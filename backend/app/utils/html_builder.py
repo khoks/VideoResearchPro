@@ -87,7 +87,7 @@ REPORT_TEMPLATE = """<!DOCTYPE html>
     {% endif %}
   </div>
 
-  {{ report_body }}
+  {{ report_body | safe }}
 </div>
 </body>
 </html>"""
@@ -107,7 +107,7 @@ def build_report_html(
     report_body: str = "",
 ) -> str:
     """Render the final HTML report."""
-    env = Environment()
+    env = Environment(autoescape=True)
     env.filters["number_format"] = _number_format
     template = env.from_string(REPORT_TEMPLATE)
 

@@ -8,9 +8,18 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Module-level connection pool + singleton client. Reusing a single pool
+# avoids the overhead of opening a fresh TCP connection on every publish
+# (previously done via `redis.from_url(...)` per call).
+_redis_pool: redis.ConnectionPool = redis.ConnectionPool.from_url(
+    settings.REDIS_URL, decode_responses=True
+)
+_redis_client: redis.Redis = redis.Redis(connection_pool=_redis_pool)
+
 
 def _get_redis() -> redis.Redis:
-    return redis.from_url(settings.REDIS_URL, decode_responses=True)
+    """Return the module-level Redis client backed by a connection pool."""
+    return _redis_client
 
 
 def publish_progress(
@@ -31,8 +40,7 @@ def publish_progress(
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     try:
-        r = _get_redis()
-        r.publish(f"job_progress:{job_id}", json.dumps(payload))
+        _get_redis().publish(f"job_progress:{job_id}", json.dumps(payload))
     except Exception as e:
         logger.warning(f"Failed to publish progress for job {job_id}: {e}")
 
@@ -53,8 +61,7 @@ def publish_status_change(
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     try:
-        r = _get_redis()
-        r.publish(f"job_progress:{job_id}", json.dumps(payload))
+        _get_redis().publish(f"job_progress:{job_id}", json.dumps(payload))
     except Exception as e:
         logger.warning(f"Failed to publish status change for job {job_id}: {e}")
 
@@ -69,7 +76,6 @@ def publish_error(job_id: str, error: str) -> None:
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     try:
-        r = _get_redis()
-        r.publish(f"job_progress:{job_id}", json.dumps(payload))
+        _get_redis().publish(f"job_progress:{job_id}", json.dumps(payload))
     except Exception as e:
         logger.warning(f"Failed to publish error for job {job_id}: {e}")

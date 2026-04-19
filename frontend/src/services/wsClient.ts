@@ -1,4 +1,5 @@
 import type { WSProgressMessage } from '../types/ws';
+import { AUTH_TOKEN_KEY } from './api';
 
 type Callback = (msg: WSProgressMessage) => void;
 
@@ -20,7 +21,12 @@ class WSClient {
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
-    this.ws = new WebSocket(resolveWsUrl());
+    const baseUrl = resolveWsUrl();
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    const url = token
+      ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
+      : baseUrl;
+    this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;

@@ -1,7 +1,7 @@
 import json
 import logging
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
 
 from app.agents.prompts.search_prompts import INTERPRET_QUERY_PROMPT, RANK_AND_CURATE_PROMPT
@@ -37,37 +37,35 @@ def generate_search_queries(state: SearchAgentState) -> dict:
 
 
 def execute_searches(state: SearchAgentState) -> dict:
-    """Execute YouTube searches and collect videos."""
+    """Execute YouTube searches, pull detailed metadata, and filter by duration."""
     queries = state.get("search_queries_used", [state["topic"]])
     target = state["num_videos"]
     min_dur = state.get("min_duration")
     max_dur = state.get("max_duration")
+    channel_type_filters = state.get("channel_type_filters") or []
+    # YouTube's `channelType` param supports a single value; pass the first filter if any.
+    channel_type = channel_type_filters[0] if channel_type_filters else None
 
-    # Determine duration filter
-    duration_filter = None
-    if min_dur and min_dur >= 20:
-        duration_filter = "long"
-    elif max_dur and max_dur <= 4:
-        duration_filter = "short"
-    elif min_dur or max_dur:
-        duration_filter = "medium"
+    # Fetch a generous candidate pool so ranking has real choices. We rely on
+    # post-fetch duration filtering (finer than YouTube's short/medium/long buckets).
+    per_query_max = max(target * 3, 50)
 
-    all_videos = {}
+    all_videos: dict[str, dict] = {}
     for query in queries:
         results = youtube_service.search_videos(
             query=query,
-            max_results=min(target, 25),
-            video_duration=duration_filter,
+            max_results=per_query_max,
+            channel_type=channel_type,
         )
         for v in results:
             vid = v["video_id"]
             if vid not in all_videos:
                 all_videos[vid] = v
 
-        if len(all_videos) >= target * 2:
+        if len(all_videos) >= target * 5:
             break
 
-    # Fetch detailed metadata (duration, etc.)
+    # Fetch detailed metadata (duration, stats, channel_id, etc.).
     video_ids = list(all_videos.keys())
     if video_ids:
         details = youtube_service.get_video_details(video_ids)
@@ -75,14 +73,24 @@ def execute_searches(state: SearchAgentState) -> dict:
             if vid in all_videos:
                 all_videos[vid].update(detail)
 
-    # Apply duration filters
+    # Fetch channel subscriber counts so ranking can use channel authority.
+    channel_ids = sorted({v.get("channel_id") for v in all_videos.values() if v.get("channel_id")})
+    if channel_ids:
+        try:
+            subs = youtube_service.get_channel_subscribers(channel_ids)
+        except Exception:
+            logger.exception("Failed to fetch channel subscribers; continuing without them")
+            subs = {}
+        for v in all_videos.values():
+            v["channel_subscribers"] = subs.get(v.get("channel_id"))
+
+    # Fine-grained duration filtering using minute bounds.
     filtered = []
     for v in all_videos.values():
-        dur_sec = v.get("duration_seconds", 0)
-        dur_min = dur_sec / 60
-        if min_dur and dur_min < min_dur:
+        dur_min = v.get("duration_seconds", 0) / 60
+        if min_dur is not None and dur_min < min_dur:
             continue
-        if max_dur and dur_min > max_dur:
+        if max_dur is not None and dur_min > max_dur:
             continue
         filtered.append(v)
 
@@ -90,6 +98,24 @@ def execute_searches(state: SearchAgentState) -> dict:
         "discovered_videos": filtered,
         "messages": [HumanMessage(content=f"Found {len(filtered)} videos after filtering")],
     }
+
+
+def _format_video_line(v: dict) -> str:
+    """Render a single video entry for the ranking prompt."""
+    subs = v.get("channel_subscribers")
+    subs_str = f"{subs:,}" if isinstance(subs, int) else "unknown"
+    views = v.get("view_count")
+    views_str = f"{views:,}" if isinstance(views, int) else "unknown"
+    likes = v.get("like_count")
+    likes_str = f"{likes:,}" if isinstance(likes, int) else "unknown"
+    return (
+        f"- ID: {v['video_id']} | Title: {v.get('title', 'N/A')} | "
+        f"Channel: {v.get('channel_name', 'N/A')} | "
+        f"Duration: {format_duration(v.get('duration_seconds', 0))} | "
+        f"Views: {views_str} | Likes: {likes_str} | "
+        f"Published: {v.get('published_at', 'unknown')} | "
+        f"Subscribers: {subs_str}"
+    )
 
 
 def rank_and_curate(state: SearchAgentState) -> dict:
@@ -101,12 +127,7 @@ def rank_and_curate(state: SearchAgentState) -> dict:
         return {"curated_videos": videos}
 
     llm = get_llm(temperature=0.0)
-    video_list = "\n".join([
-        f"- ID: {v['video_id']} | Title: {v.get('title', 'N/A')} | "
-        f"Channel: {v.get('channel_name', 'N/A')} | "
-        f"Duration: {format_duration(v.get('duration_seconds', 0))}"
-        for v in videos
-    ])
+    video_list = "\n".join(_format_video_line(v) for v in videos)
 
     prompt = RANK_AND_CURATE_PROMPT.format(
         topic=state["topic"],
@@ -130,7 +151,7 @@ def rank_and_curate(state: SearchAgentState) -> dict:
                             break
             return {"curated_videos": curated}
     except (json.JSONDecodeError, TypeError):
-        pass
+        logger.exception("Failed to parse rank_and_curate LLM response; falling back to head-of-list")
 
     return {"curated_videos": videos[:target]}
 
@@ -157,8 +178,8 @@ def run_search_agent(
     min_duration: int | None = None,
     max_duration: int | None = None,
     channel_type_filters: list[str] | None = None,
-) -> list[dict]:
-    """Run the search agent and return curated video list."""
+) -> tuple[list[dict], list[str]]:
+    """Run the search agent and return (curated videos, queries used)."""
     graph = build_search_graph()
     result = graph.invoke({
         "messages": [],
@@ -172,4 +193,4 @@ def run_search_agent(
         "curated_videos": [],
         "search_queries_used": [],
     })
-    return result.get("curated_videos", [])
+    return result.get("curated_videos", []), result.get("search_queries_used", [])

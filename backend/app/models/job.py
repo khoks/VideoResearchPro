@@ -31,6 +31,9 @@ class Job(Base):
     channel_list: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
     videos_per_channel: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Search metadata
+    search_queries_used: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
+
     # Results
     chroma_collection_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     report_path: Mapped[str | None] = mapped_column(String(500), nullable=True)

@@ -4,7 +4,9 @@ import { useJobStore } from '../stores/jobStore';
 export function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { setActiveTab } = useJobStore();
+  const setActiveTab = useJobStore((s) => s.setActiveTab);
+  const theme = useJobStore((s) => s.theme);
+  const toggleTheme = useJobStore((s) => s.toggleTheme);
 
   const handleTabChange = (tab: 'submit' | 'jobs') => {
     setActiveTab(tab);
@@ -15,20 +17,12 @@ export function AppLayout() {
   const isJobsActive = location.pathname.startsWith('/jobs');
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f1f5f9' }}>
-      <header style={{
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        padding: '1rem 2rem',
-        color: '#fff',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '2rem',
-      }}>
-        <h1 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0, cursor: 'pointer' }}
-            onClick={() => navigate('/')}>
+    <div style={{ minHeight: '100vh', background: 'var(--color-bg)' }}>
+      <header className="app-header">
+        <h1 className="app-header__title" onClick={() => navigate('/')}>
           VideoResearchPro
         </h1>
-        <nav style={{ display: 'flex', gap: '0.5rem' }}>
+        <nav className="app-header__nav">
           <TabButton active={isSubmitActive} onClick={() => handleTabChange('submit')}>
             Submit Job
           </TabButton>
@@ -36,8 +30,28 @@ export function AppLayout() {
             Jobs
           </TabButton>
         </nav>
+        <div className="app-header__actions">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+            style={{
+              background: 'rgba(255,255,255,0.15)',
+              color: '#fff',
+              border: '1px solid rgba(255,255,255,0.3)',
+              padding: '0.4rem 0.8rem',
+              borderRadius: 8,
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              fontWeight: 500,
+            }}
+          >
+            {theme === 'light' ? 'Dark' : 'Light'} mode
+          </button>
+        </div>
       </header>
-      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '1.5rem' }}>
+      <main className="app-main">
         <Outlet />
       </main>
     </div>

@@ -114,16 +114,35 @@ def insert_chunks(job_id: str, chunks: list[dict]) -> int:
 def query_collection(
     job_id: str,
     query_text: str,
-    n_results: int = 15,
+    n_results: int | None = None,
     where: dict | None = None,
+    distance_threshold: float | None = None,
 ) -> list[dict]:
     """
     Query a job's ChromaDB collection.
 
+    Args:
+        job_id: The job ID.
+        query_text: Natural-language query text.
+        n_results: Max number of raw results to fetch from ChromaDB. Defaults to
+            ``settings.RAG_TOP_K``.
+        where: Optional metadata filter passed through to ChromaDB.
+        distance_threshold: Max distance to keep. Chunks with distance greater
+            than this value are dropped. Defaults to
+            ``settings.RAG_DISTANCE_THRESHOLD``. Pass a very large value (e.g.
+            ``float("inf")``) to disable filtering.
+
     Returns:
-        List of {text, metadata, distance} dicts sorted by relevance.
+        List of {text, metadata, distance} dicts sorted by relevance with
+        distance filter applied.
     """
+    if n_results is None:
+        n_results = settings.RAG_TOP_K
+    if distance_threshold is None:
+        distance_threshold = settings.RAG_DISTANCE_THRESHOLD
+
     logger.info(f"[job:{job_id}] ChromaDB query: n_results={n_results}, "
+                f"distance_threshold={distance_threshold}, "
                 f"query='{query_text[:80]}{'...' if len(query_text) > 80 else ''}'")
     collection = get_collection(job_id)
     if not collection:
@@ -141,13 +160,23 @@ def query_collection(
     results = collection.query(**params)
 
     chunks = []
+    dropped = 0
     if results and results.get("documents"):
         for i, doc in enumerate(results["documents"][0]):
+            distance = (
+                results["distances"][0][i] if results.get("distances") else 0.0
+            )
+            if distance > distance_threshold:
+                dropped += 1
+                continue
             chunks.append({
                 "text": doc,
                 "metadata": results["metadatas"][0][i] if results.get("metadatas") else {},
-                "distance": results["distances"][0][i] if results.get("distances") else 0.0,
+                "distance": distance,
             })
 
-    logger.info(f"[job:{job_id}] ChromaDB query returned {len(chunks)} results")
+    logger.info(
+        f"[job:{job_id}] ChromaDB query returned {len(chunks)} results "
+        f"(dropped {dropped} by distance > {distance_threshold})"
+    )
     return chunks

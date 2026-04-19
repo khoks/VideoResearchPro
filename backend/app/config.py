@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 256
     CHUNK_OVERLAP: int = 32
     RAG_TOP_K: int = 15
+    RAG_DISTANCE_THRESHOLD: float = 0.6
 
     # Reports
     REPORTS_DIR: str = "./data/reports"

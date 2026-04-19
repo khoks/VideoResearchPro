@@ -12,11 +12,35 @@ INSTRUCTIONS:
 4. Include information that is indirectly relevant (e.g., background context, related events, contrasting perspectives).
 5. Format your output as a clean, organized set of relevant extracts with their sources.
 6. If the research report contains relevant findings, key facts, or analysis — include those prominently.
-7. Aim for 2000-4000 characters of focused, relevant context.
+7. Aim for 4000-8000 characters of focused, relevant context.
 
 IMPORTANT: Be inclusive, not exclusive. If in doubt about whether something is relevant, include it. The next step will use your extracts to answer the question — missing information is worse than including slightly tangential info.
 
 Extracted relevant context:"""
+
+
+SUB_QUERY_EXPANSION_PROMPT = """You are a retrieval assistant. Given a user's question, generate exactly 2 focused sub-queries that together broaden the retrieval coverage.
+
+Guidelines:
+- Each sub-query should rephrase or narrow a distinct aspect of the original question.
+- Sub-queries should be short (5-15 words), keyword-rich, and suitable for semantic search.
+- Avoid yes/no questions. Avoid duplicating the original question verbatim.
+- Return ONLY the two sub-queries, one per line, with no numbering, bullets, quotes, or extra commentary.
+
+Original question: {question}
+
+Two sub-queries:"""
+
+
+USED_SOURCES_PROMPT = """You are a citation auditor. Given an answer and a list of candidate source chunks, return the chunk indices whose video was actually cited or relied upon in the answer.
+
+Answer:
+{answer}
+
+Candidate chunks (index | video_id | video_title):
+{chunks}
+
+Return ONLY a JSON array of integer indices (0-based) of chunks that are clearly used in the answer. Example: [0, 2, 5]. Return [] if none are used."""
 
 QA_SYSTEM_PROMPT = """You are a research assistant that answers questions based on YouTube video transcript data.
 

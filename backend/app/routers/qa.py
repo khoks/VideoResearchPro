@@ -1,4 +1,5 @@
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
@@ -8,6 +9,9 @@ from app.dependencies import get_db
 from app.models.qa_exchange import QAExchange
 from app.schemas.qa import ClarifyRequest, ClarifyResponse, QARequest, QAResponse, Reference
 from app.services import job_service, report_service
+from app.services.llm_service import get_llm
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/jobs/{job_id}", tags=["qa"])
 
@@ -34,14 +38,7 @@ def clarify_question(job_id: str, request: ClarifyRequest, db: Session = Depends
     if job.status != "completed":
         raise HTTPException(status_code=400, detail="Job is not completed yet")
 
-    from langchain_openai import ChatOpenAI
-    from app.config import settings
-
-    llm = ChatOpenAI(
-        model=settings.LLM_MODEL,
-        temperature=0.3,
-        openai_api_key=settings.OPENAI_API_KEY,
-    )
+    llm = get_llm(temperature=0.3)
 
     prompt = (
         f'The user asked: "{request.question}"\n\n'
@@ -127,7 +124,7 @@ def get_qa_history(job_id: str, limit: int = 50, offset: int = 0, db: Session = 
     exchanges = (
         db.query(QAExchange)
         .filter(QAExchange.job_id == job_id)
-        .order_by(QAExchange.created_at.desc())
+        .order_by(QAExchange.created_at.asc())
         .offset(offset)
         .limit(limit)
         .all()
@@ -138,6 +135,7 @@ def get_qa_history(job_id: str, limit: int = 50, offset: int = 0, db: Session = 
         try:
             refs = [Reference(**r) for r in json.loads(qa.references)]
         except (json.JSONDecodeError, TypeError):
+            logger.warning(f"Failed to parse references JSON for qa_exchange id={qa.id}")
             refs = []
         results.append(QAResponse(
             id=qa.id,

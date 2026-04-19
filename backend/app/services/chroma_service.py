@@ -6,6 +6,16 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Process-level singleton: ChromaDB's PersistentClient holds an exclusive
+# handle on the underlying SQLite database, so only one client instance may
+# exist per process. This is safe for the current Celery worker topology
+# (`--pool=solo` on Windows, one worker = one process), but it imposes a
+# concurrency limitation: running Celery with prefork/threads/gevent/eventlet
+# pools, or multiple worker processes sharing this persist directory, will
+# fail with "An instance of Chroma already exists" or SQLite lock errors.
+# If concurrency > 1 is ever required, switch to ChromaDB's client/server
+# mode (HttpClient against a dedicated chroma-server) instead of the
+# in-process PersistentClient.
 _client: chromadb.ClientAPI | None = None
 
 

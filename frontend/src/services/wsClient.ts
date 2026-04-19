@@ -2,6 +2,13 @@ import type { WSProgressMessage } from '../types/ws';
 
 type Callback = (msg: WSProgressMessage) => void;
 
+function resolveWsUrl(): string {
+  const fromEnv = import.meta.env.VITE_WS_URL;
+  if (fromEnv) return fromEnv;
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/ws/jobs`;
+}
+
 class WSClient {
   private ws: WebSocket | null = null;
   private subscriptions = new Map<string, Set<Callback>>();
@@ -13,7 +20,7 @@ class WSClient {
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
-    this.ws = new WebSocket('ws://localhost:8000/ws/jobs');
+    this.ws = new WebSocket(resolveWsUrl());
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;

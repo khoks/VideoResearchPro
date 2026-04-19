@@ -127,7 +127,7 @@ export function JobDetailPage() {
               cursor: 'pointer', fontSize: '1.1rem', zIndex: 10,
             }}>X</button>
             <iframe
-              src={`http://localhost:8000/api/v1/jobs/${job.id}/report`}
+              src={`/api/v1/jobs/${job.id}/report`}
               style={{ width: '100%', height: '100%', border: 'none' }}
               title="Research Report"
             />

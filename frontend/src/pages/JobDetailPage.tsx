@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
 import { useJob, useJobVideos, useApproveJob, useCancelJob, useDeleteJob } from '../hooks/useJobs';
 import { useJobProgress } from '../hooks/useJobProgress';
 import { useQAHistory, useAskQuestion, useClarifyQuestion } from '../hooks/useQA';
@@ -9,6 +10,7 @@ import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { formatDuration, formatDate, statusColor } from '../utils/formatters';
 import { useJobStore } from '../stores/jobStore';
 import type { Video } from '../types/video';
+import type { QAExchange } from '../types/qa';
 
 export function JobDetailPage() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -112,27 +114,7 @@ export function JobDetailPage() {
 
       {/* Report Modal */}
       {isReportModalOpen && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-        }} onClick={closeReportModal}>
-          <div style={{
-            width: '90vw', height: '90vh', background: '#fff', borderRadius: 12,
-            overflow: 'hidden', position: 'relative',
-          }} onClick={(e) => e.stopPropagation()}>
-            <button onClick={closeReportModal} style={{
-              position: 'absolute', top: 12, right: 12, background: '#ef4444',
-              color: '#fff', border: 'none', borderRadius: '50%', width: 32, height: 32,
-              cursor: 'pointer', fontSize: '1.1rem', zIndex: 10,
-            }}>X</button>
-            <iframe
-              src={`/api/v1/jobs/${job.id}/report`}
-              style={{ width: '100%', height: '100%', border: 'none' }}
-              title="Research Report"
-            />
-          </div>
-        </div>
+        <ReportModal jobId={job.id} onClose={closeReportModal} />
       )}
 
       {/* Q&A Panel */}
@@ -273,6 +255,51 @@ function VideoApprovalSection({ videos, jobId, onApprove }: {
       }}>
         Approve & Continue ({selected.size} videos)
       </button>
+    </div>
+  );
+}
+
+function ReportModal({ jobId, onClose }: { jobId: string; onClose: () => void }) {
+  const reportUrl = `/api/v1/jobs/${jobId}/report`;
+
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+      background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex',
+      alignItems: 'center', justifyContent: 'center',
+    }} onClick={onClose}>
+      <div style={{
+        width: '90vw', height: '90vh', background: '#fff', borderRadius: 12,
+        overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column',
+      }} onClick={(e) => e.stopPropagation()}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '0.75rem 1rem', borderBottom: '1px solid #e2e8f0', gap: '0.75rem',
+          background: '#f8fafc',
+        }}>
+          <h3 style={{ margin: 0, fontSize: '1rem', color: '#1e293b' }}>Research Report</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <a href={reportUrl} target="_blank" rel="noopener noreferrer" style={{
+              background: '#667eea', color: '#fff', padding: '0.4rem 0.9rem',
+              borderRadius: 6, fontSize: '0.85rem', fontWeight: 500, textDecoration: 'none',
+            }}>
+              Open in new tab
+            </a>
+            <button onClick={onClose} style={{
+              background: '#fff', color: '#475569', border: '1px solid #cbd5e1',
+              padding: '0.4rem 0.9rem', borderRadius: 6, cursor: 'pointer',
+              fontSize: '0.85rem', fontWeight: 500,
+            }}>
+              Close
+            </button>
+          </div>
+        </div>
+        <iframe
+          src={reportUrl}
+          style={{ width: '100%', flex: 1, border: 'none' }}
+          title="Research Report"
+        />
+      </div>
     </div>
   );
 }
@@ -462,22 +489,52 @@ function QASection({ jobId }: { jobId: string }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem',
                       marginTop: step === 'clarify' ? 0 : '1rem' }}>
           {history.map(qa => (
-            <div key={qa.id} style={{ padding: '1rem', background: '#f8fafc', borderRadius: 8 }}>
-              <p style={{ fontWeight: 600, color: '#1e293b', marginBottom: '0.5rem' }}>Q: {qa.question}</p>
-              <div style={{ color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{qa.answer}</div>
-              {qa.references.length > 0 && (
-                <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e2e8f0', paddingTop: '0.5rem' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>References:</span>
-                  {qa.references.map((ref, i) => (
-                    <div key={i} style={{ fontSize: '0.8rem', color: '#667eea', marginTop: '0.25rem' }}>
-                      <a href={ref.youtube_link} target="_blank" rel="noopener noreferrer"
-                         style={{ color: '#667eea', textDecoration: 'none' }}>
-                        {ref.video_title} by {ref.channel_name} at {ref.timestamp_display}
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <QAExchangeCard key={qa.id} qa={qa} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QAExchangeCard({ qa }: { qa: QAExchange }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(qa.answer);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard unavailable (e.g. insecure context) — leave button state unchanged
+    }
+  };
+
+  return (
+    <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                    gap: '0.75rem', marginBottom: '0.5rem' }}>
+        <p style={{ fontWeight: 600, color: '#1e293b', margin: 0, flex: 1 }}>Q: {qa.question}</p>
+        <button onClick={handleCopy} style={{
+          background: copied ? '#22c55e' : '#fff', color: copied ? '#fff' : '#475569',
+          border: '1px solid #cbd5e1', padding: '0.25rem 0.6rem', borderRadius: 6,
+          cursor: 'pointer', fontSize: '0.75rem', fontWeight: 500, flexShrink: 0,
+        }}>
+          {copied ? 'Copied' : 'Copy answer'}
+        </button>
+      </div>
+      <div style={{ color: '#334155', lineHeight: 1.6 }}>
+        <ReactMarkdown>{qa.answer}</ReactMarkdown>
+      </div>
+      {qa.references.length > 0 && (
+        <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e2e8f0', paddingTop: '0.5rem' }}>
+          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>References:</span>
+          {qa.references.map((ref, i) => (
+            <div key={i} style={{ fontSize: '0.8rem', color: '#667eea', marginTop: '0.25rem' }}>
+              <a href={ref.youtube_link} target="_blank" rel="noopener noreferrer"
+                 style={{ color: '#667eea', textDecoration: 'none' }}>
+                {ref.video_title} by {ref.channel_name} at {ref.timestamp_display}
+              </a>
             </div>
           ))}
         </div>

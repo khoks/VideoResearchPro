@@ -252,6 +252,8 @@ def resume_job_after_approval(self, job_id: str) -> None:
                         "channel_name": video.channel_name,
                         "channel_id": video.channel_id,
                         "url": video.url,
+                        "published_at": video.published_at,
+                        "duration_seconds": video.duration_seconds,
                         "language": settings.DEFAULT_TRANSCRIPT_LANGUAGE,
                     },
                 )

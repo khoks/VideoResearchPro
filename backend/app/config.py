@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     DEFAULT_TRANSCRIPT_LANGUAGE: str = "en"
 
     # RAG
-    CHUNK_SIZE: int = 512
-    CHUNK_OVERLAP: int = 50
+    CHUNK_SIZE: int = 256
+    CHUNK_OVERLAP: int = 32
     RAG_TOP_K: int = 15
 
     # Reports

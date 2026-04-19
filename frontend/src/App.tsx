@@ -8,6 +8,7 @@ import {
 import { router } from './routes';
 import { ToastContainer } from './components/common/Toast';
 import { useJobStore } from './stores/jobStore';
+import { AuthProvider } from './contexts/AuthContext';
 
 function extractErrorMessage(error: unknown): string {
   if (!error) return 'An unexpected error occurred.';
@@ -35,8 +36,10 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-      <ToastContainer />
+      <AuthProvider>
+        <RouterProvider router={router} />
+        <ToastContainer />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

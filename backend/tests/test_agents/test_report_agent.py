@@ -263,19 +263,27 @@ def test_compose_report_returns_error_html_on_failure():
 
 # ---------- Graph routing ----------
 
-def test_should_skip_analysis_routes_channel_to_end():
-    assert report_agent.should_skip_analysis({"job_type": "channel"}) == "format_html"
+def test_route_after_statistics_routes_channel_to_compose_channel():
+    """Channel jobs go to the lightweight per-channel narrative path."""
+    assert report_agent.route_after_statistics({"job_type": "channel"}) == "compose_channel_report"
 
 
-def test_should_skip_analysis_routes_topic_to_map():
-    assert report_agent.should_skip_analysis({"job_type": "topic"}) == "map_chunks"
+def test_route_after_statistics_routes_topic_to_map():
+    assert report_agent.route_after_statistics({"job_type": "topic"}) == "map_chunks"
 
 
-def test_run_report_agent_channel_returns_empty_body():
-    """Full graph run for a channel job: stats only, no LLM required."""
+def test_run_report_agent_channel_returns_narrative_body():
+    """Full graph run for a channel job: stats + a lightweight LLM-composed narrative."""
     chunks = [_chunk("v1", "ChA", 0.0, 60.0, word_count=10)]
-    stats, body = report_agent.run_report_agent(
-        job_type="channel", topic="", transcript_chunks=chunks
-    )
+    # Channel jobs invoke get_llm twice: once per channel for CHANNEL_MAP_PROMPT,
+    # then once more for the cross-channel composition.
+    fake_llms = [
+        _fake_llm_returning('{"channel_name": "ChA", "themes": ["t"], "highlights": []}'),
+        _fake_llm_returning("<section>Channel narrative</section>"),
+    ]
+    with patch.object(report_agent, "get_llm", side_effect=fake_llms):
+        stats, body = report_agent.run_report_agent(
+            job_type="channel", topic="", transcript_chunks=chunks
+        )
     assert stats["video_count"] == 1
-    assert body == ""
+    assert "Channel narrative" in body

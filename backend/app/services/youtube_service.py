@@ -35,14 +35,15 @@ def search_videos(
         max_results: Max results to return (costs 100 quota units per call).
         published_after: ISO 8601 datetime string.
         video_duration: "short" (<4min), "medium" (4-20min), "long" (>20min).
-        channel_type: Filter by channel type.
+        channel_type: YouTube search `channelType` filter, e.g. "any" or "show".
 
     Returns:
         List of video dicts with basic metadata.
     """
     logger.info(
         f"search_videos: query={query!r}, max_results={max_results}, "
-        f"published_after={published_after}, video_duration={video_duration}"
+        f"published_after={published_after}, video_duration={video_duration}, "
+        f"channel_type={channel_type}"
     )
     youtube = get_youtube_client()
 
@@ -57,6 +58,8 @@ def search_videos(
         params["publishedAfter"] = published_after
     if video_duration:
         params["videoDuration"] = video_duration
+    if channel_type:
+        params["channelType"] = channel_type
 
     response = youtube.search().list(**params).execute()
 
@@ -102,6 +105,7 @@ def get_video_details(video_ids: list[str], job_id: str = "") -> dict[str, dict]
             vid = item["id"]
             content = item.get("contentDetails", {})
             snippet = item.get("snippet", {})
+            stats = item.get("statistics", {})
             details[vid] = {
                 "video_id": vid,
                 "title": snippet.get("title", ""),
@@ -111,10 +115,59 @@ def get_video_details(video_ids: list[str], job_id: str = "") -> dict[str, dict]
                 "published_at": snippet.get("publishedAt"),
                 "thumbnail_url": snippet.get("thumbnails", {}).get("high", {}).get("url"),
                 "url": f"https://www.youtube.com/watch?v={vid}",
+                "view_count": _safe_int(stats.get("viewCount")),
+                "like_count": _safe_int(stats.get("likeCount")),
             }
 
     logger.info(f"{tag} get_video_details: resolved {len(details)}/{total} video(s)")
     return details
+
+
+def _safe_int(value) -> int | None:
+    """Parse a string/int statistic to int, returning None on failure."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_channel_subscribers(channel_ids: list[str], job_id: str = "") -> dict[str, int | None]:
+    """
+    Fetch subscriber counts for a batch of channels.
+    Costs 1 quota unit per channels.list call (up to 50 IDs per call).
+
+    Returns a mapping of channel_id -> subscriber count (or None if hidden/unavailable).
+    """
+    tag = f"[job:{job_id}]" if job_id else ""
+    unique_ids = [cid for cid in dict.fromkeys(channel_ids) if cid]
+    if not unique_ids:
+        return {}
+
+    logger.info(f"{tag} get_channel_subscribers: fetching for {len(unique_ids)} channel(s)")
+    youtube = get_youtube_client()
+    subs: dict[str, int | None] = {}
+
+    for i in range(0, len(unique_ids), 50):
+        batch = unique_ids[i:i + 50]
+        response = youtube.channels().list(
+            part="statistics",
+            id=",".join(batch),
+        ).execute()
+        for item in response.get("items", []):
+            cid = item.get("id")
+            stats = item.get("statistics", {})
+            if stats.get("hiddenSubscriberCount"):
+                subs[cid] = None
+            else:
+                subs[cid] = _safe_int(stats.get("subscriberCount"))
+
+    for cid in unique_ids:
+        subs.setdefault(cid, None)
+
+    logger.info(f"{tag} get_channel_subscribers: resolved {len(subs)} channel(s)")
+    return subs
 
 
 def get_channel_videos(

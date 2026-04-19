@@ -56,7 +56,7 @@ def execute_topic_job(self, job_id: str) -> None:
         # Run Search Agent
         from app.agents.search_agent import run_search_agent
         logger.info(f"[job:{job_id}] Starting Search Agent for topic: '{job.topic}'")
-        curated_videos = run_search_agent(
+        curated_videos, queries_used = run_search_agent(
             topic=job.topic,
             num_videos=job.num_videos,
             search_instructions=job.search_instructions or "",
@@ -65,6 +65,10 @@ def execute_topic_job(self, job_id: str) -> None:
             channel_type_filters=json.loads(job.channel_type_filters) if job.channel_type_filters else [],
         )
         logger.info(f"[job:{job_id}] Search Agent complete: found {len(curated_videos)} candidate videos")
+
+        if queries_used:
+            job.search_queries_used = json.dumps(queries_used)
+            db.commit()
 
         progress_service.publish_progress(job_id, "searching", 15,
                                           f"Found {len(curated_videos)} videos. Fetching details...")

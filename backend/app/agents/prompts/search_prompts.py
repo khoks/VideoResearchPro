@@ -20,15 +20,25 @@ rank them by relevance and select the top {num_videos} most relevant ones.
 Topic: {topic}
 Additional instructions: {search_instructions}
 
+Each video below is shown with metadata:
+- Title and channel
+- Duration
+- Views (view count on the video)
+- Likes (like count on the video)
+- Published (ISO 8601 publish date — more recent is usually better unless the topic calls for foundational content)
+- Subscribers (approximate subscriber count of the channel — a proxy for channel authority)
+
 Videos found:
 {video_list}
 
 Consider:
 - Relevance to the specific topic
-- Channel authority and quality
-- Video duration (prefer substantive content)
-- Recency when relevant
-- Diversity of perspectives
+- Engagement signals (views, likes) relative to channel size — a mid-size channel with strong engagement
+  is often a better signal than a huge channel with a tangential video
+- Channel authority via subscriber count, but weight relevance higher than raw popularity
+- Video duration — prefer substantive content over shallow clickbait
+- Recency when the topic is fast-moving; favor older foundational videos for evergreen topics
+- Diversity of perspectives across different channels
 
 Return a JSON array of video IDs for the top {num_videos} most relevant videos, ordered by relevance.
 Example: ["video_id_1", "video_id_2"]

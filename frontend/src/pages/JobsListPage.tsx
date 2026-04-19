@@ -78,11 +78,11 @@ export function JobsListPage() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: '1rem', color: '#1e293b' }}>Research Jobs</h2>
+      <h2 style={{ marginBottom: '1rem', color: 'var(--color-text)' }}>Research Jobs</h2>
 
       <div style={{
-        background: '#fff', borderRadius: 12, padding: '1rem', marginBottom: '1rem',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.08)', display: 'flex', flexWrap: 'wrap',
+        background: 'var(--color-surface)', borderRadius: 12, padding: '1rem', marginBottom: '1rem',
+        boxShadow: 'var(--shadow-card)', display: 'flex', flexWrap: 'wrap',
         gap: '0.75rem', alignItems: 'center',
       }}>
         <input
@@ -91,15 +91,16 @@ export function JobsListPage() {
           placeholder="Search by topic or channel name..."
           style={{
             flex: '1 1 240px', padding: '0.5rem 0.75rem', borderRadius: 8,
-            border: '1px solid #e2e8f0', fontSize: '0.9rem',
+            border: '1px solid var(--color-border)', fontSize: '0.9rem',
+            background: 'var(--color-surface)', color: 'var(--color-text)',
           }}
         />
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value as '' | JobStatus); resetPage(); }}
           style={{
-            padding: '0.5rem 0.75rem', borderRadius: 8, border: '1px solid #e2e8f0',
-            fontSize: '0.9rem', background: '#fff',
+            padding: '0.5rem 0.75rem', borderRadius: 8, border: '1px solid var(--color-border)',
+            fontSize: '0.9rem', background: 'var(--color-surface)', color: 'var(--color-text)',
           }}
         >
           {STATUS_OPTIONS.map(opt => (
@@ -110,8 +111,8 @@ export function JobsListPage() {
           value={sortOrder}
           onChange={(e) => setSortOrder(e.target.value as SortOrder)}
           style={{
-            padding: '0.5rem 0.75rem', borderRadius: 8, border: '1px solid #e2e8f0',
-            fontSize: '0.9rem', background: '#fff',
+            padding: '0.5rem 0.75rem', borderRadius: 8, border: '1px solid var(--color-border)',
+            fontSize: '0.9rem', background: 'var(--color-surface)', color: 'var(--color-text)',
           }}
         >
           <option value="newest">Newest first</option>

@@ -1,122 +1,397 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCreateJob } from '../hooks/useJobs';
+import { useJobStore } from '../stores/jobStore';
 import type { JobCreate, JobType } from '../types/job';
+
+const CHANNEL_TYPE_OPTIONS = [
+  'educational',
+  'academic',
+  'news',
+  'entertainment',
+  'podcast',
+  'tutorial',
+] as const;
+
+type ChannelTypeOption = (typeof CHANNEL_TYPE_OPTIONS)[number];
+
+const FORM_STATE_KEY = 'vrp:submit-form';
+
+interface PersistedFormState {
+  jobType: JobType;
+  topic: string;
+  searchInstructions: string;
+  numVideos: number;
+  minDuration: string;
+  maxDuration: string;
+  channelFilters: ChannelTypeOption[];
+  channelList: string;
+  videosPerChannel: number;
+}
+
+const DEFAULT_FORM: PersistedFormState = {
+  jobType: 'topic',
+  topic: '',
+  searchInstructions: '',
+  numVideos: 10,
+  minDuration: '',
+  maxDuration: '',
+  channelFilters: [],
+  channelList: '',
+  videosPerChannel: 10,
+};
+
+function loadForm(): PersistedFormState {
+  if (typeof window === 'undefined') return DEFAULT_FORM;
+  try {
+    const raw = window.localStorage.getItem(FORM_STATE_KEY);
+    if (!raw) return DEFAULT_FORM;
+    const parsed = JSON.parse(raw) as Partial<PersistedFormState>;
+    return {
+      ...DEFAULT_FORM,
+      ...parsed,
+      channelFilters: Array.isArray(parsed.channelFilters)
+        ? parsed.channelFilters.filter((c): c is ChannelTypeOption =>
+            (CHANNEL_TYPE_OPTIONS as readonly string[]).includes(c),
+          )
+        : [],
+    };
+  } catch {
+    return DEFAULT_FORM;
+  }
+}
+
+// Accept @handle, youtube.com/@handle, /channel/UC..., /c/name, /user/name
+const CHANNEL_URL_RE =
+  /^(?:@[\w.-]{1,}|(?:https?:\/\/)?(?:www\.)?youtube\.com\/(?:@[\w.-]{1,}|channel\/[\w-]{1,}|c\/[\w.-]{1,}|user\/[\w.-]{1,})\/?)$/i;
+
+function parseChannelList(raw: string): string[] {
+  return raw
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function validateChannels(lines: string[]): string[] {
+  return lines.filter((line) => !CHANNEL_URL_RE.test(line));
+}
 
 export function SubmitJobPage() {
   const navigate = useNavigate();
   const createJob = useCreateJob();
-  const [jobType, setJobType] = useState<JobType>('topic');
-  const [topic, setTopic] = useState('');
-  const [searchInstructions, setSearchInstructions] = useState('');
-  const [numVideos, setNumVideos] = useState(10);
-  const [minDuration, setMinDuration] = useState('');
-  const [maxDuration, setMaxDuration] = useState('');
-  const [channelFilters, setChannelFilters] = useState('');
-  const [channelList, setChannelList] = useState('');
-  const [videosPerChannel, setVideosPerChannel] = useState(10);
+  const pushToast = useJobStore((s) => s.pushToast);
+
+  const [form, setForm] = useState<PersistedFormState>(() => loadForm());
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Persist on every change
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(FORM_STATE_KEY, JSON.stringify(form));
+    } catch {
+      // storage full / disabled — silently ignore
+    }
+  }, [form]);
+
+  const update = <K extends keyof PersistedFormState>(key: K, value: PersistedFormState[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const toggleChannelFilter = (opt: ChannelTypeOption) => {
+    setForm((f) => ({
+      ...f,
+      channelFilters: f.channelFilters.includes(opt)
+        ? f.channelFilters.filter((x) => x !== opt)
+        : [...f.channelFilters, opt],
+    }));
+  };
+
+  // Quota estimate: ~100 units per search query × 3 queries + ~1 per video for details.
+  // Channel jobs: channel lookup (~1/channel) + playlistItems (~1 per 50 videos) + ~1/video details.
+  const quotaEstimate = useMemo(() => {
+    if (form.jobType === 'topic') {
+      const searches = 100 * 3;
+      const details = Math.max(0, form.numVideos) * 1;
+      return searches + details;
+    }
+    const channels = parseChannelList(form.channelList).length;
+    const playlistCalls = channels * Math.max(1, Math.ceil(form.videosPerChannel / 50));
+    const details = channels * form.videosPerChannel;
+    return channels + playlistCalls + details;
+  }, [form.jobType, form.numVideos, form.channelList, form.videosPerChannel]);
+
+  const invalidChannels = useMemo(() => {
+    if (form.jobType !== 'channel') return [];
+    return validateChannels(parseChannelList(form.channelList));
+  }, [form.jobType, form.channelList]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const data: JobCreate = { job_type: jobType, num_videos: numVideos };
+    setValidationError(null);
 
-    if (jobType === 'topic') {
-      data.topic = topic;
-      data.search_instructions = searchInstructions || undefined;
-      if (minDuration) data.min_duration_minutes = parseInt(minDuration);
-      if (maxDuration) data.max_duration_minutes = parseInt(maxDuration);
-      if (channelFilters) data.channel_type_filters = channelFilters.split(',').map(s => s.trim());
+    const data: JobCreate = { job_type: form.jobType, num_videos: form.numVideos };
+
+    if (form.jobType === 'topic') {
+      if (!form.topic.trim()) {
+        setValidationError('Topic is required.');
+        return;
+      }
+      data.topic = form.topic.trim();
+      data.search_instructions = form.searchInstructions || undefined;
+      if (form.minDuration) data.min_duration_minutes = parseInt(form.minDuration, 10);
+      if (form.maxDuration) data.max_duration_minutes = parseInt(form.maxDuration, 10);
+      if (form.channelFilters.length > 0) data.channel_type_filters = [...form.channelFilters];
     } else {
-      data.channel_list = channelList.split('\n').map(s => s.trim()).filter(Boolean);
-      data.videos_per_channel = videosPerChannel;
+      const lines = parseChannelList(form.channelList);
+      if (lines.length === 0) {
+        setValidationError('Provide at least one channel URL or handle.');
+        return;
+      }
+      const invalid = validateChannels(lines);
+      if (invalid.length > 0) {
+        setValidationError(
+          `Invalid channel entries: ${invalid.slice(0, 3).join(', ')}${invalid.length > 3 ? '...' : ''}`,
+        );
+        return;
+      }
+      data.channel_list = lines;
+      data.videos_per_channel = form.videosPerChannel;
+      if (form.minDuration) data.min_duration_minutes = parseInt(form.minDuration, 10);
+      if (form.maxDuration) data.max_duration_minutes = parseInt(form.maxDuration, 10);
     }
 
-    const job = await createJob.mutateAsync(data);
-    navigate(`/jobs/${job.id}`);
+    try {
+      const job = await createJob.mutateAsync(data);
+      // Clear persisted form on successful submission
+      try {
+        window.localStorage.removeItem(FORM_STATE_KEY);
+      } catch {
+        /* ignore */
+      }
+      pushToast('success', 'Job submitted.');
+      navigate(`/jobs/${job.id}`);
+    } catch {
+      // Global error toast is emitted by the MutationCache; nothing to do here.
+    }
+  };
+
+  const handleReset = () => {
+    setForm(DEFAULT_FORM);
+    setValidationError(null);
+    try {
+      window.localStorage.removeItem(FORM_STATE_KEY);
+    } catch {
+      /* ignore */
+    }
   };
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto' }}>
-      <h2 style={{ marginBottom: '1.5rem', color: '#1e293b' }}>Submit New Research Job</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    marginBottom: '1.5rem' }}>
+        <h2 style={{ color: 'var(--color-text)' }}>Submit New Research Job</h2>
+        <button
+          type="button"
+          onClick={handleReset}
+          style={{
+            background: 'transparent',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-text-muted)',
+            padding: '0.4rem 0.9rem',
+            borderRadius: 6,
+            cursor: 'pointer',
+            fontSize: '0.8rem',
+          }}
+        >
+          Reset form
+        </button>
+      </div>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-        <TypeToggle active={jobType === 'topic'} onClick={() => setJobType('topic')}>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+        <TypeToggle active={form.jobType === 'topic'} onClick={() => update('jobType', 'topic')}>
           Topic Research
         </TypeToggle>
-        <TypeToggle active={jobType === 'channel'} onClick={() => setJobType('channel')}>
+        <TypeToggle active={form.jobType === 'channel'} onClick={() => update('jobType', 'channel')}>
           Channel Scrape
         </TypeToggle>
       </div>
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        {jobType === 'topic' ? (
+        {form.jobType === 'topic' ? (
           <>
             <Field label="Research Topic *">
-              <input value={topic} onChange={(e) => setTopic(e.target.value)}
-                     placeholder="e.g. Quantum Computing breakthroughs 2025" required />
+              <input
+                value={form.topic}
+                onChange={(e) => update('topic', e.target.value)}
+                placeholder="e.g. Quantum Computing breakthroughs 2025"
+                required
+              />
             </Field>
             <Field label="Search Instructions (optional)">
-              <textarea value={searchInstructions} onChange={(e) => setSearchInstructions(e.target.value)}
-                        placeholder="e.g. Focus on academic channels, prefer recent uploads..." rows={3} />
+              <textarea
+                value={form.searchInstructions}
+                onChange={(e) => update('searchInstructions', e.target.value)}
+                placeholder="e.g. Focus on academic channels, prefer recent uploads..."
+                rows={3}
+              />
             </Field>
             <Field label="Number of Videos">
-              <input type="number" value={numVideos} onChange={(e) => setNumVideos(parseInt(e.target.value))}
-                     min={1} max={100} />
+              <input
+                type="number"
+                value={form.numVideos}
+                onChange={(e) => update('numVideos', parseInt(e.target.value || '0', 10) || 0)}
+                min={1}
+                max={100}
+              />
             </Field>
-            <div style={{ display: 'flex', gap: '1rem' }}>
+            <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
               <Field label="Min Duration (minutes)">
-                <input type="number" value={minDuration} onChange={(e) => setMinDuration(e.target.value)}
-                       placeholder="Any" min={1} />
+                <input
+                  type="number"
+                  value={form.minDuration}
+                  onChange={(e) => update('minDuration', e.target.value)}
+                  placeholder="Any"
+                  min={1}
+                />
               </Field>
               <Field label="Max Duration (minutes)">
-                <input type="number" value={maxDuration} onChange={(e) => setMaxDuration(e.target.value)}
-                       placeholder="Any" min={1} />
+                <input
+                  type="number"
+                  value={form.maxDuration}
+                  onChange={(e) => update('maxDuration', e.target.value)}
+                  placeholder="Any"
+                  min={1}
+                />
               </Field>
             </div>
-            <Field label="Channel Type Filters (comma-separated, optional)">
-              <input value={channelFilters} onChange={(e) => setChannelFilters(e.target.value)}
-                     placeholder="e.g. educational, academic, news" />
+            <Field label="Channel Type Filters (optional)">
+              <div style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '0.4rem',
+                padding: '0.5rem',
+                border: '1px solid var(--color-border)',
+                borderRadius: 8,
+                background: 'var(--color-input-bg)',
+              }}>
+                {CHANNEL_TYPE_OPTIONS.map((opt) => {
+                  const selected = form.channelFilters.includes(opt);
+                  return (
+                    <button
+                      type="button"
+                      key={opt}
+                      onClick={() => toggleChannelFilter(opt)}
+                      aria-pressed={selected}
+                      style={{
+                        background: selected ? 'var(--color-accent)' : 'transparent',
+                        color: selected ? '#fff' : 'var(--color-text-muted)',
+                        border: `1px solid ${selected ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
+                        padding: '0.3rem 0.8rem',
+                        borderRadius: 999,
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                        fontWeight: selected ? 600 : 500,
+                        textTransform: 'capitalize',
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
             </Field>
           </>
         ) : (
           <>
             <Field label="YouTube Channels (one per line) *">
-              <textarea value={channelList} onChange={(e) => setChannelList(e.target.value)}
-                        placeholder={"@3blue1brown\n@Veritasium\nhttps://youtube.com/@kurzgesagt"}
-                        rows={5} required />
+              <textarea
+                value={form.channelList}
+                onChange={(e) => update('channelList', e.target.value)}
+                placeholder={'@3blue1brown\n@Veritasium\nhttps://youtube.com/@kurzgesagt'}
+                rows={5}
+                required
+              />
             </Field>
+            {invalidChannels.length > 0 && (
+              <p style={{
+                margin: 0,
+                fontSize: '0.8rem',
+                color: '#ef4444',
+              }}>
+                Invalid entries: {invalidChannels.slice(0, 3).join(', ')}
+                {invalidChannels.length > 3 ? `, +${invalidChannels.length - 3} more` : ''}
+              </p>
+            )}
             <Field label="Videos per Channel">
-              <input type="number" value={videosPerChannel}
-                     onChange={(e) => setVideosPerChannel(parseInt(e.target.value))}
-                     min={1} max={50} />
+              <input
+                type="number"
+                value={form.videosPerChannel}
+                onChange={(e) =>
+                  update('videosPerChannel', parseInt(e.target.value || '0', 10) || 0)
+                }
+                min={1}
+                max={50}
+              />
             </Field>
-            <div style={{ display: 'flex', gap: '1rem' }}>
+            <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
               <Field label="Min Duration (minutes)">
-                <input type="number" value={minDuration} onChange={(e) => setMinDuration(e.target.value)}
-                       placeholder="Any" min={1} />
+                <input
+                  type="number"
+                  value={form.minDuration}
+                  onChange={(e) => update('minDuration', e.target.value)}
+                  placeholder="Any"
+                  min={1}
+                />
               </Field>
               <Field label="Max Duration (minutes)">
-                <input type="number" value={maxDuration} onChange={(e) => setMaxDuration(e.target.value)}
-                       placeholder="Any" min={1} />
+                <input
+                  type="number"
+                  value={form.maxDuration}
+                  onChange={(e) => update('maxDuration', e.target.value)}
+                  placeholder="Any"
+                  min={1}
+                />
               </Field>
             </div>
           </>
         )}
 
-        <button type="submit" disabled={createJob.isPending} style={{
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          color: '#fff', border: 'none', padding: '0.8rem 2rem', borderRadius: 8,
-          fontSize: '1rem', fontWeight: 600, cursor: 'pointer', marginTop: '0.5rem',
-          opacity: createJob.isPending ? 0.7 : 1,
+        <div style={{
+          background: 'var(--color-surface-alt)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 8,
+          padding: '0.7rem 0.9rem',
+          fontSize: '0.82rem',
+          color: 'var(--color-text-muted)',
         }}>
+          <strong style={{ color: 'var(--color-text)' }}>Estimated YouTube quota:</strong>{' '}
+          ~{quotaEstimate.toLocaleString()} units
+          <span style={{ marginLeft: '0.5rem', color: 'var(--color-text-faint)' }}>
+            (daily free quota: 10,000)
+          </span>
+        </div>
+
+        {validationError && (
+          <p style={{ color: '#ef4444', margin: 0, fontSize: '0.85rem' }}>{validationError}</p>
+        )}
+
+        <button
+          type="submit"
+          disabled={createJob.isPending}
+          style={{
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: '#fff',
+            border: 'none',
+            padding: '0.8rem 2rem',
+            borderRadius: 8,
+            fontSize: '1rem',
+            fontWeight: 600,
+            cursor: createJob.isPending ? 'not-allowed' : 'pointer',
+            marginTop: '0.5rem',
+            opacity: createJob.isPending ? 0.7 : 1,
+          }}
+        >
           {createJob.isPending ? 'Submitting...' : 'Submit Job'}
         </button>
-
-        {createJob.isError && (
-          <p style={{ color: '#ef4444' }}>
-            Error: {(createJob.error as Error).message}
-          </p>
-        )}
       </form>
     </div>
   );
@@ -128,9 +403,9 @@ function TypeToggle({ active, onClick, children }: {
   return (
     <button type="button" onClick={onClick} style={{
       padding: '0.6rem 1.5rem', borderRadius: 8, border: '2px solid',
-      borderColor: active ? '#667eea' : '#e2e8f0',
-      background: active ? '#667eea' : '#fff',
-      color: active ? '#fff' : '#64748b',
+      borderColor: active ? 'var(--color-accent)' : 'var(--color-border)',
+      background: active ? 'var(--color-accent)' : 'var(--color-surface)',
+      color: active ? '#fff' : 'var(--color-text-muted)',
       fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
     }}>
       {children}
@@ -141,7 +416,7 @@ function TypeToggle({ active, onClick, children }: {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', flex: 1 }}>
-      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>{label}</span>
+      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>{label}</span>
       {children}
     </label>
   );

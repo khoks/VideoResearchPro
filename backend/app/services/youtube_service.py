@@ -6,11 +6,14 @@ import time
 from datetime import datetime, timezone
 
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from youtube_transcript_api import YouTubeTranscriptApi
 
 from app.config import settings
 from app.database import SessionLocal
 from app.models.transcript_cache import TranscriptCache
+from app.services import quota_service
+from app.services.quota_service import QuotaExceededError
 from app.utils.rate_limiter import RateLimiter
 from app.utils.youtube_helpers import parse_iso8601_duration
 
@@ -25,9 +28,60 @@ WHISPER_MAX_FILE_BYTES = 25 * 1024 * 1024
 # returns only a text blob without per-segment timestamps.
 WHISPER_PSEUDO_SEGMENT_SECONDS = 30.0
 
+# Retry configuration for 5xx responses from the YouTube Data API.
+_YT_RETRY_DELAYS = (1, 2, 4)
+
 
 def get_youtube_client():
     return build("youtube", "v3", developerKey=settings.YOUTUBE_API_KEY)
+
+
+def _is_quota_error(err: HttpError) -> bool:
+    """Identify a 403 quota-exceeded response."""
+    if err.resp.status != 403:
+        return False
+    body = (err.content or b"").decode("utf-8", errors="ignore").lower()
+    return "quotaexceeded" in body or "dailylimitexceeded" in body or "quota" in body
+
+
+def _execute_youtube_request(request, operation: str):
+    """Execute a YouTube Data API request with retries, quota tracking, and error translation.
+
+    - Retries 5xx responses with exponential backoff.
+    - Translates 403 quota errors into ``QuotaExceededError``.
+    - Records a quota-log row for every request that is actually issued.
+    """
+    last_error: HttpError | None = None
+    for attempt, delay in enumerate((0, *_YT_RETRY_DELAYS)):
+        if delay:
+            time.sleep(delay)
+        try:
+            response = request.execute()
+        except HttpError as err:
+            last_error = err
+            status = err.resp.status
+            if _is_quota_error(err):
+                logger.error("YouTube API quota exceeded on operation=%s: %s", operation, err)
+                # Still record the attempt so the daily counter reflects reality.
+                quota_service.record(operation)
+                raise QuotaExceededError(
+                    f"YouTube API daily quota exceeded during '{operation}' call."
+                ) from err
+            if 500 <= status < 600 and attempt < len(_YT_RETRY_DELAYS):
+                logger.warning(
+                    "YouTube API %s returned %s, retrying (attempt %s/%s)...",
+                    operation, status, attempt + 1, len(_YT_RETRY_DELAYS),
+                )
+                continue
+            logger.error("YouTube API %s failed with HttpError %s: %s", operation, status, err)
+            raise
+        else:
+            quota_service.record(operation)
+            return response
+
+    # Exhausted retries on 5xx.
+    assert last_error is not None
+    raise last_error
 
 
 def search_videos(
@@ -71,7 +125,7 @@ def search_videos(
     if channel_type:
         params["channelType"] = channel_type
 
-    response = youtube.search().list(**params).execute()
+    response = _execute_youtube_request(youtube.search().list(**params), "search")
 
     videos = []
     for item in response.get("items", []):
@@ -106,10 +160,13 @@ def get_video_details(video_ids: list[str], job_id: str = "") -> dict[str, dict]
         batch_num = i // 50 + 1
         total_batches = (total + 49) // 50
         logger.info(f"{tag} get_video_details: batch {batch_num}/{total_batches} ({len(batch)} IDs)")
-        response = youtube.videos().list(
-            part="contentDetails,snippet,statistics",
-            id=",".join(batch),
-        ).execute()
+        response = _execute_youtube_request(
+            youtube.videos().list(
+                part="contentDetails,snippet,statistics",
+                id=",".join(batch),
+            ),
+            "videos",
+        )
 
         for item in response.get("items", []):
             vid = item["id"]
@@ -194,10 +251,13 @@ def get_channel_videos(
     youtube = get_youtube_client()
 
     # Get the uploads playlist ID from channel
-    channel_response = youtube.channels().list(
-        part="contentDetails",
-        id=channel_id,
-    ).execute()
+    channel_response = _execute_youtube_request(
+        youtube.channels().list(
+            part="contentDetails",
+            id=channel_id,
+        ),
+        "channels",
+    )
 
     items = channel_response.get("items", [])
     if not items:
@@ -214,12 +274,15 @@ def get_channel_videos(
 
     while len(video_ids) < max_results:
         page += 1
-        playlist_response = youtube.playlistItems().list(
-            part="contentDetails",
-            playlistId=uploads_playlist_id,
-            maxResults=min(50, max_results - len(video_ids)),
-            pageToken=next_page_token,
-        ).execute()
+        playlist_response = _execute_youtube_request(
+            youtube.playlistItems().list(
+                part="contentDetails",
+                playlistId=uploads_playlist_id,
+                maxResults=min(50, max_results - len(video_ids)),
+                pageToken=next_page_token,
+            ),
+            "playlistItems",
+        )
 
         page_items = playlist_response.get("items", [])
         for item in page_items:
@@ -269,10 +332,13 @@ def resolve_channel_id(channel_input: str, job_id: str = "") -> str | None:
 
     if handle:
         logger.info(f"{tag} resolve_channel_id: resolving handle @{handle} via API")
-        response = youtube.channels().list(
-            part="id",
-            forHandle=handle,
-        ).execute()
+        response = _execute_youtube_request(
+            youtube.channels().list(
+                part="id",
+                forHandle=handle,
+            ),
+            "channels",
+        )
         items = response.get("items", [])
         if items:
             channel_id = items[0]["id"]
@@ -282,12 +348,15 @@ def resolve_channel_id(channel_input: str, job_id: str = "") -> str | None:
 
     # Fall back to search (costs 100 units)
     logger.info(f"{tag} resolve_channel_id: falling back to search for {channel_input!r} (costs 100 quota units)")
-    response = youtube.search().list(
-        q=channel_input,
-        part="snippet",
-        type="channel",
-        maxResults=1,
-    ).execute()
+    response = _execute_youtube_request(
+        youtube.search().list(
+            q=channel_input,
+            part="snippet",
+            type="channel",
+            maxResults=1,
+        ),
+        "search",
+    )
     items = response.get("items", [])
     if items:
         channel_id = items[0]["snippet"]["channelId"]

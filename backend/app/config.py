@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # YouTube
     YOUTUBE_API_KEY: str = ""
     YOUTUBE_TRANSCRIPT_RATE_LIMIT: float = 0.5
+    YOUTUBE_DAILY_QUOTA: int = 10000
 
     # LLM
     OPENAI_API_KEY: str = ""

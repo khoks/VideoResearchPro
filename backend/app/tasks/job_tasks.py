@@ -1,5 +1,6 @@
 import json
 import logging
+import sys
 from datetime import datetime, timezone
 
 from app.config import settings
@@ -361,6 +362,22 @@ def resume_job_after_approval(self, job_id: str) -> None:
 
 def _handle_failure(db, job_id: str, error: str) -> None:
     """Set job to failed and publish error."""
+    # Translate YouTube quota exhaustion into a user-friendly message.
+    from app.services.quota_service import QuotaExceededError
+    exc_type, exc_value, _ = sys.exc_info()
+    if exc_type is not None and issubclass(exc_type, QuotaExceededError):
+        error = (
+            "YouTube API daily quota exceeded. The job cannot continue until "
+            "the quota resets (midnight Pacific Time). Try again tomorrow or "
+            "request a quota increase from Google."
+        )
+    elif "quota exceeded" in error.lower() and "youtube" in error.lower():
+        error = (
+            "YouTube API daily quota exceeded. The job cannot continue until "
+            "the quota resets (midnight Pacific Time). Try again tomorrow or "
+            "request a quota increase from Google."
+        )
+
     try:
         job = _get_job(db, job_id)
         if job:

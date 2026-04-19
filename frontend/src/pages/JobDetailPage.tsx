@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useJob, useJobVideos, useApproveJob, useCancelJob, useDeleteJob } from '../hooks/useJobs';
 import { useJobProgress } from '../hooks/useJobProgress';
@@ -141,11 +141,24 @@ export function JobDetailPage() {
   );
 }
 
+type VideoSortKey = 'channel' | 'duration' | 'title';
+
 function VideoApprovalSection({ videos, jobId, onApprove }: {
   videos: Video[]; jobId: string;
   onApprove: (args: { id: string; data: { approved_video_ids: string[] } }) => Promise<unknown>;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set(videos.map(v => v.id)));
+  const [sortKey, setSortKey] = useState<VideoSortKey>('channel');
+
+  const sortedVideos = useMemo(() => {
+    const copy = [...videos];
+    copy.sort((a, b) => {
+      if (sortKey === 'duration') return a.duration_seconds - b.duration_seconds;
+      if (sortKey === 'title') return a.title.localeCompare(b.title);
+      return a.channel_name.localeCompare(b.channel_name);
+    });
+    return copy;
+  }, [videos, sortKey]);
 
   const toggleVideo = (id: string) => {
     setSelected(prev => {
@@ -154,6 +167,9 @@ function VideoApprovalSection({ videos, jobId, onApprove }: {
       return next;
     });
   };
+
+  const selectAll = () => setSelected(new Set(videos.map(v => v.id)));
+  const deselectAll = () => setSelected(new Set());
 
   const handleApprove = () => {
     onApprove({ id: jobId, data: { approved_video_ids: Array.from(selected) } });
@@ -166,19 +182,90 @@ function VideoApprovalSection({ videos, jobId, onApprove }: {
       <p style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: '1rem' }}>
         Deselect any videos you don't want to include, then approve to continue.
       </p>
-      {videos.map(v => (
-        <label key={v.id} style={{
+
+      <div style={{
+        display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap',
+        marginBottom: '1rem',
+      }}>
+        <button onClick={selectAll} style={{
+          background: 'transparent', color: '#667eea', border: '1px solid #667eea',
+          padding: '0.3rem 0.75rem', borderRadius: 6, cursor: 'pointer',
+          fontSize: '0.8rem', fontWeight: 600,
+        }}>Select All</button>
+        <button onClick={deselectAll} style={{
+          background: 'transparent', color: '#64748b', border: '1px solid #cbd5e1',
+          padding: '0.3rem 0.75rem', borderRadius: 6, cursor: 'pointer',
+          fontSize: '0.8rem', fontWeight: 600,
+        }}>Deselect All</button>
+        <label style={{ fontSize: '0.8rem', color: '#64748b', marginLeft: 'auto' }}>
+          Sort by:{' '}
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as VideoSortKey)}
+            style={{
+              padding: '0.3rem 0.5rem', borderRadius: 6, border: '1px solid #e2e8f0',
+              fontSize: '0.8rem', background: '#fff',
+            }}
+          >
+            <option value="channel">Channel</option>
+            <option value="duration">Duration</option>
+            <option value="title">Title</option>
+          </select>
+        </label>
+      </div>
+
+      {sortedVideos.map(v => (
+        <div key={v.id} style={{
           display: 'flex', alignItems: 'center', gap: '0.75rem',
-          padding: '0.5rem', borderBottom: '1px solid #f1f5f9', cursor: 'pointer',
+          padding: '0.5rem', borderBottom: '1px solid #f1f5f9',
         }}>
-          <input type="checkbox" checked={selected.has(v.id)} onChange={() => toggleVideo(v.id)} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 500 }}>{v.title}</div>
+          <input
+            type="checkbox"
+            checked={selected.has(v.id)}
+            onChange={() => toggleVideo(v.id)}
+            style={{ cursor: 'pointer' }}
+          />
+          {v.thumbnail_url ? (
+            <img
+              src={v.thumbnail_url}
+              alt=""
+              onClick={() => toggleVideo(v.id)}
+              style={{
+                width: 96, height: 54, borderRadius: 4, objectFit: 'cover',
+                flexShrink: 0, background: '#f1f5f9', cursor: 'pointer',
+              }}
+            />
+          ) : (
+            <div
+              onClick={() => toggleVideo(v.id)}
+              style={{
+                width: 96, height: 54, borderRadius: 4, background: '#f1f5f9',
+                flexShrink: 0, cursor: 'pointer',
+              }}
+            />
+          )}
+          <div
+            onClick={() => toggleVideo(v.id)}
+            style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+          >
+            <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.title}</div>
             <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
               {v.channel_name} | {formatDuration(v.duration_seconds)}
             </div>
           </div>
-        </label>
+          <a
+            href={v.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: '#667eea', textDecoration: 'none', fontSize: '0.8rem',
+              fontWeight: 600, border: '1px solid #667eea', padding: '0.3rem 0.75rem',
+              borderRadius: 6, flexShrink: 0,
+            }}
+          >
+            Watch
+          </a>
+        </div>
       ))}
       <button onClick={handleApprove} style={{
         background: '#22c55e', color: '#fff', border: 'none', padding: '0.6rem 1.5rem',

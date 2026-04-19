@@ -2,10 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { jobsApi } from '../services/jobsApi';
 import type { JobCreate, VideoApproval } from '../types/job';
 
-export function useJobs(status?: string) {
+export function useJobs(params?: { status?: string; limit?: number; offset?: number }) {
   return useQuery({
-    queryKey: ['jobs', status],
-    queryFn: () => jobsApi.list(status),
+    queryKey: ['jobs', params?.status ?? null, params?.limit ?? null, params?.offset ?? null],
+    queryFn: () => jobsApi.list(params),
     refetchInterval: 10000,
   });
 }

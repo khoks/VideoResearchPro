@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db
 from app.schemas.job import JobCreate, JobResponse, VideoApproval
 from app.schemas.video import VideoResponse
 from app.services import chroma_service, job_service, report_service
@@ -11,7 +11,11 @@ from app.tasks.job_tasks import execute_channel_job, execute_topic_job, resume_j
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/jobs", tags=["jobs"])
+router = APIRouter(
+    prefix="/jobs",
+    tags=["jobs"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.post("", response_model=JobResponse, status_code=201)

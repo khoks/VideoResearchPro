@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db
 from app.models.qa_exchange import QAExchange
 from app.schemas.qa import ClarifyRequest, ClarifyResponse, QARequest, QAResponse, Reference
 from app.services import job_service, report_service
@@ -13,7 +13,11 @@ from app.services.llm_service import get_llm
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/jobs/{job_id}", tags=["qa"])
+router = APIRouter(
+    prefix="/jobs/{job_id}",
+    tags=["qa"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get("/report", response_class=HTMLResponse)

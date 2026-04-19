@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     REPORTS_DIR: str = "./data/reports"
     MAX_REPORT_WORDS: int = 20000
 
+    # Auth
+    JWT_SECRET: str = "dev-insecure-secret-change-me-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRY_HOURS: int = 24
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

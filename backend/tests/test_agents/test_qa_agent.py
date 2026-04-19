@@ -36,8 +36,14 @@ def _rag_result(video_id: str, channel: str, title: str, text: str,
 # ---------- retrieve_context ----------
 
 def test_retrieve_context_queries_chroma_with_top_k():
-    """retrieve_context delegates to chroma_service.query_collection with n_results=15."""
-    with patch.object(qa_agent.chroma_service, "query_collection") as mock_query:
+    """retrieve_context delegates to chroma_service.query_collection with n_results=15.
+
+    Multi-query expansion is mocked to return no extra sub-queries so only the
+    original question is issued.
+    """
+    with patch.object(qa_agent.chroma_service, "query_collection") as mock_query, \
+         patch.object(qa_agent, "get_llm") as mock_get_llm:
+        mock_get_llm.return_value = _fake_llm_returning("")  # no sub-queries
         mock_query.return_value = [
             _rag_result("v1", "ChA", "Video 1", "chunk 1", ts_start=42.0),
         ]
@@ -67,7 +73,7 @@ def test_retrieve_context_queries_chroma_with_top_k():
 
 
 def test_retrieve_context_topic_job_extracts_report_text():
-    """HTML tags/styles stripped; clean text is capped at 15000 chars."""
+    """HTML tags/styles stripped; clean text is capped at REPORT_CONTEXT_CHAR_CAP."""
     html = """
         <html>
           <head><style>body { color: red; }</style></head>
@@ -78,7 +84,9 @@ def test_retrieve_context_topic_job_extracts_report_text():
           </body>
         </html>
     """
-    with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]):
+    with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]), \
+         patch.object(qa_agent, "get_llm") as mock_get_llm:
+        mock_get_llm.return_value = _fake_llm_returning("")
         result = qa_agent.retrieve_context({
             "job_id": "j",
             "job_type": "topic",
@@ -96,7 +104,9 @@ def test_retrieve_context_topic_job_extracts_report_text():
 
 
 def test_retrieve_context_channel_job_skips_report_context():
-    with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]):
+    with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]), \
+         patch.object(qa_agent, "get_llm") as mock_get_llm:
+        mock_get_llm.return_value = _fake_llm_returning("")
         result = qa_agent.retrieve_context({
             "job_id": "j",
             "job_type": "channel",
@@ -107,9 +117,12 @@ def test_retrieve_context_channel_job_skips_report_context():
 
 
 def test_retrieve_context_truncates_long_reports():
-    big_text = "word " * 10000  # > 15000 chars
+    # REPORT_CONTEXT_CHAR_CAP is 50000 (Unit 6 raised it from 15000).
+    big_text = "word " * 20000  # 100000 chars >> 50000 cap
     html = f"<p>{big_text}</p>"
-    with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]):
+    with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]), \
+         patch.object(qa_agent, "get_llm") as mock_get_llm:
+        mock_get_llm.return_value = _fake_llm_returning("")  # no sub-queries
         result = qa_agent.retrieve_context({
             "job_id": "j",
             "job_type": "topic",
@@ -118,12 +131,14 @@ def test_retrieve_context_truncates_long_reports():
         })
     clean = result["report_context"]
     assert clean.endswith("...")
-    # 15000 + len("...")
-    assert len(clean) <= 15010
+    # 50000 cap + len("...")
+    assert len(clean) <= qa_agent.REPORT_CONTEXT_CHAR_CAP + 10
 
 
 def test_retrieve_context_empty_chroma_results():
-    with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]):
+    with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]), \
+         patch.object(qa_agent, "get_llm") as mock_get_llm:
+        mock_get_llm.return_value = _fake_llm_returning("")
         result = qa_agent.retrieve_context({
             "job_id": "j",
             "job_type": "topic",
@@ -234,7 +249,10 @@ def test_extract_references_dedupes_same_video_timestamp():
         _rag_result("v1", "ChA", "Vid", "y", ts_start=30.0),  # duplicate
         _rag_result("v1", "ChA", "Vid", "z", ts_start=60.0),  # different ts, keep
     ]
-    result = qa_agent.extract_references({"rag_results": rag, "answer": "Vid"})
+    # Answer must contain the video_id so the deterministic citation matcher
+    # picks up the chunks (titles under 10 chars are ignored to avoid false
+    # positives on generic titles).
+    result = qa_agent.extract_references({"rag_results": rag, "answer": "see v1 for context"})
 
     keys = {(r["video_url"], r["timestamp_seconds"]) for r in result["references"]}
     assert len(keys) == len(result["references"])  # all unique
@@ -263,14 +281,17 @@ def test_run_qa_agent_full_graph():
     rag = [
         _rag_result("v1", "ChA", "Video A", "some transcript text", ts_start=42.0),
     ]
+    # Each get_llm() call returns a fresh fake LLM. The graph invokes get_llm
+    # in this order: sub_query expansion -> refine_context -> formulate_answer.
+    # extract_references uses the deterministic citation matcher when the
+    # answer contains the video_id (no LLM call needed).
+    fake_llms = [
+        _fake_llm_returning(""),                    # sub-queries: none
+        _fake_llm_returning("compacted context"),   # refine_context
+        _fake_llm_returning("Answer referencing v1 / Video A"),  # formulate_answer
+    ]
     with patch.object(qa_agent.chroma_service, "query_collection", return_value=rag), \
-         patch.object(qa_agent, "get_llm") as mock_get_llm:
-        # refine_context, then formulate_answer
-        mock_get_llm.side_effect = [
-            _fake_llm_returning("compacted context"),
-            _fake_llm_returning("Answer referencing Video A"),
-        ]
-
+         patch.object(qa_agent, "get_llm", side_effect=fake_llms):
         answer, references = qa_agent.run_qa_agent(
             job_id="job-1",
             job_type="topic",
@@ -278,6 +299,6 @@ def test_run_qa_agent_full_graph():
             report_html=None,
         )
 
-    assert answer == "Answer referencing Video A"
+    assert answer == "Answer referencing v1 / Video A"
     assert len(references) == 1
     assert references[0]["video_title"] == "Video A"

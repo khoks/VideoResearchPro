@@ -82,7 +82,8 @@ def test_generate_search_queries_falls_back_when_not_a_list():
 def test_execute_searches_calls_youtube_service_with_expected_queries(fake_videos):
     queries = ["q one", "q two"]
     with patch.object(search_agent.youtube_service, "search_videos") as mock_search, \
-         patch.object(search_agent.youtube_service, "get_video_details") as mock_details:
+         patch.object(search_agent.youtube_service, "get_video_details") as mock_details, \
+         patch.object(search_agent.youtube_service, "get_channel_subscribers", return_value={}):
         mock_search.return_value = fake_videos[:2]
         mock_details.return_value = {
             v["video_id"]: {"duration_seconds": v["duration_seconds"]}
@@ -106,10 +107,11 @@ def test_execute_searches_calls_youtube_service_with_expected_queries(fake_video
     assert len(result["discovered_videos"]) == 2
 
 
-def test_execute_searches_applies_long_duration_filter(fake_videos):
-    """min_duration >= 20 picks the 'long' filter keyword."""
+def test_execute_searches_filters_videos_above_min_duration(fake_videos):
+    """min_duration in minutes excludes videos under that length (post-fetch filter)."""
     with patch.object(search_agent.youtube_service, "search_videos") as mock_search, \
-         patch.object(search_agent.youtube_service, "get_video_details") as mock_details:
+         patch.object(search_agent.youtube_service, "get_video_details") as mock_details, \
+         patch.object(search_agent.youtube_service, "get_channel_subscribers", return_value={}):
         mock_search.return_value = fake_videos
         mock_details.return_value = {
             v["video_id"]: {"duration_seconds": v["duration_seconds"]} for v in fake_videos
@@ -119,37 +121,44 @@ def test_execute_searches_applies_long_duration_filter(fake_videos):
             "topic": "quantum",
             "search_queries_used": ["q1"],
             "num_videos": 5,
-            "min_duration": 30,
+            "min_duration": 30,  # 30 minutes
             "max_duration": None,
         }
-        search_agent.execute_searches(state)
+        result = search_agent.execute_searches(state)
 
-    # The first (and only) call used video_duration="long"
-    assert mock_search.call_args.kwargs["video_duration"] == "long"
+    # v1=10min, v2=30min, v3=60min — only v2 and v3 are >= 30 min
+    kept_ids = {v["video_id"] for v in result["discovered_videos"]}
+    assert kept_ids == {"v2", "v3"}
 
 
-def test_execute_searches_applies_short_duration_filter(fake_videos):
+def test_execute_searches_filters_videos_under_max_duration(fake_videos):
+    """max_duration in minutes excludes videos longer than that bound."""
     with patch.object(search_agent.youtube_service, "search_videos") as mock_search, \
-         patch.object(search_agent.youtube_service, "get_video_details") as mock_details:
-        mock_search.return_value = []
-        mock_details.return_value = {}
+         patch.object(search_agent.youtube_service, "get_video_details") as mock_details, \
+         patch.object(search_agent.youtube_service, "get_channel_subscribers", return_value={}):
+        mock_search.return_value = fake_videos
+        mock_details.return_value = {
+            v["video_id"]: {"duration_seconds": v["duration_seconds"]} for v in fake_videos
+        }
 
         state = {
             "topic": "t",
             "search_queries_used": ["q1"],
             "num_videos": 5,
             "min_duration": None,
-            "max_duration": 3,
+            "max_duration": 15,  # 15 minutes — only v1 (10min) qualifies
         }
-        search_agent.execute_searches(state)
+        result = search_agent.execute_searches(state)
 
-    assert mock_search.call_args.kwargs["video_duration"] == "short"
+    kept_ids = {v["video_id"] for v in result["discovered_videos"]}
+    assert kept_ids == {"v1"}
 
 
 def test_execute_searches_filters_by_duration_minutes(fake_videos):
     """After enrichment, videos outside the min/max minute range are dropped."""
     with patch.object(search_agent.youtube_service, "search_videos") as mock_search, \
-         patch.object(search_agent.youtube_service, "get_video_details") as mock_details:
+         patch.object(search_agent.youtube_service, "get_video_details") as mock_details, \
+         patch.object(search_agent.youtube_service, "get_channel_subscribers", return_value={}):
         mock_search.return_value = fake_videos
         mock_details.return_value = {
             v["video_id"]: {"duration_seconds": v["duration_seconds"]} for v in fake_videos
@@ -171,7 +180,8 @@ def test_execute_searches_filters_by_duration_minutes(fake_videos):
 
 def test_execute_searches_dedupes_across_queries(fake_videos):
     with patch.object(search_agent.youtube_service, "search_videos") as mock_search, \
-         patch.object(search_agent.youtube_service, "get_video_details") as mock_details:
+         patch.object(search_agent.youtube_service, "get_video_details") as mock_details, \
+         patch.object(search_agent.youtube_service, "get_channel_subscribers", return_value={}):
         # Same videos returned twice — should be deduped
         mock_search.return_value = fake_videos[:2]
         mock_details.return_value = {
@@ -255,10 +265,14 @@ def test_rank_and_curate_fills_short_llm_selection(fake_videos):
 
 
 def test_run_search_agent_end_to_end(fake_videos):
-    """Full graph: LLM + YouTube service all mocked; verifies the wiring works."""
+    """Full graph: LLM + YouTube service all mocked; verifies the wiring works.
+
+    run_search_agent returns (curated_videos, queries_used).
+    """
     with patch.object(search_agent, "get_llm") as mock_get_llm, \
          patch.object(search_agent.youtube_service, "search_videos") as mock_search, \
-         patch.object(search_agent.youtube_service, "get_video_details") as mock_details:
+         patch.object(search_agent.youtube_service, "get_video_details") as mock_details, \
+         patch.object(search_agent.youtube_service, "get_channel_subscribers", return_value={}):
 
         # generate_search_queries LLM call
         query_llm = _fake_llm_returning('["q1", "q2"]')
@@ -271,7 +285,7 @@ def test_run_search_agent_end_to_end(fake_videos):
             v["video_id"]: {"duration_seconds": v["duration_seconds"]} for v in fake_videos
         }
 
-        curated = search_agent.run_search_agent(
+        curated, queries_used = search_agent.run_search_agent(
             topic="quantum computing",
             num_videos=2,
             search_instructions="focus on fundamentals",
@@ -279,6 +293,7 @@ def test_run_search_agent_end_to_end(fake_videos):
 
     assert isinstance(curated, list)
     assert len(curated) == 2
+    assert queries_used == ["q1", "q2"]
     # YouTube service was invoked
     assert mock_search.called
     # LLM invoked twice (queries + curation)

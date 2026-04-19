@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import tempfile
@@ -8,12 +9,21 @@ from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
 
 from app.config import settings
+from app.database import SessionLocal
+from app.models.transcript_cache import TranscriptCache
 from app.utils.rate_limiter import RateLimiter
 from app.utils.youtube_helpers import parse_iso8601_duration
 
 logger = logging.getLogger(__name__)
 
 transcript_limiter = RateLimiter(rate=settings.YOUTUBE_TRANSCRIPT_RATE_LIMIT)
+
+# OpenAI Whisper API enforces a 25 MB upload limit per file.
+WHISPER_MAX_FILE_BYTES = 25 * 1024 * 1024
+
+# Length (in seconds) of each synthesized pseudo-segment when Whisper
+# returns only a text blob without per-segment timestamps.
+WHISPER_PSEUDO_SEGMENT_SECONDS = 30.0
 
 
 def get_youtube_client():
@@ -288,25 +298,39 @@ def resolve_channel_id(channel_input: str, job_id: str = "") -> str | None:
     return None
 
 
-def fetch_transcript(video_id: str, language: str = "en", job_id: str = "") -> list[dict] | None:
+def fetch_transcript(
+    video_id: str, language: str = "en", job_id: str = ""
+) -> tuple[list[dict], str] | None:
     """
-    Fetch transcript with retry + OpenAI Whisper API fallback.
+    Fetch transcript with caching, retry, and OpenAI Whisper API fallback.
 
-    1. Try YouTube Transcript API up to 3 times with exponential backoff (2s, 4s, 8s).
-    2. If all retries fail, download audio via yt-dlp and transcribe via OpenAI Whisper API.
-    3. If that also fails, return None.
+    Lookup order:
+    1. transcript_cache DB table — cache hit returns immediately.
+    2. YouTube Transcript API up to 3 times with exponential backoff (2s, 4s, 8s).
+    3. Download audio via yt-dlp and transcribe via OpenAI Whisper API.
 
     Returns:
-        List of {text, start, duration} segments, or None if unavailable.
+        Tuple of (segments, actual_language) on success, or None if unavailable.
+        `segments` is a list of {text, start, duration} dicts.
+        `actual_language` is the BCP-47 code of the transcript that was fetched,
+        or "unknown" when the source cannot report one (e.g. Whisper fallback).
     """
     retry_delays = [2, 4, 8]
     tag = f"[job:{job_id}]" if job_id else ""
     logger.info(f"{tag} fetch_transcript: video_id={video_id}, language={language}")
 
+    cached = _load_from_cache(video_id, tag)
+    if cached is not None:
+        return cached
+
     for attempt, delay in enumerate(retry_delays, start=1):
         result = _fetch_transcript_once(video_id, language, job_id=job_id)
         if result:
-            logger.info(f"{tag} YouTube transcript succeeded for {video_id} on attempt {attempt}/{len(retry_delays)}")
+            logger.info(
+                f"{tag} YouTube transcript succeeded for {video_id} "
+                f"on attempt {attempt}/{len(retry_delays)}"
+            )
+            _save_to_cache(video_id, result[0], result[1], tag)
             return result
         if attempt < len(retry_delays):
             logger.info(
@@ -319,11 +343,72 @@ def fetch_transcript(video_id: str, language: str = "en", job_id: str = "") -> l
         f"{tag} All {len(retry_delays)} YouTube transcript attempts failed for {video_id}. "
         "Starting Whisper API fallback..."
     )
-    return _transcribe_with_whisper(video_id, job_id=job_id)
+    whisper_result = _transcribe_with_whisper(video_id, job_id=job_id)
+    if whisper_result is not None:
+        _save_to_cache(video_id, whisper_result[0], whisper_result[1], tag)
+    return whisper_result
 
 
-def _fetch_transcript_once(video_id: str, language: str = "en", job_id: str = "") -> list[dict] | None:
-    """Single attempt to fetch transcript via YouTube Transcript API."""
+def _load_from_cache(video_id: str, tag: str) -> tuple[list[dict], str] | None:
+    """Return cached (segments, language) tuple for video_id, or None on miss."""
+    db = SessionLocal()
+    try:
+        row = db.query(TranscriptCache).filter(TranscriptCache.video_id == video_id).first()
+        if row is None:
+            return None
+        try:
+            segments = json.loads(row.segments_json)
+        except (ValueError, TypeError):
+            logger.exception(f"{tag} Corrupt transcript cache row for {video_id}; ignoring")
+            return None
+        logger.info(
+            f"{tag} Transcript cache hit for {video_id}: "
+            f"{len(segments)} segments, language={row.language}"
+        )
+        return segments, row.language
+    finally:
+        db.close()
+
+
+def _save_to_cache(video_id: str, segments: list[dict], language: str, tag: str) -> None:
+    """Upsert a transcript into the cache. Failures are logged but non-fatal."""
+    if not segments:
+        return
+    db = SessionLocal()
+    try:
+        payload = json.dumps(segments)
+        existing = db.query(TranscriptCache).filter(TranscriptCache.video_id == video_id).first()
+        if existing is None:
+            db.add(
+                TranscriptCache(
+                    video_id=video_id,
+                    segments_json=payload,
+                    language=language,
+                )
+            )
+        else:
+            existing.segments_json = payload
+            existing.language = language
+            existing.fetched_at = datetime.now(timezone.utc)
+        db.commit()
+        logger.info(
+            f"{tag} Transcript cached for {video_id}: "
+            f"{len(segments)} segments, language={language}"
+        )
+    except Exception:
+        db.rollback()
+        logger.exception(f"{tag} Failed to write transcript cache for {video_id}")
+    finally:
+        db.close()
+
+
+def _fetch_transcript_once(
+    video_id: str, language: str = "en", job_id: str = ""
+) -> tuple[list[dict], str] | None:
+    """Single attempt to fetch transcript via YouTube Transcript API.
+
+    Returns a (segments, actual_language) tuple, or None on failure.
+    """
     tag = f"[job:{job_id}]" if job_id else ""
     transcript_limiter.wait()
     ytt_api = YouTubeTranscriptApi()
@@ -335,8 +420,12 @@ def _fetch_transcript_once(video_id: str, language: str = "en", job_id: str = ""
     try:
         transcript = ytt_api.fetch(video_id, languages=preferred)
         result = _transcript_to_list(transcript)
-        logger.info(f"{tag} YouTube transcript fetched for {video_id}: {len(result)} segments")
-        return result
+        actual_lang = getattr(transcript, "language_code", None) or language
+        logger.info(
+            f"{tag} YouTube transcript fetched for {video_id}: "
+            f"{len(result)} segments (language={actual_lang})"
+        )
+        return result, actual_lang
     except Exception:
         pass
 
@@ -345,25 +434,33 @@ def _fetch_transcript_once(video_id: str, language: str = "en", job_id: str = ""
         transcript_list = ytt_api.list(video_id)
         available = [t.language_code for t in transcript_list]
         if available:
-            logger.info(f"{tag} Preferred languages unavailable for {video_id}, "
-                        f"falling back to '{available[0]}' (available: {available})")
-            transcript = ytt_api.fetch(video_id, languages=[available[0]])
+            fallback_lang = available[0]
+            logger.info(
+                f"{tag} Preferred languages unavailable for {video_id}, "
+                f"falling back to '{fallback_lang}' (available: {available})"
+            )
+            transcript = ytt_api.fetch(video_id, languages=[fallback_lang])
             result = _transcript_to_list(transcript)
-            logger.info(f"{tag} Fallback transcript fetched for {video_id} in '{available[0]}': "
-                        f"{len(result)} segments")
-            return result
+            actual_lang = getattr(transcript, "language_code", None) or fallback_lang
+            logger.info(
+                f"{tag} Fallback transcript fetched for {video_id} in '{actual_lang}': "
+                f"{len(result)} segments"
+            )
+            return result, actual_lang
     except Exception as e:
         logger.warning(f"{tag} Transcript unavailable for {video_id}: {e}")
 
     return None
 
 
-def _transcribe_with_whisper(video_id: str, job_id: str = "") -> list[dict] | None:
+def _transcribe_with_whisper(
+    video_id: str, job_id: str = ""
+) -> tuple[list[dict], str] | None:
     """
     Download audio with yt-dlp and transcribe via OpenAI Whisper API.
 
     Does not require ffmpeg — downloads audio in native format (m4a/webm).
-    Returns transcript segments in [{text, start, duration}] format, or None on failure.
+    Returns (segments, language) tuple on success, or None on failure.
     """
     tag = f"[job:{job_id}]" if job_id else ""
     logger.info(f"{tag} Whisper fallback starting for video_id={video_id}")
@@ -402,11 +499,26 @@ def _transcribe_with_whisper(video_id: str, job_id: str = "") -> list[dict] | No
             logger.error(f"{tag} No audio file found after yt-dlp download for {video_id}")
             return None
         audio_path = candidates[0]
-        audio_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
-        logger.info(f"{tag} Audio downloaded for {video_id}: {audio_size_mb:.1f} MB ({os.path.basename(audio_path)})")
+        audio_size_bytes = os.path.getsize(audio_path)
+        audio_size_mb = audio_size_bytes / (1024 * 1024)
+        logger.info(
+            f"{tag} Audio downloaded for {video_id}: "
+            f"{audio_size_mb:.1f} MB ({os.path.basename(audio_path)})"
+        )
+
+        # Whisper rejects uploads larger than 25 MB. Splitting is out of scope;
+        # bail cleanly so callers can record the transcript as unavailable.
+        if audio_size_bytes > WHISPER_MAX_FILE_BYTES:
+            logger.warning(
+                f"{tag} Audio for {video_id} is {audio_size_mb:.1f} MB, exceeds Whisper "
+                f"{WHISPER_MAX_FILE_BYTES // (1024 * 1024)} MB limit; skipping Whisper fallback"
+            )
+            return None
 
         try:
-            logger.info(f"{tag} Sending {video_id} to OpenAI Whisper API ({audio_size_mb:.1f} MB)...")
+            logger.info(
+                f"{tag} Sending {video_id} to OpenAI Whisper API ({audio_size_mb:.1f} MB)..."
+            )
             with open(audio_path, "rb") as audio_file:
                 response = client.audio.transcriptions.create(
                     model="whisper-1",
@@ -417,13 +529,20 @@ def _transcribe_with_whisper(video_id: str, job_id: str = "") -> list[dict] | No
             logger.error(f"{tag} OpenAI Whisper API transcription failed for {video_id}: {e}")
             return None
 
+        response_language = getattr(response, "language", None) or "unknown"
+        response_duration = float(getattr(response, "duration", 0.0) or 0.0)
+
         segments = getattr(response, "segments", None) or []
         if not segments:
             text = getattr(response, "text", "").strip()
             if text:
-                logger.info(f"{tag} Whisper returned full text (no segments) for {video_id}: "
-                            f"{len(text.split())} words")
-                return [{"text": text, "start": 0.0, "duration": 0.0}]
+                pseudo = _synthesize_pseudo_segments(text, response_duration)
+                logger.info(
+                    f"{tag} Whisper returned full text (no segments) for {video_id}: "
+                    f"{len(text.split())} words → {len(pseudo)} pseudo-segments "
+                    f"(duration={response_duration:.1f}s, language={response_language})"
+                )
+                return pseudo, response_language
             logger.warning(f"{tag} Whisper returned no transcript content for {video_id}")
             return None
 
@@ -431,14 +550,63 @@ def _transcribe_with_whisper(video_id: str, job_id: str = "") -> list[dict] | No
             {
                 "text": getattr(seg, "text", "").strip(),
                 "start": getattr(seg, "start", 0.0),
-                "duration": getattr(seg, "end", getattr(seg, "start", 0.0)) - getattr(seg, "start", 0.0),
+                "duration": getattr(seg, "end", getattr(seg, "start", 0.0))
+                - getattr(seg, "start", 0.0),
             }
             for seg in segments
             if getattr(seg, "text", "").strip()
         ]
 
-        logger.info(f"{tag} Whisper transcription succeeded for {video_id}: {len(transcript)} segments")
-        return transcript or None
+        logger.info(
+            f"{tag} Whisper transcription succeeded for {video_id}: "
+            f"{len(transcript)} segments (language={response_language})"
+        )
+        if not transcript:
+            return None
+        return transcript, response_language
+
+
+def _synthesize_pseudo_segments(text: str, duration_seconds: float) -> list[dict]:
+    """
+    Split a single-blob Whisper transcript into evenly spaced pseudo-segments.
+
+    Uses word count to proportion the text, and the reported audio duration to
+    space start times. Falls back to a single segment when duration is unknown
+    or the text is too short to split meaningfully.
+    """
+    words = text.split()
+    if not words:
+        return []
+
+    if duration_seconds <= 0:
+        # Without a duration we have no basis for timestamps; keep one segment.
+        return [{"text": text, "start": 0.0, "duration": 0.0}]
+
+    segment_len = WHISPER_PSEUDO_SEGMENT_SECONDS
+    num_segments = max(1, int(round(duration_seconds / segment_len)))
+    if num_segments == 1:
+        return [{"text": text, "start": 0.0, "duration": duration_seconds}]
+
+    words_per_segment = max(1, len(words) // num_segments)
+    segments: list[dict] = []
+    for i in range(num_segments):
+        start_word = i * words_per_segment
+        # Absorb any remainder words into the final segment so no text is lost.
+        end_word = (i + 1) * words_per_segment if i < num_segments - 1 else len(words)
+        chunk = " ".join(words[start_word:end_word]).strip()
+        if not chunk:
+            continue
+        start = round(i * segment_len, 3)
+        # Clamp the last segment's duration to the actual audio length.
+        end = min(duration_seconds, (i + 1) * segment_len)
+        segments.append(
+            {
+                "text": chunk,
+                "start": start,
+                "duration": round(max(0.0, end - start), 3),
+            }
+        )
+    return segments
 
 
 def _transcript_to_list(transcript) -> list[dict]:

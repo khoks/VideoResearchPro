@@ -233,17 +233,18 @@ def resume_job_after_approval(self, job_id: str) -> None:
             logger.info(f"[job:{job_id}] [{i + 1}/{total}] Fetching transcript: "
                         f"video_id={video.video_id} '{video.title[:60]}'")
 
-            transcript = youtube_service.fetch_transcript(
+            fetch_result = youtube_service.fetch_transcript(
                 video.video_id,
                 language=settings.DEFAULT_TRANSCRIPT_LANGUAGE,
                 job_id=job_id,
             )
 
-            if transcript:
+            if fetch_result:
+                transcript, actual_language = fetch_result
                 video.transcript_status = "fetched"
                 word_count = sum(len(seg.get("text", "").split()) for seg in transcript)
                 video.transcript_word_count = word_count
-                video.transcript_language = settings.DEFAULT_TRANSCRIPT_LANGUAGE
+                video.transcript_language = actual_language
 
                 # Chunk the transcript
                 chunks = chunk_transcript(
@@ -258,7 +259,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                         "url": video.url,
                         "published_at": video.published_at,
                         "duration_seconds": video.duration_seconds,
-                        "language": settings.DEFAULT_TRANSCRIPT_LANGUAGE,
+                        "language": actual_language,
                     },
                 )
                 all_chunks.extend(chunks)

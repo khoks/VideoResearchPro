@@ -360,4 +360,4 @@ def _handle_failure(db, job_id: str, error: str) -> None:
             _update_job(db, job, status="failed", error_message=error)
         progress_service.publish_error(job_id, error)
     except Exception:
-        pass
+        logger.exception(f"[job:{job_id}] _handle_failure also failed while recording error: {error!r}")

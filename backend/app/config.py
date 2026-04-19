@@ -23,7 +23,8 @@ class Settings(BaseSettings):
 
     # LLM
     OPENAI_API_KEY: str = ""
-    LLM_MODEL: str = "gpt-5.4"
+    LLM_MODEL: str = "gpt-5"
+    LLM_FALLBACK_MODEL: str = "gpt-4o"
     LLM_MAX_CONTEXT_TOKENS: int = 1047576
 
     # Jobs

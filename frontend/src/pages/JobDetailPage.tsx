@@ -129,7 +129,9 @@ function VideoApprovalSection({ videos, jobId, onApprove }: {
   videos: Video[]; jobId: string;
   onApprove: (args: { id: string; data: { approved_video_ids: string[] } }) => Promise<unknown>;
 }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set(videos.map(v => v.id)));
+  // Use YouTube video_id (not internal UUID) so the approval payload matches
+  // what the backend expects in approved_video_ids.
+  const [selected, setSelected] = useState<Set<string>>(new Set(videos.map(v => v.video_id)));
   const [sortKey, setSortKey] = useState<VideoSortKey>('channel');
 
   const sortedVideos = useMemo(() => {
@@ -150,7 +152,7 @@ function VideoApprovalSection({ videos, jobId, onApprove }: {
     });
   };
 
-  const selectAll = () => setSelected(new Set(videos.map(v => v.id)));
+  const selectAll = () => setSelected(new Set(videos.map(v => v.video_id)));
   const deselectAll = () => setSelected(new Set());
 
   const handleApprove = () => {
@@ -203,15 +205,15 @@ function VideoApprovalSection({ videos, jobId, onApprove }: {
         }}>
           <input
             type="checkbox"
-            checked={selected.has(v.id)}
-            onChange={() => toggleVideo(v.id)}
+            checked={selected.has(v.video_id)}
+            onChange={() => toggleVideo(v.video_id)}
             style={{ cursor: 'pointer' }}
           />
           {v.thumbnail_url ? (
             <img
               src={v.thumbnail_url}
               alt=""
-              onClick={() => toggleVideo(v.id)}
+              onClick={() => toggleVideo(v.video_id)}
               style={{
                 width: 96, height: 54, borderRadius: 4, objectFit: 'cover',
                 flexShrink: 0, background: '#f1f5f9', cursor: 'pointer',
@@ -219,7 +221,7 @@ function VideoApprovalSection({ videos, jobId, onApprove }: {
             />
           ) : (
             <div
-              onClick={() => toggleVideo(v.id)}
+              onClick={() => toggleVideo(v.video_id)}
               style={{
                 width: 96, height: 54, borderRadius: 4, background: '#f1f5f9',
                 flexShrink: 0, cursor: 'pointer',
@@ -227,7 +229,7 @@ function VideoApprovalSection({ videos, jobId, onApprove }: {
             />
           )}
           <div
-            onClick={() => toggleVideo(v.id)}
+            onClick={() => toggleVideo(v.video_id)}
             style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
           >
             <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.title}</div>

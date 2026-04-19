@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -46,9 +46,10 @@ def client(db):
         patch("app.routers.jobs.execute_channel_job") as mock_channel,
         patch("app.routers.jobs.resume_job_after_approval") as mock_resume,
     ):
-        mock_topic.delay.return_value = None
-        mock_channel.delay.return_value = None
-        mock_resume.delay.return_value = None
+        # Router code reads `.id` off AsyncResult to track the Celery task.
+        mock_topic.delay.return_value = MagicMock(id="mock-topic-task-id")
+        mock_channel.delay.return_value = MagicMock(id="mock-channel-task-id")
+        mock_resume.delay.return_value = MagicMock(id="mock-resume-task-id")
         with TestClient(app) as c:
             yield c
 

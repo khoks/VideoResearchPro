@@ -33,6 +33,7 @@ class QAAgentState(TypedDict):
     job_type: str
     question: str
     report_html: str
+    sub_queries: list[str]
     rag_results: list[dict]
     report_context: str | None
     refined_context: str

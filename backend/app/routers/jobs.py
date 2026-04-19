@@ -66,9 +66,11 @@ def approve_job(job_id: str, approval: VideoApproval, db: Session = Depends(get_
     if job.status != "awaiting_approval":
         raise HTTPException(status_code=400, detail=f"Job is not awaiting approval (status: {job.status})")
 
+    # `approved_video_ids` carries YouTube video IDs (e.g. "U-G-mSd4KAE"),
+    # not the internal DB primary keys (UUIDs).
     approved_set = set(approval.approved_video_ids)
     for video in job.videos:
-        video.approved = video.id in approved_set
+        video.approved = video.video_id in approved_set
 
     # Clear the phase-1 task id so a racing cancel cannot revoke a task that
     # has already completed. The new task id is stored below after .delay().

@@ -42,9 +42,10 @@ def execute_searches(state: SearchAgentState) -> dict:
     target = state["num_videos"]
     min_dur = state.get("min_duration")
     max_dur = state.get("max_duration")
-    channel_type_filters = state.get("channel_type_filters") or []
-    # YouTube's `channelType` param supports a single value; pass the first filter if any.
-    channel_type = channel_type_filters[0] if channel_type_filters else None
+    # NOTE: `channel_type_filters` (e.g. "educational", "academic") is a semantic
+    # preference consumed by the LLM ranking step, NOT a YouTube API parameter.
+    # YouTube's `channelType` only accepts ['channelTypeUnspecified', 'any', 'show'].
+    # Don't forward user-facing semantic filters to the API — let the rank prompt use them.
 
     # Fetch a generous candidate pool so ranking has real choices. We rely on
     # post-fetch duration filtering (finer than YouTube's short/medium/long buckets).
@@ -55,7 +56,6 @@ def execute_searches(state: SearchAgentState) -> dict:
         results = youtube_service.search_videos(
             query=query,
             max_results=per_query_max,
-            channel_type=channel_type,
         )
         for v in results:
             vid = v["video_id"]

@@ -92,6 +92,17 @@ def execute_topic_job(self, job_id: str) -> None:
         db.commit()
         logger.info(f"[job:{job_id}] {len(curated_videos)} videos saved to DB, awaiting user approval")
 
+        # Fail clearly if the search returned nothing — pushing the user to the
+        # approval screen with an empty list is a dead end.
+        if not curated_videos:
+            msg = (
+                f"No videos found for topic '{job.topic}'. Try a broader topic, "
+                "different search instructions, or relax the duration filters."
+            )
+            logger.warning(f"[job:{job_id}] {msg}")
+            _handle_failure(db, job_id, msg)
+            return
+
         _update_job(db, job, status="awaiting_approval", progress_pct=20,
                     progress_message=f"Found {len(curated_videos)} videos. Please review and approve.")
         progress_service.publish_status_change(job_id, "searching", "awaiting_approval",
@@ -189,6 +200,26 @@ def execute_channel_job(self, job_id: str) -> None:
 
         video_count = len(job.videos)
         logger.info(f"[job:{job_id}] {video_count} videos saved to DB, awaiting user approval")
+
+        # Fail clearly when zero channels resolved or zero videos passed filters.
+        # Going to awaiting_approval with an empty list traps the user with no
+        # approval action they can take.
+        if video_count == 0:
+            if not all_video_ids:
+                msg = (
+                    f"None of the {len(channel_list)} channel(s) could be resolved. "
+                    "Check the channel URLs/handles and try again."
+                )
+            else:
+                msg = (
+                    f"All {len(all_video_ids)} videos were excluded by the duration filters "
+                    f"(min={job.min_duration_minutes}, max={job.max_duration_minutes} minutes). "
+                    "Loosen the filters and try again."
+                )
+            logger.warning(f"[job:{job_id}] No videos available; failing job: {msg}")
+            _handle_failure(db, job_id, msg)
+            return
+
         _update_job(db, job, status="awaiting_approval", progress_pct=20,
                     progress_message=f"Found {video_count} videos. Please review and approve.")
         progress_service.publish_status_change(job_id, "searching", "awaiting_approval",

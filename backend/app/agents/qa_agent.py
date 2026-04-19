@@ -163,8 +163,55 @@ def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
     return key, ref
 
 
+def _title_variants(title: str) -> list[str]:
+    """Yield normalized title forms the LLM might paraphrase to.
+
+    LLMs often drop leading numbers ("8 Pragmatic Tips" -> "Pragmatic Tips") or
+    parenthetical suffixes ("Tips (From Real Projects)" -> "Tips"). Generate a
+    small handful of variants and let the matcher try each.
+    """
+    variants: list[str] = []
+    base = title.strip()
+    if base:
+        variants.append(base)
+    # Strip leading number / numeral prefix: "8 Foo", "10. Foo"
+    stripped = re.sub(r'^\s*\d+[.\):\s-]*', '', base).strip()
+    if stripped and stripped != base:
+        variants.append(stripped)
+    # Drop parenthetical/bracketed suffix: "Foo (From Real Projects)"
+    no_paren = re.sub(r'\s*[\(\[].*?[\)\]]\s*$', '', stripped or base).strip()
+    if no_paren and no_paren not in variants:
+        variants.append(no_paren)
+    # Drop trailing tagline after " - " or " | ": "Foo - A Deep Dive"
+    no_tagline = re.split(r'\s+[-|–—]\s+', no_paren or stripped or base)[0].strip()
+    if no_tagline and no_tagline not in variants:
+        variants.append(no_tagline)
+    return variants
+
+
+def _channel_in_answer(channel: str, answer_lower: str) -> bool:
+    """Match a channel name in the answer, ignoring trailing diacritics on the last token.
+
+    Whisper / YouTube responses sometimes mojibake non-ASCII channel names
+    (e.g. "Jovanović" -> garbled bytes). Match by ASCII-only substring fallback.
+    """
+    if not channel or len(channel) < 4:
+        return False
+    if channel.lower() in answer_lower:
+        return True
+    ascii_channel = re.sub(r'[^\x00-\x7f]+', '', channel).strip()
+    if len(ascii_channel) >= 4 and ascii_channel.lower() in answer_lower:
+        return True
+    return False
+
+
 def _references_from_citations(rag_results: list[dict], answer: str) -> list[dict]:
-    """Deterministic: match video_ids / full titles appearing verbatim in the answer."""
+    """Deterministic: match video_ids / titles / channel names appearing in the answer.
+
+    The LLM's `[Source: "<title>" by <channel> at <ts>]` citations are not always
+    verbatim — it may strip leading numbers, parentheticals, or rephrase. So we
+    accept any title variant or a channel-name + title-keyword co-occurrence.
+    """
     answer_lower = answer.lower()
     references: list[dict] = []
     seen: set[str] = set()
@@ -172,11 +219,22 @@ def _references_from_citations(rag_results: list[dict], answer: str) -> list[dic
         meta = r.get("metadata", {})
         vid = meta.get("video_id", "") or ""
         title = meta.get("video_title", "") or ""
-        # Exact-match a citation: video_id substring, or a title long enough
-        # (>= 10 chars) to avoid accidental matches on generic titles.
+        channel = meta.get("channel_name", "") or ""
+
         vid_match = bool(vid) and vid.lower() in answer_lower
-        title_match = len(title) >= 10 and title.lower() in answer_lower
-        if not (vid_match or title_match):
+        title_match = any(
+            len(v) >= 10 and v.lower() in answer_lower
+            for v in _title_variants(title)
+        )
+        # Fallback: channel name appears AND at least one significant (>=5 char)
+        # title word also appears — strong signal the citation refers to this video.
+        channel_match = False
+        if not (vid_match or title_match) and _channel_in_answer(channel, answer_lower):
+            keywords = [w.lower() for w in re.findall(r'\b[A-Za-z]{5,}\b', title)]
+            if any(k in answer_lower for k in keywords):
+                channel_match = True
+
+        if not (vid_match or title_match or channel_match):
             continue
         key, ref = _chunk_to_reference(r)
         if key in seen:

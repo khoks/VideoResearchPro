@@ -10,9 +10,15 @@ export function AppLayout() {
   const toggleTheme = useJobStore((s) => s.toggleTheme);
   const { user, logout } = useAuth();
 
-  const handleTabChange = (tab: 'submit' | 'jobs') => {
+  const handleTabChange = (tab: 'submit' | 'jobs' | 'library' | 'library-qa') => {
     setActiveTab(tab);
-    navigate(tab === 'submit' ? '/submit' : '/jobs');
+    const routeMap: Record<typeof tab, string> = {
+      submit: '/submit',
+      jobs: '/jobs',
+      library: '/library',
+      'library-qa': '/library/qa',
+    };
+    navigate(routeMap[tab]);
   };
 
   const handleLogout = () => {
@@ -20,8 +26,11 @@ export function AppLayout() {
     navigate('/login', { replace: true });
   };
 
-  const isSubmitActive = location.pathname === '/' || location.pathname === '/submit';
+  // `/library/qa` is a prefix of `/library`, so test it first.
+  const isLibraryQAActive = location.pathname.startsWith('/library/qa');
+  const isLibraryActive = !isLibraryQAActive && location.pathname.startsWith('/library');
   const isJobsActive = location.pathname.startsWith('/jobs');
+  const isSubmitActive = location.pathname === '/' || location.pathname === '/submit';
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)' }}>
@@ -35,6 +44,12 @@ export function AppLayout() {
           </TabButton>
           <TabButton active={isJobsActive} onClick={() => handleTabChange('jobs')}>
             Jobs
+          </TabButton>
+          <TabButton active={isLibraryActive} onClick={() => handleTabChange('library')}>
+            Library
+          </TabButton>
+          <TabButton active={isLibraryQAActive} onClick={() => handleTabChange('library-qa')}>
+            Global Q&amp;A
           </TabButton>
         </nav>
         <div className="app-header__actions" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>

@@ -29,13 +29,13 @@ function applyTheme(theme: Theme) {
 interface JobStore {
   activeJobId: string | null;
   isReportModalOpen: boolean;
-  activeTab: 'submit' | 'jobs';
+  activeTab: 'submit' | 'jobs' | 'library' | 'library-qa';
   theme: Theme;
   toasts: Toast[];
   setActiveJob: (id: string | null) => void;
   openReportModal: () => void;
   closeReportModal: () => void;
-  setActiveTab: (tab: 'submit' | 'jobs') => void;
+  setActiveTab: (tab: 'submit' | 'jobs' | 'library' | 'library-qa') => void;
   toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
   pushToast: (kind: ToastKind, message: string) => void;

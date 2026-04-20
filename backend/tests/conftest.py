@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -104,3 +105,52 @@ def unauthenticated_client(db):
             yield c
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def seeded_global_library(db):
+    """Pre-populate the global `videos` and `channels` tables with synthetic data.
+
+    Shared by any test that needs an existing library without re-creating it.
+    """
+    from app.models.channel import Channel
+    from app.models.video import Video
+
+    now = datetime.now(timezone.utc)
+
+    channels = []
+    for i in range(2):
+        channels.append(
+            Channel(
+                channel_id=f"UC{'A' * 20}{i:02d}",
+                name=f"Channel {i}",
+                subscribed=False,
+            )
+        )
+    db.add_all(channels)
+    db.commit()
+
+    videos = []
+    for i in range(5):
+        vid = f"vid{i:03d}abcXYZ"
+        videos.append(
+            Video(
+                video_id=vid,
+                title=f"Seeded Video {i}",
+                channel_id=f"UC{'A' * 20}{i % 2:02d}",
+                url=f"https://www.youtube.com/watch?v={vid}",
+                duration_seconds=300 + i * 60,
+                published_at=now,
+                thumbnail_url=f"https://img/{vid}.jpg",
+                transcript_status="pending",
+                created_at=now,
+            )
+        )
+    db.add_all(videos)
+    db.commit()
+    for v in videos:
+        db.refresh(v)
+    for c in channels:
+        db.refresh(c)
+
+    return {"videos": videos, "channels": channels}

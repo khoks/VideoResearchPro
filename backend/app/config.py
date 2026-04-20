@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 32
     RAG_TOP_K: int = 15
     RAG_DISTANCE_THRESHOLD: float = 0.6
+    EMBEDDING_MODEL_NAME: str = "paraphrase-multilingual-MiniLM-L12-v2"
 
     # Reports
     REPORTS_DIR: str = "./data/reports"

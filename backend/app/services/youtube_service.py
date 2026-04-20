@@ -530,6 +530,12 @@ def _transcribe_with_whisper(
 
     Does not require ffmpeg — downloads audio in native format (m4a/webm).
     Returns (segments, language) tuple on success, or None on failure.
+
+    Multilingual note: we do **not** pass a ``language`` hint so Whisper
+    auto-detects the spoken language(s), and we pass ``task="transcribe"``
+    explicitly so Whisper returns the speaker's original language(s) rather
+    than translating everything to English. Proper nouns and code-mixed
+    speech are preserved in their native script.
     """
     tag = f"[job:{job_id}]" if job_id else ""
     logger.info(f"{tag} Whisper fallback starting for video_id={video_id}")
@@ -593,6 +599,7 @@ def _transcribe_with_whisper(
                     model="whisper-1",
                     file=audio_file,
                     response_format="verbose_json",
+                    task="transcribe",
                 )
         except Exception as e:
             logger.error(f"{tag} OpenAI Whisper API transcription failed for {video_id}: {e}")

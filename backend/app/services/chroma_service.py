@@ -18,6 +18,14 @@ Chunk IDs are derived as ``"{video_id}:{chunk_index}"`` and inserts use
 — re-running an extraction overwrites existing chunks in place rather than
 creating duplicates.
 
+Embedding model
+---------------
+Uses ``settings.EMBEDDING_MODEL_NAME`` (default
+``paraphrase-multilingual-MiniLM-L12-v2``) via a cached
+``SentenceTransformerEmbeddingFunction``. The same embedding function must be
+passed on every ``get_or_create_collection`` / ``get_collection`` call so the
+collection is opened with the same embedder it was created with.
+
 Concurrency note
 ----------------
 ``PersistentClient`` holds an exclusive handle on the underlying SQLite
@@ -37,12 +45,18 @@ import warnings
 from typing import Any
 
 import chromadb
+from chromadb.utils import embedding_functions
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 _client: chromadb.ClientAPI | None = None
+
+# A collection must be opened with the same embedding function it was
+# created with, so we cache one instance and reuse it for every
+# get_or_create_collection / get_collection call.
+_embedding_function: embedding_functions.SentenceTransformerEmbeddingFunction | None = None
 
 _BATCH_SIZE = 100
 
@@ -55,12 +69,27 @@ def get_chroma_client() -> chromadb.ClientAPI:
     return _client
 
 
+def _get_embedding_function() -> embedding_functions.SentenceTransformerEmbeddingFunction:
+    """Return the process-level singleton embedding function.
+
+    Uses ``settings.EMBEDDING_MODEL_NAME`` (multilingual by default so
+    non-English transcripts embed meaningfully).
+    """
+    global _embedding_function
+    if _embedding_function is None:
+        _embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=settings.EMBEDDING_MODEL_NAME,
+        )
+    return _embedding_function
+
+
 def get_global_collection() -> chromadb.Collection:
     """Return the single global collection, creating it if missing."""
     client = get_chroma_client()
     return client.get_or_create_collection(
         name=settings.CHROMA_GLOBAL_COLLECTION_NAME,
         metadata={"scope": "global"},
+        embedding_function=_get_embedding_function(),
     )
 
 

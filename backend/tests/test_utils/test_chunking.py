@@ -143,3 +143,34 @@ def test_published_at_accepts_iso_string():
     chunks = chunk_transcript(segs, video_metadata=meta)
     assert chunks[0]["metadata"]["published_at"] == "2024-06-01T00:00:00Z"
     assert chunks[0]["metadata"]["duration_seconds"] == 42
+
+
+def test_transcription_source_defaults_to_youtube():
+    segs = [{"text": "Hello world", "start": 0.0, "duration": 5.0}]
+    chunks = chunk_transcript(segs, video_metadata={"video_id": "x"})
+    assert chunks[0]["metadata"]["transcription_source"] == "youtube"
+
+
+def test_transcription_source_whisper_propagated():
+    segs = [{"text": "Hola mundo", "start": 0.0, "duration": 5.0}]
+    chunks = chunk_transcript(
+        segs,
+        video_metadata={"video_id": "x", "language": "es"},
+        transcription_source="whisper",
+    )
+    assert chunks[0]["metadata"]["transcription_source"] == "whisper"
+    assert chunks[0]["metadata"]["language"] == "es"
+
+
+def test_language_preserved_from_metadata_not_hardcoded_en():
+    """Non-English transcripts (Hindi, Urdu, Russian, etc.) must keep their
+    language tag through chunking rather than being silently reset to 'en'."""
+    segs = [{"text": "नमस्ते दुनिया", "start": 0.0, "duration": 5.0}]
+    chunks = chunk_transcript(segs, video_metadata={"video_id": "x", "language": "hi"})
+    assert chunks[0]["metadata"]["language"] == "hi"
+
+
+def test_language_defaults_to_unknown_when_missing():
+    segs = [{"text": "Hello world", "start": 0.0, "duration": 5.0}]
+    chunks = chunk_transcript(segs, video_metadata={"video_id": "x"})
+    assert chunks[0]["metadata"]["language"] == "unknown"

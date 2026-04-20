@@ -28,6 +28,10 @@ type SortOrder = 'newest' | 'oldest';
 function jobTitle(job: Job): string {
   if (job.job_type === 'topic') return job.topic ?? 'Untitled topic';
   const channels = job.channel_list;
+  if (job.job_type === 'subscription') {
+    const list = channels && channels.length > 0 ? channels.join(', ') : '';
+    return `Subscription: ${list}`;
+  }
   if (channels && channels.length > 0) return channels.join(', ');
   return 'Channel Collection';
 }

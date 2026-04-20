@@ -28,3 +28,23 @@ export interface ClarifyResponse {
   interpretation: string;
   clarifications: string[];
 }
+
+export type AnswerLanguage = 'en' | 'hi' | 'es' | 'fr';
+
+export interface LibraryQAExchange {
+  id: string;
+  question: string;
+  answer: string;
+  references: Reference[];
+  created_at: string;
+}
+
+export interface LibraryQARequest {
+  question: string;
+  answer_language: AnswerLanguage;
+  context?: string;
+}
+
+export interface LibraryClarifyRequest {
+  question: string;
+}

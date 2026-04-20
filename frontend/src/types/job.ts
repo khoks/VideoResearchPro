@@ -1,4 +1,4 @@
-export type JobType = 'topic' | 'channel';
+export type JobType = 'topic' | 'channel' | 'subscription';
 
 export type JobStatus =
   | 'pending'

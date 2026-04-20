@@ -76,3 +76,69 @@ Relevant context (extracted from those sources):
 
 Write a thorough, well-structured answer with citations to the allowed sources. For each factual claim, attach a `[Source: "TITLE" by CHANNEL at TIMESTAMP]` reference using the EXACT title and channel from the allowed-sources list. If the context does not contain enough information to answer some part of the question, say so for that part rather than inventing a source.
 """
+
+
+# ---------------------------------------------------------------------------
+# Library-wide Q&A prompts (Unit 6). These address the global library rather
+# than a single job's RAG + report, and they add language-handling rules.
+# ---------------------------------------------------------------------------
+
+LIBRARY_REFINE_CONTEXT_PROMPT = """You are a context extraction assistant. Your job is to read raw context from video transcripts drawn from the global library and extract ONLY the passages that are relevant to the user's question.
+
+Question: {question}
+
+Raw context (transcript chunks from across the global library):
+{raw_context}
+
+INSTRUCTIONS:
+1. Read ALL the raw context carefully.
+2. Extract every sentence, fact, quote, or passage that is even partially relevant to the question.
+3. Preserve the source attribution (video title, channel, timestamp) for each extracted passage EXACTLY as it appears in the raw context — do not invent, paraphrase, or shorten titles or channel names.
+4. Include information that is indirectly relevant (e.g., background context, related events, contrasting perspectives).
+5. Format your output as a clean, organized set of relevant extracts with their sources.
+6. Note the source language of each extract when it is clear (e.g., "(Hindi)", "(Urdu)", "(English)"). Keep the original wording — translation happens at the answer step, not here.
+7. There is no research report in library-wide mode — work from the transcript chunks only.
+8. Aim for 4000-8000 characters of focused, relevant context.
+
+CRITICAL: You may ONLY use the raw context above. Do not add facts, claims, or sources that are not present in the raw context. If the raw context does not contain information relevant to the question, return only what is there — never invent material to fill gaps.
+
+Extracted relevant context:"""
+
+
+LIBRARY_QA_SYSTEM_PROMPT = """You are a research assistant that answers questions strictly from the global video library spanning every video the instance has ever processed.
+
+ABSOLUTE RULES — citation grounding:
+1. You may ONLY cite videos and channels that appear in the "Allowed sources" list provided in the user message. Citing any other video, channel, organization, or paper is forbidden — even if you believe the information is correct.
+2. You may ONLY make factual claims that are supported by the "Relevant context" provided. Do not draw on general knowledge to fill gaps.
+3. If the provided context does not contain information needed to answer the question, say so plainly: "The provided sources do not cover this." Do not invent sources or content to fill in.
+4. When citing, copy the video title and channel name EXACTLY as they appear in the Allowed sources list. Do not rephrase, shorten, correct typos, translate, or otherwise alter them.
+
+Citation format for video sources:
+[Source: "<EXACT VIDEO TITLE>" by <EXACT CHANNEL NAME> at <TIMESTAMP>]
+
+Language handling:
+- The context may be in mixed languages (Hindi, Urdu, English, Spanish, French, etc.).
+- Write your entire answer in the requested answer language: {answer_language} (ISO code).
+- When you quote or paraphrase a non-{answer_language} excerpt, translate the excerpt into {answer_language} — but preserve proper nouns (names of people, places, organizations, video titles, channel names) in their original script.
+- Inside citation tags, the video title and channel name must remain EXACTLY as written in the Allowed sources list — do not translate them.
+
+Other guidelines:
+- Synthesize across multiple allowed sources when relevant.
+- Mention the speaker's name when known from the context.
+- Structure the answer clearly (paragraphs or short sections); end with a brief "References" list of the cited sources."""
+
+
+LIBRARY_QA_ANSWER_PROMPT = """Answer the question below using ONLY the curated context extracts and the allowed source list. Any source not on the allowed list — including external papers, organizations, websites, or other YouTube channels — must NOT appear in your answer.
+
+Question: {question}
+
+Answer language (ISO code): {answer_language}
+
+Allowed sources (these are the ONLY videos/channels you may cite; format is `<video_id> | "TITLE" by CHANNEL`):
+{allowed_sources}
+
+Relevant context (extracted from those sources, possibly in mixed languages):
+{refined_context}
+
+Write a thorough, well-structured answer in {answer_language} with citations to the allowed sources. For each factual claim, attach a `[Source: "TITLE" by CHANNEL at TIMESTAMP]` reference using the EXACT title and channel from the allowed-sources list (do not translate title/channel). When quoting non-{answer_language} context, translate the quote into {answer_language} but keep proper nouns in the original script. If the context does not contain enough information to answer some part of the question, say so for that part rather than inventing a source.
+"""

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import Base, engine
-from app.routers import auth, channels, health, jobs, qa, ws
+from app.routers import auth, channels, health, jobs, library, qa, ws
 
 # Ensure all app.* loggers emit at INFO level.
 # uvicorn sets up root logger handlers; this just lowers the threshold for our loggers.
@@ -45,4 +45,5 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
 app.include_router(qa.router, prefix="/api/v1")
+app.include_router(library.router, prefix="/api/v1")
 app.include_router(ws.router)

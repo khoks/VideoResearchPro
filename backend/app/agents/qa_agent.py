@@ -6,6 +6,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
 from app.agents.prompts.qa_prompts import (
+    LIBRARY_QA_ANSWER_PROMPT,
+    LIBRARY_QA_SYSTEM_PROMPT,
+    LIBRARY_REFINE_CONTEXT_PROMPT,
     QA_ANSWER_PROMPT,
     QA_SYSTEM_PROMPT,
     REFINE_CONTEXT_PROMPT,
@@ -16,7 +19,7 @@ from app.agents.state import QAAgentState
 from app.config import settings
 from app.services import chroma_service
 from app.services.llm_service import get_llm
-from app.utils.youtube_helpers import build_youtube_url, format_timestamp
+from app.utils.youtube_helpers import build_youtube_url, extract_video_id, format_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -496,3 +499,165 @@ def run_qa_agent(
         "references": [],
     })
     return result.get("answer", ""), result.get("references", [])
+
+
+# ---------------------------------------------------------------------------
+# Library-wide Q&A (Unit 6). Searches the global library (no job_id scope)
+# and supports answering in a requested language.
+# ---------------------------------------------------------------------------
+
+
+def _query_library(query_text: str) -> list[dict]:
+    """Query the global library ChromaDB collection.
+
+    Unit 2 introduces a new ``query_collection`` signature that accepts
+    ``video_ids=None`` for library-wide search. Call that first; fall back to
+    the legacy per-job signature (with a sentinel global-collection id) if the
+    new signature isn't available yet so Unit 6 is robust to merge ordering.
+    """
+    try:
+        return chroma_service.query_collection(
+            query_text=query_text,
+            n_results=settings.RAG_TOP_K,
+            video_ids=None,
+            distance_threshold=settings.RAG_DISTANCE_THRESHOLD,
+        )
+    except TypeError:
+        logger.info(
+            "chroma_service.query_collection lacks new library-wide signature; "
+            "falling back to legacy per-job call (library-wide search unavailable)."
+        )
+        return []
+
+
+def _dedupe_chunks(chunks: list[dict]) -> list[dict]:
+    """Dedupe RAG chunks by (video_id, chunk_index); keep closest distance."""
+    merged: dict[str, dict] = {}
+    for r in chunks:
+        meta = r.get("metadata", {})
+        key = f"{meta.get('video_id', '')}_{meta.get('chunk_index', '')}"
+        existing = merged.get(key)
+        if existing is None or r.get("distance", 1.0) < existing.get("distance", 1.0):
+            merged[key] = r
+    return sorted(merged.values(), key=lambda x: x.get("distance", 1.0))
+
+
+def _enrich_chunks(chunks: list[dict]) -> None:
+    """In-place: add timestamp_display and youtube_link to each chunk."""
+    for r in chunks:
+        meta = r.get("metadata", {})
+        ts = float(meta.get("timestamp_start", 0) or 0)
+        vid = meta.get("video_id", "")
+        r["timestamp_display"] = format_timestamp(ts)
+        r["youtube_link"] = build_youtube_url(vid, ts)
+
+
+def _build_library_allowed_sources(rag_results: list[dict]) -> str:
+    """Allowed-sources list for library Q&A.
+
+    Includes the video_id prefix so the LLM can disambiguate same-titled
+    videos across different channels in the global library. Dedupes by
+    (video_id, title, channel).
+    """
+    seen: set[tuple[str, str, str]] = set()
+    lines: list[str] = []
+    for r in rag_results:
+        meta = r.get("metadata", {})
+        vid = (meta.get("video_id") or "").strip()
+        title = (meta.get("video_title") or "Unknown").strip()
+        channel = (meta.get("channel_name") or "Unknown").strip()
+        key = (vid, title.lower(), channel.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        lines.append(f'- {vid} | "{title}" by {channel}')
+    return "\n".join(lines) if lines else "(no sources available)"
+
+
+def run_library_qa_agent(
+    question: str,
+    answer_language: str = "en",
+) -> dict:
+    """Run library-wide Q&A against the global video library.
+
+    Flow: sub-query expansion -> chroma retrieve across all videos -> dedupe
+    -> LLM context refinement -> LLM answer with language + citation rules
+    -> citation sanitizer.
+
+    Returns:
+        {"answer": str, "references": list[dict]}
+    """
+    # 1. Sub-query expansion (reuse the existing prompt; same style of retrieval).
+    sub_queries = _generate_sub_queries(question)
+    all_queries = [question] + sub_queries
+    logger.info("Library Q&A retrieval using %d queries", len(all_queries))
+
+    # 2. Library-wide ChromaDB retrieval.
+    raw: list[dict] = []
+    for q in all_queries:
+        raw.extend(_query_library(q))
+
+    # 3. Dedupe + enrich.
+    rag_results = _dedupe_chunks(raw)
+    _enrich_chunks(rag_results)
+
+    # 4. Refine context.
+    raw_parts = []
+    for i, r in enumerate(rag_results):
+        meta = r.get("metadata", {})
+        raw_parts.append(
+            f"[Chunk {i+1} | Video: \"{meta.get('video_title', 'Unknown')}\" "
+            f"by {meta.get('channel_name', 'Unknown')} at {r.get('timestamp_display', '0:00')}]\n"
+            f"{r.get('text', '')}"
+        )
+    raw_context = "\n\n".join(raw_parts)
+
+    llm = get_llm(temperature=0.0)
+    refine_prompt = LIBRARY_REFINE_CONTEXT_PROMPT.format(
+        question=question,
+        raw_context=raw_context,
+    )
+    refined_response = llm.invoke([HumanMessage(content=refine_prompt)])
+    refined_context = (refined_response.content or "").strip() or "No context available."
+
+    logger.info(
+        "Library Q&A refined context: %d chars from %d chars raw",
+        len(refined_context), len(raw_context),
+    )
+
+    # 5. Formulate answer with language + allowed-sources constraints.
+    allowed_sources = _build_library_allowed_sources(rag_results)
+    answer_llm = get_llm(temperature=0.0)
+    system_prompt = LIBRARY_QA_SYSTEM_PROMPT.format(answer_language=answer_language)
+    user_prompt = LIBRARY_QA_ANSWER_PROMPT.format(
+        question=question,
+        answer_language=answer_language,
+        allowed_sources=allowed_sources,
+        refined_context=refined_context,
+    )
+    answer_response = answer_llm.invoke([
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt),
+    ])
+    answer = answer_response.content or ""
+
+    # 6. Sanitize fabricated citations using the shared helper, then extract
+    # structured references.
+    if not rag_results or not answer:
+        return {"answer": answer, "references": []}
+
+    sanitized_answer, removed = _sanitize_citations(answer, rag_results)
+    if removed:
+        logger.info("Sanitized %d fabricated citation(s) from library Q&A answer", removed)
+    references = _references_from_citations(rag_results, sanitized_answer)
+    if not references:
+        references = _references_via_llm(rag_results, sanitized_answer)
+
+    # LibraryReference requires an explicit video_id; the shared helper builds
+    # refs without one, so derive it from the video_url.
+    library_refs = [
+        {**ref, "video_id": extract_video_id(ref.get("video_url", "")) or ""}
+        for ref in references[:10]
+    ]
+
+    return {"answer": sanitized_answer, "references": library_refs}

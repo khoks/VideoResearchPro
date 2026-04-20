@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { useJob, useJobVideos, useApproveJob, useCancelJob, useDeleteJob } from '../hooks/useJobs';
@@ -10,8 +10,10 @@ import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { formatDuration, formatDate, statusColor } from '../utils/formatters';
 import { useJobStore } from '../stores/jobStore';
 import { useAuth } from '../contexts/AuthContext';
+import { wsClient } from '../services/wsClient';
 import type { Video } from '../types/video';
 import type { QAExchange } from '../types/qa';
+import type { Job } from '../types/job';
 
 export function JobDetailPage() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -24,9 +26,16 @@ export function JobDetailPage() {
   const { isReportModalOpen, openReportModal, closeReportModal } = useJobStore();
 
   useJobProgress(jobId || null);
+  const syncCounts = useSubscriptionSyncCounts(jobId || null);
 
   if (isLoading) return <div style={{ textAlign: 'center', padding: '3rem' }}><LoadingSpinner size={40} /></div>;
   if (!job) return <p>Job not found.</p>;
+
+  const isSubscription = job.job_type === 'subscription';
+  const showApproval = !isSubscription && job.status === 'awaiting_approval';
+  const showReportButton = job.has_report && !isSubscription;
+  const videosHeading = isSubscription ? 'Synced Videos' : 'Videos';
+  const isSyncing = job.status === 'extracting' || job.status === 'building_rag';
 
   return (
     <div>
@@ -42,7 +51,7 @@ export function JobDetailPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
           <div>
             <h2 style={{ margin: 0, color: '#1e293b' }}>
-              {job.job_type === 'topic' ? job.topic : 'Channel Collection'}
+              {jobHeaderTitle(job)}
             </h2>
             <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
               Created {formatDate(job.created_at)} | {job.job_type} job
@@ -75,16 +84,20 @@ export function JobDetailPage() {
         )}
       </div>
 
+      {isSubscription && isSyncing && syncCounts && (
+        <SubscriptionSyncCard counts={syncCounts} />
+      )}
+
       {/* Video Approval */}
-      {job.status === 'awaiting_approval' && videos && (
+      {showApproval && videos && (
         <VideoApprovalSection videos={videos} jobId={job.id} onApprove={approveJob.mutateAsync} />
       )}
 
       {/* Video List (non-approval states) */}
-      {job.status !== 'awaiting_approval' && videos && videos.length > 0 && (
+      {!showApproval && videos && videos.length > 0 && (
         <div style={{ background: '#fff', borderRadius: 12, padding: '1.5rem',
                        boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: '1rem' }}>
-          <h3 style={{ margin: '0 0 1rem', color: '#1e293b' }}>Videos ({videos.length})</h3>
+          <h3 style={{ margin: '0 0 1rem', color: '#1e293b' }}>{videosHeading} ({videos.length})</h3>
           {videos.map(v => (
             <div key={v.id} style={{ display: 'flex', justifyContent: 'space-between',
                                      padding: '0.5rem 0', borderBottom: '1px solid #f1f5f9' }}>
@@ -101,7 +114,7 @@ export function JobDetailPage() {
       )}
 
       {/* Report Button */}
-      {job.has_report && (
+      {showReportButton && (
         <div style={{ marginBottom: '1rem' }}>
           <button onClick={openReportModal} style={{
             background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -114,12 +127,76 @@ export function JobDetailPage() {
       )}
 
       {/* Report Modal */}
-      {isReportModalOpen && (
+      {isReportModalOpen && showReportButton && (
         <ReportModal jobId={job.id} onClose={closeReportModal} />
       )}
 
       {/* Q&A Panel */}
       {job.status === 'completed' && <QASection jobId={job.id} />}
+    </div>
+  );
+}
+
+function jobHeaderTitle(job: Job): string {
+  if (job.job_type === 'topic') return job.topic ?? 'Untitled topic';
+  if (job.job_type === 'subscription') {
+    const list = job.channel_list && job.channel_list.length > 0
+      ? job.channel_list.join(', ')
+      : '';
+    return `Subscription: ${list}`;
+  }
+  return 'Channel Collection';
+}
+
+interface SyncCounts {
+  reused_count: number;
+  newly_processed_count: number;
+  total_count: number;
+}
+
+// Fields are published by the subscription ingestion pipeline; other job types
+// never emit them, so counts stay null for topic/channel jobs.
+function useSubscriptionSyncCounts(jobId: string | null): SyncCounts | null {
+  const [counts, setCounts] = useState<SyncCounts | null>(null);
+
+  useEffect(() => {
+    setCounts(null);
+    if (!jobId) return;
+    return wsClient.subscribe(jobId, (msg) => {
+      const data = msg.data;
+      if (!data) return;
+      const reused = data.reused_count;
+      const newly = data.newly_processed_count;
+      const total = data.total_count;
+      if (typeof reused === 'number' && typeof newly === 'number' && typeof total === 'number') {
+        setCounts({ reused_count: reused, newly_processed_count: newly, total_count: total });
+      }
+    });
+  }, [jobId]);
+
+  return counts;
+}
+
+function SubscriptionSyncCard({ counts }: { counts: SyncCounts }) {
+  const { reused_count, newly_processed_count, total_count } = counts;
+  return (
+    <div style={{ background: '#fff', borderRadius: 12, padding: '1.25rem',
+                   boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: '1rem' }}>
+      <h3 style={{ margin: '0 0 0.75rem', color: '#1e293b', fontSize: '1rem' }}>Sync Progress</h3>
+      <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.2rem' }}>Reused</div>
+          <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#1e293b' }}>
+            {reused_count} / {total_count}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.2rem' }}>Newly processed</div>
+          <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#1e293b' }}>
+            {newly_processed_count} / {total_count}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

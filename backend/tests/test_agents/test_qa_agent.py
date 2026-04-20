@@ -302,3 +302,120 @@ def test_run_qa_agent_full_graph():
     assert answer == "Answer referencing v1 / Video A"
     assert len(references) == 1
     assert references[0]["video_title"] == "Video A"
+
+
+# ---------- _build_allowed_sources ----------
+
+def test_build_allowed_sources_lists_unique_videos():
+    rag = [
+        _rag_result("v1", "ChA", "Title One", "x"),
+        _rag_result("v1", "ChA", "Title One", "x"),  # duplicate
+        _rag_result("v2", "ChB", "Title Two", "y"),
+    ]
+    out = qa_agent._build_allowed_sources(rag, include_report=False)
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert len(lines) == 2
+    assert '"Title One" by ChA' in out
+    assert '"Title Two" by ChB' in out
+    assert "Research Report" not in out
+
+
+def test_build_allowed_sources_includes_report_when_present():
+    rag = [_rag_result("v1", "ChA", "Title One", "x")]
+    out = qa_agent._build_allowed_sources(rag, include_report=True)
+    assert "Research Report" in out
+
+
+def test_build_allowed_sources_handles_empty():
+    out = qa_agent._build_allowed_sources([], include_report=False)
+    assert "no sources available" in out.lower()
+
+
+# ---------- _sanitize_citations ----------
+
+def test_sanitize_strips_fabricated_citation():
+    rag = [_rag_result("v1", "Real Channel", "Real Title About Quantum", "x")]
+    answer = (
+        'Quantum stuff is interesting [Source: "Real Title About Quantum" by Real Channel at 0:42]. '
+        'Other research [Source: "Made Up Paper" by Fake Lab at 1:00] disagrees.'
+    )
+    sanitized, removed = qa_agent._sanitize_citations(answer, rag)
+    assert removed == 1
+    assert '"Real Title About Quantum" by Real Channel' in sanitized
+    assert "Made Up Paper" not in sanitized
+    assert "[Source: unverified]" in sanitized
+
+
+def test_sanitize_keeps_real_citation_with_rephrased_title():
+    """LLM commonly drops leading numbers/parens — sanitizer must accept variants."""
+    rag = [_rag_result("v1", "Milan J", "8 Pragmatic Tips (From Real Projects)", "x")]
+    answer = '[Source: "Pragmatic Tips" by Milan J at 0:53] explains the pattern.'
+    sanitized, removed = qa_agent._sanitize_citations(answer, rag)
+    assert removed == 0
+    assert "Pragmatic Tips" in sanitized
+
+
+def test_sanitize_keeps_research_report_citations():
+    rag = [_rag_result("v1", "ChA", "Real Title", "x")]
+    answer = (
+        'Per the report [Source: Research Report at 0:00] and the video '
+        '[Source: "Real Title" by ChA at 0:42] the answer is yes.'
+    )
+    sanitized, removed = qa_agent._sanitize_citations(answer, rag)
+    assert removed == 0
+    assert "Research Report" in sanitized
+
+
+def test_sanitize_no_op_when_all_citations_grounded():
+    rag = [
+        _rag_result("v1", "ChA", "Title One About Quantum Computing", "x"),
+        _rag_result("v2", "ChB", "Title Two About Networking", "y"),
+    ]
+    answer = (
+        '[Source: "Title One About Quantum Computing" by ChA at 0:00] and '
+        '[Source: "Title Two About Networking" by ChB at 1:00].'
+    )
+    sanitized, removed = qa_agent._sanitize_citations(answer, rag)
+    assert removed == 0
+    assert sanitized == answer
+
+
+def test_sanitize_handles_empty_answer():
+    sanitized, removed = qa_agent._sanitize_citations("", [])
+    assert sanitized == ""
+    assert removed == 0
+
+
+# ---------- extract_references with sanitizer ----------
+
+def test_extract_references_returns_sanitized_answer():
+    rag = [_rag_result("v1", "Real", "Real Topic Video", "x", ts_start=0.0)]
+    answer = (
+        'Real says [Source: "Real Topic Video" by Real at 0:00]. '
+        'Fake says [Source: "Fake Video" by Fake Channel at 1:00].'
+    )
+    result = qa_agent.extract_references({"rag_results": rag, "answer": answer})
+    # Sanitizer should have stripped the fabricated citation
+    assert "Fake Video" not in result["answer"]
+    assert "Real Topic Video" in result["answer"]
+    assert len(result["references"]) == 1
+    assert result["references"][0]["video_title"] == "Real Topic Video"
+
+
+# ---------- formulate_answer passes allowed_sources ----------
+
+def test_formulate_answer_injects_allowed_sources():
+    rag = [_rag_result("v1", "ChA", "Real Video", "x")]
+    with patch.object(qa_agent, "get_llm") as mock_get_llm:
+        mock_get_llm.return_value = _fake_llm_returning("answer")
+        qa_agent.formulate_answer({
+            "question": "q",
+            "refined_context": "ctx",
+            "rag_results": rag,
+            "report_context": None,
+        })
+    # Inspect the human message — it should include the allowed-sources list
+    messages = mock_get_llm.return_value.invoke.call_args.args[0]
+    human_text = messages[1].content
+    assert '"Real Video" by ChA' in human_text
+    assert "Allowed sources" in human_text

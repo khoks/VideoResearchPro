@@ -129,12 +129,40 @@ def refine_context(state: QAAgentState) -> dict:
     return {"refined_context": refined}
 
 
+def _build_allowed_sources(rag_results: list[dict], include_report: bool) -> str:
+    """Render the allow-list of sources the LLM is permitted to cite.
+
+    Listing them explicitly in the prompt is the strongest single anti-hallucination
+    signal: the model has a closed universe of citable items.
+    """
+    seen: set[tuple[str, str]] = set()
+    lines: list[str] = []
+    for r in rag_results:
+        meta = r.get("metadata", {})
+        title = (meta.get("video_title") or "Unknown").strip()
+        channel = (meta.get("channel_name") or "Unknown").strip()
+        key = (title.lower(), channel.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        lines.append(f'- "{title}" by {channel}')
+    if include_report:
+        lines.append("- Research Report (the synthesized report for this job)")
+    return "\n".join(lines) if lines else "(no sources available)"
+
+
 def formulate_answer(state: QAAgentState) -> dict:
-    """Generate answer using LLM with refined context."""
-    llm = get_llm(temperature=0.1)
+    """Generate answer using LLM with refined context, constrained to allowed sources."""
+    # Temperature 0: citations must be deterministic and grounded.
+    llm = get_llm(temperature=0.0)
+
+    rag_results = state.get("rag_results", [])
+    include_report = bool(state.get("report_context"))
+    allowed_sources = _build_allowed_sources(rag_results, include_report)
 
     prompt = QA_ANSWER_PROMPT.format(
         question=state["question"],
+        allowed_sources=allowed_sources,
         refined_context=state.get("refined_context", "No context available."),
     )
 
@@ -294,24 +322,134 @@ def _references_via_llm(rag_results: list[dict], answer: str) -> list[dict]:
     return references
 
 
-def extract_references(state: QAAgentState) -> dict:
-    """Extract structured references from RAG results actually used in the answer.
+# Match a `[Source: "TITLE" by CHANNEL at TIMESTAMP]` citation. Title may be
+# in straight quotes, curly quotes, or bare; channel runs to " at " or "]".
+_CITATION_PATTERN = re.compile(
+    r'\[Source:\s*'
+    r'(?:["“\'](?P<title_q>[^"”\']+)["”\']|(?P<title_b>[^"”\'][^]]*?))'
+    r'\s+by\s+(?P<channel>.+?)'
+    r'(?:\s+at\s+[^\]]+)?'
+    r'\]',
+    re.IGNORECASE,
+)
+_REPORT_CITATION_PATTERN = re.compile(
+    r'\[Source:\s*Research Report[^\]]*\]',
+    re.IGNORECASE,
+)
 
-    Prefers an exact-match pass over `[Source: ...]` style citations / video_id
-    substrings; falls back to an LLM auditor if nothing is matched
-    deterministically.
+
+def _citation_is_grounded(
+    cited_title: str,
+    cited_channel: str,
+    allowed_titles_lower: set[str],
+    allowed_channels_lower: set[str],
+    title_keyword_index: dict[str, set[str]],
+) -> bool:
+    """Decide whether a parsed citation refers to a real allowed source.
+
+    Allow if the cited title (or one of its normalized variants) appears in the
+    allowed-titles set, OR the cited channel matches an allowed channel and the
+    cited title shares at least one significant keyword with that channel's
+    real titles. This mirrors the looser matching used by the reference
+    extractor so we don't strip legitimate-but-rephrased citations.
+    """
+    cited_title = (cited_title or "").strip()
+    cited_channel = (cited_channel or "").strip()
+    cited_channel_lower = cited_channel.lower()
+
+    # Exact / variant title match against any allowed title.
+    for variant in _title_variants(cited_title):
+        v_lower = variant.lower()
+        if v_lower in allowed_titles_lower:
+            return True
+        # Also allow if any allowed title is a substring of the cited variant
+        # (LLM expanded with a subtitle) or vice versa.
+        for allowed in allowed_titles_lower:
+            if len(v_lower) >= 10 and (v_lower in allowed or allowed in v_lower):
+                return True
+
+    # Channel + keyword fallback.
+    if cited_channel_lower in allowed_channels_lower:
+        cited_keywords = {w.lower() for w in re.findall(r'\b[A-Za-z]{5,}\b', cited_title)}
+        real_keywords = title_keyword_index.get(cited_channel_lower, set())
+        if cited_keywords & real_keywords:
+            return True
+
+    return False
+
+
+def _sanitize_citations(answer: str, rag_results: list[dict]) -> tuple[str, int]:
+    """Strip [Source: ...] tags whose title doesn't match any real RAG chunk.
+
+    Returns (sanitized_answer, removed_count). Research Report citations are
+    always kept (they're grounded by definition when a report exists).
+    """
+    if not answer:
+        return answer, 0
+
+    allowed_titles_lower: set[str] = set()
+    allowed_channels_lower: set[str] = set()
+    title_keyword_index: dict[str, set[str]] = {}
+    for r in rag_results:
+        meta = r.get("metadata", {})
+        title = (meta.get("video_title") or "").strip()
+        channel = (meta.get("channel_name") or "").strip()
+        if not title:
+            continue
+        for variant in _title_variants(title):
+            allowed_titles_lower.add(variant.lower())
+        if channel:
+            allowed_channels_lower.add(channel.lower())
+            kw = {w.lower() for w in re.findall(r'\b[A-Za-z]{5,}\b', title)}
+            title_keyword_index.setdefault(channel.lower(), set()).update(kw)
+
+    removed = 0
+
+    def _replace(match: re.Match) -> str:
+        nonlocal removed
+        cited_title = (match.group("title_q") or match.group("title_b") or "").strip()
+        cited_channel = match.group("channel").strip()
+        if _citation_is_grounded(
+            cited_title, cited_channel,
+            allowed_titles_lower, allowed_channels_lower, title_keyword_index,
+        ):
+            return match.group(0)
+        removed += 1
+        logger.warning(
+            "Stripping fabricated citation: title=%r channel=%r",
+            cited_title, cited_channel,
+        )
+        # Replace with a clear marker rather than silently deleting; preserves
+        # answer flow but signals that the source could not be verified.
+        return "[Source: unverified]"
+
+    sanitized = _CITATION_PATTERN.sub(_replace, answer)
+    return sanitized, removed
+
+
+def extract_references(state: QAAgentState) -> dict:
+    """Sanitize fabricated citations, then extract structured references.
+
+    1. Strip any `[Source: ...]` tags whose title/channel doesn't match a real
+       RAG chunk (LLM hallucination guard).
+    2. Run the existing matcher (deterministic + LLM auditor fallback) over
+       the sanitized answer.
     """
     rag_results = state.get("rag_results", [])
     answer = state.get("answer", "") or ""
 
     if not rag_results or not answer:
-        return {"references": []}
+        return {"answer": answer, "references": []}
 
-    references = _references_from_citations(rag_results, answer)
+    sanitized_answer, removed = _sanitize_citations(answer, rag_results)
+    if removed:
+        logger.info(f"Sanitized {removed} fabricated citation(s) from Q&A answer")
+
+    references = _references_from_citations(rag_results, sanitized_answer)
     if not references:
-        references = _references_via_llm(rag_results, answer)
+        references = _references_via_llm(rag_results, sanitized_answer)
 
-    return {"references": references[:10]}
+    return {"answer": sanitized_answer, "references": references[:10]}
 
 
 def build_qa_graph() -> StateGraph:

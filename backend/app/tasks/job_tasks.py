@@ -315,7 +315,14 @@ def resume_job_after_approval(self, job_id: str) -> None:
             return
 
         # PHASE: EXTRACTING
-        approved_videos = [v for v in job.videos if v.approved]
+        # `approved` now lives on the JobVideo link row, not on Video.
+        approved_rows = (
+            db.query(Video)
+            .join(JobVideo, JobVideo.video_id == Video.video_id)
+            .filter(JobVideo.job_id == job_id, JobVideo.approved.is_(True))
+            .all()
+        )
+        approved_videos = approved_rows
         total = len(approved_videos)
         logger.info(f"[job:{job_id}] Resuming job after approval: {total} approved videos "
                     f"to process (job_type={job.job_type})")
@@ -579,7 +586,13 @@ def _run_extraction_and_rag(self, db, job) -> None:
     ingest.
     """
     job_id = job.id
-    approved_videos = [v for v in job.videos if v.approved]
+    # `approved` now lives on the JobVideo link row, not on Video.
+    approved_videos = (
+        db.query(Video)
+        .join(JobVideo, JobVideo.video_id == Video.video_id)
+        .filter(JobVideo.job_id == job_id, JobVideo.approved.is_(True))
+        .all()
+    )
     total = len(approved_videos)
     logger.info(
         f"[job:{job_id}] Starting extraction+RAG for {total} approved video(s) "

@@ -39,9 +39,9 @@ export function useApproveJob() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: VideoApproval }) => jobsApi.approve(id, data),
-    onSuccess: () => {
+    onSuccess: (updatedJob, { id }) => {
+      queryClient.setQueryData(['job', id], updatedJob);
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
-      queryClient.invalidateQueries({ queryKey: ['job'] });
     },
   });
 }
@@ -50,7 +50,10 @@ export function useCancelJob() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => jobsApi.cancel(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
+    onSuccess: (updatedJob, id) => {
+      queryClient.setQueryData(['job', id], updatedJob);
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
   });
 }
 

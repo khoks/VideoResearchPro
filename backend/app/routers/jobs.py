@@ -66,11 +66,11 @@ def approve_job(job_id: str, approval: VideoApproval, db: Session = Depends(get_
     if job.status != "awaiting_approval":
         raise HTTPException(status_code=400, detail=f"Job is not awaiting approval (status: {job.status})")
 
-    # `approved_video_ids` carries YouTube video IDs (e.g. "U-G-mSd4KAE"),
-    # not the internal DB primary keys (UUIDs).
+    # `approved_video_ids` carries YouTube video IDs (e.g. "U-G-mSd4KAE").
+    # Approval state now lives on the JobVideo join row, not the shared Video.
     approved_set = set(approval.approved_video_ids)
-    for video in job.videos:
-        video.approved = video.video_id in approved_set
+    for jv in job.job_videos:
+        jv.approved = jv.video_id in approved_set
 
     # Clear the phase-1 task id so a racing cancel cannot revoke a task that
     # has already completed. The new task id is stored below after .delay().
@@ -130,4 +130,4 @@ def get_job_videos(job_id: str, db: Session = Depends(get_db)):
     job = job_service.get_job(db, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job.videos
+    return job_service.job_videos_response(job)

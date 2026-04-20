@@ -8,6 +8,7 @@ from app.database import SessionLocal
 from app.models.channel import Channel
 from app.models.job import Job
 from app.models.job_video import JobVideo
+from app.models.transcript_cache import TranscriptCache
 from app.models.video import Video
 from app.services import chroma_service, progress_service, youtube_service
 from app.tasks.celery_app import celery_app
@@ -71,6 +72,42 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
             approved=True,
             selection_reason=data.get("selection_reason"),
         ))
+
+
+def _build_video_metadata(video: Video, language: str | None) -> dict:
+    """Build the metadata dict passed to ``chunk_transcript`` for a Video row."""
+    return {
+        "video_id": video.video_id,
+        "title": video.title,
+        "channel_name": video.channel_name,
+        "channel_id": video.channel_id,
+        "url": video.url,
+        "published_at": video.published_at,
+        "duration_seconds": video.duration_seconds,
+        "language": language or getattr(video, "transcript_language", None) or "en",
+    }
+
+
+def _load_cached_segments(video_id: str) -> tuple[list[dict], str] | None:
+    """Load cached transcript segments for ``video_id`` from TranscriptCache.
+
+    Returns (segments, language) on hit, or None on miss / corrupt row.
+    """
+    db = SessionLocal()
+    try:
+        row = db.query(TranscriptCache).filter(TranscriptCache.video_id == video_id).first()
+        if row is None:
+            return None
+        try:
+            segments = json.loads(row.segments_json)
+        except (ValueError, TypeError):
+            logger.exception(
+                "Corrupt transcript cache row for %s; ignoring", video_id
+            )
+            return None
+        return segments, row.language
+    finally:
+        db.close()
 
 
 def _get_job(db, job_id: str) -> Job | None:
@@ -289,67 +326,160 @@ def resume_job_after_approval(self, job_id: str) -> None:
         progress_service.publish_status_change(job_id, "awaiting_approval", "extracting",
                                                f"Extracting transcripts for {total} videos...")
 
-        all_chunks = []
+        all_chunks: list[dict] = []
+        new_chunks: list[dict] = []
         fetched_count = 0
+        reused_count = 0
+        newly_processed_count = 0
+
+        global_collection_name = getattr(
+            settings, "CHROMA_GLOBAL_COLLECTION_NAME", "videoresearchpro_global"
+        )
 
         for i, video in enumerate(approved_videos):
             if _is_cancelled(db, job_id):
                 logger.info(f"[job:{job_id}] Job cancelled during extraction at video {i + 1}/{total}, exiting")
                 return
 
-            logger.info(f"[job:{job_id}] [{i + 1}/{total}] Fetching transcript: "
-                        f"video_id={video.video_id} '{video.title[:60]}'")
+            title_preview = (video.title or "")[:60]
+            already_fetched = video.transcript_status == "fetched"
+            already_embedded = bool(getattr(video, "embedded_in_chroma", False))
 
-            fetch_result = youtube_service.fetch_transcript(
-                video.video_id,
-                language=settings.DEFAULT_TRANSCRIPT_LANGUAGE,
-                job_id=job_id,
-            )
+            # Fully reused: re-chunk from the transcript cache so the report
+            # agent still sees this video's content, but skip fetch + Chroma
+            # insert. JobVideo link is assumed to already exist.
+            if already_fetched and already_embedded:
+                cached = _load_cached_segments(video.video_id)
+                if cached is not None:
+                    segments, cached_language = cached
+                    chunks = chunk_transcript(
+                        segments,
+                        chunk_size=settings.CHUNK_SIZE,
+                        chunk_overlap=settings.CHUNK_OVERLAP,
+                        video_metadata=_build_video_metadata(video, cached_language),
+                    )
+                    all_chunks.extend(chunks)
+                    reused_count += 1
+                    fetched_count += 1
+                    logger.info(
+                        f"[job:{job_id}] [{i + 1}/{total}] Reusing library video "
+                        f"(already embedded): video_id={video.video_id} '{title_preview}' "
+                        f"→ {len(chunks)} chunks"
+                    )
+                else:
+                    # Inconsistent state: flag says embedded, but no cached
+                    # transcript to re-chunk. Fall through to a full fetch.
+                    logger.warning(
+                        f"[job:{job_id}] [{i + 1}/{total}] video_id={video.video_id} "
+                        "is marked embedded but transcript cache is missing; re-fetching"
+                    )
+                    already_fetched = False
+                    already_embedded = False
 
-            if fetch_result:
-                transcript, actual_language = fetch_result
-                video.transcript_status = "fetched"
-                word_count = sum(len(seg.get("text", "").split()) for seg in transcript)
-                video.transcript_word_count = word_count
-                video.transcript_language = actual_language
+            # Previously fetched but never embedded (e.g. subscription ingest
+            # saved the transcript without building the RAG). Embed it now.
+            if already_fetched and not already_embedded:
+                cached = _load_cached_segments(video.video_id)
+                if cached is not None:
+                    segments, cached_language = cached
+                    chunks = chunk_transcript(
+                        segments,
+                        chunk_size=settings.CHUNK_SIZE,
+                        chunk_overlap=settings.CHUNK_OVERLAP,
+                        video_metadata=_build_video_metadata(video, cached_language),
+                    )
+                    all_chunks.extend(chunks)
+                    new_chunks.extend(chunks)
+                    if hasattr(video, "embedded_in_chroma"):
+                        video.embedded_in_chroma = True
+                    db.commit()
+                    newly_processed_count += 1
+                    fetched_count += 1
+                    logger.info(
+                        f"[job:{job_id}] [{i + 1}/{total}] Embedding cached transcript: "
+                        f"video_id={video.video_id} '{title_preview}' → {len(chunks)} chunks"
+                    )
+                else:
+                    logger.warning(
+                        f"[job:{job_id}] [{i + 1}/{total}] video_id={video.video_id} "
+                        "is marked fetched but transcript cache is missing; re-fetching"
+                    )
+                    already_fetched = False
 
-                # Chunk the transcript
-                chunks = chunk_transcript(
-                    transcript,
-                    chunk_size=settings.CHUNK_SIZE,
-                    chunk_overlap=settings.CHUNK_OVERLAP,
-                    video_metadata={
-                        "video_id": video.video_id,
-                        "title": video.title,
-                        "channel_name": video.channel_name,
-                        "channel_id": video.channel_id,
-                        "url": video.url,
-                        "published_at": video.published_at,
-                        "duration_seconds": video.duration_seconds,
-                        "language": actual_language,
-                    },
+            # Never fetched: full fetch + chunk + embed + update Video row.
+            if not already_fetched:
+                logger.info(
+                    f"[job:{job_id}] [{i + 1}/{total}] Fetching transcript: "
+                    f"video_id={video.video_id} '{title_preview}'"
                 )
-                all_chunks.extend(chunks)
-                fetched_count += 1
-                logger.info(f"[job:{job_id}] [{i + 1}/{total}] Transcript OK: "
-                            f"{word_count} words → {len(chunks)} chunks (video_id={video.video_id})")
-            else:
-                video.transcript_status = "unavailable"
-                logger.warning(f"[job:{job_id}] [{i + 1}/{total}] Transcript unavailable: "
-                               f"video_id={video.video_id} '{video.title[:60]}'")
+                fetch_result = youtube_service.fetch_transcript(
+                    video.video_id,
+                    language=settings.DEFAULT_TRANSCRIPT_LANGUAGE,
+                    job_id=job_id,
+                )
 
-            db.commit()
+                if fetch_result:
+                    transcript, actual_language = fetch_result
+                    word_count = sum(len(seg.get("text", "").split()) for seg in transcript)
+
+                    video.transcript_status = "fetched"
+                    video.transcript_word_count = word_count
+                    video.transcript_language = actual_language
+                    # Optional columns added by Unit 1's migration. Set when
+                    # present; silently skipped on older schemas.
+                    if hasattr(video, "transcripted_at"):
+                        video.transcripted_at = datetime.now(timezone.utc)
+                    if hasattr(video, "transcript_source"):
+                        # youtube_service.fetch_transcript doesn't tell us which
+                        # path it took, so record the generic "youtube" source.
+                        video.transcript_source = "youtube"
+
+                    chunks = chunk_transcript(
+                        transcript,
+                        chunk_size=settings.CHUNK_SIZE,
+                        chunk_overlap=settings.CHUNK_OVERLAP,
+                        video_metadata=_build_video_metadata(video, actual_language),
+                    )
+                    all_chunks.extend(chunks)
+                    new_chunks.extend(chunks)
+
+                    if hasattr(video, "embedded_in_chroma"):
+                        video.embedded_in_chroma = True
+
+                    newly_processed_count += 1
+                    fetched_count += 1
+                    logger.info(
+                        f"[job:{job_id}] [{i + 1}/{total}] Transcript OK: "
+                        f"{word_count} words → {len(chunks)} chunks (video_id={video.video_id})"
+                    )
+                else:
+                    video.transcript_status = "unavailable"
+                    logger.warning(
+                        f"[job:{job_id}] [{i + 1}/{total}] Transcript unavailable: "
+                        f"video_id={video.video_id} '{title_preview}'"
+                    )
+
+                db.commit()
 
             progress_pct = 30 + int(25 * ((i + 1) / total))
             progress_service.publish_progress(
                 job_id, "extracting", progress_pct,
-                f"Extracted {fetched_count}/{total} transcripts...",
-                data={"transcripts_fetched": fetched_count, "transcripts_total": total},
+                f"Extracted {fetched_count}/{total} transcripts "
+                f"(reused {reused_count}, new {newly_processed_count})...",
+                data={
+                    "transcripts_fetched": fetched_count,
+                    "transcripts_total": total,
+                    "reused_count": reused_count,
+                    "newly_processed_count": newly_processed_count,
+                },
             )
 
         unavailable_count = total - fetched_count
-        logger.info(f"[job:{job_id}] Extraction complete: {fetched_count} fetched, "
-                    f"{unavailable_count} unavailable, {len(all_chunks)} total chunks")
+        logger.info(
+            f"[job:{job_id}] Extraction complete: {fetched_count} fetched "
+            f"(reused={reused_count}, new={newly_processed_count}), "
+            f"{unavailable_count} unavailable, {len(all_chunks)} total chunks"
+        )
 
         if fetched_count == 0:
             logger.error(f"[job:{job_id}] No transcripts fetched for any of {total} videos, failing job")
@@ -368,15 +498,30 @@ def resume_job_after_approval(self, job_id: str) -> None:
         progress_service.publish_status_change(job_id, "extracting", "building_rag",
                                                "Building knowledge base...")
 
-        collection_name = f"job_{job_id.replace('-', '_')}"
-        logger.info(f"[job:{job_id}] Building RAG: inserting {len(all_chunks)} chunks "
-                    f"into ChromaDB collection '{collection_name}'")
-        chroma_service.insert_chunks(job_id, all_chunks)
-        _update_job(db, job, chroma_collection_name=collection_name)
-        logger.info(f"[job:{job_id}] RAG built: {len(all_chunks)} chunks indexed in '{collection_name}'")
+        logger.info(
+            f"[job:{job_id}] Building RAG: inserting {len(new_chunks)} new chunks "
+            f"into global ChromaDB collection '{global_collection_name}' "
+            f"(skipped {len(all_chunks) - len(new_chunks)} already-embedded chunks)"
+        )
+        if new_chunks:
+            chroma_service.insert_chunks(new_chunks)
+        _update_job(db, job, chroma_collection_name=global_collection_name)
+        logger.info(
+            f"[job:{job_id}] RAG built: {len(new_chunks)} new chunks indexed in "
+            f"'{global_collection_name}' (total for this job: {len(all_chunks)})"
+        )
 
-        progress_service.publish_progress(job_id, "building_rag", 70,
-                                          f"Indexed {len(all_chunks)} chunks into knowledge base.")
+        progress_service.publish_progress(
+            job_id, "building_rag", 70,
+            f"Indexed {len(new_chunks)} new chunks into the library "
+            f"({len(all_chunks)} total for this job).",
+            data={
+                "reused_count": reused_count,
+                "newly_processed_count": newly_processed_count,
+                "new_chunks": len(new_chunks),
+                "total_chunks": len(all_chunks),
+            },
+        )
 
         # PHASE: GENERATING_REPORT
         if _is_cancelled(db, job_id):

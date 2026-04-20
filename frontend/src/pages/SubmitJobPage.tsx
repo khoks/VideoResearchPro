@@ -27,6 +27,7 @@ interface PersistedFormState {
   channelFilters: ChannelTypeOption[];
   channelList: string;
   videosPerChannel: number;
+  subscriptionChannels: string;
 }
 
 const DEFAULT_FORM: PersistedFormState = {
@@ -39,6 +40,7 @@ const DEFAULT_FORM: PersistedFormState = {
   channelFilters: [],
   channelList: '',
   videosPerChannel: 10,
+  subscriptionChannels: '',
 };
 
 function loadForm(): PersistedFormState {
@@ -61,9 +63,9 @@ function loadForm(): PersistedFormState {
   }
 }
 
-// Accept @handle, youtube.com/@handle, /channel/UC..., /c/name, /user/name
+// Accept @handle, youtube.com/@handle, /channel/UC..., /c/name, /user/name, or bare UC-IDs
 const CHANNEL_URL_RE =
-  /^(?:@[\w.-]{1,}|(?:https?:\/\/)?(?:www\.)?youtube\.com\/(?:@[\w.-]{1,}|channel\/[\w-]{1,}|c\/[\w.-]{1,}|user\/[\w.-]{1,})\/?)$/i;
+  /^(?:@[\w.-]{1,}|UC[\w-]{22}|(?:https?:\/\/)?(?:www\.)?youtube\.com\/(?:@[\w.-]{1,}|channel\/[\w-]{1,}|c\/[\w.-]{1,}|user\/[\w.-]{1,})\/?)$/i;
 
 function parseChannelList(raw: string): string[] {
   return raw
@@ -107,28 +109,43 @@ export function SubmitJobPage() {
 
   // Quota estimate: ~100 units per search query × 3 queries + ~1 per video for details.
   // Channel jobs: channel lookup (~1/channel) + playlistItems (~1 per 50 videos) + ~1/video details.
+  // Subscription jobs: ~100 units per channel to resolve + ~1 unit per 50 videos (walks all).
   const quotaEstimate = useMemo(() => {
     if (form.jobType === 'topic') {
       const searches = 100 * 3;
       const details = Math.max(0, form.numVideos) * 1;
       return searches + details;
     }
+    if (form.jobType === 'subscription') {
+      // Video count is unknown until resolve; assume a large channel (~500 videos) as upper estimate.
+      const channels = parseChannelList(form.subscriptionChannels).length;
+      const playlistCalls = channels * Math.ceil(500 / 50);
+      return channels * 100 + playlistCalls;
+    }
     const channels = parseChannelList(form.channelList).length;
     const playlistCalls = channels * Math.max(1, Math.ceil(form.videosPerChannel / 50));
     const details = channels * form.videosPerChannel;
     return channels + playlistCalls + details;
-  }, [form.jobType, form.numVideos, form.channelList, form.videosPerChannel]);
+  }, [
+    form.jobType,
+    form.numVideos,
+    form.channelList,
+    form.videosPerChannel,
+    form.subscriptionChannels,
+  ]);
 
   const invalidChannels = useMemo(() => {
-    if (form.jobType !== 'channel') return [];
-    return validateChannels(parseChannelList(form.channelList));
-  }, [form.jobType, form.channelList]);
+    if (form.jobType === 'channel') return validateChannels(parseChannelList(form.channelList));
+    if (form.jobType === 'subscription')
+      return validateChannels(parseChannelList(form.subscriptionChannels));
+    return [];
+  }, [form.jobType, form.channelList, form.subscriptionChannels]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
 
-    const data: JobCreate = { job_type: form.jobType, num_videos: form.numVideos };
+    const data: JobCreate = { job_type: form.jobType };
 
     if (form.jobType === 'topic') {
       if (!form.topic.trim()) {
@@ -136,14 +153,16 @@ export function SubmitJobPage() {
         return;
       }
       data.topic = form.topic.trim();
+      data.num_videos = form.numVideos;
       data.search_instructions = form.searchInstructions || undefined;
       if (form.minDuration) data.min_duration_minutes = parseInt(form.minDuration, 10);
       if (form.maxDuration) data.max_duration_minutes = parseInt(form.maxDuration, 10);
       if (form.channelFilters.length > 0) data.channel_type_filters = [...form.channelFilters];
     } else {
-      const lines = parseChannelList(form.channelList);
+      const raw = form.jobType === 'channel' ? form.channelList : form.subscriptionChannels;
+      const lines = parseChannelList(raw);
       if (lines.length === 0) {
-        setValidationError('Provide at least one channel URL or handle.');
+        setValidationError('Provide at least one channel URL, handle, or UC-ID.');
         return;
       }
       const invalid = validateChannels(lines);
@@ -154,9 +173,12 @@ export function SubmitJobPage() {
         return;
       }
       data.channel_list = lines;
-      data.videos_per_channel = form.videosPerChannel;
-      if (form.minDuration) data.min_duration_minutes = parseInt(form.minDuration, 10);
-      if (form.maxDuration) data.max_duration_minutes = parseInt(form.maxDuration, 10);
+      if (form.jobType === 'channel') {
+        data.videos_per_channel = form.videosPerChannel;
+        data.num_videos = form.numVideos;
+        if (form.minDuration) data.min_duration_minutes = parseInt(form.minDuration, 10);
+        if (form.maxDuration) data.max_duration_minutes = parseInt(form.maxDuration, 10);
+      }
     }
 
     try {
@@ -211,12 +233,18 @@ export function SubmitJobPage() {
           Topic Research
         </TypeToggle>
         <TypeToggle active={form.jobType === 'channel'} onClick={() => update('jobType', 'channel')}>
-          Channel Scrape
+          Channel List
+        </TypeToggle>
+        <TypeToggle
+          active={form.jobType === 'subscription'}
+          onClick={() => update('jobType', 'subscription')}
+        >
+          Channel Subscription
         </TypeToggle>
       </div>
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        {form.jobType === 'topic' ? (
+        {form.jobType === 'topic' && (
           <>
             <Field label="Research Topic *">
               <input
@@ -300,7 +328,9 @@ export function SubmitJobPage() {
               </div>
             </Field>
           </>
-        ) : (
+        )}
+
+        {form.jobType === 'channel' && (
           <>
             <Field label="YouTube Channels (one per line) *">
               <textarea
@@ -355,6 +385,44 @@ export function SubmitJobPage() {
           </>
         )}
 
+        {form.jobType === 'subscription' && (
+          <>
+            <div style={{
+              background: 'rgba(234, 179, 8, 0.08)',
+              border: '1px solid rgba(234, 179, 8, 0.4)',
+              borderRadius: 8,
+              padding: '0.8rem 1rem',
+              fontSize: '0.85rem',
+              color: 'var(--color-text)',
+              lineHeight: 1.5,
+            }}>
+              <strong>Note:</strong> Subscription jobs ingest <strong>every</strong> video from each
+              channel. Videos without YouTube captions will be transcribed with OpenAI Whisper
+              (this can incur significant API costs on large channels). Videos are added to the
+              shared library and reused across all future jobs.
+            </div>
+            <Field label="YouTube Channels (one per line) *">
+              <textarea
+                value={form.subscriptionChannels}
+                onChange={(e) => update('subscriptionChannels', e.target.value)}
+                placeholder={'@3blue1brown\n@Veritasium\nUCsXVk37bltHxD1rDPwtNM8Q'}
+                rows={5}
+                required
+              />
+            </Field>
+            {invalidChannels.length > 0 && (
+              <p style={{
+                margin: 0,
+                fontSize: '0.8rem',
+                color: '#ef4444',
+              }}>
+                Invalid entries: {invalidChannels.slice(0, 3).join(', ')}
+                {invalidChannels.length > 3 ? `, +${invalidChannels.length - 3} more` : ''}
+              </p>
+            )}
+          </>
+        )}
+
         <div style={{
           background: 'var(--color-surface-alt)',
           border: '1px solid var(--color-border)',
@@ -368,6 +436,12 @@ export function SubmitJobPage() {
           <span style={{ marginLeft: '0.5rem', color: 'var(--color-text-faint)' }}>
             (daily free quota: 10,000)
           </span>
+          {form.jobType === 'subscription' && (
+            <div style={{ marginTop: '0.4rem', color: 'var(--color-text-faint)' }}>
+              Approximate cost: 100 units per channel to resolve + ~1 unit per 50 videos on the
+              channel. A large channel with 500 videos is approximately 110 units.
+            </div>
+          )}
         </div>
 
         {validationError && (

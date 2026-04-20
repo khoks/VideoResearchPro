@@ -59,6 +59,7 @@ def chunk_transcript(
     chunk_size: int = 256,
     chunk_overlap: int = 32,
     video_metadata: dict | None = None,
+    transcription_source: str = "youtube",
 ) -> list[dict]:
     """
     Chunk a YouTube transcript into RAG-ready documents with timestamp mapping.
@@ -74,6 +75,12 @@ def chunk_transcript(
         chunk_overlap: Overlap tokens between consecutive chunks.
         video_metadata: {video_id, title, channel_name, channel_id, url,
             published_at, duration_seconds, language} to attach to every chunk.
+        transcription_source: Provenance tag for how the transcript was
+            produced. ``"youtube"`` (default) means it came from the YouTube
+            Transcript API; ``"whisper"`` means it was produced by the
+            OpenAI Whisper fallback. Propagated into per-chunk metadata
+            so downstream consumers can reason about quality/language
+            reliability.
 
     Returns:
         List of {text, metadata} dicts ready for ChromaDB insertion.
@@ -173,7 +180,8 @@ def chunk_transcript(
                 "timestamp_end": chunk["timestamp_end"],
                 "chunk_index": i,
                 "total_chunks": len(chunks),
-                "language": metadata.get("language", "en"),
+                "language": metadata.get("language", "unknown"),
+                "transcription_source": transcription_source,
                 "word_count": chunk["word_count"],
             },
         })

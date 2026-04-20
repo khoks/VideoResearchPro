@@ -34,6 +34,9 @@ class Job(Base):
     # Search metadata
     search_queries_used: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
 
+    # Subscription-job metadata: JSON array of {channel_id, name} for resolved channels
+    channel_list_resolved: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Results
     chroma_collection_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     report_path: Mapped[str | None] = mapped_column(String(500), nullable=True)

@@ -65,11 +65,13 @@ def client(db, auth_headers):
     with (
         patch("app.routers.jobs.execute_topic_job") as mock_topic,
         patch("app.routers.jobs.execute_channel_job") as mock_channel,
+        patch("app.routers.jobs.execute_subscription_job") as mock_subscription,
         patch("app.routers.jobs.resume_job_after_approval") as mock_resume,
     ):
         # Router code reads `.id` off AsyncResult to track the Celery task.
         mock_topic.delay.return_value = MagicMock(id="mock-topic-task-id")
         mock_channel.delay.return_value = MagicMock(id="mock-channel-task-id")
+        mock_subscription.delay.return_value = MagicMock(id="mock-subscription-task-id")
         mock_resume.delay.return_value = MagicMock(id="mock-resume-task-id")
         with TestClient(app, headers=auth_headers) as c:
             yield c
@@ -91,10 +93,12 @@ def unauthenticated_client(db):
     with (
         patch("app.routers.jobs.execute_topic_job") as mock_topic,
         patch("app.routers.jobs.execute_channel_job") as mock_channel,
+        patch("app.routers.jobs.execute_subscription_job") as mock_subscription,
         patch("app.routers.jobs.resume_job_after_approval") as mock_resume,
     ):
         mock_topic.delay.return_value = MagicMock(id="mock-topic-task-id")
         mock_channel.delay.return_value = MagicMock(id="mock-channel-task-id")
+        mock_subscription.delay.return_value = MagicMock(id="mock-subscription-task-id")
         mock_resume.delay.return_value = MagicMock(id="mock-resume-task-id")
         with TestClient(app) as c:
             yield c

@@ -571,6 +571,447 @@ def resume_job_after_approval(self, job_id: str) -> None:
         db.close()
 
 
+def _run_extraction_and_rag(self, db, job) -> None:
+    """Fetch transcripts for approved videos, chunk, and index them in ChromaDB.
+
+    Stops short of report generation — subscription jobs skip the report phase.
+    Shared between ``resume_job_after_approval`` semantics and subscription
+    ingest.
+    """
+    job_id = job.id
+    approved_videos = [v for v in job.videos if v.approved]
+    total = len(approved_videos)
+    logger.info(
+        f"[job:{job_id}] Starting extraction+RAG for {total} approved video(s) "
+        f"(job_type={job.job_type})"
+    )
+
+    _update_job(
+        db, job,
+        status="extracting",
+        progress_pct=30,
+        progress_message=f"Extracting transcripts (0/{total})...",
+        celery_task_id=self.request.id,
+    )
+    progress_service.publish_status_change(
+        job_id, job.status, "extracting",
+        f"Extracting transcripts for {total} videos...",
+    )
+
+    all_chunks: list[dict] = []
+    new_chunks: list[dict] = []
+    fetched_count = 0
+    reused_count = 0
+    newly_processed_count = 0
+
+    global_collection_name = getattr(
+        settings, "CHROMA_GLOBAL_COLLECTION_NAME", "videoresearchpro_global"
+    )
+
+    for i, video in enumerate(approved_videos):
+        if _is_cancelled(db, job_id):
+            logger.info(
+                f"[job:{job_id}] Job cancelled during extraction at video {i + 1}/{total}, exiting"
+            )
+            return
+
+        title_preview = (video.title or "")[:60]
+        already_fetched = video.transcript_status == "fetched"
+        already_embedded = bool(getattr(video, "embedded_in_chroma", False))
+
+        # Fully reused: re-chunk from the transcript cache without fetch/embed.
+        if already_fetched and already_embedded:
+            cached = _load_cached_segments(video.video_id)
+            if cached is not None:
+                segments, cached_language = cached
+                chunks = chunk_transcript(
+                    segments,
+                    chunk_size=settings.CHUNK_SIZE,
+                    chunk_overlap=settings.CHUNK_OVERLAP,
+                    video_metadata=_build_video_metadata(video, cached_language),
+                )
+                all_chunks.extend(chunks)
+                reused_count += 1
+                fetched_count += 1
+                logger.info(
+                    f"[job:{job_id}] [{i + 1}/{total}] Reusing library video: "
+                    f"video_id={video.video_id} '{title_preview}' -> {len(chunks)} chunks"
+                )
+            else:
+                already_fetched = False
+                already_embedded = False
+
+        if already_fetched and not already_embedded:
+            cached = _load_cached_segments(video.video_id)
+            if cached is not None:
+                segments, cached_language = cached
+                chunks = chunk_transcript(
+                    segments,
+                    chunk_size=settings.CHUNK_SIZE,
+                    chunk_overlap=settings.CHUNK_OVERLAP,
+                    video_metadata=_build_video_metadata(video, cached_language),
+                )
+                all_chunks.extend(chunks)
+                new_chunks.extend(chunks)
+                if hasattr(video, "embedded_in_chroma"):
+                    video.embedded_in_chroma = True
+                db.commit()
+                newly_processed_count += 1
+                fetched_count += 1
+                logger.info(
+                    f"[job:{job_id}] [{i + 1}/{total}] Embedding cached transcript: "
+                    f"video_id={video.video_id} '{title_preview}' -> {len(chunks)} chunks"
+                )
+            else:
+                already_fetched = False
+
+        if not already_fetched:
+            logger.info(
+                f"[job:{job_id}] [{i + 1}/{total}] Fetching transcript: "
+                f"video_id={video.video_id} '{title_preview}'"
+            )
+            fetch_result = youtube_service.fetch_transcript(
+                video.video_id,
+                language=settings.DEFAULT_TRANSCRIPT_LANGUAGE,
+                job_id=job_id,
+            )
+
+            if fetch_result:
+                transcript, actual_language = fetch_result
+                word_count = sum(len(seg.get("text", "").split()) for seg in transcript)
+
+                video.transcript_status = "fetched"
+                video.transcript_word_count = word_count
+                video.transcript_language = actual_language
+                if hasattr(video, "transcripted_at"):
+                    video.transcripted_at = datetime.now(timezone.utc)
+                if hasattr(video, "transcript_source"):
+                    video.transcript_source = "youtube"
+
+                chunks = chunk_transcript(
+                    transcript,
+                    chunk_size=settings.CHUNK_SIZE,
+                    chunk_overlap=settings.CHUNK_OVERLAP,
+                    video_metadata=_build_video_metadata(video, actual_language),
+                )
+                all_chunks.extend(chunks)
+                new_chunks.extend(chunks)
+
+                if hasattr(video, "embedded_in_chroma"):
+                    video.embedded_in_chroma = True
+
+                newly_processed_count += 1
+                fetched_count += 1
+                logger.info(
+                    f"[job:{job_id}] [{i + 1}/{total}] Transcript OK: "
+                    f"{word_count} words -> {len(chunks)} chunks (video_id={video.video_id})"
+                )
+            else:
+                video.transcript_status = "unavailable"
+                logger.warning(
+                    f"[job:{job_id}] [{i + 1}/{total}] Transcript unavailable: "
+                    f"video_id={video.video_id} '{title_preview}'"
+                )
+
+            db.commit()
+
+        progress_pct = 30 + int(25 * ((i + 1) / total)) if total else 55
+        progress_service.publish_progress(
+            job_id, "extracting", progress_pct,
+            f"Extracted {fetched_count}/{total} transcripts "
+            f"(reused {reused_count}, new {newly_processed_count})...",
+            data={
+                "transcripts_fetched": fetched_count,
+                "transcripts_total": total,
+                "reused_count": reused_count,
+                "newly_processed_count": newly_processed_count,
+            },
+        )
+
+    unavailable_count = total - fetched_count
+    logger.info(
+        f"[job:{job_id}] Extraction complete: {fetched_count} fetched "
+        f"(reused={reused_count}, new={newly_processed_count}), "
+        f"{unavailable_count} unavailable, {len(all_chunks)} total chunks"
+    )
+
+    if fetched_count == 0:
+        logger.error(
+            f"[job:{job_id}] No transcripts fetched for any of {total} videos, failing job"
+        )
+        _update_job(
+            db, job,
+            status="failed",
+            error_message="No transcripts could be fetched for any video.",
+        )
+        progress_service.publish_error(job_id, "No transcripts available.")
+        return
+
+    if _is_cancelled(db, job_id):
+        logger.info(f"[job:{job_id}] Job cancelled before RAG build, exiting")
+        return
+
+    _update_job(
+        db, job,
+        status="building_rag",
+        progress_pct=60,
+        progress_message="Building knowledge base...",
+    )
+    progress_service.publish_status_change(
+        job_id, "extracting", "building_rag", "Building knowledge base..."
+    )
+
+    logger.info(
+        f"[job:{job_id}] Building RAG: inserting {len(new_chunks)} new chunks "
+        f"into global ChromaDB collection '{global_collection_name}' "
+        f"(skipped {len(all_chunks) - len(new_chunks)} already-embedded chunks)"
+    )
+    if new_chunks:
+        chroma_service.insert_chunks(new_chunks)
+    _update_job(db, job, chroma_collection_name=global_collection_name)
+    logger.info(
+        f"[job:{job_id}] RAG built: {len(new_chunks)} new chunks indexed in "
+        f"'{global_collection_name}' (total for this job: {len(all_chunks)})"
+    )
+
+    progress_service.publish_progress(
+        job_id, "building_rag", 70,
+        f"Indexed {len(new_chunks)} new chunks into the library "
+        f"({len(all_chunks)} total for this job).",
+        data={
+            "reused_count": reused_count,
+            "newly_processed_count": newly_processed_count,
+            "new_chunks": len(new_chunks),
+            "total_chunks": len(all_chunks),
+        },
+    )
+
+
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=60)
+def execute_subscription_job(self, job_id: str) -> None:
+    """Fire-and-forget subscription ingest: resolve channels, walk uploads, extract, embed.
+
+    Skips the approval pause and the report phase. Channels are upserted into
+    the global ``channels`` table and marked ``subscribed=True``. All uploads
+    are ingested as approved videos so the existing extraction pipeline runs
+    untouched.
+    """
+    db = SessionLocal()
+    try:
+        job = _get_job(db, job_id)
+        if not job:
+            logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
+            return
+
+        channel_inputs = json.loads(job.channel_list) if job.channel_list else []
+        logger.info(
+            f"[job:{job_id}] Subscription job starting: {len(channel_inputs)} channel input(s)"
+        )
+
+        _update_job(
+            db, job,
+            status="searching",
+            progress_pct=5,
+            progress_message="Resolving channels...",
+            celery_task_id=self.request.id,
+        )
+        progress_service.publish_status_change(
+            job_id, "pending", "searching", "Resolving channels..."
+        )
+
+        if _is_cancelled(db, job_id):
+            logger.info(f"[job:{job_id}] Job cancelled before channel resolve, exiting")
+            return
+
+        resolved_channels: list[dict] = []
+
+        # Phase 1: resolve + upsert channels
+        for i, channel_input in enumerate(channel_inputs):
+            if _is_cancelled(db, job_id):
+                logger.info(f"[job:{job_id}] Job cancelled mid channel-resolve, exiting")
+                return
+
+            progress_service.publish_progress(
+                job_id, "searching", 5 + int(10 * (i / max(1, len(channel_inputs)))),
+                f"Resolving channel {i + 1}/{len(channel_inputs)}: {channel_input}",
+            )
+
+            channel_id = youtube_service.resolve_channel_id(channel_input, job_id=job_id)
+            if not channel_id:
+                logger.warning(
+                    f"[job:{job_id}] Could not resolve channel: '{channel_input}', skipping"
+                )
+                continue
+
+            metadata = youtube_service.get_channel_metadata(channel_id, job_id=job_id)
+            if not metadata:
+                logger.warning(
+                    f"[job:{job_id}] Could not fetch metadata for channel {channel_id}, skipping"
+                )
+                continue
+
+            channel = db.query(Channel).filter(Channel.channel_id == channel_id).first()
+            if channel is None:
+                channel = Channel(
+                    channel_id=channel_id,
+                    name=metadata.get("name", ""),
+                    uploads_playlist_id=metadata.get("uploads_playlist_id"),
+                    subscriber_count=metadata.get("subscriber_count"),
+                    subscribed=True,
+                )
+                db.add(channel)
+            else:
+                channel.name = metadata.get("name", channel.name)
+                channel.uploads_playlist_id = metadata.get(
+                    "uploads_playlist_id", channel.uploads_playlist_id
+                )
+                channel.subscriber_count = metadata.get(
+                    "subscriber_count", channel.subscriber_count
+                )
+                channel.subscribed = True
+            db.commit()
+
+            resolved_channels.append({
+                "channel_id": channel_id,
+                "name": channel.name,
+                "uploads_playlist_id": channel.uploads_playlist_id,
+            })
+
+        if not resolved_channels:
+            msg = (
+                f"None of the {len(channel_inputs)} channel(s) could be resolved. "
+                "Check the channel URLs/handles and try again."
+            )
+            logger.warning(f"[job:{job_id}] {msg}")
+            _handle_failure(db, job_id, msg)
+            return
+
+        # channel_list_resolved stores the user-facing summary only;
+        # the uploads_playlist_id stays on the Channel row.
+        job.channel_list_resolved = json.dumps(
+            [{"channel_id": c["channel_id"], "name": c["name"]} for c in resolved_channels]
+        )
+        db.commit()
+
+        # Phase 2: walk uploads, fetch details, insert Video rows
+        if _is_cancelled(db, job_id):
+            logger.info(f"[job:{job_id}] Job cancelled before uploads walk, exiting")
+            return
+
+        progress_service.publish_progress(
+            job_id, "searching", 18,
+            f"Resolved {len(resolved_channels)} channel(s). Walking uploads...",
+        )
+
+        # Videos already linked to this job from prior partial runs.
+        linked_video_ids = {
+            jv.video_id for jv in db.query(JobVideo.video_id).filter(JobVideo.job_id == job_id).all()
+        }
+        total_ingested = 0
+
+        for i, entry in enumerate(resolved_channels):
+            if _is_cancelled(db, job_id):
+                logger.info(f"[job:{job_id}] Job cancelled mid uploads walk, exiting")
+                return
+
+            channel_id = entry["channel_id"]
+            name = entry["name"]
+            progress_service.publish_progress(
+                job_id, "searching", 18 + int(7 * (i / max(1, len(resolved_channels)))),
+                f"Walking uploads for {name} ({i + 1}/{len(resolved_channels)})",
+            )
+
+            video_ids = youtube_service.get_channel_videos_all(
+                channel_id,
+                job_id=job_id,
+                uploads_playlist_id=entry.get("uploads_playlist_id"),
+            )
+            unlinked_ids = [vid for vid in video_ids if vid not in linked_video_ids]
+            logger.info(
+                f"[job:{job_id}] Channel {channel_id}: {len(video_ids)} videos "
+                f"({len(unlinked_ids)} to link to this job)"
+            )
+
+            if unlinked_ids:
+                # Fetch details for videos not yet in the global library so we
+                # populate Video rows with accurate metadata. _upsert_video_and_link
+                # tolerates pre-existing Video rows and just creates the JobVideo.
+                missing_from_library = [
+                    vid for vid in unlinked_ids if db.get(Video, vid) is None
+                ]
+                details: dict = {}
+                if missing_from_library:
+                    details = youtube_service.get_video_details(
+                        missing_from_library, job_id=job_id
+                    )
+                for vid in unlinked_ids:
+                    info = details.get(vid) or {}
+                    _upsert_video_and_link(db, job_id, {
+                        "video_id": vid,
+                        "title": info.get("title", "Unknown"),
+                        "channel_id": info.get("channel_id", channel_id),
+                        "channel_name": info.get("channel_name", name),
+                        "url": info.get("url", f"https://www.youtube.com/watch?v={vid}"),
+                        "duration_seconds": info.get("duration_seconds", 0),
+                        "thumbnail_url": info.get("thumbnail_url"),
+                        "published_at": info.get("published_at"),
+                        "selection_reason": "subscription",
+                    })
+                    linked_video_ids.add(vid)
+                    total_ingested += 1
+                db.commit()
+
+            # Update last_synced_at on the channel once all its uploads are staged.
+            channel = db.query(Channel).filter(Channel.channel_id == channel_id).first()
+            if channel is not None:
+                channel.last_synced_at = datetime.now(timezone.utc)
+                db.commit()
+
+            progress_service.publish_progress(
+                job_id, "searching", 18 + int(7 * ((i + 1) / max(1, len(resolved_channels)))),
+                f"{total_ingested} videos ingested so far...",
+            )
+
+        logger.info(
+            f"[job:{job_id}] Subscription uploads walk complete: "
+            f"{total_ingested} new video(s) ingested"
+        )
+
+        db.refresh(job)
+        if not job.videos:
+            msg = "No videos were found in any subscribed channel."
+            logger.warning(f"[job:{job_id}] {msg}")
+            _handle_failure(db, job_id, msg)
+            return
+
+        # Phase 3: extraction + RAG (skip report).
+        _run_extraction_and_rag(self, db, job)
+
+        db.refresh(job)
+        if job.status in ("failed", "cancelled"):
+            return
+
+        # Skip generating_report — subscription jobs produce no report.
+        _update_job(
+            db, job,
+            status="completed",
+            progress_pct=100,
+            progress_message="Subscription sync completed successfully!",
+            report_path=None,
+            completed_at=datetime.now(timezone.utc),
+        )
+        progress_service.publish_status_change(
+            job_id, "building_rag", "completed", "Subscription sync completed successfully!"
+        )
+        logger.info(f"[job:{job_id}] Subscription job COMPLETED")
+
+    except Exception as e:
+        logger.exception(f"[job:{job_id}] Subscription job failed: {e}")
+        _handle_failure(db, job_id, str(e))
+    finally:
+        db.close()
+
+
 def _handle_failure(db, job_id: str, error: str) -> None:
     """Set job to failed and publish error."""
     # Translate YouTube quota exhaustion into a user-friendly message.

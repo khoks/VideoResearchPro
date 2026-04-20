@@ -7,7 +7,12 @@ from app.dependencies import get_current_user, get_db
 from app.schemas.job import JobCreate, JobResponse, VideoApproval
 from app.schemas.video import VideoResponse
 from app.services import chroma_service, job_service, report_service
-from app.tasks.job_tasks import execute_channel_job, execute_topic_job, resume_job_after_approval
+from app.tasks.job_tasks import (
+    execute_channel_job,
+    execute_subscription_job,
+    execute_topic_job,
+    resume_job_after_approval,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +32,8 @@ def create_job(job_data: JobCreate, db: Session = Depends(get_db)):
 
     if job_data.job_type == "topic":
         async_result = execute_topic_job.delay(job.id)
+    elif job_data.job_type == "subscription":
+        async_result = execute_subscription_job.delay(job.id)
     else:
         async_result = execute_channel_job.delay(job.id)
 

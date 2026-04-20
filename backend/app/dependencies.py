@@ -1,7 +1,7 @@
 from collections.abc import Generator
 
 import redis
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -34,10 +34,7 @@ def get_redis() -> redis.Redis:
     return _redis_client
 
 
-def get_current_user(
-    token: str | None = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> User:
+def _resolve_user(token: str | None, db: Session) -> User:
     credentials_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -58,3 +55,21 @@ def get_current_user(
     if not user:
         raise credentials_exc
     return user
+
+
+def get_current_user(
+    token: str | None = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    return _resolve_user(token, db)
+
+
+def get_user_from_query_or_header(
+    header_token: str | None = Depends(oauth2_scheme),
+    query_token: str | None = Query(None, alias="token"),
+    db: Session = Depends(get_db),
+) -> User:
+    # Scoped fallback for requests that can't set an Authorization header
+    # (e.g. <iframe src>, window.open). Only apply to read-only endpoints —
+    # query-string tokens leak via server logs and Referer headers.
+    return _resolve_user(header_token or query_token, db)

@@ -9,6 +9,7 @@ import { ProgressBar } from '../components/common/ProgressBar';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { formatDuration, formatDate, statusColor } from '../utils/formatters';
 import { useJobStore } from '../stores/jobStore';
+import { useAuth } from '../contexts/AuthContext';
 import type { Video } from '../types/video';
 import type { QAExchange } from '../types/qa';
 
@@ -262,7 +263,15 @@ function VideoApprovalSection({ videos, jobId, onApprove }: {
 }
 
 function ReportModal({ jobId, onClose }: { jobId: string; onClose: () => void }) {
-  const reportUrl = `/api/v1/jobs/${jobId}/report`;
+  // The /report endpoint is protected by JWT. An <iframe src> (and window.open
+  // via target="_blank") is a plain browser navigation that cannot carry the
+  // Authorization header our axios interceptor adds, so we thread the token
+  // through a scoped ?token= query param that the backend accepts only on this
+  // single read-only route.
+  const { token } = useAuth();
+  const reportUrl = token
+    ? `/api/v1/jobs/${jobId}/report?token=${encodeURIComponent(token)}`
+    : `/api/v1/jobs/${jobId}/report`;
 
   return (
     <div style={{

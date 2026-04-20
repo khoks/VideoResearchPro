@@ -9,9 +9,9 @@ languages at comparable quality.
 
 Why multilingual matters here:
 
-* Whisper auto-detects the spoken language and transcribes natively
-  (``task="transcribe"``), so proper nouns stay in their original script
-  (Devanagari, Cyrillic, Perso-Arabic, etc.).
+* Whisper auto-detects the spoken language and transcribes natively via
+  OpenAI's ``audio.transcriptions.create`` endpoint, so proper nouns stay
+  in their original script (Devanagari, Cyrillic, Perso-Arabic, etc.).
 * Code-mixed audio (e.g. Hindi-English) is captured as-is without being
   translated to English.
 * Using a multilingual embedder means a Hindi transcript chunk and an

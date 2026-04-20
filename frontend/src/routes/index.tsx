@@ -3,14 +3,11 @@ import { AppLayout } from '../layouts/AppLayout';
 import { SubmitJobPage } from '../pages/SubmitJobPage';
 import { JobsListPage } from '../pages/JobsListPage';
 import { JobDetailPage } from '../pages/JobDetailPage';
+import { LibraryPage } from '../pages/LibraryPage';
 import { LibraryQAPage } from '../pages/LibraryQAPage';
 import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
 import { useAuth } from '../contexts/AuthContext';
-
-function LibraryPagePlaceholder() {
-  return <div>Library</div>;
-}
 
 function ProtectedRoute() {
   const { isAuthenticated } = useAuth();
@@ -48,7 +45,7 @@ export const router = createBrowserRouter([
           { path: 'submit', element: <SubmitJobPage /> },
           { path: 'jobs', element: <JobsListPage /> },
           { path: 'jobs/:jobId', element: <JobDetailPage /> },
-          { path: 'library', element: <LibraryPagePlaceholder /> },
+          { path: 'library', element: <LibraryPage /> },
           { path: 'library/qa', element: <LibraryQAPage /> },
         ],
       },

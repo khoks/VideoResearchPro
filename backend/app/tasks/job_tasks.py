@@ -18,6 +18,30 @@ from app.utils.html_builder import build_report_html, save_report
 logger = logging.getLogger(__name__)
 
 
+def _parse_published_at(value) -> datetime | None:
+    """Coerce a YouTube `publishedAt` field into a datetime.
+
+    YouTube returns ISO-8601 strings like `"2016-05-26T20:59:04Z"`. SQLAlchemy's
+    SQLite DateTime column only accepts `datetime` objects, so we parse strings
+    here and pass through anything already `datetime`-typed.
+    """
+    if value is None or isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return None
+        # Python's fromisoformat handles trailing 'Z' from 3.11+.
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        try:
+            return datetime.fromisoformat(s)
+        except ValueError:
+            logger.warning("Could not parse published_at=%r; dropping", value)
+            return None
+    return None
+
+
 def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
     """Insert/refresh a global Video, its Channel, and the JobVideo link.
 
@@ -48,7 +72,7 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
             title=data.get("title", "Unknown"),
             url=data.get("url", f"https://www.youtube.com/watch?v={video_id}"),
             duration_seconds=data.get("duration_seconds", 0),
-            published_at=data.get("published_at"),
+            published_at=_parse_published_at(data.get("published_at")),
             thumbnail_url=data.get("thumbnail_url"),
             description=data.get("description"),
         ))

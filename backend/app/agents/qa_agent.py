@@ -515,17 +515,20 @@ def _query_library(query_text: str) -> list[dict]:
     the legacy per-job signature (with a sentinel global-collection id) if the
     new signature isn't available yet so Unit 6 is robust to merge ordering.
     """
+    # Pass the query positionally: Unit 2 kept the first param name as
+    # `query_or_job_id` for backward compat with the old per-job signature,
+    # so `query_text=` as a kwarg raises TypeError.
     try:
         return chroma_service.query_collection(
-            query_text=query_text,
+            query_text,
             n_results=settings.RAG_TOP_K,
             video_ids=None,
             distance_threshold=settings.RAG_DISTANCE_THRESHOLD,
         )
     except TypeError:
-        logger.info(
-            "chroma_service.query_collection lacks new library-wide signature; "
-            "falling back to legacy per-job call (library-wide search unavailable)."
+        logger.exception(
+            "chroma_service.query_collection unexpected signature; "
+            "library-wide search unavailable."
         )
         return []
 

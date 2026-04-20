@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, get_user_from_query_or_header
 from app.models.qa_exchange import QAExchange
 from app.schemas.qa import ClarifyRequest, ClarifyResponse, QARequest, QAResponse, Reference
 from app.services import job_service, report_service
@@ -13,14 +13,20 @@ from app.services.llm_service import get_llm
 
 logger = logging.getLogger(__name__)
 
+# Per-route auth because /report accepts a query-string token fallback
+# (iframes can't set Authorization headers) while the rest of this router
+# requires a header-bearer JWT.
 router = APIRouter(
     prefix="/jobs/{job_id}",
     tags=["qa"],
-    dependencies=[Depends(get_current_user)],
 )
 
 
-@router.get("/report", response_class=HTMLResponse)
+@router.get(
+    "/report",
+    response_class=HTMLResponse,
+    dependencies=[Depends(get_user_from_query_or_header)],
+)
 def get_report(job_id: str, db: Session = Depends(get_db)):
     job = job_service.get_job(db, job_id)
     if not job:
@@ -34,7 +40,11 @@ def get_report(job_id: str, db: Session = Depends(get_db)):
     return HTMLResponse(content=html)
 
 
-@router.post("/qa/clarify", response_model=ClarifyResponse)
+@router.post(
+    "/qa/clarify",
+    response_model=ClarifyResponse,
+    dependencies=[Depends(get_current_user)],
+)
 def clarify_question(job_id: str, request: ClarifyRequest, db: Session = Depends(get_db)):
     job = job_service.get_job(db, job_id)
     if not job:
@@ -72,7 +82,11 @@ def clarify_question(job_id: str, request: ClarifyRequest, db: Session = Depends
     )
 
 
-@router.post("/qa", response_model=QAResponse)
+@router.post(
+    "/qa",
+    response_model=QAResponse,
+    dependencies=[Depends(get_current_user)],
+)
 def ask_question(job_id: str, request: QARequest, db: Session = Depends(get_db)):
     job = job_service.get_job(db, job_id)
     if not job:
@@ -119,7 +133,11 @@ def ask_question(job_id: str, request: QARequest, db: Session = Depends(get_db))
     )
 
 
-@router.get("/qa", response_model=list[QAResponse])
+@router.get(
+    "/qa",
+    response_model=list[QAResponse],
+    dependencies=[Depends(get_current_user)],
+)
 def get_qa_history(job_id: str, limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
     job = job_service.get_job(db, job_id)
     if not job:

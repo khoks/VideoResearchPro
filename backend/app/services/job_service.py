@@ -73,8 +73,9 @@ def delete_job(db: Session, job_id: str) -> bool:
 
 def job_to_response_dict(job: Job) -> dict:
     """Convert a Job ORM object to a dict suitable for JobResponse."""
-    video_count = len(job.videos) if job.videos else 0
-    transcript_count = sum(1 for v in job.videos if v.transcript_status == "fetched") if job.videos else 0
+    videos = job.videos or []
+    video_count = len(videos)
+    transcript_count = sum(1 for v in videos if v.transcript_status == "fetched")
 
     return {
         "id": job.id,
@@ -99,3 +100,39 @@ def job_to_response_dict(job: Job) -> dict:
         "transcript_count": transcript_count,
         "has_report": job.report_path is not None,
     }
+
+
+def job_videos_response(job: Job) -> list[dict]:
+    """Build the video list response for a job, stitching per-job approval
+    state from the JobVideo join onto the global Video rows.
+
+    The shape matches the pre-refactor `/jobs/{id}/videos` response so existing
+    API consumers keep working.
+    """
+    approval_by_video: dict[str, bool] = {
+        jv.video_id: jv.approved for jv in (job.job_videos or [])
+    }
+
+    results: list[dict] = []
+    for v in job.videos or []:
+        results.append({
+            # Pre-refactor shape had an internal UUID `id`; we now expose the
+            # YouTube `video_id` under both names for back-compat.
+            "id": v.video_id,
+            "video_id": v.video_id,
+            "title": v.title,
+            "channel_name": v.channel_name,
+            "channel_id": v.channel_id,
+            "url": v.url,
+            "duration_seconds": v.duration_seconds,
+            "published_at": v.published_at,
+            "thumbnail_url": v.thumbnail_url,
+            "description": v.description,
+            "approved": approval_by_video.get(v.video_id, True),
+            "transcript_status": v.transcript_status,
+            "transcript_word_count": v.transcript_word_count,
+            "transcript_language": v.transcript_language,
+            "transcript_source": v.transcript_source,
+            "embedded_in_chroma": v.embedded_in_chroma,
+        })
+    return results

@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class JobCreate(BaseModel):
-    job_type: Literal["topic", "channel"]
+    job_type: Literal["topic", "channel", "subscription"]
 
     # Topic fields
     topic: str | None = None

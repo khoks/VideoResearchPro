@@ -11,7 +11,7 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    job_type: Mapped[str] = mapped_column(String(20))  # "topic" | "channel"
+    job_type: Mapped[str] = mapped_column(String(20))  # "topic" | "channel" | "subscription"
     status: Mapped[str] = mapped_column(String(30), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
@@ -47,8 +47,20 @@ class Job(Base):
     celery_task_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Relationships
+    # Videos are a globally deduplicated library (one `videos` row per YouTube
+    # video_id). The `job_videos` join carries per-job approval/audit state.
+    # The attribute name `videos` is preserved for backward compatibility so
+    # existing callers (`job.videos`) keep working.
     videos: Mapped[list["Video"]] = relationship(  # noqa: F821
-        back_populates="job", cascade="all, delete-orphan"
+        "Video",
+        secondary="job_videos",
+        viewonly=True,
+        lazy="select",
+    )
+    job_videos: Mapped[list["JobVideo"]] = relationship(  # noqa: F821
+        "JobVideo",
+        cascade="all, delete-orphan",
+        lazy="select",
     )
     qa_exchanges: Mapped[list["QAExchange"]] = relationship(  # noqa: F821
         back_populates="job", cascade="all, delete-orphan"

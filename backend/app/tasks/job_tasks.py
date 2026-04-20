@@ -5,7 +5,9 @@ from datetime import datetime, timezone
 
 from app.config import settings
 from app.database import SessionLocal
+from app.models.channel import Channel
 from app.models.job import Job
+from app.models.job_video import JobVideo
 from app.models.video import Video
 from app.services import chroma_service, progress_service, youtube_service
 from app.tasks.celery_app import celery_app
@@ -13,6 +15,62 @@ from app.utils.chunking import chunk_transcript
 from app.utils.html_builder import build_report_html, save_report
 
 logger = logging.getLogger(__name__)
+
+
+def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
+    """Insert/refresh a global Video, its Channel, and the JobVideo link.
+
+    `data` is the search-result dict from the Search Agent or YouTube service
+    (keys: video_id, title, channel_id, channel_name, url, duration_seconds,
+    thumbnail_url, description, selection_reason). Missing keys are tolerated.
+
+    Existing Video rows are preserved with their transcript/embedding state;
+    only lightweight surface metadata (title, thumbnail, url) is refreshed.
+    Uses Session.get() so repeated lookups within one batch hit the identity
+    map instead of the database.
+    """
+    video_id = data.get("video_id") or ""
+    if not video_id:
+        return
+
+    channel_id = data.get("channel_id") or None
+    channel_name = data.get("channel_name") or ""
+
+    if channel_id and db.get(Channel, channel_id) is None:
+        db.add(Channel(channel_id=channel_id, name=channel_name or channel_id))
+
+    video = db.get(Video, video_id)
+    if video is None:
+        db.add(Video(
+            video_id=video_id,
+            channel_id=channel_id,
+            title=data.get("title", "Unknown"),
+            url=data.get("url", f"https://www.youtube.com/watch?v={video_id}"),
+            duration_seconds=data.get("duration_seconds", 0),
+            published_at=data.get("published_at"),
+            thumbnail_url=data.get("thumbnail_url"),
+            description=data.get("description"),
+        ))
+    else:
+        new_title = data.get("title")
+        new_thumb = data.get("thumbnail_url")
+        new_url = data.get("url")
+        if new_title:
+            video.title = new_title
+        if new_thumb:
+            video.thumbnail_url = new_thumb
+        if new_url:
+            video.url = new_url
+        if channel_id and not video.channel_id:
+            video.channel_id = channel_id
+
+    if db.get(JobVideo, (job_id, video_id)) is None:
+        db.add(JobVideo(
+            job_id=job_id,
+            video_id=video_id,
+            approved=True,
+            selection_reason=data.get("selection_reason"),
+        ))
 
 
 def _get_job(db, job_id: str) -> Job | None:
@@ -74,21 +132,9 @@ def execute_topic_job(self, job_id: str) -> None:
         progress_service.publish_progress(job_id, "searching", 15,
                                           f"Found {len(curated_videos)} videos. Fetching details...")
 
-        # Save videos to DB
+        # Save videos to the global library and link to this job.
         for v in curated_videos:
-            video = Video(
-                job_id=job_id,
-                video_id=v.get("video_id", ""),
-                title=v.get("title", "Unknown"),
-                channel_name=v.get("channel_name", "Unknown"),
-                channel_id=v.get("channel_id", ""),
-                url=v.get("url", f"https://www.youtube.com/watch?v={v.get('video_id', '')}"),
-                duration_seconds=v.get("duration_seconds", 0),
-                published_at=None,
-                thumbnail_url=v.get("thumbnail_url"),
-                approved=True,
-            )
-            db.add(video)
+            _upsert_video_and_link(db, job_id, v)
         db.commit()
         logger.info(f"[job:{job_id}] {len(curated_videos)} videos saved to DB, awaiting user approval")
 
@@ -181,18 +227,7 @@ def execute_channel_job(self, job_id: str) -> None:
                 if job.max_duration_minutes and dur_min > job.max_duration_minutes:
                     continue
 
-                video = Video(
-                    job_id=job_id,
-                    video_id=vid,
-                    title=info.get("title", "Unknown"),
-                    channel_name=info.get("channel_name", "Unknown"),
-                    channel_id=info.get("channel_id", ""),
-                    url=info.get("url", f"https://www.youtube.com/watch?v={vid}"),
-                    duration_seconds=info.get("duration_seconds", 0),
-                    thumbnail_url=info.get("thumbnail_url"),
-                    approved=True,
-                )
-                db.add(video)
+                _upsert_video_and_link(db, job_id, {"video_id": vid, **info})
                 accepted_count += 1
             db.commit()
 

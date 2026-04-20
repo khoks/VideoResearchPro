@@ -93,6 +93,9 @@ def job_to_response_dict(job: Job) -> dict:
         "channel_list": json.loads(job.channel_list) if job.channel_list else None,
         "videos_per_channel": job.videos_per_channel,
         "search_queries_used": json.loads(job.search_queries_used) if job.search_queries_used else None,
+        "channel_list_resolved": (
+            json.loads(job.channel_list_resolved) if job.channel_list_resolved else None
+        ),
         "progress_pct": job.progress_pct,
         "progress_message": job.progress_message,
         "error_message": job.error_message,

@@ -301,6 +301,116 @@ def get_channel_videos(
     return video_ids
 
 
+def get_channel_videos_all(
+    channel_id: str,
+    job_id: str = "",
+    uploads_playlist_id: str | None = None,
+) -> list[str]:
+    """Walk every page of a channel's uploads playlist and return all video IDs.
+
+    Unlike ``get_channel_videos`` this imposes no cap — it paginates via
+    ``nextPageToken`` until exhausted. Costs 1 quota unit per 50 items
+    (each ``playlistItems.list`` page).
+
+    Args:
+        channel_id: Canonical YouTube channel ID (``UC...``).
+        job_id: Optional job tag for log correlation.
+        uploads_playlist_id: Pre-resolved uploads playlist ID. Providing it
+            skips an extra ``channels.list`` round trip (1 quota unit).
+
+    Returns:
+        List of YouTube video IDs in the channel's uploads playlist.
+    """
+    tag = f"[job:{job_id}]" if job_id else ""
+    logger.info(f"{tag} get_channel_videos_all: channel_id={channel_id}")
+    youtube = get_youtube_client()
+
+    if not uploads_playlist_id:
+        channel_response = _execute_youtube_request(
+            youtube.channels().list(part="contentDetails", id=channel_id),
+            "channels",
+        )
+        items = channel_response.get("items", [])
+        if not items:
+            logger.warning(
+                f"{tag} get_channel_videos_all: channel {channel_id} not found or has no content"
+            )
+            return []
+        uploads_playlist_id = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+
+    logger.info(f"{tag} get_channel_videos_all: uploads playlist={uploads_playlist_id}")
+
+    video_ids: list[str] = []
+    next_page_token: str | None = None
+    page = 0
+
+    while True:
+        page += 1
+        playlist_response = _execute_youtube_request(
+            youtube.playlistItems().list(
+                part="contentDetails",
+                playlistId=uploads_playlist_id,
+                maxResults=50,
+                pageToken=next_page_token,
+            ),
+            "playlistItems",
+        )
+
+        page_items = playlist_response.get("items", [])
+        for item in page_items:
+            vid = item.get("contentDetails", {}).get("videoId")
+            if vid:
+                video_ids.append(vid)
+
+        logger.info(
+            f"{tag} get_channel_videos_all: page {page} fetched {len(page_items)} items "
+            f"(total so far: {len(video_ids)})"
+        )
+
+        next_page_token = playlist_response.get("nextPageToken")
+        if not next_page_token:
+            break
+
+    logger.info(
+        f"{tag} get_channel_videos_all: done — {len(video_ids)} video IDs from channel {channel_id}"
+    )
+    return video_ids
+
+
+def get_channel_metadata(channel_id: str, job_id: str = "") -> dict | None:
+    """Fetch channel name, uploads playlist ID, and subscriber count.
+
+    Costs 1 quota unit (``channels.list``). Returns ``None`` when the channel
+    cannot be resolved.
+    """
+    tag = f"[job:{job_id}]" if job_id else ""
+    logger.info(f"{tag} get_channel_metadata: channel_id={channel_id}")
+    youtube = get_youtube_client()
+    response = _execute_youtube_request(
+        youtube.channels().list(
+            part="snippet,contentDetails,statistics",
+            id=channel_id,
+        ),
+        "channels",
+    )
+    items = response.get("items", [])
+    if not items:
+        return None
+    item = items[0]
+    snippet = item.get("snippet", {})
+    content = item.get("contentDetails", {})
+    stats = item.get("statistics", {})
+    subs: int | None = None
+    if not stats.get("hiddenSubscriberCount"):
+        subs = _safe_int(stats.get("subscriberCount"))
+    return {
+        "channel_id": item.get("id", channel_id),
+        "name": snippet.get("title", ""),
+        "uploads_playlist_id": content.get("relatedPlaylists", {}).get("uploads"),
+        "subscriber_count": subs,
+    }
+
+
 def resolve_channel_id(channel_input: str, job_id: str = "") -> str | None:
     """
     Resolve a channel URL, handle, or name to a channel ID.

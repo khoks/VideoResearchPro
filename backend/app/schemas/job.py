@@ -25,6 +25,8 @@ class JobCreate(BaseModel):
             raise ValueError("topic is required for topic-based jobs")
         if self.job_type == "channel" and not self.channel_list:
             raise ValueError("channel_list is required for channel-based jobs")
+        if self.job_type == "subscription" and not self.channel_list:
+            raise ValueError("channel_list is required for subscription jobs")
         if self.min_duration_minutes and self.max_duration_minutes:
             if self.min_duration_minutes > self.max_duration_minutes:
                 raise ValueError("min_duration_minutes must be <= max_duration_minutes")
@@ -47,6 +49,7 @@ class JobResponse(BaseModel):
     channel_list: list[str] | None = None
     videos_per_channel: int | None = None
     search_queries_used: list[str] | None = None
+    channel_list_resolved: list[dict] | None = None
     progress_pct: int
     progress_message: str | None = None
     error_message: str | None = None

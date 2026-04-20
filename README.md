@@ -1,6 +1,16 @@
 # VideoResearchPro
 
-A full-stack web application for YouTube video research. Submit jobs to fetch transcripts from YouTube videos (by topic search or channel), build vector DB RAGs, generate HTML reports via LangGraph agents, and ask citation-backed questions against the collected data.
+A full-stack web application for YouTube video research. Run **topic**, **channel**, or **channel-subscription** jobs that feed a **shared global video library**, generate HTML reports via LangGraph agents, and ask citation-backed questions either scoped to a single job or across the **entire library**. Transcripts and embeddings are computed once per video and reused across every job that references them.
+
+## Features
+
+- **Topic research** — Describe a topic; AI finds, ranks, and summarizes the best videos.
+- **Channel research** — Paste channel URLs; pull the latest N videos per channel.
+- **Channel subscriptions** — Subscribe to a channel; every current and future video is ingested and indexed automatically.
+- **Global video library** — One canonical copy of every transcribed video, reused across all jobs.
+- **Library-wide Q&A** — Ask questions against the entire library of videos, not just one job.
+- **Multilingual** — Transcribes whatever the speaker says (Hindi, Urdu, English, mixed); answers in your chosen language.
+- **Citation-grounded Q&A** — Every answer includes clickable YouTube timestamps back to the source.
 
 ## Prerequisites
 
@@ -116,13 +126,22 @@ The backend API is available at **http://localhost:8000** (health check: `GET /a
 
 ## How It Works
 
-1. **Submit a job** — Choose topic-based (AI searches YouTube for you) or channel-based (provide channel URLs directly). Configure number of videos, duration filters, and search instructions.
+1. **Pick a job type**
+   - **Topic** — AI searches YouTube from a topic + instructions you provide.
+   - **Channel** — You paste channel URLs; the latest N videos from each are pulled.
+   - **Subscription** — You subscribe to a channel; every current and future video is ingested automatically. No approval step, no per-job report — pure library ingestion.
 
-2. **Review & approve videos** — The system finds matching videos and pauses for your approval. The video list auto-populates in real time via WebSocket — no page refresh needed. Deselect any you don't want, then approve to continue.
+2. **Review & approve videos** (Topic and Channel jobs only) — The system finds matching videos and pauses for your approval. The list auto-populates in real time via WebSocket. Deselect any you don't want, then approve to continue. Subscription jobs skip this step entirely.
 
-3. **Automatic processing** — Transcripts are fetched (with automatic language fallback — tries English first, then any available language like Hindi or Spanish), chunked at 512 tokens with timestamp mapping, and embedded into a per-job vector database (ChromaDB). A LangGraph report agent generates a comprehensive HTML research report using map-reduce.
+3. **Global video library** — Transcripts and embeddings are computed **once per video** and stored in a single global ChromaDB collection. If a later job references a video that's already in the library, it's reused instantly — no re-fetch, no re-transcribe, no re-embed. Deleting a job unlinks its videos but does not remove them from the library.
 
-4. **View report & ask questions** — Read the generated report in a full-page modal viewer. Ask follow-up questions in the Q&A panel — a 4-step pipeline retrieves relevant RAG chunks + report text, refines the context through an LLM compactor (reducing ~45K chars to ~2-4K focused extracts), generates an answer, and extracts citation references with clickable YouTube timestamp links.
+4. **Automatic processing** — Transcripts are fetched from YouTube (with a Whisper fallback when captions are unavailable), chunked at 512 tokens with timestamp mapping, and embedded using a multilingual model (`paraphrase-multilingual-MiniLM-L12-v2`) that handles Hindi, Urdu, English, Russian, and 50+ other languages. Topic and Channel jobs then generate an HTML research report via a LangGraph map-reduce agent.
+
+5. **Per-job Q&A** — Ask questions inside a single job. Retrieval is filtered to the job's approved videos. Citations link back to the source video with `&t=` timestamps.
+
+6. **Library-wide Q&A** (new) — Ask questions across your entire library of transcribed videos, not just one job. Useful for cross-channel research or revisiting subscribed content.
+
+7. **Multilingual answers** — Whisper transcribes speakers in their native language(s), including code-mixed audio. The Q&A agent accepts an `answer_language` parameter and translates quoted non-English context into your chosen language while preserving proper nouns.
 
 ## Project Structure
 
@@ -132,8 +151,8 @@ VideoResearchPro/
 │   ├── app/
 │   │   ├── main.py              # FastAPI application
 │   │   ├── config.py            # Settings (reads .env)
-│   │   ├── routers/             # API endpoints (jobs, qa, ws, health)
-│   │   ├── models/              # SQLAlchemy ORM (job, video, qa_exchange)
+│   │   ├── routers/             # API endpoints (jobs, qa, channels, library, ws, health)
+│   │   ├── models/              # SQLAlchemy ORM (job, video, channel, job_video, qa_exchange, library_qa_exchange)
 │   │   ├── schemas/             # Pydantic request/response models
 │   │   ├── services/            # Business logic (youtube, chroma, progress, llm)
 │   │   ├── agents/              # LangGraph agents (search, report, qa)
@@ -147,7 +166,7 @@ VideoResearchPro/
 │   └── requirements-dev.txt
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/               # SubmitJobPage, JobsListPage, JobDetailPage
+│   │   ├── pages/               # SubmitJobPage, JobsListPage, JobDetailPage, LibraryPage, LibraryQAPage
 │   │   ├── hooks/               # React Query hooks + WebSocket bridge
 │   │   ├── services/            # API client + WebSocket client
 │   │   ├── stores/              # Zustand UI state
@@ -206,4 +225,23 @@ Tests use an in-memory SQLite database and mock Celery tasks — no Redis requir
 | GET | `/api/v1/jobs/{id}/report` | View HTML report |
 | POST | `/api/v1/jobs/{id}/qa` | Ask a question |
 | GET | `/api/v1/jobs/{id}/qa` | Get Q&A history |
+| POST | `/api/v1/library/qa` | Library-wide Q&A ask |
+| GET | `/api/v1/library/qa` | Library-wide Q&A history |
+| POST | `/api/v1/library/qa/clarify` | Library-wide clarify step |
+| DELETE | `/api/v1/library/qa/{id}` | Delete a library Q&A exchange (optional) |
+| GET | `/api/v1/library/videos` | Browse global video library |
+| GET | `/api/v1/channels` | List all channels |
+| GET | `/api/v1/channels/{id}` | Single channel detail |
+| POST | `/api/v1/channels/{id}/subscribe` | Subscribe to a channel |
+| POST | `/api/v1/channels/{id}/unsubscribe` | Unsubscribe from a channel |
+| POST | `/api/v1/channels/{id}/sync` | Trigger a fresh sync |
+| GET | `/api/v1/channels/{id}/videos` | List videos for a channel |
 | WS | `/ws/jobs` | Real-time progress (subscribe/unsubscribe per job) |
+
+## What's New
+
+- Videos are now globally deduplicated across jobs.
+- New channel-subscription job type (fire-and-forget ingestion, no approval, no report).
+- New library-wide Q&A endpoint and UI page.
+- Multilingual transcription (Whisper fallback) and embeddings (`paraphrase-multilingual-MiniLM-L12-v2`).
+- Single global ChromaDB collection (`videoresearchpro_global`) with per-job `video_id` metadata filtering.

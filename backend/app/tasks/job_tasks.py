@@ -42,6 +42,39 @@ def _parse_published_at(value) -> datetime | None:
     return None
 
 
+def _channel_pending(db, channel_id: str) -> bool:
+    """Is there already a Channel(channel_id=...) in this session's pending adds?
+
+    ``db.get()`` only sees flushed rows, not objects in ``db.new``. When a
+    single batch adds multiple videos that share a channel, the first call
+    stages the Channel, the second call fails to see it, stages it again,
+    and the commit then trips the UNIQUE constraint. Callers use this to
+    dedup against in-session pending inserts.
+    """
+    return any(
+        isinstance(obj, Channel) and obj.channel_id == channel_id
+        for obj in db.new
+    )
+
+
+def _video_pending(db, video_id: str) -> bool:
+    """Same idea as ``_channel_pending`` but for Video rows."""
+    return any(
+        isinstance(obj, Video) and obj.video_id == video_id
+        for obj in db.new
+    )
+
+
+def _jobvideo_pending(db, job_id: str, video_id: str) -> bool:
+    """Same idea as ``_channel_pending`` but for JobVideo link rows."""
+    return any(
+        isinstance(obj, JobVideo)
+        and obj.job_id == job_id
+        and obj.video_id == video_id
+        for obj in db.new
+    )
+
+
 def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
     """Insert/refresh a global Video, its Channel, and the JobVideo link.
 
@@ -61,22 +94,37 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
     channel_id = data.get("channel_id") or None
     channel_name = data.get("channel_name") or ""
 
-    if channel_id and db.get(Channel, channel_id) is None:
+    # ``db.get()`` only checks already-flushed rows; it does NOT see
+    # still-pending additions in ``db.new``. A search batch commonly
+    # produces multiple videos from the same channel (e.g. 5 Firstpost
+    # videos), so the first call adds the Channel, and the second call
+    # does not see it yet and tries to add it again. That second insert
+    # passes the in-memory check but then trips the UNIQUE constraint at
+    # commit time, wedging the whole transaction. Check both layers.
+    if channel_id and db.get(Channel, channel_id) is None and not _channel_pending(db, channel_id):
         db.add(Channel(channel_id=channel_id, name=channel_name or channel_id))
 
+    # Same dedup concern for Video: defensive, since duplicates here
+    # would also wedge the commit.
     video = db.get(Video, video_id)
     if video is None:
-        db.add(Video(
-            video_id=video_id,
-            channel_id=channel_id,
-            title=data.get("title", "Unknown"),
-            url=data.get("url", f"https://www.youtube.com/watch?v={video_id}"),
-            duration_seconds=data.get("duration_seconds", 0),
-            published_at=_parse_published_at(data.get("published_at")),
-            thumbnail_url=data.get("thumbnail_url"),
-            description=data.get("description"),
-        ))
+        # Not in the DB. Only stage a new Video if another call in this same
+        # batch hasn't already staged one — otherwise we'd produce duplicate
+        # primary keys at commit time.
+        if not _video_pending(db, video_id):
+            db.add(Video(
+                video_id=video_id,
+                channel_id=channel_id,
+                title=data.get("title", "Unknown"),
+                url=data.get("url", f"https://www.youtube.com/watch?v={video_id}"),
+                duration_seconds=data.get("duration_seconds", 0),
+                published_at=_parse_published_at(data.get("published_at")),
+                thumbnail_url=data.get("thumbnail_url"),
+                description=data.get("description"),
+            ))
+        # If already pending, leave it as-is — the first caller's payload wins.
     else:
+        # Existing row: refresh lightweight surface metadata, preserve the rest.
         new_title = data.get("title")
         new_thumb = data.get("thumbnail_url")
         new_url = data.get("url")
@@ -89,7 +137,7 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
         if channel_id and not video.channel_id:
             video.channel_id = channel_id
 
-    if db.get(JobVideo, (job_id, video_id)) is None:
+    if db.get(JobVideo, (job_id, video_id)) is None and not _jobvideo_pending(db, job_id, video_id):
         db.add(JobVideo(
             job_id=job_id,
             video_id=video_id,
@@ -1126,6 +1174,18 @@ def _handle_failure(db, job_id: str, error: str) -> None:
             "request a quota increase from Google."
         )
 
+    # The common failure path is an exception mid-transaction — e.g. a UNIQUE
+    # violation during commit leaves the session in PendingRollbackError. In
+    # that state every query raises until the session is rolled back, which
+    # would make the failure handler itself silently fail and leave the job
+    # stuck in a transient status. Roll back first so the subsequent writes
+    # can land. Fall back to a fresh session if the existing one is too far
+    # gone to recover.
+    try:
+        db.rollback()
+    except Exception:
+        logger.exception(f"[job:{job_id}] _handle_failure: rollback itself failed")
+
     try:
         job = _get_job(db, job_id)
         if job:
@@ -1133,3 +1193,18 @@ def _handle_failure(db, job_id: str, error: str) -> None:
         progress_service.publish_error(job_id, error)
     except Exception:
         logger.exception(f"[job:{job_id}] _handle_failure also failed while recording error: {error!r}")
+        # Last-ditch: open a fresh session and update the row directly so the
+        # UI doesn't hang on a transient status.
+        try:
+            fresh = SessionLocal()
+            try:
+                job = fresh.query(Job).filter(Job.id == job_id).first()
+                if job is not None:
+                    job.status = "failed"
+                    job.error_message = error
+                    job.updated_at = datetime.now(timezone.utc)
+                    fresh.commit()
+            finally:
+                fresh.close()
+        except Exception:
+            logger.exception(f"[job:{job_id}] _handle_failure: fresh-session fallback also failed")

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useCreateJob } from '../hooks/useJobs';
 import { useJobStore } from '../stores/jobStore';
-import type { JobCreate, JobType } from '../types/job';
+import type { Job, JobCreate, JobType } from '../types/job';
 
 const CHANNEL_TYPE_OPTIONS = [
   'educational',
@@ -65,6 +65,33 @@ function loadForm(): PersistedFormState {
   }
 }
 
+// Translate a saved Job's submission parameters back into the shape the form
+// state expects. Used when the user clicks "Duplicate / Re-run" on a job —
+// we route here with { cloneFrom: job } in location.state and seed the form
+// from those values, overriding any localStorage draft for this mount only.
+function jobToFormState(job: Job): PersistedFormState {
+  const channelLines = (list: string[] | null | undefined) =>
+    list && list.length > 0 ? list.join('\n') : '';
+  const validFilters = (job.channel_type_filters ?? []).filter(
+    (c): c is ChannelTypeOption =>
+      (CHANNEL_TYPE_OPTIONS as readonly string[]).includes(c),
+  );
+  return {
+    jobType: job.job_type,
+    topic: job.topic ?? '',
+    searchInstructions: job.search_instructions ?? '',
+    numVideos: job.num_videos ?? 10,
+    minDuration: job.min_duration_minutes != null ? String(job.min_duration_minutes) : '',
+    maxDuration: job.max_duration_minutes != null ? String(job.max_duration_minutes) : '',
+    channelFilters: validFilters,
+    preferredChannels: channelLines(job.preferred_channels),
+    channelList: job.job_type === 'channel' ? channelLines(job.channel_list) : '',
+    videosPerChannel: job.videos_per_channel ?? 10,
+    subscriptionChannels:
+      job.job_type === 'subscription' ? channelLines(job.channel_list) : '',
+  };
+}
+
 // Accept @handle, youtube.com/@handle, /channel/UC..., /c/name, /user/name, or bare UC-IDs
 const CHANNEL_URL_RE =
   /^(?:@[\w.-]{1,}|UC[\w-]{22}|(?:https?:\/\/)?(?:www\.)?youtube\.com\/(?:@[\w.-]{1,}|channel\/[\w-]{1,}|c\/[\w.-]{1,}|user\/[\w.-]{1,})\/?)$/i;
@@ -82,10 +109,21 @@ function validateChannels(lines: string[]): string[] {
 
 export function SubmitJobPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const createJob = useCreateJob();
   const pushToast = useJobStore((s) => s.pushToast);
 
-  const [form, setForm] = useState<PersistedFormState>(() => loadForm());
+  // When the user arrives via "Duplicate / Re-run" on a Job card, the source
+  // job is passed in router state. Seed the form from it on first mount,
+  // overriding any stale localStorage draft. Clone info is kept in component
+  // state so the "Cloning from…" banner survives typing but disappears after
+  // submission (which navigates away).
+  const cloneFromInitial = (location.state as { cloneFrom?: Job } | null)?.cloneFrom ?? null;
+  const [cloneFrom] = useState<Job | null>(cloneFromInitial);
+
+  const [form, setForm] = useState<PersistedFormState>(() =>
+    cloneFromInitial ? jobToFormState(cloneFromInitial) : loadForm(),
+  );
   const [validationError, setValidationError] = useState<string | null>(null);
 
   // Persist on every change
@@ -238,9 +276,40 @@ export function SubmitJobPage() {
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto' }}>
+      {cloneFrom && (
+        <div style={{
+          background: 'rgba(102, 126, 234, 0.08)',
+          border: '1px solid rgba(102, 126, 234, 0.35)',
+          borderRadius: 8,
+          padding: '0.7rem 0.9rem',
+          marginBottom: '1rem',
+          fontSize: '0.85rem',
+          color: 'var(--color-text)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.75rem',
+          flexWrap: 'wrap',
+        }}>
+          <span>
+            Cloning from job{' '}
+            <a
+              href={`/jobs/${cloneFrom.id}`}
+              onClick={(e) => { e.preventDefault(); navigate(`/jobs/${cloneFrom.id}`); }}
+              style={{ color: 'var(--color-accent)', fontWeight: 600, textDecoration: 'none' }}
+            >
+              {cloneFrom.id.slice(0, 8)}
+            </a>
+            . Fields below are pre-filled from that submission — edit freely; a
+            new job with a new ID will be created on submit.
+          </span>
+        </div>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                     marginBottom: '1.5rem' }}>
-        <h2 style={{ color: 'var(--color-text)' }}>Submit New Research Job</h2>
+        <h2 style={{ color: 'var(--color-text)' }}>
+          {cloneFrom ? 'Duplicate Research Job' : 'Submit New Research Job'}
+        </h2>
         <button
           type="button"
           onClick={handleReset}

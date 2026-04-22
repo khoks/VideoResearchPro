@@ -154,6 +154,12 @@ export function JobsListPage() {
                   </span>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }} onClick={(e) => e.stopPropagation()}>
+                  <SmallButton
+                    color="#667eea"
+                    onClick={() => navigate('/submit', { state: { cloneFrom: job } })}
+                  >
+                    Duplicate
+                  </SmallButton>
                   {!['completed', 'cancelled', 'failed'].includes(job.status) && (
                     <SmallButton color="#f59e0b" onClick={() => cancelJob.mutate(job.id)}>Cancel</SmallButton>
                   )}

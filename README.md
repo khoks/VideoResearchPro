@@ -12,7 +12,9 @@ A full-stack web application for YouTube video research. Run **topic**, **channe
 - **Library-wide Q&A** — Ask questions against the entire library of videos, not just one job.
 - **Multilingual** — Transcribes whatever the speaker says (Hindi, Urdu, English, mixed); answers in your chosen language.
 - **Citation-grounded Q&A** — Every answer includes clickable YouTube timestamps back to the source.
-- **One-click restart** — `scripts/restart_services.ps1` and a protected `POST /api/v1/admin/restart` endpoint bring Redis, the backend, the Celery worker, and the frontend back up in a single shot.
+- **Duplicate / re-run any job** — The Jobs list and Job Detail pages both expose a **Duplicate / Re-run** action that opens the submit form pre-filled with the original job's parameters (topic, instructions, duration filters, preferred channels, channel list, etc.). Tweak what you want and resubmit — a brand-new job with a new ID is created, the original is untouched.
+- **Job Parameters card** — The detail page shows every submission parameter in a read-only card so you can see exactly what was asked for, months later.
+- **One-click restart** — `scripts/restart_services.ps1` and a protected `POST /api/v1/admin/restart` endpoint bring Redis, the backend, the Celery worker, and the frontend back up in a single shot. Detached processes now write to `.uvicorn.log`, `.celery.log`, and `.frontend.log` at the repo root so post-mortem debugging stays possible.
 
 ## Prerequisites
 
@@ -171,6 +173,8 @@ The endpoint returns `202 Accepted` immediately, spawns `restart_services.ps1` a
 
 7. **Multilingual answers** — Whisper transcribes speakers in their native language(s), including code-mixed audio. The Q&A agent accepts an `answer_language` parameter and translates quoted non-English context into your chosen language while preserving proper nouns.
 
+8. **Duplicate & iterate** — Every job is permanently browsable from the Jobs list. Click through to a detail page to see the full parameter set you submitted plus the live run state, approval queue, report, and Q&A history. Hit **Duplicate / Re-run** from either the list row or the detail header to spin up a new job seeded from the old one. No backend migration — the form just round-trips the stored `Job` row back into its inputs.
+
 ## Project Structure
 
 ```
@@ -269,6 +273,8 @@ Tests use an in-memory SQLite database and mock Celery tasks — no Redis requir
 
 ## What's New
 
+- **Duplicate / re-run any job.** The Jobs list and each Job Detail page now have a **Duplicate / Re-run** button that navigates to the submit form with every parameter pre-filled from the original job. A new Job Parameters card on the detail page also surfaces the full submission payload in read-only form. Zero-backend-change feature — the frontend just round-trips the existing `Job` response back into the form.
+- **Orphan backstop + worker log capture.** Every orchestrator task now runs a `finally`-clause safety net that fails any job still stuck in a transient status (`pending` / `searching` / `extracting` / `building_rag` / `generating_report`) when the task returns, so a silent bug can't strand the UI at 5% forever. `restart_services.ps1` now redirects each detached runtime's stdout + stderr to `.uvicorn.log`, `.celery.log`, `.celery.err.log`, and `.frontend.log` at the repo root so post-mortem debugging is possible.
 - **Preferred channels on topic jobs.** The Search Agent now takes a `preferred_channels` list alongside the topic and instructions. The LLM produces a structured plan (`broad_queries` + `channel_keywords`); preferred channels are resolved to IDs and their uploads playlists are walked directly, then keyword-filtered. No more creator names getting stuffed into query strings.
 - **Self-restart endpoint + PowerShell script.** `scripts/restart_services.ps1` kills and relaunches all four runtimes in one shot; `POST /api/v1/admin/restart` drives the same script from inside the running backend via a detached trampoline process.
 - Videos are now globally deduplicated across jobs.

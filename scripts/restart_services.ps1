@@ -135,37 +135,52 @@ if (-not $redis) {
     Write-Step "  Redis already running"
 }
 
+# Detached processes have no attached console, so their stdout/stderr would
+# otherwise vanish. Redirect each service to its own log file in the repo
+# root so post-mortem debugging is possible. Hidden dotfiles keep them out
+# of directory listings and git (see .gitignore).
+$backendLog = Join-Path $repoRoot '.uvicorn.log'
+$celeryLog  = Join-Path $repoRoot '.celery.log'
+$celeryErr  = Join-Path $repoRoot '.celery.err.log'
+$frontendLog = Join-Path $repoRoot '.frontend.log'
+
 # ---- 5. Start backend detached ----
-Write-Step "Starting backend (uvicorn :8000)..."
+Write-Step "Starting backend (uvicorn :8000) -> $backendLog"
 if (-not (Test-Path $venvPython)) {
     Write-Step "  ERROR: venv python not found at $venvPython"
 } else {
     Start-Process -FilePath $venvPython `
         -ArgumentList @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000') `
         -WorkingDirectory $backendDir `
-        -WindowStyle Hidden
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $backendLog `
+        -RedirectStandardError $backendLog
 }
 
 # ---- 6. Start Celery worker detached ----
-Write-Step "Starting Celery worker..."
+Write-Step "Starting Celery worker -> $celeryLog"
 if (-not (Test-Path $venvCelery)) {
     Write-Step "  ERROR: celery not found at $venvCelery"
 } else {
     Start-Process -FilePath $venvCelery `
         -ArgumentList @('-A', 'app.tasks.celery_app', 'worker', '--loglevel=info', '--pool=solo') `
         -WorkingDirectory $backendDir `
-        -WindowStyle Hidden
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $celeryLog `
+        -RedirectStandardError $celeryErr
 }
 
 # ---- 7. Start frontend dev server detached ----
 if (-not $SkipFrontend) {
-    Write-Step "Starting frontend (vite :5173)..."
+    Write-Step "Starting frontend (vite :5173) -> $frontendLog"
     # Use cmd /c so npm's .cmd shim resolves correctly regardless of the
     # PowerShell execution policy.
     Start-Process -FilePath 'cmd.exe' `
         -ArgumentList @('/c', 'npm', 'run', 'dev') `
         -WorkingDirectory $frontendDir `
-        -WindowStyle Hidden
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $frontendLog `
+        -RedirectStandardError $frontendLog
 }
 
 Write-Step "Done. Backend should be healthy within ~10s."

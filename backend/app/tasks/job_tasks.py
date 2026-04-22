@@ -220,6 +220,11 @@ def execute_topic_job(self, job_id: str) -> None:
         logger.exception(f"[job:{job_id}] Topic job failed during search: {e}")
         _handle_failure(db, job_id, str(e))
     finally:
+        # Backstop: if the task is about to return while the job is still
+        # in a transient state, something silently bailed. Force-fail it so
+        # the UI doesn't hang forever at "Searching...". Harmless when the
+        # happy path already moved status to awaiting_approval/failed/etc.
+        _backstop_orphan(db, job_id)
         db.close()
 
 
@@ -326,6 +331,7 @@ def execute_channel_job(self, job_id: str) -> None:
         logger.exception(f"[job:{job_id}] Channel job failed during search: {e}")
         _handle_failure(db, job_id, str(e))
     finally:
+        _backstop_orphan(db, job_id)
         db.close()
 
 
@@ -600,6 +606,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
         logger.exception(f"[job:{job_id}] Job failed: {e}")
         _handle_failure(db, job_id, str(e))
     finally:
+        _backstop_orphan(db, job_id)
         db.close()
 
 
@@ -1047,7 +1054,58 @@ def execute_subscription_job(self, job_id: str) -> None:
         logger.exception(f"[job:{job_id}] Subscription job failed: {e}")
         _handle_failure(db, job_id, str(e))
     finally:
+        _backstop_orphan(db, job_id)
         db.close()
+
+
+# States a task leaves behind only when it's actively mid-run. If a task is
+# returning and the row is still in one of these, nobody's ever going to move
+# it forward — force-fail so the UI doesn't wedge at "Searching...".
+_TRANSIENT_STATUSES = {"pending", "searching", "extracting", "building_rag", "generating_report"}
+
+
+def _backstop_orphan(db, job_id: str) -> None:
+    """Force-fail a job whose task returned while still in a transient status.
+
+    Called from the ``finally`` of every orchestrator task. If the happy path
+    already moved status to ``awaiting_approval`` / ``completed`` / ``failed``
+    / ``cancelled``, this is a silent no-op. Otherwise we set status=failed
+    with a diagnostic message so the user isn't stranded watching a dead
+    progress bar.
+
+    Swallows its own exceptions — this is a last-resort safety net; it must
+    never itself bring the task down.
+    """
+    try:
+        fresh = SessionLocal()
+        try:
+            job = fresh.query(Job).filter(Job.id == job_id).first()
+            if job is None or job.status not in _TRANSIENT_STATUSES:
+                return
+            stuck_in = job.status
+            logger.error(
+                f"[job:{job_id}] Orphan backstop tripped: task returned with status={stuck_in!r}; "
+                "marking failed. Check worker logs for the root cause."
+            )
+            job.status = "failed"
+            job.error_message = (
+                f"Task returned without advancing from '{stuck_in}'. "
+                "This usually means an exception fired inside the orchestrator "
+                "but the failure handler did not record it. Retry the job; "
+                "if it repeats, inspect the Celery worker logs."
+            )
+            job.progress_message = "Failed: orchestrator returned without recording a result."
+            job.updated_at = datetime.now(timezone.utc)
+            fresh.commit()
+            try:
+                from app.services import progress_service as _ps
+                _ps.publish_error(job_id, job.error_message)
+            except Exception:
+                logger.exception(f"[job:{job_id}] backstop failed to publish progress error")
+        finally:
+            fresh.close()
+    except Exception:
+        logger.exception(f"[job:{job_id}] _backstop_orphan itself raised; swallowing")
 
 
 def _handle_failure(db, job_id: str, error: str) -> None:

@@ -55,6 +55,12 @@ Register → login → Bearer token. All non-health routes are protected. The We
 
 A single PowerShell script (`scripts/restart_services.ps1`) and a protected HTTP endpoint (`POST /api/v1/admin/restart`) kill and relaunch all four runtimes (Redis verified, backend, Celery worker, frontend dev server) in a single step. The endpoint uses a detached trampoline pattern so the backend can safely kill itself. See §7.5 for the mechanics.
 
+### 2.9 Duplicate / re-run any job
+
+Every job row on the Jobs list carries a **Duplicate** button, and the Job Detail page header exposes a **Duplicate / Re-run** action. Both navigate to `/submit` with the full `Job` object passed through `react-router` `location.state`. The Submit form has a lazy `useState` initializer that translates the Job row back into its original form state (topic, instructions, duration filters, preferred channels, channel list, videos-per-channel, filters), the user tweaks what they want, and a regular `POST /api/v1/jobs` creates a **new** job with a **new** UUID. The original job row is never modified — this is purely a form-seeding UX affordance with zero backend change.
+
+The Job Detail page also renders a read-only **Job Parameters** card (`JobParamsCard`) that surfaces every submission field (topic, search instructions, duration bounds, channel-type filters, preferred channels, channel list, videos-per-channel) so you can inspect exactly what was asked for weeks or months later. Empty fields are hidden.
+
 ## 3. System Architecture
 
 ### 3.1 Process topology
@@ -273,7 +279,17 @@ Flags: `-SkipFrontend` (backend + Celery only), `-KillOnly` (stop without restar
 
 From the client's perspective: the 202 flies, the server goes quiet for ~5–10 s, then the new backend is up on the same port. Query params `skip_frontend` and `delay` are forwarded to the script. The route is protected with `Depends(get_current_user)` — only authenticated callers can restart the stack. Self-restart is wired up only for Windows hosts; the handler returns `501 Not Implemented` elsewhere.
 
-### 7.6 Progress publishing (`services/progress_service.py`)
+**Detached runtime logging.** Because `Start-Process -WindowStyle Hidden` hands each runtime a console that's immediately discarded, stdout/stderr would otherwise evaporate. The script therefore redirects each service to its own hidden log file at the repo root: `.uvicorn.log`, `.celery.log` / `.celery.err.log`, `.frontend.log`. These are `.gitignore`d. When a Celery task silently returns (see §7.7), these logs are usually the only way to find the root cause.
+
+### 7.6 Orphan-state backstop
+
+Every orchestrator task (`execute_topic_job`, `execute_channel_job`, `resume_job_after_approval`, `execute_subscription_job`) runs `_backstop_orphan(db, job_id)` in its `finally:` clause. The function opens a fresh session, checks the current status, and — if it's still one of the transient states (`pending`, `searching`, `extracting`, `building_rag`, `generating_report`) — force-sets status to `failed` with a diagnostic message. On the happy path where the task has already advanced status to `awaiting_approval` / `completed` / `failed` / `cancelled`, the backstop is a no-op.
+
+Why this exists: on `2026-04-22T04:03Z` a topic job hit a silent bug where the Celery task completed with `state=SUCCESS, result=None` after producing a valid search-query plan, yet the DB row never advanced beyond `status=searching`. The happy-path `_update_job(awaiting_approval)` never ran, but neither did `_handle_failure`. Without the backstop, the UI shows a dead progress bar forever. With it, the job transitions to `failed`, the WebSocket emits a `progress_error` event, and the user's Duplicate button works.
+
+The backstop itself swallows all exceptions — it's a last-resort safety net that must never, itself, be what brings a task down.
+
+### 7.7 Progress publishing (`services/progress_service.py`)
 
 Every phase transition and progress update publishes a JSON event to Redis channel `job_progress:{job_id}`:
 

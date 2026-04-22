@@ -32,7 +32,7 @@ npm run build        # Production build + type check
 
 ### Tests
 ```bash
-# All backend tests (36 tests)
+# All backend tests (168 tests)
 cd backend && ./venv/Scripts/python -m pytest tests/ -v
 
 # Single test file

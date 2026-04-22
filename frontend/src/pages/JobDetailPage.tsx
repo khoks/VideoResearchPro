@@ -57,8 +57,19 @@ export function JobDetailPage() {
               Created {formatDate(job.created_at)} | {job.job_type} job
             </span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
             <StatusBadge status={job.status} />
+            <button
+              onClick={() => navigate('/submit', { state: { cloneFrom: job } })}
+              title="Open the submit form pre-filled from this job's parameters"
+              style={{
+                background: 'transparent', color: '#667eea', border: '1px solid #667eea',
+                padding: '0.4rem 1rem', borderRadius: 6, cursor: 'pointer', fontSize: '0.85rem',
+                fontWeight: 600,
+              }}
+            >
+              Duplicate / Re-run
+            </button>
             {!['completed', 'cancelled', 'failed'].includes(job.status) && (
               <button onClick={() => cancelJob.mutate(job.id)} style={{
                 background: '#ef4444', color: '#fff', border: 'none', padding: '0.4rem 1rem',
@@ -83,6 +94,8 @@ export function JobDetailPage() {
           </p>
         )}
       </div>
+
+      <JobParamsCard job={job} />
 
       {isSubscription && isSyncing && syncCounts && (
         <SubscriptionSyncCard counts={syncCounts} />
@@ -146,6 +159,79 @@ function jobHeaderTitle(job: Job): string {
     return `Subscription: ${list}`;
   }
   return 'Channel Collection';
+}
+
+// Renders every non-empty submission parameter so the user can see exactly
+// what this job was run with — supports the "view it entirely, duplicate,
+// or tweak and re-run" workflow. Empty/null fields are omitted so the card
+// doesn't bloat for minimal topic jobs.
+function JobParamsCard({ job }: { job: Job }) {
+  const rows: Array<[string, React.ReactNode]> = [];
+
+  rows.push(['Job ID', <code style={{ fontSize: '0.85rem', color: '#475569' }}>{job.id}</code>]);
+  rows.push(['Type', <span style={{ textTransform: 'capitalize' }}>{job.job_type}</span>]);
+
+  if (job.topic) rows.push(['Topic', job.topic]);
+  if (job.search_instructions) {
+    rows.push([
+      'Search instructions',
+      <span style={{ whiteSpace: 'pre-wrap' }}>{job.search_instructions}</span>,
+    ]);
+  }
+  if (job.num_videos != null) rows.push(['Number of videos', String(job.num_videos)]);
+  if (job.min_duration_minutes != null) {
+    rows.push(['Min duration', `${job.min_duration_minutes} min`]);
+  }
+  if (job.max_duration_minutes != null) {
+    rows.push(['Max duration', `${job.max_duration_minutes} min`]);
+  }
+  if (job.channel_type_filters && job.channel_type_filters.length > 0) {
+    rows.push(['Channel type filters', job.channel_type_filters.join(', ')]);
+  }
+  if (job.preferred_channels && job.preferred_channels.length > 0) {
+    rows.push([
+      'Preferred channels',
+      <span style={{ whiteSpace: 'pre-wrap' }}>{job.preferred_channels.join('\n')}</span>,
+    ]);
+  }
+  if (job.channel_list && job.channel_list.length > 0) {
+    rows.push([
+      job.job_type === 'subscription' ? 'Subscribed channels' : 'Channels',
+      <span style={{ whiteSpace: 'pre-wrap' }}>{job.channel_list.join('\n')}</span>,
+    ]);
+  }
+  if (job.job_type === 'channel' && job.videos_per_channel != null) {
+    rows.push(['Videos per channel', String(job.videos_per_channel)]);
+  }
+
+  return (
+    <div style={{
+      background: '#fff', borderRadius: 12, padding: '1.25rem',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: '1rem',
+    }}>
+      <h3 style={{ margin: '0 0 0.75rem', color: '#1e293b', fontSize: '1rem' }}>
+        Job Parameters
+      </h3>
+      <dl style={{
+        margin: 0,
+        display: 'grid',
+        gridTemplateColumns: 'max-content 1fr',
+        columnGap: '1rem',
+        rowGap: '0.4rem',
+        fontSize: '0.85rem',
+      }}>
+        {rows.map(([label, value], i) => (
+          <div
+            key={i}
+            style={{ display: 'contents' }}
+          >
+            <dt style={{ color: '#64748b', fontWeight: 500 }}>{label}</dt>
+            <dd style={{ margin: 0, color: '#1e293b', overflowWrap: 'anywhere' }}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
 }
 
 interface SyncCounts {

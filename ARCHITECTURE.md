@@ -20,7 +20,7 @@ Design priorities, in order:
 
 | Type | Input | Pipeline | Output |
 |---|---|---|---|
-| **Topic** | Topic string + search instructions + filters | Search Agent (LLM-expanded YouTube searches) → user approval → transcript extraction → RAG index → Report Agent (map-reduce HTML) | Approved list, global index chunks, full HTML report, Q&A enabled |
+| **Topic** | Topic string + search instructions + duration/channel-type filters + optional **preferred channels** list | Search Agent (resolve preferred channels → LLM planner → broad YouTube searches + direct uploads-playlist walk → rank & curate) → user approval → transcript extraction → RAG index → Report Agent (map-reduce HTML) | Approved list, global index chunks, full HTML report, Q&A enabled |
 | **Channel** | List of channel URLs | Resolve uploads playlists → user approval → extraction → RAG index → stats-only report | Same as topic but report is channel-statistics only |
 | **Subscription** | List of channel URLs | Fire-and-forget: resolve channels, walk every upload page, extract transcripts (with Whisper fallback), embed into global index. No approval. No report. | Library growth; channel marked `subscribed=True` for future re-syncs |
 
@@ -51,6 +51,10 @@ Topic jobs: comprehensive HTML report with an intro, synthesized sections, a cha
 
 Register → login → Bearer token. All non-health routes are protected. The WebSocket accepts the token as a query parameter (`?token=…`) since browsers can't attach headers to `new WebSocket(...)`.
 
+### 2.8 One-click service restart
+
+A single PowerShell script (`scripts/restart_services.ps1`) and a protected HTTP endpoint (`POST /api/v1/admin/restart`) kill and relaunch all four runtimes (Redis verified, backend, Celery worker, frontend dev server) in a single step. The endpoint uses a detached trampoline pattern so the backend can safely kill itself. See §7.5 for the mechanics.
+
 ## 3. System Architecture
 
 ### 3.1 Process topology
@@ -65,7 +69,7 @@ Register → login → Bearer token. All non-health routes are protected. The We
   ┌──────────────────────────────────────────┐
   │   FastAPI app  (uvicorn, port 8000)     │
   │   • Routers (jobs, channels, library,   │
-  │     auth, ws)                           │
+  │     auth, admin, ws)                    │
   │   • ConnectionManager: Redis pub/sub    │
   │     → WebSocket fan-out                 │
   └───────┬──────────────────────────┬──────┘
@@ -118,7 +122,7 @@ All tables live in a single SQLite file (`data/videoresearchpro.db`) via SQLAlch
 | Table | Primary key | Purpose | Notable columns |
 |---|---|---|---|
 | `users` | `id` (UUID) | Auth | `email` (unique), `password_hash` (bcrypt via passlib) |
-| `jobs` | `id` (UUID) | One row per job | `job_type ∈ {topic, channel, subscription}`, `status`, `channel_list_resolved` (JSON), `search_queries_used` (JSON), `progress_pct`, `celery_task_id` |
+| `jobs` | `id` (UUID) | One row per job | `job_type ∈ {topic, channel, subscription}`, `status`, `preferred_channels` (JSON — topic jobs only), `channel_list_resolved` (JSON), `search_queries_used` (JSON), `progress_pct`, `celery_task_id` |
 | `videos` | `video_id` (YouTube ID) | **Global** deduplicated video registry | `channel_id` FK, `transcript_status`, `transcript_language`, `transcript_source ∈ {youtube, whisper}`, `embedded_in_chroma` |
 | `channels` | `channel_id` | **Global** channel registry | `subscribed`, `uploads_playlist_id`, `last_synced_at` |
 | `job_videos` | `(job_id, video_id)` composite | M:N join: which videos does a job reference | `approved`, `curated_at`, `selection_reason` |
@@ -169,13 +173,21 @@ All three agents are built with `langgraph.StateGraph` over `TypedDict` states i
 ### 6.1 Search Agent (`agents/search_agent.py`)
 
 ```
-generate_search_queries → execute_searches → rank_and_curate → END
+resolve_preferred_channels → plan_searches → execute_searches → rank_and_curate → END
 ```
 
-- `generate_search_queries`: LLM expansion of the user's topic + instructions into an array of concrete YouTube search queries (JSON-parsed).
-- `execute_searches`: YouTube Data API calls per query, fetching ~3× the target candidate pool, deduped by `video_id`.
-- `rank_and_curate`: LLM ranks candidates against the original topic + duration/channel-type filters, selects the final `num_videos`.
-- Temperature: 0.3 for queries; 0.0 for ranking (deterministic).
+The 4-node design replaced an earlier naive `generate_search_queries → execute_searches → rank_and_curate` pipeline that stuffed creator names, handles, and URLs lifted from `search_instructions` directly into YouTube query strings. That produced brittle, over-specific queries that often returned zero results. The current agent separates *broad topical discovery* from *creator-specific fetches* and merges them at curation time.
+
+- **`resolve_preferred_channels`**: the user's optional `preferred_channels` list (handles, URLs, `UC…`-IDs, or plain text) is resolved to canonical channel IDs via `youtube_service.resolve_channel_id`. Unresolvable entries are skipped with a warning so a single typo can't sink the whole job. Deduped. Output: `preferred_channel_ids: list[str]`.
+- **`plan_searches`**: a single structured LLM call (`PLAN_SEARCHES_PROMPT`, temperature 0.3) produces JSON `{broad_queries: [...], channel_keywords: [...]}`:
+  - `broad_queries` are clean, topic-only YouTube search strings. The prompt explicitly forbids including channel names, creator names, handles, URLs, or `@`-mentions.
+  - `channel_keywords` are topic-salient terms used later to filter each preferred channel's uploads. If the LLM returns an empty list but preferred channels are present, a fallback derives keywords from the topic directly.
+- **`execute_searches`** merges two streams of candidates, each tagged with a `source` field on its metadata:
+  1. `source="search"` — `broad_queries` are sent through `youtube_service.search_videos`; results are fetched at ~3× the target pool and deduped by `video_id`.
+  2. `source="preferred_channel"` — for each resolved channel ID, `_fetch_preferred_channel_uploads` walks the uploads playlist (bounded by `PREFERRED_CHANNEL_FETCH_LIMIT = 50` items per channel, one YouTube quota unit). Each upload is scored against `channel_keywords` by `_keyword_score`; videos with zero keyword matches are dropped.
+- **`rank_and_curate`**: `RANK_AND_CURATE_PROMPT` (temperature 0.0) ranks the merged pool against the topic, duration/channel-type filters, and the user's `search_instructions`. The prompt is `source`-aware — the curator can prefer or penalize preferred-channel videos based on fit rather than trusting them blindly. Output: the final `num_videos`.
+
+**Design rationale**: creator preferences are a *retrieval* signal, not a *query* signal. Walking uploads playlists directly gives the curator full access to a creator's back-catalog on the topic, even when that creator wouldn't rank organically in broad search results. Meanwhile the broad queries stay semantically clean, so recall isn't handicapped by accidentally appending "Andrew Berman" to every search string.
 
 ### 6.2 Report Agent (`agents/report_agent.py`) — map-reduce
 
@@ -238,7 +250,30 @@ Subscription jobs skip approval entirely:
 
 Re-walks a subscribed channel, picks only videos newer than `last_synced_at`, creates a new "sync" Job row that represents the delta. This is the "Sync now" button in the Library → Channels tab.
 
-### 7.5 Progress publishing (`services/progress_service.py`)
+### 7.5 Service lifecycle & self-restart (`scripts/restart_services.ps1`, `routers/admin.py`)
+
+The app has four moving pieces — Redis, the uvicorn backend, a Celery worker, and the Vite frontend dev server. A reload-everything operation has to kill the backend (which is the process driving the reload), so we can't do it inline.
+
+**The script** (`scripts/restart_services.ps1`) is the single source of truth for "what does a full restart look like":
+
+1. Kill the backend by PID on `:8000` (`Get-NetTCPConnection -LocalPort 8000`).
+2. Kill every Celery worker (matches `python.exe` with `celery` in its command line; also catches helper `celery.exe` processes left over from `--pool=solo`).
+3. Kill the frontend by PID on `:5173`.
+4. Verify the Redis Windows service is installed and `Running`; start it if it's stopped.
+5. Relaunch backend (`venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000`), Celery (`venv\Scripts\celery.exe -A app.tasks.celery_app worker --loglevel=info --pool=solo`), and frontend (`cmd /c npm run dev`) — each detached with `-WindowStyle Hidden`.
+
+Flags: `-SkipFrontend` (backend + Celery only), `-KillOnly` (stop without restart), `-Delay <seconds>` (sleep before the kill phase — used by the HTTP endpoint below). Every step is mirrored to `restart_services.log` at the repo root, because when the script is spawned detached by the backend it has no console to write to.
+
+**The endpoint** (`POST /api/v1/admin/restart`) is how the user triggers a restart from the running app. The challenge: a Python process on Windows cannot safely kill-and-respawn itself inline — the parent dies the moment you kill it, and any `Popen` it spawned would go with it unless explicitly detached. We use a *trampoline* pattern:
+
+1. The HTTP handler validates auth, confirms the script exists, returns `202 Accepted` immediately.
+2. A background daemon thread does a tiny `sleep(0.5)` (so the HTTP response can flush), then spawns `restart_services.ps1` with `subprocess.Popen`.
+3. The child process inherits no handles: we use `creationflags = CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP` and `close_fds=True`. `DETACHED_PROCESS` is what you'd expect to use here, but in practice on Windows 10/11 it combined with `close_fds=True` causes PowerShell to exit before running the script — the new-console flag reliably works and is invisible in our scheduled-task infra.
+4. The script sleeps for `-Delay 2`, then kills the backend's own uvicorn process and relaunches everything.
+
+From the client's perspective: the 202 flies, the server goes quiet for ~5–10 s, then the new backend is up on the same port. Query params `skip_frontend` and `delay` are forwarded to the script. The route is protected with `Depends(get_current_user)` — only authenticated callers can restart the stack. Self-restart is wired up only for Windows hosts; the handler returns `501 Not Implemented` elsewhere.
+
+### 7.6 Progress publishing (`services/progress_service.py`)
 
 Every phase transition and progress update publishes a JSON event to Redis channel `job_progress:{job_id}`:
 

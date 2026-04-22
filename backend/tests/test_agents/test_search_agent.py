@@ -33,50 +33,105 @@ def fake_videos():
     ]
 
 
-def test_generate_search_queries_parses_json_list():
+def _plan_payload(queries: list[str], keywords: list[str] | None = None) -> str:
+    """Return a JSON plan payload matching the new PLAN_SEARCHES_PROMPT schema."""
+    return json.dumps({"broad_queries": queries, "channel_keywords": keywords or []})
+
+
+def test_plan_searches_parses_json_object():
     with patch.object(search_agent, "get_llm") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning(
-            '["quantum computing intro", "qubit tutorial", "quantum gates"]'
+            _plan_payload(
+                ["quantum computing intro", "qubit tutorial", "quantum gates"],
+                ["quantum", "qubit"],
+            )
         )
         state = {
             "topic": "quantum computing",
             "search_instructions": "",
             "channel_type_filters": [],
+            "preferred_channel_ids": [],
         }
-        result = search_agent.generate_search_queries(state)
+        result = search_agent.plan_searches(state)
 
     assert result["search_queries_used"] == [
         "quantum computing intro",
         "qubit tutorial",
         "quantum gates",
     ]
+    assert result["channel_keywords"] == ["quantum", "qubit"]
     assert len(result["messages"]) == 1
 
 
-def test_generate_search_queries_falls_back_on_bad_json():
+def test_plan_searches_falls_back_on_bad_json():
     with patch.object(search_agent, "get_llm") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("not valid json!!")
         state = {
             "topic": "physics",
             "search_instructions": "",
             "channel_type_filters": [],
+            "preferred_channel_ids": [],
         }
-        result = search_agent.generate_search_queries(state)
+        result = search_agent.plan_searches(state)
 
+    # Falls back to the topic as a single broad query.
     assert result["search_queries_used"] == ["physics"]
+    assert result["channel_keywords"] == []
 
 
-def test_generate_search_queries_falls_back_when_not_a_list():
+def test_plan_searches_falls_back_when_not_an_object():
+    """LLM returned a list (old format) or anything that isn't a dict — we
+    cannot trust it, so we fall back to the topic."""
     with patch.object(search_agent, "get_llm") as mock_get_llm:
-        mock_get_llm.return_value = _fake_llm_returning('{"query": "physics"}')
+        mock_get_llm.return_value = _fake_llm_returning('["physics"]')
         state = {
             "topic": "physics",
             "search_instructions": "",
             "channel_type_filters": [],
+            "preferred_channel_ids": [],
         }
-        result = search_agent.generate_search_queries(state)
+        result = search_agent.plan_searches(state)
 
     assert result["search_queries_used"] == ["physics"]
+
+
+def test_plan_searches_generates_fallback_keywords_when_channels_present():
+    """If preferred channels are supplied but the LLM forgot to include
+    channel_keywords, we synthesize them from the topic so the keyword
+    filter is never empty."""
+    with patch.object(search_agent, "get_llm") as mock_get_llm:
+        mock_get_llm.return_value = _fake_llm_returning(
+            json.dumps({"broad_queries": ["quantum intro"], "channel_keywords": []})
+        )
+        state = {
+            "topic": "quantum computing fundamentals",
+            "search_instructions": "",
+            "channel_type_filters": [],
+            "preferred_channel_ids": ["UC123"],
+        }
+        result = search_agent.plan_searches(state)
+
+    assert result["search_queries_used"] == ["quantum intro"]
+    # Synthesized from topic tokens (>2 chars).
+    assert set(result["channel_keywords"]) == {"quantum", "computing", "fundamentals"}
+
+
+def test_resolve_preferred_channels_dedupes_and_skips_failures():
+    with patch.object(search_agent.youtube_service, "resolve_channel_id") as mock_resolve:
+        mock_resolve.side_effect = ["UC1", "UC1", None, "UC2"]
+        result = search_agent.resolve_preferred_channels(
+            {"preferred_channels": ["@a", "@aDup", "@bogus", "@b"]}
+        )
+    assert result["preferred_channel_ids"] == ["UC1", "UC2"]
+
+
+def test_resolve_preferred_channels_empty_input_skips_api():
+    with patch.object(search_agent.youtube_service, "resolve_channel_id") as mock_resolve:
+        result = search_agent.resolve_preferred_channels(
+            {"preferred_channels": []}
+        )
+    assert result["preferred_channel_ids"] == []
+    mock_resolve.assert_not_called()
 
 
 def test_execute_searches_calls_youtube_service_with_expected_queries(fake_videos):
@@ -96,6 +151,8 @@ def test_execute_searches_calls_youtube_service_with_expected_queries(fake_video
             "num_videos": 5,
             "min_duration": None,
             "max_duration": None,
+            "preferred_channel_ids": [],
+            "channel_keywords": [],
         }
         result = search_agent.execute_searches(state)
 
@@ -105,6 +162,8 @@ def test_execute_searches_calls_youtube_service_with_expected_queries(fake_video
     assert actual_queries == queries
     # Videos returned and enriched
     assert len(result["discovered_videos"]) == 2
+    # All are tagged as search-sourced.
+    assert all(v["source"] == "search" for v in result["discovered_videos"])
 
 
 def test_execute_searches_filters_videos_above_min_duration(fake_videos):
@@ -123,6 +182,8 @@ def test_execute_searches_filters_videos_above_min_duration(fake_videos):
             "num_videos": 5,
             "min_duration": 30,  # 30 minutes
             "max_duration": None,
+            "preferred_channel_ids": [],
+            "channel_keywords": [],
         }
         result = search_agent.execute_searches(state)
 
@@ -147,6 +208,8 @@ def test_execute_searches_filters_videos_under_max_duration(fake_videos):
             "num_videos": 5,
             "min_duration": None,
             "max_duration": 15,  # 15 minutes — only v1 (10min) qualifies
+            "preferred_channel_ids": [],
+            "channel_keywords": [],
         }
         result = search_agent.execute_searches(state)
 
@@ -170,6 +233,8 @@ def test_execute_searches_filters_by_duration_minutes(fake_videos):
             "num_videos": 5,
             "min_duration": 15,  # >= 15 minutes only
             "max_duration": 45,  # <= 45 minutes
+            "preferred_channel_ids": [],
+            "channel_keywords": [],
         }
         result = search_agent.execute_searches(state)
 
@@ -195,10 +260,61 @@ def test_execute_searches_dedupes_across_queries(fake_videos):
             "num_videos": 5,
             "min_duration": None,
             "max_duration": None,
+            "preferred_channel_ids": [],
+            "channel_keywords": [],
         }
         result = search_agent.execute_searches(state)
 
     assert len(result["discovered_videos"]) == 2
+
+
+def test_execute_searches_merges_preferred_channel_uploads(fake_videos):
+    """Preferred channels contribute uploads via playlist walk, tagged source=preferred_channel."""
+    broad = [fake_videos[0]]  # v1 from broad search
+
+    # Preferred channel UCX returns v2 and v3 as recent uploads.
+    preferred_uploads = [fake_videos[1]["video_id"], fake_videos[2]["video_id"]]
+
+    with patch.object(search_agent.youtube_service, "search_videos") as mock_search, \
+         patch.object(search_agent.youtube_service, "get_channel_videos", return_value=preferred_uploads), \
+         patch.object(search_agent.youtube_service, "get_video_details") as mock_details, \
+         patch.object(search_agent.youtube_service, "get_channel_subscribers", return_value={}):
+        mock_search.return_value = broad
+
+        # get_video_details is called twice: once for preferred uploads, once for broad enrichment.
+        def _details_side_effect(ids):
+            return {
+                v["video_id"]: {
+                    "video_id": v["video_id"],
+                    "title": v["title"],
+                    "channel_name": v["channel_name"],
+                    "channel_id": v["channel_id"],
+                    "duration_seconds": v["duration_seconds"],
+                    "published_at": "2024-01-01T00:00:00Z",
+                }
+                for v in fake_videos
+                if v["video_id"] in ids
+            }
+
+        mock_details.side_effect = _details_side_effect
+
+        state = {
+            "topic": "quantum",
+            "search_queries_used": ["quantum intro"],
+            "num_videos": 5,
+            "min_duration": None,
+            "max_duration": None,
+            "preferred_channel_ids": ["UCX"],
+            # Both "quantum" and "qubits" match fake_videos titles.
+            "channel_keywords": ["quantum", "qubits"],
+        }
+        result = search_agent.execute_searches(state)
+
+    by_id = {v["video_id"]: v for v in result["discovered_videos"]}
+    assert set(by_id) == {"v1", "v2", "v3"}
+    assert by_id["v1"]["source"] == "search"
+    assert by_id["v2"]["source"] == "preferred_channel"
+    assert by_id["v3"]["source"] == "preferred_channel"
 
 
 def test_rank_and_curate_returns_all_when_below_target(fake_videos):
@@ -274,11 +390,11 @@ def test_run_search_agent_end_to_end(fake_videos):
          patch.object(search_agent.youtube_service, "get_video_details") as mock_details, \
          patch.object(search_agent.youtube_service, "get_channel_subscribers", return_value={}):
 
-        # generate_search_queries LLM call
-        query_llm = _fake_llm_returning('["q1", "q2"]')
+        # plan_searches LLM call (structured plan)
+        plan_llm = _fake_llm_returning(_plan_payload(["q1", "q2"]))
         # rank_and_curate LLM call
         rank_llm = _fake_llm_returning(json.dumps(["v1", "v2"]))
-        mock_get_llm.side_effect = [query_llm, rank_llm]
+        mock_get_llm.side_effect = [plan_llm, rank_llm]
 
         mock_search.return_value = fake_videos
         mock_details.return_value = {
@@ -296,5 +412,57 @@ def test_run_search_agent_end_to_end(fake_videos):
     assert queries_used == ["q1", "q2"]
     # YouTube service was invoked
     assert mock_search.called
-    # LLM invoked twice (queries + curation)
+    # LLM invoked twice (plan + curation)
     assert mock_get_llm.call_count == 2
+
+
+def test_run_search_agent_resolves_preferred_channels(fake_videos):
+    """End-to-end with preferred_channels supplied: resolve_channel_id is
+    called for each hint, and their uploads show up as preferred-sourced."""
+    preferred_uploads_v2 = ["v2"]
+
+    with patch.object(search_agent, "get_llm") as mock_get_llm, \
+         patch.object(search_agent.youtube_service, "resolve_channel_id") as mock_resolve, \
+         patch.object(search_agent.youtube_service, "search_videos") as mock_search, \
+         patch.object(search_agent.youtube_service, "get_channel_videos") as mock_channel_videos, \
+         patch.object(search_agent.youtube_service, "get_video_details") as mock_details, \
+         patch.object(search_agent.youtube_service, "get_channel_subscribers", return_value={}):
+
+        mock_resolve.side_effect = ["UCABC"]
+        plan_llm = _fake_llm_returning(
+            _plan_payload(["quantum intro", "quantum risks"], ["quantum"])
+        )
+        rank_llm = _fake_llm_returning(json.dumps(["v2", "v1"]))
+        mock_get_llm.side_effect = [plan_llm, rank_llm]
+
+        mock_search.return_value = [fake_videos[0]]  # v1 from broad
+        mock_channel_videos.return_value = preferred_uploads_v2  # v2 from preferred channel
+
+        def _details_side_effect(ids):
+            return {
+                v["video_id"]: {
+                    "video_id": v["video_id"],
+                    "title": v["title"],
+                    "channel_name": v["channel_name"],
+                    "channel_id": v["channel_id"],
+                    "duration_seconds": v["duration_seconds"],
+                    "published_at": "2024-01-01T00:00:00Z",
+                }
+                for v in fake_videos
+                if v["video_id"] in ids
+            }
+
+        mock_details.side_effect = _details_side_effect
+
+        curated, queries_used = search_agent.run_search_agent(
+            topic="quantum",
+            num_videos=2,
+            preferred_channels=["@preferred"],
+        )
+
+    assert mock_resolve.call_count == 1
+    mock_channel_videos.assert_called_once()
+    # Broad queries must NOT contain the channel hint text.
+    assert all("@preferred" not in q for q in queries_used)
+    # Both broad and preferred-source videos make it into the curated set.
+    assert {v["video_id"] for v in curated} == {"v1", "v2"}

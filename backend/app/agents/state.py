@@ -11,6 +11,12 @@ class SearchAgentState(TypedDict):
     min_duration: int | None
     max_duration: int | None
     channel_type_filters: list[str]
+    # Raw user-supplied channel hints (URLs/handles/UC-IDs). Optional; may be empty.
+    preferred_channels: list[str]
+    # Channel IDs resolved from `preferred_channels` via the YouTube API.
+    preferred_channel_ids: list[str]
+    # LLM-selected keywords used to score preferred-channel uploads for topic relevance.
+    channel_keywords: list[str]
     discovered_videos: list[dict]
     curated_videos: list[dict]
     search_queries_used: list[str]

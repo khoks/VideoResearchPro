@@ -24,6 +24,7 @@ export interface Job {
   min_duration_minutes: number | null;
   max_duration_minutes: number | null;
   channel_type_filters: string[] | null;
+  preferred_channels: string[] | null;
   channel_list: string[] | null;
   videos_per_channel: number | null;
   progress_pct: number;
@@ -42,6 +43,7 @@ export interface JobCreate {
   min_duration_minutes?: number;
   max_duration_minutes?: number;
   channel_type_filters?: string[];
+  preferred_channels?: string[];
   channel_list?: string[];
   videos_per_channel?: number;
 }

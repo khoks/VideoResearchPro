@@ -183,6 +183,7 @@ def execute_topic_job(self, job_id: str) -> None:
             min_duration=job.min_duration_minutes,
             max_duration=job.max_duration_minutes,
             channel_type_filters=json.loads(job.channel_type_filters) if job.channel_type_filters else [],
+            preferred_channels=json.loads(job.preferred_channels) if job.preferred_channels else [],
         )
         logger.info(f"[job:{job_id}] Search Agent complete: found {len(curated_videos)} candidate videos")
 

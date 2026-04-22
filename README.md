@@ -5,12 +5,14 @@ A full-stack web application for YouTube video research. Run **topic**, **channe
 ## Features
 
 - **Topic research** — Describe a topic; AI finds, ranks, and summarizes the best videos.
+- **Preferred channels filter (topic jobs)** — Optionally paste creator handles or channel URLs; the Search Agent walks each channel's uploads directly and keyword-filters them against your topic, alongside the broad YouTube searches. Creator names never end up stuffed into raw query strings.
 - **Channel research** — Paste channel URLs; pull the latest N videos per channel.
 - **Channel subscriptions** — Subscribe to a channel; every current and future video is ingested and indexed automatically.
 - **Global video library** — One canonical copy of every transcribed video, reused across all jobs.
 - **Library-wide Q&A** — Ask questions against the entire library of videos, not just one job.
 - **Multilingual** — Transcribes whatever the speaker says (Hindi, Urdu, English, mixed); answers in your chosen language.
 - **Citation-grounded Q&A** — Every answer includes clickable YouTube timestamps back to the source.
+- **One-click restart** — `scripts/restart_services.ps1` and a protected `POST /api/v1/admin/restart` endpoint bring Redis, the backend, the Celery worker, and the frontend back up in a single shot.
 
 ## Prerequisites
 
@@ -124,6 +126,32 @@ Navigate to **http://localhost:5173** in your browser.
 
 The backend API is available at **http://localhost:8000** (health check: `GET /api/v1/health`).
 
+## Restarting Services
+
+All four runtimes (Redis, backend, Celery worker, frontend dev server) can be killed and relaunched in one shot via `scripts/restart_services.ps1` on Windows.
+
+**From the command line:**
+```powershell
+# Full restart of everything:
+./scripts/restart_services.ps1
+
+# Backend + Celery only; leave the frontend dev server alone:
+./scripts/restart_services.ps1 -SkipFrontend
+
+# Kill the four runtimes without restarting (handy when debugging):
+./scripts/restart_services.ps1 -KillOnly
+```
+
+The script kills processes by port (`:8000` backend, `:5173` frontend) and by command-line match (`celery`), verifies the Redis Windows service is running (auto-starts it if not), and relaunches every service detached with `-WindowStyle Hidden`. Every step is mirrored to `restart_services.log` at the repo root so you can see what happened even when the scripts run without a console.
+
+**From the running backend** (the endpoint is authenticated, so use your JWT):
+```bash
+curl -X POST "http://localhost:8000/api/v1/admin/restart" \
+     -H "Authorization: Bearer $TOKEN"
+```
+
+The endpoint returns `202 Accepted` immediately, spawns `restart_services.ps1` as a detached child process, then sleeps for the configured delay (default 2 s) before killing its own uvicorn process. The new backend comes up on the same port within ~5–10 s. Useful query params: `?skip_frontend=true`, `?delay=5`. Self-restart is wired up for Windows hosts only.
+
 ## How It Works
 
 1. **Pick a job type**
@@ -236,10 +264,13 @@ Tests use an in-memory SQLite database and mock Celery tasks — no Redis requir
 | POST | `/api/v1/channels/{id}/unsubscribe` | Unsubscribe from a channel |
 | POST | `/api/v1/channels/{id}/sync` | Trigger a fresh sync |
 | GET | `/api/v1/channels/{id}/videos` | List videos for a channel |
+| POST | `/api/v1/admin/restart` | Restart Redis/backend/Celery/frontend (Windows only) |
 | WS | `/ws/jobs` | Real-time progress (subscribe/unsubscribe per job) |
 
 ## What's New
 
+- **Preferred channels on topic jobs.** The Search Agent now takes a `preferred_channels` list alongside the topic and instructions. The LLM produces a structured plan (`broad_queries` + `channel_keywords`); preferred channels are resolved to IDs and their uploads playlists are walked directly, then keyword-filtered. No more creator names getting stuffed into query strings.
+- **Self-restart endpoint + PowerShell script.** `scripts/restart_services.ps1` kills and relaunches all four runtimes in one shot; `POST /api/v1/admin/restart` drives the same script from inside the running backend via a detached trampoline process.
 - Videos are now globally deduplicated across jobs.
 - New channel-subscription job type (fire-and-forget ingestion, no approval, no report).
 - New library-wide Q&A endpoint and UI page.

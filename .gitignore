@@ -18,6 +18,7 @@ venv/
 
 # Data (runtime)
 backend/data/
+backend/data.legacy-backup.*/
 
 # IDE
 .vscode/

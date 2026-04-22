@@ -26,6 +26,10 @@ class Job(Base):
     min_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     channel_type_filters: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
+    # Topic-job only: JSON array of user-supplied channel hints (URLs/handles/UC-IDs).
+    # Resolved to channel_ids by the Search Agent and used to walk each channel's
+    # uploads playlist alongside broad topic searches.
+    preferred_channels: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
 
     # Channel-based fields
     channel_list: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array

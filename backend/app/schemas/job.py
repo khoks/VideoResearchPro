@@ -14,6 +14,12 @@ class JobCreate(BaseModel):
     min_duration_minutes: int | None = Field(default=None, ge=1)
     max_duration_minutes: int | None = Field(default=None, ge=1)
     channel_type_filters: list[str] | None = None
+    # Optional list of YouTube channel URLs, handles, or UC-IDs that the user
+    # wants the Search Agent to emphasize. Unlike free-text in
+    # `search_instructions`, these are resolved to channel_ids and their
+    # uploads playlists are walked directly — avoiding the pathological
+    # pattern where the LLM stuffs channel names into YouTube query strings.
+    preferred_channels: list[str] | None = None
 
     # Channel fields
     channel_list: list[str] | None = None
@@ -46,6 +52,7 @@ class JobResponse(BaseModel):
     min_duration_minutes: int | None = None
     max_duration_minutes: int | None = None
     channel_type_filters: list[str] | None = None
+    preferred_channels: list[str] | None = None
     channel_list: list[str] | None = None
     videos_per_channel: int | None = None
     search_queries_used: list[str] | None = None

@@ -25,6 +25,7 @@ def create_job(db: Session, job_data: JobCreate) -> Job:
         min_duration_minutes=job_data.min_duration_minutes,
         max_duration_minutes=job_data.max_duration_minutes,
         channel_type_filters=json.dumps(job_data.channel_type_filters) if job_data.channel_type_filters else None,
+        preferred_channels=json.dumps(job_data.preferred_channels) if job_data.preferred_channels else None,
         channel_list=json.dumps(job_data.channel_list) if job_data.channel_list else None,
         videos_per_channel=job_data.videos_per_channel,
     )
@@ -90,6 +91,7 @@ def job_to_response_dict(job: Job) -> dict:
         "min_duration_minutes": job.min_duration_minutes,
         "max_duration_minutes": job.max_duration_minutes,
         "channel_type_filters": json.loads(job.channel_type_filters) if job.channel_type_filters else None,
+        "preferred_channels": json.loads(job.preferred_channels) if job.preferred_channels else None,
         "channel_list": json.loads(job.channel_list) if job.channel_list else None,
         "videos_per_channel": job.videos_per_channel,
         "search_queries_used": json.loads(job.search_queries_used) if job.search_queries_used else None,

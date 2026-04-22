@@ -25,6 +25,7 @@ interface PersistedFormState {
   minDuration: string;
   maxDuration: string;
   channelFilters: ChannelTypeOption[];
+  preferredChannels: string;
   channelList: string;
   videosPerChannel: number;
   subscriptionChannels: string;
@@ -38,6 +39,7 @@ const DEFAULT_FORM: PersistedFormState = {
   minDuration: '',
   maxDuration: '',
   channelFilters: [],
+  preferredChannels: '',
   channelList: '',
   videosPerChannel: 10,
   subscriptionChannels: '',
@@ -112,9 +114,14 @@ export function SubmitJobPage() {
   // Subscription jobs: ~100 units per channel to resolve + ~1 unit per 50 videos (walks all).
   const quotaEstimate = useMemo(() => {
     if (form.jobType === 'topic') {
-      const searches = 100 * 3;
+      // 4-6 broad queries at 100 units each; pick a mid estimate.
+      const broadSearches = 100 * 5;
       const details = Math.max(0, form.numVideos) * 1;
-      return searches + details;
+      // Each preferred channel: ~100 units to resolve (if search fallback hits)
+      // + 1 unit to walk the uploads page + 1 unit of details per ~50 uploads.
+      const preferredLines = parseChannelList(form.preferredChannels);
+      const preferredCost = preferredLines.length * (100 + 1 + 1);
+      return broadSearches + details + preferredCost;
     }
     if (form.jobType === 'subscription') {
       // Video count is unknown until resolve; assume a large channel (~500 videos) as upper estimate.
@@ -132,6 +139,7 @@ export function SubmitJobPage() {
     form.channelList,
     form.videosPerChannel,
     form.subscriptionChannels,
+    form.preferredChannels,
   ]);
 
   const invalidChannels = useMemo(() => {
@@ -140,6 +148,14 @@ export function SubmitJobPage() {
       return validateChannels(parseChannelList(form.subscriptionChannels));
     return [];
   }, [form.jobType, form.channelList, form.subscriptionChannels]);
+
+  // Preferred-channels validation runs independently of the main channel list
+  // because it appears only on the topic-job tab.
+  const invalidPreferredChannels = useMemo(() => {
+    if (form.jobType !== 'topic') return [];
+    const lines = parseChannelList(form.preferredChannels);
+    return validateChannels(lines);
+  }, [form.jobType, form.preferredChannels]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,6 +174,20 @@ export function SubmitJobPage() {
       if (form.minDuration) data.min_duration_minutes = parseInt(form.minDuration, 10);
       if (form.maxDuration) data.max_duration_minutes = parseInt(form.maxDuration, 10);
       if (form.channelFilters.length > 0) data.channel_type_filters = [...form.channelFilters];
+
+      const preferredLines = parseChannelList(form.preferredChannels);
+      if (preferredLines.length > 0) {
+        const invalid = validateChannels(preferredLines);
+        if (invalid.length > 0) {
+          setValidationError(
+            `Invalid preferred-channel entries: ${invalid.slice(0, 3).join(', ')}${
+              invalid.length > 3 ? '...' : ''
+            }`,
+          );
+          return;
+        }
+        data.preferred_channels = preferredLines;
+      }
     } else {
       const raw = form.jobType === 'channel' ? form.channelList : form.subscriptionChannels;
       const lines = parseChannelList(raw);
@@ -258,10 +288,39 @@ export function SubmitJobPage() {
               <textarea
                 value={form.searchInstructions}
                 onChange={(e) => update('searchInstructions', e.target.value)}
-                placeholder="e.g. Focus on academic channels, prefer recent uploads..."
+                placeholder={
+                  'Semantic guidance for the Search Agent. Good examples:\n' +
+                  '  - "Prefer recent 2026 uploads, skip anything older than 12 months."\n' +
+                  '  - "Favor skeptical / critical perspectives over marketing clips."\n' +
+                  "Don't list channel names here — use the Preferred Channels field below instead."
+                }
                 rows={3}
               />
             </Field>
+            <Field label="Preferred Channels (optional)">
+              <textarea
+                value={form.preferredChannels}
+                onChange={(e) => update('preferredChannels', e.target.value)}
+                placeholder={
+                  '@nateb.jones\n@dwarkeshpatel\nhttps://youtube.com/@andrewberman\nUCx...'
+                }
+                rows={4}
+              />
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-faint)' }}>
+                One per line: @handles, channel URLs, or UC-IDs. The agent will walk each
+                channel&apos;s recent uploads and surface anything topic-relevant alongside a
+                broad YouTube search.
+              </span>
+            </Field>
+            {invalidPreferredChannels.length > 0 && (
+              <p style={{ margin: 0, fontSize: '0.8rem', color: '#ef4444' }}>
+                Invalid preferred-channel entries:{' '}
+                {invalidPreferredChannels.slice(0, 3).join(', ')}
+                {invalidPreferredChannels.length > 3
+                  ? `, +${invalidPreferredChannels.length - 3} more`
+                  : ''}
+              </p>
+            )}
             <Field label="Number of Videos">
               <input
                 type="number"

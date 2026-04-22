@@ -1,10 +1,43 @@
+"""Search Agent: plans and executes YouTube video discovery for a topic job.
+
+Pipeline (LangGraph):
+
+    resolve_preferred_channels
+        ↓
+    plan_searches    (LLM produces {broad_queries, channel_keywords})
+        ↓
+    execute_searches (broad queries + preferred-channel uploads, deduped)
+        ↓
+    rank_and_curate  (LLM ranks the merged pool)
+        ↓
+    END
+
+Key design choices:
+
+* The user's ``search_instructions`` is semantic guidance only — it never
+  gets pasted into a YouTube query string. The LLM is explicitly told to
+  ignore creator names, handles, and URLs when drafting queries.
+* Preferred channels are resolved to channel IDs and their uploads playlists
+  are walked directly. We then keyword-filter those uploads down to the
+  topic-relevant subset using ``channel_keywords`` from the LLM plan.
+* We merge both sources before the final LLM rank, giving the curator full
+  awareness of each video's provenance (``source=search`` vs
+  ``source=preferred_channel``) so it can weight accordingly.
+"""
+
+from __future__ import annotations
+
 import json
 import logging
 
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
 
-from app.agents.prompts.search_prompts import INTERPRET_QUERY_PROMPT, RANK_AND_CURATE_PROMPT
+from app.agents.prompts.search_prompts import (
+    PLAN_SEARCHES_PROMPT,
+    PREFERRED_CHANNELS_BLOCK,
+    RANK_AND_CURATE_PROMPT,
+)
 from app.agents.state import SearchAgentState
 from app.services import youtube_service
 from app.services.llm_service import get_llm
@@ -12,66 +45,269 @@ from app.utils.youtube_helpers import format_duration
 
 logger = logging.getLogger(__name__)
 
+# How many recent uploads we pull per preferred channel before keyword-filtering.
+# 50 hits the YouTube playlistItems page size for a single quota unit.
+PREFERRED_CHANNEL_FETCH_LIMIT = 50
 
-def generate_search_queries(state: SearchAgentState) -> dict:
-    """Use LLM to generate YouTube search queries from topic + instructions."""
+
+def resolve_preferred_channels(state: SearchAgentState) -> dict:
+    """Resolve user-supplied channel hints (URLs / handles / UC-IDs) to channel IDs.
+
+    Unresolvable entries are skipped with a warning so a single typo does
+    not sink the whole job.
+    """
+    hints = state.get("preferred_channels") or []
+    if not hints:
+        return {"preferred_channel_ids": []}
+
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for hint in hints:
+        hint = (hint or "").strip()
+        if not hint:
+            continue
+        try:
+            cid = youtube_service.resolve_channel_id(hint)
+        except Exception:
+            logger.exception("resolve_preferred_channels: %r raised, skipping", hint)
+            continue
+        if cid and cid not in seen:
+            seen.add(cid)
+            resolved.append(cid)
+        elif not cid:
+            logger.warning("resolve_preferred_channels: could not resolve %r", hint)
+
+    logger.info(
+        "resolve_preferred_channels: %d/%d hints resolved",
+        len(resolved), len(hints),
+    )
+    return {"preferred_channel_ids": resolved}
+
+
+def plan_searches(state: SearchAgentState) -> dict:
+    """LLM produces a structured search plan: broad_queries + channel_keywords.
+
+    Replaces the old ``generate_search_queries`` node. Always returns at
+    least one broad query (falling back to the topic itself if the LLM
+    response is unparseable), and never stuffs channel names into the
+    queries.
+    """
+    topic = state["topic"]
+    preferred_ids = state.get("preferred_channel_ids") or []
+
+    if preferred_ids:
+        preferred_block = PREFERRED_CHANNELS_BLOCK.format(
+            channels=", ".join(preferred_ids)
+        )
+    else:
+        preferred_block = ""
+
     llm = get_llm(temperature=0.3)
-    prompt = INTERPRET_QUERY_PROMPT.format(
-        topic=state["topic"],
-        search_instructions=state.get("search_instructions", ""),
+    prompt = PLAN_SEARCHES_PROMPT.format(
+        topic=topic,
+        search_instructions=state.get("search_instructions", "") or "(none)",
         channel_type_filters=", ".join(state.get("channel_type_filters", [])) or "none",
+        preferred_channels_section=preferred_block,
     )
     response = llm.invoke([HumanMessage(content=prompt)])
 
+    broad_queries: list[str] = []
+    channel_keywords: list[str] = []
     try:
-        queries = json.loads(response.content)
-        if not isinstance(queries, list):
-            queries = [state["topic"]]
+        plan = json.loads(response.content)
+        if isinstance(plan, dict):
+            raw_q = plan.get("broad_queries") or []
+            if isinstance(raw_q, list):
+                broad_queries = [str(q).strip() for q in raw_q if str(q).strip()]
+            raw_k = plan.get("channel_keywords") or []
+            if isinstance(raw_k, list):
+                channel_keywords = [str(k).strip().lower() for k in raw_k if str(k).strip()]
     except (json.JSONDecodeError, TypeError):
-        queries = [state["topic"]]
+        logger.exception("plan_searches: failed to parse LLM JSON, falling back to topic")
+
+    # Defensive fallbacks — the pipeline MUST have at least one query, and
+    # at least one keyword if preferred channels were supplied (otherwise
+    # the keyword filter would keep nothing).
+    if not broad_queries:
+        broad_queries = [topic]
+    if preferred_ids and not channel_keywords:
+        channel_keywords = [w.lower() for w in topic.split() if len(w) > 2]
+
+    logger.info(
+        "plan_searches: %d broad_queries, %d channel_keywords",
+        len(broad_queries), len(channel_keywords),
+    )
 
     return {
-        "search_queries_used": queries,
-        "messages": [HumanMessage(content=f"Generated {len(queries)} search queries")],
+        "search_queries_used": broad_queries,
+        "channel_keywords": channel_keywords,
+        "messages": [
+            HumanMessage(
+                content=(
+                    f"Planned {len(broad_queries)} broad queries and "
+                    f"{len(channel_keywords)} channel keywords"
+                )
+            )
+        ],
     }
 
 
-def execute_searches(state: SearchAgentState) -> dict:
-    """Execute YouTube searches, pull detailed metadata, and filter by duration."""
-    queries = state.get("search_queries_used", [state["topic"]])
-    target = state["num_videos"]
-    min_dur = state.get("min_duration")
-    max_dur = state.get("max_duration")
-    # NOTE: `channel_type_filters` (e.g. "educational", "academic") is a semantic
-    # preference consumed by the LLM ranking step, NOT a YouTube API parameter.
-    # YouTube's `channelType` only accepts ['channelTypeUnspecified', 'any', 'show'].
-    # Don't forward user-facing semantic filters to the API — let the rank prompt use them.
-
-    # Fetch a generous candidate pool so ranking has real choices. We rely on
-    # post-fetch duration filtering (finer than YouTube's short/medium/long buckets).
+def _run_broad_searches(queries: list[str], target: int) -> dict[str, dict]:
+    """Run each broad query against YouTube, deduping by video_id."""
     per_query_max = max(target * 3, 50)
-
     all_videos: dict[str, dict] = {}
     for query in queries:
-        results = youtube_service.search_videos(
-            query=query,
-            max_results=per_query_max,
-        )
+        try:
+            results = youtube_service.search_videos(
+                query=query,
+                max_results=per_query_max,
+            )
+        except Exception:
+            logger.exception("broad search for %r failed; skipping", query)
+            continue
         for v in results:
             vid = v["video_id"]
             if vid not in all_videos:
+                v["source"] = "search"
+                v["source_query"] = query
                 all_videos[vid] = v
-
         if len(all_videos) >= target * 5:
             break
+    return all_videos
 
-    # Fetch detailed metadata (duration, stats, channel_id, etc.).
-    video_ids = list(all_videos.keys())
-    if video_ids:
-        details = youtube_service.get_video_details(video_ids)
+
+def _keyword_score(text: str, keywords: list[str]) -> int:
+    """Very cheap relevance score: count of keyword substring hits in text.
+
+    Kept simple on purpose — the LLM-based ``rank_and_curate`` does the
+    heavy lifting. This scoring just filters out channel uploads that are
+    obviously off-topic (e.g. a creator's cooking video when the topic is
+    AI safety).
+    """
+    if not keywords:
+        return 0
+    text_l = (text or "").lower()
+    return sum(1 for kw in keywords if kw and kw in text_l)
+
+
+def _fetch_preferred_channel_uploads(
+    channel_ids: list[str],
+    keywords: list[str],
+    cap_per_channel: int = 20,
+) -> dict[str, dict]:
+    """Pull recent uploads from each preferred channel and keyword-filter them.
+
+    We fetch the ``PREFERRED_CHANNEL_FETCH_LIMIT`` most recent uploads per
+    channel, fetch their details, and keep only the ones whose title
+    matches at least one keyword. This prevents a channel's entire back
+    catalogue from drowning out topic relevance while still surfacing
+    everything on-topic they have recently published.
+    """
+    if not channel_ids:
+        return {}
+
+    # Fetch recent upload IDs per channel.
+    all_ids: list[str] = []
+    channel_of: dict[str, str] = {}
+    for cid in channel_ids:
+        try:
+            vids = youtube_service.get_channel_videos(
+                channel_id=cid,
+                max_results=PREFERRED_CHANNEL_FETCH_LIMIT,
+            )
+        except Exception:
+            logger.exception("preferred-channel fetch failed for %s", cid)
+            continue
+        for vid in vids:
+            if vid not in channel_of:
+                channel_of[vid] = cid
+                all_ids.append(vid)
+
+    if not all_ids:
+        return {}
+
+    try:
+        details = youtube_service.get_video_details(all_ids)
+    except Exception:
+        logger.exception("get_video_details failed for preferred-channel uploads")
+        return {}
+
+    # Score by title+description (description is usually not returned by
+    # videos.list without a separate fetch, so we rely on title).
+    scored_per_channel: dict[str, list[tuple[int, dict]]] = {}
+    for vid, d in details.items():
+        d["source"] = "preferred_channel"
+        d["source_channel_id"] = channel_of.get(vid, "")
+        score = _keyword_score(d.get("title", ""), keywords)
+        scored_per_channel.setdefault(channel_of.get(vid, ""), []).append((score, d))
+
+    kept: dict[str, dict] = {}
+    for cid, scored in scored_per_channel.items():
+        # Keep keyword matches first, then fill up to cap_per_channel with
+        # the most recent uploads so the user's channel is always represented.
+        scored.sort(key=lambda t: (-t[0], t[1].get("published_at") or ""), reverse=False)
+        matches = [v for s, v in scored if s > 0]
+        if not matches:
+            # No keyword hits — keep the top few recent uploads so the LLM
+            # ranker at least sees this channel. It will drop them as
+            # off-topic if they really are.
+            matches = [v for _, v in scored[:3]]
+        for v in matches[:cap_per_channel]:
+            kept[v["video_id"]] = v
+
+    logger.info(
+        "_fetch_preferred_channel_uploads: kept %d videos across %d channels",
+        len(kept), len(channel_ids),
+    )
+    return kept
+
+
+def execute_searches(state: SearchAgentState) -> dict:
+    """Execute the planned searches against YouTube and the uploads playlists.
+
+    Merges broad-query results with preferred-channel uploads, enriches
+    each with channel-subscriber counts, and applies the user's duration
+    filter.
+    """
+    queries = state.get("search_queries_used") or [state["topic"]]
+    target = state["num_videos"]
+    min_dur = state.get("min_duration")
+    max_dur = state.get("max_duration")
+    preferred_ids = state.get("preferred_channel_ids") or []
+    keywords = state.get("channel_keywords") or []
+
+    # NOTE: `channel_type_filters` (e.g. "educational", "academic") is a
+    # semantic preference consumed by the LLM ranking step, NOT a YouTube
+    # API parameter. YouTube's `channelType` only accepts
+    # ['channelTypeUnspecified', 'any', 'show']. Don't forward user-facing
+    # semantic filters to the API — let the rank prompt use them.
+
+    all_videos: dict[str, dict] = _run_broad_searches(queries, target)
+
+    # Preferred-channel path: walks uploads directly, sidestepping the
+    # "stuff channel names into the search query" pathology.
+    if preferred_ids:
+        preferred_videos = _fetch_preferred_channel_uploads(preferred_ids, keywords)
+        # Preferred-channel videos already carry full details from
+        # videos.list; merge them in without clobbering the search-sourced
+        # `source` tag on overlaps (prefer the preferred_channel tag so
+        # the ranker knows this video comes from a channel the user asked for).
+        for vid, v in preferred_videos.items():
+            all_videos[vid] = v
+
+    # Fetch detailed metadata for any video we haven't already enriched.
+    missing_ids = [
+        vid for vid, v in all_videos.items()
+        if "duration_seconds" not in v
+    ]
+    if missing_ids:
+        details = youtube_service.get_video_details(missing_ids)
         for vid, detail in details.items():
             if vid in all_videos:
-                all_videos[vid].update(detail)
+                # Preserve the `source` and `source_query` tags we set.
+                merged = {**detail, **{k: v for k, v in all_videos[vid].items() if k.startswith("source")}}
+                merged.setdefault("source", all_videos[vid].get("source", "search"))
+                all_videos[vid] = {**all_videos[vid], **merged}
 
     # Fetch channel subscriber counts so ranking can use channel authority.
     channel_ids = sorted({v.get("channel_id") for v in all_videos.values() if v.get("channel_id")})
@@ -94,6 +330,10 @@ def execute_searches(state: SearchAgentState) -> dict:
             continue
         filtered.append(v)
 
+    logger.info(
+        "execute_searches: %d videos after merge+filter (broad+preferred)",
+        len(filtered),
+    )
     return {
         "discovered_videos": filtered,
         "messages": [HumanMessage(content=f"Found {len(filtered)} videos after filtering")],
@@ -108,8 +348,10 @@ def _format_video_line(v: dict) -> str:
     views_str = f"{views:,}" if isinstance(views, int) else "unknown"
     likes = v.get("like_count")
     likes_str = f"{likes:,}" if isinstance(likes, int) else "unknown"
+    source = v.get("source", "search")
     return (
-        f"- ID: {v['video_id']} | Title: {v.get('title', 'N/A')} | "
+        f"- ID: {v['video_id']} | Source: {source} | "
+        f"Title: {v.get('title', 'N/A')} | "
         f"Channel: {v.get('channel_name', 'N/A')} | "
         f"Duration: {format_duration(v.get('duration_seconds', 0))} | "
         f"Views: {views_str} | Likes: {likes_str} | "
@@ -159,16 +401,29 @@ def rank_and_curate(state: SearchAgentState) -> dict:
 def build_search_graph() -> StateGraph:
     """Build the search agent LangGraph."""
     graph = StateGraph(SearchAgentState)
-    graph.add_node("generate_search_queries", generate_search_queries)
+    graph.add_node("resolve_preferred_channels", resolve_preferred_channels)
+    graph.add_node("plan_searches", plan_searches)
     graph.add_node("execute_searches", execute_searches)
     graph.add_node("rank_and_curate", rank_and_curate)
 
-    graph.set_entry_point("generate_search_queries")
-    graph.add_edge("generate_search_queries", "execute_searches")
+    graph.set_entry_point("resolve_preferred_channels")
+    graph.add_edge("resolve_preferred_channels", "plan_searches")
+    graph.add_edge("plan_searches", "execute_searches")
     graph.add_edge("execute_searches", "rank_and_curate")
     graph.add_edge("rank_and_curate", END)
 
     return graph.compile()
+
+
+# --------------------------------------------------------------------------
+# Back-compat shim for tests that still import ``generate_search_queries``.
+# The new orchestration uses ``plan_searches``, which does everything
+# ``generate_search_queries`` did plus produces ``channel_keywords``.
+# Kept here so the existing test suite keeps passing.
+# --------------------------------------------------------------------------
+def generate_search_queries(state: SearchAgentState) -> dict:
+    """Deprecated: use ``plan_searches``. Left for test/back-compat only."""
+    return plan_searches(state)
 
 
 def run_search_agent(
@@ -178,8 +433,9 @@ def run_search_agent(
     min_duration: int | None = None,
     max_duration: int | None = None,
     channel_type_filters: list[str] | None = None,
+    preferred_channels: list[str] | None = None,
 ) -> tuple[list[dict], list[str]]:
-    """Run the search agent and return (curated videos, queries used)."""
+    """Run the search agent and return (curated videos, broad queries used)."""
     graph = build_search_graph()
     result = graph.invoke({
         "messages": [],
@@ -189,6 +445,9 @@ def run_search_agent(
         "min_duration": min_duration,
         "max_duration": max_duration,
         "channel_type_filters": channel_type_filters or [],
+        "preferred_channels": preferred_channels or [],
+        "preferred_channel_ids": [],
+        "channel_keywords": [],
         "discovered_videos": [],
         "curated_videos": [],
         "search_queries_used": [],

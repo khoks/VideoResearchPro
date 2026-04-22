@@ -548,24 +548,30 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 db.commit()
 
             progress_pct = 30 + int(25 * ((i + 1) / total))
+            attempted = i + 1
+            unavailable_so_far = attempted - fetched_count
             progress_message = (
-                f"Extracted {fetched_count}/{total} transcripts "
+                f"Video {attempted}/{total}: "
+                f"{fetched_count} fetched, {unavailable_so_far} unavailable "
                 f"(reused {reused_count}, new {newly_processed_count})..."
             )
             progress_service.publish_progress(
                 job_id, "extracting", progress_pct, progress_message,
                 data={
                     "transcripts_fetched": fetched_count,
+                    "transcripts_attempted": attempted,
                     "transcripts_total": total,
+                    "transcripts_unavailable": unavailable_so_far,
                     "reused_count": reused_count,
                     "newly_processed_count": newly_processed_count,
                 },
             )
             # Also persist to the DB so page reloads (or clients that aren't
             # WS-connected) see the current state, not the stale initial
-            # "Extracting transcripts (0/N)..." message. The per-video
-            # iteration already does a commit above for the Video row; this
-            # just piggybacks on the same transaction.
+            # "Extracting transcripts (0/N)..." message. Showing attempted +
+            # fetched (not just fetched) means the counter advances even when
+            # every video is falling through to a failing Whisper fallback —
+            # otherwise it looks frozen.
             job.progress_pct = progress_pct
             job.progress_message = progress_message
             job.updated_at = datetime.now(timezone.utc)
@@ -820,15 +826,20 @@ def _run_extraction_and_rag(self, db, job) -> None:
             db.commit()
 
         progress_pct = 30 + int(25 * ((i + 1) / total)) if total else 55
+        attempted = i + 1
+        unavailable_so_far = attempted - fetched_count
         progress_message = (
-            f"Extracted {fetched_count}/{total} transcripts "
+            f"Video {attempted}/{total}: "
+            f"{fetched_count} fetched, {unavailable_so_far} unavailable "
             f"(reused {reused_count}, new {newly_processed_count})..."
         )
         progress_service.publish_progress(
             job_id, "extracting", progress_pct, progress_message,
             data={
                 "transcripts_fetched": fetched_count,
+                "transcripts_attempted": attempted,
                 "transcripts_total": total,
+                "transcripts_unavailable": unavailable_so_far,
                 "reused_count": reused_count,
                 "newly_processed_count": newly_processed_count,
             },

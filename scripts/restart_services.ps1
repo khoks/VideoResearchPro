@@ -139,13 +139,19 @@ if (-not $redis) {
 # otherwise vanish. Redirect each service to its own log file in the repo
 # root so post-mortem debugging is possible. Hidden dotfiles keep them out
 # of directory listings and git (see .gitignore).
-$backendLog = Join-Path $repoRoot '.uvicorn.log'
-$celeryLog  = Join-Path $repoRoot '.celery.log'
-$celeryErr  = Join-Path $repoRoot '.celery.err.log'
-$frontendLog = Join-Path $repoRoot '.frontend.log'
+#
+# NOTE: Start-Process refuses -RedirectStandardOutput and -RedirectStandardError
+# pointing at the same file (even though cmd/bash are perfectly happy with
+# `>file 2>&1`). So every service gets separate .out.log and .err.log files.
+$backendOut  = Join-Path $repoRoot '.uvicorn.out.log'
+$backendErr  = Join-Path $repoRoot '.uvicorn.err.log'
+$celeryOut   = Join-Path $repoRoot '.celery.out.log'
+$celeryErr   = Join-Path $repoRoot '.celery.err.log'
+$frontendOut = Join-Path $repoRoot '.frontend.out.log'
+$frontendErr = Join-Path $repoRoot '.frontend.err.log'
 
 # ---- 5. Start backend detached ----
-Write-Step "Starting backend (uvicorn :8000) -> $backendLog"
+Write-Step "Starting backend (uvicorn :8000) -> $backendOut / $backendErr"
 if (-not (Test-Path $venvPython)) {
     Write-Step "  ERROR: venv python not found at $venvPython"
 } else {
@@ -153,12 +159,12 @@ if (-not (Test-Path $venvPython)) {
         -ArgumentList @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000') `
         -WorkingDirectory $backendDir `
         -WindowStyle Hidden `
-        -RedirectStandardOutput $backendLog `
-        -RedirectStandardError $backendLog
+        -RedirectStandardOutput $backendOut `
+        -RedirectStandardError $backendErr
 }
 
 # ---- 6. Start Celery worker detached ----
-Write-Step "Starting Celery worker -> $celeryLog"
+Write-Step "Starting Celery worker -> $celeryOut / $celeryErr"
 if (-not (Test-Path $venvCelery)) {
     Write-Step "  ERROR: celery not found at $venvCelery"
 } else {
@@ -166,21 +172,21 @@ if (-not (Test-Path $venvCelery)) {
         -ArgumentList @('-A', 'app.tasks.celery_app', 'worker', '--loglevel=info', '--pool=solo') `
         -WorkingDirectory $backendDir `
         -WindowStyle Hidden `
-        -RedirectStandardOutput $celeryLog `
+        -RedirectStandardOutput $celeryOut `
         -RedirectStandardError $celeryErr
 }
 
 # ---- 7. Start frontend dev server detached ----
 if (-not $SkipFrontend) {
-    Write-Step "Starting frontend (vite :5173) -> $frontendLog"
+    Write-Step "Starting frontend (vite :5173) -> $frontendOut / $frontendErr"
     # Use cmd /c so npm's .cmd shim resolves correctly regardless of the
     # PowerShell execution policy.
     Start-Process -FilePath 'cmd.exe' `
         -ArgumentList @('/c', 'npm', 'run', 'dev') `
         -WorkingDirectory $frontendDir `
         -WindowStyle Hidden `
-        -RedirectStandardOutput $frontendLog `
-        -RedirectStandardError $frontendLog
+        -RedirectStandardOutput $frontendOut `
+        -RedirectStandardError $frontendErr
 }
 
 Write-Step "Done. Backend should be healthy within ~10s."

@@ -279,7 +279,7 @@ Flags: `-SkipFrontend` (backend + Celery only), `-KillOnly` (stop without restar
 
 From the client's perspective: the 202 flies, the server goes quiet for ~5–10 s, then the new backend is up on the same port. Query params `skip_frontend` and `delay` are forwarded to the script. The route is protected with `Depends(get_current_user)` — only authenticated callers can restart the stack. Self-restart is wired up only for Windows hosts; the handler returns `501 Not Implemented` elsewhere.
 
-**Detached runtime logging.** Because `Start-Process -WindowStyle Hidden` hands each runtime a console that's immediately discarded, stdout/stderr would otherwise evaporate. The script therefore redirects each service to its own hidden log file at the repo root: `.uvicorn.log`, `.celery.log` / `.celery.err.log`, `.frontend.log`. These are `.gitignore`d. When a Celery task silently returns (see §7.7), these logs are usually the only way to find the root cause.
+**Detached runtime logging.** Because `Start-Process -WindowStyle Hidden` hands each runtime a console that's immediately discarded, stdout/stderr would otherwise evaporate. The script therefore redirects each service to its own pair of hidden log files at the repo root — one for stdout and one for stderr, because PowerShell's `Start-Process` refuses to take the same path for both (unlike cmd's `>file 2>&1`): `.uvicorn.out.log` / `.uvicorn.err.log`, `.celery.out.log` / `.celery.err.log`, `.frontend.out.log` / `.frontend.err.log`. These are all `.gitignore`d via the catchall `*.log` rule. When a Celery task silently returns (see §7.6), these logs are usually the only way to find the root cause.
 
 ### 7.6 Orphan-state backstop
 

@@ -548,10 +548,12 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 db.commit()
 
             progress_pct = 30 + int(25 * ((i + 1) / total))
-            progress_service.publish_progress(
-                job_id, "extracting", progress_pct,
+            progress_message = (
                 f"Extracted {fetched_count}/{total} transcripts "
-                f"(reused {reused_count}, new {newly_processed_count})...",
+                f"(reused {reused_count}, new {newly_processed_count})..."
+            )
+            progress_service.publish_progress(
+                job_id, "extracting", progress_pct, progress_message,
                 data={
                     "transcripts_fetched": fetched_count,
                     "transcripts_total": total,
@@ -559,6 +561,15 @@ def resume_job_after_approval(self, job_id: str) -> None:
                     "newly_processed_count": newly_processed_count,
                 },
             )
+            # Also persist to the DB so page reloads (or clients that aren't
+            # WS-connected) see the current state, not the stale initial
+            # "Extracting transcripts (0/N)..." message. The per-video
+            # iteration already does a commit above for the Video row; this
+            # just piggybacks on the same transaction.
+            job.progress_pct = progress_pct
+            job.progress_message = progress_message
+            job.updated_at = datetime.now(timezone.utc)
+            db.commit()
 
         unavailable_count = total - fetched_count
         logger.info(
@@ -809,10 +820,12 @@ def _run_extraction_and_rag(self, db, job) -> None:
             db.commit()
 
         progress_pct = 30 + int(25 * ((i + 1) / total)) if total else 55
-        progress_service.publish_progress(
-            job_id, "extracting", progress_pct,
+        progress_message = (
             f"Extracted {fetched_count}/{total} transcripts "
-            f"(reused {reused_count}, new {newly_processed_count})...",
+            f"(reused {reused_count}, new {newly_processed_count})..."
+        )
+        progress_service.publish_progress(
+            job_id, "extracting", progress_pct, progress_message,
             data={
                 "transcripts_fetched": fetched_count,
                 "transcripts_total": total,
@@ -820,6 +833,11 @@ def _run_extraction_and_rag(self, db, job) -> None:
                 "newly_processed_count": newly_processed_count,
             },
         )
+        # Persist to the DB so reloads don't see the stale initial message.
+        job.progress_pct = progress_pct
+        job.progress_message = progress_message
+        job.updated_at = datetime.now(timezone.utc)
+        db.commit()
 
     unavailable_count = total - fetched_count
     logger.info(

@@ -502,8 +502,19 @@ def fetch_transcript(
     if cached is not None:
         return cached
 
+    ip_blocked = False
     for attempt, delay in enumerate(retry_delays, start=1):
-        result = _fetch_transcript_once(video_id, language, job_id=job_id)
+        try:
+            result = _fetch_transcript_once(video_id, language, job_id=job_id)
+        except _IpBlockedError as e:
+            # YouTube is actively blocking us — no point retrying in 2-8s.
+            # Skip straight to Whisper fallback. Saves ~14s per blocked video.
+            logger.warning(
+                f"{tag} YouTube is blocking requests for {video_id} ({e}); "
+                "skipping transcript retries and going to Whisper fallback"
+            )
+            ip_blocked = True
+            break
         if result:
             logger.info(
                 f"{tag} YouTube transcript succeeded for {video_id} "
@@ -518,10 +529,11 @@ def fetch_transcript(
             )
             time.sleep(delay)
 
-    logger.warning(
-        f"{tag} All {len(retry_delays)} YouTube transcript attempts failed for {video_id}. "
-        "Starting Whisper API fallback..."
-    )
+    if not ip_blocked:
+        logger.warning(
+            f"{tag} All {len(retry_delays)} YouTube transcript attempts failed for {video_id}. "
+            "Starting Whisper API fallback..."
+        )
     whisper_result = _transcribe_with_whisper(video_id, job_id=job_id)
     if whisper_result is not None:
         _save_to_cache(video_id, whisper_result[0], whisper_result[1], tag)
@@ -628,7 +640,126 @@ def _fetch_transcript_once(
             return result, actual_lang
     except Exception as e:
         logger.warning(f"{tag} Transcript unavailable for {video_id}: {e}")
+        # Propagate a sentinel so callers can distinguish IP-blocking (where
+        # retrying a few seconds later is pointless) from normal "no transcript"
+        # failures. The youtube-transcript-api library raises a handful of
+        # exception types for this; we don't want to import them all, so we
+        # match on their string representation.
+        if _is_ip_block_signal(e):
+            raise _IpBlockedError(str(e)) from e
 
+    return None
+
+
+class _IpBlockedError(RuntimeError):
+    """Marker raised by `_fetch_transcript_once` when YouTube is rate-limiting us.
+
+    Consumed by `fetch_transcript` to skip the retry loop and go straight to
+    Whisper fallback (or bail), since retrying within seconds won't unblock us.
+    """
+
+
+def _is_ip_block_signal(exc: BaseException) -> bool:
+    """True when the exception message indicates YouTube is blocking our IP.
+
+    youtube-transcript-api raises `IpBlocked` / `RequestBlocked` for explicit
+    blocks and bubbles up `urllib3.exceptions.RemoteDisconnected` when the
+    server closes the connection without responding — a common symptom of
+    rate-limiting. Classifying by name avoids brittle imports across library
+    versions.
+    """
+    names: list[str] = []
+    cls = type(exc)
+    if cls is not None:
+        names.append(cls.__name__)
+    cause = getattr(exc, "__cause__", None)
+    if cause is not None:
+        names.append(type(cause).__name__)
+    # Also walk args in case the real exception is nested inside a tuple.
+    for a in getattr(exc, "args", ()) or ():
+        if isinstance(a, BaseException):
+            names.append(type(a).__name__)
+    msg = str(exc).lower()
+    signals = ("ipblocked", "requestblocked", "remotedisconnected", "youtube is blocking")
+    return any(s.lower() in n.lower() for s in signals for n in names) or any(
+        s in msg for s in signals
+    )
+
+
+# Per-request timeout for a single Whisper API call. OpenAI's SDK default is
+# 600s total, which was letting failed requests hang for 5+ minutes each. A
+# tighter cap lets us surface transient connection errors quickly and retry.
+# 180s is long enough for a ~25 MB upload over a 1 Mbit/s link with margin
+# for transcription, short enough that three retries total out under 10 min.
+_WHISPER_REQUEST_TIMEOUT = 180.0
+_WHISPER_MAX_ATTEMPTS = 3
+_WHISPER_RETRY_BACKOFF = (5, 15)  # seconds between attempts 1→2 and 2→3
+
+
+def _whisper_transcribe_with_retry(
+    client, audio_path: str, video_id: str, tag: str, audio_size_mb: float
+):
+    """Call OpenAI Whisper with bounded retries for transient errors.
+
+    Retryable: ``APIConnectionError``, ``APITimeoutError``, 5xx ``InternalServerError``.
+    These typically indicate network drops or upstream overload — the same
+    file often succeeds on a second attempt.
+
+    Non-retryable: ``BadRequestError`` (e.g. 400 "file too large" — won't get
+    smaller on retry), ``AuthenticationError`` / ``PermissionDeniedError``
+    (credentials won't fix themselves). These bubble up so the caller records
+    the video as unavailable without wasting 3× the upload time.
+    """
+    # Deferred import so the module loads cleanly in test environments where
+    # ``openai`` may be unavailable at import time.
+    from openai import (
+        APIConnectionError,
+        APITimeoutError,
+        AuthenticationError,
+        BadRequestError,
+        InternalServerError,
+        PermissionDeniedError,
+    )
+
+    last_exc: BaseException | None = None
+    for attempt in range(1, _WHISPER_MAX_ATTEMPTS + 1):
+        try:
+            logger.info(
+                f"{tag} Sending {video_id} to OpenAI Whisper API "
+                f"({audio_size_mb:.1f} MB, attempt {attempt}/{_WHISPER_MAX_ATTEMPTS})..."
+            )
+            with open(audio_path, "rb") as audio_file:
+                return client.with_options(
+                    timeout=_WHISPER_REQUEST_TIMEOUT
+                ).audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    response_format="verbose_json",
+                )
+        except (BadRequestError, AuthenticationError, PermissionDeniedError) as e:
+            # Non-retryable: re-raise so the caller records unavailable.
+            logger.error(
+                f"{tag} Whisper non-retryable error for {video_id} "
+                f"(attempt {attempt}): {type(e).__name__}: {e}"
+            )
+            raise
+        except (APIConnectionError, APITimeoutError, InternalServerError) as e:
+            last_exc = e
+            if attempt < _WHISPER_MAX_ATTEMPTS:
+                backoff = _WHISPER_RETRY_BACKOFF[attempt - 1]
+                logger.warning(
+                    f"{tag} Whisper retryable error for {video_id} "
+                    f"(attempt {attempt}/{_WHISPER_MAX_ATTEMPTS}): "
+                    f"{type(e).__name__}: {e}. Retrying in {backoff}s..."
+                )
+                time.sleep(backoff)
+            else:
+                logger.error(
+                    f"{tag} Whisper exhausted {_WHISPER_MAX_ATTEMPTS} attempts for "
+                    f"{video_id}: {type(e).__name__}: {e}"
+                )
+    if last_exc is not None:
+        raise last_exc
     return None
 
 
@@ -703,17 +834,13 @@ def _transcribe_with_whisper(
             return None
 
         try:
-            logger.info(
-                f"{tag} Sending {video_id} to OpenAI Whisper API ({audio_size_mb:.1f} MB)..."
+            response = _whisper_transcribe_with_retry(
+                client, audio_path, video_id, tag, audio_size_mb
             )
-            with open(audio_path, "rb") as audio_file:
-                response = client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    response_format="verbose_json",
-                )
         except Exception as e:
             logger.error(f"{tag} OpenAI Whisper API transcription failed for {video_id}: {e}")
+            return None
+        if response is None:
             return None
 
         response_language = getattr(response, "language", None) or "unknown"

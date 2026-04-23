@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import Base, engine
 from app.routers import admin, auth, channels, health, jobs, library, qa, ws
+from app.services import chroma_service
 
 # Ensure all app.* loggers emit at INFO level.
 # uvicorn sets up root logger handlers; this just lowers the threshold for our loggers.
@@ -22,6 +23,15 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     os.makedirs(settings.REPORTS_DIR, exist_ok=True)
     os.makedirs(settings.CHROMA_PERSIST_DIR, exist_ok=True)
+
+    # Idempotent one-shot backfill of the Q&A library Chroma collection.
+    # Upsert on fixed `qa:{id}` chunk IDs means this is safe to run on every
+    # startup; a Chroma failure here must never prevent the app from coming up.
+    try:
+        chroma_service.backfill_qa_library()
+    except Exception:
+        logger.exception("Q&A library backfill failed; continuing startup")
+
     logger.info("VideoResearchPro startup complete")
     yield
     # Shutdown: cleanup if needed

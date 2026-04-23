@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # ChromaDB
     CHROMA_PERSIST_DIR: str = "./data/chroma"
     CHROMA_GLOBAL_COLLECTION_NAME: str = "videoresearchpro_global"
+    CHROMA_QA_COLLECTION_NAME: str = "qa_library_global"
 
     # YouTube
     YOUTUBE_API_KEY: str = ""

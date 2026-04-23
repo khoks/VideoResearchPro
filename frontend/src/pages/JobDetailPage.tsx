@@ -11,6 +11,7 @@ import { formatDuration, formatDate, statusColor } from '../utils/formatters';
 import { useJobStore } from '../stores/jobStore';
 import { useAuth } from '../contexts/AuthContext';
 import { wsClient } from '../services/wsClient';
+import { VideoKnowledgeDrawer } from './VideoKnowledgePage';
 import type { Video } from '../types/video';
 import type { QAExchange } from '../types/qa';
 import type { Job } from '../types/job';
@@ -27,6 +28,7 @@ export function JobDetailPage() {
 
   useJobProgress(jobId || null);
   const syncCounts = useSubscriptionSyncCounts(jobId || null);
+  const [knowledgeVideo, setKnowledgeVideo] = useState<Video | null>(null);
 
   if (isLoading) return <div style={{ textAlign: 'center', padding: '3rem' }}><LoadingSpinner size={40} /></div>;
   if (!job) return <p>Job not found.</p>;
@@ -113,14 +115,29 @@ export function JobDetailPage() {
           <h3 style={{ margin: '0 0 1rem', color: '#1e293b' }}>{videosHeading} ({videos.length})</h3>
           {videos.map(v => (
             <div key={v.id} style={{ display: 'flex', justifyContent: 'space-between',
+                                     alignItems: 'center', gap: '0.75rem',
                                      padding: '0.5rem 0', borderBottom: '1px solid #f1f5f9' }}>
-              <div>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <a href={v.url} target="_blank" rel="noopener noreferrer"
                    style={{ color: '#667eea', textDecoration: 'none', fontWeight: 500 }}>{v.title}</a>
                 <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
                   {v.channel_name} | {formatDuration(v.duration_seconds)} | {v.transcript_status}
                 </div>
               </div>
+              {v.transcript_status === 'fetched' && (
+                <button
+                  onClick={() => setKnowledgeVideo(v)}
+                  title="Generate or view the AI knowledge report for this video."
+                  style={{
+                    background: 'transparent', color: '#667eea',
+                    border: '1px solid #667eea', padding: '0.3rem 0.75rem',
+                    borderRadius: 6, cursor: 'pointer', fontSize: '0.8rem',
+                    fontWeight: 600, flexShrink: 0,
+                  }}
+                >
+                  Knowledge
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -146,6 +163,15 @@ export function JobDetailPage() {
 
       {/* Q&A Panel */}
       {job.status === 'completed' && <QASection jobId={job.id} />}
+
+      {/* Per-video knowledge drawer */}
+      {knowledgeVideo && (
+        <VideoKnowledgeDrawer
+          videoId={knowledgeVideo.video_id}
+          videoTitle={knowledgeVideo.title}
+          onClose={() => setKnowledgeVideo(null)}
+        />
+      )}
     </div>
   );
 }

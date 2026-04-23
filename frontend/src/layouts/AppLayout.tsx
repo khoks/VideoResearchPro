@@ -18,6 +18,7 @@ export function AppLayout() {
       library: '/library',
       'library-qa': '/library/qa',
       'qa-history': '/qa-history',
+      exports: '/exports',
     };
     navigate(routeMap[tab]);
   };
@@ -32,6 +33,7 @@ export function AppLayout() {
   const isLibraryActive = !isLibraryQAActive && location.pathname.startsWith('/library');
   const isJobsActive = location.pathname.startsWith('/jobs');
   const isQAHistoryActive = location.pathname.startsWith('/qa-history');
+  const isExportsActive = location.pathname.startsWith('/exports');
   const isSubmitActive = location.pathname === '/' || location.pathname === '/submit';
 
   return (
@@ -55,6 +57,9 @@ export function AppLayout() {
           </TabButton>
           <TabButton active={isQAHistoryActive} onClick={() => handleTabChange('qa-history')}>
             Q&amp;A History
+          </TabButton>
+          <TabButton active={isExportsActive} onClick={() => handleTabChange('exports')}>
+            Exports
           </TabButton>
         </nav>
         <div className="app-header__actions" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>

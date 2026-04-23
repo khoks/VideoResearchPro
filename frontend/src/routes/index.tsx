@@ -6,6 +6,7 @@ import { JobDetailPage } from '../pages/JobDetailPage';
 import { LibraryPage } from '../pages/LibraryPage';
 import { LibraryQAPage } from '../pages/LibraryQAPage';
 import { QAHistoryChatPage } from '../pages/QAHistoryChatPage';
+import { ExportsPage } from '../pages/ExportsPage';
 import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
 import { useAuth } from '../contexts/AuthContext';
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
           { path: 'library', element: <LibraryPage /> },
           { path: 'library/qa', element: <LibraryQAPage /> },
           { path: 'qa-history', element: <QAHistoryChatPage /> },
+          { path: 'exports', element: <ExportsPage /> },
         ],
       },
     ],

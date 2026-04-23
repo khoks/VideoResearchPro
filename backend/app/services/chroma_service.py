@@ -18,6 +18,15 @@ Chunk IDs are derived as ``"{video_id}:{chunk_index}"`` and inserts use
 — re-running an extraction overwrites existing chunks in place rather than
 creating duplicates.
 
+Q&A library collection
+----------------------
+In addition to the transcript-chunk global collection, a second collection
+(``settings.CHROMA_QA_COLLECTION_NAME``, default ``qa_library_global``)
+indexes every Q&A exchange — job-scoped, library-scoped, and future
+history-chat turns — one document per exchange, keyed by ``f"qa:{id}"``.
+See ``get_qa_collection``, ``upsert_qa_exchange``, ``query_qa_collection``,
+and ``backfill_qa_library``.
+
 Embedding model
 ---------------
 Uses ``settings.EMBEDDING_MODEL_NAME`` (default
@@ -40,9 +49,10 @@ required.
 
 from __future__ import annotations
 
+import json
 import logging
 import warnings
-from typing import Any
+from typing import Any, Literal
 
 import chromadb
 from chromadb.utils import embedding_functions
@@ -350,6 +360,198 @@ def get_collection(job_id: str) -> chromadb.Collection | None:
     except Exception:
         logger.exception(f"[job:{job_id}] get_global_collection failed")
         return None
+
+
+# --- Q&A library collection -----------------------------------------------
+
+QASource = Literal["job", "library", "history"]
+
+
+def get_qa_collection() -> chromadb.Collection:
+    """Return the Q&A library collection, creating it if missing.
+
+    One document per Q&A exchange (not chunked). Document text is
+    ``f"Q: {question}\n\nA: {answer}"``; IDs are ``f"qa:{exchange_id}"``.
+    """
+    client = get_chroma_client()
+    return client.get_or_create_collection(
+        name=settings.CHROMA_QA_COLLECTION_NAME,
+        metadata={"scope": "qa_library"},
+        embedding_function=_get_embedding_function(),
+    )
+
+
+def _qa_document_text(question: str, answer: str) -> str:
+    return f"Q: {question}\n\nA: {answer}"
+
+
+def _reference_count(exchange: Any) -> int:
+    """Return the length of the exchange's references list, tolerating both
+    ``references`` (job Q&A) and ``references_json`` (library Q&A) attrs
+    and any malformed JSON.
+    """
+    raw = getattr(exchange, "references_json", None)
+    if raw is None:
+        raw = getattr(exchange, "references", None)
+    if raw is None:
+        return 0
+    if isinstance(raw, list):
+        return len(raw)
+    if not isinstance(raw, str):
+        return 0
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return 0
+    return len(parsed) if isinstance(parsed, list) else 0
+
+
+def upsert_qa_exchange(exchange: Any, source: QASource) -> bool:
+    """Upsert a single Q&A exchange into the Q&A library collection.
+
+    Expects the ORM object to expose ``id``, ``question``, ``answer``,
+    ``created_at`` and (optionally) ``job_id`` / ``answer_language``.
+    All failures are caught and logged — callers MUST NOT let a Chroma
+    error break the Q&A response. Returns ``True`` on success, ``False``
+    otherwise.
+    """
+    try:
+        exchange_id = str(exchange.id)
+        question = exchange.question or ""
+        answer = exchange.answer or ""
+    except Exception:
+        logger.exception("upsert_qa_exchange: malformed exchange object")
+        return False
+
+    metadata: dict[str, Any] = {
+        "source": source,
+        "exchange_id": exchange_id,
+        "reference_count": _reference_count(exchange),
+    }
+
+    job_id = getattr(exchange, "job_id", None)
+    if job_id is not None:
+        metadata["job_id"] = str(job_id)
+
+    answer_language = getattr(exchange, "answer_language", None)
+    if answer_language is not None:
+        metadata["answer_language"] = str(answer_language)
+
+    created_at = getattr(exchange, "created_at", None)
+    if created_at is not None:
+        try:
+            metadata["created_at_iso"] = created_at.isoformat()
+        except Exception:
+            metadata["created_at_iso"] = str(created_at)
+
+    try:
+        collection = get_qa_collection()
+        collection.upsert(
+            ids=[f"qa:{exchange_id}"],
+            documents=[_qa_document_text(question, answer)],
+            metadatas=[_flatten_metadata(metadata)],
+        )
+    except Exception:
+        logger.exception(
+            f"upsert_qa_exchange failed for exchange_id={exchange_id} source={source}"
+        )
+        return False
+
+    logger.info(
+        f"Upserted Q&A exchange into '{settings.CHROMA_QA_COLLECTION_NAME}': "
+        f"id={exchange_id} source={source}"
+    )
+    return True
+
+
+def query_qa_collection(
+    query_text: str,
+    top_k: int | None = None,
+    where: dict | None = None,
+) -> list[dict]:
+    """Query the Q&A library collection.
+
+    Returns a list of ``{"text", "metadata", "distance"}`` dicts sorted by
+    relevance. ``where`` is passed straight through to ChromaDB for
+    metadata filtering (e.g. ``{"source": "job"}``).
+    """
+    if top_k is None:
+        top_k = settings.RAG_TOP_K
+
+    try:
+        collection = get_qa_collection()
+    except Exception:
+        logger.exception("Failed to open Q&A ChromaDB collection")
+        return []
+
+    params: dict[str, Any] = {
+        "query_texts": [query_text],
+        "n_results": top_k,
+        "include": ["documents", "metadatas", "distances"],
+    }
+    if where:
+        params["where"] = where
+
+    try:
+        results = collection.query(**params)
+    except Exception:
+        logger.exception("Q&A ChromaDB query failed")
+        return []
+
+    out: list[dict] = []
+    if results and results.get("documents"):
+        docs = results["documents"][0] if results["documents"] else []
+        dists = results["distances"][0] if results.get("distances") else []
+        metas = results["metadatas"][0] if results.get("metadatas") else []
+        for i, doc in enumerate(docs):
+            out.append({
+                "text": doc,
+                "metadata": metas[i] if i < len(metas) else {},
+                "distance": dists[i] if i < len(dists) else 0.0,
+            })
+    return out
+
+
+def backfill_qa_library() -> int:
+    """Upsert every existing ``QAExchange`` and ``LibraryQAExchange`` row
+    into the Q&A library collection.
+
+    Idempotent: upsert on the fixed ``qa:{id}`` chunk ID means re-running
+    only overwrites in place. Safe to call on every process startup.
+
+    Returns the total number of rows upserted (including repeats).
+    """
+    # Imports are local so importing chroma_service never pulls in
+    # SQLAlchemy / app models — keeps the service free of module-level
+    # side effects for tests that monkeypatch the ORM.
+    from app.database import SessionLocal
+    from app.models.library_qa_exchange import LibraryQAExchange
+    from app.models.qa_exchange import QAExchange
+
+    count = 0
+    try:
+        db = SessionLocal()
+    except Exception:
+        logger.exception("backfill_qa_library: failed to open DB session")
+        return 0
+
+    try:
+        for exchange in db.query(QAExchange).all():
+            if upsert_qa_exchange(exchange, source="job"):
+                count += 1
+        for exchange in db.query(LibraryQAExchange).all():
+            if upsert_qa_exchange(exchange, source="library"):
+                count += 1
+    except Exception:
+        logger.exception("backfill_qa_library: unexpected error during backfill")
+    finally:
+        try:
+            db.close()
+        except Exception:
+            logger.exception("backfill_qa_library: failed to close DB session")
+
+    logger.info(f"backfill_qa_library: upserted {count} Q&A exchange(s)")
+    return count
 
 
 # --- Startup migration ----------------------------------------------------

@@ -13,6 +13,7 @@ from app.schemas.library_qa import (
     LibraryQAResponse,
     LibraryReference,
 )
+from app.services import chroma_service
 from app.services.llm_service import get_llm
 
 logger = logging.getLogger(__name__)
@@ -97,6 +98,16 @@ def ask_library_question(
     db.add(exchange)
     db.commit()
     db.refresh(exchange)
+
+    # Index into the Q&A library collection so it powers the history-chat
+    # meta-RAG. Chroma failures must never break the Q&A response.
+    try:
+        chroma_service.upsert_qa_exchange(exchange, source="library")
+    except Exception:
+        logger.exception(
+            "Failed to upsert library Q&A exchange id=%s into Q&A library",
+            exchange.id,
+        )
 
     return LibraryQAResponse(
         id=exchange.id,

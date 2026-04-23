@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_current_user, get_db, get_user_from_query_or_header
 from app.models.qa_exchange import QAExchange
 from app.schemas.qa import ClarifyRequest, ClarifyResponse, QARequest, QAResponse, Reference
-from app.services import job_service, report_service
+from app.services import chroma_service, job_service, report_service
 from app.services.llm_service import get_llm
 
 logger = logging.getLogger(__name__)
@@ -123,6 +123,15 @@ def ask_question(job_id: str, request: QARequest, db: Session = Depends(get_db))
     db.add(qa)
     db.commit()
     db.refresh(qa)
+
+    # Index into the Q&A library collection so it powers the history-chat
+    # meta-RAG. Chroma failures must never break the Q&A response.
+    try:
+        chroma_service.upsert_qa_exchange(qa, source="job")
+    except Exception:
+        logger.exception(
+            f"Failed to upsert job Q&A exchange id={qa.id} into Q&A library"
+        )
 
     return QAResponse(
         id=qa.id,

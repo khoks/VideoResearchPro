@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session
 
 from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.qa_exchange import QAExchange
+from app.models.qa_history_exchange import QAHistoryExchange
+from app.models.video import Video
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +49,7 @@ def iter_qa_rows(db: Session) -> Iterator[tuple[str, str]]:
     """Yield ``(question, answer)`` pairs across every Q&A source.
 
     Sources: ``qa_exchanges`` (job-scoped), ``library_qa_exchanges``
-    (library-scoped), and ``qa_history_exchanges`` (history-chat) when the
-    model is available. The history-chat table ships in Unit 2; we import it
-    lazily and skip gracefully if its module is not present so this service
-    compiles without Unit 2 merged.
+    (library-scoped), and ``qa_history_exchanges`` (history-chat).
 
     Rows are ordered by ``created_at ASC`` via a UNION ALL subquery so the DB
     does a single sorted scan. Streaming uses ``yield_per`` to keep memory
@@ -67,22 +66,12 @@ def iter_qa_rows(db: Session) -> Iterator[tuple[str, str]]:
             LibraryQAExchange.question.label("question"),
             LibraryQAExchange.answer.label("answer"),
         ).statement,
+        db.query(
+            QAHistoryExchange.created_at.label("created_at"),
+            QAHistoryExchange.question.label("question"),
+            QAHistoryExchange.answer.label("answer"),
+        ).statement,
     ]
-
-    # TODO(unit-2): once `app.models.qa_history_exchange` lands, this import
-    # becomes unconditional.
-    try:
-        from app.models.qa_history_exchange import QAHistoryExchange  # type: ignore
-
-        selects.append(
-            db.query(
-                QAHistoryExchange.created_at.label("created_at"),
-                QAHistoryExchange.question.label("question"),
-                QAHistoryExchange.answer.label("answer"),
-            ).statement
-        )
-    except ImportError:
-        logger.debug("qa_history_exchange model not available; skipping that source")
 
     stmt = union_all(*selects).order_by("created_at")
     result = db.execute(stmt, execution_options={"yield_per": _YIELD_PER})
@@ -94,36 +83,20 @@ def iter_qa_rows(db: Session) -> Iterator[tuple[str, str]]:
 def iter_knowledge_rows(db: Session) -> Iterator[tuple[list[str], list[str], list[str], str]]:
     """Yield ``(topics, concepts, events, knowledge_report_md)`` for every
     video with a populated knowledge report.
-
-    The knowledge columns (``extracted_knowledge_json``, ``knowledge_report_md``)
-    are added by Unit 4. If they are not present on the ``Video`` model yet we
-    log once and yield nothing, which keeps the endpoint serving a valid
-    (empty) JSONL body pre-merge instead of 500-ing.
     """
-    # TODO(unit-4): remove the getattr guard once the columns are on the model.
-    from app.models.video import Video
-
-    if not hasattr(Video, "knowledge_report_md"):
-        logger.info(
-            "knowledge_report_md column not present on Video; knowledge export will be empty "
-            "until Unit 4 ships"
-        )
-        return
-
     q = (
         db.query(Video)
-        .filter(Video.knowledge_report_md.isnot(None))  # type: ignore[attr-defined]
+        .filter(Video.knowledge_report_md.isnot(None))
         .order_by(Video.created_at.asc())
         .execution_options(yield_per=_YIELD_PER)
     )
     for video in q:
-        raw_json = getattr(video, "extracted_knowledge_json", None)
         topics: list[str] = []
         concepts: list[str] = []
         events: list[str] = []
-        if raw_json:
+        if video.extracted_knowledge_json:
             try:
-                data = json.loads(raw_json)
+                data = json.loads(video.extracted_knowledge_json)
                 topics = list(data.get("topics") or [])
                 concepts = list(data.get("concepts") or [])
                 events = list(data.get("events") or [])
@@ -132,8 +105,7 @@ def iter_knowledge_rows(db: Session) -> Iterator[tuple[list[str], list[str], lis
                     "Failed to parse extracted_knowledge_json for video_id=%s",
                     video.video_id,
                 )
-        report = getattr(video, "knowledge_report_md", "") or ""
-        yield topics, concepts, events, report
+        yield topics, concepts, events, video.knowledge_report_md or ""
 
 
 # ---------------------------------------------------------------------------

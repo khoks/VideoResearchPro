@@ -139,36 +139,23 @@ def test_qa_endpoints_empty_when_no_rows(client, db):
 # ---------------------------------------------------------------------------
 # Knowledge dataset
 # ---------------------------------------------------------------------------
-#
-# Knowledge column ships in Unit 4. Until then, the endpoint returns an empty
-# body — verifying that behavior here locks in the graceful-fallback contract
-# so the endpoint doesn't 500 when the column is missing.
 
 
-def test_knowledge_openai_empty_without_unit_4(client, db):
+def test_knowledge_openai_empty_when_no_reports(client, db):
     response = client.get("/api/v1/exports/knowledge-dataset/openai.jsonl")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/x-ndjson")
     assert _parse_jsonl(response.text) == []
 
 
-def test_knowledge_tuple_empty_without_unit_4(client, db):
+def test_knowledge_tuple_empty_when_no_reports(client, db):
     response = client.get("/api/v1/exports/knowledge-dataset/tuple.jsonl")
     assert response.status_code == 200
     assert _parse_jsonl(response.text) == []
 
 
-def test_knowledge_openai_serializes_report_when_column_present(client, db, monkeypatch):
-    """If Unit 4 has shipped, verify the format.
-
-    Skip when the column isn't on the model — this is forward-looking coverage,
-    not a requirement for Unit 6 to ship.
-    """
-    from app.models.video import Video
-
-    if not hasattr(Video, "knowledge_report_md"):
-        pytest.skip("knowledge_report_md column not present — Unit 4 not merged yet")
-
+def test_knowledge_openai_serializes_report(client, db, monkeypatch):
+    """Verify the OpenAI chat format for knowledge rows."""
     from app.services import dataset_service
 
     def fake_iter(_db):

@@ -35,7 +35,7 @@ def clarify_library_question(request: LibraryClarifyRequest) -> LibraryClarifyRe
     The clarify step doesn't depend on any job context, so we reuse the same
     prompt structure as the job Q&A clarify endpoint.
     """
-    llm = get_llm(temperature=0.3)
+    llm = get_llm(temperature=0.3, purpose="fast")
 
     prompt = (
         f'The user asked: "{request.question}"\n\n'

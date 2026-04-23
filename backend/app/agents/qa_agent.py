@@ -28,7 +28,7 @@ REPORT_CONTEXT_CHAR_CAP = 50000
 
 def _generate_sub_queries(question: str) -> list[str]:
     """Ask the LLM for 2 semantically-focused sub-queries to broaden retrieval."""
-    llm = get_llm(temperature=0.0)
+    llm = get_llm(temperature=0.0, purpose="fast")
     prompt = SUB_QUERY_EXPANSION_PROMPT.format(question=question)
     try:
         response = llm.invoke([HumanMessage(content=prompt)])
@@ -99,7 +99,7 @@ def retrieve_context(state: QAAgentState) -> dict:
 
 def refine_context(state: QAAgentState) -> dict:
     """Use LLM to extract only the relevant passages from RAG + report context."""
-    llm = get_llm(temperature=0.0)
+    llm = get_llm(temperature=0.0, purpose="fast")
     question = state["question"]
     rag_results = state.get("rag_results", [])
     report_context = state.get("report_context")
@@ -615,7 +615,7 @@ def run_library_qa_agent(
         )
     raw_context = "\n\n".join(raw_parts)
 
-    llm = get_llm(temperature=0.0)
+    llm = get_llm(temperature=0.0, purpose="fast")
     refine_prompt = LIBRARY_REFINE_CONTEXT_PROMPT.format(
         question=question,
         raw_context=raw_context,

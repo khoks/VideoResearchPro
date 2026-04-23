@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     LLM_FALLBACK_MODEL: str = "gpt-4o"
     LLM_MAX_CONTEXT_TOKENS: int = 1047576
 
+    # Fast / local LLM routing — LLM_FAST_BASE_URL set routes purpose="fast"
+    # calls to an OpenAI-compatible server (e.g. LM Studio); unset keeps them
+    # on OpenAI with the cheaper LLM_FAST_MODEL.
+    LLM_FAST_MODEL: str = "gpt-4.1-mini"
+    LLM_FAST_BASE_URL: str | None = None
+    LLM_FAST_API_KEY: str = "not-needed"
+
     # Jobs
     MAX_CONCURRENT_JOBS: int = 5
     MAX_VIDEOS_PER_JOB: int = 100

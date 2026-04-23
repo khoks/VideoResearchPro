@@ -102,7 +102,7 @@ def plan_searches(state: SearchAgentState) -> dict:
     else:
         preferred_block = ""
 
-    llm = get_llm(temperature=0.3)
+    llm = get_llm(temperature=0.3, purpose="fast")
     prompt = PLAN_SEARCHES_PROMPT.format(
         topic=topic,
         search_instructions=state.get("search_instructions", "") or "(none)",

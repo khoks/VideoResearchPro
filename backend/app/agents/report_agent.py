@@ -103,7 +103,7 @@ def map_chunks(state: ReportAgentState) -> dict:
     if not chunks:
         return {"chunk_summaries": []}
 
-    llm = get_llm(temperature=0.0)
+    llm = get_llm(temperature=0.0, purpose="fast")
     max_context = settings.LLM_MAX_CONTEXT_TOKENS
     budget_per_batch = int(max_context * 0.6)
 
@@ -164,7 +164,7 @@ def reduce_summaries(state: ReportAgentState) -> dict:
     if len(summaries) == 1:
         return {}  # No reduction needed
 
-    llm = get_llm(temperature=0.0)
+    llm = get_llm(temperature=0.0, purpose="fast")
     batch_text = json.dumps(summaries, indent=2, default=str)
 
     # If too large, reduce in pairs

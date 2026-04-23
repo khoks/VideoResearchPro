@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     REPORTS_DIR: str = "./data/reports"
     MAX_REPORT_WORDS: int = 20000
 
+    # Knowledge extraction (Unit 4)
+    KNOWLEDGE_EXTRACT_BATCH_TOKENS: int = 8000
+    KNOWLEDGE_MAX_TRANSCRIPT_TOKENS: int = 60000
+
     # Auth
     JWT_SECRET: str = "dev-insecure-secret-change-me-in-production"
     JWT_ALGORITHM: str = "HS256"

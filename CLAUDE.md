@@ -112,6 +112,18 @@ Single multiplexed WebSocket at `/ws/jobs`. Clients send `subscribe`/`unsubscrib
 - **Report Agent**: compute_statistics → map_chunks → reduce_summaries → compose_report (map-reduce for large transcript sets; channel jobs skip to stats-only)
 - **Q&A Agent**: retrieve_context → refine_context → formulate_answer → extract_references (LLM-based context refinement compacts ~45K raw RAG+report into ~3K focused extracts before answering; topic jobs use RAG + report, channel jobs use RAG only, subscription jobs have no report and are only queried via library-wide Q&A; accepts an `answer_language` parameter; citations include `&t=` timestamp links)
 
+### Q&A Library RAG
+One central ChromaDB collection (`qa_library_global`) indexes every Q&A exchange from all three surfaces (job-scoped, library-scoped, history-chat) as single documents — question and answer concatenated, not chunked. New Q&As are upserted post-commit on a best-effort basis (Chroma failures never break the Q&A response). A backfill runs on worker startup that idempotently upserts every existing row from `qa_exchanges`, `library_qa_exchanges`, and `qa_history_exchanges`. This is the retrieval backbone for the Q&A History Chat page.
+
+### Video Knowledge Artifacts
+On-demand per-video knowledge extraction. Every video row carries three nullable columns — `extracted_knowledge_json`, `knowledge_report_md`, `knowledge_extracted_at`. A "Generate knowledge report" button on each video triggers a map-reduce LangGraph agent (`knowledge_agent.py`) that splits the full transcript into token-budgeted batches, extracts structured `{topics, concepts, events, facts}` per batch, merges with dedupe, and synthesizes a report-style Markdown document. Returns 409 if already extracted unless `?force=true`.
+
+### Dataset Exports
+Four streaming JSONL endpoints feed an external fine-tune pipeline — two for Q&A (OpenAI chat format and plain tuple format), two for knowledge artifacts (same split). Endpoints use FastAPI `StreamingResponse` with SQL iterators so memory stays constant for arbitrarily large datasets. System prompts are baked into `services/dataset_service.py` as module constants; the Q&A dataset unions `qa_exchanges` + `library_qa_exchanges` + `qa_history_exchanges` ordered by `created_at`.
+
+### Q&A History Chat
+A dedicated page at `/qa-history` where the user asks meta-questions across every Q&A they have ever run ("summarize everything I've learned about tariffs"). Powered by the `qa_library_global` collection plus a synthesis LLM (`qa_history_agent.py`). References link back to the originating job detail page or the library Q&A page so the user can jump to the source exchange.
+
 ### Data Flow
 ```
 REST API → FastAPI Router → Service Layer → Celery Task dispatch
@@ -171,6 +183,15 @@ POST   /api/v1/channels/{id}/unsubscribe
 POST   /api/v1/channels/{id}/sync      # Trigger a fresh sync
 GET    /api/v1/channels/{id}/videos
 
+POST   /api/v1/qa-history/chat               # Ask meta-question across all Q&A history
+GET    /api/v1/qa-history/exchanges          # List history chat exchanges
+POST   /api/v1/videos/{id}/extract-knowledge # Run knowledge extraction (409 if exists unless ?force)
+GET    /api/v1/videos/{id}/knowledge         # Fetch stored knowledge artifact
+GET    /api/v1/exports/qa-dataset/openai.jsonl         # Q&A dataset, OpenAI chat format
+GET    /api/v1/exports/qa-dataset/tuple.jsonl          # Q&A dataset, plain tuple format
+GET    /api/v1/exports/knowledge-dataset/openai.jsonl  # Knowledge dataset, chat format
+GET    /api/v1/exports/knowledge-dataset/tuple.jsonl   # Knowledge dataset, tuple format
+
 WS     /ws/jobs                        # Multiplexed progress (subscribe/unsubscribe per job)
 ```
 
@@ -190,6 +211,12 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `RAG_TOP_K` | No | `15` | Number of RAG results per query |
 | `EMBEDDING_MODEL_NAME` | No | `paraphrase-multilingual-MiniLM-L12-v2` | SentenceTransformer model |
 | `CHROMA_GLOBAL_COLLECTION_NAME` | No | `videoresearchpro_global` | Name of the single global Chroma collection |
+| `CHROMA_QA_COLLECTION_NAME` | No | `qa_library_global` | Central Q&A collection name |
+| `KNOWLEDGE_EXTRACT_BATCH_TOKENS` | No | `8000` | Max tokens per extract batch |
+| `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS` | No | `60000` | Max transcript size for knowledge extraction |
+| `LLM_FAST_MODEL` | No | `gpt-4.1-mini` | Cheap-call model (clarification, map-chunk, multi-query) |
+| `LLM_FAST_BASE_URL` | No | (unset) | Set to `http://localhost:1234/v1` to route fast calls to LM Studio |
+| `LLM_FAST_API_KEY` | No | `not-needed` | LM Studio ignores; satisfies OpenAI SDK validator |
 
 ## Important Conventions
 
@@ -207,9 +234,31 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 - **WebSocket cache invalidation**: `useJobProgress` invalidates the `jobVideos` query on `awaiting_approval` status change so the approval list auto-populates
 - **Global video library**: Videos are never job-owned. Any job selects from the global library via `job_videos`.
 - **Single global Chroma collection**: All chunks live in `videoresearchpro_global`. Per-job scoping is a metadata filter at query time. Deleting a job does NOT delete chunks.
+- **Fast LLM slot**: `get_llm(..., purpose='fast')` routes cheap LLM calls through LM Studio when `LLM_FAST_BASE_URL` is set. Default is `'primary'` — behavior unchanged for existing code.
 
 ### Multilingual transcription
 
 - Whisper is called with `task="transcribe"` (not `translate`), preserving the speaker's language(s). Mixed-language audio (e.g., Hindi-English code-mixed) is transcribed faithfully, with proper nouns in their original script.
 - The multilingual embedding model (`paraphrase-multilingual-MiniLM-L12-v2`) ensures a Hindi transcript and its English question land in similar vector space.
 - The Q&A agent accepts an `answer_language` parameter (default English) and is instructed to translate quoted non-English context into English (preserving proper nouns) while responding in the requested language.
+
+## Running with a local LLM
+
+VideoResearchPro routes cheap, low-stakes LLM calls (clarification questions, map-chunk fact extraction, multi-query expansion, context compression) through a "fast" slot that you can point at a local OpenAI-compatible server like LM Studio. The expensive final-answer and compose-report LLMs stay on OpenAI.
+
+1. Start LM Studio and load any instruct model (default tested: `google/gemma-4-26b-a4b`; Qwen and Llama 3 instruct variants also work).
+2. Turn on the server (Developer → Start Server); confirm it listens on `http://localhost:1234`.
+3. Verify: `curl http://localhost:1234/v1/models | jq .` (should return the loaded model).
+4. In `backend/.env` set:
+
+   ```
+   LLM_FAST_BASE_URL=http://localhost:1234/v1
+   LLM_FAST_MODEL=google/gemma-4-26b-a4b
+   LLM_FAST_API_KEY=not-needed
+   ```
+
+5. Restart backend + Celery via `.\scripts\restart_services.ps1 -SkipFrontend`.
+
+When `LLM_FAST_BASE_URL` is unset, the fast slot stays on `LLM_FAST_MODEL` online — zero behavior change for existing users.
+
+Note: embeddings are already local — we use SentenceTransformer (`paraphrase-multilingual-MiniLM-L12-v2`) on CPU. No OpenAI embeddings cost today.

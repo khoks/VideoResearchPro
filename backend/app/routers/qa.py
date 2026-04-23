@@ -52,7 +52,7 @@ def clarify_question(job_id: str, request: ClarifyRequest, db: Session = Depends
     if job.status != "completed":
         raise HTTPException(status_code=400, detail="Job is not completed yet")
 
-    llm = get_llm(temperature=0.3)
+    llm = get_llm(temperature=0.3, purpose="fast")
 
     prompt = (
         f'The user asked: "{request.question}"\n\n'

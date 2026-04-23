@@ -2,6 +2,15 @@
 
 A full-stack web application for YouTube video research. Run **topic**, **channel**, or **channel-subscription** jobs that feed a **shared global video library**, generate HTML reports via LangGraph agents, and ask citation-backed questions either scoped to a single job or across the **entire library**. Transcripts and embeddings are computed once per video and reused across every job that references them.
 
+## Personal Wiki
+
+VideoResearchPro is also a personal research wiki that grows every time you use it:
+
+- **Every Q&A you ever ask is indexed into a searchable vector DB.** Job-scoped, library-scoped, and history-chat exchanges all land in one central ChromaDB collection (`qa_library_global`) — question and answer stored together.
+- **A dedicated chat page lets you ask meta-questions across your whole research history.** `/qa-history` lets you ask things like "summarize everything I've learned about tariffs" or "which videos did I bookmark about supply chains" — answers are synthesized from your past Q&As with clickable references back to the source exchange.
+- **For any transcribed video, an on-demand button generates a structured knowledge report.** Click "Generate knowledge report" on a video row and a LangGraph map-reduce agent extracts structured `{topics, concepts, events, facts}` and writes a Wikipedia-paragraph-style Markdown document. Persisted on the video row so you only pay for it once.
+- **All Q&As and all knowledge reports export as JSONL datasets in two formats** (OpenAI `messages` chat format and plain `{system, user, assistant}` tuples) so you can fine-tune an LLM with your personal wiki as parametric knowledge. See the "Fine-tuning your own model" section below.
+
 ## Features
 
 - **Topic research** — Describe a topic; AI finds, ranks, and summarizes the best videos.
@@ -169,11 +178,42 @@ The endpoint returns `202 Accepted` immediately, spawns `restart_services.ps1` a
 
 5. **Per-job Q&A** — Ask questions inside a single job. Retrieval is filtered to the job's approved videos. Citations link back to the source video with `&t=` timestamps.
 
-6. **Library-wide Q&A** (new) — Ask questions across your entire library of transcribed videos, not just one job. Useful for cross-channel research or revisiting subscribed content.
+6. **Library-wide Q&A** — Ask questions across your entire library of transcribed videos, not just one job. Useful for cross-channel research or revisiting subscribed content.
 
-7. **Multilingual answers** — Whisper transcribes speakers in their native language(s), including code-mixed audio. The Q&A agent accepts an `answer_language` parameter and translates quoted non-English context into your chosen language while preserving proper nouns.
+7. **Q&A library indexing & history chat** (new) — Every Q&A exchange you ever run (job-scoped, library-scoped, or the history chat itself) is indexed into a central ChromaDB collection (`qa_library_global`) post-commit. The `/qa-history` page lets you ask meta-questions across all of it — answers cite the source exchanges with clickable links back to the original job or library Q&A.
 
-8. **Duplicate & iterate** — Every job is permanently browsable from the Jobs list. Click through to a detail page to see the full parameter set you submitted plus the live run state, approval queue, report, and Q&A history. Hit **Duplicate / Re-run** from either the list row or the detail header to spin up a new job seeded from the old one. No backend migration — the form just round-trips the stored `Job` row back into its inputs.
+8. **Video knowledge reports** (new) — Any transcribed video has a "Generate knowledge report" button. An LLM map-reduce agent extracts structured `{topics, concepts, events, facts}` from the full transcript and synthesizes a Markdown knowledge document (Wikipedia-paragraph style, not a raw transcript). Persisted on the video row so subsequent views are free; click again with Force to regenerate.
+
+9. **Dataset exports for fine-tuning** (new) — Four streaming JSONL download endpoints turn your accumulated Q&A history and knowledge reports into training datasets. Feed them to OpenAI or Vertex fine-tuning to carry your wiki as parametric knowledge inside a custom model. See the "Fine-tuning your own model" section.
+
+10. **Multilingual answers** — Whisper transcribes speakers in their native language(s), including code-mixed audio. The Q&A agent accepts an `answer_language` parameter and translates quoted non-English context into your chosen language while preserving proper nouns.
+
+11. **Duplicate & iterate** — Every job is permanently browsable from the Jobs list. Click through to a detail page to see the full parameter set you submitted plus the live run state, approval queue, report, and Q&A history. Hit **Duplicate / Re-run** from either the list row or the detail header to spin up a new job seeded from the old one. No backend migration — the form just round-trips the stored `Job` row back into its inputs.
+
+## Running with a local LLM
+
+VideoResearchPro routes cheap, low-stakes LLM calls (clarification questions, map-chunk fact extraction, multi-query expansion, context compression) through a "fast" slot that you can point at a local OpenAI-compatible server like LM Studio. The expensive final-answer and compose-report LLMs stay on OpenAI.
+
+1. Start LM Studio and load any instruct model (default tested: `google/gemma-4-26b-a4b`; Qwen and Llama 3 instruct variants also work).
+2. Turn on the server (Developer → Start Server); confirm it listens on `http://localhost:1234`.
+3. Verify: `curl http://localhost:1234/v1/models | jq .` (should return the loaded model).
+4. In `backend/.env` set:
+
+   ```
+   LLM_FAST_BASE_URL=http://localhost:1234/v1
+   LLM_FAST_MODEL=google/gemma-4-26b-a4b
+   LLM_FAST_API_KEY=not-needed
+   ```
+
+5. Restart backend + Celery via `.\scripts\restart_services.ps1 -SkipFrontend`.
+
+When `LLM_FAST_BASE_URL` is unset, the fast slot stays on `LLM_FAST_MODEL` online — zero behavior change for existing users.
+
+Note: embeddings are already local — we use SentenceTransformer (`paraphrase-multilingual-MiniLM-L12-v2`) on CPU. No OpenAI embeddings cost today.
+
+## Fine-tuning your own model
+
+See [docs/finetune_design.md](docs/finetune_design.md) for the design of a future in-app fine-tune runner. Today, the exports feature gives you everything you need to run `openai fine_tunes.create` or `gcloud ai-platform tuning-jobs` externally — four streaming `GET /api/v1/exports/...jsonl` endpoints produce OpenAI-chat-format and plain-tuple-format JSONL for both the Q&A dataset and the knowledge-report dataset.
 
 ## Project Structure
 
@@ -268,6 +308,14 @@ Tests use an in-memory SQLite database and mock Celery tasks — no Redis requir
 | POST | `/api/v1/channels/{id}/unsubscribe` | Unsubscribe from a channel |
 | POST | `/api/v1/channels/{id}/sync` | Trigger a fresh sync |
 | GET | `/api/v1/channels/{id}/videos` | List videos for a channel |
+| POST | `/api/v1/qa-history/chat` | Ask a meta-question across all Q&A history |
+| GET | `/api/v1/qa-history/exchanges` | List history chat exchanges |
+| POST | `/api/v1/videos/{id}/extract-knowledge` | Run knowledge extraction (409 if exists unless `?force`) |
+| GET | `/api/v1/videos/{id}/knowledge` | Fetch stored knowledge artifact |
+| GET | `/api/v1/exports/qa-dataset/openai.jsonl` | Stream Q&A dataset, OpenAI chat format |
+| GET | `/api/v1/exports/qa-dataset/tuple.jsonl` | Stream Q&A dataset, plain tuple format |
+| GET | `/api/v1/exports/knowledge-dataset/openai.jsonl` | Stream knowledge dataset, chat format |
+| GET | `/api/v1/exports/knowledge-dataset/tuple.jsonl` | Stream knowledge dataset, tuple format |
 | POST | `/api/v1/admin/restart` | Restart Redis/backend/Celery/frontend (Windows only) |
 | WS | `/ws/jobs` | Real-time progress (subscribe/unsubscribe per job) |
 

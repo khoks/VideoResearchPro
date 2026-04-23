@@ -42,6 +42,15 @@ class Video(Base):
     # RAG state
     embedded_in_chroma: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Knowledge extraction artifacts (Unit 4)
+    # `extracted_knowledge_json` holds the structured merged extraction as a
+    # JSON-encoded string: {"topics": [...], "concepts": [...], "events": [...], "facts": [...]}
+    # `knowledge_report_md` is the synthesized Markdown knowledge document.
+    # `knowledge_extracted_at` is set once the agent has completed successfully.
+    extracted_knowledge_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    knowledge_report_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    knowledge_extracted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )

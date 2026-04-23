@@ -33,6 +33,23 @@ class ReportAgentState(TypedDict):
     final_html: str
 
 
+class KnowledgeAgentState(TypedDict):
+    messages: Annotated[list, add_messages]
+    video_id: str
+    video_title: str
+    channel_name: str
+    # Full transcript text reconstructed from transcript_cache.segments_json.
+    full_transcript_text: str
+    # Token-budgeted slices of `full_transcript_text` fed to the map pass.
+    transcript_batches: list[str]
+    # One structured extraction per batch: {topics, concepts, events, facts}.
+    per_batch_extractions: list[dict]
+    # Union-deduped merged extraction.
+    merged_extraction: dict
+    # Final Markdown knowledge document.
+    knowledge_report_md: str
+
+
 class QAAgentState(TypedDict):
     messages: Annotated[list, add_messages]
     job_id: str

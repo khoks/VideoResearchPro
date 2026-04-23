@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import Base, engine
-from app.routers import admin, auth, channels, health, jobs, knowledge, library, qa, qa_history, ws
+from app.routers import admin, auth, channels, exports, health, jobs, knowledge, library, qa, qa_history, ws
 from app.services import chroma_service
 
 # Ensure all app.* loggers emit at INFO level.
@@ -59,4 +59,5 @@ app.include_router(library.router, prefix="/api/v1")
 app.include_router(qa_history.router, prefix="/api/v1")
 app.include_router(knowledge.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(exports.router, prefix="/api/v1")
 app.include_router(ws.router)

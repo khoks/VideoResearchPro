@@ -48,3 +48,27 @@ export interface LibraryQARequest {
 export interface LibraryClarifyRequest {
   question: string;
 }
+
+export type QAHistorySourceType = 'job' | 'library' | 'history';
+
+export interface QAHistoryReference {
+  source_type: QAHistorySourceType;
+  exchange_id: string;
+  question_preview: string;
+  job_id?: string | null;
+  original_created_at: string;
+}
+
+export interface QAHistoryExchange {
+  id: string;
+  question: string;
+  answer: string;
+  references: QAHistoryReference[];
+  answer_language: AnswerLanguage;
+  created_at: string;
+}
+
+export interface QAHistoryChatRequest {
+  question: string;
+  answer_language?: AnswerLanguage;
+}

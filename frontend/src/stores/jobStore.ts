@@ -10,6 +10,8 @@ export interface Toast {
 
 export type Theme = 'light' | 'dark';
 
+export type AppTab = 'submit' | 'jobs' | 'library' | 'library-qa' | 'qa-history';
+
 const THEME_KEY = 'vrp:theme';
 
 function loadInitialTheme(): Theme {
@@ -29,13 +31,13 @@ function applyTheme(theme: Theme) {
 interface JobStore {
   activeJobId: string | null;
   isReportModalOpen: boolean;
-  activeTab: 'submit' | 'jobs' | 'library' | 'library-qa';
+  activeTab: AppTab;
   theme: Theme;
   toasts: Toast[];
   setActiveJob: (id: string | null) => void;
   openReportModal: () => void;
   closeReportModal: () => void;
-  setActiveTab: (tab: 'submit' | 'jobs' | 'library' | 'library-qa') => void;
+  setActiveTab: (tab: AppTab) => void;
   toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
   pushToast: (kind: ToastKind, message: string) => void;

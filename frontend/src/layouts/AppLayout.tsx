@@ -1,5 +1,5 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useJobStore } from '../stores/jobStore';
+import { useJobStore, type AppTab } from '../stores/jobStore';
 import { useAuth } from '../contexts/AuthContext';
 
 export function AppLayout() {
@@ -10,13 +10,14 @@ export function AppLayout() {
   const toggleTheme = useJobStore((s) => s.toggleTheme);
   const { user, logout } = useAuth();
 
-  const handleTabChange = (tab: 'submit' | 'jobs' | 'library' | 'library-qa') => {
+  const handleTabChange = (tab: AppTab) => {
     setActiveTab(tab);
-    const routeMap: Record<typeof tab, string> = {
+    const routeMap: Record<AppTab, string> = {
       submit: '/submit',
       jobs: '/jobs',
       library: '/library',
       'library-qa': '/library/qa',
+      'qa-history': '/qa-history',
     };
     navigate(routeMap[tab]);
   };
@@ -30,6 +31,7 @@ export function AppLayout() {
   const isLibraryQAActive = location.pathname.startsWith('/library/qa');
   const isLibraryActive = !isLibraryQAActive && location.pathname.startsWith('/library');
   const isJobsActive = location.pathname.startsWith('/jobs');
+  const isQAHistoryActive = location.pathname.startsWith('/qa-history');
   const isSubmitActive = location.pathname === '/' || location.pathname === '/submit';
 
   return (
@@ -50,6 +52,9 @@ export function AppLayout() {
           </TabButton>
           <TabButton active={isLibraryQAActive} onClick={() => handleTabChange('library-qa')}>
             Global Q&amp;A
+          </TabButton>
+          <TabButton active={isQAHistoryActive} onClick={() => handleTabChange('qa-history')}>
+            Q&amp;A History
           </TabButton>
         </nav>
         <div className="app-header__actions" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>

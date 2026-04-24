@@ -25,8 +25,7 @@ from app.agents.prompts.knowledge_prompts import (
 )
 from app.agents.state import KnowledgeAgentState
 from app.config import settings
-from app.services.llm_routing import resolve_route
-from app.services.llm_service import get_llm
+from app.services.llm_service import get_llm_for
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +160,7 @@ def extract_per_batch(state: KnowledgeAgentState) -> dict:
     if not batches:
         return {"per_batch_extractions": []}
 
-    llm = get_llm(temperature=0.0, purpose=resolve_route("knowledge_extract_batch"))
+    llm = get_llm_for("knowledge_extract_batch", temperature=0.0)
     video_title = state.get("video_title", "") or "Unknown"
     channel_name = state.get("channel_name", "") or "Unknown"
 
@@ -227,10 +226,10 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
     if not any(merged.get(k) for k in _KNOWLEDGE_KEYS) and not transcript_for_prompt.strip():
         return {"knowledge_report_md": ""}
 
-    llm = get_llm(
+    llm = get_llm_for(
+        "knowledge_synthesize_report",
         temperature=0.2,
         max_tokens=8000,
-        purpose=resolve_route("knowledge_synthesize_report"),
     )
     prompt = SYNTHESIZE_REPORT_PROMPT.format(
         video_title=state.get("video_title", "") or "Unknown",

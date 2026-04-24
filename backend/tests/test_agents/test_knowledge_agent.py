@@ -82,7 +82,7 @@ def test_extract_per_batch_parses_json_response():
         "events": ["Paris Agreement 2015"],
         "facts": ["CO2 reached 420 ppm in 2023"],
     })
-    with patch.object(knowledge_agent, "get_llm") as mock_get_llm:
+    with patch.object(knowledge_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_constant(payload)
         result = knowledge_agent.extract_per_batch({
             "transcript_batches": ["some transcript batch text"],
@@ -100,7 +100,7 @@ def test_extract_per_batch_tolerates_code_fences():
     fenced = "```json\n" + json.dumps({
         "topics": ["a"], "concepts": [], "events": [], "facts": [],
     }) + "\n```"
-    with patch.object(knowledge_agent, "get_llm") as mock_get_llm:
+    with patch.object(knowledge_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_constant(fenced)
         result = knowledge_agent.extract_per_batch({
             "transcript_batches": ["b"],
@@ -110,7 +110,7 @@ def test_extract_per_batch_tolerates_code_fences():
 
 
 def test_extract_per_batch_non_json_falls_back_to_empty_lists():
-    with patch.object(knowledge_agent, "get_llm") as mock_get_llm:
+    with patch.object(knowledge_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_constant("not json at all")
         result = knowledge_agent.extract_per_batch({
             "transcript_batches": ["b"],
@@ -129,7 +129,7 @@ def test_extract_per_batch_continues_when_llm_raises():
             "topics": ["recovered"], "concepts": [], "events": [], "facts": [],
         })),
     ]
-    with patch.object(knowledge_agent, "get_llm", return_value=llm):
+    with patch.object(knowledge_agent, "get_llm_for", return_value=llm):
         result = knowledge_agent.extract_per_batch({
             "transcript_batches": ["b1", "b2"],
             "video_title": "V", "channel_name": "C",
@@ -188,7 +188,7 @@ def test_synthesize_report_empty_merged_and_transcript_returns_empty():
 
 def test_synthesize_report_invokes_llm_and_strips_code_fence():
     md_with_fence = "```markdown\n# Title\n\nParagraph.\n```"
-    with patch.object(knowledge_agent, "get_llm") as mock_get_llm:
+    with patch.object(knowledge_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_constant(md_with_fence)
         result = knowledge_agent.synthesize_report({
             "merged_extraction": {
@@ -205,7 +205,7 @@ def test_synthesize_report_invokes_llm_and_strips_code_fence():
 def test_synthesize_report_returns_empty_on_llm_error():
     llm = MagicMock()
     llm.invoke.side_effect = RuntimeError("boom")
-    with patch.object(knowledge_agent, "get_llm", return_value=llm):
+    with patch.object(knowledge_agent, "get_llm_for", return_value=llm):
         result = knowledge_agent.synthesize_report({
             "merged_extraction": {
                 "topics": ["a"], "concepts": [], "events": [], "facts": [],
@@ -235,7 +235,7 @@ def test_run_knowledge_extract_agent_full_graph():
     )
 
     with patch.object(
-        knowledge_agent, "get_llm",
+        knowledge_agent, "get_llm_for",
         side_effect=[_fake_llm_constant(extraction_payload), _fake_llm_constant(report_md)],
     ):
         result = knowledge_agent.run_knowledge_extract_agent(
@@ -252,7 +252,7 @@ def test_run_knowledge_extract_agent_full_graph():
 def test_run_knowledge_extract_agent_empty_transcript():
     """Empty transcript short-circuits: no batches, no LLM calls, empty result."""
     video = SimpleNamespace(video_id="v", title="t", channel_name="c")
-    with patch.object(knowledge_agent, "get_llm") as mock_get_llm:
+    with patch.object(knowledge_agent, "get_llm_for") as mock_get_llm:
         result = knowledge_agent.run_knowledge_extract_agent(
             video=video, full_transcript_text=""
         )

@@ -40,6 +40,7 @@ from app.agents.prompts.search_prompts import (
 )
 from app.agents.state import SearchAgentState
 from app.services import youtube_service
+from app.services.llm_routing import resolve_route
 from app.services.llm_service import get_llm
 from app.utils.youtube_helpers import format_duration
 
@@ -102,7 +103,7 @@ def plan_searches(state: SearchAgentState) -> dict:
     else:
         preferred_block = ""
 
-    llm = get_llm(temperature=0.3, purpose="fast")
+    llm = get_llm(temperature=0.3, purpose=resolve_route("search_plan_queries"))
     prompt = PLAN_SEARCHES_PROMPT.format(
         topic=topic,
         search_instructions=state.get("search_instructions", "") or "(none)",
@@ -368,7 +369,7 @@ def rank_and_curate(state: SearchAgentState) -> dict:
     if len(videos) <= target:
         return {"curated_videos": videos}
 
-    llm = get_llm(temperature=0.0)
+    llm = get_llm(temperature=0.0, purpose=resolve_route("search_rank_and_curate"))
     video_list = "\n".join(_format_video_line(v) for v in videos)
 
     prompt = RANK_AND_CURATE_PROMPT.format(

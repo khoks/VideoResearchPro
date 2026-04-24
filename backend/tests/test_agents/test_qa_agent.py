@@ -42,7 +42,7 @@ def test_retrieve_context_queries_chroma_with_top_k():
     original question is issued.
     """
     with patch.object(qa_agent.chroma_service, "query_collection") as mock_query, \
-         patch.object(qa_agent, "get_llm") as mock_get_llm:
+         patch.object(qa_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("")  # no sub-queries
         mock_query.return_value = [
             _rag_result("v1", "ChA", "Video 1", "chunk 1", ts_start=42.0),
@@ -85,7 +85,7 @@ def test_retrieve_context_topic_job_extracts_report_text():
         </html>
     """
     with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]), \
-         patch.object(qa_agent, "get_llm") as mock_get_llm:
+         patch.object(qa_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("")
         result = qa_agent.retrieve_context({
             "job_id": "j",
@@ -105,7 +105,7 @@ def test_retrieve_context_topic_job_extracts_report_text():
 
 def test_retrieve_context_channel_job_skips_report_context():
     with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]), \
-         patch.object(qa_agent, "get_llm") as mock_get_llm:
+         patch.object(qa_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("")
         result = qa_agent.retrieve_context({
             "job_id": "j",
@@ -121,7 +121,7 @@ def test_retrieve_context_truncates_long_reports():
     big_text = "word " * 20000  # 100000 chars >> 50000 cap
     html = f"<p>{big_text}</p>"
     with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]), \
-         patch.object(qa_agent, "get_llm") as mock_get_llm:
+         patch.object(qa_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("")  # no sub-queries
         result = qa_agent.retrieve_context({
             "job_id": "j",
@@ -137,7 +137,7 @@ def test_retrieve_context_truncates_long_reports():
 
 def test_retrieve_context_empty_chroma_results():
     with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]), \
-         patch.object(qa_agent, "get_llm") as mock_get_llm:
+         patch.object(qa_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("")
         result = qa_agent.retrieve_context({
             "job_id": "j",
@@ -162,7 +162,7 @@ def test_refine_context_formats_sources_and_calls_llm():
     rag[1]["timestamp_display"] = "1:00"
     rag[1]["youtube_link"] = "https://www.youtube.com/watch?v=v2&t=60"
 
-    with patch.object(qa_agent, "get_llm") as mock_get_llm:
+    with patch.object(qa_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("Refined extract: A and B")
         state = {
             "question": "how?",
@@ -182,7 +182,7 @@ def test_refine_context_formats_sources_and_calls_llm():
 
 
 def test_refine_context_includes_report_section():
-    with patch.object(qa_agent, "get_llm") as mock_get_llm:
+    with patch.object(qa_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("compacted")
         state = {
             "question": "q",
@@ -199,7 +199,7 @@ def test_refine_context_includes_report_section():
 # ---------- formulate_answer ----------
 
 def test_formulate_answer_uses_refined_context():
-    with patch.object(qa_agent, "get_llm") as mock_get_llm:
+    with patch.object(qa_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("Here is the answer.")
         state = {
             "question": "how do qubits work?",
@@ -214,7 +214,7 @@ def test_formulate_answer_uses_refined_context():
 
 
 def test_formulate_answer_with_no_context():
-    with patch.object(qa_agent, "get_llm") as mock_get_llm:
+    with patch.object(qa_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("I don't know.")
         state = {"question": "q", "refined_context": ""}
         result = qa_agent.formulate_answer(state)
@@ -281,7 +281,7 @@ def test_run_qa_agent_full_graph():
     rag = [
         _rag_result("v1", "ChA", "Video A", "some transcript text", ts_start=42.0),
     ]
-    # Each get_llm() call returns a fresh fake LLM. The graph invokes get_llm
+    # Each get_llm_for() call returns a fresh fake LLM. The graph invokes get_llm_for
     # in this order: sub_query expansion -> refine_context -> formulate_answer.
     # extract_references uses the deterministic citation matcher when the
     # answer contains the video_id (no LLM call needed).
@@ -291,7 +291,7 @@ def test_run_qa_agent_full_graph():
         _fake_llm_returning("Answer referencing v1 / Video A"),  # formulate_answer
     ]
     with patch.object(qa_agent.chroma_service, "query_collection", return_value=rag), \
-         patch.object(qa_agent, "get_llm", side_effect=fake_llms):
+         patch.object(qa_agent, "get_llm_for", side_effect=fake_llms):
         answer, references = qa_agent.run_qa_agent(
             job_id="job-1",
             job_type="topic",
@@ -406,7 +406,7 @@ def test_extract_references_returns_sanitized_answer():
 
 def test_formulate_answer_injects_allowed_sources():
     rag = [_rag_result("v1", "ChA", "Real Video", "x")]
-    with patch.object(qa_agent, "get_llm") as mock_get_llm:
+    with patch.object(qa_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("answer")
         qa_agent.formulate_answer({
             "question": "q",

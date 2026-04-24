@@ -18,7 +18,8 @@ VideoResearchPro is also a personal research wiki that grows every time you use 
 - **Channel research** — Paste channel URLs; pull the latest N videos per channel.
 - **Channel subscriptions** — Subscribe to a channel; every current and future video is ingested and indexed automatically.
 - **Global video library** — One canonical copy of every transcribed video, reused across all jobs.
-- **Library-wide Q&A** — Ask questions against the entire library of videos, not just one job.
+- **Global Q&A** (`/library/qa`) — Ask anything across every video from every job in one place, not just within a single job.
+- **Q&A History chat** (`/qa-history`) — A meta chat that searches every past Q&A exchange you've ever had and synthesizes answers from them, with links back to the original question.
 - **Multilingual** — Transcribes whatever the speaker says (Hindi, Urdu, English, mixed); answers in your chosen language.
 - **Citation-grounded Q&A** — Every answer includes clickable YouTube timestamps back to the source.
 - **Duplicate / re-run any job** — The Jobs list and Job Detail pages both expose a **Duplicate / Re-run** action that opens the submit form pre-filled with the original job's parameters (topic, instructions, duration filters, preferred channels, channel list, etc.). Tweak what you want and resubmit — a brand-new job with a new ID is created, the original is untouched.
@@ -192,24 +193,42 @@ The endpoint returns `202 Accepted` immediately, spawns `restart_services.ps1` a
 
 ## Running with a local LLM
 
-VideoResearchPro routes cheap, low-stakes LLM calls (clarification questions, map-chunk fact extraction, multi-query expansion, context compression) through a "fast" slot that you can point at a local OpenAI-compatible server like LM Studio. The expensive final-answer and compose-report LLMs stay on OpenAI.
+Every LLM call site (clarification, fact extraction, final-answer synthesis, report composition, etc.) is an independent **use case**. You pick the provider, model, and reasoning level per use case via `LLM_USE_CASE_CONFIG`, and you can point any of them at a local OpenAI-compatible server (LM Studio, Ollama, vLLM, llama.cpp) by choosing the `local` provider.
 
-1. Start LM Studio and load any instruct model (default tested: `google/gemma-4-26b-a4b`; Qwen and Llama 3 instruct variants also work).
-2. Turn on the server (Developer → Start Server); confirm it listens on `http://localhost:1234`.
-3. Verify: `curl http://localhost:1234/v1/models | jq .` (should return the loaded model).
-4. In `backend/.env` set:
+1. Start LM Studio (or your server of choice) and load any instruct model. Turn on the server and confirm it listens on e.g. `http://localhost:1234`.
+2. Verify with `curl http://localhost:1234/v1/models` — it should list the loaded model.
+3. In `backend/.env` set the local endpoint and a per-use-case routing config:
 
    ```
-   LLM_FAST_BASE_URL=http://localhost:1234/v1
-   LLM_FAST_MODEL=google/gemma-4-26b-a4b
-   LLM_FAST_API_KEY=not-needed
+   LLM_LOCAL_BASE_URL=http://localhost:1234/v1
+   LLM_LOCAL_API_KEY=not-needed
+
+   # Route the cheap, chatty use cases to the local model; keep the
+   # high-stakes ones on OpenAI (or Anthropic / Google).
+   LLM_USE_CASE_CONFIG=qa_clarification=local:qwen/qwen3-8b-instruct,qa_sub_query_expansion=local:qwen/qwen3-8b-instruct,report_map_chunks=local:qwen/qwen3-8b-instruct,qa_formulate_answer=openai:gpt-5:medium,knowledge_synthesize_report=anthropic:claude-opus-4-5:medium
    ```
 
-5. Restart backend + Celery via `.\scripts\restart_services.ps1 -SkipFrontend`.
+   Format: `use_case=provider:model[:reasoning]`, comma-separated. Providers: `openai`, `anthropic`, `google`, `local`. Reasoning (optional): `off`, `minimal`, `low`, `medium`, `high`, `auto`. Any use case not listed falls back to its registry default. See `backend/app/services/llm_routing.py` for the full list of use case names.
 
-When `LLM_FAST_BASE_URL` is unset, the fast slot stays on `LLM_FAST_MODEL` online — zero behavior change for existing users.
+4. Restart backend + Celery via `.\scripts\restart_services.ps1 -SkipFrontend`.
+
+**Benchmarking your local server.** `backend/scripts/stress_test_local_llm.py` sweeps concurrency levels against your local endpoint and reports latency percentiles and aggregate throughput:
+
+```bash
+./venv/Scripts/python backend/scripts/stress_test_local_llm.py --concurrency 1 4 8
+```
 
 Note: embeddings are already local — we use SentenceTransformer (`paraphrase-multilingual-MiniLM-L12-v2`) on CPU. No OpenAI embeddings cost today.
+
+## What happens when an LLM is unreachable
+
+The app is designed to fail soft. At boot it probes every configured LLM once; if any probe fails the app still starts and the rest of the UI stays usable:
+
+- A banner at the top of every page lists which features are affected (e.g. "Q&A and knowledge extraction are unavailable") and offers a **Retry** button that re-probes without a full restart.
+- LLM-dependent pages — Q&A (job-scoped and library-wide), Q&A History chat, knowledge-report generation, and new job submission — disable their primary actions with an inline explainer pointing at the offending provider/model.
+- Non-LLM features stay fully interactive: browsing the Jobs list, viewing past reports, browsing the global library, downloading JSONL exports, and managing channel subscriptions.
+
+This means a dead local model, an expired OpenAI key, or a rate-limited Anthropic account never bricks the app — you can keep reading past work while you fix the config.
 
 ## Fine-tuning your own model
 
@@ -256,12 +275,23 @@ VideoResearchPro/
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `YOUTUBE_API_KEY` | Yes | — | YouTube Data API v3 key |
-| `OPENAI_API_KEY` | Yes | — | OpenAI API key for GPT-4.1 |
+| `OPENAI_API_KEY` | Conditional | — | Required if any use case routes to provider `openai` |
+| `ANTHROPIC_API_KEY` | Conditional | — | Required if any use case routes to provider `anthropic` |
+| `GOOGLE_API_KEY` | Conditional | — | Required if any use case routes to provider `google` |
 | `DATABASE_URL` | No | `sqlite:///./data/videoresearchpro.db` | SQLAlchemy DB connection |
 | `REDIS_URL` | No | `redis://localhost:6379/0` | Redis for WebSocket pub/sub |
 | `CELERY_BROKER_URL` | No | `redis://localhost:6379/1` | Celery task broker |
 | `CELERY_RESULT_BACKEND` | No | `redis://localhost:6379/2` | Celery result storage |
-| `LLM_MODEL` | No | `gpt-4.1` | OpenAI model name |
+| `LLM_USE_CASE_CONFIG` | No | — | Per-use-case routing, e.g. `qa_clarification=local:qwen/qwen3-8b,qa_formulate_answer=openai:gpt-5:medium`. See `backend/app/services/llm_routing.py` for use case names. |
+| `LLM_LOCAL_BASE_URL` | No | — | OpenAI-compatible local server URL (e.g. `http://localhost:1234/v1`). Required for any use case with provider `local`. |
+| `LLM_LOCAL_API_KEY` | No | `not-needed` | API key sent to the local server (most accept anything) |
+| `LLM_PRIMARY_PROVIDER` | No | `openai` | Default provider for use cases not in `LLM_USE_CASE_CONFIG` (`openai` / `anthropic` / `google`) |
+| `LLM_PRIMARY_MODEL` | No | — | Default model for use cases not in `LLM_USE_CASE_CONFIG` |
+| `LLM_MODEL` | No | `gpt-5` | Legacy OpenAI model name; still honored when provider is `openai` |
+| `LLM_ROUTE_OVERRIDES` | No | — | Legacy — use `LLM_USE_CASE_CONFIG` |
+| `LLM_FAST_BASE_URL` | No | — | Legacy — use `LLM_USE_CASE_CONFIG` + `LLM_LOCAL_BASE_URL` |
+| `LLM_FAST_MODEL` | No | `gpt-4.1-mini` | Legacy — use `LLM_USE_CASE_CONFIG` |
+| `LLM_FAST_API_KEY` | No | `not-needed` | Legacy — use `LLM_USE_CASE_CONFIG` + `LLM_LOCAL_API_KEY` |
 | `CHROMA_PERSIST_DIR` | No | `./data/chroma` | ChromaDB storage path |
 | `REPORTS_DIR` | No | `./data/reports` | Generated HTML reports path |
 

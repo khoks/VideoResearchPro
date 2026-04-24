@@ -26,8 +26,7 @@ from app.agents.prompts.qa_history_prompts import (
 )
 from app.config import settings
 from app.services import chroma_service
-from app.services.llm_routing import resolve_route
-from app.services.llm_service import get_llm
+from app.services.llm_service import get_llm_for
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +161,7 @@ def _build_raw_context(parsed: list[tuple[dict, str, str]], refs: list[dict]) ->
 def _refine_context(question: str, raw_context: str) -> str:
     if not raw_context:
         return ""
-    llm = get_llm(temperature=0.0, purpose=resolve_route("qa_history_refine_context"))
+    llm = get_llm_for("qa_history_refine_context", temperature=0.0)
     prompt = QA_HISTORY_REFINE_CONTEXT_PROMPT.format(
         question=question,
         raw_context=raw_context,
@@ -188,7 +187,7 @@ def _formulate_answer(
     allowed_sources: str,
     refined_context: str,
 ) -> str:
-    llm = get_llm(temperature=0.0, purpose=resolve_route("qa_history_formulate_answer"))
+    llm = get_llm_for("qa_history_formulate_answer", temperature=0.0)
     system_prompt = QA_HISTORY_SYSTEM_PROMPT.format(answer_language=answer_language)
     user_prompt = QA_HISTORY_ANSWER_PROMPT.format(
         question=question,

@@ -9,6 +9,7 @@ from app.config import settings
 from app.database import Base, engine
 from app.routers import admin, auth, channels, exports, health, jobs, knowledge, library, qa, qa_history, ws
 from app.services import chroma_service
+from app.services.llm_smoke import run_startup_probes
 
 # Ensure all app.* loggers emit at INFO level.
 # uvicorn sets up root logger handlers; this just lowers the threshold for our loggers.
@@ -31,6 +32,11 @@ async def lifespan(app: FastAPI):
         chroma_service.backfill_qa_library()
     except Exception:
         logger.exception("Q&A library backfill failed; continuing startup")
+
+    try:
+        await run_startup_probes()
+    except Exception:
+        logger.exception("LLM startup probes failed catastrophically")
 
     logger.info("VideoResearchPro startup complete")
     yield

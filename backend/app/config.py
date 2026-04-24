@@ -79,7 +79,17 @@ class Settings(BaseSettings):
     LLM_FAST_API_KEY: str = "not-needed"
 
     # -------------------------------------------------------------------
-    # LLM — Per-use-case route overrides
+    # LLM — Local inference endpoint (OpenAI-compatible)
+    # -------------------------------------------------------------------
+    # Canonical names for the local endpoint. If unset, the legacy
+    # LLM_FAST_BASE_URL / LLM_FAST_API_KEY are used as fallback so existing
+    # .env files keep working. Either may point at LM Studio, Ollama,
+    # vLLM, llama.cpp-server, etc.
+    LLM_LOCAL_BASE_URL: str = ""
+    LLM_LOCAL_API_KEY: str = ""
+
+    # -------------------------------------------------------------------
+    # LLM — Per-use-case route overrides (legacy, binary primary/fast)
     # -------------------------------------------------------------------
     # Comma-separated ``use_case=route`` pairs. Lets you flip any single
     # call site between primary/fast without touching code.
@@ -92,7 +102,38 @@ class Settings(BaseSettings):
     # The full list of use_case names (with descriptions and token budgets)
     # lives in app/services/llm_routing.py::USE_CASE_REGISTRY. Unknown
     # names are logged and ignored, not fatal.
+    #
+    # NOTE: This knob is superseded by LLM_USE_CASE_CONFIG below (which
+    # picks provider+model+reasoning per call site). LLM_ROUTE_OVERRIDES
+    # is still honored for back-compat; entries here are the *lowest*
+    # precedence and only apply when LLM_USE_CASE_CONFIG is empty or
+    # missing for that use case.
     LLM_ROUTE_OVERRIDES: str = ""
+
+    # -------------------------------------------------------------------
+    # LLM — Per-use-case inline config (provider + model + reasoning)
+    # -------------------------------------------------------------------
+    # Comma-separated entries. Each entry::
+    #
+    #   <use_case>=<provider>:<model>[:<reasoning>]
+    #
+    # where provider ∈ {openai, anthropic, google, local}, model is the
+    # provider-specific name, and reasoning (optional, default "off") is
+    # one of {off, minimal, low, medium, high, auto}. Whitespace and line
+    # breaks between entries are tolerated (pydantic ignores newlines in
+    # env values by default; if you need multi-line, set env var via a
+    # shell one-liner and keep commas).
+    #
+    # Example::
+    #
+    #   LLM_USE_CASE_CONFIG=qa_formulate_answer=openai:gpt-5.4:medium,qa_clarification=local:qwen/qwen3.5-9b:off,knowledge_synthesize_report=anthropic:claude-opus-4-5:medium
+    #
+    # Missing use cases fall back to the registry's default_config (see
+    # app/services/llm_routing.py::USE_CASE_REGISTRY). Unknown use-case
+    # names, unknown providers, and unknown reasoning levels are logged
+    # as warnings and ignored — never fatal, so a typo doesn't take down
+    # the app.
+    LLM_USE_CASE_CONFIG: str = ""
 
     # Jobs
     MAX_CONCURRENT_JOBS: int = 5

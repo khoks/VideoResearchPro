@@ -1,8 +1,11 @@
 import { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useKnowledge, useExtractKnowledge } from '../hooks/useKnowledge';
+import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import type { KnowledgeArtifact } from '../services/knowledgeApi';
+
+const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
 interface Props {
   videoId: string;
@@ -17,18 +20,25 @@ interface Props {
 export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
   const { data: artifact, isLoading: isLoadingCached, isError } = useKnowledge(videoId);
   const extract = useExtractKnowledge(videoId);
+  const knowledgeExtractionAvailable = useFeatureAvailable('knowledge_extraction');
 
   // When the GET resolves to null (never extracted) kick off the POST exactly
-  // once. Guarded by pending/success so re-renders never retrigger.
+  // once. Guarded by pending/success so re-renders never retrigger. Also
+  // short-circuits when LLM extraction is unavailable so we render an empty
+  // state instead of firing a doomed request.
   useEffect(() => {
     if (isLoadingCached) return;
     if (artifact) return;
+    if (!knowledgeExtractionAvailable) return;
     if (extract.isPending || extract.isSuccess || extract.isError) return;
     extract.mutate(undefined);
-  }, [artifact, isLoadingCached, extract]);
+  }, [artifact, isLoadingCached, extract, knowledgeExtractionAvailable]);
 
   const displayed: KnowledgeArtifact | null = artifact ?? extract.data ?? null;
   const isBusy = isLoadingCached || extract.isPending;
+  const showUnavailableEmptyState =
+    !knowledgeExtractionAvailable && !displayed && !isBusy;
+  const regenDisabled = extract.isPending || !knowledgeExtractionAvailable;
 
   return (
     <div
@@ -66,13 +76,16 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
             {displayed && !isBusy && (
               <button
                 onClick={() => extract.mutate({ force: true })}
-                disabled={extract.isPending}
-                title="Re-run extraction; overwrites the stored report."
+                disabled={regenDisabled}
+                title={knowledgeExtractionAvailable
+                  ? 'Re-run extraction; overwrites the stored report.'
+                  : FEATURE_UNAVAILABLE_MSG}
                 style={{
                   background: '#fff', color: '#667eea', border: '1px solid #667eea',
                   padding: '0.4rem 0.9rem', borderRadius: 6,
-                  cursor: extract.isPending ? 'not-allowed' : 'pointer',
+                  cursor: regenDisabled ? 'not-allowed' : 'pointer',
                   fontSize: '0.85rem', fontWeight: 500,
+                  opacity: regenDisabled ? 0.6 : 1,
                 }}
               >
                 Regenerate
@@ -107,13 +120,23 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
             </div>
           )}
 
-          {isError && !extract.isPending && !displayed && (
+          {isError && !extract.isPending && !displayed && knowledgeExtractionAvailable && (
             <div style={{
               padding: '1rem', background: '#fef2f2', borderRadius: 8,
               border: '1px solid #fecaca', color: '#b91c1c', fontSize: '0.9rem',
               marginBottom: '1rem',
             }}>
               Failed to load knowledge report. Click Regenerate to try again.
+            </div>
+          )}
+
+          {showUnavailableEmptyState && (
+            <div style={{
+              padding: '1rem', background: '#fffbeb', borderRadius: 8,
+              border: '1px solid #fde68a', color: '#92400e', fontSize: '0.9rem',
+            }}>
+              {FEATURE_UNAVAILABLE_MSG}. Knowledge extraction will resume once the
+              LLM service recovers — try again in a moment.
             </div>
           )}
 

@@ -5,13 +5,24 @@ from fastapi import APIRouter
 from app.config import settings
 from app.schemas.quota import QuotaStatus
 from app.services import quota_service
+from app.services.llm_smoke import _STATUS
 
 router = APIRouter()
 
 
 @router.get("/health")
 def health_check():
-    return {"status": "ok", "app": "VideoResearchPro"}
+    return {
+        "status": "ok",
+        "app": "VideoResearchPro",
+        "llm": _STATUS.summary(),
+    }
+
+
+@router.get("/health/llm")
+def health_llm():
+    """Detailed per-use-case LLM probe status."""
+    return _STATUS.as_dict()
 
 
 @router.get("/health/quota", response_model=QuotaStatus)

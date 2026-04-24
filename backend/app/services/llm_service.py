@@ -1,36 +1,110 @@
-"""LLM client factory with provider-agnostic primary routing.
+"""LLM client factory with per-use-case provider + model + reasoning routing.
 
-Two axes:
+Three axes resolved per call:
 
-1. **Purpose** — each call site is either ``"primary"`` (slow, smart, usually
-   paid API) or ``"fast"`` (cheap, often local). The decision lives in
-   ``app.services.llm_routing`` — edit that file to change routing.
+1. **Use case** — a named call site (e.g. ``qa_formulate_answer``). The
+   registry in ``app.services.llm_routing`` has one entry per call site
+   with a ``default_config`` and rationale. Flip the decision via
+   ``LLM_USE_CASE_CONFIG`` without touching code.
 
-2. **Provider** — the *primary* client can be OpenAI, Anthropic, or Google,
-   selected by ``LLM_PRIMARY_PROVIDER``. The *fast* client is always
-   OpenAI-compatible (LM Studio, vLLM, Ollama, or OpenAI proper) because
-   that's the lowest common denominator for local inference.
+2. **Provider** — ``openai`` / ``anthropic`` / ``google`` (SaaS) or
+   ``local`` (any OpenAI-compatible server: LM Studio, vLLM, Ollama,
+   llama.cpp-server). Chosen per use case.
 
-Call sites should prefer ``get_llm_for(use_case)`` — it looks up the route
-from the registry, so flipping a decision never touches call-site code.
-The legacy ``get_llm(purpose=...)`` is kept for back-compat.
+3. **Reasoning level** — ``off`` / ``minimal`` / ``low`` / ``medium`` /
+   ``high`` / ``auto``. Normalized across providers:
+
+   * OpenAI → ``reasoning_effort`` via ``model_kwargs``
+   * Anthropic → ``thinking={"type": "enabled", "budget_tokens": N}``
+   * Google → ``thinking_budget`` (integer tokens, or -1 for adaptive)
+
+Call sites should use ``get_llm_for(use_case, ...)``. The legacy
+``get_llm(purpose=...)`` shim is preserved for any remaining external
+callers.
 """
 from __future__ import annotations
 
 import logging
+import time
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
 from app.config import settings
-from app.services.llm_routing import UseCase, resolve_route
+from app.services.llm_routing import (
+    ReasoningLevel,
+    UseCase,
+    UseCaseConfig,
+    resolve_config,
+    resolve_route,
+)
 
 logger = logging.getLogger(__name__)
 
-# Cache the validated primary model name (OpenAI path only) so we don't
-# retry the /models round-trip on every call.
+# Cache the validated primary model name (OpenAI back-compat path) so we
+# don't retry the /models round-trip on every call. Cleared between tests
+# by the autouse fixture in test_llm_service_routing.py.
 _validated_model: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Reasoning parameter mapping (provider-agnostic → provider-specific)
+# ---------------------------------------------------------------------------
+
+# Anthropic maps reasoning levels to thinking budget tokens. Values are
+# conservative; set LLM_USE_CASE_CONFIG with a concrete reasoning level
+# if a specific call needs more or less headroom.
+_ANTHROPIC_THINKING_BUDGET = {
+    "minimal": 1_024,
+    "low": 2_048,
+    "medium": 4_096,
+    "high": 16_384,
+    # "auto" has no native analog on Claude; treat as medium.
+    "auto": 4_096,
+}
+
+# Google maps reasoning levels to thinking budget tokens. "auto" uses -1
+# to let the model decide (Gemini 2.5 adaptive thinking).
+_GOOGLE_THINKING_BUDGET = {
+    "off": 0,
+    "minimal": 512,
+    "low": 2_048,
+    "medium": 8_192,
+    "high": 16_384,
+    "auto": -1,
+}
+
+
+def _openai_reasoning_kwargs(reasoning: ReasoningLevel) -> dict[str, Any]:
+    """Translate reasoning level to OpenAI ``model_kwargs``.
+
+    ``off`` emits no ``reasoning_effort`` (the model decides — typically
+    fast). Any other level is passed through as-is; OpenAI accepts
+    ``minimal`` / ``low`` / ``medium`` / ``high``. ``auto`` is mapped to
+    ``medium`` because OpenAI has no adaptive knob today.
+    """
+    if reasoning == "off":
+        return {}
+    if reasoning == "auto":
+        return {"model_kwargs": {"reasoning_effort": "medium"}}
+    return {"model_kwargs": {"reasoning_effort": reasoning}}
+
+
+def _anthropic_reasoning_kwargs(reasoning: ReasoningLevel) -> dict[str, Any]:
+    if reasoning == "off":
+        return {}
+    budget = _ANTHROPIC_THINKING_BUDGET.get(reasoning, 4_096)
+    return {"thinking": {"type": "enabled", "budget_tokens": budget}}
+
+
+def _google_reasoning_kwargs(reasoning: ReasoningLevel) -> dict[str, Any]:
+    # Google accepts thinking_budget even when "off" (value 0 disables it).
+    # Pass through for every level so behavior is deterministic.
+    budget = _GOOGLE_THINKING_BUDGET.get(reasoning, 0)
+    return {"thinking_budget": budget}
 
 
 # ---------------------------------------------------------------------------
@@ -43,9 +117,15 @@ def _build_openai(
     *,
     base_url: str | None = None,
     api_key: str | None = None,
+    reasoning: ReasoningLevel = "off",
 ) -> ChatOpenAI:
     """Build a ``ChatOpenAI`` client. Used for both OpenAI primary and every
-    OpenAI-compatible fast server (LM Studio, vLLM, Ollama shim, etc.)."""
+    OpenAI-compatible local server (LM Studio, vLLM, Ollama shim, etc.).
+
+    Local servers generally don't implement reasoning params, so callers
+    should pass ``reasoning="off"`` when ``base_url`` points at a local
+    endpoint.
+    """
     kwargs: dict[str, Any] = {
         "model": model,
         "api_key": api_key if api_key is not None else settings.OPENAI_API_KEY,
@@ -55,6 +135,9 @@ def _build_openai(
         kwargs["max_tokens"] = max_tokens
     if base_url:
         kwargs["base_url"] = base_url
+    # Merge reasoning kwargs last so explicit caller-provided
+    # model_kwargs (none today, but future-proof) are preserved.
+    kwargs.update(_openai_reasoning_kwargs(reasoning))
     return ChatOpenAI(**kwargs)
 
 
@@ -66,18 +149,19 @@ def _build_anthropic(
     model: str,
     temperature: float,
     max_tokens: int | None,
+    *,
+    reasoning: ReasoningLevel = "off",
 ) -> BaseChatModel:
     """Build an Anthropic ``ChatAnthropic`` client (lazy import)."""
     try:
         from langchain_anthropic import ChatAnthropic  # type: ignore[import-not-found]
     except ImportError as e:
         raise RuntimeError(
-            "LLM_PRIMARY_PROVIDER=anthropic requires: "
-            "pip install langchain-anthropic"
+            "provider=anthropic requires: pip install langchain-anthropic"
         ) from e
     if not settings.ANTHROPIC_API_KEY:
         raise RuntimeError(
-            "LLM_PRIMARY_PROVIDER=anthropic requires ANTHROPIC_API_KEY to be set."
+            "provider=anthropic requires ANTHROPIC_API_KEY to be set."
         )
     kwargs: dict[str, Any] = {
         "model": model,
@@ -86,6 +170,7 @@ def _build_anthropic(
     }
     if max_tokens:
         kwargs["max_tokens"] = max_tokens
+    kwargs.update(_anthropic_reasoning_kwargs(reasoning))
     return ChatAnthropic(**kwargs)
 
 
@@ -93,18 +178,19 @@ def _build_google(
     model: str,
     temperature: float,
     max_tokens: int | None,
+    *,
+    reasoning: ReasoningLevel = "off",
 ) -> BaseChatModel:
     """Build a Google Gemini ``ChatGoogleGenerativeAI`` client (lazy import)."""
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI  # type: ignore[import-not-found]
     except ImportError as e:
         raise RuntimeError(
-            "LLM_PRIMARY_PROVIDER=google requires: "
-            "pip install langchain-google-genai"
+            "provider=google requires: pip install langchain-google-genai"
         ) from e
     if not settings.GOOGLE_API_KEY:
         raise RuntimeError(
-            "LLM_PRIMARY_PROVIDER=google requires GOOGLE_API_KEY to be set."
+            "provider=google requires GOOGLE_API_KEY to be set."
         )
     kwargs: dict[str, Any] = {
         "model": model,
@@ -114,15 +200,87 @@ def _build_google(
     if max_tokens:
         # Gemini uses `max_output_tokens`, not `max_tokens`.
         kwargs["max_output_tokens"] = max_tokens
+    kwargs.update(_google_reasoning_kwargs(reasoning))
     return ChatGoogleGenerativeAI(**kwargs)
 
 
+def _local_base_url() -> str | None:
+    """Canonical local endpoint: ``LLM_LOCAL_BASE_URL`` first, legacy
+    ``LLM_FAST_BASE_URL`` as fallback. Returns ``None`` if neither is set."""
+    return (
+        getattr(settings, "LLM_LOCAL_BASE_URL", "")
+        or settings.LLM_FAST_BASE_URL
+        or None
+    )
+
+
+def _local_api_key() -> str:
+    """Canonical local API key (default ``not-needed`` — LM Studio ignores it
+    but the OpenAI SDK rejects an empty string)."""
+    return (
+        getattr(settings, "LLM_LOCAL_API_KEY", "")
+        or settings.LLM_FAST_API_KEY
+        or "not-needed"
+    )
+
+
 # ---------------------------------------------------------------------------
-# Purpose-level builders.
+# Config-driven builder (new canonical path)
+# ---------------------------------------------------------------------------
+
+
+def _build_from_config(
+    cfg: UseCaseConfig,
+    temperature: float,
+    max_tokens: int | None,
+) -> BaseChatModel:
+    """Build a chat client from a resolved ``UseCaseConfig``."""
+    if cfg.provider == "local":
+        base_url = _local_base_url()
+        if not base_url:
+            raise RuntimeError(
+                "Use case resolved to provider=local but neither "
+                "LLM_LOCAL_BASE_URL nor LLM_FAST_BASE_URL is set. Point "
+                "one of them at your local OpenAI-compatible endpoint "
+                "(e.g. http://localhost:1234/v1) or change the use-case "
+                "provider via LLM_USE_CASE_CONFIG."
+            )
+        # Local servers generally don't implement reasoning_effort; pass
+        # it through if the user asked for it, but don't force it on by
+        # default — cfg.reasoning already defaults to 'off' per-registry
+        # for use cases we ship with local defaults.
+        return _build_openai(
+            cfg.model,
+            temperature,
+            max_tokens,
+            base_url=base_url,
+            api_key=_local_api_key(),
+            reasoning=cfg.reasoning,
+        )
+    if cfg.provider == "openai":
+        return _build_openai(
+            cfg.model, temperature, max_tokens, reasoning=cfg.reasoning
+        )
+    if cfg.provider == "anthropic":
+        return _build_anthropic(
+            cfg.model, temperature, max_tokens, reasoning=cfg.reasoning
+        )
+    if cfg.provider == "google":
+        return _build_google(
+            cfg.model, temperature, max_tokens, reasoning=cfg.reasoning
+        )
+    raise ValueError(
+        f"Unknown provider {cfg.provider!r} in UseCaseConfig. "
+        f"Must be one of: openai, anthropic, google, local."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Back-compat: purpose-level builders (primary/fast binary)
 # ---------------------------------------------------------------------------
 def _resolve_primary_model() -> str:
-    """Resolve the primary model name, preferring LLM_PRIMARY_MODEL but
-    falling back to the legacy LLM_MODEL for back-compat."""
+    """Primary model for the legacy ``purpose='primary'`` path. Prefers
+    ``LLM_PRIMARY_MODEL`` and falls back to ``LLM_MODEL``."""
     return settings.LLM_PRIMARY_MODEL or settings.LLM_MODEL
 
 
@@ -148,12 +306,10 @@ _validate_model = _validate_openai_model
 
 
 def _get_primary_llm(temperature: float, max_tokens: int | None) -> BaseChatModel:
-    """Build the primary LLM, dispatching on ``LLM_PRIMARY_PROVIDER``.
+    """Legacy primary builder (back-compat for ``get_llm(purpose='primary')``).
 
-    OpenAI path validates the model once and caches the result, falling
-    back to ``LLM_FALLBACK_MODEL`` on failure. Anthropic / Google paths
-    trust the configured model name — their APIs either return a clear
-    error on invoke or succeed, so pre-validation buys little.
+    Dispatches on ``LLM_PRIMARY_PROVIDER``. OpenAI path validates + caches
+    the model; others trust the configured name.
     """
     global _validated_model
     provider = settings.LLM_PRIMARY_PROVIDER
@@ -186,24 +342,19 @@ def _get_primary_llm(temperature: float, max_tokens: int | None) -> BaseChatMode
 
 
 def _get_fast_llm(temperature: float, max_tokens: int | None) -> BaseChatModel:
-    """Build the fast LLM.
+    """Legacy fast builder (back-compat for ``get_llm(purpose='fast')``).
 
-    If ``LLM_FAST_BASE_URL`` is set, route to that OpenAI-compatible server
-    (e.g. LM Studio) using ``LLM_FAST_MODEL`` and ``LLM_FAST_API_KEY``. We
-    intentionally skip ``_validate_openai_model`` here — local servers often
-    don't implement ``/models`` reliably.
-
-    If ``LLM_FAST_BASE_URL`` is unset, fall back to the normal OpenAI
-    endpoint but still use the cheaper ``LLM_FAST_MODEL``, so the caller
-    saves tokens even when no local server is configured.
+    If a local endpoint is configured, route to it. Otherwise use
+    ``LLM_FAST_MODEL`` against the default OpenAI endpoint.
     """
-    if settings.LLM_FAST_BASE_URL:
+    base_url = _local_base_url()
+    if base_url:
         return _build_openai(
             settings.LLM_FAST_MODEL,
             temperature,
             max_tokens,
-            base_url=settings.LLM_FAST_BASE_URL,
-            api_key=settings.LLM_FAST_API_KEY or "not-needed",
+            base_url=base_url,
+            api_key=_local_api_key(),
         )
     return _build_openai(settings.LLM_FAST_MODEL, temperature, max_tokens)
 
@@ -219,11 +370,9 @@ def get_llm(
 ) -> BaseChatModel:
     """Back-compat API. Prefer ``get_llm_for(use_case=...)`` in new code.
 
-    ``purpose="primary"`` uses ``LLM_PRIMARY_PROVIDER`` + ``LLM_PRIMARY_MODEL``
-    (falls back to ``LLM_MODEL``).
-
-    ``purpose="fast"`` uses ``LLM_FAST_MODEL``, optionally against an
-    OpenAI-compatible server at ``LLM_FAST_BASE_URL``.
+    ``purpose="primary"`` uses ``LLM_PRIMARY_PROVIDER`` + ``LLM_PRIMARY_MODEL``.
+    ``purpose="fast"`` uses ``LLM_FAST_MODEL`` at the local endpoint if
+    configured.
     """
     if purpose == "fast":
         return _get_fast_llm(temperature, max_tokens)
@@ -237,13 +386,81 @@ def get_llm_for(
 ) -> BaseChatModel:
     """Build the LLM for a named call site.
 
-    Looks up ``use_case`` in ``app.services.llm_routing.USE_CASE_REGISTRY``
-    and routes to primary or fast based on the resolved route (which honors
-    ``LLM_ROUTE_OVERRIDES``).
-
-    This is the preferred call-site API. It makes the "which LLM handles
-    this?" decision a single-place change instead of a codebase-wide
-    grep-and-edit.
+    Resolves provider + model + reasoning from the registry (with env
+    overrides applied) and builds the appropriate provider client. This
+    is the canonical call-site API.
     """
-    route = resolve_route(use_case)
-    return get_llm(temperature=temperature, max_tokens=max_tokens, purpose=route)
+    cfg = resolve_config(use_case)
+    return _build_from_config(cfg, temperature, max_tokens)
+
+
+# ---------------------------------------------------------------------------
+# Probe helper for smoke checks and stress tests.
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ProbeResult:
+    """Outcome of a trivial liveness probe against a ``UseCaseConfig``.
+
+    ``ok=True`` means the provider responded with any non-empty content
+    within the timeout. ``ok=False`` means it either raised, timed out,
+    or returned empty.
+    """
+
+    config: UseCaseConfig
+    ok: bool
+    latency_ms: int
+    error: str | None = None
+
+
+def probe_config(
+    cfg: UseCaseConfig,
+    *,
+    timeout_seconds: float = 10.0,
+) -> ProbeResult:
+    """Fire a one-token probe against ``cfg`` and return the outcome.
+
+    Sync (not async) — called from the FastAPI lifespan via ``asyncio.to_thread``
+    or from the stress-test CLI directly. Never raises; every failure is
+    captured in ``ProbeResult.error``.
+    """
+    # Build the client first — build errors (missing API key, missing
+    # pip package) are a legitimate probe failure reason.
+    try:
+        llm = _build_from_config(cfg, temperature=0.0, max_tokens=16)
+    except Exception as e:
+        return ProbeResult(
+            config=cfg, ok=False, latency_ms=0, error=f"build: {e}"
+        )
+    # langchain clients don't uniformly expose a timeout kwarg on .invoke;
+    # we rely on the provider SDK's default (usually 60s) and trust the
+    # caller's wall-clock timeout. Providers that take longer than
+    # timeout_seconds still count as "responded" if they eventually
+    # succeed — the goal is "does it work at all", not "is it fast".
+    start = time.monotonic()
+    try:
+        resp = llm.invoke([HumanMessage(content="Reply with the single word: ok")])
+    except Exception as e:
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        return ProbeResult(
+            config=cfg, ok=False, latency_ms=elapsed_ms, error=str(e)[:300]
+        )
+    elapsed_ms = int((time.monotonic() - start) * 1000)
+    content = getattr(resp, "content", "") or ""
+    if not content.strip():
+        return ProbeResult(
+            config=cfg,
+            ok=False,
+            latency_ms=elapsed_ms,
+            error="empty response content",
+        )
+    return ProbeResult(config=cfg, ok=True, latency_ms=elapsed_ms, error=None)
+
+
+# Keep resolve_route importable from here for any external caller.
+__all__ = [
+    "get_llm",
+    "get_llm_for",
+    "probe_config",
+    "ProbeResult",
+    "resolve_route",
+]

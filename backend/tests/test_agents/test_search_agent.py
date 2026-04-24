@@ -1,6 +1,6 @@
 """Tests for the Search Agent (backend/app/agents/search_agent.py).
 
-These tests mock `get_llm` to produce canned responses and mock the YouTube
+These tests mock `get_llm_for` to produce canned responses and mock the YouTube
 service so the agent runs offline against real LangGraph code paths.
 """
 import json
@@ -39,7 +39,7 @@ def _plan_payload(queries: list[str], keywords: list[str] | None = None) -> str:
 
 
 def test_plan_searches_parses_json_object():
-    with patch.object(search_agent, "get_llm") as mock_get_llm:
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning(
             _plan_payload(
                 ["quantum computing intro", "qubit tutorial", "quantum gates"],
@@ -64,7 +64,7 @@ def test_plan_searches_parses_json_object():
 
 
 def test_plan_searches_falls_back_on_bad_json():
-    with patch.object(search_agent, "get_llm") as mock_get_llm:
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("not valid json!!")
         state = {
             "topic": "physics",
@@ -82,7 +82,7 @@ def test_plan_searches_falls_back_on_bad_json():
 def test_plan_searches_falls_back_when_not_an_object():
     """LLM returned a list (old format) or anything that isn't a dict — we
     cannot trust it, so we fall back to the topic."""
-    with patch.object(search_agent, "get_llm") as mock_get_llm:
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning('["physics"]')
         state = {
             "topic": "physics",
@@ -99,7 +99,7 @@ def test_plan_searches_generates_fallback_keywords_when_channels_present():
     """If preferred channels are supplied but the LLM forgot to include
     channel_keywords, we synthesize them from the topic so the keyword
     filter is never empty."""
-    with patch.object(search_agent, "get_llm") as mock_get_llm:
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning(
             json.dumps({"broad_queries": ["quantum intro"], "channel_keywords": []})
         )
@@ -319,7 +319,7 @@ def test_execute_searches_merges_preferred_channel_uploads(fake_videos):
 
 def test_rank_and_curate_returns_all_when_below_target(fake_videos):
     """Short-circuit: no LLM call if candidate count <= target."""
-    with patch.object(search_agent, "get_llm") as mock_get_llm:
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm:
         state = {
             "topic": "t",
             "discovered_videos": fake_videos,
@@ -333,7 +333,7 @@ def test_rank_and_curate_returns_all_when_below_target(fake_videos):
 
 
 def test_rank_and_curate_llm_selects_ids(fake_videos):
-    with patch.object(search_agent, "get_llm") as mock_get_llm:
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning('["v3", "v1"]')
         state = {
             "topic": "t",
@@ -349,7 +349,7 @@ def test_rank_and_curate_llm_selects_ids(fake_videos):
 
 
 def test_rank_and_curate_falls_back_on_bad_json(fake_videos):
-    with patch.object(search_agent, "get_llm") as mock_get_llm:
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("nonsense")
         state = {
             "topic": "t",
@@ -366,7 +366,7 @@ def test_rank_and_curate_falls_back_on_bad_json(fake_videos):
 
 def test_rank_and_curate_fills_short_llm_selection(fake_videos):
     """If LLM selects fewer than num_videos, pad with remaining videos."""
-    with patch.object(search_agent, "get_llm") as mock_get_llm:
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning('["v2"]')
         state = {
             "topic": "t",
@@ -385,7 +385,7 @@ def test_run_search_agent_end_to_end(fake_videos):
 
     run_search_agent returns (curated_videos, queries_used).
     """
-    with patch.object(search_agent, "get_llm") as mock_get_llm, \
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm, \
          patch.object(search_agent.youtube_service, "search_videos") as mock_search, \
          patch.object(search_agent.youtube_service, "get_video_details") as mock_details, \
          patch.object(search_agent.youtube_service, "get_channel_subscribers", return_value={}):
@@ -421,7 +421,7 @@ def test_run_search_agent_resolves_preferred_channels(fake_videos):
     called for each hint, and their uploads show up as preferred-sourced."""
     preferred_uploads_v2 = ["v2"]
 
-    with patch.object(search_agent, "get_llm") as mock_get_llm, \
+    with patch.object(search_agent, "get_llm_for") as mock_get_llm, \
          patch.object(search_agent.youtube_service, "resolve_channel_id") as mock_resolve, \
          patch.object(search_agent.youtube_service, "search_videos") as mock_search, \
          patch.object(search_agent.youtube_service, "get_channel_videos") as mock_channel_videos, \

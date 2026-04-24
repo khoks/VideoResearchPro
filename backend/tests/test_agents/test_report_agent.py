@@ -145,7 +145,7 @@ def test_map_chunks_empty_returns_empty():
 
 def test_map_chunks_invokes_llm_and_parses_json():
     chunks = [_chunk("v1", "ChA", 0.0, 60.0, text="hello world")]
-    with patch.object(report_agent, "get_llm") as mock_get_llm:
+    with patch.object(report_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning(
             '{"themes": ["t1"], "insights": ["i1"]}'
         )
@@ -159,7 +159,7 @@ def test_map_chunks_invokes_llm_and_parses_json():
 
 def test_map_chunks_wraps_non_json_response():
     chunks = [_chunk("v1", "ChA", 0.0, 60.0)]
-    with patch.object(report_agent, "get_llm") as mock_get_llm:
+    with patch.object(report_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("free-form text not json")
         result = report_agent.map_chunks(
             {"job_type": "topic", "transcript_chunks": chunks, "topic": "x"}
@@ -170,7 +170,7 @@ def test_map_chunks_wraps_non_json_response():
 
 def test_map_chunks_continues_when_llm_batch_raises():
     chunks = [_chunk("v1", "ChA", 0.0, 60.0)]
-    with patch.object(report_agent, "get_llm") as mock_get_llm:
+    with patch.object(report_agent, "get_llm_for") as mock_get_llm:
         llm = MagicMock()
         llm.invoke.side_effect = RuntimeError("LLM timeout")
         mock_get_llm.return_value = llm
@@ -208,7 +208,7 @@ def test_reduce_summaries_single_summary_returns_noop():
 
 def test_reduce_summaries_consolidates_multiple():
     summaries = [{"a": 1}, {"b": 2}, {"c": 3}]
-    with patch.object(report_agent, "get_llm") as mock_get_llm:
+    with patch.object(report_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning('{"merged": true}')
         result = report_agent.reduce_summaries(
             {"job_type": "topic", "chunk_summaries": summaries, "topic": "x"}
@@ -231,7 +231,7 @@ def test_compose_report_no_summaries_returns_placeholder():
 
 
 def test_compose_report_invokes_llm():
-    with patch.object(report_agent, "get_llm") as mock_get_llm:
+    with patch.object(report_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("<section>Report body</section>")
         state = {
             "job_type": "topic",
@@ -245,7 +245,7 @@ def test_compose_report_invokes_llm():
 
 
 def test_compose_report_returns_error_html_on_failure():
-    with patch.object(report_agent, "get_llm") as mock_get_llm:
+    with patch.object(report_agent, "get_llm_for") as mock_get_llm:
         llm = MagicMock()
         llm.invoke.side_effect = RuntimeError("boom")
         mock_get_llm.return_value = llm
@@ -275,13 +275,13 @@ def test_route_after_statistics_routes_topic_to_map():
 def test_run_report_agent_channel_returns_narrative_body():
     """Full graph run for a channel job: stats + a lightweight LLM-composed narrative."""
     chunks = [_chunk("v1", "ChA", 0.0, 60.0, word_count=10)]
-    # Channel jobs invoke get_llm twice: once per channel for CHANNEL_MAP_PROMPT,
+    # Channel jobs invoke get_llm_for twice: once per channel for CHANNEL_MAP_PROMPT,
     # then once more for the cross-channel composition.
     fake_llms = [
         _fake_llm_returning('{"channel_name": "ChA", "themes": ["t"], "highlights": []}'),
         _fake_llm_returning("<section>Channel narrative</section>"),
     ]
-    with patch.object(report_agent, "get_llm", side_effect=fake_llms):
+    with patch.object(report_agent, "get_llm_for", side_effect=fake_llms):
         stats, body = report_agent.run_report_agent(
             job_type="channel", topic="", transcript_chunks=chunks
         )

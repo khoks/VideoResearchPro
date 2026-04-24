@@ -1,7 +1,7 @@
 """Tests for the Q&A history chat agent (Unit 2 — Personal Wiki).
 
 Mocks out ``chroma_service.query_qa_collection`` (added by Unit 1) and
-``get_llm`` so we can verify:
+``get_llm_for`` so we can verify:
   * the agent calls the Q&A collection API (not the transcript-chunk API),
   * it returns a shaped answer + reference list,
   * reference fields match the planned shape
@@ -76,7 +76,7 @@ def test_qa_history_agent_returns_answer_and_shaped_references():
         ),
     ]
 
-    # get_llm is called twice: refine_context, formulate_answer.
+    # get_llm_for is called twice: refine_context, formulate_answer.
     fake_llms = [
         _fake_llm("refined excerpt mentioning ex-1 and ex-2"),
         _fake_llm(
@@ -92,7 +92,7 @@ def test_qa_history_agent_returns_answer_and_shaped_references():
         create=True,
         return_value=chunks,
     ) as mock_q, patch.object(
-        qa_history_agent, "get_llm", side_effect=fake_llms
+        qa_history_agent, "get_llm_for", side_effect=fake_llms
     ):
         result = _run("what have I learned about tariffs")
 
@@ -138,7 +138,7 @@ def test_qa_history_agent_handles_empty_retrieval():
         return_value=[],
     ), patch.object(
         qa_history_agent,
-        "get_llm",
+        "get_llm_for",
         side_effect=[_fake_llm("I could not find anything in your Q&A history about this.")],
     ):
         result = _run("what have I asked about bicycles")
@@ -161,7 +161,7 @@ def test_qa_history_agent_survives_missing_chroma_api():
         side_effect=_raise_attribute_error,
     ), patch.object(
         qa_history_agent,
-        "get_llm",
+        "get_llm_for",
         side_effect=[_fake_llm("nothing to cite")],
     ):
         result = _run("meta question")
@@ -184,11 +184,11 @@ def test_qa_history_agent_respects_answer_language():
         create=True,
         return_value=chunks,
     ), patch.object(
-        qa_history_agent, "get_llm", side_effect=fake_llms
-    ) as mock_get_llm:
+        qa_history_agent, "get_llm_for", side_effect=fake_llms
+    ) as mock_get_llm_for:
         _run("que he aprendido", answer_language="es")
 
-    assert mock_get_llm.call_count == 2
+    assert mock_get_llm_for.call_count == 2
     # The formulate_answer LLM was given messages mentioning the iso code.
     invocations = fake_llms[1].invoke.call_args_list
     assert invocations, "formulate_answer must call llm.invoke"

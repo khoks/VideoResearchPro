@@ -60,7 +60,7 @@ def _retrieve_past_exchanges(question: str, n_results: int) -> list[dict]:
     try:
         return chroma_service.query_qa_collection(
             question,
-            n_results=n_results,
+            top_k=n_results,
         )
     except AttributeError:
         logger.warning(

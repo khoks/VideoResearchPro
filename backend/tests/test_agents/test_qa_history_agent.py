@@ -100,7 +100,10 @@ def test_qa_history_agent_returns_answer_and_shaped_references():
     assert mock_q.called
     first_call = mock_q.call_args_list[0]
     assert first_call.args[0] == "what have I learned about tariffs"
-    assert "n_results" in first_call.kwargs
+    # The agent must pass the retrieval count using the real service kwarg.
+    # Using ``n_results`` would be silently swallowed by the try/except in
+    # _retrieve_past_exchanges and return [].
+    assert "top_k" in first_call.kwargs
 
     answer = result["answer"]
     refs = result["references"]

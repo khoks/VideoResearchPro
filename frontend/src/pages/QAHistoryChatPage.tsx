@@ -5,11 +5,14 @@ import {
   useAskQAHistoryChat,
   useQAHistoryChatHistory,
 } from '../hooks/useQAHistoryChat';
+import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import type {
   AnswerLanguage,
   QAHistoryExchange,
   QAHistoryReference,
 } from '../types/qa';
+
+const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
 const LANGUAGE_OPTIONS: Array<{ value: AnswerLanguage; label: string }> = [
   { value: 'en', label: 'English' },
@@ -44,9 +47,13 @@ function referenceSourceLabel(ref: QAHistoryReference): string {
 export function QAHistoryChatPage() {
   const { data: history, isLoading } = useQAHistoryChatHistory();
   const askChat = useAskQAHistoryChat();
+  const qaHistoryAvailable = useFeatureAvailable('qa_history');
 
   const [question, setQuestion] = useState('');
   const [language, setLanguage] = useState<AnswerLanguage>('en');
+
+  const inputDisabled = askChat.isPending || !qaHistoryAvailable;
+  const buttonDisabled = inputDisabled || !question.trim();
 
   // The page renders history ascending (oldest at top) so the newest exchange
   // lands at the bottom — chat-style. After a new answer arrives or on first
@@ -77,7 +84,7 @@ export function QAHistoryChatPage() {
   const handleAsk = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = question.trim();
-    if (!trimmed || askChat.isPending) return;
+    if (!trimmed || askChat.isPending || !qaHistoryAvailable) return;
     await askChat.mutateAsync({ question: trimmed, answer_language: language });
     setQuestion('');
   };
@@ -150,25 +157,38 @@ export function QAHistoryChatPage() {
           </div>
         )}
 
+        {!qaHistoryAvailable && (
+          <p style={{ color: '#b45309', fontSize: '0.85rem', margin: '0 0 0.5rem' }}>
+            {FEATURE_UNAVAILABLE_MSG}.
+          </p>
+        )}
         <form onSubmit={handleAsk} style={{ display: 'flex', gap: '0.5rem' }}>
           <input
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Ask across every Q&A you've ever run..."
-            disabled={askChat.isPending}
+            placeholder={qaHistoryAvailable
+              ? "Ask across every Q&A you've ever run..."
+              : FEATURE_UNAVAILABLE_MSG}
+            disabled={inputDisabled}
+            title={!qaHistoryAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
             style={{
               flex: 1, padding: '0.6rem 1rem', borderRadius: 8, border: '1px solid #e2e8f0',
               fontSize: '0.95rem',
-              opacity: askChat.isPending ? 0.6 : 1,
-              background: askChat.isPending ? '#f1f5f9' : '#fff',
+              opacity: inputDisabled ? 0.6 : 1,
+              background: inputDisabled ? '#f1f5f9' : '#fff',
             }}
           />
-          <button type="submit" disabled={askChat.isPending || !question.trim()} style={{
-            background: '#667eea', color: '#fff', border: 'none', padding: '0.6rem 1.5rem',
-            borderRadius: 8,
-            cursor: askChat.isPending || !question.trim() ? 'not-allowed' : 'pointer',
-            fontWeight: 600, opacity: askChat.isPending || !question.trim() ? 0.5 : 1,
-          }}>
+          <button
+            type="submit"
+            disabled={buttonDisabled}
+            title={!qaHistoryAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
+            style={{
+              background: '#667eea', color: '#fff', border: 'none', padding: '0.6rem 1.5rem',
+              borderRadius: 8,
+              cursor: buttonDisabled ? 'not-allowed' : 'pointer',
+              fontWeight: 600, opacity: buttonDisabled ? 0.5 : 1,
+            }}
+          >
             {askChat.isPending ? '...' : 'Ask'}
           </button>
         </form>

@@ -6,7 +6,10 @@ import {
   useClarifyLibraryQA,
   useLibraryQAHistory,
 } from '../hooks/useLibraryQA';
+import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import type { AnswerLanguage, LibraryQAExchange } from '../types/qa';
+
+const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
 const LANGUAGE_OPTIONS: Array<{ value: AnswerLanguage; label: string }> = [
   { value: 'en', label: 'English' },
@@ -19,6 +22,7 @@ export function LibraryQAPage() {
   const { data: history } = useLibraryQAHistory();
   const askQuestion = useAskLibraryQA();
   const clarifyQuestion = useClarifyLibraryQA();
+  const libraryQAAvailable = useFeatureAvailable('library_qa');
 
   const [question, setQuestion] = useState('');
   const [language, setLanguage] = useState<AnswerLanguage>('en');
@@ -26,6 +30,10 @@ export function LibraryQAPage() {
   const [interpretation, setInterpretation] = useState('');
   const [clarifications, setClarifications] = useState<string[]>([]);
   const [clarificationAnswers, setClarificationAnswers] = useState<string[]>([]);
+
+  const askInputDisabled = clarifyQuestion.isPending || !libraryQAAvailable;
+  const askButtonDisabled = askInputDisabled || !question.trim();
+  const clarifyButtonsDisabled = askQuestion.isPending || !libraryQAAvailable;
 
   const resetToAsk = () => {
     setStep('ask');
@@ -36,7 +44,7 @@ export function LibraryQAPage() {
 
   const handleAsk = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!question.trim()) return;
+    if (!question.trim() || !libraryQAAvailable) return;
     const result = await clarifyQuestion.mutateAsync({ question });
     setInterpretation(result.interpretation);
     setClarifications(result.clarifications);
@@ -45,6 +53,7 @@ export function LibraryQAPage() {
   };
 
   const handleConfirmSearch = async () => {
+    if (!libraryQAAvailable) return;
     const answeredParts = clarifications
       .map((q, i) => (clarificationAnswers[i]?.trim() ? `${q}\n${clarificationAnswers[i].trim()}` : null))
       .filter(Boolean) as string[];
@@ -60,6 +69,7 @@ export function LibraryQAPage() {
   };
 
   const handleSkipAndAsk = async () => {
+    if (!libraryQAAvailable) return;
     await askQuestion.mutateAsync({ question, answer_language: language });
     setQuestion('');
     resetToAsk();
@@ -101,23 +111,36 @@ export function LibraryQAPage() {
 
         {step === 'ask' && (
           <>
+            {!libraryQAAvailable && (
+              <p style={{ color: '#b45309', fontSize: '0.85rem', margin: '0 0 0.75rem' }}>
+                {FEATURE_UNAVAILABLE_MSG}.
+              </p>
+            )}
             <form onSubmit={handleAsk} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
               <input
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
-                placeholder="Ask a question about your entire library..."
-                disabled={clarifyQuestion.isPending}
+                placeholder={libraryQAAvailable
+                  ? 'Ask a question about your entire library...'
+                  : FEATURE_UNAVAILABLE_MSG}
+                disabled={askInputDisabled}
+                title={!libraryQAAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
                 style={{
                   flex: 1, padding: '0.6rem 1rem', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: '0.95rem',
-                  opacity: clarifyQuestion.isPending ? 0.6 : 1,
-                  background: clarifyQuestion.isPending ? '#f1f5f9' : '#fff',
+                  opacity: askInputDisabled ? 0.6 : 1,
+                  background: askInputDisabled ? '#f1f5f9' : '#fff',
                 }}
               />
-              <button type="submit" disabled={clarifyQuestion.isPending || !question.trim()} style={{
-                background: '#667eea', color: '#fff', border: 'none', padding: '0.6rem 1.5rem',
-                borderRadius: 8, cursor: clarifyQuestion.isPending || !question.trim() ? 'not-allowed' : 'pointer',
-                fontWeight: 600, opacity: clarifyQuestion.isPending || !question.trim() ? 0.5 : 1,
-              }}>
+              <button
+                type="submit"
+                disabled={askButtonDisabled}
+                title={!libraryQAAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
+                style={{
+                  background: '#667eea', color: '#fff', border: 'none', padding: '0.6rem 1.5rem',
+                  borderRadius: 8, cursor: askButtonDisabled ? 'not-allowed' : 'pointer',
+                  fontWeight: 600, opacity: askButtonDisabled ? 0.5 : 1,
+                }}
+              >
                 {clarifyQuestion.isPending ? '...' : 'Ask'}
               </button>
             </form>
@@ -200,20 +223,32 @@ export function LibraryQAPage() {
             )}
 
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button onClick={handleConfirmSearch} disabled={askQuestion.isPending} style={{
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: '#fff', border: 'none', padding: '0.6rem 1.25rem',
-                borderRadius: 8, cursor: askQuestion.isPending ? 'not-allowed' : 'pointer',
-                fontWeight: 600, fontSize: '0.9rem', opacity: askQuestion.isPending ? 0.6 : 1,
-              }}>
+              <button
+                onClick={handleConfirmSearch}
+                disabled={clarifyButtonsDisabled}
+                title={!libraryQAAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
+                style={{
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: '#fff', border: 'none', padding: '0.6rem 1.25rem',
+                  borderRadius: 8, cursor: clarifyButtonsDisabled ? 'not-allowed' : 'pointer',
+                  fontWeight: 600, fontSize: '0.9rem',
+                  opacity: clarifyButtonsDisabled ? 0.6 : 1,
+                }}
+              >
                 {askQuestion.isPending ? '...' : 'Confirm & Search'}
               </button>
-              <button onClick={handleSkipAndAsk} disabled={askQuestion.isPending} style={{
-                background: 'none', color: '#667eea', border: '1px solid #667eea',
-                padding: '0.6rem 1.25rem', borderRadius: 8,
-                cursor: askQuestion.isPending ? 'not-allowed' : 'pointer',
-                fontWeight: 500, fontSize: '0.9rem', opacity: askQuestion.isPending ? 0.4 : 1,
-              }}>
+              <button
+                onClick={handleSkipAndAsk}
+                disabled={clarifyButtonsDisabled}
+                title={!libraryQAAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
+                style={{
+                  background: 'none', color: '#667eea', border: '1px solid #667eea',
+                  padding: '0.6rem 1.25rem', borderRadius: 8,
+                  cursor: clarifyButtonsDisabled ? 'not-allowed' : 'pointer',
+                  fontWeight: 500, fontSize: '0.9rem',
+                  opacity: clarifyButtonsDisabled ? 0.4 : 1,
+                }}
+              >
                 Skip clarifications
               </button>
             </div>

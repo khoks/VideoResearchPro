@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import { useJob, useJobVideos, useApproveJob, useCancelJob, useDeleteJob } from '../hooks/useJobs';
 import { useJobProgress } from '../hooks/useJobProgress';
 import { useQAHistory, useAskQuestion, useClarifyQuestion } from '../hooks/useQA';
+import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
@@ -15,6 +16,8 @@ import { VideoKnowledgeDrawer } from './VideoKnowledgePage';
 import type { Video } from '../types/video';
 import type { QAExchange } from '../types/qa';
 import type { Job } from '../types/job';
+
+const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
 export function JobDetailPage() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -29,6 +32,7 @@ export function JobDetailPage() {
   useJobProgress(jobId || null);
   const syncCounts = useSubscriptionSyncCounts(jobId || null);
   const [knowledgeVideo, setKnowledgeVideo] = useState<Video | null>(null);
+  const knowledgeExtractionAvailable = useFeatureAvailable('knowledge_extraction');
 
   if (isLoading) return <div style={{ textAlign: 'center', padding: '3rem' }}><LoadingSpinner size={40} /></div>;
   if (!job) return <p>Job not found.</p>;
@@ -127,12 +131,17 @@ export function JobDetailPage() {
               {v.transcript_status === 'fetched' && (
                 <button
                   onClick={() => setKnowledgeVideo(v)}
-                  title="Generate or view the AI knowledge report for this video."
+                  disabled={!knowledgeExtractionAvailable}
+                  title={knowledgeExtractionAvailable
+                    ? 'Generate or view the AI knowledge report for this video.'
+                    : FEATURE_UNAVAILABLE_MSG}
                   style={{
                     background: 'transparent', color: '#667eea',
                     border: '1px solid #667eea', padding: '0.3rem 0.75rem',
-                    borderRadius: 6, cursor: 'pointer', fontSize: '0.8rem',
-                    fontWeight: 600, flexShrink: 0,
+                    borderRadius: 6,
+                    cursor: knowledgeExtractionAvailable ? 'pointer' : 'not-allowed',
+                    fontSize: '0.8rem', fontWeight: 600, flexShrink: 0,
+                    opacity: knowledgeExtractionAvailable ? 1 : 0.5,
                   }}
                 >
                   Knowledge
@@ -508,12 +517,17 @@ function QASection({ jobId }: { jobId: string }) {
   const { data: history } = useQAHistory(jobId);
   const askQuestion = useAskQuestion(jobId);
   const clarifyQuestion = useClarifyQuestion(jobId);
+  const qaAvailable = useFeatureAvailable('qa');
 
   const [question, setQuestion] = useState('');
   const [step, setStep] = useState<'ask' | 'clarify'>('ask');
   const [interpretation, setInterpretation] = useState('');
   const [clarifications, setClarifications] = useState<string[]>([]);
   const [clarificationAnswers, setClarificationAnswers] = useState<string[]>([]);
+
+  const askInputDisabled = clarifyQuestion.isPending || !qaAvailable;
+  const askButtonDisabled = askInputDisabled || !question.trim();
+  const clarifyButtonsDisabled = askQuestion.isPending || !qaAvailable;
 
   const resetToAsk = () => {
     setStep('ask');
@@ -525,7 +539,7 @@ function QASection({ jobId }: { jobId: string }) {
   // Step 1: call /qa/clarify and move to clarify step
   const handleAsk = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!question.trim()) return;
+    if (!question.trim() || !qaAvailable) return;
     const result = await clarifyQuestion.mutateAsync({ question });
     setInterpretation(result.interpretation);
     setClarifications(result.clarifications);
@@ -535,6 +549,7 @@ function QASection({ jobId }: { jobId: string }) {
 
   // Step 2a: combine original question + interpretation + answers, fire /qa
   const handleConfirmSearch = async () => {
+    if (!qaAvailable) return;
     const answeredParts = clarifications
       .map((q, i) => (clarificationAnswers[i]?.trim() ? `${q}\n${clarificationAnswers[i].trim()}` : null))
       .filter(Boolean) as string[];
@@ -551,6 +566,7 @@ function QASection({ jobId }: { jobId: string }) {
 
   // Step 2b: skip clarifications and fire /qa directly (fallback)
   const handleSkipAndAsk = async () => {
+    if (!qaAvailable) return;
     await askQuestion.mutateAsync({ question });
     setQuestion('');
     resetToAsk();
@@ -564,23 +580,36 @@ function QASection({ jobId }: { jobId: string }) {
       {/* ── Step 1: question input ── */}
       {step === 'ask' && (
         <>
+          {!qaAvailable && (
+            <p style={{ color: '#b45309', fontSize: '0.85rem', margin: '0 0 0.75rem' }}>
+              {FEATURE_UNAVAILABLE_MSG}.
+            </p>
+          )}
           <form onSubmit={handleAsk} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
             <input
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              placeholder="Ask a question about the research..."
-              disabled={clarifyQuestion.isPending}
+              placeholder={qaAvailable
+                ? 'Ask a question about the research...'
+                : FEATURE_UNAVAILABLE_MSG}
+              disabled={askInputDisabled}
+              title={!qaAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
               style={{
                 flex: 1, padding: '0.6rem 1rem', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: '0.95rem',
-                opacity: clarifyQuestion.isPending ? 0.6 : 1,
-                background: clarifyQuestion.isPending ? '#f1f5f9' : '#fff',
+                opacity: askInputDisabled ? 0.6 : 1,
+                background: askInputDisabled ? '#f1f5f9' : '#fff',
               }}
             />
-            <button type="submit" disabled={clarifyQuestion.isPending || !question.trim()} style={{
-              background: '#667eea', color: '#fff', border: 'none', padding: '0.6rem 1.5rem',
-              borderRadius: 8, cursor: clarifyQuestion.isPending || !question.trim() ? 'not-allowed' : 'pointer',
-              fontWeight: 600, opacity: clarifyQuestion.isPending || !question.trim() ? 0.5 : 1,
-            }}>
+            <button
+              type="submit"
+              disabled={askButtonDisabled}
+              title={!qaAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
+              style={{
+                background: '#667eea', color: '#fff', border: 'none', padding: '0.6rem 1.5rem',
+                borderRadius: 8, cursor: askButtonDisabled ? 'not-allowed' : 'pointer',
+                fontWeight: 600, opacity: askButtonDisabled ? 0.5 : 1,
+              }}
+            >
               {clarifyQuestion.isPending ? '...' : 'Ask'}
             </button>
           </form>
@@ -664,20 +693,32 @@ function QASection({ jobId }: { jobId: string }) {
           )}
 
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button onClick={handleConfirmSearch} disabled={askQuestion.isPending} style={{
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              color: '#fff', border: 'none', padding: '0.6rem 1.25rem',
-              borderRadius: 8, cursor: askQuestion.isPending ? 'not-allowed' : 'pointer',
-              fontWeight: 600, fontSize: '0.9rem', opacity: askQuestion.isPending ? 0.6 : 1,
-            }}>
+            <button
+              onClick={handleConfirmSearch}
+              disabled={clarifyButtonsDisabled}
+              title={!qaAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
+              style={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: '#fff', border: 'none', padding: '0.6rem 1.25rem',
+                borderRadius: 8, cursor: clarifyButtonsDisabled ? 'not-allowed' : 'pointer',
+                fontWeight: 600, fontSize: '0.9rem',
+                opacity: clarifyButtonsDisabled ? 0.6 : 1,
+              }}
+            >
               {askQuestion.isPending ? '...' : 'Confirm & Search'}
             </button>
-            <button onClick={handleSkipAndAsk} disabled={askQuestion.isPending} style={{
-              background: 'none', color: '#667eea', border: '1px solid #667eea',
-              padding: '0.6rem 1.25rem', borderRadius: 8,
-              cursor: askQuestion.isPending ? 'not-allowed' : 'pointer',
-              fontWeight: 500, fontSize: '0.9rem', opacity: askQuestion.isPending ? 0.4 : 1,
-            }}>
+            <button
+              onClick={handleSkipAndAsk}
+              disabled={clarifyButtonsDisabled}
+              title={!qaAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
+              style={{
+                background: 'none', color: '#667eea', border: '1px solid #667eea',
+                padding: '0.6rem 1.25rem', borderRadius: 8,
+                cursor: clarifyButtonsDisabled ? 'not-allowed' : 'pointer',
+                fontWeight: 500, fontSize: '0.9rem',
+                opacity: clarifyButtonsDisabled ? 0.4 : 1,
+              }}
+            >
               Skip clarifications
             </button>
           </div>

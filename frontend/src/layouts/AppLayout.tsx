@@ -1,6 +1,8 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useJobStore, type AppTab } from '../stores/jobStore';
 import { useAuth } from '../contexts/AuthContext';
+import { useSystemStatus } from '../hooks/useSystemStatus';
+import { SystemStatusBanner } from '../components/common/SystemStatusBanner';
 
 export function AppLayout() {
   const navigate = useNavigate();
@@ -9,6 +11,7 @@ export function AppLayout() {
   const theme = useJobStore((s) => s.theme);
   const toggleTheme = useJobStore((s) => s.toggleTheme);
   const { user, logout } = useAuth();
+  const { refetch: refetchSystemStatus } = useSystemStatus();
 
   const handleTabChange = (tab: AppTab) => {
     setActiveTab(tab);
@@ -103,6 +106,7 @@ export function AppLayout() {
           </button>
         </div>
       </header>
+      <SystemStatusBanner onRetry={() => { void refetchSystemStatus(); }} />
       <main className="app-main">
         <Outlet />
       </main>

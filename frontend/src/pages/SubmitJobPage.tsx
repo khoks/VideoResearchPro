@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useCreateJob } from '../hooks/useJobs';
+import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { useJobStore } from '../stores/jobStore';
 import type { Job, JobCreate, JobType } from '../types/job';
+
+const FEATURE_UNAVAILABLE_MSG =
+  'LLM-dependent feature is temporarily unavailable';
 
 const CHANNEL_TYPE_OPTIONS = [
   'educational',
@@ -112,6 +116,7 @@ export function SubmitJobPage() {
   const location = useLocation();
   const createJob = useCreateJob();
   const pushToast = useJobStore((s) => s.pushToast);
+  const topicJobAvailable = useFeatureAvailable('topic_job');
 
   // When the user arrives via "Duplicate / Re-run" on a Job card, the source
   // job is passed in router state. Seed the form from it on first mount,
@@ -179,6 +184,9 @@ export function SubmitJobPage() {
     form.subscriptionChannels,
     form.preferredChannels,
   ]);
+
+  const topicBlocked = form.jobType === 'topic' && !topicJobAvailable;
+  const submitDisabled = createJob.isPending || topicBlocked;
 
   const invalidChannels = useMemo(() => {
     if (form.jobType === 'channel') return validateChannels(parseChannelList(form.channelList));
@@ -576,9 +584,17 @@ export function SubmitJobPage() {
           <p style={{ color: '#ef4444', margin: 0, fontSize: '0.85rem' }}>{validationError}</p>
         )}
 
+        {topicBlocked && (
+          <p style={{ color: '#b45309', margin: 0, fontSize: '0.85rem' }}>
+            {FEATURE_UNAVAILABLE_MSG}. Topic research depends on the search LLM — try
+            again once it recovers, or submit a channel / subscription job instead.
+          </p>
+        )}
+
         <button
           type="submit"
-          disabled={createJob.isPending}
+          disabled={submitDisabled}
+          title={topicBlocked ? FEATURE_UNAVAILABLE_MSG : undefined}
           style={{
             background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
             color: '#fff',
@@ -587,9 +603,9 @@ export function SubmitJobPage() {
             borderRadius: 8,
             fontSize: '1rem',
             fontWeight: 600,
-            cursor: createJob.isPending ? 'not-allowed' : 'pointer',
+            cursor: submitDisabled ? 'not-allowed' : 'pointer',
             marginTop: '0.5rem',
-            opacity: createJob.isPending ? 0.7 : 1,
+            opacity: submitDisabled ? 0.6 : 1,
           }}
         >
           {createJob.isPending ? 'Submitting...' : 'Submit Job'}

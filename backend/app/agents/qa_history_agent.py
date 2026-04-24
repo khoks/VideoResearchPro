@@ -26,6 +26,7 @@ from app.agents.prompts.qa_history_prompts import (
 )
 from app.config import settings
 from app.services import chroma_service
+from app.services.llm_routing import resolve_route
 from app.services.llm_service import get_llm
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ def _retrieve_past_exchanges(question: str, n_results: int) -> list[dict]:
     try:
         return chroma_service.query_qa_collection(
             question,
-            n_results=n_results,
+            top_k=n_results,
         )
     except AttributeError:
         logger.warning(
@@ -161,7 +162,7 @@ def _build_raw_context(parsed: list[tuple[dict, str, str]], refs: list[dict]) ->
 def _refine_context(question: str, raw_context: str) -> str:
     if not raw_context:
         return ""
-    llm = get_llm(temperature=0.0)
+    llm = get_llm(temperature=0.0, purpose=resolve_route("qa_history_refine_context"))
     prompt = QA_HISTORY_REFINE_CONTEXT_PROMPT.format(
         question=question,
         raw_context=raw_context,
@@ -187,7 +188,7 @@ def _formulate_answer(
     allowed_sources: str,
     refined_context: str,
 ) -> str:
-    llm = get_llm(temperature=0.0)
+    llm = get_llm(temperature=0.0, purpose=resolve_route("qa_history_formulate_answer"))
     system_prompt = QA_HISTORY_SYSTEM_PROMPT.format(answer_language=answer_language)
     user_prompt = QA_HISTORY_ANSWER_PROMPT.format(
         question=question,

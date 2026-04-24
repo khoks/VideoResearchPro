@@ -9,6 +9,7 @@ from app.dependencies import get_current_user, get_db, get_user_from_query_or_he
 from app.models.qa_exchange import QAExchange
 from app.schemas.qa import ClarifyRequest, ClarifyResponse, QARequest, QAResponse, Reference
 from app.services import chroma_service, job_service, report_service
+from app.services.llm_routing import resolve_route
 from app.services.llm_service import get_llm
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ def clarify_question(job_id: str, request: ClarifyRequest, db: Session = Depends
     if job.status != "completed":
         raise HTTPException(status_code=400, detail="Job is not completed yet")
 
-    llm = get_llm(temperature=0.3, purpose="fast")
+    llm = get_llm(temperature=0.3, purpose=resolve_route("qa_clarification"))
 
     prompt = (
         f'The user asked: "{request.question}"\n\n'

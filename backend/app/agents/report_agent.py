@@ -13,6 +13,7 @@ from app.agents.prompts.report_prompts import (
     REDUCE_PROMPT,
 )
 from app.agents.state import ReportAgentState
+from app.services.llm_routing import resolve_route
 from app.services.llm_service import get_llm
 from app.config import settings
 from app.utils.youtube_helpers import format_timestamp
@@ -103,7 +104,7 @@ def map_chunks(state: ReportAgentState) -> dict:
     if not chunks:
         return {"chunk_summaries": []}
 
-    llm = get_llm(temperature=0.0, purpose="fast")
+    llm = get_llm(temperature=0.0, purpose=resolve_route("report_map_chunks"))
     max_context = settings.LLM_MAX_CONTEXT_TOKENS
     budget_per_batch = int(max_context * 0.6)
 
@@ -164,7 +165,7 @@ def reduce_summaries(state: ReportAgentState) -> dict:
     if len(summaries) == 1:
         return {}  # No reduction needed
 
-    llm = get_llm(temperature=0.0, purpose="fast")
+    llm = get_llm(temperature=0.0, purpose=resolve_route("report_reduce_summaries"))
     batch_text = json.dumps(summaries, indent=2, default=str)
 
     # If too large, reduce in pairs
@@ -210,7 +211,7 @@ def compose_report(state: ReportAgentState) -> dict:
     if not summaries:
         return {"final_html": "<p>No transcript data available for analysis.</p>"}
 
-    llm = get_llm(temperature=0.2, max_tokens=16000)
+    llm = get_llm(temperature=0.2, max_tokens=16000, purpose=resolve_route("report_compose"))
     consolidated = json.dumps(summaries[0] if len(summaries) == 1 else summaries, indent=2, default=str)
 
     prompt = COMPOSE_REPORT_PROMPT.format(
@@ -249,7 +250,7 @@ def compose_channel_report(state: ReportAgentState) -> dict:
     if not chunks:
         return {"final_html": "<p>No transcript data available for this channel collection.</p>"}
 
-    llm = get_llm(temperature=0.1)
+    llm = get_llm(temperature=0.1, purpose=resolve_route("report_channel"))
     by_channel = _group_chunks_by_channel(chunks)
     budget_per_channel = int(settings.LLM_MAX_CONTEXT_TOKENS * 0.3)
 
@@ -298,7 +299,7 @@ def compose_channel_report(state: ReportAgentState) -> dict:
                 "highlights": [],
             })
 
-    compose_llm = get_llm(temperature=0.2, max_tokens=4000)
+    compose_llm = get_llm(temperature=0.2, max_tokens=4000, purpose=resolve_route("report_compose_channel_section"))
     compose_prompt = CHANNEL_COMPOSE_PROMPT.format(
         statistics=json.dumps(statistics, indent=2),
         channel_summaries=json.dumps(channel_summaries, indent=2, default=str),

@@ -18,6 +18,7 @@ from app.agents.prompts.qa_prompts import (
 from app.agents.state import QAAgentState
 from app.config import settings
 from app.services import chroma_service
+from app.services.llm_routing import resolve_route
 from app.services.llm_service import get_llm
 from app.utils.youtube_helpers import build_youtube_url, extract_video_id, format_timestamp
 
@@ -28,7 +29,7 @@ REPORT_CONTEXT_CHAR_CAP = 50000
 
 def _generate_sub_queries(question: str) -> list[str]:
     """Ask the LLM for 2 semantically-focused sub-queries to broaden retrieval."""
-    llm = get_llm(temperature=0.0, purpose="fast")
+    llm = get_llm(temperature=0.0, purpose=resolve_route("qa_sub_query_expansion"))
     prompt = SUB_QUERY_EXPANSION_PROMPT.format(question=question)
     try:
         response = llm.invoke([HumanMessage(content=prompt)])
@@ -99,7 +100,7 @@ def retrieve_context(state: QAAgentState) -> dict:
 
 def refine_context(state: QAAgentState) -> dict:
     """Use LLM to extract only the relevant passages from RAG + report context."""
-    llm = get_llm(temperature=0.0, purpose="fast")
+    llm = get_llm(temperature=0.0, purpose=resolve_route("qa_refine_context"))
     question = state["question"]
     rag_results = state.get("rag_results", [])
     report_context = state.get("report_context")
@@ -157,7 +158,7 @@ def _build_allowed_sources(rag_results: list[dict], include_report: bool) -> str
 def formulate_answer(state: QAAgentState) -> dict:
     """Generate answer using LLM with refined context, constrained to allowed sources."""
     # Temperature 0: citations must be deterministic and grounded.
-    llm = get_llm(temperature=0.0)
+    llm = get_llm(temperature=0.0, purpose=resolve_route("qa_formulate_answer"))
 
     rag_results = state.get("rag_results", [])
     include_report = bool(state.get("report_context"))
@@ -288,7 +289,7 @@ def _references_via_llm(rag_results: list[dict], answer: str) -> list[dict]:
     ]
     prompt = USED_SOURCES_PROMPT.format(answer=answer, chunks="\n".join(lines))
 
-    llm = get_llm(temperature=0.0)
+    llm = get_llm(temperature=0.0, purpose=resolve_route("qa_extract_references"))
     try:
         response = llm.invoke([HumanMessage(content=prompt)])
         content = (response.content or "").strip()
@@ -615,7 +616,7 @@ def run_library_qa_agent(
         )
     raw_context = "\n\n".join(raw_parts)
 
-    llm = get_llm(temperature=0.0, purpose="fast")
+    llm = get_llm(temperature=0.0, purpose=resolve_route("library_qa_refine_context"))
     refine_prompt = LIBRARY_REFINE_CONTEXT_PROMPT.format(
         question=question,
         raw_context=raw_context,
@@ -630,7 +631,7 @@ def run_library_qa_agent(
 
     # 5. Formulate answer with language + allowed-sources constraints.
     allowed_sources = _build_library_allowed_sources(rag_results)
-    answer_llm = get_llm(temperature=0.0)
+    answer_llm = get_llm(temperature=0.0, purpose=resolve_route("library_qa_formulate_answer"))
     system_prompt = LIBRARY_QA_SYSTEM_PROMPT.format(answer_language=answer_language)
     user_prompt = LIBRARY_QA_ANSWER_PROMPT.format(
         question=question,

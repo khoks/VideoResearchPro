@@ -67,7 +67,7 @@ def test_get_library_qa_returns_persisted_exchange(client):
 
 
 def test_post_library_qa_clarify_returns_interpretation_and_clarifications(client):
-    """clarify endpoint mocks get_llm to return the JSON envelope the real route parses."""
+    """clarify endpoint mocks get_llm_for to return the JSON envelope the real route parses."""
     json_payload = (
         '{"interpretation": "User wants a DNS primer.", '
         '"clarifications": ["What level?", "Which record types?", "For DevOps?"]}'
@@ -80,7 +80,7 @@ def test_post_library_qa_clarify_returns_interpretation_and_clarifications(clien
         def invoke(self, _prompt):
             return _Resp()
 
-    with patch("app.routers.library.get_llm", return_value=_LLM(), create=True):
+    with patch("app.routers.library.get_llm_for", return_value=_LLM()):
         response = client.post(
             "/api/v1/library/qa/clarify",
             json={"question": "What is DNS?"},

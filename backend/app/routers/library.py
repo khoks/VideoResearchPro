@@ -14,8 +14,7 @@ from app.schemas.library_qa import (
     LibraryReference,
 )
 from app.services import chroma_service
-from app.services.llm_routing import resolve_route
-from app.services.llm_service import get_llm
+from app.services.llm_service import get_llm_for
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +35,7 @@ def clarify_library_question(request: LibraryClarifyRequest) -> LibraryClarifyRe
     The clarify step doesn't depend on any job context, so we reuse the same
     prompt structure as the job Q&A clarify endpoint.
     """
-    llm = get_llm(temperature=0.3, purpose=resolve_route("library_qa_clarification"))
+    llm = get_llm_for("library_qa_clarification", temperature=0.3)
 
     prompt = (
         f'The user asked: "{request.question}"\n\n'

@@ -117,7 +117,9 @@ class LLMStatus:
     """
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
+        # Reentrant: ``as_dict`` acquires the lock and calls ``summary``,
+        # which acquires it again.
+        self._lock = threading.RLock()
         self._results: dict[str, UseCaseStatus] = {}
         self._last_checked_at: float | None = None
 

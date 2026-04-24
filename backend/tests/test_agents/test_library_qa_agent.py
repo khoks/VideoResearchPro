@@ -49,7 +49,7 @@ def test_library_qa_runs_end_to_end_with_citations():
         _rag_chunk("vNet", "Intro to Networking", "NetTeach", ts=60.0),
     ]
 
-    # get_llm is invoked in this order inside the agent:
+    # get_llm_for is invoked in this order inside the agent:
     #   sub-query expansion -> refine_context -> formulate_answer
     # extract_references uses deterministic matching when the answer contains
     # video_ids/titles, so typically no extra LLM call is needed.
@@ -62,7 +62,7 @@ def test_library_qa_runs_end_to_end_with_citations():
         ),  # formulate_answer
     ]
     with patch.object(qa_agent.chroma_service, "query_collection", return_value=rag) as mock_q, \
-         patch.object(qa_agent, "get_llm", side_effect=fake_llms):
+         patch.object(qa_agent, "get_llm_for", side_effect=fake_llms):
         result = qa_agent.run_library_qa_agent(question="What is DNS?")
 
     answer = result["answer"]
@@ -86,7 +86,7 @@ def test_library_qa_runs_end_to_end_with_citations():
 
 def test_library_qa_returns_empty_references_when_rag_empty():
     with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]), \
-         patch.object(qa_agent, "get_llm", side_effect=[
+         patch.object(qa_agent, "get_llm_for", side_effect=[
              _fake_llm(""),                   # sub-queries
              _fake_llm("nothing relevant"),   # refine_context
              _fake_llm("I don't know."),      # formulate_answer

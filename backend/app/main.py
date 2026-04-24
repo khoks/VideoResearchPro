@@ -33,6 +33,11 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Q&A library backfill failed; continuing startup")
 
+    try:
+        await run_startup_probes()
+    except Exception:
+        logger.exception("LLM startup probes failed catastrophically")
+
     logger.info("VideoResearchPro startup complete")
     yield
     # Shutdown: cleanup if needed

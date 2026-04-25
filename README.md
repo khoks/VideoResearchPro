@@ -1,362 +1,292 @@
-# VideoResearchPro
+# प्रतिध्वनि · Pratidhvani
 
-A full-stack web application for YouTube video research. Run **topic**, **channel**, or **channel-subscription** jobs that feed a **shared global video library**, generate HTML reports via LangGraph agents, and ask citation-backed questions either scoped to a single job or across the **entire library**. Transcripts and embeddings are computed once per video and reused across every job that references them.
+> *Your sources, echoed back.*
 
-## Personal Wiki
+**Pratidhvani** (Sanskrit: "echo") is a personal curated research wiki. Unlike Wikipedia — moderated, balanced, diluted — Pratidhvani embraces **the sources you choose**: independent podcasters, niche creators, forum threads, books, articles. The curation system is the product.
 
-VideoResearchPro is also a personal research wiki that grows every time you use it:
+It is:
 
-- **Every Q&A you ever ask is indexed into a searchable vector DB.** Job-scoped, library-scoped, and history-chat exchanges all land in one central ChromaDB collection (`qa_library_global`) — question and answer stored together.
-- **A dedicated chat page lets you ask meta-questions across your whole research history.** `/qa-history` lets you ask things like "summarize everything I've learned about tariffs" or "which videos did I bookmark about supply chains" — answers are synthesized from your past Q&As with clickable references back to the source exchange.
-- **For any transcribed video, an on-demand button generates a structured knowledge report.** Click "Generate knowledge report" on a video row and a LangGraph map-reduce agent extracts structured `{topics, concepts, events, facts}` and writes a Wikipedia-paragraph-style Markdown document. Persisted on the video row so you only pay for it once.
-- **All Q&As and all knowledge reports export as JSONL datasets in two formats** (OpenAI `messages` chat format and plain `{system, user, assistant}` tuples) so you can fine-tune an LLM with your personal wiki as parametric knowledge. See the "Fine-tuning your own model" section below.
+- **A personal library** that grows every time you run a research job.
+- **A question-answering engine** grounded in your library — every answer cites the exact video, timestamp, or past exchange it came from.
+- **A knowledge-capture system**: every Q&A you've ever asked, every transcript you've ever ingested, and every structured knowledge artifact you've ever generated is searchable forever.
+- **A fine-tune pipeline**: the library streams out as training-ready JSONL so you can carry your wiki as parametric knowledge inside a custom LLM.
 
-## Features
+The long-term aspiration is a **personal brain** — a system that learns your voice, your opinions, your interests, and your life so it can speak on your behalf. See [docs/vision.md](docs/vision.md) and [docs/personal-brain.md](docs/personal-brain.md).
 
-- **Topic research** — Describe a topic; AI finds, ranks, and summarizes the best videos.
-- **Preferred channels filter (topic jobs)** — Optionally paste creator handles or channel URLs; the Search Agent walks each channel's uploads directly and keyword-filters them against your topic, alongside the broad YouTube searches. Creator names never end up stuffed into raw query strings.
-- **Channel research** — Paste channel URLs; pull the latest N videos per channel.
-- **Channel subscriptions** — Subscribe to a channel; every current and future video is ingested and indexed automatically.
-- **Global video library** — One canonical copy of every transcribed video, reused across all jobs.
-- **Global Q&A** (`/library/qa`) — Ask anything across every video from every job in one place, not just within a single job.
-- **Q&A History chat** (`/qa-history`) — A meta chat that searches every past Q&A exchange you've ever had and synthesizes answers from them, with links back to the original question.
-- **Multilingual** — Transcribes whatever the speaker says (Hindi, Urdu, English, mixed); answers in your chosen language.
-- **Citation-grounded Q&A** — Every answer includes clickable YouTube timestamps back to the source.
-- **Duplicate / re-run any job** — The Jobs list and Job Detail pages both expose a **Duplicate / Re-run** action that opens the submit form pre-filled with the original job's parameters (topic, instructions, duration filters, preferred channels, channel list, etc.). Tweak what you want and resubmit — a brand-new job with a new ID is created, the original is untouched.
-- **Job Parameters card** — The detail page shows every submission parameter in a read-only card so you can see exactly what was asked for, months later.
-- **One-click restart** — `scripts/restart_services.ps1` and a protected `POST /api/v1/admin/restart` endpoint bring Redis, the backend, the Celery worker, and the frontend back up in a single shot. Detached processes now write to `.uvicorn.out.log`/`.uvicorn.err.log`, `.celery.out.log`/`.celery.err.log`, and `.frontend.out.log`/`.frontend.err.log` at the repo root so post-mortem debugging stays possible.
+> **Historical note.** This project was previously named *VideoResearchPro*. The legacy name survives in grandfathered environment-variable names (e.g. `CHROMA_GLOBAL_COLLECTION_NAME=videoresearchpro_global`) for back-compat, but all user-facing and documentation references are now Pratidhvani.
+
+---
+
+## Documentation
+
+| I want to... | Read |
+|--------------|------|
+| Understand why this product exists | [docs/vision.md](docs/vision.md) |
+| See the feature roadmap | [docs/feature-roadmap.md](docs/feature-roadmap.md) |
+| See the visual identity | [docs/branding.md](docs/branding.md) |
+| Understand the architecture | [docs/architecture.md](docs/architecture.md) |
+| Look up an API endpoint | [docs/api-reference.md](docs/api-reference.md) |
+| Look up a UI page | [docs/ui-pages.md](docs/ui-pages.md) |
+| See functional & non-functional requirements | [docs/requirements.md](docs/requirements.md) |
+| Set up a dev environment | [docs/contributing.md](docs/contributing.md) |
+| Write a test | [docs/testing.md](docs/testing.md) |
+| Plan for the multi-source future | [docs/source-types.md](docs/source-types.md) |
+| Plan for the SaaS future | [docs/saas-roadmap.md](docs/saas-roadmap.md) |
+| Plan for the personal-brain future | [docs/personal-brain.md](docs/personal-brain.md) |
+| See what shipped recently | [CHANGELOG.md](CHANGELOG.md) |
+
+---
+
+## Features (today)
+
+- **Topic research.** Describe a topic; an LLM-driven Search Agent finds, ranks, and curates YouTube videos, with optional preferred-channel filtering.
+- **Channel research.** Paste channel URLs; pull the latest N videos per channel.
+- **Channel subscriptions.** Subscribe once; every current and future video is ingested and indexed automatically. No per-job report — pure library ingestion.
+- **Global video library.** One canonical copy of every transcribed video, reused across every job that references it.
+- **Per-job Q&A.** Ask questions scoped to a single job's approved videos.
+- **Library-wide Q&A.** Ask questions across every transcribed video in your library at once.
+- **Q&A History chat.** A dedicated `/qa-history` page that searches every past Q&A exchange you've ever had and synthesizes meta-answers.
+- **Per-video knowledge reports.** An on-demand map-reduce agent extracts structured `{topics, concepts, events, facts}` from any transcript and writes a Wikipedia-paragraph-style Markdown document, persisted on the video row.
+- **Dataset exports.** Four streaming JSONL endpoints turn your accumulated Q&A and knowledge artifacts into training-ready datasets (OpenAI chat format and plain tuple format).
+- **Multilingual.** Whisper transcribes speakers in their native language(s), including code-mixed audio. Answers respond in your chosen language while preserving proper nouns.
+- **Citation-grounded.** Every answer includes clickable YouTube timestamps and links back to source exchanges.
+- **Duplicate / re-run any job.** The submit form pre-fills from the original job's parameters so you can tweak and resubmit.
+- **Per-use-case LLM routing.** Every LLM call site has a registered use case that can be independently routed to OpenAI / Anthropic / Google / a local OpenAI-compatible server.
+- **Fail-soft.** An LLM outage disables only the dependent features; everything else keeps working.
+- **One-click restart.** `scripts/restart_services.ps1` and `POST /api/v1/admin/restart` relaunch all four runtimes on Windows.
+
+Planned: multi-source ingest (podcasts, articles, forums, PDFs), a curated "source ranking" layer, an Author Studio for generating books/sites/decks/reels from the library, and the personal-brain direction. See [docs/feature-roadmap.md](docs/feature-roadmap.md).
+
+---
 
 ## Prerequisites
 
 - **Python 3.12+**
-- **Node.js 18+** and npm
-- **Redis** (installed natively on Windows, or via Docker on Linux/macOS)
-- **YouTube Data API v3 key** — [Get one here](https://console.cloud.google.com/apis/api/youtube.googleapis.com)
-- **OpenAI API key** — [Get one here](https://platform.openai.com/api-keys)
+- **Node.js 20+** and npm
+- **Redis** 7+ (native on Windows, or via Docker / Homebrew / apt)
+- **YouTube Data API v3 key** — [Get one](https://console.cloud.google.com/apis/api/youtube.googleapis.com)
+- **At least one LLM provider key.** Out of the box, routing defaults to OpenAI, so `OPENAI_API_KEY` is required unless you override every use case. Anthropic, Google, and local OpenAI-compatible endpoints are also supported.
 
-## Quick Start
+---
 
-> **The app requires 4 processes running simultaneously:**
-> 1. **Redis** — as a service or Docker container
-> 2. **Backend API** — `uvicorn` in `backend/`
-> 3. **Celery worker** — required for all job processing; `--pool=solo` is mandatory on Windows
-> 4. **Frontend** — `npm run dev` in `frontend/`
->
-> Jobs will never progress past "pending" if the Celery worker is not running.
+## Quick start
+
+> **Four processes run in parallel:** Redis, backend API, Celery worker, frontend dev server. Jobs will never progress past `pending` if the Celery worker is not running.
 
 ### 1. Install Redis
 
-**Windows:**
 ```bash
-winget install Redis.Redis
-```
-This installs Redis and starts it as a Windows service on port 6379 automatically.
+# Windows
+winget install Redis.Redis                  # installs + starts as a Windows service on :6379
 
-**macOS:**
-```bash
-brew install redis
-brew services start redis
-```
+# macOS
+brew install redis && brew services start redis
 
-**Linux (Ubuntu/Debian):**
-```bash
-sudo apt install redis-server
-sudo systemctl start redis
-```
+# Linux (Debian/Ubuntu)
+sudo apt install redis-server && sudo systemctl start redis
 
-**Docker (any platform):**
-```bash
+# Any platform, via Docker
 docker compose up -d redis
 ```
 
-Verify Redis is running:
-```bash
-redis-cli ping
-# Should return: PONG
-```
+Verify with `redis-cli ping` → `PONG`.
 
-### 2. Set up the Backend
+### 2. Backend
 
 ```bash
 cd backend
 python -m venv venv
-
-# Install dependencies
-./venv/Scripts/pip install -r requirements.txt        # Windows
-# ./venv/bin/pip install -r requirements.txt          # Linux/macOS
-
-# Install dev dependencies (for testing)
-./venv/Scripts/pip install -r requirements-dev.txt    # Windows
-# ./venv/bin/pip install -r requirements-dev.txt      # Linux/macOS
-
-# Configure environment
-cp ../.env.example .env
+./venv/Scripts/pip install -r requirements.txt          # Windows
+./venv/Scripts/pip install -r requirements-dev.txt      # Windows
+# (Linux/macOS: replace ./venv/Scripts/ with ./venv/bin/)
+cp ../.env.example .env                                  # fill in YOUTUBE_API_KEY + OPENAI_API_KEY + JWT_SECRET
+./venv/Scripts/alembic upgrade head
 ```
 
-Edit `backend/.env` and fill in your API keys:
-```
-YOUTUBE_API_KEY=your-youtube-api-key
-OPENAI_API_KEY=your-openai-api-key
-```
-
-### 3. Set up the Frontend
+### 3. Frontend
 
 ```bash
 cd frontend
 npm install
 ```
 
-### 4. Start All Services
+### 4. Start everything (three terminals)
 
-You need **three terminals** (Redis runs as a service/container; open one terminal for each of the following):
-
-**Terminal 1 — Backend API server:**
 ```bash
-cd backend
-./venv/Scripts/python -m uvicorn app.main:app --reload --port 8000    # Windows
-# ./venv/bin/python -m uvicorn app.main:app --reload --port 8000      # Linux/macOS
+# Terminal 1 — API
+cd backend && ./venv/Scripts/python -m uvicorn app.main:app --reload --port 8000
+
+# Terminal 2 — Celery worker (--pool=solo mandatory on Windows)
+cd backend && ./venv/Scripts/celery -A app.tasks.celery_app worker --loglevel=info --pool=solo
+
+# Terminal 3 — Frontend
+cd frontend && npm run dev
 ```
 
-**Terminal 2 — Celery worker:**
-```bash
-cd backend
-./venv/Scripts/celery -A app.tasks.celery_app worker --loglevel=info --pool=solo    # Windows
-# ./venv/bin/celery -A app.tasks.celery_app worker --loglevel=info                  # Linux/macOS
-```
+### 5. Open the app
 
-> Note: `--pool=solo` is required on Windows. Linux/macOS can omit it to use the default prefork pool.
+- Frontend: **http://localhost:5173**
+- Backend health: **http://localhost:8000/api/v1/health**
 
-**Terminal 3 — Frontend dev server:**
-```bash
-cd frontend
-npm run dev
-```
+For the full dev loop — migrations, tests, lint, commit conventions — see [docs/contributing.md](docs/contributing.md).
 
-### 5. Open the App
+---
 
-Navigate to **http://localhost:5173** in your browser.
+## Restarting services (Windows)
 
-The backend API is available at **http://localhost:8000** (health check: `GET /api/v1/health`).
+All four runtimes can be killed and relaunched in one shot via `scripts/restart_services.ps1`:
 
-## Restarting Services
-
-All four runtimes (Redis, backend, Celery worker, frontend dev server) can be killed and relaunched in one shot via `scripts/restart_services.ps1` on Windows.
-
-**From the command line:**
 ```powershell
-# Full restart of everything:
-./scripts/restart_services.ps1
-
-# Backend + Celery only; leave the frontend dev server alone:
-./scripts/restart_services.ps1 -SkipFrontend
-
-# Kill the four runtimes without restarting (handy when debugging):
-./scripts/restart_services.ps1 -KillOnly
+./scripts/restart_services.ps1                       # full restart
+./scripts/restart_services.ps1 -SkipFrontend         # leave Vite alone
+./scripts/restart_services.ps1 -KillOnly             # kill without relaunching
 ```
 
-The script kills processes by port (`:8000` backend, `:5173` frontend) and by command-line match (`celery`), verifies the Redis Windows service is running (auto-starts it if not), and relaunches every service detached with `-WindowStyle Hidden`. Every step is mirrored to `restart_services.log` at the repo root so you can see what happened even when the scripts run without a console.
+Or from inside the running backend:
 
-**From the running backend** (the endpoint is authenticated, so use your JWT):
 ```bash
 curl -X POST "http://localhost:8000/api/v1/admin/restart" \
      -H "Authorization: Bearer $TOKEN"
 ```
 
-The endpoint returns `202 Accepted` immediately, spawns `restart_services.ps1` as a detached child process, then sleeps for the configured delay (default 2 s) before killing its own uvicorn process. The new backend comes up on the same port within ~5–10 s. Useful query params: `?skip_frontend=true`, `?delay=5`. Self-restart is wired up for Windows hosts only.
+The endpoint spawns the restart script as a detached child, returns `202`, then kills its own uvicorn after a short delay. The new backend comes up on the same port within ~5–10 s.
 
-## How It Works
+---
 
-1. **Pick a job type**
-   - **Topic** — AI searches YouTube from a topic + instructions you provide.
-   - **Channel** — You paste channel URLs; the latest N videos from each are pulled.
-   - **Subscription** — You subscribe to a channel; every current and future video is ingested automatically. No approval step, no per-job report — pure library ingestion.
+## How it works (one paragraph each)
 
-2. **Review & approve videos** (Topic and Channel jobs only) — The system finds matching videos and pauses for your approval. The list auto-populates in real time via WebSocket. Deselect any you don't want, then approve to continue. Subscription jobs skip this step entirely.
+1. **Submit a job.** Topic (AI-discovered videos), channel (paste URLs), or subscription (fire-and-forget ingestion of a channel's uploads playlist).
+2. **Approve.** Topic and channel jobs pause for you to review the discovered video list; subscription jobs skip this step.
+3. **Ingest.** Transcripts are fetched from YouTube (with a Whisper fallback), chunked at 512 tokens with timestamp mapping, and embedded once per video using a multilingual model (`paraphrase-multilingual-MiniLM-L12-v2`). Already-indexed videos are reused for free.
+4. **Report.** Topic and channel jobs run a LangGraph map-reduce agent that produces an HTML report grounded in the transcripts. Subscription jobs skip this step.
+5. **Ask.** Per-job, library-wide, or across-all-past-Q&A-history — every answer is citation-grounded with clickable timestamps.
+6. **Harvest.** Any video can be turned into a structured knowledge artifact. All Q&As and all knowledge artifacts stream out as JSONL for fine-tuning.
 
-3. **Global video library** — Transcripts and embeddings are computed **once per video** and stored in a single global ChromaDB collection. If a later job references a video that's already in the library, it's reused instantly — no re-fetch, no re-transcribe, no re-embed. Deleting a job unlinks its videos but does not remove them from the library.
+For the deeper walk-through, see [docs/architecture.md](docs/architecture.md).
 
-4. **Automatic processing** — Transcripts are fetched from YouTube (with a Whisper fallback when captions are unavailable), chunked at 512 tokens with timestamp mapping, and embedded using a multilingual model (`paraphrase-multilingual-MiniLM-L12-v2`) that handles Hindi, Urdu, English, Russian, and 50+ other languages. Topic and Channel jobs then generate an HTML research report via a LangGraph map-reduce agent.
-
-5. **Per-job Q&A** — Ask questions inside a single job. Retrieval is filtered to the job's approved videos. Citations link back to the source video with `&t=` timestamps.
-
-6. **Library-wide Q&A** — Ask questions across your entire library of transcribed videos, not just one job. Useful for cross-channel research or revisiting subscribed content.
-
-7. **Q&A library indexing & history chat** (new) — Every Q&A exchange you ever run (job-scoped, library-scoped, or the history chat itself) is indexed into a central ChromaDB collection (`qa_library_global`) post-commit. The `/qa-history` page lets you ask meta-questions across all of it — answers cite the source exchanges with clickable links back to the original job or library Q&A.
-
-8. **Video knowledge reports** (new) — Any transcribed video has a "Generate knowledge report" button. An LLM map-reduce agent extracts structured `{topics, concepts, events, facts}` from the full transcript and synthesizes a Markdown knowledge document (Wikipedia-paragraph style, not a raw transcript). Persisted on the video row so subsequent views are free; click again with Force to regenerate.
-
-9. **Dataset exports for fine-tuning** (new) — Four streaming JSONL download endpoints turn your accumulated Q&A history and knowledge reports into training datasets. Feed them to OpenAI or Vertex fine-tuning to carry your wiki as parametric knowledge inside a custom model. See the "Fine-tuning your own model" section.
-
-10. **Multilingual answers** — Whisper transcribes speakers in their native language(s), including code-mixed audio. The Q&A agent accepts an `answer_language` parameter and translates quoted non-English context into your chosen language while preserving proper nouns.
-
-11. **Duplicate & iterate** — Every job is permanently browsable from the Jobs list. Click through to a detail page to see the full parameter set you submitted plus the live run state, approval queue, report, and Q&A history. Hit **Duplicate / Re-run** from either the list row or the detail header to spin up a new job seeded from the old one. No backend migration — the form just round-trips the stored `Job` row back into its inputs.
+---
 
 ## Running with a local LLM
 
-Every LLM call site (clarification, fact extraction, final-answer synthesis, report composition, etc.) is an independent **use case**. You pick the provider, model, and reasoning level per use case via `LLM_USE_CASE_CONFIG`, and you can point any of them at a local OpenAI-compatible server (LM Studio, Ollama, vLLM, llama.cpp) by choosing the `local` provider.
+Every LLM call site is a named use case that can be individually routed. Point any use case at a local OpenAI-compatible server (LM Studio, Ollama, vLLM, llama.cpp-server) by choosing the `local` provider.
 
-1. Start LM Studio (or your server of choice) and load any instruct model. Turn on the server and confirm it listens on e.g. `http://localhost:1234`.
-2. Verify with `curl http://localhost:1234/v1/models` — it should list the loaded model.
-3. In `backend/.env` set the local endpoint and a per-use-case routing config:
+```env
+LLM_LOCAL_BASE_URL=http://localhost:1234/v1
+LLM_LOCAL_API_KEY=not-needed
 
-   ```
-   LLM_LOCAL_BASE_URL=http://localhost:1234/v1
-   LLM_LOCAL_API_KEY=not-needed
-
-   # Route the cheap, chatty use cases to the local model; keep the
-   # high-stakes ones on OpenAI (or Anthropic / Google).
-   LLM_USE_CASE_CONFIG=qa_clarification=local:qwen/qwen3-8b-instruct,qa_sub_query_expansion=local:qwen/qwen3-8b-instruct,report_map_chunks=local:qwen/qwen3-8b-instruct,qa_formulate_answer=openai:gpt-5:medium,knowledge_synthesize_report=anthropic:claude-opus-4-5:medium
-   ```
-
-   Format: `use_case=provider:model[:reasoning]`, comma-separated. Providers: `openai`, `anthropic`, `google`, `local`. Reasoning (optional): `off`, `minimal`, `low`, `medium`, `high`, `auto`. Any use case not listed falls back to its registry default. See `backend/app/services/llm_routing.py` for the full list of use case names.
-
-4. Restart backend + Celery via `.\scripts\restart_services.ps1 -SkipFrontend`.
-
-**Benchmarking your local server.** `backend/scripts/stress_test_local_llm.py` sweeps concurrency levels against your local endpoint and reports latency percentiles and aggregate throughput:
-
-```bash
-./venv/Scripts/python backend/scripts/stress_test_local_llm.py --concurrency 1 4 8
+# Route cheap chatty use cases local; keep high-stakes ones on a frontier model.
+LLM_USE_CASE_CONFIG=qa_clarification=local:qwen/qwen3-8b-instruct,qa_sub_query_expansion=local:qwen/qwen3-8b-instruct,report_map_chunks=local:qwen/qwen3-8b-instruct,qa_formulate_answer=openai:gpt-5:medium,knowledge_synthesize_report=anthropic:claude-opus-4-5:medium
 ```
 
-Note: embeddings are already local — we use SentenceTransformer (`paraphrase-multilingual-MiniLM-L12-v2`) on CPU. No OpenAI embeddings cost today.
+Format: `use_case=provider:model[:reasoning]`, comma-separated. Providers: `openai`, `anthropic`, `google`, `local`. Reasoning (optional): `off` / `minimal` / `low` / `medium` / `high` / `auto`. Any use case not listed falls back to the registry default in `backend/app/services/llm_routing.py::USE_CASE_REGISTRY`. Full reference in [CLAUDE.md](CLAUDE.md#llm-configuration).
 
-## What happens when an LLM is unreachable
+**Benchmark your config.** `backend/scripts/stress_test_llm.py` sweeps concurrency levels and reports latency percentiles + aggregate throughput:
 
-The app is designed to fail soft. At boot it probes every configured LLM once; if any probe fails the app still starts and the rest of the UI stays usable:
+```bash
+./venv/Scripts/python backend/scripts/stress_test_llm.py --use-case qa_formulate_answer
+./venv/Scripts/python backend/scripts/stress_test_llm.py --provider local --model qwen/qwen3-9b --concurrency 1 2 4 8
+```
 
-- A banner at the top of every page lists which features are affected (e.g. "Q&A and knowledge extraction are unavailable") and offers a **Retry** button that re-probes without a full restart.
-- LLM-dependent pages — Q&A (job-scoped and library-wide), Q&A History chat, knowledge-report generation, and new job submission — disable their primary actions with an inline explainer pointing at the offending provider/model.
-- Non-LLM features stay fully interactive: browsing the Jobs list, viewing past reports, browsing the global library, downloading JSONL exports, and managing channel subscriptions.
+Embeddings are already local (CPU SentenceTransformer). No embeddings-API cost.
 
-This means a dead local model, an expired OpenAI key, or a rate-limited Anthropic account never bricks the app — you can keep reading past work while you fix the config.
+---
+
+## Fail-soft behavior
+
+At boot the app probes every unique `(provider, model)` pair once. If any probe fails the app still starts:
+
+- A banner at the top of every page lists affected features and offers a **Retry** button.
+- LLM-dependent primary actions disable themselves (Ask question, Generate report, Extract knowledge) with an inline explainer pointing at the offending use case.
+- Non-LLM features stay fully interactive: browsing jobs, viewing past reports, browsing the library, downloading exports, managing subscriptions.
+
+A dead local model, an expired API key, or a rate-limited account never bricks the app.
+
+---
 
 ## Fine-tuning your own model
 
-See [docs/finetune_design.md](docs/finetune_design.md) for the design of a future in-app fine-tune runner. Today, the exports feature gives you everything you need to run `openai fine_tunes.create` or `gcloud ai-platform tuning-jobs` externally — four streaming `GET /api/v1/exports/...jsonl` endpoints produce OpenAI-chat-format and plain-tuple-format JSONL for both the Q&A dataset and the knowledge-report dataset.
+Four streaming JSONL endpoints turn your accumulated library into training-ready datasets:
 
-## Project Structure
+- `GET /api/v1/exports/qa-dataset/openai.jsonl` — Q&A, OpenAI chat format
+- `GET /api/v1/exports/qa-dataset/tuple.jsonl` — Q&A, plain `{system, user, assistant}` tuples
+- `GET /api/v1/exports/knowledge-dataset/openai.jsonl` — knowledge artifacts, chat format
+- `GET /api/v1/exports/knowledge-dataset/tuple.jsonl` — knowledge artifacts, tuple format
+
+Feed them to OpenAI fine-tuning or Vertex tuning jobs externally today. An in-app fine-tune runner is planned — see [docs/finetune_design.md](docs/finetune_design.md).
+
+---
+
+## Project layout
 
 ```
-VideoResearchPro/
+Pratidhvani/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py              # FastAPI application
 │   │   ├── config.py            # Settings (reads .env)
-│   │   ├── routers/             # API endpoints (jobs, qa, channels, library, ws, health)
-│   │   ├── models/              # SQLAlchemy ORM (job, video, channel, job_video, qa_exchange, library_qa_exchange)
+│   │   ├── routers/             # HTTP endpoints (auth, jobs, qa, library, channels,
+│   │   │                        #   qa_history, knowledge, exports, admin, health, ws)
+│   │   ├── models/              # SQLAlchemy ORM
 │   │   ├── schemas/             # Pydantic request/response models
-│   │   ├── services/            # Business logic (youtube, chroma, progress, llm)
-│   │   ├── agents/              # LangGraph agents (search, report, qa)
+│   │   ├── services/            # Business logic (youtube, chroma, llm_routing, ...)
+│   │   ├── agents/              # LangGraph agents (search, report, qa, knowledge, qa_history)
 │   │   ├── tasks/               # Celery task definitions
 │   │   ├── websocket/           # WebSocket connection manager
 │   │   └── utils/               # Chunking, HTML builder, YouTube helpers
-│   ├── tests/                   # pytest test suite (36 tests)
-│   ├── alembic/                 # Database migrations
-│   ├── data/                    # Runtime data (SQLite DB, ChromaDB, reports)
-│   ├── requirements.txt
-│   └── requirements-dev.txt
+│   ├── tests/                   # 168 pytest tests
+│   ├── alembic/                 # Migrations
+│   ├── scripts/                 # stress_test_llm, etc.
+│   └── requirements*.txt
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/               # SubmitJobPage, JobsListPage, JobDetailPage, LibraryPage, LibraryQAPage
+│   │   ├── pages/               # Login, Submit, JobsList, JobDetail, Library, LibraryQA,
+│   │   │                        #   QAHistoryChat, Exports, ...
 │   │   ├── hooks/               # React Query hooks + WebSocket bridge
 │   │   ├── services/            # API client + WebSocket client
 │   │   ├── stores/              # Zustand UI state
-│   │   ├── components/          # StatusBadge, ProgressBar, LoadingSpinner
+│   │   ├── components/          # StatusBadge, ProgressBar, LoadingSpinner, ...
 │   │   └── types/               # TypeScript interfaces
 │   └── package.json
-├── docs/                        # Architecture, requirements, UI design docs
-├── .env.example                 # Environment variable template
-├── docker-compose.yml           # Redis (alternative to native install)
-└── CLAUDE.md                    # Claude Code project guidance
+├── docs/                        # See the Documentation table above
+├── scripts/                     # restart_services.ps1
+├── .env.example
+├── docker-compose.yml
+├── CHANGELOG.md
+├── CLAUDE.md                    # Claude Code project guidance
+└── README.md                    # this file
 ```
 
-## Environment Variables
+---
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `YOUTUBE_API_KEY` | Yes | — | YouTube Data API v3 key |
-| `OPENAI_API_KEY` | Conditional | — | Required if any use case routes to provider `openai` |
-| `ANTHROPIC_API_KEY` | Conditional | — | Required if any use case routes to provider `anthropic` |
-| `GOOGLE_API_KEY` | Conditional | — | Required if any use case routes to provider `google` |
-| `DATABASE_URL` | No | `sqlite:///./data/videoresearchpro.db` | SQLAlchemy DB connection |
-| `REDIS_URL` | No | `redis://localhost:6379/0` | Redis for WebSocket pub/sub |
-| `CELERY_BROKER_URL` | No | `redis://localhost:6379/1` | Celery task broker |
-| `CELERY_RESULT_BACKEND` | No | `redis://localhost:6379/2` | Celery result storage |
-| `LLM_USE_CASE_CONFIG` | No | — | Per-use-case routing, e.g. `qa_clarification=local:qwen/qwen3-8b,qa_formulate_answer=openai:gpt-5:medium`. See `backend/app/services/llm_routing.py` for use case names. |
-| `LLM_LOCAL_BASE_URL` | No | — | OpenAI-compatible local server URL (e.g. `http://localhost:1234/v1`). Required for any use case with provider `local`. |
-| `LLM_LOCAL_API_KEY` | No | `not-needed` | API key sent to the local server (most accept anything) |
-| `LLM_PRIMARY_PROVIDER` | No | `openai` | Default provider for use cases not in `LLM_USE_CASE_CONFIG` (`openai` / `anthropic` / `google`) |
-| `LLM_PRIMARY_MODEL` | No | — | Default model for use cases not in `LLM_USE_CASE_CONFIG` |
-| `LLM_MODEL` | No | `gpt-5` | Legacy OpenAI model name; still honored when provider is `openai` |
-| `LLM_ROUTE_OVERRIDES` | No | — | Legacy — use `LLM_USE_CASE_CONFIG` |
-| `LLM_FAST_BASE_URL` | No | — | Legacy — use `LLM_USE_CASE_CONFIG` + `LLM_LOCAL_BASE_URL` |
-| `LLM_FAST_MODEL` | No | `gpt-4.1-mini` | Legacy — use `LLM_USE_CASE_CONFIG` |
-| `LLM_FAST_API_KEY` | No | `not-needed` | Legacy — use `LLM_USE_CASE_CONFIG` + `LLM_LOCAL_API_KEY` |
-| `CHROMA_PERSIST_DIR` | No | `./data/chroma` | ChromaDB storage path |
-| `REPORTS_DIR` | No | `./data/reports` | Generated HTML reports path |
+## Environment variables
 
-## Running Tests
+See [.env.example](.env.example) for the template and [CLAUDE.md](CLAUDE.md#environment-variables) for the full table.
 
-```bash
-cd backend
+Most important knobs:
 
-# All tests
-./venv/Scripts/python -m pytest tests/ -v
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `YOUTUBE_API_KEY` | yes | YouTube Data API v3 |
+| `OPENAI_API_KEY` | conditional | required if any use case routes to `openai` (defaults do) |
+| `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` | conditional | required if the corresponding provider is configured |
+| `JWT_SECRET` | yes | any long random string — don't reuse across environments |
+| `LLM_USE_CASE_CONFIG` | no | per-use-case provider/model/reasoning override |
+| `LLM_LOCAL_BASE_URL` | no | endpoint for `local` provider (LM Studio / Ollama / vLLM / llama.cpp-server) |
 
-# Single test file
-./venv/Scripts/python -m pytest tests/test_routers/test_jobs.py -v
+---
 
-# Single test
-./venv/Scripts/python -m pytest tests/test_routers/test_jobs.py::test_create_topic_job -v
-```
+## What's new
 
-Tests use an in-memory SQLite database and mock Celery tasks — no Redis required.
+See [CHANGELOG.md](CHANGELOG.md).
 
-## API Overview
+---
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/v1/health` | Health check |
-| POST | `/api/v1/jobs` | Create a new research job |
-| GET | `/api/v1/jobs` | List all jobs |
-| GET | `/api/v1/jobs/{id}` | Get job details |
-| PUT | `/api/v1/jobs/{id}/approve` | Approve video list and resume |
-| POST | `/api/v1/jobs/{id}/cancel` | Cancel a running job |
-| DELETE | `/api/v1/jobs/{id}` | Delete job and all associated data |
-| GET | `/api/v1/jobs/{id}/videos` | List videos for a job |
-| GET | `/api/v1/jobs/{id}/report` | View HTML report |
-| POST | `/api/v1/jobs/{id}/qa` | Ask a question |
-| GET | `/api/v1/jobs/{id}/qa` | Get Q&A history |
-| POST | `/api/v1/library/qa` | Library-wide Q&A ask |
-| GET | `/api/v1/library/qa` | Library-wide Q&A history |
-| POST | `/api/v1/library/qa/clarify` | Library-wide clarify step |
-| DELETE | `/api/v1/library/qa/{id}` | Delete a library Q&A exchange (optional) |
-| GET | `/api/v1/library/videos` | Browse global video library |
-| GET | `/api/v1/channels` | List all channels |
-| GET | `/api/v1/channels/{id}` | Single channel detail |
-| POST | `/api/v1/channels/{id}/subscribe` | Subscribe to a channel |
-| POST | `/api/v1/channels/{id}/unsubscribe` | Unsubscribe from a channel |
-| POST | `/api/v1/channels/{id}/sync` | Trigger a fresh sync |
-| GET | `/api/v1/channels/{id}/videos` | List videos for a channel |
-| POST | `/api/v1/qa-history/chat` | Ask a meta-question across all Q&A history |
-| GET | `/api/v1/qa-history/exchanges` | List history chat exchanges |
-| POST | `/api/v1/videos/{id}/extract-knowledge` | Run knowledge extraction (409 if exists unless `?force`) |
-| GET | `/api/v1/videos/{id}/knowledge` | Fetch stored knowledge artifact |
-| GET | `/api/v1/exports/qa-dataset/openai.jsonl` | Stream Q&A dataset, OpenAI chat format |
-| GET | `/api/v1/exports/qa-dataset/tuple.jsonl` | Stream Q&A dataset, plain tuple format |
-| GET | `/api/v1/exports/knowledge-dataset/openai.jsonl` | Stream knowledge dataset, chat format |
-| GET | `/api/v1/exports/knowledge-dataset/tuple.jsonl` | Stream knowledge dataset, tuple format |
-| POST | `/api/v1/admin/restart` | Restart Redis/backend/Celery/frontend (Windows only) |
-| WS | `/ws/jobs` | Real-time progress (subscribe/unsubscribe per job) |
+## Contributing
 
-## What's New
+Setup, conventions, commit style, and PR checklist live in [docs/contributing.md](docs/contributing.md). Testing strategy in [docs/testing.md](docs/testing.md). Please read both before opening your first PR.
 
-- **Duplicate / re-run any job.** The Jobs list and each Job Detail page now have a **Duplicate / Re-run** button that navigates to the submit form with every parameter pre-filled from the original job. A new Job Parameters card on the detail page also surfaces the full submission payload in read-only form. Zero-backend-change feature — the frontend just round-trips the existing `Job` response back into the form.
-- **Orphan backstop + worker log capture.** Every orchestrator task now runs a `finally`-clause safety net that fails any job still stuck in a transient status (`pending` / `searching` / `extracting` / `building_rag` / `generating_report`) when the task returns, so a silent bug can't strand the UI at 5% forever. `restart_services.ps1` now redirects each detached runtime's stdout + stderr to per-service `.out.log` + `.err.log` files at the repo root (one pair each for uvicorn, Celery, and the Vite frontend) so post-mortem debugging is possible.
-- **Preferred channels on topic jobs.** The Search Agent now takes a `preferred_channels` list alongside the topic and instructions. The LLM produces a structured plan (`broad_queries` + `channel_keywords`); preferred channels are resolved to IDs and their uploads playlists are walked directly, then keyword-filtered. No more creator names getting stuffed into query strings.
-- **Self-restart endpoint + PowerShell script.** `scripts/restart_services.ps1` kills and relaunches all four runtimes in one shot; `POST /api/v1/admin/restart` drives the same script from inside the running backend via a detached trampoline process.
-- Videos are now globally deduplicated across jobs.
-- New channel-subscription job type (fire-and-forget ingestion, no approval, no report).
-- New library-wide Q&A endpoint and UI page.
-- Multilingual transcription (Whisper fallback) and embeddings (`paraphrase-multilingual-MiniLM-L12-v2`).
-- Single global ChromaDB collection (`videoresearchpro_global`) with per-job `video_id` metadata filtering.
+---
+
+## License
+
+TBD — the project is open-source in spirit today; the license will be finalized before the first tagged release. See [docs/saas-roadmap.md §License](docs/saas-roadmap.md) for the considered options.

@@ -1,11 +1,16 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db
+from app.models.channel import Channel
+from app.models.job import Job
+from app.models.job_video import JobVideo
 from app.models.library_qa_exchange import LibraryQAExchange
+from app.models.video import Video
 from app.schemas.library_qa import (
     LibraryClarifyRequest,
     LibraryClarifyResponse,
@@ -13,6 +18,7 @@ from app.schemas.library_qa import (
     LibraryQAResponse,
     LibraryReference,
 )
+from app.schemas.library_video import LibrarySort, LibraryVideoResponse
 from app.services import chroma_service
 from app.services.llm_service import get_llm_for
 
@@ -176,3 +182,95 @@ def delete_library_qa_exchange(
         )
     db.delete(exchange)
     db.commit()
+
+
+@router.get(
+    "/videos",
+    response_model=list[LibraryVideoResponse],
+)
+def list_library_videos(
+    search: str | None = None,
+    language: str | None = None,
+    channel_id: str | None = None,
+    transcript_status: str | None = None,
+    sort: LibrarySort = "newest",
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> list[LibraryVideoResponse]:
+    """Browse the global, deduplicated video library.
+
+    Filters: free-text search across title and channel name, transcript
+    language, channel_id, and transcript_status. Sort by recency or duration.
+    Each row carries an aggregated `job_count` and `job_titles[]` so the UI
+    can show "appears in N research runs" without follow-up requests.
+    """
+    q = db.query(Video).outerjoin(Channel, Video.channel_id == Channel.channel_id)
+
+    if search:
+        like = f"%{search}%"
+        q = q.filter(or_(Video.title.ilike(like), Channel.name.ilike(like)))
+    if language:
+        q = q.filter(Video.transcript_language == language)
+    if channel_id:
+        q = q.filter(Video.channel_id == channel_id)
+    if transcript_status:
+        q = q.filter(Video.transcript_status == transcript_status)
+
+    if sort == "newest":
+        q = q.order_by(Video.created_at.desc())
+    elif sort == "oldest":
+        q = q.order_by(Video.created_at.asc())
+    elif sort == "longest":
+        q = q.order_by(Video.duration_seconds.desc())
+    elif sort == "shortest":
+        q = q.order_by(Video.duration_seconds.asc())
+
+    videos = q.offset(offset).limit(limit).all()
+
+    if not videos:
+        return []
+
+    video_ids = [v.video_id for v in videos]
+
+    # One round-trip to fetch (video_id -> distinct job topics) for the page.
+    rows = (
+        db.query(JobVideo.video_id, Job.topic)
+        .join(Job, Job.id == JobVideo.job_id)
+        .filter(JobVideo.video_id.in_(video_ids))
+        .all()
+    )
+    titles_by_video: dict[str, list[str]] = {}
+    for vid, topic in rows:
+        if not topic:
+            continue
+        bucket = titles_by_video.setdefault(vid, [])
+        if topic not in bucket:
+            bucket.append(topic)
+
+    counts_by_video: dict[str, int] = dict(
+        db.query(JobVideo.video_id, func.count(func.distinct(JobVideo.job_id)))
+        .filter(JobVideo.video_id.in_(video_ids))
+        .group_by(JobVideo.video_id)
+        .all()
+    )
+
+    return [
+        LibraryVideoResponse(
+            id=v.video_id,
+            video_id=v.video_id,
+            title=v.title,
+            channel_id=v.channel_id,
+            channel_name=v.channel_name,
+            url=v.url,
+            thumbnail_url=v.thumbnail_url,
+            duration_seconds=v.duration_seconds,
+            published_at=v.published_at,
+            transcript_status=v.transcript_status,
+            transcript_language=v.transcript_language,
+            transcript_word_count=v.transcript_word_count,
+            job_count=counts_by_video.get(v.video_id, 0),
+            job_titles=titles_by_video.get(v.video_id, []),
+        )
+        for v in videos
+    ]

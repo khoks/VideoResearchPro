@@ -1,18 +1,10 @@
-import { statusColor, statusLabel } from '../../utils/formatters';
+import { StatusPill, type BadgeSize } from '../primitives';
 
-export function StatusBadge({ status }: { status: string }) {
-  return (
-    <span
-      style={{
-        background: statusColor(status),
-        color: '#fff',
-        padding: '2px 10px',
-        borderRadius: 12,
-        fontSize: '0.8rem',
-        fontWeight: 600,
-      }}
-    >
-      {statusLabel(status)}
-    </span>
-  );
+/**
+ * Thin wrapper around the token-driven `StatusPill` primitive. Preserved as a
+ * stable import path while pages migrate off the legacy name. New call sites
+ * should import `StatusPill` directly from `../primitives`.
+ */
+export function StatusBadge({ status, size = 'sm' }: { status: string; size?: BadgeSize }) {
+  return <StatusPill status={status} size={size} />;
 }

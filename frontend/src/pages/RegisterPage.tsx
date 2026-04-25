@@ -1,10 +1,14 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LoadingSpinner } from '../components/common/LoadingSpinner';
+import { AuthShell, AuthError } from '../components/auth/AuthShell';
+import { Button, FormField, Input } from '../components/primitives';
+import { useColors } from '../hooks/useTheme';
+import { fonts, fontSize, fontWeight, space } from '../theme';
 
 export function RegisterPage() {
   const navigate = useNavigate();
+  const c = useColors();
   const { register, isLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -32,59 +36,75 @@ export function RegisterPage() {
   };
 
   return (
-    <AuthShell title="Create your account">
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <Field label="Email">
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-            placeholder="you@example.com"
-          />
-        </Field>
-        <Field label="Password">
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="new-password"
-            placeholder="At least 8 characters"
-            minLength={8}
-          />
-        </Field>
-        <Field label="Confirm Password">
-          <input
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            autoComplete="new-password"
-            placeholder="Repeat your password"
-            minLength={8}
-          />
-        </Field>
-        <button
-          type="submit"
-          disabled={isLoading}
+    <AuthShell title="Begin your personal library.">
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}>
+        <FormField label="Email" required>
+          {(id) => (
+            <Input
+              id={id}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+              placeholder="you@example.com"
+            />
+          )}
+        </FormField>
+        <FormField label="Password" required helperText="At least 8 characters.">
+          {(id) => (
+            <Input
+              id={id}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="new-password"
+              placeholder="At least 8 characters"
+              minLength={8}
+            />
+          )}
+        </FormField>
+        <FormField label="Confirm password" required>
+          {(id) => (
+            <Input
+              id={id}
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              autoComplete="new-password"
+              placeholder="Repeat your password"
+              minLength={8}
+            />
+          )}
+        </FormField>
+        <Button type="submit" loading={isLoading} fullWidth style={{ marginTop: space['2'] }}>
+          {isLoading ? 'Creating account…' : 'Create account'}
+        </Button>
+        {error && <AuthError message={error} />}
+      </form>
+      <p
+        style={{
+          marginTop: space['5'],
+          marginBottom: 0,
+          color: c.textSecondary,
+          fontFamily: fonts.ui,
+          fontSize: fontSize.sm,
+          textAlign: 'center',
+        }}
+      >
+        Already curating?{' '}
+        <Link
+          to="/login"
           style={{
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            color: '#fff', border: 'none', padding: '0.8rem 2rem', borderRadius: 8,
-            fontSize: '1rem', fontWeight: 600, cursor: 'pointer', marginTop: '0.5rem',
-            opacity: isLoading ? 0.7 : 1,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+            color: c.accent,
+            fontWeight: fontWeight.semibold,
+            textDecoration: 'none',
           }}
         >
-          {isLoading ? <LoadingSpinner size={18} /> : null}
-          {isLoading ? 'Creating account...' : 'Create Account'}
-        </button>
-        {error && <p style={{ color: '#ef4444', margin: 0 }}>{error}</p>}
-      </form>
-      <p style={{ marginTop: '1.5rem', color: '#64748b', fontSize: '0.9rem' }}>
-        Already have an account?{' '}
-        <Link to="/login" style={{ color: '#667eea', fontWeight: 600 }}>Sign in</Link>
+          Sign in
+        </Link>
       </p>
     </AuthShell>
   );
@@ -100,40 +120,4 @@ function extractError(err: unknown): string | null {
     if (maybe.message) return maybe.message;
   }
   return null;
-}
-
-function AuthShell({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem',
-    }}>
-      <div style={{
-        background: '#fff',
-        borderRadius: 12,
-        padding: '2.5rem',
-        width: '100%',
-        maxWidth: 420,
-        boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
-      }}>
-        <h1 style={{ margin: 0, marginBottom: '0.3rem', color: '#1e293b', fontSize: '1.6rem' }}>
-          VideoResearchPro
-        </h1>
-        <h2 style={{ margin: 0, marginBottom: '1.5rem', color: '#64748b', fontSize: '1rem', fontWeight: 500 }}>
-          {title}
-        </h2>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>{label}</span>
-      {children}
-    </label>
-  );
 }

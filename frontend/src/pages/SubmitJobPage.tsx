@@ -3,10 +3,26 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useCreateJob } from '../hooks/useJobs';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { useJobStore } from '../stores/jobStore';
+import {
+  Button,
+  Card,
+  FormField,
+  Input,
+  Textarea,
+} from '../components/primitives';
+import { useColors } from '../hooks/useTheme';
+import {
+  fonts,
+  fontSize,
+  fontWeight,
+  lineHeight,
+  measure,
+  radius,
+  space,
+} from '../theme';
 import type { Job, JobCreate, JobType } from '../types/job';
 
-const FEATURE_UNAVAILABLE_MSG =
-  'LLM-dependent feature is temporarily unavailable';
+const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
 const CHANNEL_TYPE_OPTIONS = [
   'educational',
@@ -69,10 +85,6 @@ function loadForm(): PersistedFormState {
   }
 }
 
-// Translate a saved Job's submission parameters back into the shape the form
-// state expects. Used when the user clicks "Duplicate / Re-run" on a job —
-// we route here with { cloneFrom: job } in location.state and seed the form
-// from those values, overriding any localStorage draft for this mount only.
 function jobToFormState(job: Job): PersistedFormState {
   const channelLines = (list: string[] | null | undefined) =>
     list && list.length > 0 ? list.join('\n') : '';
@@ -96,7 +108,6 @@ function jobToFormState(job: Job): PersistedFormState {
   };
 }
 
-// Accept @handle, youtube.com/@handle, /channel/UC..., /c/name, /user/name, or bare UC-IDs
 const CHANNEL_URL_RE =
   /^(?:@[\w.-]{1,}|UC[\w-]{22}|(?:https?:\/\/)?(?:www\.)?youtube\.com\/(?:@[\w.-]{1,}|channel\/[\w-]{1,}|c\/[\w.-]{1,}|user\/[\w.-]{1,})\/?)$/i;
 
@@ -114,15 +125,11 @@ function validateChannels(lines: string[]): string[] {
 export function SubmitJobPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const c = useColors();
   const createJob = useCreateJob();
   const pushToast = useJobStore((s) => s.pushToast);
   const topicJobAvailable = useFeatureAvailable('topic_job');
 
-  // When the user arrives via "Duplicate / Re-run" on a Job card, the source
-  // job is passed in router state. Seed the form from it on first mount,
-  // overriding any stale localStorage draft. Clone info is kept in component
-  // state so the "Cloning from…" banner survives typing but disappears after
-  // submission (which navigates away).
   const cloneFromInitial = (location.state as { cloneFrom?: Job } | null)?.cloneFrom ?? null;
   const [cloneFrom] = useState<Job | null>(cloneFromInitial);
 
@@ -131,7 +138,6 @@ export function SubmitJobPage() {
   );
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // Persist on every change
   useEffect(() => {
     try {
       window.localStorage.setItem(FORM_STATE_KEY, JSON.stringify(form));
@@ -152,22 +158,15 @@ export function SubmitJobPage() {
     }));
   };
 
-  // Quota estimate: ~100 units per search query × 3 queries + ~1 per video for details.
-  // Channel jobs: channel lookup (~1/channel) + playlistItems (~1 per 50 videos) + ~1/video details.
-  // Subscription jobs: ~100 units per channel to resolve + ~1 unit per 50 videos (walks all).
   const quotaEstimate = useMemo(() => {
     if (form.jobType === 'topic') {
-      // 4-6 broad queries at 100 units each; pick a mid estimate.
       const broadSearches = 100 * 5;
       const details = Math.max(0, form.numVideos) * 1;
-      // Each preferred channel: ~100 units to resolve (if search fallback hits)
-      // + 1 unit to walk the uploads page + 1 unit of details per ~50 uploads.
       const preferredLines = parseChannelList(form.preferredChannels);
       const preferredCost = preferredLines.length * (100 + 1 + 1);
       return broadSearches + details + preferredCost;
     }
     if (form.jobType === 'subscription') {
-      // Video count is unknown until resolve; assume a large channel (~500 videos) as upper estimate.
       const channels = parseChannelList(form.subscriptionChannels).length;
       const playlistCalls = channels * Math.ceil(500 / 50);
       return channels * 100 + playlistCalls;
@@ -195,8 +194,6 @@ export function SubmitJobPage() {
     return [];
   }, [form.jobType, form.channelList, form.subscriptionChannels]);
 
-  // Preferred-channels validation runs independently of the main channel list
-  // because it appears only on the topic-job tab.
   const invalidPreferredChannels = useMemo(() => {
     if (form.jobType !== 'topic') return [];
     const lines = parseChannelList(form.preferredChannels);
@@ -227,7 +224,7 @@ export function SubmitJobPage() {
         if (invalid.length > 0) {
           setValidationError(
             `Invalid preferred-channel entries: ${invalid.slice(0, 3).join(', ')}${
-              invalid.length > 3 ? '...' : ''
+              invalid.length > 3 ? '…' : ''
             }`,
           );
           return;
@@ -244,7 +241,7 @@ export function SubmitJobPage() {
       const invalid = validateChannels(lines);
       if (invalid.length > 0) {
         setValidationError(
-          `Invalid channel entries: ${invalid.slice(0, 3).join(', ')}${invalid.length > 3 ? '...' : ''}`,
+          `Invalid channel entries: ${invalid.slice(0, 3).join(', ')}${invalid.length > 3 ? '…' : ''}`,
         );
         return;
       }
@@ -259,13 +256,12 @@ export function SubmitJobPage() {
 
     try {
       const job = await createJob.mutateAsync(data);
-      // Clear persisted form on successful submission
       try {
         window.localStorage.removeItem(FORM_STATE_KEY);
       } catch {
         /* ignore */
       }
-      pushToast('success', 'Job submitted.');
+      pushToast('success', 'Research submitted.');
       navigate(`/jobs/${job.id}`);
     } catch {
       // Global error toast is emitted by the MutationCache; nothing to do here.
@@ -283,359 +279,492 @@ export function SubmitJobPage() {
   };
 
   return (
-    <div style={{ maxWidth: 700, margin: '0 auto' }}>
+    <div style={{ maxWidth: measure.form, margin: '0 auto' }}>
       {cloneFrom && (
-        <div style={{
-          background: 'rgba(102, 126, 234, 0.08)',
-          border: '1px solid rgba(102, 126, 234, 0.35)',
-          borderRadius: 8,
-          padding: '0.7rem 0.9rem',
-          marginBottom: '1rem',
-          fontSize: '0.85rem',
-          color: 'var(--color-text)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '0.75rem',
-          flexWrap: 'wrap',
-        }}>
-          <span>
-            Cloning from job{' '}
+        <Card
+          sunken
+          style={{
+            marginBottom: space['4'],
+            padding: `${space['3']} ${space['4']}`,
+            display: 'flex',
+            gap: space['3'],
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <span
+            style={{
+              fontFamily: fonts.ui,
+              fontSize: fontSize.sm,
+              color: c.textSecondary,
+            }}
+          >
+            Cloning from run{' '}
             <a
               href={`/jobs/${cloneFrom.id}`}
-              onClick={(e) => { e.preventDefault(); navigate(`/jobs/${cloneFrom.id}`); }}
-              style={{ color: 'var(--color-accent)', fontWeight: 600, textDecoration: 'none' }}
+              onClick={(e) => {
+                e.preventDefault();
+                navigate(`/jobs/${cloneFrom.id}`);
+              }}
+              style={{
+                color: c.accent,
+                fontWeight: fontWeight.semibold,
+                textDecoration: 'none',
+              }}
             >
               {cloneFrom.id.slice(0, 8)}
             </a>
-            . Fields below are pre-filled from that submission — edit freely; a
-            new job with a new ID will be created on submit.
+            . Fields below are pre-filled from that submission — edit freely; a new run with a new ID will be created on submit.
           </span>
-        </div>
+        </Card>
       )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    marginBottom: '1.5rem' }}>
-        <h2 style={{ color: 'var(--color-text)' }}>
-          {cloneFrom ? 'Duplicate Research Job' : 'Submit New Research Job'}
-        </h2>
-        <button
-          type="button"
-          onClick={handleReset}
-          style={{
-            background: 'transparent',
-            border: '1px solid var(--color-border)',
-            color: 'var(--color-text-muted)',
-            padding: '0.4rem 0.9rem',
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontSize: '0.8rem',
-          }}
-        >
-          Reset form
-        </button>
-      </div>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+      <header
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-end',
+          gap: space['3'],
+          marginBottom: space['5'],
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <h1
+            style={{
+              fontFamily: fonts.display,
+              fontSize: fontSize['2xl'],
+              fontWeight: fontWeight.semibold,
+              color: c.textPrimary,
+              margin: 0,
+              lineHeight: lineHeight.tight,
+            }}
+          >
+            {cloneFrom ? 'Duplicate a research run' : 'Begin a new research run'}
+          </h1>
+          <p
+            style={{
+              fontFamily: fonts.body,
+              fontStyle: 'italic',
+              fontSize: fontSize.sm,
+              color: c.textMuted,
+              margin: `${space['2']} 0 0`,
+              maxWidth: measure.reading,
+            }}
+          >
+            Curate the voices. The library will remember them.
+          </p>
+        </div>
+        <Button size="sm" variant="tertiary" onClick={handleReset}>
+          Reset form
+        </Button>
+      </header>
+
+      <div
+        role="tablist"
+        aria-label="Research type"
+        style={{
+          display: 'flex',
+          gap: space['1'],
+          marginBottom: space['5'],
+          borderBottom: `1px solid ${c.border}`,
+        }}
+      >
         <TypeToggle active={form.jobType === 'topic'} onClick={() => update('jobType', 'topic')}>
-          Topic Research
+          Topic
         </TypeToggle>
-        <TypeToggle active={form.jobType === 'channel'} onClick={() => update('jobType', 'channel')}>
-          Channel List
+        <TypeToggle
+          active={form.jobType === 'channel'}
+          onClick={() => update('jobType', 'channel')}
+        >
+          Channels
         </TypeToggle>
         <TypeToggle
           active={form.jobType === 'subscription'}
           onClick={() => update('jobType', 'subscription')}
         >
-          Channel Subscription
+          Subscription
         </TypeToggle>
       </div>
 
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        {form.jobType === 'topic' && (
-          <>
-            <Field label="Research Topic *">
-              <input
-                value={form.topic}
-                onChange={(e) => update('topic', e.target.value)}
-                placeholder="e.g. Quantum Computing breakthroughs 2025"
-                required
-              />
-            </Field>
-            <Field label="Search Instructions (optional)">
-              <textarea
-                value={form.searchInstructions}
-                onChange={(e) => update('searchInstructions', e.target.value)}
-                placeholder={
-                  'Semantic guidance for the Search Agent. Good examples:\n' +
-                  '  - "Prefer recent 2026 uploads, skip anything older than 12 months."\n' +
-                  '  - "Favor skeptical / critical perspectives over marketing clips."\n' +
-                  "Don't list channel names here — use the Preferred Channels field below instead."
-                }
-                rows={3}
-              />
-            </Field>
-            <Field label="Preferred Channels (optional)">
-              <textarea
-                value={form.preferredChannels}
-                onChange={(e) => update('preferredChannels', e.target.value)}
-                placeholder={
-                  '@nateb.jones\n@dwarkeshpatel\nhttps://youtube.com/@andrewberman\nUCx...'
-                }
-                rows={4}
-              />
-              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-faint)' }}>
-                One per line: @handles, channel URLs, or UC-IDs. The agent will walk each
-                channel&apos;s recent uploads and surface anything topic-relevant alongside a
-                broad YouTube search.
-              </span>
-            </Field>
-            {invalidPreferredChannels.length > 0 && (
-              <p style={{ margin: 0, fontSize: '0.8rem', color: '#ef4444' }}>
-                Invalid preferred-channel entries:{' '}
-                {invalidPreferredChannels.slice(0, 3).join(', ')}
-                {invalidPreferredChannels.length > 3
-                  ? `, +${invalidPreferredChannels.length - 3} more`
-                  : ''}
-              </p>
-            )}
-            <Field label="Number of Videos">
-              <input
-                type="number"
-                value={form.numVideos}
-                onChange={(e) => update('numVideos', parseInt(e.target.value || '0', 10) || 0)}
-                min={1}
-                max={100}
-              />
-            </Field>
-            <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
-              <Field label="Min Duration (minutes)">
-                <input
-                  type="number"
-                  value={form.minDuration}
-                  onChange={(e) => update('minDuration', e.target.value)}
-                  placeholder="Any"
-                  min={1}
-                />
-              </Field>
-              <Field label="Max Duration (minutes)">
-                <input
-                  type="number"
-                  value={form.maxDuration}
-                  onChange={(e) => update('maxDuration', e.target.value)}
-                  placeholder="Any"
-                  min={1}
-                />
-              </Field>
-            </div>
-            <Field label="Channel Type Filters (optional)">
-              <div style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '0.4rem',
-                padding: '0.5rem',
-                border: '1px solid var(--color-border)',
-                borderRadius: 8,
-                background: 'var(--color-input-bg)',
-              }}>
-                {CHANNEL_TYPE_OPTIONS.map((opt) => {
-                  const selected = form.channelFilters.includes(opt);
-                  return (
-                    <button
-                      type="button"
-                      key={opt}
-                      onClick={() => toggleChannelFilter(opt)}
-                      aria-pressed={selected}
-                      style={{
-                        background: selected ? 'var(--color-accent)' : 'transparent',
-                        color: selected ? '#fff' : 'var(--color-text-muted)',
-                        border: `1px solid ${selected ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
-                        padding: '0.3rem 0.8rem',
-                        borderRadius: 999,
-                        fontSize: '0.8rem',
-                        cursor: 'pointer',
-                        fontWeight: selected ? 600 : 500,
-                        textTransform: 'capitalize',
-                      }}
-                    >
-                      {opt}
-                    </button>
-                  );
-                })}
-              </div>
-            </Field>
-          </>
-        )}
-
-        {form.jobType === 'channel' && (
-          <>
-            <Field label="YouTube Channels (one per line) *">
-              <textarea
-                value={form.channelList}
-                onChange={(e) => update('channelList', e.target.value)}
-                placeholder={'@3blue1brown\n@Veritasium\nhttps://youtube.com/@kurzgesagt'}
-                rows={5}
-                required
-              />
-            </Field>
-            {invalidChannels.length > 0 && (
-              <p style={{
-                margin: 0,
-                fontSize: '0.8rem',
-                color: '#ef4444',
-              }}>
-                Invalid entries: {invalidChannels.slice(0, 3).join(', ')}
-                {invalidChannels.length > 3 ? `, +${invalidChannels.length - 3} more` : ''}
-              </p>
-            )}
-            <Field label="Videos per Channel">
-              <input
-                type="number"
-                value={form.videosPerChannel}
-                onChange={(e) =>
-                  update('videosPerChannel', parseInt(e.target.value || '0', 10) || 0)
-                }
-                min={1}
-                max={50}
-              />
-            </Field>
-            <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
-              <Field label="Min Duration (minutes)">
-                <input
-                  type="number"
-                  value={form.minDuration}
-                  onChange={(e) => update('minDuration', e.target.value)}
-                  placeholder="Any"
-                  min={1}
-                />
-              </Field>
-              <Field label="Max Duration (minutes)">
-                <input
-                  type="number"
-                  value={form.maxDuration}
-                  onChange={(e) => update('maxDuration', e.target.value)}
-                  placeholder="Any"
-                  min={1}
-                />
-              </Field>
-            </div>
-          </>
-        )}
-
-        {form.jobType === 'subscription' && (
-          <>
-            <div style={{
-              background: 'rgba(234, 179, 8, 0.08)',
-              border: '1px solid rgba(234, 179, 8, 0.4)',
-              borderRadius: 8,
-              padding: '0.8rem 1rem',
-              fontSize: '0.85rem',
-              color: 'var(--color-text)',
-              lineHeight: 1.5,
-            }}>
-              <strong>Note:</strong> Subscription jobs ingest <strong>every</strong> video from each
-              channel. Videos without YouTube captions will be transcribed with OpenAI Whisper
-              (this can incur significant API costs on large channels). Videos are added to the
-              shared library and reused across all future jobs.
-            </div>
-            <Field label="YouTube Channels (one per line) *">
-              <textarea
-                value={form.subscriptionChannels}
-                onChange={(e) => update('subscriptionChannels', e.target.value)}
-                placeholder={'@3blue1brown\n@Veritasium\nUCsXVk37bltHxD1rDPwtNM8Q'}
-                rows={5}
-                required
-              />
-            </Field>
-            {invalidChannels.length > 0 && (
-              <p style={{
-                margin: 0,
-                fontSize: '0.8rem',
-                color: '#ef4444',
-              }}>
-                Invalid entries: {invalidChannels.slice(0, 3).join(', ')}
-                {invalidChannels.length > 3 ? `, +${invalidChannels.length - 3} more` : ''}
-              </p>
-            )}
-          </>
-        )}
-
-        <div style={{
-          background: 'var(--color-surface-alt)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 8,
-          padding: '0.7rem 0.9rem',
-          fontSize: '0.82rem',
-          color: 'var(--color-text-muted)',
-        }}>
-          <strong style={{ color: 'var(--color-text)' }}>Estimated YouTube quota:</strong>{' '}
-          ~{quotaEstimate.toLocaleString()} units
-          <span style={{ marginLeft: '0.5rem', color: 'var(--color-text-faint)' }}>
-            (daily free quota: 10,000)
-          </span>
-          {form.jobType === 'subscription' && (
-            <div style={{ marginTop: '0.4rem', color: 'var(--color-text-faint)' }}>
-              Approximate cost: 100 units per channel to resolve + ~1 unit per 50 videos on the
-              channel. A large channel with 500 videos is approximately 110 units.
-            </div>
-          )}
-        </div>
-
-        {validationError && (
-          <p style={{ color: '#ef4444', margin: 0, fontSize: '0.85rem' }}>{validationError}</p>
-        )}
-
-        {topicBlocked && (
-          <p style={{ color: '#b45309', margin: 0, fontSize: '0.85rem' }}>
-            {FEATURE_UNAVAILABLE_MSG}. Topic research depends on the search LLM — try
-            again once it recovers, or submit a channel / subscription job instead.
-          </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={submitDisabled}
-          title={topicBlocked ? FEATURE_UNAVAILABLE_MSG : undefined}
-          style={{
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            color: '#fff',
-            border: 'none',
-            padding: '0.8rem 2rem',
-            borderRadius: 8,
-            fontSize: '1rem',
-            fontWeight: 600,
-            cursor: submitDisabled ? 'not-allowed' : 'pointer',
-            marginTop: '0.5rem',
-            opacity: submitDisabled ? 0.6 : 1,
-          }}
+      <Card>
+        <form
+          onSubmit={handleSubmit}
+          style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}
         >
-          {createJob.isPending ? 'Submitting...' : 'Submit Job'}
-        </button>
-      </form>
+          {form.jobType === 'topic' && (
+            <>
+              <FormField label="Research topic" required>
+                {(id) => (
+                  <Input
+                    id={id}
+                    value={form.topic}
+                    onChange={(e) => update('topic', e.target.value)}
+                    placeholder="e.g. Quantum Computing breakthroughs 2025"
+                    required
+                  />
+                )}
+              </FormField>
+              <FormField
+                label="Search instructions"
+                optional
+                helperText="Semantic guidance for the Search Agent. Don't list channel names here — use Preferred Channels below."
+              >
+                {(id) => (
+                  <Textarea
+                    id={id}
+                    value={form.searchInstructions}
+                    onChange={(e) => update('searchInstructions', e.target.value)}
+                    placeholder={
+                      'Good examples:\n  - "Prefer recent 2026 uploads, skip anything older than 12 months."\n  - "Favor skeptical / critical perspectives over marketing clips."'
+                    }
+                    rows={3}
+                  />
+                )}
+              </FormField>
+              <FormField
+                label="Preferred channels"
+                optional
+                helperText="One per line: @handles, channel URLs, or UC-IDs. The agent walks each channel's recent uploads alongside a broad YouTube search."
+                errorText={
+                  invalidPreferredChannels.length > 0
+                    ? `Invalid entries: ${invalidPreferredChannels.slice(0, 3).join(', ')}${
+                        invalidPreferredChannels.length > 3
+                          ? `, +${invalidPreferredChannels.length - 3} more`
+                          : ''
+                      }`
+                    : undefined
+                }
+              >
+                {(id) => (
+                  <Textarea
+                    id={id}
+                    value={form.preferredChannels}
+                    onChange={(e) => update('preferredChannels', e.target.value)}
+                    placeholder={
+                      '@nateb.jones\n@dwarkeshpatel\nhttps://youtube.com/@andrewberman\nUCx…'
+                    }
+                    rows={4}
+                    invalid={invalidPreferredChannels.length > 0}
+                  />
+                )}
+              </FormField>
+              <FormField label="Number of videos">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="number"
+                    value={form.numVideos}
+                    onChange={(e) => update('numVideos', parseInt(e.target.value || '0', 10) || 0)}
+                    min={1}
+                    max={100}
+                  />
+                )}
+              </FormField>
+              <div className="form-row" style={{ display: 'flex', gap: space['4'] }}>
+                <FormField label="Min duration (minutes)" style={{ flex: 1 }}>
+                  {(id) => (
+                    <Input
+                      id={id}
+                      type="number"
+                      value={form.minDuration}
+                      onChange={(e) => update('minDuration', e.target.value)}
+                      placeholder="Any"
+                      min={1}
+                    />
+                  )}
+                </FormField>
+                <FormField label="Max duration (minutes)" style={{ flex: 1 }}>
+                  {(id) => (
+                    <Input
+                      id={id}
+                      type="number"
+                      value={form.maxDuration}
+                      onChange={(e) => update('maxDuration', e.target.value)}
+                      placeholder="Any"
+                      min={1}
+                    />
+                  )}
+                </FormField>
+              </div>
+              <FormField label="Channel-type filters" optional>
+                {() => (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: space['2'],
+                      padding: space['2'],
+                      border: `1px solid ${c.border}`,
+                      borderRadius: radius.md,
+                      background: c.surfaceAlt,
+                    }}
+                  >
+                    {CHANNEL_TYPE_OPTIONS.map((opt) => {
+                      const selected = form.channelFilters.includes(opt);
+                      return (
+                        <button
+                          type="button"
+                          key={opt}
+                          onClick={() => toggleChannelFilter(opt)}
+                          aria-pressed={selected}
+                          style={{
+                            background: selected ? c.accent : 'transparent',
+                            color: selected ? c.textInverted : c.textSecondary,
+                            border: `1px solid ${selected ? c.accent : c.borderStrong}`,
+                            padding: `${space['1']} ${space['3']}`,
+                            borderRadius: radius.pill,
+                            fontFamily: fonts.ui,
+                            fontSize: fontSize.xs,
+                            cursor: 'pointer',
+                            fontWeight: selected ? fontWeight.semibold : fontWeight.medium,
+                            textTransform: 'capitalize',
+                            letterSpacing: '0.02em',
+                          }}
+                        >
+                          {opt}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </FormField>
+            </>
+          )}
+
+          {form.jobType === 'channel' && (
+            <>
+              <FormField
+                label="YouTube channels"
+                required
+                helperText="One per line."
+                errorText={
+                  invalidChannels.length > 0
+                    ? `Invalid entries: ${invalidChannels.slice(0, 3).join(', ')}${
+                        invalidChannels.length > 3 ? `, +${invalidChannels.length - 3} more` : ''
+                      }`
+                    : undefined
+                }
+              >
+                {(id) => (
+                  <Textarea
+                    id={id}
+                    value={form.channelList}
+                    onChange={(e) => update('channelList', e.target.value)}
+                    placeholder={'@3blue1brown\n@Veritasium\nhttps://youtube.com/@kurzgesagt'}
+                    rows={5}
+                    required
+                    invalid={invalidChannels.length > 0}
+                  />
+                )}
+              </FormField>
+              <FormField label="Videos per channel">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="number"
+                    value={form.videosPerChannel}
+                    onChange={(e) =>
+                      update('videosPerChannel', parseInt(e.target.value || '0', 10) || 0)
+                    }
+                    min={1}
+                    max={50}
+                  />
+                )}
+              </FormField>
+              <div className="form-row" style={{ display: 'flex', gap: space['4'] }}>
+                <FormField label="Min duration (minutes)" style={{ flex: 1 }}>
+                  {(id) => (
+                    <Input
+                      id={id}
+                      type="number"
+                      value={form.minDuration}
+                      onChange={(e) => update('minDuration', e.target.value)}
+                      placeholder="Any"
+                      min={1}
+                    />
+                  )}
+                </FormField>
+                <FormField label="Max duration (minutes)" style={{ flex: 1 }}>
+                  {(id) => (
+                    <Input
+                      id={id}
+                      type="number"
+                      value={form.maxDuration}
+                      onChange={(e) => update('maxDuration', e.target.value)}
+                      placeholder="Any"
+                      min={1}
+                    />
+                  )}
+                </FormField>
+              </div>
+            </>
+          )}
+
+          {form.jobType === 'subscription' && (
+            <>
+              <div
+                role="note"
+                style={{
+                  background: c.warnSubtle,
+                  border: `1px solid ${c.warn}`,
+                  borderRadius: radius.md,
+                  padding: `${space['3']} ${space['4']}`,
+                  fontFamily: fonts.body,
+                  fontSize: fontSize.sm,
+                  color: c.textPrimary,
+                  lineHeight: lineHeight.normal,
+                }}
+              >
+                <strong style={{ color: c.warn, fontWeight: fontWeight.semibold }}>Note.</strong>{' '}
+                Subscription runs ingest <strong>every</strong> video from each channel. Videos without YouTube captions will be transcribed with OpenAI Whisper (this can incur significant API costs on large channels). Videos are added to the shared library and reused across all future runs.
+              </div>
+              <FormField
+                label="YouTube channels"
+                required
+                helperText="One per line."
+                errorText={
+                  invalidChannels.length > 0
+                    ? `Invalid entries: ${invalidChannels.slice(0, 3).join(', ')}${
+                        invalidChannels.length > 3 ? `, +${invalidChannels.length - 3} more` : ''
+                      }`
+                    : undefined
+                }
+              >
+                {(id) => (
+                  <Textarea
+                    id={id}
+                    value={form.subscriptionChannels}
+                    onChange={(e) => update('subscriptionChannels', e.target.value)}
+                    placeholder={'@3blue1brown\n@Veritasium\nUCsXVk37bltHxD1rDPwtNM8Q'}
+                    rows={5}
+                    required
+                    invalid={invalidChannels.length > 0}
+                  />
+                )}
+              </FormField>
+            </>
+          )}
+
+          <div
+            style={{
+              background: c.surfaceAlt,
+              border: `1px solid ${c.border}`,
+              borderRadius: radius.md,
+              padding: `${space['3']} ${space['4']}`,
+              fontFamily: fonts.ui,
+              fontSize: fontSize.sm,
+              color: c.textSecondary,
+              lineHeight: lineHeight.snug,
+            }}
+          >
+            <strong style={{ color: c.textPrimary, fontWeight: fontWeight.semibold }}>
+              Estimated YouTube quota:
+            </strong>{' '}
+            <span
+              style={{
+                fontFamily: fonts.mono,
+                color: c.textPrimary,
+                fontWeight: fontWeight.medium,
+              }}
+            >
+              ~{quotaEstimate.toLocaleString()} units
+            </span>
+            <span style={{ marginLeft: space['2'], color: c.textMuted }}>
+              (daily free quota: 10,000)
+            </span>
+            {form.jobType === 'subscription' && (
+              <div style={{ marginTop: space['2'], color: c.textMuted }}>
+                Approximate cost: 100 units per channel to resolve + ~1 unit per 50 videos on the channel. A large channel with 500 videos is approximately 110 units.
+              </div>
+            )}
+          </div>
+
+          {validationError && (
+            <p
+              role="alert"
+              style={{
+                margin: 0,
+                padding: space['3'],
+                background: c.errorSubtle,
+                border: `1px solid ${c.error}`,
+                borderRadius: radius.md,
+                color: c.error,
+                fontFamily: fonts.ui,
+                fontSize: fontSize.sm,
+                fontWeight: fontWeight.medium,
+              }}
+            >
+              {validationError}
+            </p>
+          )}
+
+          {topicBlocked && (
+            <p
+              role="alert"
+              style={{
+                margin: 0,
+                padding: space['3'],
+                background: c.warnSubtle,
+                border: `1px solid ${c.warn}`,
+                borderRadius: radius.md,
+                color: c.warn,
+                fontFamily: fonts.ui,
+                fontSize: fontSize.sm,
+              }}
+            >
+              {FEATURE_UNAVAILABLE_MSG}. Topic research depends on the search LLM — try again once it recovers, or submit a channel / subscription run instead.
+            </p>
+          )}
+
+          <div style={{ marginTop: space['2'] }}>
+            <Button
+              type="submit"
+              disabled={submitDisabled}
+              loading={createJob.isPending}
+              title={topicBlocked ? FEATURE_UNAVAILABLE_MSG : undefined}
+              style={{ minWidth: 160 }}
+            >
+              Begin research
+            </Button>
+          </div>
+        </form>
+      </Card>
     </div>
   );
 }
 
-function TypeToggle({ active, onClick, children }: {
-  active: boolean; onClick: () => void; children: React.ReactNode;
+function TypeToggle({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
 }) {
+  const c = useColors();
   return (
-    <button type="button" onClick={onClick} style={{
-      padding: '0.6rem 1.5rem', borderRadius: 8, border: '2px solid',
-      borderColor: active ? 'var(--color-accent)' : 'var(--color-border)',
-      background: active ? 'var(--color-accent)' : 'var(--color-surface)',
-      color: active ? '#fff' : 'var(--color-text-muted)',
-      fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
-    }}>
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      style={{
+        background: 'transparent',
+        color: active ? c.accent : c.textSecondary,
+        border: 'none',
+        borderBottom: `2px solid ${active ? c.accent : 'transparent'}`,
+        padding: `${space['2']} ${space['4']}`,
+        marginBottom: -1,
+        cursor: 'pointer',
+        fontFamily: fonts.ui,
+        fontWeight: active ? fontWeight.semibold : fontWeight.medium,
+        fontSize: fontSize.sm,
+        letterSpacing: '0.02em',
+      }}
+    >
       {children}
     </button>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', flex: 1 }}>
-      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>{label}</span>
-      {children}
-    </label>
   );
 }

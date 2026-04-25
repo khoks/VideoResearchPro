@@ -4,16 +4,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**VideoResearchPro** — A full-stack web application for YouTube video research. Users submit jobs to fetch transcripts from YouTube videos (by topic search, channel list, or channel subscription), contribute them to a **global, deduplicated video library**, generate comprehensive HTML reports using LangGraph agents (map-reduce pattern), and ask citation-backed questions either scoped to a single job or across the **entire library**. Videos, transcripts, and embeddings are computed once and reused across every job that references them.
+**Pratidhvani (प्रतिध्वनि)** — Sanskrit for "echo". A full-stack personal research wiki. Users submit jobs to ingest sources (today: YouTube by topic search, channel list, or channel subscription; future: podcasts, articles, forum threads, PDFs — see [docs/source-types.md](docs/source-types.md)), contribute them to a **global, deduplicated document library**, generate comprehensive HTML reports via LangGraph agents (map-reduce pattern), and ask citation-backed questions either scoped to a single job, across the **entire library**, or across **every Q&A they've ever asked**. Transcripts, embeddings, and knowledge artifacts are computed once per document and reused across every job that references them.
+
+> **Legacy name.** The project was previously called *VideoResearchPro*. The legacy string survives in grandfathered environment-variable names (e.g. `CHROMA_GLOBAL_COLLECTION_NAME=videoresearchpro_global`) for back-compat only. All user-facing copy now reads `Pratidhvani`.
+
+## Vision & Roadmap
+
+The product is intentionally *curated, not balanced* — the opposite of Wikipedia. Long-term trajectory is a **personal brain** that learns the user's voice, opinions, and life. Canonical narrative docs:
+
+- **Why the product exists:** [docs/vision.md](docs/vision.md)
+- **What ships next:** [docs/feature-roadmap.md](docs/feature-roadmap.md)
+- **Multi-source ingest (L1):** [docs/source-types.md](docs/source-types.md)
+- **Personal brain (L3):** [docs/personal-brain.md](docs/personal-brain.md)
+- **Path to SaaS:** [docs/saas-roadmap.md](docs/saas-roadmap.md)
+- **Visual identity:** [docs/branding.md](docs/branding.md) and [docs/ui-design.md](docs/ui-design.md)
+- **Recent changes:** [CHANGELOG.md](CHANGELOG.md)
 
 ## Tech Stack
 
-- **Frontend**: React 18 + TypeScript + Vite + TanStack React Query + Zustand + React Router v6
+- **Frontend**: React 19 + TypeScript + Vite + TanStack React Query + Zustand + React Router v7 (100% inline styles, tokens driven from `frontend/src/theme.ts`)
 - **Backend**: Python 3.12+ + FastAPI + SQLAlchemy 2.x (SQLite) + Alembic migrations
 - **Task Queue**: Celery + Redis (broker on db1, results on db2, pub/sub on db0)
-- **Vector DB**: ChromaDB with PersistentClient, sentence-transformers `paraphrase-multilingual-MiniLM-L12-v2` embeddings (single global collection)
-- **AI Agents**: LangGraph (3 agents: Search, Report, Q&A) + per-use-case LLM config (OpenAI / Anthropic / Google / local OpenAI-compatible)
-- **YouTube**: YouTube Data API v3 + `youtube-transcript-api`
+- **Vector DB**: ChromaDB with PersistentClient, sentence-transformers `paraphrase-multilingual-MiniLM-L12-v2` embeddings (two global collections: `videoresearchpro_global` for transcript chunks, `qa_library_global` for Q&A exchanges)
+- **AI Agents**: LangGraph (5 agents: Search, Report, Q&A, Q&A-History, Knowledge) + per-use-case LLM config (OpenAI / Anthropic / Google / local OpenAI-compatible)
+- **Auth**: JWT, email+password, user-scoped jobs + Q&A history + knowledge artifacts
+- **YouTube**: YouTube Data API v3 + `youtube-transcript-api` + OpenAI Whisper fallback
 
 ## Build & Run Commands
 

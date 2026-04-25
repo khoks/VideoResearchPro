@@ -1,14 +1,21 @@
 import { useJobStore, type ToastKind } from '../../stores/jobStore';
+import { useColors, useShadows } from '../../hooks/useTheme';
+import type { ResolvedColors } from '../../hooks/useTheme';
+import { fonts, fontSize, fontWeight, lineHeight, radius, space, z } from '../../theme';
 
-const KIND_COLORS: Record<ToastKind, { bg: string; border: string }> = {
-  error: { bg: '#ef4444', border: '#dc2626' },
-  success: { bg: '#22c55e', border: '#16a34a' },
-  info: { bg: '#667eea', border: '#4f46e5' },
-};
+function paletteFor(kind: ToastKind, c: ResolvedColors) {
+  switch (kind) {
+    case 'error':   return { bg: c.errorSubtle,   border: c.error,   text: c.error };
+    case 'success': return { bg: c.successSubtle, border: c.success, text: c.success };
+    case 'info':    return { bg: c.infoSubtle,    border: c.info,    text: c.info };
+  }
+}
 
 export function ToastContainer() {
   const toasts = useJobStore((s) => s.toasts);
   const dismissToast = useJobStore((s) => s.dismissToast);
+  const c = useColors();
+  const s = useShadows();
 
   if (toasts.length === 0) return null;
 
@@ -17,34 +24,35 @@ export function ToastContainer() {
       aria-live="polite"
       style={{
         position: 'fixed',
-        top: '1rem',
-        right: '1rem',
-        zIndex: 2000,
+        top: space['4'],
+        right: space['4'],
+        zIndex: z.toast,
         display: 'flex',
         flexDirection: 'column',
-        gap: '0.5rem',
+        gap: space['2'],
         maxWidth: 'min(90vw, 420px)',
       }}
     >
       {toasts.map((t) => {
-        const c = KIND_COLORS[t.kind];
+        const p = paletteFor(t.kind, c);
         return (
           <div
             key={t.id}
             role="status"
             style={{
-              background: c.bg,
-              color: '#fff',
-              padding: '0.7rem 1rem',
-              borderRadius: 8,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-              border: `1px solid ${c.border}`,
+              background: p.bg,
+              color: p.text,
+              padding: `${space['3']} ${space['4']}`,
+              borderRadius: radius.md,
+              boxShadow: s.floating,
+              border: `1px solid ${p.border}`,
               display: 'flex',
               alignItems: 'flex-start',
               justifyContent: 'space-between',
-              gap: '0.75rem',
-              fontSize: '0.9rem',
-              lineHeight: 1.4,
+              gap: space['3'],
+              fontFamily: fonts.ui,
+              fontSize: fontSize.sm,
+              lineHeight: lineHeight.snug,
             }}
           >
             <span style={{ flex: 1, wordBreak: 'break-word' }}>{t.message}</span>
@@ -54,15 +62,16 @@ export function ToastContainer() {
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#fff',
+                color: p.text,
                 cursor: 'pointer',
-                fontSize: '1rem',
+                fontSize: fontSize.md,
+                fontWeight: fontWeight.medium,
                 padding: 0,
                 lineHeight: 1,
                 flexShrink: 0,
               }}
             >
-              X
+              ×
             </button>
           </div>
         );

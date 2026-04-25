@@ -7,9 +7,26 @@ import {
   useSyncChannel,
   useUnsubscribeChannel,
 } from '../hooks/useChannels';
-import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { VideoRow } from '../components/library/VideoRow';
 import { ChannelRow } from '../components/library/ChannelRow';
+import {
+  Button,
+  Card,
+  EmptyState,
+  Input,
+  Select,
+  Spinner,
+} from '../components/primitives';
+import { useColors } from '../hooks/useTheme';
+import {
+  fonts,
+  fontSize,
+  fontWeight,
+  lineHeight,
+  measure,
+  radius,
+  space,
+} from '../theme';
 import type { LibrarySort, LibraryVideoResponse } from '../services/libraryApi';
 import type { Channel } from '../services/channelsApi';
 
@@ -39,19 +56,10 @@ const SORT_OPTIONS: { value: LibrarySort; label: string }[] = [
   { value: 'shortest', label: 'Shortest' },
 ];
 
-const inputStyle: React.CSSProperties = {
-  padding: '0.5rem 0.75rem',
-  borderRadius: 8,
-  border: '1px solid var(--color-border)',
-  fontSize: '0.9rem',
-  background: 'var(--color-surface)',
-  color: 'var(--color-text)',
-};
-
 export function LibraryPage() {
+  const c = useColors();
   const [tab, setTab] = useState<TabKey>('videos');
 
-  // Videos tab state
   const [search, setSearch] = useState('');
   const [language, setLanguage] = useState('');
   const [transcriptStatus, setTranscriptStatus] = useState('');
@@ -59,8 +67,6 @@ export function LibraryPage() {
   const [sort, setSort] = useState<LibrarySort>('newest');
   const [page, setPage] = useState(0);
 
-  // Track the sync job kicked off from the channels tab so we can show a spinner
-  // until it reaches completed/failed.
   const [syncingChannels, setSyncingChannels] = useState<Record<string, string>>({});
 
   const channelsQuery = useChannels();
@@ -113,7 +119,7 @@ export function LibraryPage() {
 
   const channelNameById = useMemo(() => {
     const map = new Map<string, string>();
-    (channelsQuery.data ?? []).forEach((c) => map.set(c.channel_id, c.name));
+    (channelsQuery.data ?? []).forEach((ch) => map.set(ch.channel_id, ch.name));
     return map;
   }, [channelsQuery.data]);
 
@@ -122,12 +128,45 @@ export function LibraryPage() {
     : null;
 
   return (
-    <div>
-      <h2 style={{ marginBottom: '1rem', color: 'var(--color-text)' }}>Library</h2>
+    <div style={{ maxWidth: measure.grid, margin: '0 auto' }}>
+      <header style={{ marginBottom: space['5'] }}>
+        <h1
+          style={{
+            fontFamily: fonts.display,
+            fontSize: fontSize['2xl'],
+            fontWeight: fontWeight.semibold,
+            color: c.textPrimary,
+            margin: 0,
+            lineHeight: lineHeight.tight,
+          }}
+        >
+          Your library
+        </h1>
+        <p
+          style={{
+            fontFamily: fonts.body,
+            fontStyle: 'italic',
+            fontSize: fontSize.sm,
+            color: c.textMuted,
+            margin: `${space['2']} 0 0`,
+          }}
+        >
+          Every voice you've invited onto the shelves.
+        </p>
+      </header>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+      <div
+        role="tablist"
+        aria-label="Library sections"
+        style={{
+          display: 'flex',
+          gap: space['1'],
+          marginBottom: space['4'],
+          borderBottom: `1px solid ${c.border}`,
+        }}
+      >
         <TabButton active={tab === 'videos'} onClick={() => setTab('videos')}>
-          Videos
+          Sources
         </TabButton>
         <TabButton active={tab === 'channels'} onClick={() => setTab('channels')}>
           Channels
@@ -205,27 +244,31 @@ function TabButton({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  const c = useColors();
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
       style={{
-        background: active ? '#667eea' : 'transparent',
-        color: active ? '#fff' : '#667eea',
-        border: '1px solid #667eea',
-        padding: '0.4rem 1.2rem',
-        borderRadius: 8,
+        background: 'transparent',
+        color: active ? c.accent : c.textSecondary,
+        border: 'none',
+        borderBottom: `2px solid ${active ? c.accent : 'transparent'}`,
+        padding: `${space['2']} ${space['4']}`,
+        marginBottom: -1,
         cursor: 'pointer',
-        fontWeight: 600,
-        fontSize: '0.9rem',
+        fontFamily: fonts.ui,
+        fontWeight: active ? fontWeight.semibold : fontWeight.medium,
+        fontSize: fontSize.sm,
+        letterSpacing: '0.02em',
       }}
     >
       {children}
     </button>
   );
 }
-
-// ---------------------------- Videos tab ----------------------------
 
 interface VideosTabProps {
   search: string;
@@ -268,122 +311,130 @@ function VideosTab({
   isError,
   onPickChannel,
 }: VideosTabProps) {
+  const c = useColors();
   const hasNextPage = videos.length === PAGE_SIZE;
 
   return (
     <>
-      <div
-        style={{
-          background: 'var(--color-surface)',
-          borderRadius: 12,
-          padding: '1rem',
-          marginBottom: '1rem',
-          boxShadow: 'var(--shadow-card)',
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '0.75rem',
-          alignItems: 'center',
-        }}
-      >
-        <input
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search title or channel..."
-          style={{ ...inputStyle, flex: '1 1 240px' }}
-        />
-        <select
-          value={language}
-          onChange={(e) => onLanguageChange(e.target.value)}
-          style={inputStyle}
+      <Card style={{ marginBottom: space['4'] }}>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: space['3'],
+            alignItems: 'center',
+          }}
         >
-          {LANGUAGE_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={transcriptStatus}
-          onChange={(e) => onTranscriptStatusChange(e.target.value)}
-          style={inputStyle}
-        >
-          {TRANSCRIPT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={channelFilter}
-          onChange={(e) => onChannelFilterChange(e.target.value)}
-          style={inputStyle}
-        >
-          <option value="">All channels</option>
-          {channels.map((c) => (
-            <option key={c.id} value={c.channel_id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={sort}
-          onChange={(e) => onSortChange(e.target.value as LibrarySort)}
-          style={inputStyle}
-        >
-          {SORT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-      </div>
+          <div style={{ flex: '1 1 240px' }}>
+            <Input
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Search title or channel…"
+              aria-label="Search sources"
+            />
+          </div>
+          <div style={{ flex: '0 0 170px' }}>
+            <Select
+              value={language}
+              onChange={(e) => onLanguageChange(e.target.value)}
+              aria-label="Filter by language"
+            >
+              {LANGUAGE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div style={{ flex: '0 0 170px' }}>
+            <Select
+              value={transcriptStatus}
+              onChange={(e) => onTranscriptStatusChange(e.target.value)}
+              aria-label="Filter by transcript status"
+            >
+              {TRANSCRIPT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div style={{ flex: '0 0 200px' }}>
+            <Select
+              value={channelFilter}
+              onChange={(e) => onChannelFilterChange(e.target.value)}
+              aria-label="Filter by channel"
+            >
+              <option value="">All channels</option>
+              {channels.map((ch) => (
+                <option key={ch.id} value={ch.channel_id}>
+                  {ch.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div style={{ flex: '0 0 140px' }}>
+            <Select
+              value={sort}
+              onChange={(e) => onSortChange(e.target.value as LibrarySort)}
+              aria-label="Sort order"
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+      </Card>
 
       {activeChannelName && (
         <div
           style={{
-            marginBottom: '0.75rem',
-            fontSize: '0.85rem',
-            color: '#64748b',
+            marginBottom: space['3'],
             display: 'flex',
             alignItems: 'center',
-            gap: '0.5rem',
+            gap: space['3'],
+            fontFamily: fonts.ui,
+            fontSize: fontSize.sm,
+            color: c.textSecondary,
           }}
         >
           <span>
-            Filtering by channel: <strong style={{ color: '#1e293b' }}>{activeChannelName}</strong>
+            Filtering by channel:{' '}
+            <strong style={{ color: c.textPrimary, fontWeight: fontWeight.semibold }}>
+              {activeChannelName}
+            </strong>
           </span>
-          <button
-            type="button"
+          <Button
+            size="sm"
+            variant="tertiary"
             onClick={() => onChannelFilterChange('')}
-            style={{
-              background: 'transparent',
-              border: '1px solid #cbd5e1',
-              padding: '0.2rem 0.6rem',
-              borderRadius: 6,
-              cursor: 'pointer',
-              fontSize: '0.75rem',
-              color: '#475569',
-            }}
           >
             Clear
-          </button>
+          </Button>
         </div>
       )}
 
       {isLoading && page === 0 ? (
-        <div style={{ textAlign: 'center', padding: '3rem' }}>
-          <LoadingSpinner size={40} />
+        <div style={{ textAlign: 'center', padding: space['8'] }}>
+          <Spinner size={32} />
         </div>
       ) : isError ? (
-        <div style={{ textAlign: 'center', padding: '2rem', color: '#ef4444' }}>
-          Failed to load library videos.
-        </div>
+        <EmptyState
+          size="sm"
+          title="Couldn't load the shelves."
+          description="Something blocked the library fetch. Try refreshing the page."
+        />
       ) : videos.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
-          No videos match the current filters.
-        </div>
+        <EmptyState
+          size="sm"
+          title="Nothing matches these filters."
+          description="Loosen the filters or clear the channel pick to see more volumes."
+        />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
           {videos.map((video) => (
             <VideoRow
               key={video.id}
@@ -400,52 +451,45 @@ function VideosTab({
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            gap: '1rem',
-            marginTop: '1.5rem',
+            gap: space['4'],
+            marginTop: space['6'],
           }}
         >
-          <button
-            onClick={() => onPageChange(Math.max(0, page - 1))}
+          <Button
+            size="sm"
+            variant="tertiary"
             disabled={page === 0}
+            onClick={() => onPageChange(Math.max(0, page - 1))}
+            leadingIcon={<span aria-hidden>←</span>}
+          >
+            Previous
+          </Button>
+          <span
             style={{
-              background: '#fff',
-              color: '#667eea',
-              border: '1px solid #e2e8f0',
-              padding: '0.5rem 1rem',
-              borderRadius: 8,
-              cursor: page === 0 ? 'not-allowed' : 'pointer',
-              opacity: page === 0 ? 0.5 : 1,
-              fontWeight: 600,
-              fontSize: '0.85rem',
+              fontFamily: fonts.ui,
+              fontSize: fontSize.sm,
+              color: c.textSecondary,
+              padding: `${space['1']} ${space['3']}`,
+              border: `1px solid ${c.border}`,
+              borderRadius: radius.pill,
             }}
           >
-            &larr; Previous
-          </button>
-          <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Page {page + 1}</span>
-          <button
-            onClick={() => onPageChange(page + 1)}
+            Page {page + 1}
+          </span>
+          <Button
+            size="sm"
+            variant="tertiary"
             disabled={!hasNextPage}
-            style={{
-              background: '#fff',
-              color: '#667eea',
-              border: '1px solid #e2e8f0',
-              padding: '0.5rem 1rem',
-              borderRadius: 8,
-              cursor: !hasNextPage ? 'not-allowed' : 'pointer',
-              opacity: !hasNextPage ? 0.5 : 1,
-              fontWeight: 600,
-              fontSize: '0.85rem',
-            }}
+            onClick={() => onPageChange(page + 1)}
+            trailingIcon={<span aria-hidden>→</span>}
           >
-            Next &rarr;
-          </button>
+            Next
+          </Button>
         </div>
       )}
     </>
   );
 }
-
-// ---------------------------- Channels tab ----------------------------
 
 interface ChannelsTabProps {
   channels: Channel[];
@@ -472,28 +516,31 @@ function ChannelsTab({
 }: ChannelsTabProps) {
   if (isLoading) {
     return (
-      <div style={{ textAlign: 'center', padding: '3rem' }}>
-        <LoadingSpinner size={40} />
+      <div style={{ textAlign: 'center', padding: space['8'] }}>
+        <Spinner size={32} />
       </div>
     );
   }
   if (isError) {
     return (
-      <div style={{ textAlign: 'center', padding: '2rem', color: '#ef4444' }}>
-        Failed to load channels.
-      </div>
+      <EmptyState
+        size="sm"
+        title="Couldn't load channels."
+        description="Something blocked the channels fetch. Try refreshing the page."
+      />
     );
   }
   if (channels.length === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
-        No channels yet. Subscribe to channels from a job or add them here.
-      </div>
+      <EmptyState
+        title="No channels on the shelf yet."
+        description="Subscribe to a channel from a research run, or add them from the submit page."
+      />
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
       {channels.map((channel) => (
         <ChannelRowWithSyncWatcher
           key={channel.id}
@@ -510,10 +557,6 @@ function ChannelsTab({
   );
 }
 
-/**
- * Wraps ChannelRow and watches the returned sync-job until it terminates, so the
- * "Sync now" button keeps a spinner until the server confirms completion.
- */
 function ChannelRowWithSyncWatcher({
   channel,
   onOpenVideos,
@@ -551,3 +594,4 @@ function ChannelRowWithSyncWatcher({
     />
   );
 }
+

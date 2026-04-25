@@ -1,12 +1,30 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import {
   useAskLibraryQA,
   useClarifyLibraryQA,
   useLibraryQAHistory,
 } from '../hooks/useLibraryQA';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
+import {
+  Badge,
+  Button,
+  Card,
+  FormField,
+  Input,
+  Select,
+  Spinner,
+} from '../components/primitives';
+import { useColors } from '../hooks/useTheme';
+import {
+  fonts,
+  fontSize,
+  fontWeight,
+  lineHeight,
+  measure,
+  radius,
+  space,
+} from '../theme';
 import type { AnswerLanguage, LibraryQAExchange } from '../types/qa';
 
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
@@ -19,6 +37,7 @@ const LANGUAGE_OPTIONS: Array<{ value: AnswerLanguage; label: string }> = [
 ];
 
 export function LibraryQAPage() {
+  const c = useColors();
   const { data: history } = useLibraryQAHistory();
   const askQuestion = useAskLibraryQA();
   const clarifyQuestion = useClarifyLibraryQA();
@@ -76,199 +95,328 @@ export function LibraryQAPage() {
   };
 
   return (
-    <div>
-      <div style={{ background: '#fff', borderRadius: 12, padding: '1.5rem',
-                     boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: '1rem' }}>
-        <h2 style={{ margin: 0, color: '#1e293b' }}>Global Library Q&amp;A</h2>
-        <p style={{ margin: '0.5rem 0 0', color: '#64748b', fontSize: '0.9rem' }}>
-          Ask questions across every video in your library. Answers are grounded in the
-          entire collected corpus with timestamped citations.
+    <div style={{ maxWidth: measure.grid, margin: '0 auto' }}>
+      <header style={{ marginBottom: space['5'] }}>
+        <h1
+          style={{
+            fontFamily: fonts.display,
+            fontSize: fontSize['2xl'],
+            fontWeight: fontWeight.semibold,
+            color: c.textPrimary,
+            margin: 0,
+            lineHeight: lineHeight.tight,
+          }}
+        >
+          Ask the whole library
+        </h1>
+        <p
+          style={{
+            fontFamily: fonts.body,
+            fontStyle: 'italic',
+            fontSize: fontSize.sm,
+            color: c.textMuted,
+            margin: `${space['2']} 0 0`,
+            maxWidth: measure.reading,
+          }}
+        >
+          Questions travel every shelf — every transcript you've ever gathered. Answers come back grounded in the corpus with timestamped citations.
         </p>
-      </div>
+      </header>
 
-      <div style={{ background: '#fff', borderRadius: 12, padding: '1.5rem',
-                     boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
-          <h3 style={{ margin: 0, color: '#1e293b' }}>Ask Questions</h3>
-          <label style={{ fontSize: '0.85rem', color: '#475569', display: 'flex',
-                          alignItems: 'center', gap: '0.5rem' }}>
-            Answer language:
-            <select
+      <Card>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: space['4'],
+            flexWrap: 'wrap',
+            marginBottom: space['4'],
+          }}
+        >
+          <h2
+            style={{
+              margin: 0,
+              fontFamily: fonts.display,
+              fontSize: fontSize.lg,
+              fontWeight: fontWeight.semibold,
+              color: c.textPrimary,
+            }}
+          >
+            New question
+          </h2>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: space['2'],
+              fontFamily: fonts.ui,
+              fontSize: fontSize.sm,
+              color: c.textSecondary,
+            }}
+          >
+            Answer language
+            <Select
               value={language}
               onChange={(e) => setLanguage(e.target.value as AnswerLanguage)}
-              style={{
-                padding: '0.4rem 0.6rem', borderRadius: 6, border: '1px solid #e2e8f0',
-                fontSize: '0.85rem', background: '#fff',
-              }}
+              style={{ width: 'auto', minWidth: 140 }}
             >
-              {LANGUAGE_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              {LANGUAGE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
 
         {step === 'ask' && (
           <>
             {!libraryQAAvailable && (
-              <p style={{ color: '#b45309', fontSize: '0.85rem', margin: '0 0 0.75rem' }}>
-                {FEATURE_UNAVAILABLE_MSG}.
-              </p>
-            )}
-            <form onSubmit={handleAsk} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-              <input
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                placeholder={libraryQAAvailable
-                  ? 'Ask a question about your entire library...'
-                  : FEATURE_UNAVAILABLE_MSG}
-                disabled={askInputDisabled}
-                title={!libraryQAAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
+              <div
+                role="alert"
                 style={{
-                  flex: 1, padding: '0.6rem 1rem', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: '0.95rem',
-                  opacity: askInputDisabled ? 0.6 : 1,
-                  background: askInputDisabled ? '#f1f5f9' : '#fff',
-                }}
-              />
-              <button
-                type="submit"
-                disabled={askButtonDisabled}
-                title={!libraryQAAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
-                style={{
-                  background: '#667eea', color: '#fff', border: 'none', padding: '0.6rem 1.5rem',
-                  borderRadius: 8, cursor: askButtonDisabled ? 'not-allowed' : 'pointer',
-                  fontWeight: 600, opacity: askButtonDisabled ? 0.5 : 1,
+                  marginBottom: space['3'],
+                  padding: space['3'],
+                  borderRadius: radius.md,
+                  background: c.warnSubtle,
+                  border: `1px solid ${c.warn}`,
+                  color: c.warn,
+                  fontFamily: fonts.ui,
+                  fontSize: fontSize.sm,
                 }}
               >
-                {clarifyQuestion.isPending ? '...' : 'Ask'}
-              </button>
-            </form>
-            {clarifyQuestion.isPending && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem',
-                            padding: '1rem', background: '#f0f2ff', borderRadius: 8 }}>
-                <LoadingSpinner size={20} />
-                <span style={{ color: '#667eea', fontSize: '0.9rem', fontWeight: 500 }}>
-                  Generating clarifying questions...
-                </span>
+                {FEATURE_UNAVAILABLE_MSG}.
               </div>
             )}
+            <form
+              onSubmit={handleAsk}
+              style={{
+                display: 'flex',
+                gap: space['2'],
+                marginBottom: space['4'],
+                flexWrap: 'wrap',
+              }}
+            >
+              <div style={{ flex: '1 1 280px' }}>
+                <Input
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  placeholder={
+                    libraryQAAvailable
+                      ? 'Ask a question about your entire library…'
+                      : FEATURE_UNAVAILABLE_MSG
+                  }
+                  disabled={askInputDisabled}
+                  title={!libraryQAAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
+                  aria-label="Question"
+                />
+              </div>
+              <Button
+                type="submit"
+                disabled={askButtonDisabled}
+                loading={clarifyQuestion.isPending}
+                title={!libraryQAAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
+              >
+                Ask
+              </Button>
+            </form>
+            {clarifyQuestion.isPending && <InfoStripe text="Listening for the echo of your question…" />}
           </>
         )}
 
         {step === 'clarify' && (
-          <div style={{ marginBottom: '1.5rem', padding: '1.25rem', background: '#f8fafc',
-                        borderRadius: 10, border: '1px solid #e2e8f0' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-                          marginBottom: '0.75rem' }}>
-              <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8', fontWeight: 500 }}>
-                Your question: <em style={{ color: '#64748b' }}>{question}</em>
+          <div
+            style={{
+              marginBottom: space['5'],
+              padding: space['4'],
+              background: c.surfaceAlt,
+              borderRadius: radius.md,
+              border: `1px solid ${c.border}`,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: space['3'],
+                marginBottom: space['3'],
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontFamily: fonts.ui,
+                  fontSize: fontSize.xs,
+                  color: c.textMuted,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                Your question:{' '}
+                <em
+                  style={{
+                    color: c.textSecondary,
+                    fontStyle: 'italic',
+                    textTransform: 'none',
+                    letterSpacing: '0',
+                    fontSize: fontSize.sm,
+                  }}
+                >
+                  {question}
+                </em>
               </p>
-              <button onClick={resetToAsk} style={{
-                background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer',
-                fontSize: '0.8rem', padding: 0, flexShrink: 0, marginLeft: '1rem',
-              }}>
-                ← Edit question
-              </button>
+              <Button size="sm" variant="tertiary" onClick={resetToAsk}>
+                ← Edit
+              </Button>
             </div>
 
-            <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#eef2ff',
-                          borderRadius: 8, borderLeft: '3px solid #667eea' }}>
-              <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600, color: '#4338ca',
-                          marginBottom: '0.25rem' }}>Here's how I understand your question:</p>
-              <p style={{ margin: 0, fontSize: '0.9rem', color: '#334155', lineHeight: 1.5 }}>
+            <div
+              style={{
+                marginBottom: space['4'],
+                padding: space['3'],
+                background: c.accentSubtle,
+                borderRadius: radius.md,
+                borderLeft: `3px solid ${c.accent}`,
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontFamily: fonts.ui,
+                  fontSize: fontSize.xs,
+                  fontWeight: fontWeight.semibold,
+                  color: c.accent,
+                  marginBottom: space['1'],
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                Here's how I understand your question
+              </p>
+              <p
+                style={{
+                  margin: 0,
+                  fontFamily: fonts.body,
+                  fontSize: fontSize.base,
+                  color: c.textPrimary,
+                  lineHeight: lineHeight.normal,
+                }}
+              >
                 {interpretation}
               </p>
             </div>
 
             {clarifications.length > 0 && (
-              <div style={{ marginBottom: '1rem' }}>
-                <p style={{ margin: '0 0 0.5rem', fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>
+              <div style={{ marginBottom: space['4'] }}>
+                <p
+                  style={{
+                    margin: `0 0 ${space['3']}`,
+                    fontFamily: fonts.ui,
+                    fontSize: fontSize.sm,
+                    fontWeight: fontWeight.semibold,
+                    color: c.textSecondary,
+                  }}
+                >
                   A few clarifying questions (optional — answer any that are useful):
                 </p>
-                {clarifications.map((q, i) => (
-                  <div key={i} style={{ marginBottom: '0.75rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.85rem', color: '#475569',
-                                     marginBottom: '0.25rem' }}>
-                      {q}
-                    </label>
-                    <input
-                      value={clarificationAnswers[i] ?? ''}
-                      onChange={(e) => {
-                        const next = [...clarificationAnswers];
-                        next[i] = e.target.value;
-                        setClarificationAnswers(next);
-                      }}
-                      placeholder="Your answer (optional)"
-                      disabled={askQuestion.isPending}
-                      style={{
-                        width: '100%', padding: '0.5rem 0.75rem', borderRadius: 6,
-                        border: '1px solid #e2e8f0', fontSize: '0.875rem', boxSizing: 'border-box',
-                        background: askQuestion.isPending ? '#f1f5f9' : '#fff',
-                      }}
-                    />
-                  </div>
-                ))}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
+                  {clarifications.map((q, i) => (
+                    <FormField key={i} label={q}>
+                      {(controlId) => (
+                        <Input
+                          id={controlId}
+                          value={clarificationAnswers[i] ?? ''}
+                          onChange={(e) => {
+                            const next = [...clarificationAnswers];
+                            next[i] = e.target.value;
+                            setClarificationAnswers(next);
+                          }}
+                          placeholder="Your answer (optional)"
+                          disabled={askQuestion.isPending}
+                        />
+                      )}
+                    </FormField>
+                  ))}
+                </div>
               </div>
             )}
 
-            {askQuestion.isPending && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem',
-                            padding: '0.75rem', background: '#f0f2ff', borderRadius: 8 }}>
-                <LoadingSpinner size={18} />
-                <span style={{ color: '#667eea', fontSize: '0.9rem', fontWeight: 500 }}>
-                  Searching the library and generating answer...
-                </span>
-              </div>
-            )}
+            {askQuestion.isPending && <InfoStripe text="Searching the library and generating answer…" />}
 
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button
+            <div style={{ display: 'flex', gap: space['2'], marginTop: space['3'] }}>
+              <Button
+                variant="primary"
                 onClick={handleConfirmSearch}
                 disabled={clarifyButtonsDisabled}
+                loading={askQuestion.isPending}
                 title={!libraryQAAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
-                style={{
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  color: '#fff', border: 'none', padding: '0.6rem 1.25rem',
-                  borderRadius: 8, cursor: clarifyButtonsDisabled ? 'not-allowed' : 'pointer',
-                  fontWeight: 600, fontSize: '0.9rem',
-                  opacity: clarifyButtonsDisabled ? 0.6 : 1,
-                }}
               >
-                {askQuestion.isPending ? '...' : 'Confirm & Search'}
-              </button>
-              <button
+                Confirm & search
+              </Button>
+              <Button
+                variant="tertiary"
                 onClick={handleSkipAndAsk}
                 disabled={clarifyButtonsDisabled}
                 title={!libraryQAAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
-                style={{
-                  background: 'none', color: '#667eea', border: '1px solid #667eea',
-                  padding: '0.6rem 1.25rem', borderRadius: 8,
-                  cursor: clarifyButtonsDisabled ? 'not-allowed' : 'pointer',
-                  fontWeight: 500, fontSize: '0.9rem',
-                  opacity: clarifyButtonsDisabled ? 0.4 : 1,
-                }}
               >
                 Skip clarifications
-              </button>
+              </Button>
             </div>
           </div>
         )}
 
         {history && history.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem',
-                        marginTop: step === 'clarify' ? 0 : '1rem' }}>
-            {history.map(qa => (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: space['3'],
+              marginTop: step === 'clarify' ? 0 : space['4'],
+            }}
+          >
+            {history.map((qa) => (
               <LibraryQAExchangeCard key={qa.id} qa={qa} />
             ))}
           </div>
         )}
-      </div>
+      </Card>
+    </div>
+  );
+}
+
+function InfoStripe({ text }: { text: string }) {
+  const c = useColors();
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: space['3'],
+        marginBottom: space['3'],
+        padding: space['3'],
+        background: c.accentSubtle,
+        borderRadius: radius.md,
+      }}
+    >
+      <Spinner size={16} />
+      <span
+        style={{
+          fontFamily: fonts.ui,
+          fontSize: fontSize.sm,
+          color: c.accent,
+          fontWeight: fontWeight.medium,
+        }}
+      >
+        {text}
+      </span>
     </div>
   );
 }
 
 function LibraryQAExchangeCard({ qa }: { qa: LibraryQAExchange }) {
+  const c = useColors();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -282,32 +430,97 @@ function LibraryQAExchangeCard({ qa }: { qa: LibraryQAExchange }) {
   };
 
   return (
-    <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: 8 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-                    gap: '0.75rem', marginBottom: '0.5rem' }}>
-        <p style={{ fontWeight: 600, color: '#1e293b', margin: 0, flex: 1 }}>Q: {qa.question}</p>
-        <button onClick={handleCopy} style={{
-          background: copied ? '#22c55e' : '#fff', color: copied ? '#fff' : '#475569',
-          border: '1px solid #cbd5e1', padding: '0.25rem 0.6rem', borderRadius: 6,
-          cursor: 'pointer', fontSize: '0.75rem', fontWeight: 500, flexShrink: 0,
-        }}>
-          {copied ? 'Copied' : 'Copy answer'}
-        </button>
+    <div
+      style={{
+        padding: space['4'],
+        background: c.surfaceAlt,
+        borderRadius: radius.md,
+        border: `1px solid ${c.border}`,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: space['3'],
+          marginBottom: space['3'],
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            flex: 1,
+            fontFamily: fonts.display,
+            fontSize: fontSize.md,
+            fontWeight: fontWeight.semibold,
+            color: c.textPrimary,
+            lineHeight: lineHeight.snug,
+          }}
+        >
+          {qa.question}
+        </p>
+        <Button size="sm" variant="tertiary" onClick={handleCopy}>
+          {copied ? (
+            <Badge tone="success" size="sm">
+              Copied
+            </Badge>
+          ) : (
+            'Copy answer'
+          )}
+        </Button>
       </div>
-      <div style={{ color: '#334155', lineHeight: 1.6 }}>
+      <div
+        className="reading"
+        style={{
+          color: c.textPrimary,
+          fontFamily: fonts.body,
+          fontSize: fontSize.base,
+          lineHeight: lineHeight.loose,
+        }}
+      >
         <ReactMarkdown>{qa.answer}</ReactMarkdown>
       </div>
       {qa.references.length > 0 && (
-        <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e2e8f0', paddingTop: '0.5rem' }}>
-          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>References:</span>
-          {qa.references.map((ref, i) => (
-            <div key={i} style={{ fontSize: '0.8rem', color: '#667eea', marginTop: '0.25rem' }}>
-              <a href={ref.youtube_link} target="_blank" rel="noopener noreferrer"
-                 style={{ color: '#667eea', textDecoration: 'none' }}>
-                {ref.video_title} by {ref.channel_name} at {ref.timestamp_display}
+        <div
+          style={{
+            marginTop: space['3'],
+            borderTop: `1px solid ${c.border}`,
+            paddingTop: space['3'],
+          }}
+        >
+          <span
+            style={{
+              fontFamily: fonts.ui,
+              fontSize: fontSize.xs,
+              fontWeight: fontWeight.semibold,
+              color: c.textSecondary,
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+            }}
+          >
+            References
+          </span>
+          <div style={{ marginTop: space['2'], display: 'flex', flexDirection: 'column', gap: space['1'] }}>
+            {qa.references.map((ref, i) => (
+              <a
+                key={i}
+                href={ref.youtube_link}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  fontFamily: fonts.ui,
+                  fontSize: fontSize.sm,
+                  color: c.accent,
+                  textDecoration: 'none',
+                }}
+              >
+                {ref.video_title}{' '}
+                <span style={{ color: c.textMuted }}>· {ref.channel_name} ·</span>{' '}
+                {ref.timestamp_display}
               </a>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>

@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LoadingSpinner } from '../components/common/LoadingSpinner';
+import { AuthShell, AuthError } from '../components/auth/AuthShell';
+import { Button, FormField, Input } from '../components/primitives';
+import { useColors } from '../hooks/useTheme';
+import { fonts, fontSize, fontWeight, space } from '../theme';
 
 interface LocationState {
   from?: { pathname: string };
@@ -10,6 +13,7 @@ interface LocationState {
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const c = useColors();
   const { login, isLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,47 +34,60 @@ export function LoginPage() {
   };
 
   return (
-    <AuthShell title="Sign in to VideoResearchPro">
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <Field label="Email">
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-            placeholder="you@example.com"
-          />
-        </Field>
-        <Field label="Password">
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-            placeholder="Your password"
-          />
-        </Field>
-        <button
-          type="submit"
-          disabled={isLoading}
+    <AuthShell title="Welcome back to your library.">
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}>
+        <FormField label="Email" required>
+          {(id) => (
+            <Input
+              id={id}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+              placeholder="you@example.com"
+            />
+          )}
+        </FormField>
+        <FormField label="Password" required>
+          {(id) => (
+            <Input
+              id={id}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+              placeholder="Your password"
+            />
+          )}
+        </FormField>
+        <Button type="submit" loading={isLoading} fullWidth style={{ marginTop: space['2'] }}>
+          {isLoading ? 'Signing in…' : 'Sign in'}
+        </Button>
+        {error && <AuthError message={error} />}
+      </form>
+      <p
+        style={{
+          marginTop: space['5'],
+          marginBottom: 0,
+          color: c.textSecondary,
+          fontFamily: fonts.ui,
+          fontSize: fontSize.sm,
+          textAlign: 'center',
+        }}
+      >
+        New here?{' '}
+        <Link
+          to="/register"
           style={{
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            color: '#fff', border: 'none', padding: '0.8rem 2rem', borderRadius: 8,
-            fontSize: '1rem', fontWeight: 600, cursor: 'pointer', marginTop: '0.5rem',
-            opacity: isLoading ? 0.7 : 1,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+            color: c.accent,
+            fontWeight: fontWeight.semibold,
+            textDecoration: 'none',
           }}
         >
-          {isLoading ? <LoadingSpinner size={18} /> : null}
-          {isLoading ? 'Signing in...' : 'Sign In'}
-        </button>
-        {error && <p style={{ color: '#ef4444', margin: 0 }}>{error}</p>}
-      </form>
-      <p style={{ marginTop: '1.5rem', color: '#64748b', fontSize: '0.9rem' }}>
-        Don&apos;t have an account?{' '}
-        <Link to="/register" style={{ color: '#667eea', fontWeight: 600 }}>Create one</Link>
+          Begin your first shelf
+        </Link>
       </p>
     </AuthShell>
   );
@@ -86,40 +103,4 @@ function extractError(err: unknown): string | null {
     if (maybe.message) return maybe.message;
   }
   return null;
-}
-
-function AuthShell({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem',
-    }}>
-      <div style={{
-        background: '#fff',
-        borderRadius: 12,
-        padding: '2.5rem',
-        width: '100%',
-        maxWidth: 420,
-        boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
-      }}>
-        <h1 style={{ margin: 0, marginBottom: '0.3rem', color: '#1e293b', fontSize: '1.6rem' }}>
-          VideoResearchPro
-        </h1>
-        <h2 style={{ margin: 0, marginBottom: '1.5rem', color: '#64748b', fontSize: '1rem', fontWeight: 500 }}>
-          {title}
-        </h2>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>{label}</span>
-      {children}
-    </label>
-  );
 }

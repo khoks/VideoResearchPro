@@ -1,6 +1,8 @@
 import type { Channel } from '../../services/channelsApi';
-import { LoadingSpinner } from '../common/LoadingSpinner';
 import { formatDate } from '../../utils/formatters';
+import { Button, Card, Spinner } from '../primitives';
+import { useColors } from '../../hooks/useTheme';
+import { fonts, fontSize, fontWeight, space } from '../../theme';
 
 interface Props {
   channel: Channel;
@@ -19,96 +21,106 @@ export function ChannelRow({
   subscribeBusy,
   syncBusy,
 }: Props) {
+  const c = useColors();
   const subscribed = channel.subscribed;
 
   return (
-    <div
+    <Card
+      interactive
       onClick={() => onOpenVideos(channel.channel_id)}
-      style={{
-        background: '#fff',
-        borderRadius: 12,
-        padding: '1rem',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-        border: '1px solid #e2e8f0',
-        cursor: 'pointer',
-        display: 'flex',
-        gap: '1rem',
-        alignItems: 'center',
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpenVideos(channel.channel_id);
+        }
       }}
     >
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: space['4'],
+          alignItems: 'center',
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontFamily: fonts.display,
+              fontWeight: fontWeight.semibold,
+              fontSize: fontSize.md,
+              color: c.textPrimary,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              marginBottom: space['1'],
+            }}
+            title={channel.name}
+          >
+            {channel.name}
+          </div>
+          <div
+            style={{
+              fontFamily: fonts.ui,
+              fontSize: fontSize.sm,
+              color: c.textSecondary,
+              display: 'flex',
+              gap: space['2'],
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}
+          >
+            {channel.subscriber_count != null && (
+              <>
+                <span>{channel.subscriber_count.toLocaleString()} subscribers</span>
+                <span aria-hidden style={{ color: c.textMuted }}>
+                  ·
+                </span>
+              </>
+            )}
+            <span>
+              {channel.video_count}{' '}
+              {channel.video_count === 1 ? 'volume' : 'volumes'} on your shelf
+            </span>
+            <span aria-hidden style={{ color: c.textMuted }}>
+              ·
+            </span>
+            <span style={{ color: c.textMuted }}>
+              Last synced:{' '}
+              {channel.last_synced_at ? formatDate(channel.last_synced_at) : 'never'}
+            </span>
+          </div>
+        </div>
+
         <div
           style={{
-            fontWeight: 600,
-            color: '#1e293b',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-          title={channel.name}
-        >
-          {channel.name}
-        </div>
-        <div style={{ fontSize: '0.8rem', color: '#64748b', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {channel.subscriber_count != null && (
-            <>
-              <span>{channel.subscriber_count.toLocaleString()} subscribers</span>
-              <span>·</span>
-            </>
-          )}
-          <span>{channel.video_count} {channel.video_count === 1 ? 'video' : 'videos'} in library</span>
-          <span>·</span>
-          <span>
-            Last synced: {channel.last_synced_at ? formatDate(channel.last_synced_at) : 'never'}
-          </span>
-        </div>
-      </div>
-
-      <div
-        style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexShrink: 0 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          onClick={() => onToggleSubscribe(channel)}
-          disabled={subscribeBusy}
-          style={{
-            background: subscribed ? '#22c55e' : 'transparent',
-            color: subscribed ? '#fff' : '#22c55e',
-            border: `1px solid #22c55e`,
-            padding: '0.3rem 0.8rem',
-            borderRadius: 8,
-            fontSize: '0.8rem',
-            fontWeight: 600,
-            cursor: subscribeBusy ? 'wait' : 'pointer',
-            opacity: subscribeBusy ? 0.6 : 1,
-          }}
-        >
-          {subscribed ? 'Subscribed' : 'Subscribe'}
-        </button>
-        <button
-          type="button"
-          onClick={() => onSync(channel.id)}
-          disabled={syncBusy}
-          style={{
-            background: 'transparent',
-            color: '#667eea',
-            border: '1px solid #667eea',
-            padding: '0.3rem 0.8rem',
-            borderRadius: 8,
-            fontSize: '0.8rem',
-            fontWeight: 600,
-            cursor: syncBusy ? 'wait' : 'pointer',
             display: 'flex',
+            gap: space['2'],
             alignItems: 'center',
-            gap: '0.4rem',
-            opacity: syncBusy ? 0.7 : 1,
+            flexShrink: 0,
           }}
+          onClick={(e) => e.stopPropagation()}
         >
-          {syncBusy && <LoadingSpinner size={12} />}
-          {syncBusy ? 'Syncing...' : 'Sync now'}
-        </button>
+          <Button
+            size="sm"
+            variant={subscribed ? 'primary' : 'secondary'}
+            onClick={() => onToggleSubscribe(channel)}
+            disabled={subscribeBusy}
+          >
+            {subscribed ? 'Subscribed' : 'Subscribe'}
+          </Button>
+          <Button
+            size="sm"
+            variant="tertiary"
+            onClick={() => onSync(channel.id)}
+            disabled={syncBusy}
+            leadingIcon={syncBusy ? <Spinner size={12} /> : undefined}
+          >
+            {syncBusy ? 'Syncing…' : 'Sync now'}
+          </Button>
+        </div>
       </div>
-    </div>
+    </Card>
   );
 }

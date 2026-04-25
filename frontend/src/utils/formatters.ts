@@ -27,17 +27,39 @@ export function statusLabel(status: string): string {
   return labels[status] || status;
 }
 
+/**
+ * Semantic tone for a job status — resolved by theme-aware components.
+ * Prefer this over `statusColor` (deprecated) since it adapts to dark mode.
+ */
+export type StatusTone = 'neutral' | 'info' | 'warn' | 'accent' | 'success' | 'error';
+
+export function statusTone(status: string): StatusTone {
+  const tones: Record<string, StatusTone> = {
+    pending: 'neutral',
+    searching: 'info',
+    awaiting_approval: 'warn',
+    extracting: 'info',
+    building_rag: 'accent',
+    generating_report: 'accent',
+    completed: 'success',
+    cancelled: 'neutral',
+    failed: 'error',
+  };
+  return tones[status] ?? 'neutral';
+}
+
+/** @deprecated Use `statusTone` with `<ProgressBar tone={...} />`. */
 export function statusColor(status: string): string {
   const colors: Record<string, string> = {
-    pending: '#94a3b8',
-    searching: '#3b82f6',
-    awaiting_approval: '#f59e0b',
-    extracting: '#3b82f6',
-    building_rag: '#8b5cf6',
-    generating_report: '#8b5cf6',
-    completed: '#22c55e',
-    cancelled: '#94a3b8',
-    failed: '#ef4444',
+    pending: '#7d756b',
+    searching: '#3d5a73',
+    awaiting_approval: '#c79945',
+    extracting: '#3d5a73',
+    building_rag: '#7a2c1a',
+    generating_report: '#7a2c1a',
+    completed: '#2d4a3e',
+    cancelled: '#7d756b',
+    failed: '#7a2c1a',
   };
-  return colors[status] || '#94a3b8';
+  return colors[status] || '#7d756b';
 }

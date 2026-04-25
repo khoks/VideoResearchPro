@@ -107,7 +107,7 @@ class GeminiFineTuneAdapter(FineTuneAdapter):
     """
     Flow (Vertex AI):
       1. Upload JSONL to GCS:
-           gs://{GCP_BUCKET}/videoresearchpro/finetune/{run_id}.jsonl
+           gs://{GCP_BUCKET}/pratidhvani/finetune/{run_id}.jsonl
          using google-cloud-storage. Return the gs:// URI as the "file id".
       2. aiplatform.init(project=GCP_PROJECT_ID, location=GCP_REGION, credentials=...)
          job = aiplatform.TuningJob.create(

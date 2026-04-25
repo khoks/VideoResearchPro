@@ -2,7 +2,17 @@ import { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useKnowledge, useExtractKnowledge } from '../hooks/useKnowledge';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
-import { LoadingSpinner } from '../components/common/LoadingSpinner';
+import { Badge, Button, Spinner, type BadgeTone } from '../components/primitives';
+import { useColors, useShadows } from '../hooks/useTheme';
+import {
+  fonts,
+  fontSize,
+  fontWeight,
+  lineHeight,
+  radius,
+  space,
+  z,
+} from '../theme';
 import type { KnowledgeArtifact } from '../services/knowledgeApi';
 
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
@@ -13,19 +23,18 @@ interface Props {
   onClose: () => void;
 }
 
-// Drawer idiom (right-side slide-in + backdrop) — modelled after the existing
-// ReportModal pattern but anchored to the right edge so the user can still see
-// the video row context behind it. Auto-fires extraction when no cached
-// artifact exists so the first click "just works" with a spinner.
+/**
+ * Right-side slide-in drawer showing the extracted knowledge artifact for a
+ * single video. Auto-kicks extraction if no cached artifact exists so the first
+ * click "just works" with a spinner.
+ */
 export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
+  const c = useColors();
+  const s = useShadows();
   const { data: artifact, isLoading: isLoadingCached, isError } = useKnowledge(videoId);
   const extract = useExtractKnowledge(videoId);
   const knowledgeExtractionAvailable = useFeatureAvailable('knowledge_extraction');
 
-  // When the GET resolves to null (never extracted) kick off the POST exactly
-  // once. Guarded by pending/success so re-renders never retrigger. Also
-  // short-circuits when LLM extraction is unavailable so we render an empty
-  // state instead of firing a doomed request.
   useEffect(() => {
     if (isLoadingCached) return;
     if (artifact) return;
@@ -33,6 +42,14 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
     if (extract.isPending || extract.isSuccess || extract.isError) return;
     extract.mutate(undefined);
   }, [artifact, isLoadingCached, extract, knowledgeExtractionAvailable]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const displayed: KnowledgeArtifact | null = artifact ?? extract.data ?? null;
   const isBusy = isLoadingCached || extract.isPending;
@@ -42,101 +59,158 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
 
   return (
     <div
-      style={{
-        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-        background: 'rgba(0,0,0,0.5)', zIndex: 1000,
-        display: 'flex', justifyContent: 'flex-end',
-      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Knowledge report for ${videoTitle}`}
       onClick={onClose}
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(20, 17, 14, 0.55)',
+        zIndex: z.drawer,
+        display: 'flex',
+        justifyContent: 'flex-end',
+      }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 'min(720px, 95vw)', height: '100vh', background: '#fff',
-          display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 12px rgba(0,0,0,0.15)',
+          width: 'min(720px, 95vw)',
+          height: '100vh',
+          background: c.surface,
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: s.floating,
+          borderLeft: `1px solid ${c.border}`,
         }}
       >
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '0.75rem 1.25rem', borderBottom: '1px solid #e2e8f0', gap: '0.75rem',
-          background: '#f8fafc', flexShrink: 0,
-        }}>
+        <header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: `${space['3']} ${space['5']}`,
+            borderBottom: `1px solid ${c.border}`,
+            gap: space['3'],
+            background: c.surfaceAlt,
+            flexShrink: 0,
+          }}
+        >
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 500 }}>
-              Knowledge Report
+            <div
+              style={{
+                fontFamily: fonts.ui,
+                fontSize: fontSize.xs,
+                color: c.textMuted,
+                fontWeight: fontWeight.medium,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+              }}
+            >
+              Knowledge report
             </div>
-            <div style={{
-              fontSize: '1rem', color: '#1e293b', fontWeight: 600,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }} title={videoTitle}>
+            <div
+              style={{
+                fontFamily: fonts.display,
+                fontSize: fontSize.md,
+                color: c.textPrimary,
+                fontWeight: fontWeight.semibold,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                marginTop: 2,
+              }}
+              title={videoTitle}
+            >
               {videoTitle}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: space['2'], flexShrink: 0 }}>
             {displayed && !isBusy && (
-              <button
+              <Button
+                size="sm"
+                variant="secondary"
                 onClick={() => extract.mutate({ force: true })}
                 disabled={regenDisabled}
-                title={knowledgeExtractionAvailable
-                  ? 'Re-run extraction; overwrites the stored report.'
-                  : FEATURE_UNAVAILABLE_MSG}
-                style={{
-                  background: '#fff', color: '#667eea', border: '1px solid #667eea',
-                  padding: '0.4rem 0.9rem', borderRadius: 6,
-                  cursor: regenDisabled ? 'not-allowed' : 'pointer',
-                  fontSize: '0.85rem', fontWeight: 500,
-                  opacity: regenDisabled ? 0.6 : 1,
-                }}
+                title={
+                  knowledgeExtractionAvailable
+                    ? 'Re-run extraction; overwrites the stored report.'
+                    : FEATURE_UNAVAILABLE_MSG
+                }
               >
                 Regenerate
-              </button>
+              </Button>
             )}
-            <button
-              onClick={onClose}
+            <Button size="sm" variant="tertiary" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </header>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: space['5'] }}>
+          {isBusy && (
+            <div
               style={{
-                background: '#fff', color: '#475569', border: '1px solid #cbd5e1',
-                padding: '0.4rem 0.9rem', borderRadius: 6, cursor: 'pointer',
-                fontSize: '0.85rem', fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: space['3'],
+                padding: space['4'],
+                background: c.accentSubtle,
+                borderRadius: radius.md,
+                marginBottom: space['4'],
               }}
             >
-              Close
-            </button>
-          </div>
-        </div>
-
-        <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem' }}>
-          {isBusy && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '0.75rem',
-              padding: '1rem', background: '#f0f2ff', borderRadius: 8,
-              marginBottom: '1rem',
-            }}>
-              <LoadingSpinner size={20} />
-              <span style={{ color: '#667eea', fontSize: '0.9rem', fontWeight: 500 }}>
+              <Spinner size={18} />
+              <span
+                style={{
+                  fontFamily: fonts.ui,
+                  fontSize: fontSize.sm,
+                  color: c.accent,
+                  fontWeight: fontWeight.medium,
+                }}
+              >
                 {extract.isPending
-                  ? 'Extracting topics and generating report...'
-                  : 'Loading...'}
+                  ? 'Extracting topics and generating report…'
+                  : 'Loading…'}
               </span>
             </div>
           )}
 
           {isError && !extract.isPending && !displayed && knowledgeExtractionAvailable && (
-            <div style={{
-              padding: '1rem', background: '#fef2f2', borderRadius: 8,
-              border: '1px solid #fecaca', color: '#b91c1c', fontSize: '0.9rem',
-              marginBottom: '1rem',
-            }}>
-              Failed to load knowledge report. Click Regenerate to try again.
+            <div
+              role="alert"
+              style={{
+                padding: space['4'],
+                background: c.errorSubtle,
+                borderRadius: radius.md,
+                border: `1px solid ${c.error}`,
+                color: c.error,
+                fontFamily: fonts.ui,
+                fontSize: fontSize.sm,
+                marginBottom: space['4'],
+              }}
+            >
+              Couldn't load the knowledge report. Click Regenerate to try again.
             </div>
           )}
 
           {showUnavailableEmptyState && (
-            <div style={{
-              padding: '1rem', background: '#fffbeb', borderRadius: 8,
-              border: '1px solid #fde68a', color: '#92400e', fontSize: '0.9rem',
-            }}>
-              {FEATURE_UNAVAILABLE_MSG}. Knowledge extraction will resume once the
-              LLM service recovers — try again in a moment.
+            <div
+              role="note"
+              style={{
+                padding: space['4'],
+                background: c.warnSubtle,
+                borderRadius: radius.md,
+                border: `1px solid ${c.warn}`,
+                color: c.warn,
+                fontFamily: fonts.ui,
+                fontSize: fontSize.sm,
+              }}
+            >
+              {FEATURE_UNAVAILABLE_MSG}. Knowledge extraction will resume once the LLM service recovers — try again in a moment.
             </div>
           )}
 
@@ -148,25 +222,45 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
 }
 
 function KnowledgeBody({ artifact }: { artifact: KnowledgeArtifact }) {
+  const c = useColors();
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <ChipSection label="Topics" items={artifact.topics} tone="topic" />
-      <ChipSection label="Concepts" items={artifact.concepts} tone="concept" />
-      <ChipSection label="Events" items={artifact.events} tone="event" />
-      <ChipSection label="Facts" items={artifact.facts} tone="fact" />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}>
+      <ChipSection label="Topics" items={artifact.topics} tone="accent" />
+      <ChipSection label="Concepts" items={artifact.concepts} tone="info" />
+      <ChipSection label="Events" items={artifact.events} tone="warn" />
+      <ChipSection label="Facts" items={artifact.facts} tone="neutral" />
 
       {artifact.knowledge_report_md && (
-        <div style={{
-          background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8,
-          padding: '1rem 1.25rem',
-        }}>
-          <div style={{
-            fontSize: '0.8rem', fontWeight: 600, color: '#64748b',
-            textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem',
-          }}>
+        <div
+          style={{
+            background: c.surface,
+            border: `1px solid ${c.border}`,
+            borderRadius: radius.md,
+            padding: `${space['4']} ${space['5']}`,
+          }}
+        >
+          <div
+            style={{
+              fontFamily: fonts.ui,
+              fontSize: fontSize.xs,
+              fontWeight: fontWeight.semibold,
+              color: c.textSecondary,
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              marginBottom: space['3'],
+            }}
+          >
             Report
           </div>
-          <div style={{ color: '#334155', lineHeight: 1.6, fontSize: '0.95rem' }}>
+          <div
+            className="reading"
+            style={{
+              color: c.textPrimary,
+              fontFamily: fonts.body,
+              fontSize: fontSize.base,
+              lineHeight: lineHeight.loose,
+            }}
+          >
             <ReactMarkdown>{artifact.knowledge_report_md}</ReactMarkdown>
           </div>
         </div>
@@ -175,37 +269,37 @@ function KnowledgeBody({ artifact }: { artifact: KnowledgeArtifact }) {
   );
 }
 
-type ChipTone = 'topic' | 'concept' | 'event' | 'fact';
-
-const TONE_COLORS: Record<ChipTone, { bg: string; color: string; border: string }> = {
-  topic:   { bg: '#eef2ff', color: '#4338ca', border: '#c7d2fe' },
-  concept: { bg: '#ecfeff', color: '#0e7490', border: '#a5f3fc' },
-  event:   { bg: '#fef3c7', color: '#92400e', border: '#fde68a' },
-  fact:    { bg: '#f1f5f9', color: '#334155', border: '#cbd5e1' },
-};
-
-function ChipSection({ label, items, tone }: { label: string; items: string[]; tone: ChipTone }) {
+function ChipSection({
+  label,
+  items,
+  tone,
+}: {
+  label: string;
+  items: string[];
+  tone: BadgeTone;
+}) {
+  const c = useColors();
   if (!items || items.length === 0) return null;
-  const c = TONE_COLORS[tone];
   return (
     <div>
-      <div style={{
-        fontSize: '0.8rem', fontWeight: 600, color: '#64748b',
-        textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem',
-      }}>
+      <div
+        style={{
+          fontFamily: fonts.ui,
+          fontSize: fontSize.xs,
+          fontWeight: fontWeight.semibold,
+          color: c.textSecondary,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          marginBottom: space['2'],
+        }}
+      >
         {label} ({items.length})
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: space['2'] }}>
         {items.map((item, i) => (
-          <span
-            key={i}
-            style={{
-              background: c.bg, color: c.color, border: `1px solid ${c.border}`,
-              padding: '3px 10px', borderRadius: 14, fontSize: '0.8rem', fontWeight: 500,
-            }}
-          >
+          <Badge key={i} tone={tone} size="sm">
             {item}
-          </span>
+          </Badge>
         ))}
       </div>
     </div>

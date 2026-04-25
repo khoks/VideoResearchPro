@@ -2,6 +2,16 @@ import { useAuth } from '../contexts/AuthContext';
 import { useJobStore } from '../stores/jobStore';
 import { exportsApi } from '../services/exportsApi';
 import { downloadUrl } from '../utils/download';
+import { Button, Card } from '../components/primitives';
+import { useColors } from '../hooks/useTheme';
+import {
+  fonts,
+  fontSize,
+  fontWeight,
+  lineHeight,
+  measure,
+  space,
+} from '../theme';
 
 interface DatasetCard {
   title: string;
@@ -13,6 +23,7 @@ interface DatasetCard {
 }
 
 export function ExportsPage() {
+  const c = useColors();
   const { token } = useAuth();
   const pushToast = useJobStore((s) => s.pushToast);
 
@@ -46,75 +57,77 @@ export function ExportsPage() {
   };
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', padding: '2rem 1rem' }}>
-      <h2 style={{ margin: '0 0 0.5rem', color: 'var(--color-text)' }}>Exports</h2>
-      <p style={{ margin: '0 0 2rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
-        Download your personal wiki as JSONL fine-tune datasets. Each dataset is offered in
-        two shapes: the OpenAI chat format and a plain tuple format.
-      </p>
+    <div style={{ maxWidth: measure.grid, margin: '0 auto' }}>
+      <header style={{ marginBottom: space['6'] }}>
+        <h1
+          style={{
+            fontFamily: fonts.display,
+            fontSize: fontSize['2xl'],
+            fontWeight: fontWeight.semibold,
+            color: c.textPrimary,
+            margin: 0,
+            lineHeight: lineHeight.tight,
+          }}
+        >
+          Exports
+        </h1>
+        <p
+          style={{
+            fontFamily: fonts.body,
+            fontSize: fontSize.base,
+            color: c.textSecondary,
+            margin: `${space['2']} 0 0`,
+            lineHeight: lineHeight.normal,
+            maxWidth: measure.reading,
+          }}
+        >
+          Download your personal wiki as JSONL fine-tune datasets. Each set ships in two shapes: the OpenAI chat format and a plain tuple format.
+        </p>
+      </header>
 
-      <div style={{ display: 'grid', gap: '1.25rem' }}>
-        {cards.map((c) => (
-          <section
-            key={c.title}
-            style={{
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 12,
-              padding: '1.25rem 1.5rem',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-            }}
-          >
-            <h3 style={{ margin: '0 0 0.4rem', color: 'var(--color-text)', fontSize: '1.1rem' }}>
-              {c.title}
-            </h3>
-            <p style={{ margin: '0 0 1rem', color: 'var(--color-text-muted)', lineHeight: 1.45 }}>
-              {c.description}
+      <div style={{ display: 'grid', gap: space['4'] }}>
+        {cards.map((card) => (
+          <Card key={card.title}>
+            <h2
+              style={{
+                margin: `0 0 ${space['2']}`,
+                fontFamily: fonts.display,
+                fontSize: fontSize.lg,
+                fontWeight: fontWeight.semibold,
+                color: c.textPrimary,
+              }}
+            >
+              {card.title}
+            </h2>
+            <p
+              style={{
+                margin: `0 0 ${space['4']}`,
+                fontFamily: fonts.body,
+                fontSize: fontSize.base,
+                color: c.textSecondary,
+                lineHeight: lineHeight.normal,
+                maxWidth: measure.reading,
+              }}
+            >
+              {card.description}
             </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
-              <DownloadButton
-                label="OpenAI JSONL"
-                onClick={() => handleDownload(c.openaiUrl, c.openaiFilename)}
-              />
-              <DownloadButton
-                label="Tuple JSONL"
-                onClick={() => handleDownload(c.tupleUrl, c.tupleFilename)}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: space['2'] }}>
+              <Button
+                variant="primary"
+                onClick={() => handleDownload(card.openaiUrl, card.openaiFilename)}
+              >
+                OpenAI JSONL
+              </Button>
+              <Button
                 variant="secondary"
-              />
+                onClick={() => handleDownload(card.tupleUrl, card.tupleFilename)}
+              >
+                Tuple JSONL
+              </Button>
             </div>
-          </section>
+          </Card>
         ))}
       </div>
     </div>
-  );
-}
-
-function DownloadButton({
-  label,
-  onClick,
-  variant = 'primary',
-}: {
-  label: string;
-  onClick: () => void;
-  variant?: 'primary' | 'secondary';
-}) {
-  const isPrimary = variant === 'primary';
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        background: isPrimary ? '#667eea' : 'transparent',
-        color: isPrimary ? '#fff' : 'var(--color-text)',
-        border: isPrimary ? 'none' : '1px solid var(--color-border)',
-        padding: '0.55rem 1.1rem',
-        borderRadius: 8,
-        cursor: 'pointer',
-        fontWeight: 600,
-        fontSize: '0.9rem',
-      }}
-    >
-      {label}
-    </button>
   );
 }

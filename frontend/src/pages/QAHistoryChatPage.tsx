@@ -1,11 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import {
   useAskQAHistoryChat,
   useQAHistoryChatHistory,
 } from '../hooks/useQAHistoryChat';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Input,
+  Select,
+  Spinner,
+} from '../components/primitives';
+import { useColors } from '../hooks/useTheme';
+import {
+  fonts,
+  fontSize,
+  fontWeight,
+  lineHeight,
+  measure,
+  radius,
+  space,
+} from '../theme';
 import type {
   AnswerLanguage,
   QAHistoryExchange,
@@ -21,8 +39,6 @@ const LANGUAGE_OPTIONS: Array<{ value: AnswerLanguage; label: string }> = [
   { value: 'fr', label: 'Français' },
 ];
 
-// Build the href for a reference back to its source Q&A location.
-// The "history" source deep-links back to this same page, keyed by exchange id.
 function referenceHref(ref: QAHistoryReference): string {
   if (ref.source_type === 'job' && ref.job_id) {
     return `/jobs/${ref.job_id}`;
@@ -40,11 +56,12 @@ function referenceSourceLabel(ref: QAHistoryReference): string {
     case 'library':
       return 'Global Q&A';
     case 'history':
-      return 'Q&A History';
+      return 'Echo chat';
   }
 }
 
 export function QAHistoryChatPage() {
+  const c = useColors();
   const { data: history, isLoading } = useQAHistoryChatHistory();
   const askChat = useAskQAHistoryChat();
   const qaHistoryAvailable = useFeatureAvailable('qa_history');
@@ -55,9 +72,6 @@ export function QAHistoryChatPage() {
   const inputDisabled = askChat.isPending || !qaHistoryAvailable;
   const buttonDisabled = inputDisabled || !question.trim();
 
-  // The page renders history ascending (oldest at top) so the newest exchange
-  // lands at the bottom — chat-style. After a new answer arrives or on first
-  // load with a #exchange-<id> hash we scroll it into view.
   const historyEndRef = useRef<HTMLDivElement | null>(null);
   const sortedHistory = useMemo(() => {
     if (!history) return [];
@@ -68,8 +82,6 @@ export function QAHistoryChatPage() {
 
   useEffect(() => {
     if (!sortedHistory.length) return;
-    // Honor deep-link hash (#exchange-<id>) exactly once per load; otherwise
-    // stick to the chat-style "scroll to newest" behavior.
     const hash = window.location.hash;
     if (hash.startsWith('#exchange-')) {
       const el = document.getElementById(hash.slice(1));
@@ -90,56 +102,105 @@ export function QAHistoryChatPage() {
   };
 
   return (
-    <div>
-      <div style={{ background: '#fff', borderRadius: 12, padding: '1.5rem',
-                     boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: '1rem' }}>
-        <h2 style={{ margin: 0, color: '#1e293b' }}>Chat with your Q&amp;A History</h2>
-        <p style={{ margin: '0.5rem 0 0', color: '#64748b', fontSize: '0.9rem' }}>
-          Ask meta-questions across every Q&amp;A you&apos;ve ever run — job-scoped, global,
-          and previous history chats. Answers cite the original exchanges so you can jump
-          back to the source.
+    <div style={{ maxWidth: measure.grid, margin: '0 auto' }}>
+      <header style={{ marginBottom: space['5'] }}>
+        <h1
+          style={{
+            fontFamily: fonts.display,
+            fontSize: fontSize['2xl'],
+            fontWeight: fontWeight.semibold,
+            color: c.textPrimary,
+            margin: 0,
+            lineHeight: lineHeight.tight,
+          }}
+        >
+          Echoes of past questions
+        </h1>
+        <p
+          style={{
+            fontFamily: fonts.body,
+            fontStyle: 'italic',
+            fontSize: fontSize.sm,
+            color: c.textMuted,
+            margin: `${space['2']} 0 0`,
+            maxWidth: measure.reading,
+          }}
+        >
+          Ask meta-questions across every Q&amp;A you've ever run — job-scoped, global, and previous chats. Answers cite the original exchanges so you can jump back to the source.
         </p>
-      </div>
+      </header>
 
-      <div style={{ background: '#fff', borderRadius: 12, padding: '1.5rem',
-                     boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
-          <h3 style={{ margin: 0, color: '#1e293b' }}>History Chat</h3>
-          <label style={{ fontSize: '0.85rem', color: '#475569', display: 'flex',
-                          alignItems: 'center', gap: '0.5rem' }}>
-            Answer language:
-            <select
+      <Card>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: space['4'],
+            flexWrap: 'wrap',
+            marginBottom: space['4'],
+          }}
+        >
+          <h2
+            style={{
+              margin: 0,
+              fontFamily: fonts.display,
+              fontSize: fontSize.lg,
+              fontWeight: fontWeight.semibold,
+              color: c.textPrimary,
+            }}
+          >
+            Chat
+          </h2>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: space['2'],
+              fontFamily: fonts.ui,
+              fontSize: fontSize.sm,
+              color: c.textSecondary,
+            }}
+          >
+            Answer language
+            <Select
               value={language}
               onChange={(e) => setLanguage(e.target.value as AnswerLanguage)}
-              style={{
-                padding: '0.4rem 0.6rem', borderRadius: 6, border: '1px solid #e2e8f0',
-                fontSize: '0.85rem', background: '#fff',
-              }}
+              style={{ width: 'auto', minWidth: 140 }}
             >
-              {LANGUAGE_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              {LANGUAGE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
 
         {isLoading && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '1.5rem' }}>
-            <LoadingSpinner size={28} />
+          <div style={{ display: 'flex', justifyContent: 'center', padding: space['6'] }}>
+            <Spinner size={28} />
           </div>
         )}
 
         {!isLoading && sortedHistory.length === 0 && (
-          <p style={{ color: '#94a3b8', fontSize: '0.9rem', margin: '0 0 1rem' }}>
-            No history yet — ask your first meta-question below.
-          </p>
+          <EmptyState
+            size="sm"
+            title="No echoes yet."
+            description="Ask your first meta-question below to begin."
+          />
         )}
 
         {sortedHistory.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem',
-                        marginBottom: '1rem' }}>
-            {sortedHistory.map(qa => (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: space['3'],
+              marginBottom: space['4'],
+            }}
+          >
+            {sortedHistory.map((qa) => (
               <QAHistoryExchangeCard key={qa.id} qa={qa} />
             ))}
             <div ref={historyEndRef} />
@@ -147,57 +208,83 @@ export function QAHistoryChatPage() {
         )}
 
         {askChat.isPending && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem',
-                        marginBottom: '1rem', padding: '1rem', background: '#f0f2ff',
-                        borderRadius: 8 }}>
-            <LoadingSpinner size={20} />
-            <span style={{ color: '#667eea', fontSize: '0.9rem', fontWeight: 500 }}>
-              Searching your Q&amp;A history and generating answer...
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: space['3'],
+              marginBottom: space['3'],
+              padding: space['3'],
+              background: c.accentSubtle,
+              borderRadius: radius.md,
+            }}
+          >
+            <Spinner size={16} />
+            <span
+              style={{
+                fontFamily: fonts.ui,
+                fontSize: fontSize.sm,
+                color: c.accent,
+                fontWeight: fontWeight.medium,
+              }}
+            >
+              Searching your Q&amp;A history and generating answer…
             </span>
           </div>
         )}
 
         {!qaHistoryAvailable && (
-          <p style={{ color: '#b45309', fontSize: '0.85rem', margin: '0 0 0.5rem' }}>
-            {FEATURE_UNAVAILABLE_MSG}.
-          </p>
-        )}
-        <form onSubmit={handleAsk} style={{ display: 'flex', gap: '0.5rem' }}>
-          <input
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder={qaHistoryAvailable
-              ? "Ask across every Q&A you've ever run..."
-              : FEATURE_UNAVAILABLE_MSG}
-            disabled={inputDisabled}
-            title={!qaHistoryAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
+          <div
+            role="alert"
             style={{
-              flex: 1, padding: '0.6rem 1rem', borderRadius: 8, border: '1px solid #e2e8f0',
-              fontSize: '0.95rem',
-              opacity: inputDisabled ? 0.6 : 1,
-              background: inputDisabled ? '#f1f5f9' : '#fff',
-            }}
-          />
-          <button
-            type="submit"
-            disabled={buttonDisabled}
-            title={!qaHistoryAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
-            style={{
-              background: '#667eea', color: '#fff', border: 'none', padding: '0.6rem 1.5rem',
-              borderRadius: 8,
-              cursor: buttonDisabled ? 'not-allowed' : 'pointer',
-              fontWeight: 600, opacity: buttonDisabled ? 0.5 : 1,
+              marginBottom: space['3'],
+              padding: space['3'],
+              borderRadius: radius.md,
+              background: c.warnSubtle,
+              border: `1px solid ${c.warn}`,
+              color: c.warn,
+              fontFamily: fonts.ui,
+              fontSize: fontSize.sm,
             }}
           >
-            {askChat.isPending ? '...' : 'Ask'}
-          </button>
+            {FEATURE_UNAVAILABLE_MSG}.
+          </div>
+        )}
+
+        <form
+          onSubmit={handleAsk}
+          style={{ display: 'flex', gap: space['2'], flexWrap: 'wrap' }}
+        >
+          <div style={{ flex: '1 1 280px' }}>
+            <Input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder={
+                qaHistoryAvailable
+                  ? "Ask across every Q&A you've ever run…"
+                  : FEATURE_UNAVAILABLE_MSG
+              }
+              disabled={inputDisabled}
+              title={!qaHistoryAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
+              aria-label="Question"
+            />
+          </div>
+          <Button
+            type="submit"
+            disabled={buttonDisabled}
+            loading={askChat.isPending}
+            title={!qaHistoryAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
+          >
+            Ask
+          </Button>
         </form>
-      </div>
+      </Card>
     </div>
   );
 }
 
 function QAHistoryExchangeCard({ qa }: { qa: QAHistoryExchange }) {
+  const c = useColors();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -211,32 +298,112 @@ function QAHistoryExchangeCard({ qa }: { qa: QAHistoryExchange }) {
   };
 
   return (
-    <div id={`exchange-${qa.id}`} style={{ padding: '1rem', background: '#f8fafc', borderRadius: 8 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-                    gap: '0.75rem', marginBottom: '0.5rem' }}>
-        <p style={{ fontWeight: 600, color: '#1e293b', margin: 0, flex: 1 }}>Q: {qa.question}</p>
-        <button onClick={handleCopy} style={{
-          background: copied ? '#22c55e' : '#fff', color: copied ? '#fff' : '#475569',
-          border: '1px solid #cbd5e1', padding: '0.25rem 0.6rem', borderRadius: 6,
-          cursor: 'pointer', fontSize: '0.75rem', fontWeight: 500, flexShrink: 0,
-        }}>
-          {copied ? 'Copied' : 'Copy answer'}
-        </button>
+    <div
+      id={`exchange-${qa.id}`}
+      style={{
+        padding: space['4'],
+        background: c.surfaceAlt,
+        borderRadius: radius.md,
+        border: `1px solid ${c.border}`,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: space['3'],
+          marginBottom: space['3'],
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            flex: 1,
+            fontFamily: fonts.display,
+            fontSize: fontSize.md,
+            fontWeight: fontWeight.semibold,
+            color: c.textPrimary,
+            lineHeight: lineHeight.snug,
+          }}
+        >
+          {qa.question}
+        </p>
+        <Button size="sm" variant="tertiary" onClick={handleCopy}>
+          {copied ? (
+            <Badge tone="success" size="sm">
+              Copied
+            </Badge>
+          ) : (
+            'Copy answer'
+          )}
+        </Button>
       </div>
-      <div style={{ color: '#334155', lineHeight: 1.6 }}>
+      <div
+        className="reading"
+        style={{
+          color: c.textPrimary,
+          fontFamily: fonts.body,
+          fontSize: fontSize.base,
+          lineHeight: lineHeight.loose,
+        }}
+      >
         <ReactMarkdown>{qa.answer}</ReactMarkdown>
       </div>
       {qa.references.length > 0 && (
-        <div style={{ marginTop: '0.75rem', borderTop: '1px solid #e2e8f0', paddingTop: '0.5rem' }}>
-          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>References:</span>
-          {qa.references.map((ref, i) => (
-            <div key={i} style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
-              <a href={referenceHref(ref)}
-                 style={{ color: '#667eea', textDecoration: 'none' }}>
-                [{referenceSourceLabel(ref)}] {ref.question_preview}
+        <div
+          style={{
+            marginTop: space['3'],
+            borderTop: `1px solid ${c.border}`,
+            paddingTop: space['3'],
+          }}
+        >
+          <span
+            style={{
+              fontFamily: fonts.ui,
+              fontSize: fontSize.xs,
+              fontWeight: fontWeight.semibold,
+              color: c.textSecondary,
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+            }}
+          >
+            References
+          </span>
+          <div
+            style={{
+              marginTop: space['2'],
+              display: 'flex',
+              flexDirection: 'column',
+              gap: space['1'],
+            }}
+          >
+            {qa.references.map((ref, i) => (
+              <a
+                key={i}
+                href={referenceHref(ref)}
+                style={{
+                  fontFamily: fonts.ui,
+                  fontSize: fontSize.sm,
+                  color: c.accent,
+                  textDecoration: 'none',
+                }}
+              >
+                <span
+                  style={{
+                    color: c.textMuted,
+                    fontSize: fontSize.xs,
+                    marginRight: space['2'],
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  {referenceSourceLabel(ref)}
+                </span>
+                {ref.question_preview}
               </a>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>

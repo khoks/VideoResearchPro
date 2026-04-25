@@ -80,11 +80,13 @@ The user can then turn this curated knowledge into outputs:
 
 This is the "Author Studio" surface (L2 in [feature-roadmap.md](feature-roadmap.md)).
 
-### Ring 3 — Personal brain / second self (long-horizon)
+### Ring 3 — Echo (personal brain / second self) (long-horizon)
 
-The widest, most ambitious circle. **Multi-quarter trajectory; design lives in [personal-brain.md](personal-brain.md).**
+The widest, most ambitious circle. **Named feature: Echo. Multi-quarter trajectory; design lives in [personal-brain.md](personal-brain.md).**
 
-The wiki keeps growing. The Q&A library keeps growing. Notes and opinions keep accumulating. Now the system also begins ingesting *the user themselves*:
+The wiki keeps growing. The Q&A library keeps growing. Notes and opinions keep accumulating. Now the system also begins ingesting *the user themselves* — through **two complementary intake modes**:
+
+**Pull-mode connectors** (the system fetches from external systems on a schedule):
 
 - Email (read-only)
 - YouTube watch history & likes
@@ -96,16 +98,30 @@ The wiki keeps growing. The Q&A library keeps growing. Notes and opinions keep a
 - Goodreads / Letterboxd / GitHub (consumption history)
 - Daily journaling input the user provides
 
-Each connector is **opt-in, scoped, revocable, encrypted-at-rest**, and respects a clear privacy model. Self-host stores everything locally; the eventual SaaS tier offers a zero-knowledge mode (see [saas-roadmap.md](saas-roadmap.md)).
+**Push-mode constant-stream sharing** (the user actively forwards content all day, with as little friction as possible):
 
-From this combined corpus — sources the user trusts + the user's own life — Pratidhvani begins to:
+- Liked videos, reels, memes
+- WhatsApp conversations they want preserved
+- Their own social posts
+- Google Keep / Apple Notes / Notion clippings
+- Quotes from books, podcasts, articles
+- Voice memos and bookmarks
+- Anything else: "and other such stuff" (per the user's framing)
 
-1. **Suggest questions** the user would likely ask, based on their patterns.
+OS share targets, a browser extension, an email-in inbox, drag-drop, and a manual quick-share button feed a single `shares_inbox`. Approval friction is removed precisely because *the act of sharing is itself the curation step*.
+
+Each connector and intake surface is **opt-in, scoped, revocable, encrypted-at-rest**, and respects a clear privacy model. Self-host stores everything locally; the eventual SaaS tier offers a zero-knowledge mode (see [saas-roadmap.md](saas-roadmap.md)).
+
+From this combined corpus — sources the user trusts + the user's own life + the user's daily share-stream — Pratidhvani begins to:
+
+1. **Capture personality, not just style** — trusted conclusions, preferred solutions, recommendation lens, apprehensions, methodology, topic emphasis, perception lens.
 2. **Anticipate what they need** when they open a topic (e.g. surface their saved-but-unread podcast on it).
-3. **Capture their voice** — writing samples, conversational style, recurring opinions — so that…
-4. **The "Speak as me" agent** can draft responses to incoming messages, emails, comments — in the user's voice, citing their accumulated knowledge.
+3. **Suggest questions** the user would likely ask, based on their patterns.
+4. **Speak as them** — Echo drafts responses to incoming messages, emails, comments in the user's voice, citing their accumulated knowledge. Two modes: **A** prompt-time retrieval of personality signals (default, ships first); **B** opt-in fine-tuning of a per-user model on curated dataset themes (problem-solution, recommendation lens, situational priority, opinion-formation, methodology) once the readiness corpus warrants it. Per the user's 2026-04-24 framing (verbatim in [`notes/2026-04-24-echo-feature-vision.md`](notes/2026-04-24-echo-feature-vision.md)): *"just having a RAG to answer is" probably insufficient* — Mode B + an agentic harness exists to address that.
 
-The endpoint of this ring is a **second self**: not a clone, not a copy, but a research-grounded interlocutor that knows what the user knows, sounds like the user sounds, and can hold a conversation on the user's behalf when they're not available.
+**The Echo surface itself** is always-evokable — a floating bubble present on every page, summoned with one click or `cmd+e` / `ctrl+e`. It is **cold-start gated**: until the user has accumulated enough corpus across all domains, the bubble shows a readiness meter and refuses to mimic poorly. Better to refuse than to break trust.
+
+The endpoint of this ring is a **second self**: not a clone, not a copy, but a research-grounded interlocutor that knows what the user knows, sounds like the user sounds, holds the user's conclusions and methodology, and can hold a conversation on the user's behalf when they're not available.
 
 ---
 
@@ -167,7 +183,7 @@ Roughly:
 | **Phase 3 — Author Studio** | 2026 Q4 | L2 lands incrementally: Books → static sites → decks → reels. |
 | **Phase 4 — Curated source ranking** | 2027 Q1 | L4 lands. Source weights, disagreement-preserving answers, side-by-side narratives. |
 | **Phase 5 — SaaS** | 2027 Q2+ | L5 lands. Hosted SaaS, billing tiers, OAuth, regions, abuse prevention. Self-host stays first-class. |
-| **Phase 6 — Personal Brain** | 2027 Q3+ | L3 begins. Activity connectors opt-in, voice capture, "speak as me" agent. |
+| **Phase 6 — Echo (Personal Brain)** | 2027 Q3+ | L3 begins. Constant-stream intake (Domain 5) ships first; activity connectors land one-by-one; personality capture; the "speak as me" agent + always-evokable Echo bubble; cold-start readiness gating; opt-in Mode B fine-tuning. |
 
 Targets are aspirational, not commitments. Each phase only ships when its design doc, schema migration, and user-facing flow are stable enough to live with.
 

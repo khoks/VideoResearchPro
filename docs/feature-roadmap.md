@@ -96,23 +96,44 @@ Multi-week each. Foundational. Each one reshapes the schema or adds a top-level 
 
 ---
 
-### L3 — Personal Brain ⚪
+### L3 — Echo (the personal brain) ⚪
 
-**Motivation.** The widest ring of the vision (see [vision.md](vision.md) Ring 3). Pratidhvani learns enough about the user — through opt-in life connectors — that it can suggest questions before they ask, anticipate their needs, capture their voice, and eventually speak on their behalf.
+**Motivation.** The widest ring of the vision (see [vision.md](vision.md) Ring 3). Pratidhvani learns enough about the user — through opt-in life connectors *and* constant-stream sharing of liked videos / reels / memes / WhatsApp threads / Keep notes / quotes — that it can suggest questions before they ask, anticipate their needs, capture their personality, and eventually speak on their behalf.
 
-**Sketch.** Three components:
+The user-facing surface has a name: **Echo**, a proper-noun reuse of the brand's literal meaning (*Pratidhvani* = echo). Echo is **the** killer L3 feature; everything else in this entry is its supporting infrastructure. Per the user's 2026-04-24 framing (verbatim in [`notes/2026-04-24-echo-feature-vision.md`](notes/2026-04-24-echo-feature-vision.md)): *"behave just like the individual who is using it… their own perception, their own lens, their own apprehensions, their own methodology, their own style of talking."*
 
-1. **Personal context store** — separate schema (`user_context_*` tables) holding what the user has *told* or *connected* about themselves: location history, interests, hobbies, work, talents, skills, personality dimensions, life events, opinions, daily routine.
-2. **Activity ingestion connectors** — pluggable, opt-in, scoped, revocable. Each connector lands as its own PR. See [personal-brain.md](personal-brain.md) for the connector contract.
-3. **Voice & "speak as me" agent** — captures the user's writing samples, Q&A patterns, recurring framings; drafts responses to incoming messages in the user's voice using their accumulated knowledge.
+**Sketch.** Five components:
 
-**Schema impact.** Substantial new schema, isolated from the source library. See [personal-brain.md](personal-brain.md).
+1. **Personal context store** — separate schema (`personal_facts` + `personal_context_global` Chroma collection) holding what the user has *told* or *connected* about themselves: location history, interests, hobbies, work, talents, skills, personality dimensions, life events, opinions, daily routine.
+2. **Activity ingestion connectors (pull-mode)** — pluggable, opt-in, scoped, revocable. Each connector lands as its own PR. YouTube watch history → Spotify → Goodreads → calendar → Apple Health → GitHub → browser history → journal → email. See [personal-brain.md](personal-brain.md) for the connector contract.
+3. **Personality capture & "speak as me" agent** — captures the user's writing samples, Q&A patterns, recurring framings, *plus* trusted conclusions, preferred solutions, recommendation lens, apprehensions, methodology, topic emphasis, perception lens. Drafts responses to incoming messages in the user's voice using their accumulated knowledge. Two modes: **A** prompt-time retrieval of personality signals (default), **B** opt-in per-user fine-tuning post-readiness, on curated dataset themes (problem-solution, recommendation lens, situational priority, opinion-formation, methodology) plus an agentic harness that consults the right substrate per turn.
+4. **Constant-stream intake (push-mode sharing)** — `shares_inbox` table fed by OS share targets, browser extension, email-in inbox, drag-drop dropzone, manual quick-share. Friction-free intake of liked videos / reels / memes / WhatsApp threads / Keep notes / quotes / voice memos. Cross-feeds Domains 1 (facts), 2 (events), 3 (personality signals), and the source library. The single richest signal feeder for Echo readiness.
+5. **Always-evokable Echo surface** — floating bubble present on every page (the "Jarvis" pattern). One-click expand into chat panel; keyboard `cmd+e` / `ctrl+e`. Cold-start readiness gating: Echo refuses (showing a progress meter) until the user crosses thresholds across all five domains.
 
-**API impact.** New top-level `/api/v1/me/*` endpoints for connectors, context store, and voice agent.
+**Schema impact.** Substantial new schema, isolated from the source library. New tables: `personal_facts`, `activity_events`, `voice_signals`, `shares_inbox`. New Chroma collections: `personal_context_global`, `activity_stream_global`, `shares_global`. See [personal-brain.md](personal-brain.md).
 
-**Open questions.** Many — see [personal-brain.md](personal-brain.md). Privacy model is the largest open design space.
+**API impact.** New top-level `/api/v1/me/*` endpoints for connectors, context store, personality agent. New `/api/v1/echo/*` endpoints for the always-evokable surface (chat, readiness status, fine-tune control). New `/api/v1/shares/*` for constant-stream intake (POST from share targets, browser ext, email-in webhook, drag-drop).
 
-**Status.** ⚪ proposed. Targeted Phase 6 (2027 Q3+). Connectors land one at a time, easiest first (YouTube watch history → Spotify → email → calendar).
+**Cold-start readiness threshold** (recommended initial — see [personal-brain.md](personal-brain.md) for sub-table):
+
+| Signal | Minimum |
+|--------|---------|
+| Self-authored personal facts | 30 facts across ≥ 3 categories |
+| Activity events (any connector) | 90 days, ≥ 200 events |
+| Personality signals | ≥ 50 signals across ≥ 4 types |
+| Constant-stream shares | ≥ 100 shares spanning ≥ 4 content types |
+
+Below threshold: bubble dimmed, banner explains what's missing. Crossing threshold: bubble lights up, one-time onboarding moment.
+
+**Open questions.** Many — see [personal-brain.md](personal-brain.md). Privacy model is the largest open design space; fine-tuning leverage and corpus thresholds are the second-largest.
+
+**Status.** ⚪ proposed. Targeted Phase 6 (2027 Q3+). Components land in order:
+
+1. Constant-stream intake first (Domain 5) — it's the highest-leverage, lowest-privacy-load entry point and starts feeding the readiness corpus immediately.
+2. Personal context store + manual personality signals (Domains 1 + 3, retrieval mode only).
+3. Activity connectors (Domain 2), one at a time, easiest first (YouTube watch history → Spotify → email → calendar).
+4. "Speak as me" agent + Echo bubble (Domain 4) — once the corpus crosses readiness for any subset of users.
+5. Mode B fine-tuning — opt-in, after Mode A is stable and readiness data shows the corpus warrants it.
 
 ---
 

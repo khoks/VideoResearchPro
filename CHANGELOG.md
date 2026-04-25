@@ -20,6 +20,18 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 *(No code changes shipped in this pass — documentation and identity only.)*
 
+### Echo — Ring 3 vision capture (docs only, 2026-04-24)
+
+- **Named the L3 user-facing surface "Echo"** — a proper-noun reuse of the brand's literal meaning (*Pratidhvani* = echo). Echo is the always-evokable "Jarvis-style" floating bubble that speaks *as the user themselves*: synthesising sources, history, personal facts, activity, and personality signals into responses that mirror the user's lens, methodology, and conclusions. See [docs/personal-brain.md](docs/personal-brain.md) §"Echo — the named L3 surface".
+- **Added Domain 5 — constant-stream intake (push-mode sharing).** OS share targets, browser extension, email-in inbox, drag-drop, manual quick-share — friction-free intake of liked videos / reels / memes / WhatsApp threads / Keep notes / quotes / voice memos. New `shares_inbox` table and `shares_global` Chroma collection. Cross-feeds Domains 1 (facts), 2 (events), 3 (personality signals), and the source library. The single richest signal feeder for Echo readiness.
+- **Reframed Domain 3 from "voice capture" to "personality capture".** Style/cadence is one signal among many; the new schema treats `trusted_conclusion`, `preferred_solution`, `recommendation_lens`, `apprehension`, `methodology`, `topic_emphasis`, `perception_lens` as first-class signal types alongside the existing style layer.
+- **Two complementary personality-capture modes documented:** **Mode A** prompt-time retrieval of personality signals (default, ships first); **Mode B** opt-in per-user fine-tuning on curated dataset themes (problem-solution, recommendation lens, situational priority, opinion-formation, methodology) once readiness is crossed.
+- **Cold-start readiness gating.** Echo refuses to mimic poorly: until thresholds are crossed across all five domains, the bubble is dimmed and shows a progress meter. Better to refuse than to break trust.
+- **Captured the user's verbatim 2026-04-24 vision brain-dump** in [docs/notes/2026-04-24-echo-feature-vision.md](docs/notes/2026-04-24-echo-feature-vision.md) as a raw safekeeping artifact. The structured docs (personal-brain.md, feature-roadmap.md, vision.md) are the synthesis; the notes file is the source of truth if synthesis ever drifts from intent.
+- **Updated:** [docs/personal-brain.md](docs/personal-brain.md), [docs/feature-roadmap.md](docs/feature-roadmap.md) (L3 entry renamed and expanded to five components), [docs/vision.md](docs/vision.md) (Ring 3 + Phase 6 milestone reference Echo by name).
+
+*(Still docs-only — no code or schema changes. The L3 build-out is targeted Phase 6 / 2027 Q3+.)*
+
 ---
 
 ## Recently shipped

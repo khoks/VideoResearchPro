@@ -10,6 +10,14 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### L1 multi-source ingest — PR 4: rename `videos` table → `documents`
+
+- **Pure rename migration** at `backend/alembic/versions/01c5b6dae736_rename_videos_to_documents.py` (revises `f6a7b8c9d0e1`). Renames the table, drops/recreates the two existing indexes (`ix_videos_channel_id` and `ix_videos_source_type_source_id` → `ix_documents_*`), and re-points the `job_videos.video_id` foreign key from `videos.video_id` to `documents.video_id` on non-SQLite via `batch_alter_table`. Reversible.
+- **Renamed `app/models/video.py` → `app/models/document.py`** with `class Video` → `class Document`, `__tablename__ = "documents"`, and the legacy `__init__` compat shim preserved (defaults `source_type='video'`, `source_id` from `video_id`, `source_url` from `url`). The PK column is intentionally still `video_id` — promoting it to a UUID `id` would cascade to `job_videos.video_id` and `transcript_cache.video_id` foreign keys and is deferred to a later PR.
+- **Propagated `Video` → `Document` across 14 importers** under `app/routers/`, `app/services/`, `app/tasks/`, `app/agents/` plus `app/models/__init__.py`, `app/models/job.py` (relationship), and `app/models/job_video.py` (FK target). User-facing strings (404 messages, LLM prompt formatting, Celery progress messages like `f"Video {attempted}/{total}:"`) intentionally left unchanged — they refer to the user-facing concept of a YouTube video, not the ORM class.
+- **Tests** — every `from app.models.video import Video` import migrated to `from app.models.document import Document`; `db.query(Video)`, `db.get(Video, ...)`, and `Video(...)` constructor calls in 8 test files updated to `Document`. 320/320 backend tests pass excluding 5 pre-existing LLM-routing failures unrelated to this PR.
+- *(After PR 4, the schema, model class, and every Python call site speak `Document`. Connectors (PR 2/3) and the orchestrator are now ready for the next L1 step: a non-video connector — article or PDF — without further table renames.)*
+
 ### L1 multi-source ingest — PR 3: route remaining YouTube call sites through the connector
 
 - **`app/tasks/job_tasks.py` migrated** — channel-job and subscription-job orchestrator paths now resolve creators, list creator items, fetch metadata, and fetch creator profiles via `connector_for("video")` rather than calling `youtube_service` directly. The single exception is `youtube_service.get_channel_videos_all(...)` in the subscription uploads-walk: it depends on the cached `uploads_playlist_id` optimization (saves one `channels.list` quota unit per channel) and the connector contract has no per-source-type optimization slot today. Documented inline; future PR can extend `list_creator_items` with an `extra` kwargs bag.

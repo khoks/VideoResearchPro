@@ -9,7 +9,7 @@ from app.models.channel import Channel
 from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.models.transcript_cache import TranscriptCache
-from app.models.video import Video
+from app.models.document import Document
 from app.services import chroma_service, progress_service, youtube_service
 from app.sources import connector_for
 from app.sources.types import Candidate, SourceMetadata
@@ -60,9 +60,9 @@ def _channel_pending(db, channel_id: str) -> bool:
 
 
 def _video_pending(db, video_id: str) -> bool:
-    """Same idea as ``_channel_pending`` but for Video rows."""
+    """Same idea as ``_channel_pending`` but for Document rows."""
     return any(
-        isinstance(obj, Video) and obj.video_id == video_id
+        isinstance(obj, Document) and obj.video_id == video_id
         for obj in db.new
     )
 
@@ -88,8 +88,8 @@ def _source_metadata_to_legacy_dict(sm: SourceMetadata) -> dict:
     the subscription-job uploads-walk) still expects the flat dict
     shape. Bridging at the call-site boundary lets PR 3 ship without
     rewriting that downstream code; a future PR can promote callers
-    to ``SourceMetadata`` directly when ``videos`` → ``documents``
-    lands.
+    to ``SourceMetadata`` directly now that the ``videos`` → ``documents``
+    rename has landed.
     """
     return {
         "title": sm.title,
@@ -106,13 +106,13 @@ def _source_metadata_to_legacy_dict(sm: SourceMetadata) -> dict:
 
 
 def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
-    """Insert/refresh a global Video, its Channel, and the JobVideo link.
+    """Insert/refresh a global Document, its Channel, and the JobVideo link.
 
     `data` is the search-result dict from the Search Agent or YouTube service
     (keys: video_id, title, channel_id, channel_name, url, duration_seconds,
     thumbnail_url, description, selection_reason). Missing keys are tolerated.
 
-    Existing Video rows are preserved with their transcript/embedding state;
+    Existing Document rows are preserved with their transcript/embedding state;
     only lightweight surface metadata (title, thumbnail, url) is refreshed.
     Uses Session.get() so repeated lookups within one batch hit the identity
     map instead of the database.
@@ -134,15 +134,15 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
     if channel_id and db.get(Channel, channel_id) is None and not _channel_pending(db, channel_id):
         db.add(Channel(channel_id=channel_id, name=channel_name or channel_id))
 
-    # Same dedup concern for Video: defensive, since duplicates here
+    # Same dedup concern for Document: defensive, since duplicates here
     # would also wedge the commit.
-    video = db.get(Video, video_id)
+    video = db.get(Document, video_id)
     if video is None:
-        # Not in the DB. Only stage a new Video if another call in this same
+        # Not in the DB. Only stage a new Document if another call in this same
         # batch hasn't already staged one — otherwise we'd produce duplicate
         # primary keys at commit time.
         if not _video_pending(db, video_id):
-            db.add(Video(
+            db.add(Document(
                 video_id=video_id,
                 channel_id=channel_id,
                 title=data.get("title", "Unknown"),
@@ -176,8 +176,8 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
         ))
 
 
-def _build_video_metadata(video: Video, language: str | None) -> dict:
-    """Build the metadata dict passed to ``chunk_transcript`` for a Video row."""
+def _build_video_metadata(video: Document, language: str | None) -> dict:
+    """Build the metadata dict passed to ``chunk_transcript`` for a Document row."""
     return {
         "video_id": video.video_id,
         "title": video.title,
@@ -435,10 +435,10 @@ def resume_job_after_approval(self, job_id: str) -> None:
             return
 
         # PHASE: EXTRACTING
-        # `approved` now lives on the JobVideo link row, not on Video.
+        # `approved` now lives on the JobVideo link row, not on Document.
         approved_rows = (
-            db.query(Video)
-            .join(JobVideo, JobVideo.video_id == Video.video_id)
+            db.query(Document)
+            .join(JobVideo, JobVideo.video_id == Document.video_id)
             .filter(JobVideo.job_id == job_id, JobVideo.approved.is_(True))
             .all()
         )
@@ -533,7 +533,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                     )
                     already_fetched = False
 
-            # Never fetched: full fetch + chunk + embed + update Video row.
+            # Never fetched: full fetch + chunk + embed + update Document row.
             if not already_fetched:
                 logger.info(
                     f"[job:{job_id}] [{i + 1}/{total}] Fetching transcript: "
@@ -728,10 +728,10 @@ def _run_extraction_and_rag(self, db, job) -> None:
     ingest.
     """
     job_id = job.id
-    # `approved` now lives on the JobVideo link row, not on Video.
+    # `approved` now lives on the JobVideo link row, not on Document.
     approved_videos = (
-        db.query(Video)
-        .join(JobVideo, JobVideo.video_id == Video.video_id)
+        db.query(Document)
+        .join(JobVideo, JobVideo.video_id == Document.video_id)
         .filter(JobVideo.job_id == job_id, JobVideo.approved.is_(True))
         .all()
     )
@@ -1067,7 +1067,7 @@ def execute_subscription_job(self, job_id: str) -> None:
         )
         db.commit()
 
-        # Phase 2: walk uploads, fetch details, insert Video rows
+        # Phase 2: walk uploads, fetch details, insert Document rows
         if _is_cancelled(db, job_id):
             logger.info(f"[job:{job_id}] Job cancelled before uploads walk, exiting")
             return
@@ -1114,10 +1114,10 @@ def execute_subscription_job(self, job_id: str) -> None:
 
             if unlinked_ids:
                 # Fetch details for videos not yet in the global library so we
-                # populate Video rows with accurate metadata. _upsert_video_and_link
-                # tolerates pre-existing Video rows and just creates the JobVideo.
+                # populate Document rows with accurate metadata. _upsert_video_and_link
+                # tolerates pre-existing Document rows and just creates the JobVideo.
                 missing_from_library = [
-                    vid for vid in unlinked_ids if db.get(Video, vid) is None
+                    vid for vid in unlinked_ids if db.get(Document, vid) is None
                 ]
                 details: dict = {}
                 if missing_from_library:

@@ -74,7 +74,7 @@ def approve_job(job_id: str, approval: VideoApproval, db: Session = Depends(get_
         raise HTTPException(status_code=400, detail=f"Job is not awaiting approval (status: {job.status})")
 
     # `approved_video_ids` carries YouTube video IDs (e.g. "U-G-mSd4KAE").
-    # Approval state now lives on the JobVideo join row, not the shared Video.
+    # Approval state now lives on the JobVideo join row, not the shared Document.
     approved_set = set(approval.approved_video_ids)
     for jv in job.job_videos:
         jv.approved = jv.video_id in approved_set

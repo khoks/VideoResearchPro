@@ -10,7 +10,7 @@ from app.models.channel import Channel
 from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.models.library_qa_exchange import LibraryQAExchange
-from app.models.video import Video
+from app.models.document import Document
 from app.schemas.library_qa import (
     LibraryClarifyRequest,
     LibraryClarifyResponse,
@@ -205,26 +205,26 @@ def list_library_videos(
     Each row carries an aggregated `job_count` and `job_titles[]` so the UI
     can show "appears in N research runs" without follow-up requests.
     """
-    q = db.query(Video).outerjoin(Channel, Video.channel_id == Channel.channel_id)
+    q = db.query(Document).outerjoin(Channel, Document.channel_id == Channel.channel_id)
 
     if search:
         like = f"%{search}%"
-        q = q.filter(or_(Video.title.ilike(like), Channel.name.ilike(like)))
+        q = q.filter(or_(Document.title.ilike(like), Channel.name.ilike(like)))
     if language:
-        q = q.filter(Video.transcript_language == language)
+        q = q.filter(Document.transcript_language == language)
     if channel_id:
-        q = q.filter(Video.channel_id == channel_id)
+        q = q.filter(Document.channel_id == channel_id)
     if transcript_status:
-        q = q.filter(Video.transcript_status == transcript_status)
+        q = q.filter(Document.transcript_status == transcript_status)
 
     if sort == "newest":
-        q = q.order_by(Video.created_at.desc())
+        q = q.order_by(Document.created_at.desc())
     elif sort == "oldest":
-        q = q.order_by(Video.created_at.asc())
+        q = q.order_by(Document.created_at.asc())
     elif sort == "longest":
-        q = q.order_by(Video.duration_seconds.desc())
+        q = q.order_by(Document.duration_seconds.desc())
     elif sort == "shortest":
-        q = q.order_by(Video.duration_seconds.asc())
+        q = q.order_by(Document.duration_seconds.asc())
 
     videos = q.offset(offset).limit(limit).all()
 

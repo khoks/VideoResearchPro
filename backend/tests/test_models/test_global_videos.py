@@ -14,15 +14,15 @@ from app.models.job import Job
 # clear reason when those haven't landed yet.
 pytest.importorskip("app.models.job_video", reason="pending Unit 1 merge — JobVideo link table")
 
+from app.models.document import Document  # noqa: E402
 from app.models.job_video import JobVideo  # noqa: E402
-from app.models.video import Video  # noqa: E402
 
-# Extra guard: the refactored Video model no longer has a per-row job_id FK
+# Extra guard: the refactored Document model no longer has a per-row job_id FK
 # (moved to the JobVideo link table). If we still see that column, the
 # rename hasn't fully happened yet.
-if "job_id" in {c.name for c in Video.__table__.columns}:
+if "job_id" in {c.name for c in Document.__table__.columns}:
     pytest.skip(
-        "pending Unit 1 merge — Video.job_id still present; awaiting global-video refactor",
+        "pending Unit 1 merge — Document.job_id still present; awaiting global-video refactor",
         allow_module_level=True,
     )
 
@@ -35,8 +35,8 @@ def _make_job(db, topic: str = "unit-test") -> Job:
     return job
 
 
-def _make_video(db, video_id: str, title: str = "Title") -> Video:
-    video = Video(
+def _make_video(db, video_id: str, title: str = "Title") -> Document:
+    video = Document(
         video_id=video_id,
         title=title,
         channel_id="UC123",
@@ -62,7 +62,7 @@ def test_video_global_uniqueness_across_jobs(db):
                     selection_reason="search"))
     db.commit()
 
-    assert db.query(Video).filter(Video.video_id == "shared-vid").count() == 1
+    assert db.query(Document).filter(Document.video_id == "shared-vid").count() == 1
     assert db.query(JobVideo).filter(JobVideo.video_id == "shared-vid").count() == 2
 
 
@@ -93,7 +93,7 @@ def test_insert_duplicate_video_raises(db):
     constraint — enforcement may be PRIMARY KEY or UNIQUE depending on schema."""
     _make_video(db, "dup-vid")
 
-    dup = Video(
+    dup = Document(
         video_id="dup-vid",
         title="Dup",
         channel_id="UC123",
@@ -121,7 +121,7 @@ def test_delete_job_removes_link_but_keeps_global_video(db):
     db.commit()
 
     # Video row survives, job_b's link survives, only job_a's link is gone.
-    assert db.query(Video).filter(Video.video_id == "vid-shared2").count() == 1
+    assert db.query(Document).filter(Document.video_id == "vid-shared2").count() == 1
     assert db.query(JobVideo).filter(JobVideo.video_id == "vid-shared2").count() == 1
     remaining = db.query(JobVideo).filter(JobVideo.video_id == "vid-shared2").first()
     assert remaining.job_id == job_b.id

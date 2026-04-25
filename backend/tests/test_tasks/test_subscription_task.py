@@ -26,7 +26,7 @@ pytest.importorskip("app.models.channel", reason="pending Unit 2 — Channel")
 from app.models.channel import Channel  # noqa: E402
 from app.models.job import Job  # noqa: E402
 from app.models.job_video import JobVideo  # noqa: E402
-from app.models.video import Video  # noqa: E402
+from app.models.document import Document  # noqa: E402
 from app.sources.video import connector as yt_connector  # noqa: E402
 
 
@@ -104,7 +104,7 @@ def test_execute_subscription_job_auto_completes_without_approval(patch_session_
         job_tasks.execute_subscription_job.run(job.id)
 
     # Global videos table now has 3 rows.
-    videos = db.query(Video).filter(Video.video_id.in_(video_ids)).all()
+    videos = db.query(Document).filter(Document.video_id.in_(video_ids)).all()
     assert len(videos) == 3
 
     # job_videos links: all 3, all approved, selection_reason='subscription'.
@@ -131,7 +131,7 @@ def test_execute_subscription_job_skips_duplicate_videos(patch_session_local, db
     job = _make_subscription_job(db, channel_id=channel_id)
 
     # Pre-seed one video in the global table.
-    existing = Video(
+    existing = Document(
         video_id="vSub1",
         title="Already Seen",
         channel_id=channel_id,
@@ -180,7 +180,7 @@ def test_execute_subscription_job_skips_duplicate_videos(patch_session_local, db
         job_tasks.execute_subscription_job.run(job.id)
 
     # Still only one row per video_id globally.
-    assert db.query(Video).filter(Video.video_id == "vSub1").count() == 1
-    assert db.query(Video).filter(Video.video_id == "vSub2").count() == 1
+    assert db.query(Document).filter(Document.video_id == "vSub1").count() == 1
+    assert db.query(Document).filter(Document.video_id == "vSub2").count() == 1
     # Both linked to the subscription job.
     assert db.query(JobVideo).filter(JobVideo.job_id == job.id).count() == 2

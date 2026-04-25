@@ -109,7 +109,7 @@ def job_to_response_dict(job: Job) -> dict:
 
 def job_videos_response(job: Job) -> list[dict]:
     """Build the video list response for a job, stitching per-job approval
-    state from the JobVideo join onto the global Video rows.
+    state from the JobVideo join onto the global Document rows.
 
     The shape matches the pre-refactor `/jobs/{id}/videos` response so existing
     API consumers keep working.

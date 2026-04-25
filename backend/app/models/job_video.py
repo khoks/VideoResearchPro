@@ -8,11 +8,15 @@ from app.database import Base
 
 
 class JobVideo(Base):
-    """Join table associating Jobs to Videos (now globally deduplicated).
+    """Join table associating Jobs to Documents (the global deduplicated library).
 
-    A given YouTube video may appear in many jobs; each row captures the per-job
-    approval state and audit fields (`curated_at`, `selection_reason`). Use the
-    composite `(job_id, video_id)` primary key to de-dupe within a single job.
+    A given source document may appear in many jobs; each row captures
+    the per-job approval state and audit fields (`curated_at`,
+    `selection_reason`). Use the composite `(job_id, video_id)` primary
+    key to de-dupe within a single job.
+
+    The column is still named `video_id` for back-compat — see the
+    `Document.video_id` docstring for why the column rename is deferred.
     """
 
     __tablename__ = "job_videos"
@@ -25,7 +29,7 @@ class JobVideo(Base):
         String(36), ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True
     )
     video_id: Mapped[str] = mapped_column(
-        String(20), ForeignKey("videos.video_id", ondelete="CASCADE"), primary_key=True
+        String(20), ForeignKey("documents.video_id", ondelete="CASCADE"), primary_key=True
     )
 
     approved: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

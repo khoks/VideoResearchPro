@@ -54,12 +54,14 @@ class Job(Base):
     celery_task_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Relationships
-    # Videos are a globally deduplicated library (one `videos` row per YouTube
-    # video_id). The `job_videos` join carries per-job approval/audit state.
-    # The attribute name `videos` is preserved for backward compatibility so
-    # existing callers (`job.videos`) keep working.
-    videos: Mapped[list["Video"]] = relationship(  # noqa: F821
-        "Video",
+    # Documents are a globally deduplicated library (one `documents` row
+    # per source — YouTube video today, podcasts/articles/etc. soon).
+    # The `job_videos` join carries per-job approval/audit state.
+    # The attribute name `videos` is preserved for back-compat so existing
+    # callers (`job.videos`) keep working; the join target is the renamed
+    # `Document` model.
+    videos: Mapped[list["Document"]] = relationship(  # noqa: F821
+        "Document",
         secondary="job_videos",
         viewonly=True,
         lazy="select",

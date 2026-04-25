@@ -1,8 +1,11 @@
-"""Tests for the L1 multi-source schema columns on `videos` and `channels`.
+"""Tests for the L1 multi-source schema columns on `documents` and `channels`.
 
 PR 1 introduced `source_type`, `source_id`, `source_url`, `source_metadata_json`,
-`language`, `word_count`, `user_provenance_json` on `videos` and `source_type`,
-`creator_external_id`, `source_weight`, `creator_metadata_json` on `channels`.
+`language`, `word_count`, `user_provenance_json` on `documents` (then named
+`videos`) and `source_type`, `creator_external_id`, `source_weight`,
+`creator_metadata_json` on `channels`. PR 4 renamed `videos` → `documents`
+and the `Video` model class to `Document`; the YouTube-flavoured column
+names (`video_id`, `url`) stay for back-compat.
 
 The legacy YouTube ingest call sites are not yet aware of these columns, so
 the model `__init__` overrides default `source_id` from `video_id`,
@@ -11,10 +14,10 @@ the model `__init__` overrides default `source_id` from `video_id`,
 from sqlalchemy.exc import IntegrityError
 
 from app.models.channel import Channel
-from app.models.video import Video
+from app.models.document import Document
 
 
-def _video(db, video_id: str = "abc123def45", **overrides) -> Video:
+def _video(db, video_id: str = "abc123def45", **overrides) -> Document:
     kwargs = dict(
         video_id=video_id,
         title="A title",
@@ -22,7 +25,7 @@ def _video(db, video_id: str = "abc123def45", **overrides) -> Video:
         duration_seconds=300,
     )
     kwargs.update(overrides)
-    v = Video(**kwargs)
+    v = Document(**kwargs)
     db.add(v)
     db.commit()
     db.refresh(v)
@@ -73,7 +76,7 @@ class TestVideoDefaults:
     def test_unique_source_type_source_id_pair(self, db):
         """Two `video`-source rows with the same source_id are forbidden."""
         _video(db, video_id="aaa1112223")
-        clash = Video(
+        clash = Document(
             video_id="zzz9998887",
             title="Different title",
             url="https://www.youtube.com/watch?v=zzz9998887",

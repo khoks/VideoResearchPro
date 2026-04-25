@@ -16,7 +16,7 @@ pytest.importorskip("app.routers.library", reason="pending Unit 6 merge — libr
 from app.models.channel import Channel
 from app.models.job import Job
 from app.models.job_video import JobVideo
-from app.models.video import Video
+from app.models.document import Document
 
 
 def test_get_library_qa_initially_empty(client):
@@ -115,7 +115,7 @@ def _seed_library(db) -> dict:
     db.add_all([ch_a, ch_b])
     db.commit()
 
-    v1 = Video(
+    v1 = Document(
         video_id="vid001alpha",
         channel_id=ch_a.channel_id,
         title="Alpha Intro to DNS",
@@ -127,7 +127,7 @@ def _seed_library(db) -> dict:
         transcript_word_count=900,
         created_at=base + timedelta(days=1),
     )
-    v2 = Video(
+    v2 = Document(
         video_id="vid002alpha",
         channel_id=ch_a.channel_id,
         title="Alpha Deep Dive on TCP",
@@ -139,7 +139,7 @@ def _seed_library(db) -> dict:
         transcript_word_count=None,
         created_at=base + timedelta(days=2),
     )
-    v3 = Video(
+    v3 = Document(
         video_id="vid003beta",
         channel_id=ch_b.channel_id,
         title="Beta Hindi Tutorial",
@@ -151,7 +151,7 @@ def _seed_library(db) -> dict:
         transcript_word_count=1200,
         created_at=base + timedelta(days=3),
     )
-    v4 = Video(
+    v4 = Document(
         video_id="vid004beta",
         channel_id=ch_b.channel_id,
         title="Beta Unavailable Video",

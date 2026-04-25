@@ -27,6 +27,7 @@ from app.models.channel import Channel  # noqa: E402
 from app.models.job import Job  # noqa: E402
 from app.models.job_video import JobVideo  # noqa: E402
 from app.models.video import Video  # noqa: E402
+from app.sources.video import connector as yt_connector  # noqa: E402
 
 
 @pytest.fixture
@@ -89,6 +90,7 @@ def test_execute_subscription_job_auto_completes_without_approval(patch_session_
     }
 
     with patch.object(job_tasks, "youtube_service") as mock_yt, \
+         patch.object(yt_connector, "youtube_service", mock_yt), \
          patch.object(job_tasks, "chroma_service") as mock_chroma, \
          patch.object(job_tasks, "progress_service"):
         mock_yt.resolve_channel_id = MagicMock(return_value=channel_id)
@@ -164,6 +166,7 @@ def test_execute_subscription_job_skips_duplicate_videos(patch_session_local, db
     }
 
     with patch.object(job_tasks, "youtube_service") as mock_yt, \
+         patch.object(yt_connector, "youtube_service", mock_yt), \
          patch.object(job_tasks, "chroma_service") as mock_chroma, \
          patch.object(job_tasks, "progress_service"):
         mock_yt.resolve_channel_id = MagicMock(return_value=channel_id)

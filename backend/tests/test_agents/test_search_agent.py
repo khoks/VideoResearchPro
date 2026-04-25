@@ -282,7 +282,8 @@ def test_execute_searches_merges_preferred_channel_uploads(fake_videos):
         mock_search.return_value = broad
 
         # get_video_details is called twice: once for preferred uploads, once for broad enrichment.
-        def _details_side_effect(ids):
+        # Accepts **_ so the connector's `job_id=""` kwarg passes through.
+        def _details_side_effect(ids, **_):
             return {
                 v["video_id"]: {
                     "video_id": v["video_id"],
@@ -438,7 +439,7 @@ def test_run_search_agent_resolves_preferred_channels(fake_videos):
         mock_search.return_value = [fake_videos[0]]  # v1 from broad
         mock_channel_videos.return_value = preferred_uploads_v2  # v2 from preferred channel
 
-        def _details_side_effect(ids):
+        def _details_side_effect(ids, **_):
             return {
                 v["video_id"]: {
                     "video_id": v["video_id"],

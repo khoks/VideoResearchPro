@@ -120,16 +120,18 @@ class YouTubeConnector(BaseConnector):
         since: datetime | None = None,
         *,
         limit: int | None = None,
+        job_id: str = "",
     ) -> Iterator[Candidate]:
         # `since` is not yet honored — today's job pipeline filters at
         # the orchestrator layer using the channel's `last_synced_at`.
-        # When PR 3+ migrates that filter into the connector, this is
-        # where it lands.
+        # Migrating that filter into the connector is a follow-up.
         if limit is None:
-            ids = youtube_service.get_channel_videos_all(creator_external_id)
+            ids = youtube_service.get_channel_videos_all(
+                creator_external_id, job_id=job_id
+            )
         else:
             ids = youtube_service.get_channel_videos(
-                creator_external_id, max_results=limit
+                creator_external_id, max_results=limit, job_id=job_id
             )
         for vid in ids:
             yield _candidate_from_id(vid)
@@ -137,14 +139,24 @@ class YouTubeConnector(BaseConnector):
     # ------------------------------------------------------------------
     # Enrichment
     # ------------------------------------------------------------------
-    def fetch_metadata(self, source_ids: list[str]) -> dict[str, SourceMetadata]:
+    def fetch_metadata(
+        self,
+        source_ids: list[str],
+        *,
+        job_id: str = "",
+    ) -> dict[str, SourceMetadata]:
         if not source_ids:
             return {}
-        details = youtube_service.get_video_details(source_ids)
+        details = youtube_service.get_video_details(source_ids, job_id=job_id)
         return {vid: _metadata_from_details_dict(d) for vid, d in details.items()}
 
-    def fetch_creator(self, creator_external_id: str) -> CreatorMetadata | None:
-        meta = youtube_service.get_channel_metadata(creator_external_id)
+    def fetch_creator(
+        self,
+        creator_external_id: str,
+        *,
+        job_id: str = "",
+    ) -> CreatorMetadata | None:
+        meta = youtube_service.get_channel_metadata(creator_external_id, job_id=job_id)
         if not meta:
             return None
         return CreatorMetadata(
@@ -159,6 +171,9 @@ class YouTubeConnector(BaseConnector):
                 if k in meta and meta[k] is not None
             },
         )
+
+    def resolve_creator_id(self, hint: str, *, job_id: str = "") -> str | None:
+        return youtube_service.resolve_channel_id(hint, job_id=job_id)
 
     # ------------------------------------------------------------------
     # Text payload

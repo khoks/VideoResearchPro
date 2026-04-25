@@ -41,6 +41,8 @@ from app.agents.prompts.search_prompts import (
 from app.agents.state import SearchAgentState
 from app.services import youtube_service
 from app.services.llm_service import get_llm_for
+from app.sources import connector_for
+from app.sources.types import Candidate, SourceMetadata
 from app.utils.youtube_helpers import format_duration
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,48 @@ logger = logging.getLogger(__name__)
 # How many recent uploads we pull per preferred channel before keyword-filtering.
 # 50 hits the YouTube playlistItems page size for a single quota unit.
 PREFERRED_CHANNEL_FETCH_LIMIT = 50
+
+
+def _candidate_to_legacy_dict(c: Candidate) -> dict:
+    """Convert a connector ``Candidate`` (from ``search()``) back to the
+    legacy ``youtube_service.search_videos`` dict shape so the existing
+    ``execute_searches`` plumbing (`source` tags, dedup-by-id, the
+    LLM rank prompt) keeps working untouched.
+    """
+    return {
+        "video_id": c.source_id,
+        "title": c.title,
+        "channel_name": c.creator_name or "",
+        "channel_id": c.creator_external_id or "",
+        "published_at": c.published_at,
+        "thumbnail_url": c.thumbnail_url,
+    }
+
+
+def _source_metadata_to_legacy_dict(sm: SourceMetadata, source_id: str) -> dict:
+    """Convert a connector ``SourceMetadata`` back to the legacy
+    ``youtube_service.get_video_details`` dict shape — same role as the
+    helper in ``job_tasks.py`` but kept local to avoid coupling the
+    agent module to the orchestrator. Both helpers will retire when
+    callers migrate to ``SourceMetadata`` directly.
+
+    ``source_id`` is the dict key from ``fetch_metadata``'s return
+    mapping — passed in so the legacy ``video_id`` field is populated
+    (the connector dataclass keeps it as the mapping key, not on the
+    object itself).
+    """
+    return {
+        "video_id": source_id,
+        "title": sm.title,
+        "channel_id": sm.creator_external_id or "",
+        "channel_name": sm.creator_name or "",
+        "duration_seconds": sm.duration_seconds,
+        "published_at": sm.published_at,
+        "thumbnail_url": sm.thumbnail_url,
+        "url": sm.extra.get("url"),
+        "view_count": sm.extra.get("view_count"),
+        "like_count": sm.extra.get("like_count"),
+    }
 
 
 def resolve_preferred_channels(state: SearchAgentState) -> dict:
@@ -60,6 +104,7 @@ def resolve_preferred_channels(state: SearchAgentState) -> dict:
     if not hints:
         return {"preferred_channel_ids": []}
 
+    connector = connector_for("video")
     resolved: list[str] = []
     seen: set[str] = set()
     for hint in hints:
@@ -67,7 +112,7 @@ def resolve_preferred_channels(state: SearchAgentState) -> dict:
         if not hint:
             continue
         try:
-            cid = youtube_service.resolve_channel_id(hint)
+            cid = connector.resolve_creator_id(hint)
         except Exception:
             logger.exception("resolve_preferred_channels: %r raised, skipping", hint)
             continue
@@ -155,19 +200,18 @@ def plan_searches(state: SearchAgentState) -> dict:
 def _run_broad_searches(queries: list[str], target: int) -> dict[str, dict]:
     """Run each broad query against YouTube, deduping by video_id."""
     per_query_max = max(target * 3, 50)
+    connector = connector_for("video")
     all_videos: dict[str, dict] = {}
     for query in queries:
         try:
-            results = youtube_service.search_videos(
-                query=query,
-                max_results=per_query_max,
-            )
+            candidates = connector.search(query, limit=per_query_max)
         except Exception:
             logger.exception("broad search for %r failed; skipping", query)
             continue
-        for v in results:
-            vid = v["video_id"]
+        for c in candidates:
+            vid = c.source_id
             if vid not in all_videos:
+                v = _candidate_to_legacy_dict(c)
                 v["source"] = "search"
                 v["source_query"] = query
                 all_videos[vid] = v
@@ -206,15 +250,19 @@ def _fetch_preferred_channel_uploads(
     if not channel_ids:
         return {}
 
+    connector = connector_for("video")
+
     # Fetch recent upload IDs per channel.
     all_ids: list[str] = []
     channel_of: dict[str, str] = {}
     for cid in channel_ids:
         try:
-            vids = youtube_service.get_channel_videos(
-                channel_id=cid,
-                max_results=PREFERRED_CHANNEL_FETCH_LIMIT,
-            )
+            vids = [
+                c.source_id
+                for c in connector.list_creator_items(
+                    cid, limit=PREFERRED_CHANNEL_FETCH_LIMIT
+                )
+            ]
         except Exception:
             logger.exception("preferred-channel fetch failed for %s", cid)
             continue
@@ -227,10 +275,14 @@ def _fetch_preferred_channel_uploads(
         return {}
 
     try:
-        details = youtube_service.get_video_details(all_ids)
+        details_meta = connector.fetch_metadata(all_ids)
     except Exception:
-        logger.exception("get_video_details failed for preferred-channel uploads")
+        logger.exception("fetch_metadata failed for preferred-channel uploads")
         return {}
+    details = {
+        vid: _source_metadata_to_legacy_dict(sm, vid)
+        for vid, sm in details_meta.items()
+    }
 
     # Score by title+description (description is usually not returned by
     # videos.list without a separate fetch, so we rely on title).
@@ -301,7 +353,12 @@ def execute_searches(state: SearchAgentState) -> dict:
         if "duration_seconds" not in v
     ]
     if missing_ids:
-        details = youtube_service.get_video_details(missing_ids)
+        connector = connector_for("video")
+        details_meta = connector.fetch_metadata(missing_ids)
+        details = {
+            vid: _source_metadata_to_legacy_dict(sm, vid)
+            for vid, sm in details_meta.items()
+        }
         for vid, detail in details.items():
             if vid in all_videos:
                 # Preserve the `source` and `source_query` tags we set.

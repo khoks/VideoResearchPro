@@ -107,22 +107,22 @@ def test_channel_videos_lists_only_channel_videos(client, db):
     _seed_channel(db, channel_id="UCvids2", name="Vids2")
     _seed_channel(db, channel_id="UCother", name="Other")
 
-    from app.models.video import Video
+    from app.models.document import Document
 
-    # Global Video rows (no job_id; channel_id is the scoping field)
-    v1 = Video(
+    # Global Document rows (no job_id; channel_id is the scoping field)
+    v1 = Document(
         video_id="vid1", title="one", channel_id="UCvids2",
         url="https://youtube.com/watch?v=vid1",
         duration_seconds=60, transcript_status="pending",
         created_at=datetime.now(timezone.utc),
     )
-    v2 = Video(
+    v2 = Document(
         video_id="vid2", title="two", channel_id="UCvids2",
         url="https://youtube.com/watch?v=vid2",
         duration_seconds=60, transcript_status="pending",
         created_at=datetime.now(timezone.utc),
     )
-    v_other = Video(
+    v_other = Document(
         video_id="other", title="other", channel_id="UCother",
         url="https://youtube.com/watch?v=other",
         duration_seconds=60, transcript_status="pending",

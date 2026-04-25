@@ -7,22 +7,26 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
-class Video(Base):
+class Document(Base):
     """Global (single-tenant) source-document record.
 
-    Today the table is populated entirely by the YouTube ingest path so the
-    primary key remains the YouTube `video_id` and the table name is still
-    `videos`. The L1 multi-source columns (`source_type`, `source_id`,
-    `source_url`, …) coexist with the legacy YouTube columns; non-video
-    sources will land in this same table in subsequent PRs without another
-    migration. See `docs/source-types.md`.
+    The table hosts every ingested source — videos today, podcasts /
+    articles / threads / PDFs in upcoming PRs (see
+    `docs/source-types.md`). The L1 multi-source columns (`source_type`,
+    `source_id`, `source_url`, …) coexist with the legacy YouTube columns
+    inherited from when this table was called `videos`.
+
+    The primary-key column is still named `video_id` for back-compat
+    with `job_videos.video_id` and `transcript_cache.video_id`; that
+    rename is deferred to a future PR. Treat it as the YouTube-flavoured
+    alias for `source_id` whenever the row is a video.
     """
 
-    __tablename__ = "videos"
+    __tablename__ = "documents"
     __table_args__ = (
-        Index("ix_videos_channel_id", "channel_id"),
+        Index("ix_documents_channel_id", "channel_id"),
         Index(
-            "ix_videos_source_type_source_id",
+            "ix_documents_source_type_source_id",
             "source_type",
             "source_id",
             unique=True,
@@ -100,5 +104,5 @@ class Video(Base):
 
     @property
     def channel_name(self) -> str:
-        """Backward-compatible accessor; pre-refactor code reads `video.channel_name`."""
+        """Backward-compatible accessor; pre-refactor code reads `document.channel_name`."""
         return self.channel.name if self.channel is not None else ""

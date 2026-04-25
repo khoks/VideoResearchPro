@@ -114,7 +114,7 @@ def seeded_global_library(db):
     Shared by any test that needs an existing library without re-creating it.
     """
     from app.models.channel import Channel
-    from app.models.video import Video
+    from app.models.document import Document
 
     now = datetime.now(timezone.utc)
 
@@ -134,7 +134,7 @@ def seeded_global_library(db):
     for i in range(5):
         vid = f"vid{i:03d}abcXYZ"
         videos.append(
-            Video(
+            Document(
                 video_id=vid,
                 title=f"Seeded Video {i}",
                 channel_id=f"UC{'A' * 20}{i % 2:02d}",

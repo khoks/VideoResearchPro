@@ -2,7 +2,7 @@
 
 Runs the knowledge agent synchronously for the first pass (Celery migration can
 come later if the wall-clock becomes an issue). Persists the structured
-extraction + Markdown report on the `Video` row.
+extraction + Markdown report on the `Document` row.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db
 from app.models.transcript_cache import TranscriptCache
-from app.models.video import Video
+from app.models.document import Document
 from app.schemas.knowledge import KnowledgeExtractResponse
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ def _reconstruct_transcript_text(db: Session, video_id: str) -> str:
     return "\n\n".join(paragraphs)
 
 
-def _load_merged_from_video(video: Video) -> dict[str, list[str]]:
+def _load_merged_from_video(video: Document) -> dict[str, list[str]]:
     """Parse `video.extracted_knowledge_json` into a dict of four lists."""
     empty = {k: [] for k in _KNOWLEDGE_KEYS}
     if not video.extracted_knowledge_json:
@@ -85,7 +85,7 @@ def _load_merged_from_video(video: Video) -> dict[str, list[str]]:
     }
 
 
-def _build_response(video: Video) -> KnowledgeExtractResponse:
+def _build_response(video: Document) -> KnowledgeExtractResponse:
     merged = _load_merged_from_video(video)
     return KnowledgeExtractResponse(
         video_id=video.video_id,
@@ -113,7 +113,7 @@ def extract_knowledge(
     Returns 404 if the video doesn't exist. Returns 422 if no transcript is
     cached for the video (nothing to extract from).
     """
-    video = db.get(Video, video_id)
+    video = db.get(Document, video_id)
     if video is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -170,7 +170,7 @@ def get_knowledge(
     db: Session = Depends(get_db),
 ) -> KnowledgeExtractResponse:
     """Return the persisted knowledge artifact for this video (404 if unset)."""
-    video = db.get(Video, video_id)
+    video = db.get(Document, video_id)
     if video is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

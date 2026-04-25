@@ -76,7 +76,7 @@ Three logical databases on the same instance:
 
 ### SQLite
 
-`data/videoresearchpro.db` (env `DATABASE_URL`). All structured state: users, jobs, videos, channels, transcript cache, Q&A exchanges, knowledge artifact metadata. Alembic migrations under `backend/alembic/`.
+`data/videoresearchpro.db` (env `DATABASE_URL`). All structured state: users, jobs, documents (formerly `videos`; renamed in L1 PR 4), channels, transcript cache, Q&A exchanges, knowledge artifact metadata. Alembic migrations under `backend/alembic/`.
 
 ### ChromaDB
 
@@ -113,8 +113,8 @@ backend/
 │   ├── models/
 │   │   ├── user.py              # User (email, hashed_password, created_at)
 │   │   ├── job.py               # Job (UUID PK, status, type, JSON fields)
-│   │   ├── video.py             # Video (global, deduped, knowledge artifact columns)
-│   │   ├── job_video.py         # job ↔ video join with approval flag
+│   │   ├── document.py          # Document (global, deduped — renamed from video.py in L1 PR 4)
+│   │   ├── job_video.py         # job ↔ document join with approval flag
 │   │   ├── channel.py           # Channels (subscribed, last_synced_at)
 │   │   ├── transcript_cache.py  # cached raw transcript per video_id
 │   │   ├── qa_exchange.py       # job-scoped Q&A
@@ -209,7 +209,7 @@ State split: **server state in React Query**, **UI state in Zustand**. No Redux.
 ### Authoritative entities
 
 ```
-User ──┬──< Job ──< JobVideo >── Video ──> Channel
+User ──┬──< Job ──< JobVideo >── Document ──> Channel
        │           │
        │           ├──< QAExchange
        │           ├── ReportFile (filesystem, not a DB row)
@@ -218,25 +218,27 @@ User ──┬──< Job ──< JobVideo >── Video ──> Channel
        ├──< LibraryQAExchange
        └──< QAHistoryExchange
 
-Video ──< KnowledgeArtifact (columns on Video, not a separate table)
-Video ──< TranscriptCache (1:1 by video_id)
+Document ──< KnowledgeArtifact (columns on Document, not a separate table)
+Document ──< TranscriptCache (1:1 by video_id)
 
 ApiQuotaLog (append-only ledger of YouTube + LLM calls)
 ```
 
+> **Naming note (L1 PR 4).** The table is `documents` and the ORM class is `Document`. The PK column is still named `video_id` and the join table is still `job_videos` — those renames (and the `video_id` → UUID `id` PK promotion) come in a follow-up PR. The ER diagram above uses `Document` to reflect the post-PR-4 ORM names; the legacy class `Video` no longer exists.
+
 ### Key invariants
 
-- **Videos are global.** One row per YouTube `video_id`, ever. The library is a single, deduplicated, shared corpus. `JobVideo` is the only thing that ties a job to its videos. Deleting a job drops `JobVideo` rows; videos and chunks survive.
+- **Documents are global.** One row per source — today only YouTube videos (`source_type='video'`, PK column `video_id`), tomorrow podcasts / articles / threads / PDFs. The library is a single, deduplicated, shared corpus. `JobVideo` is the only thing that ties a job to its documents. Deleting a job drops `JobVideo` rows; documents and chunks survive.
 - **Channels are first-class.** Subscribing a channel pre-pulls every video on its uploads playlist into the global library via subscription jobs.
 - **Transcripts are cached once.** Re-fetch is suppressed by `transcript_cache.video_id`.
-- **Embeddings happen exactly once per video.** `Video.embedded_in_chroma` flips to `true` after chunks land in `videoresearchpro_global`. Subsequent jobs referencing that video skip embedding.
+- **Embeddings happen exactly once per document.** `Document.embedded_in_chroma` flips to `true` after chunks land in `videoresearchpro_global`. Subsequent jobs referencing that document skip embedding.
 - **Q&A exchanges have three flavors** that union into one Chroma collection:
   - `qa_exchanges` (job-scoped)
   - `library_qa_exchanges` (library-scoped)
   - `qa_history_exchanges` (meta-chat surface)
 
   All three are stored separately for SQL-level filtering but indexed together in `qa_library_global` so meta-chat retrieval crosses surfaces.
-- **Knowledge artifacts live on the Video row.** Three nullable columns (`extracted_knowledge_json`, `knowledge_report_md`, `knowledge_extracted_at`). One artifact per video.
+- **Knowledge artifacts live on the Document row.** Three nullable columns (`extracted_knowledge_json`, `knowledge_report_md`, `knowledge_extracted_at`). One artifact per document.
 - **Jobs carry a status enum**: `pending → searching → awaiting_approval → extracting → building_rag → generating_report → completed`. Terminal: `completed`, `failed`, `cancelled`. Subscription jobs skip `awaiting_approval` and `generating_report`.
 
 ### Forward-compat columns (already present or planned next sprint)
@@ -244,8 +246,8 @@ ApiQuotaLog (append-only ledger of YouTube + LLM calls)
 Per [saas-roadmap.md](saas-roadmap.md) and [source-types.md](source-types.md):
 
 - Every user-scoped table has — or will have, in the imminent migration — a `tenant_id` column. The single self-host instance has a single tenant.
-- The video table grows into `documents` with `source_type`, `source_id`, `source_url`, `source_metadata`, `creator_id`, `user_provenance` — see [source-types.md](source-types.md).
-- The channel table grows into `creators` with `source_type`, `source_weight`.
+- The `documents` table already carries `source_type`, `source_id`, `source_url`, `source_metadata_json`, `language`, `word_count`, `user_provenance_json` from L1 PR 1. The next L1 PR promotes the PK column from `video_id` to a UUID `id` and grows a `creator_id` foreign key.
+- The `channels` table grows into `creators` with `source_type`, `source_weight`. (`source_type` and `creator_external_id` and `source_weight` are already present from L1 PR 1.)
 
 Today's PRs respect both invariants even though only one tenant and one source type exist.
 
@@ -405,7 +407,7 @@ batch_transcript → map_extract_per_batch → merge_with_dedupe → synthesize_
 - **merge_with_dedupe** unions the per-batch outputs and deduplicates by case-insensitive equality.
 - **synthesize_report** (`use_case=knowledge_synthesize_report`) renders a Markdown knowledge document.
 
-Output written to `Video.extracted_knowledge_json` and `Video.knowledge_report_md`. Triggered by `POST /api/v1/videos/{id}/extract-knowledge`. Returns 409 if already extracted unless `?force=true`.
+Output written to `Document.extracted_knowledge_json` and `Document.knowledge_report_md`. Triggered by `POST /api/v1/videos/{id}/extract-knowledge`. Returns 409 if already extracted unless `?force=true`.
 
 ### Q&A History Agent (`qa_history_agent.py`)
 
@@ -517,7 +519,7 @@ Four streaming JSONL endpoints (`routers/exports.py`):
 
 These sections describe the trajectory, not the current code:
 
-- **Multi-source ingest** — the `videos` → `documents` migration and the `SourceConnector` interface contract are detailed in [source-types.md](source-types.md). This is L1 in the [feature-roadmap](feature-roadmap.md) and ships first.
+- **Multi-source ingest** — the `videos` → `documents` table rename landed in L1 PR 4; the `SourceConnector` interface contract (PR 2/3) routes every YouTube call site through `connector_for("video")`. The next L1 milestone is a non-video connector (article or PDF) plus the PK promotion from `video_id` to UUID `id`. Full trajectory in [source-types.md](source-types.md). L1 in the [feature-roadmap](feature-roadmap.md).
 - **Personal Brain** — activity stream connectors, voice capture, "speak as me" agent are detailed in [personal-brain.md](personal-brain.md). Multi-quarter trajectory.
 - **SaaS** — tenancy, billing, abuse prevention, hosting are detailed in [saas-roadmap.md](saas-roadmap.md). Today's PRs already respect the forward-compat invariants.
 - **Author Studio** — derivative artifact generation (books, sites, decks, newsletters, reels) is L2 in the [feature-roadmap](feature-roadmap.md). Each output type plugs into the same library.

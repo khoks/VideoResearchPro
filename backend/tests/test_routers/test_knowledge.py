@@ -11,14 +11,14 @@ from unittest.mock import patch
 import pytest
 
 from app.models.transcript_cache import TranscriptCache
-from app.models.video import Video
+from app.models.document import Document
 
 
 @pytest.fixture
 def seeded_video_with_transcript(db):
     """Create one Video row plus a matching TranscriptCache row."""
     now = datetime.now(timezone.utc)
-    video = Video(
+    video = Document(
         video_id="vid123abcXYZ",
         title="Intro to PostgreSQL",
         channel_id=None,
@@ -63,7 +63,7 @@ def test_extract_knowledge_404_if_video_missing(client):
 
 def test_extract_knowledge_422_if_no_transcript(client, db):
     """Video exists but TranscriptCache row is missing → 422."""
-    video = Video(
+    video = Document(
         video_id="vidNoTrans",
         title="No transcript",
         channel_id=None,
@@ -97,7 +97,7 @@ def test_extract_knowledge_runs_agent_and_persists(client, seeded_video_with_tra
 
     # Persisted on the row
     db.expire_all()
-    refreshed = db.get(Video, seeded_video_with_transcript.video_id)
+    refreshed = db.get(Document, seeded_video_with_transcript.video_id)
     assert refreshed.knowledge_report_md.startswith("# Databases")
     stored = json.loads(refreshed.extracted_knowledge_json)
     assert stored["topics"] == ["databases"]

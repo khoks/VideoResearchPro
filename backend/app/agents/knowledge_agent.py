@@ -273,7 +273,7 @@ def run_knowledge_extract_agent(video: Any, full_transcript_text: str) -> dict:
     """Run the knowledge agent for one video.
 
     Args:
-        video: the `Video` ORM row (used for title + channel_name).
+        video: the `Document` ORM row (used for title + channel_name).
         full_transcript_text: the full transcript as a single string.
 
     Returns:

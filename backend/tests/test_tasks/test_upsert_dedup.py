@@ -16,7 +16,7 @@ These tests pin down both:
 from app.models.channel import Channel
 from app.models.job import Job
 from app.models.job_video import JobVideo
-from app.models.video import Video
+from app.models.document import Document
 from app.tasks.job_tasks import (
     _channel_pending,
     _upsert_video_and_link,
@@ -35,11 +35,11 @@ def _make_job(db, job_type: str = "topic") -> Job:
 def test_pending_helpers_see_unflushed_additions(db):
     """Without a flush, db.get() returns None but the pending helpers catch it."""
     db.add(Channel(channel_id="UCpending", name="Pending"))
-    db.add(Video(video_id="vPending", channel_id="UCpending", title="t", url="u"))
+    db.add(Document(video_id="vPending", channel_id="UCpending", title="t", url="u"))
 
     # db.get() does not see unflushed adds — that's the bug we're working around.
     assert db.get(Channel, "UCpending") is None
-    assert db.get(Video, "vPending") is None
+    assert db.get(Document, "vPending") is None
 
     # The helpers must see them.
     assert _channel_pending(db, "UCpending") is True
@@ -72,7 +72,7 @@ def test_upsert_dedups_same_channel_across_videos(db):
     assert len(channels) == 1
     assert channels[0].name == shared_channel_name
 
-    videos = db.query(Video).filter(Video.channel_id == shared_channel_id).all()
+    videos = db.query(Document).filter(Document.channel_id == shared_channel_id).all()
     assert len(videos) == 5
 
     links = db.query(JobVideo).filter(JobVideo.job_id == job.id).all()
@@ -100,7 +100,7 @@ def test_upsert_dedups_same_video_added_twice(db):
 
     db.commit()
 
-    videos = db.query(Video).filter(Video.video_id == "vTwice").all()
+    videos = db.query(Document).filter(Document.video_id == "vTwice").all()
     assert len(videos) == 1
 
     links = db.query(JobVideo).filter(
@@ -114,7 +114,7 @@ def test_upsert_handles_mixed_batch_new_and_existing(db):
     commit cleanly — preserving the existing row's state and inserting the new."""
     # Pre-seed an existing Channel + Video (flushed and committed).
     db.add(Channel(channel_id="UCmixed", name="Mixed"))
-    db.add(Video(
+    db.add(Document(
         video_id="vExisting",
         channel_id="UCmixed",
         title="Original Title",
@@ -149,11 +149,11 @@ def test_upsert_handles_mixed_batch_new_and_existing(db):
     assert db.query(Channel).filter(Channel.channel_id == "UCmixed").count() == 1
 
     # Existing video: title got refreshed, still one row.
-    existing = db.query(Video).filter(Video.video_id == "vExisting").one()
+    existing = db.query(Document).filter(Document.video_id == "vExisting").one()
     assert existing.title == "Refreshed Title"
 
     # New video landed.
-    fresh = db.query(Video).filter(Video.video_id == "vFresh").one()
+    fresh = db.query(Document).filter(Document.video_id == "vFresh").one()
     assert fresh.title == "Brand New"
 
     # Both JobVideo links created.

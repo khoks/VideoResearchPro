@@ -14,12 +14,12 @@ The user-facing claim of [vision](vision.md) Ring 2 is that **the curation flow 
 
 ## Today's data model (video-only)
 
-Three tables carry the video library:
+Three tables carry the document library:
 
-- **`videos`** — global, deduplicated, primary key is YouTube `video_id`. Carries title, channel reference, thumbnail, duration, published date, description, transcript state, RAG state, and (since Unit 4) extracted knowledge artifacts.
-- **`channels`** — subscribed YouTube channels with `last_synced_at`.
-- **`transcript_cache`** — keyed by `video_id`, stores the raw segmented transcript so we never re-fetch.
-- **`job_videos`** — many-to-many between `jobs` and `videos`.
+- **`documents`** — global, deduplicated, primary key is the platform-native ID (today: YouTube `video_id`; the column is still named `video_id` until a future PR promotes it to a UUID). Carries title, creator/channel reference, thumbnail, duration, published date, description, transcript state, RAG state, and (since Unit 4) extracted knowledge artifacts. The Python ORM class is `Document` (`app.models.document`); `source_type` defaults to `'video'` for every existing row and is the discriminator the connector layer dispatches on.
+- **`channels`** — subscribed YouTube channels with `last_synced_at`. (Generalizes to `creators` in a later PR.)
+- **`transcript_cache`** — keyed by `video_id`, stores the raw segmented transcript so we never re-fetch. (Renamed to `text_cache` and re-keyed on `(source_type, source_id)` in a later PR.)
+- **`job_videos`** — many-to-many between `jobs` and `documents`. (Renamed to `job_documents` alongside the `video_id` → `document_id` PK promotion.)
 
 A single ChromaDB collection (`videoresearchpro_global`) holds chunked transcripts, with metadata `{video_id, job_id, chunk_index, start_time, end_time, channel_id}` per chunk. Per-job Q&A filters by `video_id ∈ approved_set` at query time.
 
@@ -59,16 +59,16 @@ This works because every "thing" in the library is a YouTube video. The L1 probl
 
 A unique constraint on `(tenant_id, source_type, source_id)` deduplicates within a tenant.
 
-### Backwards-compat: the `videos` view
+### Migration shape (what landed in PR 1 / PR 4 vs. what's still ahead)
 
-Old code reads `videos`. New code reads `documents WHERE source_type='video'`. We bridge the two by:
+The renames happen in stages so each PR stays small and reversible:
 
-1. Renaming the existing `videos` table to `documents` in a migration.
-2. Adding the new columns with defaults inferred from existing data (`source_type='video'`, `source_id=video_id`, `source_url=url`, etc.).
-3. Creating a SQL `VIEW videos AS SELECT video_id, title, ... FROM documents WHERE source_type='video'` so legacy reads continue to work during the rollover.
-4. Migrating call sites batch by batch over a single sprint, then dropping the view.
+1. **PR 1 — additive columns.** Added `source_type` / `source_id` / `source_url` / `source_metadata_json` / `language` / `word_count` / `user_provenance_json` to the existing `videos` table. Backfilled `source_type='video'` and `source_id=video_id` for every row. No renames; legacy ingest call sites kept working untouched via `__init__` defaults on the model. **Shipped.**
+2. **PR 4 — `videos` → `documents` rename.** Pure rename of the table, the ORM class (`Video` → `Document`), the two indexes (`ix_documents_channel_id`, `ix_documents_source_type_source_id`), and the `job_videos.video_id` FK target. The PK column is intentionally still named `video_id` so this PR doesn't have to cascade into `job_videos.video_id` and `transcript_cache.video_id`. **Shipped.**
+3. **Future PR — UUID PK.** Promote `documents.video_id` → `documents.id` (UUID); cascade the rename into `job_videos.document_id` (table also renamed `job_documents`) and `text_cache.document_id` (table renamed from `transcript_cache`). At this point the legacy `video_id` column either disappears or becomes a back-compat shadow alias.
+4. **Future PR — `channels` → `creators`.** Same shape: rename table and ORM class, re-point `documents.channel_id` → `documents.creator_id`, retire the YouTube-specific column names.
 
-The legacy `video_id`-as-primary-key gives way to the new UUID `id`. The `transcript_cache` table is renamed `text_cache` and re-keyed on `(source_type, source_id)`.
+No SQL `VIEW` is needed for back-compat: the `Document` ORM class keeps `__init__` defaults that turn legacy `Video(video_id=..., url=..., channel_id=...)` calls into a fully populated `Document` row, and the column `documents.video_id` still exists, so legacy SQL reads against the (now-renamed) table need only swap `videos` for `documents`.
 
 ### The `creators` table (replaces `channels`)
 
@@ -196,13 +196,15 @@ The user does not have to learn a new flow per source type. They learn the flow 
 
 A single sprint (2-3 weeks):
 
-1. **Schema migration** — add `documents` (rename `videos`), add `creators` (rename `channels`), add new columns with defaults. Create the `videos` view for back-compat. Backfill `source_type='video'` for all existing rows.
+1. **Schema migration** — done in three stages:
+   - PR 1 (additive columns) — added `source_type`, `source_id`, `source_url`, `source_metadata_json`, `language`, `word_count`, `user_provenance_json` to `videos`; added `source_type`, `creator_external_id`, `source_weight`, `creator_metadata_json` to `channels`. Backfilled `source_type='video'`, `source_id=video_id`, `creator_external_id=channel_id`. **Shipped.**
+   - PR 4 (videos → documents rename) — pure rename of the `videos` table and the `Video` ORM class to `documents` / `Document`. Indexes renamed `ix_documents_*`. `job_videos.video_id` FK re-pointed at `documents.video_id`. The PK column kept as `video_id` to avoid cascading FK changes; promoting it to a UUID `id` is the next schema PR. **Shipped.**
+   - Future PRs — `channels` → `creators` rename; `transcript_cache` → `text_cache`; `video_id` PK → UUID `id` with cascading `job_videos`/`text_cache` FK updates; drop legacy compat columns once all reads migrate.
 2. **Service layer** — introduce `app/services/document_service.py` with the same shape as today's `video_service.py`. The video service keeps its name temporarily and delegates to document_service.
-3. **Connector module** — create `app/sources/types.py` with the dataclasses, and `app/sources/video/` containing today's YouTube logic, conforming to `SourceConnector`. The job orchestrator switches from direct YouTube calls to `connector_for(source_type).fetch_text(candidate)`.
+3. **Connector module** — created `app/sources/types.py` with the dataclasses, and `app/sources/video/` containing today's YouTube logic, conforming to `BaseConnector`. The job orchestrator switches from direct YouTube calls to `connector_for(source_type).fetch_text(candidate)`. **Shipped (PR 2/3).**
 4. **First new connector** — ship `app/sources/article/` (URL → trafilatura → text). Smallest possible connector. Validates the abstraction.
 5. **Frontend tabs** — add "URL list" tab to the submit-research form. Approval list grows a source-type icon column.
-6. **Drop the `videos` view** once all reads have migrated.
-7. **Subsequent connectors** — `pdf`, then `podcast`, then `tweet`, then `forum_post`. Each is its own PR.
+6. **Subsequent connectors** — `pdf`, then `podcast`, then `tweet`, then `forum_post`. Each is its own PR.
 
 The user-facing release cadence is one source type per release after the abstraction lands. Each new source type is a deliverable in its own right.
 
@@ -221,9 +223,9 @@ The user-facing release cadence is one source type per release after the abstrac
 
 ## Naming nits
 
-The internal codename is `documents`. The user-facing word is *"sources"* in some contexts and *"volumes"* in others — see [branding.md](branding.md) §voice. We never expose `documents` or `source_type` strings in user-facing copy. The user sees "Article", "Podcast episode", "Video", "Thread", "PDF", "Note" — capitalized, English, friendly.
+The internal table is `documents` (after PR 4) and the ORM class is `Document` (`app.models.document`). The user-facing word is *"sources"* in some contexts and *"volumes"* in others — see [branding.md](branding.md) §voice. We never expose `documents` or `source_type` strings in user-facing copy. The user sees "Article", "Podcast episode", "Video", "Thread", "PDF", "Note" — capitalized, English, friendly.
 
-The internal codename for the join is still `job_videos` until we rename it to `job_documents` in the same migration. (The schema migration covers it.) The `Job` model gains a `document_count` accessor that just delegates.
+The join table is still `job_videos` (with PK column `video_id` on both `documents` and `job_videos.video_id`) until a future PR promotes the PK to a UUID and renames the join to `job_documents`. The `Job.videos` relationship attribute is intentionally kept as-is for back-compat; it now returns `list[Document]` regardless of name.
 
 ---
 

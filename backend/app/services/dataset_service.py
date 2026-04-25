@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.qa_exchange import QAExchange
 from app.models.qa_history_exchange import QAHistoryExchange
-from app.models.video import Video
+from app.models.document import Document
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +85,9 @@ def iter_knowledge_rows(db: Session) -> Iterator[tuple[list[str], list[str], lis
     video with a populated knowledge report.
     """
     q = (
-        db.query(Video)
-        .filter(Video.knowledge_report_md.isnot(None))
-        .order_by(Video.created_at.asc())
+        db.query(Document)
+        .filter(Document.knowledge_report_md.isnot(None))
+        .order_by(Document.created_at.asc())
         .execution_options(yield_per=_YIELD_PER)
     )
     for video in q:

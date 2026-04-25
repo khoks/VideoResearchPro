@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_current_user, get_db
 from app.models.channel import Channel
 from app.models.job import Job
-from app.models.video import Video
+from app.models.document import Document
 from app.schemas.channel import ChannelResponse, SubscribeResponse
 from app.schemas.video import VideoResponse
 
@@ -23,8 +23,8 @@ router = APIRouter(
 
 def _video_count_for_channel(db: Session, channel_id: str) -> int:
     return (
-        db.query(func.count(Video.video_id))
-        .filter(Video.channel_id == channel_id)
+        db.query(func.count(Document.video_id))
+        .filter(Document.channel_id == channel_id)
         .scalar()
         or 0
     )
@@ -104,9 +104,9 @@ def list_channel_videos(
         raise HTTPException(status_code=404, detail="Channel not found")
 
     videos = (
-        db.query(Video)
-        .filter(Video.channel_id == channel_id)
-        .order_by(Video.created_at.desc())
+        db.query(Document)
+        .filter(Document.channel_id == channel_id)
+        .order_by(Document.created_at.desc())
         .offset(offset)
         .limit(limit)
         .all()

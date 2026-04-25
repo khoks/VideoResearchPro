@@ -12,7 +12,7 @@ from app.models.transcript_cache import TranscriptCache
 from app.models.video import Video
 from app.services import chroma_service, progress_service, youtube_service
 from app.sources import connector_for
-from app.sources.types import Candidate
+from app.sources.types import Candidate, SourceMetadata
 from app.tasks.celery_app import celery_app
 from app.utils.chunking import chunk_transcript
 from app.utils.html_builder import build_report_html, save_report
@@ -75,6 +75,34 @@ def _jobvideo_pending(db, job_id: str, video_id: str) -> bool:
         and obj.video_id == video_id
         for obj in db.new
     )
+
+
+def _source_metadata_to_legacy_dict(sm: SourceMetadata) -> dict:
+    """Convert a connector ``SourceMetadata`` back to the legacy
+    ``youtube_service.get_video_details`` dict shape.
+
+    The orchestrator now resolves video metadata via
+    ``connector.fetch_metadata(...)`` rather than calling the YouTube
+    service directly, but every downstream consumer in this module
+    (``_upsert_video_and_link``, the channel-job duration filter,
+    the subscription-job uploads-walk) still expects the flat dict
+    shape. Bridging at the call-site boundary lets PR 3 ship without
+    rewriting that downstream code; a future PR can promote callers
+    to ``SourceMetadata`` directly when ``videos`` → ``documents``
+    lands.
+    """
+    return {
+        "title": sm.title,
+        "channel_id": sm.creator_external_id,
+        "channel_name": sm.creator_name,
+        "duration_seconds": sm.duration_seconds,
+        "published_at": sm.published_at,
+        "thumbnail_url": sm.thumbnail_url,
+        "description": sm.description,
+        "url": sm.extra.get("url"),
+        "view_count": sm.extra.get("view_count"),
+        "like_count": sm.extra.get("like_count"),
+    }
 
 
 def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
@@ -303,6 +331,7 @@ def execute_channel_job(self, job_id: str) -> None:
             return
 
         all_video_ids = []
+        connector = connector_for("video")
 
         for i, channel_input in enumerate(channel_list):
             if _is_cancelled(db, job_id):
@@ -316,7 +345,7 @@ def execute_channel_job(self, job_id: str) -> None:
 
             # Resolve channel ID
             logger.info(f"[job:{job_id}] Channel {i + 1}/{len(channel_list)}: resolving '{channel_input}'")
-            channel_id = youtube_service.resolve_channel_id(channel_input, job_id=job_id)
+            channel_id = connector.resolve_creator_id(channel_input, job_id=job_id)
             if not channel_id:
                 logger.warning(f"[job:{job_id}] Could not resolve channel: '{channel_input}', skipping")
                 continue
@@ -324,8 +353,14 @@ def execute_channel_job(self, job_id: str) -> None:
             logger.info(f"[job:{job_id}] Channel '{channel_input}' → {channel_id}, "
                         f"fetching up to {videos_per_channel} videos")
 
-            # Fetch video IDs from channel
-            video_ids = youtube_service.get_channel_videos(channel_id, max_results=videos_per_channel, job_id=job_id)
+            # Fetch candidate items from the channel; we only need the IDs
+            # here because metadata enrichment happens below.
+            video_ids = [
+                c.source_id
+                for c in connector.list_creator_items(
+                    channel_id, limit=videos_per_channel, job_id=job_id
+                )
+            ]
             logger.info(f"[job:{job_id}] Fetched {len(video_ids)} video IDs from channel {channel_id}")
             all_video_ids.extend(video_ids)
 
@@ -334,7 +369,11 @@ def execute_channel_job(self, job_id: str) -> None:
         # Fetch details for all videos
         accepted_count = 0
         if all_video_ids:
-            details = youtube_service.get_video_details(all_video_ids, job_id=job_id)
+            details_meta = connector.fetch_metadata(all_video_ids, job_id=job_id)
+            details = {
+                vid: _source_metadata_to_legacy_dict(sm)
+                for vid, sm in details_meta.items()
+            }
 
             # Apply duration filters
             for vid, info in details.items():
@@ -958,6 +997,7 @@ def execute_subscription_job(self, job_id: str) -> None:
             return
 
         resolved_channels: list[dict] = []
+        connector = connector_for("video")
 
         # Phase 1: resolve + upsert channels
         for i, channel_input in enumerate(channel_inputs):
@@ -970,38 +1010,38 @@ def execute_subscription_job(self, job_id: str) -> None:
                 f"Resolving channel {i + 1}/{len(channel_inputs)}: {channel_input}",
             )
 
-            channel_id = youtube_service.resolve_channel_id(channel_input, job_id=job_id)
+            channel_id = connector.resolve_creator_id(channel_input, job_id=job_id)
             if not channel_id:
                 logger.warning(
                     f"[job:{job_id}] Could not resolve channel: '{channel_input}', skipping"
                 )
                 continue
 
-            metadata = youtube_service.get_channel_metadata(channel_id, job_id=job_id)
-            if not metadata:
+            creator = connector.fetch_creator(channel_id, job_id=job_id)
+            if not creator:
                 logger.warning(
                     f"[job:{job_id}] Could not fetch metadata for channel {channel_id}, skipping"
                 )
                 continue
+            uploads_playlist_id = creator.extra.get("uploads_playlist_id")
 
             channel = db.query(Channel).filter(Channel.channel_id == channel_id).first()
             if channel is None:
                 channel = Channel(
                     channel_id=channel_id,
-                    name=metadata.get("name", ""),
-                    uploads_playlist_id=metadata.get("uploads_playlist_id"),
-                    subscriber_count=metadata.get("subscriber_count"),
+                    name=creator.name or "",
+                    uploads_playlist_id=uploads_playlist_id,
+                    subscriber_count=creator.subscriber_count,
                     subscribed=True,
                 )
                 db.add(channel)
             else:
-                channel.name = metadata.get("name", channel.name)
-                channel.uploads_playlist_id = metadata.get(
-                    "uploads_playlist_id", channel.uploads_playlist_id
-                )
-                channel.subscriber_count = metadata.get(
-                    "subscriber_count", channel.subscriber_count
-                )
+                if creator.name:
+                    channel.name = creator.name
+                if uploads_playlist_id:
+                    channel.uploads_playlist_id = uploads_playlist_id
+                if creator.subscriber_count is not None:
+                    channel.subscriber_count = creator.subscriber_count
                 channel.subscribed = True
             db.commit()
 
@@ -1055,6 +1095,12 @@ def execute_subscription_job(self, job_id: str) -> None:
                 f"Walking uploads for {name} ({i + 1}/{len(resolved_channels)})",
             )
 
+            # Subscription jobs walk every page of the uploads playlist
+            # and benefit from the cached `uploads_playlist_id` (saves one
+            # `channels.list` quota unit per channel). The connector
+            # contract has no per-source-type optimization slot today, so
+            # this single seam stays on `youtube_service` until we extend
+            # `list_creator_items` with an `extra` kwargs bag in a later PR.
             video_ids = youtube_service.get_channel_videos_all(
                 channel_id,
                 job_id=job_id,
@@ -1075,9 +1121,13 @@ def execute_subscription_job(self, job_id: str) -> None:
                 ]
                 details: dict = {}
                 if missing_from_library:
-                    details = youtube_service.get_video_details(
+                    details_meta = connector.fetch_metadata(
                         missing_from_library, job_id=job_id
                     )
+                    details = {
+                        vid: _source_metadata_to_legacy_dict(sm)
+                        for vid, sm in details_meta.items()
+                    }
                 for vid in unlinked_ids:
                     info = details.get(vid) or {}
                     _upsert_video_and_link(db, job_id, {

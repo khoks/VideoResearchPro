@@ -50,20 +50,30 @@ class BaseConnector(abc.ABC):
         since: datetime | None = None,
         *,
         limit: int | None = None,
+        job_id: str = "",
     ) -> Iterable[Candidate]:
         """List items by a creator (channel/show/feed/etc.).
 
         Used by both manual channel jobs (with `limit`) and subscription
         jobs (no `limit`, walk every page). When `since` is set, return
         only items published after that timestamp.
+
+        `job_id` is forwarded for log correlation only.
         """
 
     @abc.abstractmethod
-    def fetch_metadata(self, source_ids: list[str]) -> dict[str, SourceMetadata]:
+    def fetch_metadata(
+        self,
+        source_ids: list[str],
+        *,
+        job_id: str = "",
+    ) -> dict[str, SourceMetadata]:
         """Batch-fetch metadata for a list of source IDs.
 
         Returns a `{source_id: SourceMetadata}` mapping. Missing IDs are
         omitted from the result rather than raising.
+
+        `job_id` is forwarded for log correlation only.
         """
 
     @abc.abstractmethod
@@ -88,5 +98,18 @@ class BaseConnector(abc.ABC):
 
         Default implementation returns None. Connectors with a creator
         concept (YouTube channel, podcast show, RSS feed) override this.
+        """
+        return None
+
+    def resolve_creator_id(self, hint: str, *, job_id: str = "") -> str | None:
+        """Optional: resolve a free-text hint (URL, handle, name, raw ID)
+        to the canonical `creator_external_id` this connector uses
+        internally.
+
+        E.g. for YouTube: `"https://youtube.com/@channel"` → `"UCxxx..."`.
+        For podcasts: `"The Daily"` → an Apple/Spotify show ID.
+
+        Default implementation returns None — connectors without a
+        creator concept (PDFs) leave this unimplemented.
         """
         return None

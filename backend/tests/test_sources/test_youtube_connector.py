@@ -99,7 +99,7 @@ def test_list_creator_items_no_limit_uses_all_helper(yt):
     ):
         out = list(yt.list_creator_items("UCfoo"))
 
-    mock_all.assert_called_once_with("UCfoo")
+    mock_all.assert_called_once_with("UCfoo", job_id="")
     mock_paged.assert_not_called()
     assert [c.source_id for c in out] == ["v1", "v2", "v3"]
     # All should be shallow Candidates with source_type=video.
@@ -123,7 +123,7 @@ def test_list_creator_items_with_limit_uses_paged_helper(yt):
     ):
         out = list(yt.list_creator_items("UCfoo", limit=10))
 
-    mock_paged.assert_called_once_with("UCfoo", max_results=10)
+    mock_paged.assert_called_once_with("UCfoo", max_results=10, job_id="")
     mock_all.assert_not_called()
     assert [c.source_id for c in out] == ["v1", "v2"]
 
@@ -174,7 +174,7 @@ def test_fetch_metadata_converts_details_to_source_metadata(yt):
     ) as mock_details:
         out = yt.fetch_metadata(["abc"])
 
-    mock_details.assert_called_once_with(["abc"])
+    mock_details.assert_called_once_with(["abc"], job_id="")
     assert set(out.keys()) == {"abc"}
     sm = out["abc"]
     assert isinstance(sm, SourceMetadata)
@@ -243,7 +243,7 @@ def test_fetch_creator_converts_to_creator_metadata(yt):
     ) as mock_meta:
         out = yt.fetch_creator("UCfoo")
 
-    mock_meta.assert_called_once_with("UCfoo")
+    mock_meta.assert_called_once_with("UCfoo", job_id="")
     assert isinstance(out, CreatorMetadata)
     assert out.creator_external_id == "UCfoo"
     assert out.name == "Channel Foo"
@@ -251,6 +251,35 @@ def test_fetch_creator_converts_to_creator_metadata(yt):
     assert out.description == "Macro analysis"
     assert out.subscriber_count == 100_000
     assert out.extra == {"uploads_playlist_id": "UUfoo"}
+
+
+# ---------------------------------------------------------------------------
+# resolve_creator_id()
+# ---------------------------------------------------------------------------
+def test_resolve_creator_id_forwards_to_service(yt):
+    """The connector must pass the hint and job_id straight through to
+    `youtube_service.resolve_channel_id` — that's where the URL/handle/name
+    parsing lives."""
+    with patch.object(
+        yt_connector_mod.youtube_service,
+        "resolve_channel_id",
+        return_value="UCfoo",
+    ) as mock_resolve:
+        out = yt.resolve_creator_id("https://youtube.com/@foo", job_id="job-7")
+
+    mock_resolve.assert_called_once_with(
+        "https://youtube.com/@foo", job_id="job-7"
+    )
+    assert out == "UCfoo"
+
+
+def test_resolve_creator_id_returns_none_when_service_returns_none(yt):
+    with patch.object(
+        yt_connector_mod.youtube_service,
+        "resolve_channel_id",
+        return_value=None,
+    ):
+        assert yt.resolve_creator_id("garbage") is None
 
 
 # ---------------------------------------------------------------------------

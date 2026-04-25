@@ -11,6 +11,8 @@ from app.models.job_video import JobVideo
 from app.models.transcript_cache import TranscriptCache
 from app.models.video import Video
 from app.services import chroma_service, progress_service, youtube_service
+from app.sources import connector_for
+from app.sources.types import Candidate
 from app.tasks.celery_app import celery_app
 from app.utils.chunking import chunk_transcript
 from app.utils.html_builder import build_report_html, save_report
@@ -498,15 +500,21 @@ def resume_job_after_approval(self, job_id: str) -> None:
                     f"[job:{job_id}] [{i + 1}/{total}] Fetching transcript: "
                     f"video_id={video.video_id} '{title_preview}'"
                 )
-                fetch_result = youtube_service.fetch_transcript(
-                    video.video_id,
-                    language=settings.DEFAULT_TRANSCRIPT_LANGUAGE,
+                connector = connector_for(video.source_type)
+                extracted = connector.fetch_text(
+                    Candidate(
+                        source_type=video.source_type,
+                        source_id=video.source_id,
+                        title=video.title,
+                        source_url=video.source_url or video.url,
+                    ),
                     job_id=job_id,
                 )
 
-                if fetch_result:
-                    transcript, actual_language = fetch_result
-                    word_count = sum(len(seg.get("text", "").split()) for seg in transcript)
+                if extracted:
+                    transcript = extracted.segments
+                    actual_language = extracted.language
+                    word_count = extracted.word_count
 
                     video.transcript_status = "fetched"
                     video.transcript_word_count = word_count
@@ -516,9 +524,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                     if hasattr(video, "transcripted_at"):
                         video.transcripted_at = datetime.now(timezone.utc)
                     if hasattr(video, "transcript_source"):
-                        # youtube_service.fetch_transcript doesn't tell us which
-                        # path it took, so record the generic "youtube" source.
-                        video.transcript_source = "youtube"
+                        video.transcript_source = extracted.text_source
 
                     chunks = chunk_transcript(
                         transcript,
@@ -780,15 +786,21 @@ def _run_extraction_and_rag(self, db, job) -> None:
                 f"[job:{job_id}] [{i + 1}/{total}] Fetching transcript: "
                 f"video_id={video.video_id} '{title_preview}'"
             )
-            fetch_result = youtube_service.fetch_transcript(
-                video.video_id,
-                language=settings.DEFAULT_TRANSCRIPT_LANGUAGE,
+            connector = connector_for(video.source_type)
+            extracted = connector.fetch_text(
+                Candidate(
+                    source_type=video.source_type,
+                    source_id=video.source_id,
+                    title=video.title,
+                    source_url=video.source_url or video.url,
+                ),
                 job_id=job_id,
             )
 
-            if fetch_result:
-                transcript, actual_language = fetch_result
-                word_count = sum(len(seg.get("text", "").split()) for seg in transcript)
+            if extracted:
+                transcript = extracted.segments
+                actual_language = extracted.language
+                word_count = extracted.word_count
 
                 video.transcript_status = "fetched"
                 video.transcript_word_count = word_count
@@ -796,7 +808,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
                 if hasattr(video, "transcripted_at"):
                     video.transcripted_at = datetime.now(timezone.utc)
                 if hasattr(video, "transcript_source"):
-                    video.transcript_source = "youtube"
+                    video.transcript_source = extracted.text_source
 
                 chunks = chunk_transcript(
                     transcript,

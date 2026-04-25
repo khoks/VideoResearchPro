@@ -10,6 +10,15 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### L1 multi-source ingest — PR 2: connector abstraction
+
+- **Introduced the `BaseConnector` abstract base class** (`backend/app/sources/base.py`) and four typed dataclasses (`Candidate`, `ExtractedText`, `SourceMetadata`, `CreatorMetadata`) in `backend/app/sources/types.py` — the shape every future source-type connector (podcast, article, tweet, forum_post, pdf) plugs into. See [docs/source-types.md](docs/source-types.md) §"connector contract".
+- **Added a process-global registry** at `backend/app/sources/registry.py` mapping `source_type → connector instance`. Connectors register themselves at import time; the orchestrator resolves them via `connector_for(source_type)`. Re-registering the same type overrides the prior entry — useful for swapping fakes in tests.
+- **Refactored today's YouTube ingest** into the first concrete connector at `backend/app/sources/video/connector.py`. Pure pass-through wrapping of `app.services.youtube_service` — every YouTube quirk (API quota, transcript-API retry/back-off, Whisper fallback, yt-dlp audio download, subscriber enrichment) stays in `youtube_service`; the connector only reshapes provider dicts into typed dataclasses.
+- **Switched the `fetch_transcript` seam in [backend/app/tasks/job_tasks.py](backend/app/tasks/job_tasks.py)** to route through `connector_for(video.source_type).fetch_text(...)`. Behavior-preserving: existing topic / channel / subscription jobs run identically — but the abstraction is now exercised in production code, proving it works end-to-end before any non-video connector ships.
+- **Tests:** `backend/tests/test_sources/test_registry.py` (7 tests) locks the registry contract and verifies the YouTube connector implements every `BaseConnector` hook. `backend/tests/test_sources/test_youtube_connector.py` (14 tests) mocks `youtube_service` and asserts each connector method produces correctly-shaped Candidate / SourceMetadata / ExtractedText / CreatorMetadata objects, including edge cases (sparse search dicts, missing optional fields, no-text segments). `tests/test_tasks/test_subscription_task.py` updated to also patch the connector's `youtube_service` binding now that the call site goes through the connector.
+- *(Other call sites — `youtube_service.search_videos`, `get_video_details`, `get_channel_metadata`, `get_channel_videos*` — are still invoked directly from `job_tasks.py` / `search_agent.py` / `channels.py`. They migrate to `connector.search()` / `fetch_metadata()` / `fetch_creator()` / `list_creator_items()` in PR 3.)*
+
 ### L1 multi-source ingest — PR 1: additive schema
 
 - **Added the source-type discriminator and supporting columns** to `videos` and `channels` so the existing tables can host non-video sources (podcasts, articles, threads, PDFs, …) in subsequent PRs without another migration. Pure additive: no renames, no behavior change. See [docs/source-types.md](docs/source-types.md).

@@ -10,6 +10,16 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### L1 multi-source ingest — PR 1: additive schema
+
+- **Added the source-type discriminator and supporting columns** to `videos` and `channels` so the existing tables can host non-video sources (podcasts, articles, threads, PDFs, …) in subsequent PRs without another migration. Pure additive: no renames, no behavior change. See [docs/source-types.md](docs/source-types.md).
+- **`videos`** gains `source_type` (default `'video'`), `source_id` (NOT NULL, backfilled from `video_id`), `source_url`, `source_metadata_json`, `language`, `word_count`, `user_provenance_json`. `duration_seconds` is now nullable (articles and threads have no duration). New unique index `ix_videos_source_type_source_id` for cross-source dedup scoped by source-type.
+- **`channels`** gains `source_type`, `creator_external_id` (NOT NULL, backfilled from `channel_id`), `source_weight` (default `1.0` — feeds the L4 retrieval re-ranking), and `creator_metadata_json`.
+- **Backfill** runs in the same migration and sets every existing row to `source_type='video'`, `source_id=video_id`, `creator_external_id=channel_id`. 912/912 videos and 48/48 channels migrated cleanly on the local DB.
+- **Model `__init__` overrides** keep the legacy YouTube ingest call sites working untouched: passing only `video_id`/`url`/`channel_id` auto-populates the new columns. New tests in `tests/test_models/test_multi_source_columns.py` lock in the defaults, the unique constraint, and cross-source-type independence.
+- **Migration:** `b8c9d0e1f2a3_multi_source_columns.py` (revises `a7b8c9d0e1f2`). Reversible — `alembic downgrade -1` restores the prior schema cleanly.
+- *(Channel→Creator and Video→Document table renames are deferred to a later PR.)*
+
 ### Branding & documentation refresh
 
 - **Rebrand to Pratidhvani (प्रतिध्वनि).** Sanskrit for "echo" — captures both the *sources echoing into the library* and *past exchanges echoing into future ones*. Legacy `VideoResearchPro` name retained only in grandfathered env-var names like `CHROMA_GLOBAL_COLLECTION_NAME=videoresearchpro_global` for back-compat. See [docs/branding.md](docs/branding.md).

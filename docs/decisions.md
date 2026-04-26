@@ -352,3 +352,26 @@ Each source-type registers a small config: which meta chips to show, what the pl
 - Risk: a future source type genuinely needs UI not expressible in the primitive set (e.g. a podcast card wants an inline audio scrubber). Mitigation: the per-source config can include a `customSlot` render override for the rare case; the default path stays uniform. We accept this escape hatch only if and when it's needed.
 
 **Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.4. Updates S-1.5.4 acceptance and tasks.
+
+---
+
+## D-017 — E-1.10 hard cutover (single-migration UUID PK promotion) (2026-04-26)
+
+**Status:** accepted. Resolves [OQ-7](initiatives.md#open-questions-parking-lot).
+
+**Context.** [D-015](#d-015--promote-e-110-uuid-pk-ahead-of-reddit--hn-orchestrator-wiring-2026-04-26) promoted E-1.10 ahead of Reddit / HN orchestrator wiring with an 8-task migration breakdown but did not specify the *cadence*. Two viable shapes were on the table (filed as OQ-7): **(a) hard cutover** — drop the legacy `video_id` PK and add the new `(source_type, source_id)` unique constraint in a single Alembic migration, single PR; **(b) additive-then-cutover** — ship `document_id` UUID + `source_id text` alongside the legacy `video_id` for one release with dual-write / dual-read at every reader site, then drop `video_id` in a follow-up PR. Recommendation in OQ-7 was (b) on reversibility grounds (project ships SQLite — no `pg_dump`-and-restore parachute — and 14 importers touch the legacy column).
+
+**Decision.** Hard cutover. E-1.10 ships as a single Alembic migration that adds `document_id` UUID + `source_id text`, backfills both, drops the legacy `video_id` PK, adds the `(source_type, source_id)` unique constraint, and retargets `job_videos` / `transcript_cache` FKs in one transaction. T-1.10.1 .. T-1.10.8 (as drafted in [E-1.10 in initiatives.md](initiatives.md#e-110--promote-video_id-pk-to-uuid-document_id)) stay shaped exactly as listed — they were already hard-cutover-shaped; this ADR just formalizes the cadence.
+
+**Alternatives considered.**
+- *Additive-then-cutover* — was the OQ-7 recommendation. Rejected because (i) the dual-write / dual-read transitional state has its own bug surface (every reader and writer needs a code path that handles "either column may be authoritative"), which is arguably *more* error-prone than a single audited cutover; (ii) two PRs of migration overhead for a foundation step that will see no production-traffic concurrency between PRs; (iii) the 168-test suite + a forward-and-rollback round-trip migration test (T-1.10.8) gives the same regression-catching property without dragging out the cutover; (iv) no SaaS / multi-tenant readers exist yet, so "missed call site discovered after release" is a self-host / dev-machine concern, not a customer-impacting one. Reversibility from a true cutover is preserved by the rollback half of T-1.10.8 — Alembic `downgrade` reinstates the legacy PK.
+- *Keep prefixed strings forever* — already rejected in [D-015](#d-015--promote-e-110-uuid-pk-ahead-of-reddit--hn-orchestrator-wiring-2026-04-26).
+
+**Consequences.**
+- Single migration PR for E-1.10 — no transitional release.
+- T-1.10.8 (round-trip migration test + 168-test suite + e2e smoke on a real existing job) is the safety net against missed call sites among the 14 importers. Treat T-1.10.8 as **gating** — the PR does not merge until both directions of the migration round-trip cleanly and the e2e smoke runs green.
+- Pre-merge audit: every reference to `video_id` in `app/services/youtube_service.py`, `app/services/chroma_service.py`, the five LangGraph agents, the routers, the dataset exporters, and the test fixtures gets visited and updated in the same PR. No `video_id` reads survive.
+- Database file backup as a manual pre-cutover step (`cp data/videoresearchpro.db data/videoresearchpro.db.pre-e110.bak`) documented in T-1.10.8's runbook so users who self-host can fall back if `downgrade` ever proves insufficient.
+- OQ-7 marked resolved with reference to this ADR.
+
+**Linked initiatives / PRs.** I-1 / E-1.10 / D-015 / OQ-7.

@@ -230,6 +230,11 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `YOUTUBE_API_KEY` | Yes | — | YouTube Data API v3 key |
+| `REDDIT_CLIENT_ID` | No | — | Reddit script-app client ID; required for the Reddit connector (S-1.5.1). Register at https://www.reddit.com/prefs/apps |
+| `REDDIT_CLIENT_SECRET` | No | — | Reddit script-app client secret |
+| `REDDIT_USER_AGENT` | No | `pratidhvani/0.1 (by u/anonymous)` | Reddit-required UA string — bad/empty UAs are aggressively rate-limited |
+| `REDDIT_RATE_LIMIT_RPM` | No | `100` | Requests/minute on Reddit's free OAuth tier; client spaces calls accordingly |
+| `REDDIT_COMMENT_DEPTH_DEFAULT` | No | `50` | Top-N comments by score to flatten alongside the OP body |
 | `OPENAI_API_KEY` | Yes* | — | Required if any use case resolves to `openai` (most defaults do) |
 | `ANTHROPIC_API_KEY` | No | — | Required if any use case resolves to `anthropic` |
 | `GOOGLE_API_KEY` | No | — | Required if any use case resolves to `google` |

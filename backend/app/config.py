@@ -26,6 +26,21 @@ class Settings(BaseSettings):
     YOUTUBE_TRANSCRIPT_RATE_LIMIT: float = 0.5
     YOUTUBE_DAILY_QUOTA: int = 10000
 
+    # Reddit (S-1.5.1) — read-only access via script-app OAuth (client_credentials).
+    # The token is for the *app*, not the user; suitable for reading public
+    # subreddits and posts. User-OAuth (per D-013) is a separate code path
+    # that lives in the Connected Accounts surface (S-1.5.13).
+    #
+    # Register a script-type app at https://www.reddit.com/prefs/apps to obtain
+    # CLIENT_ID + CLIENT_SECRET. USER_AGENT must follow Reddit's required format
+    # (`<platform>:<app-id>:<version> (by /u/<reddit-username>)`) — Reddit
+    # rate-limits requests with bad/empty User-Agent strings aggressively.
+    REDDIT_CLIENT_ID: str = ""
+    REDDIT_CLIENT_SECRET: str = ""
+    REDDIT_USER_AGENT: str = "pratidhvani/0.1 (by u/anonymous)"
+    REDDIT_RATE_LIMIT_RPM: int = 100  # 100 req/min on Reddit's free OAuth tier
+    REDDIT_COMMENT_DEPTH_DEFAULT: int = 50  # top N comments by score; OQ-2
+
     # -------------------------------------------------------------------
     # LLM — Primary (high-quality) model
     # -------------------------------------------------------------------

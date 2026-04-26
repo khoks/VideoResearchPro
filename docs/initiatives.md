@@ -26,7 +26,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Why it exists.** Generalize the data model from YouTube-only to all source types — podcasts, articles, threads, books, forum posts, social-media posts. Same search → approval → ingest → embed → query pipeline for every type.
 **North-star doc:** [feature-roadmap.md L1](feature-roadmap.md#l1--multi-source-ingest) · [source-types.md](source-types.md)
-**Decision links:** [D-004](decisions.md#d-004--l1-multi-source-ingest-as-the-next-large-initiative-2026-04-24), [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25), [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25), [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25), [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25), [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25)
+**Decision links:** [D-004](decisions.md#d-004--l1-multi-source-ingest-as-the-next-large-initiative-2026-04-24), [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25), [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25), [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25), [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25), [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25), [D-013](decisions.md#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25)
 
 ### E-1.1 🟢 Schema additive
 
@@ -50,8 +50,8 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 ### E-1.5 🔵 Social-media connectors
 
-**Scope.** Add Reddit + HN search connectors first; Mastodon + Bluesky next; manual-paste mode for FB/IG/LI/X-without-paid-API; paid Twitter as a BYOK opt-in; defer Discord and TikTok (D-010). One `Document` per thread (D-006); fetch-time stance/sentiment classification (D-007); no search-page scraping (D-008).
-**Linked decisions.** [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25), [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25), [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25), [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25), [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25)
+**Scope.** Add Reddit + HN search connectors first; Mastodon + Bluesky next; manual-paste mode (Mode B) for FB/IG/LI/X-without-paid-API + **Discord/TikTok via user-OAuth fallback** per [D-013](decisions.md#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25); paid Twitter as a BYOK opt-in. Defer Mode A (search/discovery) on Discord and TikTok (D-010). One `Document` per thread (D-006); fetch-time stance/sentiment classification (D-007); no search-page scraping (D-008). A new **Connected Accounts** settings surface stores per-user OAuth tokens used by Mode B paste fallback.
+**Linked decisions.** [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25), [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25), [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25), [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25), [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25), [D-013](decisions.md#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25)
 
 #### S-1.5.1 🔵 Reddit search connector
 
@@ -121,15 +121,18 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [ ] T-1.5.7.1 AT-Proto API client integration
 - [ ] T-1.5.7.2 Tests
 
-#### S-1.5.8 🔵 Manual-paste mode (Mode B for FB/IG/LI/X-without-paid)
+#### S-1.5.8 🔵 Manual-paste mode (Mode B for FB/IG/LI/Discord/TikTok/X-without-paid)
 
 **PR:** TBD
-**Acceptance.** User pastes 1–N post URLs from any supported platform; system fetches each via the article-connector machinery (trafilatura → Playwright fallback) and ingests as the right `source_type`. Honest UI: search disabled for these platforms, paste-only.
+**Acceptance.** User pastes 1–N post URLs from any supported platform; system fetches each via the article-connector machinery (trafilatura → Playwright fallback) and ingests as the right `source_type`. Per [D-013](decisions.md#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25), if the public anonymous fetch returns gated content, the connector falls back to a per-user OAuth token from the Connected Accounts surface (S-1.5.13). Honest UI: search disabled for these platforms, paste-only.
 **Tasks**
-- [ ] T-1.5.8.1 URL → `source_type` resolver (FB / IG / LI / X / generic)
+- [ ] T-1.5.8.1 URL → `source_type` resolver (FB / IG / LI / Discord / TikTok / X / generic)
 - [ ] T-1.5.8.2 Reuse trafilatura + Playwright pipeline (article-connector primitives) — see also E-1.6
 - [ ] T-1.5.8.3 Frontend "Paste URLs" surface in job submission
 - [ ] T-1.5.8.4 Per-platform `source_metadata` extraction (author handle, date) where the page exposes it
+- [ ] T-1.5.8.5 Two-step fetch dispatcher: public fetch → on gated/login-wall, fall back to user-OAuth fetch (token from S-1.5.13)
+- [ ] T-1.5.8.6 `text_source` recording: `paste_extract_public` vs `paste_extract_user_auth`
+- [ ] T-1.5.8.7 Soft-fail UX when no token is connected: surface "Connect your &lt;platform&gt; account?" prompt linking to Connected Accounts
 
 #### S-1.5.9 ⚪ Pluggable Twitter Bearer token (BYOK)
 
@@ -149,6 +152,46 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [ ] T-1.5.10.2 Self-thread unrolling (author replies to own tweets)
 - [ ] T-1.5.10.3 Reply fetch (top 50)
 - [ ] T-1.5.10.4 Quota exhaustion fallback to Mode B
+
+#### S-1.5.11 🔵 Discord paste-mode (user-OAuth)
+
+**PR:** TBD
+**Acceptance.** User pastes a Discord message URL (`https://discord.com/channels/<guild>/<channel>/<message>`). With a connected Discord account (from S-1.5.13), the connector uses the user's OAuth token to fetch the message + thread context via the Discord API. Without a connected account, the UI prompts the user to connect first. Source type `discord_message`. Mode A (global search / per-server bot) remains deferred per [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25).
+**Linked decisions.** [D-013](decisions.md#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25) (paste enables); [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25) (search defers).
+**Tasks**
+- [ ] T-1.5.11.1 Discord URL parser → `(guild_id, channel_id, message_id)` triple
+- [ ] T-1.5.11.2 Discord OAuth scope set: `messages.read`, `guilds` (for thread fetch)
+- [ ] T-1.5.11.3 Connector implementation: fetch message + reply thread via Discord API using the user's OAuth token
+- [ ] T-1.5.11.4 `source_metadata` shape: `guild_name`, `channel_name`, `author_handle`, `posted_at`, `reactions[]`
+- [ ] T-1.5.11.5 Tests with golden Discord message URLs (mocked API)
+
+#### S-1.5.12 🔵 TikTok paste-mode (public + user-OAuth)
+
+**PR:** TBD
+**Acceptance.** User pastes a TikTok video URL. Public fetch first (oEmbed-style metadata + caption); if the video itself is private/gated, fall back to user-OAuth fetch via connected TikTok account (from S-1.5.13). Whisper transcribes the video stream regardless of auth path. Source type `tiktok_video`. Mode A (search) remains deferred per [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25).
+**Linked decisions.** [D-013](decisions.md#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25) (paste enables); [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25) (search defers).
+**Tasks**
+- [ ] T-1.5.12.1 TikTok URL parser (`/@<user>/video/<id>` and short-link variants)
+- [ ] T-1.5.12.2 Public-path fetch via oEmbed + page-meta scrape (caption, author, date, like/comment count)
+- [ ] T-1.5.12.3 Whisper transcription path for video stream (reuse YouTube Whisper fallback infra)
+- [ ] T-1.5.12.4 TikTok OAuth scope set + connector for user-auth path
+- [ ] T-1.5.12.5 `source_metadata` shape: `author_handle`, `caption`, `posted_at`, `likes`, `comments`, `video_url`
+- [ ] T-1.5.12.6 Tests
+
+#### S-1.5.13 🔵 Connected Accounts settings surface
+
+**PR:** TBD
+**Acceptance.** New settings page (`/settings/connected-accounts`) where the user can OAuth-connect/disconnect FB, IG, LinkedIn, Discord, TikTok, and (in future) any other Mode B platform. Tokens stored encrypted in `user_platform_tokens` table; never displayed in plaintext. Each platform card shows: connection status (connected / not connected / token expired), last refresh, scope, "Disconnect" button. Disconnect deletes the row and triggers OAuth-revoke server-side.
+**Linked decisions.** [D-013](decisions.md#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25).
+**Tasks**
+- [ ] T-1.5.13.1 SQLAlchemy model + Alembic migration: `user_platform_tokens(user_id, platform, access_token_enc, refresh_token_enc, scope, expires_at, created_at, updated_at)`
+- [ ] T-1.5.13.2 Encryption layer: per-row symmetric encryption keyed off `JWT_SECRET` (self-host) or per-tenant KMS (SaaS, future)
+- [ ] T-1.5.13.3 OAuth callback handler: generic `/api/v1/oauth/<platform>/callback` that stores the token row
+- [ ] T-1.5.13.4 Per-platform OAuth client config (client_id from env per platform; document in `.env.example`)
+- [ ] T-1.5.13.5 Token-refresh background job (Celery beat) with per-platform refresh-URL config
+- [ ] T-1.5.13.6 Frontend settings page (lists platforms + connection status + connect/disconnect actions)
+- [ ] T-1.5.13.7 `GET /api/v1/health/connected-accounts` capability flag exposed to the frontend so paste-mode can show "Connect ≪platform≫?" CTA
+- [ ] T-1.5.13.8 Tests (model, encryption, callback flow, token refresh)
 
 ### E-1.6 🔴 Article connector
 
@@ -348,3 +391,4 @@ These are real questions raised in conversation that don't yet have a Story home
 - **OQ-4.** Whisper for podcast Mode A vs external service (Deepgram / AssemblyAI) for SaaS tier? (Tied to E-1.7)
 - **OQ-5.** PDF connector: file upload only, URL only, or both? (Tied to E-1.8)
 - **OQ-6.** Echo cold-start readiness threshold — quantitative criteria? (Tied to E-3.5)
+- **OQ-7.** Per-platform OAuth client registration — should the project ship default client_ids for FB/IG/LI/Discord/TikTok (subject to each platform's developer-app review), or require self-hosters to register their own apps? (Tied to S-1.5.13, [D-013](decisions.md#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25))

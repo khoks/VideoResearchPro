@@ -153,7 +153,9 @@ Where `Candidate`, `ExtractedText`, `SourceMetadata`, `CreatorMetadata` are type
 | `hn_story` | Algolia HN search (free, no auth) | story + comment tree | `hn_algolia` | reply depth per chunk |
 | `mastodon_post` | ActivityPub instance search | thread + replies | `activitypub` | reply depth per chunk |
 | `bluesky_post` | AT-Proto search (app password) | thread + replies | `at_proto` | reply depth per chunk |
-| `fb_post` / `ig_post` / `li_post` | ❌ no public-search API (see [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25)) — Mode B paste only | trafilatura → Playwright fallback on the user-pasted URL | `paste_extract` | reply position per chunk (when extractable) |
+| `fb_post` / `ig_post` / `li_post` | ❌ no public-search API (see [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25)) — Mode B paste only | public fetch (trafilatura → Playwright); user-OAuth fallback per [D-013](decisions.md#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25) | `paste_extract_public` or `paste_extract_user_auth` | reply position per chunk (when extractable) |
+| `discord_message` | ❌ no global search (Mode A deferred per [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25)) — Mode B paste only | user-OAuth required (Discord messages are gated); public fetch always fails | `paste_extract_user_auth` | message position in channel |
+| `tiktok_video` | ❌ Research API US-academic-gated; Display API has no search (Mode A deferred per [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25)) — Mode B paste only | public fetch first; user-OAuth fallback per [D-013](decisions.md#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25); transcript via Whisper from video stream | `paste_extract_public`, `paste_extract_user_auth`, or `whisper` | `start_time` / `end_time` per chunk |
 | `forum_post` | Reddit API / HN Algolia / Discourse API (umbrella for non-platform-specific forums) | top-level post + top N comments | `forum_extract` | comment depth per chunk |
 | `pdf` | (no search; user uploads) | pdfplumber + table extraction | `pdf_extract` | `page_number` per chunk |
 | `book` | (no search; user uploads EPUB/PDF) | calibre-style extraction | `pdf_extract` or `epub_extract` | `page_number` + chapter per chunk |
@@ -172,9 +174,34 @@ Social-media post connectors (Reddit, HN, Mastodon, Bluesky, Twitter, plus paste
 The choice is forced by per-platform API reality, not by design preference.
 
 - **Mode A — Discovery (search).** Available on **Reddit, HN, Mastodon, Bluesky** (free APIs) and **Twitter/X** (paid API, BYOK per [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25)). The connector implements `search()` with topic + optional date range, returns candidate threads, user approves, ingest proceeds.
-- **Mode B — Direct paste.** The only honest option for **Facebook, Instagram, LinkedIn, X-without-paid-API** (see [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25)). The user pastes 1–N post URLs; the connector fetches each via the article-pipeline primitives (trafilatura → Playwright fallback). No `search()` exposed; the UI clearly labels these platforms as paste-only.
+- **Mode B — Direct paste.** The only honest option for **Facebook, Instagram, LinkedIn, Discord, TikTok, X-without-paid-API** (see [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25), [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25)). The user pastes 1–N post URLs; the connector fetches each via a **two-step strategy** (per [D-013](decisions.md#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25)). No `search()` exposed; the UI clearly labels these platforms as paste-only.
 
 The submit-research form supports both modes per platform; the UI hides Mode A controls for platforms where it isn't available.
+
+#### Mode B fetch strategy (public → user-auth fallback)
+
+Per [D-013](decisions.md#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25), every Mode B connector dispatches its `fetch_text` in two steps:
+
+1. **Public anonymous fetch** — trafilatura → Playwright fallback against the pasted URL. Records `text_source='paste_extract_public'` on success.
+2. **User-auth fallback** — only if step 1 returns gated content (login wall, content stripped, HTTP 401/403). Re-fetches the same URL using a per-user OAuth token stored under the **Connected Accounts** settings surface. Records `text_source='paste_extract_user_auth'`. Skipped silently when the user has not connected that platform.
+
+```
+candidate URL
+   │
+   ├─► public anonymous fetch (trafilatura / Playwright)
+   │       │
+   │       ├─► success → text + source='paste_extract_public'
+   │       └─► gated/login-wall ↓
+   │
+   └─► user-OAuth fetch (per-user, per-platform token)
+           │
+           ├─► token absent → fail soft, surface "connect account?" prompt
+           └─► success      → text + source='paste_extract_user_auth'
+```
+
+Tokens are held in a `user_platform_tokens` table (`user_id, platform, access_token_encrypted, refresh_token_encrypted, scope, expires_at`). In self-host they never leave the device. SaaS extends with per-tenant key rotation per [saas-roadmap.md](saas-roadmap.md).
+
+This same pattern unblocks **TikTok** (paste a video URL → fetch via user's logged-in TikTok session) and **Discord** (paste a message URL → fetch via user's Discord session) from D-010's broad defer for Mode B only. **Mode A search remains deferred on those platforms.**
 
 ### One `Document` per thread (not per comment)
 
@@ -252,15 +279,17 @@ A social-post candidate card surfaces, beyond the standard video-card fields:
 
 Filter chips ("show only against", "show only positive", "show only ≥100 score") filter the in-memory candidate list. They do not re-fetch or re-classify.
 
-### Platforms explicitly out of scope today
+### Platforms with Mode A out of scope today
 
-- **TikTok** — Research API is US-academic-gated; Display API has no search. Deferred per [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25).
-- **Discord** — no global search; per-server bot model only. Deferred per [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25). May unfreeze if a clear self-host use case emerges.
+Per [D-013](decisions.md#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25), Mode B paste-with-user-OAuth is supported for all of these. Only Mode A (search/discovery) remains out of scope.
+
+- **TikTok** — Mode A: Research API is US-academic-gated; Display API has no search. Deferred per [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25). Mode B: paste a video URL, app fetches via public path or user-OAuth, transcript via Whisper.
+- **Discord** — Mode A: no global search; per-server bot model only. Deferred per [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25). Mode B: paste a message link, app fetches via the user's Discord OAuth session.
 - **YouTube comments as a standalone connector** — already accessible via the existing video pipeline; not a new source type.
 
 ### Sequencing
 
-Per [E-1.5 in `initiatives.md`](initiatives.md#e-15--social-media-connectors): Reddit + HN first, then Mastodon + Bluesky, then Mode B paste mode for FB/IG/LI/X-without-paid, then BYOK Twitter API.
+Per [E-1.5 in `initiatives.md`](initiatives.md#e-15--social-media-connectors): Reddit + HN first, then Mastodon + Bluesky, then Mode B paste mode for FB/IG/LI/X-without-paid (and Discord/TikTok per [D-013](decisions.md#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25)), then BYOK Twitter API. The Connected-Accounts settings surface ships alongside the first paste-with-user-OAuth platform.
 
 ---
 

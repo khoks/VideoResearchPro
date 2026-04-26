@@ -186,7 +186,7 @@ This is the chronological record of every product / engineering decision made on
 
 ## D-010 — Defer TikTok and per-server Discord bot indefinitely (2026-04-25)
 
-**Status:** accepted.
+**Status:** accepted (partially superseded by [D-013](#d-013--personal-account-oauth-as-fallback-for-mode-b-paste-2026-04-25) — paste-only Mode B *is* supported on TikTok and Discord via user-OAuth; only Mode A search / per-server bot remain deferred).
 
 **Context.** TikTok's Research API is US-academic-gated; the Display API has no search. Discord has no global search — a bot can only see servers it is invited to.
 
@@ -238,3 +238,38 @@ This is the chronological record of every product / engineering decision made on
 **Consequences.** A new doc to maintain. The curator skill biases toward over-capture (a false positive costs nothing — mark `superseded by prior art`; a false negative loses chronology forever). Verbatim source preservation extends the existing safekeeping pattern at `docs/notes/`. Future SaaS commercialization gets a defensive-disclosure paper trail.
 
 **Linked initiatives / PRs.** I-4 / E-4.7. PR [#68](https://github.com/khoks/VideoResearchPro/pull/68) (same bootstrap PR, follow-up commit).
+
+---
+
+## D-013 — Personal-account OAuth as fallback for Mode B paste (2026-04-25)
+
+**Status:** accepted.
+
+**Context.** Mode B (manual paste of post URLs) was originally scoped to fetch only **public** posts via the article pipeline (trafilatura → Playwright fallback). Many social-media posts on Facebook / Instagram / LinkedIn / Discord / TikTok are partially or fully gated — visible to logged-in users but stripped or denied for an anonymous request. Without an authenticated path, paste mode fails on a large fraction of real-world URLs the user wants to ingest.
+
+The user's framing: "the user shares the link with the app, and the app accesses it either as a public post or via the auth of the user's own accounts."
+
+**Decision.** Each Mode B connector is upgraded to a two-step fetch:
+
+1. **Try public anonymous fetch first** (today's trafilatura → Playwright pipeline).
+2. **If the response is gated** (login wall, content stripped, error 401/403), fall back to a fetch using a **per-user, per-platform stored OAuth token** — when the user has connected that account in a "Connected accounts" settings surface.
+
+OAuth connection is **opt-in per platform**. Tokens are stored encrypted and scoped to a single user; in self-host they never leave the device. Refresh handled by the same connector. Same pattern as [D-009](#d-009--twitter--x-is-byok--opt-in-2026-04-25) (BYOK Twitter), generalized: every platform that has an OAuth flow can accept a personal account as the fetch identity.
+
+This **partially supersedes D-010**: TikTok and Discord were deferred indefinitely on the assumption that no public-search and no global-bot path was viable. With paste-mode + user-OAuth, the user can drop a TikTok video URL or a Discord message URL and the connector fetches via the user's logged-in session. **Mode A (search/discovery) on those platforms remains deferred.**
+
+**Alternatives considered.**
+- *Paste public-only forever.* Roughly half of real FB/IG/LI URLs strip content for anonymous fetches. Users hit dead-ends and lose trust in the paste flow.
+- *Require BYOK API tokens for every platform.* Higher friction than OAuth (FB/IG/LI/Discord/TikTok don't expose user-level "developer keys" for casual users; OAuth is the natural path). Twitter's BYOK works precisely because Twitter offers a paid API tier; the others don't.
+- *Use third-party scraping vendors with shared session cookies.* Same ToS objection as [D-008](#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25), now with vendor-lock-in costs.
+- *Require the user to copy-paste the post text manually instead of the URL.* Loses metadata (author, date, score, thread structure), breaks citations, breaks the curation flow uniformity Ring 2 of the [vision](vision.md) promises.
+
+**Consequences.**
+- New schema: `user_platform_tokens` table — `(user_id, platform, access_token_encrypted, refresh_token_encrypted, scope, expires_at)`. Reuses the SaaS BYOK pattern; SaaS later adds per-tenant scoping and key rotation.
+- New connector capability: `fetch_text_with_user_auth(candidate, user_id) -> ExtractedText`. Default `fetch_text` keeps the public-anonymous path; the orchestrator dispatches to the auth fallback only when the public path returns gated content.
+- New frontend surface: **Connected Accounts** settings page (planned under E-2 / I-2, but the data model lives under I-1 / E-1.5).
+- TikTok and Discord enter the supported-paste-platforms set. Mode A (search / per-server bot) remains deferred until a clear user need emerges.
+- Each connector's fetch result records `text_source` accurately: `paste_extract_public` vs `paste_extract_user_auth` so the audit trail distinguishes how the content was reached.
+- Privacy posture sharpens: the same self-host model that already handles `OPENAI_API_KEY` now also holds platform OAuth tokens. SaaS tier inherits this cleanly via per-tenant secrets storage from [saas-roadmap.md](saas-roadmap.md).
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.8 (extended). New stories tracked under E-1.5 for Discord-paste, TikTok-paste, and the Connected-Accounts settings surface. Partially supersedes [D-010](#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25).

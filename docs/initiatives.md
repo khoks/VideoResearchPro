@@ -48,22 +48,23 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Scope.** SQLite table rename, ORM class `Video` → `Document`, model file move (`video.py` → `document.py`), 14 importers propagated, no behavioral change. PK column intentionally still `video_id` until UUID promotion (E-1.10).
 **Shipped:** 2026-04-25 — PR [#67](https://github.com/khoks/VideoResearchPro/pull/67) (squash-merged as `cfa0406`)
 
-### E-1.5 🔵 Social-media connectors
+### E-1.5 🟡 Social-media connectors
 
 **Scope.** Add Reddit + HN search connectors first; Mastodon + Bluesky next; manual-paste mode for FB/IG/LI/X-without-paid-API; paid Twitter as a BYOK opt-in; defer Discord and TikTok (D-010). One `Document` per thread (D-006); fetch-time stance/sentiment classification (D-007); no search-page scraping (D-008).
 **Linked decisions.** [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25), [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25), [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25), [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25), [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25)
 
-#### S-1.5.1 🔵 Reddit search connector
+#### S-1.5.1 🟡 Reddit search connector
 
-**PR:** TBD
+**PR:** [#70](https://github.com/khoks/VideoResearchPro/pull/70)
 **Acceptance.** A topic job with `source_types=["reddit_post"]` searches Reddit (`/search.json` + per-sub fallback), presents threads at approval, ingests into the global library. Q&A returns Reddit citations with permalink + `#comment-<id>` deep-links.
+**Scope-changed 2026-04-25:** Connector module (search / list / fetch_metadata / fetch_text) + OAuth client with rate limit + comment-tree flatten + 29 unit tests landed in PR #70. Storage-layer wiring (T-1.5.1.4 row insertion), end-to-end pipeline test (second half of T-1.5.1.6), Reddit approval-UI card (T-1.5.1.7), and citation rendering (S-1.5.5) are deferred to follow-up stories that wire Reddit through the job orchestrator. The `f"reddit:{post_id}"` namespace convention is enforced at the connector layer (`Candidate.source_id`); persistence into the `documents.video_id` PK column lands when the orchestrator dispatches Reddit jobs.
 **Tasks**
-- [ ] T-1.5.1.1 Implement `RedditConnector(BaseConnector)` against `/search.json` + per-sub `/r/<sub>/search.json`
-- [ ] T-1.5.1.2 OAuth app registration + token refresh; respect 100 req/min rate limit
-- [ ] T-1.5.1.3 Flatten OP + top-50 comments (sorted by score) into single text body with reply markers
+- [x] T-1.5.1.1 Implement `RedditConnector(BaseConnector)` against `/search.json` + per-sub `/r/<sub>/search.json`
+- [x] T-1.5.1.2 OAuth app registration + token refresh; respect 100 req/min rate limit
+- [x] T-1.5.1.3 Flatten OP + top-50 comments (sorted by score) into single text body with reply markers
 - [ ] T-1.5.1.4 Store new `source_type='reddit_post'` rows; PK column = `f"reddit:{post_id}"`
-- [ ] T-1.5.1.5 Comment-tree depth configurable (default top 50 by score)
-- [ ] T-1.5.1.6 Connector unit tests + end-to-end pipeline test
+- [x] T-1.5.1.5 Comment-tree depth configurable (default top 50 by score)
+- [ ] T-1.5.1.6 Connector unit tests + end-to-end pipeline test *(unit tests landed in PR #70; e2e test pending orchestrator wiring)*
 - [ ] T-1.5.1.7 Approval-UI card variant for Reddit (handle, score, comment count, snippet, sentiment hint)
 
 #### S-1.5.2 🔵 Hacker News search connector

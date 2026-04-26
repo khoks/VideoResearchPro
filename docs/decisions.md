@@ -238,3 +238,23 @@ This is the chronological record of every product / engineering decision made on
 **Consequences.** A new doc to maintain. The curator skill biases toward over-capture (a false positive costs nothing — mark `superseded by prior art`; a false negative loses chronology forever). Verbatim source preservation extends the existing safekeeping pattern at `docs/notes/`. Future SaaS commercialization gets a defensive-disclosure paper trail.
 
 **Linked initiatives / PRs.** I-4 / E-4.7. PR [#68](https://github.com/khoks/VideoResearchPro/pull/68) (same bootstrap PR, follow-up commit).
+
+---
+
+## D-013 — Pseudo-timestamps at 3 wps for text-based connectors (2026-04-25)
+
+**Status:** accepted.
+
+**Context.** The chunker in `app/utils/chunking.py` was designed around YouTube transcripts whose segments carry natural `(start_time, end_time)` pairs. It threads those values onto every chunk's metadata so per-chunk citations can build `&t=NNs` deep-links. Text-based sources (Reddit threads, HN comment trees, articles, tweets, future Mastodon / Bluesky) have no native time axis but must still satisfy the chunker's segment contract; otherwise we fragment the chunker into per-source-type variants.
+
+**Decision.** Text-based connectors synthesize pseudo-timestamps at **3 words/second** (~180 wpm — a normal reading cadence). Each segment's `start` is the running word-count cursor up to that segment divided by 3.0; `end` is `start + (segment_words / 3.0)`. The first segment starts at `0.0`. The synthetic values flow through chunk metadata but are never displayed to the user — text-source citations use `permalink` / `#comment-<id>` / page-anchor deep-links instead of `&t=`. Codified in `app/sources/reddit/flatten.py::_segment_for_text` via the constant `_WORDS_PER_SECOND = 3.0`.
+
+**Alternatives considered.**
+- *Make `Segment.start` / `.end` `Optional[float]` and branch the chunker on `None`* — fans out a `None` check across every code path that reads chunk metadata; the chunker becomes source-type-aware.
+- *Special-case the chunker by `source_type`* — moves source-type knowledge into a layer that should stay generic; same coupling problem.
+- *Propagate `word_index` instead of `time`* — requires a parallel metadata field everywhere `start_time` / `end_time` is read (search / Q&A / citation builders), and the chunker contract still wouldn't accept it.
+- *Pick a different rate (e.g. 2 or 4 wps)* — 3 wps is a coarse but defensible reading-speed estimate; the rate is a one-line constant if a future connector needs to tune.
+
+**Consequences.** Every future text-based connector (HN, Mastodon, Bluesky, articles, tweets) reuses the same constant — no per-source chunker branches. The synthetic time values are meaningless to users but make all downstream tooling uniform. If 3 wps proves a poor proxy (e.g. messes up chunk-size estimation), revisit by tuning the constant in one place rather than re-architecting the contract.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.1. PR [#70](https://github.com/khoks/VideoResearchPro/pull/70) (initial implementation in Reddit connector).

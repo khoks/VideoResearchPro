@@ -141,6 +141,14 @@ Where `Candidate`, `ExtractedText`, `SourceMetadata`, `CreatorMetadata` are type
 
 **No connector touches the database directly.** The job orchestrator (Celery task in `app/tasks/job_tasks.py`) calls the connector for text extraction, then calls `app/services/document_service.py` to persist. This keeps connectors stateless and testable.
 
+### Pseudo-timestamps for text-based sources
+
+Connectors that return `ExtractedText` for text-based sources (Reddit threads, HN comment trees, future Mastodon / Bluesky / articles / tweets) still hand the chunker a list of `Segment(text, start, end)` triples even though the underlying content has no time axis. The chunker in `app/utils/chunking.py` was designed around YouTube transcripts and threads `(start, end)` seconds onto every chunk's metadata so the rest of the pipeline (embedder, citations, RAG metadata) stays uniform across source types.
+
+Convention: synthesize pseudo-timestamps at **3 words/second** (~180 wpm — a normal reading cadence). Each segment's `start` is the running word-count cursor up to that segment divided by 3.0; `end` is `start + (segment_words / 3.0)`. The first segment starts at `0.0`. Values are not displayed to the user — text-source citations build deep-links from `permalink` / `#comment-<id>` / page-anchors instead of `&t=` — but the chunker contract is satisfied without a special-case branch (see [D-013](decisions.md#d-013--pseudo-timestamps-at-3-wps-for-text-based-connectors-2026-04-25)).
+
+Codified in `app/sources/reddit/flatten.py::_segment_for_text` via the constant `_WORDS_PER_SECOND = 3.0`. Future text-based connectors should reuse the same constant so the convention stays a one-line tunable.
+
 ### Per-source-type implementations (sketch)
 
 | source_type | search | fetch_text | text_source | timestamp granularity |

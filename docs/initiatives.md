@@ -270,6 +270,12 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Scope.** v2 enhancement: when both `/knowledge-curator` and `/work-tracker` fire on the same session, the second skill checks out the first's branch and adds a commit instead of opening a sibling PR. For now, sibling PRs with `Companion PR: #N` cross-references is the default.
 
+### E-4.7 🟡 Inventions / novel-ideas log
+
+**Scope.** New canonical doc [`inventions.md`](inventions.md) owned by `/knowledge-curator`. Captures novel mechanisms / non-obvious combinations / potentially-patentable concepts surfaced in conversation. Skill detection heuristic biased toward over-capture; verbatim user messages flagged as novel are also saved raw to `docs/notes/<YYYY-MM-DD-novel-<slug>.md`. Skill makes no legal patentability assessment.
+**Linked decision:** [D-012](decisions.md#d-012--capture-novel--potentially-patentable-ideas-in-inventionsmd-2026-04-25)
+**PR:** [#68](https://github.com/khoks/VideoResearchPro/pull/68) (follow-up commit on the bootstrap branch)
+
 ---
 
 ## I-5 ⚪ SaaS readiness (long-horizon)

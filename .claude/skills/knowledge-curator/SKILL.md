@@ -1,6 +1,6 @@
 ---
 name: knowledge-curator
-description: Extract future requirements, vision additions, architecture/tech-stack/scaling/optimization choices, and crucial product/engineering decisions from the current conversation, then update the canonical project docs and the decision log. Commit on a branch and open a PR to master.
+description: Extract future requirements, vision additions, architecture/tech-stack/scaling/optimization choices, crucial product/engineering decisions, and any novel/potentially-patentable ideas surfaced in the current conversation. Route everything into the canonical project docs, the decision log, and the inventions log. Commit on a branch and open a PR to master.
 ---
 
 # `/knowledge-curator` — capture session knowledge into the docs
@@ -15,6 +15,7 @@ This skill is the project's **session-to-docs pump**. It runs at the end of any 
 - Architecture, tech-stack, scaling, optimization, infrastructure, data-model, or API design discussion
 - Decisions that will shape future PRs (chosen approach, rejected alternative, trade-off accepted, scope deferral)
 - Brand / product framing that updates `vision.md`, `branding.md`, or `personal-brain.md`
+- **Novel ideas or potentially-patentable concepts** — see the dedicated section below for the detection heuristic and the [`inventions.md`](../../docs/inventions.md) log shape
 
 If the session was purely tactical (a bug fix, a one-off command, a code question with no design content), **exit without changes**. The skill is allowed to be a no-op.
 
@@ -41,6 +42,7 @@ The canonical doc map (mirrors §4.3 of the original rebrand plan). The skill **
 | Test strategy | [`docs/testing.md`](../../docs/testing.md) |
 | Fine-tune dataset shape | [`docs/finetune_design.md`](../../docs/finetune_design.md) |
 | **Decision log (this skill's home)** | [`docs/decisions.md`](../../docs/decisions.md) |
+| **Inventions / novel-idea log (this skill's home)** | [`docs/inventions.md`](../../docs/inventions.md) |
 | Recently shipped changes | [`CHANGELOG.md`](../../CHANGELOG.md) |
 | Verbatim user vision dumps (safekeeping) | [`docs/notes/<YYYY-MM-DD-slug>.md`](../../docs/notes/) |
 
@@ -68,6 +70,61 @@ If the user delivers a long verbatim vision message, save it raw in `docs/notes/
 
 Number monotonically (D-001, D-002, …). Never renumber. If a decision is reversed, add a new entry that supersedes the old one and update the old one's `Status:` line.
 
+## The inventions log
+
+`docs/inventions.md` is the project's **novel-ideas / potentially-patentable-concepts log**. Decisions are about *which* path we take among known options; inventions are *new mechanisms* — non-obvious combinations, novel algorithms, unusual system architectures, or product shapes that may not exist in the public literature. The skill's job is to flag them and preserve the chronology and authorship; **the skill does not assess patentability legally** (that's a follow-up the user does, possibly with counsel).
+
+### Detection heuristic — when to file an `N-NNN`
+
+Treat an idea as a candidate invention when **any** of the following hold:
+
+1. The user explicitly says some variant of: *"is this novel?"*, *"could this be patented?"*, *"I haven't seen this before"*, *"this might be unique"*, *"this is a new way of …"*.
+2. The user describes a mechanism that is **specific** (not just a goal) and you do not recognize it from the public literature you've seen — e.g., a particular ranking pipeline, a particular way of combining models, a particular UI affordance, a particular data structure.
+3. The user describes a **non-obvious combination** of known techniques whose joint use produces a measurable advantage (efficiency, accuracy, UX, cost) and that combination isn't a standard textbook recipe.
+4. The user articulates a **product shape** (interaction model, business model, agency surface) that is unusual relative to comparable products in the same space.
+
+If only the *goal* is described ("an app that learns my taste") without a specific mechanism, that's vision content, not an invention — route to `vision.md` / `feature-roadmap.md` instead.
+
+If the idea is clearly part of standard prior art (e.g., "use embeddings for semantic search", "RAG", "fine-tuning"), do **not** file it.
+
+Be **inclusive** at capture time. A false positive (filing an idea that turns out to be prior art) costs nothing — just update `Status:` to `superseded by prior art: <citation>`. A false negative (failing to capture a real novel idea) is the expensive failure mode because chronology can't be reconstructed later.
+
+### Entry shape
+
+```markdown
+### N-NNN — <short title> (YYYY-MM-DD)
+
+**Status:** captured | under-investigation | disclosed-publicly | patent-considered | patent-filed | abandoned | superseded by prior art
+
+**Source.** Who introduced it (user / Claude / both). Session date. One-line context of how it came up.
+
+**Summary.** One paragraph in plain language describing the idea — what it does, what problem it solves.
+
+**Mechanism.** The specific *how* — the algorithm, data flow, component arrangement, or user-flow that makes the idea concrete. This is the part that distinguishes an invention from a vision: a mechanism can be implemented from this description.
+
+**Why this is potentially novel.** The non-obviousness claim — what known approaches it differs from, and why the difference matters. List adjacent prior art the author already knows about, with how this differs from each.
+
+**Prior-art notes.** Anything Claude or the user already remembers that's adjacent. Often empty initially; updated over time as a search is done.
+
+**Commercial / strategic implications.** What does owning, defensively disclosing, or open-sourcing this mean for the project / future SaaS.
+
+**Linked decisions / initiatives / PRs.** D-NNN, I-N / E-N.M, PR #X. Use `—` if none yet.
+
+**Verbatim source (optional).** If the idea came from a single user message, preserve it here verbatim as an indented blockquote so future prior-art chronology has the original wording. This mirrors the safekeeping pattern in [`docs/notes/`](../../docs/notes/).
+```
+
+Number monotonically (`N-001`, `N-002`, …). Never renumber. **Status transitions** are append-only — if status changes, update the field but leave the entry text intact; add a `Status-changed YYYY-MM-DD: <reason>` line at the bottom.
+
+### What to add when the user signals "this is novel"
+
+When the user explicitly flags an idea as novel/patentable in a message:
+
+1. File the `N-NNN` entry as described above.
+2. Save the originating message verbatim to a `docs/notes/<YYYY-MM-DD-novel-<slug>.md` file with frontmatter `status: raw — do not edit` (mirrors the existing pattern at `docs/notes/2026-04-24-echo-feature-vision.md`). The `inventions.md` entry's `Verbatim source` field links to this note.
+3. Cross-reference: if the idea has an architectural / roadmap implication, add a paragraph in the relevant doc that says `Realizes invention [N-NNN](inventions.md#n-NNN-...).`
+
+The chronology + verbatim record is the part that matters most legally — that's the part to bias towards over-capturing.
+
 ## Style rules when editing existing docs
 
 1. **Match the existing voice and Markdown shape** of the doc you're editing. `feature-roadmap.md` uses status emoji + structured sections (Motivation / Sketch / Schema impact / API impact / Open questions / Status). `architecture.md` is descriptive prose with diagrams. `requirements.md` is FR-N / NFR-N bullets. Don't import a different skeleton.
@@ -94,6 +151,7 @@ Read the conversation in this session (the active turn's history). Classify each
 - **Requirements (what currently ships)** → `requirements.md`
 - **UI / page / token** → `ui-design.md` or `ui-pages.md`
 - **Decision** → `decisions.md` (and add `Linked decision: D-NNN` cross-references in the other docs you touched)
+- **Novel idea / potentially-patentable concept** → `inventions.md` (apply the detection heuristic above; if the idea was a single verbatim user message, also save it to `docs/notes/<YYYY-MM-DD-novel-<slug>.md`)
 
 ### 2. Open every doc you intend to modify
 

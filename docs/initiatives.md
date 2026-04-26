@@ -53,9 +53,9 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Scope.** Add Reddit + HN search connectors first; Mastodon + Bluesky next; manual-paste mode for FB/IG/LI/X-without-paid-API; paid Twitter as a BYOK opt-in; defer Discord and TikTok (D-010). One `Document` per thread (D-006); fetch-time stance/sentiment classification (D-007); no search-page scraping (D-008).
 **Linked decisions.** [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25), [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25), [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25), [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25), [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25)
 
-#### S-1.5.1 🟡 Reddit search connector
+#### S-1.5.1 🟢 Reddit search connector
 
-**PR:** [#70](https://github.com/khoks/VideoResearchPro/pull/70)
+**Shipped:** 2026-04-26 — PR [#70](https://github.com/khoks/VideoResearchPro/pull/70) (squash-merged as `faaed18`)
 **Acceptance.** A topic job with `source_types=["reddit_post"]` searches Reddit (`/search.json` + per-sub fallback), presents threads at approval, ingests into the global library. Q&A returns Reddit citations with permalink + `#comment-<id>` deep-links.
 **Scope-changed 2026-04-25:** Connector module (search / list / fetch_metadata / fetch_text) + OAuth client with rate limit + comment-tree flatten + 29 unit tests landed in PR #70. Storage-layer wiring (T-1.5.1.4 row insertion), end-to-end pipeline test (second half of T-1.5.1.6), Reddit approval-UI card (T-1.5.1.7), and citation rendering (S-1.5.5) are deferred to follow-up stories that wire Reddit through the job orchestrator. The `f"reddit:{post_id}"` namespace convention is enforced at the connector layer (`Candidate.source_id`); persistence into the `documents.video_id` PK column lands when the orchestrator dispatches Reddit jobs.
 **Tasks**
@@ -67,15 +67,16 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [ ] T-1.5.1.6 Connector unit tests + end-to-end pipeline test *(unit tests landed in PR #70; e2e test pending orchestrator wiring)*
 - [ ] T-1.5.1.7 Approval-UI card variant for Reddit (handle, score, comment count, snippet, sentiment hint)
 
-#### S-1.5.2 🔵 Hacker News search connector
+#### S-1.5.2 🟡 Hacker News search connector
 
-**PR:** TBD
+**PR:** [#73](https://github.com/khoks/VideoResearchPro/pull/73) (open as of 2026-04-26)
 **Acceptance.** Topic job with `source_types=["hn_story"]` returns HN stories with comment trees; uses Algolia HN search API (free, no auth).
+**In-progress 2026-04-26:** Connector module (search via `/search?tags=story`, `list_creator_items` via `/search_by_date`, `fetch_metadata` + `fetch_text` via `/items/<id>`), HTML-scrub flatten with `↳` depth markers mirroring Reddit's segment shape, 31 unit tests, and a small refactor extracting `_WORDS_PER_SECOND` + `_segment_for_text` into `app/sources/_text_utils.py` so both text-based connectors share the D-013 constant. Date-range filtering (T-1.5.2.2) is deferred — Algolia exposes it via `numericFilters=created_at_i>...,<...`, but the in-scope acceptance is plain topic search; date scoping waits until the topic-job UI has a date-range field.
 **Tasks**
-- [ ] T-1.5.2.1 Implement `HNConnector(BaseConnector)` against `https://hn.algolia.com/api/v1/search`
-- [ ] T-1.5.2.2 Date-range filter via `numericFilters=created_at_i>...,<...`
-- [ ] T-1.5.2.3 Comment tree fetch via item endpoint, flatten same as Reddit
-- [ ] T-1.5.2.4 Tests
+- [x] T-1.5.2.1 Implement `HNConnector(BaseConnector)` against `https://hn.algolia.com/api/v1/search`
+- [ ] T-1.5.2.2 Date-range filter via `numericFilters=created_at_i>...,<...` *(deferred — see In-progress note)*
+- [x] T-1.5.2.3 Comment tree fetch via item endpoint, flatten same as Reddit
+- [x] T-1.5.2.4 Tests
 
 #### S-1.5.3 🔵 `social_classify_stance` LLM use case
 

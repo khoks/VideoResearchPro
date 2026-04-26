@@ -232,16 +232,19 @@ Citations dispatched by `source_type` build deep-links: `permalink#comment-<id>`
 
 ### Stance / sentiment classification at fetch time
 
-Per [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25). Each candidate document (and each comment) is classified at ingest time by the `social_classify_stance` LLM use case (default cheap-and-fast: `provider=openai, model=gpt-4.1-mini, reasoning=off`). Output schema:
+Per [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), extended by [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26) to include a `framing` axis. Each candidate document (and each comment) is classified at ingest time by the `social_classify_stance` LLM use case (default cheap-and-fast: `provider=openai, model=gpt-4.1-mini, reasoning=off`). Output schema:
 
 ```python
 class StanceClassification(BaseModel):
     stance: Literal["for", "against", "neutral", "unclear"]
     sentiment: Literal["positive", "negative", "mixed", "neutral"]
+    framing: Literal["technical", "political", "emotional", "experiential"]
     topic_relevance: float  # 0.0 - 1.0
 ```
 
-Results land in `source_metadata.stance` / `.sentiment` / `.topic_relevance` on the `Document`, and per-comment under `source_metadata.comments[].sentiment`. The approval UI surfaces classification as a **hint** (filter chips, badge color), never as a hard gate that hides candidates — sarcasm and dog-whistle handling is too noisy to autopilot.
+The `framing` axis captures the **register** in which the author is engaging with the topic — `technical` (data / mechanism / system-level reasoning), `political` (ideology / party-line / group-identity), `emotional` (affect-driven, tone over reasoning), `experiential` (first-person lived experience). The classifier picks one primary value; multi-label is deferred per D-014.
+
+Results land in `source_metadata.stance` / `.sentiment` / `.framing` / `.topic_relevance` on the `Document`, and per-comment under `source_metadata.comments[].sentiment` (and similarly `.framing`). The approval UI surfaces classification as a **hint** (filter chips, badge color), never as a hard gate that hides candidates — sarcasm and dog-whistle handling is too noisy to autopilot.
 
 ### Comment-tree depth
 
@@ -249,16 +252,18 @@ Default: top 50 comments by score. Configurable per-job (open question OQ-2 in [
 
 ### Approval-UI surface
 
-A social-post candidate card surfaces, beyond the standard video-card fields:
+Per [D-016](decisions.md#d-016--single-polymorphic-approval-card-driven-by-source_metadata-2026-04-26), approvals render through a **single polymorphic `<ApprovalCard>`** driven by `source_type` + `source_metadata`, not per-source-type card components. Composition primitives: `<CardHeader>`, `<CardBody>`, `<CardMetaRow>`, `<CardBadgeRow>`, `<CardActions>`. Each source-type registers a small config entry (which meta chips to show, platform glyph, header field mapping); adding a new source type = a config entry, not a new component file.
+
+A social-post candidate surfaces, beyond the standard video-card fields:
 
 - Author handle + follower / karma proxy
 - Post date + platform icon
 - First ~200 chars of OP
 - Comment count + score / likes / retweets
-- **Stance + sentiment badges** (from `social_classify_stance`)
+- **Stance + sentiment + framing badges** (from `social_classify_stance`)
 - "View on platform" deep-link
 
-Filter chips ("show only against", "show only positive", "show only ≥100 score") filter the in-memory candidate list. They do not re-fetch or re-classify.
+Filter chips ("show only against", "show only experiential framing", "show only ≥100 score") filter the in-memory candidate list. They do not re-fetch or re-classify. Filter-chip behaviour generalizes across source types because chips operate on `source_metadata.<field>` regardless of `source_type`.
 
 ### Platforms explicitly out of scope today
 

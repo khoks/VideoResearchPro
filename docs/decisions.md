@@ -258,3 +258,97 @@ This is the chronological record of every product / engineering decision made on
 **Consequences.** Every future text-based connector (HN, Mastodon, Bluesky, articles, tweets) reuses the same constant — no per-source chunker branches. The synthetic time values are meaningless to users but make all downstream tooling uniform. If 3 wps proves a poor proxy (e.g. messes up chunk-size estimation), revisit by tuning the constant in one place rather than re-architecting the contract.
 
 **Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.1. PR [#70](https://github.com/khoks/VideoResearchPro/pull/70) (initial implementation in Reddit connector).
+
+---
+
+## D-014 — Add `framing` axis to `social_classify_stance` schema (2026-04-26)
+
+**Status:** accepted.
+
+**Context.** [D-007](#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25) defined the `social_classify_stance` use case to emit `{stance, sentiment, topic_relevance}` per fetched social post (and per comment). This handles **polarity** ("for / against / neutral") and **tone** ("positive / negative / mixed"), but not **register** — the lens through which someone is engaging with the topic. Two posts can both be `against` a policy while one cites economic data ("the math doesn't work because...") and the other cites lived experience ("when this passed in 2019 my industry collapsed"). For L4 source-weighting and contradiction detection — and for the user's "show me the *kinds* of perspectives, not just the polarity split" use case — collapsing both into `against / negative` flattens out the genuinely different ways people argue.
+
+**Decision.** Add a fourth axis `framing` to the classification schema with four primary values:
+
+- **`technical`** — argues from data, citations, mechanism, system-level reasoning ("the math doesn't work because…", "the latency would be unacceptable")
+- **`political`** — argues from ideology, party-line, group-identity ("conservatives / progressives think…", "this is what the establishment wants")
+- **`emotional`** — argues from affect, outrage, joy, fear ("this is terrifying / amazing / disgusting"; tone-driven without reasoning chain)
+- **`experiential`** — argues from first-person lived experience ("when I tried this…", "in my industry…", "as a parent of three…")
+
+The classifier picks **one primary** framing. The values are not mutually exclusive in reality, but a flat single-label keeps the prompt cheap and the badges legible. A future `framing_secondary` slot is deferred until single-label proves lossy.
+
+**Alternatives considered.**
+- *Don't add framing* — keeps the schema small but L4 perspective-clustering becomes hard; you can only see polarity, not register, and the `experiential` voice (which the user explicitly values) drowns under generic `against / negative` aggregation.
+- *Free-text `framing` label* — maximally flexible but unrankable / unfilterable in the UI; no consistent vocabulary across the corpus, defeats the point of structured classification.
+- *Larger taxonomy* (academic / journalistic / activist / personal / humorous / sarcastic) — more granular but each value gets fewer examples in any reasonable batch and classifier accuracy on a `gpt-4.1-mini`-class model degrades fast as the cardinality grows. Four values is coarse enough to rate consistently.
+- *Multi-label (return all framings present, ranked)* — better fidelity but doubles classification cost and complicates UI rendering; defer to a phase-2 ADR if data shows single-primary is too lossy.
+
+**Consequences.**
+- Schema becomes `{stance, sentiment, framing, topic_relevance}`. Pydantic model adds the `framing: Literal["technical", "political", "emotional", "experiential"]` enum.
+- LLM prompt grows by ~80 tokens (one rule + four exemplars). Negligible on `gpt-4.1-mini`.
+- Approval-UI badges (S-1.5.4) gain a fourth chip; filter chips can pick "show only experiential" or "show only technical".
+- L4 retrieval re-ranker can boost / dampen by framing per user preference (e.g. weight `experiential` higher when researching "how do people *feel* about X", weight `technical` higher when researching "how does X actually work").
+- Source-types.md classification schema and S-1.5.3 acceptance + tasks updated in lockstep.
+- Future ADR may add `framing_secondary` if data shows single-label is too lossy in production.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.3. Builds on [D-007](#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25).
+
+---
+
+## D-015 — Promote E-1.10 (UUID PK) ahead of Reddit / HN orchestrator wiring (2026-04-26)
+
+**Status:** accepted.
+
+**Context.** The Reddit and HN connectors (S-1.5.1, S-1.5.2 — both shipped) emit `Candidate.source_id` as namespaced strings: `"reddit:abc123"`, `"hn:42000000"`. T-1.5.1.4 (Reddit storage wiring) was originally scoped to land these into `documents.video_id` as-is, leveraging the existing PK column with a string namespace prefix. E-1.10 (UUID promotion: `video_id` → `document_id` UUID + a separate `source_id` text column) was filed but ⚪ proposed with the explicit blocker note: *"Wait until at least 2-3 non-video source types are in the codebase so we have evidence the namespaced-string approach really is friction (not premature)."* Two non-video connectors are now on master.
+
+**Decision.** Promote E-1.10 ahead of the Reddit / HN orchestrator wiring. Sequence:
+
+1. **E-1.10 ships first** — UUID `document_id` PK + a separate `source_id text` column with a `(source_type, source_id)` unique index. `job_videos` → `job_documents` (FK target updated). `transcript_cache` PK retargeted.
+2. **T-1.5.1.4 (Reddit storage) and T-1.5.2.5 (HN storage — to be filed) follow** — both write into the new schema natively. No prefixed-string PK transitional state ever exists.
+3. **Approval / Q&A / citation surfaces (S-1.5.3 / S-1.5.4 / S-1.5.5) build on the clean foundation.**
+
+**Alternatives considered.**
+- *Land prefixed strings into `video_id` now, promote PK later* — works in principle but creates two waves of migration. Every Reddit / HN row inserted with `video_id="reddit:abc"` later needs `source_id="abc"` backfilled and a `document_id` UUID assigned. Every JOIN site touched twice (once on insert, once on cutover). Risk of inconsistent intermediate state in production.
+- *Hard-rename the PK column without UUID* (i.e. `video_id` → `document_id`, keep string type) — cosmetic only. Doesn't solve the underlying typing problem of a single PK column trying to be `YT11`, `reddit:abc`, `hn:123`, future `pdf:sha256-hex` simultaneously, with no schema-level guarantee of namespace uniqueness across types.
+- *Keep namespaced strings forever, declare it the design* — the original E-1.10 blocker note suspected this might prove fine. Two reasons it doesn't: (a) UUID is the standard for shared multi-source primary keys, especially once SaaS adds tenancy; (b) `documents.video_id="reddit:abc"` makes legacy YouTube assumptions in code (column name reads as YouTube-only) much harder to audit and root out.
+
+**Consequences.**
+- E-1.5 (social-media connectors) initiative effectively pauses on **storage wiring** until E-1.10 ships. Connector code on master continues to work standalone — it emits Candidates; the orchestrator just doesn't dispatch them yet, which has no user-facing impact today.
+- E-1.10 status moves from ⚪ proposed to 🔵 accepted with explicit "next" sequencing.
+- T-1.5.1.4 and the to-be-filed T-1.5.2.5 (HN storage) become trivial: drop a row into a generic table, no namespace-prefix design needed.
+- Migration shape (sketched): add `document_id UUID NOT NULL DEFAULT gen_random_uuid()` (Postgres) / `BLOB(16)` populated via Python (SQLite), populate for existing 912 rows, add `source_id TEXT` (backfill from `video_id`), drop `video_id` PK constraint, add `(source_type, source_id)` unique constraint, retarget FK targets in `job_videos` and `transcript_cache`. Reversible — rollback drops the new columns; the legacy PK is reinstated.
+- The plus side of the reorder: T-1.5.1.4 / T-1.5.2.5 design pressure goes from *"how do we make namespaced strings work as a PK"* to *"insert a row"*.
+
+**Linked initiatives / PRs.** I-1 / E-1.10. Updates the blocker note on E-1.10 (initiatives.md). Re-sequences E-1.5 storage tasks.
+
+---
+
+## D-016 — Single polymorphic approval card driven by `source_metadata` (2026-04-26)
+
+**Status:** accepted.
+
+**Context.** Today the approval UI renders YouTube videos with thumbnail / title / channel / duration / view-count / publish-date as a bespoke component. S-1.5.4 was originally scoped as a "social-post card variant" alongside the existing video card. With more source types on the L1 roadmap (Reddit, HN, Mastodon, Bluesky, paste-mode FB/IG/LI/X, articles, podcasts, PDFs, tweets), the variant approach implies N variants for N source types — duplicated card layout code, drift in spacing / density / dark-mode / focus-ring affordances between types, and a JS bundle that grows linearly with source-type count.
+
+**Decision.** Render approvals through a **single polymorphic card** that reads the `source_type` discriminator and the `source_metadata` shape, not per-type card components. Composition is built from a small primitive set:
+
+- `<CardHeader>` — author / handle / channel avatar + display name + platform glyph (always present; field mapping varies by source)
+- `<CardBody>` — title or excerpt (always present)
+- `<CardMetaRow>` — flexible row of `(icon, label, value)` chips: views, score, likes, RTs, points, comment count, duration, word count, published date — only the chips relevant to the source-type render
+- `<CardBadgeRow>` — stance / sentiment / framing badges (post-[D-014](#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26))
+- `<CardActions>` — checkbox + "View on platform" link
+
+Each source-type registers a small config: which meta chips to show, what the platform glyph is, which `source_metadata` fields map to `<CardHeader>`. Adding a source type = a new entry in a config map, not a new component file.
+
+**Alternatives considered.**
+- *Per-source-type card components (the original S-1.5.4 plan)* — clearer for any single type read in isolation, but every cross-cutting UI affordance change (focus ring, dark-mode contrast, mobile collapse, density toggle, accessibility tweaks) requires editing N components. Drift between types is inevitable; it's the path the existing 10-page inline-style codebase already learned the hard way.
+- *Headless card primitive + per-type visual variants* — splits styling from logic but you still ship N visual files. Half the duplication, none of the savings on cross-cutting concerns.
+- *Render-prop / slot-based composition* — pure flexibility but every source type composes its own card from scratch; the consistency-by-construction the polymorphic config gives you is lost. Slot APIs also tend to leak implementation details into the consumer.
+- *Markdown-based template with a renderer* — overkill for this surface; the dynamic shape is small enough to live in a TS config object.
+
+**Consequences.**
+- One `<ApprovalCard>` component file. New source type = ~30-line config entry + a glyph asset (~+1 day of work over per-variant for the *first* source type, then –2 days per additional source type after that).
+- Stance / sentiment / framing badges (D-014) become a sub-component reused across every card automatically — no per-variant duplication.
+- Filter-chip behavior (e.g. "only experiential framing", "only score > 50") generalizes across types since the data shape is uniform: chips filter `source_metadata.<field>` regardless of `source_type`.
+- Frontend test surface shrinks: one `<ApprovalCard>` component test parametrized over a fixture per source type, instead of N component tests.
+- Risk: a future source type genuinely needs UI not expressible in the primitive set (e.g. a podcast card wants an inline audio scrubber). Mitigation: the per-source config can include a `customSlot` render override for the rare case; the default path stays uniform. We accept this escape hatch only if and when it's needed.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.4. Updates S-1.5.4 acceptance and tasks.

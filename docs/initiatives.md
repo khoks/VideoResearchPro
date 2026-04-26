@@ -62,7 +62,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [x] T-1.5.1.1 Implement `RedditConnector(BaseConnector)` against `/search.json` + per-sub `/r/<sub>/search.json`
 - [x] T-1.5.1.2 OAuth app registration + token refresh; respect 100 req/min rate limit
 - [x] T-1.5.1.3 Flatten OP + top-50 comments (sorted by score) into single text body with reply markers
-- [ ] T-1.5.1.4 Store new `source_type='reddit_post'` rows; PK column = `f"reddit:{post_id}"`
+- [ ] T-1.5.1.4 ⚫ Store new `source_type='reddit_post'` rows. **Blocked on E-1.10.** Per [D-015](decisions.md#d-015--promote-e-110-uuid-pk-ahead-of-reddit--hn-orchestrator-wiring-2026-04-26), storage lands as inserts into the new `documents` schema (UUID `document_id` PK + `source_id text`), not as `f"reddit:{post_id}"` strings into the legacy `video_id` column.
 - [x] T-1.5.1.5 Comment-tree depth configurable (default top 50 by score)
 - [ ] T-1.5.1.6 Connector unit tests + end-to-end pipeline test *(unit tests landed in PR #70; e2e test pending orchestrator wiring)*
 - [ ] T-1.5.1.7 Approval-UI card variant for Reddit (handle, score, comment count, snippet, sentiment hint)
@@ -74,29 +74,33 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Shipped scope 2026-04-26:** Connector module (search via `/search?tags=story`, `list_creator_items` via `/search_by_date`, `fetch_metadata` + `fetch_text` via `/items/<id>`), HTML-scrub flatten with `↳` depth markers mirroring Reddit's segment shape, 31 unit tests, and a small refactor extracting `_WORDS_PER_SECOND` + `_segment_for_text` into `app/sources/_text_utils.py` so both text-based connectors share the D-013 constant. Date-range filtering (T-1.5.2.2) is deferred — Algolia exposes it via `numericFilters=created_at_i>...,<...`, but the in-scope acceptance is plain topic search; date scoping waits until the topic-job UI has a date-range field. Storage-layer wiring into `documents` (T-1.5.2.5 candidate, not yet filed) is the same blocker as the Reddit connector — both wait on the orchestrator dispatch path.
 **Tasks**
 - [x] T-1.5.2.1 Implement `HNConnector(BaseConnector)` against `https://hn.algolia.com/api/v1/search`
-- [ ] T-1.5.2.2 Date-range filter via `numericFilters=created_at_i>...,<...` *(deferred — see In-progress note)*
+- [ ] T-1.5.2.2 Date-range filter via `numericFilters=created_at_i>...,<...` *(deferred — see Shipped scope note)*
 - [x] T-1.5.2.3 Comment tree fetch via item endpoint, flatten same as Reddit
 - [x] T-1.5.2.4 Tests
+- [ ] T-1.5.2.5 ⚫ Store new `source_type='hn_story'` rows. **Blocked on E-1.10.** Same shape as T-1.5.1.4 — inserts into the new `documents` schema once UUID PK + `source_id text` lands ([D-015](decisions.md#d-015--promote-e-110-uuid-pk-ahead-of-reddit--hn-orchestrator-wiring-2026-04-26)).
 
 #### S-1.5.3 🔵 `social_classify_stance` LLM use case
 
 **PR:** TBD
-**Acceptance.** New named entry in `app/services/llm_routing.py::USE_CASE_REGISTRY` with default `provider=openai, model=gpt-4.1-mini, reasoning=off`. Returns structured `{stance, sentiment, topic_relevance}` for a candidate document. Same use case classifies each comment.
+**Acceptance.** New named entry in `app/services/llm_routing.py::USE_CASE_REGISTRY` with default `provider=openai, model=gpt-4.1-mini, reasoning=off`. Returns structured `{stance, sentiment, framing, topic_relevance}` for a candidate document — schema extended with the `framing` axis per [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26). Same use case classifies each comment.
 **Tasks**
-- [ ] T-1.5.3.1 Define schema (Pydantic)
+- [ ] T-1.5.3.1 Define schema (Pydantic) — `stance` ∈ {for, against, neutral, unclear}; `sentiment` ∈ {positive, negative, mixed, neutral}; `framing` ∈ {technical, political, emotional, experiential}; `topic_relevance` ∈ [0, 1]
 - [ ] T-1.5.3.2 Add to registry with token-budget recommendation
 - [ ] T-1.5.3.3 Wire into the social-connector ingest path so each candidate is classified at fetch time
-- [ ] T-1.5.3.4 Persist results into `Document.source_metadata` and `source_metadata.comments[]`
+- [ ] T-1.5.3.4 Persist results into `Document.source_metadata` and `source_metadata.comments[]` (incl. `framing`)
 - [ ] T-1.5.3.5 Tests with golden short-text examples (sarcasm, sincere praise, in-favor, against)
+- [ ] T-1.5.3.6 Framing prompt exemplars — at least one short canonical example per framing value (technical, political, emotional, experiential) baked into the prompt; golden tests cover each framing
 
-#### S-1.5.4 🔵 Approval-UI variant for social posts
+#### S-1.5.4 🔵 Single polymorphic `<ApprovalCard>` (per [D-016](decisions.md#d-016--single-polymorphic-approval-card-driven-by-source_metadata-2026-04-26))
 
 **PR:** TBD
-**Acceptance.** Approval list rendered for social-post candidates shows: author handle, follower/karma proxy, post date, platform icon, first ~200 chars, comment count, score/likes/RTs, stance + sentiment badges, "View on platform" link. Same checkboxes + Approve flow as YouTube.
+**Acceptance.** Approval list rendered through a **single `<ApprovalCard>` component** dispatched on `source_type` + `source_metadata`, not per-source-type card variants. Composition primitives: `<CardHeader>` (avatar / display name / platform glyph), `<CardBody>` (title or excerpt), `<CardMetaRow>` (variable `(icon, label, value)` chips: views / score / likes / RTs / points / comment count / duration / word count / published date), `<CardBadgeRow>` (stance / sentiment / framing badges per [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26)), `<CardActions>` (checkbox + "View on platform"). Each source-type registers a config entry (~30 lines) declaring which chips to show, the platform glyph, and the header field mapping. New source type = new config entry, not a new component file. Filter chips operate on `source_metadata.<field>` regardless of `source_type`.
 **Tasks**
-- [ ] T-1.5.4.1 Frontend card component (variant of existing video card)
-- [ ] T-1.5.4.2 Sentiment / stance badge sub-component
-- [ ] T-1.5.4.3 Filter chips ("show only against", "show only positive") that filter the in-memory candidate list (do not re-fetch / re-classify)
+- [ ] T-1.5.4.1 Build `<ApprovalCard>` polymorphic primitive + the five sub-components (`<CardHeader>` / `<CardBody>` / `<CardMetaRow>` / `<CardBadgeRow>` / `<CardActions>`). Wire token-driven styling per [E-2.1](#e-21--tokens-layer-frontendsrcthemets); include `customSlot` escape hatch for source-types that need custom rendering (e.g. future podcast audio scrubber).
+- [ ] T-1.5.4.2 Stance / sentiment / **framing** badge sub-component (consumed by `<CardBadgeRow>`); tooltip-on-hover with full classification breakdown.
+- [ ] T-1.5.4.3 Filter chips ("show only against", "show only positive", "show only experiential framing", "show only score ≥ N") — filter `source_metadata.<field>` regardless of `source_type`. Filter state lives client-side; chips do not re-fetch / re-classify.
+- [ ] T-1.5.4.4 Migrate existing YouTube approval card to `<ApprovalCard>` as the first config-entry consumer; verify visual + interaction parity vs. today's bespoke component before any social-post type is wired.
+- [ ] T-1.5.4.5 Reddit + HN config entries — register source-type configs (chip layout, glyph, header mapping) for `reddit_post` and `hn_story`. Component tests parametrized over fixture per source-type (one shared component test, N fixtures).
 
 #### S-1.5.5 🔵 Citation rendering for social posts
 
@@ -170,10 +174,31 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Scope.** Generalizes the YouTube-channel concept to any creator (podcast host, blog author, Twitter handle). Pure rename PR; no behavioral change.
 **Note.** Plays the same role for creators as E-1.4 played for documents.
 
-### E-1.10 ⚪ Promote `video_id` PK to UUID `document_id`
+### E-1.10 🔵 Promote `video_id` PK to UUID `document_id`
 
-**Scope.** Final L1 schema cleanup. Migrate the `videos.video_id` PK column to a `document_id` UUID; namespaced platform IDs (e.g. `reddit:abc123`) move to a `source_id` column; `job_videos` join table renamed to `job_documents`.
-**Blocker.** Wait until at least 2-3 non-video source types are in the codebase so we have evidence the namespaced-string approach really is friction (not premature).
+**Promoted 2026-04-26** ahead of E-1.5 storage wiring per [D-015](decisions.md#d-015--promote-e-110-uuid-pk-ahead-of-reddit--hn-orchestrator-wiring-2026-04-26). Reddit (S-1.5.1) and HN (S-1.5.2) connectors are on master and emit namespaced `Candidate.source_id` strings (`reddit:<id>`, `hn:<id>`); landing E-1.10 first means their storage tasks (T-1.5.1.4, T-1.5.2.5) become trivial inserts on the new schema rather than a transitional namespaced-string PK that would need a second migration pass.
+
+**Scope.** Migrate `documents.video_id` PK column → `documents.document_id UUID` + a separate `documents.source_id text` column with `(source_type, source_id)` unique index. Cascade FK retargeting into `job_videos` (rename → `job_documents`) and `transcript_cache` (PK retargeted; rename → `text_cache` deferred unless trivial).
+
+**Migration shape.**
+- Add `document_id UUID NOT NULL DEFAULT gen_random_uuid()` (Postgres) / `BLOB(16)` populated via Python (SQLite) — the project ships SQLite today.
+- Backfill `document_id` for all ~912 existing rows.
+- Add `source_id TEXT` populated from existing `video_id` (since `source_type='video'` everywhere today, the existing `video_id` *is* the YouTube ID — no namespace prefix).
+- Drop `video_id` PK constraint; add `(source_type, source_id)` unique constraint.
+- Retarget FK targets in `job_videos` → `job_documents.document_id`; in `transcript_cache` → `document_id`.
+- Reversible: rollback drops the new columns, reinstates the legacy PK.
+
+**Tasks**
+- [ ] T-1.10.1 Alembic migration adding `document_id` + `source_id` columns; backfill from `video_id`; populate UUIDs for all rows.
+- [ ] T-1.10.2 Migration step 2 — drop legacy PK; add `(source_type, source_id)` unique constraint.
+- [ ] T-1.10.3 ORM updates (`Document.document_id` PK; `Document.source_id` column; relationships re-pointed).
+- [ ] T-1.10.4 Rename `job_videos` → `job_documents` (table + ORM class + 14 importers); FK → `documents.document_id`.
+- [ ] T-1.10.5 Retarget `transcript_cache` PK to `document_id` (table rename `→ text_cache` deferred to future PR unless trivial).
+- [ ] T-1.10.6 Update Chroma chunk metadata: chunks now key on `document_id` (UUID) not `video_id` (string); migration script re-tags existing chunks.
+- [ ] T-1.10.7 Update all 14 reading sites (`youtube_service`, `chroma_service`, agents, routers, exports) for the new PK shape.
+- [ ] T-1.10.8 Tests: round-trip migration (forward + rollback), 168-test suite passes, end-to-end smoke with an existing job.
+
+**Unblocks.** T-1.5.1.4 (Reddit storage), T-1.5.2.5 (HN storage), and all subsequent E-1.5 storage tasks (Mastodon, Bluesky, Mode B). Net effect: with E-1.10 done, every social storage task collapses to "insert a row".
 
 ---
 

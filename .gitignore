@@ -42,8 +42,15 @@ htmlcov/
 # Alembic
 *.db
 
-# Claude Code
-.claude/
+# Claude Code — root .claude/ is partially tracked: skills, hooks, and project settings
+# are checked in; everything else (settings.local.json, worktrees/, launch.json, etc.) stays local.
+/.claude/*
+!/.claude/skills/
+!/.claude/hooks/
+!/.claude/settings.json
+# Any nested .claude/ (e.g. backend/.claude/) stays fully ignored.
+**/[!/].claude/
+backend/.claude/
 
 # Logs
 backend/logs/

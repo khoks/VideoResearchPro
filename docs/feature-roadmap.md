@@ -24,7 +24,7 @@ Multi-week each. Foundational. Each one reshapes the schema or adds a top-level 
 
 ---
 
-### L1 — Multi-source ingest 🔵
+### L1 — Multi-source ingest 🟡
 
 **Motivation.** Today the only source-type is YouTube video. The user's vision (see [vision.md](vision.md) Ring 2) is a personal wiki built from podcasts, articles, threads, books, and forum posts in addition to videos — all flowing through the **same** search → approval → ingest → embed → query pipeline. The curation surface is the product, so it must generalize.
 
@@ -57,7 +57,14 @@ Multi-week each. Foundational. Each one reshapes the schema or adds a top-level 
 - How are forum threads chunked — by reply, by token-budget, or as a single doc with reply boundaries preserved? Recommend single doc with `segment_metadata.reply_index`.
 - Source-type ordering when ingesting a mixed job: round-robin, sequential, or parallel? Recommend parallel with per-type rate limits.
 
-**Status.** 🔵 accepted. Detailed design in [source-types.md](source-types.md). Targeted Phase 2 (2026 Q3).
+**Status.** 🟡 in-progress.
+
+- 🟢 **Foundation (PRs #63 / #65 / #66 / #67, shipped 2026-04-22 → 04-25).** Schema additive columns; `BaseConnector` interface; routed call sites; `videos` → `documents` table + ORM rename. See [`initiatives.md`](initiatives.md#i-1--multi-source-ingest) for the full E-1.1 → E-1.4 trace.
+- 🔵 **Next: social-media connectors (E-1.5).** Per [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25), ahead of the article connector. Stages: **Reddit + HN first** (free APIs; richest ToS-clean discussion surface), then Mastodon + Bluesky, then Mode B paste mode covering FB / IG / LI / X-without-paid-API, then BYOK Twitter API ([D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25)). Discord and TikTok deferred ([D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25)). One `Document` per thread ([D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25)); fetch-time stance / sentiment classification ([D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25)); no scraping of search-result pages ([D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25)). Detailed shape: [`source-types.md` § Social-media post specifics](source-types.md#social-media-post-specifics).
+- 🔴 **Article connector (E-1.6).** Deferred until E-1.5 ships. Pipeline primitives (trafilatura + Playwright fallback) are reused by the social Mode B paste path, so they may land sooner inside E-1.5.
+- ⚪ Podcast (E-1.7), PDF/e-book (E-1.8), `channels` → `creators` rename (E-1.9), `video_id` → UUID promotion (E-1.10).
+
+Targeted Phase 2 (2026 Q3) for non-foundation source types. Detailed design in [source-types.md](source-types.md).
 
 ---
 

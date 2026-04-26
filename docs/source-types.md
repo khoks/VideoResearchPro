@@ -265,6 +265,50 @@ A social-post candidate surfaces, beyond the standard video-card fields:
 
 Filter chips ("show only against", "show only experiential framing", "show only ≥100 score") filter the in-memory candidate list. They do not re-fetch or re-classify. Filter-chip behaviour generalizes across source types because chips operate on `source_metadata.<field>` regardless of `source_type`.
 
+### Polymorphic `<ApprovalCard>` TypeScript shape (proposed 2026-04-26)
+
+The card's per-source config is a single registry typed via TypeScript discriminated union + generics + a mapped-type registry, so adding a new `source_type` is a compile error until a config entry is added. Sketch:
+
+```typescript
+// 1. Discriminated union — backend Pydantic mirrors this per source_type
+type SourceMetadata =
+  | { source_type: 'video';       channel: string; durationSec: number; viewCount: number; publishedAt: string }
+  | { source_type: 'reddit_post'; subreddit: string; author: string; score: number; commentCount: number; permalink: string; createdAt: string }
+  | { source_type: 'hn_story';    author: string; points: number; commentCount: number; url: string; createdAt: string };
+
+type SourceType = SourceMetadata['source_type'];
+type MetadataFor<K extends SourceType> = Extract<SourceMetadata, { source_type: K }>;
+
+// 2. MetaChip generic over the source's metadata — `field` is `keyof T`, so a typo = compile error
+type MetaChip<T extends SourceMetadata> = {
+  field: Exclude<keyof T, 'source_type'>;
+  icon: ReactNode;
+  format?: (v: T[Exclude<keyof T, 'source_type'>]) => string;
+  filterable?: 'eq' | 'gte' | 'lt' | 'contains';
+};
+
+type ApprovalCardConfig<T extends SourceMetadata> = {
+  glyph: ReactNode;
+  header: { titleField: keyof T; subtitleField?: keyof T; avatarField?: keyof T };
+  body?:  { excerptField: keyof T };
+  metaChips: MetaChip<T>[];
+  customSlot?: (p: { metadata: T; classification?: Classification }) => ReactNode;
+};
+
+// 3. Mapped-type registry — adding a source_type forces a registry entry (compile error otherwise)
+type SourceConfigRegistry = { [K in SourceType]: ApprovalCardConfig<MetadataFor<K>> };
+```
+
+The mapped-type registry is the load-bearing trick: an exhaustive registry by construction. Adding `'mastodon_post'` to `SourceMetadata` won't compile until the registry has a corresponding entry — this is the contract that makes "register a config, not a component" structurally enforceable rather than convention-enforced.
+
+Four open design questions are tracked as [OQ-8 in initiatives.md](initiatives.md#open-questions-parking-lot):
+- **Where does `SourceMetadata` live?** Build step (Pydantic → `json-schema-to-typescript` → `.d.ts`) vs hand-rolled-and-synced.
+- **Field references.** Flat `keyof (Document & T)` (Document-level fields like `title` / `published_at` flattened with metadata) vs namespaced `'document.title' | 'metadata.subreddit'`.
+- **Formatters.** Per-chip callback vs typed registry (durationSeconds → "12:34", epochMs → "3h ago", signedNumber → "+42") vs hybrid.
+- **Filter chips.** Share `MetaChip` with the `filterable` discriminator, or separate type.
+
+To be answered before T-1.5.4.1 (build polymorphic primitive) starts.
+
 ### Platforms explicitly out of scope today
 
 - **TikTok** — Research API is US-academic-gated; Display API has no search. Deferred per [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25).

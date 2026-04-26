@@ -18,7 +18,19 @@ The product is intentionally *curated, not balanced* — the opposite of Wikiped
 - **Personal brain (L3):** [docs/personal-brain.md](docs/personal-brain.md)
 - **Path to SaaS:** [docs/saas-roadmap.md](docs/saas-roadmap.md)
 - **Visual identity:** [docs/branding.md](docs/branding.md) and [docs/ui-design.md](docs/ui-design.md)
+- **Decision log (ADRs):** [docs/decisions.md](docs/decisions.md)
+- **Initiatives / epics / stories / tasks:** [docs/initiatives.md](docs/initiatives.md)
+- **Inventions / novel-idea log:** [docs/inventions.md](docs/inventions.md)
 - **Recent changes:** [CHANGELOG.md](CHANGELOG.md)
+
+## Session-end persistence skills
+
+Two project skills auto-invoke at session-end (via the `Stop` hook in [`.claude/settings.json`](.claude/settings.json), which fires once per session — `stop_hook_active` guards against recursion). Both are no-op-safe on tactical sessions and open PRs to master rather than pushing directly.
+
+- [`/knowledge-curator`](.claude/skills/knowledge-curator/SKILL.md) — extracts vision / architecture / tech-stack / scaling / decision content from the conversation and routes it into the canonical docs (`docs/feature-roadmap.md`, `docs/architecture.md`, `docs/source-types.md`, `docs/decisions.md`, etc.). Also flags **novel mechanisms / potentially-patentable concepts** into [`docs/inventions.md`](docs/inventions.md). Owns both the [decision log](docs/decisions.md) and the [inventions log](docs/inventions.md).
+- [`/work-tracker`](.claude/skills/work-tracker/SKILL.md) — owns [`docs/initiatives.md`](docs/initiatives.md) (Initiative → Epic → Story → Task hierarchy). Updates status / scope of existing items, creates new items for newly-discussed work, cross-links to decisions and PRs.
+
+Both skills can be invoked manually any time. If a session was purely tactical (a one-off bug fix, a code question with no design content, a debugging exchange), let them no-op rather than forcing an empty PR.
 
 ## Tech Stack
 

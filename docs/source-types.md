@@ -148,13 +148,119 @@ Where `Candidate`, `ExtractedText`, `SourceMetadata`, `CreatorMetadata` are type
 | `video` | YouTube Data API v3 | `youtube-transcript-api`, fallback to Whisper-via-yt-dlp | `youtube` or `whisper` | `start_time` / `end_time` per chunk |
 | `podcast` | Listen Notes / Spotify search / Apple Podcasts | RSS enclosure → Whisper if no transcript provided | `whisper` or `rss_transcript` | `start_time` / `end_time` per chunk |
 | `article` | Google CSE / Brave Search / direct URL list | trafilatura / readability-py | `trafilatura` | `section_anchor` per chunk |
-| `tweet` | Twitter/X API (single tweet or thread URL) | thread unrolling | `unrolled` | thread position per chunk |
-| `forum_post` | Reddit API / HN Algolia / Discourse API | top-level post + top N comments | `forum_extract` | comment depth per chunk |
+| `tweet` | Twitter/X API v2 (paid, BYOK — see [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25)); Mode B paste fallback | thread unrolling + top-K replies | `twitter_api` or `paste_extract` | reply position per chunk |
+| `reddit_post` | `/search.json` + per-sub fallback (free, OAuth-app + 100 req/min) | OP + top-50 comments by score | `reddit_api` | reply depth per chunk |
+| `hn_story` | Algolia HN search (free, no auth) | story + comment tree | `hn_algolia` | reply depth per chunk |
+| `mastodon_post` | ActivityPub instance search | thread + replies | `activitypub` | reply depth per chunk |
+| `bluesky_post` | AT-Proto search (app password) | thread + replies | `at_proto` | reply depth per chunk |
+| `fb_post` / `ig_post` / `li_post` | ❌ no public-search API (see [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25)) — Mode B paste only | trafilatura → Playwright fallback on the user-pasted URL | `paste_extract` | reply position per chunk (when extractable) |
+| `forum_post` | Reddit API / HN Algolia / Discourse API (umbrella for non-platform-specific forums) | top-level post + top N comments | `forum_extract` | comment depth per chunk |
 | `pdf` | (no search; user uploads) | pdfplumber + table extraction | `pdf_extract` | `page_number` per chunk |
 | `book` | (no search; user uploads EPUB/PDF) | calibre-style extraction | `pdf_extract` or `epub_extract` | `page_number` + chapter per chunk |
 | `note` | (no search; user-authored in app) | direct text save | `manual` | none |
 
 `note` is the user's own annotations (medium feature M5). Treating notes as a source type means they appear in retrieval, get cited like any other source, and inherit the same approval/curation surface.
+
+---
+
+## Social-media post specifics
+
+Social-media post connectors (Reddit, HN, Mastodon, Bluesky, Twitter, plus paste-only FB/IG/LinkedIn) all conform to `BaseConnector` but share a few constraints unique to discussion-shaped content. Captured here so each connector's implementation stays consistent.
+
+### Two ingestion modes
+
+The choice is forced by per-platform API reality, not by design preference.
+
+- **Mode A — Discovery (search).** Available on **Reddit, HN, Mastodon, Bluesky** (free APIs) and **Twitter/X** (paid API, BYOK per [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25)). The connector implements `search()` with topic + optional date range, returns candidate threads, user approves, ingest proceeds.
+- **Mode B — Direct paste.** The only honest option for **Facebook, Instagram, LinkedIn, X-without-paid-API** (see [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25)). The user pastes 1–N post URLs; the connector fetches each via the article-pipeline primitives (trafilatura → Playwright fallback). No `search()` exposed; the UI clearly labels these platforms as paste-only.
+
+The submit-research form supports both modes per platform; the UI hides Mode A controls for platforms where it isn't available.
+
+### One `Document` per thread (not per comment)
+
+Per [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25). A social-media post **and its reply tree** is stored as a single `Document` row, with the comment tree flattened into the document text. Comment-level metadata (id, author, score, sentiment) lives in `source_metadata.comments[]`.
+
+```jsonc
+// source_metadata for a reddit_post Document
+{
+  "platform": "reddit",
+  "subreddit": "r/economics",
+  "score": 1342,
+  "permalink": "https://reddit.com/r/economics/comments/abc123/...",
+  "comments": [
+    { "id": "def456", "author": "u/example", "score": 87,
+      "depth": 0, "sentiment": {"stance": "against", "score": 0.82} },
+    ...
+  ],
+  "stance": "neutral",
+  "sentiment": {"label": "mixed", "score": 0.6},
+  "topic_relevance": 0.91
+}
+```
+
+The flattened text body uses explicit reply markers preserved through chunking so citations can name the specific reply:
+
+```
+<OP body text>
+
+[--- reply by @u/example (score 87) ---]
+<reply body>
+
+[--- reply by @u/another (score 42, depth 1) ---]
+<nested reply body>
+```
+
+Chunk metadata grows two new fields when chunks span replies:
+
+```jsonc
+{
+  ...
+  "thread_position": "op" | "reply:<id>" | "reply:<id>/reply:<sub_id>",
+  "comment_id": "<id>"  // when the chunk is entirely within a reply
+}
+```
+
+Citations dispatched by `source_type` build deep-links: `permalink#comment-<id>` for Reddit / Mastodon / Bluesky, `tweet_url` for Twitter (replies have their own URL), generic anchor-or-fragment for paste-extracted FB/IG/LI.
+
+### Stance / sentiment classification at fetch time
+
+Per [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25). Each candidate document (and each comment) is classified at ingest time by the `social_classify_stance` LLM use case (default cheap-and-fast: `provider=openai, model=gpt-4.1-mini, reasoning=off`). Output schema:
+
+```python
+class StanceClassification(BaseModel):
+    stance: Literal["for", "against", "neutral", "unclear"]
+    sentiment: Literal["positive", "negative", "mixed", "neutral"]
+    topic_relevance: float  # 0.0 - 1.0
+```
+
+Results land in `source_metadata.stance` / `.sentiment` / `.topic_relevance` on the `Document`, and per-comment under `source_metadata.comments[].sentiment`. The approval UI surfaces classification as a **hint** (filter chips, badge color), never as a hard gate that hides candidates — sarcasm and dog-whistle handling is too noisy to autopilot.
+
+### Comment-tree depth
+
+Default: top 50 comments by score. Configurable per-job (open question OQ-2 in [`initiatives.md`](initiatives.md)). Past depth 50 the cost grows fast and the marginal value drops; deeper threads can be re-ingested if a specific deep-thread analysis becomes a feature.
+
+### Approval-UI surface
+
+A social-post candidate card surfaces, beyond the standard video-card fields:
+
+- Author handle + follower / karma proxy
+- Post date + platform icon
+- First ~200 chars of OP
+- Comment count + score / likes / retweets
+- **Stance + sentiment badges** (from `social_classify_stance`)
+- "View on platform" deep-link
+
+Filter chips ("show only against", "show only positive", "show only ≥100 score") filter the in-memory candidate list. They do not re-fetch or re-classify.
+
+### Platforms explicitly out of scope today
+
+- **TikTok** — Research API is US-academic-gated; Display API has no search. Deferred per [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25).
+- **Discord** — no global search; per-server bot model only. Deferred per [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25). May unfreeze if a clear self-host use case emerges.
+- **YouTube comments as a standalone connector** — already accessible via the existing video pipeline; not a new source type.
+
+### Sequencing
+
+Per [E-1.5 in `initiatives.md`](initiatives.md#e-15--social-media-connectors): Reddit + HN first, then Mastodon + Bluesky, then Mode B paste mode for FB/IG/LI/X-without-paid, then BYOK Twitter API.
 
 ---
 

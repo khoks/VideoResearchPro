@@ -10,6 +10,23 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Pseudo-timestamps codified at 3 wps for text-based connectors (D-013)
+
+- **Captured the Reddit-introduced convention as ADR D-013** in [docs/decisions.md](docs/decisions.md). Text-based connectors (Reddit / HN / future article / forum / PDF) synthesise per-segment `start` + `duration` at **3 words/second** so the chunker — designed around video transcripts — sees monotonic non-negative timestamps and packs text into chunks identically across source types. Documents the alternatives considered (true-zero timestamps, per-source rates, parameterising the chunker) and why a single shared constant won.
+- **Pointer added** in [docs/source-types.md](docs/source-types.md) so future connectors copy the same constant rather than picking a fresh number.
+- *(Doc-only — the constant itself was already added in PR [#70](https://github.com/khoks/VideoResearchPro/pull/70). PR [#72](https://github.com/khoks/VideoResearchPro/pull/72) just records the why so the next connector author doesn't relitigate the choice.)*
+
+### L1 multi-source ingest — Reddit connector (S-1.5.1)
+
+- **Added `backend/app/sources/reddit/`** — first non-video L1 connector. `RedditConnector(BaseConnector)` covers `/search.json`, per-sub `/r/<sub>/search.json`, `/user/<name>/submitted.json`, `/api/info.json`, and `/comments/<id>.json` for full thread fetch.
+- **Script-app OAuth** (`client_credentials` flow) with token caching, 401-driven refresh, and a token-bucket rate limiter pinned to `REDDIT_RATE_LIMIT_RPM` (default 100 rpm → ~0.6s spacing — Reddit's free OAuth tier).
+- **Comment-tree flatten** (`flatten.py`) — OP first (title + selftext joined), then top-N comments by score with `↳` Unicode depth markers per nesting level. Emits chunkable `{text, start, duration, extra}` segments with synthesised pseudo-timestamps at 3 wps so the existing transcript chunker contract holds without a special-case branch. `kind=="more"` placeholders are skipped (expanding them is deferred).
+- **Identity convention.** `Candidate.source_id = f"reddit:{post_id}"` — namespaced to avoid collisions with YouTube's 11-char IDs (and HN's integer IDs) inside the shared `documents.video_id` PK column. The connector also accepts both prefixed and unprefixed IDs at the `fetch_metadata` / `fetch_text` boundary so callers don't have to know.
+- **Eager registration** in `app/sources/__init__.py` — importing the package registers the connector so `connector_for("reddit_post")` resolves out of the box.
+- **Tests.** 29 unit tests in `backend/tests/test_sources/test_reddit_connector.py` covering connector / flatten / client (token caching, 401-retry, missing-credential guard). The whole `tests/test_sources/` suite stays green at 54/54; full backend suite passes 357 (excluding 5 pre-existing LLM-routing failures unrelated to this branch).
+- **Env vars** added: `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`, `REDDIT_RATE_LIMIT_RPM`, `REDDIT_COMMENT_DEPTH_DEFAULT`. Documented in [.env.example](.env.example) and [CLAUDE.md](CLAUDE.md).
+- *(Storage wiring (T-1.5.1.4 — landing rows in `documents` with `source_type='reddit_post'`), end-to-end pipeline test (second half of T-1.5.1.6), Reddit approval-UI card variant (T-1.5.1.7), and `reddit_post`-aware citation rendering (S-1.5.5) are deferred to follow-up PRs that wire Reddit through the job orchestrator. The connector contract is the foundation; the orchestrator integration is the next layer.)*
+
 ### L1 multi-source ingest — PR 4: rename `videos` table → `documents`
 
 - **Pure rename migration** at `backend/alembic/versions/01c5b6dae736_rename_videos_to_documents.py` (revises `f6a7b8c9d0e1`). Renames the table, drops/recreates the two existing indexes (`ix_videos_channel_id` and `ix_videos_source_type_source_id` → `ix_documents_*`), and re-points the `job_videos.video_id` foreign key from `videos.video_id` to `documents.video_id` on non-SQLite via `batch_alter_table`. Reversible.

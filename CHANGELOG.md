@@ -10,6 +10,17 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### L1 multi-source ingest — HN connector (S-1.5.2)
+
+- **Added `backend/app/sources/hn/`** — second non-video L1 connector. `HNConnector(BaseConnector)` covers Algolia HN search (`/search?tags=story`), `list_creator_items` via `/search_by_date?tags=story,author_<name>`, and full thread fetch via `/items/<id>`. HN's Algolia API is **unauthenticated** so the client is markedly simpler than Reddit's — no OAuth, no token cache, no 401-retry. Singleton client + `_reset_for_tests()` follow the same shape as `reddit/client.py`.
+- **Comment-tree flatten** mirrors Reddit's segment shape so chunking + embedding stay unchanged across both source types: OP first (title + HTML-scrubbed body), then top-N comments by `points` (HN's `score` equivalent) with `↳` Unicode depth markers per nesting level. HN comment bodies are HTML-rendered (`<p>` tags + entities), so the flatten module includes a cheap scrub before joining.
+- **Identity convention.** `Candidate.source_id = f"hn:{story_id}"` — namespaced to avoid collisions with YouTube's 11-char IDs and Reddit's base36 IDs while the `documents.video_id` PK column is shared across source types. Connector tolerates both prefixed and unprefixed IDs at the `fetch_metadata` / `fetch_text` boundary.
+- **Shared text-utils module.** `_WORDS_PER_SECOND = 3.0` and `_segment_for_text(...)` extracted from `app/sources/reddit/flatten.py` into `app/sources/_text_utils.py` so future text-based connectors (article, forum_post, pdf) share **one** tunable per [D-013](docs/decisions.md) instead of redeclaring the constant per package. Reddit's flatten now imports the helper.
+- **Eager registration** in `app/sources/__init__.py` so `connector_for("hn_story")` resolves out of the box.
+- **Tests.** 31 unit tests in `backend/tests/test_sources/test_hn_connector.py` mirroring the Reddit suite (search 5 / list_creator_items 3 / fetch_metadata 5 / fetch_text 3 / flatten 9 / identity 2 / client 4). Reddit's 29 tests stay green after the `_text_utils` extraction. Full backend suite passes 388 (excluding 5 pre-existing `test_llm_routing*` failures unrelated to this branch).
+- **Env vars** added: `HN_USER_AGENT` (Algolia is generous but a polite UA string keeps us out of any heuristic rate-limiter), `HN_RATE_LIMIT_RPM` (default 60 — well under any soft cap), `HN_COMMENT_DEPTH_DEFAULT` (default 50, parity with Reddit).
+- *(T-1.5.2.2 — date-range filter via `numericFilters=created_at_i>...,<...` — implicitly out of scope. Algolia exposes the filter, but the topic-job submit form has no date-range input yet, so wiring it on the connector side without a UI surface would be dead code. Will land alongside the date-range form field.)*
+
 ### Pseudo-timestamps codified at 3 wps for text-based connectors (D-013)
 
 - **Captured the Reddit-introduced convention as ADR D-013** in [docs/decisions.md](docs/decisions.md). Text-based connectors (Reddit / HN / future article / forum / PDF) synthesise per-segment `start` + `duration` at **3 words/second** so the chunker — designed around video transcripts — sees monotonic non-negative timestamps and packs text into chunks identically across source types. Documents the alternatives considered (true-zero timestamps, per-source rates, parameterising the chunker) and why a single shared constant won.

@@ -67,11 +67,11 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [ ] T-1.5.1.6 Connector unit tests + end-to-end pipeline test *(unit tests landed in PR #70; e2e test pending orchestrator wiring)*
 - [ ] T-1.5.1.7 Approval-UI card variant for Reddit (handle, score, comment count, snippet, sentiment hint)
 
-#### S-1.5.2 🟡 Hacker News search connector
+#### S-1.5.2 🟢 Hacker News search connector
 
-**PR:** [#73](https://github.com/khoks/VideoResearchPro/pull/73) (open as of 2026-04-26)
+**Shipped:** 2026-04-26 — PR [#73](https://github.com/khoks/VideoResearchPro/pull/73) (squash-merged as `3615d81`)
 **Acceptance.** Topic job with `source_types=["hn_story"]` returns HN stories with comment trees; uses Algolia HN search API (free, no auth).
-**In-progress 2026-04-26:** Connector module (search via `/search?tags=story`, `list_creator_items` via `/search_by_date`, `fetch_metadata` + `fetch_text` via `/items/<id>`), HTML-scrub flatten with `↳` depth markers mirroring Reddit's segment shape, 31 unit tests, and a small refactor extracting `_WORDS_PER_SECOND` + `_segment_for_text` into `app/sources/_text_utils.py` so both text-based connectors share the D-013 constant. Date-range filtering (T-1.5.2.2) is deferred — Algolia exposes it via `numericFilters=created_at_i>...,<...`, but the in-scope acceptance is plain topic search; date scoping waits until the topic-job UI has a date-range field.
+**Shipped scope 2026-04-26:** Connector module (search via `/search?tags=story`, `list_creator_items` via `/search_by_date`, `fetch_metadata` + `fetch_text` via `/items/<id>`), HTML-scrub flatten with `↳` depth markers mirroring Reddit's segment shape, 31 unit tests, and a small refactor extracting `_WORDS_PER_SECOND` + `_segment_for_text` into `app/sources/_text_utils.py` so both text-based connectors share the D-013 constant. Date-range filtering (T-1.5.2.2) is deferred — Algolia exposes it via `numericFilters=created_at_i>...,<...`, but the in-scope acceptance is plain topic search; date scoping waits until the topic-job UI has a date-range field. Storage-layer wiring into `documents` (T-1.5.2.5 candidate, not yet filed) is the same blocker as the Reddit connector — both wait on the orchestrator dispatch path.
 **Tasks**
 - [x] T-1.5.2.1 Implement `HNConnector(BaseConnector)` against `https://hn.algolia.com/api/v1/search`
 - [ ] T-1.5.2.2 Date-range filter via `numericFilters=created_at_i>...,<...` *(deferred — see In-progress note)*

@@ -42,6 +42,18 @@ class Settings(BaseSettings):
     REDDIT_COMMENT_DEPTH_DEFAULT: int = 50  # top N comments by score; OQ-2
 
     # -------------------------------------------------------------------
+    # Hacker News connector (Algolia API)
+    # -------------------------------------------------------------------
+    # HN's Algolia search API is free and unauthenticated:
+    #   https://hn.algolia.com/api/v1/search?query=...&tags=story
+    #   https://hn.algolia.com/api/v1/items/<item_id>
+    # No keys to register; we still send a polite User-Agent so the
+    # operator can identify us if Algolia ever decides to throttle.
+    HN_USER_AGENT: str = "pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani)"
+    HN_RATE_LIMIT_RPM: int = 60  # Algolia is generous; stay well under any soft cap
+    HN_COMMENT_DEPTH_DEFAULT: int = 50  # top N comments by points (parity with Reddit)
+
+    # -------------------------------------------------------------------
     # LLM — Primary (high-quality) model
     # -------------------------------------------------------------------
     # Provider dispatches which chat client is built. The call-site code is

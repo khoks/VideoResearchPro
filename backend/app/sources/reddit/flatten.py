@@ -30,11 +30,7 @@ from __future__ import annotations
 
 from typing import Any
 
-# Synthesised reading-rate for pseudo-timestamps. Roughly 3 wps ≈ 180
-# wpm — a comfortable narration tempo. The chunker only cares that
-# `start`/`duration` are non-negative and monotonic; the exact value
-# is not load-bearing.
-_WORDS_PER_SECOND = 3.0
+from app.sources._text_utils import _segment_for_text
 
 
 def _comment_tree_iter(comment_listing: dict, depth: int = 0) -> list[dict]:
@@ -55,20 +51,6 @@ def _comment_tree_iter(comment_listing: dict, depth: int = 0) -> list[dict]:
         if isinstance(replies, dict):
             out.extend(_comment_tree_iter(replies, depth=depth + 1))
     return out
-
-
-def _segment_for_text(
-    text: str, cursor: float, extra: dict[str, Any]
-) -> tuple[dict[str, Any], float]:
-    """Build a segment dict + return the new cursor.
-
-    Empty text is rejected by the caller; this helper assumes ``text`` is
-    non-empty so the duration floor is meaningful.
-    """
-    words = max(1, len(text.split()))
-    duration = words / _WORDS_PER_SECOND
-    seg = {"text": text, "start": cursor, "duration": duration, "extra": extra}
-    return seg, cursor + duration
 
 
 def flatten_post_with_comments(

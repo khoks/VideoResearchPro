@@ -82,7 +82,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 #### S-1.5.3 🔵 `social_classify_stance` LLM use case
 
 **PR:** TBD
-**Acceptance.** New named entry in `app/services/llm_routing.py::USE_CASE_REGISTRY` with default `provider=openai, model=gpt-4.1-mini, reasoning=off`. Returns structured `{stance, sentiment, framing, topic_relevance}` for a candidate document — schema extended with the `framing` axis per [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26). Same use case classifies each comment.
+**Acceptance.** New named entry in `app/services/llm_routing.py::USE_CASE_REGISTRY` with default `provider=openai, model=gpt-4.1-mini, reasoning=off`. Returns structured `{stance, sentiment, framing, topic_relevance}` for a candidate document — schema extended with the `framing` axis per [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26). Same use case classifies each comment. Module exports `TOPIC_RELEVANCE_THRESHOLD = 0.50` per [D-021](decisions.md#d-021--topic-relevance-threshold--050-2026-04-26); the prompt instructs the LLM to use calibrated scoring (1.0 unambiguous / 0.5 adjacent / 0.0 unrelated) with borderline 0.4–0.6 exemplars baked in alongside framing exemplars.
 **Tasks**
 - [ ] T-1.5.3.1 Define schema (Pydantic) — `stance` ∈ {for, against, neutral, unclear}; `sentiment` ∈ {positive, negative, mixed, neutral}; `framing` ∈ {technical, political, emotional, experiential}; `topic_relevance` ∈ [0, 1]
 - [ ] T-1.5.3.2 Add to registry with token-budget recommendation
@@ -98,7 +98,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Tasks**
 - [ ] T-1.5.4.1 Build `<ApprovalCard>` polymorphic primitive + the five sub-components (`<CardHeader>` / `<CardBody>` / `<CardMetaRow>` / `<CardBadgeRow>` / `<CardActions>`). TypeScript shape locked by [D-018](decisions.md#d-018--polymorphic-approvalcard-typescript-shape--four-sub-decisions-2026-04-26): hand-rolled `SourceMetadata` discriminated union, chips are `keyof T` (pure source-metadata; Document fields render through fixed slots), hybrid formatters (`FormatterName` registry + callback override), separate `FilterChip<T>` type alongside `MetaChip<T>`. Wire token-driven styling per [E-2.1](#e-21--tokens-layer-frontendsrcthemets); include `customSlot` escape hatch with signature `(p: { metadata: T; document: Document; classification?: Classification }) => ReactNode`.
 - [ ] T-1.5.4.2 Stance / sentiment / **framing** badge sub-component (consumed by `<CardBadgeRow>`); tooltip-on-hover with full classification breakdown.
-- [ ] T-1.5.4.3 Filter chips ("show only against", "show only positive", "show only experiential framing", "show only score ≥ N") — filter `source_metadata.<field>` regardless of `source_type`. Filter state lives client-side; chips do not re-fetch / re-classify.
+- [ ] T-1.5.4.3 Filter chips ("show only against", "show only positive", "show only experiential framing", "show only score ≥ N", **"Show low-relevance candidates" toggle** per [D-021](decisions.md#d-021--topic-relevance-threshold--050-2026-04-26)) — filter `source_metadata.<field>` regardless of `source_type`. Default approval list applies `topic_relevance >= 0.50`; the toggle drops the cutoff to 0.0 to surface hidden candidates. Filter state lives client-side; chips do not re-fetch / re-classify.
 - [ ] T-1.5.4.4 Migrate existing YouTube approval card to `<ApprovalCard>` as the first config-entry consumer; verify visual + interaction parity vs. today's bespoke component before any social-post type is wired.
 - [ ] T-1.5.4.5 Reddit + HN config entries — register source-type configs (chip layout, glyph, header mapping) for `reddit_post` and `hn_story`. Component tests parametrized over fixture per source-type (one shared component test, N fixtures).
 
@@ -156,6 +156,24 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [ ] T-1.5.10.3 Reply fetch (top 50)
 - [ ] T-1.5.10.4 Quota exhaustion fallback to Mode B
 
+#### S-1.5.11 🔵 Topic-job routing through new connectors
+
+**PR:** TBD
+**Filed 2026-04-26** per [D-020](decisions.md#d-020--file-orchestrator-dispatch-as-standalone-story-s-1511-2026-04-26) (resolves [OQ-10](#open-questions-parking-lot)). The Reddit (S-1.5.1) and HN (S-1.5.2) connectors emit `Candidate` objects standalone, but `app/tasks/job_tasks.py` does not route topic jobs through them yet. T-1.5.1.4 / T-1.5.2.5 (storage wiring, blocked on E-1.10) implicitly assume an orchestrator step that this Story owns.
+
+**Acceptance.** Topic jobs with `source_types=["reddit_post","hn_story",...]` route through the connector registry via a `dispatch_by_source_type(source_type, ...)` mechanism. The dispatcher reads the connector registry and routes each `source_type` to its `BaseConnector` implementation (search → list → fetch_metadata → fetch_text). Per-source-type rate-limit + retry config externalized so each connector declares its own constraints. Progress reporting parity with the existing YouTube path (Redis pub/sub events match shape + cadence). End-to-end pipeline tests cover Reddit-only, HN-only, and mixed `["video","reddit_post","hn_story"]` jobs.
+
+**Tasks**
+- [ ] T-1.5.11.1 Build `dispatch_by_source_type` in `app/tasks/job_tasks.py` (or factor into a new `app/services/connector_dispatch.py`); reads from the existing `CONNECTOR_REGISTRY`. Surface area for `BaseConnector` extends with whatever's needed for dispatch (e.g. `connector.rate_limit_config`, `connector.retry_config`).
+- [ ] T-1.5.11.2 Per-source-type rate-limit + retry config in `BaseConnector` subclasses. YouTube / Reddit / HN config entries declare their own limits (e.g. Reddit 100 req/min, HN unlimited Algolia, YouTube quota-aware).
+- [ ] T-1.5.11.3 Fan-out semantics for mixed-source jobs — choose between **round-robin** (one source-type at a time, smaller bursts) vs **parallel** (all source types kicked off concurrently). Recommendation: parallel with per-type rate-limit guarding so overall job latency tracks the slowest source rather than the sum. Decision recorded inline once T-1.5.11.3 lands.
+- [ ] T-1.5.11.4 Progress reporting parity. Redis pub/sub events for non-video sources match the existing `job_progress:{job_id}` channel shape (`{phase, progress, current_item, total_items, ...}`). UI WebSocket handler does not need source-type-specific branches.
+- [ ] T-1.5.11.5 End-to-end pipeline test: submit topic job with `source_types=["reddit_post"]` → connector emits Candidates → orchestrator routes → Candidates land in approval queue (post-E-1.10).
+- [ ] T-1.5.11.6 Same e2e test for `hn_story`.
+- [ ] T-1.5.11.7 Same e2e test for mixed `["video","reddit_post","hn_story"]`.
+
+**Dependencies.** Independent of E-1.10 for build (dispatch layer can be developed and unit-tested without storage); e2e tests (T-1.5.11.5/.6/.7) need T-1.5.1.4 / T-1.5.2.5 (which need E-1.10) to land. Parallelizable with E-1.10 in calendar terms.
+
 ### E-1.6 🔴 Article connector
 
 **Scope.** Generic article ingestion: trafilatura primary, Playwright fallback for SPAs, hybrid (try trafilatura → fall back if word_count<200). Two modes (Discovery via search-engine API or RSS, Direct via URL list / file upload). Deferred per [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25) until E-1.5 (social media) ships.
@@ -180,7 +198,14 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Cadence: hard cutover** ([D-017](decisions.md#d-017--e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26), resolves OQ-7). Single Alembic migration, single PR — no transitional release. T-1.10.8 (round-trip migration test) is **gating** — the PR does not merge until both forward and rollback round-trip cleanly and the e2e smoke runs green on a real existing job. Every reader of `video_id` (14 importers across `youtube_service`, `chroma_service`, the five LangGraph agents, routers, and dataset exporters) gets visited and updated in the same PR; no `video_id` reads survive.
 
-**Scheduling: parallel with S-1.5.4 / T-1.5.4.1.** Per user direction (2026-04-26), E-1.10 (backend Alembic + ORM + FK retargeting) and T-1.5.4.1 (frontend polymorphic primitive build) proceed as **parallel work tracks**. They share no files — backend SQLite schema vs frontend React + TypeScript — and each ships as its own PR series. Either can start first; neither blocks the other. E-1.10 still gates Reddit / HN orchestrator wiring (D-015); T-1.5.4.1 still gates Reddit / HN approval-UI rendering (S-1.5.4 follow-on tasks).
+**Scheduling: four parallel tracks (2026-04-26).** Per user direction, four tracks proceed in parallel; each ships its own PR series and shares no files with the others:
+
+- **Backend A — E-1.10** (this initiative): backend Alembic + ORM + FK retargeting.
+- **Backend B — S-1.5.3**: `social_classify_stance` LLM use case + framing axis + threshold.
+- **Frontend — T-1.5.4.1 / S-1.5.4**: polymorphic `<ApprovalCard>` primitive build.
+- **I-2 — E-2.1+**: visual rebrand starting with `frontend/src/theme.ts` tokens layer.
+
+Any can start first; none block the other. E-1.10 still gates Reddit / HN orchestrator wiring (D-015) and the e2e tests in S-1.5.11 (D-020); T-1.5.4.1 still gates Reddit / HN approval-UI rendering. S-1.5.11 (orchestrator dispatch) builds independently of E-1.10 but its e2e tests need E-1.10 + storage tasks to land.
 
 **Scope.** Migrate `documents.video_id` PK column → `documents.document_id UUID` + a separate `documents.source_id text` column with `(source_type, source_id)` unique index. Cascade FK retargeting into `job_videos` (rename → `job_documents`) and `transcript_cache` (PK retargeted; rename → `text_cache` deferred unless trivial).
 
@@ -206,13 +231,15 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 ---
 
-## I-2 🔵 Brand & visual identity rollout
+## I-2 🟡 Brand & visual identity rollout
+
+**Activated 2026-04-26** as a **fourth parallel track** alongside E-1.10 (Backend A: UUID PK), S-1.5.3 (Backend B: classification), and S-1.5.4 (Frontend: polymorphic card). Per user direction, all four tracks proceed in parallel; the rebrand work is decoupled from L1 and ships its own PR series. E-2.1 (tokens layer) starts first as the foundation everything else in I-2 reads from.
 
 **Why it exists.** Switch the running app from generic-AI-SaaS aesthetics (purple-blue gradient, default sans) to warm-editorial Pratidhvani identity (paper background, oxblood / forest-teal / vintage gold, Fraunces / Source Serif). Visual identity should match the personal-library / research-journal vision.
 **North-star doc:** [branding.md](branding.md) · [ui-design.md](ui-design.md)
 **Decision links:** [D-001](decisions.md#d-001--rebrand-to-pratidhvani-प्रतिध्वनि-2026-04-24), [D-002](decisions.md#d-002--warm-editorial-visual-identity-2026-04-24)
 
-### E-2.1 ⚪ Tokens layer (`frontend/src/theme.ts`)
+### E-2.1 🔵 Tokens layer (`frontend/src/theme.ts`)
 
 **Scope.** Single tokens file exporting `colors`, `space`, `radius`, `shadow`, `type`, `motion` for both light and dark modes. Mirrors `branding.md` palette.
 
@@ -373,7 +400,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 These are real questions raised in conversation that don't yet have a Story home. When one of them is answered the answer becomes a Decision (`D-NNN`) and the question is converted into one or more Stories.
 
-- **OQ-1.** Sentiment classification confidence threshold — at what score do we surface a stance/sentiment badge as a hint vs hide it as too noisy? (Tied to [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25))
+- **OQ-1.** ✅ **Resolved 2026-04-26 by [D-021](decisions.md#d-021--topic-relevance-threshold--050-2026-04-26): `TOPIC_RELEVANCE_THRESHOLD = 0.50`.** Candidates below 0.50 hidden from default approval list but kept in the database; "Show low-relevance candidates" filter chip toggles cutoff to 0.0. Calibrated scoring (1.0 unambiguous / 0.5 adjacent / 0.0 unrelated) baked into the prompt with borderline 0.4–0.6 exemplars. Re-evaluation hooks documented (precision low → bump 0.60; recall low → drop 0.40; per-source-type override is the next escalation).
 - **OQ-2.** Comment-tree default depth — top 50 by score is the proposed default; configurable per-job? Per-platform? (Tied to S-1.5.1, S-1.5.2)
 - **OQ-3.** Sibling-PR coordination — should `/knowledge-curator` and `/work-tracker` share a single PR per session? (Tied to E-4.6)
 - **OQ-4.** Whisper for podcast Mode A vs external service (Deepgram / AssemblyAI) for SaaS tier? (Tied to E-1.7)
@@ -387,8 +414,4 @@ These are real questions raised in conversation that don't yet have a Story home
   - **(d)** Separate ` FilterChip<T>` type. Source configs register two distinct arrays: ` metaChips` (display) and ` filterChips` (predicate).
   - T-1.5.4.1 unblocked. PR-review-driven drift correction documented as a revisit hook on (a); promotion to flat ` View<T>` documented as a revisit hook on (b) if a future source type wants Document-level chips.
 - **OQ-9.** ✅ **Resolved 2026-04-26 by [D-019](decisions.md#d-019--codeowners--branch-protection-policy-for-autonomous-merge-sessions-2026-04-26).** User picked option (c) bypass list, but `bypass_pull_request_allowances` is not exposed on personal-account free-plan public repos (verified via PATCH that silently dropped the field). Pragmatic landing: `.github/CODEOWNERS` declares `@khoks` as owner of every path, and `required_approving_review_count` dropped to `0`. Net: `gh pr merge --squash --delete-branch` (no `--admin`) works on master immediately. Force-push still blocked. Two revisit hooks documented (second collaborator joins → Rulesets `bypass_actors`; org migration → `bypass_pull_request_allowances.users`).
-- **OQ-10.** Orchestrator dispatch for Reddit / HN — surfaced 2026-04-26 during the holistic backlog walkthrough. The Reddit (S-1.5.1) and HN (S-1.5.2) connectors emit `Candidate` objects standalone, but `app/tasks/job_tasks.py` does not yet route topic jobs through them. There's no Story for this work today; T-1.5.1.4 / T-1.5.2.5 (storage wiring) implicitly assume an orchestrator step that doesn't exist yet. Two resolutions:
-  - **(a)** File a new **S-1.5.11 — Topic-job routing through new connectors** capturing: dispatch table by `source_type` in the job orchestrator, per-source-type rate-limit + retry config, fan-out semantics for jobs that mix `source_types=["video","reddit_post","hn_story"]`, progress reporting parity with the existing YouTube path. Cleaner accounting; obvious surface area.
-  - **(b)** Fold the dispatch logic into T-1.5.1.4 + T-1.5.2.5 directly (each storage task includes the small slice of orchestrator wiring needed for its `source_type`). Faster to MVP; mixes "dispatch the connector" and "store the candidates" into one PR.
-  - Recommendation: **(a)** — the dispatch layer is reused by every future connector (Mastodon, Bluesky, Mode B paste, podcasts, PDFs); folding into storage tasks duplicates the dispatch pattern across N connectors. Cleaner to land it once with the first two consumers. To be confirmed.
-  - (Tied to [E-1.5](#e-15--social-media-connectors), T-1.5.1.4, T-1.5.2.5)
+- **OQ-10.** ✅ **Resolved 2026-04-26 by [D-020](decisions.md#d-020--file-orchestrator-dispatch-as-standalone-story-s-1511-2026-04-26): file as standalone S-1.5.11.** Dispatch layer ships once with the first two consumers (Reddit + HN) and is reused by every future connector. Folding into per-source storage tasks would duplicate the dispatch pattern N times. See [S-1.5.11](#s-1511--topic-job-routing-through-new-connectors) for the task breakdown.

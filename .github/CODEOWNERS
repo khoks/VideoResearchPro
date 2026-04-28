@@ -1,0 +1,13 @@
+# Pratidhvani — code ownership
+#
+# Single-owner repo today. The owner is also the (only) human committer
+# and operates the autonomous knowledge-curator / work-tracker / coding
+# skills via gh CLI authenticated as @khoks.
+#
+# This file documents ownership for future automation (auto-assign
+# reviewers, CODEOWNERS-aware PR templating, etc.) and signals the
+# owner intent if the repo ever onboards additional contributors.
+#
+# See docs/decisions.md § D-019 — CODEOWNERS bypass policy.
+
+* @khoks

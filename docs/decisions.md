@@ -375,3 +375,39 @@ Each source-type registers a small config: which meta chips to show, what the pl
 - OQ-7 marked resolved with reference to this ADR.
 
 **Linked initiatives / PRs.** I-1 / E-1.10 / D-015 / OQ-7.
+
+---
+
+## D-018 — Polymorphic `<ApprovalCard>` TypeScript shape — four sub-decisions (2026-04-26)
+
+**Status:** accepted. Resolves [OQ-8](initiatives.md#open-questions-parking-lot).
+
+**Context.** [D-016](#d-016--single-polymorphic-approval-card-driven-by-source_metadata-2026-04-26) settled *that* the approval surface is a single polymorphic component dispatched on `source_type` + `source_metadata`. [OQ-8](initiatives.md#open-questions-parking-lot) raised four interrelated implementation questions for the TypeScript shape: where `SourceMetadata` lives in code, how chips reference fields, how formatters work, and how filter chips relate to display chips. This ADR locks all four. The user's overarching framing was *"keep the system a bit open ended for future enhancements and not too strict"* — that bias informs each sub-decision.
+
+**Decisions.**
+
+**(a) `SourceMetadata` is hand-rolled in TypeScript and kept synced with backend Pydantic models by convention.** No build-step generator. PR review enforces drift correction.
+
+**(b) Chip `field` references are `keyof T` — pure source-metadata.** Document-level fields (`title`, `published_at`, `source_url`) are not addressable by chips; they render through fixed slots in `<CardHeader>` (always `document.title`, `document.published_at`) and `<CardActions>` (always `document.source_url`). Only the per-source-unique data — the data that *justifies* a polymorphic component — flows through the chip mechanism.
+
+**(c) Formatters are hybrid: registry by name, callback override.** A small registry of named formatters (`durationSeconds`, `relativeTime`, `signedNumber`, `numberWithCommas`, `truncate`) covers ~80% of cases. A `format?: (v) => string` callback on the chip overrides the registry for one-offs. Both fields optional; callback wins when both are present; default is `String(v)`.
+
+**(d) Filter chips are a separate `FilterChip<T>` type from `MetaChip<T>`.** Each source-type config registers two arrays: `metaChips` (display) and `filterChips` (predicate). A source can register both for the same field, but each has its own type shape.
+
+**Alternatives considered.**
+
+- *(a) Build-step generation from Pydantic JSON schema.* Recommendation in OQ-8. Rejected for being too rigid for a system still finding its abstractions — the open-ended evolution path the user explicitly cited as the priority outweighs the structural drift-prevention benefit. Decision can be revisited when the schema is more stable (post-Mastodon / Bluesky landings) and a build step has higher payoff.
+- *(b) Flat `keyof (Document & T)` (recommendation in OQ-8) or namespaced `'document.title' | 'metadata.subreddit'`.* Both rejected. Flat blurs the line between Document-stable fields and source-specific ones — the very distinction the polymorphism is *about*. Namespaced is verbose at every chip declaration and still requires deciding which fields can appear in which namespace. Pure-metadata is the cleanest separation: chips talk about *what's unique to this source*; everything else is a fixed slot in the card primitives.
+- *(c) Pure per-chip callback* (no registry) — DRY-loss for the ~6 common cases, no shared idiom. *Pure typed-formatter registry by JS type* — too rigid; can't express "format `score` as signed number when subreddit is r/AskReddit" without a custom callback anyway.
+- *(d) Shared `MetaChip<T>` with a `filterable: 'eq' | 'gte' | 'lt' | 'contains'` discriminator.* Recommendation in OQ-8. Rejected because display and filter have genuinely different shapes (display has icon + format; filter has predicate + comparison value), and union-typing them loses clarity. Two arrays of clean types beats one array of polluted types.
+
+**Consequences.**
+
+- TypeScript sketch in [source-types.md § Polymorphic ApprovalCard TypeScript shape](source-types.md#polymorphic-approvalcard-typescript-shape-proposed-2026-04-26) updated in lockstep: `header` config drops `titleField` / `subtitleField` / `avatarField` (always `document.*`); `MetaChip<T>` adds `formatter?: FormatterName`; new `FilterChip<T>` type and `filterChips: FilterChip<T>[]` field on the config; `customSlot` signature gains a `document: Document` arg.
+- `<ApprovalCard>` component signature: `(props: { document: Document; metadata: T; classification?: Classification; config: ApprovalCardConfig<T> })`. `<CardHeader>` and `<CardActions>` read directly from `document`; `<CardBody>` / `<CardMetaRow>` / filter UI read from `metadata` via the typed registry.
+- Per-source config size shrinks (no Document-field declarations) and cross-source consistency increases (header layout is structurally identical across all source types).
+- Pydantic ↔ TS drift becomes a PR-review concern. If review fatigue kicks in or a fourth or fifth source type lands and the drift count climbs, revisit (a) and consider promoting to a build-step generator.
+- Revisit hook for (b): if a future source type genuinely needs chips referencing Document-level fields (e.g. "show chip with `published_at` on the meta row alongside source-specific data"), reopen and consider promoting to flat `View<T>`.
+- T-1.5.4.1 (build polymorphic primitive) starts unblocked.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.4 / T-1.5.4.1. Builds on [D-016](#d-016--single-polymorphic-approval-card-driven-by-source_metadata-2026-04-26).

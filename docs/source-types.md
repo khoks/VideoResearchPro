@@ -265,49 +265,62 @@ A social-post candidate surfaces, beyond the standard video-card fields:
 
 Filter chips ("show only against", "show only experiential framing", "show only ≥100 score") filter the in-memory candidate list. They do not re-fetch or re-classify. Filter-chip behaviour generalizes across source types because chips operate on `source_metadata.<field>` regardless of `source_type`.
 
-### Polymorphic `<ApprovalCard>` TypeScript shape (proposed 2026-04-26)
+### Polymorphic `<ApprovalCard>` TypeScript shape
 
-The card's per-source config is a single registry typed via TypeScript discriminated union + generics + a mapped-type registry, so adding a new `source_type` is a compile error until a config entry is added. Sketch:
+The card's per-source config is a single registry typed via TypeScript discriminated union + generics + a mapped-type registry, so adding a new `source_type` is a compile error until a config entry is added. Locked-in shape per [D-018](decisions.md#d-018--polymorphic-approvalcard-typescript-shape--four-sub-decisions-2026-04-26):
 
 ```typescript
-// 1. Discriminated union — backend Pydantic mirrors this per source_type
+// 1. Discriminated union — hand-rolled in TS, backend Pydantic mirrors per source_type (D-018a).
+//    Drift is a PR-review concern; revisit if drift count climbs.
 type SourceMetadata =
-  | { source_type: 'video';       channel: string; durationSec: number; viewCount: number; publishedAt: string }
-  | { source_type: 'reddit_post'; subreddit: string; author: string; score: number; commentCount: number; permalink: string; createdAt: string }
-  | { source_type: 'hn_story';    author: string; points: number; commentCount: number; url: string; createdAt: string };
+  | { source_type: 'video';       channel: string; durationSec: number; viewCount: number }
+  | { source_type: 'reddit_post'; subreddit: string; author: string; score: number; commentCount: number; permalink: string }
+  | { source_type: 'hn_story';    author: string; points: number; commentCount: number; url: string };
 
 type SourceType = SourceMetadata['source_type'];
 type MetadataFor<K extends SourceType> = Extract<SourceMetadata, { source_type: K }>;
 
-// 2. MetaChip generic over the source's metadata — `field` is `keyof T`, so a typo = compile error
+// 2. Formatter registry (D-018c hybrid)
+type FormatterName = 'durationSeconds' | 'relativeTime' | 'signedNumber' | 'numberWithCommas' | 'truncate';
+
+// 3. Display chip — `field` is `keyof T` (D-018b: pure source-metadata, not Document fields).
+//    Document-level fields (title / published_at / source_url) render through fixed slots
+//    in <CardHeader> and <CardActions>, not through chips.
 type MetaChip<T extends SourceMetadata> = {
   field: Exclude<keyof T, 'source_type'>;
   icon: ReactNode;
-  format?: (v: T[Exclude<keyof T, 'source_type'>]) => string;
-  filterable?: 'eq' | 'gte' | 'lt' | 'contains';
+  formatter?: FormatterName;                                            // pick from registry
+  format?: (v: T[Exclude<keyof T, 'source_type'>]) => string;            // callback override (wins over formatter)
 };
 
+// 4. Filter chip — separate type from MetaChip (D-018d).
+//    Sources register `metaChips` and `filterChips` as two distinct arrays; same field can appear in both.
+type FilterChip<T extends SourceMetadata> = {
+  label: string;
+  field: Exclude<keyof T, 'source_type'>;
+  predicate: 'eq' | 'gte' | 'lt' | 'contains';
+  value?: unknown;
+};
+
+// 5. Per-source config — Document-level fields are not configured here; <CardHeader> always
+//    reads `document.title` / `document.published_at`, <CardActions> reads `document.source_url`.
 type ApprovalCardConfig<T extends SourceMetadata> = {
   glyph: ReactNode;
-  header: { titleField: keyof T; subtitleField?: keyof T; avatarField?: keyof T };
-  body?:  { excerptField: keyof T };
+  body?: { excerptField: keyof T };
   metaChips: MetaChip<T>[];
-  customSlot?: (p: { metadata: T; classification?: Classification }) => ReactNode;
+  filterChips: FilterChip<T>[];
+  customSlot?: (p: { metadata: T; document: Document; classification?: Classification }) => ReactNode;
 };
 
-// 3. Mapped-type registry — adding a source_type forces a registry entry (compile error otherwise)
+// 6. Mapped-type registry — adding a source_type forces a registry entry (compile error otherwise)
 type SourceConfigRegistry = { [K in SourceType]: ApprovalCardConfig<MetadataFor<K>> };
 ```
 
 The mapped-type registry is the load-bearing trick: an exhaustive registry by construction. Adding `'mastodon_post'` to `SourceMetadata` won't compile until the registry has a corresponding entry — this is the contract that makes "register a config, not a component" structurally enforceable rather than convention-enforced.
 
-Four open design questions are tracked as [OQ-8 in initiatives.md](initiatives.md#open-questions-parking-lot):
-- **Where does `SourceMetadata` live?** Build step (Pydantic → `json-schema-to-typescript` → `.d.ts`) vs hand-rolled-and-synced.
-- **Field references.** Flat `keyof (Document & T)` (Document-level fields like `title` / `published_at` flattened with metadata) vs namespaced `'document.title' | 'metadata.subreddit'`.
-- **Formatters.** Per-chip callback vs typed registry (durationSeconds → "12:34", epochMs → "3h ago", signedNumber → "+42") vs hybrid.
-- **Filter chips.** Share `MetaChip` with the `filterable` discriminator, or separate type.
+`<ApprovalCard>` component signature: `(props: { document: Document; metadata: T; classification?: Classification; config: ApprovalCardConfig<T> })`. `<CardHeader>` and `<CardActions>` read fixed Document fields directly; `<CardBody>` / `<CardMetaRow>` / filter UI dispatch through the typed config.
 
-To be answered before T-1.5.4.1 (build polymorphic primitive) starts.
+Revisit hooks documented in [D-018](decisions.md#d-018--polymorphic-approvalcard-typescript-shape--four-sub-decisions-2026-04-26): drift fatigue → consider build-step generator (a); chip wanting a Document-level field → consider flat `View<T>` (b).
 
 ### Platforms explicitly out of scope today
 

@@ -203,7 +203,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - **Backend A — E-1.10** (this initiative): backend Alembic + ORM + FK retargeting.
 - **Backend B — S-1.5.3**: `social_classify_stance` LLM use case + framing axis + threshold.
 - **Frontend — T-1.5.4.1 / S-1.5.4**: polymorphic `<ApprovalCard>` primitive build.
-- **I-2 — E-2.1+**: visual rebrand starting with `frontend/src/theme.ts` tokens layer.
+- **I-2 remainder — E-2.5 (marketing site) and E-2.6 (code identifier rename)**: per the 2026-04-26 audit, E-2.1 / E-2.2 / E-2.3 / E-2.4 are already 🟢 (theme.ts + primitives + page migration + sidebar nav all shipped); the remaining I-2 work is the marketing landing page and the code-identifier cleanup with its data migration story.
 
 Any can start first; none block the other. E-1.10 still gates Reddit / HN orchestrator wiring (D-015) and the e2e tests in S-1.5.11 (D-020); T-1.5.4.1 still gates Reddit / HN approval-UI rendering. S-1.5.11 (orchestrator dispatch) builds independently of E-1.10 but its e2e tests need E-1.10 + storage tasks to land.
 
@@ -233,35 +233,61 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 ## I-2 🟡 Brand & visual identity rollout
 
-**Activated 2026-04-26** as a **fourth parallel track** alongside E-1.10 (Backend A: UUID PK), S-1.5.3 (Backend B: classification), and S-1.5.4 (Frontend: polymorphic card). Per user direction, all four tracks proceed in parallel; the rebrand work is decoupled from L1 and ships its own PR series. E-2.1 (tokens layer) starts first as the foundation everything else in I-2 reads from.
+**Status reconciliation 2026-04-26.** A backlog audit on 2026-04-26 revealed I-2 is **substantially shipped** — 4 of 6 epics are 🟢 (tokens, primitives library, page migration, sidebar nav). The earlier characterization in feature-roadmap.md ("documented but zero code shifted") was inaccurate; the warm-editorial migration largely landed in earlier sessions and was not reflected here. Remaining I-2 work: E-2.5 (marketing landing page) ⚪ and E-2.6 (code identifier rename) 🟡 partial. I-2 stays 🟡 (in-progress) until both ship.
 
 **Why it exists.** Switch the running app from generic-AI-SaaS aesthetics (purple-blue gradient, default sans) to warm-editorial Pratidhvani identity (paper background, oxblood / forest-teal / vintage gold, Fraunces / Source Serif). Visual identity should match the personal-library / research-journal vision.
 **North-star doc:** [branding.md](branding.md) · [ui-design.md](ui-design.md)
 **Decision links:** [D-001](decisions.md#d-001--rebrand-to-pratidhvani-प्रतिध्वनि-2026-04-24), [D-002](decisions.md#d-002--warm-editorial-visual-identity-2026-04-24)
 
-### E-2.1 🔵 Tokens layer (`frontend/src/theme.ts`)
+### E-2.1 🟢 Tokens layer (`frontend/src/theme.ts`)
 
-**Scope.** Single tokens file exporting `colors`, `space`, `radius`, `shadow`, `type`, `motion` for both light and dark modes. Mirrors `branding.md` palette.
+**Shipped** in an earlier session (verified live on master 2026-04-26). `frontend/src/theme.ts` exports `colors` (warm-editorial light + dark), `fonts` (Fraunces / Source Serif / Inter / Tiro Devanagari / JetBrains Mono), `fontSize` (modular scale), `lineHeight`, `fontWeight`, `space` (4px scale), `radius`, `shadow`, `motion`, `z`, `breakpoints`, `measure`. Helpers `pickColor(token, mode)`, `transitionAll(d)`, `focusRing(mode)`. CSS-var mirror in `frontend/src/index.css` (`--color-*` etc.) so native pseudo-elements (`::placeholder`, scrollbar) share the palette.
 
-### E-2.2 ⚪ Primitives library
+### E-2.2 🟢 Primitives library
 
-**Scope.** `frontend/src/components/primitives/` — Button, Card, Input, Textarea, Select, Badge, Modal, Tooltip, Tabs, Spinner, Skeleton, EmptyState, Toast, IconButton. All read from `theme.ts`. No CSS framework; inline styles per project convention.
+**Shipped** core set (verified live on master 2026-04-26). `frontend/src/components/primitives/`: `Button`, `Card`, `Input` / `Textarea` / `Select`, `FormField`, `Badge` + `StatusPill`, `Modal`, `Spinner` + `Skeleton`, `EmptyState`. All consume tokens via `useColors()` hook. The original feature-roadmap "primitives" list also called for `Tooltip` / `Tabs` / `Toast` / `IconButton`; those are not yet in `primitives/index.ts` (Toast lives in `components/common/Toast.tsx`; Tooltip / Tabs / IconButton not yet built).
 
-### E-2.3 ⚪ Page-by-page migration
+**Remaining (low-priority within E-2.2).**
+- [ ] T-2.2.1 `Tooltip` primitive (currently inline)
+- [ ] T-2.2.2 `Tabs` primitive (currently inline where needed)
+- [ ] T-2.2.3 `IconButton` primitive (currently `<Button>` with icon-only content)
+- [ ] T-2.2.4 Move `Toast` from `components/common/` → `primitives/` for index parity
 
-**Scope.** Migrate the 10 existing pages off ad-hoc inline styles onto tokens + primitives. Order: Login → AppLayout → JobsList → JobDetail → Library → LibraryQA → SubmitJob → Exports → QAHistoryChat → VideoKnowledge.
+### E-2.3 🟢 Page-by-page migration
 
-### E-2.4 ⚪ Sidebar nav (replace top tabs)
+**Shipped** for all 10 pages (verified live on master 2026-04-26). All pages import from `../theme` and consume primitives from `../components/primitives`. Pages migrated: `LoginPage`, `RegisterPage`, `JobsListPage`, `JobDetailPage`, `LibraryPage`, `LibraryQAPage`, `SubmitJobPage`, `ExportsPage`, `QAHistoryChatPage`, `VideoKnowledgePage`. 26 files in total import from `theme`.
 
-**Scope.** Top-tab nav → slim left sidebar grouped by purpose (Library / Research / Knowledge / Author future).
+### E-2.4 🟢 Sidebar nav (replace top tabs)
+
+**Shipped** (verified live on master 2026-04-26). `AppLayout.tsx` now renders an editorial sidebar (240px desktop, drawer on mobile<960px) with the Devanagari + Latin brand lockup at the top and user chrome (email / theme toggle / logout) at the bottom. NavContent groups Submit / Jobs / Library / Library Q&A / Q&A History / Exports.
 
 ### E-2.5 ⚪ Marketing landing page (warm-editorial)
 
-**Scope.** Static landing page under `marketing/` describing the curated-personal-wiki pitch, screenshots, install instructions, SaaS waitlist.
+**Scope.** Static landing page under `marketing/` describing the curated-personal-wiki pitch, screenshots, install instructions, SaaS waitlist. Folder does not yet exist (verified 2026-04-26 — no `marketing/` directory in repo).
 
-### E-2.6 ⚪ Code identifier rename pass
+**Tasks** (initial)
+- [ ] T-2.5.1 Astro project scaffold under `marketing/` (or 11ty / plain HTML — choose at start).
+- [ ] T-2.5.2 Hero with the personal-wiki pitch + tagline ("Your sources, echoed back" or similar from branding.md).
+- [ ] T-2.5.3 "How it differs from Wikipedia" section (curation thesis).
+- [ ] T-2.5.4 Source-types matrix (videos / podcasts / articles / etc.) reflecting current support.
+- [ ] T-2.5.5 "How it works" walkthrough (search → approve → embed → ask).
+- [ ] T-2.5.6 Install instructions (open-source self-host).
+- [ ] T-2.5.7 SaaS waitlist hook (future-only — disabled call-to-action today).
+- [ ] T-2.5.8 Footer: GitHub, docs, license.
 
-**Scope.** Once visual rollout settles: `videoresearchpro_global` → `pratidhvani_global` Chroma collection (with migration), package paths, env-var aliases. Decoupled from D-001 because identifier renames need a deliberate migration; brand copy moved immediately.
+### E-2.6 🟡 Code identifier rename pass
+
+**Status partial 2026-04-26.** User-facing brand copy moved to `Pratidhvani` (CLAUDE.md, README, page strings, doc headers — all migrated). Legacy code identifiers remain in env-var defaults, package paths, the SQLite filename, and the Chroma collection name. Audit on 2026-04-26 found 73 occurrences of `videoresearchpro` / `VideoResearchPro` across 30 files; many are intentional grandfathered env-var defaults but a meaningful subset is rename-eligible.
+
+**Remaining identifiers (high-level inventory).**
+- [ ] T-2.6.1 `CHROMA_GLOBAL_COLLECTION_NAME` default `videoresearchpro_global` → `pratidhvani_global`. **Requires migration** — existing collections need to be copied/renamed via a one-time backfill script, not just an env default change. Risk-rate: high (lose embeddings = lose Q&A retrieval).
+- [ ] T-2.6.2 `DATABASE_URL` default `sqlite:///./data/videoresearchpro.db` → `pratidhvani.db`. Requires data migration or symlink for existing self-hosters.
+- [ ] T-2.6.3 Backend package paths — currently `app.*` (already neutral); no rename needed unless a top-level rename is wanted (e.g. directory `backend/` → `backend/` no change).
+- [ ] T-2.6.4 GitHub repo rename `khoks/VideoResearchPro` → `khoks/pratidhvani` (or similar). Outside-codebase action; redirects auto-handled by GitHub but old PR / issue URLs depend on the redirect.
+- [ ] T-2.6.5 Audit + fix any remaining strings in tests, scripts, docstrings that aren't grandfathered env-var references.
+- [ ] T-2.6.6 Migration runbook covering data preservation for self-hosters running the legacy names.
+
+**Sequencing.** T-2.6.1 / T-2.6.2 are gated by a thoughtful migration story (they're production-data-mutating). T-2.6.5 is purely cosmetic and can ship anytime. T-2.6.4 can ship anytime but is outside the codebase. Decoupled from D-001 because identifier renames need a deliberate migration; brand copy moved immediately.
 
 ---
 

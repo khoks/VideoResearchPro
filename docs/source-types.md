@@ -246,6 +246,28 @@ The `framing` axis captures the **register** in which the author is engaging wit
 
 Results land in `source_metadata.stance` / `.sentiment` / `.framing` / `.topic_relevance` on the `Document`, and per-comment under `source_metadata.comments[].sentiment` (and similarly `.framing`). The approval UI surfaces classification as a **hint** (filter chips, badge color), never as a hard gate that hides candidates — sarcasm and dog-whistle handling is too noisy to autopilot.
 
+#### Framing prompt exemplars (for T-1.5.3.6)
+
+The `social_classify_stance` classifier prompt bakes in **two canonical short examples per framing value** so the LLM has concrete pattern targets without single-example anchoring. Exemplars span different topical domains so the classifier learns the *register*, not the topic:
+
+**`technical`** — argues from data, citations, mechanism, system-level reasoning.
+- *"The benchmark numbers don't support that claim — at p99 latency the system stalls under 200 rps, well below the published spec."*
+- *"Adding the proposed feature requires recomputing the entire embedding index, which is O(n²) in document count."*
+
+**`political`** — argues from ideology, party-line, group-identity.
+- *"This is exactly what the donor class wants — they've been pushing this regulatory framework for a decade because it locks in their incumbent advantage."*
+- *"Of course the progressive caucus is celebrating; this is their playbook on every issue."*
+
+**`emotional`** — argues from affect, outrage, joy, fear; tone-driven without a reasoning chain.
+- *"I cannot believe this passed. It's appalling. Whoever wrote this should be ashamed."*
+- *"This is honestly the most exciting development I've seen in years — I'm still buzzing from reading it."*
+
+**`experiential`** — argues from first-person lived experience.
+- *"I worked on a team that tried this exact approach in 2019 and it took us six months to migrate back. The hidden cost is the on-call burden."*
+- *"As someone who's been homeschooling for eight years, I can tell you the curriculum thing is way more complex than the article makes out."*
+
+Two exemplars per framing (rather than one) reduces single-example anchoring; topical diversity (tech / policy / generic life) keeps the classifier focused on the *register* rather than the *subject*. T-1.5.3.5 golden tests cover at least one example from each set; in production, exemplars can be edited freely as classifier accuracy is observed.
+
 ### Comment-tree depth
 
 Default: top 50 comments by score. Configurable per-job (open question OQ-2 in [`initiatives.md`](initiatives.md)). Past depth 50 the cost grows fast and the marginal value drops; deeper threads can be re-ingested if a specific deep-thread analysis becomes a feature.

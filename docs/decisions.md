@@ -446,3 +446,53 @@ Each source-type registers a small config: which meta chips to show, what the pl
 - Repo migrates to an organization or upgrades plan → switch to `bypass_pull_request_allowances.users` (the user-preferred path).
 
 **Linked initiatives / PRs.** I-4 (persistence skills) / OQ-9. References `feedback_pr_workflow.md`.
+
+---
+
+## D-020 — File orchestrator dispatch as standalone Story S-1.5.11 (2026-04-26)
+
+**Status:** accepted. Resolves [OQ-10](initiatives.md#open-questions-parking-lot).
+
+**Context.** Reddit (S-1.5.1) and HN (S-1.5.2) connectors emit `Candidate` objects standalone but `app/tasks/job_tasks.py` does not yet route topic jobs through them. [OQ-10](initiatives.md#open-questions-parking-lot) surfaced this gap during the 2026-04-26 holistic backlog walkthrough. Two resolutions: (a) file as new **S-1.5.11 — Topic-job routing through new connectors**; (b) fold dispatch into T-1.5.1.4 + T-1.5.2.5 storage tasks.
+
+**Decision.** Option (a). File **S-1.5.11** as its own Story under E-1.5, sequenced after S-1.5.5 and ahead of Mastodon / Bluesky. The dispatcher abstraction lives in either `app/tasks/job_tasks.py` directly or factored into a new `app/services/connector_dispatch.py` (implementation detail; punt to S-1.5.11 design).
+
+**Alternatives considered.**
+- *(b) Fold into T-1.5.1.4 + T-1.5.2.5.* Faster to MVP but duplicates the dispatch pattern across N future connectors (Mastodon, Bluesky, Mode B paste, podcasts, PDFs). Each connector landing would re-implement the routing wiring. Rejected.
+- *Land dispatch invisibly inside the orchestrator core, no Story.* The work happens, but it's invisible to progress tracking, not enumerated in `initiatives.md`, and a future contributor would re-discover the gap. Rejected.
+
+**Consequences.**
+- The dispatch layer ships **once** with the first two consumers (Reddit + HN); reused unchanged by every future connector.
+- T-1.5.1.4 / T-1.5.2.5 stay scoped to "insert candidates into `documents`"; they consume the dispatch layer rather than re-implementing it.
+- S-1.5.11 acceptance includes: `dispatch_by_source_type(source_type, candidate)` mechanism, per-source-type rate-limit + retry config externalized so each connector declares its own constraints, fan-out semantics for jobs that mix `source_types=["video","reddit_post","hn_story"]` (round-robin vs parallel — punted to S-1.5.11 design), progress reporting parity with the existing YouTube path.
+- E-1.10 (UUID PK) is still a hard prerequisite of T-1.5.1.4 / T-1.5.2.5 storage tasks; S-1.5.11 dispatch can begin building independently but its e2e tests need the storage tasks to land.
+- OQ-10 marked resolved.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.11 (filed in lockstep). References T-1.5.1.4, T-1.5.2.5.
+
+---
+
+## D-021 — Topic relevance threshold = 0.50 (2026-04-26)
+
+**Status:** accepted. Resolves [OQ-1](initiatives.md#open-questions-parking-lot).
+
+**Context.** [D-007](#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25) introduced `social_classify_stance` returning `topic_relevance: float ∈ [0, 1]` alongside stance / sentiment / framing. [OQ-1](initiatives.md#open-questions-parking-lot) parked the question of *threshold* — at what score does a candidate get filtered vs surfaced as low-confidence? Without a threshold, every fetched candidate (including drift / off-topic / spam matches the search API surfaced incidentally) flows into the approval list, drowning the user in noise. With too aggressive a threshold, borderline-relevant items the user might want to see get hidden.
+
+**Decision.** **`TOPIC_RELEVANCE_THRESHOLD = 0.50`**. Candidates with `topic_relevance < 0.50` are excluded from default approval-list rendering. The user can opt in to seeing them via a filter chip ("Show low-relevance candidates"). Filtered candidates are **not deleted** — they remain in `documents` with their classification intact, just hidden by default in the UI.
+
+**Alternatives considered.**
+- *Higher threshold (0.7 / 0.8).* Skips too many borderline-relevant items. The classifier is `gpt-4.1-mini`-grade (cheap-and-fast, not surgical); a conservative cutoff produces too many false negatives, especially for niche-vocabulary topics where the classifier under-confidence-penalizes legit matches.
+- *Lower threshold (0.3).* Surfaces too much off-topic noise; defeats the filter's purpose. Reddit / HN topic searches notoriously include drift hits that score in the 0.2–0.4 band.
+- *No threshold (surface all with confidence badge).* Punts the noise problem to user attention. Explicitly counter to the curation-as-product thesis. The user gets the badge information *and* the filter so they can drill into low-confidence items selectively but not by default.
+- *Per-source-type thresholds.* Reddit / HN / Mastodon may have different noise profiles. Rejected for v1: introduces complexity without empirical evidence it matters; one threshold lets us measure noise empirically and add per-source overrides later if data warrants.
+- *Adaptive threshold based on query specificity.* Overkill for v1; revisit only if data shows static cutoff misperforms.
+
+**Consequences.**
+- Threshold lives as a constant in the social-classify module (e.g. `app/services/social_classify.py::TOPIC_RELEVANCE_THRESHOLD = 0.50`). Easy to tune as data accumulates.
+- The classifier prompt (T-1.5.3.6) instructs the LLM to rate `topic_relevance` ∈ [0, 1] using calibrated scoring (1.0 = unambiguously on-topic, 0.5 = adjacent, 0.0 = unrelated). Exemplars in the prompt include borderline cases at the 0.4–0.6 band so the threshold maps to a sensible cut.
+- Approval UI default filter applies `topic_relevance >= 0.50`; "Show low-relevance candidates" filter chip toggles the cutoff to 0.0.
+- S-1.5.3 acceptance updated to include the threshold + default-filter behavior; S-1.5.4 acceptance gains the "Show low-relevance candidates" filter chip.
+- Re-evaluation hook: if observed precision is too low (lots of 0.5+ matches that turn out off-topic on inspection), bump to 0.60 globally; if observed recall is too low (genuine matches scored 0.4 / 0.45), drop to 0.40 globally. Per-source-type override is the next escalation.
+- OQ-1 marked resolved.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.3 / S-1.5.4. Builds on [D-007](#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), [D-014](#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26).

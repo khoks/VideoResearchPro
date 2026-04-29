@@ -50,22 +50,38 @@ def test_registry_entries_have_coherent_metadata() -> None:
         assert info.rationale.strip(), f"{name}: empty rationale"
 
 
+def _expected_route_from_config(info: llm_routing.UseCaseInfo) -> llm_routing.Route:
+    """Compute the route resolve_route() should return for a given entry's
+    default config, given the post-LLM_USE_CASE_CONFIG semantics:
+    "fast" only when provider resolves to "local"; everything else is "primary".
+
+    This is the source of truth for "what does the resolver actually do?" —
+    `info.default_route` is documentation of the *intent* (cheap call site)
+    and may legitimately differ from what resolve_route returns when the
+    cheap call site uses a SaaS provider rather than the local one.
+    """
+    return "fast" if info.default_config.provider == "local" else "primary"
+
+
 def test_resolve_route_returns_registry_default_when_no_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(llm_routing.settings, "LLM_ROUTE_OVERRIDES", "")
+    monkeypatch.setattr(llm_routing.settings, "LLM_USE_CASE_CONFIG", "")
 
     for name, info in llm_routing.USE_CASE_REGISTRY.items():
-        assert llm_routing.resolve_route(name) == info.default_route
+        assert llm_routing.resolve_route(name) == _expected_route_from_config(info)
 
 
 def test_resolve_route_honors_override(monkeypatch: pytest.MonkeyPatch) -> None:
     """An override flips a single use case without touching others."""
-    # Pick a registry entry that defaults to "primary" so we can flip it to
+    monkeypatch.setattr(llm_routing.settings, "LLM_USE_CASE_CONFIG", "")
+
+    # Pick a registry entry that resolves to "primary" so we can flip it to
     # "fast" and see the change.
     primary_default = next(
         n for n, i in llm_routing.USE_CASE_REGISTRY.items()
-        if i.default_route == "primary"
+        if _expected_route_from_config(i) == "primary"
     )
     monkeypatch.setattr(
         llm_routing.settings,
@@ -79,7 +95,7 @@ def test_resolve_route_honors_override(monkeypatch: pytest.MonkeyPatch) -> None:
     for name, info in llm_routing.USE_CASE_REGISTRY.items():
         if name == primary_default:
             continue
-        assert llm_routing.resolve_route(name) == info.default_route
+        assert llm_routing.resolve_route(name) == _expected_route_from_config(info)
 
 
 def test_resolve_route_override_tolerates_whitespace_and_casing(
@@ -100,6 +116,7 @@ def test_resolve_route_ignores_unknown_or_malformed_overrides(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Typos in the env var must not crash resolve_route."""
+    monkeypatch.setattr(llm_routing.settings, "LLM_USE_CASE_CONFIG", "")
     monkeypatch.setattr(
         llm_routing.settings,
         "LLM_ROUTE_OVERRIDES",
@@ -109,10 +126,13 @@ def test_resolve_route_ignores_unknown_or_malformed_overrides(
     # Valid override still applied.
     assert llm_routing.resolve_route("qa_refine_context") == "primary"
 
-    # Invalid route for a real use case → falls back to default.
+    # Invalid route for a real use case → falls back to the route that
+    # resolve_route would derive from the registry's default_config.
     assert (
         llm_routing.resolve_route("qa_clarification")
-        == llm_routing.USE_CASE_REGISTRY["qa_clarification"].default_route
+        == _expected_route_from_config(
+            llm_routing.USE_CASE_REGISTRY["qa_clarification"]
+        )
     )
 
 

@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("LLM startup probes failed catastrophically")
 
-    logger.info("VideoResearchPro startup complete")
+    logger.info("Pratidhvani startup complete")
     yield
     # Shutdown: cleanup if needed
 

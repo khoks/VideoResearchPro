@@ -14,7 +14,7 @@ router = APIRouter()
 def health_check():
     return {
         "status": "ok",
-        "app": "VideoResearchPro",
+        "app": "Pratidhvani",
         "llm": _STATUS.summary(),
     }
 

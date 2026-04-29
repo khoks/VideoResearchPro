@@ -1,6 +1,6 @@
 """Multilingual sentence-transformer embedding service.
 
-VideoResearchPro indexes transcripts that may be spoken in Hindi, Urdu,
+Pratidhvani indexes transcripts that may be spoken in Hindi, Urdu,
 English, Russian, or code-mixed across these languages. To embed such
 content into a shared RAG index we use ``paraphrase-multilingual-MiniLM-L12-v2``
 — a 384-dim multilingual sentence-transformer that is a drop-in replacement

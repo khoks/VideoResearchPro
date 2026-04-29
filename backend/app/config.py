@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # App
-    APP_NAME: str = "VideoResearchPro"
+    APP_NAME: str = "Pratidhvani"
     DEBUG: bool = False
 
     # Database

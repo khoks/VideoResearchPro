@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Kills every VideoResearchPro runtime (backend, Celery, frontend) and
+Kills every Pratidhvani runtime (backend, Celery, frontend) and
 starts them again. Verifies Redis (which runs as a Windows service).
 
 .DESCRIPTION

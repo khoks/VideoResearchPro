@@ -1,0 +1,106 @@
+---
+/**
+ * Pratidhvani marketing-site home page.
+ *
+ * Status: scaffold-only (T-2.5.1, 2026-04-28). The hero / curation-thesis /
+ * source-types matrix / how-it-works / install / waitlist sections all
+ * land in T-2.5.2 .. T-2.5.8 — see ../README.md for the roadmap.
+ *
+ * What's here today: a placeholder hero that establishes the brand
+ * lockup (Devanagari + Latin), the tagline, and the warm-editorial
+ * tone, so any future contributor opening this file sees what the
+ * site is meant to feel like even before the content lands.
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout
+  title="Pratidhvani — your sources, echoed back"
+  description="A personal research wiki built from your chosen sources, not a balanced encyclopedia. Curated, opinionated, citation-grounded."
+>
+  <main>
+    <section class="hero">
+      <h1 class="lockup">
+        <span class="devanagari">प्रतिध्वनि</span>
+        <span class="latin">Pratidhvani</span>
+      </h1>
+      <p class="tagline">Your sources, echoed back.</p>
+      <p class="lede">
+        A personal research wiki built from <em>your chosen sources</em> —
+        videos, podcasts, articles, threads — not a balanced
+        encyclopedia. Curate the voices. Ask the echo.
+      </p>
+      <div class="placeholder-note">
+        <strong>Marketing site under construction.</strong>
+        Hero / "different from Wikipedia" / source-types matrix /
+        how-it-works / install / waitlist sections land in upcoming
+        PRs (T-2.5.2 → T-2.5.8). See
+        <a href="https://github.com/khoks/VideoResearchPro/blob/master/docs/initiatives.md#e-25--marketing-landing-page-warm-editorial">
+          docs/initiatives.md § E-2.5
+        </a>.
+      </div>
+    </section>
+  </main>
+  <style>
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 6rem 1.5rem;
+    }
+    .lockup {
+      font-size: clamp(2.5rem, 7vw, 4.5rem);
+      letter-spacing: -0.02em;
+      margin-bottom: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .lockup .devanagari {
+      font-family: var(--font-devanagari);
+      color: var(--color-accent);
+    }
+    .lockup .latin {
+      font-family: var(--font-display);
+      font-weight: 500;
+      color: var(--color-text-primary);
+    }
+    .tagline {
+      font-family: var(--font-display);
+      font-size: 1.5rem;
+      font-style: italic;
+      color: var(--color-forest);
+      margin: 0 0 2rem;
+    }
+    .lede {
+      font-size: 1.25rem;
+      line-height: 1.6;
+      color: var(--color-text-primary);
+      max-width: 56ch;
+    }
+    .placeholder-note {
+      margin-top: 4rem;
+      padding: 1.5rem;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-left: 4px solid var(--color-gold);
+      font-family: var(--font-ui);
+      font-size: 0.9375rem;
+      color: var(--color-text-secondary);
+    }
+    .placeholder-note strong {
+      display: block;
+      margin-bottom: 0.5rem;
+      color: var(--color-text-primary);
+      font-weight: 600;
+    }
+    .placeholder-note a {
+      color: var(--color-accent);
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+    em {
+      font-style: italic;
+      color: var(--color-accent);
+    }
+  </style>
+</BaseLayout>

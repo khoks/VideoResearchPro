@@ -496,3 +496,41 @@ Each source-type registers a small config: which meta chips to show, what the pl
 - OQ-1 marked resolved.
 
 **Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.3 / S-1.5.4. Builds on [D-007](#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), [D-014](#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26).
+
+---
+
+## D-022 — Astro for the marketing landing page (2026-04-28)
+
+**Status:** accepted.
+
+**Context.** [E-2.5](initiatives.md#e-25--marketing-landing-page-warm-editorial) needed a static-site stack for the marketing landing page (hero / curation thesis / source-types matrix / how-it-works / install / SaaS waitlist). The site is **explicitly separate** from the React product app under `frontend/` — different audience, different deploy target, no shared runtime — so the choice is unconstrained by the existing React-Vite stack.
+
+Four candidates: **Astro**, **Next.js**, **11ty**, **plain HTML+CSS**.
+
+**Decision.** **Astro** (^5.0.0) under a new top-level `marketing/` directory with its own `node_modules`, `package.json`, and build pipeline. Scaffold landed in PR [#98](https://github.com/khoks/VideoResearchPro/pull/98).
+
+**Alternatives considered.**
+- *Next.js.* Overkill for a static marketing site. Biases the codebase toward React-first thinking even though the marketing copy has zero React state. Heavier bundle, more config, more dependencies. The interactivity Next is good for (server components, dynamic routes, ISR) is irrelevant here.
+- *11ty.* Viable. Mature, fast static-site generator. Rejected because the file-as-component DX (`.eleventy.js` data layers + Nunjucks/Liquid templating) is more friction than Astro's `.astro` files where TypeScript + components + scoped CSS coexist in a single file. Personal-preference call; reasonable engineers could pick 11ty.
+- *Plain HTML + CSS.* Considered for the scaffold-only stage. Rejected because future sections (source-types matrix, install instructions across platforms, recurring footer / nav) want layout / partial / content-collection abstractions. Hand-writing those without a static-site framework means reinventing the wheel.
+- *Folding into `frontend/` as a separate Vite entry point.* Rejected because (i) the marketing site's deploy target (static-only host like Netlify / Vercel / GitHub Pages / Cloudflare Pages) differs from the product app (which needs the FastAPI backend); (ii) coupling dependency trees forces marketing-side upgrades to revalidate against the product app and vice versa; (iii) the conceptual separation ("marketing copy vs the product") is clearer when the directories live separately.
+
+**Why Astro wins on this surface:**
+- **Zero JS by default.** Marketing pages ship as plain HTML; JS only loads when an island opts in (e.g. the eventual SaaS waitlist signup form).
+- **Components-as-files DX.** `.astro` files combine frontmatter (TypeScript / data fetching), template (HTML + components), and scoped `<style>` in one place.
+- **First-class Markdown / MDX.** The "different from Wikipedia" thesis and "how it works" walkthroughs can live as `.md` files that page templates import — clean separation of copy from layout.
+- **Static output to `dist/`** deployable anywhere without a Node runtime.
+- **Multi-page abstractions** (layouts, content collections, automatic `<link rel="canonical">`, sitemap generation) work out-of-the-box.
+- **TypeScript-strict tsconfig** in the scaffold (`extends: "astro/tsconfigs/strict"`).
+
+**Consequences.**
+- New top-level directory `marketing/` with its own dependency tree. Independent of `frontend/`.
+- Warm-editorial tokens mirrored from `frontend/src/theme.ts` into `marketing/src/layouts/BaseLayout.astro` (canonical token table is `docs/branding.md`; both consumers read from there). PR review catches drift. A future T-2.5.x could export a shared `@pratidhvani/tokens` workspace package, but a workspace setup for two consumers is premature; revisit if a third consumer appears.
+- Google Fonts (Fraunces / Source Serif 4 / Inter / Tiro Devanagari Hindi) load via CDN preconnect in BaseLayout; the product app uses the same fonts, so users see coherent typography across product + marketing.
+- Deploy target: static-only host. The eventual SaaS landing page reuses this infrastructure as-is; SaaS-specific surfaces (login / billing portal / status page) become separate Astro routes or separate sub-sites.
+
+**Revisit hooks.**
+- If marketing acquires substantial dynamic surfaces (live stats counters, OAuth-gated demos, multi-step interactive walkthroughs), reconsider Next.js — Astro can do islands but at scale Next's server-component model becomes more idiomatic.
+- If the product app's React stack needs to share rendered components with marketing (e.g. a live-embed of the approval card), introduce a shared package and decide whether marketing consumes React via Astro's `@astrojs/react` integration or whether the product moves to Astro+React itself.
+
+**Linked initiatives / PRs.** I-2 / E-2.5 / T-2.5.1. PR [#98](https://github.com/khoks/VideoResearchPro/pull/98) (initial scaffold).

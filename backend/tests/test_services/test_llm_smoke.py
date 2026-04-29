@@ -143,9 +143,14 @@ def test_summary_status_transitions() -> None:
 async def test_run_startup_probes_dedupes_unique_configs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Two unique configs across 19 use cases -> probe_config called twice."""
+    """Two unique configs across all registered use cases -> probe_config called twice."""
     registry_names = list(llm_smoke.USE_CASE_REGISTRY.keys())
-    assert len(registry_names) == 19
+    # Sanity: registry should be at least 20 (Q&A + library Q&A + Q&A history
+    # + knowledge + topic search + reports + social_classify_stance). Bump
+    # this when adding new use cases. The exact count isn't load-bearing for
+    # the dedup logic the test exercises — it just guards against accidental
+    # registry truncation.
+    assert len(registry_names) >= 20
 
     cfg_a = UseCaseConfig("openai", "gpt-5.4", "medium")
     cfg_b = UseCaseConfig("openai", "gpt-5.4-mini", "off")

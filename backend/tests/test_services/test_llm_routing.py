@@ -65,6 +65,9 @@ def test_fast_without_base_url_uses_openai_with_fast_model(monkeypatch, fake_cha
 
 def test_primary_uses_settings_llm_model_no_base_url(monkeypatch, fake_chat):
     """purpose='primary' (default) → LLM_MODEL, no base_url override."""
+    # _resolve_primary_model() prefers LLM_PRIMARY_MODEL; clear it so the
+    # legacy LLM_MODEL fallback path is what's exercised here.
+    monkeypatch.setattr(llm_service.settings, "LLM_PRIMARY_MODEL", "")
     monkeypatch.setattr(llm_service.settings, "LLM_MODEL", "gpt-5")
     # Even if a fast base URL is configured, primary must not use it.
     monkeypatch.setattr(llm_service.settings, "LLM_FAST_BASE_URL", "http://localhost:1234/v1")
@@ -79,6 +82,7 @@ def test_primary_uses_settings_llm_model_no_base_url(monkeypatch, fake_chat):
 
 def test_primary_is_default_when_purpose_omitted(monkeypatch, fake_chat):
     """Calls that omit ``purpose`` must land on the primary path unchanged."""
+    monkeypatch.setattr(llm_service.settings, "LLM_PRIMARY_MODEL", "")
     monkeypatch.setattr(llm_service.settings, "LLM_MODEL", "gpt-5")
     monkeypatch.setattr(llm_service.settings, "LLM_FAST_BASE_URL", "http://localhost:1234/v1")
 

@@ -79,24 +79,25 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [x] T-1.5.2.4 Tests
 - [ ] T-1.5.2.5 ⚫ Store new `source_type='hn_story'` rows. **Blocked on E-1.10.** Same shape as T-1.5.1.4 — inserts into the new `documents` schema once UUID PK + `source_id text` lands ([D-015](decisions.md#d-015--promote-e-110-uuid-pk-ahead-of-reddit--hn-orchestrator-wiring-2026-04-26)).
 
-#### S-1.5.3 🔵 `social_classify_stance` LLM use case
+#### S-1.5.3 🟡 `social_classify_stance` LLM use case
 
 **PR:** TBD
 **Acceptance.** New named entry in `app/services/llm_routing.py::USE_CASE_REGISTRY` with default `provider=openai, model=gpt-4.1-mini, reasoning=off`. Returns structured `{stance, sentiment, framing, topic_relevance}` for a candidate document — schema extended with the `framing` axis per [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26). Same use case classifies each comment. Module exports `TOPIC_RELEVANCE_THRESHOLD = 0.50` per [D-021](decisions.md#d-021--topic-relevance-threshold--050-2026-04-26); the prompt instructs the LLM to use calibrated scoring (1.0 unambiguous / 0.5 adjacent / 0.0 unrelated) with borderline 0.4–0.6 exemplars baked in alongside framing exemplars.
 **Tasks**
-- [ ] T-1.5.3.1 Define schema (Pydantic) — `stance` ∈ {for, against, neutral, unclear}; `sentiment` ∈ {positive, negative, mixed, neutral}; `framing` ∈ {technical, political, emotional, experiential}; `topic_relevance` ∈ [0, 1]
-- [ ] T-1.5.3.2 Add to registry with token-budget recommendation
+- [x] T-1.5.3.1 Define schema (Pydantic) — `stance` ∈ {for, against, neutral, unclear}; `sentiment` ∈ {positive, negative, mixed, neutral}; `framing` ∈ {technical, political, emotional, experiential}; `topic_relevance` ∈ [0, 1] *(shipped 2026-04-28 — PR [#94](https://github.com/khoks/VideoResearchPro/pull/94); module `backend/app/services/social_classify.py` exports `StanceClassification` + `TOPIC_RELEVANCE_THRESHOLD = 0.50`)*
+- [x] T-1.5.3.2 Add to registry with token-budget recommendation *(shipped 2026-04-28 — PR [#94](https://github.com/khoks/VideoResearchPro/pull/94); `social_classify_stance` registered with default `UseCaseConfig("openai", "gpt-4.1-mini", "off")`, `default_route="fast"`, full token-budget metadata)*
 - [ ] T-1.5.3.3 Wire into the social-connector ingest path so each candidate is classified at fetch time
 - [ ] T-1.5.3.4 Persist results into `Document.source_metadata` and `source_metadata.comments[]` (incl. `framing`)
 - [ ] T-1.5.3.5 Tests with golden short-text examples (sarcasm, sincere praise, in-favor, against)
 - [ ] T-1.5.3.6 Framing prompt exemplars — **two short canonical examples per framing value** (technical, political, emotional, experiential) baked into the prompt; topical diversity (tech / policy / generic-life) so classifier learns *register*, not topic. Locked exemplars in [`source-types.md` § Framing prompt exemplars](source-types.md#framing-prompt-exemplars-for-t-1536). Golden tests cover at least one example from each set (paired with T-1.5.3.5).
 
-#### S-1.5.4 🔵 Single polymorphic `<ApprovalCard>` (per [D-016](decisions.md#d-016--single-polymorphic-approval-card-driven-by-source_metadata-2026-04-26))
+#### S-1.5.4 🟡 Single polymorphic `<ApprovalCard>` (per [D-016](decisions.md#d-016--single-polymorphic-approval-card-driven-by-source_metadata-2026-04-26))
 
 **PR:** TBD
 **Acceptance.** Approval list rendered through a **single `<ApprovalCard>` component** dispatched on `source_type` + `source_metadata`, not per-source-type card variants. Composition primitives: `<CardHeader>` (avatar / display name / platform glyph), `<CardBody>` (title or excerpt), `<CardMetaRow>` (variable `(icon, label, value)` chips: views / score / likes / RTs / points / comment count / duration / word count / published date), `<CardBadgeRow>` (stance / sentiment / framing badges per [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26)), `<CardActions>` (checkbox + "View on platform"). Each source-type registers a config entry (~30 lines) declaring which chips to show, the platform glyph, and the header field mapping. New source type = new config entry, not a new component file. Filter chips operate on `source_metadata.<field>` regardless of `source_type`.
 **Tasks**
 - [ ] T-1.5.4.1 Build `<ApprovalCard>` polymorphic primitive + the five sub-components (`<CardHeader>` / `<CardBody>` / `<CardMetaRow>` / `<CardBadgeRow>` / `<CardActions>`). TypeScript shape locked by [D-018](decisions.md#d-018--polymorphic-approvalcard-typescript-shape--four-sub-decisions-2026-04-26): hand-rolled `SourceMetadata` discriminated union, chips are `keyof T` (pure source-metadata; Document fields render through fixed slots), hybrid formatters (`FormatterName` registry + callback override), separate `FilterChip<T>` type alongside `MetaChip<T>`. Wire token-driven styling per [E-2.1](#e-21--tokens-layer-frontendsrcthemets); include `customSlot` escape hatch with signature `(p: { metadata: T; document: Document; classification?: Classification }) => ReactNode`.
+  - **Types subset shipped 2026-04-28** — PR [#95](https://github.com/khoks/VideoResearchPro/pull/95). `frontend/src/components/approval/types.ts` exports the full D-018 shape (`SourceMetadata` discriminated union, `MetadataFor<K>`, `FormatterName`, `MetaChip<T>`, `FilterChip<T>`, `ApprovalCardConfig<T>`, mapped-type `SourceConfigRegistry`, `ApprovalCardProps<T>`, classification mirror, `ApprovalDocument` fixed-slot type). React component build + formatters.ts impl + YouTube migration + Reddit/HN config entries are remaining sub-work.
 - [ ] T-1.5.4.2 Stance / sentiment / **framing** badge sub-component (consumed by `<CardBadgeRow>`); tooltip-on-hover with full classification breakdown.
 - [ ] T-1.5.4.3 Filter chips ("show only against", "show only positive", "show only experiential framing", "show only score ≥ N", **"Show low-relevance candidates" toggle** per [D-021](decisions.md#d-021--topic-relevance-threshold--050-2026-04-26)) — filter `source_metadata.<field>` regardless of `source_type`. Default approval list applies `topic_relevance >= 0.50`; the toggle drops the cutoff to 0.0 to surface hidden candidates. Filter state lives client-side; chips do not re-fetch / re-classify.
 - [ ] T-1.5.4.4 Migrate existing YouTube approval card to `<ApprovalCard>` as the first config-entry consumer; verify visual + interaction parity vs. today's bespoke component before any social-post type is wired.
@@ -192,7 +193,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Scope.** Generalizes the YouTube-channel concept to any creator (podcast host, blog author, Twitter handle). Pure rename PR; no behavioral change.
 **Note.** Plays the same role for creators as E-1.4 played for documents.
 
-### E-1.10 🔵 Promote `video_id` PK to UUID `document_id`
+### E-1.10 🟡 Promote `video_id` PK to UUID `document_id`
 
 **Promoted 2026-04-26** ahead of E-1.5 storage wiring per [D-015](decisions.md#d-015--promote-e-110-uuid-pk-ahead-of-reddit--hn-orchestrator-wiring-2026-04-26). Reddit (S-1.5.1) and HN (S-1.5.2) connectors are on master and emit namespaced `Candidate.source_id` strings (`reddit:<id>`, `hn:<id>`); landing E-1.10 first means their storage tasks (T-1.5.1.4, T-1.5.2.5) become trivial inserts on the new schema rather than a transitional namespaced-string PK that would need a second migration pass.
 
@@ -218,7 +219,7 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 - Reversible: rollback drops the new columns, reinstates the legacy PK.
 
 **Tasks**
-- [ ] T-1.10.1 Alembic migration adding `document_id` + `source_id` columns; backfill from `video_id`; populate UUIDs for all rows.
+- [x] T-1.10.1 Alembic migration adding `document_id` + `source_id` columns; backfill from `video_id`; populate UUIDs for all rows. *(shipped 2026-04-28 — PR [#96](https://github.com/khoks/VideoResearchPro/pull/96); `source_id` was already in place from L1 PR-1, so this PR adds `document_id VARCHAR(36)` only, backfills with UUID4 per row, alters to NOT NULL, creates a unique index. Doubles as a **merge node** joining the two parallel migration heads `01c5b6dae736` (rename) and `b8c9d0e1f2a3` (multi-source columns) that had been silently parallel since L1 PR-1. Drive-by fix: `alembic/env.py` stale `Video` import → `Document`)*
 - [ ] T-1.10.2 Migration step 2 — drop legacy PK; add `(source_type, source_id)` unique constraint.
 - [ ] T-1.10.3 ORM updates (`Document.document_id` PK; `Document.source_id` column; relationships re-pointed).
 - [ ] T-1.10.4 Rename `job_videos` → `job_documents` (table + ORM class + 14 importers); FK → `documents.document_id`.
@@ -261,12 +262,12 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 **Shipped** (verified live on master 2026-04-26). `AppLayout.tsx` now renders an editorial sidebar (240px desktop, drawer on mobile<960px) with the Devanagari + Latin brand lockup at the top and user chrome (email / theme toggle / logout) at the bottom. NavContent groups Submit / Jobs / Library / Library Q&A / Q&A History / Exports.
 
-### E-2.5 ⚪ Marketing landing page (warm-editorial)
+### E-2.5 🟡 Marketing landing page (warm-editorial)
 
 **Scope.** Static landing page under `marketing/` describing the curated-personal-wiki pitch, screenshots, install instructions, SaaS waitlist. Folder does not yet exist (verified 2026-04-26 — no `marketing/` directory in repo).
 
 **Tasks** (initial)
-- [ ] T-2.5.1 Astro project scaffold under `marketing/` (or 11ty / plain HTML — choose at start).
+- [x] T-2.5.1 Astro project scaffold under `marketing/` *(shipped 2026-04-28 — PR [#98](https://github.com/khoks/VideoResearchPro/pull/98); Astro ^5.0.0 chosen per [D-022](decisions.md#d-022--astro-for-the-marketing-landing-page-2026-04-28). `package.json` / `astro.config.mjs` / `tsconfig.json` (extends `astro/tsconfigs/strict`) / `.gitignore` / `README.md` + `BaseLayout.astro` mirroring `frontend/src/theme.ts` tokens + `index.astro` placeholder hero with brand lockup)*
 - [ ] T-2.5.2 Hero with the personal-wiki pitch + tagline ("Your sources, echoed back" or similar from branding.md).
 - [ ] T-2.5.3 "How it differs from Wikipedia" section (curation thesis).
 - [ ] T-2.5.4 Source-types matrix (videos / podcasts / articles / etc.) reflecting current support.
@@ -284,7 +285,7 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 - [ ] T-2.6.2 `DATABASE_URL` default `sqlite:///./data/videoresearchpro.db` → `pratidhvani.db`. Requires data migration or symlink for existing self-hosters.
 - [ ] T-2.6.3 Backend package paths — currently `app.*` (already neutral); no rename needed unless a top-level rename is wanted (e.g. directory `backend/` → `backend/` no change).
 - [ ] T-2.6.4 GitHub repo rename `khoks/VideoResearchPro` → `khoks/pratidhvani` (or similar). Outside-codebase action; redirects auto-handled by GitHub but old PR / issue URLs depend on the redirect.
-- [ ] T-2.6.5 Audit + fix any remaining strings in tests, scripts, docstrings that aren't grandfathered env-var references.
+- [x] T-2.6.5 Audit + fix any remaining strings in tests, scripts, docstrings that aren't grandfathered env-var references. *(shipped 2026-04-28 — PR [#97](https://github.com/khoks/VideoResearchPro/pull/97); 9 files updated: `APP_NAME` default, `/api/v1/health` response, startup log, `POST /restart` docstring, two service module docstrings, env template header, paired test, restart-services.ps1. Intentional non-changes for future migration tasks documented in PR body)*
 - [ ] T-2.6.6 Migration runbook covering data preservation for self-hosters running the legacy names.
 
 **Sequencing.** T-2.6.1 / T-2.6.2 are gated by a thoughtful migration story (they're production-data-mutating). T-2.6.5 is purely cosmetic and can ship anytime. T-2.6.4 can ship anytime but is outside the codebase. Decoupled from D-001 because identifier renames need a deliberate migration; brand copy moved immediately.
@@ -441,3 +442,8 @@ These are real questions raised in conversation that don't yet have a Story home
   - T-1.5.4.1 unblocked. PR-review-driven drift correction documented as a revisit hook on (a); promotion to flat ` View<T>` documented as a revisit hook on (b) if a future source type wants Document-level chips.
 - **OQ-9.** ✅ **Resolved 2026-04-26 by [D-019](decisions.md#d-019--codeowners--branch-protection-policy-for-autonomous-merge-sessions-2026-04-26).** User picked option (c) bypass list, but `bypass_pull_request_allowances` is not exposed on personal-account free-plan public repos (verified via PATCH that silently dropped the field). Pragmatic landing: `.github/CODEOWNERS` declares `@khoks` as owner of every path, and `required_approving_review_count` dropped to `0`. Net: `gh pr merge --squash --delete-branch` (no `--admin`) works on master immediately. Force-push still blocked. Two revisit hooks documented (second collaborator joins → Rulesets `bypass_actors`; org migration → `bypass_pull_request_allowances.users`).
 - **OQ-10.** ✅ **Resolved 2026-04-26 by [D-020](decisions.md#d-020--file-orchestrator-dispatch-as-standalone-story-s-1511-2026-04-26): file as standalone S-1.5.11.** Dispatch layer ships once with the first two consumers (Reddit + HN) and is reused by every future connector. Folding into per-source storage tasks would duplicate the dispatch pattern N times. See [S-1.5.11](#s-1511--topic-job-routing-through-new-connectors) for the task breakdown.
+- **OQ-11.** Dev-DB half-migrated state reconciliation. Discovered 2026-04-28 during E-1.10 T-1.10.1 testing (PR [#96](https://github.com/khoks/VideoResearchPro/pull/96)): the local DB at `data/videoresearchpro.db` has `alembic_version = b8c9d0e1f2a3` (multi-source columns) but the rename migration `01c5b6dae736` was never recorded — yet **both** `videos` (912 rows of legacy data) and `documents` (0 rows, empty) tables coexist. Likely caused by FastAPI app's ORM-driven `Base.metadata.create_all()` running before alembic caught up. Running `alembic upgrade head` now fails on the rename because `documents` already exists. **Production canonical-state DBs are unaffected** — this is a dev-machine-only issue, but it blocks T-1.10.2 and beyond on this machine until reconciled. Two resolutions:
+  - **(a) Manual SQL reconciliation.** `DROP TABLE documents` (it's empty), then run `alembic upgrade head` (which renames `videos → documents` correctly), then re-run my T-1.10.1 migration. Preserves all 912 rows + transcripts + Q&A history. Fast (~5 min). Risk: a one-off SQL operation outside the migration system; if you mistype, the data is gone.
+  - **(b) Reset and re-import.** Backup `data/`, delete the DB, run `alembic upgrade head` from scratch on a fresh DB, then re-import jobs / videos / Q&A from the backup via a one-time import script. Cleanest. Risk: requires writing the import script (or implementing one if it doesn't exist) and verifying re-import preserves all relations.
+  - Recommendation: **(a)** for the dev machine — fast, low-risk given the current state, no tooling investment. (b) is the right answer if this state ever appears in a production self-host install (where data is precious + the import script becomes a reusable disaster-recovery tool). To be confirmed before T-1.10.2 starts.
+  - (Tied to [E-1.10](#e-110--promote-video_id-pk-to-uuid-document_id))

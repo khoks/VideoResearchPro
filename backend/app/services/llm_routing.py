@@ -100,6 +100,8 @@ UseCase = Literal[
     # Topic search — app/agents/search_agent.py
     "search_plan_queries",
     "search_rank_and_curate",
+    # Social-media candidate classification (S-1.5.3) — D-007 / D-014 / D-021
+    "social_classify_stance",
     # Report generation (map-reduce) — app/agents/report_agent.py
     "report_map_chunks",
     "report_reduce_summaries",
@@ -475,6 +477,33 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "Section-level composition (multiple per job). Flagship + low "
             "reasoning keeps quality up without burning tokens at high "
             "volume."
+        ),
+    ),
+    # --- Social-media candidate classification (S-1.5.3) ---------------
+    "social_classify_stance": UseCaseInfo(
+        default_route="fast",
+        default_config=UseCaseConfig("openai", "gpt-4.1-mini", "off"),
+        summary=(
+            "Per-candidate-Document (and per-comment) classification "
+            "returning {stance, sentiment, framing, topic_relevance}. "
+            "Used at fetch time during social-media ingest (Reddit, HN, "
+            "Mastodon, Bluesky, paste-mode FB/IG/LI/X). See "
+            "app/services/social_classify.py for the schema and the "
+            "TOPIC_RELEVANCE_THRESHOLD = 0.50 surfacing cut."
+        ),
+        typical_input_tokens=600,
+        p95_input_tokens=1_200,
+        typical_output_tokens=80,
+        min_context_recommended=2_048,
+        rationale=(
+            "Short post body in, structured 4-field JSON out. Volume is "
+            "high (one call per Document + one per top comment, easily "
+            "hundreds per topic search). Cheap-and-fast model with "
+            "reasoning off is the right pick — the calibrated scoring "
+            "discipline lives in the prompt exemplars (D-014 framing + "
+            "D-021 topic-relevance), not in chain-of-thought. Safe to "
+            "route to local for cost-sensitive operators (any "
+            "instruction-tuned ≥7B model handles it cleanly)."
         ),
     ),
 }

@@ -98,7 +98,7 @@ def _spawn_restart_trampoline(skip_frontend: bool, delay: int) -> None:
 
 @router.post("/restart", status_code=status.HTTP_202_ACCEPTED)
 def restart_services(skip_frontend: bool = False, delay: int = 2) -> dict:
-    """Restart every runtime that makes up VideoResearchPro.
+    """Restart every runtime that makes up Pratidhvani.
 
     Returns 202 immediately; the actual restart happens out-of-band via a
     detached PowerShell script that kills this process and relaunches it

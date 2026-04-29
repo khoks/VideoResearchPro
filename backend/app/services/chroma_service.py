@@ -1,10 +1,13 @@
 """ChromaDB service: global-collection model.
 
-VideoResearchPro stores every transcript chunk in a single shared ChromaDB
+Pratidhvani stores every transcript chunk in a single shared ChromaDB
 collection — ``settings.CHROMA_GLOBAL_COLLECTION_NAME`` (default
-``videoresearchpro_global``). Videos are globally deduplicated: a given
-video's chunks are indexed exactly once and re-used across any job that
-references the video. The former per-job collection model has been retired.
+``videoresearchpro_global``, a grandfathered legacy identifier; the
+collection name is preserved for back-compat per D-001 / E-2.6 until
+the migration in T-2.6.1 ships). Videos are globally deduplicated: a
+given video's chunks are indexed exactly once and re-used across any
+job that references the video. The former per-job collection model has
+been retired.
 
 Query scoping is performed via ChromaDB metadata filtering on ``video_id``:
 

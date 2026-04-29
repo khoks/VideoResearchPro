@@ -7,12 +7,14 @@ from app.database import Base
 from app.models import (  # noqa: F401
     ApiQuotaLog,
     Channel,
+    Document,
     Job,
     JobVideo,
+    LibraryQAExchange,
     QAExchange,
+    QAHistoryExchange,
     TranscriptCache,
     User,
-    Video,
 )
 
 config = context.config

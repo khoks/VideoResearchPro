@@ -534,3 +534,82 @@ Four candidates: **Astro**, **Next.js**, **11ty**, **plain HTML+CSS**.
 - If the product app's React stack needs to share rendered components with marketing (e.g. a live-embed of the approval card), introduce a shared package and decide whether marketing consumes React via Astro's `@astrojs/react` integration or whether the product moves to Astro+React itself.
 
 **Linked initiatives / PRs.** I-2 / E-2.5 / T-2.5.1. PR [#98](https://github.com/khoks/VideoResearchPro/pull/98) (initial scaffold).
+
+---
+
+## D-023 — `social_classify_stance` invoked inline inside each connector (2026-04-28)
+
+**Status:** accepted. Resolves [OQ-12](initiatives.md#open-questions-parking-lot).
+
+**Context.** [D-007](#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25) introduced `social_classify_stance` to run at fetch time. [D-014](#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26) added the `framing` axis. [D-021](#d-021--topic-relevance-threshold--050-2026-04-26) set the surfacing threshold to 0.50. None of these specified *where in the codebase* the classifier gets called. [OQ-12](initiatives.md#open-questions-parking-lot) surfaced two natural placements: **(a)** inline inside each connector's `fetch_text()` / `fetch_metadata()` so each connector classifies before returning Candidates; **(b)** as a separate orchestrator pipeline step that runs after the connector returns and before persistence.
+
+**Decision.** Option (a) — inline inside each connector. Each `BaseConnector` subclass (`RedditConnector`, `HNConnector`, future `MastodonConnector` / `BlueskyConnector`) calls `social_classify` on the text it just fetched, before returning the `Candidate`. The classification result lands on `Candidate.classification` (or, equivalently, on `source_metadata.{stance,sentiment,framing,topic_relevance}` if Candidates pass `source_metadata` directly).
+
+**Alternatives considered.**
+- *(b) Orchestrator pipeline step.* Cleaner separation of concerns (connector fetches, orchestrator classifies, storage persists). Rejected because: (i) classification cost is per-Candidate and the per-source-type call counts vary widely (Reddit returns hundreds of comments per thread; HN returns a flat story), so connectors are the natural batching boundary; (ii) connectors know the *right text to classify* — Reddit might classify "OP + top-comment summary" while Mastodon-OP-only classifies just the post body, while HN classifies "story + top-comment" — that knowledge lives in connector code, not orchestrator code; (iii) orchestrator stays focused on its core concern (fan-out + progress reporting + retry); (iv) parallelizable across connectors when fan-out is parallel.
+- *Hybrid* — connector returns un-classified Candidates, orchestrator classifies, but optionally a connector can pre-classify if it has a cheap path. Rejected as over-engineered for v1; if the layering matters later the inline path is trivially refactorable into a hybrid.
+
+**Consequences.**
+- Each connector imports and calls `social_classify` from `app/services/social_classify.py`. Cost is amortized inside the connector's per-Candidate loop.
+- Connector tests grow to assert classification fields populate on returned Candidates (mocked classifier in unit tests).
+- The classifier function itself stays connector-agnostic — same signature regardless of source type.
+- T-1.5.3.3 acceptance updates: "Wire into the social-connector ingest path" → "Inline call inside `RedditConnector.fetch_text()` and `HNConnector.fetch_text()` (and future connectors). Each connector calls `social_classify(text, query)` and attaches the result to the returned Candidate."
+- OQ-12 marked resolved.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.3 / T-1.5.3.3. Builds on [D-007](#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), [D-014](#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26), [D-021](#d-021--topic-relevance-threshold--050-2026-04-26).
+
+---
+
+## D-024 — Flip E-1.6 to 🔵 with primitives-only scope split (2026-04-28)
+
+**Status:** accepted. Resolves [OQ-14](initiatives.md#open-questions-parking-lot). Amends [D-005](#d-005--social-media-ingest-before-article-ingest-2026-04-25).
+
+**Context.** [D-005](#d-005--social-media-ingest-before-article-ingest-2026-04-25) deferred the article connector (E-1.6) behind E-1.5 (social-media connectors). At the time, the assumption was the article connector and the social work were independent enough that ordering them sequentially saved attention. The 2026-04-28 holistic-backlog review revealed the trafilatura + Playwright fallback **pipeline primitives** that E-1.6 builds are also on the dependency path of S-1.5.8 (Mode B paste mode for FB/IG/LI/X-without-paid-API): both surfaces hit arbitrary HTML pages, extract clean text with trafilatura, and fall back to Playwright when trafilatura fails on JS-heavy SPA platforms. Building those primitives twice (once in S-1.5.8, then again — or factored differently — in E-1.6) is wasteful.
+
+**Decision.** Flip E-1.6 from 🔴 deferred to 🔵 accepted, with **scope split**: the *pipeline primitives* (trafilatura wrapper, Playwright fallback, hybrid extraction strategy, language detection, word-count gating) ship first as a lightweight foundation under `app/services/article_extraction/` (or similar). The full article-connector UX (job submission flow that takes `source_types=["article"]`, RSS feed ingestion, search via Brave / Kagi / Tavily, approval card variant for articles) stays deferred until after the Reddit + HN end-to-end MVP (M-1.5).
+
+**Alternatives considered.**
+- *(a) Keep 🔴 deferred (status quo).* The deferral was deliberate per D-005 to focus attention on social MVP. Rejected because the primitive-duplication cost is real — S-1.5.8 needs the same primitives, so they get built somewhere either way.
+- *(c) Flip to 🔵 with full scope (article connector + Mode B share the primitives).* Rejected because the full article-connector UX (RSS, search, approval card variant) adds in-flight surface area that distracts from the M-1.5 critical path. Recommendation (b) — primitives only, defer UX — gets the durable foundation in place without committing to the user-facing surface yet.
+
+**Consequences.**
+- E-1.6 status flips 🔴 → 🔵 in initiatives.md. Sub-tasks split into "T-1.6.1 — pipeline primitives (high priority, in service of S-1.5.8)" and "T-1.6.2+ — full article connector UX (post-M-1.5)".
+- S-1.5.8 (Manual-paste mode) acceptance updated to reference E-1.6 T-1.6.1 as the dependency rather than reusing-from-the-future.
+- The primitives module is intentionally connector-agnostic — `extract_text(url) -> ExtractionResult` — so the article connector and Mode B paste consume the same code.
+- The decision is reversible: if M-1.5 takes longer than expected, E-1.6's primitives-only scope can be put back on the shelf without touching S-1.5.8 (which can absorb the trafilatura/Playwright code inline temporarily).
+
+**Linked initiatives / PRs.** I-1 / E-1.6 / S-1.5.8. Amends [D-005](#d-005--social-media-ingest-before-article-ingest-2026-04-25).
+
+---
+
+## D-025 — File MVP definition-of-done as Milestone M-1.5 (2026-04-28)
+
+**Status:** accepted. Resolves [OQ-15](initiatives.md#open-questions-parking-lot).
+
+**Context.** Six in-flight stories (E-1.10, S-1.5.3, S-1.5.4, S-1.5.5, S-1.5.11, plus T-1.5.1.4 / T-1.5.2.5 unblocked by E-1.10) form the critical path to "Reddit + HN end-to-end ingest." Without an explicit milestone the work-tracker has no single convergence target — each story can claim to be "ready" by its own acceptance, but there's no test of whether the *user-facing experience* is end-to-end working.
+
+**Decision.** File **Milestone M-1.5 — Reddit + HN end-to-end ingest** under E-1.5 with the following definition-of-done:
+
+> A user submits a topic job with `source_types=['reddit_post','hn_story']`, sees a curated approval list with **stance / sentiment / framing badges + filter chips** (including the `topic_relevance >= 0.50` default per [D-021](#d-021--topic-relevance-threshold--050-2026-04-26) and the "Show low-relevance candidates" toggle), approves a subset, and asks Q&A across the approved threads receiving **comment-anchored citations** (per the `permalink#comment-<id>` format defined in [D-006](#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25)).
+
+**Component checks for M-1.5 closure:**
+1. E-1.10 cutover landed (UUID `document_id` PK + `source_id text` columns).
+2. S-1.5.11 dispatcher routes topic-job source-type lists through the connector registry.
+3. T-1.5.1.4 + T-1.5.2.5 storage tasks land Reddit / HN Candidates as `documents` rows.
+4. S-1.5.3 inline classifier (per [D-023](#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28)) populates stance / sentiment / framing / topic_relevance.
+5. S-1.5.4 polymorphic `<ApprovalCard>` renders Reddit + HN config entries with badges + filter chips.
+6. S-1.5.5 citation rendering produces Reddit / HN deep-links.
+7. End-to-end pipeline test passes for `["reddit_post"]`, `["hn_story"]`, and mixed `["video","reddit_post","hn_story"]`.
+
+**Alternatives considered.**
+- *Keep critical-path informal.* Rejected: gives no convergence test; risks "all stories shipped, but the user experience is still broken."
+- *Define M-1.5 narrower (just Reddit, defer HN).* Rejected: HN is essentially free once Reddit ships (Algolia API needs no auth, comment-tree shape mirrors Reddit per the existing connector code), and a milestone without HN doesn't capture the meaningful "two source types in parallel" threshold.
+- *Define M-1.5 broader (include Mastodon / Bluesky).* Rejected: those need their own connectors which haven't shipped; folding them into M-1.5 inflates scope past where the trade-off is worth it.
+
+**Consequences.**
+- initiatives.md gains a "Milestones" section (or M-1.5 lives inline under E-1.5) tracking the 7 component checks above. Each component check links to the closing PR or shipped task.
+- "M-1.5" becomes the shorthand for the convergence target; sub-stories can quote progress relative to M-1.5 ("3/7 component checks closed", etc.).
+- Future milestones — M-1.7 (podcast end-to-end), M-1.8 (PDF end-to-end), M-2.5 (marketing landing page deployed) — follow the same template.
+- OQ-15 marked resolved.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / E-1.10 / S-1.5.3 / S-1.5.4 / S-1.5.5 / S-1.5.11 / T-1.5.1.4 / T-1.5.2.5.

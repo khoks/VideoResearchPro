@@ -60,15 +60,25 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Definition of done.** A user submits a topic job with `source_types=['reddit_post','hn_story']`, sees a curated approval list with **stance / sentiment / framing badges + filter chips** (including the `topic_relevance >= 0.50` default per [D-021](decisions.md#d-021--topic-relevance-threshold--050-2026-04-26) and the "Show low-relevance candidates" toggle), approves a subset, and asks Q&A across the approved threads receiving **comment-anchored citations** (per the `permalink#comment-<id>` format defined in [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25)).
 
 **Component checks** (7 total — flip to ✅ as each closes; "🟡 partial" marks substantive progress short of full closure):
-- [ ] **C1.** E-1.10 cutover landed (UUID `document_id` PK + `source_id text` columns) — *T-1.10.1 ✅ shipped (PRs [#94](https://github.com/khoks/VideoResearchPro/pull/94)/[#95](https://github.com/khoks/VideoResearchPro/pull/95)); T-1.10.2-.8 cutover PR pending — the next-session priority*
-- [ ] **C2. 🟡** S-1.5.11 dispatcher routes topic-job source-type lists through the connector registry — *T-1.5.11.1 ✅ shipped (PR [#109](https://github.com/khoks/VideoResearchPro/pull/109)) — search-phase ` dispatch_search()` interface + 8 unit tests + error isolation. T-1.5.11.2/.3/.4 + e2e tests still pending*
-- [ ] **C3.** T-1.5.1.4 + T-1.5.2.5 storage tasks land Reddit / HN Candidates as `documents` rows — *⚫ blocked on C1 (E-1.10 cutover)*
-- [ ] **C4. 🟡** S-1.5.3 inline classifier (per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28)) populates stance / sentiment / framing / topic_relevance — *T-1.5.3.1/.2/.3 ✅ shipped (PRs [#94](https://github.com/khoks/VideoResearchPro/pull/94), [#107](https://github.com/khoks/VideoResearchPro/pull/107)). Classifier function + Reddit/HN inline wiring + 12 unit tests + 2 connector tests. T-1.5.3.4 (persist into `source_metadata`) blocked on C3; T-1.5.3.5/.6 (golden tests + framing exemplars baked into prompt) ship with C3*
-- [ ] **C5. 🟡** S-1.5.4 polymorphic `<ApprovalCard>` renders Reddit + HN config entries with badges + filter chips — *T-1.5.4.1 (TS shape) + T-1.5.4.2 (`<ClassificationBadgeRow>`) ✅ shipped (PRs [#99](https://github.com/khoks/VideoResearchPro/pull/99), [#108](https://github.com/khoks/VideoResearchPro/pull/108)). T-1.5.4.3 filter chips, T-1.5.4.4 YouTube migration, T-1.5.4.5 Reddit/HN configs pending*
-- [ ] **C6.** S-1.5.5 citation rendering produces Reddit / HN deep-links — *not yet started; ships post-C3*
-- [ ] **C7.** End-to-end pipeline test passes for `["reddit_post"]`, `["hn_story"]`, and mixed `["video","reddit_post","hn_story"]` — *⚫ blocked on C1 + C3*
+- [x] **C1. ✅** E-1.10 cutover landed (UUID `document_id` PK + `source_id text` columns) — *T-1.10.1 ✅ (PR [#96](https://github.com/khoks/VideoResearchPro/pull/96)) + T-1.10.2-.8 cutover ✅ shipped 2026-05-02 PR [#112](https://github.com/khoks/VideoResearchPro/pull/112). Documents PK swapped, job_videos→job_documents, transcript_cache PK retargeted, ORM + 14-importer audit clean, 415/415 tests green*
+- [ ] **C2. 🟡** S-1.5.11 dispatcher routes topic-job source-type lists through the connector registry — *T-1.5.11.1 ✅ shipped (PR [#109](https://github.com/khoks/VideoResearchPro/pull/109)) — search-phase ` dispatch_search()` interface + 8 unit tests + error isolation. T-1.5.11.2 (rate-limit/retry config) + T-1.5.11.3 (fan-out semantics) + T-1.5.11.4 (progress reporting) + orchestrator wiring + e2e tests still pending*
+- [x] **C3. ✅** T-1.5.1.4 + T-1.5.2.5 storage tasks land Reddit / HN Candidates as `documents` rows — *Shipped 2026-05-02 PR [#113](https://github.com/khoks/VideoResearchPro/pull/113). `_upsert_candidate_and_link()` generalizes the YouTube path to handle any source_type via canonical (source_type, source_id) lookup; 9 new tests cover Reddit + HN happy paths, idempotent dedup, cross-job sharing, classification persistence, ExtractedText state recording. Orchestrator wiring (calling this from execute_topic_job for non-video source_types) is S-1.5.11 follow-up*
+- [x] **C4. ✅** S-1.5.3 inline classifier (per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28)) populates stance / sentiment / framing / topic_relevance — *T-1.5.3.1/.2/.3 ✅ (PRs [#94](https://github.com/khoks/VideoResearchPro/pull/94), [#107](https://github.com/khoks/VideoResearchPro/pull/107)) + T-1.5.3.4 ✅ shipped 2026-05-02 PR [#113](https://github.com/khoks/VideoResearchPro/pull/113). Classifier dict round-trips into `source_metadata_json["classification"]` via `_upsert_candidate_and_link(..., classification=...)`. T-1.5.3.5 (golden tests with sarcasm / sincere / for / against examples) + T-1.5.3.6 (framing exemplars embedded in the prompt — already locked in source-types.md, just needs the prompt-level baking) remain*
+- [ ] **C5. 🟡** S-1.5.4 polymorphic `<ApprovalCard>` renders Reddit + HN config entries with badges + filter chips — *T-1.5.4.1 (TS shape) + T-1.5.4.2 (`<ClassificationBadgeRow>`) ✅ shipped (PRs [#99](https://github.com/khoks/VideoResearchPro/pull/99), [#108](https://github.com/khoks/VideoResearchPro/pull/108)). T-1.5.4.3 filter chips, T-1.5.4.4 YouTube migration to the polymorphic primitive, T-1.5.4.5 Reddit/HN config entries pending*
+- [ ] **C6.** S-1.5.5 citation rendering produces Reddit / HN deep-links — *not yet started; can ship in parallel with C5 since both are frontend-only*
+- [ ] **C7.** End-to-end pipeline test passes for `["reddit_post"]`, `["hn_story"]`, and mixed `["video","reddit_post","hn_story"]` — *blocked on orchestrator wiring (S-1.5.11 T-1.5.11.4 + connector dispatch integration into execute_topic_job)*
 
-**Progress as of 2026-04-28:** 0 of 7 fully closed; 3 of 7 (C2, C4, C5) have substantive progress. The next-session unblocker is **C1 — E-1.10 cutover** (single-PR per [D-017](decisions.md#d-017--e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26), executes T-1.10.2 through T-1.10.8 in one sweep, T-1.10.8 round-trip test gating). Once C1 lands, C3 unblocks immediately, T-1.5.3.4 + the e2e tests follow.
+**Progress as of 2026-05-02:** **3 of 7 fully closed (C1, C3, C4); 1 of 7 partial (C2, C5)**. The next-session priorities are:
+
+1. **Orchestrator wiring** (S-1.5.11 T-1.5.11.2-.4): Thread `dispatch_search()` → connector.fetch_text() → `_upsert_candidate_and_link()` into `execute_topic_job` so a topic job with `source_types=["reddit_post"]` actually flows end-to-end. Closes most of C2 and unblocks C7.
+
+2. **Frontend ApprovalCard primitive** (T-1.5.4.1 full + T-1.5.4.3/.4/.5): Build the polymorphic `<ApprovalCard>` component, migrate YouTube approval to it, register Reddit + HN configs. Closes C5.
+
+3. **Citation rendering** (S-1.5.5 T-1.5.5.1/.2): Source-type-dispatched citation renderer with permalink + comment-anchor builders. Closes C6. Independent of (1) and (2).
+
+4. **E2E tests** (T-1.5.11.5/.6/.7): Exercise the full pipeline for Reddit-only, HN-only, mixed. Closes C7.
+
+5. **Classifier golden tests** (T-1.5.3.5 + T-1.5.3.6): Prompt-level framing exemplars + golden cases. Closes C4 fully.
 
 #### S-1.5.1 🟢 Reddit search connector
 
@@ -79,7 +89,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [x] T-1.5.1.1 Implement `RedditConnector(BaseConnector)` against `/search.json` + per-sub `/r/<sub>/search.json`
 - [x] T-1.5.1.2 OAuth app registration + token refresh; respect 100 req/min rate limit
 - [x] T-1.5.1.3 Flatten OP + top-50 comments (sorted by score) into single text body with reply markers
-- [ ] T-1.5.1.4 ⚫ Store new `source_type='reddit_post'` rows. **Blocked on E-1.10.** Per [D-015](decisions.md#d-015--promote-e-110-uuid-pk-ahead-of-reddit--hn-orchestrator-wiring-2026-04-26), storage lands as inserts into the new `documents` schema (UUID `document_id` PK + `source_id text`), not as `f"reddit:{post_id}"` strings into the legacy `video_id` column.
+- [x] T-1.5.1.4 Store new `source_type='reddit_post'` rows — *shipped 2026-05-02 PR [#113](https://github.com/khoks/VideoResearchPro/pull/113). `_upsert_candidate_and_link(db, job_id, candidate, classification=..., extracted_text=...)` resolves existing rows by canonical `(source_type, source_id)`, mirrors `source_id` into `video_id` only for video rows (NULL otherwise), creates JobVideo (job_documents) link with UUID document_id. 9 dedicated unit tests including cross-job sharing.*
 - [x] T-1.5.1.5 Comment-tree depth configurable (default top 50 by score)
 - [ ] T-1.5.1.6 Connector unit tests + end-to-end pipeline test *(unit tests landed in PR #70; e2e test pending orchestrator wiring)*
 - [ ] T-1.5.1.7 Approval-UI card variant for Reddit (handle, score, comment count, snippet, sentiment hint)
@@ -94,7 +104,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [ ] T-1.5.2.2 Date-range filter via `numericFilters=created_at_i>...,<...` *(deferred — see Shipped scope note)*
 - [x] T-1.5.2.3 Comment tree fetch via item endpoint, flatten same as Reddit
 - [x] T-1.5.2.4 Tests
-- [ ] T-1.5.2.5 ⚫ Store new `source_type='hn_story'` rows. **Blocked on E-1.10.** Same shape as T-1.5.1.4 — inserts into the new `documents` schema once UUID PK + `source_id text` lands ([D-015](decisions.md#d-015--promote-e-110-uuid-pk-ahead-of-reddit--hn-orchestrator-wiring-2026-04-26)).
+- [x] T-1.5.2.5 Store new `source_type='hn_story'` rows — *shipped 2026-05-02 PR [#113](https://github.com/khoks/VideoResearchPro/pull/113). Same `_upsert_candidate_and_link()` path as Reddit; HN candidates flow through identically since the function is source-type-agnostic.*
 
 #### S-1.5.3 🟡 `social_classify_stance` LLM use case
 
@@ -104,7 +114,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [x] T-1.5.3.1 Define schema (Pydantic) — `stance` ∈ {for, against, neutral, unclear}; `sentiment` ∈ {positive, negative, mixed, neutral}; `framing` ∈ {technical, political, emotional, experiential}; `topic_relevance` ∈ [0, 1] *(shipped 2026-04-28 — PR [#94](https://github.com/khoks/VideoResearchPro/pull/94); module `backend/app/services/social_classify.py` exports `StanceClassification` + `TOPIC_RELEVANCE_THRESHOLD = 0.50`)*
 - [x] T-1.5.3.2 Add to registry with token-budget recommendation *(shipped 2026-04-28 — PR [#94](https://github.com/khoks/VideoResearchPro/pull/94); `social_classify_stance` registered with default `UseCaseConfig("openai", "gpt-4.1-mini", "off")`, `default_route="fast"`, full token-budget metadata)*
 - [x] T-1.5.3.3 Inline call inside each connector's `fetch_text()` per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28) — *shipped 2026-04-28 PR [#107](https://github.com/khoks/VideoResearchPro/pull/107). Adds `classify(text, query)` to `app/services/social_classify.py`, wires inline into `RedditConnector.fetch_text` and `HNConnector.fetch_text`, populates `ExtractedText.extra["classification"]`. Fail-soft on every error path. 12 classifier unit tests + 2 connector tests. `BaseConnector.fetch_text` signature gains `query: str = ""` kwarg; `job_tasks.py` call sites pass `query=job.topic or ""`.*
-- [ ] T-1.5.3.4 Persist results into `Document.source_metadata` and `source_metadata.comments[]` (incl. `framing`)
+- [x] T-1.5.3.4 Persist classification into `Document.source_metadata_json["classification"]` — *shipped 2026-05-02 PR [#113](https://github.com/khoks/VideoResearchPro/pull/113). Document-level classification persisted via the `classification=` kwarg on `_upsert_candidate_and_link`. Sibling source_metadata keys preserved on re-upsert. Per-comment classification under `source_metadata.comments[]` deferred to follow-up — today's classifier classifies the document-level OP+top-comment text per D-023, not per-comment*
 - [ ] T-1.5.3.5 Tests with golden short-text examples (sarcasm, sincere praise, in-favor, against)
 - [ ] T-1.5.3.6 Framing prompt exemplars — **two short canonical examples per framing value** (technical, political, emotional, experiential) baked into the prompt; topical diversity (tech / policy / generic-life) so classifier learns *register*, not topic. Locked exemplars in [`source-types.md` § Framing prompt exemplars](source-types.md#framing-prompt-exemplars-for-t-1536). Golden tests cover at least one example from each set (paired with T-1.5.3.5).
 
@@ -220,7 +230,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Scope.** Generalizes the YouTube-channel concept to any creator (podcast host, blog author, Twitter handle). Pure rename PR; no behavioral change.
 **Note.** Plays the same role for creators as E-1.4 played for documents.
 
-### E-1.10 🟡 Promote `video_id` PK to UUID `document_id`
+### E-1.10 🟢 Promote `video_id` PK to UUID `document_id`
 
 **Promoted 2026-04-26** ahead of E-1.5 storage wiring per [D-015](decisions.md#d-015--promote-e-110-uuid-pk-ahead-of-reddit--hn-orchestrator-wiring-2026-04-26). Reddit (S-1.5.1) and HN (S-1.5.2) connectors are on master and emit namespaced `Candidate.source_id` strings (`reddit:<id>`, `hn:<id>`); landing E-1.10 first means their storage tasks (T-1.5.1.4, T-1.5.2.5) become trivial inserts on the new schema rather than a transitional namespaced-string PK that would need a second migration pass.
 
@@ -247,15 +257,17 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 **Tasks**
 - [x] T-1.10.1 Alembic migration adding `document_id` + `source_id` columns; backfill from `video_id`; populate UUIDs for all rows. *(shipped 2026-04-28 — PR [#96](https://github.com/khoks/VideoResearchPro/pull/96); `source_id` was already in place from L1 PR-1, so this PR adds `document_id VARCHAR(36)` only, backfills with UUID4 per row, alters to NOT NULL, creates a unique index. Doubles as a **merge node** joining the two parallel migration heads `01c5b6dae736` (rename) and `b8c9d0e1f2a3` (multi-source columns) that had been silently parallel since L1 PR-1. Drive-by fix: `alembic/env.py` stale `Video` import → `Document`)*
-- [ ] T-1.10.2 Migration step 2 — drop legacy PK; add `(source_type, source_id)` unique constraint.
-- [ ] T-1.10.3 ORM updates (`Document.document_id` PK; `Document.source_id` column; relationships re-pointed).
-- [ ] T-1.10.4 Rename `job_videos` → `job_documents` (table + ORM class + 14 importers); FK → `documents.document_id`.
-- [ ] T-1.10.5 Retarget `transcript_cache` PK to `document_id` (table rename `→ text_cache` deferred to future PR unless trivial).
-- [ ] T-1.10.6 Update Chroma chunk metadata: chunks now key on `document_id` (UUID) not `video_id` (string); migration script re-tags existing chunks.
-- [ ] T-1.10.7 Update all 14 reading sites (`youtube_service`, `chroma_service`, agents, routers, exports) for the new PK shape.
-- [ ] T-1.10.8 Tests: round-trip migration (forward + rollback), 168-test suite passes, end-to-end smoke with an existing job.
+- [x] T-1.10.2 Drop legacy `video_id` PK + add `(source_type, source_id)` unique constraint *(landed in PR [#112](https://github.com/khoks/VideoResearchPro/pull/112) via explicit table-rebuild on documents — SQLite's anonymous PK constraint forced a manual CREATE NEW + INSERT FROM OLD + DROP + RENAME pattern rather than batch_alter_table)*
+- [x] T-1.10.3 ORM updates (`Document.document_id` PK; relationships re-pointed) *(PR [#112](https://github.com/khoks/VideoResearchPro/pull/112). Document gets eager UUID4 factory at `__init__` time so callers reading `doc.document_id` pre-flush see a populated value)*
+- [x] T-1.10.4 Rename `job_videos` → `job_documents` *(PR [#112](https://github.com/khoks/VideoResearchPro/pull/112). Table + ORM `__tablename__` updated; class name kept as JobVideo for back-compat with existing imports; before_insert event listener resolves document_id from video_id for legacy fixtures)*
+- [x] T-1.10.5 Retarget `transcript_cache` PK to `document_id` *(PR [#112](https://github.com/khoks/VideoResearchPro/pull/112). Same before_insert resolver pattern as JobVideo)*
+- [x] T-1.10.6 Chroma chunk metadata migration — *no-op since OQ-11 wiped Chroma; new chunks naturally key on document_id via the new ORM. Documented in the migration's docstring*
+- [x] T-1.10.7 Update reading sites for the new PK shape *(PR [#112](https://github.com/khoks/VideoResearchPro/pull/112). Surgical updates: `db.get(Document, video_id)` patterns swapped for `db.query(Document).filter(Document.video_id == video_id).first()` in routers/knowledge.py and tasks/job_tasks.py. The 50+ readers that just print/log/return `video.video_id` for the YouTube native ID still work via the back-compat column — full elimination is an E-2.6 follow-on)*
+- [x] T-1.10.8 Tests: round-trip migration + 415-test suite passes + e2e smoke *(PR [#112](https://github.com/khoks/VideoResearchPro/pull/112). `alembic upgrade head` + `alembic downgrade -1` cycle round-trips cleanly; full backend suite 415/415 green; FastAPI app imports cleanly with 42 routes)*
 
-**Unblocks.** T-1.5.1.4 (Reddit storage), T-1.5.2.5 (HN storage), and all subsequent E-1.5 storage tasks (Mastodon, Bluesky, Mode B). Net effect: with E-1.10 done, every social storage task collapses to "insert a row".
+**Status: 🟢 shipped 2026-05-02** — PR [#112](https://github.com/khoks/VideoResearchPro/pull/112). All 8 sub-tasks closed.
+
+**Unblocked downstream:** T-1.5.1.4 + T-1.5.2.5 (Reddit/HN storage — shipped 2026-05-02 PR [#113](https://github.com/khoks/VideoResearchPro/pull/113)). T-1.5.3.4 (classifier persistence — also PR #113). M-1.5 e2e tests (still pending orchestrator wiring).
 
 ---
 

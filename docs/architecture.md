@@ -286,6 +286,17 @@ Today's PRs respect both invariants even though only one tenant and one source t
                                          └─────────────┘
 ```
 
+### Multi-source dispatch (post-S-1.5.11, 2026-05-02)
+
+Topic jobs carry a `source_types_json` column — a JSON-encoded array of `source_type` discriminators. NULL → `["video"]` for back-compat. `execute_topic_job` reads the column and branches:
+
+- **`"video"`** → existing LangGraph search agent (richer ranking via `search_plan_queries` + `search_rank_and_curate` use cases).
+- **Everything else (`"reddit_post"`, `"hn_story"`, future `"mastodon"` / `"bluesky"`)** → `app/services/connector_dispatch.py::dispatch_search()`, which iterates each non-video source_type **sequentially** (per [D-026](decisions.md#d-026--sequential-fan-out-for-the-connector-dispatcher-2026-05-02)) through `connector_for(source_type).search(query, instructions, limit)`. For each Candidate, the connector's own `fetch_text(query=...)` is called (which inline-classifies per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28)); persistence is uniform across source types via `_upsert_candidate_and_link()`.
+
+Both paths converge into the same `awaiting_approval` flow. The combined candidate count drives the user-visible "Found N candidates" message; an empty result across all sources fails the job with a clear "No candidates for source_types=[...]" error rather than dropping the user onto an empty approval list.
+
+Per-source-type errors (connector raised, missing connector, NotImplementedError for PDF-style sources) are captured per source in `DispatchResult.errors_by_source_type` and logged; they don't fail the job — other source types' candidates still flow through.
+
 ### Approval pause mechanism
 
 Topic jobs pause at `awaiting_approval`. The pause is **passive, not blocking**:

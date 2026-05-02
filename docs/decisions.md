@@ -613,3 +613,38 @@ Four candidates: **Astro**, **Next.js**, **11ty**, **plain HTML+CSS**.
 - OQ-15 marked resolved.
 
 **Linked initiatives / PRs.** I-1 / E-1.5 / E-1.10 / S-1.5.3 / S-1.5.4 / S-1.5.5 / S-1.5.11 / T-1.5.1.4 / T-1.5.2.5.
+
+---
+
+## D-026 — Sequential fan-out for the connector dispatcher (2026-05-02)
+
+**Status:** accepted. Resolves [T-1.5.11.3](initiatives.md#s-1511--topic-job-routing-through-new-connectors).
+
+**Context.** T-1.5.11.3 ("Fan-out semantics for mixed-source jobs") was filed when [S-1.5.11](initiatives.md#s-1511--topic-job-routing-through-new-connectors) was scoped, with two candidate shapes for how `dispatch_search()` should iterate `source_types` when a topic job spans multiple connectors:
+
+- **(a) Round-robin** — one source-type at a time, smaller bursts. Bounds peak load on any individual provider; adds slight bookkeeping.
+- **(b) Parallel** — every source-type's `connector.search()` kicks off concurrently via `asyncio.gather` (or thread-pool). Total latency tracks the slowest source rather than the sum.
+
+Initial OQ-15 plan recommendation was (b) parallel.
+
+**Decision.** **Sequential** for v1: each `source_type`'s `connector.search()` runs in turn, with the next starting only after the previous returns or errors. This is what shipped in PR [#109](https://github.com/khoks/VideoResearchPro/pull/109)'s `dispatch_search()` implementation and PR [#116](https://github.com/khoks/VideoResearchPro/pull/116)'s `execute_topic_job` integration. Total latency = sum of per-source latencies.
+
+**Alternatives considered.**
+- *(b) Parallel via asyncio.gather.* Better latency at scale, but adds genuine complexity for v1: (i) async-context plumbing through `execute_topic_job` (currently a synchronous Celery task); (ii) per-connector exception isolation across simultaneous calls (we already have it sequentially via `try/except` per source — would need careful gather-with-return-exceptions); (iii) partial-result semantics (one connector finishing fast and another timing out — what does the user see?); (iv) rate-limit coordination across simultaneous outbound calls (RedditClient's 100 rpm budget shouldn't be split unevenly across parallel sources). At M-1.5 scale (3 source types × ~10 candidates each), expected latency saving is ~1-3 seconds; not worth the complexity.
+- *(a) Round-robin.* No meaningful advantage over sequential at v1 scale. Round-robin shines when individual sources can return many candidates and you want fairness; with `limit_per_type=10` per source, sequential is essentially indistinguishable in user-visible behavior.
+- *Hybrid (sequential per-job, parallel inside hot connectors).* Over-engineered for v1.
+
+**Consequences.**
+- Each per-source-type request runs in its own try-except so one connector's outage doesn't block the others (shipped in PR #109).
+- Connector-internal rate limits (RedditClient's 100 rpm, HN Algolia's free tier) operate independently per source — sequential dispatch never causes rate-limit collisions.
+- Total latency is bounded by `sum(per-source latencies)`. For Reddit (~1-2s search) + HN Algolia (~0.3-0.5s) + future Mastodon (~1s) + Bluesky (~1s), worst case is ~5s for a 4-source job. Acceptable for self-host; SaaS-tier may revisit when concurrent load matters.
+- Initiatives.md task `T-1.5.11.3` flips ✅ closed with this decision recorded inline.
+
+**Re-evaluation hooks.**
+- Switch to **parallel** if/when:
+  - More than 4 source types are routinely requested in a single topic job AND user-perceived latency exceeds ~5s for a normal search.
+  - SaaS tier hosts concurrent users with overlapping multi-source queries (ratelimit-aware parallel becomes important for fairness).
+  - We add a connector with materially slow search (e.g. paid Twitter API at ~3-5s/query) where its sequential cost dominates.
+- Switch to **round-robin** only if a connector lifts its rate-limit cap and `limit_per_type` grows past ~50, where fairness across sources starts to matter.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.11 / T-1.5.11.3. PRs [#109](https://github.com/khoks/VideoResearchPro/pull/109), [#116](https://github.com/khoks/VideoResearchPro/pull/116).

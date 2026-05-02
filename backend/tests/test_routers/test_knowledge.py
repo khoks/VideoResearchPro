@@ -97,7 +97,7 @@ def test_extract_knowledge_runs_agent_and_persists(client, seeded_video_with_tra
 
     # Persisted on the row
     db.expire_all()
-    refreshed = db.get(Document, seeded_video_with_transcript.video_id)
+    refreshed = db.get(Document, seeded_video_with_transcript.document_id)
     assert refreshed.knowledge_report_md.startswith("# Databases")
     stored = json.loads(refreshed.extracted_knowledge_json)
     assert stored["topics"] == ["databases"]

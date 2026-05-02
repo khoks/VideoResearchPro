@@ -201,6 +201,159 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
         ))
 
 
+def _upsert_candidate_and_link(
+    db,
+    job_id: str,
+    candidate,
+    *,
+    classification: dict | None = None,
+    extracted_text=None,
+) -> Document | None:
+    """Insert/refresh a global Document from a connector ``Candidate`` and
+    create the JobVideo (job_documents) link.
+
+    Closes T-1.5.1.4 (Reddit storage) + T-1.5.2.5 (HN storage) + the
+    persistence half of T-1.5.3.4 (classifier output → ``source_metadata``).
+
+    Generalizes ``_upsert_video_and_link`` (which is YouTube-shaped and
+    keyed on ``data["video_id"]``) to handle any ``source_type``. The
+    canonical identity for non-video sources is ``(source_type, source_id)``;
+    we resolve existing rows via the unique index on those two columns,
+    not via the back-compat ``video_id`` column.
+
+    Args:
+        candidate: ``app.sources.types.Candidate``. Provides
+            ``source_type`` (e.g. "reddit_post", "hn_story"),
+            ``source_id`` (the platform-native ID, possibly already
+            namespaced like "reddit:abc"), ``title``, ``source_url``,
+            optional ``creator_external_id`` / ``creator_name`` / etc.
+        classification: optional dict produced by
+            ``social_classify.classify().model_dump()``; persisted onto
+            ``Document.source_metadata_json["classification"]`` when
+            present (T-1.5.3.4).
+        extracted_text: optional ``ExtractedText`` from
+            ``connector.fetch_text(...)``. When provided we record
+            ``transcript_status='fetched'``, ``transcript_word_count``,
+            ``transcript_language``, and ``transcript_source`` so the
+            downstream chunk pipeline can be uniform across source types.
+
+    Returns:
+        The persisted ``Document`` (existing or newly added). ``None``
+        only if the candidate has no ``source_id`` (a defensive guard).
+    """
+    import json
+
+    source_type = candidate.source_type
+    source_id = candidate.source_id
+    if not source_id:
+        return None
+
+    # Resolve any existing Document by canonical (source_type, source_id) —
+    # check both the flushed table AND db.new (in-flight inserts in the
+    # same batch) so two upsert calls in one transaction collapse onto
+    # one row.
+    existing = (
+        db.query(Document)
+        .filter(
+            Document.source_type == source_type,
+            Document.source_id == source_id,
+        )
+        .first()
+    )
+    if existing is None:
+        existing = next(
+            (
+                obj
+                for obj in db.new
+                if isinstance(obj, Document)
+                and obj.source_type == source_type
+                and obj.source_id == source_id
+            ),
+            None,
+        )
+
+    # Build / merge the source_metadata JSON. Classifier output (D-023)
+    # lives under "classification"; future per-source extras can join
+    # under their own keys (e.g. "reddit": {...} or "hn": {...}).
+    metadata: dict = {}
+    if existing is not None and existing.source_metadata_json:
+        try:
+            metadata = json.loads(existing.source_metadata_json) or {}
+        except json.JSONDecodeError:
+            metadata = {}
+    if classification is not None:
+        metadata["classification"] = classification
+
+    if existing is not None:
+        # Refresh lightweight surface metadata; preserve classification +
+        # transcript state if they exist.
+        if candidate.title:
+            existing.title = candidate.title
+        if candidate.source_url:
+            existing.source_url = candidate.source_url
+            if not existing.url:
+                existing.url = candidate.source_url
+        if candidate.thumbnail_url and not existing.thumbnail_url:
+            existing.thumbnail_url = candidate.thumbnail_url
+        if metadata:
+            existing.source_metadata_json = json.dumps(metadata)
+        if extracted_text is not None:
+            existing.transcript_status = "fetched"
+            existing.transcript_word_count = extracted_text.word_count
+            existing.transcript_language = extracted_text.language
+            existing.transcript_source = extracted_text.text_source
+        document = existing
+    else:
+        # New row. video_id stays NULL for non-video sources; for
+        # source_type='video' we mirror source_id into video_id so the
+        # back-compat readers continue to find the row.
+        video_id_for_compat = source_id if source_type == "video" else None
+        document = Document(
+            video_id=video_id_for_compat,
+            source_type=source_type,
+            source_id=source_id,
+            source_url=candidate.source_url,
+            title=candidate.title or "Untitled",
+            url=candidate.source_url or "",
+            thumbnail_url=candidate.thumbnail_url,
+            description=candidate.description,
+            duration_seconds=candidate.duration_seconds,
+            published_at=candidate.published_at,
+            channel_id=candidate.creator_external_id,
+            source_metadata_json=json.dumps(metadata) if metadata else None,
+            transcript_status=(
+                "fetched" if extracted_text is not None else "pending"
+            ),
+            transcript_word_count=(
+                extracted_text.word_count if extracted_text is not None else None
+            ),
+            transcript_language=(
+                extracted_text.language if extracted_text is not None else None
+            ),
+            transcript_source=(
+                extracted_text.text_source if extracted_text is not None else None
+            ),
+        )
+        db.add(document)
+
+    # Create the JobVideo link with the canonical document_id.
+    existing_link = db.get(JobVideo, (job_id, document.document_id))
+    if existing_link is None:
+        db.add(
+            JobVideo(
+                job_id=job_id,
+                document_id=document.document_id,
+                # Mirror video_id into the back-compat column for video
+                # rows; NULL for everything else.
+                video_id=document.video_id,
+                approved=True,
+                selection_reason="topic_search",
+            )
+        )
+
+    return document
+
+
 def _build_video_metadata(video: Document, language: str | None) -> dict:
     """Build the metadata dict passed to ``chunk_transcript`` for a Document row."""
     return {

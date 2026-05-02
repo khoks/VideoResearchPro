@@ -2,12 +2,17 @@
 
 Pratidhvani stores every transcript chunk in a single shared ChromaDB
 collection — ``settings.CHROMA_GLOBAL_COLLECTION_NAME`` (default
-``videoresearchpro_global``, a grandfathered legacy identifier; the
-collection name is preserved for back-compat per D-001 / E-2.6 until
-the migration in T-2.6.1 ships). Videos are globally deduplicated: a
-given video's chunks are indexed exactly once and re-used across any
-job that references the video. The former per-job collection model has
-been retired.
+``pratidhvani_global`` as of T-2.6.1, 2026-04-28; the legacy default
+``videoresearchpro_global`` was renamed in alignment with the project
+brand and the post-OQ-11 dev-environment reset, which made the rename
+risk-free in dev. Self-hosters with accumulated embeddings under the
+legacy name should follow the migration runbook in T-2.6.6 — short
+version: copy the legacy collection's documents into a fresh
+``pratidhvani_global`` collection, or pin the legacy name via the env
+var ``CHROMA_GLOBAL_COLLECTION_NAME=videoresearchpro_global``).
+Documents are globally deduplicated: a given source's chunks are
+indexed exactly once and re-used across any job that references the
+source. The former per-job collection model has been retired.
 
 Query scoping is performed via ChromaDB metadata filtering on ``video_id``:
 

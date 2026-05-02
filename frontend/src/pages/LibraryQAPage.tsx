@@ -6,6 +6,7 @@ import {
   useLibraryQAHistory,
 } from '../hooks/useLibraryQA';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
+import { CitationLink } from '../components/citation';
 import {
   Badge,
   Button,
@@ -503,22 +504,7 @@ function LibraryQAExchangeCard({ qa }: { qa: LibraryQAExchange }) {
           </span>
           <div style={{ marginTop: space['2'], display: 'flex', flexDirection: 'column', gap: space['1'] }}>
             {qa.references.map((ref, i) => (
-              <a
-                key={i}
-                href={ref.youtube_link}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  fontFamily: fonts.ui,
-                  fontSize: fontSize.sm,
-                  color: c.accent,
-                  textDecoration: 'none',
-                }}
-              >
-                {ref.video_title}{' '}
-                <span style={{ color: c.textMuted }}>· {ref.channel_name} ·</span>{' '}
-                {ref.timestamp_display}
-              </a>
+              <CitationLink key={i} reference={ref} style={{ fontSize: fontSize.sm }} />
             ))}
           </div>
         </div>

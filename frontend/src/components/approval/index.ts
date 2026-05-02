@@ -15,9 +15,15 @@ export {
   ClassificationBadgeRow,
   type ClassificationBadgeRowProps,
 } from './ClassificationBadgeRow';
+export {
+  ApprovalCard,
+  FORMATTERS,
+  formatChipValue,
+  type ApprovalCardProps,
+} from './ApprovalCard';
+export { SOURCE_CONFIGS } from './sourceConfigs';
 export type {
   ApprovalCardConfig,
-  ApprovalCardProps,
   ApprovalDocument,
   Classification,
   FilterChip,

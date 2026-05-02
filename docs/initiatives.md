@@ -326,30 +326,30 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 **Why it exists.** Decisions, vision refinements, and new work items routinely surface in chat conversations and risk being lost in the transcript. Skills + Stop hook persist them automatically into the canonical docs and this initiatives file, so future-Claude (and future-me) can reconstruct project state without trawling chat history.
 **Decision links:** [D-011](decisions.md#d-011--two-persistence-skills--auto-stop-hook-for-session-to-docs-flow-2026-04-25)
 
-### E-4.1 🟡 `knowledge-curator` skill
+### E-4.1 🟢 `knowledge-curator` skill
 
 **Scope.** Skill at `.claude/skills/knowledge-curator/SKILL.md` that scans session, routes content into the canonical docs (`feature-roadmap.md`, `architecture.md`, `requirements.md`, `source-types.md`, `branding.md`, `vision.md`, `personal-brain.md`, `saas-roadmap.md`, `decisions.md`), commits on a branch, opens PR.
-**PR:** this PR (bootstrap)
+**Status verified 2026-04-28** — skill has been invoked dozens of times across the multi-session L1 rollout, has correctly opened curator PRs (e.g. PRs #94, #97, #98, #101), correctly no-ops on tactical sessions (PR-merge sessions, status-only sessions), and reliably routes ADRs / source-types / feature-roadmap edits into the right files.
 
-### E-4.2 🟡 `work-tracker` skill
+### E-4.2 🟢 `work-tracker` skill
 
 **Scope.** Skill at `.claude/skills/work-tracker/SKILL.md` that owns this file (`docs/initiatives.md`). Updates status / scope of existing items; creates new items for newly-discussed work; cross-links to decisions and PRs; commits on a branch, opens PR.
-**PR:** this PR (bootstrap)
+**Status verified 2026-04-28** — skill has filed S-1.5.11 (D-020), S-1.5.3 / S-1.5.4 framing/polymorphic updates (D-014/016/018), I-2 audit (PR #93), OQ-1 through OQ-11 lifecycle tracking, and the I-4 audit captured in this PR. Sibling-PR pattern with curator works reliably.
 
-### E-4.3 🟡 Stop-hook auto-invocation
+### E-4.3 🟢 Stop-hook auto-invocation
 
 **Scope.** `.claude/settings.json` Stop hook nudges Claude once per session (via `stop_hook_active` guard) to invoke both skills before ending. Skills are no-op-safe.
-**PR:** this PR (bootstrap)
+**Status verified 2026-04-28** — Stop hook fired 8+ times across the 2026-04-26 → 2026-04-28 sessions; recursion-guard works; both skills triggered or correctly no-op'd as appropriate. Per-session reliability has been 100%.
 
-### E-4.4 🟡 Decision log seed
+### E-4.4 🟢 Decision log seed
 
 **Scope.** Bootstrap [`decisions.md`](decisions.md) with the eleven decisions captured from project history (D-001 through D-011).
-**PR:** this PR (bootstrap)
+**Shipped** in the bootstrap PR. The log has since grown organically to D-022 through curator-driven adds — the seed serves its purpose.
 
-### E-4.5 🟡 Initiatives seed
+### E-4.5 🟢 Initiatives seed
 
 **Scope.** Bootstrap this file with all known initiatives + epics + stories at the time of the bootstrap PR.
-**PR:** this PR (bootstrap)
+**Shipped** in the bootstrap PR. File has since grown to 6 initiatives (I-1 through I-6) and 11 OQs through work-tracker maintenance.
 
 ### E-4.6 ⚪ Coordinated PR composition (skills share a PR per session)
 
@@ -442,6 +442,18 @@ These are real questions raised in conversation that don't yet have a Story home
   - T-1.5.4.1 unblocked. PR-review-driven drift correction documented as a revisit hook on (a); promotion to flat ` View<T>` documented as a revisit hook on (b) if a future source type wants Document-level chips.
 - **OQ-9.** ✅ **Resolved 2026-04-26 by [D-019](decisions.md#d-019--codeowners--branch-protection-policy-for-autonomous-merge-sessions-2026-04-26).** User picked option (c) bypass list, but `bypass_pull_request_allowances` is not exposed on personal-account free-plan public repos (verified via PATCH that silently dropped the field). Pragmatic landing: `.github/CODEOWNERS` declares `@khoks` as owner of every path, and `required_approving_review_count` dropped to `0`. Net: `gh pr merge --squash --delete-branch` (no `--admin`) works on master immediately. Force-push still blocked. Two revisit hooks documented (second collaborator joins → Rulesets `bypass_actors`; org migration → `bypass_pull_request_allowances.users`).
 - **OQ-10.** ✅ **Resolved 2026-04-26 by [D-020](decisions.md#d-020--file-orchestrator-dispatch-as-standalone-story-s-1511-2026-04-26): file as standalone S-1.5.11.** Dispatch layer ships once with the first two consumers (Reddit + HN) and is reused by every future connector. Folding into per-source storage tasks would duplicate the dispatch pattern N times. See [S-1.5.11](#s-1511--topic-job-routing-through-new-connectors) for the task breakdown.
+- **OQ-12.** Where does `social_classify_stance` get invoked at fetch time? Two natural placements surface during the holistic-backlog review on 2026-04-28, ahead of T-1.5.3.3 (wire classifier into ingest path):
+  - **(a) Inline inside each connector's `fetch_text()` / `fetch_metadata()`.** Each connector classifies before returning Candidates. Cost smeared across fetch latency; parallelizable across connectors; the connector knows the text best (raw vs flattened, OP-only vs with-comments). Per-source flexibility (e.g. Mastodon might classify only OP, Reddit might classify OP+top-comment).
+  - **(b) Orchestrator pipeline step.** Orchestrator calls connector to fetch, then calls classifier, then persists. Cleaner separation of concerns; uniform classification-lifecycle across all source types; serial — adds a hop to per-Candidate latency.
+  - Recommendation: **(a)** — classification cost is per-Candidate (not per-orchestrator-pass) and the connector is the natural owner of source text. Per-source flexibility is real: Reddit OP+top-comment classification differs from Mastodon-OP-only.
+  - To be confirmed before T-1.5.3.3 starts. (Tied to [S-1.5.3](#s-153--social_classify_stance-llm-use-case))
+- **OQ-13.** Should T-2.6.1 (Chroma collection rename `videoresearchpro_global` → `pratidhvani_global`) ship as a tiny PR now? Originally [#97](https://github.com/khoks/VideoResearchPro/pull/97)-era assessment was "high-risk; needs migration script to preserve embeddings." After the OQ-11 dev-environment wipe (2026-04-28), there's nothing to migrate in dev — the rename collapses to a single env-var default change in `app/config.py` and a one-line update to the env template. SaaS / production self-host installs that have accumulated embeddings would still need a backfill, but that concern moves to T-2.6.6 (migration runbook). Recommendation: **ship now as a 5-minute PR**; T-2.6.6 documents the production-data path separately. (Tied to [E-2.6](#e-26--code-identifier-rename-pass), [T-2.6.1](#e-26--code-identifier-rename-pass), [T-2.6.6](#e-26--code-identifier-rename-pass))
+- **OQ-14.** Re-evaluate E-1.6 (Article connector) deferral? Currently 🔴 deferred per [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25). Two reasons to revisit:
+  - The trafilatura + Playwright fallback pipeline primitives that E-1.6 builds are already on the dependency path of S-1.5.8 (Mode B paste for FB/IG/LI/X-without-paid). They have to be built anyway; gating them behind "after social MVP" delays both.
+  - It could run as a 7th parallel track alongside the existing five. Independent of L1 social work files-wise.
+  - Counter: building the article connector before the social MVP means more in-flight surface area; risks distraction. The 🔴 deferral was deliberate per D-005.
+  - Three options: **(a)** keep 🔴 deferred (status quo, ship after social MVP); **(b)** flip to 🔵 with a "build the trafilatura primitives in service of S-1.5.8; full article connector later" scope split; **(c)** flip to 🔵 with full scope (article connector + Mode B share the primitives). Recommend **(b)** — get the pipeline primitives into the codebase ahead of time without committing to a full article-connector UX. (Tied to [E-1.6](#e-16--article-connector), [S-1.5.8](#s-158--manual-paste-mode-mode-b-for-fbiglix-without-paid))
+- **OQ-15.** File MVP definition-of-done as an explicit milestone? The Reddit + HN end-to-end critical path traces six in-flight stories (E-1.10, S-1.5.3, S-1.5.4, S-1.5.5, S-1.5.11, plus T-1.5.1.4 / T-1.5.2.5 unblocked by E-1.10). A single named milestone gives the work-tracker a convergence target. Proposed DoD: *"User submits a topic job with `source_types=['reddit_post','hn_story']`, sees a curated approval list with stance / sentiment / framing badges + filter chips (incl. `topic_relevance >= 0.50` default per D-021), approves, and asks Q&A across approved threads with comment-anchored citations."* Worth filing? Or keep critical-path as informal? Recommend **filing** as Milestone M-1.5 under E-1.5 once approved. (Tied to [E-1.5](#e-15--social-media-connectors), all six in-flight stories)
 - **OQ-11.** ✅ **Resolved 2026-04-28 — option (b) cleanest-reset chosen.** User authorized full data wipe ("I don't care about existing data and jobs"). Executed in this session:
   - Moved `data/videoresearchpro.db` (3.4 MB, 912 legacy `videos` rows + the empty post-rename `documents` table + all jobs / channels / Q&A history / transcript cache) to `data/.pre-cleanup-2026-04-28/`.
   - Moved `data/chroma/` (22 MB embedding store) to `data/.pre-cleanup-2026-04-28/` so dangling chunk metadata referencing wiped video_ids doesn't surface in Q&A retrieval.

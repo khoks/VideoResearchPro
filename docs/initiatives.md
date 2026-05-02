@@ -50,8 +50,23 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 ### E-1.5 🟡 Social-media connectors
 
-**Scope.** Add Reddit + HN search connectors first; Mastodon + Bluesky next; manual-paste mode for FB/IG/LI/X-without-paid-API; paid Twitter as a BYOK opt-in; defer Discord and TikTok (D-010). One `Document` per thread (D-006); fetch-time stance/sentiment classification (D-007); no search-page scraping (D-008).
-**Linked decisions.** [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25), [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25), [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25), [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25), [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25)
+**Scope.** Add Reddit + HN search connectors first; Mastodon + Bluesky next; manual-paste mode for FB/IG/LI/X-without-paid-API; paid Twitter as a BYOK opt-in; defer Discord and TikTok (D-010). One `Document` per thread (D-006); fetch-time stance/sentiment classification (D-007) inline per connector (D-023); no search-page scraping (D-008).
+**Linked decisions.** [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25), [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25), [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25), [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25), [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25), [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28), [D-025](decisions.md#d-025--file-mvp-definition-of-done-as-milestone-m-15-2026-04-28)
+
+#### M-1.5 🟡 Milestone — Reddit + HN end-to-end ingest
+
+**Filed 2026-04-28** per [D-025](decisions.md#d-025--file-mvp-definition-of-done-as-milestone-m-15-2026-04-28). The convergence target for E-1.5 work — six in-flight stories close into a single user-visible experience.
+
+**Definition of done.** A user submits a topic job with `source_types=['reddit_post','hn_story']`, sees a curated approval list with **stance / sentiment / framing badges + filter chips** (including the `topic_relevance >= 0.50` default per [D-021](decisions.md#d-021--topic-relevance-threshold--050-2026-04-26) and the "Show low-relevance candidates" toggle), approves a subset, and asks Q&A across the approved threads receiving **comment-anchored citations** (per the `permalink#comment-<id>` format defined in [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25)).
+
+**Component checks** (7 total — flip to ✅ as each closes):
+- [ ] **C1.** E-1.10 cutover landed (UUID `document_id` PK + `source_id text` columns)
+- [ ] **C2.** S-1.5.11 dispatcher routes topic-job source-type lists through the connector registry
+- [ ] **C3.** T-1.5.1.4 + T-1.5.2.5 storage tasks land Reddit / HN Candidates as `documents` rows
+- [ ] **C4.** S-1.5.3 inline classifier (per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28)) populates stance / sentiment / framing / topic_relevance
+- [ ] **C5.** S-1.5.4 polymorphic `<ApprovalCard>` renders Reddit + HN config entries with badges + filter chips
+- [ ] **C6.** S-1.5.5 citation rendering produces Reddit / HN deep-links
+- [ ] **C7.** End-to-end pipeline test passes for `["reddit_post"]`, `["hn_story"]`, and mixed `["video","reddit_post","hn_story"]`
 
 #### S-1.5.1 🟢 Reddit search connector
 
@@ -86,7 +101,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Tasks**
 - [x] T-1.5.3.1 Define schema (Pydantic) — `stance` ∈ {for, against, neutral, unclear}; `sentiment` ∈ {positive, negative, mixed, neutral}; `framing` ∈ {technical, political, emotional, experiential}; `topic_relevance` ∈ [0, 1] *(shipped 2026-04-28 — PR [#94](https://github.com/khoks/VideoResearchPro/pull/94); module `backend/app/services/social_classify.py` exports `StanceClassification` + `TOPIC_RELEVANCE_THRESHOLD = 0.50`)*
 - [x] T-1.5.3.2 Add to registry with token-budget recommendation *(shipped 2026-04-28 — PR [#94](https://github.com/khoks/VideoResearchPro/pull/94); `social_classify_stance` registered with default `UseCaseConfig("openai", "gpt-4.1-mini", "off")`, `default_route="fast"`, full token-budget metadata)*
-- [ ] T-1.5.3.3 Wire into the social-connector ingest path so each candidate is classified at fetch time
+- [ ] T-1.5.3.3 Inline call inside each connector's `fetch_text()` per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28). `RedditConnector` classifies after flattening OP+top-comments; `HNConnector` classifies after the Algolia item endpoint returns story+top-comment text. Each connector calls `social_classify(text, query)` from `app/services/social_classify.py` and attaches the result to the returned `Candidate.classification` (or via `source_metadata`).
 - [ ] T-1.5.3.4 Persist results into `Document.source_metadata` and `source_metadata.comments[]` (incl. `framing`)
 - [ ] T-1.5.3.5 Tests with golden short-text examples (sarcasm, sincere praise, in-favor, against)
 - [ ] T-1.5.3.6 Framing prompt exemplars — **two short canonical examples per framing value** (technical, political, emotional, experiential) baked into the prompt; topical diversity (tech / policy / generic-life) so classifier learns *register*, not topic. Locked exemplars in [`source-types.md` § Framing prompt exemplars](source-types.md#framing-prompt-exemplars-for-t-1536). Golden tests cover at least one example from each set (paired with T-1.5.3.5).
@@ -134,7 +149,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Acceptance.** User pastes 1–N post URLs from any supported platform; system fetches each via the article-connector machinery (trafilatura → Playwright fallback) and ingests as the right `source_type`. Honest UI: search disabled for these platforms, paste-only.
 **Tasks**
 - [ ] T-1.5.8.1 URL → `source_type` resolver (FB / IG / LI / X / generic)
-- [ ] T-1.5.8.2 Reuse trafilatura + Playwright pipeline (article-connector primitives) — see also E-1.6
+- [ ] T-1.5.8.2 Reuse `app/services/article_extraction/` (E-1.6 T-1.6.1 primitives) — depends on T-1.6.1 landing first per [D-024](decisions.md#d-024--flip-e-16-to--with-primitives-only-scope-split-2026-04-28)
 - [ ] T-1.5.8.3 Frontend "Paste URLs" surface in job submission
 - [ ] T-1.5.8.4 Per-platform `source_metadata` extraction (author handle, date) where the page exposes it
 
@@ -175,10 +190,20 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Dependencies.** Independent of E-1.10 for build (dispatch layer can be developed and unit-tested without storage); e2e tests (T-1.5.11.5/.6/.7) need T-1.5.1.4 / T-1.5.2.5 (which need E-1.10) to land. Parallelizable with E-1.10 in calendar terms.
 
-### E-1.6 🔴 Article connector
+### E-1.6 🔵 Article connector
 
-**Scope.** Generic article ingestion: trafilatura primary, Playwright fallback for SPAs, hybrid (try trafilatura → fall back if word_count<200). Two modes (Discovery via search-engine API or RSS, Direct via URL list / file upload). Deferred per [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25) until E-1.5 (social media) ships.
-**Note.** Pipeline primitives built here are reused by S-1.5.8 (manual-paste mode), so even though the *connector* is deferred, the *fetch primitives* may land earlier as part of E-1.5.
+**Status updated 2026-04-28** per [D-024](decisions.md#d-024--flip-e-16-to--with-primitives-only-scope-split-2026-04-28). Flipped 🔴 → 🔵 with **scope split**: pipeline primitives ship now in service of S-1.5.8; full article-connector UX stays deferred until after M-1.5.
+
+**Scope (primitives, near-term).** Connector-agnostic text-extraction module under `app/services/article_extraction/`: trafilatura primary, Playwright fallback for SPAs, hybrid strategy (try trafilatura → fall back if `word_count<200` or extraction fails). Single API: `extract_text(url) -> ExtractionResult` returning `{text, title, author, published_at, language, word_count, source}`. Reused by S-1.5.8 Mode B paste.
+
+**Scope (full UX, post-M-1.5).** Discovery flow (search-engine API like Brave / Kagi / Tavily, or RSS feed ingestion); Direct flow (URL list, file upload); approval card variant for articles with title + author + excerpt + source-domain.
+
+**Tasks**
+- [ ] T-1.6.1 🔵 Build `app/services/article_extraction/` module — trafilatura wrapper + Playwright fallback + hybrid strategy + `ExtractionResult` dataclass + tests against fixture HTML.
+- [ ] T-1.6.2 ⚪ Article search-engine integration (Brave / Kagi / Tavily) — *deferred until post-M-1.5*.
+- [ ] T-1.6.3 ⚪ RSS feed ingestion path — *deferred until post-M-1.5*.
+- [ ] T-1.6.4 ⚪ Article approval card variant + Q&A citation rendering — *deferred until post-M-1.5*.
+- [ ] T-1.6.5 ⚪ End-to-end article-job pipeline test — *deferred until post-M-1.5*.
 
 ### E-1.7 ⚪ Podcast connector
 
@@ -442,18 +467,10 @@ These are real questions raised in conversation that don't yet have a Story home
   - T-1.5.4.1 unblocked. PR-review-driven drift correction documented as a revisit hook on (a); promotion to flat ` View<T>` documented as a revisit hook on (b) if a future source type wants Document-level chips.
 - **OQ-9.** ✅ **Resolved 2026-04-26 by [D-019](decisions.md#d-019--codeowners--branch-protection-policy-for-autonomous-merge-sessions-2026-04-26).** User picked option (c) bypass list, but `bypass_pull_request_allowances` is not exposed on personal-account free-plan public repos (verified via PATCH that silently dropped the field). Pragmatic landing: `.github/CODEOWNERS` declares `@khoks` as owner of every path, and `required_approving_review_count` dropped to `0`. Net: `gh pr merge --squash --delete-branch` (no `--admin`) works on master immediately. Force-push still blocked. Two revisit hooks documented (second collaborator joins → Rulesets `bypass_actors`; org migration → `bypass_pull_request_allowances.users`).
 - **OQ-10.** ✅ **Resolved 2026-04-26 by [D-020](decisions.md#d-020--file-orchestrator-dispatch-as-standalone-story-s-1511-2026-04-26): file as standalone S-1.5.11.** Dispatch layer ships once with the first two consumers (Reddit + HN) and is reused by every future connector. Folding into per-source storage tasks would duplicate the dispatch pattern N times. See [S-1.5.11](#s-1511--topic-job-routing-through-new-connectors) for the task breakdown.
-- **OQ-12.** Where does `social_classify_stance` get invoked at fetch time? Two natural placements surface during the holistic-backlog review on 2026-04-28, ahead of T-1.5.3.3 (wire classifier into ingest path):
-  - **(a) Inline inside each connector's `fetch_text()` / `fetch_metadata()`.** Each connector classifies before returning Candidates. Cost smeared across fetch latency; parallelizable across connectors; the connector knows the text best (raw vs flattened, OP-only vs with-comments). Per-source flexibility (e.g. Mastodon might classify only OP, Reddit might classify OP+top-comment).
-  - **(b) Orchestrator pipeline step.** Orchestrator calls connector to fetch, then calls classifier, then persists. Cleaner separation of concerns; uniform classification-lifecycle across all source types; serial — adds a hop to per-Candidate latency.
-  - Recommendation: **(a)** — classification cost is per-Candidate (not per-orchestrator-pass) and the connector is the natural owner of source text. Per-source flexibility is real: Reddit OP+top-comment classification differs from Mastodon-OP-only.
-  - To be confirmed before T-1.5.3.3 starts. (Tied to [S-1.5.3](#s-153--social_classify_stance-llm-use-case))
-- **OQ-13.** Should T-2.6.1 (Chroma collection rename `videoresearchpro_global` → `pratidhvani_global`) ship as a tiny PR now? Originally [#97](https://github.com/khoks/VideoResearchPro/pull/97)-era assessment was "high-risk; needs migration script to preserve embeddings." After the OQ-11 dev-environment wipe (2026-04-28), there's nothing to migrate in dev — the rename collapses to a single env-var default change in `app/config.py` and a one-line update to the env template. SaaS / production self-host installs that have accumulated embeddings would still need a backfill, but that concern moves to T-2.6.6 (migration runbook). Recommendation: **ship now as a 5-minute PR**; T-2.6.6 documents the production-data path separately. (Tied to [E-2.6](#e-26--code-identifier-rename-pass), [T-2.6.1](#e-26--code-identifier-rename-pass), [T-2.6.6](#e-26--code-identifier-rename-pass))
-- **OQ-14.** Re-evaluate E-1.6 (Article connector) deferral? Currently 🔴 deferred per [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25). Two reasons to revisit:
-  - The trafilatura + Playwright fallback pipeline primitives that E-1.6 builds are already on the dependency path of S-1.5.8 (Mode B paste for FB/IG/LI/X-without-paid). They have to be built anyway; gating them behind "after social MVP" delays both.
-  - It could run as a 7th parallel track alongside the existing five. Independent of L1 social work files-wise.
-  - Counter: building the article connector before the social MVP means more in-flight surface area; risks distraction. The 🔴 deferral was deliberate per D-005.
-  - Three options: **(a)** keep 🔴 deferred (status quo, ship after social MVP); **(b)** flip to 🔵 with a "build the trafilatura primitives in service of S-1.5.8; full article connector later" scope split; **(c)** flip to 🔵 with full scope (article connector + Mode B share the primitives). Recommend **(b)** — get the pipeline primitives into the codebase ahead of time without committing to a full article-connector UX. (Tied to [E-1.6](#e-16--article-connector), [S-1.5.8](#s-158--manual-paste-mode-mode-b-for-fbiglix-without-paid))
-- **OQ-15.** File MVP definition-of-done as an explicit milestone? The Reddit + HN end-to-end critical path traces six in-flight stories (E-1.10, S-1.5.3, S-1.5.4, S-1.5.5, S-1.5.11, plus T-1.5.1.4 / T-1.5.2.5 unblocked by E-1.10). A single named milestone gives the work-tracker a convergence target. Proposed DoD: *"User submits a topic job with `source_types=['reddit_post','hn_story']`, sees a curated approval list with stance / sentiment / framing badges + filter chips (incl. `topic_relevance >= 0.50` default per D-021), approves, and asks Q&A across approved threads with comment-anchored citations."* Worth filing? Or keep critical-path as informal? Recommend **filing** as Milestone M-1.5 under E-1.5 once approved. (Tied to [E-1.5](#e-15--social-media-connectors), all six in-flight stories)
+- **OQ-12.** ✅ **Resolved 2026-04-28 by [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28): option (a) inline.** Each `BaseConnector` subclass calls `social_classify` from `app/services/social_classify.py` on its fetched text before returning Candidates. T-1.5.3.3 acceptance updated to "Inline call inside `RedditConnector.fetch_text()` and `HNConnector.fetch_text()` (and future connectors)."
+- **OQ-13.** ✅ **Resolved 2026-04-28 — ship now as a tiny PR.** User approved. Post-OQ-11 dev wipe collapsed the rename from a high-risk migration to a one-line env default change. T-2.6.1 ships in this work cycle; T-2.6.6 documents the production-data migration path separately for self-hosters with accumulated embeddings.
+- **OQ-14.** ✅ **Resolved 2026-04-28 by [D-024](decisions.md#d-024--flip-e-16-to--with-primitives-only-scope-split-2026-04-28): option (b) primitives-only split.** E-1.6 flips 🔴 → 🔵. trafilatura + Playwright primitives ship now as `app/services/article_extraction/` in service of S-1.5.8 Mode B paste. Full article-connector UX (RSS / search / approval card variant) stays deferred until after M-1.5. D-005 amended.
+- **OQ-15.** ✅ **Resolved 2026-04-28 by [D-025](decisions.md#d-025--file-mvp-definition-of-done-as-milestone-m-15-2026-04-28).** Milestone M-1.5 — Reddit + HN end-to-end ingest filed under E-1.5 with 7 component checks: (1) E-1.10 cutover landed; (2) S-1.5.11 dispatcher; (3) T-1.5.1.4 + T-1.5.2.5 storage; (4) S-1.5.3 inline classifier per D-023; (5) S-1.5.4 polymorphic ApprovalCard with badges + filters; (6) S-1.5.5 citation rendering; (7) e2e pipeline tests for Reddit-only / HN-only / mixed source types.
 - **OQ-11.** ✅ **Resolved 2026-04-28 — option (b) cleanest-reset chosen.** User authorized full data wipe ("I don't care about existing data and jobs"). Executed in this session:
   - Moved `data/videoresearchpro.db` (3.4 MB, 912 legacy `videos` rows + the empty post-rename `documents` table + all jobs / channels / Q&A history / transcript cache) to `data/.pre-cleanup-2026-04-28/`.
   - Moved `data/chroma/` (22 MB embedding store) to `data/.pre-cleanup-2026-04-28/` so dangling chunk metadata referencing wiped video_ids doesn't surface in Q&A retrieval.

@@ -246,6 +246,30 @@ The `framing` axis captures the **register** in which the author is engaging wit
 
 Results land in `source_metadata.stance` / `.sentiment` / `.framing` / `.topic_relevance` on the `Document`, and per-comment under `source_metadata.comments[].sentiment` (and similarly `.framing`). The approval UI surfaces classification as a **hint** (filter chips, badge color), never as a hard gate that hides candidates — sarcasm and dog-whistle handling is too noisy to autopilot.
 
+#### Connector contract — where classification lives in the typed dataclasses
+
+Per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28) the classifier is called **inline inside each connector's `fetch_text()`** — not as a separate orchestrator pipeline step. The result attaches to the typed dataclass on the **`extra`** field of `ExtractedText`:
+
+```python
+# app/sources/types.py
+@dataclass
+class ExtractedText:
+    segments: list[dict[str, Any]]
+    language: str
+    text_source: str
+    word_count: int
+    extra: dict[str, Any] = field(default_factory=dict)
+    # By convention (D-023):
+    #   extra["classification"] = StanceClassification(...).model_dump()
+    # i.e. {"stance": ..., "sentiment": ..., "framing": ..., "topic_relevance": ...}
+```
+
+The connector calls `app.services.social_classify.classify(text, query)` after segments are computed, where `text` is the connector's chosen classifier input (Reddit / HN today: OP body + top-3 comments by score) and `query` is the topic search string the orchestrator passes through `fetch_text(candidate, query=...)`. The classifier itself fail-softs (empty query / LLM error / malformed JSON → low-confidence fallback), so the connector never needs to guard the call.
+
+When the orchestrator persists the `Document` (T-1.5.3.4, post-E-1.10), it lifts `ExtractedText.extra["classification"]` into `Document.source_metadata.{stance, sentiment, framing, topic_relevance}` — that's the schema-of-record for downstream filter chips, retrieval re-ranking (L4), and badge rendering. Per-comment classification lives under `source_metadata.comments[]` and is populated by the same connector when it iterates comments individually; today's Reddit/HN connectors classify only at the document level, with per-comment classification deferred to T-1.5.3.4 follow-up.
+
+**Future connectors** (Mastodon, Bluesky, Mode B paste, podcasts, articles): follow the same shape. Build classifier input from your source-specific text (e.g. Mastodon: OP only; podcast: episode summary or first 8K transcript chars), call `classify(text, query)`, attach to `ExtractedText.extra["classification"]`. The orchestrator does the rest uniformly.
+
 #### Framing prompt exemplars (for T-1.5.3.6)
 
 The `social_classify_stance` classifier prompt bakes in **two canonical short examples per framing value** so the LLM has concrete pattern targets without single-example anchoring. Exemplars span different topical domains so the classifier learns the *register*, not the topic:

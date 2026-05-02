@@ -183,6 +183,7 @@ class YouTubeConnector(BaseConnector):
         candidate: Candidate,
         *,
         job_id: str = "",
+        query: str = "",  # noqa: ARG002 — YouTube doesn't classify; signature parity per D-023
     ) -> ExtractedText | None:
         result = youtube_service.fetch_transcript(
             candidate.source_id,

@@ -82,6 +82,7 @@ class BaseConnector(abc.ABC):
         candidate: Candidate,
         *,
         job_id: str = "",
+        query: str = "",
     ) -> ExtractedText | None:
         """Fetch the full text payload for `candidate`.
 
@@ -91,6 +92,14 @@ class BaseConnector(abc.ABC):
 
         `job_id` is forwarded for log correlation only; connectors should
         not branch on it.
+
+        `query` is the topic search query the orchestrator dispatched
+        with — social-media connectors invoke `social_classify` inline
+        per [D-023](../../../docs/decisions.md#d-023) using this query
+        as the topic-relevance anchor. Connectors that don't classify
+        (video / podcast / PDF) ignore the parameter. Empty string is
+        a fail-soft signal: classifier short-circuits to a low-confidence
+        fallback rather than calling the LLM.
         """
 
     def fetch_creator(self, creator_external_id: str) -> CreatorMetadata | None:

@@ -286,6 +286,48 @@ def test_fetch_text_returns_extracted_text_on_success(rd, fake_client):
     # OP segment carries the post's metadata in `extra`.
     assert out.segments[0]["extra"]["kind"] == "post"
     assert out.segments[1]["extra"]["kind"] == "comment"
+    # ExtractedText.extra["classification"] is populated even with empty
+    # query — fail-soft fallback (D-023). No LLM call when query is "".
+    assert "classification" in out.extra
+    assert out.extra["classification"]["stance"] == "unclear"
+    assert out.extra["classification"]["topic_relevance"] == 0.0
+
+
+def test_fetch_text_calls_classifier_when_query_is_present(rd, fake_client):
+    """Per D-023: connector calls social_classify inline when the
+    orchestrator passes a query. The classification result lands in
+    ExtractedText.extra["classification"]."""
+    post = _post(post_id="abc", title="Tariffs and trade", selftext="My take")
+    comments = _comments_listing(_comment(body="agreed", score=10))
+    fake_client.get_post_with_comments.return_value = [_listing(post), comments]
+
+    fake_classification = {
+        "stance": "for",
+        "sentiment": "positive",
+        "framing": "experiential",
+        "topic_relevance": 0.85,
+    }
+    fake_classify_result = Mock()
+    fake_classify_result.model_dump.return_value = fake_classification
+
+    with (
+        patch.object(rd_connector_mod.reddit_client, "get_client", return_value=fake_client),
+        patch(
+            "app.sources.reddit.connector.classify",
+            return_value=fake_classify_result,
+        ) as mock_classify,
+    ):
+        out = rd.fetch_text(
+            _candidate("reddit:abc"), job_id="job-7", query="tariffs"
+        )
+
+    assert isinstance(out, ExtractedText)
+    # Classifier was called with the OP+top-comment text and the query.
+    mock_classify.assert_called_once()
+    call_args = mock_classify.call_args
+    assert call_args.kwargs.get("query", call_args.args[1] if len(call_args.args) > 1 else None) == "tariffs"
+    # The classification round-trips into extra.
+    assert out.extra["classification"] == fake_classification
 
 
 def test_fetch_text_returns_none_on_client_exception(rd, fake_client):

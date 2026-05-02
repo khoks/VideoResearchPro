@@ -23,6 +23,10 @@ class Job(Base):
     topic: Mapped[str | None] = mapped_column(String(500), nullable=True)
     search_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
     num_videos: Mapped[int] = mapped_column(Integer, default=10)
+    # JSON-encoded array of source_type discriminators the topic search
+    # should dispatch across — e.g. '["video"]', '["video","reddit_post","hn_story"]'.
+    # NULL → ["video"] for back-compat. See ``app.services.connector_dispatch``.
+    source_types_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     min_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     channel_type_filters: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array

@@ -354,6 +354,133 @@ def _upsert_candidate_and_link(
     return document
 
 
+def _resolve_source_types(job: Job) -> list[str]:
+    """Decode ``Job.source_types_json`` into a Python list, defaulting
+    to ``["video"]`` for back-compat with jobs created before the
+    column existed (pre-2026-05-02)."""
+    if not job.source_types_json:
+        return ["video"]
+    try:
+        parsed = json.loads(job.source_types_json)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Job %s has malformed source_types_json %r; defaulting to ['video']",
+            job.id,
+            job.source_types_json,
+        )
+        return ["video"]
+    if not isinstance(parsed, list) or not parsed:
+        return ["video"]
+    return [str(st) for st in parsed if str(st)]
+
+
+def _dispatch_and_store_non_video_sources(
+    db,
+    job: Job,
+    *,
+    source_types: list[str],
+    limit_per_type: int = 10,
+) -> int:
+    """For every non-video source_type on the job, run the dispatcher,
+    fetch text inline (the connector classifies during fetch_text per
+    [D-023](../../../docs/decisions.md#d-023)), and persist via
+    ``_upsert_candidate_and_link``.
+
+    Returns the total count of candidates stored across all non-video
+    source types — the orchestrator combines this with the YouTube
+    search-agent count for the user-visible "found N candidates"
+    message.
+
+    "Video" source_type is *not* handled here — the existing search
+    agent (LangGraph) owns that path and produces a richer ranked
+    output than `connector.search()` alone. This helper handles only
+    the source_types where ``connector.search()`` is the canonical
+    discovery surface (Reddit, HN, future Mastodon / Bluesky).
+    """
+    from app.services.connector_dispatch import dispatch_search
+
+    non_video = [st for st in source_types if st != "video"]
+    if not non_video:
+        return 0
+
+    logger.info(
+        "[job:%s] Dispatching search for non-video source_types: %s",
+        job.id,
+        non_video,
+    )
+
+    result = dispatch_search(
+        non_video,
+        query=job.topic or "",
+        instructions=job.search_instructions or "",
+        limit_per_type=limit_per_type,
+        job_id=job.id,
+    )
+
+    if result.has_errors:
+        for st, err in result.errors_by_source_type.items():
+            logger.warning(
+                "[job:%s] dispatch_search error for source_type=%s: %s",
+                job.id,
+                st,
+                err,
+            )
+
+    # For each candidate, run fetch_text (which classifies inline per
+    # D-023) and persist. Failures on individual candidates are logged
+    # and skipped — one bad post must not crash the job.
+    from app.sources.registry import connector_for
+
+    stored = 0
+    for st, candidates in result.candidates_by_source_type.items():
+        connector = connector_for(st)
+        for cand in candidates:
+            try:
+                extracted = connector.fetch_text(
+                    cand,
+                    job_id=job.id,
+                    query=job.topic or "",
+                )
+            except Exception:
+                logger.exception(
+                    "[job:%s] fetch_text failed for %s/%s",
+                    job.id,
+                    st,
+                    cand.source_id,
+                )
+                extracted = None
+
+            classification = None
+            if extracted is not None and "classification" in extracted.extra:
+                classification = extracted.extra["classification"]
+
+            try:
+                _upsert_candidate_and_link(
+                    db,
+                    job.id,
+                    cand,
+                    classification=classification,
+                    extracted_text=extracted,
+                )
+                stored += 1
+            except Exception:
+                logger.exception(
+                    "[job:%s] persist failed for %s/%s",
+                    job.id,
+                    st,
+                    cand.source_id,
+                )
+
+    db.commit()
+    logger.info(
+        "[job:%s] Non-video dispatch persisted %d candidates across %d source types",
+        job.id,
+        stored,
+        len(non_video),
+    )
+    return stored
+
+
 def _build_video_metadata(video: Document, language: str | None) -> dict:
     """Build the metadata dict passed to ``chunk_transcript`` for a Document row."""
     return {
@@ -429,48 +556,100 @@ def execute_topic_job(self, job_id: str) -> None:
             logger.info(f"[job:{job_id}] Job cancelled before search, exiting")
             return
 
-        # Run Search Agent
-        from app.agents.search_agent import run_search_agent
-        logger.info(f"[job:{job_id}] Starting Search Agent for topic: '{job.topic}'")
-        curated_videos, queries_used = run_search_agent(
-            topic=job.topic,
-            num_videos=job.num_videos,
-            search_instructions=job.search_instructions or "",
-            min_duration=job.min_duration_minutes,
-            max_duration=job.max_duration_minutes,
-            channel_type_filters=json.loads(job.channel_type_filters) if job.channel_type_filters else [],
-            preferred_channels=json.loads(job.preferred_channels) if job.preferred_channels else [],
+        # Decode source_types — controls which connectors fan out for
+        # discovery. Per S-1.5.11, video uses the LangGraph search agent
+        # (richer ranking); non-video uses the connector_dispatch path.
+        source_types = _resolve_source_types(job)
+        wants_video = "video" in source_types
+
+        curated_videos: list[dict] = []
+        queries_used: list[str] = []
+
+        # YouTube path (only when video is requested).
+        if wants_video:
+            from app.agents.search_agent import run_search_agent
+
+            logger.info(
+                f"[job:{job_id}] Starting Search Agent for topic: '{job.topic}'"
+            )
+            curated_videos, queries_used = run_search_agent(
+                topic=job.topic,
+                num_videos=job.num_videos,
+                search_instructions=job.search_instructions or "",
+                min_duration=job.min_duration_minutes,
+                max_duration=job.max_duration_minutes,
+                channel_type_filters=(
+                    json.loads(job.channel_type_filters)
+                    if job.channel_type_filters
+                    else []
+                ),
+                preferred_channels=(
+                    json.loads(job.preferred_channels)
+                    if job.preferred_channels
+                    else []
+                ),
+            )
+            logger.info(
+                f"[job:{job_id}] Search Agent complete: found "
+                f"{len(curated_videos)} candidate videos"
+            )
+
+            if queries_used:
+                job.search_queries_used = json.dumps(queries_used)
+                db.commit()
+
+        progress_service.publish_progress(
+            job_id,
+            "searching",
+            15,
+            f"Found {len(curated_videos)} videos. Fetching details...",
         )
-        logger.info(f"[job:{job_id}] Search Agent complete: found {len(curated_videos)} candidate videos")
 
-        if queries_used:
-            job.search_queries_used = json.dumps(queries_used)
-            db.commit()
-
-        progress_service.publish_progress(job_id, "searching", 15,
-                                          f"Found {len(curated_videos)} videos. Fetching details...")
-
-        # Save videos to the global library and link to this job.
+        # Save YouTube videos to the global library and link to this job.
         for v in curated_videos:
             _upsert_video_and_link(db, job_id, v)
         db.commit()
-        logger.info(f"[job:{job_id}] {len(curated_videos)} videos saved to DB, awaiting user approval")
+        logger.info(
+            f"[job:{job_id}] {len(curated_videos)} videos saved to DB"
+        )
 
-        # Fail clearly if the search returned nothing — pushing the user to the
-        # approval screen with an empty list is a dead end.
-        if not curated_videos:
+        # Non-video path: dispatch the configured social/etc connectors,
+        # fetch text inline (which classifies per D-023), persist via
+        # the source-type-agnostic helper.
+        non_video_count = _dispatch_and_store_non_video_sources(
+            db,
+            job,
+            source_types=source_types,
+            limit_per_type=job.num_videos or 10,
+        )
+
+        total_candidates = len(curated_videos) + non_video_count
+        logger.info(
+            f"[job:{job_id}] Total candidates across all source_types: "
+            f"{total_candidates} (video={len(curated_videos)}, "
+            f"non_video={non_video_count})"
+        )
+
+        # Fail clearly if every source returned nothing — pushing the user to
+        # the approval screen with an empty list is a dead end.
+        if total_candidates == 0:
             msg = (
-                f"No videos found for topic '{job.topic}'. Try a broader topic, "
+                f"No candidates found for topic '{job.topic}' across "
+                f"source_types={source_types}. Try a broader topic, "
                 "different search instructions, or relax the duration filters."
             )
             logger.warning(f"[job:{job_id}] {msg}")
             _handle_failure(db, job_id, msg)
             return
 
-        _update_job(db, job, status="awaiting_approval", progress_pct=20,
-                    progress_message=f"Found {len(curated_videos)} videos. Please review and approve.")
-        progress_service.publish_status_change(job_id, "searching", "awaiting_approval",
-                                               f"Found {len(curated_videos)} videos. Please review and approve.")
+        _update_job(
+            db, job, status="awaiting_approval", progress_pct=20,
+            progress_message=f"Found {total_candidates} candidates. Please review and approve.",
+        )
+        progress_service.publish_status_change(
+            job_id, "searching", "awaiting_approval",
+            f"Found {total_candidates} candidates. Please review and approve.",
+        )
 
     except Exception as e:
         logger.exception(f"[job:{job_id}] Topic job failed during search: {e}")

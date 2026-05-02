@@ -460,7 +460,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
         newly_processed_count = 0
 
         global_collection_name = getattr(
-            settings, "CHROMA_GLOBAL_COLLECTION_NAME", "videoresearchpro_global"
+            settings, "CHROMA_GLOBAL_COLLECTION_NAME", "pratidhvani_global"
         )
 
         for i, video in enumerate(approved_videos):
@@ -760,7 +760,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
     newly_processed_count = 0
 
     global_collection_name = getattr(
-        settings, "CHROMA_GLOBAL_COLLECTION_NAME", "videoresearchpro_global"
+        settings, "CHROMA_GLOBAL_COLLECTION_NAME", "pratidhvani_global"
     )
 
     for i, video in enumerate(approved_videos):

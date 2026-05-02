@@ -116,7 +116,7 @@ backend/
 │   │   ├── document.py          # Document (global, deduped — renamed from video.py in L1 PR 4)
 │   │   ├── job_video.py         # job ↔ document join with approval flag
 │   │   ├── channel.py           # Channels (subscribed, last_synced_at)
-│   │   ├── transcript_cache.py  # cached raw transcript per video_id
+│   │   ├── transcript_cache.py  # cached raw transcript, PK = document_id (E-1.10)
 │   │   ├── qa_exchange.py       # job-scoped Q&A
 │   │   ├── library_qa_exchange.py  # library-wide Q&A
 │   │   ├── qa_history_exchange.py  # meta-chat across all Q&A
@@ -219,18 +219,18 @@ User ──┬──< Job ──< JobVideo >── Document ──> Channel
        └──< QAHistoryExchange
 
 Document ──< KnowledgeArtifact (columns on Document, not a separate table)
-Document ──< TranscriptCache (1:1 by video_id)
+Document ──< TranscriptCache (1:1 by document_id; FK ON DELETE CASCADE)
 
 ApiQuotaLog (append-only ledger of YouTube + LLM calls)
 ```
 
-> **Naming note (L1 PR 4).** The table is `documents` and the ORM class is `Document`. The PK column is still named `video_id` and the join table is still `job_videos` — those renames (and the `video_id` → UUID `id` PK promotion) come in a follow-up PR. The ER diagram above uses `Document` to reflect the post-PR-4 ORM names; the legacy class `Video` no longer exists.
+> **Schema state (post-E-1.10, 2026-05-02).** The primary key on `documents` is now `document_id` (UUID4, str(36)). The legacy `video_id` column survives as a NULLABLE back-compat reading column populated for `source_type='video'` rows (NULL for Reddit / HN / other source types). The join table is renamed to `job_documents` (Python class still `JobVideo` for import back-compat) with composite PK `(job_id, document_id)`. `transcript_cache` PK is also now `document_id` with FK to `documents.document_id`. See [D-017](decisions.md#d-017--e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26) for the cutover rationale and [PR #112](https://github.com/khoks/VideoResearchPro/pull/112) for the migration.
 
 ### Key invariants
 
-- **Documents are global.** One row per source — today only YouTube videos (`source_type='video'`, PK column `video_id`), tomorrow podcasts / articles / threads / PDFs. The library is a single, deduplicated, shared corpus. `JobVideo` is the only thing that ties a job to its documents. Deleting a job drops `JobVideo` rows; documents and chunks survive.
+- **Documents are global.** One row per source. Canonical identity is `(source_type, source_id)` (unique-indexed); the PK is the synthetic `document_id` UUID. Today's source types: `video` (YouTube), `reddit_post`, `hn_story`. The library is a single, deduplicated, shared corpus. `JobVideo` rows in `job_documents` tie a job to its documents. Deleting a job drops `JobVideo` rows; documents and chunks survive.
 - **Channels are first-class.** Subscribing a channel pre-pulls every video on its uploads playlist into the global library via subscription jobs.
-- **Transcripts are cached once.** Re-fetch is suppressed by `transcript_cache.video_id`.
+- **Transcripts are cached once.** Re-fetch is suppressed by `transcript_cache.document_id` lookup. Legacy `transcript_cache.video_id` column survives as nullable back-compat for video rows.
 - **Embeddings happen exactly once per document.** `Document.embedded_in_chroma` flips to `true` after chunks land in `videoresearchpro_global`. Subsequent jobs referencing that document skip embedding.
 - **Q&A exchanges have three flavors** that union into one Chroma collection:
   - `qa_exchanges` (job-scoped)
@@ -246,8 +246,9 @@ ApiQuotaLog (append-only ledger of YouTube + LLM calls)
 Per [saas-roadmap.md](saas-roadmap.md) and [source-types.md](source-types.md):
 
 - Every user-scoped table has — or will have, in the imminent migration — a `tenant_id` column. The single self-host instance has a single tenant.
-- The `documents` table already carries `source_type`, `source_id`, `source_url`, `source_metadata_json`, `language`, `word_count`, `user_provenance_json` from L1 PR 1. The next L1 PR promotes the PK column from `video_id` to a UUID `id` and grows a `creator_id` foreign key.
-- The `channels` table grows into `creators` with `source_type`, `source_weight`. (`source_type` and `creator_external_id` and `source_weight` are already present from L1 PR 1.)
+- The `documents` table carries `source_type`, `source_id`, `source_url`, `source_metadata_json`, `language`, `word_count`, `user_provenance_json` (from L1 PR 1) plus `document_id` UUID PK (from E-1.10, PR #112). The legacy `video_id` column persists as nullable back-compat. The future `creator_id` foreign key for cross-source-type creators is the next planned column (E-1.9).
+- The `channels` table grows into `creators` with `source_type`, `source_weight` (E-1.9). `source_type`, `creator_external_id`, and `source_weight` are already present from L1 PR 1.
+- The classifier output (D-007 / D-014) lands at `documents.source_metadata_json["classification"]` per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28); inserted via the source-type-agnostic `_upsert_candidate_and_link()` helper (PR [#113](https://github.com/khoks/VideoResearchPro/pull/113)).
 
 Today's PRs respect both invariants even though only one tenant and one source type exist.
 
@@ -519,7 +520,7 @@ Four streaming JSONL endpoints (`routers/exports.py`):
 
 These sections describe the trajectory, not the current code:
 
-- **Multi-source ingest** — the `videos` → `documents` table rename landed in L1 PR 4; the `SourceConnector` interface contract (PR 2/3) routes every YouTube call site through `connector_for("video")`. The next L1 milestone is a non-video connector (article or PDF) plus the PK promotion from `video_id` to UUID `id`. Full trajectory in [source-types.md](source-types.md). L1 in the [feature-roadmap](feature-roadmap.md).
+- **Multi-source ingest** — the `videos` → `documents` table rename landed in L1 PR 4; the `SourceConnector` interface contract (PR 2/3) routes every YouTube call site through `connector_for("video")`. The Reddit (S-1.5.1) and HN (S-1.5.2) standalone connectors followed; **E-1.10 UUID PK promotion shipped 2026-05-02** ([PR #112](https://github.com/khoks/VideoResearchPro/pull/112)) collapsing storage tasks to trivial inserts. Reddit + HN end-to-end ingest converges on **Milestone M-1.5** (3 of 7 component checks closed; orchestrator wiring + frontend ApprovalCard primitive + citation rendering + e2e tests are the remaining work). Full trajectory in [source-types.md](source-types.md). L1 in the [feature-roadmap](feature-roadmap.md).
 - **Personal Brain** — activity stream connectors, voice capture, "speak as me" agent are detailed in [personal-brain.md](personal-brain.md). Multi-quarter trajectory.
 - **SaaS** — tenancy, billing, abuse prevention, hosting are detailed in [saas-roadmap.md](saas-roadmap.md). Today's PRs already respect the forward-compat invariants.
 - **Author Studio** — derivative artifact generation (books, sites, decks, newsletters, reels) is L2 in the [feature-roadmap](feature-roadmap.md). Each output type plugs into the same library.

@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -13,13 +14,15 @@ class Document(Base):
     The table hosts every ingested source — videos today, podcasts /
     articles / threads / PDFs in upcoming PRs (see
     `docs/source-types.md`). The L1 multi-source columns (`source_type`,
-    `source_id`, `source_url`, …) coexist with the legacy YouTube columns
-    inherited from when this table was called `videos`.
+    `source_id`, `source_url`, …) coexist with the legacy YouTube
+    columns inherited from when this table was called `videos`.
 
-    The primary-key column is still named `video_id` for back-compat
-    with `job_videos.video_id` and `transcript_cache.video_id`; that
-    rename is deferred to a future PR. Treat it as the YouTube-flavoured
-    alias for `source_id` whenever the row is a video.
+    The primary key is now ``document_id`` (a UUID4 string) per E-1.10
+    cutover (D-017). The legacy ``video_id`` column is retained as a
+    NULLABLE back-compat reading column — for ``source_type='video'``
+    rows it mirrors the YouTube native ID; for non-video rows it is
+    NULL. New code should reference ``document_id`` for joins and
+    ``source_id`` for the platform-native identifier.
     """
 
     __tablename__ = "documents"
@@ -33,7 +36,18 @@ class Document(Base):
         ),
     )
 
-    video_id: Mapped[str] = mapped_column(String(20), primary_key=True)
+    # Canonical PK as of E-1.10 cutover. Generated automatically when
+    # not provided so `Document(...)` callers don't have to know about
+    # UUID4 minting; tests + ingest paths still work unchanged.
+    document_id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    # Legacy back-compat column. Carries the YouTube native ID for
+    # ``source_type='video'`` rows; NULL for newer source types
+    # (Reddit, HN, etc.) which use ``source_id`` exclusively.
+    video_id: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, index=True
+    )
     channel_id: Mapped[str | None] = mapped_column(
         String(50), ForeignKey("channels.channel_id", ondelete="SET NULL"), nullable=True
     )
@@ -100,6 +114,13 @@ class Document(Base):
             kwargs["source_id"] = kwargs["video_id"]
         if "source_url" not in kwargs and "url" in kwargs:
             kwargs["source_url"] = kwargs["url"]
+        # E-1.10: mint the document_id UUID at construct time (not flush
+        # time) so callers that read `document.document_id` immediately
+        # after construction (e.g. to thread it into a JobVideo link
+        # before commit) see a populated value. The column-level default
+        # would only fire at flush, which is too late for those callers.
+        if "document_id" not in kwargs:
+            kwargs["document_id"] = str(uuid.uuid4())
         super().__init__(**kwargs)
 
     @property

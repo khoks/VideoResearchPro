@@ -113,7 +113,10 @@ def extract_knowledge(
     Returns 404 if the video doesn't exist. Returns 422 if no transcript is
     cached for the video (nothing to extract from).
     """
-    video = db.get(Document, video_id)
+    # E-1.10: Document PK is now `document_id` (UUID); the API path
+    # parameter is the YouTube `video_id` for back-compat, so resolve
+    # via the back-compat column rather than `db.get(Document, ...)`.
+    video = db.query(Document).filter(Document.video_id == video_id).first()
     if video is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -170,7 +173,10 @@ def get_knowledge(
     db: Session = Depends(get_db),
 ) -> KnowledgeExtractResponse:
     """Return the persisted knowledge artifact for this video (404 if unset)."""
-    video = db.get(Document, video_id)
+    # E-1.10: Document PK is now `document_id` (UUID); the API path
+    # parameter is the YouTube `video_id` for back-compat, so resolve
+    # via the back-compat column rather than `db.get(Document, ...)`.
+    video = db.query(Document).filter(Document.video_id == video_id).first()
     if video is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

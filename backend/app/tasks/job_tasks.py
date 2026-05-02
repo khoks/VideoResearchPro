@@ -114,8 +114,13 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
 
     Existing Document rows are preserved with their transcript/embedding state;
     only lightweight surface metadata (title, thumbnail, url) is refreshed.
-    Uses Session.get() so repeated lookups within one batch hit the identity
-    map instead of the database.
+
+    E-1.10 note: Document PK is now ``document_id`` (UUID). Lookups by
+    ``video_id`` go through the back-compat indexed column rather than
+    ``Session.get()``. The JobVideo link's ``document_id`` is resolved
+    explicitly here (rather than relying on the before_insert event)
+    so we can also probe the in-flight session for unflushed pending
+    inserts.
     """
     video_id = data.get("video_id") or ""
     if not video_id:
@@ -134,15 +139,12 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
     if channel_id and db.get(Channel, channel_id) is None and not _channel_pending(db, channel_id):
         db.add(Channel(channel_id=channel_id, name=channel_name or channel_id))
 
-    # Same dedup concern for Document: defensive, since duplicates here
-    # would also wedge the commit.
-    video = db.get(Document, video_id)
+    # Document lookup via back-compat video_id column (PK is now document_id).
+    video = db.query(Document).filter(Document.video_id == video_id).first()
     if video is None:
-        # Not in the DB. Only stage a new Document if another call in this same
-        # batch hasn't already staged one — otherwise we'd produce duplicate
-        # primary keys at commit time.
+        # Not in the DB and not in db.new either — stage a new Document.
         if not _video_pending(db, video_id):
-            db.add(Document(
+            video = Document(
                 video_id=video_id,
                 channel_id=channel_id,
                 title=data.get("title", "Unknown"),
@@ -151,8 +153,20 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
                 published_at=_parse_published_at(data.get("published_at")),
                 thumbnail_url=data.get("thumbnail_url"),
                 description=data.get("description"),
-            ))
-        # If already pending, leave it as-is — the first caller's payload wins.
+            )
+            db.add(video)
+        else:
+            # Already pending in this batch — find it in db.new for the
+            # JobVideo link. _video_pending only checks; we need the
+            # actual instance to grab document_id.
+            video = next(
+                (
+                    obj
+                    for obj in db.new
+                    if isinstance(obj, Document) and obj.video_id == video_id
+                ),
+                None,
+            )
     else:
         # Existing row: refresh lightweight surface metadata, preserve the rest.
         new_title = data.get("title")
@@ -167,9 +181,20 @@ def _upsert_video_and_link(db, job_id: str, data: dict) -> None:
         if channel_id and not video.channel_id:
             video.channel_id = channel_id
 
-    if db.get(JobVideo, (job_id, video_id)) is None and not _jobvideo_pending(db, job_id, video_id):
+    if video is None:
+        # Defensive — should not reach here, but if document staging
+        # failed, skip the link rather than crash.
+        return
+
+    document_id = video.document_id
+
+    # JobVideo lookup needs the new (job_id, document_id) PK; check both
+    # the flushed table and the in-flight session.
+    existing_link = db.get(JobVideo, (job_id, document_id))
+    if existing_link is None and not _jobvideo_pending(db, job_id, video_id):
         db.add(JobVideo(
             job_id=job_id,
+            document_id=document_id,
             video_id=video_id,
             approved=True,
             selection_reason=data.get("selection_reason"),

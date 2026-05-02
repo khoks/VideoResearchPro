@@ -62,7 +62,7 @@ class Job(Base):
     # `Document` model.
     videos: Mapped[list["Document"]] = relationship(  # noqa: F821
         "Document",
-        secondary="job_videos",
+        secondary="job_documents",
         viewonly=True,
         lazy="select",
     )

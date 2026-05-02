@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from typing import Iterator
 
 from app.config import settings
+from app.services.social_classify import classify
 from app.sources import registry
 from app.sources.base import BaseConnector
 from app.sources.hn import client as hn_client
@@ -216,6 +217,7 @@ class HNConnector(BaseConnector):
         candidate: Candidate,
         *,
         job_id: str = "",
+        query: str = "",
     ) -> ExtractedText | None:
         story_id = _strip_prefix(candidate.source_id)
         client = hn_client.get_client()
@@ -240,12 +242,41 @@ class HNConnector(BaseConnector):
             return None
 
         word_count = sum(len(seg.get("text", "").split()) for seg in segments)
+
+        # Inline classification per D-023. Same shape as Reddit: OP
+        # + top-3-by-score comments fed to the classifier. Fail-soft
+        # inside the classifier itself.
+        classifier_text = _build_classifier_input(segments)
+        classification = classify(classifier_text, query)
+
         return ExtractedText(
             segments=segments,
             language="en",  # HN is English-dominant; assume EN.
             text_source="hn",
             word_count=word_count,
+            extra={"classification": classification.model_dump()},
         )
+
+
+def _build_classifier_input(segments: list[dict]) -> str:
+    """Assemble the text the classifier sees for an HN thread.
+
+    Same approach as Reddit: OP (story title + body) + top-3 comments
+    by score. Per D-023, the connector decides what text to classify
+    because it knows the segment shape best.
+    """
+    if not segments:
+        return ""
+    op_text = segments[0].get("text", "") or ""
+    comments = segments[1:]
+    comments_sorted = sorted(
+        comments,
+        key=lambda s: s.get("extra", {}).get("score", 0) or 0,
+        reverse=True,
+    )
+    top_comments = comments_sorted[:3]
+    parts = [op_text] + [c.get("text", "") or "" for c in top_comments]
+    return "\n\n".join(p for p in parts if p)
 
 
 # Module-level instance + eager registration. Importing this module

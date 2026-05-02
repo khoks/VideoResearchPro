@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from typing import Iterator
 
 from app.config import settings
+from app.services.social_classify import classify
 from app.sources import registry
 from app.sources.base import BaseConnector
 from app.sources.reddit import client as reddit_client
@@ -200,6 +201,7 @@ class RedditConnector(BaseConnector):
         candidate: Candidate,
         *,
         job_id: str = "",
+        query: str = "",
     ) -> ExtractedText | None:
         post_id = _strip_prefix(candidate.source_id)
         client = reddit_client.get_client()
@@ -227,12 +229,46 @@ class RedditConnector(BaseConnector):
             return None
 
         word_count = sum(len(seg.get("text", "").split()) for seg in segments)
+
+        # Inline classification per D-023. Build the classifier input
+        # from the OP segment plus a short summary of top-comment text.
+        # The classifier itself fail-softs on empty query / LLM error,
+        # so we don't need to guard here.
+        classifier_text = _build_classifier_input(segments)
+        classification = classify(classifier_text, query)
+
         return ExtractedText(
             segments=segments,
             language="en",  # Reddit doesn't expose language; assume EN.
             text_source="reddit",
             word_count=word_count,
+            extra={"classification": classification.model_dump()},
         )
+
+
+def _build_classifier_input(segments: list[dict]) -> str:
+    """Assemble the text the classifier sees for a Reddit thread.
+
+    Concatenate OP body + the top 3 comments (by score) so the
+    classifier sees both the post register and the conversation tone.
+    Per the D-023 rationale, the connector is the natural owner of
+    this decision because the connector knows the segment shape.
+    """
+    if not segments:
+        return ""
+    op_text = segments[0].get("text", "") or ""
+    # Reddit segments include extra={"score": int, ...}; sort comments
+    # by score (descending) and take top 3. Defensive: if no scores,
+    # take first 3 comments after OP.
+    comments = segments[1:]
+    comments_sorted = sorted(
+        comments,
+        key=lambda s: s.get("extra", {}).get("score", 0) or 0,
+        reverse=True,
+    )
+    top_comments = comments_sorted[:3]
+    parts = [op_text] + [c.get("text", "") or "" for c in top_comments]
+    return "\n\n".join(p for p in parts if p)
 
 
 # Module-level instance + eager registration. Importing this module

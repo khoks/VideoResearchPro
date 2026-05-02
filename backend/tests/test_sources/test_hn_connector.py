@@ -303,6 +303,48 @@ def test_fetch_text_returns_extracted_text_on_success(hn, fake_client):
     # HTML must be stripped from the rendered text.
     assert "<p>" not in out.segments[0]["text"]
     assert "<p>" not in out.segments[1]["text"]
+    # Empty query → fail-soft fallback classification populated (D-023).
+    assert "classification" in out.extra
+    assert out.extra["classification"]["stance"] == "unclear"
+    assert out.extra["classification"]["topic_relevance"] == 0.0
+
+
+def test_fetch_text_calls_classifier_when_query_is_present(hn, fake_client):
+    """Per D-023: HN connector calls social_classify inline when the
+    orchestrator passes a query. Classification result lands in
+    ExtractedText.extra["classification"]."""
+    item = _item(
+        item_id=12345,
+        title="Caching strategies",
+        text="<p>The math doesn't work.</p>",
+        children=[_comment(text="<p>agree</p>", points=10, cid=1)],
+    )
+    fake_client.get_item.return_value = item
+
+    fake_classification = {
+        "stance": "against",
+        "sentiment": "negative",
+        "framing": "technical",
+        "topic_relevance": 0.95,
+    }
+    fake_classify_result = Mock()
+    fake_classify_result.model_dump.return_value = fake_classification
+
+    with (
+        patch.object(hn_connector_mod.hn_client, "get_client", return_value=fake_client),
+        patch(
+            "app.sources.hn.connector.classify",
+            return_value=fake_classify_result,
+        ) as mock_classify,
+    ):
+        out = hn.fetch_text(_candidate("hn:12345"), job_id="job-7", query="caching")
+
+    assert isinstance(out, ExtractedText)
+    mock_classify.assert_called_once()
+    call_args = mock_classify.call_args
+    # query is the second positional arg
+    assert call_args.args[1] == "caching"
+    assert out.extra["classification"] == fake_classification
 
 
 def test_fetch_text_returns_none_on_client_exception(hn, fake_client):

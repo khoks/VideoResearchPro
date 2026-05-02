@@ -548,6 +548,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                         source_url=video.source_url or video.url,
                     ),
                     job_id=job_id,
+                    query=job.topic or "",
                 )
 
                 if extracted:
@@ -834,6 +835,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
                     source_url=video.source_url or video.url,
                 ),
                 job_id=job_id,
+                query=job.topic or "",
             )
 
             if extracted:

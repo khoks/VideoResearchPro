@@ -6,6 +6,7 @@ import { useJobProgress } from '../hooks/useJobProgress';
 import { useQAHistory, useAskQuestion, useClarifyQuestion } from '../hooks/useQA';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { ProgressBar } from '../components/common/ProgressBar';
+import { CitationLink } from '../components/citation';
 import {
   Badge,
   Button,
@@ -1055,20 +1056,7 @@ function QAExchangeCard({ qa }: { qa: QAExchange }) {
           </span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: space['1'] }}>
             {qa.references.map((ref, i) => (
-              <a
-                key={i}
-                href={ref.youtube_link}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  color: c.accent,
-                  textDecoration: 'none',
-                  fontFamily: fonts.ui,
-                  fontSize: fontSize.xs,
-                }}
-              >
-                {ref.video_title} · {ref.channel_name} · {ref.timestamp_display}
-              </a>
+              <CitationLink key={i} reference={ref} />
             ))}
           </div>
         </div>

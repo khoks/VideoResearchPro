@@ -109,7 +109,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [x] T-1.5.2.4 Tests
 - [x] T-1.5.2.5 Store new `source_type='hn_story'` rows — *shipped 2026-05-02 PR [#113](https://github.com/khoks/VideoResearchPro/pull/113). Same `_upsert_candidate_and_link()` path as Reddit; HN candidates flow through identically since the function is source-type-agnostic.*
 
-#### S-1.5.3 🟡 `social_classify_stance` LLM use case
+#### S-1.5.3 🟢 `social_classify_stance` LLM use case
 
 **PR:** TBD
 **Acceptance.** New named entry in `app/services/llm_routing.py::USE_CASE_REGISTRY` with default `provider=openai, model=gpt-4.1-mini, reasoning=off`. Returns structured `{stance, sentiment, framing, topic_relevance}` for a candidate document — schema extended with the `framing` axis per [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26). Same use case classifies each comment. Module exports `TOPIC_RELEVANCE_THRESHOLD = 0.50` per [D-021](decisions.md#d-021--topic-relevance-threshold--050-2026-04-26); the prompt instructs the LLM to use calibrated scoring (1.0 unambiguous / 0.5 adjacent / 0.0 unrelated) with borderline 0.4–0.6 exemplars baked in alongside framing exemplars.
@@ -121,7 +121,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [ ] T-1.5.3.5 Tests with golden short-text examples (sarcasm, sincere praise, in-favor, against)
 - [ ] T-1.5.3.6 Framing prompt exemplars — **two short canonical examples per framing value** (technical, political, emotional, experiential) baked into the prompt; topical diversity (tech / policy / generic-life) so classifier learns *register*, not topic. Locked exemplars in [`source-types.md` § Framing prompt exemplars](source-types.md#framing-prompt-exemplars-for-t-1536). Golden tests cover at least one example from each set (paired with T-1.5.3.5).
 
-#### S-1.5.4 🟡 Single polymorphic `<ApprovalCard>` (per [D-016](decisions.md#d-016--single-polymorphic-approval-card-driven-by-source_metadata-2026-04-26))
+#### S-1.5.4 🟢 Single polymorphic `<ApprovalCard>` (per [D-016](decisions.md#d-016--single-polymorphic-approval-card-driven-by-source_metadata-2026-04-26))
 
 **PR:** TBD
 **Acceptance.** Approval list rendered through a **single `<ApprovalCard>` component** dispatched on `source_type` + `source_metadata`, not per-source-type card variants. Composition primitives: `<CardHeader>` (avatar / display name / platform glyph), `<CardBody>` (title or excerpt), `<CardMetaRow>` (variable `(icon, label, value)` chips: views / score / likes / RTs / points / comment count / duration / word count / published date), `<CardBadgeRow>` (stance / sentiment / framing badges per [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26)), `<CardActions>` (checkbox + "View on platform"). Each source-type registers a config entry (~30 lines) declaring which chips to show, the platform glyph, and the header field mapping. New source type = new config entry, not a new component file. Filter chips operate on `source_metadata.<field>` regardless of `source_type`.
@@ -186,7 +186,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [ ] T-1.5.10.3 Reply fetch (top 50)
 - [ ] T-1.5.10.4 Quota exhaustion fallback to Mode B
 
-#### S-1.5.11 🔵 Topic-job routing through new connectors
+#### S-1.5.11 🟢 Topic-job routing through new connectors
 
 **PR:** TBD
 **Filed 2026-04-26** per [D-020](decisions.md#d-020--file-orchestrator-dispatch-as-standalone-story-s-1511-2026-04-26) (resolves [OQ-10](#open-questions-parking-lot)). The Reddit (S-1.5.1) and HN (S-1.5.2) connectors emit `Candidate` objects standalone, but `app/tasks/job_tasks.py` does not route topic jobs through them yet. T-1.5.1.4 / T-1.5.2.5 (storage wiring, blocked on E-1.10) implicitly assume an orchestrator step that this Story owns.

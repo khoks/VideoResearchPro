@@ -197,6 +197,9 @@ def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
       - mastodon_post:         permalink (Mastodon status URL — points
                                at the reply when comment_id present) +
                                thread_title + author + instance
+      - bluesky_post:          permalink (bsky.app web URL — points
+                               at the reply when comment_url present) +
+                               thread_title + author
     """
     meta = chunk.get("metadata", {})
     source_type = (meta.get("source_type") or "video").strip() or "video"
@@ -298,6 +301,36 @@ def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
             "video_url": permalink,
             "video_title": title,
             "channel_name": author or (instance or "Mastodon"),
+            "timestamp_seconds": 0.0,
+            "timestamp_display": "",
+            "youtube_link": permalink,
+        }
+
+    if source_type == "bluesky_post":
+        permalink = (
+            meta.get("permalink")
+            or meta.get("source_url")
+            or meta.get("video_url")
+            or ""
+        )
+        author = meta.get("author") or ""
+        comment_id = meta.get("comment_id")
+        # Same reply-anchor pattern as Mastodon: each reply is a
+        # standalone post with its own bsky.app web URL. If the
+        # chunking pipeline indexed `comment_url`, jump to it.
+        comment_url = meta.get("comment_url")
+        if comment_id and comment_url:
+            permalink = comment_url
+        key = f"{source_type}:{source_id}_{comment_id or ''}"
+        return key, {
+            "source_type": "bluesky_post",
+            "permalink": permalink,
+            "thread_title": title,
+            "author": author,
+            # Legacy YouTube-shaped fallback fields.
+            "video_url": permalink,
+            "video_title": title,
+            "channel_name": author or "Bluesky",
             "timestamp_seconds": 0.0,
             "timestamp_display": "",
             "youtube_link": permalink,

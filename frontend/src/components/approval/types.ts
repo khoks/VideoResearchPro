@@ -97,6 +97,14 @@ export type SourceMetadata =
       favourites: number;
       replyCount: number;
       permalink: string;
+    }
+  | {
+      source_type: 'bluesky_post';
+      author: string;
+      likes: number;
+      replyCount: number;
+      repostCount: number;
+      permalink: string;
     };
 
 export type SourceType = SourceMetadata['source_type'];

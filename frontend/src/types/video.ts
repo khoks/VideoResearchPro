@@ -106,6 +106,19 @@ export function videoToApprovalProps(
       };
       break;
     }
+    case 'bluesky_post':
+      metadata = {
+        source_type: 'bluesky_post',
+        // Bluesky author is the bare handle (e.g. `alice.bsky.social`).
+        // Strip a leading `@` if present so chip formatters that prepend
+        // `@` don't double it.
+        author: String(m.author ?? m.handle ?? '').replace(/^@/, ''),
+        likes: Number(m.likes ?? m.likeCount ?? m.like_count ?? 0),
+        replyCount: Number(m.replyCount ?? m.replies ?? m.replyCount ?? 0),
+        repostCount: Number(m.repostCount ?? m.repostCount ?? m.reposts ?? 0),
+        permalink: String(m.permalink ?? video.source_url ?? ''),
+      };
+      break;
     default:
       return null;
   }

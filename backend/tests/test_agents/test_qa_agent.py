@@ -609,6 +609,71 @@ def test_chunk_to_reference_mastodon_falls_back_to_op_url_when_no_comment_url() 
     assert ref["permalink"] == "https://mastodon.social/@op/111222"
 
 
+def test_chunk_to_reference_bluesky_renders_polymorphic() -> None:
+    """Bluesky chunks emit source_type='bluesky_post', a permalink,
+    and author so the frontend renders as '@author · title'."""
+    chunk = {
+        "metadata": {
+            "source_type": "bluesky_post",
+            "source_id": "bluesky:at://did:plc:abc/app.bsky.feed.post/100",
+            "title": "AT-Protocol design notes",
+            "permalink": "https://bsky.app/profile/alice.bsky.social/post/100",
+            "author": "alice.bsky.social",
+        },
+        "text": "post snippet",
+    }
+    _key, ref = qa_agent._chunk_to_reference(chunk)
+    assert ref["source_type"] == "bluesky_post"
+    assert ref["thread_title"] == "AT-Protocol design notes"
+    assert ref["author"] == "alice.bsky.social"
+    assert ref["permalink"] == (
+        "https://bsky.app/profile/alice.bsky.social/post/100"
+    )
+    assert ref["channel_name"] == "alice.bsky.social"
+
+
+def test_chunk_to_reference_bluesky_uses_comment_url_when_present() -> None:
+    """When a Bluesky chunk is from a specific reply (comment_id +
+    comment_url), the citation jumps to the reply's bsky.app URL
+    rather than the OP's. Same shape as Mastodon."""
+    chunk = {
+        "metadata": {
+            "source_type": "bluesky_post",
+            "source_id": "bluesky:at://did:plc:abc/app.bsky.feed.post/100",
+            "title": "Original post title",
+            "permalink": "https://bsky.app/profile/op.bsky.social/post/100",
+            "author": "op.bsky.social",
+            "comment_id": "at://did:plc:bob/app.bsky.feed.post/r1",
+            "comment_url": "https://bsky.app/profile/bob.bsky.social/post/r1",
+        },
+        "text": "reply snippet",
+    }
+    key, ref = qa_agent._chunk_to_reference(chunk)
+    assert ref["permalink"] == "https://bsky.app/profile/bob.bsky.social/post/r1"
+    # Dedupe key includes comment_id.
+    assert key.endswith("at://did:plc:bob/app.bsky.feed.post/r1")
+
+
+def test_chunk_to_reference_bluesky_falls_back_to_op_url_when_no_comment_url() -> None:
+    """If the indexer wrote a comment_id but no comment_url (older
+    data, or chunking hasn't been updated yet), the permalink stays
+    on the OP — better than producing a broken link."""
+    chunk = {
+        "metadata": {
+            "source_type": "bluesky_post",
+            "source_id": "bluesky:at://did:plc:abc/app.bsky.feed.post/100",
+            "title": "OP title",
+            "permalink": "https://bsky.app/profile/op.bsky.social/post/100",
+            "author": "op.bsky.social",
+            "comment_id": "at://did:plc:bob/app.bsky.feed.post/r1",
+            # No comment_url.
+        },
+        "text": "snippet",
+    }
+    _key, ref = qa_agent._chunk_to_reference(chunk)
+    assert ref["permalink"] == "https://bsky.app/profile/op.bsky.social/post/100"
+
+
 def test_chunk_to_reference_unknown_source_type_falls_through_to_video() -> None:
     """Defensive fallback — unrecognized source_type renders via the
     YouTube path so we don't hard-fail on a future-source-type chunk

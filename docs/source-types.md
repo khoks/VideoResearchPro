@@ -160,7 +160,7 @@ Codified in `app/sources/reddit/flatten.py::_segment_for_text` via the constant 
 | `reddit_post` | `/search.json` + per-sub fallback (free, OAuth-app + 100 req/min) | OP + top-50 comments by score | `reddit_api` | reply depth per chunk |
 | `hn_story` | Algolia HN search (free, no auth) | story + comment tree | `hn_algolia` | reply depth per chunk |
 | `mastodon_post` | public hashtag timeline (`/api/v1/timelines/tag/<hashtag>`, no auth) — topic→hashtag normalised (lowercased, alphanumerics-only); creator-feed via `/api/v1/accounts/<id>/statuses` | OP + top-N replies (favourites) via `/api/v1/statuses/<id>` + `/context` | `mastodon` | reply depth per chunk |
-| `bluesky_post` | AT-Proto search (app password) | thread + replies | `at_proto` | reply depth per chunk |
+| `bluesky_post` | public AT-Proto XRPC `app.bsky.feed.searchPosts` (no auth) — free-text search; creator-feed via `app.bsky.feed.getAuthorFeed`, reposts excluded | OP + top-N replies (likes) via `app.bsky.feed.getPostThread` (recursive `{post, replies}`) | `bluesky` | reply depth per chunk |
 | `fb_post` / `ig_post` / `li_post` | ❌ no public-search API (see [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25)) — Mode B paste only | trafilatura → Playwright fallback on the user-pasted URL | `paste_extract` | reply position per chunk (when extractable) |
 | `forum_post` | Reddit API / HN Algolia / Discourse API (umbrella for non-platform-specific forums) | top-level post + top N comments | `forum_extract` | comment depth per chunk |
 | `pdf` | (no search; user uploads) | pdfplumber + table extraction | `pdf_extract` | `page_number` per chunk |
@@ -322,7 +322,8 @@ type SourceMetadata =
   | { source_type: 'video';         channel: string; durationSec: number; viewCount: number }
   | { source_type: 'reddit_post';   subreddit: string; author: string; score: number; commentCount: number; permalink: string }
   | { source_type: 'hn_story';      author: string; points: number; commentCount: number; url: string }
-  | { source_type: 'mastodon_post'; author: string; instance: string; favourites: number; replyCount: number; permalink: string };
+  | { source_type: 'mastodon_post'; author: string; instance: string; favourites: number; replyCount: number; permalink: string }
+  | { source_type: 'bluesky_post';  author: string; likes: number; replyCount: number; repostCount: number; permalink: string };
 
 type SourceType = SourceMetadata['source_type'];
 type MetadataFor<K extends SourceType> = Extract<SourceMetadata, { source_type: K }>;
@@ -363,7 +364,7 @@ type ApprovalCardConfig<T extends SourceMetadata> = {
 type SourceConfigRegistry = { [K in SourceType]: ApprovalCardConfig<MetadataFor<K>> };
 ```
 
-The mapped-type registry is the load-bearing trick: an exhaustive registry by construction. Adding `'bluesky_post'` (or any future source type) to `SourceMetadata` won't compile until the registry has a corresponding entry — this is the contract that makes "register a config, not a component" structurally enforceable rather than convention-enforced. Mastodon was the first post-M-1.5 cut-over and validated the workflow end-to-end (one entry in `SourceMetadata`, one in `SOURCE_CONFIGS`, one in `videoToApprovalProps`, no other frontend changes).
+The mapped-type registry is the load-bearing trick: an exhaustive registry by construction. Adding any new source type (`'podcast'`, `'article'`, …) to `SourceMetadata` won't compile until the registry has a corresponding entry — this is the contract that makes "register a config, not a component" structurally enforceable rather than convention-enforced. **Mastodon (S-1.5.6) and Bluesky (S-1.5.7) both shipped this way same-day on 2026-05-03**, validating the cut-over: each was one entry in `SourceMetadata`, one in `SOURCE_CONFIGS`, one in `videoToApprovalProps`, one branch in `_chunk_to_reference` and `<CitationLink>`, and that's it. No other frontend or component code changed.
 
 `<ApprovalCard>` component signature: `(props: { document: Document; metadata: T; classification?: Classification; config: ApprovalCardConfig<T> })`. `<CardHeader>` and `<CardActions>` read fixed Document fields directly; `<CardBody>` / `<CardMetaRow>` / filter UI dispatch through the typed config.
 

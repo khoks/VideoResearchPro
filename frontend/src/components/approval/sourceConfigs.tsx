@@ -84,6 +84,19 @@ function MastodonGlyph() {
   );
 }
 
+function BlueskyGlyph() {
+  // Stylised butterfly silhouette — Bluesky's logo is a simple two-
+  // wing shape. We render a minimal version with overlapping
+  // circles to evoke the wings without pulling in an icon package.
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <rect x="0" y="0" width="18" height="18" rx="3" fill="currentColor" />
+      <circle cx="6" cy="9" r="3" fill="white" />
+      <circle cx="12" cy="9" r="3" fill="white" />
+    </svg>
+  );
+}
+
 // Tiny inline icon helpers for chip glyphs.
 function DotGlyph({ color = 'currentColor' }: { color?: string } = {}) {
   return (
@@ -225,6 +238,42 @@ export const SOURCE_CONFIGS: SourceConfigRegistry = {
     ],
     filterChips: [
       // M-1.6: filter rail parity — same staged-out pattern as Reddit/HN.
+    ],
+  },
+
+  // -------------------------------------------------------------------------
+  // Bluesky post
+  // -------------------------------------------------------------------------
+  bluesky_post: {
+    glyph: <BlueskyGlyph />,
+    metaChips: [
+      {
+        field: 'author',
+        icon: <DotGlyph />,
+        label: 'Author',
+        format: (v) => `@${v}`,
+      },
+      {
+        field: 'likes',
+        icon: <DotGlyph />,
+        label: 'Likes',
+        formatter: 'numberWithCommas',
+      },
+      {
+        field: 'replyCount',
+        icon: <DotGlyph />,
+        label: 'Replies',
+        formatter: 'numberWithCommas',
+      },
+      {
+        field: 'repostCount',
+        icon: <DotGlyph />,
+        label: 'Reposts',
+        formatter: 'numberWithCommas',
+      },
+    ],
+    filterChips: [
+      // M-1.6: filter rail parity — same staged-out pattern as Reddit/HN/Mastodon.
     ],
   },
 };

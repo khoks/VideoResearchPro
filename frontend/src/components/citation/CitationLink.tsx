@@ -11,6 +11,7 @@
  *   - reddit_post:              "r/<subreddit> · u/<author> · <thread_title>"   → permalink (#comment-<id> when set by backend)
  *   - hn_story:                 "HN · <author> · <story_title>"                  → permalink (HN item URL)
  *   - mastodon_post:            "@<author>@<instance> · <status_title>"          → permalink (status URL; reply URL when comment_url indexed)
+ *   - bluesky_post:             "@<author> · <post_title>"                        → permalink (bsky.app web URL; reply URL when comment_url indexed)
  *
  * Back-compat: references without `source_type` (pre-S-1.5.5 rows in
  * existing Q&A history) render as YouTube — that was the only shape
@@ -79,6 +80,21 @@ function renderCitation(ref: Reference): RenderedCitation {
     } else {
       handle = 'Mastodon';
     }
+    const title = ref.thread_title ?? ref.video_title ?? '';
+    const labelParts = [handle, title].filter(Boolean);
+    return {
+      href: ref.permalink ?? ref.video_url ?? '#',
+      label: labelParts.join(' · '),
+    };
+  }
+
+  if (sourceType === 'bluesky_post') {
+    // Bluesky handles already include the instance/domain
+    // (`alice.bsky.social`), so we just prefix `@` for readability.
+    // Strip a leading `@` if the backend sent one in already so we
+    // don't render `@@`.
+    const rawAuthor = (ref.author ?? '').replace(/^@/, '');
+    const handle = rawAuthor ? `@${rawAuthor}` : 'Bluesky';
     const title = ref.thread_title ?? ref.video_title ?? '';
     const labelParts = [handle, title].filter(Boolean);
     return {

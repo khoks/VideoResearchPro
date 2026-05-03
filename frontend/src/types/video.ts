@@ -86,6 +86,26 @@ export function videoToApprovalProps(
         url: String(m.url ?? video.source_url ?? ''),
       };
       break;
+    case 'mastodon_post': {
+      // Mastodon `acct` is `user@instance`; split for chip rendering
+      // unless the backend already supplied an `instance` field
+      // (forward-compat for when chunking starts emitting it).
+      const acct = String(m.author ?? m.acct ?? '');
+      const explicitInstance = m.instance ? String(m.instance) : '';
+      const splitInstance = acct.includes('@') ? acct.split('@')[1] : '';
+      const splitUser = acct.includes('@') ? acct.split('@')[0] : acct;
+      metadata = {
+        source_type: 'mastodon_post',
+        author: splitUser,
+        instance: explicitInstance || splitInstance,
+        favourites: Number(
+          m.favourites ?? m.favourites_count ?? m.favorites ?? 0,
+        ),
+        replyCount: Number(m.replyCount ?? m.replies_count ?? m.reply_count ?? 0),
+        permalink: String(m.permalink ?? video.source_url ?? ''),
+      };
+      break;
+    }
     default:
       return null;
   }

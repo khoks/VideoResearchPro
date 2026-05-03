@@ -62,6 +62,28 @@ function HNGlyph() {
   );
 }
 
+function MastodonGlyph() {
+  // Stylised "M" inside a rounded square — visually distinct from
+  // the HN "Y" while staying within the dependency-free SVG envelope
+  // we use for every other source glyph.
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <rect x="0" y="0" width="18" height="18" rx="3" fill="currentColor" />
+      <text
+        x="9"
+        y="13"
+        textAnchor="middle"
+        fill="white"
+        fontFamily="sans-serif"
+        fontSize="10"
+        fontWeight="bold"
+      >
+        M
+      </text>
+    </svg>
+  );
+}
+
 // Tiny inline icon helpers for chip glyphs.
 function DotGlyph({ color = 'currentColor' }: { color?: string } = {}) {
   return (
@@ -168,6 +190,41 @@ export const SOURCE_CONFIGS: SourceConfigRegistry = {
     ],
     filterChips: [
       // T-1.5.4.3: Filter rail comes with the page-integration PR.
+    ],
+  },
+
+  // -------------------------------------------------------------------------
+  // Mastodon post
+  // -------------------------------------------------------------------------
+  mastodon_post: {
+    glyph: <MastodonGlyph />,
+    metaChips: [
+      {
+        field: 'author',
+        icon: <DotGlyph />,
+        label: 'Author',
+        format: (v) => `@${v}`,
+      },
+      {
+        field: 'instance',
+        icon: <DotGlyph />,
+        label: 'Instance',
+      },
+      {
+        field: 'favourites',
+        icon: <DotGlyph />,
+        label: 'Favourites',
+        formatter: 'numberWithCommas',
+      },
+      {
+        field: 'replyCount',
+        icon: <DotGlyph />,
+        label: 'Replies',
+        formatter: 'numberWithCommas',
+      },
+    ],
+    filterChips: [
+      // M-1.6: filter rail parity — same staged-out pattern as Reddit/HN.
     ],
   },
 };

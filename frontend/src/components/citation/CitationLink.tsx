@@ -7,9 +7,10 @@
  * by extending the dispatch table.
  *
  * Display formats:
- *   - video       (YouTube): "<video_title> · <channel_name> · <timestamp>"  → youtube_link with &t= anchor
- *   - reddit_post:            "r/<subreddit> · u/<author> · <thread_title>"   → permalink (#comment-<id> when set by backend)
- *   - hn_story:               "HN · <author> · <story_title>"                  → permalink (HN item URL)
+ *   - video         (YouTube):  "<video_title> · <channel_name> · <timestamp>"  → youtube_link with &t= anchor
+ *   - reddit_post:              "r/<subreddit> · u/<author> · <thread_title>"   → permalink (#comment-<id> when set by backend)
+ *   - hn_story:                 "HN · <author> · <story_title>"                  → permalink (HN item URL)
+ *   - mastodon_post:            "@<author>@<instance> · <status_title>"          → permalink (status URL; reply URL when comment_url indexed)
  *
  * Back-compat: references without `source_type` (pre-S-1.5.5 rows in
  * existing Q&A history) render as YouTube — that was the only shape
@@ -55,6 +56,31 @@ function renderCitation(ref: Reference): RenderedCitation {
     const author = ref.author ?? '';
     const title = ref.thread_title ?? ref.video_title ?? '';
     const labelParts = ['HN', author, title].filter(Boolean);
+    return {
+      href: ref.permalink ?? ref.video_url ?? '#',
+      label: labelParts.join(' · '),
+    };
+  }
+
+  if (sourceType === 'mastodon_post') {
+    // The author handle from the backend is `user@instance`-shaped or
+    // bare `user` (when the instance was carried separately in the
+    // `instance` field). Render it as `@user@instance` regardless so
+    // the citation is unambiguous across the federated network.
+    const rawAuthor = ref.author ?? '';
+    const instance = ref.instance ?? '';
+    let handle: string;
+    if (rawAuthor && rawAuthor.includes('@')) {
+      handle = `@${rawAuthor}`;
+    } else if (rawAuthor && instance) {
+      handle = `@${rawAuthor}@${instance}`;
+    } else if (rawAuthor) {
+      handle = `@${rawAuthor}`;
+    } else {
+      handle = 'Mastodon';
+    }
+    const title = ref.thread_title ?? ref.video_title ?? '';
+    const labelParts = [handle, title].filter(Boolean);
     return {
       href: ref.permalink ?? ref.video_url ?? '#',
       label: labelParts.join(' · '),

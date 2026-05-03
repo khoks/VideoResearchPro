@@ -8,15 +8,21 @@
  * with existing Q&A history rows.
  *
  * The polymorphic fields below are populated based on `source_type`:
- *   - "video"       (YouTube): video_title + channel_name + timestamp_display + youtube_link
- *   - "reddit_post":           thread_title + subreddit + author + permalink (#comment-<id> when applicable)
- *   - "hn_story":              story_title + author + permalink (item id deep-link)
+ *   - "video"          (YouTube):  video_title + channel_name + timestamp_display + youtube_link
+ *   - "reddit_post":               thread_title + subreddit + author + permalink (#comment-<id> when applicable)
+ *   - "hn_story":                  story_title + author + permalink (item id deep-link)
+ *   - "mastodon_post":             status_title + author + instance + permalink (status URL — points at reply
+ *                                  when comment_id was indexed alongside `comment_url`)
  *
  * The connector contract (docs/source-types.md § Citations) defines
  * the per-source URL shape; backends building references should use
  * that contract.
  */
-export type ReferenceSourceType = 'video' | 'reddit_post' | 'hn_story';
+export type ReferenceSourceType =
+  | 'video'
+  | 'reddit_post'
+  | 'hn_story'
+  | 'mastodon_post';
 
 export interface Reference {
   /** Absent on legacy rows; defaults to "video" in the renderer. */
@@ -32,15 +38,18 @@ export interface Reference {
 
   // Polymorphic fields populated per source_type. The renderer reads
   // the appropriate set based on `source_type`.
-  /** Reddit + HN: the canonical platform link, optionally with a
-   *  comment / item anchor (`permalink#comment-<id>`). */
+  /** Reddit + HN + Mastodon: the canonical platform link, optionally with a
+   *  comment / item anchor (`permalink#comment-<id>`) or a per-reply
+   *  status URL (Mastodon). */
   permalink?: string;
-  /** Reddit + HN: thread/story title (mirrors video_title for video). */
+  /** Reddit + HN + Mastodon: thread/story title (mirrors video_title for video). */
   thread_title?: string;
   /** Reddit: subreddit name (without leading "r/"). */
   subreddit?: string;
-  /** Reddit + HN: post / story author handle. */
+  /** Reddit + HN + Mastodon: post / story / status author handle. */
   author?: string;
+  /** Mastodon: instance host (e.g. `mastodon.social`). Empty string when unknown. */
+  instance?: string;
 }
 
 export interface QAExchange {

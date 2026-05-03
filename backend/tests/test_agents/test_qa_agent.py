@@ -538,6 +538,77 @@ def test_chunk_to_reference_hn_comment_uses_comment_item_url() -> None:
     assert ref["permalink"] == "https://news.ycombinator.com/item?id=42100"
 
 
+def test_chunk_to_reference_mastodon_renders_polymorphic() -> None:
+    """Mastodon chunks emit source_type='mastodon_post', a permalink,
+    and author + instance fields the frontend renders as
+    '@author@instance · title'."""
+    chunk = {
+        "metadata": {
+            "source_type": "mastodon_post",
+            "source_id": "mastodon:111222",
+            "title": "Federated identity reconsidered",
+            "permalink": "https://mastodon.social/@privacynerd/111222",
+            "author": "privacynerd",
+            "instance": "mastodon.social",
+        },
+        "text": "status snippet",
+    }
+    _key, ref = qa_agent._chunk_to_reference(chunk)
+    assert ref["source_type"] == "mastodon_post"
+    assert ref["thread_title"] == "Federated identity reconsidered"
+    assert ref["author"] == "privacynerd"
+    assert ref["instance"] == "mastodon.social"
+    assert ref["permalink"] == "https://mastodon.social/@privacynerd/111222"
+    # Legacy fallback fields populated for back-compat with rendering
+    # paths that haven't migrated to <CitationLink>.
+    assert ref["channel_name"] == "privacynerd"
+
+
+def test_chunk_to_reference_mastodon_uses_comment_url_when_present() -> None:
+    """When a Mastodon chunk is from a specific reply (comment_id +
+    comment_url), the citation permalink jumps to the reply's status
+    URL rather than the OP's URL. This is the Mastodon analogue of
+    Reddit's #comment-<id> anchor and HN's per-item endpoint."""
+    chunk = {
+        "metadata": {
+            "source_type": "mastodon_post",
+            "source_id": "mastodon:111222",
+            "title": "Original post title",
+            "permalink": "https://mastodon.social/@op/111222",
+            "author": "op",
+            "instance": "mastodon.social",
+            "comment_id": "111333",
+            "comment_url": "https://mastodon.social/@reply_user/111333",
+        },
+        "text": "reply snippet",
+    }
+    key, ref = qa_agent._chunk_to_reference(chunk)
+    assert ref["permalink"] == "https://mastodon.social/@reply_user/111333"
+    # Dedupe key includes comment_id so two cites from the same thread
+    # but different replies stay distinct in the answer's reference set.
+    assert key.endswith("_111333")
+
+
+def test_chunk_to_reference_mastodon_falls_back_to_op_url_when_no_comment_url() -> None:
+    """If the indexer wrote a comment_id but no separate comment_url
+    (older data, or chunking hasn't been updated yet), the permalink
+    stays on the OP — better than producing a broken link."""
+    chunk = {
+        "metadata": {
+            "source_type": "mastodon_post",
+            "source_id": "mastodon:111222",
+            "title": "OP title",
+            "permalink": "https://mastodon.social/@op/111222",
+            "author": "op",
+            "comment_id": "111333",
+            # No comment_url.
+        },
+        "text": "snippet",
+    }
+    _key, ref = qa_agent._chunk_to_reference(chunk)
+    assert ref["permalink"] == "https://mastodon.social/@op/111222"
+
+
 def test_chunk_to_reference_unknown_source_type_falls_through_to_video() -> None:
     """Defensive fallback — unrecognized source_type renders via the
     YouTube path so we don't hard-fail on a future-source-type chunk

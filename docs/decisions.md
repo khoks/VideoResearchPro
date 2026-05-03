@@ -648,3 +648,124 @@ Initial OQ-15 plan recommendation was (b) parallel.
 - Switch to **round-robin** only if a connector lifts its rate-limit cap and `limit_per_type` grows past ~50, where fairness across sources starts to matter.
 
 **Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.11 / T-1.5.11.3. PRs [#109](https://github.com/khoks/VideoResearchPro/pull/109), [#116](https://github.com/khoks/VideoResearchPro/pull/116).
+
+---
+
+## D-027 — Mastodon discovery uses the public hashtag timeline (no auth, single-hashtag normalisation) (2026-05-03)
+
+**Status:** accepted. Resolves the discovery question for [S-1.5.6](initiatives.md#s-156--mastodon-connector) and shipped with PR [#128](https://github.com/khoks/VideoResearchPro/pull/128).
+
+**Context.** Mastodon disables full-text search by default on most instances to honour user privacy. The original S-1.5.6 acceptance criterion ("ActivityPub search + thread fetch") didn't pin down which discovery surface to use. Three candidate paths existed:
+
+1. **Public hashtag timeline** — `GET /api/v1/timelines/tag/<hashtag>` is open on every instance, federates across the network, requires no auth.
+2. **Per-instance authenticated full-text search** — only available where the instance operator has explicitly enabled it; needs OAuth + per-instance credentials, fragmenting the connector.
+3. **Profile-page HTML scraping** — fast to ship but brittle, against ToS, and the per-IP rate-limiter would catch it.
+
+A topic-search query like *"climate change"* must reduce to a single hashtag because Mastodon hashtags don't accept spaces or punctuation.
+
+**Decision.** Use **(1) the public hashtag timeline**. Topic queries are normalised to a single alphanumeric hashtag — lowercased, with everything outside Unicode `L*` (Letter), `N*` (Number), and `M*` (Mark) categories stripped. The default instance is `mastodon.social`; self-hosters can override via `MASTODON_INSTANCE_BASE`.
+
+**Alternatives considered.**
+- *(2) Per-instance authenticated full-text search.* Rejected — fragments the connector across instances; most public instances don't expose it; auth complicates the no-credentials promise that distinguishes Mastodon from Reddit/Twitter ingest.
+- *(3) HTML scraping of `/explore/posts` or profile pages.* Rejected — brittle, ToS-violating, and doesn't add reach beyond what hashtag federation already provides.
+- *Multi-hashtag splitting* — break "climate change" into `#climate` + `#change`, run two timelines, merge. Rejected because Mastodon hashtag conventions are single-token (`#climatechange`), so the multi-hashtag form returns posts about *change* unrelated to *climate*. The single-token concatenation reproduces user behaviour on the platform.
+
+**Consequences.**
+- Discovery is hashtag-only. A topic that doesn't survive normalisation (pure punctuation, empty after stripping) returns zero candidates rather than calling the timeline endpoint with a bad path. Caller treats that as "no results, skip this source" rather than an error.
+- **Combining-mark support is load-bearing.** Devanagari `ि` / `्`, Arabic `ـ`, Thai vowel marks all fail `str.isalnum()` (which only checks `L` + `N` categories). The `unicodedata.category(ch)[0] in ("L", "N", "M")` rule preserves them, which is what Mastodon's own hashtag parser does. Without this, Hindi/Marathi/Bengali queries get mangled (`परिवर्तन` → `परवरतन`).
+- No per-instance auth means no token plumbing, no 401-retry loops, no credential rotation. The connector lifecycle is dead-simple.
+- The hashtag normalisation function (`_topic_to_hashtag`) is connector-local; future connectors with similar topic-to-tag mappings (Bluesky tags, `forum_post`-shaped sources) can copy or share it.
+
+**Re-evaluation hooks.**
+- If user feedback shows hashtag-only discovery misses important non-tagged posts (a real Mastodon failure mode), revisit (2) for instances where the operator has enabled full-text search — it can be added as a second discovery path that runs alongside hashtag-timeline rather than replacing it.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.6 / M-1.6. PR [#128](https://github.com/khoks/VideoResearchPro/pull/128).
+
+---
+
+## D-028 — Bluesky uses public unauthenticated AT-Proto XRPC (deviation from S-1.5.7 spec) (2026-05-03)
+
+**Status:** accepted. Resolves the auth question for [S-1.5.7](initiatives.md#s-157--bluesky-connector) and shipped with PR [#129](https://github.com/khoks/VideoResearchPro/pull/129).
+
+**Context.** S-1.5.7 was originally specced as *"AT-Protocol search + thread fetch. App password auth."* — under the assumption that Bluesky required an app password for ingest. While building the connector we verified that Bluesky exposes its public read endpoints (`searchPosts`, `getPostThread`, `getProfile`, `getAuthorFeed`) at `https://public.api.bsky.app/xrpc/` **without auth**. App-password auth is required only for *writes* (posting / liking / following) and for higher-throughput PDS-direct reads.
+
+**Decision.** Ship the connector against the public unauthenticated XRPC base. Configure via `BLUESKY_XRPC_BASE` so operators running a private PDS or who later need higher throughput can swap to an authenticated endpoint by setting that var (and adding a token-fetching path in the client at that point).
+
+**Alternatives considered.**
+- *App-password auth from the start, as originally specced.* Rejected for v1 — adds key management (rotation, storage, leak handling), a 401-retry path, and per-user vs. per-app-password rate-limit accounting. None of this is needed for ingest of public posts. We'd be paying complexity for a feature we may never use.
+- *Defer the connector until app-password auth is justified.* Rejected — it would have blocked M-1.6 closure and left the polymorphic-plumbing-validates-without-changes claim unproven. The session goal was to validate that claim across two connectors back-to-back; postponing one for a non-load-bearing auth concern would lose the validation event.
+
+**Consequences.**
+- No credentials to manage. Frees us to ship Bluesky on the same day as Mastodon without a credential-onboarding flow.
+- If Bluesky tightens public-endpoint rate limits in the future, the migration path is one env-var swap + adding a token fetcher to `client.py`. The rest of the connector (search/list/metadata/text wiring, flatten, classifier integration) is unchanged.
+- The doc trail (S-1.5.7 in `initiatives.md`) called out the deviation explicitly so future readers understand why the spec said one thing and the code did another.
+
+**Re-evaluation hooks.**
+- Switch to authenticated PDS endpoint if (a) public-endpoint rate limits start materially constraining ingest throughput, or (b) Bluesky deprecates the public unauthenticated read path.
+- If we ever ingest *private* (auth-protected) posts — which is out of scope today and may stay out of scope per the curated-but-public-content thesis — auth becomes mandatory.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.7 / M-1.6. PR [#129](https://github.com/khoks/VideoResearchPro/pull/129).
+
+---
+
+## D-029 — Bluesky `source_id` is the AT-URI, not the bsky.app web URL (2026-05-03)
+
+**Status:** accepted. Shipped with PR [#129](https://github.com/khoks/VideoResearchPro/pull/129).
+
+**Context.** Every Bluesky post has two parallel identifiers:
+
+- **AT-URI** — `at://did:plc:abc.../app.bsky.feed.post/<rkey>`. Built from the *DID* (a permanent, opaque identifier the user can't change) plus a stable record key.
+- **bsky.app web URL** — `https://bsky.app/profile/<handle>/post/<rkey>`. Built from the user's *handle*, which is mutable: users rename, change domains, or migrate instances.
+
+Both round-trip into `getPostThread` (the API accepts either form), so either could serve as the connector's `Candidate.source_id`. But the L1 schema's deduplication relies on `(source_type, source_id)` being **stable** — if a handle changes after we ingest a post, a web-URL-based `source_id` would silently de-duplicate wrong on a future re-ingest of the same post.
+
+**Decision.** Use the **AT-URI** as `Candidate.source_id` (namespaced as `bluesky:at://did:plc:.../app.bsky.feed.post/<rkey>`). The bsky.app web URL goes into `Candidate.source_url` for browser-friendly citations.
+
+**Alternatives considered.**
+- *bsky.app web URL as `source_id`.* Rejected — handle renames silently break dedup, and the L1 unique-index promise (`(source_type, source_id)` is stable) would no longer hold for Bluesky rows.
+- *Post `cid` (content hash) as `source_id`.* Rejected — `cid` is content-addressable, which means edited posts get a new `cid`. We want one Document row per post regardless of edit history; `cid` would create new rows on edit, defeating dedup.
+- *Bare `<rkey>` as `source_id`.* Rejected — rkeys are scoped to the author's repo, so two different authors can have the same rkey. Without the DID prefix, the namespace collides.
+
+**Consequences.**
+- AT-URIs are opaque to users (a long string with `did:plc:` + base-32 rkey). The connector compensates by always populating `Candidate.source_url` with the human-readable web URL, and by building `source_url` deterministically from the post's `author.handle` + AT-URI's rkey rather than relying on whatever the post payload happens to ship.
+- Per-reply `comment_id` carries the *reply's* AT-URI (not the OP's) and `comment_url` carries the *reply's* bsky.app web URL — consistent with the reply-anchor pattern we use elsewhere.
+- If a user renames, future ingests of their posts will keep producing the same `source_id` for the same posts (dedup holds), but the citations that point at *old* posts may show outdated `source_url` web URLs (which Bluesky redirects from the old handle to the new). Acceptable — citation hygiene, not dedup correctness.
+
+**Re-evaluation hooks.**
+- If we add reverse-lookup features (citation → post-id roundtrip from clipboard or shared links), we may want a content-addressable index on `cid` alongside `source_id` to handle the shared-link case where users have only the web URL.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.7. PR [#129](https://github.com/khoks/VideoResearchPro/pull/129).
+
+---
+
+## D-030 — Backend reference enrichment ships per-document polymorphic Chroma metadata first; per-segment (`comment_id`/`comment_url`) deferred (2026-05-03)
+
+**Status:** accepted. Shipped with PR [#131](https://github.com/khoks/VideoResearchPro/pull/131).
+
+**Context.** After M-1.6 closed, the polymorphic citation pipeline had a producer/consumer mismatch in production:
+
+- **Frontend (consumer)** was renderer-complete since [PR #117](https://github.com/khoks/VideoResearchPro/pull/117) and PRs [#127](https://github.com/khoks/VideoResearchPro/pull/127)/[#128](https://github.com/khoks/VideoResearchPro/pull/128)/[#129](https://github.com/khoks/VideoResearchPro/pull/129). `<CitationLink>` dispatches by `source_type` and reads `permalink`, `author`, `subreddit`, `instance`.
+- **Backend (producer)** was still writing only YouTube-shaped metadata to Chroma. `chunk_transcript()` had hardcoded `video_id`/`video_title`/`channel_name`/`video_url`/etc., dropping every polymorphic field on the floor. So in production, `_chunk_to_reference` always saw a metadata block without `source_type` and fell through to the YouTube default branch — even for Reddit/HN/Mastodon/Bluesky chunks that *had* the right `source_type` on the Document row.
+
+Two ways to close the gap:
+
+1. **Per-document fields only** — thread `source_type`, `source_id`, `source_url`, `permalink`, `author`, `subreddit`, `instance` (lifted from `Document.source_metadata_json`) through `_build_video_metadata()` → `chunk_transcript()` → Chroma. Citations link to **OP-level** URLs (`https://www.reddit.com/r/sub/comments/abc`, `https://news.ycombinator.com/item?id=42000`, etc.).
+2. **Per-document AND per-segment fields** — additionally preserve each segment's `extra` block (`comment_id`, `comment_url`) through sentence-expansion and greedy-pack so a chunk citing a *specific reply* deep-links to that reply (e.g. `#comment-<id>` for Reddit, the per-status URL for Mastodon/Bluesky, the per-item endpoint for HN).
+
+**Decision.** Ship **(1) per-document only**. Per-segment propagation is filed as the highest-value M-1.5/M-1.6 polish-backlog item.
+
+**Alternatives considered.**
+- *(2) Both layers in a single PR.* Rejected for now. Per-segment requires a structural change to `chunk_transcript()`: today it strips segments to bare `(text, start, end)` 3-tuples at line ~94 (losing the `extra` dict), then runs sentence-expansion + greedy-packing on the tuples. To preserve per-segment metadata we'd need to keep `extra` alongside each tuple through expansion + packing, then collapse a chunk's segments down to a representative reply when assigning chunk-level metadata (dominant-segment heuristic, or first-segment, or empty when a chunk straddles multiple replies). That's a meaningful refactor on a hot path with timestamp-arithmetic invariants the existing tests pin. Worth shipping carefully on its own.
+- *Defer the whole thing until per-segment is ready.* Rejected. Per-document fields alone deliver the 80% production win — every social-media citation now renders with proper labels and links to the OP page, which is what users actually see when they click a citation. Per-segment is a refinement (jump to specific reply) layered on top of working OP-level citations, not a prerequisite for them. Shipping (1) immediately means Reddit/HN/Mastodon/Bluesky citations stop rendering as YouTube fallback in production today, instead of waiting for the chunker rework.
+
+**Consequences.**
+- Production citations across all five source types (`video` / `reddit_post` / `hn_story` / `mastodon_post` / `bluesky_post`) now render via their dedicated `_chunk_to_reference` branches with correct labels and OP-level permalinks.
+- Reply-anchor citations (Reddit `#comment-<id>`, HN per-item, Mastodon per-reply status URL, Bluesky per-reply web URL) **do not work yet** for chunks read out of Chroma. The connector flatten layer still emits `comment_id` and `comment_url` in each segment's `extra` block — that data is now wasted at the chunking boundary, where it's stripped. This is acceptable because the OP-level citation always lands the user on the right thread; the per-reply jump is convenience, not correctness.
+- `_build_video_metadata()` is now the choke point for per-document polymorphic field lifting. New source types just need to populate the right keys in `Document.source_metadata_json`; the helper handles the rest. This locks in the contract for the upcoming M-1.7 podcast connector and any further social-media surfaces.
+- Legacy chunks already in Chroma (written before this PR) keep working — `_chunk_to_reference` falls back to the YouTube branch when `source_type` is missing from metadata, which is the right behaviour for those legacy rows since they're all `source_type='video'`. No backfill needed.
+
+**Re-evaluation hooks.**
+- Ship per-segment when (a) we observe materially different reply quality across multiple replies of the same thread getting cited (so jumping to specific reply matters), or (b) a future connector emits content where the per-reply identity is the citable unit (e.g. forum threads with multiple long top-level posts, podcast chapter markers).
+- The chunker rework is also the natural moment to revisit pseudo-timestamp synthesis ([D-013](#d-013--pseudo-timestamps-at-3-wps-as-a-shared-cross-source-constant-2026-04-26)) — they could be replaced with explicit per-segment indices once `extra` is preserved.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.5 (frontend half shipped earlier). PR [#131](https://github.com/khoks/VideoResearchPro/pull/131). M-1.5 polish backlog item *Backend reference enrichment* — per-document layer ✅; per-segment layer remains open as a follow-up.

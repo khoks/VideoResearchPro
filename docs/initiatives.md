@@ -135,14 +135,17 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 #### S-1.5.5 🟢 Citation rendering for social posts
 
-**PR:** TBD
+**Shipped:** 2026-05-02 — PR [#117](https://github.com/khoks/VideoResearchPro/pull/117) (frontend) + 2026-05-03 — PR [#127](https://github.com/khoks/VideoResearchPro/pull/127) (qa_agent backend dispatch)
 **Acceptance.** Q&A answer citations rendering for social `source_type` values shows author handle + post date + platform; clicks open the permalink with `#comment-<id>` anchor when the cite is from a reply.
+**Follow-up Story:** [S-1.5.12 — Backend reference enrichment](#s-1512--backend-reference-enrichment) covers the missing producer half — propagating `source_type` / `permalink` / `author` / `subreddit` / `instance` from `Document.source_metadata_json` through the chunking pipeline into Chroma metadata so `_chunk_to_reference` can dispatch correctly in production.
 **Tasks**
-- [x] T-1.5.5.1 + T-1.5.5.2 Citation renderer dispatch + per-platform URL builders — *shipped 2026-05-02 PR [#117](https://github.com/khoks/VideoResearchPro/pull/117). `<CitationLink>` polymorphic component dispatches by `Reference.source_type`; `renderCitation(ref) → {href, label}` is the pure dispatcher (testable). Per-source labels: video → "title · channel · timestamp", reddit_post → "r/sub · u/author · title", hn_story → "HN · author · title". JobDetailPage + LibraryQAPage migrated. Backend QA-agent reference enrichment (emit source_type / permalink / author per source) is the post-MVP follow-up*
+- [x] T-1.5.5.1 + T-1.5.5.2 Citation renderer dispatch + per-platform URL builders — *shipped 2026-05-02 PR [#117](https://github.com/khoks/VideoResearchPro/pull/117). `<CitationLink>` polymorphic component dispatches by `Reference.source_type`; `renderCitation(ref) → {href, label}` is the pure dispatcher (testable). Per-source labels: video → "title · channel · timestamp", reddit_post → "r/sub · u/author · title", hn_story → "HN · author · title", mastodon_post → "@user@instance · title", bluesky_post → "@handle.bsky.social · title". JobDetailPage + LibraryQAPage migrated.*
+- [x] T-1.5.5.3 Backend `_chunk_to_reference` polymorphic dispatch — *shipped 2026-05-03 PR [#127](https://github.com/khoks/VideoResearchPro/pull/127); extended for Mastodon in [#128](https://github.com/khoks/VideoResearchPro/pull/128) and Bluesky in [#129](https://github.com/khoks/VideoResearchPro/pull/129). Reads `source_type` from chunk metadata and emits the right field set per source. The producer side (chunker writing `source_type` to Chroma in the first place) ships in [S-1.5.12](#s-1512--backend-reference-enrichment).*
 
 #### S-1.5.6 🟢 Mastodon connector
 
-**PR:** TBD (this branch — `feat/s-1-5-6-mastodon-connector-2026-05-03`)
+**Shipped:** 2026-05-03 — PR [#128](https://github.com/khoks/VideoResearchPro/pull/128)
+**Linked decision:** [D-027 — Mastodon discovery uses the public hashtag timeline (no auth, single-hashtag normalisation)](decisions.md#d-027--mastodon-discovery-uses-the-public-hashtag-timeline-no-auth-single-hashtag-normalisation-2026-05-03)
 **Acceptance.** Same shape as Reddit/HN. ActivityPub-based discovery via the public hashtag timeline (`/api/v1/timelines/tag/<hashtag>`); thread fetch via `/api/v1/statuses/<id>` + `/api/v1/statuses/<id>/context`. No auth required. No paid tier needed.
 **Tasks**
 - [x] T-1.5.6.1 Mastodon instance config (`MASTODON_INSTANCE_BASE`, default `https://mastodon.social`; per-job override is a follow-up to S-1.5.6 once the submit-research form gains the `mastodon_instance` source_metadata input)
@@ -160,7 +163,8 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 #### S-1.5.7 🟢 Bluesky connector
 
-**PR:** TBD (this branch — `feat/s-1-5-7-bluesky-connector-2026-05-03`)
+**Shipped:** 2026-05-03 — PR [#129](https://github.com/khoks/VideoResearchPro/pull/129)
+**Linked decisions:** [D-028 — Bluesky uses public unauthenticated AT-Proto XRPC](decisions.md#d-028--bluesky-uses-public-unauthenticated-at-proto-xrpc-deviation-from-s-157-spec-2026-05-03), [D-029 — Bluesky `source_id` is the AT-URI, not the bsky.app web URL](decisions.md#d-029--bluesky-source_id-is-the-at-uri-not-the-bskyapp-web-url-2026-05-03)
 **Acceptance.** AT-Protocol search + thread fetch via the public XRPC API at `https://public.api.bsky.app/xrpc/`. **No auth required for ingest** — the original spec called for app-password auth, but Bluesky's public read endpoints (`searchPosts`, `getPostThread`, `getProfile`, `getAuthorFeed`) are open and that's what we use. If Bluesky tightens rate limits later, swapping to an authenticated PDS endpoint is a matter of adding a token-fetching path and toggling `BLUESKY_XRPC_BASE`.
 **Tasks**
 - [x] T-1.5.7.1 AT-Proto XRPC client integration — `app/sources/bluesky/client.py` with rate-limited `searchPosts`, `getPostThread`, `getProfile`, `getAuthorFeed` wrappers; `app/sources/bluesky/connector.py` implementing the BaseConnector contract; `app/sources/bluesky/flatten.py` for OP + top-N replies (by likes) with depth markers reconstructed by walking the recursive `replies` tree.
@@ -224,6 +228,30 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [ ] T-1.5.11.6 Same e2e test for `hn_story` — *pending; same pattern as T-1.5.11.5*
 - [ ] T-1.5.11.7 Same e2e test for mixed `["video","reddit_post","hn_story"]` — *pending; needs LangGraph + dispatcher concurrent path*
 **Dependencies.** Was independent of E-1.10 for build; e2e tests now run against the post-E-1.10 schema with storage tasks shipped.
+
+#### S-1.5.12 🟡 Backend reference enrichment
+
+**Filed 2026-05-03** as the producer-side completion of [S-1.5.5](#s-155--citation-rendering-for-social-posts) (frontend rendering). Per-document layer 🟢 shipped in PR [#131](https://github.com/khoks/VideoResearchPro/pull/131) on the same day; per-segment layer remains 🔵 accepted as the highest-value polish-backlog item.
+
+**Linked decision:** [D-030 — Backend reference enrichment ships per-document polymorphic Chroma metadata first; per-segment deferred](decisions.md#d-030--backend-reference-enrichment-ships-per-document-polymorphic-chroma-metadata-first-per-segment-comment_idcomment_url-deferred-2026-05-03)
+
+**Context.** After M-1.6 closed, the polymorphic citation pipeline had a producer/consumer mismatch. Frontend `<CitationLink>` and backend `_chunk_to_reference` both dispatched correctly by `source_type`, but `chunk_transcript()` was still writing only YouTube-shaped fields to Chroma. So in production every social-media chunk fell through to the YouTube default branch — even though the source row carried the right `source_type`.
+
+**Acceptance.** Production Q&A citations across all five source types (`video` / `reddit_post` / `hn_story` / `mastodon_post` / `bluesky_post`) render with their dedicated `_chunk_to_reference` branches, with correct labels and platform-canonical URLs. **Per-document acceptance ✅ met** by PR #131. Per-segment acceptance (citations that originated from a specific reply jump to that reply's URL rather than the OP) is the open follow-up.
+
+**Tasks**
+- [x] T-1.5.12.1 Per-document polymorphic Chroma metadata — *shipped 2026-05-03 PR [#131](https://github.com/khoks/VideoResearchPro/pull/131). Threaded `source_type` / `source_id` / `source_url` / `permalink` / `author` / `subreddit` / `instance` from `Document.source_metadata_json` through `_build_video_metadata()` → `chunk_transcript()` → `chroma_service.insert_chunks()`. 17 new tests (11 in `test_chunking.py` for polymorphic field propagation per source_type + multi-chunk consistency; 6 + 6 in new `test_build_video_metadata.py` for the per-source field-lifting contract incl. defensive None / non-dict / missing-source_url cases). Backend suite 549 → 566.*
+- [ ] T-1.5.12.2 🔵 Per-segment reply-anchor fields (`comment_id` / `comment_url`) — *Not started. Requires structural change to `chunk_transcript()`: today it strips segments to bare `(text, start, end)` 3-tuples at line ~94 and runs sentence-expansion + greedy-packing on the tuples. To preserve per-segment metadata we need to (a) keep `extra` alongside each tuple through expansion + packing, (b) when a chunk's segments come from a single reply (all share `comment_id`), promote that reply's identity to chunk-level metadata, (c) when a chunk straddles multiple replies, pick a dominant-reply heuristic (most segments by token-count, or first-segment fallback). Connector flatten layer already emits these fields in each segment's `extra` block — this is purely a chunker-side change. The frontend `<CitationLink>` and backend `_chunk_to_reference` already read `comment_id` / `comment_url` and prefer them when present (added during M-1.6).*
+- [ ] T-1.5.12.3 ⚪ `extract_references` LLM-prompt update for polymorphic shape — *deferred polish. The LLM currently pattern-matches on `video_title` / `channel_name` output. Empirically it works fine on chunks with non-video metadata because `title` is always populated, but a prompt tweak teaching it the polymorphic field set would sharpen non-video reference quality (especially for Mastodon / Bluesky where author handles look different from YouTube channel names).*
+
+**Implementation notes (T-1.5.12.1, shipped).**
+- `_build_video_metadata()` is the choke point for per-document polymorphic field lifting. It reads `source_metadata_json` defensively (None / non-dict / missing keys all handled) and emits a flat dict the chunker can pass through to Chroma.
+- `chunk_transcript()` writes the polymorphic block alongside the legacy YouTube-shaped fields. Legacy chunks already in Chroma keep working because `_chunk_to_reference` falls back to the YouTube branch when `source_type` is missing — the right behaviour for legacy rows since they're all `source_type='video'` anyway.
+- New source types (the upcoming M-1.7 podcast connector, future `article` / `pdf`) just need to populate the right keys in `Document.source_metadata_json`; the chunker passes them through unchanged.
+
+**Re-evaluation hooks (T-1.5.12.2, deferred).**
+- Ship per-segment when (a) we observe materially different reply quality across multiple replies of the same thread getting cited (so jumping to specific reply matters), or (b) a future connector emits content where the per-reply identity is the citable unit (forum threads with multiple long top-level posts, podcast chapter markers, etc.).
+- The chunker rework is also the natural moment to revisit pseudo-timestamp synthesis ([D-013](decisions.md#d-013--pseudo-timestamps-at-3-wps-as-a-shared-cross-source-constant-2026-04-26)) — they could be replaced with explicit per-segment indices once `extra` is preserved end-to-end.
 
 ### E-1.6 🔵 Article connector
 

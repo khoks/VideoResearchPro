@@ -42,3 +42,12 @@ python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 bcrypt>=3.2.0,<4.0.0
 email-validator>=2.0.0
+
+# HTTP client (used by social-media connectors and article extraction)
+httpx>=0.27.0
+
+# Article extraction (E-1.6 T-1.6.1) — trafilatura is the primary path
+# (high-quality boilerplate-removal for most static pages). Playwright
+# fallback for SPAs (T-1.6.1 follow-up — needs browser-binary install
+# and is gated on operator opt-in to keep the default install lean).
+trafilatura>=1.12.0

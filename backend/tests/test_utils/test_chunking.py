@@ -302,3 +302,204 @@ def test_polymorphic_fields_present_on_every_chunk():
         assert md["subreddit"] == "x"
         assert md["author"] == "user"
         assert md["permalink"].startswith("https://")
+
+
+# ---------------------------------------------------------------------------
+# Per-segment provenance (S-1.5.12 T-1.5.12.2)
+# ---------------------------------------------------------------------------
+# These tests lock in the chunker's contract that per-segment metadata
+# (carried in `extra` on each input transcript segment) survives all
+# the way to chunk-level Chroma metadata via the dominant-segment
+# heuristic. Before this PR, the chunker stripped `extra` at the
+# segment-tuple boundary, which meant Reddit/HN/Mastodon/Bluesky
+# chunks lost their per-reply identity — a citation could only point
+# at the OP, never the specific reply that was cited.
+
+
+def test_per_segment_extra_propagates_to_chunk_metadata_single_reply():
+    """Single-reply chunk: the chunk's metadata reflects that reply's
+    comment_id / comment_url / author / kind / depth."""
+    segs = [
+        {
+            "text": "Reply body content",
+            "start": 0.0,
+            "duration": 5.0,
+            "extra": {
+                "kind": "reply",
+                "author": "@bob.bsky.social",
+                "comment_id": "at://did:plc:bob/app.bsky.feed.post/r1",
+                "comment_url": "https://bsky.app/profile/bob.bsky.social/post/r1",
+                "depth": 1,
+            },
+        },
+    ]
+    chunks = chunk_transcript(segs, video_metadata={"video_id": "x"})
+    assert len(chunks) == 1
+    md = chunks[0]["metadata"]
+    assert md["segment_kind"] == "reply"
+    assert md["segment_author"] == "@bob.bsky.social"
+    assert md["comment_id"] == "at://did:plc:bob/app.bsky.feed.post/r1"
+    assert md["comment_url"] == "https://bsky.app/profile/bob.bsky.social/post/r1"
+    assert md["segment_depth"] == 1
+
+
+def test_per_segment_extra_empty_for_video_transcripts():
+    """YouTube transcripts don't carry `extra` — chunker should leave
+    per-segment fields as empty strings / 0, not crash."""
+    segs = [{"text": "Video transcript text", "start": 0.0, "duration": 5.0}]
+    chunks = chunk_transcript(segs, video_metadata={"video_id": "abc"})
+    md = chunks[0]["metadata"]
+    assert md["comment_id"] == ""
+    assert md["comment_url"] == ""
+    assert md["segment_author"] == ""
+    assert md["segment_kind"] == ""
+    assert md["segment_depth"] == 0
+
+
+def test_dominant_segment_heuristic_picks_longest_when_chunk_straddles_replies():
+    """When a chunk spans multiple replies (overlap window or
+    end-of-buffer stitching), the longest reply wins per the dominant-
+    by-tokens heuristic. Prevents short top-line replies from
+    systematically grabbing citations from longer adjacent ones."""
+    segs = [
+        {
+            "text": "ok",  # short top-line reply
+            "start": 0.0,
+            "duration": 1.0,
+            "extra": {
+                "kind": "reply",
+                "author": "shortie",
+                "comment_id": "reply-short",
+                "comment_url": "https://example.com/short",
+                "depth": 1,
+            },
+        },
+        {
+            # Long second reply — many more tokens than the short one.
+            "text": (
+                "This is a much longer reply with a substantive technical argument "
+                "that goes on for several sentences and dominates the chunk's text. "
+                "The dominant-segment heuristic should pick this one because it "
+                "contributes the bulk of the searchable content."
+            ),
+            "start": 1.0,
+            "duration": 10.0,
+            "extra": {
+                "kind": "reply",
+                "author": "long_reply_author",
+                "comment_id": "reply-long",
+                "comment_url": "https://example.com/long",
+                "depth": 1,
+            },
+        },
+    ]
+    chunks = chunk_transcript(segs, video_metadata={"video_id": "x"})
+    # Both replies fit in one chunk at default chunk_size (256 tokens).
+    assert len(chunks) == 1
+    md = chunks[0]["metadata"]
+    assert md["comment_id"] == "reply-long"
+    assert md["comment_url"] == "https://example.com/long"
+    assert md["segment_author"] == "long_reply_author"
+
+
+def test_per_segment_fields_survive_sentence_expansion():
+    """A multi-sentence reply with a single `extra` block: every
+    sentence-level sub-segment must carry the same `extra` so the
+    chunk metadata still reflects the parent reply. Without this,
+    sentence-expansion would orphan the per-segment identity."""
+    segs = [
+        {
+            "text": "First sentence. Second sentence. Third sentence.",
+            "start": 0.0,
+            "duration": 6.0,
+            "extra": {
+                "kind": "reply",
+                "author": "author_x",
+                "comment_id": "cid-x",
+                "comment_url": "https://example.com/x",
+                "depth": 2,
+            },
+        },
+    ]
+    chunks = chunk_transcript(segs, video_metadata={"video_id": "x"})
+    assert len(chunks) == 1
+    md = chunks[0]["metadata"]
+    assert md["comment_id"] == "cid-x"
+    assert md["comment_url"] == "https://example.com/x"
+    assert md["segment_depth"] == 2
+
+
+def test_per_segment_extra_with_invalid_shape_falls_back_to_empty():
+    """Defensive — if a segment's `extra` is a non-dict shape (a string,
+    list, None), the chunker should treat it as empty rather than
+    crashing on `.get(...)`."""
+    segs = [
+        {
+            "text": "Body text",
+            "start": 0.0,
+            "duration": 5.0,
+            "extra": "malformed-not-a-dict",  # not a dict
+        },
+    ]
+    chunks = chunk_transcript(segs, video_metadata={"video_id": "x"})
+    md = chunks[0]["metadata"]
+    assert md["comment_id"] == ""
+    assert md["comment_url"] == ""
+
+
+def test_per_segment_depth_with_non_int_value_coerces_to_zero():
+    """Chroma metadata only stores flat primitives; `depth` must end
+    up as an int even if the connector emits a string or None."""
+    segs = [
+        {
+            "text": "Body",
+            "start": 0.0,
+            "duration": 5.0,
+            "extra": {"depth": "two"},  # bad type
+        },
+    ]
+    chunks = chunk_transcript(segs, video_metadata={"video_id": "x"})
+    assert chunks[0]["metadata"]["segment_depth"] == 0
+
+
+def test_first_chunk_picks_op_segment_when_op_dominates():
+    """OP (`kind=='post'` / `'story'`) dominating a chunk: the chunk
+    metadata reflects the OP rather than a shorter trailing reply."""
+    segs = [
+        {
+            "text": (
+                "OP body — this is the original post and contains substantial "
+                "content that dominates the first chunk. The OP is the longer "
+                "segment in this scenario, so dominant-by-tokens picks it."
+            ),
+            "start": 0.0,
+            "duration": 10.0,
+            "extra": {
+                "kind": "post",
+                "author": "@op",
+                "comment_id": "",  # OP doesn't carry comment_id
+                "comment_url": "",
+                "depth": 0,
+            },
+        },
+        {
+            "text": "short reply",
+            "start": 10.0,
+            "duration": 1.0,
+            "extra": {
+                "kind": "reply",
+                "author": "@reply",
+                "comment_id": "reply-id",
+                "comment_url": "https://example.com/reply",
+                "depth": 1,
+            },
+        },
+    ]
+    chunks = chunk_transcript(segs, video_metadata={"video_id": "x"})
+    assert len(chunks) == 1
+    md = chunks[0]["metadata"]
+    # OP dominates → chunk's per-segment fields reflect the OP (no comment_id).
+    assert md["segment_kind"] == "post"
+    assert md["segment_author"] == "@op"
+    assert md["comment_id"] == ""
+    assert md["comment_url"] == ""

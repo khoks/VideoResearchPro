@@ -1,5 +1,6 @@
 import logging
 import re
+from typing import Any
 
 import tiktoken
 
@@ -24,21 +25,34 @@ def _split_into_sentences(text: str) -> list[str]:
     return parts or ([text.strip()] if text.strip() else [])
 
 
+# Internal segment shape used through expansion + packing. We carry
+# `extra` alongside `(text, start, end)` so per-segment metadata
+# (e.g. `comment_id` / `comment_url` / `kind` / `author` from social
+# connectors) survives all the way to chunk emission. For sources
+# without per-segment metadata (YouTube transcripts), `extra` is an
+# empty dict.
+_Seg = tuple[str, float, float, dict[str, Any]]
+
+
 def _expand_segments_to_sentences(
-    segments: list[tuple[str, float, float]],
-) -> list[tuple[str, float, float]]:
+    segments: list[_Seg],
+) -> list[_Seg]:
     """Expand transcript segments into sentence-level sub-segments.
 
     Timestamps for each sentence are linearly interpolated from the parent
     segment's (start, end) window by character-count share. If no sentence
     boundary is found within a segment, it is emitted unchanged (greedy
     fallback).
+
+    The parent segment's ``extra`` dict propagates to every sentence-level
+    sub-segment — all sentences within one segment share the same
+    provenance (same reply, same author, etc.).
     """
-    expanded: list[tuple[str, float, float]] = []
-    for text, start, end in segments:
+    expanded: list[_Seg] = []
+    for text, start, end, extra in segments:
         sentences = _split_into_sentences(text)
         if len(sentences) <= 1:
-            expanded.append((text, start, end))
+            expanded.append((text, start, end, extra))
             continue
 
         total_chars = sum(len(s) for s in sentences) or 1
@@ -49,7 +63,7 @@ def _expand_segments_to_sentences(
             sent_duration = duration * share
             sent_start = cursor
             sent_end = end if i == len(sentences) - 1 else cursor + sent_duration
-            expanded.append((sentence, sent_start, sent_end))
+            expanded.append((sentence, sent_start, sent_end, extra))
             cursor = sent_end
     return expanded
 
@@ -84,6 +98,17 @@ def chunk_transcript(
             (video / reddit_post / hn_story / mastodon_post / bluesky_post).
             Legacy chunks without the polymorphic fields keep working
             because the agent falls back to the YouTube branch.
+
+            **Per-segment fields** (S-1.5.12 T-1.5.12.2) are read
+            *automatically* from each `transcript_segments` entry's
+            optional ``extra`` dict — the caller does not pass them
+            in ``video_metadata``. Connector flatten layers (Reddit /
+            HN / Mastodon / Bluesky) emit ``extra = {kind, author,
+            comment_id, comment_url, depth, ...}`` per reply, and
+            this function promotes the dominant-by-tokens segment's
+            ``comment_id`` / ``comment_url`` / ``author`` to the
+            chunk's metadata. For YouTube transcripts (no `extra`),
+            those chunk fields are empty strings.
         transcription_source: Provenance tag for how the transcript was
             produced. ``"youtube"`` (default) means it came from the YouTube
             Transcript API; ``"whisper"`` means it was produced by the
@@ -99,15 +124,22 @@ def chunk_transcript(
 
     metadata = video_metadata or {}
 
-    # Build (text, start, end) tuples for each non-empty segment.
-    segments: list[tuple[str, float, float]] = []
+    # Build (text, start, end, extra) tuples for each non-empty segment.
+    # `extra` carries per-segment provenance from text-based connectors
+    # (Reddit / HN / Mastodon / Bluesky): `{kind, author, comment_id,
+    # comment_url, depth, ...}` per-reply identity. YouTube transcripts
+    # don't supply `extra`, so it defaults to an empty dict.
+    segments: list[_Seg] = []
     for seg in transcript_segments:
         text = seg.get("text", "").strip()
         if not text:
             continue
         start = float(seg.get("start", 0))
         duration = float(seg.get("duration", 0))
-        segments.append((text, start, start + duration))
+        extra = seg.get("extra") or {}
+        if not isinstance(extra, dict):
+            extra = {}
+        segments.append((text, start, start + duration, extra))
 
     if not segments:
         return []
@@ -116,24 +148,69 @@ def chunk_transcript(
     segments = _expand_segments_to_sentences(segments)
 
     chunks: list[dict] = []
-    current_items: list[tuple[str, float, float]] = []
+    current_items: list[_Seg] = []
     current_tokens = 0
 
-    for text, seg_start, seg_end in segments:
+    def _emit_chunk(items: list[_Seg]) -> dict:
+        """Build a chunk dict from a list of packed segments.
+
+        Per S-1.5.12 T-1.5.12.2: we promote per-reply identity to chunk
+        level using a **dominant-segment heuristic** — the segment in
+        the chunk with the most tokens "wins" and contributes its
+        ``comment_id`` / ``comment_url`` / ``author`` / ``kind`` /
+        ``depth`` to the chunk's metadata. Rationale:
+
+        - Most chunks contain a single segment (or several from the
+          same reply) — dominant is then trivial.
+        - When a chunk straddles multiple replies (a small reply at
+          the start, a long reply at the end), the longer reply
+          supplies the bulk of the searchable text, so its identity
+          is the more meaningful citation target.
+        - Falling back to first-segment would systematically
+          mis-attribute citations to short top-line replies in a
+          straddling chunk; falling back to last-segment loses the
+          natural reading order intuition. Dominant-by-tokens is a
+          neutral tie-breaker that aligns with retrieval relevance.
+
+        Cross-reply chunks happen mostly because of the chunk-overlap
+        window stitching the tail of one reply onto the head of the
+        next. The heuristic still picks the longer one, which is the
+        right call since the overlap region is semantically
+        ambiguous-by-design (it's there for retrieval continuity, not
+        citation accuracy).
+        """
+        chunk_text = " ".join(it[0] for it in items)
+        # Dominant segment — most tokens wins. Ties broken by first-
+        # occurrence (Python max() is stable, returns the first
+        # equal-key element).
+        dominant = max(
+            items,
+            key=lambda it: _count_tokens(it[0]),
+        )
+        dominant_extra = dominant[3] or {}
+        return {
+            "text": chunk_text,
+            "timestamp_start": items[0][1],
+            "timestamp_end": items[-1][2],
+            "word_count": len(chunk_text.split()),
+            # Per-segment provenance (S-1.5.12 T-1.5.12.2). Empty
+            # for video transcripts; populated for social connectors.
+            "kind": dominant_extra.get("kind") or "",
+            "comment_id": dominant_extra.get("comment_id") or "",
+            "comment_url": dominant_extra.get("comment_url") or "",
+            "segment_author": dominant_extra.get("author") or "",
+            "segment_depth": dominant_extra.get("depth"),
+        }
+
+    for text, seg_start, seg_end, extra in segments:
         seg_tokens = _count_tokens(text)
 
         if current_tokens + seg_tokens > chunk_size and current_items:
             # Emit the current chunk.
-            chunk_text = " ".join(item[0] for item in current_items)
-            chunks.append({
-                "text": chunk_text,
-                "timestamp_start": current_items[0][1],
-                "timestamp_end": current_items[-1][2],
-                "word_count": len(chunk_text.split()),
-            })
+            chunks.append(_emit_chunk(current_items))
 
             # Build overlap window from the tail of the emitted chunk.
-            overlap_items: list[tuple[str, float, float]] = []
+            overlap_items: list[_Seg] = []
             overlap_tokens = 0
             for item in reversed(current_items):
                 item_tokens = _count_tokens(item[0])
@@ -145,18 +222,12 @@ def chunk_transcript(
             current_items = overlap_items
             current_tokens = overlap_tokens
 
-        current_items.append((text, seg_start, seg_end))
+        current_items.append((text, seg_start, seg_end, extra))
         current_tokens += seg_tokens
 
     # Emit the final chunk.
     if current_items:
-        chunk_text = " ".join(item[0] for item in current_items)
-        chunks.append({
-            "text": chunk_text,
-            "timestamp_start": current_items[0][1],
-            "timestamp_end": current_items[-1][2],
-            "word_count": len(chunk_text.split()),
-        })
+        chunks.append(_emit_chunk(current_items))
 
     # Normalize optional metadata so ChromaDB (which requires flat scalar
     # metadata) gets predictable types.
@@ -175,6 +246,27 @@ def chunk_transcript(
 
     result = []
     for i, chunk in enumerate(chunks):
+        # Per-segment provenance (S-1.5.12 T-1.5.12.2). Promoted by
+        # the dominant-segment heuristic in `_emit_chunk`. Empty for
+        # video transcripts (no per-segment metadata); populated for
+        # social-connector chunks that came from a specific reply.
+        # The Q&A agent's `_chunk_to_reference` reads `comment_id` +
+        # `comment_url` to deep-link a citation to the exact reply
+        # rather than the OP.
+        comment_id = chunk.get("comment_id") or ""
+        comment_url = chunk.get("comment_url") or ""
+        segment_author = chunk.get("segment_author") or ""
+        segment_kind = chunk.get("kind") or ""
+        segment_depth_raw = chunk.get("segment_depth")
+        # Chroma metadata only stores flat primitives; coerce None /
+        # missing to 0 so the column type stays uniform across chunks.
+        try:
+            segment_depth = (
+                int(segment_depth_raw) if segment_depth_raw is not None else 0
+            )
+        except (TypeError, ValueError):
+            segment_depth = 0
+
         result.append({
             "text": chunk["text"],
             "metadata": {
@@ -211,6 +303,19 @@ def chunk_transcript(
                 "author": str(metadata.get("author") or ""),
                 "subreddit": str(metadata.get("subreddit") or ""),
                 "instance": str(metadata.get("instance") or ""),
+                # Per-segment provenance (S-1.5.12 T-1.5.12.2 — the
+                # reply-anchor refinement). When set, the Q&A agent
+                # promotes these to the citation's permalink so a
+                # cite from a specific reply opens at that reply's
+                # URL rather than the OP. `comment_url` wins when
+                # present (Mastodon / Bluesky reply URLs); when only
+                # `comment_id` is present (Reddit / HN), the agent
+                # synthesises the reply URL from it.
+                "comment_id": str(comment_id),
+                "comment_url": str(comment_url),
+                "segment_author": str(segment_author),
+                "segment_kind": str(segment_kind),
+                "segment_depth": segment_depth,
             },
         })
 

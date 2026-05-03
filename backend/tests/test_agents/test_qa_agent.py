@@ -419,3 +419,138 @@ def test_formulate_answer_injects_allowed_sources():
     human_text = messages[1].content
     assert '"Real Video" by ChA' in human_text
     assert "Allowed sources" in human_text
+
+
+# ---------------------------------------------------------------------------
+# Polymorphic _chunk_to_reference (S-1.5.5 backend reference enrichment)
+# ---------------------------------------------------------------------------
+# Per S-1.5.5, the frontend <CitationLink> dispatches its rendering on
+# Reference.source_type. The backend extractor emits that discriminator
+# per chunk so Reddit / HN citations render with their proper labels
+# (r/sub · u/author · title) rather than falling through to YouTube.
+
+def test_chunk_to_reference_video_default_path() -> None:
+    """Legacy YouTube-only chunks (no source_type in metadata) keep
+    rendering as before — back-compat for chunks indexed pre-S-1.5.5."""
+    chunk = {
+        "metadata": {
+            "video_id": "abc123",
+            "video_title": "Tariffs explained",
+            "channel_name": "Some Channel",
+            "video_url": "https://www.youtube.com/watch?v=abc123",
+            "timestamp_start": 145.0,
+        },
+        "text": "snippet",
+    }
+    key, ref = qa_agent._chunk_to_reference(chunk)
+    assert ref["source_type"] == "video"
+    assert ref["video_title"] == "Tariffs explained"
+    assert "youtube.com" in ref["youtube_link"]
+    assert ref["timestamp_display"]  # non-empty
+    assert key == "abc123_145"
+
+
+def test_chunk_to_reference_reddit_renders_polymorphic() -> None:
+    """Reddit chunks emit source_type='reddit_post', a permalink, and
+    author + subreddit fields the frontend renders as
+    'r/sub · u/author · title'."""
+    chunk = {
+        "metadata": {
+            "source_type": "reddit_post",
+            "source_id": "reddit:abc",
+            "video_id": None,
+            "title": "Why tariffs broke our supply chain",
+            "permalink": "https://www.reddit.com/r/economics/comments/abc",
+            "subreddit": "economics",
+            "author": "supply_chain_pro",
+            "timestamp_start": 0,
+        },
+        "text": "snippet",
+    }
+    key, ref = qa_agent._chunk_to_reference(chunk)
+    assert ref["source_type"] == "reddit_post"
+    assert ref["thread_title"] == "Why tariffs broke our supply chain"
+    assert ref["subreddit"] == "economics"
+    assert ref["author"] == "supply_chain_pro"
+    assert ref["permalink"].startswith(
+        "https://www.reddit.com/r/economics/comments/abc"
+    )
+    # Legacy YouTube-shaped fields still populated as fallback.
+    assert ref["channel_name"] == "r/economics"
+
+
+def test_chunk_to_reference_reddit_appends_comment_anchor_when_present() -> None:
+    """When a chunk is from a specific reply (comment_id set), the
+    permalink gains the #comment-<id> anchor so the citation opens
+    at the right reply."""
+    chunk = {
+        "metadata": {
+            "source_type": "reddit_post",
+            "source_id": "reddit:abc",
+            "title": "thread title",
+            "permalink": "https://www.reddit.com/r/sub/comments/abc",
+            "subreddit": "sub",
+            "author": "user",
+            "comment_id": "xyz789",
+        },
+        "text": "comment-level snippet",
+    }
+    _key, ref = qa_agent._chunk_to_reference(chunk)
+    assert ref["permalink"].endswith("#comment-xyz789")
+
+
+def test_chunk_to_reference_hn_renders_polymorphic() -> None:
+    """HN chunks emit source_type='hn_story', a story-item permalink,
+    and author so the frontend renders as 'HN · author · title'."""
+    chunk = {
+        "metadata": {
+            "source_type": "hn_story",
+            "source_id": "hn:42000",
+            "title": "Caching strategies in production",
+            "permalink": "https://news.ycombinator.com/item?id=42000",
+            "author": "throwaway_dev",
+        },
+        "text": "snippet",
+    }
+    _key, ref = qa_agent._chunk_to_reference(chunk)
+    assert ref["source_type"] == "hn_story"
+    assert ref["thread_title"] == "Caching strategies in production"
+    assert ref["author"] == "throwaway_dev"
+    assert ref["permalink"] == "https://news.ycombinator.com/item?id=42000"
+    # Legacy fallback fields populated.
+    assert ref["channel_name"] == "throwaway_dev"
+
+
+def test_chunk_to_reference_hn_comment_uses_comment_item_url() -> None:
+    """For HN, per-comment URLs are separate item endpoints (not anchors).
+    When comment_id is set, permalink points at that item directly."""
+    chunk = {
+        "metadata": {
+            "source_type": "hn_story",
+            "source_id": "hn:42000",
+            "title": "Story title",
+            "author": "op",
+            "comment_id": 42100,
+        },
+        "text": "comment snippet",
+    }
+    _key, ref = qa_agent._chunk_to_reference(chunk)
+    assert ref["permalink"] == "https://news.ycombinator.com/item?id=42100"
+
+
+def test_chunk_to_reference_unknown_source_type_falls_through_to_video() -> None:
+    """Defensive fallback — unrecognized source_type renders via the
+    YouTube path so we don't hard-fail on a future-source-type chunk
+    that happens to land in the index before the renderer is updated."""
+    chunk = {
+        "metadata": {
+            "source_type": "future_unknown_type",
+            "video_id": "xyz",
+            "video_title": "Some title",
+            "channel_name": "Whatever",
+            "timestamp_start": 30.0,
+        },
+        "text": "snippet",
+    }
+    _key, ref = qa_agent._chunk_to_reference(chunk)
+    assert ref["source_type"] == "video"  # falls through

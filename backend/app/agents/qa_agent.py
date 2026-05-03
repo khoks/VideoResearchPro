@@ -178,20 +178,106 @@ def formulate_answer(state: QAAgentState) -> dict:
 
 
 def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
-    """Build a (dedupe_key, reference_dict) pair from a RAG chunk."""
+    """Build a (dedupe_key, reference_dict) pair from a RAG chunk.
+
+    Polymorphic by ``source_type`` per S-1.5.5. The frontend
+    `<CitationLink>` component (PR #117) dispatches its rendering on
+    the same `source_type` discriminator, so we emit it here on every
+    reference. Legacy chunks (pre-S-1.5.4 era — no source_type in
+    metadata) fall through to the YouTube path.
+
+    Per-source fields:
+      - video       (YouTube): video_url + video_title + channel_name
+                               + timestamp_display + youtube_link
+      - reddit_post:           permalink (with #comment-<id> when
+                               applicable) + thread_title + subreddit
+                               + author
+      - hn_story:              permalink (HN item URL) + thread_title
+                               + author
+    """
     meta = chunk.get("metadata", {})
-    vid = meta.get("video_id", "")
+    source_type = (meta.get("source_type") or "video").strip() or "video"
+    source_id = meta.get("source_id") or meta.get("video_id") or ""
+    title = (meta.get("video_title") or meta.get("title") or "Unknown") or "Unknown"
+
+    if source_type == "reddit_post":
+        permalink = (
+            meta.get("permalink")
+            or meta.get("source_url")
+            or meta.get("video_url")
+            or ""
+        )
+        # Reply-anchor support: if the chunk is from a specific
+        # comment, append the #comment-<id> fragment so the citation
+        # opens at the right reply.
+        comment_id = meta.get("comment_id")
+        if comment_id and "#comment-" not in permalink:
+            permalink = f"{permalink}#comment-{comment_id}"
+        author = meta.get("author") or ""
+        subreddit = meta.get("subreddit") or ""
+        # Dedupe key includes comment_id so two cites from the same
+        # thread but different replies stay distinct.
+        key = f"{source_type}:{source_id}_{comment_id or ''}"
+        return key, {
+            "source_type": "reddit_post",
+            "permalink": permalink,
+            "thread_title": title,
+            "subreddit": subreddit,
+            "author": author,
+            # YouTube-shaped fields preserved as fallback for the
+            # legacy frontend rendering path (still used by tests
+            # that haven't migrated to <CitationLink>).
+            "video_url": permalink,
+            "video_title": title,
+            "channel_name": (
+                f"r/{subreddit}" if subreddit else (author or "Unknown")
+            ),
+            "timestamp_seconds": 0.0,
+            "timestamp_display": "",
+            "youtube_link": permalink,
+        }
+
+    if source_type == "hn_story":
+        permalink = (
+            meta.get("permalink")
+            or meta.get("source_url")
+            or meta.get("video_url")
+            or ""
+        )
+        author = meta.get("author") or ""
+        comment_id = meta.get("comment_id")
+        # HN's per-comment URL is a separate item endpoint, not an
+        # anchor; if a comment_id is set, point at that item directly.
+        if comment_id:
+            permalink = f"https://news.ycombinator.com/item?id={comment_id}"
+        key = f"{source_type}:{source_id}_{comment_id or ''}"
+        return key, {
+            "source_type": "hn_story",
+            "permalink": permalink,
+            "thread_title": title,
+            "author": author,
+            # Legacy YouTube-shaped fallback fields.
+            "video_url": permalink,
+            "video_title": title,
+            "channel_name": author or "HN",
+            "timestamp_seconds": 0.0,
+            "timestamp_display": "",
+            "youtube_link": permalink,
+        }
+
+    # Default: video / unknown — preserve the legacy YouTube shape.
+    vid = source_id or meta.get("video_id", "")
     ts = float(meta.get("timestamp_start", 0))
     key = f"{vid}_{int(ts)}"
-    ref = {
+    return key, {
+        "source_type": "video",
         "video_url": meta.get("video_url", build_youtube_url(vid)),
-        "video_title": meta.get("video_title", "Unknown") or "Unknown",
+        "video_title": title,
         "channel_name": meta.get("channel_name", "Unknown"),
         "timestamp_seconds": ts,
         "timestamp_display": format_timestamp(ts),
         "youtube_link": build_youtube_url(vid, ts),
     }
-    return key, ref
 
 
 def _title_variants(title: str) -> list[str]:

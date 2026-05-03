@@ -73,8 +73,17 @@ def chunk_transcript(
         transcript_segments: List of {text, start, duration} from youtube-transcript-api.
         chunk_size: Target tokens per chunk.
         chunk_overlap: Overlap tokens between consecutive chunks.
-        video_metadata: {video_id, title, channel_name, channel_id, url,
-            published_at, duration_seconds, language} to attach to every chunk.
+        video_metadata: per-document fields to attach to every chunk's
+            Chroma metadata. Legacy YouTube-shaped: ``{video_id, title,
+            channel_name, channel_id, url, published_at, duration_seconds,
+            language}``. Polymorphic (M-1.5 / M-1.6 follow-up):
+            ``{source_type, source_id, source_url, permalink, author,
+            subreddit, instance}``. The Q&A agent's
+            ``_chunk_to_reference`` reads the polymorphic block on
+            every chunk to dispatch citation rendering by source_type
+            (video / reddit_post / hn_story / mastodon_post / bluesky_post).
+            Legacy chunks without the polymorphic fields keep working
+            because the agent falls back to the YouTube branch.
         transcription_source: Provenance tag for how the transcript was
             produced. ``"youtube"`` (default) means it came from the YouTube
             Transcript API; ``"whisper"`` means it was produced by the
@@ -169,6 +178,12 @@ def chunk_transcript(
         result.append({
             "text": chunk["text"],
             "metadata": {
+                # Legacy YouTube-shaped fields. Still populated for
+                # every source_type because the report-agent and the
+                # Q&A agent's video-default branch read them; for non-
+                # video sources `video_id` doubles as the dedup key
+                # but the polymorphic fields below are the citation
+                # source.
                 "video_id": metadata.get("video_id", ""),
                 "video_title": metadata.get("title", ""),
                 "channel_name": metadata.get("channel_name", ""),
@@ -183,6 +198,19 @@ def chunk_transcript(
                 "language": metadata.get("language", "unknown"),
                 "transcription_source": transcription_source,
                 "word_count": chunk["word_count"],
+                # Polymorphic per-document fields per S-1.5.5 follow-up.
+                # The Q&A agent's `_chunk_to_reference` dispatches on
+                # `source_type` and reads the matching set of fields.
+                # Missing keys default to "" / "video" so legacy chunks
+                # written before this PR continue to render via the
+                # YouTube default branch.
+                "source_type": str(metadata.get("source_type") or "video"),
+                "source_id": str(metadata.get("source_id") or ""),
+                "source_url": str(metadata.get("source_url") or ""),
+                "permalink": str(metadata.get("permalink") or ""),
+                "author": str(metadata.get("author") or ""),
+                "subreddit": str(metadata.get("subreddit") or ""),
+                "instance": str(metadata.get("instance") or ""),
             },
         })
 

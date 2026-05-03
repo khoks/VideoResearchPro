@@ -174,3 +174,131 @@ def test_language_defaults_to_unknown_when_missing():
     segs = [{"text": "Hello world", "start": 0.0, "duration": 5.0}]
     chunks = chunk_transcript(segs, video_metadata={"video_id": "x"})
     assert chunks[0]["metadata"]["language"] == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Polymorphic per-document fields (M-1.5 / M-1.6 follow-up)
+# ---------------------------------------------------------------------------
+# These tests lock in the contract that every chunk carries the
+# polymorphic source-type fields the Q&A agent's `_chunk_to_reference`
+# reads. Before this PR, social-media chunks (Reddit / HN / Mastodon /
+# Bluesky) lost their source identity at the chunking layer and ended
+# up rendering as YouTube citations in production despite the
+# frontend rendering contract being in place since PR #117.
+
+
+def test_polymorphic_fields_default_to_video_when_missing():
+    """Legacy callers that don't pass source_type still get a sensible
+    default — `_chunk_to_reference` falls through the YouTube branch."""
+    segs = [{"text": "Hello world", "start": 0.0, "duration": 5.0}]
+    chunks = chunk_transcript(segs, video_metadata={"video_id": "x"})
+    md = chunks[0]["metadata"]
+    assert md["source_type"] == "video"
+    assert md["source_id"] == ""
+    assert md["source_url"] == ""
+    assert md["permalink"] == ""
+    assert md["author"] == ""
+    assert md["subreddit"] == ""
+    assert md["instance"] == ""
+
+
+def test_reddit_polymorphic_fields_propagate_to_chunk_metadata():
+    """A Reddit document's source_type / permalink / subreddit / author
+    must reach Chroma so qa_agent renders the citation correctly."""
+    segs = [{"text": "Reddit thread body", "start": 0.0, "duration": 5.0}]
+    meta = {
+        "video_id": "reddit:abc",
+        "title": "Why tariffs are bad",
+        "source_type": "reddit_post",
+        "source_id": "reddit:abc",
+        "source_url": "https://www.reddit.com/r/economics/comments/abc",
+        "permalink": "https://www.reddit.com/r/economics/comments/abc",
+        "subreddit": "economics",
+        "author": "supply_chain_pro",
+    }
+    chunks = chunk_transcript(segs, video_metadata=meta)
+    md = chunks[0]["metadata"]
+    assert md["source_type"] == "reddit_post"
+    assert md["source_id"] == "reddit:abc"
+    assert md["permalink"] == "https://www.reddit.com/r/economics/comments/abc"
+    assert md["subreddit"] == "economics"
+    assert md["author"] == "supply_chain_pro"
+
+
+def test_hn_polymorphic_fields_propagate_to_chunk_metadata():
+    segs = [{"text": "HN story body", "start": 0.0, "duration": 5.0}]
+    meta = {
+        "video_id": "hn:42000",
+        "title": "Caching strategies",
+        "source_type": "hn_story",
+        "source_id": "hn:42000",
+        "source_url": "https://news.ycombinator.com/item?id=42000",
+        "permalink": "https://news.ycombinator.com/item?id=42000",
+        "author": "throwaway_dev",
+    }
+    chunks = chunk_transcript(segs, video_metadata=meta)
+    md = chunks[0]["metadata"]
+    assert md["source_type"] == "hn_story"
+    assert md["permalink"] == "https://news.ycombinator.com/item?id=42000"
+    assert md["author"] == "throwaway_dev"
+    # Reddit-only field should still serialize as empty for HN.
+    assert md["subreddit"] == ""
+
+
+def test_mastodon_polymorphic_fields_propagate_to_chunk_metadata():
+    segs = [{"text": "Status body", "start": 0.0, "duration": 5.0}]
+    meta = {
+        "video_id": "mastodon:111222",
+        "title": "Federated identity",
+        "source_type": "mastodon_post",
+        "source_id": "mastodon:111222",
+        "source_url": "https://mastodon.social/@privacynerd/111222",
+        "permalink": "https://mastodon.social/@privacynerd/111222",
+        "author": "privacynerd",
+        "instance": "mastodon.social",
+    }
+    chunks = chunk_transcript(segs, video_metadata=meta)
+    md = chunks[0]["metadata"]
+    assert md["source_type"] == "mastodon_post"
+    assert md["permalink"] == "https://mastodon.social/@privacynerd/111222"
+    assert md["author"] == "privacynerd"
+    assert md["instance"] == "mastodon.social"
+
+
+def test_bluesky_polymorphic_fields_propagate_to_chunk_metadata():
+    segs = [{"text": "Post body", "start": 0.0, "duration": 5.0}]
+    meta = {
+        "video_id": "bluesky:at://did:plc:abc/app.bsky.feed.post/100",
+        "title": "AT-Proto thoughts",
+        "source_type": "bluesky_post",
+        "source_id": "bluesky:at://did:plc:abc/app.bsky.feed.post/100",
+        "source_url": "https://bsky.app/profile/alice.bsky.social/post/100",
+        "permalink": "https://bsky.app/profile/alice.bsky.social/post/100",
+        "author": "alice.bsky.social",
+    }
+    chunks = chunk_transcript(segs, video_metadata=meta)
+    md = chunks[0]["metadata"]
+    assert md["source_type"] == "bluesky_post"
+    assert md["permalink"] == "https://bsky.app/profile/alice.bsky.social/post/100"
+    assert md["author"] == "alice.bsky.social"
+
+
+def test_polymorphic_fields_present_on_every_chunk():
+    """Multi-chunk documents — each chunk in the result must carry the
+    polymorphic block, not just the first."""
+    segs = _make_segments(20, words_per_seg=50)
+    meta = {
+        "video_id": "reddit:abc",
+        "source_type": "reddit_post",
+        "permalink": "https://www.reddit.com/r/x/comments/abc",
+        "subreddit": "x",
+        "author": "user",
+    }
+    chunks = chunk_transcript(segs, video_metadata=meta, chunk_size=200, chunk_overlap=20)
+    assert len(chunks) > 1  # ensure we have multi-chunk coverage
+    for c in chunks:
+        md = c["metadata"]
+        assert md["source_type"] == "reddit_post"
+        assert md["subreddit"] == "x"
+        assert md["author"] == "user"
+        assert md["permalink"].startswith("https://")

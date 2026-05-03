@@ -345,3 +345,193 @@ def test_execute_topic_job_fails_clearly_when_all_sources_empty(
     assert persisted_job is not None
     assert persisted_job.status == "failed"
     assert "No candidates found" in (persisted_job.error_message or "")
+
+
+# ---------------------------------------------------------------------------
+# T-1.5.11.6: HN-only end-to-end (mirror of the Reddit-only test)
+# ---------------------------------------------------------------------------
+def test_execute_topic_job_hn_only_goes_through_dispatch_path(
+    db, clean_registry, monkeypatch
+):
+    """source_types=['hn_story'] must NOT call run_search_agent and must
+    persist HN candidates with classification + transcript state."""
+    registry.register(_FakeHNConnector([_hn_cand("h1"), _hn_cand("h2"), _hn_cand("h3")]))
+
+    job = _make_topic_job(db, source_types=["hn_story"], topic="caching strategies")
+
+    from app.tasks import job_tasks
+
+    monkeypatch.setattr(job_tasks, "SessionLocal", lambda: db)
+
+    def _no_video_path(*args, **kwargs):  # pragma: no cover
+        raise AssertionError("run_search_agent should not be called for HN-only jobs")
+
+    monkeypatch.setattr(
+        "app.agents.search_agent.run_search_agent",
+        _no_video_path,
+    )
+
+    from app.services import progress_service
+
+    monkeypatch.setattr(progress_service, "publish_progress", lambda *a, **kw: None)
+    monkeypatch.setattr(progress_service, "publish_status_change", lambda *a, **kw: None)
+
+    execute_topic_job.run(job.id)
+
+    persisted_job = db.query(Job).filter(Job.id == job.id).first()
+    assert persisted_job is not None
+    assert persisted_job.status == "awaiting_approval"
+
+    docs = db.query(Document).filter(Document.source_type == "hn_story").all()
+    assert len(docs) == 3
+    # HN connector's stub fetch_text returns a 'technical' classification
+    # — verify it lands in source_metadata.
+    for doc in docs:
+        metadata = json.loads(doc.source_metadata_json or "{}")
+        assert metadata.get("classification", {}).get("framing") == "technical"
+        assert doc.transcript_status == "fetched"
+        assert doc.transcript_source == "hn"
+
+    links = db.query(JobVideo).filter(JobVideo.job_id == job.id).all()
+    assert len(links) == 3
+
+
+# ---------------------------------------------------------------------------
+# T-1.5.11.7: mixed [video, reddit_post, hn_story] end-to-end
+# ---------------------------------------------------------------------------
+def test_execute_topic_job_mixed_video_reddit_hn_combines_both_paths(
+    db, clean_registry, monkeypatch
+):
+    """A topic job with source_types=['video','reddit_post','hn_story']
+    runs BOTH run_search_agent (for video) AND dispatch_search (for the
+    other two), and the resulting Documents include all three source
+    types with proper classification persistence on the non-video ones."""
+    registry.register(_FakeRedditConnector([_reddit_cand("r1"), _reddit_cand("r2")]))
+    registry.register(_FakeHNConnector([_hn_cand("h1")]))
+
+    job = _make_topic_job(
+        db,
+        source_types=["video", "reddit_post", "hn_story"],
+        topic="ai ethics",
+    )
+
+    from app.tasks import job_tasks
+
+    monkeypatch.setattr(job_tasks, "SessionLocal", lambda: db)
+
+    # Patch run_search_agent to return synthetic YouTube curation. The
+    # legacy YouTube ingest path uses _upsert_video_and_link with the
+    # dict shape; mirror that.
+    youtube_videos = [
+        {
+            "video_id": "ytABC1",
+            "title": "YouTube video 1",
+            "channel_id": "UC_test",
+            "channel_name": "Test Channel",
+            "url": "https://www.youtube.com/watch?v=ytABC1",
+            "duration_seconds": 600,
+            "published_at": None,
+            "thumbnail_url": None,
+            "description": "",
+        }
+    ]
+    monkeypatch.setattr(
+        "app.agents.search_agent.run_search_agent",
+        lambda **kwargs: (youtube_videos, ["q1"]),
+    )
+
+    from app.services import progress_service
+
+    monkeypatch.setattr(progress_service, "publish_progress", lambda *a, **kw: None)
+    monkeypatch.setattr(progress_service, "publish_status_change", lambda *a, **kw: None)
+
+    execute_topic_job.run(job.id)
+
+    persisted_job = db.query(Job).filter(Job.id == job.id).first()
+    assert persisted_job is not None
+    assert persisted_job.status == "awaiting_approval"
+
+    # All three source types persisted.
+    by_type = {
+        st: db.query(Document).filter(Document.source_type == st).count()
+        for st in ("video", "reddit_post", "hn_story")
+    }
+    assert by_type == {"video": 1, "reddit_post": 2, "hn_story": 1}
+
+    # Total JobVideo links = 4 (1 video + 2 reddit + 1 hn).
+    links = db.query(JobVideo).filter(JobVideo.job_id == job.id).all()
+    assert len(links) == 4
+
+    # Non-video rows carry classification; video row does not (video
+    # ingest uses _upsert_video_and_link, which doesn't run the
+    # classifier).
+    reddit_doc = (
+        db.query(Document)
+        .filter(Document.source_type == "reddit_post")
+        .first()
+    )
+    reddit_meta = json.loads(reddit_doc.source_metadata_json or "{}")
+    assert reddit_meta.get("classification", {}).get("stance") == "for"
+
+    hn_doc = (
+        db.query(Document).filter(Document.source_type == "hn_story").first()
+    )
+    hn_meta = json.loads(hn_doc.source_metadata_json or "{}")
+    assert hn_meta.get("classification", {}).get("framing") == "technical"
+
+
+# ---------------------------------------------------------------------------
+# Partial-failure resilience: dispatcher error on one source doesn't
+# kill the whole job
+# ---------------------------------------------------------------------------
+def test_execute_topic_job_isolates_one_source_failure(
+    db, clean_registry, monkeypatch
+):
+    """If one connector raises during search, others' candidates still
+    flow through and the job reaches awaiting_approval."""
+
+    class _ExplodingConnector(BaseConnector):
+        source_type = "reddit_post"
+
+        def search(self, *args, **kwargs):
+            raise RuntimeError("reddit api on fire")
+
+        def list_creator_items(self, *args, **kwargs):  # pragma: no cover
+            return []
+
+        def fetch_metadata(self, *args, **kwargs):  # pragma: no cover
+            return {}
+
+        def fetch_text(self, *args, **kwargs):  # pragma: no cover
+            return None
+
+    registry.register(_ExplodingConnector())
+    registry.register(_FakeHNConnector([_hn_cand("h1")]))
+
+    job = _make_topic_job(
+        db,
+        source_types=["reddit_post", "hn_story"],
+        topic="resilience test",
+    )
+
+    from app.tasks import job_tasks
+
+    monkeypatch.setattr(job_tasks, "SessionLocal", lambda: db)
+
+    from app.services import progress_service
+
+    monkeypatch.setattr(progress_service, "publish_progress", lambda *a, **kw: None)
+    monkeypatch.setattr(progress_service, "publish_status_change", lambda *a, **kw: None)
+
+    execute_topic_job.run(job.id)
+
+    persisted_job = db.query(Job).filter(Job.id == job.id).first()
+    assert persisted_job is not None
+    # HN's lone candidate survived the Reddit explosion → awaiting_approval.
+    assert persisted_job.status == "awaiting_approval"
+    assert (
+        db.query(Document).filter(Document.source_type == "reddit_post").count() == 0
+    )
+    assert (
+        db.query(Document).filter(Document.source_type == "hn_story").count() == 1
+    )

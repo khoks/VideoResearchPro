@@ -13,6 +13,8 @@
  *   - "hn_story":                  story_title + author + permalink (item id deep-link)
  *   - "mastodon_post":             status_title + author + instance + permalink (status URL — points at reply
  *                                  when comment_id was indexed alongside `comment_url`)
+ *   - "bluesky_post":              post_title + author + permalink (bsky.app web URL — points at reply
+ *                                  when comment_id was indexed alongside `comment_url`)
  *
  * The connector contract (docs/source-types.md § Citations) defines
  * the per-source URL shape; backends building references should use
@@ -22,7 +24,8 @@ export type ReferenceSourceType =
   | 'video'
   | 'reddit_post'
   | 'hn_story'
-  | 'mastodon_post';
+  | 'mastodon_post'
+  | 'bluesky_post';
 
 export interface Reference {
   /** Absent on legacy rows; defaults to "video" in the renderer. */

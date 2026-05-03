@@ -79,7 +79,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Next milestones (post-M-1.5):**
 
-- **M-1.6** 🟡 (Mastodon + Bluesky end-to-end) — same pattern, two more connectors. **S-1.5.6 (Mastodon) shipped 2026-05-03** on `feat/s-1-5-6-mastodon-connector-2026-05-03` (this branch); S-1.5.7 (Bluesky) still ⚪ open as the second discovery surface. Storage + classifier + polymorphic approval / citation rendering reused from the M-1.5 plumbing without changes.
+- **M-1.6** 🟢 (Mastodon + Bluesky end-to-end) — **shipped 2026-05-03**. S-1.5.6 (Mastodon) + S-1.5.7 (Bluesky) both closed. Two new connectors slotted into the M-1.5 BaseConnector / polymorphic ApprovalCard / classifier / citation plumbing without changes — that's the structural validation we wanted from this milestone. The pattern is now battle-tested across four social-media surfaces (Reddit / HN / Mastodon / Bluesky).
 - **M-1.7** (podcast end-to-end) — E-1.7 connector + Whisper-as-service decision (OQ-4).
 - **M-2.5** (marketing landing page deployed) — E-2.5 + a hosting decision.
 
@@ -158,13 +158,26 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - Federated reach: `mastodon.social` (the default) federates with most public instances, so a single connection point gives broad discovery without per-instance auth. Self-hosters can override with `MASTODON_INSTANCE_BASE`.
 - Per-source rate-limit / retry config (T-1.5.11.2 from the M-1.5 polish backlog) still applies to Mastodon when it lands; the unauth ceiling is 300 req/5min ≈ 60 rpm and the client throttles defensively to that.
 
-#### S-1.5.7 ⚪ Bluesky connector
+#### S-1.5.7 🟢 Bluesky connector
 
-**PR:** TBD
-**Acceptance.** AT-Protocol search + thread fetch. App password auth.
-**Tasks** (initial)
-- [ ] T-1.5.7.1 AT-Proto API client integration
-- [ ] T-1.5.7.2 Tests
+**PR:** TBD (this branch — `feat/s-1-5-7-bluesky-connector-2026-05-03`)
+**Acceptance.** AT-Protocol search + thread fetch via the public XRPC API at `https://public.api.bsky.app/xrpc/`. **No auth required for ingest** — the original spec called for app-password auth, but Bluesky's public read endpoints (`searchPosts`, `getPostThread`, `getProfile`, `getAuthorFeed`) are open and that's what we use. If Bluesky tightens rate limits later, swapping to an authenticated PDS endpoint is a matter of adding a token-fetching path and toggling `BLUESKY_XRPC_BASE`.
+**Tasks**
+- [x] T-1.5.7.1 AT-Proto XRPC client integration — `app/sources/bluesky/client.py` with rate-limited `searchPosts`, `getPostThread`, `getProfile`, `getAuthorFeed` wrappers; `app/sources/bluesky/connector.py` implementing the BaseConnector contract; `app/sources/bluesky/flatten.py` for OP + top-N replies (by likes) with depth markers reconstructed by walking the recursive `replies` tree.
+- [x] T-1.5.7.2 Tests — `backend/tests/test_sources/test_bluesky_connector.py` (~50 tests covering search/list/metadata/text wiring, classifier integration, AT-URI validation, comment_url emission, blocked-post / repost skipping, language extraction from `record.langs`).
+- [x] T-1.5.7.3 Frontend `SOURCE_CONFIGS['bluesky_post']` + `SourceMetadata` discriminator + `videoToApprovalProps` mapper extension (compile-time-enforced via mapped-type registry).
+- [x] T-1.5.7.4 Polymorphic `_chunk_to_reference` (backend) + `<CitationLink>` (frontend) extension for `bluesky_post` — author + reply-aware permalink (same `comment_url` reply-anchor pattern as Mastodon).
+
+**Implementation notes.**
+- Identity: `Candidate.source_id = f"bluesky:{at_uri}"`. AT-URIs are stable across handle renames (DIDs are permanent); the bsky.app web URL goes into `Candidate.source_url` for browser-friendly citations.
+- Discovery: `searchPosts` returns posts ranked by Bluesky's relevance scoring (keyword + recency + engagement weighting). No query normalisation needed — AT-Proto search accepts free text.
+- Creator-feed: `getAuthorFeed` accepts both handles and DIDs as `actor`. Reposts (entries with `reason.$type === '...#reasonRepost'`) are filtered out — parity with how Mastodon excludes reblogs.
+- Reply tree: `getPostThread` returns recursive `{post, replies}` shape. Depth-first walk yields absolute depth per reply; we sort by `likeCount` and trim to top-N.
+- Each reply segment carries its own `comment_url` (the reply's bsky.app web URL) so the reference enricher can deep-link to that exact reply when chunks of its body get cited — same reply-anchor pattern as Mastodon.
+- Language: `record.langs[0]` flows through to `ExtractedText.language` for multilingual indexing.
+- Blocked / not-found posts (`#blockedPost`, `#notFoundPost` thread nodes) are skipped during walking; their visible children (if any) still render.
+
+**Closes M-1.6** ✅ — Mastodon (S-1.5.6) + Bluesky (S-1.5.7) shipped same day. The polymorphic-connector / approval / citation pattern is now validated across four social-media surfaces (Reddit / HN / Mastodon / Bluesky); future connectors slot into the same shape.
 
 #### S-1.5.8 🔵 Manual-paste mode (Mode B for FB/IG/LI/X-without-paid)
 

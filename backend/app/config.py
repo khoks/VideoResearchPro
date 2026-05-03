@@ -73,6 +73,25 @@ class Settings(BaseSettings):
     MASTODON_COMMENT_DEPTH_DEFAULT: int = 50  # top-N replies by favourites (parity with Reddit/HN)
 
     # -------------------------------------------------------------------
+    # Bluesky connector (public AT-Protocol XRPC)
+    # -------------------------------------------------------------------
+    # Bluesky exposes its public read API without auth at:
+    #   GET https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts
+    #   GET https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread
+    #   GET https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile
+    #   GET https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed
+    # No app password is needed for ingest today; if Bluesky tightens
+    # rate limits we can swap to an authenticated PDS endpoint by
+    # adding a token-fetching path. Operators running a private
+    # Bluesky PDS can override the base URL.
+    BLUESKY_XRPC_BASE: str = "https://public.api.bsky.app"
+    BLUESKY_USER_AGENT: str = (
+        "pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani)"
+    )
+    BLUESKY_RATE_LIMIT_RPM: int = 60  # Bluesky's public unauth caps are generous; stay polite at 60 rpm
+    BLUESKY_COMMENT_DEPTH_DEFAULT: int = 50  # top-N replies by likes (parity with Reddit/HN/Mastodon)
+
+    # -------------------------------------------------------------------
     # LLM — Primary (high-quality) model
     # -------------------------------------------------------------------
     # Provider dispatches which chat client is built. The call-site code is

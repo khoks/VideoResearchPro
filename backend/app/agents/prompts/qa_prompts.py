@@ -32,12 +32,14 @@ Original question: {question}
 Two sub-queries:"""
 
 
-USED_SOURCES_PROMPT = """You are a citation auditor. Given an answer and a list of candidate source chunks, return the chunk indices whose video was actually cited or relied upon in the answer.
+USED_SOURCES_PROMPT = """You are a citation auditor. Given an answer and a list of candidate source chunks, return the chunk indices whose source was actually cited or relied upon in the answer.
+
+The candidate chunks may be from multiple source types (YouTube videos, Reddit threads, Hacker News stories, Mastodon posts, Bluesky posts). Each line is prefixed with its `[source_type]` so you can distinguish them — match the answer's claims against any source type, not just videos.
 
 Answer:
 {answer}
 
-Candidate chunks (index | video_id | video_title):
+Candidate chunks (index | [source_type] | source_id | title):
 {chunks}
 
 Return ONLY a JSON array of integer indices (0-based) of chunks that are clearly used in the answer. Example: [0, 2, 5]. Return [] if none are used."""

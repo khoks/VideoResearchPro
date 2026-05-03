@@ -438,11 +438,20 @@ def _references_via_llm(rag_results: list[dict], answer: str) -> list[dict]:
     if not candidates:
         return []
 
-    lines = [
-        f"{i} | {r.get('metadata', {}).get('video_id', '')} | "
-        f"{r.get('metadata', {}).get('video_title', 'Unknown')}"
-        for i, r in enumerate(candidates)
-    ]
+    # Polymorphic chunk listing per S-1.5.12 T-1.5.12.3. The LLM
+    # auditor sees `[source_type]` as a prefix so it can distinguish
+    # YouTube videos from Reddit / HN / Mastodon / Bluesky chunks.
+    # The id column prefers `source_id` (the namespaced form like
+    # `reddit:abc` / `bluesky:at://...`) when present, falling back
+    # to legacy `video_id` for older chunks. Title falls back through
+    # `video_title` → `title` → "Unknown".
+    lines = []
+    for i, r in enumerate(candidates):
+        m = r.get("metadata", {}) or {}
+        source_type = (m.get("source_type") or "video").strip() or "video"
+        chunk_id = m.get("source_id") or m.get("video_id") or ""
+        title = m.get("video_title") or m.get("title") or "Unknown"
+        lines.append(f"{i} | [{source_type}] | {chunk_id} | {title}")
     prompt = USED_SOURCES_PROMPT.format(answer=answer, chunks="\n".join(lines))
 
     llm = get_llm_for("qa_extract_references", temperature=0.0)

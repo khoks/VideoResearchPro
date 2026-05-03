@@ -73,11 +73,19 @@ def approve_job(job_id: str, approval: VideoApproval, db: Session = Depends(get_
     if job.status != "awaiting_approval":
         raise HTTPException(status_code=400, detail=f"Job is not awaiting approval (status: {job.status})")
 
-    # `approved_video_ids` carries YouTube video IDs (e.g. "U-G-mSd4KAE").
-    # Approval state now lives on the JobVideo join row, not the shared Document.
+    # `approved_video_ids` historically carried YouTube video IDs (e.g.
+    # "U-G-mSd4KAE"). Post-S-1.5.4 page integration, the frontend sends
+    # whatever string identifies the row as displayed — for video that's
+    # still the YouTube video_id, for Reddit/HN it's the document_id
+    # (UUID) since those rows have video_id=NULL. We accept either here
+    # and match against both columns on each JobVideo row. Approval
+    # state lives on the JobVideo join row, not the shared Document.
     approved_set = set(approval.approved_video_ids)
     for jv in job.job_videos:
-        jv.approved = jv.video_id in approved_set
+        jv.approved = (
+            (jv.video_id is not None and jv.video_id in approved_set)
+            or jv.document_id in approved_set
+        )
 
     # Clear the phase-1 task id so a racing cancel cannot revoke a task that
     # has already completed. The new task id is stored below after .delay().

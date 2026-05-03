@@ -111,20 +111,60 @@ def job_videos_response(job: Job) -> list[dict]:
     """Build the video list response for a job, stitching per-job approval
     state from the JobVideo join onto the global Document rows.
 
-    The shape matches the pre-refactor `/jobs/{id}/videos` response so existing
-    API consumers keep working.
+    Post-M-1.5 (S-1.5.4 page integration), the response includes
+    polymorphic fields that drive the frontend ` <ApprovalCard>`:
+    ``source_type``, ``source_id``, ``source_metadata`` (parsed JSON),
+    and ``classification`` (lifted out of source_metadata if present).
+    Legacy YouTube-only consumers ignore the new fields safely.
     """
+    import json as _json
+
     approval_by_video: dict[str, bool] = {
-        jv.video_id: jv.approved for jv in (job.job_videos or [])
+        jv.video_id: jv.approved for jv in (job.job_videos or []) if jv.video_id
+    }
+    # Also key approvals by document_id so non-video rows (where
+    # video_id is NULL) can still resolve their approval state.
+    approval_by_document: dict[str, bool] = {
+        jv.document_id: jv.approved for jv in (job.job_videos or [])
     }
 
     results: list[dict] = []
     for v in job.videos or []:
+        # Approval state lookup — prefer document_id (canonical post-
+        # E-1.10) and fall back to video_id for legacy reasons.
+        approved = approval_by_document.get(
+            v.document_id, approval_by_video.get(v.video_id, True)
+        )
+
+        # Parse source_metadata JSON; lift classification out into a
+        # top-level field for the frontend (which renders it via the
+        # <ClassificationBadgeRow> + <ApprovalCard> contract). Sibling
+        # source_metadata keys (e.g. per-source enrichment like score,
+        # subreddit) stay nested.
+        source_metadata: dict = {}
+        classification: dict | None = None
+        if v.source_metadata_json:
+            try:
+                parsed = _json.loads(v.source_metadata_json)
+                if isinstance(parsed, dict):
+                    source_metadata = parsed
+                    classification = parsed.get("classification")
+            except _json.JSONDecodeError:
+                pass
+
         results.append({
             # Pre-refactor shape had an internal UUID `id`; we now expose the
-            # YouTube `video_id` under both names for back-compat.
-            "id": v.video_id,
+            # YouTube `video_id` under both names for back-compat. For non-
+            # video rows, `id` falls back to document_id so the frontend
+            # has a stable key for list rendering.
+            "id": v.video_id or v.document_id,
             "video_id": v.video_id,
+            "document_id": v.document_id,
+            "source_type": v.source_type,
+            "source_id": v.source_id,
+            "source_url": v.source_url,
+            "source_metadata": source_metadata,
+            "classification": classification,
             "title": v.title,
             "channel_name": v.channel_name,
             "channel_id": v.channel_id,
@@ -133,7 +173,7 @@ def job_videos_response(job: Job) -> list[dict]:
             "published_at": v.published_at,
             "thumbnail_url": v.thumbnail_url,
             "description": v.description,
-            "approved": approval_by_video.get(v.video_id, True),
+            "approved": approved,
             "transcript_status": v.transcript_status,
             "transcript_word_count": v.transcript_word_count,
             "transcript_language": v.transcript_language,

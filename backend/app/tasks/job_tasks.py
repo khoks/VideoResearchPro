@@ -482,8 +482,42 @@ def _dispatch_and_store_non_video_sources(
 
 
 def _build_video_metadata(video: Document, language: str | None) -> dict:
-    """Build the metadata dict passed to ``chunk_transcript`` for a Document row."""
+    """Build the metadata dict passed to ``chunk_transcript`` for a Document row.
+
+    Carries per-document fields that the chunker writes into per-chunk
+    Chroma metadata. The Q&A agent reads `source_type` / `permalink` /
+    `author` / `subreddit` / `instance` from chunk metadata via
+    ``_chunk_to_reference`` to render polymorphic citations.
+
+    For ``source_type='video'`` the legacy YouTube-shaped fields
+    (``video_id``, ``title``, ``channel_name``, ``channel_id``, ``url``)
+    are the primary surface and the new fields are largely redundant
+    (e.g. ``permalink == url``). For non-video sources (``reddit_post``,
+    ``hn_story``, ``mastodon_post``, ``bluesky_post``) the new fields
+    ARE the citation source — without them, ``_chunk_to_reference``
+    would fall through to the YouTube default branch and the citation
+    UI would render blank or wrong.
+
+    Per-source-specific fields (``subreddit``, ``author``, ``instance``)
+    are lifted from ``source_metadata_json`` so the chunker doesn't
+    have to know per-source schemas. Missing keys default to empty
+    strings — that's fine because Chroma metadata only stores flat
+    primitives anyway and the Q&A agent uses ``meta.get(...)`` with
+    sensible fallbacks.
+    """
+    # Lift per-source fields from source_metadata_json (defensive against
+    # both dict and missing-attr shapes — older rows may not have it).
+    source_metadata: dict = {}
+    raw_meta = getattr(video, "source_metadata_json", None) or {}
+    if isinstance(raw_meta, dict):
+        source_metadata = raw_meta
+
+    source_type = getattr(video, "source_type", None) or "video"
+    source_id = getattr(video, "source_id", None) or ""
+    source_url = getattr(video, "source_url", None) or video.url or ""
+
     return {
+        # Legacy YouTube-shaped fields (still primary for source_type='video').
         "video_id": video.video_id,
         "title": video.title,
         "channel_name": video.channel_name,
@@ -492,6 +526,18 @@ def _build_video_metadata(video: Document, language: str | None) -> dict:
         "published_at": video.published_at,
         "duration_seconds": video.duration_seconds,
         "language": language or getattr(video, "transcript_language", None) or "en",
+        # Polymorphic per-document fields. Chunker writes these to
+        # Chroma; ``_chunk_to_reference`` reads them.
+        "source_type": source_type,
+        "source_id": source_id,
+        "source_url": source_url,
+        # ``permalink`` is the field name the qa_agent reads. For
+        # video sources it's the youtube URL; for everything else
+        # it's the canonical platform link.
+        "permalink": source_url or video.url or "",
+        "author": str(source_metadata.get("author") or ""),
+        "subreddit": str(source_metadata.get("subreddit") or ""),
+        "instance": str(source_metadata.get("instance") or ""),
     }
 
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { useJob, useJobVideos, useApproveJob, useCancelJob, useDeleteJob } from '../hooks/useJobs';
@@ -7,6 +7,7 @@ import { useQAHistory, useAskQuestion, useClarifyQuestion } from '../hooks/useQA
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { CitationLink } from '../components/citation';
+import { ApprovalCard, SOURCE_CONFIGS } from '../components/approval';
 import {
   Badge,
   Button,
@@ -25,7 +26,7 @@ import { useJobStore } from '../stores/jobStore';
 import { useAuth } from '../contexts/AuthContext';
 import { wsClient } from '../services/wsClient';
 import { VideoKnowledgeDrawer } from './VideoKnowledgePage';
-import type { Video } from '../types/video';
+import { videoToApprovalProps, type Video } from '../types/video';
 import type { QAExchange } from '../types/qa';
 import type { Job } from '../types/job';
 
@@ -219,7 +220,7 @@ export function JobDetailPage() {
                       marginTop: 2,
                     }}
                   >
-                    {v.channel_name} · {formatDuration(v.duration_seconds)} · {v.transcript_status}
+                    {v.channel_name} · {formatDuration(v.duration_seconds ?? 0)} · {v.transcript_status}
                   </div>
                 </div>
                 {v.transcript_status === 'fetched' && (
@@ -255,7 +256,7 @@ export function JobDetailPage() {
 
       {job.status === 'completed' && <QASection jobId={job.id} />}
 
-      {knowledgeVideo && (
+      {knowledgeVideo && knowledgeVideo.video_id && (
         <VideoKnowledgeDrawer
           videoId={knowledgeVideo.video_id}
           videoTitle={knowledgeVideo.title}
@@ -458,20 +459,40 @@ function VideoApprovalSection({
   onApprove: (args: { id: string; data: { approved_video_ids: string[] } }) => Promise<unknown>;
 }) {
   const c = useColors();
-  // Use YouTube video_id (not internal UUID) so the approval payload matches
-  // what the backend expects in approved_video_ids.
-  const [selected, setSelected] = useState<Set<string>>(new Set(videos.map((v) => v.video_id)));
+  // The per-row identity used in the backend approval payload. For
+  // video rows that's video_id (legacy YouTube ID); for non-video
+  // rows (Reddit, HN) that's document_id (UUID). Backend's
+  // /approve endpoint accepts either per S-1.5.4 page integration.
+  const approvalKey = (v: Video) => v.video_id ?? v.document_id;
+
+  const [selected, setSelected] = useState<Set<string>>(
+    new Set(videos.map(approvalKey)),
+  );
   const [sortKey, setSortKey] = useState<VideoSortKey>('channel');
+  // Per D-021: low-relevance candidates (topic_relevance < 0.5) are
+  // hidden from the default approval list. Toggle to show them dimmed.
+  const [showLowRelevance, setShowLowRelevance] = useState(false);
+
+  const filteredVideos = useMemo(() => {
+    return videos.filter((v) => {
+      if (showLowRelevance) return true;
+      // No classification → show (legacy / video / unclassified).
+      if (!v.classification) return true;
+      return v.classification.topic_relevance >= 0.5;
+    });
+  }, [videos, showLowRelevance]);
 
   const sortedVideos = useMemo(() => {
-    const copy = [...videos];
+    const copy = [...filteredVideos];
     copy.sort((a, b) => {
-      if (sortKey === 'duration') return a.duration_seconds - b.duration_seconds;
+      if (sortKey === 'duration') {
+        return (a.duration_seconds ?? 0) - (b.duration_seconds ?? 0);
+      }
       if (sortKey === 'title') return a.title.localeCompare(b.title);
-      return a.channel_name.localeCompare(b.channel_name);
+      return (a.channel_name ?? '').localeCompare(b.channel_name ?? '');
     });
     return copy;
-  }, [videos, sortKey]);
+  }, [filteredVideos, sortKey]);
 
   const toggleVideo = (id: string) => {
     setSelected((prev) => {
@@ -481,28 +502,21 @@ function VideoApprovalSection({
     });
   };
 
-  const selectAll = () => setSelected(new Set(videos.map((v) => v.video_id)));
+  const selectAll = () =>
+    setSelected(new Set(filteredVideos.map(approvalKey)));
   const deselectAll = () => setSelected(new Set());
 
   const handleApprove = () => {
     onApprove({ id: jobId, data: { approved_video_ids: Array.from(selected) } });
   };
 
-  const thumbPlaceholder: CSSProperties = {
-    width: 96,
-    height: 54,
-    borderRadius: radius.sm,
-    background: c.surfaceAlt,
-    flexShrink: 0,
-    cursor: 'pointer',
-    objectFit: 'cover',
-  };
+  const hiddenCount = videos.length - filteredVideos.length;
 
   return (
     <Card>
       <SectionHeader
-        title={`Review videos (${selected.size}/${videos.length} selected)`}
-        description="Deselect any videos you don't want to include, then approve to continue."
+        title={`Review candidates (${selected.size}/${videos.length} selected)`}
+        description="Deselect any candidates you don't want to include, then approve to continue."
       />
 
       <div
@@ -520,6 +534,27 @@ function VideoApprovalSection({
         <Button size="sm" variant="tertiary" onClick={deselectAll}>
           Deselect all
         </Button>
+        {hiddenCount > 0 && (
+          <label
+            style={{
+              fontFamily: fonts.ui,
+              fontSize: fontSize.xs,
+              color: c.textSecondary,
+              display: 'flex',
+              alignItems: 'center',
+              gap: space['2'],
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showLowRelevance}
+              onChange={(e) => setShowLowRelevance(e.target.checked)}
+              style={{ accentColor: c.accent }}
+            />
+            <span>Show low-relevance ({hiddenCount} hidden)</span>
+          </label>
+        )}
         <label
           style={{
             marginLeft: 'auto',
@@ -534,7 +569,7 @@ function VideoApprovalSection({
           <span>Sort by</span>
           <div style={{ minWidth: 140 }}>
             <Select value={sortKey} onChange={(e) => setSortKey(e.target.value as VideoSortKey)}>
-              <option value="channel">Channel</option>
+              <option value="channel">Channel / Author</option>
               <option value="duration">Duration</option>
               <option value="title">Title</option>
             </Select>
@@ -542,78 +577,74 @@ function VideoApprovalSection({
         </label>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        {sortedVideos.map((v, i) => (
-          <div
-            key={v.id}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: space['3'],
-              padding: space['2'],
-              borderBottom: i < sortedVideos.length - 1 ? `1px solid ${c.border}` : 'none',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={selected.has(v.video_id)}
-              onChange={() => toggleVideo(v.video_id)}
-              style={{ cursor: 'pointer', accentColor: c.accent }}
-            />
-            {v.thumbnail_url ? (
-              <img src={v.thumbnail_url} alt="" onClick={() => toggleVideo(v.video_id)} style={thumbPlaceholder} />
-            ) : (
-              <div onClick={() => toggleVideo(v.video_id)} style={thumbPlaceholder} />
-            )}
-            <div onClick={() => toggleVideo(v.video_id)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
+        {sortedVideos.map((v) => {
+          const props = videoToApprovalProps(v);
+          if (!props) {
+            // Unknown source_type — fall back to compact legacy row so
+            // the page degrades gracefully even for unregistered types.
+            return (
               <div
+                key={v.id}
                 style={{
-                  fontFamily: fonts.ui,
-                  fontSize: fontSize.sm,
-                  fontWeight: fontWeight.medium,
-                  color: c.textPrimary,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: space['3'],
+                  padding: space['2'],
+                  borderBottom: `1px solid ${c.border}`,
                 }}
               >
-                {v.title}
+                <input
+                  type="checkbox"
+                  checked={selected.has(approvalKey(v))}
+                  onChange={() => toggleVideo(approvalKey(v))}
+                  style={{ cursor: 'pointer', accentColor: c.accent }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: fonts.ui, fontSize: fontSize.sm }}>{v.title}</div>
+                  <div style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>
+                    {v.source_type} · {v.source_id}
+                  </div>
+                </div>
               </div>
-              <div
-                style={{
-                  fontFamily: fonts.ui,
-                  fontSize: fontSize.xs,
-                  color: c.textMuted,
-                  marginTop: 2,
-                }}
-              >
-                {v.channel_name} · {formatDuration(v.duration_seconds)}
-              </div>
-            </div>
-            <a
-              href={v.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                color: c.accent,
-                textDecoration: 'none',
-                fontFamily: fonts.ui,
-                fontSize: fontSize.xs,
-                fontWeight: fontWeight.semibold,
-                border: `1px solid ${c.accent}`,
-                padding: `${space['1']} ${space['2']}`,
-                borderRadius: radius.sm,
-                flexShrink: 0,
+            );
+          }
+          const key = approvalKey(v);
+          // TS can't narrow that SOURCE_CONFIGS[source_type] returns the
+          // matching ApprovalCardConfig variant at compile time when the
+          // source_type is read off a union-typed Video. Pragmatic
+          // escape: cast the config to ApprovalCardConfig<typeof
+          // props.metadata>. The mapped-type registry guarantees
+          // correctness at the SOURCE_CONFIGS declaration; this is a
+          // cast at the consumer side only.
+          const config = SOURCE_CONFIGS[v.source_type] as Parameters<
+            typeof ApprovalCard
+          >[0]['config'];
+          return (
+            <ApprovalCard
+              key={v.id}
+              document={props.document}
+              metadata={props.metadata}
+              classification={v.classification ?? undefined}
+              config={config}
+              selected={selected.has(key)}
+              onSelectionChange={(next) => {
+                setSelected((prev) => {
+                  const out = new Set(prev);
+                  if (next) out.add(key);
+                  else out.delete(key);
+                  return out;
+                });
               }}
-            >
-              Watch
-            </a>
-          </div>
-        ))}
+              showLowRelevance={showLowRelevance}
+            />
+          );
+        })}
       </div>
 
       <div style={{ marginTop: space['4'] }}>
         <Button onClick={handleApprove} leadingIcon={<span aria-hidden>✓</span>}>
-          Approve &amp; continue ({selected.size} videos)
+          Approve &amp; continue ({selected.size} candidates)
         </Button>
       </div>
     </Card>

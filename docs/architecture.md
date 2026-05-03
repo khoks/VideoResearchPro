@@ -301,11 +301,23 @@ Per-source-type errors (connector raised, missing connector, NotImplementedError
 
 Topic jobs pause at `awaiting_approval`. The pause is **passive, not blocking**:
 
-1. Celery task fetches search results, persists candidate videos, sets `status='awaiting_approval'`, and **exits**. No worker is held waiting.
-2. The user reviews and POSTs `/api/v1/jobs/{id}/approve` with a list of approved video IDs.
+1. Celery task fetches search results, persists candidate documents (any source_type), sets `status='awaiting_approval'`, and **exits**. No worker is held waiting.
+2. The user reviews and POSTs `/api/v1/jobs/{id}/approve` with a list of approved row IDs in `approved_video_ids`. Per S-1.5.4 (post-M-1.5), the field name is legacy — values can be either YouTube `video_id` strings (for `source_type='video'`) or `document_id` UUIDs (for non-video sources where `video_id` is NULL). The backend matches against both columns on each `JobVideo` row.
 3. The router updates `JobVideo.approved=True` for the chosen rows, then dispatches a **new** Celery task (`resume_job_after_approval`) which picks up at the extraction phase.
 
 This pattern means a job can sit in `awaiting_approval` for arbitrary time without consuming worker capacity.
+
+#### Polymorphic approval response
+
+`GET /api/v1/jobs/{id}/videos` returns one row per Document linked to the job. Post-S-1.5.4 (PR [#122](https://github.com/khoks/VideoResearchPro/pull/122)), the response carries:
+
+- `id`, `video_id` (nullable for non-video), `document_id` (UUID, canonical PK)
+- `source_type`, `source_id`, `source_url`
+- `source_metadata` — parsed JSON dict (per-source-type shape — Reddit: `{subreddit, author, score, commentCount, permalink}`; HN: `{author, points, commentCount, url}`; video: `{channel, durationSec, viewCount}`)
+- `classification` — lifted out of `source_metadata` for the frontend's `<ClassificationBadgeRow>` consumer; `{stance, sentiment, framing, topic_relevance}` per [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25) / [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26) / [D-021](decisions.md#d-021--topic-relevance-threshold--050-2026-04-26)
+- The standard YouTube fields (`title`, `channel_name`, `duration_seconds`, `thumbnail_url`, `transcript_status`, etc.) — populated for video rows; nullable on non-video.
+
+The frontend `<ApprovalCard>` polymorphic primitive (PR [#118](https://github.com/khoks/VideoResearchPro/pull/118)) consumes this shape via `videoToApprovalProps()` + `SOURCE_CONFIGS[source_type]`.
 
 ### Subscription jobs (no approval)
 

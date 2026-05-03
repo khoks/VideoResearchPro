@@ -89,6 +89,14 @@ export type SourceMetadata =
       points: number;
       commentCount: number;
       url: string;
+    }
+  | {
+      source_type: 'mastodon_post';
+      author: string;
+      instance: string;
+      favourites: number;
+      replyCount: number;
+      permalink: string;
     };
 
 export type SourceType = SourceMetadata['source_type'];

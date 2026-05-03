@@ -54,6 +54,25 @@ class Settings(BaseSettings):
     HN_COMMENT_DEPTH_DEFAULT: int = 50  # top N comments by points (parity with Reddit)
 
     # -------------------------------------------------------------------
+    # Mastodon connector (public ActivityPub instance)
+    # -------------------------------------------------------------------
+    # Mastodon's public hashtag-timeline endpoint requires no auth on most
+    # instances:
+    #   GET /api/v1/timelines/tag/<hashtag>
+    #   GET /api/v1/statuses/<id>
+    #   GET /api/v1/statuses/<id>/context
+    # The instance is configurable per-job via the source_metadata
+    # ``mastodon_instance`` field; this default is the fallback when no
+    # instance is supplied. Self-hosters running on a private instance
+    # can override globally via this env var.
+    MASTODON_INSTANCE_BASE: str = "https://mastodon.social"
+    MASTODON_USER_AGENT: str = (
+        "pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani)"
+    )
+    MASTODON_RATE_LIMIT_RPM: int = 60  # Mastodon's per-IP unauth limit is 300 req/5min ≈ 60 rpm
+    MASTODON_COMMENT_DEPTH_DEFAULT: int = 50  # top-N replies by favourites (parity with Reddit/HN)
+
+    # -------------------------------------------------------------------
     # LLM — Primary (high-quality) model
     # -------------------------------------------------------------------
     # Provider dispatches which chat client is built. The call-site code is

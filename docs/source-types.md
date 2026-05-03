@@ -159,7 +159,7 @@ Codified in `app/sources/reddit/flatten.py::_segment_for_text` via the constant 
 | `tweet` | Twitter/X API v2 (paid, BYOK — see [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25)); Mode B paste fallback | thread unrolling + top-K replies | `twitter_api` or `paste_extract` | reply position per chunk |
 | `reddit_post` | `/search.json` + per-sub fallback (free, OAuth-app + 100 req/min) | OP + top-50 comments by score | `reddit_api` | reply depth per chunk |
 | `hn_story` | Algolia HN search (free, no auth) | story + comment tree | `hn_algolia` | reply depth per chunk |
-| `mastodon_post` | ActivityPub instance search | thread + replies | `activitypub` | reply depth per chunk |
+| `mastodon_post` | public hashtag timeline (`/api/v1/timelines/tag/<hashtag>`, no auth) — topic→hashtag normalised (lowercased, alphanumerics-only); creator-feed via `/api/v1/accounts/<id>/statuses` | OP + top-N replies (favourites) via `/api/v1/statuses/<id>` + `/context` | `mastodon` | reply depth per chunk |
 | `bluesky_post` | AT-Proto search (app password) | thread + replies | `at_proto` | reply depth per chunk |
 | `fb_post` / `ig_post` / `li_post` | ❌ no public-search API (see [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25)) — Mode B paste only | trafilatura → Playwright fallback on the user-pasted URL | `paste_extract` | reply position per chunk (when extractable) |
 | `forum_post` | Reddit API / HN Algolia / Discourse API (umbrella for non-platform-specific forums) | top-level post + top N comments | `forum_extract` | comment depth per chunk |
@@ -319,9 +319,10 @@ The card's per-source config is a single registry typed via TypeScript discrimin
 // 1. Discriminated union — hand-rolled in TS, backend Pydantic mirrors per source_type (D-018a).
 //    Drift is a PR-review concern; revisit if drift count climbs.
 type SourceMetadata =
-  | { source_type: 'video';       channel: string; durationSec: number; viewCount: number }
-  | { source_type: 'reddit_post'; subreddit: string; author: string; score: number; commentCount: number; permalink: string }
-  | { source_type: 'hn_story';    author: string; points: number; commentCount: number; url: string };
+  | { source_type: 'video';         channel: string; durationSec: number; viewCount: number }
+  | { source_type: 'reddit_post';   subreddit: string; author: string; score: number; commentCount: number; permalink: string }
+  | { source_type: 'hn_story';      author: string; points: number; commentCount: number; url: string }
+  | { source_type: 'mastodon_post'; author: string; instance: string; favourites: number; replyCount: number; permalink: string };
 
 type SourceType = SourceMetadata['source_type'];
 type MetadataFor<K extends SourceType> = Extract<SourceMetadata, { source_type: K }>;
@@ -362,7 +363,7 @@ type ApprovalCardConfig<T extends SourceMetadata> = {
 type SourceConfigRegistry = { [K in SourceType]: ApprovalCardConfig<MetadataFor<K>> };
 ```
 
-The mapped-type registry is the load-bearing trick: an exhaustive registry by construction. Adding `'mastodon_post'` to `SourceMetadata` won't compile until the registry has a corresponding entry — this is the contract that makes "register a config, not a component" structurally enforceable rather than convention-enforced.
+The mapped-type registry is the load-bearing trick: an exhaustive registry by construction. Adding `'bluesky_post'` (or any future source type) to `SourceMetadata` won't compile until the registry has a corresponding entry — this is the contract that makes "register a config, not a component" structurally enforceable rather than convention-enforced. Mastodon was the first post-M-1.5 cut-over and validated the workflow end-to-end (one entry in `SourceMetadata`, one in `SOURCE_CONFIGS`, one in `videoToApprovalProps`, no other frontend changes).
 
 `<ApprovalCard>` component signature: `(props: { document: Document; metadata: T; classification?: Classification; config: ApprovalCardConfig<T> })`. `<CardHeader>` and `<CardActions>` read fixed Document fields directly; `<CardBody>` / `<CardMetaRow>` / filter UI dispatch through the typed config.
 

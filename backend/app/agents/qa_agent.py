@@ -194,6 +194,9 @@ def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
                                + author
       - hn_story:              permalink (HN item URL) + thread_title
                                + author
+      - mastodon_post:         permalink (Mastodon status URL — points
+                               at the reply when comment_id present) +
+                               thread_title + author + instance
     """
     meta = chunk.get("metadata", {})
     source_type = (meta.get("source_type") or "video").strip() or "video"
@@ -260,6 +263,41 @@ def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
             "video_url": permalink,
             "video_title": title,
             "channel_name": author or "HN",
+            "timestamp_seconds": 0.0,
+            "timestamp_display": "",
+            "youtube_link": permalink,
+        }
+
+    if source_type == "mastodon_post":
+        permalink = (
+            meta.get("permalink")
+            or meta.get("source_url")
+            or meta.get("video_url")
+            or ""
+        )
+        author = meta.get("author") or ""
+        instance = meta.get("instance") or ""
+        comment_id = meta.get("comment_id")
+        # Reply-anchor support: Mastodon doesn't have an inline anchor
+        # for replies, but each reply is itself a status with its own
+        # canonical URL. If `comment_url` was indexed alongside the
+        # comment_id, prefer it; otherwise fall through to the OP url.
+        comment_url = meta.get("comment_url")
+        if comment_id and comment_url:
+            permalink = comment_url
+        # Dedupe key includes comment_id so two cites from the same
+        # thread but different replies stay distinct.
+        key = f"{source_type}:{source_id}_{comment_id or ''}"
+        return key, {
+            "source_type": "mastodon_post",
+            "permalink": permalink,
+            "thread_title": title,
+            "author": author,
+            "instance": instance,
+            # Legacy YouTube-shaped fallback fields.
+            "video_url": permalink,
+            "video_title": title,
+            "channel_name": author or (instance or "Mastodon"),
             "timestamp_seconds": 0.0,
             "timestamp_display": "",
             "youtube_link": permalink,

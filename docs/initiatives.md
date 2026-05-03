@@ -79,7 +79,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Next milestones (post-M-1.5):**
 
-- **M-1.6** (Mastodon + Bluesky end-to-end) — same pattern, two more connectors. S-1.5.6 + S-1.5.7 as the discovery surfaces; storage + classifier reuse the M-1.5 plumbing.
+- **M-1.6** 🟡 (Mastodon + Bluesky end-to-end) — same pattern, two more connectors. **S-1.5.6 (Mastodon) shipped 2026-05-03** on `feat/s-1-5-6-mastodon-connector-2026-05-03` (this branch); S-1.5.7 (Bluesky) still ⚪ open as the second discovery surface. Storage + classifier + polymorphic approval / citation rendering reused from the M-1.5 plumbing without changes.
 - **M-1.7** (podcast end-to-end) — E-1.7 connector + Whisper-as-service decision (OQ-4).
 - **M-2.5** (marketing landing page deployed) — E-2.5 + a hosting decision.
 
@@ -140,14 +140,23 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Tasks**
 - [x] T-1.5.5.1 + T-1.5.5.2 Citation renderer dispatch + per-platform URL builders — *shipped 2026-05-02 PR [#117](https://github.com/khoks/VideoResearchPro/pull/117). `<CitationLink>` polymorphic component dispatches by `Reference.source_type`; `renderCitation(ref) → {href, label}` is the pure dispatcher (testable). Per-source labels: video → "title · channel · timestamp", reddit_post → "r/sub · u/author · title", hn_story → "HN · author · title". JobDetailPage + LibraryQAPage migrated. Backend QA-agent reference enrichment (emit source_type / permalink / author per source) is the post-MVP follow-up*
 
-#### S-1.5.6 ⚪ Mastodon connector
+#### S-1.5.6 🟢 Mastodon connector
 
-**PR:** TBD
-**Acceptance.** Same shape as Reddit/HN. ActivityPub search + thread fetch. No paid tier needed.
-**Tasks** (initial)
-- [ ] T-1.5.6.1 Mastodon instance discovery (user provides home instance URL or default to `mastodon.social`)
-- [ ] T-1.5.6.2 Search + thread fetch implementation
-- [ ] T-1.5.6.3 Tests
+**PR:** TBD (this branch — `feat/s-1-5-6-mastodon-connector-2026-05-03`)
+**Acceptance.** Same shape as Reddit/HN. ActivityPub-based discovery via the public hashtag timeline (`/api/v1/timelines/tag/<hashtag>`); thread fetch via `/api/v1/statuses/<id>` + `/api/v1/statuses/<id>/context`. No auth required. No paid tier needed.
+**Tasks**
+- [x] T-1.5.6.1 Mastodon instance config (`MASTODON_INSTANCE_BASE`, default `https://mastodon.social`; per-job override is a follow-up to S-1.5.6 once the submit-research form gains the `mastodon_instance` source_metadata input)
+- [x] T-1.5.6.2 Search + thread fetch implementation — `app/sources/mastodon/{client,connector,flatten}.py` (hashtag-timeline discovery, status + context flatten, top-N replies by favourites with depth markers, inline classifier per D-023)
+- [x] T-1.5.6.3 Tests — `backend/tests/test_sources/test_mastodon_connector.py` (~40 tests covering hashtag normalisation, search/list-creator/metadata/text wiring, classifier integration, fail-soft on get_context errors, depth-marker rendering, HTML strip)
+- [x] T-1.5.6.4 Frontend `SOURCE_CONFIGS['mastodon_post']` + `SourceMetadata` discriminator + `videoToApprovalProps` mapper extension (compile-time-enforced via mapped-type registry)
+- [x] T-1.5.6.5 Polymorphic `_chunk_to_reference` (backend) + `<CitationLink>` (frontend) extension for `mastodon_post` — author + instance + reply-aware permalink
+
+**Implementation notes.**
+- Discovery uses Mastodon's public hashtag timeline because most instances disable global keyword search to honour user privacy. Topic queries are normalised to a single alphanumeric hashtag (lowercased, punctuation stripped, Unicode letters preserved).
+- Replies arrive flat with `in_reply_to_id` pointers; depth is reconstructed from the parent chain so the depth marker (`↳`) matches threading even after favourites-sorting.
+- Status `language` flows through to `ExtractedText.language` so multilingual indexing knows what it's storing — Mastodon is genuinely multilingual.
+- Federated reach: `mastodon.social` (the default) federates with most public instances, so a single connection point gives broad discovery without per-instance auth. Self-hosters can override with `MASTODON_INSTANCE_BASE`.
+- Per-source rate-limit / retry config (T-1.5.11.2 from the M-1.5 polish backlog) still applies to Mastodon when it lands; the unauth ceiling is 300 req/5min ≈ 60 rpm and the client throttles defensively to that.
 
 #### S-1.5.7 ⚪ Bluesky connector
 

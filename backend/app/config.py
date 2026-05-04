@@ -352,6 +352,14 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "dev-insecure-secret-change-me-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRY_HOURS: int = 24
+    # E-5.4: Account lockout. Failed-login threshold; on the (Nth) failure
+    # the account locks for ``LOCKOUT_DURATION_MIN`` minutes. Set to 0 to
+    # disable lockout (not recommended in production).
+    LOCKOUT_FAILURE_THRESHOLD: int = 5
+    LOCKOUT_DURATION_MIN: int = 15
+    # E-5.4: Password-reset token TTL (minutes). Tokens expire after this
+    # window AND are single-use.
+    PASSWORD_RESET_TOKEN_TTL_MIN: int = 30
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

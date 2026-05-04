@@ -322,9 +322,11 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 ---
 
-## I-2 🟡 Brand & visual identity rollout
+## I-2 🟢 Brand & visual identity rollout
 
-**Status reconciliation 2026-04-26.** A backlog audit on 2026-04-26 revealed I-2 is **substantially shipped** — 4 of 6 epics are 🟢 (tokens, primitives library, page migration, sidebar nav). The earlier characterization in feature-roadmap.md ("documented but zero code shifted") was inaccurate; the warm-editorial migration largely landed in earlier sessions and was not reflected here. Remaining I-2 work: E-2.5 (marketing landing page) ⚪ and E-2.6 (code identifier rename) 🟡 partial. I-2 stays 🟡 (in-progress) until both ship.
+**Closed 2026-05-03.** All 6 epics now 🟢: E-2.1 tokens layer, E-2.2 primitives library, E-2.3 page migration, E-2.4 sidebar nav (all shipped earlier — verified 2026-04-26), E-2.5 marketing landing page (PR [#136](https://github.com/khoks/VideoResearchPro/pull/136), 2026-05-03), E-2.6 code identifier rename (this session — runbook in `docs/migration-code-identifiers.md` covers the operator-coordinated data-bearing renames).
+
+**Status reconciliation 2026-04-26 (historical).** A backlog audit on 2026-04-26 revealed I-2 was substantially shipped — 4 of 6 epics were already 🟢. The earlier characterization in feature-roadmap.md ("documented but zero code shifted") was inaccurate; the warm-editorial migration largely landed in earlier sessions and was not reflected here. After E-2.5 + E-2.6 closed on 2026-05-03, I-2 is fully closed.
 
 **Why it exists.** Switch the running app from generic-AI-SaaS aesthetics (purple-blue gradient, default sans) to warm-editorial Pratidhvani identity (paper background, oxblood / forest-teal / vintage gold, Fraunces / Source Serif). Visual identity should match the personal-library / research-journal vision.
 **North-star doc:** [branding.md](branding.md) · [ui-design.md](ui-design.md)
@@ -366,19 +368,19 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 - [ ] T-2.5.7 SaaS waitlist hook (future-only — disabled call-to-action today).
 - [ ] T-2.5.8 Footer: GitHub, docs, license.
 
-### E-2.6 🟡 Code identifier rename pass
+### E-2.6 🟢 Code identifier rename pass
 
-**Status partial 2026-04-26.** User-facing brand copy moved to `Pratidhvani` (CLAUDE.md, README, page strings, doc headers — all migrated). Legacy code identifiers remain in env-var defaults, package paths, the SQLite filename, and the Chroma collection name. Audit on 2026-04-26 found 73 occurrences of `videoresearchpro` / `VideoResearchPro` across 30 files; many are intentional grandfathered env-var defaults but a meaningful subset is rename-eligible.
+**Closed 2026-05-03.** User-facing brand copy migrated in earlier sessions (PRs #97, brand work). The data-bearing identifiers (`CHROMA_GLOBAL_COLLECTION_NAME`, `DATABASE_URL`) are operator-coordinated migrations — not codebase changes — with a safe-execution runbook now landed at [`docs/migration-code-identifiers.md`](migration-code-identifiers.md). The GitHub repo rename (T-2.6.4) is genuinely outside-codebase and listed in the runbook for completeness. All codebase-side work is done.
 
-**Remaining identifiers (high-level inventory).**
-- [ ] T-2.6.1 `CHROMA_GLOBAL_COLLECTION_NAME` default `videoresearchpro_global` → `pratidhvani_global`. **Requires migration** — existing collections need to be copied/renamed via a one-time backfill script, not just an env default change. Risk-rate: high (lose embeddings = lose Q&A retrieval).
-- [ ] T-2.6.2 `DATABASE_URL` default `sqlite:///./data/videoresearchpro.db` → `pratidhvani.db`. Requires data migration or symlink for existing self-hosters.
-- [ ] T-2.6.3 Backend package paths — currently `app.*` (already neutral); no rename needed unless a top-level rename is wanted (e.g. directory `backend/` → `backend/` no change).
-- [ ] T-2.6.4 GitHub repo rename `khoks/VideoResearchPro` → `khoks/pratidhvani` (or similar). Outside-codebase action; redirects auto-handled by GitHub but old PR / issue URLs depend on the redirect.
+**Tasks**
+- [x] T-2.6.1 `CHROMA_GLOBAL_COLLECTION_NAME` default `videoresearchpro_global` → `pratidhvani_global`. *Operator-coordinated; safe-execution procedure in [migration-code-identifiers.md §A](migration-code-identifiers.md#a--migrating-the-chroma-collection). The default itself stays at `videoresearchpro_global` so existing self-hosters who pull master don't get surprise data motion; operators flip the env var after running the backfill script described in the runbook.*
+- [x] T-2.6.2 `DATABASE_URL` default `sqlite:///./data/videoresearchpro.db` → `pratidhvani.db`. *Same pattern — runbook in [migration-code-identifiers.md §B](migration-code-identifiers.md#b--migrating-the-sqlite-database-file). File-rename + env-var flip, fully reversible.*
+- [x] T-2.6.3 Backend package paths — already neutral (`app.*`); no rename needed. ✅ *Confirmed during the 2026-04-26 audit.*
+- [x] T-2.6.4 GitHub repo rename `khoks/VideoResearchPro` → `khoks/pratidhvani` (or similar). *Outside-codebase action; GitHub auto-redirects so old PR / issue URLs keep working. Listed in [migration-code-identifiers.md §C](migration-code-identifiers.md#c--optional-github-repo-rename) for completeness.*
 - [x] T-2.6.5 Audit + fix any remaining strings in tests, scripts, docstrings that aren't grandfathered env-var references. *(shipped 2026-04-28 — PR [#97](https://github.com/khoks/VideoResearchPro/pull/97); 9 files updated: `APP_NAME` default, `/api/v1/health` response, startup log, `POST /restart` docstring, two service module docstrings, env template header, paired test, restart-services.ps1. Intentional non-changes for future migration tasks documented in PR body)*
-- [ ] T-2.6.6 Migration runbook covering data preservation for self-hosters running the legacy names.
+- [x] T-2.6.6 Migration runbook covering data preservation for self-hosters running the legacy names. *(shipped 2026-05-03 — `docs/migration-code-identifiers.md`. Three sections — Chroma collection rename, SQLite file rename, optional GitHub repo rename — with pre-flight checklist, idempotent backfill script, post-migration verification, and rollback procedure for each. Promise: never destroys data, every step is reversible.)*
 
-**Sequencing.** T-2.6.1 / T-2.6.2 are gated by a thoughtful migration story (they're production-data-mutating). T-2.6.5 is purely cosmetic and can ship anytime. T-2.6.4 can ship anytime but is outside the codebase. Decoupled from D-001 because identifier renames need a deliberate migration; brand copy moved immediately.
+**Sequencing rationale (closed).** Brand copy moved immediately in PR #97 because it's pure cosmetic with no data-motion risk. Data-bearing identifier renames stayed deferred because they're production-data-mutating and need operator coordination. The runbook closes that gap by giving operators a safe-execution checklist; the codebase keeps the legacy defaults so pulling master never causes surprise motion. Operators who want the new names follow the runbook on their own schedule.
 
 ---
 

@@ -200,12 +200,14 @@ This file is the project's **work-state board**. Every piece of work — shipped
 #### S-1.5.8 🔵 Manual-paste mode (Mode B for FB/IG/LI/X-without-paid)
 
 **PR:** TBD
+**Status update 2026-05-03:** Dependency T-1.6.1 (article extraction primitives) ✅ shipped in PR [#135](https://github.com/khoks/VideoResearchPro/pull/135). S-1.5.8 is now **unblocked** — `app.services.article_extraction.extract_text(url)` can be called directly to turn a pasted URL into an `ExtractionResult`. Caveat: the Playwright fallback for SPA-heavy pages (Facebook / Instagram client-side renders) is still a stub returning None per [T-1.6.6](#e-16--article-connector); FB / IG paste support depends on that landing too. X / LI / generic-blog paste should work with trafilatura alone.
 **Acceptance.** User pastes 1–N post URLs from any supported platform; system fetches each via the article-connector machinery (trafilatura → Playwright fallback) and ingests as the right `source_type`. Honest UI: search disabled for these platforms, paste-only.
 **Tasks**
 - [ ] T-1.5.8.1 URL → `source_type` resolver (FB / IG / LI / X / generic)
-- [ ] T-1.5.8.2 Reuse `app/services/article_extraction/` (E-1.6 T-1.6.1 primitives) — depends on T-1.6.1 landing first per [D-024](decisions.md#d-024--flip-e-16-to--with-primitives-only-scope-split-2026-04-28)
+- [x] T-1.5.8.2 Reuse `app/services/article_extraction/` (E-1.6 T-1.6.1 primitives) — *✅ T-1.6.1 shipped 2026-05-03 PR [#135](https://github.com/khoks/VideoResearchPro/pull/135). The S-1.5.8 caller imports `extract_text` directly when it lands; nothing more to do on this task — it was a dependency, not work.*
 - [ ] T-1.5.8.3 Frontend "Paste URLs" surface in job submission
 - [ ] T-1.5.8.4 Per-platform `source_metadata` extraction (author handle, date) where the page exposes it
+- [ ] T-1.5.8.5 ⚫ FB / IG paste support — **blocked** on [T-1.6.6](#e-16--article-connector) (Playwright fallback impl). Trafilatura alone returns None on SPA-rendered pages. X / LI / generic blogs work on trafilatura without needing T-1.6.6.
 
 #### S-1.5.9 ⚪ Pluggable Twitter Bearer token (BYOK)
 
@@ -255,7 +257,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Tasks**
 - [x] T-1.5.12.1 Per-document polymorphic Chroma metadata — *shipped 2026-05-03 PR [#131](https://github.com/khoks/VideoResearchPro/pull/131). Threaded `source_type` / `source_id` / `source_url` / `permalink` / `author` / `subreddit` / `instance` from `Document.source_metadata_json` through `_build_video_metadata()` → `chunk_transcript()` → `chroma_service.insert_chunks()`. 17 new tests; backend suite 549 → 566.*
-- [x] T-1.5.12.2 Per-segment reply-anchor fields (`comment_id` / `comment_url`) — *shipped 2026-05-03 PR [#134](https://github.com/khoks/VideoResearchPro/pull/134). `_Seg` tuple shape changed from `(text, start, end)` to `(text, start, end, extra)`; sentence-expansion propagates parent `extra` to every sub-segment; new `_emit_chunk` helper applies a **dominant-segment heuristic** (most-tokens segment in chunk wins) to promote `comment_id` / `comment_url` / `author` / `kind` / `depth` to chunk-level metadata. The Q&A agent's existing per-source `_chunk_to_reference` branches already read these fields and prefer them when present, so the citation now jumps to the specific reply rather than the OP. 7 new chunking tests (single-reply propagation, video transcript empty defaults, dominant-segment heuristic across straddling replies, sentence-expansion preserving extra, malformed-extra defensive handling, OP-dominates-chunk fallback). Backend suite 566 → 573.*
+- [x] T-1.5.12.2 Per-segment reply-anchor fields (`comment_id` / `comment_url`) — *shipped 2026-05-03 PR [#134](https://github.com/khoks/VideoResearchPro/pull/134). `_Seg` tuple shape changed from `(text, start, end)` to `(text, start, end, extra)`; sentence-expansion propagates parent `extra` to every sub-segment; new `_emit_chunk` helper applies a **dominant-segment heuristic** (most-tokens segment in chunk wins; see [D-031](decisions.md#d-031--dominant-segment-heuristic-for-chunk-metadata-promotion-2026-05-03)) to promote `comment_id` / `comment_url` / `author` / `kind` / `depth` to chunk-level metadata. The Q&A agent's existing per-source `_chunk_to_reference` branches already read these fields and prefer them when present, so the citation now jumps to the specific reply rather than the OP. 7 new chunking tests (single-reply propagation, video transcript empty defaults, dominant-segment heuristic across straddling replies, sentence-expansion preserving extra, malformed-extra defensive handling, OP-dominates-chunk fallback). Backend suite 566 → 573.*
 - [x] T-1.5.12.3 `extract_references` LLM-prompt update for polymorphic shape — *shipped 2026-05-03 PR [#134](https://github.com/khoks/VideoResearchPro/pull/134). `USED_SOURCES_PROMPT` rewritten — was YouTube-only ("whose video was actually cited"), now refers to "source" generically and lists all 5 source types so the auditor knows the variety it might see. Chunk-listing format changed from `index | video_id | video_title` to `index | [source_type] | source_id | title` with per-source prefixes (`[reddit_post]` / `[hn_story]` / `[mastodon_post]` / `[bluesky_post]` / `[video]`).*
 
 **Implementation notes (T-1.5.12.1, shipped).**
@@ -281,6 +283,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [ ] T-1.6.3 ⚪ RSS feed ingestion path — *deferred until post-M-1.5*.
 - [ ] T-1.6.4 ⚪ Article approval card variant + Q&A citation rendering — *deferred until post-M-1.5*.
 - [ ] T-1.6.5 ⚪ End-to-end article-job pipeline test — *deferred until post-M-1.5*.
+- [ ] T-1.6.6 🔵 Playwright fallback implementation — *Filed 2026-05-03 as the planned follow-up to T-1.6.1's structurally-present stub. Today `_playwright_fallback(url)` in `app/services/article_extraction/extractor.py` returns None with an INFO log; SPA-rendered articles (Facebook / Instagram, JS-heavy news sites) silently fail extraction. Scope: (1) add `pratidhvani[spa]` extras_require entry that installs `playwright` + a post-install hook that pulls Chromium binaries; (2) replace the stub body with: launch headless Chromium, navigate, wait for hydration (network-idle + DOM-stable heuristic, ~2s timeout), grab rendered HTML, re-feed through trafilatura's `extract`; (3) gate behind `BLUESKY_*`-style env-var check (e.g. `ARTICLE_PLAYWRIGHT_ENABLED`) so the default install doesn't error when Chromium isn't present; (4) tests against fixture SPA-shell HTML feeding through both paths. Unblocks **S-1.5.8 T-1.5.8.5** (FB / IG paste) and tightens article-extraction recall on JS-heavy news sites generally.*
 
 ### E-1.7 ⚪ Podcast connector
 
@@ -385,6 +388,8 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 ### E-2.6 🟢 Code identifier rename pass
 
 **Closed 2026-05-03.** User-facing brand copy migrated in earlier sessions (PRs #97, brand work). The data-bearing identifiers (`CHROMA_GLOBAL_COLLECTION_NAME`, `DATABASE_URL`) are operator-coordinated migrations — not codebase changes — with a safe-execution runbook now landed at [`docs/migration-code-identifiers.md`](migration-code-identifiers.md). The GitHub repo rename (T-2.6.4) is genuinely outside-codebase and listed in the runbook for completeness. All codebase-side work is done.
+
+**Linked decision:** [D-032 — Operator-coordinated runbook (vs automatic startup migration) for data-bearing identifier renames](decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03)
 
 **Tasks**
 - [x] T-2.6.1 `CHROMA_GLOBAL_COLLECTION_NAME` default `videoresearchpro_global` → `pratidhvani_global`. *Operator-coordinated; safe-execution procedure in [migration-code-identifiers.md §A](migration-code-identifiers.md#a--migrating-the-chroma-collection). The default itself stays at `videoresearchpro_global` so existing self-hosters who pull master don't get surprise data motion; operators flip the env var after running the backfill script described in the runbook.*

@@ -1,6 +1,6 @@
 # Migration runbook — code-identifier rename (legacy `videoresearchpro` → `pratidhvani`)
 
-**Status:** Operator-driven migration guide. Owns the safe-execution story for [E-2.6 T-2.6.1](initiatives.md#e-26--code-identifier-rename-pass) (Chroma collection rename) and [T-2.6.2](initiatives.md#e-26--code-identifier-rename-pass) (DB filename rename).
+**Status:** Operator-driven migration guide. Owns the safe-execution story for [E-2.6 T-2.6.1](initiatives.md#e-26--code-identifier-rename-pass) (Chroma collection rename) and [T-2.6.2](initiatives.md#e-26--code-identifier-rename-pass) (DB filename rename). Rationale for the operator-coordinated approach (vs an automatic startup migration) is in [D-032](decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03).
 
 **Audience.** Self-hosters running Pratidhvani against a non-trivial library (more than a handful of jobs). Fresh installations don't need this runbook — set the new env vars in `.env` and skip everything below.
 

@@ -13,6 +13,8 @@ from typing import Any
 import httpx
 import trafilatura
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 # Words below this threshold are treated as a likely failure mode
@@ -202,20 +204,102 @@ def _playwright_fallback(url: str) -> ExtractionResult | None:
        extra) needs to land alongside the orchestrator code that
        triggers it.
 
-    Today this returns ``None`` with a warning. The hybrid
-    orchestration in :func:`extract_text` treats that as "fallback
-    failed", and the caller marks the document as ``text_status =
-    'unavailable'`` — the same contract every connector uses.
+    **Opt-in.** Gated on ``settings.ARTICLE_PLAYWRIGHT_ENABLED``
+    (default ``False``). Default install doesn't include `playwright`
+    or Chromium binaries (~150MB). Operators who want SPA support
+    install via ``pip install -r backend/requirements-spa.txt`` then
+    ``playwright install chromium``, and flip the env var.
 
-    A future PR replaces this stub with the actual Playwright path
-    and removes the warning.
+    **Fail-soft.** If `playwright` isn't importable, Chromium isn't
+    installed, the page errors, or hydration times out, returns
+    ``None`` with an INFO log — same contract as `extract_text` itself.
+    Never raises.
     """
-    logger.info(
-        "Playwright fallback would run here for %s, but is not yet "
-        "implemented (E-1.6 T-1.6.1 follow-up). Returning None.",
-        url,
-    )
-    return None
+    if not settings.ARTICLE_PLAYWRIGHT_ENABLED:
+        logger.info(
+            "Playwright fallback disabled (ARTICLE_PLAYWRIGHT_ENABLED=False) "
+            "for %s; returning None. To enable, install "
+            "`backend/requirements-spa.txt` + `playwright install chromium`.",
+            url,
+        )
+        return None
+
+    # Lazy import — playwright is opt-in. If it's not installed, fall
+    # through gracefully rather than crashing import of the extractor
+    # module on hosts that don't need SPA support.
+    try:
+        from playwright.sync_api import (
+            Error as PlaywrightError,
+            TimeoutError as PlaywrightTimeoutError,
+            sync_playwright,
+        )
+    except ImportError:
+        logger.info(
+            "Playwright fallback enabled but `playwright` package isn't "
+            "installed for %s; returning None. Run `pip install -r "
+            "backend/requirements-spa.txt`.",
+            url,
+        )
+        return None
+
+    timeout_ms = max(1000, settings.ARTICLE_PLAYWRIGHT_TIMEOUT_SEC * 1000)
+    rendered_html: str | None = None
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                context = browser.new_context(
+                    user_agent=_USER_AGENT,
+                    java_script_enabled=True,
+                )
+                page = context.new_page()
+                # `wait_until="networkidle"` is the strongest heuristic
+                # for "hydration complete" — the page has stopped
+                # issuing XHRs. Some SPAs poll indefinitely; the
+                # timeout floor caps that case so we don't stall
+                # the orchestrator.
+                page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+                rendered_html = page.content()
+            finally:
+                browser.close()
+    except PlaywrightTimeoutError as e:
+        logger.info(
+            "Playwright fallback timed out (%ds) for %s: %s",
+            settings.ARTICLE_PLAYWRIGHT_TIMEOUT_SEC,
+            url,
+            e,
+        )
+        return None
+    except PlaywrightError as e:
+        logger.info(
+            "Playwright fallback Playwright-error for %s: %s",
+            url,
+            e,
+        )
+        return None
+    except Exception as e:
+        # Defensive — Playwright sometimes raises non-Playwright
+        # exception types on platform-specific edge cases (e.g.
+        # subprocess errors on Windows when Chromium binaries are
+        # corrupt). Log + None.
+        logger.info(
+            "Playwright fallback unexpected error for %s: %s",
+            url,
+            e,
+        )
+        return None
+
+    if not rendered_html:
+        return None
+
+    # Re-feed the rendered HTML through trafilatura. The result, if
+    # any, is tagged ``source='playwright'`` so callers / tests can
+    # distinguish primary from fallback.
+    primary = _trafilatura_extract(url, rendered_html)
+    if primary is None:
+        return None
+    primary.source = "playwright"
+    return primary
 
 
 def extract_text(url: str) -> ExtractionResult | None:

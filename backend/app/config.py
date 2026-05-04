@@ -128,6 +128,30 @@ class Settings(BaseSettings):
     PODCAST_AUDIO_FETCH_TIMEOUT_SEC: int = 180
 
     # -------------------------------------------------------------------
+    # Article extraction Playwright fallback (E-1.6 T-1.6.6)
+    # -------------------------------------------------------------------
+    # `playwright` + Chromium browser binaries are ~150MB and slow to
+    # install. We make the SPA-extraction fallback opt-in via a
+    # separate `backend/requirements-spa.txt` constraint set + this
+    # env flag. When `ARTICLE_PLAYWRIGHT_ENABLED=False` (default), the
+    # fallback short-circuits with a single INFO log and returns None
+    # — exactly as the T-1.6.1 stub did. When enabled, it launches
+    # headless Chromium, navigates, waits for hydration, and re-feeds
+    # the rendered DOM through trafilatura.
+    #
+    # Install (operator opt-in):
+    #   pip install -r backend/requirements-spa.txt
+    #   playwright install chromium
+    #
+    # Then set:
+    #   ARTICLE_PLAYWRIGHT_ENABLED=True
+    ARTICLE_PLAYWRIGHT_ENABLED: bool = False
+    # Hard timeout for the whole fetch + hydrate + extract loop. Long
+    # SPAs can take a while to settle; we cap at 30s so a single bad
+    # URL doesn't stall the orchestrator.
+    ARTICLE_PLAYWRIGHT_TIMEOUT_SEC: int = 30
+
+    # -------------------------------------------------------------------
     # LLM — Primary (high-quality) model
     # -------------------------------------------------------------------
     # Provider dispatches which chat client is built. The call-site code is

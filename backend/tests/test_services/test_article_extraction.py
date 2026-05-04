@@ -227,11 +227,11 @@ def test_extract_text_returns_none_when_extraction_fully_fails():
     assert result is None
 
 
-def test_extract_text_returns_none_for_spa_shell_today():
-    """SPA shell — trafilatura sees no article body. Playwright fallback
-    is a stub today (returns None) so the overall result is None.
-    Future PR replaces the stub with real Playwright; this test
-    will then need to be updated to assert a non-None result."""
+def test_extract_text_returns_none_for_spa_shell_when_playwright_disabled():
+    """SPA shell — trafilatura sees no article body. With the default
+    ``ARTICLE_PLAYWRIGHT_ENABLED=False``, the fallback short-circuits
+    and the overall result is None. The next test exercises the
+    enabled path."""
     with patch(
         "app.services.article_extraction.extractor.httpx.get",
         return_value=_mock_response(SPA_SHELL_HTML),
@@ -459,3 +459,247 @@ def test_extract_text_published_at_returns_none_for_unparseable():
 
     assert result is not None
     assert result.published_at is None  # gracefully drops bad date
+
+
+# ---------------------------------------------------------------------------
+# Playwright fallback (T-1.6.6)
+# ---------------------------------------------------------------------------
+# The Playwright path is opt-in via `ARTICLE_PLAYWRIGHT_ENABLED`. We
+# mock the entire `playwright.sync_api` surface so tests don't require
+# Chromium binaries. The mock pretends the SPA hydrates to the same
+# article HTML our `ARTICLE_HTML` fixture uses, and we assert the
+# fallback returns the extracted result with `source='playwright'`.
+
+
+@pytest.fixture
+def mock_playwright_module(monkeypatch):
+    """Inject a fake `playwright.sync_api` module whose `sync_playwright()`
+    yields a context manager whose `chromium.launch()` returns a mock
+    browser whose `new_context().new_page().content()` returns
+    `ARTICLE_HTML`. Mirrors the real call shape closely enough to lock
+    the wiring."""
+    import sys
+    import types
+
+    fake_module = types.ModuleType("playwright.sync_api")
+
+    class _PlaywrightError(Exception):
+        pass
+
+    class _PlaywrightTimeoutError(_PlaywrightError):
+        pass
+
+    page_mock = Mock()
+    page_mock.content.return_value = ARTICLE_HTML
+    page_mock.goto = Mock()
+
+    context_mock = Mock()
+    context_mock.new_page.return_value = page_mock
+
+    browser_mock = Mock()
+    browser_mock.new_context.return_value = context_mock
+    browser_mock.close = Mock()
+
+    p_mock = Mock()
+    p_mock.chromium.launch.return_value = browser_mock
+
+    class _SyncPlaywrightCtx:
+        def __enter__(self):
+            return p_mock
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    fake_module.sync_playwright = lambda: _SyncPlaywrightCtx()
+    fake_module.Error = _PlaywrightError
+    fake_module.TimeoutError = _PlaywrightTimeoutError
+
+    fake_pkg = types.ModuleType("playwright")
+    monkeypatch.setitem(sys.modules, "playwright", fake_pkg)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_module)
+
+    # Convenience handles for assertions.
+    return {
+        "page": page_mock,
+        "browser": browser_mock,
+        "p": p_mock,
+        "module": fake_module,
+        "PlaywrightError": _PlaywrightError,
+        "PlaywrightTimeoutError": _PlaywrightTimeoutError,
+    }
+
+
+def test_playwright_fallback_disabled_by_default(monkeypatch):
+    """`ARTICLE_PLAYWRIGHT_ENABLED=False` (default) → fallback returns
+    None without attempting to import playwright."""
+    # Ensure the setting is False (it's the default but be explicit).
+    from app.services.article_extraction import extractor as _ext
+    monkeypatch.setattr(_ext.settings, "ARTICLE_PLAYWRIGHT_ENABLED", False)
+    with patch(
+        "app.services.article_extraction.extractor.httpx.get",
+        return_value=_mock_response(SPA_SHELL_HTML),
+    ):
+        result = extract_text("https://spa.example.com/")
+    assert result is None
+
+
+def test_playwright_fallback_returns_none_when_module_missing(monkeypatch):
+    """When playwright isn't installed, the lazy import fails and
+    we return None with an INFO log — never raise."""
+    import sys
+
+    from app.services.article_extraction import extractor as _ext
+    monkeypatch.setattr(_ext.settings, "ARTICLE_PLAYWRIGHT_ENABLED", True)
+    # Ensure playwright isn't importable.
+    monkeypatch.delitem(sys.modules, "playwright", raising=False)
+    monkeypatch.delitem(sys.modules, "playwright.sync_api", raising=False)
+    # Make the import explicitly fail by monkey-patching __import__.
+    real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
+
+    def _import_blocking(name, *a, **kw):
+        if name == "playwright.sync_api" or name.startswith("playwright."):
+            raise ImportError("playwright not installed")
+        return real_import(name, *a, **kw)
+
+    if isinstance(__builtins__, dict):
+        monkeypatch.setitem(__builtins__, "__import__", _import_blocking)
+    else:
+        monkeypatch.setattr(__builtins__, "__import__", _import_blocking)
+
+    with patch(
+        "app.services.article_extraction.extractor.httpx.get",
+        return_value=_mock_response(SPA_SHELL_HTML),
+    ):
+        result = extract_text("https://spa.example.com/")
+    assert result is None
+
+
+def test_playwright_fallback_extracts_via_rendered_dom(
+    monkeypatch, mock_playwright_module
+):
+    """Happy path — trafilatura returns nothing on the SPA shell, so
+    the fallback launches Chromium, gets the rendered HTML, re-feeds
+    through trafilatura, and returns the extraction tagged
+    `source='playwright'`."""
+    from app.services.article_extraction import extractor as _ext
+    monkeypatch.setattr(_ext.settings, "ARTICLE_PLAYWRIGHT_ENABLED", True)
+    with patch(
+        "app.services.article_extraction.extractor.httpx.get",
+        return_value=_mock_response(SPA_SHELL_HTML),
+    ):
+        result = extract_text("https://spa.example.com/")
+
+    assert result is not None
+    assert result.source == "playwright"
+    # The mocked `page.content()` returned ARTICLE_HTML, which has a
+    # ~250-word article body — re-trafilatura'd, the result should
+    # carry that.
+    assert result.word_count >= 200
+    assert "Software development" in result.text
+
+    # Wiring check — Chromium launched headless and `page.goto` was
+    # called with the URL.
+    mock_playwright_module["p"].chromium.launch.assert_called_once_with(headless=True)
+    mock_playwright_module["page"].goto.assert_called_once()
+    args, kwargs = mock_playwright_module["page"].goto.call_args
+    assert args[0] == "https://spa.example.com/"
+    assert kwargs.get("wait_until") == "networkidle"
+
+
+def test_playwright_fallback_returns_none_on_navigation_timeout(
+    monkeypatch, mock_playwright_module
+):
+    """Some SPAs poll indefinitely — Playwright's networkidle raises
+    TimeoutError. We treat that as fallback failure → None."""
+    from app.services.article_extraction import extractor as _ext
+    monkeypatch.setattr(_ext.settings, "ARTICLE_PLAYWRIGHT_ENABLED", True)
+    timeout_cls = mock_playwright_module["PlaywrightTimeoutError"]
+    mock_playwright_module["page"].goto.side_effect = timeout_cls("nav timed out")
+
+    with patch(
+        "app.services.article_extraction.extractor.httpx.get",
+        return_value=_mock_response(SPA_SHELL_HTML),
+    ):
+        result = extract_text("https://spa.example.com/")
+    assert result is None
+    # Browser must still have been closed despite the goto failure.
+    mock_playwright_module["browser"].close.assert_called_once()
+
+
+def test_playwright_fallback_returns_none_on_browser_launch_failure(
+    monkeypatch, mock_playwright_module
+):
+    """If chromium binaries aren't installed (`playwright install
+    chromium` not run), `chromium.launch` raises Playwright's Error.
+    Fallback returns None, doesn't crash the orchestrator."""
+    from app.services.article_extraction import extractor as _ext
+    monkeypatch.setattr(_ext.settings, "ARTICLE_PLAYWRIGHT_ENABLED", True)
+    err_cls = mock_playwright_module["PlaywrightError"]
+    mock_playwright_module["p"].chromium.launch.side_effect = err_cls(
+        "chromium not installed"
+    )
+
+    with patch(
+        "app.services.article_extraction.extractor.httpx.get",
+        return_value=_mock_response(SPA_SHELL_HTML),
+    ):
+        result = extract_text("https://spa.example.com/")
+    assert result is None
+
+
+def test_playwright_fallback_returns_none_when_rendered_html_empty(
+    monkeypatch, mock_playwright_module
+):
+    """Defensive — `page.content()` returning empty / whitespace
+    bypasses trafilatura entirely, returns None."""
+    from app.services.article_extraction import extractor as _ext
+    monkeypatch.setattr(_ext.settings, "ARTICLE_PLAYWRIGHT_ENABLED", True)
+    mock_playwright_module["page"].content.return_value = ""
+
+    with patch(
+        "app.services.article_extraction.extractor.httpx.get",
+        return_value=_mock_response(SPA_SHELL_HTML),
+    ):
+        result = extract_text("https://spa.example.com/")
+    assert result is None
+
+
+def test_playwright_fallback_returns_none_when_rendered_html_too_short(
+    monkeypatch, mock_playwright_module
+):
+    """If the rendered DOM still has too little content (login walls,
+    captchas, error states), trafilatura returns nothing or a too-short
+    extract that gets dropped by HARD_FLOOR_WORDS."""
+    from app.services.article_extraction import extractor as _ext
+    monkeypatch.setattr(_ext.settings, "ARTICLE_PLAYWRIGHT_ENABLED", True)
+    mock_playwright_module["page"].content.return_value = (
+        "<html><body><nav>About | Login</nav></body></html>"
+    )
+
+    with patch(
+        "app.services.article_extraction.extractor.httpx.get",
+        return_value=_mock_response(SPA_SHELL_HTML),
+    ):
+        result = extract_text("https://spa.example.com/")
+    # 3-word nav extract is below HARD_FLOOR_WORDS=20 → suppressed.
+    assert result is None
+
+
+def test_playwright_fallback_unexpected_exception_caught(
+    monkeypatch, mock_playwright_module
+):
+    """Defensive last-resort except — non-Playwright exception types
+    (subprocess errors on Windows with corrupt Chromium, etc.) must
+    still fail-soft."""
+    from app.services.article_extraction import extractor as _ext
+    monkeypatch.setattr(_ext.settings, "ARTICLE_PLAYWRIGHT_ENABLED", True)
+    mock_playwright_module["p"].chromium.launch.side_effect = OSError(
+        "Subprocess permission denied"
+    )
+
+    with patch(
+        "app.services.article_extraction.extractor.httpx.get",
+        return_value=_mock_response(SPA_SHELL_HTML),
+    ):
+        result = extract_text("https://spa.example.com/")
+    assert result is None

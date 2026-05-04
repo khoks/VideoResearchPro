@@ -148,10 +148,15 @@ def get_library_qa_history(
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ) -> list[LibraryQAResponse]:
-    """Return library Q&A history ordered by created_at ASC (job convention)."""
+    """Return library Q&A history ordered by created_at ASC (job convention).
+
+    Per E-5.1 phase 2b, filtered to the authenticated user's tenant.
+    """
     exchanges = (
         db.query(LibraryQAExchange)
+        .filter(LibraryQAExchange.tenant_id == current_user.id)
         .order_by(LibraryQAExchange.created_at.asc())
         .offset(offset)
         .limit(limit)

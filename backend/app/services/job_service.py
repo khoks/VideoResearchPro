@@ -45,14 +45,40 @@ def create_job(
     return job
 
 
-def get_job(db: Session, job_id: str) -> Job | None:
-    return db.query(Job).filter(Job.id == job_id).first()
+def get_job(
+    db: Session, job_id: str, tenant_id: str | None = None
+) -> Job | None:
+    """Fetch a single Job by id.
+
+    `tenant_id` (E-5.1 phase 2b) — when set, scopes the lookup to a
+    single tenant. ``None`` (back-compat default) preserves the
+    legacy any-tenant behaviour for internal callers like the
+    Celery worker that doesn't have a user context.
+    """
+    query = db.query(Job).filter(Job.id == job_id)
+    if tenant_id is not None:
+        query = query.filter(Job.tenant_id == tenant_id)
+    return query.first()
 
 
-def get_jobs(db: Session, status: str | None = None, limit: int = 50, offset: int = 0) -> list[Job]:
+def get_jobs(
+    db: Session,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    tenant_id: str | None = None,
+) -> list[Job]:
+    """List Jobs with optional status + tenant filters.
+
+    `tenant_id` (E-5.1 phase 2b) — when set, returns only jobs owned
+    by that tenant. ``None`` returns jobs across all tenants
+    (legacy behaviour for internal callers).
+    """
     query = db.query(Job)
     if status:
         query = query.filter(Job.status == status)
+    if tenant_id is not None:
+        query = query.filter(Job.tenant_id == tenant_id)
     return query.order_by(Job.created_at.desc()).offset(offset).limit(limit).all()
 
 

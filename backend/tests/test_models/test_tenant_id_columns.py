@@ -200,3 +200,83 @@ def test_subscribe_channel_creates_job_with_tenant_id(
     )
     assert sub_job is not None
     assert sub_job.tenant_id == test_user.id
+
+
+# ---------------------------------------------------------------------------
+# Phase 2b — read-side enforcement (queries filter by tenant_id)
+# ---------------------------------------------------------------------------
+
+
+def test_list_jobs_only_returns_current_users_jobs(client, db, test_user):
+    """E-5.1 phase 2b: GET /api/v1/jobs filters by current_user.id."""
+    # Mine — should appear.
+    j_mine = Job(job_type="topic", topic="MINE", tenant_id=test_user.id)
+    # Someone else's — must not appear.
+    j_other = Job(job_type="topic", topic="OTHER", tenant_id="someone-else-uuid")
+    # Legacy NULL row — phase 2 chose to NOT show legacy NULL rows
+    # to current users since the backfill has populated tenant_id
+    # everywhere. Operators who upgrade in-place follow the runbook.
+    j_legacy = Job(job_type="topic", topic="LEGACY")
+    db.add_all([j_mine, j_other, j_legacy])
+    db.commit()
+
+    response = client.get("/api/v1/jobs")
+    assert response.status_code == 200
+    topics = {j["topic"] for j in response.json()}
+    assert topics == {"MINE"}
+
+
+def test_get_job_returns_404_for_other_users_job(client, db, test_user):
+    """E-5.1 phase 2b: GET /api/v1/jobs/{id} — other-user's job
+    returns 404, not 403, to avoid leaking existence."""
+    other_job = Job(
+        job_type="topic", topic="OTHER", tenant_id="someone-else-uuid"
+    )
+    db.add(other_job)
+    db.commit()
+    db.refresh(other_job)
+
+    response = client.get(f"/api/v1/jobs/{other_job.id}")
+    assert response.status_code == 404
+
+
+def test_library_qa_history_only_returns_current_users_exchanges(
+    client, db, test_user
+):
+    """E-5.1 phase 2b: GET /api/v1/library/qa filters by tenant_id."""
+    from app.models.library_qa_exchange import LibraryQAExchange
+
+    mine = LibraryQAExchange(
+        question="MINE", answer="A", tenant_id=test_user.id
+    )
+    other = LibraryQAExchange(
+        question="OTHER", answer="B", tenant_id="someone-else-uuid"
+    )
+    db.add_all([mine, other])
+    db.commit()
+
+    response = client.get("/api/v1/library/qa")
+    assert response.status_code == 200
+    questions = {q["question"] for q in response.json()}
+    assert questions == {"MINE"}
+
+
+def test_qa_history_chat_list_only_returns_current_users_exchanges(
+    client, db, test_user
+):
+    """E-5.1 phase 2b: GET /api/v1/qa-history/exchanges filters by tenant_id."""
+    from app.models.qa_history_exchange import QAHistoryExchange
+
+    mine = QAHistoryExchange(
+        question="MINE", answer="A", tenant_id=test_user.id
+    )
+    other = QAHistoryExchange(
+        question="OTHER", answer="B", tenant_id="someone-else-uuid"
+    )
+    db.add_all([mine, other])
+    db.commit()
+
+    response = client.get("/api/v1/qa-history/exchanges")
+    assert response.status_code == 200
+    questions = {q["question"] for q in response.json()}
+    assert questions == {"MINE"}

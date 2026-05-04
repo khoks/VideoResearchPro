@@ -73,9 +73,17 @@ def test_cancel_job(client):
     assert response.json()["status"] == "cancelled"
 
 
-def test_cancel_completed_job_fails(client, db):
+def test_cancel_completed_job_fails(client, db, test_user):
     from app.models.job import Job
-    job = Job(job_type="topic", topic="done", status="completed", num_videos=5)
+    # Per E-5.1 phase 2b, the cancel endpoint filters by tenant_id;
+    # tag the job with the test user's id so it's reachable.
+    job = Job(
+        job_type="topic",
+        topic="done",
+        status="completed",
+        num_videos=5,
+        tenant_id=test_user.id,
+    )
     db.add(job)
     db.commit()
     db.refresh(job)

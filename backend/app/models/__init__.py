@@ -1,5 +1,10 @@
 from app.models.api_quota_log import ApiQuotaLog
 from app.models.channel import Channel
+# `Creator` is the going-forward name for `Channel` per E-1.9.
+# Both names refer to the same class while the underlying table is
+# still `channels`; the SQL rename is operator-coordinated per
+# `docs/migration-channels-to-creators.md`.
+from app.models.creator import Creator
 from app.models.document import Document
 from app.models.job import Job
 from app.models.job_video import JobVideo
@@ -12,6 +17,7 @@ from app.models.user import User
 __all__ = [
     "ApiQuotaLog",
     "Channel",
+    "Creator",
     "Document",
     "Job",
     "JobVideo",

@@ -10,11 +10,26 @@ from app.database import Base
 class Channel(Base):
     """Global (single-tenant) source-creator record.
 
+    **Going-forward name: Creator.** The class is exported as
+    ``Creator`` from :mod:`app.models.creator` per E-1.9 (channels →
+    creators rename). The legacy ``Channel`` name remains as a
+    back-compat alias indefinitely — too much existing code
+    references it. New code should prefer ``Creator``.
+
     Today the table holds YouTube channels exclusively. The L1 multi-source
     columns (`source_type`, `creator_external_id`, `source_weight`,
     `creator_metadata_json`) are populated for every row so future creators
     (podcast shows, blog domains, X authors, …) can land here without
     another migration. See `docs/source-types.md`.
+
+    **Table-level rename.** The underlying table stays named ``channels``
+    in v1 per [D-032](../../../docs/decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03)
+    precedent — production data-bearing renames go through an
+    operator-coordinated runbook (see ``docs/migration-channels-to-creators.md``)
+    rather than an automatic startup migration. When the rename runs,
+    only ``__tablename__`` here changes; both ``Channel`` and
+    ``Creator`` Python names continue to resolve correctly against the
+    new ``creators`` table.
     """
 
     __tablename__ = "channels"

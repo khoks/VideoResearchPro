@@ -173,6 +173,24 @@ class Settings(BaseSettings):
     PDF_MAX_BYTES: int = 100 * 1024 * 1024  # 100 MB
 
     # -------------------------------------------------------------------
+    # Article connector — search engine + RSS (E-1.6 T-1.6.2 + T-1.6.3)
+    # -------------------------------------------------------------------
+    # Search-engine integration is opt-in via API key. Brave Search is
+    # the default supported provider because (a) it has a generous
+    # free tier without requiring credit-card details, (b) the API
+    # surface is simple (single GET, JSON response), (c) it doesn't
+    # demand a contract or per-query approval like Google Custom
+    # Search. Future PRs can add Tavily / Kagi as alternative
+    # providers; the connector picks whichever is configured.
+    BRAVE_SEARCH_API_KEY: str = ""
+    BRAVE_SEARCH_BASE: str = "https://api.search.brave.com/res/v1/web/search"
+    ARTICLE_USER_AGENT: str = (
+        "pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani)"
+    )
+    # Per-search-call rate limit. Brave's free tier is ~1 req/sec.
+    ARTICLE_SEARCH_RATE_LIMIT_RPM: int = 60
+
+    # -------------------------------------------------------------------
     # LLM — Primary (high-quality) model
     # -------------------------------------------------------------------
     # Provider dispatches which chat client is built. The call-site code is

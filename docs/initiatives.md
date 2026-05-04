@@ -24,19 +24,17 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 ## I-1 🟡 Multi-source ingest
 
-**Closure assessment 2026-05-03.** I-1 is **substantially advanced** but **not yet fully closed**. The structural premise (polymorphic plumbing — connectors / approval / classifier / citation) is validated five times over (YouTube + Reddit + HN + Mastodon + Bluesky all running through the same pipeline). The five social-media + video source types are **end-to-end operational**, including production polymorphic citations down to per-reply deep-links (S-1.5.12 closed 2026-05-03 PR #134). The article-connector primitives shipped (T-1.6.1, PR #135).
+**Closure assessment 2026-05-03 (afternoon, current).** I-1 is now **near-complete**. Three more milestones shipped this afternoon — **M-1.7** (Podcast e2e, [PR #140](https://github.com/khoks/VideoResearchPro/pull/140)), **T-1.6.6** (Playwright fallback, [PR #141](https://github.com/khoks/VideoResearchPro/pull/141)), **M-1.8** (PDF e2e, [PR #142](https://github.com/khoks/VideoResearchPro/pull/142)). The polymorphic plumbing is now validated **seven times** (YouTube + Reddit + HN + Mastodon + Bluesky + Podcast + PDF), including the structural-validation outlier of PDF (no discovery surface — first connector to exercise the dispatcher's `NotImplementedError` path per [D-035](decisions.md#d-035--connectors-with-no-discovery-surface-raise-notimplementederror-dispatcher-treats-as-zero-candidates-2026-05-03)).
 
-**What remains for I-1 closure:**
+**What remains for I-1 full closure:**
 
-- **E-1.5 remaining surfaces:** S-1.5.8 (Mode B paste-mode; primitives now unblocked), S-1.5.9 (BYOK Twitter env-var detection), S-1.5.10 (paid Twitter connector). All non-trivial; planned but not in the M-1.7-priority window.
-- **E-1.6 full article UX:** T-1.6.2 / T-1.6.3 / T-1.6.4 / T-1.6.5 (search-engine integration, RSS ingest, approval card variant, e2e test). Deferred per D-024 until after M-1.7.
-- **E-1.7 podcast connector** (M-1.7 candidate): never started. Needs decision OQ-4 first (Whisper-as-service vs in-process).
-- **E-1.8 PDF / e-book connector**: never started. Multi-day effort (PyMuPDF + EPUB + page-anchored citations + file-upload UX).
-- **E-1.9 channels → creators rename**: never started. Risky migration touching the FK chain on `documents.channel_id`.
+- **E-1.5 remaining surfaces:** S-1.5.8 (Mode B paste-mode — now **fully unblocked**: T-1.6.1 primitives + T-1.6.6 Playwright fallback both shipped), S-1.5.9 (BYOK Twitter env-var detection), S-1.5.10 (paid Twitter connector). All standalone PRs, no architectural blockers.
+- **E-1.6 full UX:** T-1.6.2 / T-1.6.3 / T-1.6.4 / T-1.6.5 (search-engine integration, RSS ingest, approval card variant, e2e test). Per [D-024](decisions.md#d-024--flip-e-16-to--with-primitives-only-scope-split-2026-04-28) these were deferred until after M-1.7 — that's now done, so they're next-eligible.
+- **E-1.9 channels → creators rename**: still ⚪. Per [D-032](decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03) precedent, the table rename ships via Alembic but operator-side coordination follows the runbook pattern.
 
-**Why this isn't closeable in a single session:** E-1.7 + E-1.8 + E-1.9 are each multi-day epics with their own design-decision blockers (OQ-4 for podcasts; migration safety for E-1.9). Cutting corners on any of them would compromise the architectural integrity that the M-1.5/M-1.6 polymorphic-plumbing promise depends on. Honest path forward: ship M-1.7 (podcast e2e) next, then E-1.6 full UX, then E-1.8 (PDF), then E-1.9 (creators rename) — one milestone at a time, each with proper testing + migration safety.
+**Honest sequencing for next sessions:** S-1.5.8 paste-mode (1 PR, unblocked), then E-1.6 full UX (2-3 PRs), then E-1.9 creators rename (1 careful PR with migration safety). All these are now standalone — no design-decision blockers, just engineering work. **Three sessions of similar size to today should close I-1 entirely.**
 
-**Companion initiative I-2 closed 2026-05-03** alongside this session's E-2.5 + E-2.6 work.
+**Companion initiative I-2 closed 2026-05-03 morning** alongside the E-2.5 + E-2.6 work.
 
 **Why it exists.** Generalize the data model from YouTube-only to all source types — podcasts, articles, threads, books, forum posts, social-media posts. Same search → approval → ingest → embed → query pipeline for every type.
 **North-star doc:** [feature-roadmap.md L1](feature-roadmap.md#l1--multi-source-ingest) · [source-types.md](source-types.md)
@@ -200,14 +198,18 @@ This file is the project's **work-state board**. Every piece of work — shipped
 #### S-1.5.8 🔵 Manual-paste mode (Mode B for FB/IG/LI/X-without-paid)
 
 **PR:** TBD
-**Status update 2026-05-03:** Dependency T-1.6.1 (article extraction primitives) ✅ shipped in PR [#135](https://github.com/khoks/VideoResearchPro/pull/135). S-1.5.8 is now **unblocked** — `app.services.article_extraction.extract_text(url)` can be called directly to turn a pasted URL into an `ExtractionResult`. Caveat: the Playwright fallback for SPA-heavy pages (Facebook / Instagram client-side renders) is still a stub returning None per [T-1.6.6](#e-16--article-connector); FB / IG paste support depends on that landing too. X / LI / generic-blog paste should work with trafilatura alone.
+**Status update 2026-05-03:** **Fully unblocked.** Both dependencies shipped same-day:
+- T-1.6.1 (article extraction primitives) ✅ — PR [#135](https://github.com/khoks/VideoResearchPro/pull/135). `extract_text(url)` returns `ExtractionResult` for any URL.
+- T-1.6.6 (Playwright fallback) ✅ — PR [#141](https://github.com/khoks/VideoResearchPro/pull/141). SPA-rendered FB / IG / JS-heavy news now work when operators opt-in (`requirements-spa.txt` + `playwright install chromium` + `ARTICLE_PLAYWRIGHT_ENABLED=True`).
+
+S-1.5.8 itself is now an integration / UX PR — no architectural blockers remain. Implementation: a URL→source_type resolver (T-1.5.8.1), a frontend "Paste URLs" surface in job submission (T-1.5.8.3), per-platform `source_metadata` extraction (T-1.5.8.4), and a re-evaluation of T-1.5.8.5 since FB / IG should now work via the Playwright path.
 **Acceptance.** User pastes 1–N post URLs from any supported platform; system fetches each via the article-connector machinery (trafilatura → Playwright fallback) and ingests as the right `source_type`. Honest UI: search disabled for these platforms, paste-only.
 **Tasks**
 - [ ] T-1.5.8.1 URL → `source_type` resolver (FB / IG / LI / X / generic)
 - [x] T-1.5.8.2 Reuse `app/services/article_extraction/` (E-1.6 T-1.6.1 primitives) — *✅ T-1.6.1 shipped 2026-05-03 PR [#135](https://github.com/khoks/VideoResearchPro/pull/135). The S-1.5.8 caller imports `extract_text` directly when it lands; nothing more to do on this task — it was a dependency, not work.*
 - [ ] T-1.5.8.3 Frontend "Paste URLs" surface in job submission
 - [ ] T-1.5.8.4 Per-platform `source_metadata` extraction (author handle, date) where the page exposes it
-- [ ] T-1.5.8.5 ⚫ FB / IG paste support — **blocked** on [T-1.6.6](#e-16--article-connector) (Playwright fallback impl). Trafilatura alone returns None on SPA-rendered pages. X / LI / generic blogs work on trafilatura without needing T-1.6.6.
+- [ ] T-1.5.8.5 🔵 FB / IG paste support — *unblocked 2026-05-03 by T-1.6.6 PR [#141](https://github.com/khoks/VideoResearchPro/pull/141). Operators with `ARTICLE_PLAYWRIGHT_ENABLED=True` now have working SPA extraction; this task becomes "verify FB / IG specifically render correctly through the Playwright pipeline + add per-platform source_metadata extraction (post author, post date)".*
 
 #### S-1.5.9 ⚪ Pluggable Twitter Bearer token (BYOK)
 
@@ -283,15 +285,43 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [ ] T-1.6.3 ⚪ RSS feed ingestion path — *deferred until post-M-1.5*.
 - [ ] T-1.6.4 ⚪ Article approval card variant + Q&A citation rendering — *deferred until post-M-1.5*.
 - [ ] T-1.6.5 ⚪ End-to-end article-job pipeline test — *deferred until post-M-1.5*.
-- [ ] T-1.6.6 🔵 Playwright fallback implementation — *Filed 2026-05-03 as the planned follow-up to T-1.6.1's structurally-present stub. Today `_playwright_fallback(url)` in `app/services/article_extraction/extractor.py` returns None with an INFO log; SPA-rendered articles (Facebook / Instagram, JS-heavy news sites) silently fail extraction. Scope: (1) add `pratidhvani[spa]` extras_require entry that installs `playwright` + a post-install hook that pulls Chromium binaries; (2) replace the stub body with: launch headless Chromium, navigate, wait for hydration (network-idle + DOM-stable heuristic, ~2s timeout), grab rendered HTML, re-feed through trafilatura's `extract`; (3) gate behind `BLUESKY_*`-style env-var check (e.g. `ARTICLE_PLAYWRIGHT_ENABLED`) so the default install doesn't error when Chromium isn't present; (4) tests against fixture SPA-shell HTML feeding through both paths. Unblocks **S-1.5.8 T-1.5.8.5** (FB / IG paste) and tightens article-extraction recall on JS-heavy news sites generally.*
+- [x] T-1.6.6 Playwright fallback implementation — *shipped 2026-05-03 PR [#141](https://github.com/khoks/VideoResearchPro/pull/141). Replaced T-1.6.1's structurally-present stub with a real Playwright integration. Lazy-imports `playwright.sync_api`, launches headless Chromium, navigates with `wait_until="networkidle"` for hydration, grabs rendered HTML, re-feeds through trafilatura, tags result `source='playwright'`. Gated on `ARTICLE_PLAYWRIGHT_ENABLED` (default False) so default install stays lean. Opt-in via new `backend/requirements-spa.txt` + `playwright install chromium`. 8 new tests; backend suite 637 → 645. **Unblocks S-1.5.8 T-1.5.8.5** (FB / IG paste support).*
 
-### E-1.7 ⚪ Podcast connector
+### E-1.7 🟢 Podcast connector
 
-**Scope.** Spotify/Apple show URL or RSS feed → episode list → text from existing transcript or Whisper transcription. Each episode = one `Document` with `source_type='podcast'`.
+**Shipped:** 2026-05-03 — PR [#140](https://github.com/khoks/VideoResearchPro/pull/140). Closes Milestone **M-1.7** (Podcast end-to-end).
 
-### E-1.8 ⚪ PDF / e-book connector
+**Linked decision:** [D-033 — Whisper-as-service for podcasts: reuse existing OpenAI Whisper path (resolves OQ-4)](decisions.md#d-033--whisper-as-service-for-podcasts-reuse-existing-openai-whisper-path-resolves-oq-4-2026-05-03)
 
-**Scope.** File upload (multipart). PyMuPDF text extraction; per-page boundaries preserved as segment metadata.
+**Scope.** Spotify / Apple show URL or RSS feed → episode list → text from existing transcript (Podcast Index 2.0 `<podcast:transcript>` SRT/VTT extension) or Whisper transcription (reused OpenAI Whisper path from `youtube_service`). Each episode = one `Document` with `source_type='podcast_episode'`.
+
+**Implementation notes.**
+- Discovery is two-tier: iTunes Search API for shows + per-show RSS for episodes. Topic search yields up to `PODCAST_SEARCH_TOP_N_SHOWS × PODCAST_EPISODES_PER_SHOW` candidates.
+- Identity: `source_id = f"podcast:{episode_guid}"`. GUIDs are required by RSS-2.0 and stable across CDN URL rotations.
+- Per-segment `extra` carries `comment_url = episode_url + #t=<sec>` so podcast players that honour the fragment (Overcast, Pocket Casts, Apple Podcasts iOS 17+) deep-link citations to the cited timestamp.
+- Whisper API gated on `OPENAI_API_KEY`; fail-soft to None when unset (same pattern as YouTube fallback). Known limitation: 25MB upload cap means episodes >~20 min require either an in-feed transcript or a future audio-split path; in-feed transcripts are common enough that this isn't blocking for v1.
+- 44 unit tests covering discovery, transcript parsing (SRT / VTT / Whisper), failure modes, identity, registration.
+
+### E-1.8 🟢 PDF / e-book connector
+
+**Shipped:** 2026-05-03 — PR [#142](https://github.com/khoks/VideoResearchPro/pull/142). Closes Milestone **M-1.8** (PDF end-to-end).
+
+**Linked decisions:** [D-034 — PDF source-type identity uses first-64KB SHA-256](decisions.md#d-034--pdf-source-type-identity-uses-first-64kb-sha-256-not-full-file-hash-2026-05-03), [D-035 — Connectors with no discovery surface raise `NotImplementedError`](decisions.md#d-035--connectors-with-no-discovery-surface-raise-notimplementederror-dispatcher-treats-as-zero-candidates-2026-05-03)
+
+**Scope.** File upload (multipart) via `POST /api/v1/library/upload-pdf`. PyMuPDF text extraction; per-page boundaries preserved as segment metadata. Page-anchored citations via `permalink#page=<N>` deep-link fragments that standard PDF viewers (Chrome built-in, Firefox, Adobe) honour.
+
+**Implementation notes.**
+- First source type with no discovery surface — `search()` + `list_creator_items()` raise `NotImplementedError` per D-035; the dispatcher's `dispatch_search` already handles that gracefully per [D-026](decisions.md#d-026--sequential-fan-out-for-the-connector-dispatcher-2026-05-02).
+- Identity: `source_id = f"pdf:{first_64kb_sha256}"` per D-034. Fast for very large PDFs; dedup-stable across trailer-metadata variation; idempotent re-upload.
+- Raw bytes persist at `PDF_UPLOAD_DIR/<hash>.pdf` so future PRs can re-extract (e.g. when PyMuPDF improves table extraction) without re-uploading.
+- `GET /api/v1/library/pdf/{digest}.pdf` serves bytes back so per-page deep-link citations work.
+- Tables extracted via PyMuPDF's `find_tables()` and rendered inline with `[TABLE]` markers (future enhancement: emit as separate segments for better retrieval).
+- 19 unit tests using real PyMuPDF (in-memory PDFs built via `fitz`'s writer; no fixture binaries).
+
+**E-1.8 follow-ups.**
+- Frontend file-upload UI on a Library page (backend endpoint ready; UI is a separate PR).
+- OCR for image-only PDFs (Tesseract or cloud-OCR fallback gated like Playwright).
+- Per-page Q&A reranking (chunk-level page filter on retrieval).
 
 ### E-1.9 ⚪ Rename `channels` → `creators` (DB + ORM)
 

@@ -10,6 +10,38 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### M-1.8: PDF / e-book connector + upload endpoint (PR #142)
+
+- **Seventh source type** plugs into the polymorphic plumbing — and the first with no discovery surface (PDFs come from upload, not search). Closes E-1.8 / Milestone M-1.8.
+- **`backend/app/sources/pdf/`** — new package. `PDFConnector.search()` and `list_creator_items()` raise `NotImplementedError` per [D-035](docs/decisions.md#d-035--connectors-with-no-discovery-surface-raise-notimplementederror-dispatcher-treats-as-zero-candidates-2026-05-03); the dispatcher's existing try-block handles them gracefully (validates the PDF design assumption baked into D-026 since 2026-05-02). `fetch_text` reads upload-stored bytes, runs through PyMuPDF, emits one segment per page with per-page `extra={kind:"page", page:N, comment_id:"pdf:<hash>:p<N>", comment_url:"<url>#page=<N>"}`. Tables extracted via `find_tables()` and rendered inline.
+- **Identity** per [D-034](docs/decisions.md#d-034--pdf-source-type-identity-uses-first-64kb-sha-256-not-full-file-hash-2026-05-03) — `source_id = f"pdf:{first_64kb_sha256}"`. Fast for very large PDFs (academic books); dedup-stable across trailer-metadata variation; idempotent re-upload returns existing Document with `deduped=True`.
+- **`POST /api/v1/library/upload-pdf`** — multipart upload endpoint. Hashes, persists raw bytes at `PDF_UPLOAD_DIR/<hash>.pdf`, creates Document, runs `fetch_text` inline, chunks via the same `_build_video_metadata` + `chunk_transcript` path every other source type uses, embeds into global Chroma. File-size guard at `PDF_MAX_BYTES` (default 100MB). **`GET /api/v1/library/pdf/{digest}.pdf`** serves bytes back so per-page `#page=<N>` deep-link citations work in standard PDF viewers.
+- **Frontend** — `pdf` in `SourceMetadata` (`pageCount`, `wordCount`, `uploadedAt`); `PDFGlyph` SVG; chip layout; `videoToApprovalProps` mapper; `<CitationLink>` renderCitation case (`<doc title> · p. <N>`); `Reference.page_number` field.
+- **Backend** — `_chunk_to_reference` branch for `pdf` extracts page number from `comment_id` (`pdf:<hash>:p<N>`), prefers `comment_url` (with `#page=<N>` fragment) for permalink, renders `timestamp_display` as `p. <N>`.
+- **Tests** — 19 new in `test_pdf_connector.py` using real PyMuPDF (in-memory PDFs built via fitz's writer; no fixture binaries). Backend suite 645 → 664.
+- **Out of scope (E-1.8 follow-ups)**: frontend file-upload UI, OCR for image-only PDFs, per-page Q&A reranking.
+
+### T-1.6.6: Playwright fallback for article extraction (PR #141)
+
+- **Closes E-1.6 primitives layer fully.** Replaces T-1.6.1's structurally-present `_playwright_fallback` stub with real headless-Chromium SPA extraction. Lazy-imports `playwright.sync_api`, navigates with `wait_until="networkidle"` for hydration, grabs rendered HTML, re-feeds through trafilatura, tags result `source='playwright'`.
+- **Opt-in install** via new `backend/requirements-spa.txt`: `pip install -r backend/requirements-spa.txt && playwright install chromium`, then `ARTICLE_PLAYWRIGHT_ENABLED=True` in `.env`. Default install (just `requirements.txt`) keeps Pratidhvani lean.
+- **Lazy import + multi-tier fallback**: when `playwright` isn't on the path / Chromium isn't installed / hydration times out / page errors / any unexpected exception → returns None with INFO log. Never crashes the orchestrator. New `ARTICLE_PLAYWRIGHT_TIMEOUT_SEC` (default 30s) caps the goto+content loop.
+- **Unblocks S-1.5.8 T-1.5.8.5** (FB / IG paste) — FB / IG are the canonical SPA-shell pages where this fallback is load-bearing.
+- 8 new tests using `mock_playwright_module` fixture (sys.modules injection so tests don't require Chromium installed). Backend suite 637 → 645.
+
+### M-1.7: Podcast connector e2e (PR #140)
+
+- **Sixth source type** plugs into the polymorphic plumbing without core changes. Closes E-1.7 / Milestone M-1.7. Resolves [OQ-4 per D-033](docs/decisions.md#d-033--whisper-as-service-for-podcasts-reuse-existing-openai-whisper-path-resolves-oq-4-2026-05-03) — reuse existing OpenAI Whisper path rather than separate service.
+- **`backend/app/sources/podcast/`** — `PodcastClient` (iTunes Search + RSS fetch + audio download), `PodcastConnector` (two-tier discovery: iTunes search → per-show RSS → recent K episodes), `flatten` (SRT / VTT / Whisper-segment normalisation + episode-extra-attach), `connector` (full `BaseConnector` impl).
+- **Discovery** — iTunes Search API (free, no auth) for show-level matches + per-show RSS feeds via `feedparser` for episode-level candidates. `PODCAST_SEARCH_TOP_N_SHOWS × PODCAST_EPISODES_PER_SHOW = 15` candidates per topic search by default.
+- **Text extraction** — preferred path is in-feed `<podcast:transcript>` SRT or VTT (Podcast Index 2.0 extension). Whisper fallback when no transcript: download enclosure to temp file, reuse `_whisper_transcribe_with_retry` helper from `youtube_service`. Gated on `OPENAI_API_KEY` like YouTube fallback.
+- **Identity** — `source_id = f"podcast:{episode_guid}"`. GUIDs are required by RSS-2.0 and stable across CDN URL rotations. `creator_external_id = feed URL` (canonical show id).
+- **Per-segment provenance** — every segment carries `comment_url = episode_url + #t=<sec>` so podcast players that honour the fragment (Overcast, Pocket Casts, Apple Podcasts iOS 17+) deep-link citations to the cited timestamp.
+- **`_entry_field(entry, key)` helper** unifies feedparser's `FeedParserDict` (attr access) with plain `dict` (key access) so the connector works against test fixtures + production feeds alike.
+- **Frontend** — `podcast_episode` SourceMetadata variant + SOURCE_CONFIGS entry + PodcastGlyph SVG + videoToApprovalProps + `<CitationLink>` renderCitation case (`<episode title> · <show name> · <timestamp>`).
+- **Tests** — 44 new in `test_podcast_connector.py`. All mocks; no network or Whisper API calls. Backend suite 593 → 637.
+- **Adds `feedparser>=6.0.10`** to requirements.txt.
+
 ### I-2 closed: code-identifier-rename runbook (PR #137)
 
 - **`docs/migration-code-identifiers.md`** — operator-driven safe-execution runbook for the data-bearing renames (`CHROMA_GLOBAL_COLLECTION_NAME`, `DATABASE_URL`). Three sections: §A Chroma collection rename with idempotent paginated backfill script + post-migration verification + rollback; §B SQLite file rename with backup-and-rename + verification + rollback; §C optional GitHub repo rename (outside-codebase, GitHub auto-redirects). Promise: never destroys data; every step reversible up to the operator deleting the legacy backup.

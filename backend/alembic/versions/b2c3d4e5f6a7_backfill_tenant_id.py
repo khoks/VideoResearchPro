@@ -1,7 +1,7 @@
 """Backfill tenant_id on user-scoped tables (E-5.1 phase 2a)
 
 Revision ID: b2c3d4e5f6a7
-Revises: a1b2c3d4e5f6
+Revises: d5e6f7a8b9c0
 Create Date: 2026-05-04 14:00:00.000000
 
 Per phase 2 of the [E-5.1 audit doc](docs/saas-tenant-id-audit.md),
@@ -36,7 +36,7 @@ from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision: str = "b2c3d4e5f6a7"
-down_revision: Union[str, Sequence[str], None] = "a1b2c3d4e5f6"
+down_revision: Union[str, Sequence[str], None] = "d5e6f7a8b9c0"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

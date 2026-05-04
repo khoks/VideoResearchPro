@@ -179,8 +179,13 @@ def test_query_qa_collection_respects_where_filter():
 
 # --- Hook firing via routers ----------------------------------------------
 
-def _make_completed_topic_job(db):
-    """Create a completed topic job so the Q&A endpoint accepts questions."""
+def _make_completed_topic_job(db, tenant_id: str | None = None):
+    """Create a completed topic job so the Q&A endpoint accepts questions.
+
+    `tenant_id` (E-5.1 phase 2b) — set to the test user's id so the
+    job-id is reachable via the tenant-scoped router filter. Default
+    ``None`` is for legacy-row simulation tests.
+    """
     from app.models.job import Job
 
     job = Job(
@@ -189,6 +194,7 @@ def _make_completed_topic_job(db):
         status="completed",
         topic="tariffs",
         search_instructions="x",
+        tenant_id=tenant_id,
     )
     db.add(job)
     db.commit()
@@ -196,9 +202,9 @@ def _make_completed_topic_job(db):
     return job
 
 
-def test_job_qa_endpoint_upserts_exchange(client, db):
+def test_job_qa_endpoint_upserts_exchange(client, db, test_user):
     """POST /jobs/{id}/qa must call upsert_qa_exchange with source='job'."""
-    job = _make_completed_topic_job(db)
+    job = _make_completed_topic_job(db, tenant_id=test_user.id)
 
     with (
         patch("app.agents.qa_agent.run_qa_agent", return_value=("answer text", [])),
@@ -218,9 +224,9 @@ def test_job_qa_endpoint_upserts_exchange(client, db):
     assert kwargs.get("source") == "job"
 
 
-def test_job_qa_endpoint_survives_chroma_failure(client, db):
+def test_job_qa_endpoint_survives_chroma_failure(client, db, test_user):
     """A Chroma upsert exception must not break the Q&A response."""
-    job = _make_completed_topic_job(db)
+    job = _make_completed_topic_job(db, tenant_id=test_user.id)
 
     with (
         patch("app.agents.qa_agent.run_qa_agent", return_value=("answer text", [])),

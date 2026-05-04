@@ -59,22 +59,39 @@ def list_jobs(
     limit: int = 50,
     offset: int = 0,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    jobs = job_service.get_jobs(db, status=status, limit=limit, offset=offset)
+    # E-5.1 phase 2b: tenant-scoped read.
+    jobs = job_service.get_jobs(
+        db,
+        status=status,
+        limit=limit,
+        offset=offset,
+        tenant_id=current_user.id,
+    )
     return [job_service.job_to_response_dict(j) for j in jobs]
 
 
 @router.get("/{job_id}", response_model=JobResponse)
-def get_job(job_id: str, db: Session = Depends(get_db)):
-    job = job_service.get_job(db, job_id)
+def get_job(
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    job = job_service.get_job(db, job_id, tenant_id=current_user.id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job_service.job_to_response_dict(job)
 
 
 @router.put("/{job_id}/approve", response_model=JobResponse)
-def approve_job(job_id: str, approval: VideoApproval, db: Session = Depends(get_db)):
-    job = job_service.get_job(db, job_id)
+def approve_job(
+    job_id: str,
+    approval: VideoApproval,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    job = job_service.get_job(db, job_id, tenant_id=current_user.id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if job.status != "awaiting_approval":
@@ -110,8 +127,12 @@ def approve_job(job_id: str, approval: VideoApproval, db: Session = Depends(get_
 
 
 @router.post("/{job_id}/cancel", response_model=JobResponse)
-def cancel_job(job_id: str, db: Session = Depends(get_db)):
-    job = job_service.get_job(db, job_id)
+def cancel_job(
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    job = job_service.get_job(db, job_id, tenant_id=current_user.id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if job.status in ("completed", "cancelled", "failed"):
@@ -126,8 +147,12 @@ def cancel_job(job_id: str, db: Session = Depends(get_db)):
 
 
 @router.delete("/{job_id}", status_code=204)
-def delete_job(job_id: str, db: Session = Depends(get_db)):
-    job = job_service.get_job(db, job_id)
+def delete_job(
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    job = job_service.get_job(db, job_id, tenant_id=current_user.id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -148,8 +173,12 @@ def delete_job(job_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{job_id}/videos", response_model=list[VideoResponse])
-def get_job_videos(job_id: str, db: Session = Depends(get_db)):
-    job = job_service.get_job(db, job_id)
+def get_job_videos(
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    job = job_service.get_job(db, job_id, tenant_id=current_user.id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job_service.job_videos_response(job)

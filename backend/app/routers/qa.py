@@ -25,10 +25,13 @@ router = APIRouter(
 @router.get(
     "/report",
     response_class=HTMLResponse,
-    dependencies=[Depends(get_user_from_query_or_header)],
 )
-def get_report(job_id: str, db: Session = Depends(get_db)):
-    job = job_service.get_job(db, job_id)
+def get_report(
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_user_from_query_or_header),
+):
+    job = job_service.get_job(db, job_id, tenant_id=current_user.id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if not job.report_path:
@@ -43,10 +46,14 @@ def get_report(job_id: str, db: Session = Depends(get_db)):
 @router.post(
     "/qa/clarify",
     response_model=ClarifyResponse,
-    dependencies=[Depends(get_current_user)],
 )
-def clarify_question(job_id: str, request: ClarifyRequest, db: Session = Depends(get_db)):
-    job = job_service.get_job(db, job_id)
+def clarify_question(
+    job_id: str,
+    request: ClarifyRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    job = job_service.get_job(db, job_id, tenant_id=current_user.id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if job.status != "completed":
@@ -92,7 +99,7 @@ def ask_question(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    job = job_service.get_job(db, job_id)
+    job = job_service.get_job(db, job_id, tenant_id=current_user.id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if job.status != "completed":
@@ -151,10 +158,15 @@ def ask_question(
 @router.get(
     "/qa",
     response_model=list[QAResponse],
-    dependencies=[Depends(get_current_user)],
 )
-def get_qa_history(job_id: str, limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
-    job = job_service.get_job(db, job_id)
+def get_qa_history(
+    job_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    job = job_service.get_job(db, job_id, tenant_id=current_user.id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 

@@ -1,6 +1,6 @@
 """Add tenant_id columns to user-scoped tables (E-5.1 phase 1)
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: d5e6f7a8b9c0
 Revises: f3456789cdef
 Create Date: 2026-05-04 12:00:00.000000
 
@@ -43,7 +43,7 @@ from alembic import op
 
 
 # revision identifiers, used by Alembic.
-revision: str = "a1b2c3d4e5f6"
+revision: str = "d5e6f7a8b9c0"
 down_revision: Union[str, Sequence[str], None] = "f3456789cdef"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

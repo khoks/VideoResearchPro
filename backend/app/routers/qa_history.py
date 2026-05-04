@@ -138,10 +138,15 @@ def list_qa_history(
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ) -> list[QAHistoryChatResponse]:
-    """Return history chat exchanges ordered by ``created_at`` ASC."""
+    """Return history chat exchanges ordered by ``created_at`` ASC.
+
+    Per E-5.1 phase 2b, filtered to the authenticated user's tenant.
+    """
     exchanges = (
         db.query(QAHistoryExchange)
+        .filter(QAHistoryExchange.tenant_id == current_user.id)
         .order_by(QAHistoryExchange.created_at.asc())
         .offset(offset)
         .limit(limit)

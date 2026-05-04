@@ -281,10 +281,13 @@ audit_log (
 
 ### Rate limits
 
+✅ **Phase 1 shipped 2026-05-04** via [E-5.5](initiatives.md#e-55--abuse-prevention). `app/services/rate_limit_service.py` + `app/middleware/rate_limit.py` enforce three-tier limits via in-memory sliding-window buckets. Multi-worker SaaS deployment will swap the in-memory backend for Redis (T-5.5.4) — one-function change per the service docstring.
+
 Layered:
 
-1. **Per-IP** — at the edge / reverse proxy. 100 req/min unauth, 600 req/min auth.
-2. **Per-tenant** — at the application. Tier-aware. Free: 60 req/min. Pro: 600 req/min. Studio: 6000 req/min.
+1. **Per-IP** — at the edge / reverse proxy (CDN / load balancer when SaaS launches). Until then, the app middleware does it: 100 req/min unauth.
+2. **Per-tenant** — at the application. Tier-aware. ✅ Shipped: Free 60 req/min, Pro 600 req/min, Studio 6000 req/min. Configurable via `RATE_LIMIT_PER_MIN_{FREE,PRO,STUDIO}`.
+3. **Sensitive endpoints** — ✅ Shipped: `/auth/login` 10 req/min/IP, `/auth/password-reset/*` 5 req/min/IP, `/auth/register` 5 req/min/IP. Applied BEFORE auth so the protections aren't tied to credential validity.
 3. **Per-resource** — for expensive endpoints. Library Q&A: 20/min/tenant. Knowledge extraction: 5/min/tenant. Output generation: 1/min/tenant.
 
 Implementation: Redis-backed sliding-window counters. Lives in `backend/app/middleware/rate_limit.py` (to be created).

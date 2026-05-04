@@ -361,6 +361,22 @@ class Settings(BaseSettings):
     # window AND are single-use.
     PASSWORD_RESET_TOKEN_TTL_MIN: int = 30
 
+    # E-5.5: Rate limiting. Per-minute caps applied by the
+    # RateLimitMiddleware. Set RATE_LIMIT_ENABLED=False to disable in dev /
+    # under-test contexts where rate limits get in the way of fast iteration.
+    RATE_LIMIT_ENABLED: bool = True
+    # Per-user (authenticated) caps, scaled per tier.
+    RATE_LIMIT_PER_MIN_FREE: int = 60
+    RATE_LIMIT_PER_MIN_PRO: int = 600
+    RATE_LIMIT_PER_MIN_STUDIO: int = 6000
+    # Per-IP cap for unauthenticated GETs (health, etc.).
+    RATE_LIMIT_PER_MIN_UNAUTH: int = 100
+    # Sensitive endpoints — credential-stuffing / brute-force / mass-reset
+    # defence. Per-IP, applied BEFORE the per-user bucket.
+    RATE_LIMIT_LOGIN_PER_MIN: int = 10
+    RATE_LIMIT_RESET_PER_MIN: int = 5
+    RATE_LIMIT_REGISTER_PER_MIN: int = 5
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

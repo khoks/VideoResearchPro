@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import Base, engine
+from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import admin, auth, channels, exports, health, jobs, knowledge, library, qa, qa_history, ws
 from app.services import chroma_service
 from app.services.llm_smoke import run_startup_probes
@@ -55,6 +56,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# E-5.5: per-route + per-tier rate limiting. Disabled in tests via
+# RATE_LIMIT_ENABLED=False (set automatically in conftest.py).
+app.add_middleware(RateLimitMiddleware)
 
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(auth.router, prefix="/api/v1")

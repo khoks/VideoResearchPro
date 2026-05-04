@@ -609,9 +609,27 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 - [ ] T-5.4.7 ⚪ Session management (revoke individual sessions, list active sessions) — separate PR; requires session-row storage.
 - [ ] T-5.4.8 ⚪ SMTP integration (deliver password-reset secrets via email) — separate PR; gate on `SMTP_*` env vars.
 
-### E-5.5 ⚪ Abuse prevention
+### E-5.5 🟡 Abuse prevention
 
 **Scope.** Rate limits, fraud detection, content policy, takedown process for shared reports.
+
+**Phase 1 shipped 2026-05-04.** Rate-limit middleware enforces per-route + per-tier caps via an in-memory sliding-window counter. Fraud detection / content policy / takedown remain ⚪ (each is a SaaS-launch concern).
+
+- **`backend/app/services/rate_limit_service.py`** — sliding-window counter with `RateLimit(requests, window_sec)` config + `check_and_consume(key, limit) -> (allowed, count, retry_after_sec)`. Thread-safe via `threading.Lock`; auto-prunes expired buckets. In-memory by design (single-process self-host); Redis-backed swap is one-function for SaaS multi-worker deployment per the docstring.
+- **`backend/app/middleware/rate_limit.py`** — FastAPI middleware applied early. Three-tier strategy: (1) sensitive endpoints (`/auth/login`, `/auth/password-reset/{request,confirm}`, `/auth/register`) get tight per-IP buckets that fire BEFORE auth so they defend against credential-stuffing / brute-force / mass-reset attacks; (2) authenticated routes consume from per-user buckets sized by tier (Free/Pro/Studio scale 60/600/6000 req/min); (3) unauthenticated GETs use a per-IP fallback. Returns `429` with `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`. Disabled in tests via `RATE_LIMIT_ENABLED=False` (set in conftest); individual tests opt back in.
+- **JWT pre-parse for bucket key** — middleware decodes the bearer token to extract user_id without a DB lookup; stable bucket key without slowing the request path.
+- **Config knobs** — `RATE_LIMIT_ENABLED`, `RATE_LIMIT_PER_MIN_FREE/PRO/STUDIO`, `RATE_LIMIT_PER_MIN_UNAUTH`, `RATE_LIMIT_LOGIN_PER_MIN`, `RATE_LIMIT_RESET_PER_MIN`, `RATE_LIMIT_REGISTER_PER_MIN`.
+
+12 new tests; backend suite 823 → 835.
+
+**Tasks**
+- [x] T-5.5.1 In-memory sliding-window rate-limit service — *shipped 2026-05-04*.
+- [x] T-5.5.2 FastAPI middleware with per-route + per-tier strategy — *shipped 2026-05-04*.
+- [x] T-5.5.3 Sensitive-endpoint hardening (login / reset / register) — *shipped 2026-05-04*.
+- [ ] T-5.5.4 ⚪ Redis-backed bucket store for multi-worker SaaS deployment — separate PR; one-function swap per the rate_limit_service docstring.
+- [ ] T-5.5.5 ⚪ Quota enforcement (covered by E-5.2 T-5.2.5; rate-limit infra above is what it'll layer on).
+- [ ] T-5.5.6 ⚪ Content policy + takedown workflow for shared reports — SaaS-launch.
+- [ ] T-5.5.7 ⚪ Fraud detection (anomalous-pattern alerting) — SaaS-launch.
 
 ### E-5.6 ⚪ Background-job isolation
 

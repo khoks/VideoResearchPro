@@ -10,6 +10,15 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### E-5.5 phase 1: rate-limit middleware (per-route + per-tier)
+
+- **Closes the largest practical-value chunk of [E-5.5 abuse prevention](docs/initiatives.md#e-55--abuse-prevention).** Three-tier rate-limiting strategy: sensitive endpoints (login, password-reset, register) → per-IP credential-stuffing defence; authenticated routes → per-user tier-aware bucket (60/600/6000 req/min for Free/Pro/Studio); unauthenticated GETs → per-IP fallback.
+- **`backend/app/services/rate_limit_service.py`** (new) — sliding-window counter via in-memory dict + `threading.Lock`. `RateLimit(requests, window_sec)` config + `check_and_consume(key, limit) -> (allowed, count, retry_after_sec)`. Auto-prunes expired buckets. In-memory by design for single-process self-host; one-function swap to Redis-backed buckets for multi-worker SaaS deployment (T-5.5.4).
+- **`backend/app/middleware/rate_limit.py`** (new) — FastAPI `BaseHTTPMiddleware`. JWT pre-parse extracts the user_id without a DB lookup so the bucket key is stable. Returns `429 Too Many Requests` with `Retry-After` (seconds), `X-RateLimit-Limit`, `X-RateLimit-Remaining` headers; OK responses also carry the same headers so well-behaved clients can back off proactively.
+- **Test posture** — `RATE_LIMIT_ENABLED=False` set globally in `conftest.py` so existing tests don't suddenly hit 429s; individual rate-limit tests opt back in via `monkeypatch`. Bucket state cleared between tests via `rate_limit_service.reset()` in the `db` fixture teardown.
+- **Config knobs** — `RATE_LIMIT_ENABLED` (default True), `RATE_LIMIT_PER_MIN_FREE` (60), `RATE_LIMIT_PER_MIN_PRO` (600), `RATE_LIMIT_PER_MIN_STUDIO` (6000), `RATE_LIMIT_PER_MIN_UNAUTH` (100), `RATE_LIMIT_LOGIN_PER_MIN` (10), `RATE_LIMIT_RESET_PER_MIN` (5), `RATE_LIMIT_REGISTER_PER_MIN` (5).
+- **12 new tests** in `tests/test_services/test_rate_limit.py` covering rate-limit dataclass validation, sliding-window correctness (consecutive calls + bucket roll-over + independent keys + retry-after monotonicity), middleware integration on each sensitive endpoint, per-user bucket enforcement, response headers, kill-switch pass-through. Backend suite 823 → 835.
+
 ### E-5.4 phase 1: audit log + account lockout + password reset
 
 - **Defensive auth primitives.** Closes the largest practical-value chunk of [E-5.4 auth hardening](docs/initiatives.md#e-54--auth-hardening): credential-stuffing defence (lockout), self-service recovery (password reset), observability (audit log). OAuth and MFA deferred to separate PRs since each has substantial provider-specific complexity.

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db
+from app.models.user import User
 from app.schemas.job import JobCreate, JobResponse, VideoApproval
 from app.schemas.video import VideoResponse
 from app.services import chroma_service, job_service, report_service
@@ -24,9 +25,15 @@ router = APIRouter(
 
 
 @router.post("", response_model=JobResponse, status_code=201)
-def create_job(job_data: JobCreate, db: Session = Depends(get_db)):
+def create_job(
+    job_data: JobCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     try:
-        job = job_service.create_job(db, job_data)
+        # Per E-5.1 phase 2a, stamp the new row with the creating
+        # user's id. Phase 2b adds query-time filtering by tenant_id.
+        job = job_service.create_job(db, job_data, tenant_id=current_user.id)
     except ValueError as e:
         raise HTTPException(status_code=429, detail=str(e))
 

@@ -57,7 +57,11 @@ def get_channel(channel_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{channel_id}/subscribe", response_model=SubscribeResponse)
-def subscribe_channel(channel_id: str, db: Session = Depends(get_db)):
+def subscribe_channel(
+    channel_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     channel = db.query(Channel).filter(Channel.channel_id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
@@ -66,7 +70,7 @@ def subscribe_channel(channel_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(channel)
 
-    job_id = _dispatch_subscription_sync(db, channel)
+    job_id = _dispatch_subscription_sync(db, channel, tenant_id=current_user.id)
     return SubscribeResponse(channel_id=channel.channel_id, job_id=job_id)
 
 
@@ -83,12 +87,16 @@ def unsubscribe_channel(channel_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{channel_id}/sync", response_model=SubscribeResponse)
-def sync_channel(channel_id: str, db: Session = Depends(get_db)):
+def sync_channel(
+    channel_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     channel = db.query(Channel).filter(Channel.channel_id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
 
-    job_id = _dispatch_subscription_sync(db, channel)
+    job_id = _dispatch_subscription_sync(db, channel, tenant_id=current_user.id)
     return SubscribeResponse(channel_id=channel.channel_id, job_id=job_id)
 
 
@@ -136,12 +144,18 @@ def list_channel_videos(
     ]
 
 
-def _dispatch_subscription_sync(db: Session, channel: Channel) -> str | None:
+def _dispatch_subscription_sync(
+    db: Session, channel: Channel, tenant_id: str | None = None
+) -> str | None:
     """Create a single-channel subscription Job and dispatch ``execute_subscription_job``.
 
     Returns the new job_id, or ``None`` when dispatch fails. Dispatch is
     best-effort — a failure to reach the Celery broker must not wedge the
     subscribe/sync endpoints.
+
+    `tenant_id` (E-5.1 phase 2a) — caller threads `current_user.id`
+    through; default ``None`` preserves back-compat for any internal
+    caller that hasn't been updated yet.
     """
     # Lazy import so a missing Celery broker doesn't break module import.
     from app.tasks.job_tasks import execute_subscription_job
@@ -152,6 +166,7 @@ def _dispatch_subscription_sync(db: Session, channel: Channel) -> str | None:
         topic=f"Sync {channel.name}" if channel.name else f"Sync {channel.channel_id}",
         channel_list=json.dumps([channel.channel_id]),
         num_videos=0,
+        tenant_id=tenant_id,
     )
     db.add(job)
     db.commit()

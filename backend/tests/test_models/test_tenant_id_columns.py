@@ -146,3 +146,57 @@ def test_filter_by_tenant_id_returns_only_matching_rows(db):
     legacy_jobs = db.query(Job).filter(Job.tenant_id.is_(None)).all()
     assert len(legacy_jobs) == 1
     assert legacy_jobs[0].topic == "Legacy"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2a — write-side enforcement (router endpoints stamp tenant_id
+# from the authenticated user)
+# ---------------------------------------------------------------------------
+
+
+def test_create_topic_job_via_endpoint_stamps_tenant_id(client, test_user, db):
+    """Router POST /jobs creates a Job with tenant_id = current_user.id."""
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "job_type": "topic",
+            "topic": "tariffs",
+            "search_instructions": "test",
+            "num_videos": 5,
+        },
+    )
+    assert response.status_code == 201
+    job_id = response.json()["id"]
+
+    db.expire_all()
+    job = db.query(Job).filter(Job.id == job_id).first()
+    assert job is not None
+    assert job.tenant_id == test_user.id
+
+
+def test_subscribe_channel_creates_job_with_tenant_id(
+    client, test_user, db, monkeypatch
+):
+    """Subscribe endpoint dispatches a subscription Job tagged with
+    the operator's tenant_id."""
+    from app.models.channel import Channel
+
+    # Need a channel row to subscribe to.
+    channel = Channel(
+        channel_id="UC_test",
+        name="Test Channel",
+        creator_external_id="UC_test",
+        source_type="video",
+    )
+    db.add(channel)
+    db.commit()
+
+    response = client.post("/api/v1/channels/UC_test/subscribe")
+    assert response.status_code == 200
+
+    db.expire_all()
+    sub_job = (
+        db.query(Job).filter(Job.job_type == "subscription").first()
+    )
+    assert sub_job is not None
+    assert sub_job.tenant_id == test_user.id

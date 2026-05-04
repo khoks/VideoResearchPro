@@ -91,6 +91,7 @@ def _parse_references(exchange: QAHistoryExchange) -> list[QAHistoryReference]:
 async def ask_qa_history(
     request: QAHistoryChatRequest,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ) -> QAHistoryChatResponse:
     """Run the Q&A history agent, persist the exchange, index it."""
     # Lazy import so tests can patch ``app.routers.qa_history.run_qa_history_chat_agent``.
@@ -103,11 +104,13 @@ async def ask_qa_history(
     answer = result.get("answer", "")
     references = result.get("references", []) or []
 
+    # Per E-5.1 phase 2a, stamp tenant_id from the authenticated user.
     exchange = QAHistoryExchange(
         question=request.question,
         answer=answer,
         references_json=json.dumps(references),
         answer_language=request.answer_language,
+        tenant_id=current_user.id,
     )
     db.add(exchange)
     db.commit()

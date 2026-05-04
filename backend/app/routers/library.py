@@ -93,6 +93,7 @@ def clarify_library_question(request: LibraryClarifyRequest) -> LibraryClarifyRe
 def ask_library_question(
     request: LibraryQARequest,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ) -> LibraryQAResponse:
     """Run library-wide Q&A across the global video library and persist the exchange."""
     # Import inside the handler so the agent is only loaded when needed
@@ -107,11 +108,13 @@ def ask_library_question(
     answer = result.get("answer", "")
     references = result.get("references", [])
 
+    # Per E-5.1 phase 2a, stamp tenant_id from the authenticated user.
     exchange = LibraryQAExchange(
         question=request.question,
         answer=answer,
         references_json=json.dumps(references),
         answer_language=request.answer_language,
+        tenant_id=current_user.id,
     )
     db.add(exchange)
     db.commit()

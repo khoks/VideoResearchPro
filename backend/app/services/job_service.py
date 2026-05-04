@@ -7,7 +7,16 @@ from app.models.job import Job
 from app.schemas.job import JobCreate
 
 
-def create_job(db: Session, job_data: JobCreate) -> Job:
+def create_job(
+    db: Session, job_data: JobCreate, tenant_id: str | None = None
+) -> Job:
+    """Create a new Job row.
+
+    `tenant_id` (E-5.1 phase 2a) — when set, stamps the row with the
+    creating user's id. Caller (router) passes ``current_user.id``.
+    Default ``None`` preserves the legacy single-tenant behaviour
+    so service-layer callers that haven't updated yet keep working.
+    """
     # Check concurrent job limit
     active_count = (
         db.query(Job)
@@ -28,6 +37,7 @@ def create_job(db: Session, job_data: JobCreate) -> Job:
         preferred_channels=json.dumps(job_data.preferred_channels) if job_data.preferred_channels else None,
         channel_list=json.dumps(job_data.channel_list) if job_data.channel_list else None,
         videos_per_channel=job_data.videos_per_channel,
+        tenant_id=tenant_id,
     )
     db.add(job)
     db.commit()

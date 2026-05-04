@@ -200,12 +200,14 @@ This file is the project's **work-state board**. Every piece of work — shipped
 #### S-1.5.8 🔵 Manual-paste mode (Mode B for FB/IG/LI/X-without-paid)
 
 **PR:** TBD
+**Status update 2026-05-03:** Dependency T-1.6.1 (article extraction primitives) ✅ shipped in PR [#135](https://github.com/khoks/VideoResearchPro/pull/135). S-1.5.8 is now **unblocked** — `app.services.article_extraction.extract_text(url)` can be called directly to turn a pasted URL into an `ExtractionResult`. Caveat: the Playwright fallback for SPA-heavy pages (Facebook / Instagram client-side renders) is still a stub returning None per [T-1.6.6](#e-16--article-connector); FB / IG paste support depends on that landing too. X / LI / generic-blog paste should work with trafilatura alone.
 **Acceptance.** User pastes 1–N post URLs from any supported platform; system fetches each via the article-connector machinery (trafilatura → Playwright fallback) and ingests as the right `source_type`. Honest UI: search disabled for these platforms, paste-only.
 **Tasks**
 - [ ] T-1.5.8.1 URL → `source_type` resolver (FB / IG / LI / X / generic)
-- [ ] T-1.5.8.2 Reuse `app/services/article_extraction/` (E-1.6 T-1.6.1 primitives) — depends on T-1.6.1 landing first per [D-024](decisions.md#d-024--flip-e-16-to--with-primitives-only-scope-split-2026-04-28)
+- [x] T-1.5.8.2 Reuse `app/services/article_extraction/` (E-1.6 T-1.6.1 primitives) — *✅ T-1.6.1 shipped 2026-05-03 PR [#135](https://github.com/khoks/VideoResearchPro/pull/135). The S-1.5.8 caller imports `extract_text` directly when it lands; nothing more to do on this task — it was a dependency, not work.*
 - [ ] T-1.5.8.3 Frontend "Paste URLs" surface in job submission
 - [ ] T-1.5.8.4 Per-platform `source_metadata` extraction (author handle, date) where the page exposes it
+- [ ] T-1.5.8.5 ⚫ FB / IG paste support — **blocked** on [T-1.6.6](#e-16--article-connector) (Playwright fallback impl). Trafilatura alone returns None on SPA-rendered pages. X / LI / generic blogs work on trafilatura without needing T-1.6.6.
 
 #### S-1.5.9 ⚪ Pluggable Twitter Bearer token (BYOK)
 
@@ -281,6 +283,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [ ] T-1.6.3 ⚪ RSS feed ingestion path — *deferred until post-M-1.5*.
 - [ ] T-1.6.4 ⚪ Article approval card variant + Q&A citation rendering — *deferred until post-M-1.5*.
 - [ ] T-1.6.5 ⚪ End-to-end article-job pipeline test — *deferred until post-M-1.5*.
+- [ ] T-1.6.6 🔵 Playwright fallback implementation — *Filed 2026-05-03 as the planned follow-up to T-1.6.1's structurally-present stub. Today `_playwright_fallback(url)` in `app/services/article_extraction/extractor.py` returns None with an INFO log; SPA-rendered articles (Facebook / Instagram, JS-heavy news sites) silently fail extraction. Scope: (1) add `pratidhvani[spa]` extras_require entry that installs `playwright` + a post-install hook that pulls Chromium binaries; (2) replace the stub body with: launch headless Chromium, navigate, wait for hydration (network-idle + DOM-stable heuristic, ~2s timeout), grab rendered HTML, re-feed through trafilatura's `extract`; (3) gate behind `BLUESKY_*`-style env-var check (e.g. `ARTICLE_PLAYWRIGHT_ENABLED`) so the default install doesn't error when Chromium isn't present; (4) tests against fixture SPA-shell HTML feeding through both paths. Unblocks **S-1.5.8 T-1.5.8.5** (FB / IG paste) and tightens article-extraction recall on JS-heavy news sites generally.*
 
 ### E-1.7 ⚪ Podcast connector
 

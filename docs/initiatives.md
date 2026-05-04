@@ -544,29 +544,28 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 
 ---
 
-## I-5 ⚪ SaaS readiness (long-horizon)
+## I-5 🟡 SaaS readiness (long-horizon)
 
 **Why it exists.** Today's PRs must remain forward-compatible with a future public SaaS — multi-tenant, billed, abuse-resistant, hardened auth.
 **North-star doc:** [saas-roadmap.md](saas-roadmap.md)
 
-### E-5.1 🟡 `tenant_id` audit + retrofit
+### E-5.1 🟢 `tenant_id` audit + retrofit
 
 **Scope.** Add `tenant_id` / `workspace_id` columns to every user-scoped table; convert today's implicit JWT scoping to an explicit column for future per-tenant rate limiting + multi-workspace.
 
-**Substantially closed 2026-05-04.** Four PRs ship the four-phase tenancy retrofit per the [D-038](decisions.md#d-038--tenancy-retrofit-ships-in-four-phases-audit--additive--backfillwrites--reads--not-null-2026-05-04) sequencing:
+**Closed 2026-05-04.** Five PRs ship the four-phase tenancy retrofit per the [D-038](decisions.md#d-038--tenancy-retrofit-ships-in-four-phases-audit--additive--backfillwrites--reads--not-null-2026-05-04) sequencing:
 
 - **Phase 0** ([PR #149](https://github.com/khoks/VideoResearchPro/pull/149)) — [`docs/saas-tenant-id-audit.md`](saas-tenant-id-audit.md). Headline finding: codebase is structurally single-tenant despite JWT auth.
 - **Phase 1** ([PR #150](https://github.com/khoks/VideoResearchPro/pull/150)) — Alembic migration `d5e6f7a8b9c0_add_tenant_id_columns.py` adds NULLABLE `tenant_id String(36)` + index to `jobs` / `qa_exchanges` / `library_qa_exchanges` / `qa_history_exchanges`. ORM models updated. Purely additive — no behaviour change.
 - **Phase 2a** ([PR #151](https://github.com/khoks/VideoResearchPro/pull/151)) — Backfill migration `b2c3d4e5f6a7_backfill_tenant_id.py` sets `tenant_id = first-user.id` WHERE NULL. Every write-side router stamps `tenant_id=current_user.id` from `Depends(get_current_user)`. After this PR, every existing row is attributed AND every new row is correctly attributed.
 - **Phase 2b** ([PR #152](https://github.com/khoks/VideoResearchPro/pull/152)) — `get_job(db, job_id, tenant_id=None)` + `get_jobs(...)` accept the optional filter. Routers thread `tenant_id=current_user.id`. Cross-tenant reads return 404 (not 403) to avoid existence-leak. Codebase is now fully tenant-isolated on user-facing surfaces.
-
-Phase 2c (NOT NULL constraint) is deferred to an operator runbook per D-032 / D-038 — only the operator can prove zero-NULL after their backfill runs.
+- **Phase 2c** (this PR) — Operator-coordinated runbook [`docs/migration-tenant-id-not-null.md`](migration-tenant-id-not-null.md) + Alembic migration `e6f7a8b9c0d1_tenant_id_not_null.py`. Per [D-032](decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03) precedent, the migration ships in the codebase but is not auto-applied — operators run `alembic upgrade head` after running the runbook's pre-flight (verify zero NULL rows / backup / stop writers). Optional ORM-tightening (`Mapped[str | None]` → `Mapped[str]`) deferred to a calm follow-up PR.
 
 **Tasks**
 - [x] T-5.1.0 Audit doc — *shipped 2026-05-04 in `docs/saas-tenant-id-audit.md`.*
 - [x] T-5.1.1 Phase 1 additive columns + indexes — *shipped 2026-05-04 in [PR #150](https://github.com/khoks/VideoResearchPro/pull/150).*
 - [x] T-5.1.2 Phase 2a/2b — backfill + write-side stamping + read-side filter — *shipped 2026-05-04 in [PR #151](https://github.com/khoks/VideoResearchPro/pull/151) + [PR #152](https://github.com/khoks/VideoResearchPro/pull/152).*
-- [ ] T-5.1.2c ⚫ Phase 2c (NOT NULL constraint) — deferred to operator runbook. Awaits a future runbook PR documenting how operators verify zero-NULL on their tables before applying the constraint-tightening migration.
+- [x] T-5.1.2c Phase 2c — NOT NULL constraint runbook + migration — *shipped 2026-05-04. Operator-coordinated per D-032 precedent; the codebase delivers the safe-execution path, the operator owns the timing.*
 - [ ] T-5.1.3 🔴 Phase 3 (deferred) — `tenants` + `tenant_users` tables for multi-user-per-workspace. Only needed for team SaaS tier.
 
 **Linked decision:** [D-038](decisions.md#d-038--tenancy-retrofit-ships-in-four-phases-audit--additive--backfillwrites--reads--not-null-2026-05-04)

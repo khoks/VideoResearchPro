@@ -85,9 +85,13 @@ def clarify_question(job_id: str, request: ClarifyRequest, db: Session = Depends
 @router.post(
     "/qa",
     response_model=QAResponse,
-    dependencies=[Depends(get_current_user)],
 )
-def ask_question(job_id: str, request: QARequest, db: Session = Depends(get_db)):
+def ask_question(
+    job_id: str,
+    request: QARequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     job = job_service.get_job(db, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -113,12 +117,14 @@ def ask_question(job_id: str, request: QARequest, db: Session = Depends(get_db))
         report_html=report_html,
     )
 
-    # Save original question to DB (not the enriched version)
+    # Save original question to DB (not the enriched version).
+    # Per E-5.1 phase 2a, stamp tenant_id from the authenticated user.
     qa = QAExchange(
         job_id=job_id,
         question=request.question,
         answer=answer,
         references=json.dumps([r for r in references]),
+        tenant_id=current_user.id,
     )
     db.add(qa)
     db.commit()

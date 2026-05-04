@@ -631,9 +631,26 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 - [ ] T-5.5.6 ⚪ Content policy + takedown workflow for shared reports — SaaS-launch.
 - [ ] T-5.5.7 ⚪ Fraud detection (anomalous-pattern alerting) — SaaS-launch.
 
-### E-5.6 ⚪ Background-job isolation
+### E-5.6 🟡 Background-job isolation
 
 **Scope.** Celery queues per tenant or per tier; per-tenant LLM keys (BYOK pattern, reuse from D-009); per-tenant ChromaDB tenancy.
+
+**BYOK foundation shipped 2026-05-04.** Per-user, per-provider API keys with encryption-at-rest. Power users on the Studio tier can route their LLM calls to their own provider account.
+
+- **`backend/app/models/user_credential.py`** — `(user_id, provider)` unique; `encrypted_secret Text` (Fernet ciphertext, plaintext never persisted); `label`, `created_at`, `updated_at`.
+- **`backend/app/services/byok_service.py`** — `cryptography.fernet.Fernet`-based encrypt/decrypt keyed off `BYOK_ENCRYPTION_KEY`. CRUD: `set_credential`, `get_credential`, `list_for_user`, `delete_credential`. Provider validation against `SUPPORTED_PROVIDERS` (`openai` / `anthropic` / `google` / `local` — matches `llm_routing.py` provider table). Encryption-key rotation tolerance: `get_credential` returns `None` (with warning) when ciphertext is undecryptable so the consumer falls back to install-wide env-var keys.
+- **`backend/app/routers/credentials.py`** — REST endpoints under `/api/v1/auth/credentials/*`, gated on `require_feature("byok_llm_keys")` (Studio-tier only). PUT for upsert; GET for list (metadata only — never the plaintext); DELETE for removal; `/providers` for the supported set.
+- **20 new tests** covering encryption round-trip + non-determinism, CRUD upsert semantics, cross-user isolation, provider validation, key-rotation tolerance, auth + tier gating on every endpoint, plaintext-not-leaked invariant.
+
+Backend suite 835 → 855.
+
+**Tasks**
+- [x] T-5.6.1 BYOK schema + service layer (encryption + CRUD) — *shipped 2026-05-04*.
+- [x] T-5.6.2 Credentials REST router (Studio-gated) — *shipped 2026-05-04*.
+- [x] T-5.6.3 Provider validation + encryption-rotation tolerance — *shipped 2026-05-04*.
+- [ ] T-5.6.4 ⚪ LLM resolution-path integration — when a user has a BYOK credential for the resolved provider, use it; otherwise fall back to env-var. Cross-cutting plumbing through ~19 LLM use cases (current call sites have no user_id; need to thread it through the agent layer). Separate PR.
+- [ ] T-5.6.5 ⚪ Per-tenant Celery queue routing — separate PR; needs `task_routes` config + worker pools per tier.
+- [ ] T-5.6.6 ⚪ Per-tenant ChromaDB tenancy — separate PR; either tenant-prefix per collection or `metadata.tenant_id` filter on every query.
 
 ### E-5.7 ⚪ Data residency
 

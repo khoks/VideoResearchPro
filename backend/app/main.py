@@ -8,7 +8,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import Base, engine
 from app.middleware.rate_limit import RateLimitMiddleware
-from app.routers import admin, auth, channels, exports, health, jobs, knowledge, library, qa, qa_history, ws
+from app.routers import (
+    admin,
+    auth,
+    channels,
+    credentials,
+    exports,
+    health,
+    jobs,
+    knowledge,
+    library,
+    qa,
+    qa_history,
+    ws,
+)
 from app.services import chroma_service
 from app.services.llm_smoke import run_startup_probes
 
@@ -62,6 +75,7 @@ app.add_middleware(RateLimitMiddleware)
 
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(credentials.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
 app.include_router(qa.router, prefix="/api/v1")

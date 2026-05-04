@@ -10,6 +10,15 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### E-5.6 foundation: per-user BYOK LLM credentials (Studio-gated)
+
+- **Foundation for [E-5.6 background-job isolation](docs/initiatives.md#e-56--background-job-isolation).** Per-user, per-provider API keys with encryption-at-rest. Studio-tier users can route their LLM calls to their own provider account. Cross-cutting LLM resolution-path integration (T-5.6.4) deferred to a separate PR since it touches ~19 use cases and the current agent layer has no user-context plumbing.
+- **`backend/app/models/user_credential.py`** + Alembic `b9c0d1e2f3a4_byok_credentials.py` — `user_credentials(id, user_id, provider, encrypted_secret, label, created_at, updated_at)` with `(user_id, provider)` unique constraint and `user_id` index.
+- **`backend/app/services/byok_service.py`** — `cryptography.fernet.Fernet` encrypt/decrypt keyed off `BYOK_ENCRYPTION_KEY` env var. Plaintext is **never** persisted — only the Fernet ciphertext (URL-safe base64). `set_credential` (upsert), `get_credential`, `list_for_user`, `delete_credential`. Provider validation against `SUPPORTED_PROVIDERS = {openai, anthropic, google, local}` (matches `llm_routing.py`). **Encryption-key rotation tolerance:** `get_credential` returns `None` (with warning) when ciphertext is undecryptable, so consumers fall back to install-wide env-var keys rather than crashing.
+- **`backend/app/routers/credentials.py`** — REST endpoints under `/api/v1/auth/credentials/*`, all gated on `require_feature("byok_llm_keys")` (Studio-only). `GET /` lists metadata (not the plaintext); `PUT /{provider}` upserts; `DELETE /{provider}` removes; `GET /providers` returns the supported set.
+- **`BYOK_ENCRYPTION_KEY`** config — when unset, a process-local Fernet key is generated at startup with a loud warning (stored credentials become unrecoverable on restart). Operators MUST set this in production. Generate via `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+- **20 new tests** in `test_services/test_byok_service.py` (12) and `test_routers/test_credentials.py` (8). Covers encryption round-trip + non-determinism, upsert semantics, cross-user isolation, key-rotation tolerance, auth + tier gating, plaintext-not-leaked invariant on every response. Backend suite 835 → 855.
+
 ### E-5.5 phase 1: rate-limit middleware (per-route + per-tier)
 
 - **Closes the largest practical-value chunk of [E-5.5 abuse prevention](docs/initiatives.md#e-55--abuse-prevention).** Three-tier rate-limiting strategy: sensitive endpoints (login, password-reset, register) → per-IP credential-stuffing defence; authenticated routes → per-user tier-aware bucket (60/600/6000 req/min for Free/Pro/Studio); unauthenticated GETs → per-IP fallback.

@@ -361,6 +361,13 @@ class Settings(BaseSettings):
     # window AND are single-use.
     PASSWORD_RESET_TOKEN_TTL_MIN: int = 30
 
+    # E-5.6: BYOK encryption key. 32 url-safe base64-encoded bytes
+    # (generate via cryptography.fernet.Fernet.generate_key()). When unset,
+    # a process-local key is generated at startup with a loud warning —
+    # stored credentials will be unrecoverable after a process restart in
+    # that mode. Operators MUST set this in production.
+    BYOK_ENCRYPTION_KEY: str | None = None
+
     # E-5.5: Rate limiting. Per-minute caps applied by the
     # RateLimitMiddleware. Set RATE_LIMIT_ENABLED=False to disable in dev /
     # under-test contexts where rate limits get in the way of fast iteration.

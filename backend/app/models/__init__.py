@@ -15,6 +15,7 @@ from app.models.qa_exchange import QAExchange
 from app.models.qa_history_exchange import QAHistoryExchange
 from app.models.transcript_cache import TranscriptCache
 from app.models.user import User
+from app.models.user_credential import UserCredential
 
 __all__ = [
     "ApiQuotaLog",
@@ -30,4 +31,5 @@ __all__ = [
     "QAHistoryExchange",
     "TranscriptCache",
     "User",
+    "UserCredential",
 ]

@@ -8,8 +8,10 @@ instead of calling provider-specific service modules directly.
 
 Importing this package eagerly registers every shipped connector. Today
 that's `video` (YouTube), `reddit_post` (Reddit), `hn_story`
-(Hacker News), `mastodon_post` (Mastodon), and `bluesky_post`
-(Bluesky / AT-Protocol). Future PRs add `article`, `podcast`, etc.
+(Hacker News), `mastodon_post` (Mastodon), `bluesky_post`
+(Bluesky / AT-Protocol), and `podcast_episode` (RSS-feed podcasts
+with iTunes-Search discovery + OpenAI-Whisper fallback). Future PRs
+add `article`, `pdf`, etc.
 """
 from app.sources.base import BaseConnector
 from app.sources.registry import all_connectors, connector_for, register
@@ -22,6 +24,7 @@ from app.sources.reddit import connector as _reddit_connector  # noqa: F401  (re
 from app.sources.hn import connector as _hn_connector  # noqa: F401  (registers on import)
 from app.sources.mastodon import connector as _mastodon_connector  # noqa: F401  (registers on import)
 from app.sources.bluesky import connector as _bluesky_connector  # noqa: F401  (registers on import)
+from app.sources.podcast import connector as _podcast_connector  # noqa: F401  (registers on import)
 
 __all__ = [
     "BaseConnector",

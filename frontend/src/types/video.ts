@@ -119,6 +119,23 @@ export function videoToApprovalProps(
         permalink: String(m.permalink ?? video.source_url ?? ''),
       };
       break;
+    case 'podcast_episode':
+      metadata = {
+        source_type: 'podcast_episode',
+        showName: String(m.show_name ?? m.showName ?? video.channel_name ?? ''),
+        // `episode_number` is optional in podcasts — many shows don't
+        // number episodes. We coerce to `null` so the chip formatter
+        // can render an em-dash when absent.
+        episodeNumber:
+          m.episode_number != null
+            ? Number(m.episode_number)
+            : m.episodeNumber != null
+            ? Number(m.episodeNumber)
+            : null,
+        durationSec: Number(video.duration_seconds ?? 0),
+        publishedAt: String(video.published_at ?? ''),
+      };
+      break;
     default:
       return null;
   }

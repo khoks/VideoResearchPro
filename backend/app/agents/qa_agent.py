@@ -200,6 +200,10 @@ def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
       - bluesky_post:          permalink (bsky.app web URL — points
                                at the reply when comment_url present) +
                                thread_title + author
+      - podcast_episode:       permalink (episode page URL, optionally
+                               with #t=<sec> when chunked from a
+                               specific moment) + episode_title +
+                               show_name (= author)
     """
     meta = chunk.get("metadata", {})
     source_type = (meta.get("source_type") or "video").strip() or "video"
@@ -333,6 +337,47 @@ def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
             "channel_name": author or "Bluesky",
             "timestamp_seconds": 0.0,
             "timestamp_display": "",
+            "youtube_link": permalink,
+        }
+
+    if source_type == "podcast_episode":
+        # Per-episode permalink (episode page URL when present, else
+        # the audio enclosure). The chunker writes a `comment_url`
+        # carrying the episode URL plus a `#t=<sec>` time-fragment
+        # so podcast-player apps that honor the fragment deep-link to
+        # the cited timestamp.
+        permalink = (
+            meta.get("comment_url")  # carries #t=<sec> fragment
+            or meta.get("permalink")
+            or meta.get("source_url")
+            or meta.get("video_url")
+            or ""
+        )
+        # Author here is the show host / creator, captured by the
+        # connector's `attach_episode_extra` helper.
+        author = meta.get("segment_author") or meta.get("author") or ""
+        # `comment_id` is the episode URL; use it as part of the dedupe
+        # key so two cites from different timestamps in the same
+        # episode collapse to the same reference (timestamp lives in
+        # `permalink` already).
+        comment_id = meta.get("comment_id") or ""
+        key = f"{source_type}:{source_id}_{comment_id}"
+
+        # Try to surface a `timestamp_seconds` for the legacy fallback
+        # rendering path — pull from `timestamp_start` when chunking
+        # wrote it (it always does for podcasts).
+        ts = float(meta.get("timestamp_start", 0))
+        return key, {
+            "source_type": "podcast_episode",
+            "permalink": permalink,
+            "thread_title": title,  # episode title
+            "author": author,
+            # Legacy YouTube-shaped fallback fields.
+            "video_url": permalink,
+            "video_title": title,
+            "channel_name": author or "Podcast",
+            "timestamp_seconds": ts,
+            "timestamp_display": format_timestamp(ts),
             "youtube_link": permalink,
         }
 

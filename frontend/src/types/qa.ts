@@ -25,7 +25,8 @@ export type ReferenceSourceType =
   | 'reddit_post'
   | 'hn_story'
   | 'mastodon_post'
-  | 'bluesky_post';
+  | 'bluesky_post'
+  | 'podcast_episode';
 
 export interface Reference {
   /** Absent on legacy rows; defaults to "video" in the renderer. */

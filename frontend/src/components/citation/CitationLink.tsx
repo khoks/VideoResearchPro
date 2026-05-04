@@ -103,6 +103,21 @@ function renderCitation(ref: Reference): RenderedCitation {
     };
   }
 
+  if (sourceType === 'podcast_episode') {
+    // Format: "<episode_title> · <show_name> · <timestamp>"
+    // The permalink already carries the `#t=<sec>` deep-link fragment
+    // when chunking promoted a per-segment timestamp; we just render
+    // it as-is.
+    const author = ref.author ?? '';
+    const title = ref.thread_title ?? ref.video_title ?? '';
+    const ts = ref.timestamp_display ?? '';
+    const labelParts = [title, author, ts].filter(Boolean);
+    return {
+      href: ref.permalink ?? ref.video_url ?? '#',
+      label: labelParts.join(' · '),
+    };
+  }
+
   // Default: YouTube / "video" path. This is the back-compat fallback
   // for legacy Q&A history rows that lack a source_type discriminator.
   const labelParts = [

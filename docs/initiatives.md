@@ -587,9 +587,27 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 
 **Scope.** Subscription, metered overage, team billing.
 
-### E-5.4 ⚪ Auth hardening
+### E-5.4 🟡 Auth hardening
 
 **Scope.** OAuth (Google / GitHub), MFA, session management, password reset, account lockout, audit log.
+
+**Phase 1 shipped 2026-05-04.** The defensive primitives — credential-stuffing defence (lockout), self-service recovery (password reset), and observability (audit log) — ship in one PR. Remaining auth-hardening work is OAuth and MFA, deferred to dedicated PRs since each has substantial provider-specific complexity.
+
+- **Audit log** — new `audit_log` table + `app/services/audit_service.py` with the canonical `Event` enum (USER_REGISTERED / LOGIN_SUCCESS / LOGIN_FAILURE / LOGIN_LOCKED_OUT / ACCOUNT_LOCKED / PASSWORD_RESET_REQUESTED / PASSWORD_RESET_COMPLETED / PASSWORD_RESET_INVALID_TOKEN). Recorded on every auth event with IP, user-agent, structured metadata. `GET /api/v1/auth/audit-log` returns the current user's events (newest first; capped at 500/page).
+- **Account lockout** — `users.failed_login_attempts INT NOT NULL DEFAULT 0` + `users.locked_until DATETIME NULL`. After `LOCKOUT_FAILURE_THRESHOLD` (default 5) failures, the account is locked for `LOCKOUT_DURATION_MIN` (default 15) minutes. Successful login resets both columns. **Unknown emails do NOT create User rows** (a critical-correctness check — otherwise an attacker could lock arbitrary accounts by trying any email). `authenticate_user_v2` returns a structured `AuthOutcome` so the router can audit lockouts separately from invalid creds while still serving a generic 401.
+- **Password reset** — new `password_reset_tokens` table (single-use, SHA-256 hashed; raw secret never stored). `POST /api/v1/auth/password-reset/request` returns 200 unconditionally (never leaks whether the email exists); on self-host the secret is returned in `debug_secret` and logged so operators can hand it off out-of-band when SMTP isn't configured. `POST /api/v1/auth/password-reset/confirm` rotates the password + clears any active lockout. Tokens expire after `PASSWORD_RESET_TOKEN_TTL_MIN` (default 30) minutes.
+
+22 new tests; backend suite 801 → 823.
+
+**Tasks**
+- [x] T-5.4.1 Audit log table + service — *shipped 2026-05-04*.
+- [x] T-5.4.2 Account lockout (`failed_login_attempts` + `locked_until` + threshold) — *shipped 2026-05-04*.
+- [x] T-5.4.3 Password reset flow (request + confirm + token table) — *shipped 2026-05-04*.
+- [x] T-5.4.4 `GET /auth/audit-log` per-user read endpoint — *shipped 2026-05-04*.
+- [ ] T-5.4.5 ⚪ OAuth (Google + GitHub) — separate PR; provider config + token exchange + linking flow.
+- [ ] T-5.4.6 ⚪ MFA (TOTP) — separate PR; QR-code enrolment + recovery codes + verify-on-login.
+- [ ] T-5.4.7 ⚪ Session management (revoke individual sessions, list active sessions) — separate PR; requires session-row storage.
+- [ ] T-5.4.8 ⚪ SMTP integration (deliver password-reset secrets via email) — separate PR; gate on `SMTP_*` env vars.
 
 ### E-5.5 ⚪ Abuse prevention
 

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -22,4 +22,14 @@ class User(Base):
     # for the per-tier capability table.
     tier: Mapped[str] = mapped_column(
         String(16), nullable=False, default="free", server_default="free"
+    )
+    # E-5.4: Account lockout — credential-stuffing defence. Failed logins
+    # increment the counter; on threshold (default 5 within `LOCKOUT_WINDOW`)
+    # the account is locked until `locked_until`. Successful login resets
+    # both columns. See app/services/auth_service.py.
+    failed_login_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, default=None
     )

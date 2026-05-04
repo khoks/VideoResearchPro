@@ -238,35 +238,41 @@ Self-host has no billing. Every tenant defaults to the highest tier limits effec
 - Email + password registration & login
 - JWT bearer tokens
 - WebSocket auth via query-string token
-- No password reset, no MFA, no OAuth, no audit log
+- ✅ Password reset (self-host: secret returned in response + logged for operator handoff; SMTP delivery deferred)
+- ✅ Account lockout (configurable threshold + duration; unknown emails don't create lock-able state)
+- ✅ Audit log with `GET /api/v1/auth/audit-log` per-user read endpoint
+- No MFA, no OAuth, no email verification, no session management
 
 ### SaaS additions (incremental)
 
-| Feature | Phase | Notes |
-|---------|-------|-------|
-| Audit log | Now | Add `audit_log` table; log every login, signup, password change. Cheap to add now. |
-| Email verification | SaaS launch | New users must verify email before any quota-bearing action |
-| Password reset | SaaS launch | Token sent via email; rate-limited |
-| OAuth (Google, GitHub) | SaaS launch | Standard PKCE flow |
-| MFA (TOTP) | SaaS phase 2 | Optional per-user; required for Studio/Team owners |
-| Session management | SaaS launch | List active sessions; revoke individually; "log out everywhere" |
-| Account lockout | SaaS launch | After N failed login attempts; rate-limited per IP and per email |
-| API keys (programmatic) | SaaS phase 2 | Pro+ feature; scoped per workspace |
-| SAML SSO | Team plan launch | Enterprise feature |
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Audit log | ✅ Shipped 2026-05-04 | `audit_log` table + `audit_service.record(event=Event.X, ...)` + `GET /api/v1/auth/audit-log`. |
+| Account lockout | ✅ Shipped 2026-05-04 | `users.failed_login_attempts` + `users.locked_until` columns; 5 failures → 15 min lock by default. |
+| Password reset | ✅ Shipped 2026-05-04 (self-host path) | Token-based, single-use, 30 min TTL. Secret returned in response on self-host; SMTP delivery is T-5.4.8. |
+| Email verification | ⚪ SaaS launch | New users must verify email before any quota-bearing action. Builds on the same token flow as password reset. |
+| OAuth (Google, GitHub) | ⚪ T-5.4.5 | Standard PKCE flow. Provider config + token exchange + linking. |
+| MFA (TOTP) | ⚪ T-5.4.6 | Optional per-user; required for Studio/Team owners. QR-code enrolment + recovery codes. |
+| Session management | ⚪ T-5.4.7 | List active sessions; revoke individually; "log out everywhere". Requires session-row storage. |
+| SMTP delivery for reset/verification emails | ⚪ T-5.4.8 | Gate on `SMTP_*` env vars; fall back to log-and-debug on self-host without SMTP. |
+| API keys (programmatic) | ⚪ SaaS phase 2 | Pro+ feature; scoped per workspace. |
+| SAML SSO | ⚪ Team plan launch | Enterprise feature. |
 
-### `audit_log` schema
+### `audit_log` schema (✅ shipped)
 
 ```sql
+-- backend/app/models/audit_log.py — Alembic a8b9c0d1e2f3_auth_hardening
 audit_log (
-  id UUID PRIMARY KEY,
-  tenant_id UUID,
-  user_id UUID,
-  event_type VARCHAR,    -- login, logout, password_change, key_rotated, billing_changed, connector_authorized
-  metadata JSON,
-  ip VARCHAR,
-  user_agent VARCHAR,
-  created_at TIMESTAMP
+  id            VARCHAR(36)  PRIMARY KEY,
+  tenant_id     VARCHAR(36),  -- mirrors user_id on self-host; workspace on SaaS
+  user_id       VARCHAR(36),
+  event         VARCHAR(64)  NOT NULL,  -- canonical names in audit_service.Event
+  ip_address    VARCHAR(64),
+  user_agent    VARCHAR(512),
+  metadata_json TEXT,
+  created_at    DATETIME     NOT NULL
 );
+-- Indexes on tenant_id, user_id, event, created_at for log-search queries.
 ```
 
 ---

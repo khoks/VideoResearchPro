@@ -10,6 +10,14 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### E-5.1 fully closed: phase 2c NOT NULL runbook + migration
+
+- **Closes E-5.1 entirely.** Final phase ships the [`docs/migration-tenant-id-not-null.md`](docs/migration-tenant-id-not-null.md) operator runbook + the Alembic migration file `backend/alembic/versions/e6f7a8b9c0d1_tenant_id_not_null.py` that flips `tenant_id` from NULLABLE → NOT NULL on the four user-scoped tables.
+- **Operator-coordinated** per [D-032](docs/decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03) / [D-038](docs/decisions.md#d-038--tenancy-retrofit-ships-in-four-phases-audit--additive--backfillwrites--reads--not-null-2026-05-04). The migration ships but is not auto-applied at startup; operators run `alembic upgrade head` after the runbook's pre-flight (verify zero NULL rows on each table / backup the DB / stop writers). Sibling pattern to `docs/migration-channels-to-creators.md` and `docs/migration-code-identifiers.md`.
+- **Runbook covers** — pre-flight verification SQL, NULL-row resolution playbook (re-run idempotent backfill or manual attribution), migration application, post-migration smoke test, two rollback paths (file restore vs Alembic downgrade), future-proofing for SaaS multi-tenant deployment.
+- **ORM tightening** (`Mapped[str | None]` → `Mapped[str]`) deferred to a calm follow-up PR per the runbook's §5 — the schema-level constraint is what enforces correctness; the typing hint is purely a developer-experience win that doesn't need to ship in lockstep.
+- After this PR, **I-5 / E-5.1 is fully closed**; remaining I-5 work moves to E-5.2 (subscription tiers), E-5.3 (Stripe), E-5.4 (auth hardening), E-5.5 (abuse prevention), E-5.6 (background-job isolation), E-5.7 (data residency), E-5.8 (hosting), E-5.9 (hosted UX).
+
 ### E-5.1 phase 2b: read-side tenant_id filtering + cross-tenant 404 (PR #152)
 
 - **Closes the read-side half of E-5.1.** Every user-facing GET that returns user-scoped rows now filters by the authenticated user's `tenant_id`. Other users' rows are invisible (404 not 403, to avoid leaking existence) per the audit doc's threat model.

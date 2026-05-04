@@ -6,10 +6,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.config import settings
 from app.database import Base
 from app.dependencies import get_db
 from app.main import app
-from app.services import auth_service
+from app.services import auth_service, rate_limit_service
+
+# E-5.5: disable the rate limiter globally for the test suite. Individual
+# rate-limit tests opt back in by toggling settings.RATE_LIMIT_ENABLED via
+# monkeypatch and resetting the in-memory bucket between tests.
+settings.RATE_LIMIT_ENABLED = False
 
 SQLALCHEMY_DATABASE_URL = "sqlite://"
 
@@ -30,6 +36,9 @@ def db():
     finally:
         session.close()
         Base.metadata.drop_all(bind=engine)
+        # E-5.5: clear rate-limit bucket state between tests so a test
+        # that opted into rate-limiting can't bleed into subsequent tests.
+        rate_limit_service.reset()
 
 
 @pytest.fixture

@@ -843,3 +843,96 @@ Two ways to resolve:
 - For SaaS deployment specifically, this decision will be revisited: SaaS infra controls the data layer end-to-end, and automatic migration is fine when the migrator is the operator. But that's a separate decision for [I-5](initiatives.md#i-5--saas-readiness-long-horizon).
 
 **Linked initiatives / PRs.** I-2 / E-2.6 / T-2.6.6. PR [#137](https://github.com/khoks/VideoResearchPro/pull/137). Precedent referenced from [E-1.9](initiatives.md#e-19--rename-channels--creators-db--orm) when that epic schedules.
+
+---
+
+## D-033 — Whisper-as-service for podcasts: reuse existing OpenAI Whisper path (resolves OQ-4) (2026-05-03)
+
+**Status:** accepted. Resolves [OQ-4](initiatives.md#oq-4) and shipped with PR [#140](https://github.com/khoks/VideoResearchPro/pull/140).
+
+**Context.** [E-1.7](initiatives.md#e-17--podcast-connector) podcast-end-to-end requires audio transcription for episodes that ship without an in-feed transcript. The architectural question (filed as OQ-4 when E-1.7 was scoped): do we run Whisper as a separate service (e.g. a `whisper-service` Docker container with its own queue), or reuse the existing OpenAI Whisper integration path (`youtube_service._transcribe_with_whisper`) that the YouTube connector uses as a fallback?
+
+Three viable architectures:
+
+1. **Reuse existing OpenAI Whisper path.** Same `_whisper_transcribe_with_retry` helper, same retry / error-classification, same `OPENAI_API_KEY` gate, same fail-soft contract. The podcast connector downloads the enclosure to a temp file and passes it through.
+2. **Separate Whisper service** with its own message queue (Celery task `transcribe_audio` accepting any audio URL). Decouples connector code from the transcription implementation; scales horizontally.
+3. **Local-Whisper-via-faster-whisper** as a third option for self-hosters who don't want OpenAI in the loop. Higher self-host complexity (CUDA / ROCm / CPU model variants) but eliminates the per-minute API cost.
+
+**Decision.** **(1) Reuse the existing OpenAI Whisper path** for v1. The podcast connector calls `_whisper_transcribe_with_retry` from `app.services.youtube_service`, gated on `OPENAI_API_KEY` exactly like the YouTube fallback. Local-Whisper option (3) deferred as a future opt-in (parallel to the Playwright SPA opt-in pattern from [D-024](#d-024--flip-e-16-to--with-primitives-only-scope-split-2026-04-28)).
+
+**Alternatives considered.**
+- *(2) Separate Whisper service.* Rejected for v1 — adds infrastructure complexity (a new Celery task type, a worker pool dimensioning question, retry semantics across two queues) that doesn't pay off until podcast-ingest volume is high enough to justify horizontal scaling. The existing single-task path handles podcast loads identically to YouTube fallback. We can graduate to (2) later by changing one function call site without touching the connector.
+- *(3) Local Whisper via `faster-whisper` or similar.* Rejected as the v1 default but documented as a follow-up — see "Re-evaluation hooks" below. Adding it as a separate code path *today* means (a) we'd ship two transcription paths simultaneously and have to test both, (b) we'd need an env-var to choose, (c) `faster-whisper` model files (~1-3GB depending on size) inflate the default install. The opt-in extras pattern (`pratidhvani[whisper]`) belongs alongside the orchestrator decision to use it; that's a separate PR.
+
+**Consequences.**
+- Podcast ingest works the same way YouTube ingest works — out of the box for operators with `OPENAI_API_KEY` set, fail-soft (`text_status=unavailable`) for those without.
+- The OpenAI Whisper API has a 25MB upload limit (existing constraint from YouTube integration). Long podcast episodes (1-2 hour shows = 50-150MB MP3) exceed this. Today's podcast connector doesn't yet split-and-stitch; episodes over 25MB will fail Whisper. **Filed as a known limitation**; the in-feed `<podcast:transcript>` path (which we prefer when available) sidesteps this. A future PR can add audio-splitting + per-segment Whisper + re-stitching.
+- Cost: OpenAI Whisper is $0.006/minute as of 2025-Q4. A 1-hour podcast = $0.36. For a self-hoster ingesting 100 hour/month, that's $36/month — meaningful but not prohibitive. Operators who hit this scale should evaluate (3) `faster-whisper`.
+- Reusing the existing helper means any future improvements (better retry classification, structured-output support, prompt-priming for known speakers) automatically apply to both YouTube + podcast ingest.
+
+**Re-evaluation hooks.**
+- Switch to **(2) Separate Whisper service** if podcast-ingest queue depth becomes a bottleneck (a Celery worker stuck on a 1-hour Whisper call blocks unrelated jobs). The fix is to put transcription on a dedicated queue, not to change connectors.
+- Add **(3) Local Whisper opt-in** when (a) operator demand surfaces (we hear from self-hosters who don't want OpenAI), or (b) a SaaS deployment wants to escape per-minute API cost at scale. Implementation pattern: new `requirements-whisper-local.txt` + `WHISPER_LOCAL_MODEL` env var + extends-the-existing-helper rather than parallel-path-replaces.
+- Audio-split path for >25MB files: implement when we observe the size limit biting in practice. Most podcast episodes that have transcripts publish them in-feed (Apple, Spotify Originals, every NPR show); the Whisper fallback is mostly used for indie podcasts which run shorter.
+
+**Linked initiatives / PRs.** I-1 / E-1.7 / S-1.7 / OQ-4. PR [#140](https://github.com/khoks/VideoResearchPro/pull/140).
+
+---
+
+## D-034 — PDF source-type identity uses first-64KB SHA-256 (not full-file hash) (2026-05-03)
+
+**Status:** accepted. Shipped with PR [#142](https://github.com/khoks/VideoResearchPro/pull/142).
+
+**Context.** [E-1.8](initiatives.md#e-18--pdf--e-book-connector) PDF connector needed a stable `Candidate.source_id` derived from upload bytes. Two requirements: (a) re-uploads of the same file must dedup at the `(source_type, source_id)` unique index, and (b) the hash function must be cheap enough that the upload endpoint doesn't stall on large files (academic books, technical manuals can run 50-200MB).
+
+Three candidate hashing strategies:
+
+1. **Full-file SHA-256.** Strongest collision resistance; slowest for large files (~1s for 100MB on commodity hardware). Most rigorous dedup — including catching files that differ only in trailing trailer bytes.
+2. **First-64KB SHA-256.** Fast (~ms regardless of file size); enough collision resistance in practice because the PDF header + first object table fall within 64KB and are highly file-specific. Tolerates trailing-trailer variation (e.g. timestamp-based linearization markers added by some PDF post-processors).
+3. **Filename-based.** No collision resistance (two different files with the same name would collide); rejected immediately.
+
+**Decision.** **(2) First-64KB SHA-256**. Hash the first 64KB and use the hex digest as the bare `source_id` (namespaced as `pdf:<digest>`).
+
+**Alternatives considered.**
+- *(1) Full-file SHA-256.* Considered seriously — it's the textbook choice. Rejected because it'd add up to a second of latency on large uploads with no observable user benefit. The collision space within first-64KB SHA-256 is 2^256, and PDF headers + initial object tables are highly file-specific (they encode object offsets, the cross-reference table, document-info dict). In practice we're nowhere close to needing the full-file content's entropy for collision avoidance.
+- *(3) Filename-based.* Rejected (no collision resistance).
+- *Hybrid (full-file hash, but stored in a column we can re-compute lazily).* Considered for future-proofing — if we ever need stronger dedup, we can add a `full_sha256` column populated on first read and use it as a secondary unique constraint. Skipped for v1.
+
+**Consequences.**
+- **Speed**: hash time stays in milliseconds regardless of upload size. The 100MB cap from `PDF_MAX_BYTES` becomes the I/O bound, not the hashing.
+- **Dedup tolerance to trailer-metadata variation**: two uploads that differ only in trailing PDF trailer bytes (some PDF renderers re-emit the trailer with a fresh timestamp on every save) hash the same. Treated as the same document — usually the intent.
+- **Collision risk**: 2^256 effective space. A practical collision requires two PDFs whose first 64KB byte-for-byte matches; in a normal corpus this never happens. Worst-case we'd need to upgrade to (1) full-file hashing later, but that's a doc-table migration (rehash existing uploads), not a structural redesign.
+- Re-extraction works because we store the raw bytes at `PDF_UPLOAD_DIR/<hash>.pdf` keyed by the same digest — fitting the "extract once, store, re-extract later when PyMuPDF improves" pattern that's foundational to the rest of the L1 multi-source storage model.
+
+**Re-evaluation hooks.**
+- Switch to full-file hashing if (a) we ever observe a collision in practice, or (b) we add SaaS-side audit / compliance requirements that mandate full-content hashes for tamper detection.
+
+**Linked initiatives / PRs.** I-1 / E-1.8 / S-1.8. PR [#142](https://github.com/khoks/VideoResearchPro/pull/142).
+
+---
+
+## D-035 — Connectors with no discovery surface raise `NotImplementedError`, dispatcher treats as zero-candidates (2026-05-03)
+
+**Status:** accepted. Validated and shipped with PR [#142](https://github.com/khoks/VideoResearchPro/pull/142). Resolves a long-standing latent ambiguity in the `BaseConnector` contract.
+
+**Context.** Most source types ([video](initiatives.md#e-15--social-media-connectors), reddit_post, hn_story, mastodon_post, bluesky_post, podcast_episode) implement `search()` because they all have public discovery surfaces. The PDF connector is the **first source type with no discovery surface** — PDFs come from upload, not search. The question: how does the polymorphic plumbing handle `source_type='pdf'` if a topic job's `source_types` array happens to include it?
+
+Two design options:
+
+1. **Connector raises `NotImplementedError`** in `search()` and `list_creator_items()`. Dispatcher catches the exception, treats as zero-candidates for that source type, continues with other types. Caller sees no error, just no results from that source.
+2. **Connector returns empty list** silently. Same caller-visible behaviour, but loses the explicit "this connector doesn't do search" signal in the type system.
+
+The dispatcher (`app.services.connector_dispatch.dispatch_search`) was already structured to handle both — it has a `try/except NotImplementedError: continue` block from when E-1.8 was first scoped (the empty-discovery-surface case was anticipated even though no source type exercised it until now).
+
+**Decision.** **(1) Connectors with no discovery surface raise `NotImplementedError`** from `search()` and `list_creator_items()`. The dispatcher's existing try-block handles them gracefully.
+
+**Alternatives considered.**
+- *(2) Silent empty-list return.* Rejected — loses the "this connector intentionally has no search" signal. A future contributor reading just `connector.search("query")` couldn't tell if they got `[]` because the search ran and found nothing or because the connector doesn't search at all. The exception-based form is self-documenting.
+
+**Consequences.**
+- The pattern is reusable for future connectors with no discovery surface — `note` (user-authored annotations as a source type, planned for [I-1](initiatives.md#i-1--multi-source-ingest) future), maybe a `book` connector that takes only file uploads. They follow the PDF template: raise `NotImplementedError`, document why in the docstring, the dispatcher handles it.
+- The `BaseConnector` contract's existing comment ("Connectors that do not support search (e.g. PDF, where the user uploads files directly) raise NotImplementedError") was prescient — D-035 just cements it as the shipped + tested pattern.
+- Tests for these connectors lock in the contract: `test_search_raises_not_implemented` is a new convention that every no-discovery-surface connector should include.
+- Frontend implication: when a user enables `source_types=["pdf"]` on a topic job with no search query, the dispatch yields zero candidates for that source. The UI either filters out PDF from the topic-job source-type chooser entirely (PDFs come from upload, not topic search), or shows a helpful "Use the upload page to add PDFs" empty-state. Today's frontend doesn't expose `pdf` in the topic-job source-type chooser at all, so the dispatcher behaviour is moot — but if it ever does, the empty-state is the right answer.
+
+**Linked initiatives / PRs.** I-1 / E-1.8 / S-1.8 / [D-026](#d-026--sequential-fan-out-for-the-connector-dispatcher-2026-05-02) (the dispatcher's NotImplementedError handling was added there). PR [#142](https://github.com/khoks/VideoResearchPro/pull/142).

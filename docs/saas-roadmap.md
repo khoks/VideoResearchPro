@@ -208,6 +208,8 @@ def library_qa(...): ...
 
 ## 3. Billing
 
+**Status:** ⚪ design-complete; code ships when SaaS launch is funded. Tracked as [E-5.3 in initiatives.md](initiatives.md#e-53--stripe-integration). Pure-SaaS work — self-host has no use for billing infrastructure (everyone's tier is operator-controlled), so shipping Stripe code today buys nothing while costing maintenance. The schema fields below (`tenants.billing_customer_id`, `tenants.billing_subscription_id`) will land alongside the `tenants` table when [T-5.1.3 multi-user-per-workspace](initiatives.md#e-51--tenant_id-audit--retrofit) ships.
+
 ### Provider
 
 **Stripe** for SaaS. Subscription billing for tier upgrades, metered overage for heavy users, team billing for multi-seat workspaces.
@@ -324,6 +326,8 @@ Posture:
 
 ## 6. Hosting & infrastructure
 
+**Status:** ⚪ design-complete; code ships when SaaS launch happens. Tracked as [E-5.8 in initiatives.md](initiatives.md#e-58--hosting--infra). The matrix below is the *target* topology — every row is a swap from the self-host equivalent. None of these swaps make sense for a single-machine self-host install, which is why the scope of E-5.8 is *operations work*, not *code work*. The few code touches that ARE forward-looking (Postgres compatibility, S3-not-local-disk for outputs) are tracked under their respective L1/L2 epics, not E-5.8.
+
 ### Self-host (today)
 
 - SQLite + Redis (Windows service or Docker) + ChromaDB (embedded, persistent) + local Whisper
@@ -353,11 +357,15 @@ Posture:
 
 ### Data residency
 
+**Status:** ⚪ design-complete; tracked as [E-5.7 in initiatives.md](initiatives.md#e-57--data-residency). Pure-SaaS-launch concern: a single-machine self-host install has its data in exactly one place by definition. The `tenants.region` column will land when the `tenants` table itself does (T-5.1.3); region-specific stack provisioning is operations work, not code work.
+
 SaaS users pick a region at signup: US (default), EU, India. Each region is a separate stack with its own database, vector store, and S3 bucket. Cross-region migration is a paid concierge service for now.
 
 ---
 
 ## 7. Hosted UX
+
+**Status:** ⚪ design-complete; tracked as [E-5.9 in initiatives.md](initiatives.md#e-59--hosted-ux). The marketing landing page already ships ([E-2.5](initiatives.md#e-25--marketing-landing-page-sections)) — that's the only piece of "hosted UX" with code today. The signup flow / billing portal / status page / docs site are all SaaS-launch-time work, gated on E-5.3 (billing) and SaaS infrastructure (E-5.8). No code change today.
 
 ### Marketing surface
 

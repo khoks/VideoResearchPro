@@ -191,6 +191,35 @@ class Settings(BaseSettings):
     ARTICLE_SEARCH_RATE_LIMIT_RPM: int = 60
 
     # -------------------------------------------------------------------
+    # Twitter / X connector — BYOK paid API (S-1.5.9 + S-1.5.10)
+    # -------------------------------------------------------------------
+    # Per [D-009](docs/decisions.md), Twitter / X access is BYOK + opt-in.
+    # The platform's free tier is too restrictive for ingest at the
+    # scale this project needs (1500 reads/month; Pro tier @ $100/mo
+    # gets 10K). Operators opt in by registering at
+    # https://developer.twitter.com and pasting the bearer token here.
+    #
+    # When `TWITTER_BEARER_TOKEN` is set:
+    # - The `tweet` source_type's connector is upgraded from paste-
+    #   only (S-1.5.8) to search-having (Twitter API v2).
+    # - The `/api/v1/health` endpoint reports `twitter_search_enabled:
+    #   true` so the frontend can show the topic-search-with-Twitter
+    #   path.
+    # When unset, the paste-mode `TweetConnector` from
+    # `app.sources.paste_url` is the only path — same fail-soft as
+    # E-1.6 article search-without-Brave.
+    TWITTER_BEARER_TOKEN: str = ""
+    TWITTER_API_BASE: str = "https://api.twitter.com/2"
+    TWITTER_USER_AGENT: str = (
+        "pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani)"
+    )
+    # Pro tier is ~50 req/15min on most search endpoints. Stay under
+    # the cap with a 60-rpm token bucket; operators on higher tiers
+    # can lift via env if they hit the floor.
+    TWITTER_RATE_LIMIT_RPM: int = 60
+    TWITTER_REPLY_DEPTH_DEFAULT: int = 50
+
+    # -------------------------------------------------------------------
     # LLM — Primary (high-quality) model
     # -------------------------------------------------------------------
     # Provider dispatches which chat client is built. The call-site code is

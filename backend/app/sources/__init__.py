@@ -36,6 +36,13 @@ from app.sources.paste_url import connector as _paste_url_connector  # noqa: F40
 # import overwrites it with the search-enabled variant per the
 # registry's last-write-wins semantics.
 from app.sources.article import connector as _article_connector  # noqa: F401  (re-registers article)
+# `tweet` re-registration with search-having subclass (S-1.5.10 BYOK
+# Twitter). Same idempotent re-registration pattern. When
+# `TWITTER_BEARER_TOKEN` is unset, search()/list_creator_items()
+# return empty gracefully rather than raising; paste-mode for
+# individual tweet URLs continues to work via the inherited
+# `_PasteURLBaseConnector.fetch_text` either way.
+from app.sources.twitter import connector as _twitter_connector  # noqa: F401  (re-registers tweet)
 
 __all__ = [
     "BaseConnector",

@@ -42,6 +42,37 @@ def test_health_check_includes_llm_status(client, reset_llm_status):
     assert data["llm"]["status"] == "unknown"
 
 
+def test_health_check_includes_capabilities(client):
+    """Per S-1.5.9, surface opt-in capability flags so the frontend
+    can decide which UI surfaces to expose without inspecting env
+    state directly."""
+    response = client.get("/api/v1/health")
+    assert response.status_code == 200
+    caps = response.json().get("capabilities") or {}
+    # All four capability flags should be present (booleans).
+    assert isinstance(caps.get("twitter_search_enabled"), bool)
+    assert isinstance(caps.get("article_search_enabled"), bool)
+    assert isinstance(caps.get("playwright_fallback_enabled"), bool)
+    assert isinstance(caps.get("whisper_transcribe_enabled"), bool)
+
+
+def test_health_capabilities_reflect_settings(client, monkeypatch):
+    """When env-vars flip, the capability flags should follow."""
+    from app.routers import health as _health
+
+    monkeypatch.setattr(_health.settings, "TWITTER_BEARER_TOKEN", "set")
+    monkeypatch.setattr(_health.settings, "BRAVE_SEARCH_API_KEY", "")
+    monkeypatch.setattr(_health.settings, "ARTICLE_PLAYWRIGHT_ENABLED", True)
+    monkeypatch.setattr(_health.settings, "OPENAI_API_KEY", "set")
+
+    response = client.get("/api/v1/health")
+    caps = response.json()["capabilities"]
+    assert caps["twitter_search_enabled"] is True
+    assert caps["article_search_enabled"] is False
+    assert caps["playwright_fallback_enabled"] is True
+    assert caps["whisper_transcribe_enabled"] is True
+
+
 def test_health_llm_endpoint_returns_summary_and_use_cases(
     client, reset_llm_status
 ):

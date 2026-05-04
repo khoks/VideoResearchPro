@@ -1045,3 +1045,57 @@ Three candidate providers:
 - Performance — the `tenant_id` index was added in phase 1. If query plans ever show non-index use under tenant filtering, revisit.
 
 **Linked initiatives / PRs.** I-5 / E-5.1 / T-5.1.0 / T-5.1.1 / T-5.1.2. PRs [#149](https://github.com/khoks/VideoResearchPro/pull/149) / [#150](https://github.com/khoks/VideoResearchPro/pull/150) / [#151](https://github.com/khoks/VideoResearchPro/pull/151) / [#152](https://github.com/khoks/VideoResearchPro/pull/152).
+
+---
+
+## D-039 — In-memory rate-limit backend as the default (Redis-swap deferred to multi-worker SaaS) (2026-05-04)
+
+**Status:** accepted. Resolves [E-5.5](initiatives.md#e-55--abuse-prevention) phase 1 and shipped with [PR #157](https://github.com/khoks/VideoResearchPro/pull/157).
+
+**Context.** [E-5.5 abuse prevention](initiatives.md#e-55--abuse-prevention) needed a rate-limit backend. Redis is already in the stack (Celery broker + WebSocket pub/sub), so a Redis-backed bucket store is "free" infrastructurally. But the supported self-host configuration runs a single uvicorn worker — multi-worker is blocked by Celery's Windows `--pool=solo` requirement and the project's deliberately-simple deployment story. Single-worker = single-process = an in-memory dict suffices for correctness. So which to ship first: in-memory (simpler, but caps fire per-process on multi-worker) or Redis (more general, but introduces a network dep on a feature that didn't have one).
+
+**Decision.** **In-memory dict + `threading.Lock`** is the default backend. The service-layer contract (`check_and_consume(key, limit) -> (allowed, count, retry_after)`) is identical to what a Redis implementation would expose, so swapping in a Redis-backed `check_and_consume` for SaaS multi-worker deployment is a one-function change tracked as [T-5.5.4](initiatives.md#e-55--abuse-prevention).
+
+**Alternatives considered.**
+- *Redis from the start.* Rejected for self-host: the in-memory implementation is roughly 50 lines vs ~150 for the Redis version (atomic INCR + EXPIRE + retry-after computation across the round-trip). For a feature that's optional in dev and uniform in single-worker prod, the simpler implementation wins. Swap is mechanical when SaaS lands.
+- *External library (`slowapi`, `fastapi-limiter`, `limits`).* Rejected. `slowapi` couples to Flask-style decorators that don't compose with our middleware shape; `fastapi-limiter` requires Redis and lacks the per-route override pattern; `limits` is a primitives-only library that wouldn't save much over our 50 lines. The project's pattern (per [E-1.6](initiatives.md#e-16--article-search--rss--brave--rss-feed-discovery), [E-5.4](initiatives.md#e-54--auth-hardening), etc.) is to write the small piece ourselves rather than carry the dep.
+- *SQL-backed buckets.* Rejected: every rate-limit check would round-trip the DB, and the cleanup path (deleting expired buckets) would need a periodic vacuum task. Hot-path latency would jump from microseconds (in-memory) or milliseconds (Redis) to multi-millisecond.
+
+**Consequences.**
+- **Single-worker self-host:** correct + fast. The middleware adds microseconds per request.
+- **Multi-worker SaaS:** caps will fire per-worker, so effective limits are `N × configured_limit` where N = workers. For Free-tier-style strict caps this would matter; the swap-to-Redis is gated by SaaS launch, not by self-host scale.
+- **Test posture:** `RATE_LIMIT_ENABLED=False` set globally in `conftest.py`; individual rate-limit tests opt back in via `monkeypatch`. In-memory state is cleared between tests via `rate_limit_service.reset()` in the `db` fixture teardown.
+- **Backward-compat invariant:** the `check_and_consume(key, limit) -> (allowed, count, retry_after)` signature must NOT change when the Redis backend lands. T-5.5.4 is a backend swap, not an API change.
+
+**Re-evaluation hooks.**
+- Switch to Redis-backed when (a) SaaS deployment with multi-worker uvicorn lands, OR (b) a self-hoster reports needing horizontal-scale workers (rare given the Windows constraint).
+- If T-5.5.5 (quota runtime metering, currently overlapping with E-5.2 T-5.2.5) lands and shares the same backend, that's the moment to reconsider whether SQL-backed buckets are actually the right call after all (since quotas are billing-relevant and need to survive a process restart).
+
+**Linked initiatives / PRs.** I-5 / E-5.5 / T-5.5.1 / T-5.5.2 / T-5.5.3. PR [#157](https://github.com/khoks/VideoResearchPro/pull/157).
+
+---
+
+## D-040 — Failed logins for unknown emails do NOT create User rows (lock-arbitrary-account defence) (2026-05-04)
+
+**Status:** accepted. Resolves a critical-correctness invariant for [E-5.4 auth hardening](initiatives.md#e-54--auth-hardening) and shipped with [PR #156](https://github.com/khoks/VideoResearchPro/pull/156).
+
+**Context.** [E-5.4 account lockout](initiatives.md#e-54--auth-hardening) tracks `failed_login_attempts` per User. The naive implementation would, on a failed `/auth/login`, look up (or create-then-update) a User row keyed on the submitted email. But the obvious "ensure-row-exists" path opens a critical attack: an attacker submitting `{"email": "<arbitrary-real-user@somewhere.com>", "password": "wrong"}` enough times would lock that user's account. Worse, an attacker iterating over plausible emails could mass-lock thousands of accounts they don't own.
+
+**Decision.** **Unknown emails do NOT create User rows. The lockout system applies only to existing users; brute-force attempts against non-existent emails are still rate-limited (E-5.5 sensitive-endpoint bucket) but never persist state in the `users` table.** Concretely, `authenticate_user_v2` returns `(None, INVALID_CREDENTIALS)` for unknown emails, and the router emits a `LOGIN_FAILURE` audit row with `user_id=None` (capturing the attacker's email + IP for forensics).
+
+**Alternatives considered.**
+- *Create-on-first-failure.* Rejected — opens the lock-arbitrary-account vector above. There's no defensive value: the absence of a User row is itself the correct "credentials invalid" outcome.
+- *Track failed-login state on a separate `(email, ip)` keyed table independent of `users`.* Considered as a future hardening (would let us rate-limit at the (email, IP) tuple level even before a User row exists). Rejected for v1 — the E-5.5 sensitive-endpoint bucket already provides per-IP brute-force defence on `/auth/login`. If credential-stuffing-style attacks (millions of distinct (email, password) pairs from leak databases) become a real-world threat, revisit.
+- *Account lockout at the IP level (lock the *attacker's IP* on N failures, regardless of email).* Considered but rejected as the *primary* defence — IPs are easily rotated. Per-account lockout + per-IP rate-limit is the layered approach that survives both rotation and credential-stuffing.
+
+**Consequences.**
+- **Test invariant**: `test_unknown_email_returns_invalid_credentials_not_locked` enforces the contract — the test is the canonical place a future PR would notice if it accidentally re-introduced the row-creation path.
+- **Audit log captures the attacker's email** in the `metadata_json` of the `LOGIN_FAILURE` row even when `user_id IS NULL`. Forensics work the same as the existing-user case; the only difference is that there's no per-user lockout to consult.
+- **Constant-time decoy verify**: `authenticate_user_v2` runs a dummy bcrypt verify when the email doesn't exist (`_DUMMY_PWD_HASH` constant generated at import). This keeps response latency comparable to the real-user path so timing leaks don't reveal account existence.
+- **The "User row absence" outcome serves double-duty** as both the email-existence check and the timing-leak surface. Future contributors who add fields to the `users` table that materialize on first-login (e.g. some "active" status flag) MUST keep this invariant.
+
+**Re-evaluation hooks.**
+- If credential-stuffing patterns surface in audit logs (millions of `LOGIN_FAILURE` rows with `user_id IS NULL` from one IP range), consider adding an `(email, ip)` rate-limit table as a second layer of defence.
+- If a per-email-prefix abuse pattern emerges (attacker probing every `[a-z]@target.com`), consider domain-level rate-limit grouping.
+
+**Linked initiatives / PRs.** I-5 / E-5.4 / T-5.4.2. PR [#156](https://github.com/khoks/VideoResearchPro/pull/156).

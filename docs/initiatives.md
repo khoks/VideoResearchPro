@@ -612,7 +612,7 @@ Remaining ⚪ epics — **E-5.3** Stripe / **E-5.7** Data residency / **E-5.8** 
 
 **Tasks**
 - [x] T-5.4.1 Audit log table + service — *shipped 2026-05-04*.
-- [x] T-5.4.2 Account lockout (`failed_login_attempts` + `locked_until` + threshold) — *shipped 2026-05-04*.
+- [x] T-5.4.2 Account lockout (`failed_login_attempts` + `locked_until` + threshold) — *shipped 2026-05-04. See [D-040](decisions.md#d-040--failed-logins-for-unknown-emails-do-not-create-user-rows-lock-arbitrary-account-defence-2026-05-04) for the lock-arbitrary-account defence invariant.*
 - [x] T-5.4.3 Password reset flow (request + confirm + token table) — *shipped 2026-05-04*.
 - [x] T-5.4.4 `GET /auth/audit-log` per-user read endpoint — *shipped 2026-05-04*.
 - [ ] T-5.4.5 ⚪ OAuth (Google + GitHub) — separate PR; provider config + token exchange + linking flow.
@@ -634,10 +634,10 @@ Remaining ⚪ epics — **E-5.3** Stripe / **E-5.7** Data residency / **E-5.8** 
 12 new tests; backend suite 823 → 835.
 
 **Tasks**
-- [x] T-5.5.1 In-memory sliding-window rate-limit service — *shipped 2026-05-04*.
+- [x] T-5.5.1 In-memory sliding-window rate-limit service — *shipped 2026-05-04. See [D-039](decisions.md#d-039--in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) for the in-memory-vs-Redis design decision.*
 - [x] T-5.5.2 FastAPI middleware with per-route + per-tier strategy — *shipped 2026-05-04*.
 - [x] T-5.5.3 Sensitive-endpoint hardening (login / reset / register) — *shipped 2026-05-04*.
-- [ ] T-5.5.4 ⚪ Redis-backed bucket store for multi-worker SaaS deployment — separate PR; one-function swap per the rate_limit_service docstring.
+- [ ] T-5.5.4 ⚪ Redis-backed bucket store for multi-worker SaaS deployment — separate PR; one-function swap per the rate_limit_service docstring + [D-039](decisions.md#d-039--in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) re-evaluation hooks.
 - [ ] T-5.5.5 ⚪ Quota enforcement (covered by E-5.2 T-5.2.5; rate-limit infra above is what it'll layer on).
 - [ ] T-5.5.6 ⚪ Content policy + takedown workflow for shared reports — SaaS-launch.
 - [ ] T-5.5.7 ⚪ Fraud detection (anomalous-pattern alerting) — SaaS-launch.

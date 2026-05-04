@@ -936,3 +936,65 @@ The dispatcher (`app.services.connector_dispatch.dispatch_search`) was already s
 - Frontend implication: when a user enables `source_types=["pdf"]` on a topic job with no search query, the dispatch yields zero candidates for that source. The UI either filters out PDF from the topic-job source-type chooser entirely (PDFs come from upload, not topic search), or shows a helpful "Use the upload page to add PDFs" empty-state. Today's frontend doesn't expose `pdf` in the topic-job source-type chooser at all, so the dispatcher behaviour is moot — but if it ever does, the empty-state is the right answer.
 
 **Linked initiatives / PRs.** I-1 / E-1.8 / S-1.8 / [D-026](#d-026--sequential-fan-out-for-the-connector-dispatcher-2026-05-02) (the dispatcher's NotImplementedError handling was added there). PR [#142](https://github.com/khoks/VideoResearchPro/pull/142).
+
+---
+
+## D-036 — Paste-mode emits five distinct `source_type` discriminators (not a single `paste`) (2026-05-03)
+
+**Status:** accepted. Shipped with PR [#144](https://github.com/khoks/VideoResearchPro/pull/144).
+
+**Context.** S-1.5.8 added Mode B paste-mode for FB / IG / LI / X-without-paid + generic articles. All five paste connectors share identical extraction logic (delegate to `app.services.article_extraction.extract_text`), so collapsing them into a single `paste` source_type would have been simpler — fewer SOURCE_CONFIGS entries, fewer Reference type variants, fewer connectors registered. The choice: per-platform discriminators (`fb_post` / `ig_post` / `li_post` / `tweet` / `article`) vs. a single shared `paste` discriminator with platform info in `source_metadata.platform`.
+
+**Decision.** Use **five distinct `source_type` discriminators** matching the existing source-types matrix (`fb_post` / `ig_post` / `li_post` / `tweet` / `article`). All five connectors share the `_PasteURLBaseConnector` superclass so the implementation cost is one base + five thin one-liner subclasses; the visible discriminators are still per-platform.
+
+**Alternatives considered.**
+- *Single `paste` source_type with `metadata.platform` discriminator.* Rejected for three reasons:
+  1. **Citation rendering must differ per platform.** A "fb_post" cite renders with the FB glyph + "Facebook" label; a "tweet" cite renders with the X glyph + "X / Twitter" label. Polymorphic dispatch by source_type makes that uniform; runtime-branching on `metadata.platform` makes it ad-hoc.
+  2. **Library filtering by source_type is meaningful.** Users want to browse "all my Facebook posts" without seeing "all my random news articles". The library-page filter UI already pivots on source_type — collapsing weakens that.
+  3. **Forward-compat with per-platform metadata extractors.** A future PR adding FB-specific author parsing, X handle extraction, or LI activity-id parsing pivots cleanly on source_type. With a single `paste` discriminator we'd have to runtime-branch on the URL host every time.
+- *Sub-types of `article` with `metadata.kind`.* Rejected for similar reasons — adds ad-hoc nesting on top of the polymorphic-by-source_type contract that's now validated 12 times.
+
+**Consequences.**
+- Five new SOURCE_CONFIGS entries, five new SourceMetadata variants, five new ReferenceSourceType strings. Compile-time enforced via the mapped-type registry; one new social-media connector slips through can't compile.
+- The `_PasteURLBaseConnector` shared base means the implementation cost is *low* even though the surface is polymorphic. Five subclasses are 4 lines each.
+- `app/sources/paste_url/` becomes the home for paste-only connectors. `article` is later re-registered (E-1.6 phase 2) with a search-having ArticleConnector subclass; the registry's last-write-wins semantics make this safe.
+- 12 source types total in the connector registry now: `video` / `reddit_post` / `hn_story` / `mastodon_post` / `bluesky_post` / `podcast_episode` / `pdf` / `article` / `fb_post` / `ig_post` / `li_post` / `tweet`. Polymorphic plumbing claim validated 12 times.
+
+**Re-evaluation hooks.**
+- If maintenance cost of 5 near-identical SOURCE_CONFIGS entries climbs, consider a config-table generator that emits all 5 from a single source-of-truth platform-spec list. Today (5 entries × ~15 lines each = 75 lines) is below the threshold where that pays off.
+- If Apple opens an iOS / macOS public-post API or Bluesky adds image-mode posts as a separate type, those would be additional source types layered on the same paste-mode base.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.8. PR [#144](https://github.com/khoks/VideoResearchPro/pull/144).
+
+---
+
+## D-037 — Brave Search as the default article search-engine provider (2026-05-03)
+
+**Status:** accepted. Shipped with PR [#145](https://github.com/khoks/VideoResearchPro/pull/145).
+
+**Context.** E-1.6 T-1.6.2 specced "Article search-engine integration (Brave / Kagi / Tavily)". The implementation had to pick one provider as the default; the connector code is per-provider-pluggable so future PRs can add others, but v1 needs a concrete default that operators can opt into without significant onboarding friction.
+
+Three candidate providers:
+
+1. **Brave Search.** Free tier with generous quota (~2,000 queries/month). API key is self-service signup at search.brave.com — no credit card required. Simple GET with `X-Subscription-Token` header.
+2. **Tavily.** Tuned for LLM-search workloads (returns context-aware snippets). Free tier exists but requires credit card on file. Slightly higher per-query latency.
+3. **Kagi.** Premium-quality results, paid-only. Requires Kagi subscription ($10/month minimum). Highest result quality but highest barrier to operator adoption.
+
+**Decision.** **Brave Search as the v1 default**, gated on `BRAVE_SEARCH_API_KEY`. When the key is unset, `ArticleConnector.search()` returns `[]` gracefully (rather than raising) so topic jobs that include `source_types=['article']` don't fail; they just yield zero candidates from search until the operator opts in.
+
+**Alternatives considered.**
+- *Tavily as default.* Rejected for v1 — credit-card requirement is friction. Future PR can add Tavily as an alternative provider behind `TAVILY_API_KEY`.
+- *Kagi as default.* Rejected — paid-only adoption barrier is too high for self-host scenarios. Power users who want Kagi can opt in; not the right default.
+- *Multi-provider with operator picking via env var.* Eventually yes, but for v1 the single-provider path keeps the implementation surface minimal. Adding a second provider is one additional file + a `if settings.X_API_KEY: use X else use Y` branch in `ArticleConnector.search()`.
+- *No default; operator must explicitly configure search.* Rejected — having a working free-tier default makes the article connector feel complete out of the box.
+
+**Consequences.**
+- Operators who want article search-discovery sign up at search.brave.com (free), set `BRAVE_SEARCH_API_KEY=...` in `.env`, and the article connector starts returning search candidates immediately. No code changes.
+- The graceful-empty `search()` (returns `[]` instead of raising NotImplementedError) means topic jobs with mixed `source_types` (e.g. `["video", "article"]`) work even when Brave isn't configured — they just won't discover articles via search until the key is set. Article ingest via paste-mode and RSS still works.
+- Future Tavily / Kagi / Google CSE providers slot into the same `ArticleConnector.search()` method as a `if BRAVE: ... elif TAVILY: ... elif KAGI: ...` chain, or (at higher provider count) a registry-of-providers table. Today's single-provider impl is the minimum viable path.
+
+**Re-evaluation hooks.**
+- Switch defaults if (a) Brave's free-tier quota becomes restrictive in practice, (b) Brave changes the API in a breaking way, or (c) a clearly-better free alternative emerges.
+- Add Tavily as a second provider when LLM-tuned search results materially improve Q&A relevance for article-heavy libraries (an empirical question — measure first).
+
+**Linked initiatives / PRs.** I-1 / E-1.6 / T-1.6.2. PR [#145](https://github.com/khoks/VideoResearchPro/pull/145).

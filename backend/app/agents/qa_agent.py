@@ -204,6 +204,9 @@ def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
                                with #t=<sec> when chunked from a
                                specific moment) + episode_title +
                                show_name (= author)
+      - pdf:                   permalink (upload URL with #page=<N>
+                               when chunked from a specific page) +
+                               doc_title + page_number
     """
     meta = chunk.get("metadata", {})
     source_type = (meta.get("source_type") or "video").strip() or "video"
@@ -337,6 +340,42 @@ def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
             "channel_name": author or "Bluesky",
             "timestamp_seconds": 0.0,
             "timestamp_display": "",
+            "youtube_link": permalink,
+        }
+
+    if source_type == "pdf":
+        # PDFs are page-anchored: per-page `comment_url` carries
+        # `#page=<N>` so PDF viewers (Chrome built-in, Firefox, Adobe)
+        # deep-link to the cited page.
+        permalink = (
+            meta.get("comment_url")  # carries #page=<N> fragment
+            or meta.get("permalink")
+            or meta.get("source_url")
+            or meta.get("video_url")
+            or ""
+        )
+        # Try to surface the page number for the citation label.
+        # `comment_id` for PDFs is the synthesised `pdf:<hash>:p<N>`
+        # form; the chunker's dominant-segment heuristic also writes
+        # the raw page number to `segment_depth` (we use depth=0 for
+        # PDFs so it's always 0 — page lives in `comment_id`).
+        page_number = ""
+        cid = meta.get("comment_id") or ""
+        if ":p" in cid:
+            page_number = cid.rsplit(":p", 1)[-1]
+        key = f"{source_type}:{source_id}_{cid}"
+        return key, {
+            "source_type": "pdf",
+            "permalink": permalink,
+            "thread_title": title,  # document title
+            "author": meta.get("author") or "",
+            "page_number": page_number,
+            # Legacy YouTube-shaped fallback fields.
+            "video_url": permalink,
+            "video_title": title,
+            "channel_name": meta.get("author") or "PDF",
+            "timestamp_seconds": 0.0,
+            "timestamp_display": f"p. {page_number}" if page_number else "",
             "youtube_link": permalink,
         }
 

@@ -103,6 +103,21 @@ function renderCitation(ref: Reference): RenderedCitation {
     };
   }
 
+  if (sourceType === 'pdf') {
+    // Format: "<doc_title> · p. <page_number>"
+    // The permalink already carries the `#page=<N>` deep-link
+    // fragment for standard PDF viewers when chunked from a
+    // specific page.
+    const title = ref.thread_title ?? ref.video_title ?? '';
+    const page = ref.page_number ?? '';
+    const pageLabel = page ? `p. ${page}` : '';
+    const labelParts = [title, pageLabel].filter(Boolean);
+    return {
+      href: ref.permalink ?? ref.video_url ?? '#',
+      label: labelParts.join(' · '),
+    };
+  }
+
   if (sourceType === 'podcast_episode') {
     // Format: "<episode_title> · <show_name> · <timestamp>"
     // The permalink already carries the `#t=<sec>` deep-link fragment

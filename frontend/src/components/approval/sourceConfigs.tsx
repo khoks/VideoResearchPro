@@ -97,6 +97,23 @@ function BlueskyGlyph() {
   );
 }
 
+function PDFGlyph() {
+  // Document silhouette with folded corner — universally recognised
+  // as a "page / file" mark. Same dimensions as other glyphs.
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <rect x="0" y="0" width="18" height="18" rx="3" fill="currentColor" />
+      <path
+        d="M5 4 L11 4 L13 6 L13 14 L5 14 Z M11 4 L11 6 L13 6"
+        fill="white"
+        stroke="white"
+        strokeWidth="0.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function PodcastGlyph() {
   // Microphone silhouette via two concentric rounded shapes — recall
   // a podcast mic without pulling in an icon-pack. Same dimensions
@@ -294,6 +311,34 @@ export const SOURCE_CONFIGS: SourceConfigRegistry = {
     filterChips: [
       // M-1.6: filter rail parity — same staged-out pattern as Reddit/HN/Mastodon.
     ],
+  },
+
+  // -------------------------------------------------------------------------
+  // PDF / e-book (M-1.8)
+  // -------------------------------------------------------------------------
+  pdf: {
+    glyph: <PDFGlyph />,
+    metaChips: [
+      {
+        field: 'pageCount',
+        icon: <DotGlyph />,
+        label: 'Pages',
+        formatter: 'numberWithCommas',
+      },
+      {
+        field: 'wordCount',
+        icon: <DotGlyph />,
+        label: 'Words',
+        formatter: 'numberWithCommas',
+      },
+      {
+        field: 'uploadedAt',
+        icon: <DotGlyph />,
+        label: 'Uploaded',
+        formatter: 'relativeTime',
+      },
+    ],
+    filterChips: [],
   },
 
   // -------------------------------------------------------------------------

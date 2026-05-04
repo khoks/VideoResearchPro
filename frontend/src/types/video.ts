@@ -119,6 +119,14 @@ export function videoToApprovalProps(
         permalink: String(m.permalink ?? video.source_url ?? ''),
       };
       break;
+    case 'pdf':
+      metadata = {
+        source_type: 'pdf',
+        pageCount: Number(m.page_count ?? m.pageCount ?? 0),
+        wordCount: Number(video.transcript_word_count ?? 0),
+        uploadedAt: String(video.published_at ?? ''),
+      };
+      break;
     case 'podcast_episode':
       metadata = {
         source_type: 'podcast_episode',

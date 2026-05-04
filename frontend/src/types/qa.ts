@@ -26,7 +26,8 @@ export type ReferenceSourceType =
   | 'hn_story'
   | 'mastodon_post'
   | 'bluesky_post'
-  | 'podcast_episode';
+  | 'podcast_episode'
+  | 'pdf';
 
 export interface Reference {
   /** Absent on legacy rows; defaults to "video" in the renderer. */
@@ -54,6 +55,8 @@ export interface Reference {
   author?: string;
   /** Mastodon: instance host (e.g. `mastodon.social`). Empty string when unknown. */
   instance?: string;
+  /** PDF: 1-indexed page number where the chunk's dominant segment lives. */
+  page_number?: string;
 }
 
 export interface QAExchange {

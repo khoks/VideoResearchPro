@@ -570,9 +570,18 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 
 **Linked decision:** [D-038](decisions.md#d-038--tenancy-retrofit-ships-in-four-phases-audit--additive--backfillwrites--reads--not-null-2026-05-04)
 
-### E-5.2 ⚪ Subscription tier gating
+### E-5.2 🟡 Subscription tier gating
 
 **Scope.** Free / Pro / Studio tiers with explicit YouTube quota allocation, LLM token budget, document-count cap, feature gating (Author Studio = Pro+).
+
+**Foundation shipped 2026-05-04.** `users.tier String(16)` column with `server_default='free'` (Alembic `f7a8b9c0d1e2`); `Tier` enum + `TIER_CAPABILITIES` table + `require_tier(min_tier)` / `require_feature(name)` FastAPI dependencies in `backend/app/services/tier_service.py`. 24 new tests; backend suite 777 → 801. **Quota enforcement (runtime metering + 429 on exceeded) deferred to E-5.5** since rate limiting and quota enforcement share infrastructure.
+
+**Tasks**
+- [x] T-5.2.1 Add `tier` column to `users` table — *shipped 2026-05-04*.
+- [x] T-5.2.2 `Tier` enum + capability table + FastAPI dependency factories — *shipped 2026-05-04*.
+- [x] T-5.2.3 Document tier capabilities in `saas-roadmap.md` — *shipped 2026-05-04*.
+- [ ] T-5.2.4 ⚪ Wire `require_tier` / `require_feature` into actual endpoints (e.g. Author Studio routes when L2 ships, BYOK LLM keys when E-5.6 lands).
+- [ ] T-5.2.5 ⚪ Quota runtime metering (covered by E-5.5).
 
 ### E-5.3 ⚪ Stripe integration
 

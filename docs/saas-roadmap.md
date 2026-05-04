@@ -114,6 +114,8 @@ Today's queries already use `where={"video_id": {"$in": approved_set}}`. Adding 
 
 ## 2. Subscription tiers
 
+**Status (2026-05-04):** ✅ Schema-level + utility-layer foundation shipped via [E-5.2](initiatives.md#e-52--subscription-tier-gating). The `users.tier` column lives at `String(16)` with `server_default='free'` (Alembic `f7a8b9c0d1e2`); the `Tier` enum + `TIER_CAPABILITIES` table + `require_tier(min_tier)` / `require_feature(name)` FastAPI dependencies live in `backend/app/services/tier_service.py`. **Quota *enforcement* (per-period meter + reset) is still ⚪** — the limits are read-only today; the runtime accounting that would actually 429 a user hitting their cap is the next step (E-5.5 abuse prevention overlaps here).
+
 ### Tiers
 
 | Tier | Audience | Price (placeholder) |
@@ -123,7 +125,7 @@ Today's queries already use `where={"video_id": {"$in": approved_set}}`. Adding 
 | **Studio** | Power users, content creators using L2 outputs heavily | $49/mo |
 | **Team** | Small teams sharing a workspace | $99/mo per workspace, includes 5 seats |
 
-Self-host installs are functionally Studio (no caps), but the tier column exists.
+Self-host installs are functionally Studio (no caps), but the tier column exists. Operators upgrade users via SQL: `UPDATE users SET tier='pro' WHERE id='...'`.
 
 ### Quotas (per month, per tenant)
 

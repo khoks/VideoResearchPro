@@ -998,3 +998,50 @@ Three candidate providers:
 - Add Tavily as a second provider when LLM-tuned search results materially improve Q&A relevance for article-heavy libraries (an empirical question — measure first).
 
 **Linked initiatives / PRs.** I-1 / E-1.6 / T-1.6.2. PR [#145](https://github.com/khoks/VideoResearchPro/pull/145).
+
+---
+
+## D-038 — Tenancy retrofit ships in four phases (audit → additive → backfill+writes → reads → NOT NULL) (2026-05-04)
+
+**Status:** accepted. Resolves [E-5.1](initiatives.md#e-51--tenancy-retrofit) and shipped across PRs [#149](https://github.com/khoks/VideoResearchPro/pull/149) (phase 0 audit) → [#150](https://github.com/khoks/VideoResearchPro/pull/150) (phase 1 additive) → [#151](https://github.com/khoks/VideoResearchPro/pull/151) (phase 2a backfill+writes) → [#152](https://github.com/khoks/VideoResearchPro/pull/152) (phase 2b reads). Phase 2c (NOT NULL constraint) deferred to operator runbook per [D-032](#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03) precedent.
+
+**Context.** [E-5.1 audit](saas-tenant-id-audit.md) discovered that, despite shipping JWT auth + email/password registration and four user-scoped tables (`jobs`, `qa_exchanges`, `library_qa_exchanges`, `qa_history_exchanges`), the codebase was **structurally single-tenant** — zero `tenant_id` columns, zero `WHERE user = ?` filters in routers. Any logged-in user could read any other user's jobs, Q&A history, library exchanges. The fix is conceptually simple ("add `tenant_id` everywhere, filter queries by it") but operationally risky: any single-step rollout has a window where existing rows are unattributed, the code is enforcing attribution, and joins crash. Need a phased rollout that's safe at each intermediate state.
+
+**Two ways to resolve:**
+
+- **(a) Single-PR retrofit.** One migration adds `tenant_id NOT NULL` with a default backfill, one PR threads `current_user.id` through writes + reads. Atomic from the operator's perspective. **Rejected.** Three independent failure modes: (i) deploy-vs-migrate ordering — if the app boots before the migration runs, every INSERT fails on the missing column; if the migration runs before the app deploys, every SELECT crashes on the new column being unrecognized by the old ORM. (ii) Testing surface — has to validate `tenant_id IS NULL` isn't reachable mid-migration *and* the backfill produces correct attribution *and* every router enforces the filter, all in one atomic step. (iii) No room for operator verification between additive and enforcing states.
+
+- **(b) Four-phase split.** Each phase is non-breaking on its own; the column / writes / reads / constraint advance independently with operator-observable checkpoints. **Accepted.**
+
+**Decision.** Four phases, each shippable as an independent PR:
+
+1. **Phase 0 — Audit doc.** [`docs/saas-tenant-id-audit.md`](saas-tenant-id-audit.md). Names every table needing `tenant_id`, every router endpoint needing the filter, the threat model (404 not 403 for cross-tenant to avoid existence-leak), the deferred-to-operator phase 2c rationale.
+2. **Phase 1 — Additive nullable column + index.** Alembic migration adds `tenant_id String(36) NULL` + index to each table. ORM model adds the typed-mapped column. Zero runtime behaviour change — every existing INSERT still works (column defaults to NULL), every existing SELECT still works (column doesn't appear in WHERE clauses).
+3. **Phase 2a — Backfill + write-side stamping.** Alembic backfill migration sets `tenant_id = (SELECT id FROM users ORDER BY created_at LIMIT 1)` WHERE `tenant_id IS NULL` (idempotent first-user attribution; multi-user installs follow the runbook). Concurrently, every write-side router stamps `tenant_id=current_user.id` from `Depends(get_current_user)`. After this phase, **every row has a `tenant_id`** but no SELECT filters by it.
+4. **Phase 2b — Read-side filtering.** Service-layer functions (`get_job(db, job_id, tenant_id=None)` etc.) accept an optional tenant filter — `None` preserves legacy/Celery-worker call paths; routers pass `current_user.id`. Cross-tenant reads return 404 (not 403) to avoid leaking existence. After this phase, the codebase is **fully tenant-isolated** in user-facing surfaces.
+5. **Phase 2c — NOT NULL constraint (deferred to operator).** A future migration drops nullability after operators have verified zero-NULL on their data. Deferred per D-032: only the operator can prove their backfill ran cleanly, and SQLite's batch_alter_table for NOT NULL with existing data is a runbook-class operation.
+
+**Critical sequencing**: backfill runs **before** the read-side filter so legacy rows never disappear from the user mid-deploy. Write-side stamping runs **with** the backfill (same PR) so newly-created rows are correctly attributed before reads start filtering. The two-PR gap between writes (phase 2a) and reads (phase 2b) is intentional — it gives operators a window to verify backfill correctness before reads start hiding rows.
+
+**Alternatives considered.**
+
+- *(a) Single-PR retrofit.* Rejected above.
+- *Two-phase (additive+backfill, then writes+reads).* Rejected — collapsing writes and reads into one PR loses the operator-verification window. With the four-phase split, an operator running a multi-user install can pause between 2a and 2b, run a `SELECT tenant_id, count(*) FROM jobs GROUP BY tenant_id;` sanity check, decide whether to run a per-user re-attribution before reads start filtering.
+- *Three-phase (additive, writes, backfill+reads together).* Rejected — backfill must precede the read-side filter; mixing them is the same trap.
+- *NOT NULL in phase 1.* Rejected — every existing row would need `tenant_id` populated atomically with the column add. Either a default value (incorrect attribution; "system" / first-user is a hack) or a join-time fail. Standard advice for additive migrations is "nullable first, NOT NULL later".
+
+**Consequences.**
+
+- **Each phase ships independently.** Operators can pause at any phase boundary. Phase 2c deferral means the codebase ships indefinitely with `tenant_id NULL` allowed at the schema level even when the application logic now always populates it.
+- **Service-layer signatures are forever-flexible.** `get_job(db, job_id, tenant_id=None)` keeps the legacy call path working for Celery workers (which don't have `current_user` context) and any future internal services that legitimately need cross-tenant access.
+- **First-user backfill is opinionated.** Single-user self-host: correct. Multi-user self-host: legacy rows attribute to whoever registered first; operators with a real multi-user install follow the future T-5.1.3 re-attribution runbook. SaaS deployment: explicit per-user / per-workspace attribution from day one (no legacy NULL rows possible).
+- **404 vs 403 for cross-tenant reads.** Distinguishes "not found" from "found-but-forbidden"; the latter would leak existence (a malicious user could enumerate IDs to discover other users' job IDs). 404 is uniform with truly-non-existent IDs.
+- **Sets a precedent for I-3 Echo personal-brain attribution.** The Echo north-star adds 5+ new user-scoped tables (location history, watch history, email connectors, etc.). Each will follow this same four-phase shape. The cost of doing it well once was the audit doc + four PRs; the cost of doing it badly once would have been an existence-leak vulnerability in production.
+
+**Re-evaluation hooks.**
+
+- Phase 2c (NOT NULL) ships when operators have run the runbook AND a clean fresh-install path is verified to never produce NULL `tenant_id`. The runbook lands as a separate doc.
+- Multi-workspace-per-user (T-5.1.3) — distinct from `tenant_id`. Phase 2a's first-user backfill assumes one tenant per user; future workspace work will introduce a separate `workspace_id` column or move `tenant_id` semantics to mean "workspace".
+- Performance — the `tenant_id` index was added in phase 1. If query plans ever show non-index use under tenant filtering, revisit.
+
+**Linked initiatives / PRs.** I-5 / E-5.1 / T-5.1.0 / T-5.1.1 / T-5.1.2. PRs [#149](https://github.com/khoks/VideoResearchPro/pull/149) / [#150](https://github.com/khoks/VideoResearchPro/pull/150) / [#151](https://github.com/khoks/VideoResearchPro/pull/151) / [#152](https://github.com/khoks/VideoResearchPro/pull/152).

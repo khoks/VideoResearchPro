@@ -10,6 +10,42 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### E-5.1 phase 2b: read-side tenant_id filtering + cross-tenant 404 (PR #152)
+
+- **Closes the read-side half of E-5.1.** Every user-facing GET that returns user-scoped rows now filters by the authenticated user's `tenant_id`. Other users' rows are invisible (404 not 403, to avoid leaking existence) per the audit doc's threat model.
+- **`backend/app/services/job_service.py`** — `get_job(db, job_id, tenant_id=None)` and `get_jobs(db, ..., tenant_id=None)` accept an optional tenant filter. `None` preserves legacy/Celery-worker call paths; routers thread `tenant_id=current_user.id` from `Depends(get_current_user)`.
+- **Routers updated** — `jobs.py` (list / get / cancel / delete / videos / approve), `qa.py` (job-scoped Q&A history + report), `library.py` (library Q&A history), `qa_history.py` (history-chat list). All four routers now consistently scope reads to the authenticated user.
+- **Migration ID fix.** Earlier phase-1 migration `a1b2c3d4e5f6_add_tenant_id_columns.py` collided with the existing `a1b2c3d4e5f6_add_transcript_cache_table.py`. Renamed to `d5e6f7a8b9c0` (also rejected `c1d2e3f4a5b6` due to a second collision); updated revision string + downstream `b2c3d4e5f6a7_backfill_tenant_id.py`'s `down_revision` pointer to chain correctly.
+- **Tests** — 4 new in `test_tenant_id_columns.py` covering cross-tenant isolation (list filters / 404 on other-user's job / library Q&A scoped / history-chat scoped). Updated `_make_completed_job` and `_make_completed_topic_job` test helpers to accept `tenant_id` so existing tests still pass after the read-side filter took effect.
+
+### E-5.1 phase 2a: backfill migration + write-side tenant_id stamping (PR #151)
+
+- **Backfill migration `b2c3d4e5f6a7_backfill_tenant_id.py`** — sets `tenant_id = (SELECT id FROM users ORDER BY created_at LIMIT 1)` on the four user-scoped tables WHERE `tenant_id IS NULL`. Idempotent (the WHERE clause makes it a no-op on already-populated rows). Self-host operators with one user → all legacy rows attribute correctly. Multi-user installations attribute legacy rows to the first user; T-5.1.3 will offer a re-attribution step when E-5.1 phase 3 lands.
+- **Write-side stamping** — every endpoint that creates a `Job` / `QAExchange` / `LibraryQAExchange` / `QAHistoryExchange` now stamps `tenant_id=current_user.id` at the call site. Touches `routers/jobs.py` (topic / channel / subscription job creation), `routers/channels.py` (subscribe → subscription Job dispatch), `routers/qa.py` (job Q&A exchange), `routers/library.py` (library Q&A exchange), `routers/qa_history.py` (history-chat exchange).
+- **Tests** — 6 new in `test_tenant_id_columns.py` covering set-explicit (4 tables), filter-by-tenant_id, write-side stamping via the topic-job endpoint and the subscribe endpoint.
+
+### E-5.1 phase 1: additive tenant_id columns + indexes (PR #150)
+
+- **Alembic migration `d5e6f7a8b9c0_add_tenant_id_columns.py`** (originally drafted as `a1b2c3d4e5f6`, renamed after collision with the transcript-cache migration). Adds NULLABLE `tenant_id String(36)` column + index to four user-scoped tables: `jobs`, `qa_exchanges`, `library_qa_exchanges`, `qa_history_exchanges`. Phase-1 is purely additive — no existing INSERT or SELECT path changes shape; legacy code keeps working unchanged.
+- **ORM model updates** — `app/models/job.py`, `qa_exchange.py`, `library_qa_exchange.py`, `qa_history_exchange.py` each add `tenant_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)`. SQLAlchemy 2.x typed-mapping syntax matches existing column shapes.
+- **Tests** — 5 new in `test_tenant_id_columns.py` covering NULL-default behavior on legacy-style INSERTs (4 tables) and value-acceptance.
+- Per the [E-5.1 audit doc](docs/saas-tenant-id-audit.md), this is the safe additive step before backfill / writes / reads land in subsequent phases. Identical risk profile to D-032's two-phase precedent.
+
+### E-5.1 phase 0: tenant_id audit doc — codebase is structurally single-tenant (PR #149)
+
+- **`docs/saas-tenant-id-audit.md`** — comprehensive audit of multi-tenancy gaps. Headline finding: despite shipping JWT auth + email/password registration, the codebase has **zero tenant_id columns** on user-scoped tables. All routes read `current_user` from JWT but never filter rows by user. A user logging in sees every other user's jobs / Q&A history / library exchanges.
+- **Audit covers** — four user-scoped tables (`jobs`, `qa_exchanges`, `library_qa_exchanges`, `qa_history_exchanges`), the threat model (existence-leak via cross-tenant 403 vs. 404), the safe-retrofit shape (4-phase: 0 audit → 1 additive → 2a backfill+writes → 2b reads → 2c NOT NULL), the deferred-to-operator phase 2c rationale (NOT NULL constraint requires zero-NULL guarantee, which only the operator can prove for their data).
+- Flips **E-5.1 ⚪ → 🟡** in `docs/initiatives.md` with task tree T-5.1.0 (audit, this PR) / T-5.1.1 (phase 1 additive) / T-5.1.2 (phase 2a/b writes+reads) / T-5.1.3 (phase 2c NOT NULL, deferred to operator runbook).
+
+### S-1.5.9 + S-1.5.10: BYOK Twitter / X v2 — bearer-token connector + capability flag (PR #148)
+
+- **Closes S-1.5.9 + S-1.5.10.** Per [D-009](docs/decisions.md#d-009--twitter-x-stays-byok-paid-api--explicitly-opt-in-2026-04-25), Twitter / X integration is **explicitly opt-in** — operators must register a Twitter API v2 app and provide a Bearer token. Default install yields zero Twitter capability, no errors.
+- **`backend/app/sources/twitter/`** — new `TwitterClient` (Twitter API v2 bearer-auth: `Authorization: Bearer <TWITTER_BEARER_TOKEN>`, `/2/tweets/search/recent`, `/2/users/by/username/{handle}`, `/2/users/{id}/tweets`) + `TwitterConnector` subclassing the paste-mode `TweetConnector`. Subclass overrides `search()`, `list_creator_items()`, `resolve_creator_id()`; inherits paste-mode `fetch_text` so paste-only operators still get the `tweet` source type without a Bearer token.
+- **`backend/app/sources/__init__.py` re-registers `tweet` after `paste_url`** so the search-having `TwitterConnector` wins last-write-wins. Operators with `TWITTER_BEARER_TOKEN` set get search; operators without it get paste-mode TweetConnector exclusively.
+- **`/api/v1/health` capability flags** (S-1.5.10) — health response now includes a `capabilities` block with `twitter_search_enabled` / `article_search_enabled` / `playwright_fallback_enabled` / `whisper_transcribe_enabled` booleans. Frontend reads these to enable/disable surfaces without inspecting backend env state directly.
+- **Config** — `TWITTER_BEARER_TOKEN`, `TWITTER_API_BASE`, `TWITTER_USER_AGENT`, `TWITTER_RATE_LIMIT_RPM`, `TWITTER_REPLY_DEPTH_DEFAULT`. Defaults are conservative; operators with paid plans can scale up. `.env.example` and `CLAUDE.md` env-var table updated.
+- **Tests** — 28 new (26 connector / 2 health-capability) in `test_twitter_connector.py` and `test_health.py`. Backend suite 749 → 777.
+
 ### I-1 fully closed: channels → creators rename runbook (PR #146)
 
 - **Closes E-1.9** (and with it, **closes I-1 Multi-source ingest** entirely). Python-level alias ships now; SQL table rename deferred to runbook per D-032 precedent.

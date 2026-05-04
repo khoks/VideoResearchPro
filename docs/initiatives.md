@@ -526,13 +526,19 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 **Scope.** Bootstrap this file with all known initiatives + epics + stories at the time of the bootstrap PR.
 **Shipped** in the bootstrap PR. File has since grown to 6 initiatives (I-1 through I-6) and 11 OQs through work-tracker maintenance.
 
-### E-4.6 ⚪ Coordinated PR composition (skills share a PR per session)
+### E-4.6 🟢 Coordinated PR composition (skills share a PR per session)
 
-**Scope.** v2 enhancement: when both `/knowledge-curator` and `/work-tracker` fire on the same session, the second skill checks out the first's branch and adds a commit instead of opening a sibling PR. For now, sibling PRs with `Companion PR: #N` cross-references is the default.
+**Closed 2026-05-04.** The "second skill checks out the first's branch + adds a commit" pattern is now both **documented in `SKILL.md`** (under the "Coordination with /knowledge-curator" section in `work-tracker/SKILL.md`) **and practiced in production** across multiple sessions: combined PRs include [#139](https://github.com/khoks/VideoResearchPro/pull/139) (D-031/D-032 + T-1.6.6 follow-up), [#143](https://github.com/khoks/VideoResearchPro/pull/143) (M-1.7/T-1.6.6/M-1.8 reconciliation), [#147](https://github.com/khoks/VideoResearchPro/pull/147) (I-1 closure).
 
-### E-4.7 🟡 Inventions / novel-ideas log
+Sibling-PR fallback is still acceptable when timing or branch-state makes a shared branch awkward — the convention is "shared by default, sibling when easier", with a `Companion PR: #N` cross-reference in either case.
 
-**Scope.** New canonical doc [`inventions.md`](inventions.md) owned by `/knowledge-curator`. Captures novel mechanisms / non-obvious combinations / potentially-patentable concepts surfaced in conversation. Skill detection heuristic biased toward over-capture; verbatim user messages flagged as novel are also saved raw to `docs/notes/<YYYY-MM-DD-novel-<slug>.md`. Skill makes no legal patentability assessment.
+### E-4.7 🟢 Inventions / novel-ideas log
+
+**Closed 2026-05-04.** [`inventions.md`](inventions.md) ships as a canonical doc with the full template + conventions. The `/knowledge-curator` skill includes the detection heuristic for filing `N-NNN` entries.
+
+**Status (2026-05-04 inventory).** Zero `N-NNN` entries filed to date. The project's work has been **engineering with established patterns** — polymorphic dispatch, factory base classes, opt-in extras, two-phase migrations — none of which qualify as novel mechanisms. The infrastructure (template + skill heuristic + doc location) is ready when a genuine novel concept surfaces. False-negative bias is the expensive failure mode per the doc's own conventions, so the bar stays "we'd file even something borderline" — there's just been nothing borderline yet.
+
+**Scope.** Canonical doc [`inventions.md`](inventions.md) owned by `/knowledge-curator`. Captures novel mechanisms / non-obvious combinations / potentially-patentable concepts surfaced in conversation. Skill detection heuristic biased toward over-capture; verbatim user messages flagged as novel are also saved raw to `docs/notes/<YYYY-MM-DD-novel-<slug>.md`. Skill makes no legal patentability assessment.
 **Linked decision:** [D-012](decisions.md#d-012--capture-novel--potentially-patentable-ideas-in-inventionsmd-2026-04-25)
 **PR:** [#68](https://github.com/khoks/VideoResearchPro/pull/68) (follow-up commit on the bootstrap branch)
 
@@ -547,13 +553,23 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 **Scope.** Add `tenant_id` / `workspace_id` columns to every user-scoped table; convert today's implicit JWT scoping to an explicit column for future per-tenant rate limiting + multi-workspace.
 
-**Phase 0 — audit doc shipped 2026-05-04.** [`docs/saas-tenant-id-audit.md`](saas-tenant-id-audit.md) catalogues every user-scoped table, identifies the four that need `tenant_id` immediately at SaaS launch (`jobs` / `qa_exchanges` / `library_qa_exchanges` / `qa_history_exchanges`), documents which tables stay global (`documents`, `transcript_cache`, `channels`/`creators` per the L1 vision of a globally-deduplicated library), proposes the 2-phase migration shape (additive columns first, then backfill + query updates + NOT NULL enforcement), and flags the **headline finding**: the codebase is structurally single-tenant despite having JWT auth — no model has a `user_id` FK column. Phase 1 + 2 are separate future PRs.
+**Substantially closed 2026-05-04.** Four PRs ship the four-phase tenancy retrofit per the [D-038](decisions.md#d-038--tenancy-retrofit-ships-in-four-phases-audit--additive--backfillwrites--reads--not-null-2026-05-04) sequencing:
+
+- **Phase 0** ([PR #149](https://github.com/khoks/VideoResearchPro/pull/149)) — [`docs/saas-tenant-id-audit.md`](saas-tenant-id-audit.md). Headline finding: codebase is structurally single-tenant despite JWT auth.
+- **Phase 1** ([PR #150](https://github.com/khoks/VideoResearchPro/pull/150)) — Alembic migration `d5e6f7a8b9c0_add_tenant_id_columns.py` adds NULLABLE `tenant_id String(36)` + index to `jobs` / `qa_exchanges` / `library_qa_exchanges` / `qa_history_exchanges`. ORM models updated. Purely additive — no behaviour change.
+- **Phase 2a** ([PR #151](https://github.com/khoks/VideoResearchPro/pull/151)) — Backfill migration `b2c3d4e5f6a7_backfill_tenant_id.py` sets `tenant_id = first-user.id` WHERE NULL. Every write-side router stamps `tenant_id=current_user.id` from `Depends(get_current_user)`. After this PR, every existing row is attributed AND every new row is correctly attributed.
+- **Phase 2b** ([PR #152](https://github.com/khoks/VideoResearchPro/pull/152)) — `get_job(db, job_id, tenant_id=None)` + `get_jobs(...)` accept the optional filter. Routers thread `tenant_id=current_user.id`. Cross-tenant reads return 404 (not 403) to avoid existence-leak. Codebase is now fully tenant-isolated on user-facing surfaces.
+
+Phase 2c (NOT NULL constraint) is deferred to an operator runbook per D-032 / D-038 — only the operator can prove zero-NULL after their backfill runs.
 
 **Tasks**
-- [x] T-5.1.0 Audit doc — *shipped 2026-05-04 in `docs/saas-tenant-id-audit.md`. Inventory + retrofit shape + risk assessment.*
-- [ ] T-5.1.1 ⚪ Phase 1 — additive `tenant_id` columns (nullable) + indexes on jobs / qa_exchanges / library_qa_exchanges / qa_history_exchanges. Single Alembic migration.
-- [ ] T-5.1.2 ⚪ Phase 2 — backfill existing rows (operator's user_id), update every router query to filter by `tenant_id`, update every row INSERT to stamp `tenant_id` from JWT, add NOT NULL constraint after backfill verified.
+- [x] T-5.1.0 Audit doc — *shipped 2026-05-04 in `docs/saas-tenant-id-audit.md`.*
+- [x] T-5.1.1 Phase 1 additive columns + indexes — *shipped 2026-05-04 in [PR #150](https://github.com/khoks/VideoResearchPro/pull/150).*
+- [x] T-5.1.2 Phase 2a/2b — backfill + write-side stamping + read-side filter — *shipped 2026-05-04 in [PR #151](https://github.com/khoks/VideoResearchPro/pull/151) + [PR #152](https://github.com/khoks/VideoResearchPro/pull/152).*
+- [ ] T-5.1.2c ⚫ Phase 2c (NOT NULL constraint) — deferred to operator runbook. Awaits a future runbook PR documenting how operators verify zero-NULL on their tables before applying the constraint-tightening migration.
 - [ ] T-5.1.3 🔴 Phase 3 (deferred) — `tenants` + `tenant_users` tables for multi-user-per-workspace. Only needed for team SaaS tier.
+
+**Linked decision:** [D-038](decisions.md#d-038--tenancy-retrofit-ships-in-four-phases-audit--additive--backfillwrites--reads--not-null-2026-05-04)
 
 ### E-5.2 ⚪ Subscription tier gating
 

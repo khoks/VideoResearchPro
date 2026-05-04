@@ -769,3 +769,77 @@ Two ways to close the gap:
 - The chunker rework is also the natural moment to revisit pseudo-timestamp synthesis ([D-013](#d-013--pseudo-timestamps-at-3-wps-as-a-shared-cross-source-constant-2026-04-26)) — they could be replaced with explicit per-segment indices once `extra` is preserved.
 
 **Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.5 (frontend half shipped earlier). PR [#131](https://github.com/khoks/VideoResearchPro/pull/131). M-1.5 polish backlog item *Backend reference enrichment* — per-document layer ✅; per-segment layer remains open as a follow-up.
+
+---
+
+## D-031 — Dominant-segment heuristic for chunk-metadata promotion (2026-05-03)
+
+**Status:** accepted. Resolves [T-1.5.12.2](initiatives.md#s-1512--backend-reference-enrichment) and shipped with PR [#134](https://github.com/khoks/VideoResearchPro/pull/134).
+
+**Context.** The per-segment chunker rework had to decide *which* segment's per-reply identity (`comment_id` / `comment_url` / `author` / `kind` / `depth`) to promote to chunk-level Chroma metadata when a chunk contains segments from multiple replies. This happens in two scenarios:
+
+1. **Overlap stitching.** The greedy chunk-packer's overlap window deliberately stitches the tail of one chunk's segments onto the head of the next, so a chunk straddling a reply boundary is the *intended* outcome of the overlap mechanism. (Without overlap, retrieval continuity across chunk boundaries breaks down — that's why we have it.)
+2. **End-of-buffer flush.** The final chunk before flush can include the last segment of one reply plus the first segment of the next.
+
+When the chunk's segments come from a single reply, the choice is trivial — promote that reply's identity. When they come from multiple replies, four candidate strategies:
+
+- **(a) First-segment.** Promote the first segment's identity. Simplest, but systematically mis-attributes citations to short top-line replies in a straddling chunk.
+- **(b) Last-segment.** Symmetric to (a); same problem in reverse.
+- **(c) Most-tokens (dominant).** Pick the segment in the chunk with the highest token count.
+- **(d) Suppress (no promotion when straddling).** Empty out `comment_id` / `comment_url` for any chunk that straddles, falling back to OP-level citation.
+
+**Decision.** Use **(c) most-tokens dominant-segment heuristic**. The segment in the chunk with the most tokens wins; its `comment_id` / `comment_url` / `author` / `kind` / `depth` are written to chunk metadata. Ties broken by first-occurrence (Python `max()` is stable and returns the first equal-key element).
+
+**Alternatives considered.**
+- *(a) First-segment.* Rejected — overlap windows often start with a short tail-fragment from the previous reply, so first-segment would systematically mis-attribute citations to whichever reply happened to end at the boundary.
+- *(b) Last-segment.* Rejected — same systematic mis-attribution in reverse, and loses the natural reading-order intuition where citations point at the most-quoted content.
+- *(d) Suppress when straddling.* Rejected — straddling chunks are common (overlap is the whole point of the mechanism), and suppressing reply-level identity in all of them would defeat T-1.5.12.2's whole purpose. We'd be back to OP-only citations on the chunks where reply-anchor matters most (long popular replies that span the chunk boundary).
+
+**Consequences.**
+- Per-reply citations work correctly when a chunk's content is dominated by a single reply, which is the common case.
+- For chunks where two replies have similar token counts, the citation could go to either — but the citation still lands the user *on the right thread*, just possibly at the wrong reply within it. Acceptable, since the OP page or adjacent reply is one scroll away.
+- The heuristic is testable in isolation: dropping a long reply alongside a short reply in the same chunk and asserting the long one wins. Fixture-driven, no LLM dependency. (Test: `test_dominant_segment_heuristic_picks_longest_when_chunk_straddles_replies` in `test_chunking.py`.)
+- Implementation cost is one `max(items, key=lambda it: _count_tokens(it[0]))` call per chunk emit. Negligible against the existing per-segment `_count_tokens` calls in the packer.
+
+**Re-evaluation hooks.**
+- If we ever observe systematic mis-attribution in production (a citation points at reply A when the actual quoted text was from reply B), the fix is to reweight the heuristic — e.g. apply token count *only to segments whose text was actually retrieved by the RAG query* rather than all segments in the chunk. That's a refinement, not a different strategy.
+- For text-based connectors that emit very different segment-size distributions (a future `forum_post` connector with both long-OP and very-short replies), revisit whether token-count is the right weight or whether we want some kind of relevance-weighted score.
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.12 / T-1.5.12.2. PR [#134](https://github.com/khoks/VideoResearchPro/pull/134).
+
+---
+
+## D-032 — Operator-coordinated runbook (vs automatic startup migration) for data-bearing identifier renames (2026-05-03)
+
+**Status:** accepted. Resolves [T-2.6.6](initiatives.md#e-26--code-identifier-rename-pass) and shipped with PR [#137](https://github.com/khoks/VideoResearchPro/pull/137). Sets a precedent for future data-bearing renames (e.g. [E-1.9 channels → creators](initiatives.md#e-19--rename-channels--creators-db--orm)).
+
+**Context.** The brand-rename pass identified two production-data-mutating identifiers that needed renaming alongside the user-facing copy: `CHROMA_GLOBAL_COLLECTION_NAME` (default `videoresearchpro_global` → `pratidhvani_global`) and `DATABASE_URL` (default `sqlite:///./data/videoresearchpro.db` → `pratidhvani.db`). Brand copy moved immediately in PR #97 because it's pure cosmetic. The data-bearing renames sat deferred because changing them naively would orphan existing self-hosters' libraries:
+
+- Renaming `CHROMA_GLOBAL_COLLECTION_NAME` without a backfill leaves all existing chunks under the legacy collection name. The new collection starts empty; Q&A silently returns "no relevant context" against a library the user spent days building.
+- Renaming `DATABASE_URL` without copying the SQLite file orphans every job, channel, Q&A exchange, knowledge artifact.
+
+Two ways to resolve:
+
+- **(a) Automatic startup migration.** App detects the legacy names on first boot of the new release, transparently moves data, swaps env defaults. Operator does nothing.
+- **(b) Operator-coordinated runbook.** App keeps the legacy defaults indefinitely. Ship a documented safe-execution procedure that operators run on their own schedule, with verification checkpoints and a rollback path.
+
+**Decision.** **(b) Operator-coordinated runbook** at [`docs/migration-code-identifiers.md`](migration-code-identifiers.md). Three sections: §A Chroma collection rename with idempotent paginated backfill script, §B SQLite file rename with backup-and-rename, §C optional GitHub repo rename (outside-codebase). Each section includes pre-flight checklist, execution steps, post-migration verification, and a rollback procedure. The codebase keeps the legacy defaults so pulling master never causes surprise data motion.
+
+**Alternatives considered.**
+- *(a) Automatic startup migration.* Rejected for three independent reasons:
+  1. **ChromaDB collection rename is not atomic.** A crash mid-rename would leave half the chunks under each name, with no clean recovery and no obvious way for the operator to know which chunks made it. The runbook approach makes the operation observable + interruptible — operator runs the script with the worker stopped, watches the count climb, knows when it's done.
+  2. **Default-no-rename matches operator expectations.** Self-hosters who pull master expect the same env-var defaults to keep working unless they explicitly change them. An automatic migration violates that contract.
+  3. **Some operators want side-by-side instances** during evaluation — comparing behaviour on `pratidhvani_global` vs `videoresearchpro_global` collections, or running both old and new versions of the app simultaneously against separate DBs. Auto-migration forecloses that workflow.
+- *Hybrid (default-stay + opt-in env-var to enable auto-migration).* Considered but rejected — adds a code path that runs once and is gone, plus the testing burden of an "automatically migrating mode" that's only correct on the first run. The runbook is one-time-by-design without the code-path complexity.
+
+**Consequences.**
+- The codebase ships with legacy defaults. Operators who want the new names follow the runbook on their own schedule. Fresh installs use the new names from the start (just set them in `.env`).
+- **This sets a precedent for E-1.9** (`channels` → `creators` rename). When that ships, the *table rename* (Alembic migration in code) is still automatic on first boot — that's how SQLAlchemy / Alembic always work. But any *additional* operator-side coordination (re-pointing FKs, copying data between schemas in a complex case) follows the same runbook pattern: ship docs, not auto-migration code.
+- The runbook explicitly never destroys data. Every step is reversible up to the point the operator deletes the legacy backup. That promise is worth more than execution speed.
+- Maintenance cost: when we add new data-bearing renames, we extend the runbook. The docs-as-code path stays manageable as long as the rename frequency stays low — which it should, because every entry in the runbook is a deliberate rename, not an accident.
+
+**Re-evaluation hooks.**
+- Switch to automatic startup migration if (a) the rename frequency climbs to multiple per quarter (the runbook becomes a maintenance burden then), or (b) the project decides to drop self-host support — at which point the runbook audience disappears and the migration becomes a SaaS-internal infra task.
+- For SaaS deployment specifically, this decision will be revisited: SaaS infra controls the data layer end-to-end, and automatic migration is fine when the migrator is the operator. But that's a separate decision for [I-5](initiatives.md#i-5--saas-readiness-long-horizon).
+
+**Linked initiatives / PRs.** I-2 / E-2.6 / T-2.6.6. PR [#137](https://github.com/khoks/VideoResearchPro/pull/137). Precedent referenced from [E-1.9](initiatives.md#e-19--rename-channels--creators-db--orm) when that epic schedules.

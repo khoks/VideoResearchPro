@@ -11,6 +11,12 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    # Per E-5.1 phase 1 (Alembic a1b2c3d4e5f6). The first user-scoped
+    # column on the Job model — until now, jobs were structurally
+    # global. NULLABLE until phase 2 backfill + NOT NULL enforcement.
+    # Phase 2 also adds the routing-layer change that puts
+    # `Job.tenant_id == current_user.id` in every query.
+    tenant_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     job_type: Mapped[str] = mapped_column(String(20))  # "topic" | "channel" | "subscription"
     status: Mapped[str] = mapped_column(String(30), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))

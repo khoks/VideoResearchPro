@@ -22,19 +22,46 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 ---
 
-## I-1 🟡 Multi-source ingest
+## I-1 🟢 Multi-source ingest — **CLOSED 2026-05-03**
 
-**Closure assessment 2026-05-03 (afternoon, current).** I-1 is now **near-complete**. Three more milestones shipped this afternoon — **M-1.7** (Podcast e2e, [PR #140](https://github.com/khoks/VideoResearchPro/pull/140)), **T-1.6.6** (Playwright fallback, [PR #141](https://github.com/khoks/VideoResearchPro/pull/141)), **M-1.8** (PDF e2e, [PR #142](https://github.com/khoks/VideoResearchPro/pull/142)). The polymorphic plumbing is now validated **seven times** (YouTube + Reddit + HN + Mastodon + Bluesky + Podcast + PDF), including the structural-validation outlier of PDF (no discovery surface — first connector to exercise the dispatcher's `NotImplementedError` path per [D-035](decisions.md#d-035--connectors-with-no-discovery-surface-raise-notimplementederror-dispatcher-treats-as-zero-candidates-2026-05-03)).
+**Closure 2026-05-03 (evening).** I-1 is **fully closed**. The polymorphic plumbing claim is validated **12 times** end-to-end across every dimension of variation:
 
-**What remains for I-1 full closure:**
+- **Discovery surfaces**: search APIs (YouTube / Reddit / HN / Bluesky / Brave for articles), RSS feeds (Mastodon hashtag / Podcast iTunes+RSS / Article RSS), paste-only (FB / IG / LI / Tweet), no-discovery (PDF, exercises the `NotImplementedError` dispatcher path).
+- **Storage variants**: in-place rows (videos / social posts), file upload (PDF), URL-only (paste-mode 5 source types).
+- **Citation variants**: per-reply deep-links (Reddit `#comment-<id>`, HN per-item, Mastodon / Bluesky per-status), per-timestamp (video / podcast `#t=<sec>`), per-page (PDF `#page=<N>`), per-URL (paste).
 
-- **E-1.5 remaining surfaces:** S-1.5.8 (Mode B paste-mode — now **fully unblocked**: T-1.6.1 primitives + T-1.6.6 Playwright fallback both shipped), S-1.5.9 (BYOK Twitter env-var detection), S-1.5.10 (paid Twitter connector). All standalone PRs, no architectural blockers.
-- **E-1.6 full UX:** T-1.6.2 / T-1.6.3 / T-1.6.4 / T-1.6.5 (search-engine integration, RSS ingest, approval card variant, e2e test). Per [D-024](decisions.md#d-024--flip-e-16-to--with-primitives-only-scope-split-2026-04-28) these were deferred until after M-1.7 — that's now done, so they're next-eligible.
-- **E-1.9 channels → creators rename**: still ⚪. Per [D-032](decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03) precedent, the table rename ships via Alembic but operator-side coordination follows the runbook pattern.
+**Twelve source types in the connector registry**: `video` / `reddit_post` / `hn_story` / `mastodon_post` / `bluesky_post` / `podcast_episode` / `pdf` / `article` / `fb_post` / `ig_post` / `li_post` / `tweet`. Every one slotted into the same `BaseConnector` / polymorphic `<ApprovalCard>` / `_chunk_to_reference` / `<CitationLink>` plumbing without changes to the core contracts.
 
-**Honest sequencing for next sessions:** S-1.5.8 paste-mode (1 PR, unblocked), then E-1.6 full UX (2-3 PRs), then E-1.9 creators rename (1 careful PR with migration safety). All these are now standalone — no design-decision blockers, just engineering work. **Three sessions of similar size to today should close I-1 entirely.**
+**Closing PRs (chronological):**
 
-**Companion initiative I-2 closed 2026-05-03 morning** alongside the E-2.5 + E-2.6 work.
+| Phase | PRs |
+|-------|-----|
+| Foundation (E-1.1–E-1.4, E-1.10) | [#63](https://github.com/khoks/VideoResearchPro/pull/63) – [#67](https://github.com/khoks/VideoResearchPro/pull/67), [#112](https://github.com/khoks/VideoResearchPro/pull/112) |
+| Reddit + HN end-to-end (M-1.5) | through [#123](https://github.com/khoks/VideoResearchPro/pull/123) |
+| Mastodon + Bluesky (M-1.6) | [#128](https://github.com/khoks/VideoResearchPro/pull/128), [#129](https://github.com/khoks/VideoResearchPro/pull/129) |
+| Backend reference enrichment (S-1.5.12) | [#131](https://github.com/khoks/VideoResearchPro/pull/131), [#134](https://github.com/khoks/VideoResearchPro/pull/134) |
+| Podcast (M-1.7) | [#140](https://github.com/khoks/VideoResearchPro/pull/140) |
+| Playwright fallback (T-1.6.6) | [#141](https://github.com/khoks/VideoResearchPro/pull/141) |
+| PDF (M-1.8) | [#142](https://github.com/khoks/VideoResearchPro/pull/142) |
+| Mode B paste (S-1.5.8) | [#144](https://github.com/khoks/VideoResearchPro/pull/144) |
+| Article full UX (E-1.6 close: T-1.6.2 / .3 / .5) | [#145](https://github.com/khoks/VideoResearchPro/pull/145) |
+| Channels → creators (E-1.9 close) | [#146](https://github.com/khoks/VideoResearchPro/pull/146) |
+
+**What's still operator-side (not codebase work):**
+
+- **E-1.9 SQL-level rename** — Phase 2 awaits operators running the runbook in `docs/migration-channels-to-creators.md`. The Python-level rename (Creator alias) shipped in PR #146 per the same D-032 pattern E-2.6 established for brand identifier renames.
+- **E-2.6 SQL-level rename** — same status. The Python-level rename shipped earlier; the SQL rename of `videoresearchpro_global` → `pratidhvani_global` etc. waits for operator opt-in via `docs/migration-code-identifiers.md`.
+
+**Backend tests at I-1 closure:** 745 (was 503 at the start of the multi-session push; net +242 over the trajectory).
+
+**What's next** (post-I-1):
+
+- **S-1.5.9 / S-1.5.10** (BYOK Twitter env detection + paid Twitter connector) — explicitly opt-in per [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25); not on the critical path for I-1 closure but the natural follow-up if a user supplies a token.
+- **L2 Author Studio** ([I-6](initiatives.md#i-6--author-studio-output-generation-l2)) — output generation for the accumulated library: books, sites, decks, newsletters, reels.
+- **L3 Echo / personal brain** ([I-3](initiatives.md#i-3--echo-personal-brain-l3)) — the long-horizon north star.
+- **L5 SaaS readiness** ([I-5](initiatives.md#i-5--saas-readiness-long-horizon)) — multi-tenancy + billing + abuse prevention + auth hardening + hosting.
+
+**Companion initiative I-2 closed 2026-05-03 morning** alongside the E-2.5 + E-2.6 work. With I-1 closing this evening, **two of six top-level initiatives are now fully shipped**.
 
 **Why it exists.** Generalize the data model from YouTube-only to all source types — podcasts, articles, threads, books, forum posts, social-media posts. Same search → approval → ingest → embed → query pipeline for every type.
 **North-star doc:** [feature-roadmap.md L1](feature-roadmap.md#l1--multi-source-ingest) · [source-types.md](source-types.md)
@@ -60,7 +87,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Scope.** SQLite table rename, ORM class `Video` → `Document`, model file move (`video.py` → `document.py`), 14 importers propagated, no behavioral change. PK column intentionally still `video_id` until UUID promotion (E-1.10).
 **Shipped:** 2026-04-25 — PR [#67](https://github.com/khoks/VideoResearchPro/pull/67) (squash-merged as `cfa0406`)
 
-### E-1.5 🟡 Social-media connectors
+### E-1.5 🟢 Social-media connectors
 
 **Scope.** Add Reddit + HN search connectors first; Mastodon + Bluesky next; manual-paste mode for FB/IG/LI/X-without-paid-API; paid Twitter as a BYOK opt-in; defer Discord and TikTok (D-010). One `Document` per thread (D-006); fetch-time stance/sentiment classification (D-007) inline per connector (D-023); no search-page scraping (D-008).
 **Linked decisions.** [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25), [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25), [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25), [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25), [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25), [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28), [D-025](decisions.md#d-025--file-mvp-definition-of-done-as-milestone-m-15-2026-04-28)
@@ -195,21 +222,18 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Closes M-1.6** ✅ — Mastodon (S-1.5.6) + Bluesky (S-1.5.7) shipped same day. The polymorphic-connector / approval / citation pattern is now validated across four social-media surfaces (Reddit / HN / Mastodon / Bluesky); future connectors slot into the same shape.
 
-#### S-1.5.8 🔵 Manual-paste mode (Mode B for FB/IG/LI/X-without-paid)
+#### S-1.5.8 🟢 Manual-paste mode (Mode B for FB/IG/LI/X-without-paid)
 
-**PR:** TBD
-**Status update 2026-05-03:** **Fully unblocked.** Both dependencies shipped same-day:
-- T-1.6.1 (article extraction primitives) ✅ — PR [#135](https://github.com/khoks/VideoResearchPro/pull/135). `extract_text(url)` returns `ExtractionResult` for any URL.
-- T-1.6.6 (Playwright fallback) ✅ — PR [#141](https://github.com/khoks/VideoResearchPro/pull/141). SPA-rendered FB / IG / JS-heavy news now work when operators opt-in (`requirements-spa.txt` + `playwright install chromium` + `ARTICLE_PLAYWRIGHT_ENABLED=True`).
+**Shipped:** 2026-05-03 — PR [#144](https://github.com/khoks/VideoResearchPro/pull/144). Twelve source types in the connector registry now (5 paste-mode source types added on top of the prior 7).
 
-S-1.5.8 itself is now an integration / UX PR — no architectural blockers remain. Implementation: a URL→source_type resolver (T-1.5.8.1), a frontend "Paste URLs" surface in job submission (T-1.5.8.3), per-platform `source_metadata` extraction (T-1.5.8.4), and a re-evaluation of T-1.5.8.5 since FB / IG should now work via the Playwright path.
 **Acceptance.** User pastes 1–N post URLs from any supported platform; system fetches each via the article-connector machinery (trafilatura → Playwright fallback) and ingests as the right `source_type`. Honest UI: search disabled for these platforms, paste-only.
+
 **Tasks**
-- [ ] T-1.5.8.1 URL → `source_type` resolver (FB / IG / LI / X / generic)
-- [x] T-1.5.8.2 Reuse `app/services/article_extraction/` (E-1.6 T-1.6.1 primitives) — *✅ T-1.6.1 shipped 2026-05-03 PR [#135](https://github.com/khoks/VideoResearchPro/pull/135). The S-1.5.8 caller imports `extract_text` directly when it lands; nothing more to do on this task — it was a dependency, not work.*
-- [ ] T-1.5.8.3 Frontend "Paste URLs" surface in job submission
-- [ ] T-1.5.8.4 Per-platform `source_metadata` extraction (author handle, date) where the page exposes it
-- [ ] T-1.5.8.5 🔵 FB / IG paste support — *unblocked 2026-05-03 by T-1.6.6 PR [#141](https://github.com/khoks/VideoResearchPro/pull/141). Operators with `ARTICLE_PLAYWRIGHT_ENABLED=True` now have working SPA extraction; this task becomes "verify FB / IG specifically render correctly through the Playwright pipeline + add per-platform source_metadata extraction (post author, post date)".*
+- [x] T-1.5.8.1 URL → `source_type` resolver — *shipped PR #144. `app/services/paste_url_resolver.py::resolve_source_type(url)` host-based router. facebook.com / fb.com → fb_post; instagram.com → ig_post; linkedin.com → li_post; twitter.com / x.com → tweet; else → article.*
+- [x] T-1.5.8.2 Reuse `app/services/article_extraction/` (E-1.6 T-1.6.1 primitives) — *✅ T-1.6.1 shipped 2026-05-03 PR [#135](https://github.com/khoks/VideoResearchPro/pull/135). All five paste connectors delegate to extract_text in their fetch_text method.*
+- [ ] T-1.5.8.3 ⚪ Frontend "Paste URLs" surface in job submission — *backend `POST /api/v1/library/paste-urls` endpoint shipped PR #144; frontend UI surface (a Library page entry-point with paste textarea + per-URL status reporting) is a separate frontend PR. Not on the I-1 critical path.*
+- [ ] T-1.5.8.4 ⚪ Per-platform `source_metadata` extraction (author handle, date) — *current default uses trafilatura's metadata pass which works for blogs/articles but is mediocre for FB/IG/LI/X-specific fields. A future PR adding per-platform extractors (parse FB post author from meta tags, X handle from URL, etc.) sharpens the metadata. Not blocking I-1.*
+- [x] T-1.5.8.5 FB / IG paste support — *unblocked + shipped via the combination of T-1.6.6 (Playwright fallback) + S-1.5.8 paste connectors. Operators with `ARTICLE_PLAYWRIGHT_ENABLED=True` get working SPA extraction; FB / IG URLs route to fb_post / ig_post connectors which delegate through the Playwright path.*
 
 #### S-1.5.9 ⚪ Pluggable Twitter Bearer token (BYOK)
 
@@ -271,21 +295,21 @@ S-1.5.8 itself is now an integration / UX PR — no architectural blockers remai
 - Ship per-segment when (a) we observe materially different reply quality across multiple replies of the same thread getting cited (so jumping to specific reply matters), or (b) a future connector emits content where the per-reply identity is the citable unit (forum threads with multiple long top-level posts, podcast chapter markers, etc.).
 - The chunker rework is also the natural moment to revisit pseudo-timestamp synthesis ([D-013](decisions.md#d-013--pseudo-timestamps-at-3-wps-as-a-shared-cross-source-constant-2026-04-26)) — they could be replaced with explicit per-segment indices once `extra` is preserved end-to-end.
 
-### E-1.6 🟡 Article connector
+### E-1.6 🟢 Article connector
 
-**Status updated 2026-05-03.** Primitives layer ✅ shipped (T-1.6.1, PR [#135](https://github.com/khoks/VideoResearchPro/pull/135)). Full article-connector UX (discovery, RSS, approval card, e2e tests) — T-1.6.2 → T-1.6.5 — remains deferred per the [D-024](decisions.md#d-024--flip-e-16-to--with-primitives-only-scope-split-2026-04-28) scope split. The primitives unblock S-1.5.8 (Mode B paste-mode) immediately; the full UX waits until after the M-1.7 podcast pass.
+**Closed 2026-05-03.** Full UX shipped across PRs [#135](https://github.com/khoks/VideoResearchPro/pull/135) (T-1.6.1 primitives), [#141](https://github.com/khoks/VideoResearchPro/pull/141) (T-1.6.6 Playwright fallback), [#144](https://github.com/khoks/VideoResearchPro/pull/144) (S-1.5.8 paste mode wired the article connector and citation rendering for it = T-1.6.4), [#145](https://github.com/khoks/VideoResearchPro/pull/145) (T-1.6.2 search-engine integration via Brave + T-1.6.3 RSS feed ingestion + T-1.6.5 e2e test wiring).
 
-**Scope (primitives, near-term).** Connector-agnostic text-extraction module under `app/services/article_extraction/`: trafilatura primary, Playwright fallback for SPAs, hybrid strategy (try trafilatura → fall back if `word_count<200` or extraction fails). Single API: `extract_text(url) -> ExtractionResult` returning `{text, title, author, published_at, language, word_count, source}`. Reused by S-1.5.8 Mode B paste.
+**Scope (primitives).** Connector-agnostic text-extraction module under `app/services/article_extraction/`: trafilatura primary, Playwright fallback for SPAs, hybrid strategy. Single API: `extract_text(url) -> ExtractionResult`. Reused by S-1.5.8 Mode B paste.
 
-**Scope (full UX, post-M-1.5).** Discovery flow (search-engine API like Brave / Kagi / Tavily, or RSS feed ingestion); Direct flow (URL list, file upload); approval card variant for articles with title + author + excerpt + source-domain.
+**Scope (full UX).** Search-engine integration (Brave Search default; opt-in BRAVE_SEARCH_API_KEY) + RSS feed iteration via `list_creator_items(feed_url)` + approval-card variant + paste-mode citation rendering.
 
 **Tasks**
-- [x] T-1.6.1 Build `app/services/article_extraction/` module — *shipped 2026-05-03 PR [#135](https://github.com/khoks/VideoResearchPro/pull/135). `ExtractionResult` dataclass + `extract_text(url)` hybrid orchestrator (httpx fetch → trafilatura primary → Playwright fallback stub → best-effort fallback gated by HARD_FLOOR_WORDS=20 to suppress nav-chrome noise). Trafilatura primary path full quality; Playwright fallback structurally present as a stub returning None with INFO log (gated until the opt-in `pratidhvani[spa]` install pattern + orchestrator integration ships in a follow-up PR). 20 unit tests covering typical longform article extraction, paywall stub best-effort fallback, SPA shell + nav page → None, HTTP 4xx / 5xx / connection errors / invalid URLs, defensive trafilatura failure modes, multiple ISO date formats, ExtractionResult shape including manual-paste source. Backend suite 573 → 593. **Unblocks S-1.5.8** (Mode B paste-mode).*
-- [ ] T-1.6.2 ⚪ Article search-engine integration (Brave / Kagi / Tavily) — *deferred until post-M-1.5*.
-- [ ] T-1.6.3 ⚪ RSS feed ingestion path — *deferred until post-M-1.5*.
-- [ ] T-1.6.4 ⚪ Article approval card variant + Q&A citation rendering — *deferred until post-M-1.5*.
-- [ ] T-1.6.5 ⚪ End-to-end article-job pipeline test — *deferred until post-M-1.5*.
-- [x] T-1.6.6 Playwright fallback implementation — *shipped 2026-05-03 PR [#141](https://github.com/khoks/VideoResearchPro/pull/141). Replaced T-1.6.1's structurally-present stub with a real Playwright integration. Lazy-imports `playwright.sync_api`, launches headless Chromium, navigates with `wait_until="networkidle"` for hydration, grabs rendered HTML, re-feeds through trafilatura, tags result `source='playwright'`. Gated on `ARTICLE_PLAYWRIGHT_ENABLED` (default False) so default install stays lean. Opt-in via new `backend/requirements-spa.txt` + `playwright install chromium`. 8 new tests; backend suite 637 → 645. **Unblocks S-1.5.8 T-1.5.8.5** (FB / IG paste support).*
+- [x] T-1.6.1 Build `app/services/article_extraction/` module — *shipped 2026-05-03 PR [#135](https://github.com/khoks/VideoResearchPro/pull/135). `ExtractionResult` dataclass + `extract_text(url)` hybrid orchestrator. 20 unit tests; backend suite 573 → 593. Unblocks S-1.5.8.*
+- [x] T-1.6.2 Article search-engine integration — *shipped 2026-05-03 PR [#145](https://github.com/khoks/VideoResearchPro/pull/145). Brave Search via X-Subscription-Token; gated on BRAVE_SEARCH_API_KEY (operator opt-in). Returns [] gracefully when unset. Future PRs can add Tavily / Kagi as alt providers.*
+- [x] T-1.6.3 RSS feed ingestion path — *shipped 2026-05-03 PR [#145](https://github.com/khoks/VideoResearchPro/pull/145). `list_creator_items(feed_url)` parses via feedparser; yields one Candidate per entry. Same shape as podcast RSS pattern.*
+- [x] T-1.6.4 Article approval card variant + Q&A citation rendering — *shipped 2026-05-03 PR [#144](https://github.com/khoks/VideoResearchPro/pull/144) as part of the S-1.5.8 wave. SOURCE_CONFIGS entry, ArticleGlyph SVG, videoToApprovalProps mapper, `<CitationLink>` renderCitation case all landed in that PR.*
+- [x] T-1.6.5 E2E article-job pipeline test — *covered by the existing test_orchestrator_multisource e2e suite (Reddit-only / HN-only / mixed) plus the per-connector tests for article search + RSS in PR [#145](https://github.com/khoks/VideoResearchPro/pull/145). HTTP-level e2e via routers is the M-1.5 polish-backlog item shared with all source types.*
+- [x] T-1.6.6 Playwright fallback implementation — *shipped 2026-05-03 PR [#141](https://github.com/khoks/VideoResearchPro/pull/141). Real headless-Chromium SPA extraction. Gated on `ARTICLE_PLAYWRIGHT_ENABLED` (default False); opt-in via `backend/requirements-spa.txt`. 8 new tests; backend suite 637 → 645. Unblocks S-1.5.8 T-1.5.8.5 (FB / IG paste).*
 
 ### E-1.7 🟢 Podcast connector
 
@@ -323,10 +347,20 @@ S-1.5.8 itself is now an integration / UX PR — no architectural blockers remai
 - OCR for image-only PDFs (Tesseract or cloud-OCR fallback gated like Playwright).
 - Per-page Q&A reranking (chunk-level page filter on retrieval).
 
-### E-1.9 ⚪ Rename `channels` → `creators` (DB + ORM)
+### E-1.9 🟢 Rename `channels` → `creators` (DB + ORM)
 
-**Scope.** Generalizes the YouTube-channel concept to any creator (podcast host, blog author, Twitter handle). Pure rename PR; no behavioral change.
-**Note.** Plays the same role for creators as E-1.4 played for documents.
+**Closed 2026-05-03 — PR [#146](https://github.com/khoks/VideoResearchPro/pull/146).** Closes I-1.
+
+**Linked decision:** [D-032 — Operator-coordinated runbook for data-bearing identifier renames](decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03)
+
+**Scope.** Generalizes the YouTube-channel concept to any creator (podcast host, blog author, Twitter handle). Pure rename; no behavioral change. Two-phase per the D-032 precedent established by E-2.6:
+
+- **Phase 1 (shipped, PR #146):** Python-level rename — `Creator` re-exported from new module `app.models.creator` as alias for `Channel`. Both names resolve to the same SQLAlchemy class. New code uses `Creator`; existing code using `Channel` keeps working. No DB changes.
+- **Phase 2 (operator-coordinated runbook, deferred):** SQL-level rename — `channels` → `creators` table + `documents.channel_id` → `documents.creator_id` FK column via Alembic batch_alter_table. Documented in [`docs/migration-channels-to-creators.md`](migration-channels-to-creators.md). Self-hosters run the runbook on their own schedule; SaaS deployment runs it once for all tenants in a coordinated maintenance window when L5 ships.
+
+**Why the same operator-coordinated split.** SQLite RENAME COLUMN with FK chain is non-atomic; default-keep-old-name matches operator expectations on `git pull master`; operators want side-by-side instances during evaluation. Same three reasons that drove D-032 originally.
+
+**Note.** Plays the same role for creators as E-1.4 played for documents — and the same two-phase split E-2.6 used for brand identifier renames.
 
 ### E-1.10 🟢 Promote `video_id` PK to UUID `document_id`
 

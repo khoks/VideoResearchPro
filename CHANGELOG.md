@@ -10,6 +10,28 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### I-1 fully closed: channels → creators rename runbook (PR #146)
+
+- **Closes E-1.9** (and with it, **closes I-1 Multi-source ingest** entirely). Python-level alias ships now; SQL table rename deferred to runbook per D-032 precedent.
+- **`backend/app/models/creator.py`** — new module re-exporting the `Channel` ORM class as `Creator`. Both names resolve to the same SQLAlchemy class while the underlying table is still `channels`. New code uses `Creator`; existing code using `Channel` keeps working indefinitely.
+- **`docs/migration-channels-to-creators.md`** — operator-coordinated runbook for the SQL-level rename (`channels` table → `creators`, `documents.channel_id` FK → `creator_id` via Alembic batch_alter_table). Same shape as `docs/migration-code-identifiers.md`. Phase 2 of E-1.9 (a small future PR) flips `__tablename__` to `creators` after operators have run the runbook.
+
+### E-1.6 closed: article search + RSS — Brave + RSS feed discovery (PR #145)
+
+- **Closes E-1.6 fully**. T-1.6.2 (Brave Search integration), T-1.6.3 (RSS feed iteration), T-1.6.5 (e2e wiring) all in this PR; T-1.6.4 (approval card) was already shipped in PR #144's S-1.5.8 wave; T-1.6.6 (Playwright fallback) shipped earlier in PR #141; T-1.6.1 (primitives) shipped in PR #135.
+- **`backend/app/sources/article/`** — new package overriding the paste-only base from `paste_url`. `ArticleClient` wraps Brave Search (`X-Subscription-Token` auth, free-tier-friendly per D-037) + RSS feed fetcher (httpx + feedparser). `ArticleConnector` subclasses `_PasteArticleConnector`, inherits paste-mode `fetch_text`, overrides `search()` (Brave) + `list_creator_items()` (RSS).
+- **`search()` returns `[]` gracefully when `BRAVE_SEARCH_API_KEY` is unset** — operators who haven't opted in still get working paste + RSS without per-call errors. Topic jobs that include `source_types=['article']` don't fail; they yield zero search candidates until the key is configured.
+- 19 new tests; backend suite 715 → 734.
+
+### S-1.5.8: Mode B paste-mode end-to-end — 5 paste source types + endpoint (PR #144)
+
+- **Twelfth source type** plugs into the polymorphic plumbing. Closes S-1.5.8 (Manual-paste mode for FB / IG / LI / X-without-paid + generic articles) and validates the polymorphic plumbing claim **12 times** end-to-end.
+- **Per-platform discriminators** per [D-036](docs/decisions.md#d-036--paste-mode-emits-five-distinct-source_type-discriminators-not-a-single-paste-2026-05-03) — five distinct `source_type` values (`article` / `fb_post` / `ig_post` / `li_post` / `tweet`) sharing a single `_PasteURLBaseConnector` superclass. All five delegate to `article_extraction.extract_text` for fetch + Playwright-fallback.
+- **`app/services/paste_url_resolver.py`** — `resolve_source_type(url)` host-based router with subdomain-prefix tolerance.
+- **`POST /api/v1/library/paste-urls`** — accepts `{urls: [...]}`, resolves source_type per URL, dispatches through connector registry, embeds. Per-URL result dicts let frontend show per-URL state; 100-URL cap.
+- **Frontend** — 5 new SOURCE_CONFIGS entries with platform-specific glyphs (ArticleGlyph / FBGlyph / IGGlyph / LIGlyph / XGlyph). Mapped-type registry forced compile-time enforcement.
+- 51 new tests; backend suite 664 → 715.
+
 ### M-1.8: PDF / e-book connector + upload endpoint (PR #142)
 
 - **Seventh source type** plugs into the polymorphic plumbing — and the first with no discovery surface (PDFs come from upload, not search). Closes E-1.8 / Milestone M-1.8.

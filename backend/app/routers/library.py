@@ -1,10 +1,12 @@
 import json
 import logging
+import os
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.models.channel import Channel
 from app.models.job import Job
@@ -21,6 +23,14 @@ from app.schemas.library_qa import (
 from app.schemas.library_video import LibrarySort, LibraryVideoResponse
 from app.services import chroma_service
 from app.services.llm_service import get_llm_for
+from app.sources.pdf.connector import (
+    SOURCE_ID_PREFIX as PDF_SOURCE_ID_PREFIX,
+    hash_pdf_bytes,
+    upload_path_for_source_id,
+)
+from app.sources import connector_for as _connector_for
+from app.utils.chunking import chunk_transcript
+from app.tasks.job_tasks import _build_video_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -274,3 +284,216 @@ def list_library_videos(
         )
         for v in videos
     ]
+
+
+# ---------------------------------------------------------------------------
+# PDF upload (M-1.8)
+# ---------------------------------------------------------------------------
+# PDFs are the first source type with no discovery surface — they
+# come from upload directly. This endpoint:
+#   1. Accepts a multipart PDF file.
+#   2. Hashes the first 64KB to derive a stable Document.source_id.
+#   3. Persists raw bytes to PDF_UPLOAD_DIR/<source_id>.pdf.
+#   4. Inserts a Document row with source_type='pdf', triggering the
+#      same per-document polymorphic Chroma metadata flow as every
+#      other source type.
+#   5. Calls the connector's `fetch_text` to extract per-page
+#      segments + chunk + embed into the global Chroma collection.
+#   6. Returns the document_id so the frontend can navigate to its
+#      library detail view.
+#
+# The endpoint is library-scoped (not job-scoped) because PDFs sit
+# in the global library and participate in library-wide Q&A
+# regardless of any specific research job.
+
+
+@router.post("/upload-pdf", status_code=status.HTTP_201_CREATED)
+async def upload_pdf(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Upload a PDF and ingest it into the global library.
+
+    Returns ``{document_id, source_id, page_count, word_count, deduped}``.
+    `deduped=True` indicates the same file (by first-64KB hash) was
+    already in the library — the existing Document row is returned
+    rather than a duplicate created.
+    """
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Upload must be a .pdf file",
+        )
+    pdf_bytes = await file.read()
+    if not pdf_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty",
+        )
+    if len(pdf_bytes) > settings.PDF_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                f"PDF exceeds {settings.PDF_MAX_BYTES // (1024 * 1024)}MB limit; "
+                "split the document or raise PDF_MAX_BYTES"
+            ),
+        )
+
+    # Derive stable source_id and persist raw bytes (idempotent —
+    # re-uploads of the same file dedup at the (source_type,
+    # source_id) unique index).
+    digest = hash_pdf_bytes(pdf_bytes)
+    source_id = f"{PDF_SOURCE_ID_PREFIX}{digest}"
+
+    existing = (
+        db.query(Document)
+        .filter(Document.source_type == "pdf", Document.source_id == source_id)
+        .one_or_none()
+    )
+    if existing is not None:
+        return {
+            "document_id": existing.document_id,
+            "source_id": existing.source_id,
+            "page_count": (
+                json.loads(existing.source_metadata_json or "{}").get("page_count")
+                if existing.source_metadata_json
+                else None
+            ),
+            "word_count": existing.word_count,
+            "deduped": True,
+        }
+
+    # Persist raw bytes.
+    os.makedirs(settings.PDF_UPLOAD_DIR, exist_ok=True)
+    path = upload_path_for_source_id(source_id)
+    try:
+        with open(path, "wb") as out:
+            out.write(pdf_bytes)
+    except OSError as e:
+        logger.exception("PDF upload: write failed for %s", path)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not persist PDF: {e}",
+        )
+
+    # Build the source_url that fetch_text will use to synthesise
+    # per-page #page=<N> deep-links. Served path mirrors the upload
+    # directory layout; a future PR can add a static-file route or
+    # signed-URL handler if needed.
+    source_url = f"/api/v1/library/pdf/{digest}.pdf"
+
+    # Create the Document row first so the chunking pipeline has
+    # something to attach metadata to. fetch_text below populates
+    # transcript_word_count + extracted page_count.
+    title = file.filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    if title.lower().endswith(".pdf"):
+        title = title[:-4]
+    doc = Document(
+        source_type="pdf",
+        source_id=source_id,
+        source_url=source_url,
+        title=title or "Untitled PDF",
+        url=source_url,
+        transcript_status="pending",
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    # Run extraction immediately (PDFs don't have an async fetch
+    # phase like videos / podcasts — extraction is pure-CPU and
+    # bounded). Plug into the same Chroma write path as every
+    # other source type.
+    connector = _connector_for("pdf")
+    from app.sources.types import Candidate
+
+    cand = Candidate(
+        source_type="pdf",
+        source_id=source_id,
+        title=doc.title,
+        source_url=source_url,
+    )
+    extracted = connector.fetch_text(cand)
+    if extracted is None:
+        # Extraction failed — keep the Document + raw bytes (operator
+        # can re-extract later) but report the failure to the user.
+        doc.transcript_status = "unavailable"
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "PDF was uploaded but text extraction yielded no segments — "
+                "the file may be image-only (OCR not yet supported) or corrupt"
+            ),
+        )
+
+    # Persist extraction summary on the Document row.
+    page_count = extracted.extra.get("page_count") if extracted.extra else None
+    doc.word_count = extracted.word_count
+    doc.transcript_word_count = extracted.word_count
+    doc.transcript_language = extracted.language
+    doc.transcript_source = "pdf"
+    doc.language = extracted.language
+    doc.source_metadata_json = json.dumps({"page_count": page_count})
+    doc.transcript_status = "fetched"
+    db.commit()
+
+    # Chunk + embed via the polymorphic chunker. Build the metadata
+    # dict the same way `_build_video_metadata` does so the per-document
+    # polymorphic fields (`source_type`, `source_id`, `permalink`,
+    # `author`, `subreddit`, `instance`) flow into Chroma — and so
+    # the per-segment `comment_id` / `comment_url` / `kind` / `depth`
+    # the PDF flatten module emits land on chunk metadata via the
+    # dominant-segment heuristic.
+    video_metadata = _build_video_metadata(doc, language=extracted.language)
+    chunks = chunk_transcript(
+        extracted.segments,
+        chunk_size=settings.CHUNK_SIZE,
+        chunk_overlap=settings.CHUNK_OVERLAP,
+        video_metadata=video_metadata,
+        transcription_source="pdf",
+    )
+    chroma_service.insert_chunks(chunks)
+    doc.embedded_in_chroma = True
+    db.commit()
+
+    return {
+        "document_id": doc.document_id,
+        "source_id": source_id,
+        "page_count": page_count,
+        "word_count": extracted.word_count,
+        "deduped": False,
+    }
+
+
+@router.get("/pdf/{digest}.pdf")
+def serve_pdf(digest: str, db: Session = Depends(get_db)):
+    """Serve an uploaded PDF by digest.
+
+    Used by the per-page deep-link citation rendering — clicking a
+    PDF citation in the Q&A response opens this URL with the
+    `#page=<N>` fragment so the user's PDF viewer jumps to the page.
+    """
+    from fastapi.responses import FileResponse
+
+    source_id = f"{PDF_SOURCE_ID_PREFIX}{digest}"
+    # Sanity check that the document exists in our library before
+    # serving the file (prevents serving arbitrary uploads via path
+    # manipulation).
+    existing = (
+        db.query(Document)
+        .filter(Document.source_type == "pdf", Document.source_id == source_id)
+        .one_or_none()
+    )
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="PDF not in library",
+        )
+    path = upload_path_for_source_id(source_id)
+    if not os.path.exists(path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="PDF file missing from upload directory",
+        )
+    return FileResponse(path, media_type="application/pdf", filename=f"{existing.title}.pdf")

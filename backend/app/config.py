@@ -152,6 +152,27 @@ class Settings(BaseSettings):
     ARTICLE_PLAYWRIGHT_TIMEOUT_SEC: int = 30
 
     # -------------------------------------------------------------------
+    # PDF / e-book connector (M-1.8 / E-1.8)
+    # -------------------------------------------------------------------
+    # PDFs come from user upload — there's no search / discovery
+    # surface. The connector's `search()` and `list_creator_items()`
+    # raise NotImplementedError, which the dispatcher handles per
+    # D-026 (sequential fan-out, fail-isolated per source).
+    #
+    # `PDF_UPLOAD_DIR` is where raw PDF bytes get persisted on
+    # upload. We don't store them in Chroma or the SQLite DB — only
+    # extracted text + per-page segment metadata. The raw file is
+    # kept so a future PR can re-extract (e.g. when PyMuPDF improves
+    # table extraction) without re-uploading.
+    PDF_UPLOAD_DIR: str = "./data/uploads/pdf"
+    # Hard cap on uploaded file size. PyMuPDF can technically handle
+    # arbitrary sizes but extraction time scales with page count;
+    # capping at 100MB keeps a single ingest from monopolising the
+    # worker. Larger files (academic books, technical manuals) can
+    # be split before upload.
+    PDF_MAX_BYTES: int = 100 * 1024 * 1024  # 100 MB
+
+    # -------------------------------------------------------------------
     # LLM — Primary (high-quality) model
     # -------------------------------------------------------------------
     # Provider dispatches which chat client is built. The call-site code is

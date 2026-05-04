@@ -112,6 +112,12 @@ export type SourceMetadata =
       episodeNumber: number | null;
       durationSec: number;
       publishedAt: string;
+    }
+  | {
+      source_type: 'pdf';
+      pageCount: number;
+      wordCount: number;
+      uploadedAt: string;
     };
 
 export type SourceType = SourceMetadata['source_type'];

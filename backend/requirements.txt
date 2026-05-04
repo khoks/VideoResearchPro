@@ -57,3 +57,10 @@ trafilatura>=1.12.0
 # variations (iTunes namespace extensions, Atom-vs-RSS-2.0, malformed
 # tags) that a hand-rolled parser would have to relitigate.
 feedparser>=6.0.10
+
+# PDF / e-book connector (M-1.8 / E-1.8) — PyMuPDF (also imported as
+# `fitz`) handles text + table extraction with per-page boundaries
+# preserved. AGPL-licensed; if a future commercial path needs a more
+# permissive license we can swap to pdfminer.six (slower, fewer
+# features) or pypdf (very limited table support).
+pymupdf>=1.24.0

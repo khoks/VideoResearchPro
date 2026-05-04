@@ -549,6 +549,15 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 **Why it exists.** Today's PRs must remain forward-compatible with a future public SaaS — multi-tenant, billed, abuse-resistant, hardened auth.
 **North-star doc:** [saas-roadmap.md](saas-roadmap.md)
 
+**Status (2026-05-04).** Code-shippable epics largely closed:
+- ✅ **E-5.1** Tenancy retrofit (4 phases) — fully closed.
+- 🟡 **E-5.2** Subscription tiers — schema + utility-layer foundation shipped; runtime quota enforcement deferred.
+- 🟡 **E-5.4** Auth hardening — audit log + account lockout + password reset shipped; OAuth / MFA / session mgmt / SMTP delivery still ⚪.
+- 🟡 **E-5.5** Abuse prevention — rate-limit middleware shipped; Redis backend / quota metering / content policy / fraud detection still ⚪.
+- 🟡 **E-5.6** Background-job isolation — BYOK foundation shipped; LLM resolution-path integration / per-tenant Celery routing / per-tenant ChromaDB tenancy still ⚪.
+
+Remaining ⚪ epics — **E-5.3** Stripe / **E-5.7** Data residency / **E-5.8** Hosting / **E-5.9** Hosted UX — are **design-complete, code-deferred to SaaS launch**. None of them have meaningful code work for a self-host install (Stripe billing for a single-user install? Data residency for a single-machine install?). Their full design lives in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry below cross-links the relevant section.
+
 ### E-5.1 🟢 `tenant_id` audit + retrofit
 
 **Scope.** Add `tenant_id` / `workspace_id` columns to every user-scoped table; convert today's implicit JWT scoping to an explicit column for future per-tenant rate limiting + multi-workspace.
@@ -586,6 +595,8 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 ### E-5.3 ⚪ Stripe integration
 
 **Scope.** Subscription, metered overage, team billing.
+
+**Design-complete 2026-05-04.** Full design lives in [`docs/saas-roadmap.md` §3](saas-roadmap.md#3-billing) — provider, customer / subscription objects, webhook endpoint shape, metered-overage rules, self-host kill switch (`BILLING_ENABLED=false`). **Code deferred until SaaS launch is funded** — self-host has no use for billing (everyone's tier is operator-controlled), so shipping Stripe today buys nothing while costing maintenance. Schema fields (`tenants.billing_customer_id`, `tenants.billing_subscription_id`) will land alongside the `tenants` table when T-5.1.3 ships.
 
 ### E-5.4 🟡 Auth hardening
 
@@ -656,13 +667,19 @@ Backend suite 835 → 855.
 
 **Scope.** Region-selectable storage (EU / US / etc.).
 
+**Design-complete 2026-05-04.** Full design in [`docs/saas-roadmap.md` §6 → Data residency](saas-roadmap.md#data-residency). Pure-SaaS-launch concern — a single-machine self-host install has its data in exactly one place by definition. The `tenants.region` column lands with T-5.1.3; region-specific stack provisioning is operations work, not code work. **No code change today.**
+
 ### E-5.8 ⚪ Hosting / infra
 
 **Scope.** Postgres for SQLite, Redis cluster, ChromaDB managed or pgvector, S3 for reports, CDN for static.
 
+**Design-complete 2026-05-04.** Full target topology in [`docs/saas-roadmap.md` §6 → SaaS (target)](saas-roadmap.md#saas-target). The matrix is the *target*; every row is a swap from the self-host equivalent. None of these swaps make sense for a single-machine self-host install. **The few code touches that ARE forward-looking** (e.g. Postgres compatibility on the SQLAlchemy layer, S3-not-local-disk for outputs) **are tracked under their respective L1/L2 epics**, not E-5.8. The scope of E-5.8 itself is *operations work* (Cloud SQL provisioning, Redis Cluster setup, CDN config), executed at SaaS launch time, not code work.
+
 ### E-5.9 ⚪ Hosted UX
 
 **Scope.** Landing page, signup, billing portal, support, status page.
+
+**Design-complete 2026-05-04.** Full design in [`docs/saas-roadmap.md` §7](saas-roadmap.md#7-hosted-ux). The marketing landing page already ships ([E-2.5](#e-25--marketing-landing-page-sections)) — the only piece of "hosted UX" with code today. The signup flow / billing portal / status page / docs site are all SaaS-launch-time work, gated on E-5.3 (billing) and SaaS infrastructure (E-5.8). **No code change today.**
 
 ---
 

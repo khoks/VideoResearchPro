@@ -10,6 +10,16 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### I-5 final reconciliation: design-complete framing for E-5.3 / E-5.7 / E-5.8 / E-5.9
+
+- **Closes the open coordination gap** between [`docs/initiatives.md`](docs/initiatives.md) and [`docs/saas-roadmap.md`](docs/saas-roadmap.md) for the four code-deferred epics (Stripe, Data residency, Hosting, Hosted UX). Each saas-roadmap section now opens with a status note that:
+  - Cross-links the relevant `E-5.x` task ID in `initiatives.md`.
+  - Explains why the epic is design-complete-but-code-deferred (no meaningful code work for a self-host install — Stripe billing for a single-user install? Region-stack provisioning for a single-machine install?).
+  - Disambiguates "operations work" (E-5.8) from "code work" (which sits inside the L1/L2 epics that touch Postgres compatibility, S3 storage, etc.).
+- **`docs/initiatives.md`** — I-5 header now opens with a status table summarizing what's shipped (E-5.1 fully closed; E-5.2/.4/.5/.6 foundations) vs what's design-complete-code-deferred (E-5.3/.7/.8/.9). Each ⚪ epic's entry has a "Design-complete 2026-05-04" note pointing to its saas-roadmap.md home.
+- **`docs/feature-roadmap.md`** — L5 status block rewritten to enumerate all five code-shippable I-5 epics with their current status; remaining four design-complete epics called out as such with rationale.
+- No code change.
+
 ### E-5.6 foundation: per-user BYOK LLM credentials (Studio-gated)
 
 - **Foundation for [E-5.6 background-job isolation](docs/initiatives.md#e-56--background-job-isolation).** Per-user, per-provider API keys with encryption-at-rest. Studio-tier users can route their LLM calls to their own provider account. Cross-cutting LLM resolution-path integration (T-5.6.4) deferred to a separate PR since it touches ~19 use cases and the current agent layer has no user-context plumbing.

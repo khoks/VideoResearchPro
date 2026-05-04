@@ -543,9 +543,17 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 **Why it exists.** Today's PRs must remain forward-compatible with a future public SaaS — multi-tenant, billed, abuse-resistant, hardened auth.
 **North-star doc:** [saas-roadmap.md](saas-roadmap.md)
 
-### E-5.1 ⚪ `tenant_id` audit + retrofit
+### E-5.1 🟡 `tenant_id` audit + retrofit
 
 **Scope.** Add `tenant_id` / `workspace_id` columns to every user-scoped table; convert today's implicit JWT scoping to an explicit column for future per-tenant rate limiting + multi-workspace.
+
+**Phase 0 — audit doc shipped 2026-05-04.** [`docs/saas-tenant-id-audit.md`](saas-tenant-id-audit.md) catalogues every user-scoped table, identifies the four that need `tenant_id` immediately at SaaS launch (`jobs` / `qa_exchanges` / `library_qa_exchanges` / `qa_history_exchanges`), documents which tables stay global (`documents`, `transcript_cache`, `channels`/`creators` per the L1 vision of a globally-deduplicated library), proposes the 2-phase migration shape (additive columns first, then backfill + query updates + NOT NULL enforcement), and flags the **headline finding**: the codebase is structurally single-tenant despite having JWT auth — no model has a `user_id` FK column. Phase 1 + 2 are separate future PRs.
+
+**Tasks**
+- [x] T-5.1.0 Audit doc — *shipped 2026-05-04 in `docs/saas-tenant-id-audit.md`. Inventory + retrofit shape + risk assessment.*
+- [ ] T-5.1.1 ⚪ Phase 1 — additive `tenant_id` columns (nullable) + indexes on jobs / qa_exchanges / library_qa_exchanges / qa_history_exchanges. Single Alembic migration.
+- [ ] T-5.1.2 ⚪ Phase 2 — backfill existing rows (operator's user_id), update every router query to filter by `tenant_id`, update every row INSERT to stamp `tenant_id` from JWT, add NOT NULL constraint after backfill verified.
+- [ ] T-5.1.3 🔴 Phase 3 (deferred) — `tenants` + `tenant_users` tables for multi-user-per-workspace. Only needed for team SaaS tier.
 
 ### E-5.2 ⚪ Subscription tier gating
 

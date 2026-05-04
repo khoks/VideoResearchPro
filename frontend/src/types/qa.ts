@@ -27,7 +27,12 @@ export type ReferenceSourceType =
   | 'mastodon_post'
   | 'bluesky_post'
   | 'podcast_episode'
-  | 'pdf';
+  | 'pdf'
+  | 'article'
+  | 'fb_post'
+  | 'ig_post'
+  | 'li_post'
+  | 'tweet';
 
 export interface Reference {
   /** Absent on legacy rows; defaults to "video" in the renderer. */

@@ -28,7 +28,9 @@ from app.sources.pdf.connector import (
     hash_pdf_bytes,
     upload_path_for_source_id,
 )
+from app.sources.paste_url.connector import hash_url
 from app.sources import connector_for as _connector_for
+from app.services.paste_url_resolver import resolve_source_type
 from app.utils.chunking import chunk_transcript
 from app.tasks.job_tasks import _build_video_metadata
 
@@ -462,6 +464,153 @@ async def upload_pdf(
         "source_id": source_id,
         "page_count": page_count,
         "word_count": extracted.word_count,
+        "deduped": False,
+    }
+
+
+# ---------------------------------------------------------------------------
+# URL paste-mode (S-1.5.8)
+# ---------------------------------------------------------------------------
+# Closes Mode B paste support per [D-005](docs/decisions.md) (social-
+# media before article-ingest) + [D-008](docs/decisions.md) (no
+# search-page scraping on FB/IG/LI). User pastes 1-N URLs from any
+# supported platform; the endpoint resolves each URL to a source_type
+# (article / fb_post / ig_post / li_post / tweet) via host-based
+# routing, runs the article-extraction primitives (trafilatura
+# primary, Playwright fallback when ARTICLE_PLAYWRIGHT_ENABLED), and
+# creates Documents with the right per-platform discriminator.
+
+
+@router.post("/paste-urls", status_code=status.HTTP_201_CREATED)
+def paste_urls(
+    payload: dict,
+    db: Session = Depends(get_db),
+):
+    """Ingest 1-N pasted URLs into the global library.
+
+    Body shape: ``{"urls": ["https://...", "https://...", ...]}``.
+
+    Returns ``{"results": [{url, document_id, source_id, source_type,
+    word_count, status, deduped}, ...]}`` with one entry per URL.
+    Per-URL `status` is ``"created"`` / ``"deduped"`` / ``"extraction_failed"`` /
+    ``"invalid_url"`` so the caller (frontend) can show per-URL state
+    rather than failing the whole batch on one bad URL.
+    """
+    urls = payload.get("urls")
+    if not isinstance(urls, list) or not urls:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Body must contain a non-empty 'urls' list",
+        )
+    if len(urls) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 100 URLs per paste batch",
+        )
+
+    results: list[dict] = []
+    for raw in urls:
+        result = _ingest_single_paste_url(raw, db)
+        results.append(result)
+    return {"results": results}
+
+
+def _ingest_single_paste_url(url: str, db: Session) -> dict:
+    """Ingest a single URL — typed result dict for the batch response."""
+    if not isinstance(url, str) or not url.strip():
+        return {"url": str(url), "status": "invalid_url"}
+    url = url.strip()
+
+    source_type = resolve_source_type(url)
+    digest = hash_url(url)
+    source_id = f"{source_type}:{digest}"
+
+    existing = (
+        db.query(Document)
+        .filter(Document.source_type == source_type, Document.source_id == source_id)
+        .one_or_none()
+    )
+    if existing is not None:
+        return {
+            "url": url,
+            "document_id": existing.document_id,
+            "source_id": source_id,
+            "source_type": source_type,
+            "word_count": existing.word_count,
+            "status": "deduped",
+            "deduped": True,
+        }
+
+    # Build the candidate so the connector can do its thing.
+    from app.sources.types import Candidate
+
+    cand = Candidate(
+        source_type=source_type,
+        source_id=source_id,
+        title=url,  # placeholder — overwritten when extract_text returns a title
+        source_url=url,
+    )
+    connector = _connector_for(source_type)
+    extracted = connector.fetch_text(cand)
+    if extracted is None:
+        return {
+            "url": url,
+            "source_type": source_type,
+            "status": "extraction_failed",
+        }
+
+    # Pull title / author from the extractor's metadata for the
+    # Document row. trafilatura emits these into `extracted.extra`
+    # via the paste connector's `_PasteURLBaseConnector.fetch_text`.
+    extracted_extra = extracted.extra or {}
+    title = (extracted_extra.get("extracted_title") or url)[:500]
+    author = (extracted_extra.get("extracted_author") or "")[:200]
+
+    doc = Document(
+        source_type=source_type,
+        source_id=source_id,
+        source_url=url,
+        title=title,
+        url=url,
+        transcript_status="fetched",
+        transcript_language=extracted.language,
+        transcript_word_count=extracted.word_count,
+        transcript_source=extracted.text_source,
+        language=extracted.language,
+        word_count=extracted.word_count,
+        source_metadata_json=json.dumps(
+            {
+                "author": author,
+                "extractor": extracted_extra.get("extractor_source", ""),
+            }
+        ),
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    # Chunk + embed via the polymorphic chunker. _build_video_metadata
+    # carries the per-document polymorphic fields (source_type,
+    # permalink, author) into Chroma per S-1.5.12.
+    video_metadata = _build_video_metadata(doc, language=extracted.language)
+    chunks = chunk_transcript(
+        extracted.segments,
+        chunk_size=settings.CHUNK_SIZE,
+        chunk_overlap=settings.CHUNK_OVERLAP,
+        video_metadata=video_metadata,
+        transcription_source=extracted.text_source,
+    )
+    chroma_service.insert_chunks(chunks)
+    doc.embedded_in_chroma = True
+    db.commit()
+
+    return {
+        "url": url,
+        "document_id": doc.document_id,
+        "source_id": source_id,
+        "source_type": source_type,
+        "word_count": extracted.word_count,
+        "status": "created",
         "deduped": False,
     }
 

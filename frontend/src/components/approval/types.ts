@@ -118,6 +118,38 @@ export type SourceMetadata =
       pageCount: number;
       wordCount: number;
       uploadedAt: string;
+    }
+  // -- Paste-mode source types (S-1.5.8) — five source types share the
+  //    same metadata shape since they all flow through article-extraction.
+  | {
+      source_type: 'article';
+      author: string;
+      wordCount: number;
+      sourceDomain: string;
+    }
+  | {
+      source_type: 'fb_post';
+      author: string;
+      wordCount: number;
+      sourceDomain: string;
+    }
+  | {
+      source_type: 'ig_post';
+      author: string;
+      wordCount: number;
+      sourceDomain: string;
+    }
+  | {
+      source_type: 'li_post';
+      author: string;
+      wordCount: number;
+      sourceDomain: string;
+    }
+  | {
+      source_type: 'tweet';
+      author: string;
+      wordCount: number;
+      sourceDomain: string;
     };
 
 export type SourceType = SourceMetadata['source_type'];

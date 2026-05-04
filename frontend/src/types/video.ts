@@ -127,6 +127,27 @@ export function videoToApprovalProps(
         uploadedAt: String(video.published_at ?? ''),
       };
       break;
+    case 'article':
+    case 'fb_post':
+    case 'ig_post':
+    case 'li_post':
+    case 'tweet': {
+      // All five paste-mode source types share the same chip shape.
+      const url = String(video.source_url ?? video.url ?? '');
+      let domain = '';
+      try {
+        domain = url ? new URL(url).host.replace(/^www\./, '') : '';
+      } catch {
+        domain = '';
+      }
+      metadata = {
+        source_type: video.source_type,
+        author: String(m.author ?? ''),
+        wordCount: Number(video.transcript_word_count ?? 0),
+        sourceDomain: domain,
+      };
+      break;
+    }
     case 'podcast_episode':
       metadata = {
         source_type: 'podcast_episode',

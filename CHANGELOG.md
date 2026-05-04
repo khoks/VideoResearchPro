@@ -10,6 +10,15 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### E-5.2 foundation: subscription tier enum + feature-gating utility
+
+- **Foundation for SaaS tier gating.** Adds `users.tier String(16)` column (`server_default='free'`) via Alembic migration `f7a8b9c0d1e2_add_user_tier.py`. Self-host installs default everyone to `free` and operators upgrade via SQL; SaaS deployment will set this from the billing service.
+- **`backend/app/services/tier_service.py`** — `Tier` enum (`FREE` < `PRO` < `STUDIO`), `TIER_CAPABILITIES` table per-tier (`youtube_units_per_day`, `llm_tokens_per_day`, `document_count_cap`, `features` frozenset), `require_tier(min_tier)` and `require_feature(name)` FastAPI dependency factories that raise 403 on insufficient tier, plus `get_user_tier`, `has_feature`, `quota_limit`, `capabilities_for` helpers.
+- **Defense-in-depth on tier resolution** — `get_user_tier` accepts unknown / null / mixed-case / whitespace-padded strings and degrades to `Tier.FREE` rather than crashing. Legacy rows from before the migration (where `tier` IS NULL) still get a sensible default.
+- **`docs/saas-roadmap.md`** — §2 Subscription tiers section updated with the foundation-shipped status note clarifying what landed (schema + utility) vs what's still ⚪ (runtime quota enforcement, deferred to E-5.5).
+- **24 new tests** in `backend/tests/test_services/test_tier_service.py` — enum ordering, user→tier resolution defaults, capability table consistency invariants (quotas monotonically non-decreasing across tiers; features form supersets), `require_tier` 403 + pass-through paths, `require_feature` 403 + pass-through paths, User model defaults. Backend suite 777 → 801.
+- **No endpoint gating shipped yet** — the dependency factories are wired but no production routes call them today. Author Studio (L2) and BYOK LLM keys (E-5.6) will be the first consumers when those ship.
+
 ### E-5.1 fully closed: phase 2c NOT NULL runbook + migration
 
 - **Closes E-5.1 entirely.** Final phase ships the [`docs/migration-tenant-id-not-null.md`](docs/migration-tenant-id-not-null.md) operator runbook + the Alembic migration file `backend/alembic/versions/e6f7a8b9c0d1_tenant_id_not_null.py` that flips `tenant_id` from NULLABLE → NOT NULL on the four user-scoped tables.

@@ -10,9 +10,12 @@ Importing this package eagerly registers every shipped connector. Today
 that's `video` (YouTube), `reddit_post` (Reddit), `hn_story`
 (Hacker News), `mastodon_post` (Mastodon), `bluesky_post`
 (Bluesky / AT-Protocol), `podcast_episode` (RSS-feed podcasts with
-iTunes-Search discovery + OpenAI-Whisper fallback), and `pdf`
-(uploaded PDFs / e-books with PyMuPDF text + table extraction).
-Future PRs add `article`, etc.
+iTunes-Search discovery + OpenAI-Whisper fallback), `pdf` (uploaded
+PDFs / e-books with PyMuPDF text + table extraction), and the five
+paste-mode source types (`article` / `fb_post` / `ig_post` /
+`li_post` / `tweet`) that share `app.services.article_extraction`
+for fetch + boilerplate-removal + Playwright fallback. **Twelve
+source types total.**
 """
 from app.sources.base import BaseConnector
 from app.sources.registry import all_connectors, connector_for, register
@@ -27,6 +30,7 @@ from app.sources.mastodon import connector as _mastodon_connector  # noqa: F401 
 from app.sources.bluesky import connector as _bluesky_connector  # noqa: F401  (registers on import)
 from app.sources.podcast import connector as _podcast_connector  # noqa: F401  (registers on import)
 from app.sources.pdf import connector as _pdf_connector  # noqa: F401  (registers on import)
+from app.sources.paste_url import connector as _paste_url_connector  # noqa: F401  (registers article + fb_post + ig_post + li_post + tweet on import)
 
 __all__ = [
     "BaseConnector",

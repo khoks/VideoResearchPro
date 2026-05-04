@@ -207,6 +207,12 @@ def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
       - pdf:                   permalink (upload URL with #page=<N>
                                when chunked from a specific page) +
                                doc_title + page_number
+      - article / fb_post / ig_post / li_post / tweet:
+                               permalink (the original URL) + title +
+                               author. All five paste-mode source
+                               types share rendering shape; per-platform
+                               glyph differentiation lives in the
+                               frontend `<CitationLink>`.
     """
     meta = chunk.get("metadata", {})
     source_type = (meta.get("source_type") or "video").strip() or "video"
@@ -338,6 +344,45 @@ def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
             "video_url": permalink,
             "video_title": title,
             "channel_name": author or "Bluesky",
+            "timestamp_seconds": 0.0,
+            "timestamp_display": "",
+            "youtube_link": permalink,
+        }
+
+    if source_type in ("article", "fb_post", "ig_post", "li_post", "tweet"):
+        # All five paste-mode source types share rendering — the
+        # permalink is the original URL, the title comes from the
+        # extracted document title (or the URL fallback), the author
+        # comes from trafilatura's metadata extraction.
+        permalink = (
+            meta.get("comment_url")
+            or meta.get("permalink")
+            or meta.get("source_url")
+            or meta.get("video_url")
+            or ""
+        )
+        author = meta.get("segment_author") or meta.get("author") or ""
+        comment_id = meta.get("comment_id") or ""
+        # Per-platform tags surface a friendly label in the legacy
+        # `channel_name` fallback — `Article`, `Facebook`, `Instagram`,
+        # `LinkedIn`, `X / Twitter`.
+        platform_label = {
+            "article": "Article",
+            "fb_post": "Facebook",
+            "ig_post": "Instagram",
+            "li_post": "LinkedIn",
+            "tweet": "X / Twitter",
+        }[source_type]
+        key = f"{source_type}:{source_id}_{comment_id}"
+        return key, {
+            "source_type": source_type,
+            "permalink": permalink,
+            "thread_title": title,
+            "author": author,
+            # Legacy YouTube-shaped fallback fields.
+            "video_url": permalink,
+            "video_title": title,
+            "channel_name": author or platform_label,
             "timestamp_seconds": 0.0,
             "timestamp_display": "",
             "youtube_link": permalink,

@@ -97,6 +97,100 @@ function BlueskyGlyph() {
   );
 }
 
+function ArticleGlyph() {
+  // Open-page silhouette — universally read as "article / blog post".
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <rect x="0" y="0" width="18" height="18" rx="3" fill="currentColor" />
+      <path
+        d="M5 4 H13 V14 H5 Z M7 7 H11 M7 9 H11 M7 11 H10"
+        stroke="white"
+        strokeWidth="0.8"
+        fill="none"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function FBGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <rect x="0" y="0" width="18" height="18" rx="3" fill="currentColor" />
+      <text
+        x="9"
+        y="14"
+        textAnchor="middle"
+        fill="white"
+        fontFamily="serif"
+        fontSize="13"
+        fontWeight="bold"
+      >
+        f
+      </text>
+    </svg>
+  );
+}
+
+function IGGlyph() {
+  // Camera silhouette — minimal IG-mark stand-in.
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <rect x="0" y="0" width="18" height="18" rx="3" fill="currentColor" />
+      <rect
+        x="4"
+        y="5"
+        width="10"
+        height="9"
+        rx="2"
+        fill="none"
+        stroke="white"
+        strokeWidth="1.2"
+      />
+      <circle cx="9" cy="9.5" r="2" fill="none" stroke="white" strokeWidth="1.2" />
+      <circle cx="12" cy="7" r="0.5" fill="white" />
+    </svg>
+  );
+}
+
+function LIGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <rect x="0" y="0" width="18" height="18" rx="3" fill="currentColor" />
+      <text
+        x="9"
+        y="13"
+        textAnchor="middle"
+        fill="white"
+        fontFamily="sans-serif"
+        fontSize="9"
+        fontWeight="bold"
+      >
+        in
+      </text>
+    </svg>
+  );
+}
+
+function XGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <rect x="0" y="0" width="18" height="18" rx="3" fill="currentColor" />
+      <text
+        x="9"
+        y="14"
+        textAnchor="middle"
+        fill="white"
+        fontFamily="sans-serif"
+        fontSize="12"
+        fontWeight="bold"
+      >
+        X
+      </text>
+    </svg>
+  );
+}
+
 function PDFGlyph() {
   // Document silhouette with folded corner — universally recognised
   // as a "page / file" mark. Same dimensions as other glyphs.
@@ -311,6 +405,85 @@ export const SOURCE_CONFIGS: SourceConfigRegistry = {
     filterChips: [
       // M-1.6: filter rail parity — same staged-out pattern as Reddit/HN/Mastodon.
     ],
+  },
+
+  // -------------------------------------------------------------------------
+  // Paste-mode source types (S-1.5.8). All five share the same chip
+  // layout — only the glyph differs per platform.
+  // -------------------------------------------------------------------------
+  article: {
+    glyph: <ArticleGlyph />,
+    metaChips: [
+      { field: 'sourceDomain', icon: <DotGlyph />, label: 'Source' },
+      { field: 'author', icon: <DotGlyph />, label: 'Author' },
+      {
+        field: 'wordCount',
+        icon: <DotGlyph />,
+        label: 'Words',
+        formatter: 'numberWithCommas',
+      },
+    ],
+    filterChips: [],
+  },
+
+  fb_post: {
+    glyph: <FBGlyph />,
+    metaChips: [
+      { field: 'sourceDomain', icon: <DotGlyph />, label: 'Source' },
+      { field: 'author', icon: <DotGlyph />, label: 'Author' },
+      {
+        field: 'wordCount',
+        icon: <DotGlyph />,
+        label: 'Words',
+        formatter: 'numberWithCommas',
+      },
+    ],
+    filterChips: [],
+  },
+
+  ig_post: {
+    glyph: <IGGlyph />,
+    metaChips: [
+      { field: 'sourceDomain', icon: <DotGlyph />, label: 'Source' },
+      { field: 'author', icon: <DotGlyph />, label: 'Author' },
+      {
+        field: 'wordCount',
+        icon: <DotGlyph />,
+        label: 'Words',
+        formatter: 'numberWithCommas',
+      },
+    ],
+    filterChips: [],
+  },
+
+  li_post: {
+    glyph: <LIGlyph />,
+    metaChips: [
+      { field: 'sourceDomain', icon: <DotGlyph />, label: 'Source' },
+      { field: 'author', icon: <DotGlyph />, label: 'Author' },
+      {
+        field: 'wordCount',
+        icon: <DotGlyph />,
+        label: 'Words',
+        formatter: 'numberWithCommas',
+      },
+    ],
+    filterChips: [],
+  },
+
+  tweet: {
+    glyph: <XGlyph />,
+    metaChips: [
+      { field: 'sourceDomain', icon: <DotGlyph />, label: 'Source' },
+      { field: 'author', icon: <DotGlyph />, label: 'Author' },
+      {
+        field: 'wordCount',
+        icon: <DotGlyph />,
+        label: 'Words',
+        formatter: 'numberWithCommas',
+      },
+    ],
+    filterChips: [],
   },
 
   // -------------------------------------------------------------------------

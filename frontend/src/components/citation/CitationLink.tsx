@@ -103,6 +103,42 @@ function renderCitation(ref: Reference): RenderedCitation {
     };
   }
 
+  // ---- Paste-mode source types (S-1.5.8) — share the same shape -----
+  if (
+    sourceType === 'article' ||
+    sourceType === 'fb_post' ||
+    sourceType === 'ig_post' ||
+    sourceType === 'li_post' ||
+    sourceType === 'tweet'
+  ) {
+    const platformLabel = {
+      article: '',
+      fb_post: 'Facebook',
+      ig_post: 'Instagram',
+      li_post: 'LinkedIn',
+      tweet: 'X / Twitter',
+    }[sourceType];
+    const author = ref.author ?? '';
+    const title = ref.thread_title ?? ref.video_title ?? '';
+    let host = '';
+    const url = ref.permalink ?? ref.video_url ?? '';
+    try {
+      if (url) host = new URL(url).host.replace(/^www\./, '');
+    } catch {
+      host = '';
+    }
+    // Format: "<title> · <author> · <host>" for articles
+    //         "<platform_label> · <author> · <title-or-host>" for social
+    const labelParts =
+      sourceType === 'article'
+        ? [title, author, host].filter(Boolean)
+        : [platformLabel, author, title || host].filter(Boolean);
+    return {
+      href: url || '#',
+      label: labelParts.join(' · '),
+    };
+  }
+
   if (sourceType === 'pdf') {
     // Format: "<doc_title> · p. <page_number>"
     // The permalink already carries the `#page=<N>` deep-link

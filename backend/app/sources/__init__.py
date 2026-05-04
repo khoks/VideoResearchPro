@@ -31,6 +31,11 @@ from app.sources.bluesky import connector as _bluesky_connector  # noqa: F401  (
 from app.sources.podcast import connector as _podcast_connector  # noqa: F401  (registers on import)
 from app.sources.pdf import connector as _pdf_connector  # noqa: F401  (registers on import)
 from app.sources.paste_url import connector as _paste_url_connector  # noqa: F401  (registers article + fb_post + ig_post + li_post + tweet on import)
+# `article` re-registration with search-having subclass (E-1.6 full
+# UX). Order matters: paste_url registers `article` first, then this
+# import overwrites it with the search-enabled variant per the
+# registry's last-write-wins semantics.
+from app.sources.article import connector as _article_connector  # noqa: F401  (re-registers article)
 
 __all__ = [
     "BaseConnector",

@@ -2,14 +2,18 @@
 /**
  * Pratidhvani marketing-site home page.
  *
- * Status: scaffold-only (T-2.5.1, 2026-04-28). The hero / curation-thesis /
- * source-types matrix / how-it-works / install / waitlist sections all
- * land in T-2.5.2 .. T-2.5.8 — see ../README.md for the roadmap.
+ * Closes E-2.5 — single-page warm-editorial pitch covering:
+ *   T-2.5.2  Hero with the personal-wiki pitch + tagline
+ *   T-2.5.3  "How it differs from Wikipedia" curation thesis
+ *   T-2.5.4  Source-types matrix (videos / podcasts / articles / etc.)
+ *   T-2.5.5  "How it works" walkthrough (search → approve → embed → ask)
+ *   T-2.5.6  Install instructions (open-source self-host)
+ *   T-2.5.7  SaaS waitlist hook (disabled call-to-action today)
+ *   T-2.5.8  Footer (GitHub, docs, license)
  *
- * What's here today: a placeholder hero that establishes the brand
- * lockup (Devanagari + Latin), the tagline, and the warm-editorial
- * tone, so any future contributor opening this file sees what the
- * site is meant to feel like even before the content lands.
+ * Single Astro page rather than per-section components because the
+ * content is short and bundle-size matters less than legibility for
+ * future contributors who'll edit the copy directly.
  */
 import BaseLayout from '../layouts/BaseLayout.astro';
 ---
@@ -18,6 +22,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
   description="A personal research wiki built from your chosen sources, not a balanced encyclopedia. Curated, opinionated, citation-grounded."
 >
   <main>
+    <!-- T-2.5.2 — Hero -->
     <section class="hero">
       <h1 class="lockup">
         <span class="devanagari">प्रतिध्वनि</span>
@@ -26,81 +31,580 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       <p class="tagline">Your sources, echoed back.</p>
       <p class="lede">
         A personal research wiki built from <em>your chosen sources</em> —
-        videos, podcasts, articles, threads — not a balanced
-        encyclopedia. Curate the voices. Ask the echo.
+        videos, podcasts, articles, social-media threads — not a
+        balanced encyclopedia. Curate the voices. Ask the echo.
       </p>
-      <div class="placeholder-note">
-        <strong>Marketing site under construction.</strong>
-        Hero / "different from Wikipedia" / source-types matrix /
-        how-it-works / install / waitlist sections land in upcoming
-        PRs (T-2.5.2 → T-2.5.8). See
-        <a href="https://github.com/khoks/VideoResearchPro/blob/master/docs/initiatives.md#e-25--marketing-landing-page-warm-editorial">
-          docs/initiatives.md § E-2.5
-        </a>.
+      <div class="cta-row">
+        <a class="cta primary" href="#install">Self-host today</a>
+        <a class="cta secondary" href="#waitlist">Hosted version (waitlist)</a>
       </div>
     </section>
+
+    <!-- T-2.5.3 — How it differs from Wikipedia -->
+    <section class="section thesis">
+      <h2>Wikipedia is balanced. Pratidhvani is yours.</h2>
+      <div class="two-col">
+        <div>
+          <h3>Wikipedia's thesis</h3>
+          <p>
+            Wikipedia is moderated, balanced, dilute by design. Every
+            edit converges toward consensus. Every claim is averaged
+            against every other claim. The result is a neutral
+            reference — useful, but the texture of how real people
+            actually think and argue gets sanded off.
+          </p>
+        </div>
+        <div>
+          <h3>Pratidhvani's thesis</h3>
+          <p>
+            Most knowledge that shapes us doesn't come from
+            encyclopedias. It comes from the podcast you listen to on
+            walks, the YouTube channel you trust on a topic, the
+            forum thread that got it right when the official version
+            didn't, the substack that calls things by their proper
+            names. Pratidhvani lets you build a personal library out
+            of <em>those</em> sources, then ask it questions with full
+            citations.
+          </p>
+        </div>
+      </div>
+      <p class="thesis-summary">
+        It's not a knowledge base. It's <em>your</em> knowledge base.
+      </p>
+    </section>
+
+    <!-- T-2.5.4 — Source-types matrix -->
+    <section class="section sources">
+      <h2>Many voices. One library.</h2>
+      <p class="lede">
+        Every source slots into the same search → approve → ingest →
+        embed → query pipeline. Approve once, ask forever.
+      </p>
+      <div class="source-grid">
+        <div class="source-card live">
+          <h3>YouTube videos</h3>
+          <p>
+            Topic search, channel ingest, full-channel subscription.
+            Transcripts (with Whisper fallback). Citation-grounded
+            answers with timestamp deep-links.
+          </p>
+          <span class="status">live</span>
+        </div>
+        <div class="source-card live">
+          <h3>Reddit threads</h3>
+          <p>
+            Topic search via <code>/search.json</code>, OP + top-N
+            comments by score, per-reply citation anchors.
+          </p>
+          <span class="status">live</span>
+        </div>
+        <div class="source-card live">
+          <h3>Hacker News</h3>
+          <p>
+            Algolia HN search, story + comment tree, per-comment
+            permalink citations.
+          </p>
+          <span class="status">live</span>
+        </div>
+        <div class="source-card live">
+          <h3>Mastodon</h3>
+          <p>
+            Public hashtag-timeline discovery (no auth), status +
+            replies, federation-aware reach.
+          </p>
+          <span class="status">live</span>
+        </div>
+        <div class="source-card live">
+          <h3>Bluesky</h3>
+          <p>
+            AT-Protocol public XRPC text search, recursive thread
+            tree, per-reply web-URL citations.
+          </p>
+          <span class="status">live</span>
+        </div>
+        <div class="source-card soon">
+          <h3>Articles &amp; blogs</h3>
+          <p>
+            Trafilatura + Playwright fallback for SPAs. URL list,
+            paste-mode, RSS feeds.
+          </p>
+          <span class="status">primitives shipped · UX next</span>
+        </div>
+        <div class="source-card soon">
+          <h3>Podcasts</h3>
+          <p>
+            Spotify / Apple show / RSS feed. Whisper transcribe when
+            no transcript published.
+          </p>
+          <span class="status">planned</span>
+        </div>
+        <div class="source-card soon">
+          <h3>PDFs &amp; books</h3>
+          <p>
+            File upload. Text + table extraction. Page-anchored
+            citations.
+          </p>
+          <span class="status">planned</span>
+        </div>
+        <div class="source-card soon">
+          <h3>X / FB / IG / LinkedIn</h3>
+          <p>
+            Paste-mode for platforms without public search APIs;
+            BYOK Twitter for those who pay.
+          </p>
+          <span class="status">paste-mode soon · BYOK Twitter next</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- T-2.5.5 — How it works -->
+    <section class="section how">
+      <h2>How it works</h2>
+      <ol class="how-steps">
+        <li>
+          <h3>1 · Search</h3>
+          <p>
+            Submit a topic, a list of channels, or a creator
+            subscription. Pratidhvani fans out to every connector
+            you enabled and gathers candidates with stance, sentiment,
+            and topic-relevance scores.
+          </p>
+        </li>
+        <li>
+          <h3>2 · Approve</h3>
+          <p>
+            Skim the candidates in a single polymorphic approval
+            view. Toggle low-relevance, filter by stance, mark what
+            joins your library. The curation surface is the product.
+          </p>
+        </li>
+        <li>
+          <h3>3 · Ingest</h3>
+          <p>
+            Approved sources are transcribed (where needed),
+            chunked, embedded with a multilingual model, and
+            deduplicated globally — every source lives once across
+            every job that references it.
+          </p>
+        </li>
+        <li>
+          <h3>4 · Ask</h3>
+          <p>
+            Question scoping: this job, your whole library, or every
+            Q&amp;A you have ever asked (the Echoes meta-chat).
+            Answers cite the exact source — timestamp on videos,
+            permalink on threads, page on PDFs.
+          </p>
+        </li>
+        <li>
+          <h3>5 · Author <span class="future">(future)</span></h3>
+          <p>
+            Long-form output from your library: books, sites, decks,
+            newsletters. Every paragraph traces back to its source.
+          </p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- T-2.5.6 — Install -->
+    <section id="install" class="section install">
+      <h2>Self-host today</h2>
+      <p class="lede">
+        Pratidhvani is open-source. Run it locally on your laptop or
+        on a VPS you control. Your library, your sources, your data.
+      </p>
+      <div class="install-stack">
+        <h3>Requirements</h3>
+        <ul>
+          <li>Python 3.12+</li>
+          <li>Node.js 20+</li>
+          <li>Redis (native install on your OS, or Docker)</li>
+          <li>An LLM provider key — OpenAI / Anthropic / Google /
+              local (LM Studio, Ollama, vLLM)</li>
+          <li>A YouTube Data API v3 key (free tier)</li>
+        </ul>
+
+        <h3>Quick start</h3>
+        <pre class="code"><code>{`git clone https://github.com/khoks/VideoResearchPro.git pratidhvani
+cd pratidhvani
+
+# Backend
+cd backend
+python -m venv venv
+./venv/Scripts/pip install -r requirements.txt
+cp ../.env.example .env  # fill in YOUTUBE_API_KEY + LLM provider key
+
+# Frontend
+cd ../frontend
+npm install
+
+# Redis (Windows)
+winget install Redis.Redis
+
+# Run
+cd ../backend
+./venv/Scripts/celery -A app.tasks.celery_app worker --pool=solo &
+./venv/Scripts/python -m uvicorn app.main:app --reload --port 8000 &
+
+cd ../frontend
+npm run dev`}</code></pre>
+
+        <p>
+          Open <a href="http://localhost:5173">localhost:5173</a>,
+          register a user, submit your first research job. The README
+          has the full guide; the docs/ directory has the architecture
+          deep-dive.
+        </p>
+      </div>
+    </section>
+
+    <!-- T-2.5.7 — SaaS waitlist -->
+    <section id="waitlist" class="section waitlist">
+      <h2>Hosted version</h2>
+      <p class="lede">
+        A managed Pratidhvani — your library on our infrastructure,
+        with billing, sharing, and team workspaces — is on the
+        roadmap. Not yet open. The link below opens a waitlist when
+        we have one.
+      </p>
+      <a class="cta primary disabled" aria-disabled="true" href="#waitlist">
+        Join the waitlist (coming soon)
+      </a>
+      <p class="footnote">
+        Until then, self-host is the only Pratidhvani. Same code, same
+        features, your data.
+      </p>
+    </section>
+
+    <!-- T-2.5.8 — Footer -->
+    <footer class="footer">
+      <div class="footer-row">
+        <span class="footer-brand">
+          <span class="devanagari-small">प्रतिध्वनि</span>
+          <span class="latin-small">Pratidhvani</span>
+        </span>
+        <nav class="footer-nav">
+          <a href="https://github.com/khoks/VideoResearchPro">GitHub</a>
+          <a href="https://github.com/khoks/VideoResearchPro/tree/master/docs">Docs</a>
+          <a href="https://github.com/khoks/VideoResearchPro/blob/master/CHANGELOG.md">Changelog</a>
+          <a href="https://github.com/khoks/VideoResearchPro/blob/master/LICENSE">License</a>
+        </nav>
+      </div>
+      <p class="footer-tagline">
+        प्रतिध्वनि — the echo of your chosen knowledge.
+      </p>
+    </footer>
   </main>
+
   <style>
     main {
-      max-width: 720px;
+      max-width: 960px;
       margin: 0 auto;
-      padding: 6rem 1.5rem;
+      padding: 4rem 1.5rem 2rem;
+    }
+
+    /* ----- Hero ----- */
+    .hero {
+      text-align: center;
+      padding: 3rem 0 4rem;
     }
     .lockup {
       font-size: clamp(2.5rem, 7vw, 4.5rem);
       letter-spacing: -0.02em;
-      margin-bottom: 1.5rem;
+      line-height: 1.1;
       display: flex;
       flex-direction: column;
+      align-items: center;
       gap: 0.25rem;
     }
-    .lockup .devanagari {
+    .devanagari {
       font-family: var(--font-devanagari);
-      color: var(--color-accent);
-    }
-    .lockup .latin {
-      font-family: var(--font-display);
-      font-weight: 500;
       color: var(--color-text-primary);
+      font-weight: 400;
+    }
+    .latin {
+      font-family: var(--font-display);
+      font-size: 0.55em;
+      color: var(--color-text-secondary);
+      font-weight: 500;
+      letter-spacing: 0.02em;
     }
     .tagline {
       font-family: var(--font-display);
-      font-size: 1.5rem;
       font-style: italic;
-      color: var(--color-forest);
-      margin: 0 0 2rem;
+      font-size: 1.5rem;
+      color: var(--color-accent);
+      margin: 1.5rem 0 0.75rem;
     }
     .lede {
-      font-size: 1.25rem;
-      line-height: 1.6;
-      color: var(--color-text-primary);
-      max-width: 56ch;
+      max-width: 36rem;
+      margin: 0 auto 1.5rem;
+      font-size: 1.125rem;
+      color: var(--color-text-secondary);
+      line-height: 1.7;
     }
-    .placeholder-note {
-      margin-top: 4rem;
-      padding: 1.5rem;
+    .lede em {
+      color: var(--color-text-primary);
+      font-style: italic;
+    }
+    .cta-row {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-top: 2rem;
+    }
+    .cta {
+      display: inline-block;
+      padding: 0.75rem 1.5rem;
+      border-radius: 4px;
+      font-family: var(--font-ui);
+      font-size: 0.95rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: transform 120ms ease;
+    }
+    .cta.primary {
+      background: var(--color-accent);
+      color: #fff;
+    }
+    .cta.secondary {
+      background: transparent;
+      color: var(--color-accent);
+      border: 1px solid var(--color-border);
+    }
+    .cta:hover {
+      transform: translateY(-1px);
+    }
+    .cta.disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* ----- Sections ----- */
+    .section {
+      padding: 4rem 0;
+      border-top: 1px solid var(--color-border);
+    }
+    .section h2 {
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      margin-bottom: 1.5rem;
+      letter-spacing: -0.01em;
+    }
+
+    /* ----- Thesis ----- */
+    .thesis .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2.5rem;
+      margin: 2rem 0;
+    }
+    @media (max-width: 720px) {
+      .thesis .two-col {
+        grid-template-columns: 1fr;
+      }
+    }
+    .thesis h3 {
+      font-size: 1.25rem;
+      color: var(--color-accent);
+      margin-bottom: 0.75rem;
+    }
+    .thesis p {
+      color: var(--color-text-secondary);
+      line-height: 1.75;
+    }
+    .thesis-summary {
+      font-family: var(--font-display);
+      font-style: italic;
+      font-size: 1.5rem;
+      text-align: center;
+      color: var(--color-text-primary);
+      padding: 2rem 0 0;
+      max-width: 32rem;
+      margin: 0 auto;
+    }
+    .thesis-summary em {
+      color: var(--color-accent);
+    }
+
+    /* ----- Sources matrix ----- */
+    .source-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+    .source-card {
       background: var(--color-surface);
       border: 1px solid var(--color-border);
-      border-left: 4px solid var(--color-gold);
-      font-family: var(--font-ui);
-      font-size: 0.9375rem;
-      color: var(--color-text-secondary);
+      border-radius: 6px;
+      padding: 1.5rem;
+      position: relative;
     }
-    .placeholder-note strong {
-      display: block;
+    .source-card h3 {
+      font-size: 1.125rem;
       margin-bottom: 0.5rem;
       color: var(--color-text-primary);
-      font-weight: 600;
     }
-    .placeholder-note a {
-      color: var(--color-accent);
-      text-decoration: underline;
-      text-decoration-thickness: 1px;
-      text-underline-offset: 2px;
+    .source-card p {
+      color: var(--color-text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.6;
+      margin: 0 0 1.5rem;
     }
-    em {
+    .source-card .status {
+      font-family: var(--font-ui);
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.6rem;
+      border-radius: 3px;
+      position: absolute;
+      bottom: 1rem;
+      left: 1.5rem;
+    }
+    .source-card.live .status {
+      background: var(--color-forest);
+      color: #fff;
+    }
+    .source-card.soon .status {
+      background: var(--color-surface-alt);
+      color: var(--color-text-muted);
+    }
+
+    /* ----- How it works ----- */
+    .how-steps {
+      list-style: none;
+      padding: 0;
+      margin: 2rem 0;
+      display: grid;
+      gap: 2rem;
+    }
+    .how-steps li {
+      padding-left: 1.5rem;
+      border-left: 3px solid var(--color-gold);
+    }
+    .how-steps h3 {
+      font-size: 1.125rem;
+      margin-bottom: 0.5rem;
+      color: var(--color-text-primary);
+    }
+    .how-steps p {
+      color: var(--color-text-secondary);
+      line-height: 1.7;
+      margin: 0;
+    }
+    .how-steps .future {
+      color: var(--color-text-muted);
       font-style: italic;
+      font-size: 0.9rem;
+      font-weight: 400;
+    }
+
+    /* ----- Install ----- */
+    .install h3 {
+      font-size: 1.125rem;
+      margin: 2rem 0 0.75rem;
+    }
+    .install ul {
+      color: var(--color-text-secondary);
+      line-height: 1.8;
+      padding-left: 1.5rem;
+    }
+    .install p {
+      color: var(--color-text-secondary);
+      line-height: 1.7;
+    }
+    .install a {
       color: var(--color-accent);
+    }
+    .install code {
+      background: var(--color-surface-alt);
+      padding: 0 0.3em;
+      border-radius: 3px;
+      font-size: 0.9em;
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+    }
+    .code {
+      background: var(--color-surface-alt);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: 1.5rem;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      color: var(--color-text-primary);
+    }
+    .code code {
+      background: transparent;
+      padding: 0;
+    }
+
+    /* ----- Waitlist ----- */
+    .waitlist {
+      text-align: center;
+    }
+    .waitlist .lede {
+      max-width: 40rem;
+    }
+    .waitlist .footnote {
+      color: var(--color-text-muted);
+      font-size: 0.9rem;
+      margin-top: 1rem;
+    }
+
+    /* ----- Footer ----- */
+    .footer {
+      border-top: 1px solid var(--color-border);
+      margin-top: 4rem;
+      padding: 2.5rem 0 1.5rem;
+    }
+    .footer-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .footer-brand {
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+    }
+    .devanagari-small {
+      font-family: var(--font-devanagari);
+      font-size: 1.25rem;
+      color: var(--color-text-primary);
+    }
+    .latin-small {
+      font-family: var(--font-display);
+      font-size: 1rem;
+      color: var(--color-text-secondary);
+    }
+    .footer-nav {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .footer-nav a {
+      color: var(--color-text-secondary);
+      font-family: var(--font-ui);
+      font-size: 0.9rem;
+      text-decoration: none;
+    }
+    .footer-nav a:hover {
+      color: var(--color-accent);
+    }
+    .footer-tagline {
+      text-align: center;
+      font-family: var(--font-display);
+      font-style: italic;
+      color: var(--color-text-muted);
+      margin: 1.5rem 0 0;
+      font-size: 0.95rem;
     }
   </style>
 </BaseLayout>

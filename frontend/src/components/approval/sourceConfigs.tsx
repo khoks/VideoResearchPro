@@ -97,6 +97,25 @@ function BlueskyGlyph() {
   );
 }
 
+function PodcastGlyph() {
+  // Microphone silhouette via two concentric rounded shapes — recall
+  // a podcast mic without pulling in an icon-pack. Same dimensions
+  // as the other glyphs so the approval-card grid stays uniform.
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <rect x="0" y="0" width="18" height="18" rx="3" fill="currentColor" />
+      <rect x="7" y="3" width="4" height="7" rx="2" fill="white" />
+      <path
+        d="M5 9 a4 4 0 0 0 8 0 M9 13 v2 M7 15 h4"
+        stroke="white"
+        strokeWidth="1.2"
+        fill="none"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 // Tiny inline icon helpers for chip glyphs.
 function DotGlyph({ color = 'currentColor' }: { color?: string } = {}) {
   return (
@@ -274,6 +293,41 @@ export const SOURCE_CONFIGS: SourceConfigRegistry = {
     ],
     filterChips: [
       // M-1.6: filter rail parity — same staged-out pattern as Reddit/HN/Mastodon.
+    ],
+  },
+
+  // -------------------------------------------------------------------------
+  // Podcast episode (M-1.7)
+  // -------------------------------------------------------------------------
+  podcast_episode: {
+    glyph: <PodcastGlyph />,
+    metaChips: [
+      {
+        field: 'showName',
+        icon: <DotGlyph />,
+        label: 'Show',
+      },
+      {
+        field: 'episodeNumber',
+        icon: <DotGlyph />,
+        label: 'Episode',
+        format: (v) => (v == null ? '—' : `#${v}`),
+      },
+      {
+        field: 'durationSec',
+        icon: <DotGlyph />,
+        label: 'Duration',
+        formatter: 'durationSeconds',
+      },
+      {
+        field: 'publishedAt',
+        icon: <DotGlyph />,
+        label: 'Published',
+        formatter: 'relativeTime',
+      },
+    ],
+    filterChips: [
+      // M-1.7: filter rail parity — same staged-out pattern.
     ],
   },
 };

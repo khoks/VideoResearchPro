@@ -92,6 +92,42 @@ class Settings(BaseSettings):
     BLUESKY_COMMENT_DEPTH_DEFAULT: int = 50  # top-N replies by likes (parity with Reddit/HN/Mastodon)
 
     # -------------------------------------------------------------------
+    # Podcast connector (M-1.7 / E-1.7)
+    # -------------------------------------------------------------------
+    # Two HTTP surfaces:
+    #
+    # 1. iTunes Search API at https://itunes.apple.com/search — free, no
+    #    auth, used for show discovery. Returns shows matching a topic
+    #    query; the connector then fetches each show's RSS feed to yield
+    #    episode candidates.
+    # 2. Direct RSS feed fetch — the canonical episode-data path. Each
+    #    podcast's `feedUrl` from iTunes (or a user-provided RSS URL)
+    #    gets parsed via feedparser. Episode <enclosure> tags carry the
+    #    audio URLs; <podcast:transcript> tags (when present) skip the
+    #    Whisper step.
+    #
+    # Whisper-as-service decision (resolves OQ-4): we reuse the existing
+    # OpenAI Whisper integration (same path used as YouTube fallback)
+    # rather than introducing a separate service. Gated on
+    # `OPENAI_API_KEY` like the YouTube fallback. A future PR may add
+    # a local-Whisper-via-faster-whisper opt-in for self-hosters who
+    # don't want OpenAI in the loop, but that's not on the critical
+    # path for M-1.7.
+    PODCAST_USER_AGENT: str = (
+        "pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani)"
+    )
+    PODCAST_RATE_LIMIT_RPM: int = 60  # iTunes Search is generous; stay polite
+    # Per-show search yields up to this many recent episodes per show.
+    # Combined with `PODCAST_SEARCH_TOP_N_SHOWS`, a topic search returns
+    # up to `top_n_shows * episodes_per_show` candidates.
+    PODCAST_EPISODES_PER_SHOW: int = 5
+    PODCAST_SEARCH_TOP_N_SHOWS: int = 3
+    # Audio-download timeout for the Whisper-fallback path. Podcasts are
+    # often 1-2 hour episodes (50-150MB MP3), so we allow a generous
+    # window. Connect-timeout stays short.
+    PODCAST_AUDIO_FETCH_TIMEOUT_SEC: int = 180
+
+    # -------------------------------------------------------------------
     # LLM — Primary (high-quality) model
     # -------------------------------------------------------------------
     # Provider dispatches which chat client is built. The call-site code is

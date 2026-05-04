@@ -105,6 +105,13 @@ export type SourceMetadata =
       replyCount: number;
       repostCount: number;
       permalink: string;
+    }
+  | {
+      source_type: 'podcast_episode';
+      showName: string;
+      episodeNumber: number | null;
+      durationSec: number;
+      publishedAt: string;
     };
 
 export type SourceType = SourceMetadata['source_type'];

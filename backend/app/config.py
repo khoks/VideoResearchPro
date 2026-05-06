@@ -363,6 +363,17 @@ class Settings(BaseSettings):
     # T-5.4.6 MFA — issuer name shown by the user's authenticator app.
     MFA_ISSUER_NAME: str = "Pratidhvani"
 
+    # T-5.4.5 OAuth — Google + GitHub PKCE. Each provider needs both a
+    # client_id and a client_secret. When unset, the corresponding
+    # /auth/oauth/<provider>/* endpoints return 503 with a clear message.
+    OAUTH_GOOGLE_CLIENT_ID: str | None = None
+    OAUTH_GOOGLE_CLIENT_SECRET: str | None = None
+    OAUTH_GITHUB_CLIENT_ID: str | None = None
+    OAUTH_GITHUB_CLIENT_SECRET: str | None = None
+    # Override per-deployment (e.g. to support a frontend on a different
+    # origin). Defaults assume the API itself is the redirect target.
+    OAUTH_REDIRECT_BASE_URL: str | None = None
+
     # T-5.4.8: SMTP delivery for password-reset / future verification emails.
     # When SMTP_HOST is unset, the email_service falls back to logging the
     # rendered email to stderr so self-host operators can hand-deliver it

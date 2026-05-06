@@ -10,6 +10,20 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### T-5.4.5: OAuth (Google + GitHub PKCE) — closes E-5.4 fully
+
+- **`oauth_states` + `oauth_identities` tables** (Alembic `e2f3a4b5c6d7`). `oauth_states` is single-use + 10 min TTL with S256 PKCE verifier persisted. `oauth_identities` is the long-lived link with `(provider, provider_user_id)` unique constraint.
+- **Provider abstraction** in `backend/app/services/oauth_service.py` — config-driven `_GenericOAuthProvider` with two concrete instances (`_GOOGLE`, `_GITHUB`); adding a third (Microsoft, GitLab) is ~30 lines + a Settings entry.
+- **Endpoints under `/api/v1/auth/oauth/`**:
+  - `GET /providers` — returns the list of providers whose `*_CLIENT_ID` + `*_CLIENT_SECRET` are configured. Frontend uses this to know which "Sign in with X" buttons to render.
+  - `GET /{provider}/start?redirect_uri=...` — generates state + PKCE verifier, persists, returns `{authorize_url}` for the SPA to redirect to.
+  - `GET /{provider}/callback?code=...&state=...` — validates state (CSRF + single-use), exchanges code for token (PKCE-bound via `code_verifier`), fetches user info, links/creates the User row, issues access token + writes session row (T-5.4.7).
+- **Linking semantics** — first OAuth login with an email matching an existing User links the identity to that user (no duplicate accounts; supports password→OAuth migration). First OAuth login with a new email creates a User with a random password (user can later set a real one via password reset). Repeat OAuth logins find the existing identity and re-issue.
+- **Failure-mode opacity** — every callback failure (unknown state, expired state, token-exchange error, missing email from provider, etc.) returns a generic 401. Audit log captures the specific reason in metadata so operators can debug post-hoc.
+- **Provider config knobs**: `OAUTH_GOOGLE_CLIENT_ID` / `OAUTH_GOOGLE_CLIENT_SECRET` / `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET`. Endpoints return 503 (not 500) when a requested provider is unconfigured.
+- **14 new tests** in `tests/test_routers/test_oauth.py` — providers list (configured vs unconfigured), start (URL shape + state persistence + 503 / 400 paths), callback (creates user on first login + links to existing email + recurring-login no-dup + 401 on unknown / expired / failed-exchange / no-email-from-provider), state single-use, PKCE wiring (code_verifier sent in token POST). All HTTP calls mocked. Backend suite 915 → 929.
+- **E-5.4 (auth hardening) is now fully closed** — all 8 tasks done across PRs #156 (audit log + lockout + password reset), #163 (SMTP), #164 (sessions), #165 (MFA), and this PR (OAuth).
+
 ### T-5.4.6: MFA / TOTP — RFC 6238 second factor with recovery codes
 
 - **`mfa_secrets` table** (Alembic `d1e2f3a4b5c6`) — one row per user when MFA is enrolled. TOTP secret encrypted at rest via the same Fernet key BYOK uses (`BYOK_ENCRYPTION_KEY`); recovery codes stored as a JSON list of SHA-256 hashes (raw codes returned to user **once** at enrollment-verification, never again).

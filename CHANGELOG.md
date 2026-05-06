@@ -10,6 +10,17 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### T-5.4.8: SMTP integration for password-reset emails
+
+- **`backend/app/services/email_service.py`** (new) — pluggable SMTP backend with per-config-knob SSL / STARTTLS / authentication / sender-address handling. `send_email(to, subject, body)` is fail-safe (never raises); `send_email_strict` is the test variant that raises `EmailDeliveryError` on failure.
+- **Log fallback** — when `SMTP_HOST` is unset, `send_email` writes the rendered email body to the log so self-host operators without SMTP can hand-deliver the secret. Same fallback runs when SMTP delivery itself fails (network blip, auth error) — the body is at least preserved in the log.
+- **Password-reset endpoint behavior change** — `POST /api/v1/auth/password-reset/request` now:
+  1. Renders the email via `render_password_reset_email(recipient_email, secret, ttl_minutes)`.
+  2. Sends via `email_service.send_email`.
+  3. Returns `debug_secret` ONLY when SMTP is unconfigured (self-host operator handoff). **On SaaS / SMTP-configured deployments, the secret is never in the response** — email is the only delivery channel.
+- **Config knobs**: `SMTP_HOST`, `SMTP_PORT` (default `587`), `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_ADDRESS`, `SMTP_USE_SSL` (default `False`), `SMTP_USE_STARTTLS` (default `True`).
+- **11 new tests** in `tests/test_services/test_email_service.py` covering the template, log-fallback path (no SMTP configured / empty recipient / SMTP failure → log preserve), SMTP path (mocked: STARTTLS, SSL, auth call, send_message), endpoint integration showing the `debug_secret` toggle based on `SMTP_HOST`. Backend suite 879 → 890.
+
 ### T-5.6.4: BYOK LLM resolution-path integration — Studio users' API keys take effect
 
 - **Closes the BYOK feature pathway.** PR #158 shipped the BYOK foundation (CRUD + encryption + Studio gating) but the credentials weren't actually used at the LLM call sites — power users could store keys but every LLM call still used the install-wide env-var. This PR threads the lookup all the way through.

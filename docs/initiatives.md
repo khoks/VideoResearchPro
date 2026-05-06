@@ -618,7 +618,7 @@ Remaining ⚪ epics — **E-5.3** Stripe / **E-5.7** Data residency / **E-5.8** 
 - [ ] T-5.4.5 ⚪ OAuth (Google + GitHub) — separate PR; provider config + token exchange + linking flow.
 - [ ] T-5.4.6 ⚪ MFA (TOTP) — separate PR; QR-code enrolment + recovery codes + verify-on-login.
 - [ ] T-5.4.7 ⚪ Session management (revoke individual sessions, list active sessions) — separate PR; requires session-row storage.
-- [ ] T-5.4.8 ⚪ SMTP integration (deliver password-reset secrets via email) — separate PR; gate on `SMTP_*` env vars.
+- [x] T-5.4.8 SMTP integration (deliver password-reset secrets via email) — *shipped 2026-05-05. New `app/services/email_service.py` with pluggable SMTP backend (host / port / username / password / SSL / STARTTLS / from-address config) + log-fallback when `SMTP_HOST` unset. Password-reset endpoint now: (a) renders email via `render_password_reset_email`, (b) sends via `email_service.send_email` (SMTP when configured, log otherwise), (c) returns `debug_secret` ONLY when SMTP is unconfigured (self-host operator handoff). On SaaS / SMTP-configured deployments, the secret is never in the response — email is the only delivery channel. 11 new tests; backend suite 879 → 890.*
 
 ### E-5.5 🟡 Abuse prevention
 

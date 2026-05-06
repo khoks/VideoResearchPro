@@ -21,7 +21,7 @@ Flipping a single use case at runtime — two mechanisms
 **Preferred: ``LLM_USE_CASE_CONFIG``** (provider + model + reasoning per
 call site). Comma-separated ``use_case=provider:model[:reasoning]``::
 
-    LLM_USE_CASE_CONFIG=qa_formulate_answer=openai:gpt-5.4:high,qa_clarification=local:qwen/qwen3.5-9b:off
+    LLM_USE_CASE_CONFIG=qa_formulate_answer=openai:gpt-5.5:high,qa_clarification=local:qwen/qwen3.5-9b:off
 
 **Legacy: ``LLM_ROUTE_OVERRIDES``** (binary primary/fast). Still honored
 for back-compat. When a use case is listed here *and not* in
@@ -41,7 +41,7 @@ Think about four things:
 
 1. **Output quality bar.** Final-answer composition, citation-bearing
    synthesis, and ranking decisions need the best model + medium/high
-   reasoning. Put these on flagship (``gpt-5.4`` / Opus / 2.5 Pro).
+   reasoning. Put these on flagship (``gpt-5.5`` / Opus / 2.5 Pro).
 2. **Input token pressure.** Context-compression calls (refine) often hit
    p95 inputs of 30-45k tokens. Whatever model you pick must have a
    context window that holds ``p95_input_tokens`` comfortably.
@@ -139,7 +139,7 @@ class UseCaseConfig:
     reasoning: ReasoningLevel = "off"
 
     def as_label(self) -> str:
-        """Short string for logs: ``openai:gpt-5.4:medium``."""
+        """Short string for logs: ``openai:gpt-5.5:medium``."""
         return f"{self.provider}:{self.model}:{self.reasoning}"
 
 
@@ -179,7 +179,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     # --- Job Q&A --------------------------------------------------------
     "qa_clarification": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "off"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "off"),
         summary=(
             "Generate a short clarifying follow-up question after the user "
             "asks about a job's videos (e.g. 'Did you mean the pricing "
@@ -190,14 +190,14 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         typical_output_tokens=200,
         min_context_recommended=2048,
         rationale=(
-            "Tiny prompt, tiny output, pattern-matching task. gpt-5.4-mini "
+            "Tiny prompt, tiny output, pattern-matching task. gpt-5.4-nano "
             "with reasoning off is cheap and fast. Safe to route to local "
             "(any instruct model ≥7B handles this cleanly)."
         ),
     ),
     "qa_sub_query_expansion": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "off"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "off"),
         summary=(
             "Rephrase the user's question into 2 semantically-focused "
             "sub-queries to broaden RAG retrieval coverage."
@@ -207,13 +207,13 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         typical_output_tokens=150,
         min_context_recommended=2048,
         rationale=(
-            "Short in, short out. gpt-5.4-mini is more than sufficient. "
+            "Short in, short out. gpt-5.4-nano is more than sufficient. "
             "Candidate for local routing if retrieval recall is acceptable."
         ),
     ),
     "qa_refine_context": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.5", "low"),
         summary=(
             "Compact the raw RAG hits + report context down to a focused "
             "excerpt that the final-answer LLM can reason over. Input is "
@@ -231,7 +231,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "qa_formulate_answer": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4", "medium"),
+        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
         summary=(
             "Produce the final user-facing answer with citations. Runs at "
             "temperature 0 so citations remain deterministic."
@@ -247,7 +247,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "qa_extract_references": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "off"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "off"),
         summary=(
             "Parse the answer back into a structured reference list "
             "(video_id, timestamp, quote). Must be accurate."
@@ -259,13 +259,13 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         rationale=(
             "Structured extraction — reasoning OFF is deliberate because "
             "reasoning models often violate schema during internal "
-            "thinking. gpt-5.4-mini + strict schema is more reliable."
+            "thinking. gpt-5.4-nano + strict schema is more reliable."
         ),
     ),
     # --- Library-wide Q&A ----------------------------------------------
     "library_qa_clarification": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "off"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "off"),
         summary=(
             "Same as qa_clarification, but for questions asked across the "
             "whole video library instead of a single job."
@@ -278,7 +278,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "library_qa_refine_context": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.5", "low"),
         summary=(
             "Compact the library-wide RAG hits into focused context before "
             "the final answer. Input can be very large."
@@ -291,7 +291,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "library_qa_formulate_answer": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4", "medium"),
+        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
         summary="Final library-wide answer with citations across videos.",
         typical_input_tokens=5_000,
         p95_input_tokens=15_000,
@@ -302,7 +302,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     # --- Q&A History (Personal Wiki meta-chat) -------------------------
     "qa_history_refine_context": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "low"),
         summary=(
             "Compact a handful of retrieved past Q&A exchanges into focused "
             "context before the history-chat final answer."
@@ -312,14 +312,14 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         typical_output_tokens=1_000,
         min_context_recommended=16_384,
         rationale=(
-            "Smaller input than qa_refine_context — gpt-5.4-mini + low "
+            "Smaller input than qa_refine_context — gpt-5.4-nano + low "
             "reasoning is sufficient. Flip to local if you want to cut "
             "per-turn latency."
         ),
     ),
     "qa_history_formulate_answer": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4", "medium"),
+        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
         summary=(
             "Synthesize a meta-answer across the user's past exchanges and "
             "cite which exchange IDs it drew from."
@@ -336,7 +336,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     # --- Per-video Knowledge extraction --------------------------------
     "knowledge_extract_batch": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "off"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "off"),
         summary=(
             "Map phase of the knowledge agent: extract structured "
             "{topics, concepts, events, facts} JSON from a batch of "
@@ -354,7 +354,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "knowledge_synthesize_report": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4", "medium"),
+        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
         summary=(
             "Reduce phase of the knowledge agent: compose a Markdown "
             "knowledge report from the deduped {topics, concepts, events, "
@@ -373,7 +373,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     # --- Topic search --------------------------------------------------
     "search_plan_queries": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "low"),
         summary=(
             "Plan 3-5 YouTube search queries from a user's topic + "
             "instructions prompt."
@@ -390,7 +390,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "search_rank_and_curate": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4", "high"),
+        default_config=UseCaseConfig("openai", "gpt-5.5", "high"),
         summary=(
             "Rank YouTube search results and curate a final video list. "
             "Requires judgment about relevance, authority, and dedup."
@@ -408,7 +408,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     # --- Report generation (map-reduce over transcripts) ---------------
     "report_map_chunks": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "off"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "off"),
         summary=(
             "Map phase: extract key facts from each batch of transcript "
             "chunks. Batches are token-budgeted up to LLM_MAX_CONTEXT_TOKENS."
@@ -425,7 +425,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "report_reduce_summaries": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "low"),
         summary=(
             "Reduce phase: consolidate the per-batch summaries into a "
             "single structured summary."
@@ -441,7 +441,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "report_compose": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4", "medium"),
+        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
         summary=(
             "Compose the final HTML report from the reduced summary + "
             "statistics. Produces thousands of tokens of user-facing text."
@@ -457,7 +457,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "report_channel": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4", "medium"),
+        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
         summary="Channel-level report composition for channel jobs.",
         typical_input_tokens=6_000,
         p95_input_tokens=15_000,
@@ -467,7 +467,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "report_compose_channel_section": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.5", "low"),
         summary="Per-channel section composer inside channel-report pipeline.",
         typical_input_tokens=6_000,
         p95_input_tokens=15_000,

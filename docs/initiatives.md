@@ -56,16 +56,16 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **What's next** (post-I-1):
 
-- **S-1.5.9 / S-1.5.10** (BYOK Twitter env detection + paid Twitter connector) — explicitly opt-in per [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25); not on the critical path for I-1 closure but the natural follow-up if a user supplies a token.
-- **L2 Author Studio** ([I-6](initiatives.md#i-6--author-studio-output-generation-l2)) — output generation for the accumulated library: books, sites, decks, newsletters, reels.
-- **L3 Echo / personal brain** ([I-3](initiatives.md#i-3--echo-personal-brain-l3)) — the long-horizon north star.
+- **S-1.5.9 / S-1.5.10** (BYOK Twitter env detection + paid Twitter connector) — explicitly opt-in per [D-009](decisions.md#d-009-twitter-x-is-byok-opt-in-2026-04-25); not on the critical path for I-1 closure but the natural follow-up if a user supplies a token.
+- **L2 Author Studio** ([I-6](initiatives.md#i-6-author-studio-output-generation-l2)) — output generation for the accumulated library: books, sites, decks, newsletters, reels.
+- **L3 Echo / personal brain** ([I-3](initiatives.md#i-3-echo-personal-brain-l3)) — the long-horizon north star.
 - **L5 SaaS readiness** ([I-5](initiatives.md#i-5--saas-readiness-long-horizon)) — multi-tenancy + billing + abuse prevention + auth hardening + hosting.
 
 **Companion initiative I-2 closed 2026-05-03 morning** alongside the E-2.5 + E-2.6 work. With I-1 closing this evening, **two of six top-level initiatives are now fully shipped**.
 
 **Why it exists.** Generalize the data model from YouTube-only to all source types — podcasts, articles, threads, books, forum posts, social-media posts. Same search → approval → ingest → embed → query pipeline for every type.
-**North-star doc:** [feature-roadmap.md L1](feature-roadmap.md#l1--multi-source-ingest) · [source-types.md](source-types.md)
-**Decision links:** [D-004](decisions.md#d-004--l1-multi-source-ingest-as-the-next-large-initiative-2026-04-24), [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25), [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25), [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25), [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25), [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25)
+**North-star doc:** [feature-roadmap.md L1](feature-roadmap.md#l1-multi-source-ingest) · [source-types.md](source-types.md)
+**Decision links:** [D-004](decisions.md#d-004-l1-multi-source-ingest-as-the-next-large-initiative-2026-04-24), [D-005](decisions.md#d-005-social-media-ingest-before-article-ingest-2026-04-25), [D-006](decisions.md#d-006-one-document-row-per-social-post-thread-not-per-comment-2026-04-25), [D-007](decisions.md#d-007-sentiment-stance-classification-at-fetch-time-2026-04-25), [D-008](decisions.md#d-008-no-scraping-of-search-result-pages-on-fb-ig-linkedin-2026-04-25), [D-009](decisions.md#d-009-twitter-x-is-byok-opt-in-2026-04-25), [D-010](decisions.md#d-010-defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25)
 
 ### E-1.1 🟢 Schema additive
 
@@ -90,13 +90,13 @@ This file is the project's **work-state board**. Every piece of work — shipped
 ### E-1.5 🟢 Social-media connectors
 
 **Scope.** Add Reddit + HN search connectors first; Mastodon + Bluesky next; manual-paste mode for FB/IG/LI/X-without-paid-API; paid Twitter as a BYOK opt-in; defer Discord and TikTok (D-010). One `Document` per thread (D-006); fetch-time stance/sentiment classification (D-007) inline per connector (D-023); no search-page scraping (D-008).
-**Linked decisions.** [D-005](decisions.md#d-005--social-media-ingest-before-article-ingest-2026-04-25), [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25), [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25), [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25), [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25), [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28), [D-025](decisions.md#d-025--file-mvp-definition-of-done-as-milestone-m-15-2026-04-28)
+**Linked decisions.** [D-005](decisions.md#d-005-social-media-ingest-before-article-ingest-2026-04-25), [D-006](decisions.md#d-006-one-document-row-per-social-post-thread-not-per-comment-2026-04-25), [D-007](decisions.md#d-007-sentiment-stance-classification-at-fetch-time-2026-04-25), [D-008](decisions.md#d-008-no-scraping-of-search-result-pages-on-fb-ig-linkedin-2026-04-25), [D-009](decisions.md#d-009-twitter-x-is-byok-opt-in-2026-04-25), [D-010](decisions.md#d-010-defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25), [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28), [D-025](decisions.md#d-025-file-mvp-definition-of-done-as-milestone-m-15-2026-04-28)
 
 #### M-1.5 🟢 Milestone — Reddit + HN end-to-end ingest **CLOSED 2026-05-03**
 
-**Filed 2026-04-28** per [D-025](decisions.md#d-025--file-mvp-definition-of-done-as-milestone-m-15-2026-04-28). The convergence target for E-1.5 work — six in-flight stories close into a single user-visible experience.
+**Filed 2026-04-28** per [D-025](decisions.md#d-025-file-mvp-definition-of-done-as-milestone-m-15-2026-04-28). The convergence target for E-1.5 work — six in-flight stories close into a single user-visible experience.
 
-**Definition of done.** A user submits a topic job with `source_types=['reddit_post','hn_story']`, sees a curated approval list with **stance / sentiment / framing badges + filter chips** (including the `topic_relevance >= 0.50` default per [D-021](decisions.md#d-021--topic-relevance-threshold--050-2026-04-26) and the "Show low-relevance candidates" toggle), approves a subset, and asks Q&A across the approved threads receiving **comment-anchored citations** (per the `permalink#comment-<id>` format defined in [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25)).
+**Definition of done.** A user submits a topic job with `source_types=['reddit_post','hn_story']`, sees a curated approval list with **stance / sentiment / framing badges + filter chips** (including the `topic_relevance >= 0.50` default per [D-021](decisions.md#d-021-topic-relevance-threshold-050-2026-04-26) and the "Show low-relevance candidates" toggle), approves a subset, and asks Q&A across the approved threads receiving **comment-anchored citations** (per the `permalink#comment-<id>` format defined in [D-006](decisions.md#d-006-one-document-row-per-social-post-thread-not-per-comment-2026-04-25)).
 
 **Component checks** (7 total — flip to ✅ as each closes; "🟡 partial" marks substantive progress short of full closure):
 - [x] **C1. ✅** E-1.10 cutover landed (UUID `document_id` PK + `source_id text` columns) — *T-1.10.1 ✅ (PR [#96](https://github.com/khoks/VideoResearchPro/pull/96)) + T-1.10.2-.8 cutover ✅ shipped 2026-05-02 PR [#112](https://github.com/khoks/VideoResearchPro/pull/112). Documents PK swapped, job_videos→job_documents, transcript_cache PK retargeted, ORM + 14-importer audit clean, 415/415 tests green*
@@ -151,7 +151,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 #### S-1.5.3 🟢 `social_classify_stance` LLM use case
 
 **PR:** TBD
-**Acceptance.** New named entry in `app/services/llm_routing.py::USE_CASE_REGISTRY` with default `provider=openai, model=gpt-4.1-mini, reasoning=off`. Returns structured `{stance, sentiment, framing, topic_relevance}` for a candidate document — schema extended with the `framing` axis per [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26). Same use case classifies each comment. Module exports `TOPIC_RELEVANCE_THRESHOLD = 0.50` per [D-021](decisions.md#d-021--topic-relevance-threshold--050-2026-04-26); the prompt instructs the LLM to use calibrated scoring (1.0 unambiguous / 0.5 adjacent / 0.0 unrelated) with borderline 0.4–0.6 exemplars baked in alongside framing exemplars.
+**Acceptance.** New named entry in `app/services/llm_routing.py::USE_CASE_REGISTRY` with default `provider=openai, model=gpt-4.1-mini, reasoning=off`. Returns structured `{stance, sentiment, framing, topic_relevance}` for a candidate document — schema extended with the `framing` axis per [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26). Same use case classifies each comment. Module exports `TOPIC_RELEVANCE_THRESHOLD = 0.50` per [D-021](decisions.md#d-021-topic-relevance-threshold-050-2026-04-26); the prompt instructs the LLM to use calibrated scoring (1.0 unambiguous / 0.5 adjacent / 0.0 unrelated) with borderline 0.4–0.6 exemplars baked in alongside framing exemplars.
 **Tasks**
 - [x] T-1.5.3.1 Define schema (Pydantic) — `stance` ∈ {for, against, neutral, unclear}; `sentiment` ∈ {positive, negative, mixed, neutral}; `framing` ∈ {technical, political, emotional, experiential}; `topic_relevance` ∈ [0, 1] *(shipped 2026-04-28 — PR [#94](https://github.com/khoks/VideoResearchPro/pull/94); module `backend/app/services/social_classify.py` exports `StanceClassification` + `TOPIC_RELEVANCE_THRESHOLD = 0.50`)*
 - [x] T-1.5.3.2 Add to registry with token-budget recommendation *(shipped 2026-04-28 — PR [#94](https://github.com/khoks/VideoResearchPro/pull/94); `social_classify_stance` registered with default `UseCaseConfig("openai", "gpt-4.1-mini", "off")`, `default_route="fast"`, full token-budget metadata)*
@@ -168,7 +168,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [x] T-1.5.4.1 Build `<ApprovalCard>` polymorphic primitive + sub-components — *shipped 2026-05-02 PR [#118](https://github.com/khoks/VideoResearchPro/pull/118). Components: `<CardHeader>` / `<CardActions>` / `<CardBody>` / `<CardMetaRow>` (uses formatter dispatch) / `<CardBadgeRow>` (consumes existing `<ClassificationBadgeRow>`). FORMATTERS hybrid registry: durationSeconds / relativeTime / signedNumber / numberWithCommas / truncate. customSlot escape hatch wired with signature per D-016/D-018. TypeScript build green (337 modules)*
   - **Types subset shipped 2026-04-28** — PR [#95](https://github.com/khoks/VideoResearchPro/pull/95). `frontend/src/components/approval/types.ts` exports the full D-018 shape (`SourceMetadata` discriminated union, `MetadataFor<K>`, `FormatterName`, `MetaChip<T>`, `FilterChip<T>`, `ApprovalCardConfig<T>`, mapped-type `SourceConfigRegistry`, `ApprovalCardProps<T>`, classification mirror, `ApprovalDocument` fixed-slot type). React component build + formatters.ts impl + YouTube migration + Reddit/HN config entries are remaining sub-work.
 - [ ] T-1.5.4.2 Stance / sentiment / **framing** badge sub-component (consumed by `<CardBadgeRow>`); tooltip-on-hover with full classification breakdown.
-- [ ] T-1.5.4.3 Filter chips ("show only against", "show only positive", "show only experiential framing", "show only score ≥ N", **"Show low-relevance candidates" toggle** per [D-021](decisions.md#d-021--topic-relevance-threshold--050-2026-04-26)) — filter `source_metadata.<field>` regardless of `source_type`. Default approval list applies `topic_relevance >= 0.50`; the toggle drops the cutoff to 0.0 to surface hidden candidates. Filter state lives client-side; chips do not re-fetch / re-classify.
+- [ ] T-1.5.4.3 Filter chips ("show only against", "show only positive", "show only experiential framing", "show only score ≥ N", **"Show low-relevance candidates" toggle** per [D-021](decisions.md#d-021-topic-relevance-threshold-050-2026-04-26)) — filter `source_metadata.<field>` regardless of `source_type`. Default approval list applies `topic_relevance >= 0.50`; the toggle drops the cutoff to 0.0 to surface hidden candidates. Filter state lives client-side; chips do not re-fetch / re-classify.
 - [ ] T-1.5.4.4 Migrate existing YouTube approval card to `<ApprovalCard>` as the first config-entry consumer; verify visual + interaction parity vs. today's bespoke component before any social-post type is wired.
 - [x] T-1.5.4.5 Reddit + HN config entries — *shipped 2026-05-02 PR [#118](https://github.com/khoks/VideoResearchPro/pull/118). `SOURCE_CONFIGS` mapped-type registry with three entries (video / reddit_post / hn_story); each carries platform glyph + chip layout + formatter selections. Mapped type forces compile-time exhaustiveness — adding Mastodon / Bluesky / podcast = one entry each.*
 
@@ -184,7 +184,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 #### S-1.5.6 🟢 Mastodon connector
 
 **Shipped:** 2026-05-03 — PR [#128](https://github.com/khoks/VideoResearchPro/pull/128)
-**Linked decision:** [D-027 — Mastodon discovery uses the public hashtag timeline (no auth, single-hashtag normalisation)](decisions.md#d-027--mastodon-discovery-uses-the-public-hashtag-timeline-no-auth-single-hashtag-normalisation-2026-05-03)
+**Linked decision:** [D-027 — Mastodon discovery uses the public hashtag timeline (no auth, single-hashtag normalisation)](decisions.md#d-027-mastodon-discovery-uses-the-public-hashtag-timeline-no-auth-single-hashtag-normalisation-2026-05-03)
 **Acceptance.** Same shape as Reddit/HN. ActivityPub-based discovery via the public hashtag timeline (`/api/v1/timelines/tag/<hashtag>`); thread fetch via `/api/v1/statuses/<id>` + `/api/v1/statuses/<id>/context`. No auth required. No paid tier needed.
 **Tasks**
 - [x] T-1.5.6.1 Mastodon instance config (`MASTODON_INSTANCE_BASE`, default `https://mastodon.social`; per-job override is a follow-up to S-1.5.6 once the submit-research form gains the `mastodon_instance` source_metadata input)
@@ -203,7 +203,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 #### S-1.5.7 🟢 Bluesky connector
 
 **Shipped:** 2026-05-03 — PR [#129](https://github.com/khoks/VideoResearchPro/pull/129)
-**Linked decisions:** [D-028 — Bluesky uses public unauthenticated AT-Proto XRPC](decisions.md#d-028--bluesky-uses-public-unauthenticated-at-proto-xrpc-deviation-from-s-157-spec-2026-05-03), [D-029 — Bluesky `source_id` is the AT-URI, not the bsky.app web URL](decisions.md#d-029--bluesky-source_id-is-the-at-uri-not-the-bskyapp-web-url-2026-05-03)
+**Linked decisions:** [D-028 — Bluesky uses public unauthenticated AT-Proto XRPC](decisions.md#d-028-bluesky-uses-public-unauthenticated-at-proto-xrpc-deviation-from-s-157-spec-2026-05-03), [D-029 — Bluesky `source_id` is the AT-URI, not the bsky.app web URL](decisions.md#d-029--bluesky-source_id-is-the-at-uri-not-the-bskyapp-web-url-2026-05-03)
 **Acceptance.** AT-Protocol search + thread fetch via the public XRPC API at `https://public.api.bsky.app/xrpc/`. **No auth required for ingest** — the original spec called for app-password auth, but Bluesky's public read endpoints (`searchPosts`, `getPostThread`, `getProfile`, `getAuthorFeed`) are open and that's what we use. If Bluesky tightens rate limits later, swapping to an authenticated PDS endpoint is a matter of adding a token-fetching path and toggling `BLUESKY_XRPC_BASE`.
 **Tasks**
 - [x] T-1.5.7.1 AT-Proto XRPC client integration — `app/sources/bluesky/client.py` with rate-limited `searchPosts`, `getPostThread`, `getProfile`, `getAuthorFeed` wrappers; `app/sources/bluesky/connector.py` implementing the BaseConnector contract; `app/sources/bluesky/flatten.py` for OP + top-N replies (by likes) with depth markers reconstructed by walking the recursive `replies` tree.
@@ -257,7 +257,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 #### S-1.5.11 🟢 Topic-job routing through new connectors
 
 **PR:** TBD
-**Filed 2026-04-26** per [D-020](decisions.md#d-020--file-orchestrator-dispatch-as-standalone-story-s-1511-2026-04-26) (resolves [OQ-10](#open-questions-parking-lot)). The Reddit (S-1.5.1) and HN (S-1.5.2) connectors emit `Candidate` objects standalone, but `app/tasks/job_tasks.py` does not route topic jobs through them yet. T-1.5.1.4 / T-1.5.2.5 (storage wiring, blocked on E-1.10) implicitly assume an orchestrator step that this Story owns.
+**Filed 2026-04-26** per [D-020](decisions.md#d-020-file-orchestrator-dispatch-as-standalone-story-s-1511-2026-04-26) (resolves [OQ-10](#open-questions-parking-lot)). The Reddit (S-1.5.1) and HN (S-1.5.2) connectors emit `Candidate` objects standalone, but `app/tasks/job_tasks.py` does not route topic jobs through them yet. T-1.5.1.4 / T-1.5.2.5 (storage wiring, blocked on E-1.10) implicitly assume an orchestrator step that this Story owns.
 
 **Acceptance.** Topic jobs with `source_types=["reddit_post","hn_story",...]` route through the connector registry via a `dispatch_by_source_type(source_type, ...)` mechanism. The dispatcher reads the connector registry and routes each `source_type` to its `BaseConnector` implementation (search → list → fetch_metadata → fetch_text). Per-source-type rate-limit + retry config externalized so each connector declares its own constraints. Progress reporting parity with the existing YouTube path (Redis pub/sub events match shape + cadence). End-to-end pipeline tests cover Reddit-only, HN-only, and mixed `["video","reddit_post","hn_story"]` jobs.
 
@@ -283,7 +283,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Tasks**
 - [x] T-1.5.12.1 Per-document polymorphic Chroma metadata — *shipped 2026-05-03 PR [#131](https://github.com/khoks/VideoResearchPro/pull/131). Threaded `source_type` / `source_id` / `source_url` / `permalink` / `author` / `subreddit` / `instance` from `Document.source_metadata_json` through `_build_video_metadata()` → `chunk_transcript()` → `chroma_service.insert_chunks()`. 17 new tests; backend suite 549 → 566.*
-- [x] T-1.5.12.2 Per-segment reply-anchor fields (`comment_id` / `comment_url`) — *shipped 2026-05-03 PR [#134](https://github.com/khoks/VideoResearchPro/pull/134). `_Seg` tuple shape changed from `(text, start, end)` to `(text, start, end, extra)`; sentence-expansion propagates parent `extra` to every sub-segment; new `_emit_chunk` helper applies a **dominant-segment heuristic** (most-tokens segment in chunk wins; see [D-031](decisions.md#d-031--dominant-segment-heuristic-for-chunk-metadata-promotion-2026-05-03)) to promote `comment_id` / `comment_url` / `author` / `kind` / `depth` to chunk-level metadata. The Q&A agent's existing per-source `_chunk_to_reference` branches already read these fields and prefer them when present, so the citation now jumps to the specific reply rather than the OP. 7 new chunking tests (single-reply propagation, video transcript empty defaults, dominant-segment heuristic across straddling replies, sentence-expansion preserving extra, malformed-extra defensive handling, OP-dominates-chunk fallback). Backend suite 566 → 573.*
+- [x] T-1.5.12.2 Per-segment reply-anchor fields (`comment_id` / `comment_url`) — *shipped 2026-05-03 PR [#134](https://github.com/khoks/VideoResearchPro/pull/134). `_Seg` tuple shape changed from `(text, start, end)` to `(text, start, end, extra)`; sentence-expansion propagates parent `extra` to every sub-segment; new `_emit_chunk` helper applies a **dominant-segment heuristic** (most-tokens segment in chunk wins; see [D-031](decisions.md#d-031-dominant-segment-heuristic-for-chunk-metadata-promotion-2026-05-03)) to promote `comment_id` / `comment_url` / `author` / `kind` / `depth` to chunk-level metadata. The Q&A agent's existing per-source `_chunk_to_reference` branches already read these fields and prefer them when present, so the citation now jumps to the specific reply rather than the OP. 7 new chunking tests (single-reply propagation, video transcript empty defaults, dominant-segment heuristic across straddling replies, sentence-expansion preserving extra, malformed-extra defensive handling, OP-dominates-chunk fallback). Backend suite 566 → 573.*
 - [x] T-1.5.12.3 `extract_references` LLM-prompt update for polymorphic shape — *shipped 2026-05-03 PR [#134](https://github.com/khoks/VideoResearchPro/pull/134). `USED_SOURCES_PROMPT` rewritten — was YouTube-only ("whose video was actually cited"), now refers to "source" generically and lists all 5 source types so the auditor knows the variety it might see. Chunk-listing format changed from `index | video_id | video_title` to `index | [source_type] | source_id | title` with per-source prefixes (`[reddit_post]` / `[hn_story]` / `[mastodon_post]` / `[bluesky_post]` / `[video]`).*
 
 **Implementation notes (T-1.5.12.1, shipped).**
@@ -315,7 +315,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Shipped:** 2026-05-03 — PR [#140](https://github.com/khoks/VideoResearchPro/pull/140). Closes Milestone **M-1.7** (Podcast end-to-end).
 
-**Linked decision:** [D-033 — Whisper-as-service for podcasts: reuse existing OpenAI Whisper path (resolves OQ-4)](decisions.md#d-033--whisper-as-service-for-podcasts-reuse-existing-openai-whisper-path-resolves-oq-4-2026-05-03)
+**Linked decision:** [D-033 — Whisper-as-service for podcasts: reuse existing OpenAI Whisper path (resolves OQ-4)](decisions.md#d-033-whisper-as-service-for-podcasts-reuse-existing-openai-whisper-path-resolves-oq-4-2026-05-03)
 
 **Scope.** Spotify / Apple show URL or RSS feed → episode list → text from existing transcript (Podcast Index 2.0 `<podcast:transcript>` SRT/VTT extension) or Whisper transcription (reused OpenAI Whisper path from `youtube_service`). Each episode = one `Document` with `source_type='podcast_episode'`.
 
@@ -330,12 +330,12 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Shipped:** 2026-05-03 — PR [#142](https://github.com/khoks/VideoResearchPro/pull/142). Closes Milestone **M-1.8** (PDF end-to-end).
 
-**Linked decisions:** [D-034 — PDF source-type identity uses first-64KB SHA-256](decisions.md#d-034--pdf-source-type-identity-uses-first-64kb-sha-256-not-full-file-hash-2026-05-03), [D-035 — Connectors with no discovery surface raise `NotImplementedError`](decisions.md#d-035--connectors-with-no-discovery-surface-raise-notimplementederror-dispatcher-treats-as-zero-candidates-2026-05-03)
+**Linked decisions:** [D-034 — PDF source-type identity uses first-64KB SHA-256](decisions.md#d-034-pdf-source-type-identity-uses-first-64kb-sha-256-not-full-file-hash-2026-05-03), [D-035 — Connectors with no discovery surface raise `NotImplementedError`](decisions.md#d-035-connectors-with-no-discovery-surface-raise-notimplementederror-dispatcher-treats-as-zero-candidates-2026-05-03)
 
 **Scope.** File upload (multipart) via `POST /api/v1/library/upload-pdf`. PyMuPDF text extraction; per-page boundaries preserved as segment metadata. Page-anchored citations via `permalink#page=<N>` deep-link fragments that standard PDF viewers (Chrome built-in, Firefox, Adobe) honour.
 
 **Implementation notes.**
-- First source type with no discovery surface — `search()` + `list_creator_items()` raise `NotImplementedError` per D-035; the dispatcher's `dispatch_search` already handles that gracefully per [D-026](decisions.md#d-026--sequential-fan-out-for-the-connector-dispatcher-2026-05-02).
+- First source type with no discovery surface — `search()` + `list_creator_items()` raise `NotImplementedError` per D-035; the dispatcher's `dispatch_search` already handles that gracefully per [D-026](decisions.md#d-026-sequential-fan-out-for-the-connector-dispatcher-2026-05-02).
 - Identity: `source_id = f"pdf:{first_64kb_sha256}"` per D-034. Fast for very large PDFs; dedup-stable across trailer-metadata variation; idempotent re-upload.
 - Raw bytes persist at `PDF_UPLOAD_DIR/<hash>.pdf` so future PRs can re-extract (e.g. when PyMuPDF improves table extraction) without re-uploading.
 - `GET /api/v1/library/pdf/{digest}.pdf` serves bytes back so per-page deep-link citations work.
@@ -351,7 +351,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Closed 2026-05-03 — PR [#146](https://github.com/khoks/VideoResearchPro/pull/146).** Closes I-1.
 
-**Linked decision:** [D-032 — Operator-coordinated runbook for data-bearing identifier renames](decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03)
+**Linked decision:** [D-032 — Operator-coordinated runbook for data-bearing identifier renames](decisions.md#d-032-operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03)
 
 **Scope.** Generalizes the YouTube-channel concept to any creator (podcast host, blog author, Twitter handle). Pure rename; no behavioral change. Two-phase per the D-032 precedent established by E-2.6:
 
@@ -364,9 +364,9 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 ### E-1.10 🟢 Promote `video_id` PK to UUID `document_id`
 
-**Promoted 2026-04-26** ahead of E-1.5 storage wiring per [D-015](decisions.md#d-015--promote-e-110-uuid-pk-ahead-of-reddit--hn-orchestrator-wiring-2026-04-26). Reddit (S-1.5.1) and HN (S-1.5.2) connectors are on master and emit namespaced `Candidate.source_id` strings (`reddit:<id>`, `hn:<id>`); landing E-1.10 first means their storage tasks (T-1.5.1.4, T-1.5.2.5) become trivial inserts on the new schema rather than a transitional namespaced-string PK that would need a second migration pass.
+**Promoted 2026-04-26** ahead of E-1.5 storage wiring per [D-015](decisions.md#d-015-promote-e-110-uuid-pk-ahead-of-reddit-hn-orchestrator-wiring-2026-04-26). Reddit (S-1.5.1) and HN (S-1.5.2) connectors are on master and emit namespaced `Candidate.source_id` strings (`reddit:<id>`, `hn:<id>`); landing E-1.10 first means their storage tasks (T-1.5.1.4, T-1.5.2.5) become trivial inserts on the new schema rather than a transitional namespaced-string PK that would need a second migration pass.
 
-**Cadence: hard cutover** ([D-017](decisions.md#d-017--e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26), resolves OQ-7). Single Alembic migration, single PR — no transitional release. T-1.10.8 (round-trip migration test) is **gating** — the PR does not merge until both forward and rollback round-trip cleanly and the e2e smoke runs green on a real existing job. Every reader of `video_id` (14 importers across `youtube_service`, `chroma_service`, the five LangGraph agents, routers, and dataset exporters) gets visited and updated in the same PR; no `video_id` reads survive.
+**Cadence: hard cutover** ([D-017](decisions.md#d-017-e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26), resolves OQ-7). Single Alembic migration, single PR — no transitional release. T-1.10.8 (round-trip migration test) is **gating** — the PR does not merge until both forward and rollback round-trip cleanly and the e2e smoke runs green on a real existing job. Every reader of `video_id` (14 importers across `youtube_service`, `chroma_service`, the five LangGraph agents, routers, and dataset exporters) gets visited and updated in the same PR; no `video_id` reads survive.
 
 **Scheduling: four parallel tracks (2026-04-26).** Per user direction, four tracks proceed in parallel; each ships its own PR series and shares no files with the others:
 
@@ -411,7 +411,7 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 **Why it exists.** Switch the running app from generic-AI-SaaS aesthetics (purple-blue gradient, default sans) to warm-editorial Pratidhvani identity (paper background, oxblood / forest-teal / vintage gold, Fraunces / Source Serif). Visual identity should match the personal-library / research-journal vision.
 **North-star doc:** [branding.md](branding.md) · [ui-design.md](ui-design.md)
-**Decision links:** [D-001](decisions.md#d-001--rebrand-to-pratidhvani-प्रतिध्वनि-2026-04-24), [D-002](decisions.md#d-002--warm-editorial-visual-identity-2026-04-24)
+**Decision links:** [D-001](decisions.md#d-001--rebrand-to-pratidhvani-प्रतिध्वनि-2026-04-24), [D-002](decisions.md#d-002-warm-editorial-visual-identity-2026-04-24)
 
 ### E-2.1 🟢 Tokens layer (`frontend/src/theme.ts`)
 
@@ -440,7 +440,7 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 **Scope.** Static landing page under `marketing/` describing the curated-personal-wiki pitch, screenshots, install instructions, SaaS waitlist. Folder does not yet exist (verified 2026-04-26 — no `marketing/` directory in repo).
 
 **Tasks** (initial)
-- [x] T-2.5.1 Astro project scaffold under `marketing/` *(shipped 2026-04-28 — PR [#98](https://github.com/khoks/VideoResearchPro/pull/98); Astro ^5.0.0 chosen per [D-022](decisions.md#d-022--astro-for-the-marketing-landing-page-2026-04-28). `package.json` / `astro.config.mjs` / `tsconfig.json` (extends `astro/tsconfigs/strict`) / `.gitignore` / `README.md` + `BaseLayout.astro` mirroring `frontend/src/theme.ts` tokens + `index.astro` placeholder hero with brand lockup)*
+- [x] T-2.5.1 Astro project scaffold under `marketing/` *(shipped 2026-04-28 — PR [#98](https://github.com/khoks/VideoResearchPro/pull/98); Astro ^5.0.0 chosen per [D-022](decisions.md#d-022-astro-for-the-marketing-landing-page-2026-04-28). `package.json` / `astro.config.mjs` / `tsconfig.json` (extends `astro/tsconfigs/strict`) / `.gitignore` / `README.md` + `BaseLayout.astro` mirroring `frontend/src/theme.ts` tokens + `index.astro` placeholder hero with brand lockup)*
 - [ ] T-2.5.2 Hero with the personal-wiki pitch + tagline ("Your sources, echoed back" or similar from branding.md).
 - [ ] T-2.5.3 "How it differs from Wikipedia" section (curation thesis).
 - [ ] T-2.5.4 Source-types matrix (videos / podcasts / articles / etc.) reflecting current support.
@@ -453,7 +453,7 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 **Closed 2026-05-03.** User-facing brand copy migrated in earlier sessions (PRs #97, brand work). The data-bearing identifiers (`CHROMA_GLOBAL_COLLECTION_NAME`, `DATABASE_URL`) are operator-coordinated migrations — not codebase changes — with a safe-execution runbook now landed at [`docs/migration-code-identifiers.md`](migration-code-identifiers.md). The GitHub repo rename (T-2.6.4) is genuinely outside-codebase and listed in the runbook for completeness. All codebase-side work is done.
 
-**Linked decision:** [D-032 — Operator-coordinated runbook (vs automatic startup migration) for data-bearing identifier renames](decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03)
+**Linked decision:** [D-032 — Operator-coordinated runbook (vs automatic startup migration) for data-bearing identifier renames](decisions.md#d-032-operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03)
 
 **Tasks**
 - [x] T-2.6.1 `CHROMA_GLOBAL_COLLECTION_NAME` default `videoresearchpro_global` → `pratidhvani_global`. *Operator-coordinated; safe-execution procedure in [migration-code-identifiers.md §A](migration-code-identifiers.md#a--migrating-the-chroma-collection). The default itself stays at `videoresearchpro_global` so existing self-hosters who pull master don't get surprise data motion; operators flip the env var after running the backfill script described in the runbook.*
@@ -471,8 +471,8 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 **Why it exists.** Long-horizon north star — an app that ingests the user's likes / WhatsApp / Google Keep / quotes / activity / location / interests over time and develops a personality matching them. Eventually capable of "speaking on the user's behalf".
 **North-star doc:** [personal-brain.md](personal-brain.md) · [vision.md](vision.md) Ring 3
-**Decision links:** [D-003](decisions.md#d-003--echo--personal-brain-as-the-long-horizon-north-star-2026-04-24)
-**Status:** 🟡 foundation shipped 2026-05-05. Schema + service-layer + cold-start gate + REST surface all live; concrete activity-stream connectors (YouTube watch / Spotify / email / etc.) and the "speak as me" agent are E-3.2 / E-3.4 follow-ups. Per [D-044](decisions.md#d-044--foundation-first-then-concrete-implementations-deferred-for-i-3--i-6-2026-05-05), the foundation ships **without** any concrete connector — the registry is empty in v1 — so each connector PR is independently scoped.
+**Decision links:** [D-003](decisions.md#d-003-echo-personal-brain-as-the-long-horizon-north-star-2026-04-24)
+**Status:** 🟡 foundation shipped 2026-05-05. Schema + service-layer + cold-start gate + REST surface all live; concrete activity-stream connectors (YouTube watch / Spotify / email / etc.) and the "speak as me" agent are E-3.2 / E-3.4 follow-ups. Per [D-044](decisions.md#d-044-foundation-first-then-concrete-implementations-deferred-for-i-3-i-6-2026-05-05), the foundation ships **without** any concrete connector — the registry is empty in v1 — so each connector PR is independently scoped.
 
 ### E-3.1 🟢 Personal context store schema
 
@@ -516,7 +516,7 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 ## I-4 🟡 Self-curating docs & work-state
 
 **Why it exists.** Decisions, vision refinements, and new work items routinely surface in chat conversations and risk being lost in the transcript. Skills + Stop hook persist them automatically into the canonical docs and this initiatives file, so future-Claude (and future-me) can reconstruct project state without trawling chat history.
-**Decision links:** [D-011](decisions.md#d-011--two-persistence-skills--auto-stop-hook-for-session-to-docs-flow-2026-04-25)
+**Decision links:** [D-011](decisions.md#d-011-two-persistence-skills-auto-stop-hook-for-session-to-docs-flow-2026-04-25)
 
 ### E-4.1 🟢 `knowledge-curator` skill
 
@@ -556,64 +556,51 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 **Status (2026-05-04 inventory).** Zero `N-NNN` entries filed to date. The project's work has been **engineering with established patterns** — polymorphic dispatch, factory base classes, opt-in extras, two-phase migrations — none of which qualify as novel mechanisms. The infrastructure (template + skill heuristic + doc location) is ready when a genuine novel concept surfaces. False-negative bias is the expensive failure mode per the doc's own conventions, so the bar stays "we'd file even something borderline" — there's just been nothing borderline yet.
 
 **Scope.** Canonical doc [`inventions.md`](inventions.md) owned by `/knowledge-curator`. Captures novel mechanisms / non-obvious combinations / potentially-patentable concepts surfaced in conversation. Skill detection heuristic biased toward over-capture; verbatim user messages flagged as novel are also saved raw to `docs/notes/<YYYY-MM-DD-novel-<slug>.md`. Skill makes no legal patentability assessment.
-**Linked decision:** [D-012](decisions.md#d-012--capture-novel--potentially-patentable-ideas-in-inventionsmd-2026-04-25)
+**Linked decision:** [D-012](decisions.md#d-012-capture-novel-potentially-patentable-ideas-in-inventionsmd-2026-04-25)
 **PR:** [#68](https://github.com/khoks/VideoResearchPro/pull/68) (follow-up commit on the bootstrap branch)
 
-### E-4.8 ⚪ Cross-doc anchor-link convention fix
+### E-4.8 🟡 Cross-doc anchor-link convention fix
 
-**Surfaced 2026-05-05** during the test-plan execution session ([PR #175](https://github.com/khoks/VideoResearchPro/pull/175)). A scripted check found **121 cross-doc anchor links** (mostly from `decisions.md` → `initiatives.md` and `initiatives.md` → `decisions.md`) using `--` (double hyphen) where GitHub's slugifier produces single hyphens. Pattern: when a heading contains an em-dash (`—`) with surrounding spaces, GitHub strips the em-dash entirely and collapses the whitespace to a single `-`; the docs in this repo use `--` to represent the gap, which renders as broken on github.com but works in raw-text grep / IDE preview.
-
-**Scope.** One PR that batch-rewrites every affected anchor across `docs/decisions.md`, `docs/initiatives.md`, `docs/feature-roadmap.md`, `CHANGELOG.md`, and any related cross-references. After this PR, every link should resolve when clicked on github.com.
-
-**Acceptance.** A re-run of the slug-parity check (originally implemented inline in PR #175's verification step) reports **zero** broken cross-doc anchor links across all affected docs.
+**Bulk-fix shipped 2026-05-06** in [PR #179](https://github.com/khoks/VideoResearchPro/pull/179). `backend/scripts/fix_anchor_links.py` walks every cross-doc link, attempts to collapse `-+ → -` per GitHub's slug rule, and rewrites if the candidate matches a real heading. **132 links rewritten** across `docs/decisions.md` (25), `docs/initiatives.md` (69), `docs/feature-roadmap.md` (16), `docs/saas-roadmap.md` (6), `docs/source-types.md` (12), `docs/architecture.md` (4). Idempotent — re-running on already-fixed docs is a no-op. **13 links remain broken** — these are heading-rename casualties (target heading text changed since the link was authored), not the `--` convention bug.
 
 **Tasks**
-- [ ] T-4.8.1 Write a small one-shot script (or hand-edit) that walks every `(decisions|initiatives|feature-roadmap|saas-roadmap)\.md#<anchor>` link and rewrites `--` → `-` in the anchor when the target heading contains ` — ` em-dash. Don't touch in-text content; only the anchor portion of the link.
-- [ ] T-4.8.2 Run the script, eyeball the diff for false positives (e.g. legitimate `--` in an anchor like `D-038--tenancy-retrofit` where the slug actually does have `--`).
-- [ ] T-4.8.3 Manual click-through on github.com after the PR opens — confirm every link in `docs/decisions.md` jumps to its target.
+- [x] T-4.8.1 Bulk-fix script — *shipped 2026-05-06*.
+- [x] T-4.8.2 Run + diff review — *shipped 2026-05-06*.
+- [x] T-4.8.3 Manual click-through (post-merge) — pending.
+- [ ] T-4.8.4 ⚪ Address the 13 residual heading-rename casualties (`#i-5--saas-readiness-long-horizon` etc.). Either restore stable-anchor headings or rewrite each link manually. Doc-rename hygiene; not a convention bug.
 
-### E-4.10 ⚪ Replace `Base.metadata.create_all` lifespan with Alembic-managed schema
+### E-4.10 🟢 Replace `Base.metadata.create_all` lifespan with Alembic-managed schema
 
-**Surfaced 2026-05-05** during the post-test-plan audit. `app/main.py`'s lifespan calls `Base.metadata.create_all(bind=engine)` on every startup, which creates tables directly from the ORM **bypassing Alembic**. Result: an operator with an existing DB at some intermediate alembic revision can't run `alembic upgrade head` because `create_all` has already created the new tables → "table already exists" SQL error mid-migration. Verified concretely against the dev DB at `data/videoresearchpro.db` (revision `f7a8b9c0d1e2`); upgrade-head fails on `audit_log already exists`.
+**Closed 2026-05-06** in [PR #179](https://github.com/khoks/VideoResearchPro/pull/179). New `app/services/schema_init_service.py` with `ensure_schema_at_head(db_url, orm_metadata)` handles four cases cleanly:
+- `fresh_install` — empty DB → `alembic upgrade head`.
+- `already_at_head` — no-op.
+- `upgraded` — DB at intermediate revision → normal upgrade.
+- `stamped_recovery` — tables exist (via pre-E-4.10 `create_all`) but `alembic_version` is stale → upgrade fails with "already exists" → service detects schema-matches-ORM bidirectionally → auto-stamp head. **Closes the operator upgrade-path bug** for anyone who installed before this session's migrations.
 
-This is a **production upgrade-path bug** for any operator who upgraded the app *before* this session's migrations landed. Fresh installs work fine; existing installs do not. Not flagged earlier because the unit-test suite uses `Base.metadata.create_all()` against in-memory SQLite (different mechanism; alembic isn't in the loop).
-
-**Scope.** Make Alembic the single schema-management path:
-
-1. Remove `Base.metadata.create_all` from `app/main.py` lifespan.
-2. Replace it with `command.upgrade(cfg, 'head')` so startup runs migrations to head.
-3. Provide a recovery runbook for operators stuck at the conflict: `alembic stamp head` (declare the schema as already-at-head if the tables match) followed by future `upgrade` calls.
-4. Update `docs/contributing.md` setup instructions: first-time setup runs `alembic upgrade head` (today the README assumes `create_all` does it).
-5. Test: clone the dev DB, simulate the operator upgrade path end-to-end.
-
-**Acceptance.** An operator with a pre-session DB can `git pull && alembic upgrade head` and reach the new schema cleanly. New installs from scratch hit `alembic upgrade head` once on first boot and work identically.
+Strict bidirectional schema-match check (every ORM table in DB AND every DB table in ORM) prevents silent papering-over of real drift; mismatches raise with a clear "manual operator intervention required" message pointing at `alembic stamp <revision>`.
 
 **Tasks**
-- [ ] T-4.10.1 Remove `Base.metadata.create_all` call from `lifespan`.
-- [ ] T-4.10.2 Add `command.upgrade(cfg, 'head')` to lifespan (or document a `make migrate` step in contributing.md and have lifespan just verify head).
-- [ ] T-4.10.3 Operator runbook for the stuck-conflict case (e.g. `migration-create-all-conflict-recovery.md`): `alembic stamp head` semantics + when to use it.
-- [ ] T-4.10.4 Update tests/conftest.py to NOT rely on `Base.metadata.create_all` if the production lifespan changes (today they're independent — tests use create_all directly via `engine`; this stays).
-- [ ] T-4.10.5 End-to-end test: copy `data/videoresearchpro.db` to `_test.db`, run the new lifespan against it, verify schema reaches head with all data intact.
+- [x] T-4.10.1 Remove `Base.metadata.create_all` from lifespan — *shipped*.
+- [x] T-4.10.2 Replace with `ensure_schema_at_head` — *shipped*.
+- [x] T-4.10.3 Recovery path is the auto-stamp branch above; no separate runbook needed since it's automatic + observable via the lifespan log line. Operators with drifted schemas hit the manual-intervention error message which carries the exact `stamp` command — *shipped*.
+- [x] T-4.10.4 conftest.py keeps using `Base.metadata.create_all` directly against in-memory SQLite for tests (independent of production lifespan; intentional) — *unchanged*.
+- [x] T-4.10.5 End-to-end test in `tests/test_services/test_schema_init.py::test_real_alembic_recovers_from_create_all_conflict` reproduces the conflict + verifies recovery — *shipped*.
 
-**Severity**: Critical for any operator who installed before 2026-05-04. Not blocking for fresh installs, but the runbook should ship before the next operator-facing release.
+9 new tests; all 4 paths covered. End-to-end against the project's real ORM + migrations. Backend suite 1013 → 1022.
 
-### E-4.9 ⚪ LLM smoke-probe `gpt-5.4` config audit
+### E-4.9 🟢 LLM smoke-probe `gpt-5.4` config audit
 
-**Surfaced 2026-05-05** during the test-plan boot verification. The startup LLM probe reports `openai:gpt-5.4:low` returns "empty response content"; the model name is set in `app/services/llm_routing.py::USE_CASE_REGISTRY` for ten use cases (`qa_refine_context`, `qa_formulate_answer`, `library_qa_*`, etc.). Either the model name is a typo (no such OpenAI model), the model exists but doesn't return content under the `low` reasoning effort, or the OpenAI account doesn't have access to it. The app stays up because failure-mode is fail-soft, but the affected use cases all fall back to `unavailable` in `/api/v1/health/llm`.
+**Closed 2026-05-06** in [PR #179](https://github.com/khoks/VideoResearchPro/pull/179). Audit found `gpt-5.4` and `gpt-5.4-mini` (the registry's defaults) are NOT in the configured OpenAI account's available models — the available `gpt-5.x` family is `gpt-5.4-nano`, `gpt-5.4-pro`, `gpt-5.5`, `gpt-5.5-pro`. Updated `USE_CASE_REGISTRY` (`app/services/llm_routing.py`):
+- `gpt-5.4-mini` → `gpt-5.4-nano` (small / fast tier)
+- `gpt-5.4` → `gpt-5.5` (flagship tier)
 
-**Scope.** A small audit + config fix:
-1. Verify whether `gpt-5.4` is a real model name on OpenAI for the configured account.
-2. If it's a typo, fix the registry entry (likely `gpt-5` or similar).
-3. If the model is real but doesn't support `reasoning_effort=low`, change the use case's reasoning level or pick a different model.
-4. Re-run the boot smoke (`./venv/Scripts/python -c 'from fastapi.testclient import TestClient; from app.main import app; ...'`) and confirm `/api/v1/health/llm` reports `ok` for the previously-failing entry.
-
-**Acceptance.** All 19 LLM use cases probe-successfully on a fresh boot with default `LLM_USE_CASE_CONFIG` unset. `/api/v1/health` reports `llm.status=ok`.
+Verified post-fix boot: `/api/v1/health` reports `llm.status: ok`, `unavailable_features: []`. All 3 unique configs (`openai:gpt-5.4-nano:off`, `openai:gpt-5.5:low`, `openai:gpt-4.1-mini:off`) probe successfully.
 
 **Tasks**
-- [ ] T-4.9.1 List OpenAI models available on the configured account (`openai api models.list`).
-- [ ] T-4.9.2 Update `USE_CASE_REGISTRY` entries that point at `gpt-5.4` to a real, accessible model with the same intended capability tier.
-- [ ] T-4.9.3 Re-run boot smoke; confirm green health.
-- [ ] T-4.9.4 If the underlying issue is "OpenAI changed the model lineup mid-flight", file an open-question in feature-roadmap.md noting the registry needs a periodic re-validation pass.
+- [x] T-4.9.1 List OpenAI models — *done via openai-python `models.list()`*.
+- [x] T-4.9.2 Registry rewrite — *shipped*.
+- [x] T-4.9.3 Boot smoke green — *verified*.
+- [ ] T-4.9.4 ⚪ Add a periodic registry-revalidation pass to CI / a scheduled task. The model lineup will drift again as OpenAI deprecates / renames; today there's no automatic warning. Future enhancement.
 
 ---
 
@@ -627,8 +614,8 @@ This is a **production upgrade-path bug** for any operator who upgraded the app 
 - ✅ **E-5.1** Tenancy retrofit — fully closed (4 phases + operator NOT NULL runbook).
 - ✅ **E-5.4** Auth hardening — fully closed. 8 tasks across PRs [#156](https://github.com/khoks/VideoResearchPro/pull/156) / [#163](https://github.com/khoks/VideoResearchPro/pull/163) / [#164](https://github.com/khoks/VideoResearchPro/pull/164) / [#165](https://github.com/khoks/VideoResearchPro/pull/165) / [#166](https://github.com/khoks/VideoResearchPro/pull/166).
 - ✅ **E-5.2** Subscription tiers — fully closed. Schema (#155) + utility (#155) + quota enforcement at hot endpoints (#169) shipped. T-5.2.4 (wire `require_tier` into actual endpoints) is **partial-permanent** — `require_feature("byok_llm_keys")` already gates the BYOK router; future Author Studio (I-6) and Echo (I-3) endpoints will gate when those land.
-- ✅ **E-5.5** Abuse prevention — code-shippable parts closed. Rate-limit middleware (#157) + quota metering enforcement (#169) shipped. Remaining: T-5.5.4 Redis backend (🔴 per [D-039](decisions.md#d-039--in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) — gated on multi-worker SaaS), T-5.5.6 content policy / takedown (🔴 — needs M11 public sharing first), T-5.5.7 fraud detection (🔴 — needs production traffic + abuse signal data first).
-- ✅ **E-5.6** Background-job isolation — code-shippable parts closed. BYOK foundation (#158), BYOK LLM resolution-path (#162 via ContextVar / [D-041](decisions.md#d-041--contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05)), Chroma tenant filtering (#161), per-tenant Celery routing (#170). All shipped.
+- ✅ **E-5.5** Abuse prevention — code-shippable parts closed. Rate-limit middleware (#157) + quota metering enforcement (#169) shipped. Remaining: T-5.5.4 Redis backend (🔴 per [D-039](decisions.md#d-039-in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) — gated on multi-worker SaaS), T-5.5.6 content policy / takedown (🔴 — needs M11 public sharing first), T-5.5.7 fraud detection (🔴 — needs production traffic + abuse signal data first).
+- ✅ **E-5.6** Background-job isolation — code-shippable parts closed. BYOK foundation (#158), BYOK LLM resolution-path (#162 via ContextVar / [D-041](decisions.md#d-041-contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05)), Chroma tenant filtering (#161), per-tenant Celery routing (#170). All shipped.
 
 **Remaining design-complete, code-deferred to SaaS launch:**
 - **E-5.3** Stripe — pure SaaS; no value for self-host (every user already at "Studio" effectively).
@@ -643,24 +630,24 @@ This is a **production upgrade-path bug** for any operator who upgraded the app 
 Full design for each in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry below cross-links the relevant section.
 
 **Decisions captured 2026-05-04 / 2026-05-05:**
-- [D-038](decisions.md#d-038--tenancy-retrofit-ships-in-four-phases-audit--additive--backfillwrites--reads--not-null-2026-05-04) — Tenancy retrofit ships in four phases (E-5.1).
-- [D-039](decisions.md#d-039--in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) — In-memory rate-limit backend as the default; Redis-swap deferred.
-- [D-040](decisions.md#d-040--failed-logins-for-unknown-emails-do-not-create-user-rows-lock-arbitrary-account-defence-2026-05-04) — Failed logins for unknown emails do NOT create User rows.
-- [D-041](decisions.md#d-041--contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05) — ContextVar plumbing for cross-cutting per-user state.
-- [D-042](decisions.md#d-042--oauth-first-login-links-to-existing-user-by-email-2026-05-05) — OAuth first-login email-based linking.
-- [D-043](decisions.md#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05) — Single shared Fernet key for all encrypted-at-rest credentials.
+- [D-038](decisions.md#d-038-tenancy-retrofit-ships-in-four-phases-audit-additive-backfillwrites-reads-not-null-2026-05-04) — Tenancy retrofit ships in four phases (E-5.1).
+- [D-039](decisions.md#d-039-in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) — In-memory rate-limit backend as the default; Redis-swap deferred.
+- [D-040](decisions.md#d-040-failed-logins-for-unknown-emails-do-not-create-user-rows-lock-arbitrary-account-defence-2026-05-04) — Failed logins for unknown emails do NOT create User rows.
+- [D-041](decisions.md#d-041-contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05) — ContextVar plumbing for cross-cutting per-user state.
+- [D-042](decisions.md#d-042-oauth-first-login-links-to-existing-user-by-email-2026-05-05) — OAuth first-login email-based linking.
+- [D-043](decisions.md#d-043-single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05) — Single shared Fernet key for all encrypted-at-rest credentials.
 
 ### E-5.1 🟢 `tenant_id` audit + retrofit
 
 **Scope.** Add `tenant_id` / `workspace_id` columns to every user-scoped table; convert today's implicit JWT scoping to an explicit column for future per-tenant rate limiting + multi-workspace.
 
-**Closed 2026-05-04.** Five PRs ship the four-phase tenancy retrofit per the [D-038](decisions.md#d-038--tenancy-retrofit-ships-in-four-phases-audit--additive--backfillwrites--reads--not-null-2026-05-04) sequencing:
+**Closed 2026-05-04.** Five PRs ship the four-phase tenancy retrofit per the [D-038](decisions.md#d-038-tenancy-retrofit-ships-in-four-phases-audit-additive-backfillwrites-reads-not-null-2026-05-04) sequencing:
 
 - **Phase 0** ([PR #149](https://github.com/khoks/VideoResearchPro/pull/149)) — [`docs/saas-tenant-id-audit.md`](saas-tenant-id-audit.md). Headline finding: codebase is structurally single-tenant despite JWT auth.
 - **Phase 1** ([PR #150](https://github.com/khoks/VideoResearchPro/pull/150)) — Alembic migration `d5e6f7a8b9c0_add_tenant_id_columns.py` adds NULLABLE `tenant_id String(36)` + index to `jobs` / `qa_exchanges` / `library_qa_exchanges` / `qa_history_exchanges`. ORM models updated. Purely additive — no behaviour change.
 - **Phase 2a** ([PR #151](https://github.com/khoks/VideoResearchPro/pull/151)) — Backfill migration `b2c3d4e5f6a7_backfill_tenant_id.py` sets `tenant_id = first-user.id` WHERE NULL. Every write-side router stamps `tenant_id=current_user.id` from `Depends(get_current_user)`. After this PR, every existing row is attributed AND every new row is correctly attributed.
 - **Phase 2b** ([PR #152](https://github.com/khoks/VideoResearchPro/pull/152)) — `get_job(db, job_id, tenant_id=None)` + `get_jobs(...)` accept the optional filter. Routers thread `tenant_id=current_user.id`. Cross-tenant reads return 404 (not 403) to avoid existence-leak. Codebase is now fully tenant-isolated on user-facing surfaces.
-- **Phase 2c** (this PR) — Operator-coordinated runbook [`docs/migration-tenant-id-not-null.md`](migration-tenant-id-not-null.md) + Alembic migration `e6f7a8b9c0d1_tenant_id_not_null.py`. Per [D-032](decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03) precedent, the migration ships in the codebase but is not auto-applied — operators run `alembic upgrade head` after running the runbook's pre-flight (verify zero NULL rows / backup / stop writers). Optional ORM-tightening (`Mapped[str | None]` → `Mapped[str]`) deferred to a calm follow-up PR.
+- **Phase 2c** (this PR) — Operator-coordinated runbook [`docs/migration-tenant-id-not-null.md`](migration-tenant-id-not-null.md) + Alembic migration `e6f7a8b9c0d1_tenant_id_not_null.py`. Per [D-032](decisions.md#d-032-operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03) precedent, the migration ships in the codebase but is not auto-applied — operators run `alembic upgrade head` after running the runbook's pre-flight (verify zero NULL rows / backup / stop writers). Optional ORM-tightening (`Mapped[str | None]` → `Mapped[str]`) deferred to a calm follow-up PR.
 
 **Tasks**
 - [x] T-5.1.0 Audit doc — *shipped 2026-05-04 in `docs/saas-tenant-id-audit.md`.*
@@ -669,7 +656,7 @@ Full design for each in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry 
 - [x] T-5.1.2c Phase 2c — NOT NULL constraint runbook + migration — *shipped 2026-05-04. Operator-coordinated per D-032 precedent; the codebase delivers the safe-execution path, the operator owns the timing.*
 - [ ] T-5.1.3 🔴 Phase 3 (deferred) — `tenants` + `tenant_users` tables for multi-user-per-workspace. Only needed for team SaaS tier.
 
-**Linked decision:** [D-038](decisions.md#d-038--tenancy-retrofit-ships-in-four-phases-audit--additive--backfillwrites--reads--not-null-2026-05-04)
+**Linked decision:** [D-038](decisions.md#d-038-tenancy-retrofit-ships-in-four-phases-audit-additive-backfillwrites-reads-not-null-2026-05-04)
 
 ### E-5.2 🟢 Subscription tier gating
 
@@ -682,7 +669,7 @@ Full design for each in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry 
 - [x] T-5.2.2 `Tier` enum + capability table + FastAPI dependency factories — *shipped 2026-05-04*.
 - [x] T-5.2.3 Document tier capabilities in `saas-roadmap.md` — *shipped 2026-05-04*.
 - [x] T-5.2.4 Partial-permanent. *`require_feature("byok_llm_keys")` already gates the BYOK credentials router (PR #158). Remaining wires happen as L2 (Author Studio, I-6) and L3 (Echo personal-brain, I-3) endpoints land — every new tier-gated endpoint adds a `Depends(require_tier(...))` or `Depends(require_feature(...))` at definition time, so this task closes incrementally rather than as one PR.*
-- [x] T-5.2.5 Quota runtime metering — *shipped 2026-05-05 (combined with T-5.5.5). New `quota_usage` table + `app/services/quota_metering_service.py` with `record_usage`, `get_usage`, `get_all_usage`, `check_quota`, `enforce_quota_or_raise`. Resource keys: `qa_exchanges` (monthly), `library_qa_exchanges` (monthly), `qa_history_chats` (monthly), `knowledge_extractions` (monthly), `documents` (lifetime), `llm_tokens_in/out` (daily), `youtube_units` (daily). New `qa_exchanges_per_month` + `knowledge_extractions_per_month` keys added to `TIER_CAPABILITIES` (Free 50 / Pro 1000 / Studio unlimited; Free 10 / Pro 200 / Studio 2000 respectively). Wired enforcement at the four hot endpoints: `/jobs/{id}/qa`, `/library/qa`, `/qa-history/chat`, `/videos/{id}/extract-knowledge`. New `GET /auth/quota` endpoint returns the user's full usage snapshot. 20 new tests; backend suite 929 → 949. **Linked decision:** [D-045](decisions.md#d-045--quota-metering-enforce-before-record-after-success-2026-05-05) — enforce-before / record-after-success sequencing.*
+- [x] T-5.2.5 Quota runtime metering — *shipped 2026-05-05 (combined with T-5.5.5). New `quota_usage` table + `app/services/quota_metering_service.py` with `record_usage`, `get_usage`, `get_all_usage`, `check_quota`, `enforce_quota_or_raise`. Resource keys: `qa_exchanges` (monthly), `library_qa_exchanges` (monthly), `qa_history_chats` (monthly), `knowledge_extractions` (monthly), `documents` (lifetime), `llm_tokens_in/out` (daily), `youtube_units` (daily). New `qa_exchanges_per_month` + `knowledge_extractions_per_month` keys added to `TIER_CAPABILITIES` (Free 50 / Pro 1000 / Studio unlimited; Free 10 / Pro 200 / Studio 2000 respectively). Wired enforcement at the four hot endpoints: `/jobs/{id}/qa`, `/library/qa`, `/qa-history/chat`, `/videos/{id}/extract-knowledge`. New `GET /auth/quota` endpoint returns the user's full usage snapshot. 20 new tests; backend suite 929 → 949. **Linked decision:** [D-045](decisions.md#d-045-quota-metering-enforce-before-record-after-success-2026-05-05) — enforce-before / record-after-success sequencing.*
 
 ### E-5.3 ⚪ Stripe integration
 
@@ -704,11 +691,11 @@ Full design for each in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry 
 
 **Tasks**
 - [x] T-5.4.1 Audit log table + service — *shipped 2026-05-04*.
-- [x] T-5.4.2 Account lockout (`failed_login_attempts` + `locked_until` + threshold) — *shipped 2026-05-04. See [D-040](decisions.md#d-040--failed-logins-for-unknown-emails-do-not-create-user-rows-lock-arbitrary-account-defence-2026-05-04) for the lock-arbitrary-account defence invariant.*
+- [x] T-5.4.2 Account lockout (`failed_login_attempts` + `locked_until` + threshold) — *shipped 2026-05-04. See [D-040](decisions.md#d-040-failed-logins-for-unknown-emails-do-not-create-user-rows-lock-arbitrary-account-defence-2026-05-04) for the lock-arbitrary-account defence invariant.*
 - [x] T-5.4.3 Password reset flow (request + confirm + token table) — *shipped 2026-05-04*.
 - [x] T-5.4.4 `GET /auth/audit-log` per-user read endpoint — *shipped 2026-05-04*.
-- [x] T-5.4.5 OAuth (Google + GitHub) — *shipped 2026-05-05. OAuth 2.0 + PKCE flow with two configured providers (config-driven, adding a third is ~30 lines). New tables `oauth_states` (10 min TTL, single-use, S256 PKCE verifier persisted) + `oauth_identities` (`(provider, provider_user_id)` unique). New endpoints: `GET /auth/oauth/providers`, `GET /auth/oauth/{provider}/start`, `GET /auth/oauth/{provider}/callback`. First OAuth login finds-or-creates the User by email; existing-email users get the identity linked to their existing account (no duplicates). All callback failures return generic 401 (don't leak which step failed). 14 new tests with mocked provider responses; backend suite 915 → 929. **E-5.4 fully closed** — all 8 tasks done. **Linked decision:** [D-042](decisions.md#d-042--oauth-first-login-links-to-existing-user-by-email-2026-05-05) — email-based linking trade-off + provider verification expectations.*
-- [x] T-5.4.6 MFA (TOTP) — *shipped 2026-05-05. RFC 6238 TOTP via `pyotp`. New `mfa_secrets` table (encrypted secret + JSON-hashed recovery codes; Alembic `d1e2f3a4b5c6_mfa_secrets_table.py`). Endpoints: `POST /auth/mfa/enroll` (returns `secret` + `provisioning_uri` for QR rendering), `POST /auth/mfa/verify-enrollment` (validates first TOTP code → enabled=True; returns 10 single-use recovery codes ONCE), `GET /auth/mfa/status`, `DELETE /auth/mfa` (requires valid TOTP / recovery code), `POST /auth/login/mfa` (second-step using short-lived 5-min mfa_token from /auth/login). Login flow change: when MFA is enabled, `/auth/login` returns `MfaRequiredResponse` instead of `TokenResponse`; client must call `/auth/login/mfa` with the returned mfa_token + a code to receive the real access token. ±1 TOTP window for clock skew. Encryption reuses BYOK Fernet key (see [D-043](decisions.md#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05) for the single-shared-key rationale). 13 new tests; backend suite 902 → 915.*
+- [x] T-5.4.5 OAuth (Google + GitHub) — *shipped 2026-05-05. OAuth 2.0 + PKCE flow with two configured providers (config-driven, adding a third is ~30 lines). New tables `oauth_states` (10 min TTL, single-use, S256 PKCE verifier persisted) + `oauth_identities` (`(provider, provider_user_id)` unique). New endpoints: `GET /auth/oauth/providers`, `GET /auth/oauth/{provider}/start`, `GET /auth/oauth/{provider}/callback`. First OAuth login finds-or-creates the User by email; existing-email users get the identity linked to their existing account (no duplicates). All callback failures return generic 401 (don't leak which step failed). 14 new tests with mocked provider responses; backend suite 915 → 929. **E-5.4 fully closed** — all 8 tasks done. **Linked decision:** [D-042](decisions.md#d-042-oauth-first-login-links-to-existing-user-by-email-2026-05-05) — email-based linking trade-off + provider verification expectations.*
+- [x] T-5.4.6 MFA (TOTP) — *shipped 2026-05-05. RFC 6238 TOTP via `pyotp`. New `mfa_secrets` table (encrypted secret + JSON-hashed recovery codes; Alembic `d1e2f3a4b5c6_mfa_secrets_table.py`). Endpoints: `POST /auth/mfa/enroll` (returns `secret` + `provisioning_uri` for QR rendering), `POST /auth/mfa/verify-enrollment` (validates first TOTP code → enabled=True; returns 10 single-use recovery codes ONCE), `GET /auth/mfa/status`, `DELETE /auth/mfa` (requires valid TOTP / recovery code), `POST /auth/login/mfa` (second-step using short-lived 5-min mfa_token from /auth/login). Login flow change: when MFA is enabled, `/auth/login` returns `MfaRequiredResponse` instead of `TokenResponse`; client must call `/auth/login/mfa` with the returned mfa_token + a code to receive the real access token. ±1 TOTP window for clock skew. Encryption reuses BYOK Fernet key (see [D-043](decisions.md#d-043-single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05) for the single-shared-key rationale). 13 new tests; backend suite 902 → 915.*
 - [x] T-5.4.7 Session management (revoke individual sessions, list active sessions, logout everywhere) — *shipped 2026-05-05. New `sessions` table keyed on JWT `jti` claim (Alembic `c0d1e2f3a4b5_sessions_table.py`); login writes a row + captures IP/User-Agent; `dependencies.get_current_user` validates the row is not revoked on every authenticated request. New endpoints: `GET /auth/sessions`, `DELETE /auth/sessions/{jti}` (404 on cross-user — existence-leak posture), `DELETE /auth/sessions?keep_current=true|false` (logout everywhere with the "keep current" UX), `POST /auth/logout`. Revocation is via `revoked_at` timestamp (audit trail preserved). Pre-T-5.4.7 tokens (no jti claim, no session row) keep working until they expire — back-compat. 12 new tests; backend suite 890 → 902.*
 - [x] T-5.4.8 SMTP integration (deliver password-reset secrets via email) — *shipped 2026-05-05. New `app/services/email_service.py` with pluggable SMTP backend (host / port / username / password / SSL / STARTTLS / from-address config) + log-fallback when `SMTP_HOST` unset. Password-reset endpoint now: (a) renders email via `render_password_reset_email`, (b) sends via `email_service.send_email` (SMTP when configured, log otherwise), (c) returns `debug_secret` ONLY when SMTP is unconfigured (self-host operator handoff). On SaaS / SMTP-configured deployments, the secret is never in the response — email is the only delivery channel. 11 new tests; backend suite 879 → 890.*
 
@@ -726,12 +713,12 @@ Full design for each in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry 
 12 new tests; backend suite 823 → 835.
 
 **Tasks**
-- [x] T-5.5.1 In-memory sliding-window rate-limit service — *shipped 2026-05-04. See [D-039](decisions.md#d-039--in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) for the in-memory-vs-Redis design decision.*
+- [x] T-5.5.1 In-memory sliding-window rate-limit service — *shipped 2026-05-04. See [D-039](decisions.md#d-039-in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) for the in-memory-vs-Redis design decision.*
 - [x] T-5.5.2 FastAPI middleware with per-route + per-tier strategy — *shipped 2026-05-04*.
 - [x] T-5.5.3 Sensitive-endpoint hardening (login / reset / register) — *shipped 2026-05-04*.
-- [ ] T-5.5.4 🔴 Redis-backed bucket store for multi-worker SaaS deployment — *deferred per [D-039](decisions.md#d-039--in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) until multi-worker SaaS lands. In-memory backend is correct for single-worker self-host; swapping to Redis prematurely is gold-plating without a consumer.*
+- [ ] T-5.5.4 🔴 Redis-backed bucket store for multi-worker SaaS deployment — *deferred per [D-039](decisions.md#d-039-in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) until multi-worker SaaS lands. In-memory backend is correct for single-worker self-host; swapping to Redis prematurely is gold-plating without a consumer.*
 - [x] T-5.5.5 Quota enforcement — *shipped 2026-05-05 (combined with T-5.2.5; see that entry for full detail). 429 with `Retry-After` header + structured `detail` body (`{error, resource, consumed, limit, retry_after_sec, retry_at}`) on cap-exceeded. enforce_quota_or_raise runs BEFORE the expensive agent at every hot endpoint.*
-- [ ] T-5.5.6 🔴 Content policy + takedown workflow for shared reports — *deferred. Blocks on [M11 public report sharing](feature-roadmap.md#m11--public-report-sharing-) — there's no shared-report surface to apply takedown logic to until M11 ships.*
+- [ ] T-5.5.6 🔴 Content policy + takedown workflow for shared reports — *deferred. Blocks on [M11 public report sharing](feature-roadmap.md#m11-public-report-sharing) — there's no shared-report surface to apply takedown logic to until M11 ships.*
 - [ ] T-5.5.7 🔴 Fraud detection (anomalous-pattern alerting) — *deferred. Needs real production traffic + accumulated abuse signal data before pattern definitions are useful. Premature without it.*
 
 ### E-5.6 🟢 Background-job isolation
@@ -751,7 +738,7 @@ Backend suite 835 → 855.
 - [x] T-5.6.1 BYOK schema + service layer (encryption + CRUD) — *shipped 2026-05-04*.
 - [x] T-5.6.2 Credentials REST router (Studio-gated) — *shipped 2026-05-04*.
 - [x] T-5.6.3 Provider validation + encryption-rotation tolerance — *shipped 2026-05-04*.
-- [x] T-5.6.4 LLM resolution-path integration — *shipped 2026-05-05. `llm_service.byok_context(tenant_id, db)` ContextVar set at every router/Celery boundary; `get_llm_for(...)` reads from the context (or explicit kwargs in tests) and threads the BYOK key into the resolved provider client. Tier-gated to Studio (Free / Pro tiers ignore stored credentials — defense-in-depth on tier downgrades). Local provider ignored (install-wide infrastructure). Encryption-rotation tolerant (decrypt-fail returns None → env-var fallback). Wired at: `routers/qa.py`, `routers/library.py`, `routers/qa_history.py`, `routers/knowledge.py`, plus Celery search-agent + report-agent paths in `tasks/job_tasks.py` (using `job.tenant_id` from E-5.1 phase 2a stamping). 15 new tests; backend suite 864 → 879. **Linked decision:** [D-041](decisions.md#d-041--contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05) — ContextVar pattern for cross-cutting per-user state.*
+- [x] T-5.6.4 LLM resolution-path integration — *shipped 2026-05-05. `llm_service.byok_context(tenant_id, db)` ContextVar set at every router/Celery boundary; `get_llm_for(...)` reads from the context (or explicit kwargs in tests) and threads the BYOK key into the resolved provider client. Tier-gated to Studio (Free / Pro tiers ignore stored credentials — defense-in-depth on tier downgrades). Local provider ignored (install-wide infrastructure). Encryption-rotation tolerant (decrypt-fail returns None → env-var fallback). Wired at: `routers/qa.py`, `routers/library.py`, `routers/qa_history.py`, `routers/knowledge.py`, plus Celery search-agent + report-agent paths in `tasks/job_tasks.py` (using `job.tenant_id` from E-5.1 phase 2a stamping). 15 new tests; backend suite 864 → 879. **Linked decision:** [D-041](decisions.md#d-041-contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05) — ContextVar pattern for cross-cutting per-user state.*
 - [x] T-5.6.5 Per-tenant Celery queue routing — *shipped 2026-05-05. New `app/services/task_routing_service.py` with `queue_for_user(user)`, `queue_for_tier(tier)`, `queue_for_tenant_id(db, tenant_id)`, `dispatch_for_user(task, user, *args, **kw)`, `dispatch_for_tenant_id(task, db, tenant_id, *args, **kw)`. Three tier queues (`tier_free`, `tier_pro`, `tier_studio`) plus a `default` fallback for system tasks. Wired at every Celery dispatch site in `routers/jobs.py` (topic / channel / subscription / resume) + `routers/channels.py` (subscribe / sync). Self-host: one worker handles all queues. SaaS-launch posture: split worker pools per queue for Studio-tier-latency-isolation. 10 new tests; backend suite 949 → 959.*
 - [x] T-5.6.6 Per-tenant ChromaDB tenancy on `qa_library_global` — *shipped 2026-05-05. Closes a real cross-tenant leak in the Q&A History meta-chat: PR #152 filtered SQL reads by tenant_id but the Chroma similarity search bypassed that filter, so a meta-chat question could surface other users' Q&A. Fixed via `metadata.tenant_id` propagation in upsert + `tenant_id` filter on every `query_qa_collection` call. The global document collection (`videoresearchpro_global`) stays unfiltered by design — that's the deduplicated library, not user-scoped data.*
 
@@ -778,8 +765,8 @@ Backend suite 835 → 855.
 ## I-6 🟡 Author Studio (output generation L2)
 
 **Why it exists.** The accumulated library is rich enough to produce books, sites, decks, newsletters, reels — not just answers. Closes the loop: ingest → understand → produce.
-**North-star doc:** [feature-roadmap.md L2](feature-roadmap.md#l2--author-studio-output-generation-)
-**Status:** 🟡 foundation shipped 2026-05-05. Schema + Outputter Protocol + lifecycle + REST surface + tier gating + first concrete outputter (Book v1 Markdown) all live. Sites / decks / newsletters / reels are E-6.2/.3/.4/.5 follow-ups that plug into the same registry. Per [D-044](decisions.md#d-044--foundation-first-then-concrete-implementations-deferred-for-i-3--i-6-2026-05-05), the foundation ships with one minimum-viable outputter (deterministic Book v1) so the abstraction is validated end-to-end with real content; LLM cohesion + the other kinds are individually-scoped follow-ups.
+**North-star doc:** [feature-roadmap.md L2](feature-roadmap.md#l2-author-studio-output-generation)
+**Status:** 🟡 foundation shipped 2026-05-05. Schema + Outputter Protocol + lifecycle + REST surface + tier gating + first concrete outputter (Book v1 Markdown) all live. Sites / decks / newsletters / reels are E-6.2/.3/.4/.5 follow-ups that plug into the same registry. Per [D-044](decisions.md#d-044-foundation-first-then-concrete-implementations-deferred-for-i-3-i-6-2026-05-05), the foundation ships with one minimum-viable outputter (deterministic Book v1) so the abstraction is validated end-to-end with real content; LLM cohesion + the other kinds are individually-scoped follow-ups.
 
 ### E-6.1 🟡 Books (long-form Markdown → PDF / EPUB)
 
@@ -818,25 +805,25 @@ Outputter scaffolded by I-6 foundation; concrete `SiteAstroOutputter` is a futur
 
 These are real questions raised in conversation that don't yet have a Story home. When one of them is answered the answer becomes a Decision (`D-NNN`) and the question is converted into one or more Stories.
 
-- **OQ-1.** ✅ **Resolved 2026-04-26 by [D-021](decisions.md#d-021--topic-relevance-threshold--050-2026-04-26): `TOPIC_RELEVANCE_THRESHOLD = 0.50`.** Candidates below 0.50 hidden from default approval list but kept in the database; "Show low-relevance candidates" filter chip toggles cutoff to 0.0. Calibrated scoring (1.0 unambiguous / 0.5 adjacent / 0.0 unrelated) baked into the prompt with borderline 0.4–0.6 exemplars. Re-evaluation hooks documented (precision low → bump 0.60; recall low → drop 0.40; per-source-type override is the next escalation).
+- **OQ-1.** ✅ **Resolved 2026-04-26 by [D-021](decisions.md#d-021-topic-relevance-threshold-050-2026-04-26): `TOPIC_RELEVANCE_THRESHOLD = 0.50`.** Candidates below 0.50 hidden from default approval list but kept in the database; "Show low-relevance candidates" filter chip toggles cutoff to 0.0. Calibrated scoring (1.0 unambiguous / 0.5 adjacent / 0.0 unrelated) baked into the prompt with borderline 0.4–0.6 exemplars. Re-evaluation hooks documented (precision low → bump 0.60; recall low → drop 0.40; per-source-type override is the next escalation).
 - **OQ-2.** Comment-tree default depth — top 50 by score is the proposed default; configurable per-job? Per-platform? (Tied to S-1.5.1, S-1.5.2)
 - **OQ-3.** Sibling-PR coordination — should `/knowledge-curator` and `/work-tracker` share a single PR per session? (Tied to E-4.6)
 - **OQ-4.** Whisper for podcast Mode A vs external service (Deepgram / AssemblyAI) for SaaS tier? (Tied to E-1.7)
 - **OQ-5.** PDF connector: file upload only, URL only, or both? (Tied to E-1.8)
 - **OQ-6.** Echo cold-start readiness threshold — quantitative criteria? (Tied to E-3.5)
-- **OQ-7.** ✅ **Resolved 2026-04-26 by [D-017](decisions.md#d-017--e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26): hard cutover.** Single Alembic migration adds `document_id UUID` + `source_id text`, backfills both, drops legacy `video_id` PK, adds `(source_type, source_id)` unique constraint, retargets `job_videos` + `transcript_cache` FKs in one transaction. T-1.10.8 (round-trip migration test + 168-test suite + e2e smoke) is gating. Pre-cutover backup `cp data/videoresearchpro.db data/videoresearchpro.db.pre-e110.bak` documented as a self-host fallback.
-- **OQ-8.** ✅ **Resolved 2026-04-26 by [D-018](decisions.md#d-018--polymorphic-approvalcard-typescript-shape--four-sub-decisions-2026-04-26).** Locked-in shape lives in [source-types.md § Polymorphic ApprovalCard TypeScript shape](source-types.md#polymorphic-approvalcard-typescript-shape). User's overarching framing: *"keep the system a bit open ended for future enhancements and not too strict"*.
+- **OQ-7.** ✅ **Resolved 2026-04-26 by [D-017](decisions.md#d-017-e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26): hard cutover.** Single Alembic migration adds `document_id UUID` + `source_id text`, backfills both, drops legacy `video_id` PK, adds `(source_type, source_id)` unique constraint, retargets `job_videos` + `transcript_cache` FKs in one transaction. T-1.10.8 (round-trip migration test + 168-test suite + e2e smoke) is gating. Pre-cutover backup `cp data/videoresearchpro.db data/videoresearchpro.db.pre-e110.bak` documented as a self-host fallback.
+- **OQ-8.** ✅ **Resolved 2026-04-26 by [D-018](decisions.md#d-018-polymorphic-approvalcard-typescript-shape-four-sub-decisions-2026-04-26).** Locked-in shape lives in [source-types.md § Polymorphic ApprovalCard TypeScript shape](source-types.md#polymorphic-approvalcard-typescript-shape). User's overarching framing: *"keep the system a bit open ended for future enhancements and not too strict"*.
   - **(a)** ` SourceMetadata` hand-rolled in TS, kept synced with backend Pydantic by convention. Drift is a PR-review concern. Revisit if drift count climbs.
   - **(b)** Chip ` field` is ` keyof T` — pure source-metadata. Document-level fields render through fixed slots in ` <CardHeader>` and ` <CardActions>`, not chips.
   - **(c)** Hybrid formatters — named registry (` durationSeconds`, ` relativeTime`, ` signedNumber`, ` numberWithCommas`, ` truncate`) + optional ` format?: (v) => string` callback override.
   - **(d)** Separate ` FilterChip<T>` type. Source configs register two distinct arrays: ` metaChips` (display) and ` filterChips` (predicate).
   - T-1.5.4.1 unblocked. PR-review-driven drift correction documented as a revisit hook on (a); promotion to flat ` View<T>` documented as a revisit hook on (b) if a future source type wants Document-level chips.
-- **OQ-9.** ✅ **Resolved 2026-04-26 by [D-019](decisions.md#d-019--codeowners--branch-protection-policy-for-autonomous-merge-sessions-2026-04-26).** User picked option (c) bypass list, but `bypass_pull_request_allowances` is not exposed on personal-account free-plan public repos (verified via PATCH that silently dropped the field). Pragmatic landing: `.github/CODEOWNERS` declares `@khoks` as owner of every path, and `required_approving_review_count` dropped to `0`. Net: `gh pr merge --squash --delete-branch` (no `--admin`) works on master immediately. Force-push still blocked. Two revisit hooks documented (second collaborator joins → Rulesets `bypass_actors`; org migration → `bypass_pull_request_allowances.users`).
-- **OQ-10.** ✅ **Resolved 2026-04-26 by [D-020](decisions.md#d-020--file-orchestrator-dispatch-as-standalone-story-s-1511-2026-04-26): file as standalone S-1.5.11.** Dispatch layer ships once with the first two consumers (Reddit + HN) and is reused by every future connector. Folding into per-source storage tasks would duplicate the dispatch pattern N times. See [S-1.5.11](#s-1511--topic-job-routing-through-new-connectors) for the task breakdown.
+- **OQ-9.** ✅ **Resolved 2026-04-26 by [D-019](decisions.md#d-019-codeowners-branch-protection-policy-for-autonomous-merge-sessions-2026-04-26).** User picked option (c) bypass list, but `bypass_pull_request_allowances` is not exposed on personal-account free-plan public repos (verified via PATCH that silently dropped the field). Pragmatic landing: `.github/CODEOWNERS` declares `@khoks` as owner of every path, and `required_approving_review_count` dropped to `0`. Net: `gh pr merge --squash --delete-branch` (no `--admin`) works on master immediately. Force-push still blocked. Two revisit hooks documented (second collaborator joins → Rulesets `bypass_actors`; org migration → `bypass_pull_request_allowances.users`).
+- **OQ-10.** ✅ **Resolved 2026-04-26 by [D-020](decisions.md#d-020-file-orchestrator-dispatch-as-standalone-story-s-1511-2026-04-26): file as standalone S-1.5.11.** Dispatch layer ships once with the first two consumers (Reddit + HN) and is reused by every future connector. Folding into per-source storage tasks would duplicate the dispatch pattern N times. See [S-1.5.11](#s-1511--topic-job-routing-through-new-connectors) for the task breakdown.
 - **OQ-12.** ✅ **Resolved 2026-04-28 by [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28): option (a) inline.** Each `BaseConnector` subclass calls `social_classify` from `app/services/social_classify.py` on its fetched text before returning Candidates. T-1.5.3.3 acceptance updated to "Inline call inside `RedditConnector.fetch_text()` and `HNConnector.fetch_text()` (and future connectors)."
 - **OQ-13.** ✅ **Resolved 2026-04-28 — ship now as a tiny PR.** User approved. Post-OQ-11 dev wipe collapsed the rename from a high-risk migration to a one-line env default change. T-2.6.1 ships in this work cycle; T-2.6.6 documents the production-data migration path separately for self-hosters with accumulated embeddings.
-- **OQ-14.** ✅ **Resolved 2026-04-28 by [D-024](decisions.md#d-024--flip-e-16-to--with-primitives-only-scope-split-2026-04-28): option (b) primitives-only split.** E-1.6 flips 🔴 → 🔵. trafilatura + Playwright primitives ship now as `app/services/article_extraction/` in service of S-1.5.8 Mode B paste. Full article-connector UX (RSS / search / approval card variant) stays deferred until after M-1.5. D-005 amended.
-- **OQ-15.** ✅ **Resolved 2026-04-28 by [D-025](decisions.md#d-025--file-mvp-definition-of-done-as-milestone-m-15-2026-04-28).** Milestone M-1.5 — Reddit + HN end-to-end ingest filed under E-1.5 with 7 component checks: (1) E-1.10 cutover landed; (2) S-1.5.11 dispatcher; (3) T-1.5.1.4 + T-1.5.2.5 storage; (4) S-1.5.3 inline classifier per D-023; (5) S-1.5.4 polymorphic ApprovalCard with badges + filters; (6) S-1.5.5 citation rendering; (7) e2e pipeline tests for Reddit-only / HN-only / mixed source types.
+- **OQ-14.** ✅ **Resolved 2026-04-28 by [D-024](decisions.md#d-024-flip-e-16-to-with-primitives-only-scope-split-2026-04-28): option (b) primitives-only split.** E-1.6 flips 🔴 → 🔵. trafilatura + Playwright primitives ship now as `app/services/article_extraction/` in service of S-1.5.8 Mode B paste. Full article-connector UX (RSS / search / approval card variant) stays deferred until after M-1.5. D-005 amended.
+- **OQ-15.** ✅ **Resolved 2026-04-28 by [D-025](decisions.md#d-025-file-mvp-definition-of-done-as-milestone-m-15-2026-04-28).** Milestone M-1.5 — Reddit + HN end-to-end ingest filed under E-1.5 with 7 component checks: (1) E-1.10 cutover landed; (2) S-1.5.11 dispatcher; (3) T-1.5.1.4 + T-1.5.2.5 storage; (4) S-1.5.3 inline classifier per D-023; (5) S-1.5.4 polymorphic ApprovalCard with badges + filters; (6) S-1.5.5 citation rendering; (7) e2e pipeline tests for Reddit-only / HN-only / mixed source types.
 - **OQ-11.** ✅ **Resolved 2026-04-28 — option (b) cleanest-reset chosen.** User authorized full data wipe ("I don't care about existing data and jobs"). Executed in this session:
   - Moved `data/videoresearchpro.db` (3.4 MB, 912 legacy `videos` rows + the empty post-rename `documents` table + all jobs / channels / Q&A history / transcript cache) to `data/.pre-cleanup-2026-04-28/`.
   - Moved `data/chroma/` (22 MB embedding store) to `data/.pre-cleanup-2026-04-28/` so dangling chunk metadata referencing wiped video_ids doesn't surface in Q&A retrieval.

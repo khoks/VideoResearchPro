@@ -224,7 +224,7 @@ Document ──< TranscriptCache (1:1 by document_id; FK ON DELETE CASCADE)
 ApiQuotaLog (append-only ledger of YouTube + LLM calls)
 ```
 
-> **Schema state (post-E-1.10, 2026-05-02).** The primary key on `documents` is now `document_id` (UUID4, str(36)). The legacy `video_id` column survives as a NULLABLE back-compat reading column populated for `source_type='video'` rows (NULL for Reddit / HN / other source types). The join table is renamed to `job_documents` (Python class still `JobVideo` for import back-compat) with composite PK `(job_id, document_id)`. `transcript_cache` PK is also now `document_id` with FK to `documents.document_id`. See [D-017](decisions.md#d-017--e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26) for the cutover rationale and [PR #112](https://github.com/khoks/VideoResearchPro/pull/112) for the migration.
+> **Schema state (post-E-1.10, 2026-05-02).** The primary key on `documents` is now `document_id` (UUID4, str(36)). The legacy `video_id` column survives as a NULLABLE back-compat reading column populated for `source_type='video'` rows (NULL for Reddit / HN / other source types). The join table is renamed to `job_documents` (Python class still `JobVideo` for import back-compat) with composite PK `(job_id, document_id)`. `transcript_cache` PK is also now `document_id` with FK to `documents.document_id`. See [D-017](decisions.md#d-017-e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26) for the cutover rationale and [PR #112](https://github.com/khoks/VideoResearchPro/pull/112) for the migration.
 
 ### Key invariants
 
@@ -291,7 +291,7 @@ Today's PRs respect both invariants even though only one tenant and one source t
 Topic jobs carry a `source_types_json` column — a JSON-encoded array of `source_type` discriminators. NULL → `["video"]` for back-compat. `execute_topic_job` reads the column and branches:
 
 - **`"video"`** → existing LangGraph search agent (richer ranking via `search_plan_queries` + `search_rank_and_curate` use cases).
-- **Everything else (`"reddit_post"`, `"hn_story"`, future `"mastodon"` / `"bluesky"`)** → `app/services/connector_dispatch.py::dispatch_search()`, which iterates each non-video source_type **sequentially** (per [D-026](decisions.md#d-026--sequential-fan-out-for-the-connector-dispatcher-2026-05-02)) through `connector_for(source_type).search(query, instructions, limit)`. For each Candidate, the connector's own `fetch_text(query=...)` is called (which inline-classifies per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28)); persistence is uniform across source types via `_upsert_candidate_and_link()`.
+- **Everything else (`"reddit_post"`, `"hn_story"`, future `"mastodon"` / `"bluesky"`)** → `app/services/connector_dispatch.py::dispatch_search()`, which iterates each non-video source_type **sequentially** (per [D-026](decisions.md#d-026-sequential-fan-out-for-the-connector-dispatcher-2026-05-02)) through `connector_for(source_type).search(query, instructions, limit)`. For each Candidate, the connector's own `fetch_text(query=...)` is called (which inline-classifies per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28)); persistence is uniform across source types via `_upsert_candidate_and_link()`.
 
 Both paths converge into the same `awaiting_approval` flow. The combined candidate count drives the user-visible "Found N candidates" message; an empty result across all sources fails the job with a clear "No candidates for source_types=[...]" error rather than dropping the user onto an empty approval list.
 
@@ -314,7 +314,7 @@ This pattern means a job can sit in `awaiting_approval` for arbitrary time witho
 - `id`, `video_id` (nullable for non-video), `document_id` (UUID, canonical PK)
 - `source_type`, `source_id`, `source_url`
 - `source_metadata` — parsed JSON dict (per-source-type shape — Reddit: `{subreddit, author, score, commentCount, permalink}`; HN: `{author, points, commentCount, url}`; video: `{channel, durationSec, viewCount}`)
-- `classification` — lifted out of `source_metadata` for the frontend's `<ClassificationBadgeRow>` consumer; `{stance, sentiment, framing, topic_relevance}` per [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25) / [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26) / [D-021](decisions.md#d-021--topic-relevance-threshold--050-2026-04-26)
+- `classification` — lifted out of `source_metadata` for the frontend's `<ClassificationBadgeRow>` consumer; `{stance, sentiment, framing, topic_relevance}` per [D-007](decisions.md#d-007-sentiment-stance-classification-at-fetch-time-2026-04-25) / [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26) / [D-021](decisions.md#d-021-topic-relevance-threshold-050-2026-04-26)
 - The standard YouTube fields (`title`, `channel_name`, `duration_seconds`, `thumbnail_url`, `transcript_status`, etc.) — populated for video rows; nullable on non-video.
 
 The frontend `<ApprovalCard>` polymorphic primitive (PR [#118](https://github.com/khoks/VideoResearchPro/pull/118)) consumes this shape via `videoToApprovalProps()` + `SOURCE_CONFIGS[source_type]`.

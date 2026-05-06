@@ -145,7 +145,7 @@ Where `Candidate`, `ExtractedText`, `SourceMetadata`, `CreatorMetadata` are type
 
 Connectors that return `ExtractedText` for text-based sources (Reddit threads, HN comment trees, future Mastodon / Bluesky / articles / tweets) still hand the chunker a list of `Segment(text, start, end)` triples even though the underlying content has no time axis. The chunker in `app/utils/chunking.py` was designed around YouTube transcripts and threads `(start, end)` seconds onto every chunk's metadata so the rest of the pipeline (embedder, citations, RAG metadata) stays uniform across source types.
 
-Convention: synthesize pseudo-timestamps at **3 words/second** (~180 wpm — a normal reading cadence). Each segment's `start` is the running word-count cursor up to that segment divided by 3.0; `end` is `start + (segment_words / 3.0)`. The first segment starts at `0.0`. Values are not displayed to the user — text-source citations build deep-links from `permalink` / `#comment-<id>` / page-anchors instead of `&t=` — but the chunker contract is satisfied without a special-case branch (see [D-013](decisions.md#d-013--pseudo-timestamps-at-3-wps-for-text-based-connectors-2026-04-25)).
+Convention: synthesize pseudo-timestamps at **3 words/second** (~180 wpm — a normal reading cadence). Each segment's `start` is the running word-count cursor up to that segment divided by 3.0; `end` is `start + (segment_words / 3.0)`. The first segment starts at `0.0`. Values are not displayed to the user — text-source citations build deep-links from `permalink` / `#comment-<id>` / page-anchors instead of `&t=` — but the chunker contract is satisfied without a special-case branch (see [D-013](decisions.md#d-013-pseudo-timestamps-at-3-wps-for-text-based-connectors-2026-04-25)).
 
 Codified in `app/sources/reddit/flatten.py::_segment_for_text` via the constant `_WORDS_PER_SECOND = 3.0`. Future text-based connectors should reuse the same constant so the convention stays a one-line tunable.
 
@@ -156,12 +156,12 @@ Codified in `app/sources/reddit/flatten.py::_segment_for_text` via the constant 
 | `video` | YouTube Data API v3 | `youtube-transcript-api`, fallback to Whisper-via-yt-dlp | `youtube` or `whisper` | `start_time` / `end_time` per chunk |
 | `podcast` | Listen Notes / Spotify search / Apple Podcasts | RSS enclosure → Whisper if no transcript provided | `whisper` or `rss_transcript` | `start_time` / `end_time` per chunk |
 | `article` | Google CSE / Brave Search / direct URL list | trafilatura / readability-py | `trafilatura` | `section_anchor` per chunk |
-| `tweet` | Twitter/X API v2 (paid, BYOK — see [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25)); Mode B paste fallback | thread unrolling + top-K replies | `twitter_api` or `paste_extract` | reply position per chunk |
+| `tweet` | Twitter/X API v2 (paid, BYOK — see [D-009](decisions.md#d-009-twitter-x-is-byok-opt-in-2026-04-25)); Mode B paste fallback | thread unrolling + top-K replies | `twitter_api` or `paste_extract` | reply position per chunk |
 | `reddit_post` | `/search.json` + per-sub fallback (free, OAuth-app + 100 req/min) | OP + top-50 comments by score | `reddit_api` | reply depth per chunk |
 | `hn_story` | Algolia HN search (free, no auth) | story + comment tree | `hn_algolia` | reply depth per chunk |
 | `mastodon_post` | public hashtag timeline (`/api/v1/timelines/tag/<hashtag>`, no auth) — topic→hashtag normalised (lowercased, alphanumerics-only); creator-feed via `/api/v1/accounts/<id>/statuses` | OP + top-N replies (favourites) via `/api/v1/statuses/<id>` + `/context` | `mastodon` | reply depth per chunk |
 | `bluesky_post` | public AT-Proto XRPC `app.bsky.feed.searchPosts` (no auth) — free-text search; creator-feed via `app.bsky.feed.getAuthorFeed`, reposts excluded | OP + top-N replies (likes) via `app.bsky.feed.getPostThread` (recursive `{post, replies}`) | `bluesky` | reply depth per chunk |
-| `fb_post` / `ig_post` / `li_post` | ❌ no public-search API (see [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25)) — Mode B paste only | trafilatura → Playwright fallback on the user-pasted URL | `paste_extract` | reply position per chunk (when extractable) |
+| `fb_post` / `ig_post` / `li_post` | ❌ no public-search API (see [D-008](decisions.md#d-008-no-scraping-of-search-result-pages-on-fb-ig-linkedin-2026-04-25)) — Mode B paste only | trafilatura → Playwright fallback on the user-pasted URL | `paste_extract` | reply position per chunk (when extractable) |
 | `forum_post` | Reddit API / HN Algolia / Discourse API (umbrella for non-platform-specific forums) | top-level post + top N comments | `forum_extract` | comment depth per chunk |
 | `pdf` | (no search; user uploads) | pdfplumber + table extraction | `pdf_extract` | `page_number` per chunk |
 | `book` | (no search; user uploads EPUB/PDF) | calibre-style extraction | `pdf_extract` or `epub_extract` | `page_number` + chapter per chunk |
@@ -179,14 +179,14 @@ Social-media post connectors (Reddit, HN, Mastodon, Bluesky, Twitter, plus paste
 
 The choice is forced by per-platform API reality, not by design preference.
 
-- **Mode A — Discovery (search).** Available on **Reddit, HN, Mastodon, Bluesky** (free APIs) and **Twitter/X** (paid API, BYOK per [D-009](decisions.md#d-009--twitter--x-is-byok--opt-in-2026-04-25)). The connector implements `search()` with topic + optional date range, returns candidate threads, user approves, ingest proceeds.
-- **Mode B — Direct paste.** The only honest option for **Facebook, Instagram, LinkedIn, X-without-paid-API** (see [D-008](decisions.md#d-008--no-scraping-of-search-result-pages-on-fb--ig--linkedin-2026-04-25)). The user pastes 1–N post URLs; the connector fetches each via the article-pipeline primitives (trafilatura → Playwright fallback). No `search()` exposed; the UI clearly labels these platforms as paste-only.
+- **Mode A — Discovery (search).** Available on **Reddit, HN, Mastodon, Bluesky** (free APIs) and **Twitter/X** (paid API, BYOK per [D-009](decisions.md#d-009-twitter-x-is-byok-opt-in-2026-04-25)). The connector implements `search()` with topic + optional date range, returns candidate threads, user approves, ingest proceeds.
+- **Mode B — Direct paste.** The only honest option for **Facebook, Instagram, LinkedIn, X-without-paid-API** (see [D-008](decisions.md#d-008-no-scraping-of-search-result-pages-on-fb-ig-linkedin-2026-04-25)). The user pastes 1–N post URLs; the connector fetches each via the article-pipeline primitives (trafilatura → Playwright fallback). No `search()` exposed; the UI clearly labels these platforms as paste-only.
 
 The submit-research form supports both modes per platform; the UI hides Mode A controls for platforms where it isn't available.
 
 ### One `Document` per thread (not per comment)
 
-Per [D-006](decisions.md#d-006--one-document-row-per-social-post-thread-not-per-comment-2026-04-25). A social-media post **and its reply tree** is stored as a single `Document` row, with the comment tree flattened into the document text. Comment-level metadata (id, author, score, sentiment) lives in `source_metadata.comments[]`.
+Per [D-006](decisions.md#d-006-one-document-row-per-social-post-thread-not-per-comment-2026-04-25). A social-media post **and its reply tree** is stored as a single `Document` row, with the comment tree flattened into the document text. Comment-level metadata (id, author, score, sentiment) lives in `source_metadata.comments[]`.
 
 ```jsonc
 // source_metadata for a reddit_post Document
@@ -232,7 +232,7 @@ Citations dispatched by `source_type` build deep-links: `permalink#comment-<id>`
 
 ### Stance / sentiment classification at fetch time
 
-Per [D-007](decisions.md#d-007--sentiment--stance-classification-at-fetch-time-2026-04-25), extended by [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26) to include a `framing` axis. Each candidate document (and each comment) is classified at ingest time by the `social_classify_stance` LLM use case (default cheap-and-fast: `provider=openai, model=gpt-4.1-mini, reasoning=off`). Output schema:
+Per [D-007](decisions.md#d-007-sentiment-stance-classification-at-fetch-time-2026-04-25), extended by [D-014](decisions.md#d-014--add-framing-axis-to-social_classify_stance-schema-2026-04-26) to include a `framing` axis. Each candidate document (and each comment) is classified at ingest time by the `social_classify_stance` LLM use case (default cheap-and-fast: `provider=openai, model=gpt-4.1-mini, reasoning=off`). Output schema:
 
 ```python
 class StanceClassification(BaseModel):
@@ -313,7 +313,7 @@ Filter chips ("show only against", "show only experiential framing", "show only 
 
 ### Polymorphic `<ApprovalCard>` TypeScript shape
 
-The card's per-source config is a single registry typed via TypeScript discriminated union + generics + a mapped-type registry, so adding a new `source_type` is a compile error until a config entry is added. Locked-in shape per [D-018](decisions.md#d-018--polymorphic-approvalcard-typescript-shape--four-sub-decisions-2026-04-26):
+The card's per-source config is a single registry typed via TypeScript discriminated union + generics + a mapped-type registry, so adding a new `source_type` is a compile error until a config entry is added. Locked-in shape per [D-018](decisions.md#d-018-polymorphic-approvalcard-typescript-shape-four-sub-decisions-2026-04-26):
 
 ```typescript
 // 1. Discriminated union — hand-rolled in TS, backend Pydantic mirrors per source_type (D-018a).
@@ -368,17 +368,17 @@ The mapped-type registry is the load-bearing trick: an exhaustive registry by co
 
 `<ApprovalCard>` component signature: `(props: { document: Document; metadata: T; classification?: Classification; config: ApprovalCardConfig<T> })`. `<CardHeader>` and `<CardActions>` read fixed Document fields directly; `<CardBody>` / `<CardMetaRow>` / filter UI dispatch through the typed config.
 
-Revisit hooks documented in [D-018](decisions.md#d-018--polymorphic-approvalcard-typescript-shape--four-sub-decisions-2026-04-26): drift fatigue → consider build-step generator (a); chip wanting a Document-level field → consider flat `View<T>` (b).
+Revisit hooks documented in [D-018](decisions.md#d-018-polymorphic-approvalcard-typescript-shape-four-sub-decisions-2026-04-26): drift fatigue → consider build-step generator (a); chip wanting a Document-level field → consider flat `View<T>` (b).
 
 ### Platforms explicitly out of scope today
 
-- **TikTok** — Research API is US-academic-gated; Display API has no search. Deferred per [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25).
-- **Discord** — no global search; per-server bot model only. Deferred per [D-010](decisions.md#d-010--defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25). May unfreeze if a clear self-host use case emerges.
+- **TikTok** — Research API is US-academic-gated; Display API has no search. Deferred per [D-010](decisions.md#d-010-defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25).
+- **Discord** — no global search; per-server bot model only. Deferred per [D-010](decisions.md#d-010-defer-tiktok-and-per-server-discord-bot-indefinitely-2026-04-25). May unfreeze if a clear self-host use case emerges.
 - **YouTube comments as a standalone connector** — already accessible via the existing video pipeline; not a new source type.
 
 ### Sequencing
 
-Per [E-1.5 in `initiatives.md`](initiatives.md#e-15--social-media-connectors): Reddit + HN first, then Mastodon + Bluesky, then Mode B paste mode for FB/IG/LI/X-without-paid, then BYOK Twitter API.
+Per [E-1.5 in `initiatives.md`](initiatives.md#e-15-social-media-connectors): Reddit + HN first, then Mastodon + Bluesky, then Mode B paste mode for FB/IG/LI/X-without-paid, then BYOK Twitter API.
 
 ---
 

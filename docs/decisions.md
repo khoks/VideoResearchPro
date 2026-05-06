@@ -503,7 +503,7 @@ Each source-type registers a small config: which meta chips to show, what the pl
 
 **Status:** accepted.
 
-**Context.** [E-2.5](initiatives.md#e-25--marketing-landing-page-warm-editorial) needed a static-site stack for the marketing landing page (hero / curation thesis / source-types matrix / how-it-works / install / SaaS waitlist). The site is **explicitly separate** from the React product app under `frontend/` — different audience, different deploy target, no shared runtime — so the choice is unconstrained by the existing React-Vite stack.
+**Context.** [E-2.5](initiatives.md#e-25-marketing-landing-page-warm-editorial) needed a static-site stack for the marketing landing page (hero / curation thesis / source-types matrix / how-it-works / install / SaaS waitlist). The site is **explicitly separate** from the React product app under `frontend/` — different audience, different deploy target, no shared runtime — so the choice is unconstrained by the existing React-Vite stack.
 
 Four candidates: **Astro**, **Next.js**, **11ty**, **plain HTML+CSS**.
 
@@ -618,9 +618,9 @@ Four candidates: **Astro**, **Next.js**, **11ty**, **plain HTML+CSS**.
 
 ## D-026 — Sequential fan-out for the connector dispatcher (2026-05-02)
 
-**Status:** accepted. Resolves [T-1.5.11.3](initiatives.md#s-1511--topic-job-routing-through-new-connectors).
+**Status:** accepted. Resolves [T-1.5.11.3](initiatives.md#s-1511-topic-job-routing-through-new-connectors).
 
-**Context.** T-1.5.11.3 ("Fan-out semantics for mixed-source jobs") was filed when [S-1.5.11](initiatives.md#s-1511--topic-job-routing-through-new-connectors) was scoped, with two candidate shapes for how `dispatch_search()` should iterate `source_types` when a topic job spans multiple connectors:
+**Context.** T-1.5.11.3 ("Fan-out semantics for mixed-source jobs") was filed when [S-1.5.11](initiatives.md#s-1511-topic-job-routing-through-new-connectors) was scoped, with two candidate shapes for how `dispatch_search()` should iterate `source_types` when a topic job spans multiple connectors:
 
 - **(a) Round-robin** — one source-type at a time, smaller bursts. Bounds peak load on any individual provider; adds slight bookkeeping.
 - **(b) Parallel** — every source-type's `connector.search()` kicks off concurrently via `asyncio.gather` (or thread-pool). Total latency tracks the slowest source rather than the sum.
@@ -653,7 +653,7 @@ Initial OQ-15 plan recommendation was (b) parallel.
 
 ## D-027 — Mastodon discovery uses the public hashtag timeline (no auth, single-hashtag normalisation) (2026-05-03)
 
-**Status:** accepted. Resolves the discovery question for [S-1.5.6](initiatives.md#s-156--mastodon-connector) and shipped with PR [#128](https://github.com/khoks/VideoResearchPro/pull/128).
+**Status:** accepted. Resolves the discovery question for [S-1.5.6](initiatives.md#s-156-mastodon-connector) and shipped with PR [#128](https://github.com/khoks/VideoResearchPro/pull/128).
 
 **Context.** Mastodon disables full-text search by default on most instances to honour user privacy. The original S-1.5.6 acceptance criterion ("ActivityPub search + thread fetch") didn't pin down which discovery surface to use. Three candidate paths existed:
 
@@ -685,7 +685,7 @@ A topic-search query like *"climate change"* must reduce to a single hashtag bec
 
 ## D-028 — Bluesky uses public unauthenticated AT-Proto XRPC (deviation from S-1.5.7 spec) (2026-05-03)
 
-**Status:** accepted. Resolves the auth question for [S-1.5.7](initiatives.md#s-157--bluesky-connector) and shipped with PR [#129](https://github.com/khoks/VideoResearchPro/pull/129).
+**Status:** accepted. Resolves the auth question for [S-1.5.7](initiatives.md#s-157-bluesky-connector) and shipped with PR [#129](https://github.com/khoks/VideoResearchPro/pull/129).
 
 **Context.** S-1.5.7 was originally specced as *"AT-Protocol search + thread fetch. App password auth."* — under the assumption that Bluesky required an app password for ingest. While building the connector we verified that Bluesky exposes its public read endpoints (`searchPosts`, `getPostThread`, `getProfile`, `getAuthorFeed`) at `https://public.api.bsky.app/xrpc/` **without auth**. App-password auth is required only for *writes* (posting / liking / following) and for higher-throughput PDS-direct reads.
 
@@ -774,7 +774,7 @@ Two ways to close the gap:
 
 ## D-031 — Dominant-segment heuristic for chunk-metadata promotion (2026-05-03)
 
-**Status:** accepted. Resolves [T-1.5.12.2](initiatives.md#s-1512--backend-reference-enrichment) and shipped with PR [#134](https://github.com/khoks/VideoResearchPro/pull/134).
+**Status:** accepted. Resolves [T-1.5.12.2](initiatives.md#s-1512-backend-reference-enrichment) and shipped with PR [#134](https://github.com/khoks/VideoResearchPro/pull/134).
 
 **Context.** The per-segment chunker rework had to decide *which* segment's per-reply identity (`comment_id` / `comment_url` / `author` / `kind` / `depth`) to promote to chunk-level Chroma metadata when a chunk contains segments from multiple replies. This happens in two scenarios:
 
@@ -811,7 +811,7 @@ When the chunk's segments come from a single reply, the choice is trivial — pr
 
 ## D-032 — Operator-coordinated runbook (vs automatic startup migration) for data-bearing identifier renames (2026-05-03)
 
-**Status:** accepted. Resolves [T-2.6.6](initiatives.md#e-26--code-identifier-rename-pass) and shipped with PR [#137](https://github.com/khoks/VideoResearchPro/pull/137). Sets a precedent for future data-bearing renames (e.g. [E-1.9 channels → creators](initiatives.md#e-19--rename-channels--creators-db--orm)).
+**Status:** accepted. Resolves [T-2.6.6](initiatives.md#e-26-code-identifier-rename-pass) and shipped with PR [#137](https://github.com/khoks/VideoResearchPro/pull/137). Sets a precedent for future data-bearing renames (e.g. [E-1.9 channels → creators](initiatives.md#e-19-rename-channels-creators-db-orm)).
 
 **Context.** The brand-rename pass identified two production-data-mutating identifiers that needed renaming alongside the user-facing copy: `CHROMA_GLOBAL_COLLECTION_NAME` (default `videoresearchpro_global` → `pratidhvani_global`) and `DATABASE_URL` (default `sqlite:///./data/videoresearchpro.db` → `pratidhvani.db`). Brand copy moved immediately in PR #97 because it's pure cosmetic. The data-bearing renames sat deferred because changing them naively would orphan existing self-hosters' libraries:
 
@@ -842,7 +842,7 @@ Two ways to resolve:
 - Switch to automatic startup migration if (a) the rename frequency climbs to multiple per quarter (the runbook becomes a maintenance burden then), or (b) the project decides to drop self-host support — at which point the runbook audience disappears and the migration becomes a SaaS-internal infra task.
 - For SaaS deployment specifically, this decision will be revisited: SaaS infra controls the data layer end-to-end, and automatic migration is fine when the migrator is the operator. But that's a separate decision for [I-5](initiatives.md#i-5--saas-readiness-long-horizon).
 
-**Linked initiatives / PRs.** I-2 / E-2.6 / T-2.6.6. PR [#137](https://github.com/khoks/VideoResearchPro/pull/137). Precedent referenced from [E-1.9](initiatives.md#e-19--rename-channels--creators-db--orm) when that epic schedules.
+**Linked initiatives / PRs.** I-2 / E-2.6 / T-2.6.6. PR [#137](https://github.com/khoks/VideoResearchPro/pull/137). Precedent referenced from [E-1.9](initiatives.md#e-19-rename-channels-creators-db-orm) when that epic schedules.
 
 ---
 
@@ -850,7 +850,7 @@ Two ways to resolve:
 
 **Status:** accepted. Resolves [OQ-4](initiatives.md#oq-4) and shipped with PR [#140](https://github.com/khoks/VideoResearchPro/pull/140).
 
-**Context.** [E-1.7](initiatives.md#e-17--podcast-connector) podcast-end-to-end requires audio transcription for episodes that ship without an in-feed transcript. The architectural question (filed as OQ-4 when E-1.7 was scoped): do we run Whisper as a separate service (e.g. a `whisper-service` Docker container with its own queue), or reuse the existing OpenAI Whisper integration path (`youtube_service._transcribe_with_whisper`) that the YouTube connector uses as a fallback?
+**Context.** [E-1.7](initiatives.md#e-17-podcast-connector) podcast-end-to-end requires audio transcription for episodes that ship without an in-feed transcript. The architectural question (filed as OQ-4 when E-1.7 was scoped): do we run Whisper as a separate service (e.g. a `whisper-service` Docker container with its own queue), or reuse the existing OpenAI Whisper integration path (`youtube_service._transcribe_with_whisper`) that the YouTube connector uses as a fallback?
 
 Three viable architectures:
 
@@ -883,7 +883,7 @@ Three viable architectures:
 
 **Status:** accepted. Shipped with PR [#142](https://github.com/khoks/VideoResearchPro/pull/142).
 
-**Context.** [E-1.8](initiatives.md#e-18--pdf--e-book-connector) PDF connector needed a stable `Candidate.source_id` derived from upload bytes. Two requirements: (a) re-uploads of the same file must dedup at the `(source_type, source_id)` unique index, and (b) the hash function must be cheap enough that the upload endpoint doesn't stall on large files (academic books, technical manuals can run 50-200MB).
+**Context.** [E-1.8](initiatives.md#e-18-pdf-e-book-connector) PDF connector needed a stable `Candidate.source_id` derived from upload bytes. Two requirements: (a) re-uploads of the same file must dedup at the `(source_type, source_id)` unique index, and (b) the hash function must be cheap enough that the upload endpoint doesn't stall on large files (academic books, technical manuals can run 50-200MB).
 
 Three candidate hashing strategies:
 
@@ -915,7 +915,7 @@ Three candidate hashing strategies:
 
 **Status:** accepted. Validated and shipped with PR [#142](https://github.com/khoks/VideoResearchPro/pull/142). Resolves a long-standing latent ambiguity in the `BaseConnector` contract.
 
-**Context.** Most source types ([video](initiatives.md#e-15--social-media-connectors), reddit_post, hn_story, mastodon_post, bluesky_post, podcast_episode) implement `search()` because they all have public discovery surfaces. The PDF connector is the **first source type with no discovery surface** — PDFs come from upload, not search. The question: how does the polymorphic plumbing handle `source_type='pdf'` if a topic job's `source_types` array happens to include it?
+**Context.** Most source types ([video](initiatives.md#e-15-social-media-connectors), reddit_post, hn_story, mastodon_post, bluesky_post, podcast_episode) implement `search()` because they all have public discovery surfaces. The PDF connector is the **first source type with no discovery surface** — PDFs come from upload, not search. The question: how does the polymorphic plumbing handle `source_type='pdf'` if a topic job's `source_types` array happens to include it?
 
 Two design options:
 
@@ -1050,15 +1050,15 @@ Three candidate providers:
 
 ## D-039 — In-memory rate-limit backend as the default (Redis-swap deferred to multi-worker SaaS) (2026-05-04)
 
-**Status:** accepted. Resolves [E-5.5](initiatives.md#e-55--abuse-prevention) phase 1 and shipped with [PR #157](https://github.com/khoks/VideoResearchPro/pull/157).
+**Status:** accepted. Resolves [E-5.5](initiatives.md#e-55-abuse-prevention) phase 1 and shipped with [PR #157](https://github.com/khoks/VideoResearchPro/pull/157).
 
-**Context.** [E-5.5 abuse prevention](initiatives.md#e-55--abuse-prevention) needed a rate-limit backend. Redis is already in the stack (Celery broker + WebSocket pub/sub), so a Redis-backed bucket store is "free" infrastructurally. But the supported self-host configuration runs a single uvicorn worker — multi-worker is blocked by Celery's Windows `--pool=solo` requirement and the project's deliberately-simple deployment story. Single-worker = single-process = an in-memory dict suffices for correctness. So which to ship first: in-memory (simpler, but caps fire per-process on multi-worker) or Redis (more general, but introduces a network dep on a feature that didn't have one).
+**Context.** [E-5.5 abuse prevention](initiatives.md#e-55-abuse-prevention) needed a rate-limit backend. Redis is already in the stack (Celery broker + WebSocket pub/sub), so a Redis-backed bucket store is "free" infrastructurally. But the supported self-host configuration runs a single uvicorn worker — multi-worker is blocked by Celery's Windows `--pool=solo` requirement and the project's deliberately-simple deployment story. Single-worker = single-process = an in-memory dict suffices for correctness. So which to ship first: in-memory (simpler, but caps fire per-process on multi-worker) or Redis (more general, but introduces a network dep on a feature that didn't have one).
 
-**Decision.** **In-memory dict + `threading.Lock`** is the default backend. The service-layer contract (`check_and_consume(key, limit) -> (allowed, count, retry_after)`) is identical to what a Redis implementation would expose, so swapping in a Redis-backed `check_and_consume` for SaaS multi-worker deployment is a one-function change tracked as [T-5.5.4](initiatives.md#e-55--abuse-prevention).
+**Decision.** **In-memory dict + `threading.Lock`** is the default backend. The service-layer contract (`check_and_consume(key, limit) -> (allowed, count, retry_after)`) is identical to what a Redis implementation would expose, so swapping in a Redis-backed `check_and_consume` for SaaS multi-worker deployment is a one-function change tracked as [T-5.5.4](initiatives.md#e-55-abuse-prevention).
 
 **Alternatives considered.**
 - *Redis from the start.* Rejected for self-host: the in-memory implementation is roughly 50 lines vs ~150 for the Redis version (atomic INCR + EXPIRE + retry-after computation across the round-trip). For a feature that's optional in dev and uniform in single-worker prod, the simpler implementation wins. Swap is mechanical when SaaS lands.
-- *External library (`slowapi`, `fastapi-limiter`, `limits`).* Rejected. `slowapi` couples to Flask-style decorators that don't compose with our middleware shape; `fastapi-limiter` requires Redis and lacks the per-route override pattern; `limits` is a primitives-only library that wouldn't save much over our 50 lines. The project's pattern (per [E-1.6](initiatives.md#e-16--article-search--rss--brave--rss-feed-discovery), [E-5.4](initiatives.md#e-54--auth-hardening), etc.) is to write the small piece ourselves rather than carry the dep.
+- *External library (`slowapi`, `fastapi-limiter`, `limits`).* Rejected. `slowapi` couples to Flask-style decorators that don't compose with our middleware shape; `fastapi-limiter` requires Redis and lacks the per-route override pattern; `limits` is a primitives-only library that wouldn't save much over our 50 lines. The project's pattern (per [E-1.6](initiatives.md#e-16--article-search--rss--brave--rss-feed-discovery), [E-5.4](initiatives.md#e-54-auth-hardening), etc.) is to write the small piece ourselves rather than carry the dep.
 - *SQL-backed buckets.* Rejected: every rate-limit check would round-trip the DB, and the cleanup path (deleting expired buckets) would need a periodic vacuum task. Hot-path latency would jump from microseconds (in-memory) or milliseconds (Redis) to multi-millisecond.
 
 **Consequences.**
@@ -1077,9 +1077,9 @@ Three candidate providers:
 
 ## D-040 — Failed logins for unknown emails do NOT create User rows (lock-arbitrary-account defence) (2026-05-04)
 
-**Status:** accepted. Resolves a critical-correctness invariant for [E-5.4 auth hardening](initiatives.md#e-54--auth-hardening) and shipped with [PR #156](https://github.com/khoks/VideoResearchPro/pull/156).
+**Status:** accepted. Resolves a critical-correctness invariant for [E-5.4 auth hardening](initiatives.md#e-54-auth-hardening) and shipped with [PR #156](https://github.com/khoks/VideoResearchPro/pull/156).
 
-**Context.** [E-5.4 account lockout](initiatives.md#e-54--auth-hardening) tracks `failed_login_attempts` per User. The naive implementation would, on a failed `/auth/login`, look up (or create-then-update) a User row keyed on the submitted email. But the obvious "ensure-row-exists" path opens a critical attack: an attacker submitting `{"email": "<arbitrary-real-user@somewhere.com>", "password": "wrong"}` enough times would lock that user's account. Worse, an attacker iterating over plausible emails could mass-lock thousands of accounts they don't own.
+**Context.** [E-5.4 account lockout](initiatives.md#e-54-auth-hardening) tracks `failed_login_attempts` per User. The naive implementation would, on a failed `/auth/login`, look up (or create-then-update) a User row keyed on the submitted email. But the obvious "ensure-row-exists" path opens a critical attack: an attacker submitting `{"email": "<arbitrary-real-user@somewhere.com>", "password": "wrong"}` enough times would lock that user's account. Worse, an attacker iterating over plausible emails could mass-lock thousands of accounts they don't own.
 
 **Decision.** **Unknown emails do NOT create User rows. The lockout system applies only to existing users; brute-force attempts against non-existent emails are still rate-limited (E-5.5 sensitive-endpoint bucket) but never persist state in the `users` table.** Concretely, `authenticate_user_v2` returns `(None, INVALID_CREDENTIALS)` for unknown emails, and the router emits a `LOGIN_FAILURE` audit row with `user_id=None` (capturing the attacker's email + IP for forensics).
 
@@ -1104,9 +1104,9 @@ Three candidate providers:
 
 ## D-041 — ContextVar plumbing (vs explicit kwargs) for cross-cutting per-user state (2026-05-05)
 
-**Status:** accepted. Resolves a design question that surfaced while wiring [T-5.6.4 BYOK LLM resolution-path](initiatives.md#e-56--background-job-isolation) through the LLM call sites; shipped with [PR #162](https://github.com/khoks/VideoResearchPro/pull/162).
+**Status:** accepted. Resolves a design question that surfaced while wiring [T-5.6.4 BYOK LLM resolution-path](initiatives.md#e-56-background-job-isolation) through the LLM call sites; shipped with [PR #162](https://github.com/khoks/VideoResearchPro/pull/162).
 
-**Context.** [T-5.6.4](initiatives.md#e-56--background-job-isolation) needed a way to make every `get_llm_for(use_case)` call honour the requesting user's BYOK credential when one is stored. The codebase has **19 LLM call sites** across `app/agents/qa_agent.py`, `app/agents/qa_history_agent.py`, `app/agents/knowledge_agent.py`, `app/agents/search_agent.py`, `app/agents/report_agent.py`, etc. — many nested two or three layers deep inside LangGraph node functions that take a state-dict, not free function arguments. None of these layers currently carry user context.
+**Context.** [T-5.6.4](initiatives.md#e-56-background-job-isolation) needed a way to make every `get_llm_for(use_case)` call honour the requesting user's BYOK credential when one is stored. The codebase has **19 LLM call sites** across `app/agents/qa_agent.py`, `app/agents/qa_history_agent.py`, `app/agents/knowledge_agent.py`, `app/agents/search_agent.py`, `app/agents/report_agent.py`, etc. — many nested two or three layers deep inside LangGraph node functions that take a state-dict, not free function arguments. None of these layers currently carry user context.
 
 The narrow problem (route a BYOK key through to the LLM client) is one instance of a broader pattern: **request-scoped state that's needed many layers below the entry point**. Other I-5 work has the same shape — quota counters (E-5.5 T-5.5.5), per-tenant Celery routing (E-5.6 T-5.6.5), per-tenant rate limiting at the LLM-call level. Whatever pattern we pick here will set the precedent.
 
@@ -1147,7 +1147,7 @@ with llm_service.byok_context(current_user.id, db):
 
 ## D-042 — OAuth first-login links to existing User by email (2026-05-05)
 
-**Status:** accepted. Resolves a security-and-UX trade-off that came up while implementing [T-5.4.5 OAuth](initiatives.md#e-54--auth-hardening); shipped with [PR #166](https://github.com/khoks/VideoResearchPro/pull/166).
+**Status:** accepted. Resolves a security-and-UX trade-off that came up while implementing [T-5.4.5 OAuth](initiatives.md#e-54-auth-hardening); shipped with [PR #166](https://github.com/khoks/VideoResearchPro/pull/166).
 
 **Context.** When a user signs in with Google or GitHub for the first time, the OAuth callback resolves to a `(provider, provider_user_id, email)` triple. The Pratidhvani user table is keyed on email (registration creates a row keyed on email; login looks up by email). The OAuth provider returns an email that may or may not match an existing Pratidhvani user. The implementation has to decide:
 
@@ -1185,7 +1185,7 @@ Path B has a security implication: it trusts that the OAuth provider has verifie
 
 ## D-043 — Single shared Fernet key for all encrypted-at-rest credentials (2026-05-05)
 
-**Status:** accepted. Resolves an architectural choice surfaced when [T-5.4.6 MFA](initiatives.md#e-54--auth-hardening) needed somewhere to store the TOTP secret encrypted; shipped with [PR #165](https://github.com/khoks/VideoResearchPro/pull/165).
+**Status:** accepted. Resolves an architectural choice surfaced when [T-5.4.6 MFA](initiatives.md#e-54-auth-hardening) needed somewhere to store the TOTP secret encrypted; shipped with [PR #165](https://github.com/khoks/VideoResearchPro/pull/165).
 
 **Context.** Three different encrypted-at-rest credential types now exist in the codebase:
 
@@ -1225,7 +1225,7 @@ Each encryption needs a key. Two options for managing those keys:
 
 ## D-044 — Foundation-first then concrete-implementations-deferred for I-3 / I-6 (2026-05-05)
 
-**Status:** accepted. Resolves the structuring question for [I-3 Echo personal-brain](initiatives.md#i-3--echo-personal-brain-l3) and [I-6 Author Studio](initiatives.md#i-6--author-studio-output-generation-l2) and shipped with PRs [#172](https://github.com/khoks/VideoResearchPro/pull/172) (Echo) and [#173](https://github.com/khoks/VideoResearchPro/pull/173) (Author Studio).
+**Status:** accepted. Resolves the structuring question for [I-3 Echo personal-brain](initiatives.md#i-3-echo-personal-brain-l3) and [I-6 Author Studio](initiatives.md#i-6-author-studio-output-generation-l2) and shipped with PRs [#172](https://github.com/khoks/VideoResearchPro/pull/172) (Echo) and [#173](https://github.com/khoks/VideoResearchPro/pull/173) (Author Studio).
 
 **Context.** Both I-3 (Echo) and I-6 (Author Studio) are large-scope initiatives with the same shape: a small set of cross-cutting infrastructure (schema + abstraction + REST + tier gate) that hosts a larger set of concrete implementations (six Echo connectors: YouTube watch / Spotify / email / calendar / browser / Apple Health; five Author kinds: book / site / deck / newsletter / reel). The structuring question came up: do we ship one connector / outputter together with the foundation in PR 1 (proof-of-concept fully integrated), or ship the foundation alone with zero concrete implementations and let each concrete piece be its own PR?
 
@@ -1259,7 +1259,7 @@ The trade-off is non-obvious because both shapes look reasonable from the outsid
 
 ## D-045 — Quota metering: enforce-before, record-after-success (2026-05-05)
 
-**Status:** accepted. Resolves a sequencing question that surfaced while implementing [T-5.5.5 quota runtime metering](initiatives.md#e-55--abuse-prevention) and shipped with [PR #169](https://github.com/khoks/VideoResearchPro/pull/169).
+**Status:** accepted. Resolves a sequencing question that surfaced while implementing [T-5.5.5 quota runtime metering](initiatives.md#e-55-abuse-prevention) and shipped with [PR #169](https://github.com/khoks/VideoResearchPro/pull/169).
 
 **Context.** The quota metering service exposes two operations to the hot endpoints: `enforce_quota_or_raise` (raises HTTP 429 when over cap) and `record_usage` (increments the counter). Each Q&A / library-Q&A / history-chat / knowledge-extraction endpoint has to decide the order:
 

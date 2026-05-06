@@ -10,6 +10,25 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### E-4.10 closed: `Base.metadata.create_all` → Alembic-managed schema init (CRITICAL)
+
+- **Closes the production upgrade-path bug.** Operators who installed before the I-3/I-5/I-6 sessions had `audit_log` / `mfa_secrets` / `outputs` / etc. created by the lifespan `create_all` call but `alembic_version` was stale. Running `alembic upgrade head` failed with "table already exists". This PR makes Alembic the single schema-management path AND adds an auto-recovery for the existing-conflict case.
+- **`backend/app/services/schema_init_service.py`** (new) — `ensure_schema_at_head(db_url, orm_metadata)` handles four cases: `fresh_install` (empty DB → upgrade head), `already_at_head` (no-op), `upgraded` (intermediate → upgrade succeeds), `stamped_recovery` (the conflict — schema matches ORM bidirectionally → auto-stamp head). Strict match check prevents papering-over real drift; mismatches raise a clear "manual operator intervention required" error.
+- **`app/main.py` lifespan** replaces `Base.metadata.create_all(bind=engine)` with `ensure_schema_at_head(settings.DATABASE_URL, Base.metadata)`. Operators with stuck DBs auto-recover on next boot; fresh installs go through normal migrations.
+- **9 new tests** in `tests/test_services/test_schema_init.py` covering all four paths + the bidirectional drift-detection branches. End-to-end test reproduces the actual create_all conflict against the project's real ORM + migrations and verifies auto-recovery. Backend suite 1013 → 1022.
+
+### E-4.9 closed: LLM probe `gpt-5.4` config corrected
+
+- Audit via `openai.models.list()` found `gpt-5.4` and `gpt-5.4-mini` (the registry's defaults) are NOT available on the configured account; the actual `gpt-5.x` family on this account is `gpt-5.4-nano` / `gpt-5.4-pro` / `gpt-5.5` / `gpt-5.5-pro`.
+- **`app/services/llm_routing.py` `USE_CASE_REGISTRY`** rewritten: `gpt-5.4-mini` → `gpt-5.4-nano` (small / fast tier); `gpt-5.4` → `gpt-5.5` (flagship tier).
+- Verified post-fix: `/api/v1/health` reports `llm.status: ok` with `unavailable_features: []`. All 19 LLM use cases probe-successfully on a fresh boot.
+
+### E-4.8 partial: 132 cross-doc anchor links rewritten via slug-collapse
+
+- **`backend/scripts/fix_anchor_links.py`** (new) — one-shot script that walks every cross-doc link, applies GitHub's slug rule, and rewrites `--` → `-` when the candidate matches a real heading.
+- **132 links rewritten** across `docs/decisions.md` (25), `docs/initiatives.md` (69), `docs/feature-roadmap.md` (16), `docs/saas-roadmap.md` (6), `docs/source-types.md` (12), `docs/architecture.md` (4). Idempotent.
+- **13 links remain** — these are heading-rename casualties, not the convention bug. Tracked as T-4.8.4.
+
 ### Test plan execution — smoke layer + alembic env.py fix (PR #175)
 
 - **5-layer test plan executed against everything built in the I-3 / I-5 / I-6 sessions** (1010-baseline backend suite + alembic upgrade-from-fresh + migration round-trip + boot verification + cross-feature smoke + tenant isolation). Result: 1010 → **1013 passing** with the new smoke suite.

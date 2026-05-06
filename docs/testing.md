@@ -1,8 +1,8 @@
 # Testing
 
-> Status: living doc (last refreshed 2026-04-24). Owns: testing strategy, fixture catalogue, how to add a test, how to run the LLM stress harness. Setup commands live in [docs/contributing.md](contributing.md).
+> Status: living doc (last refreshed 2026-05-05). Owns: testing strategy, fixture catalogue, how to add a test, how to run the LLM stress harness. Setup commands live in [docs/contributing.md](contributing.md).
 
-The backend ships with **168 tests** under `backend/tests/`. The frontend gates on `tsc -b` plus ESLint; no Jest / Vitest suite yet (see [open work](#7-open-work)). This doc explains the conventions so a new contributor can add a test in five minutes.
+The backend ships with **1013 tests** under `backend/tests/`. The frontend gates on `tsc -b` plus ESLint; no Jest / Vitest suite yet (see [open work](#7-open-work)). This doc explains the conventions so a new contributor can add a test in five minutes.
 
 ---
 
@@ -31,10 +31,21 @@ backend/tests/
 ├── test_agents/                # LangGraph agent tests (search, report, qa, knowledge, ...)
 ├── test_tasks/                 # Celery task body tests (subscription_task, upsert_dedup)
 ├── test_models/                # SQLAlchemy model tests
-└── test_utils/                 # pure-function tests (chunking, youtube_helpers)
+├── test_utils/                 # pure-function tests (chunking, youtube_helpers)
+└── test_smoke/                 # cross-feature integration smoke (added 2026-05-05)
 ```
 
 The directory mirrors `backend/app/`. New code under `app/foo/` gets new tests under `tests/test_foo/`. Don't bury tests inside `app/` — keep the source tree clean.
+
+`test_smoke/` is the **integration-level** layer: it walks complete user journeys across multiple surfaces (e.g. register → login → MFA → BYOK → echo → author → quota → logout) and asserts cross-feature integrations work. The unit/integration suites under `test_routers/` etc. each cover one surface in depth; the smoke layer catches regressions that only show up when surfaces compose. Smoke tests use the same fixtures (`db`, `client`, `unauthenticated_client`) as everything else — no extra infra; the difference is breadth, not stack.
+
+### When to add a smoke test
+
+- A new feature that touches **multiple existing surfaces** (e.g. a quota-bearing endpoint that also writes audit log + records metering + dispatches Celery).
+- A **cross-tenant isolation** invariant — two users active simultaneously, neither sees the other's data through any surface.
+- A **status-machine flow** that crosses async boundaries (e.g. login → MFA second-step → session list → logout-revokes-current).
+
+For single-surface bugs, write a regular `test_routers/` or `test_services/` test — smoke is for the integration story.
 
 ---
 
@@ -173,6 +184,64 @@ Coverage is informational — there is no enforced floor. Prefer adding tests wh
 ### 5.4. CI
 
 CI runs the same `pytest tests/ -v` plus `ruff check .` and the frontend build. PRs that fail any of these are blocked.
+
+### 5.5. Pre-merge sanity checks (manual)
+
+For risky PRs (schema migrations, cross-cutting refactors, anything touching `app/main.py` boot path), run these manually before merging:
+
+```bash
+# (a) Full suite — already covered above.
+./venv/Scripts/python -m pytest tests/ -q
+
+# (b) Migration round-trip — every migration's downgrade() works.
+./venv/Scripts/python -c "
+import os
+fresh = os.path.abspath('./data/_test_revertable.db')
+if os.path.exists(fresh): os.unlink(fresh)
+from alembic import command
+from alembic.config import Config
+cfg = Config('alembic.ini')
+cfg.set_main_option('sqlalchemy.url', f'sqlite:///{fresh}')
+command.upgrade(cfg, 'head')
+command.downgrade(cfg, 'base')
+command.upgrade(cfg, 'head')
+os.unlink(fresh)
+print('migration round-trip: OK')
+"
+
+# (c) ORM ↔ migrations parity — Base.metadata matches the migrated DB.
+./venv/Scripts/python -c "
+import os
+fresh = os.path.abspath('./data/_test_parity.db')
+if os.path.exists(fresh): os.unlink(fresh)
+from alembic import command
+from alembic.config import Config
+cfg = Config('alembic.ini'); cfg.set_main_option('sqlalchemy.url', f'sqlite:///{fresh}')
+command.upgrade(cfg, 'head')
+from sqlalchemy import create_engine, MetaData
+from app.database import Base
+from app.models import *  # noqa
+engine = create_engine(f'sqlite:///{fresh}')
+db_meta = MetaData(); db_meta.reflect(bind=engine)
+orm = set(Base.metadata.tables.keys())
+db = set(db_meta.tables.keys()) - {'alembic_version'}
+print('ORM-only:', orm - db)
+print('DB-only:', db - orm)
+print('parity:', 'OK' if orm == db else 'MISMATCH')
+"
+
+# (d) Boot verification — TestClient lifespan + every representative route.
+./venv/Scripts/python -c "
+from fastapi.testclient import TestClient
+from app.main import app
+with TestClient(app) as c:
+    r = c.get('/api/v1/health')
+    assert r.status_code == 200, r.status_code
+    print('boot: OK; status:', r.json().get('status'))
+"
+```
+
+Each of (a) through (d) takes seconds. Run all four when shipping schema changes; (a) alone for everything else.
 
 ---
 

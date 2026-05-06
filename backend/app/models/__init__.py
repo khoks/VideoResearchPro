@@ -13,6 +13,7 @@ from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.mfa_secret import MfaSecret
 from app.models.oauth import OAuthIdentity, OAuthState
 from app.models.password_reset_token import PasswordResetToken
+from app.models.personal_context import PersonalContext
 from app.models.qa_exchange import QAExchange
 from app.models.qa_history_exchange import QAHistoryExchange
 from app.models.quota_usage import QuotaUsage
@@ -34,6 +35,7 @@ __all__ = [
     "OAuthIdentity",
     "OAuthState",
     "PasswordResetToken",
+    "PersonalContext",
     "QAExchange",
     "QAHistoryExchange",
     "QuotaUsage",

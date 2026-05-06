@@ -10,6 +10,16 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Test plan execution — smoke layer + alembic env.py fix (PR #175)
+
+- **5-layer test plan executed against everything built in the I-3 / I-5 / I-6 sessions** (1010-baseline backend suite + alembic upgrade-from-fresh + migration round-trip + boot verification + cross-feature smoke + tenant isolation). Result: 1010 → **1013 passing** with the new smoke suite.
+- **New `tests/test_smoke/test_full_session_smoke.py`** (3 integration tests):
+  - `test_full_session_e2e` — register → login → /me → audit log → quota → tier-403 on /credentials /echo /author → upgrade to studio → BYOK round-trip → MFA enroll/verify/login-flow/disable → echo CRUD → has_feature contract → author kinds + 501 for unimplemented kind → sessions list → logout revokes → 401 on subsequent request.
+  - `test_tenant_isolation_smoke` — two users registered simultaneously; echo + BYOK + sessions + audit + quota all isolate cleanly.
+  - `test_quota_enforcement_in_qa_endpoint` — Free user at `qa_exchanges` cap gets 429 from `POST /jobs/{id}/qa` BEFORE the agent runs ([D-045](docs/decisions.md#d-045--quota-metering-enforce-before-record-after-success-2026-05-05) enforce-before invariant).
+- **Real bug fixed in `backend/alembic/env.py`** — was importing only the pre-I-5/I-3/I-6 models; missing AuditLog / MfaSecret / OAuthIdentity / OAuthState / Output / PasswordResetToken / PersonalContext / QuotaUsage / Session / UserCredential. Future `alembic revision --autogenerate` would have produced broken migrations because env.py didn't see those tables on `Base.metadata`. Replaced explicit per-name imports with `from app.models import *` so env.py stays in sync with `app.models.__all__` (the single source of truth). Verified ORM ↔ migrations parity: 20 tables on both sides match.
+- **`docs/testing.md` §2 + §5.5**: documents the new `test_smoke/` directory + when to add a smoke test (multi-surface features, cross-tenant isolation invariants, status-machine flows across async boundaries) + manual pre-merge sanity checks for risky PRs (migration round-trip + ORM↔migration parity + boot verification snippets).
+
 ### I-6 Author Studio (L2) — foundation + first outputter shipped
 
 - **First L2 code on master.** Schema + Outputter Protocol + lifecycle + REST surface + tier gating + one concrete outputter (Book v1 Markdown). The remaining kinds (site / deck / newsletter / reel) plug into the same registry as future outputter PRs.

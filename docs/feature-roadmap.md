@@ -209,12 +209,12 @@ Below threshold: bubble dimmed, banner explains what's missing. Crossing thresho
 
 **API impact.** None today. Future: `X-Tenant-ID` header for workspace-aware routes.
 
-**Status.** 🟡 in-progress as of 2026-05-04. **All five code-shippable I-5 epics now have foundations on master:**
+**Status.** 🟢 **code-shippable work fully closed 2026-05-05.** Five I-5 epics done end-to-end:
 - ✅ **E-5.1** tenancy retrofit fully closed (4-phase rollout + operator runbook).
-- 🟡 **E-5.2** subscription tier enum + capability table + `require_tier` / `require_feature` dependencies shipped; runtime quota enforcement deferred to T-5.2.5 (overlaps with E-5.5 quota metering).
-- 🟡 **E-5.4** auth hardening — audit log + account lockout + password reset; OAuth / MFA / session mgmt / SMTP delivery deferred.
-- 🟡 **E-5.5** rate-limit middleware (sensitive-endpoint + per-user-tier buckets); Redis backend / quota metering / content policy / fraud detection deferred.
-- 🟡 **E-5.6** BYOK LLM credentials foundation (Studio-gated); LLM resolution-path integration / per-tenant Celery / per-tenant ChromaDB deferred.
+- ✅ **E-5.2** subscription tier enum + capability table + `require_tier` / `require_feature` dependencies + **runtime quota metering** (consume / enforce / display) shipped.
+- ✅ **E-5.4** auth hardening — audit log + lockout + password reset + SMTP + sessions + MFA + OAuth (Google + GitHub PKCE).
+- ✅ **E-5.5** rate-limit middleware + per-user quota enforcement at hot endpoints. Remaining tasks (Redis backend / content policy / fraud detection) are 🔴 deferred per [D-039](decisions.md#d-039--in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) and dependency-on-M11 / production-traffic-needed reasoning.
+- ✅ **E-5.6** BYOK LLM credentials foundation + LLM resolution-path integration + Chroma tenant filtering on `qa_library_global` + per-tenant Celery routing.
 
 The remaining I-5 epics (**E-5.3 Stripe**, **E-5.7 Data residency**, **E-5.8 Hosting**, **E-5.9 Hosted UX**) are **design-complete and code-deferred to SaaS launch** — none has meaningful code work for a self-host install. Full design lives in [`saas-roadmap.md`](saas-roadmap.md).
 

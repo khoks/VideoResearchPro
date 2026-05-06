@@ -10,6 +10,18 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### I-5 SaaS readiness — code-shippable work fully closed
+
+- **All five code-shippable I-5 epics are now ✅ shipped end-to-end** through PRs #149–#170. The remaining ⚪/🔴 items are correctly deferred to SaaS launch — none has a self-host code path that buys anything today.
+  - ✅ **E-5.1** tenancy retrofit (4-phase + operator NOT NULL runbook).
+  - ✅ **E-5.2** subscription tier gating (schema + `require_tier`/`require_feature` deps + runtime quota metering).
+  - ✅ **E-5.4** auth hardening (audit log + lockout + password reset + SMTP + sessions + MFA TOTP + OAuth Google/GitHub PKCE).
+  - ✅ **E-5.5** abuse prevention (rate-limit middleware + per-user quota enforcement). Redis backend, content policy, fraud detection 🔴 deferred per D-039 + dependencies on M11 / production traffic.
+  - ✅ **E-5.6** background-job isolation (BYOK foundation + LLM resolution-path + Chroma tenant filter + per-tenant Celery routing).
+- **`docs/initiatives.md`** — I-5 header summary refreshed with the full ✅-status table and explicit "design-complete, code-deferred to SaaS launch" framing for E-5.3 / E-5.7 / E-5.8 / E-5.9 + T-5.1.3 / T-5.5.4 / T-5.5.6 / T-5.5.7. Each deferred item has a concrete "what gates this" reason.
+- **`docs/feature-roadmap.md`** — L5 SaaS-readiness layer flipped 🟡 → 🟢 for the code-shippable scope.
+- I-5 itself flips 🟡 → 🟢 with the qualifier "code-shippable work fully closed" — the initiative as a whole stays open conceptually since the SaaS-launch-gated work hasn't run yet.
+
 ### T-5.6.5: Per-tenant Celery queue routing foundation
 
 - **`backend/app/services/task_routing_service.py`** (new) — `queue_for_user` / `queue_for_tier` / `queue_for_tenant_id` resolve a queue name from the user's tier; `dispatch_for_user` / `dispatch_for_tenant_id` are thin wrappers over `task.apply_async(..., queue=<resolved>)`. Three tier queues (`tier_free`, `tier_pro`, `tier_studio`) plus a `default` fallback for system tasks (startup migrations, cleanup, etc.).

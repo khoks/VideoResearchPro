@@ -124,6 +124,9 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
                 "byok_llm_keys",
                 "team_workspace",
                 "data_residency_choice",
+                # I-3 Echo personal-brain features (Studio-only initially).
+                "echo_personal_brain",
+                "echo_speak_as_me",
             }
         ),
     },

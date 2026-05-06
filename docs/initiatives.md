@@ -467,20 +467,32 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 ---
 
-## I-3 ⚪ Echo (personal-brain L3)
+## I-3 🟡 Echo (personal-brain L3)
 
 **Why it exists.** Long-horizon north star — an app that ingests the user's likes / WhatsApp / Google Keep / quotes / activity / location / interests over time and develops a personality matching them. Eventually capable of "speaking on the user's behalf".
 **North-star doc:** [personal-brain.md](personal-brain.md) · [vision.md](vision.md) Ring 3
 **Decision links:** [D-003](decisions.md#d-003--echo--personal-brain-as-the-long-horizon-north-star-2026-04-24)
-**Status:** ⚪ proposed — schema decisions today must remain forward-compatible; no L3 code lands until L1 is mature.
+**Status:** 🟡 foundation shipped 2026-05-05. Schema + service-layer + cold-start gate + REST surface all live; concrete activity-stream connectors (YouTube watch / Spotify / email / etc.) and the "speak as me" agent are E-3.2 / E-3.4 follow-ups.
 
-### E-3.1 ⚪ Personal context store schema
+### E-3.1 🟢 Personal context store schema
 
 **Scope.** Separate-from-sources table holding location, interests, hobbies, work, talents, skills, personality, life events. Designed for opt-in, scoped, revocable bundles.
+**Shipped 2026-05-05** in PR #172. New `personal_context` table (Alembic `a4b5c6d7e8f9_personal_context_table.py`) — `(user_id, kind, key)` unique, value JSON-or-string in TEXT, source attribution, confidence 0-1, optional expires_at for stale-aware data ("current employer" expires after N months without re-confirmation). Service layer in `backend/app/services/echo_service.py`: `record_context` (upsert), `get_context`, `list_context` (kind/source filter; expired-by-default hidden), `delete_context`, `revoke_source` (deletes everything from a connector — opt-out path).
 
-### E-3.2 ⚪ Activity-stream connectors
+10 supported kinds: `location` / `interest` / `hobby` / `work` / `talent` / `skill` / `personality_trait` / `life_event` / `daily_routine` / `place`. Set is closed at the API layer (unknown kinds → 400); extend by editing `SUPPORTED_KINDS` + adding a test.
+
+### E-3.2 🟡 Activity-stream connectors
 
 **Scope.** Pluggable opt-in connectors. Recommended order (per [feature-roadmap.md L3](feature-roadmap.md#l3--echo-personal-brain)): YouTube watch history → Spotify history → email (read-only) → calendar → browser history → Apple Health.
+
+**Foundation shipped 2026-05-05** in PR #172. `EchoConnector` Protocol + `register_connector` / `get_connector` / `list_connectors` registry in `echo_service.py`. Each connector implements `authorize_url` / `revoke` / `sync` / `supported_kinds`. Concrete connectors are future PRs:
+
+- [ ] T-3.2.1 ⚪ YouTube watch history connector
+- [ ] T-3.2.2 ⚪ Spotify history connector
+- [ ] T-3.2.3 ⚪ Email (read-only OAuth) connector
+- [ ] T-3.2.4 ⚪ Calendar connector
+- [ ] T-3.2.5 ⚪ Browser history connector
+- [ ] T-3.2.6 ⚪ Apple Health connector
 
 ### E-3.3 ⚪ Voice & style capture
 
@@ -488,11 +500,16 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 ### E-3.4 ⚪ "Speak as me" agent
 
-**Scope.** Given an incoming message, draft a response in the user's voice using their accumulated knowledge + context. Privacy: self-host local; SaaS opt-in encrypted.
+**Scope.** Given an incoming message, draft a response in the user's voice using their accumulated knowledge + context. Privacy: self-host local; SaaS opt-in encrypted. Will use `echo_service.is_ready(user)` as the cold-start gate before activating.
 
-### E-3.5 ⚪ Cold-start readiness threshold
+### E-3.5 🟢 Cold-start readiness threshold
 
 **Scope.** Quantify "enough data has been ingested to safely activate Echo features" and gate Ring 3 surface behind this threshold.
+**Shipped 2026-05-05** in PR #172. `echo_service.is_ready(db, user_id, total_threshold=100, sources_threshold=3)` returns an `EchoReadiness` dataclass: `(ready, total_rows, distinct_sources, has_personality_trait, threshold_total, threshold_sources)`. Default thresholds are conservative (100 rows / 3 sources / ≥1 personality_trait); operators tune via the function args. Endpoint `GET /api/v1/echo/status` exposes the readiness diagnostics so the frontend can show "you're 60% there" progress UI.
+
+### E-3.6 🟢 Tier gating (Studio-only initially)
+
+**Shipped 2026-05-05** in PR #172. Two new feature flags: `echo_personal_brain` (gates the entire `/echo/*` surface) + `echo_speak_as_me` (gates the future "speak as me" agent — E-3.4). Both are Studio-tier-only at the `TIER_CAPABILITIES` level. Frontend shows the Echo surface only when `has_feature("echo_personal_brain")` returns true.
 
 ---
 

@@ -10,6 +10,22 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### I-3 Echo (personal-brain L3) — foundation shipped
+
+- **First L3 code on master.** Schema, service layer, cold-start gate, and REST surface all live. Concrete activity-stream connectors (YouTube watch history / Spotify / email / calendar / etc.) and the "speak as me" agent (E-3.4) are deliberately deferred — the foundation is what unblocks them.
+- **`personal_context` table** (Alembic `a4b5c6d7e8f9`) — `(user_id, kind, key)` unique. 10 supported kinds: `location` / `interest` / `hobby` / `work` / `talent` / `skill` / `personality_trait` / `life_event` / `daily_routine` / `place`. JSON-encoded value in TEXT, source attribution, 0-1 confidence, optional `expires_at` for stale-aware "current employer" / "current location" data.
+- **`backend/app/services/echo_service.py`** — `record_context` (upsert, clamps confidence, JSON-encodes non-string values), `get_context`, `list_context` (kind/source filters; excludes expired by default), `delete_context`, `revoke_source` (the connector opt-out path — deletes every row from a given source). Plus `EchoConnector` Protocol + `register_connector` / `get_connector` / `list_connectors` registry for future activity-stream connectors.
+- **Cold-start gate** — `is_ready(db, user_id, total_threshold=100, sources_threshold=3)` returns `EchoReadiness(ready, total_rows, distinct_sources, has_personality_trait, threshold_total, threshold_sources)`. Echo features won't fire on sparse accounts. Default: 100 rows + 3 distinct sources + ≥1 `personality_trait` row. Tunable via function args.
+- **`backend/app/routers/echo.py`** (new) — endpoints under `/api/v1/echo/*`:
+  - `GET /echo/status` — readiness diagnostics for frontend progress UI.
+  - `GET /echo/context` — list user's rows (kind/source query filters; `?include_expired=true` to override the default).
+  - `POST /echo/context` — manual entry. Source forced to `manual`.
+  - `DELETE /echo/context/{kind}/{key}` — delete a single row (404 if missing).
+  - `DELETE /echo/sources/{source}` — revoke a connector. Idempotent; returns deleted count.
+  - `GET /echo/connectors` — list registered connectors. v1 ships with the registry empty; future PRs populate.
+- **Tier gating** — every endpoint guarded by `Depends(require_feature("echo_personal_brain"))`. Two new tier flags added to `TIER_CAPABILITIES`: `echo_personal_brain` and `echo_speak_as_me` (Studio-only). Free / Pro tiers get 403 across the entire `/echo/*` surface.
+- **28 new tests** in `tests/test_routers/test_echo.py` — kind validation, upsert idempotence, confidence clamping, JSON value encoding, list filters (kind / source / expired), per-user isolation, delete + revoke_source, cold-start gate (false on empty / true when thresholds met / false without personality_trait even at row threshold), connector registry round-trip, endpoint integration (Studio-only / 403 for Free / 401 unauth / 400 bad kind / 404 missing). Backend suite 959 → 987.
+
 ### I-5 SaaS readiness — code-shippable work fully closed
 
 - **All five code-shippable I-5 epics are now ✅ shipped end-to-end** through PRs #149–#170. The remaining ⚪/🔴 items are correctly deferred to SaaS launch — none has a self-host code path that buys anything today.

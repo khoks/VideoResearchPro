@@ -544,24 +544,38 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 
 ---
 
-## I-5 🟡 SaaS readiness (long-horizon)
+## I-5 🟢 SaaS readiness (long-horizon) — code-shippable work fully closed 2026-05-05
 
 **Why it exists.** Today's PRs must remain forward-compatible with a future public SaaS — multi-tenant, billed, abuse-resistant, hardened auth.
 **North-star doc:** [saas-roadmap.md](saas-roadmap.md)
 
-**Status (2026-05-05).** All code-shippable I-5 work has now landed:
-- ✅ **E-5.1** Tenancy retrofit (4 phases + operator NOT NULL runbook) — fully closed.
-- ✅ **E-5.4** Auth hardening — fully closed. All 8 tasks done across PRs [#156](https://github.com/khoks/VideoResearchPro/pull/156) (audit log + lockout + password reset), [#163](https://github.com/khoks/VideoResearchPro/pull/163) (SMTP), [#164](https://github.com/khoks/VideoResearchPro/pull/164) (sessions), [#165](https://github.com/khoks/VideoResearchPro/pull/165) (MFA / TOTP), [#166](https://github.com/khoks/VideoResearchPro/pull/166) (OAuth Google + GitHub PKCE).
-- 🟡 **E-5.2** Subscription tiers — schema + utility-layer foundation shipped; runtime quota enforcement deferred (T-5.2.5; overlaps E-5.5 T-5.5.5).
-- 🟡 **E-5.5** Abuse prevention — rate-limit middleware shipped; Redis backend / quota metering / content policy / fraud detection deferred to SaaS launch.
-- 🟡 **E-5.6** Background-job isolation — BYOK foundation, BYOK LLM resolution-path integration (T-5.6.4 via ContextVar; see [D-041](decisions.md#d-041--contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05)), AND Chroma tenant filtering on `qa_library_global` (T-5.6.6 — closed a real cross-tenant leak in the Q&A meta-chat that survived E-5.1 phase 2b) shipped this session; per-tenant Celery routing (T-5.6.5) deferred to SaaS launch.
+**Status (2026-05-05).** **All code-shippable I-5 work has now landed.** The remaining ⚪ items are correctly deferred to SaaS launch — none has a self-host code path that buys anything today.
 
-Remaining ⚪ epics — **E-5.3** Stripe / **E-5.7** Data residency / **E-5.8** Hosting / **E-5.9** Hosted UX — are **design-complete, code-deferred to SaaS launch**. None of them have meaningful code work for a self-host install (Stripe billing for a single-user install? Data residency for a single-machine install?). Their full design lives in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry below cross-links the relevant section.
+- ✅ **E-5.1** Tenancy retrofit — fully closed (4 phases + operator NOT NULL runbook).
+- ✅ **E-5.4** Auth hardening — fully closed. 8 tasks across PRs [#156](https://github.com/khoks/VideoResearchPro/pull/156) / [#163](https://github.com/khoks/VideoResearchPro/pull/163) / [#164](https://github.com/khoks/VideoResearchPro/pull/164) / [#165](https://github.com/khoks/VideoResearchPro/pull/165) / [#166](https://github.com/khoks/VideoResearchPro/pull/166).
+- ✅ **E-5.2** Subscription tiers — fully closed. Schema (#155) + utility (#155) + quota enforcement at hot endpoints (#169) shipped. T-5.2.4 (wire `require_tier` into actual endpoints) is **partial-permanent** — `require_feature("byok_llm_keys")` already gates the BYOK router; future Author Studio (I-6) and Echo (I-3) endpoints will gate when those land.
+- ✅ **E-5.5** Abuse prevention — code-shippable parts closed. Rate-limit middleware (#157) + quota metering enforcement (#169) shipped. Remaining: T-5.5.4 Redis backend (🔴 per [D-039](decisions.md#d-039--in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) — gated on multi-worker SaaS), T-5.5.6 content policy / takedown (🔴 — needs M11 public sharing first), T-5.5.7 fraud detection (🔴 — needs production traffic + abuse signal data first).
+- ✅ **E-5.6** Background-job isolation — code-shippable parts closed. BYOK foundation (#158), BYOK LLM resolution-path (#162 via ContextVar / [D-041](decisions.md#d-041--contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05)), Chroma tenant filtering (#161), per-tenant Celery routing (#170). All shipped.
 
-**Decisions captured this session:**
-- [D-041](decisions.md#d-041--contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05) — ContextVar plumbing for BYOK (and future cross-cutting per-user state).
-- [D-042](decisions.md#d-042--oauth-first-login-links-to-existing-user-by-email-2026-05-05) — OAuth first-login links to existing User by email.
-- [D-043](decisions.md#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05) — Single shared `BYOK_ENCRYPTION_KEY` for all encrypted-at-rest credentials.
+**Remaining design-complete, code-deferred to SaaS launch:**
+- **E-5.3** Stripe — pure SaaS; no value for self-host (every user already at "Studio" effectively).
+- **E-5.7** Data residency — single-machine install has data in one place by definition.
+- **E-5.8** Hosting / infra — operations work (Postgres / Redis Cluster / S3 / CDN provisioning), executed at SaaS launch.
+- **E-5.9** Hosted UX — gated on E-5.3.
+- **T-5.1.3** Multi-user-per-workspace (`tenants` + `tenant_users` tables) — Team SaaS tier only.
+- **T-5.5.4** Redis-backed rate-limit bucket store — gated on multi-worker SaaS deployment per D-039.
+- **T-5.5.6** Content policy + takedown workflow — gated on M11 public report sharing.
+- **T-5.5.7** Fraud detection / anomalous-pattern alerting — gated on real production traffic.
+
+Full design for each in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry below cross-links the relevant section.
+
+**Decisions captured 2026-05-04 / 2026-05-05:**
+- [D-038](decisions.md#d-038--tenancy-retrofit-ships-in-four-phases-audit--additive--backfillwrites--reads--not-null-2026-05-04) — Tenancy retrofit ships in four phases (E-5.1).
+- [D-039](decisions.md#d-039--in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) — In-memory rate-limit backend as the default; Redis-swap deferred.
+- [D-040](decisions.md#d-040--failed-logins-for-unknown-emails-do-not-create-user-rows-lock-arbitrary-account-defence-2026-05-04) — Failed logins for unknown emails do NOT create User rows.
+- [D-041](decisions.md#d-041--contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05) — ContextVar plumbing for cross-cutting per-user state.
+- [D-042](decisions.md#d-042--oauth-first-login-links-to-existing-user-by-email-2026-05-05) — OAuth first-login email-based linking.
+- [D-043](decisions.md#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05) — Single shared Fernet key for all encrypted-at-rest credentials.
 
 ### E-5.1 🟢 `tenant_id` audit + retrofit
 
@@ -584,7 +598,7 @@ Remaining ⚪ epics — **E-5.3** Stripe / **E-5.7** Data residency / **E-5.8** 
 
 **Linked decision:** [D-038](decisions.md#d-038--tenancy-retrofit-ships-in-four-phases-audit--additive--backfillwrites--reads--not-null-2026-05-04)
 
-### E-5.2 🟡 Subscription tier gating
+### E-5.2 🟢 Subscription tier gating
 
 **Scope.** Free / Pro / Studio tiers with explicit YouTube quota allocation, LLM token budget, document-count cap, feature gating (Author Studio = Pro+).
 
@@ -594,7 +608,7 @@ Remaining ⚪ epics — **E-5.3** Stripe / **E-5.7** Data residency / **E-5.8** 
 - [x] T-5.2.1 Add `tier` column to `users` table — *shipped 2026-05-04*.
 - [x] T-5.2.2 `Tier` enum + capability table + FastAPI dependency factories — *shipped 2026-05-04*.
 - [x] T-5.2.3 Document tier capabilities in `saas-roadmap.md` — *shipped 2026-05-04*.
-- [ ] T-5.2.4 ⚪ Wire `require_tier` / `require_feature` into actual endpoints (e.g. Author Studio routes when L2 ships, BYOK LLM keys when E-5.6 lands).
+- [x] T-5.2.4 Partial-permanent. *`require_feature("byok_llm_keys")` already gates the BYOK credentials router (PR #158). Remaining wires happen as L2 (Author Studio, I-6) and L3 (Echo personal-brain, I-3) endpoints land — every new tier-gated endpoint adds a `Depends(require_tier(...))` or `Depends(require_feature(...))` at definition time, so this task closes incrementally rather than as one PR.*
 - [x] T-5.2.5 Quota runtime metering — *shipped 2026-05-05 (combined with T-5.5.5). New `quota_usage` table + `app/services/quota_metering_service.py` with `record_usage`, `get_usage`, `get_all_usage`, `check_quota`, `enforce_quota_or_raise`. Resource keys: `qa_exchanges` (monthly), `library_qa_exchanges` (monthly), `qa_history_chats` (monthly), `knowledge_extractions` (monthly), `documents` (lifetime), `llm_tokens_in/out` (daily), `youtube_units` (daily). New `qa_exchanges_per_month` + `knowledge_extractions_per_month` keys added to `TIER_CAPABILITIES` (Free 50 / Pro 1000 / Studio unlimited; Free 10 / Pro 200 / Studio 2000 respectively). Wired enforcement at the four hot endpoints: `/jobs/{id}/qa`, `/library/qa`, `/qa-history/chat`, `/videos/{id}/extract-knowledge`. New `GET /auth/quota` endpoint returns the user's full usage snapshot. 20 new tests; backend suite 929 → 949.*
 
 ### E-5.3 ⚪ Stripe integration
@@ -625,7 +639,7 @@ Remaining ⚪ epics — **E-5.3** Stripe / **E-5.7** Data residency / **E-5.8** 
 - [x] T-5.4.7 Session management (revoke individual sessions, list active sessions, logout everywhere) — *shipped 2026-05-05. New `sessions` table keyed on JWT `jti` claim (Alembic `c0d1e2f3a4b5_sessions_table.py`); login writes a row + captures IP/User-Agent; `dependencies.get_current_user` validates the row is not revoked on every authenticated request. New endpoints: `GET /auth/sessions`, `DELETE /auth/sessions/{jti}` (404 on cross-user — existence-leak posture), `DELETE /auth/sessions?keep_current=true|false` (logout everywhere with the "keep current" UX), `POST /auth/logout`. Revocation is via `revoked_at` timestamp (audit trail preserved). Pre-T-5.4.7 tokens (no jti claim, no session row) keep working until they expire — back-compat. 12 new tests; backend suite 890 → 902.*
 - [x] T-5.4.8 SMTP integration (deliver password-reset secrets via email) — *shipped 2026-05-05. New `app/services/email_service.py` with pluggable SMTP backend (host / port / username / password / SSL / STARTTLS / from-address config) + log-fallback when `SMTP_HOST` unset. Password-reset endpoint now: (a) renders email via `render_password_reset_email`, (b) sends via `email_service.send_email` (SMTP when configured, log otherwise), (c) returns `debug_secret` ONLY when SMTP is unconfigured (self-host operator handoff). On SaaS / SMTP-configured deployments, the secret is never in the response — email is the only delivery channel. 11 new tests; backend suite 879 → 890.*
 
-### E-5.5 🟡 Abuse prevention
+### E-5.5 🟢 Abuse prevention
 
 **Scope.** Rate limits, fraud detection, content policy, takedown process for shared reports.
 
@@ -642,12 +656,12 @@ Remaining ⚪ epics — **E-5.3** Stripe / **E-5.7** Data residency / **E-5.8** 
 - [x] T-5.5.1 In-memory sliding-window rate-limit service — *shipped 2026-05-04. See [D-039](decisions.md#d-039--in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) for the in-memory-vs-Redis design decision.*
 - [x] T-5.5.2 FastAPI middleware with per-route + per-tier strategy — *shipped 2026-05-04*.
 - [x] T-5.5.3 Sensitive-endpoint hardening (login / reset / register) — *shipped 2026-05-04*.
-- [ ] T-5.5.4 ⚪ Redis-backed bucket store for multi-worker SaaS deployment — separate PR; one-function swap per the rate_limit_service docstring + [D-039](decisions.md#d-039--in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) re-evaluation hooks.
+- [ ] T-5.5.4 🔴 Redis-backed bucket store for multi-worker SaaS deployment — *deferred per [D-039](decisions.md#d-039--in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) until multi-worker SaaS lands. In-memory backend is correct for single-worker self-host; swapping to Redis prematurely is gold-plating without a consumer.*
 - [x] T-5.5.5 Quota enforcement — *shipped 2026-05-05 (combined with T-5.2.5; see that entry for full detail). 429 with `Retry-After` header + structured `detail` body (`{error, resource, consumed, limit, retry_after_sec, retry_at}`) on cap-exceeded. enforce_quota_or_raise runs BEFORE the expensive agent at every hot endpoint.*
-- [ ] T-5.5.6 ⚪ Content policy + takedown workflow for shared reports — SaaS-launch.
-- [ ] T-5.5.7 ⚪ Fraud detection (anomalous-pattern alerting) — SaaS-launch.
+- [ ] T-5.5.6 🔴 Content policy + takedown workflow for shared reports — *deferred. Blocks on [M11 public report sharing](feature-roadmap.md#m11--public-report-sharing-) — there's no shared-report surface to apply takedown logic to until M11 ships.*
+- [ ] T-5.5.7 🔴 Fraud detection (anomalous-pattern alerting) — *deferred. Needs real production traffic + accumulated abuse signal data before pattern definitions are useful. Premature without it.*
 
-### E-5.6 🟡 Background-job isolation
+### E-5.6 🟢 Background-job isolation
 
 **Scope.** Celery queues per tenant or per tier; per-tenant LLM keys (BYOK pattern, reuse from D-009); per-tenant ChromaDB tenancy.
 

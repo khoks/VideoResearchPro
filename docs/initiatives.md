@@ -559,6 +559,37 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 **Linked decision:** [D-012](decisions.md#d-012--capture-novel--potentially-patentable-ideas-in-inventionsmd-2026-04-25)
 **PR:** [#68](https://github.com/khoks/VideoResearchPro/pull/68) (follow-up commit on the bootstrap branch)
 
+### E-4.8 ⚪ Cross-doc anchor-link convention fix
+
+**Surfaced 2026-05-05** during the test-plan execution session ([PR #175](https://github.com/khoks/VideoResearchPro/pull/175)). A scripted check found **121 cross-doc anchor links** (mostly from `decisions.md` → `initiatives.md` and `initiatives.md` → `decisions.md`) using `--` (double hyphen) where GitHub's slugifier produces single hyphens. Pattern: when a heading contains an em-dash (`—`) with surrounding spaces, GitHub strips the em-dash entirely and collapses the whitespace to a single `-`; the docs in this repo use `--` to represent the gap, which renders as broken on github.com but works in raw-text grep / IDE preview.
+
+**Scope.** One PR that batch-rewrites every affected anchor across `docs/decisions.md`, `docs/initiatives.md`, `docs/feature-roadmap.md`, `CHANGELOG.md`, and any related cross-references. After this PR, every link should resolve when clicked on github.com.
+
+**Acceptance.** A re-run of the slug-parity check (originally implemented inline in PR #175's verification step) reports **zero** broken cross-doc anchor links across all affected docs.
+
+**Tasks**
+- [ ] T-4.8.1 Write a small one-shot script (or hand-edit) that walks every `(decisions|initiatives|feature-roadmap|saas-roadmap)\.md#<anchor>` link and rewrites `--` → `-` in the anchor when the target heading contains ` — ` em-dash. Don't touch in-text content; only the anchor portion of the link.
+- [ ] T-4.8.2 Run the script, eyeball the diff for false positives (e.g. legitimate `--` in an anchor like `D-038--tenancy-retrofit` where the slug actually does have `--`).
+- [ ] T-4.8.3 Manual click-through on github.com after the PR opens — confirm every link in `docs/decisions.md` jumps to its target.
+
+### E-4.9 ⚪ LLM smoke-probe `gpt-5.4` config audit
+
+**Surfaced 2026-05-05** during the test-plan boot verification. The startup LLM probe reports `openai:gpt-5.4:low` returns "empty response content"; the model name is set in `app/services/llm_routing.py::USE_CASE_REGISTRY` for ten use cases (`qa_refine_context`, `qa_formulate_answer`, `library_qa_*`, etc.). Either the model name is a typo (no such OpenAI model), the model exists but doesn't return content under the `low` reasoning effort, or the OpenAI account doesn't have access to it. The app stays up because failure-mode is fail-soft, but the affected use cases all fall back to `unavailable` in `/api/v1/health/llm`.
+
+**Scope.** A small audit + config fix:
+1. Verify whether `gpt-5.4` is a real model name on OpenAI for the configured account.
+2. If it's a typo, fix the registry entry (likely `gpt-5` or similar).
+3. If the model is real but doesn't support `reasoning_effort=low`, change the use case's reasoning level or pick a different model.
+4. Re-run the boot smoke (`./venv/Scripts/python -c 'from fastapi.testclient import TestClient; from app.main import app; ...'`) and confirm `/api/v1/health/llm` reports `ok` for the previously-failing entry.
+
+**Acceptance.** All 19 LLM use cases probe-successfully on a fresh boot with default `LLM_USE_CASE_CONFIG` unset. `/api/v1/health` reports `llm.status=ok`.
+
+**Tasks**
+- [ ] T-4.9.1 List OpenAI models available on the configured account (`openai api models.list`).
+- [ ] T-4.9.2 Update `USE_CASE_REGISTRY` entries that point at `gpt-5.4` to a real, accessible model with the same intended capability tier.
+- [ ] T-4.9.3 Re-run boot smoke; confirm green health.
+- [ ] T-4.9.4 If the underlying issue is "OpenAI changed the model lineup mid-flight", file an open-question in feature-roadmap.md noting the registry needs a periodic re-validation pass.
+
 ---
 
 ## I-5 🟢 SaaS readiness (long-horizon) — code-shippable work fully closed 2026-05-05

@@ -20,7 +20,7 @@ from app.services.byok_service import (
     SUPPORTED_PROVIDERS,
     UnsupportedProviderError,
 )
-from app.services.tier_service import Tier, require_feature
+from app.services.tier_service import require_feature
 
 router = APIRouter(prefix="/auth/credentials", tags=["auth"])
 

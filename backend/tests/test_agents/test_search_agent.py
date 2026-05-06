@@ -7,7 +7,6 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-from langchain_core.messages import HumanMessage
 
 from app.agents import search_agent
 

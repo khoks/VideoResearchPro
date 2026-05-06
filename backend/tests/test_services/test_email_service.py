@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.config import settings
-from app.services import email_service
 from app.services.email_service import (
     EmailDeliveryError,
     render_password_reset_email,

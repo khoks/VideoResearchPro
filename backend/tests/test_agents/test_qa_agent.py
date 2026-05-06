@@ -5,7 +5,6 @@ formulate_answer, and extract_references ranking.
 """
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from app.agents import qa_agent
 

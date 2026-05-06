@@ -12,7 +12,6 @@ Covers:
 """
 from __future__ import annotations
 
-import pytest
 from jose import jwt
 
 from app.config import settings
@@ -105,7 +104,9 @@ def test_list_sessions_marks_current_session(unauthenticated_client, db):
         "/api/v1/auth/login",
         json={"email": "cur@x.com", "password": "goodpw1234"},
     )
-    token1 = r1.json()["access_token"]
+    # First login is what creates the second session row; we only need
+    # token2 for the listing-with-token2 assertion below.
+    _ = r1.json()["access_token"]
     token2 = r2.json()["access_token"]
 
     # When listing with token2, only the row for token2 is current.

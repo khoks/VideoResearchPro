@@ -9,7 +9,6 @@ No network calls, no Whisper API calls. Tests run in <1 second.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 
 import feedparser

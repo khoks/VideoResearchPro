@@ -1,7 +1,6 @@
 import os
 import logging
 
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 

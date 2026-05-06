@@ -256,6 +256,29 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `LLM_FAST_BASE_URL` | No | (unset) | **Deprecated.** Legacy alias for `LLM_LOCAL_BASE_URL`; still honored when the canonical name is unset |
 | `LLM_FAST_API_KEY` | No | `not-needed` | **Deprecated.** Legacy alias for `LLM_LOCAL_API_KEY` |
 | `LLM_MODEL` | No | `gpt-5` | **Deprecated.** Legacy primary-model name retained for back-compat; per-use-case defaults live in `app/services/llm_routing.py::USE_CASE_REGISTRY` |
+| **Auth hardening (E-5.4)** | | | |
+| `LOCKOUT_FAILURE_THRESHOLD` | No | `5` | Failed-login count before account locks. Set `0` to disable lockout (not recommended). |
+| `LOCKOUT_DURATION_MIN` | No | `15` | How long an account stays locked (minutes). |
+| `PASSWORD_RESET_TOKEN_TTL_MIN` | No | `30` | Password-reset token validity window (minutes). Single-use. |
+| `MFA_ISSUER_NAME` | No | `Pratidhvani` | Issuer label shown by the user's authenticator app. |
+| `SMTP_HOST` | No | (unset) | SMTP server for password-reset emails. When unset, the secret is returned in the API response + logged so self-host operators can hand it off out-of-band (per T-5.4.8). |
+| `SMTP_PORT` | No | `587` | SMTP port. |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | No | (unset) | SMTP auth. Both required, or both unset for anonymous relays. |
+| `SMTP_FROM_ADDRESS` | No | `no-reply@<SMTP_HOST>` | Sender envelope. |
+| `SMTP_USE_SSL` | No | `False` | SMTPS-on-connect (port 465 typical). |
+| `SMTP_USE_STARTTLS` | No | `True` | STARTTLS after connect (port 587 typical). |
+| `OAUTH_GOOGLE_CLIENT_ID` / `OAUTH_GOOGLE_CLIENT_SECRET` | No | (unset) | Google OAuth 2.0 + PKCE. Both must be set; endpoint returns 503 when unconfigured. |
+| `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET` | No | (unset) | GitHub OAuth 2.0 + PKCE. |
+| `OAUTH_REDIRECT_BASE_URL` | No | (unset) | Override the redirect base when frontend lives on a different origin. |
+| **Rate limiting (E-5.5)** | | | |
+| `RATE_LIMIT_ENABLED` | No | `True` | Kill switch. Set `False` for dev / under-test. |
+| `RATE_LIMIT_PER_MIN_FREE` / `_PRO` / `_STUDIO` | No | `60` / `600` / `6000` | Per-user-tier caps for authenticated routes (req/min). |
+| `RATE_LIMIT_PER_MIN_UNAUTH` | No | `100` | Per-IP cap for unauthenticated GETs. |
+| `RATE_LIMIT_LOGIN_PER_MIN` | No | `10` | Per-IP credential-stuffing defence on `/auth/login`. |
+| `RATE_LIMIT_RESET_PER_MIN` | No | `5` | Per-IP cap on `/auth/password-reset/{request,confirm}`. |
+| `RATE_LIMIT_REGISTER_PER_MIN` | No | `5` | Per-IP cap on `/auth/register`. |
+| **BYOK + MFA encryption (E-5.6 / E-5.4)** | | | |
+| `BYOK_ENCRYPTION_KEY` | **Yes (production)** | (unset) | Fernet key (32 url-safe base64-encoded bytes; generate via `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`). Encrypts BYOK provider keys + MFA secrets. When unset, a process-local key is generated at startup with a loud warning — stored credentials become unrecoverable on restart in that mode. Single shared key per [D-043](docs/decisions.md#d-043). |
 
 \* One provider key is effectively mandatory: whichever provider your resolved use cases point at. Defaults ship pointing at `openai`, so `OPENAI_API_KEY` is required out of the box.
 

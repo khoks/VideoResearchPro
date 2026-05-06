@@ -6,11 +6,6 @@ a fixture binary file. Tests run in <1 second.
 """
 from __future__ import annotations
 
-import os
-import tempfile
-from io import BytesIO
-from pathlib import Path
-from unittest.mock import patch
 
 import fitz
 import pytest

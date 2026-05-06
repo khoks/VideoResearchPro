@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.models.personal_context import PersonalContext
-from app.services import auth_service, echo_service
+from app.services import auth_service
 from app.services.echo_service import (
     SUPPORTED_KINDS,
     UnsupportedKindError,
@@ -146,7 +146,7 @@ def test_list_context_filters_by_kind(db):
 
 def test_list_context_excludes_expired_by_default(db):
     user = auth_service.create_user(db, email="l2@x.com", password="pw" * 6)
-    expired = record_context(
+    record_context(
         db, user_id=user.id, kind="work", key="employer-old",
         value="OLD", source="manual",
         expires_at=datetime.now(timezone.utc) - timedelta(days=1),

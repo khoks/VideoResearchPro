@@ -7,13 +7,11 @@ import uuid
 import pytest
 
 from app.models.job import Job
-from app.models.output import Output
 from app.models.qa_exchange import QAExchange
-from app.services import auth_service, output_service
+from app.services import auth_service
 from app.services.output_service import (
     OutputError,
     OutputStatus,
-    SUPPORTED_KINDS,
     UnsupportedKindError,
     create_output,
     delete_output,
@@ -21,7 +19,6 @@ from app.services.output_service import (
     get_outputter,
     list_outputs,
     list_outputters,
-    register_outputter,
     run_generation,
     transition_to,
 )

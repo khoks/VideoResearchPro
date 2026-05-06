@@ -3,10 +3,8 @@
 compute_statistics is pure and deterministic — we test it against synthetic
 chunks. The LLM-driven map/reduce/compose nodes are exercised via mocks.
 """
-import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from app.agents import report_agent
 

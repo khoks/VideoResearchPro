@@ -572,6 +572,31 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 - [ ] T-4.8.2 Run the script, eyeball the diff for false positives (e.g. legitimate `--` in an anchor like `D-038--tenancy-retrofit` where the slug actually does have `--`).
 - [ ] T-4.8.3 Manual click-through on github.com after the PR opens — confirm every link in `docs/decisions.md` jumps to its target.
 
+### E-4.10 ⚪ Replace `Base.metadata.create_all` lifespan with Alembic-managed schema
+
+**Surfaced 2026-05-05** during the post-test-plan audit. `app/main.py`'s lifespan calls `Base.metadata.create_all(bind=engine)` on every startup, which creates tables directly from the ORM **bypassing Alembic**. Result: an operator with an existing DB at some intermediate alembic revision can't run `alembic upgrade head` because `create_all` has already created the new tables → "table already exists" SQL error mid-migration. Verified concretely against the dev DB at `data/videoresearchpro.db` (revision `f7a8b9c0d1e2`); upgrade-head fails on `audit_log already exists`.
+
+This is a **production upgrade-path bug** for any operator who upgraded the app *before* this session's migrations landed. Fresh installs work fine; existing installs do not. Not flagged earlier because the unit-test suite uses `Base.metadata.create_all()` against in-memory SQLite (different mechanism; alembic isn't in the loop).
+
+**Scope.** Make Alembic the single schema-management path:
+
+1. Remove `Base.metadata.create_all` from `app/main.py` lifespan.
+2. Replace it with `command.upgrade(cfg, 'head')` so startup runs migrations to head.
+3. Provide a recovery runbook for operators stuck at the conflict: `alembic stamp head` (declare the schema as already-at-head if the tables match) followed by future `upgrade` calls.
+4. Update `docs/contributing.md` setup instructions: first-time setup runs `alembic upgrade head` (today the README assumes `create_all` does it).
+5. Test: clone the dev DB, simulate the operator upgrade path end-to-end.
+
+**Acceptance.** An operator with a pre-session DB can `git pull && alembic upgrade head` and reach the new schema cleanly. New installs from scratch hit `alembic upgrade head` once on first boot and work identically.
+
+**Tasks**
+- [ ] T-4.10.1 Remove `Base.metadata.create_all` call from `lifespan`.
+- [ ] T-4.10.2 Add `command.upgrade(cfg, 'head')` to lifespan (or document a `make migrate` step in contributing.md and have lifespan just verify head).
+- [ ] T-4.10.3 Operator runbook for the stuck-conflict case (e.g. `migration-create-all-conflict-recovery.md`): `alembic stamp head` semantics + when to use it.
+- [ ] T-4.10.4 Update tests/conftest.py to NOT rely on `Base.metadata.create_all` if the production lifespan changes (today they're independent — tests use create_all directly via `engine`; this stays).
+- [ ] T-4.10.5 End-to-end test: copy `data/videoresearchpro.db` to `_test.db`, run the new lifespan against it, verify schema reaches head with all data intact.
+
+**Severity**: Critical for any operator who installed before 2026-05-04. Not blocking for fresh installs, but the runbook should ship before the next operator-facing release.
+
 ### E-4.9 ⚪ LLM smoke-probe `gpt-5.4` config audit
 
 **Surfaced 2026-05-05** during the test-plan boot verification. The startup LLM probe reports `openai:gpt-5.4:low` returns "empty response content"; the model name is set in `app/services/llm_routing.py::USE_CASE_REGISTRY` for ten use cases (`qa_refine_context`, `qa_formulate_answer`, `library_qa_*`, etc.). Either the model name is a typo (no such OpenAI model), the model exists but doesn't return content under the `low` reasoning effort, or the OpenAI account doesn't have access to it. The app stays up because failure-mode is fail-soft, but the affected use cases all fall back to `unavailable` in `/api/v1/health/llm`.

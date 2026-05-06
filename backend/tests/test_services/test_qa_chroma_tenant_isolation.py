@@ -19,7 +19,6 @@ This module locks in the tenant-scoped contract:
 """
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
 from unittest.mock import patch

@@ -13,6 +13,7 @@ from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.password_reset_token import PasswordResetToken
 from app.models.qa_exchange import QAExchange
 from app.models.qa_history_exchange import QAHistoryExchange
+from app.models.session import Session
 from app.models.transcript_cache import TranscriptCache
 from app.models.user import User
 from app.models.user_credential import UserCredential
@@ -29,6 +30,7 @@ __all__ = [
     "PasswordResetToken",
     "QAExchange",
     "QAHistoryExchange",
+    "Session",
     "TranscriptCache",
     "User",
     "UserCredential",

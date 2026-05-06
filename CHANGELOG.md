@@ -10,6 +10,19 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### T-5.4.7: Session management — revoke individual sessions / logout everywhere
+
+- **`sessions` table** (Alembic `c0d1e2f3a4b5_sessions_table.py`) — one row per issued JWT, keyed on the JWT's `jti` claim. Captures IP / User-Agent at issuance; `last_used_at` updated on every authenticated request. Revocation is via `revoked_at` timestamp (audit trail preserved; rows never deleted).
+- **`auth_service.create_access_token(user_id, db=, ip_address=, user_agent=)`** — JWT now always carries a `jti` claim (UUID). When `db` is passed, a `Session` row is also written; without `db` the legacy stateless behaviour is preserved (back-compat for tests + any external callers).
+- **`dependencies.get_current_user` enforces revocation** — looks up the session by `jti`; rejects with 401 when the row is revoked. Tokens without `jti` (pre-T-5.4.7 issuances) skip the check via "missing row → assume active" semantics so they keep working until they expire.
+- **New endpoints** under `/api/v1/auth/`:
+  - `GET /sessions` — list active + revoked sessions for the current user (newest-first; `is_current` flag set on the requesting token's session).
+  - `DELETE /sessions/{jti}` — revoke a specific session. **Cross-user revocation returns 404 (not 403)** to avoid leaking existence — same posture as E-5.1 phase 2b.
+  - `DELETE /sessions?keep_current=true|false` — revoke ALL sessions for the user. `keep_current=true` skips the requesting token (the "log out from other devices" UX).
+  - `POST /logout` — revoke the current session.
+- **New audit events** in the `Event` enum: `LOGOUT`, `SESSION_REVOKED`, `SESSIONS_REVOKED_ALL`.
+- **12 new tests** in `tests/test_routers/test_sessions.py`: login writes session + captures IP/UA, list returns only current user's sessions with `is_current` flag set, single-session revoke blocks subsequent requests + leaves other tokens alive, cross-user revoke 404s, revoke-all clears every session, `keep_current=true` preserves the requesting token, logout revokes + audit logs, legacy-token-without-jti back-compat. Backend suite 890 → 902.
+
 ### T-5.4.8: SMTP integration for password-reset emails
 
 - **`backend/app/services/email_service.py`** (new) — pluggable SMTP backend with per-config-knob SSL / STARTTLS / authentication / sender-address handling. `send_email(to, subject, body)` is fail-safe (never raises); `send_email_strict` is the test variant that raises `EmailDeliveryError` on failure.

@@ -108,7 +108,13 @@ def login(
         user_id=user.id,
         request=request,
     )
-    token, expires_in = auth_service.create_access_token(user.id)
+    # T-5.4.7: write a session row so this token can be individually
+    # revoked from /auth/sessions/{id}.
+    ip = request.client.host if request.client else None
+    ua = request.headers.get("user-agent")
+    token, expires_in = auth_service.create_access_token(
+        user.id, db=db, ip_address=ip, user_agent=ua
+    )
     return TokenResponse(access_token=token, token_type="bearer", expires_in=expires_in)
 
 

@@ -20,6 +20,7 @@ from app.routers import (
     library,
     qa,
     qa_history,
+    sessions,
     ws,
 )
 from app.services import chroma_service
@@ -76,6 +77,7 @@ app.add_middleware(RateLimitMiddleware)
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(credentials.router, prefix="/api/v1")
+app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
 app.include_router(qa.router, prefix="/api/v1")

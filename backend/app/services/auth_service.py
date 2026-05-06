@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -210,19 +211,59 @@ def confirm_password_reset(
 
 
 def create_access_token(
-    user_id: str, expires_delta: timedelta | None = None
+    user_id: str,
+    expires_delta: timedelta | None = None,
+    *,
+    db: Session | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> tuple[str, int]:
-    """Return (jwt_token, expires_in_seconds)."""
+    """Return (jwt_token, expires_in_seconds).
+
+    T-5.4.7: when ``db`` is provided, also writes a Session row keyed on
+    the JWT's `jti` claim so the token can be revoked later. Existing
+    callers that don't pass ``db`` get the legacy "stateless JWT only"
+    behaviour — those tokens cannot be individually revoked. This
+    preserves back-compat for tests and lets routers opt-in by passing
+    their session.
+    """
     if expires_delta is None:
         expires_delta = timedelta(hours=settings.JWT_EXPIRY_HOURS)
     now = datetime.now(timezone.utc)
     expire = now + expires_delta
+    jti = str(uuid.uuid4())
     payload: dict[str, Any] = {
         "sub": user_id,
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
+        "jti": jti,
     }
     token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+
+    if db is not None:
+        try:
+            from app.models.session import Session as SessionRow
+
+            session_row = SessionRow(
+                jti=jti,
+                user_id=user_id,
+                ip_address=ip_address,
+                user_agent=user_agent[:512] if user_agent else None,
+            )
+            db.add(session_row)
+            db.commit()
+        except Exception:
+            logger.exception(
+                "create_access_token: failed to persist session row for "
+                "user_id=%s jti=%s — token issued but cannot be revoked",
+                user_id,
+                jti,
+            )
+            try:
+                db.rollback()
+            except Exception:
+                pass
+
     return token, int(expires_delta.total_seconds())
 
 
@@ -236,3 +277,109 @@ def decode_token(token: str) -> dict[str, Any] | None:
     except JWTError:
         logger.info("JWT decode failed")
         return None
+
+
+# ---------------------------------------------------------------------------
+# T-5.4.7 session management
+# ---------------------------------------------------------------------------
+
+
+def is_session_active(db: Session, jti: str) -> bool:
+    """True iff the session row for ``jti`` exists and is not revoked.
+
+    Used by the auth dependency to enforce revocation. Returns True
+    when the row is missing — back-compat for tokens issued before
+    T-5.4.7 (no session row was written). Tokens issued after this PR
+    have a session row by construction; their absence implies a
+    create-time persistence failure (logged at issuance) and we
+    fail-open rather than fail-closed for those edge cases.
+    """
+    from app.models.session import Session as SessionRow
+
+    row = db.query(SessionRow).filter(SessionRow.jti == jti).first()
+    if row is None:
+        # No session row → token pre-dates T-5.4.7. Allow it; the token's
+        # own `exp` claim still bounds its lifetime.
+        return True
+    return row.revoked_at is None
+
+
+def touch_session(db: Session, jti: str) -> None:
+    """Update `last_used_at` on the session row. Best-effort — logs on
+    failure but never propagates."""
+    from app.models.session import Session as SessionRow
+
+    try:
+        row = db.query(SessionRow).filter(SessionRow.jti == jti).first()
+        if row is None:
+            return
+        row.last_used_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception:
+        logger.exception("touch_session failed for jti=%s", jti)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
+def revoke_session(db: Session, jti: str, user_id: str) -> bool:
+    """Revoke a single session by jti. Returns True if revoked, False
+    if the session doesn't exist or doesn't belong to ``user_id``.
+
+    The user_id check is critical: a malicious user must NOT be able to
+    revoke another user's sessions by passing their jti.
+    """
+    from app.models.session import Session as SessionRow
+
+    row = (
+        db.query(SessionRow)
+        .filter(SessionRow.jti == jti, SessionRow.user_id == user_id)
+        .first()
+    )
+    if row is None:
+        return False
+    if row.revoked_at is not None:
+        # Already revoked — idempotent.
+        return True
+    row.revoked_at = datetime.now(timezone.utc)
+    db.commit()
+    return True
+
+
+def revoke_all_sessions(
+    db: Session, user_id: str, *, except_jti: str | None = None
+) -> int:
+    """Revoke every active session for ``user_id``. Optionally skip
+    ``except_jti`` (so the current request's session can stay alive
+    after a "logout other devices" call).
+
+    Returns the number of sessions revoked.
+    """
+    from app.models.session import Session as SessionRow
+
+    q = db.query(SessionRow).filter(
+        SessionRow.user_id == user_id,
+        SessionRow.revoked_at.is_(None),
+    )
+    if except_jti is not None:
+        q = q.filter(SessionRow.jti != except_jti)
+    rows = q.all()
+    now = datetime.now(timezone.utc)
+    for row in rows:
+        row.revoked_at = now
+    db.commit()
+    return len(rows)
+
+
+def list_user_sessions(db: Session, user_id: str) -> list:
+    """Return all sessions for ``user_id``, newest-first by created_at.
+    Includes revoked sessions — UI shows them with a 'revoked' badge."""
+    from app.models.session import Session as SessionRow
+
+    return (
+        db.query(SessionRow)
+        .filter(SessionRow.user_id == user_id)
+        .order_by(SessionRow.created_at.desc())
+        .all()
+    )

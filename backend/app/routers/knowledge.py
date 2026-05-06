@@ -106,6 +106,7 @@ def extract_knowledge(
     video_id: str,
     force: bool = False,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ) -> KnowledgeExtractResponse:
     """Run the knowledge agent on this video and persist the artifact.
 
@@ -142,8 +143,12 @@ def extract_knowledge(
     # `app.routers.knowledge.run_knowledge_extract_agent` work without the
     # real LLM being loaded at import time.
     from app.agents.knowledge_agent import run_knowledge_extract_agent
+    from app.services import llm_service
 
-    result = run_knowledge_extract_agent(video, transcript_text)
+    # T-5.6.4: BYOK context covers both knowledge_extract_batch (map) and
+    # knowledge_synthesize_report (reduce) call sites in the agent.
+    with llm_service.byok_context(current_user.id, db):
+        result = run_knowledge_extract_agent(video, transcript_text)
 
     merged = {key: list(result.get(key, [])) for key in _KNOWLEDGE_KEYS}
     video.extracted_knowledge_json = json.dumps(merged, ensure_ascii=False)

@@ -115,14 +115,18 @@ def ask_question(
     if request.context:
         enriched_question = f"{request.question}\n\nAdditional context from user:\n{request.context}"
 
-    # Run Q&A agent
+    # Run Q&A agent. T-5.6.4: enter BYOK context so any get_llm_for call
+    # inside the agent uses the user's BYOK credential when available.
     from app.agents.qa_agent import run_qa_agent
-    answer, references = run_qa_agent(
-        job_id=job_id,
-        job_type=job.job_type,
-        question=enriched_question,
-        report_html=report_html,
-    )
+    from app.services import llm_service
+
+    with llm_service.byok_context(current_user.id, db):
+        answer, references = run_qa_agent(
+            job_id=job_id,
+            job_type=job.job_type,
+            question=enriched_question,
+            report_html=report_html,
+        )
 
     # Save original question to DB (not the enriched version).
     # Per E-5.1 phase 2a, stamp tenant_id from the authenticated user.

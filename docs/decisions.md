@@ -1099,3 +1099,124 @@ Three candidate providers:
 - If a per-email-prefix abuse pattern emerges (attacker probing every `[a-z]@target.com`), consider domain-level rate-limit grouping.
 
 **Linked initiatives / PRs.** I-5 / E-5.4 / T-5.4.2. PR [#156](https://github.com/khoks/VideoResearchPro/pull/156).
+
+---
+
+## D-041 — ContextVar plumbing (vs explicit kwargs) for cross-cutting per-user state (2026-05-05)
+
+**Status:** accepted. Resolves a design question that surfaced while wiring [T-5.6.4 BYOK LLM resolution-path](initiatives.md#e-56--background-job-isolation) through the LLM call sites; shipped with [PR #162](https://github.com/khoks/VideoResearchPro/pull/162).
+
+**Context.** [T-5.6.4](initiatives.md#e-56--background-job-isolation) needed a way to make every `get_llm_for(use_case)` call honour the requesting user's BYOK credential when one is stored. The codebase has **19 LLM call sites** across `app/agents/qa_agent.py`, `app/agents/qa_history_agent.py`, `app/agents/knowledge_agent.py`, `app/agents/search_agent.py`, `app/agents/report_agent.py`, etc. — many nested two or three layers deep inside LangGraph node functions that take a state-dict, not free function arguments. None of these layers currently carry user context.
+
+The narrow problem (route a BYOK key through to the LLM client) is one instance of a broader pattern: **request-scoped state that's needed many layers below the entry point**. Other I-5 work has the same shape — quota counters (E-5.5 T-5.5.5), per-tenant Celery routing (E-5.6 T-5.6.5), per-tenant rate limiting at the LLM-call level. Whatever pattern we pick here will set the precedent.
+
+**Decision.** **`ContextVar` set at every router / Celery entry-point boundary**, read by `get_llm_for` (and any other infrastructure layer that needs user context). Concretely: `llm_service.byok_context(tenant_id, db)` is a context manager that sets a `ContextVar[(str, Session)]` for the duration of a `with` block. `get_llm_for` reads the var when its explicit `tenant_id`/`db` kwargs aren't provided. Routers and Celery tasks wrap their request scope:
+
+```python
+with llm_service.byok_context(current_user.id, db):
+    answer, refs = run_qa_agent(...)
+```
+
+**Alternatives considered.**
+
+- *Thread `tenant_id` + `db` as explicit kwargs through every layer.* Rejected. The "tens of touch sites" cost is real — every LangGraph node, every helper function, every agent run-function would grow the same two parameters. Mechanical refactor work that produces test churn but no behavioural value once it's done. The functions that need user context are infrastructure-layer concerns (LLM client construction, future quota metering); the agent-layer code that sits between has no business knowing about user identity.
+
+- *Pass a `RequestContext` dataclass through the agent layer.* Same downside as above (every layer grows a parameter), plus introduces a new abstraction the codebase doesn't have today (`RequestContext`, `with_context`, etc.).
+
+- *Module-global mutable singleton.* Rejected — request isolation breaks under concurrent FastAPI requests. ContextVar is the standard library's purpose-built solution to this exact "per-request state needed deep in the stack" problem.
+
+- *Stash on the `request: Request` object.* Works for sync FastAPI handlers, doesn't reach Celery workers (no `Request`), and the LangGraph nodes called from inside `run_qa_agent` are not aware of the request object. ContextVar covers both call paths uniformly.
+
+**Consequences.**
+
+- **Plumbing-free for new infrastructure-layer concerns.** Quota metering, per-tenant tracing, per-tenant rate-limiting at the LLM-call level — all can read from the same ContextVar at minimum cost. T-5.5.5 quota metering will reuse the pattern.
+- **Tests can use either the ContextVar (more realistic) or explicit kwargs (more isolated).** The `get_llm_for` signature still accepts `tenant_id=` / `db=` for the latter case.
+- **Nesting works correctly.** ContextVar tokens make `with byok_context(a, db1): with byok_context(b, db2): ...` restore `(a, db1)` after the inner block — useful for "admin acts as user" scenarios.
+- **Resets on exception.** The `@contextmanager` `try`/`finally` ensures the ContextVar is reset even when the wrapped code raises, so a crashed request doesn't leave the wrong tenant in the context for the next one.
+- **Async-safe** by design. Python's `ContextVar` is `asyncio`-aware: each task gets its own copy of the var on creation. Both sync and async LangGraph nodes work.
+- **One-of-pair warning.** Calling `get_llm_for(tenant_id=X)` without `db=` (or vice versa) is a programming error. The function logs a warning and skips the BYOK lookup rather than crashing.
+
+**Re-evaluation hooks.**
+
+- If a future cross-cutting concern needs more than `(tenant_id, db)` — e.g., the SaaS-launch milestone adds `workspace_id` distinct from `tenant_id` (T-5.1.3) — the ContextVar's value type can grow without changing call sites.
+- If we ever ship a non-Python execution path (e.g. a Rust ingest worker), the ContextVar pattern won't transfer; that's a SaaS-architecture concern outside the scope of E-5.6.
+
+**Linked initiatives / PRs.** I-5 / E-5.6 / T-5.6.4. PR [#162](https://github.com/khoks/VideoResearchPro/pull/162).
+
+---
+
+## D-042 — OAuth first-login links to existing User by email (2026-05-05)
+
+**Status:** accepted. Resolves a security-and-UX trade-off that came up while implementing [T-5.4.5 OAuth](initiatives.md#e-54--auth-hardening); shipped with [PR #166](https://github.com/khoks/VideoResearchPro/pull/166).
+
+**Context.** When a user signs in with Google or GitHub for the first time, the OAuth callback resolves to a `(provider, provider_user_id, email)` triple. The Pratidhvani user table is keyed on email (registration creates a row keyed on email; login looks up by email). The OAuth provider returns an email that may or may not match an existing Pratidhvani user. The implementation has to decide:
+
+- **Path A**: always create a fresh `User` row on first OAuth login, even if the email matches an existing password-registered user. Two accounts → user can't tell why their library is empty when logging in via Google having previously registered with email/password.
+- **Path B**: if the email matches an existing User, link the OAuth identity to that user. Single account survives the password→OAuth migration.
+
+Path B has a security implication: it trusts that the OAuth provider has verified the email belongs to the person at the keyboard. Otherwise a malicious user who knows a target's email could register an OAuth account with that email at a sloppy provider and "link" their identity to the existing Pratidhvani account, gaining access without ever knowing the password.
+
+**Decision.** **Path B** — first OAuth login matching an existing email links the new identity to the existing user. We rely on the OAuth providers' email verification: Google's OIDC `email_verified` claim is `true` by construction (Google insists on email ownership before account creation); GitHub returns only verified primary emails on the `/user` endpoint when the email was added through GitHub's verification flow. For both providers in v1 (Google, GitHub), email is verified.
+
+**Alternatives considered.**
+
+- *(A) Always create a fresh User on OAuth first-login.* Rejected. Forces users to migrate manually (export from old account, import into new), which is operationally painful, and creates duplicate User rows for the same human.
+- *(B') Link only if the OAuth provider explicitly asserts `email_verified=true` AND we cache that flag.* Considered. The shipped code doesn't currently inspect `email_verified` because both shipped providers (Google + GitHub) verify by construction at the API endpoint we use. **If a future provider doesn't (or doesn't reliably), we add the check then** — flagged in this ADR's "Re-evaluation hooks". The risk surface today is zero providers wide.
+- *(C) Link only after a confirmation email round-trip.* Rejected as v1 — adds an extra step to a flow users expect to be one-click. Reasonable for SaaS phase 2 if we ever add a provider with weaker email verification.
+- *(D) Require the user to log in via password first to "associate" OAuth.* Rejected — defeats the OAuth purpose for users who never knew their password (e.g. registered via OAuth originally, never set a password).
+
+**Consequences.**
+
+- **Single-account UX.** A user who registered with email/password and later clicks "Sign in with Google" lands in their existing account with their full library intact. No migration step.
+- **Duplicate identity rows are still impossible.** The `(provider, provider_user_id)` UNIQUE constraint on `oauth_identities` prevents linking two Pratidhvani users to the same Google account.
+- **Trust boundary moves to the OAuth provider's email-verification process.** Today both shipped providers verify by construction. **A future PR adding a provider must verify this property before adding it** — that's the runbook test (search for `email_verified` checks; if none, document why this provider's email is trustable).
+- **No way to detach a linked identity yet.** A user who linked Google to a password-registered account can't currently un-link. T-5.4.5b (future) will add `DELETE /auth/oauth/identities/{id}`. Out of scope here because the "link" direction is the urgent UX; "unlink" is rare.
+- **Audit log captures the link event** via `LOGIN_SUCCESS` with `metadata={"provider": "...", "via": "oauth"}` so a future security review can see when an OAuth identity was first attached to a user.
+
+**Re-evaluation hooks.**
+
+- Adding a provider whose email isn't verified by construction (e.g. some Mastodon servers, self-hosted Gitea instances, custom enterprise OIDC). Add an `email_verified` flag check at the linking step (returning a "this provider doesn't verify email; please log in with email/password to link" error if false).
+- Switching to confirmation-email-round-trip linking if SaaS abuse signals emerge.
+- T-5.4.5b unlink endpoint when a real user request surfaces.
+
+**Linked initiatives / PRs.** I-5 / E-5.4 / T-5.4.5. PR [#166](https://github.com/khoks/VideoResearchPro/pull/166).
+
+---
+
+## D-043 — Single shared Fernet key for all encrypted-at-rest credentials (2026-05-05)
+
+**Status:** accepted. Resolves an architectural choice surfaced when [T-5.4.6 MFA](initiatives.md#e-54--auth-hardening) needed somewhere to store the TOTP secret encrypted; shipped with [PR #165](https://github.com/khoks/VideoResearchPro/pull/165).
+
+**Context.** Three different encrypted-at-rest credential types now exist in the codebase:
+
+- **BYOK provider keys** (T-5.6.1, PR #158) — `user_credentials.encrypted_secret`. Holds the user's OpenAI / Anthropic / Google API key.
+- **MFA TOTP secret** (T-5.4.6, this PR) — `mfa_secrets.secret_encrypted`. Holds the random base32 secret shared with the user's authenticator app.
+- **Future**: per-tenant Twitter Bearer tokens (currently shared env var; movable to per-user later), per-tenant LLM endpoint URLs, per-tenant SMTP credentials when SaaS multi-tenant adds custom email domains.
+
+Each encryption needs a key. Two options for managing those keys:
+
+- **One key per credential type** (e.g. `BYOK_ENCRYPTION_KEY` for BYOK, `MFA_ENCRYPTION_KEY` for MFA secrets, future-`TWITTER_TOKEN_KEY` etc.). Rotation is per-type; a key compromise blast-radius is limited to one type.
+- **One shared key for all encrypted-at-rest credentials** (i.e. MFA reuses `BYOK_ENCRYPTION_KEY`). Operational simplicity at the cost of larger blast radius on key compromise.
+
+**Decision.** **Single shared key (`BYOK_ENCRYPTION_KEY`)** for all encrypted-at-rest credentials. Both BYOK and MFA encrypt via the same `byok_service._get_fernet()` cached instance. Future credential types reuse it.
+
+**Alternatives considered.**
+
+- *Per-credential-type keys.* Rejected for v1 because (a) the operator burden compounds — every new credential type adds a `<TYPE>_ENCRYPTION_KEY` env var; key rotation requires coordinating N rotations; lost-key recovery is a dance per type; (b) the threat model where "leaked one key but not the other" is contrived — keys live in the same `.env` / secrets manager and are exposed via the same surfaces (process memory, env-var dump, secrets-manager breach); (c) the key is read-only after process startup — the rotation story is already operator-coordinated regardless of key count.
+- *Per-user key derivation* (e.g. derive a per-user key from a master + user_id, encrypt each user's credentials with their own derived key). Rejected as overengineering for v1 — adds a derivation step on every encrypt/decrypt and doesn't change the threat model meaningfully (the master key is the real secret; derived keys recoverable from it). Reasonable for SaaS phase 2 if a regulator requires per-user key isolation.
+- *KMS-backed envelope encryption* (Fernet key itself encrypted by AWS/GCP KMS, decrypted on demand). Rejected for v1 — couples self-host to cloud KMS. Promising for SaaS infrastructure (E-5.8) where KMS is already in scope.
+
+**Consequences.**
+
+- **Single rotation story.** Generate a new key, decrypt-and-re-encrypt every row across `user_credentials` + `mfa_secrets` + future tables, replace the env var. The runbook shipped for BYOK (T-5.6.1) generalizes.
+- **Single fail-soft fallback.** When `BYOK_ENCRYPTION_KEY` is unset on self-host, a process-local Fernet key is generated at startup with a warning. Stored credentials become unrecoverable on restart in that mode — same fallback applies to BYOK + MFA. Operators who skip the key configuration get the same loud warning regardless of which feature they enable first.
+- **Key compromise = full credential exposure.** If `BYOK_ENCRYPTION_KEY` leaks, the attacker can decrypt every user's BYOK provider keys AND every user's TOTP seed. In practice, a key-leak scenario already implies a compromise where these are the lesser concerns (the attacker has env-var access → can also issue JWTs / bypass auth entirely). The blast-radius increase from "one type" to "all types" is small relative to "operator gets to manage one key vs N keys".
+- **MFA key rotation tolerance** — `verify_at_login` returns False (not raises) when the stored MFA ciphertext can't be decrypted. Same posture as BYOK's `get_credential` (returns None on decrypt-fail). Operators rotating the key will see MFA "fail open" (users can't second-factor in) until they re-encrypt, which is the right safety direction for an authn boundary.
+
+**Re-evaluation hooks.**
+
+- Switch to per-type keys if a regulator (HIPAA, FedRAMP, etc.) requires it for SaaS deployment. The runbook would split: each type's table gets its own re-encrypt step.
+- Switch to KMS envelope encryption when SaaS infra (E-5.8) lands and KMS is part of the deployment story.
+- Add per-user derivation if a high-value tenant requests cryptographic isolation between users at rest.
+
+**Linked initiatives / PRs.** I-5 / E-5.4 / E-5.6 / T-5.4.6 / T-5.6.1. PRs [#158](https://github.com/khoks/VideoResearchPro/pull/158) (introduced the key for BYOK), [#165](https://github.com/khoks/VideoResearchPro/pull/165) (extended its use to MFA).

@@ -37,6 +37,13 @@ class Event(str, Enum):
     LOGOUT = "logout"
     SESSION_REVOKED = "session_revoked"
     SESSIONS_REVOKED_ALL = "sessions_revoked_all"
+    # T-5.4.6 MFA
+    MFA_ENROLLED = "mfa_enrolled"
+    MFA_ENABLED = "mfa_enabled"
+    MFA_DISABLED = "mfa_disabled"
+    MFA_LOGIN_SUCCESS = "mfa_login_success"
+    MFA_LOGIN_FAILURE = "mfa_login_failure"
+    MFA_RECOVERY_CODE_USED = "mfa_recovery_code_used"
 
 
 def _ip_from_request(request: Request | None) -> str | None:

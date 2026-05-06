@@ -360,6 +360,8 @@ class Settings(BaseSettings):
     # E-5.4: Password-reset token TTL (minutes). Tokens expire after this
     # window AND are single-use.
     PASSWORD_RESET_TOKEN_TTL_MIN: int = 30
+    # T-5.4.6 MFA — issuer name shown by the user's authenticator app.
+    MFA_ISSUER_NAME: str = "Pratidhvani"
 
     # T-5.4.8: SMTP delivery for password-reset / future verification emails.
     # When SMTP_HOST is unset, the email_service falls back to logging the

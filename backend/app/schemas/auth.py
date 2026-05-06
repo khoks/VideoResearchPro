@@ -19,6 +19,15 @@ class TokenResponse(BaseModel):
     expires_in: int  # seconds
 
 
+class MfaRequiredResponse(BaseModel):
+    """Returned by /auth/login when the user has MFA enabled. The
+    caller must POST {mfa_token, code} to /auth/login/mfa to receive
+    the real access token."""
+    requires_mfa: bool = True
+    mfa_token: str
+    expires_in: int = 300  # seconds (matches MFA_TOKEN_TTL_MIN=5)
+
+
 class UserResponse(BaseModel):
     id: str
     email: str

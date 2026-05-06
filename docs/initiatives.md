@@ -719,20 +719,42 @@ Backend suite 835 → 855.
 
 ---
 
-## I-6 ⚪ Author Studio (output generation L2)
+## I-6 🟡 Author Studio (output generation L2)
 
 **Why it exists.** The accumulated library is rich enough to produce books, sites, decks, newsletters, reels — not just answers. Closes the loop: ingest → understand → produce.
 **North-star doc:** [feature-roadmap.md L2](feature-roadmap.md#l2--author-studio-output-generation-)
+**Status:** 🟡 foundation shipped 2026-05-05. Schema + Outputter Protocol + lifecycle + REST surface + tier gating + first concrete outputter (Book v1 Markdown) all live. Sites / decks / newsletters / reels are E-6.2/.3/.4/.5 follow-ups that plug into the same registry.
 
-### E-6.1 ⚪ Books (long-form Markdown → PDF / EPUB)
+### E-6.1 🟡 Books (long-form Markdown → PDF / EPUB)
+
+**v1 shipped 2026-05-05** in PR #173. `BookMarkdownOutputter` performs deterministic structural concatenation of selected job reports + per-job Q&A history into a Markdown manuscript with TOC. No LLM in v1 — that's the point: validate the schema + lifecycle + REST surface end-to-end before adding cohesion.
+
+**Tasks**
+- [x] T-6.1.1 v1 deterministic Markdown bundle — *shipped 2026-05-05*.
+- [ ] T-6.1.2 ⚪ LLM-driven cohesion (chapter ordering, transition prose, auto-generated introductions, glossary extraction).
+- [ ] T-6.1.3 ⚪ PDF conversion via `anthropic-skills:docx` or `pypandoc`.
+- [ ] T-6.1.4 ⚪ EPUB conversion.
+- [ ] T-6.1.5 ⚪ Frontend "Author Studio" surface (Pro+ button on a job page; book editor / preview).
 
 ### E-6.2 ⚪ Static personal-wiki site (Astro / 11ty under `outputs/sites/`)
 
+Outputter scaffolded by I-6 foundation; concrete `SiteAstroOutputter` is a future PR. The schema's `kind="site"` is supported; the route returns 501 until an outputter ships.
+
 ### E-6.3 ⚪ Slides (PPTX via `anthropic-skills:pptx`)
+
+`kind="deck"` reserved; outputter pending.
 
 ### E-6.4 ⚪ Newsletter / digest (recurring scheduled output)
 
+`kind="newsletter"` reserved; outputter pending. Will need a scheduled-task wiring (Celery beat) for the recurring aspect.
+
 ### E-6.5 ⚪ Video / reel (TTS narration + clip-stitched B-roll)
+
+`kind="reel"` reserved; outputter pending. Heaviest of the kinds — requires TTS provider + ffmpeg pipeline.
+
+### E-6.6 🟢 Foundation (schema + outputter Protocol + lifecycle + tier gate)
+
+**Shipped 2026-05-05** in PR #173. New `outputs` table (Alembic `b5c6d7e8f9a0`) with status state machine (`pending` → `generating` → `completed` | `failed`); `Outputter` Protocol + `register_outputter` / `get_outputter` / `list_outputters` registry; `run_generation` driver that handles status transitions + error capture; `OutputKind` enum (`book` / `site` / `deck` / `newsletter` / `reel`). REST surface under `/api/v1/author/*` — `GET /kinds`, `POST /outputs` (creates + generates synchronously for v1; 501 when no outputter for the kind), `GET /outputs` (kind/status filters), `GET /outputs/{id}`, `GET /outputs/{id}/content` (PlainTextResponse with media-type), `DELETE /outputs/{id}`. All gated on `require_feature("author_studio")` (Pro+).
 
 ---
 

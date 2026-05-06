@@ -10,6 +10,17 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### T-5.6.6: Chroma tenant filtering on `qa_library_global` — closes Q&A meta-chat cross-tenant leak
+
+- **Closes a real security bug** that survived [E-5.1 phase 2b](https://github.com/khoks/VideoResearchPro/pull/152). PR #152 filtered SQL reads by `tenant_id` on the four user-scoped tables, but the `qa_library_global` ChromaDB collection (which the Q&A History meta-chat queries via similarity search) was a **global shared collection with no tenant filter**. A user asking the meta-chat could surface *other users'* Q&A history in the retrieved context.
+- **`backend/app/services/chroma_service.py`** — `upsert_qa_exchange(exchange, source, tenant_id=None)` now writes `tenant_id` into Chroma metadata (defaulting to `exchange.tenant_id`); `query_qa_collection(query_text, top_k, where, tenant_id)` filters by tenant when set, combining with caller-provided `where` via `$and`. Legacy rows without `tenant_id` metadata are **invisible to tenant-scoped queries** — the fail-safe direction closes the leak even when an operator hasn't run E-5.1 phase 2c.
+- **`backend/app/agents/qa_history_agent.py`** — `run_qa_history_chat_agent` now requires `tenant_id` (keyword-only, no default); `_retrieve_past_exchanges` propagates it. The agent **cannot be called without the filter** — that's the contract that prevents future regressions.
+- **`backend/app/routers/qa_history.py`** — `POST /api/v1/qa-history/chat` threads `current_user.id` through.
+- **`backfill_qa_library` extension** — now also includes `QAHistoryExchange` rows (previously omitted, an existing gap surfaced during this work). `tenant_id` is propagated from the row's column to Chroma metadata so post-restart state matches steady-state writes.
+- **The global `videoresearchpro_global` document collection stays unfiltered by design** — it's the deduplicated library where one transcript is shared across all jobs and all users. That's a feature of the architecture, not a bug. Per-tenant filtering only applies to user-generated content (Q&A exchanges).
+- **9 new tests** in `tests/test_services/test_qa_chroma_tenant_isolation.py`: tenant_id metadata round-trip on upsert, explicit-arg-overrides-attribute, legacy-no-tenant-id warns + becomes invisible, tenant filter excludes other tenant rows, `$and` combination with caller `where`, no-filter escape hatch for backfill, backfill propagates tenant_id (and now covers `QAHistoryExchange`), end-to-end leak test against the meta-chat endpoint.
+- Backend suite 855 → 864.
+
 ### I-5 final reconciliation: design-complete framing for E-5.3 / E-5.7 / E-5.8 / E-5.9
 
 - **Closes the open coordination gap** between [`docs/initiatives.md`](docs/initiatives.md) and [`docs/saas-roadmap.md`](docs/saas-roadmap.md) for the four code-deferred epics (Stripe, Data residency, Hosting, Hosted UX). Each saas-roadmap section now opens with a status note that:

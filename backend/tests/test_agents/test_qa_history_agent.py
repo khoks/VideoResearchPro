@@ -48,10 +48,16 @@ def _qa_chunk(
     }
 
 
-def _run(question: str, answer_language: str = "en") -> dict:
+def _run(
+    question: str,
+    answer_language: str = "en",
+    tenant_id: str = "test-tenant",
+) -> dict:
     return asyncio.run(
         qa_history_agent.run_qa_history_chat_agent(
-            question=question, answer_language=answer_language
+            question=question,
+            answer_language=answer_language,
+            tenant_id=tenant_id,
         )
     )
 

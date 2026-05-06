@@ -51,16 +51,26 @@ def _question_preview(question: str) -> str:
     return _truncate(question, _QUESTION_PREVIEW_CHARS)
 
 
-def _retrieve_past_exchanges(question: str, n_results: int) -> list[dict]:
+def _retrieve_past_exchanges(
+    question: str,
+    n_results: int,
+    tenant_id: str,
+) -> list[dict]:
     """Query the central Q&A collection for exchanges relevant to ``question``.
 
-    Returns the raw chunks from chroma. If Unit 1 hasn't landed yet, or the
-    collection is empty, returns ``[]``.
+    T-5.6.6: ``tenant_id`` is required and applied as a Chroma metadata
+    filter so the meta-chat NEVER returns other users' Q&A history. Cannot
+    default to ``None`` here — that would re-introduce the cross-tenant
+    leak this function exists to prevent.
+
+    Returns the raw chunks from chroma. If Unit 1 hasn't landed yet, or
+    the collection is empty, returns ``[]``.
     """
     try:
         return chroma_service.query_qa_collection(
             question,
             top_k=n_results,
+            tenant_id=tenant_id,
         )
     except AttributeError:
         logger.warning(
@@ -220,11 +230,15 @@ def _filter_cited_references(answer: str, refs: list[dict]) -> list[dict]:
 async def run_qa_history_chat_agent(
     question: str,
     answer_language: str = "en",
+    *,
+    tenant_id: str,
 ) -> dict:
     """Answer a meta-question across the user's entire Q&A history.
 
     Flow:
-        1. Retrieve top-K past Q&A docs from ``qa_library_global``.
+        1. Retrieve top-K past Q&A docs from ``qa_library_global``,
+           filtered by ``tenant_id`` so the user only sees their own
+           past exchanges (T-5.6.6).
         2. Build structured references (one per exchange).
         3. LLM compacts the raw past exchanges into focused context.
         4. LLM synthesizes the final answer with citation rules.
@@ -235,10 +249,17 @@ async def run_qa_history_chat_agent(
         ``{"answer": str, "references": list[dict]}`` where each reference
         has shape ``{source_type, exchange_id, question_preview,
         job_id, original_created_at}``.
+
+    Args:
+        tenant_id: REQUIRED keyword-only — the user_id of the requester.
+            Used as a Chroma metadata filter so the meta-chat never
+            returns other users' Q&A history. Cannot be None.
     """
     n_results = getattr(settings, "RAG_TOP_K", _DEFAULT_TOP_K) or _DEFAULT_TOP_K
 
-    raw_chunks = _retrieve_past_exchanges(question, n_results=n_results)
+    raw_chunks = _retrieve_past_exchanges(
+        question, n_results=n_results, tenant_id=tenant_id
+    )
     chunks = _dedupe_by_exchange_id(raw_chunks)
     # Parse each stored document exactly once.
     parsed = [

@@ -414,7 +414,11 @@ def _reference_count(exchange: Any) -> int:
     return len(parsed) if isinstance(parsed, list) else 0
 
 
-def upsert_qa_exchange(exchange: Any, source: QASource) -> bool:
+def upsert_qa_exchange(
+    exchange: Any,
+    source: QASource,
+    tenant_id: str | None = None,
+) -> bool:
     """Upsert a single Q&A exchange into the Q&A library collection.
 
     Expects the ORM object to expose ``id``, ``question``, ``answer``,
@@ -422,6 +426,15 @@ def upsert_qa_exchange(exchange: Any, source: QASource) -> bool:
     All failures are caught and logged — callers MUST NOT let a Chroma
     error break the Q&A response. Returns ``True`` on success, ``False``
     otherwise.
+
+    Tenant scoping (T-5.6.6): if ``tenant_id`` is omitted, falls back to
+    ``exchange.tenant_id``. The value is written to Chroma metadata so
+    `query_qa_collection(tenant_id=...)` can enforce per-tenant isolation
+    on similarity searches. Rows where ``tenant_id`` is unresolvable
+    (legacy data created before E-5.1 phase 2a) still upsert without the
+    metadata key — they become invisible to tenant-scoped queries until
+    an operator backfills them. The fail-safe direction (invisible rather
+    than universally visible) closes the cross-tenant leak.
     """
     try:
         exchange_id = str(exchange.id)
@@ -431,11 +444,24 @@ def upsert_qa_exchange(exchange: Any, source: QASource) -> bool:
         logger.exception("upsert_qa_exchange: malformed exchange object")
         return False
 
+    if tenant_id is None:
+        tenant_id = getattr(exchange, "tenant_id", None)
+
     metadata: dict[str, Any] = {
         "source": source,
         "exchange_id": exchange_id,
         "reference_count": _reference_count(exchange),
     }
+
+    if tenant_id is not None:
+        metadata["tenant_id"] = str(tenant_id)
+    else:
+        logger.warning(
+            "upsert_qa_exchange: no tenant_id resolvable for exchange_id=%s "
+            "source=%s — row will be invisible to tenant-scoped queries.",
+            exchange_id,
+            source,
+        )
 
     job_id = getattr(exchange, "job_id", None)
     if job_id is not None:
@@ -467,7 +493,7 @@ def upsert_qa_exchange(exchange: Any, source: QASource) -> bool:
 
     logger.info(
         f"Upserted Q&A exchange into '{settings.CHROMA_QA_COLLECTION_NAME}': "
-        f"id={exchange_id} source={source}"
+        f"id={exchange_id} source={source} tenant_id={tenant_id}"
     )
     return True
 
@@ -476,12 +502,23 @@ def query_qa_collection(
     query_text: str,
     top_k: int | None = None,
     where: dict | None = None,
+    tenant_id: str | None = None,
 ) -> list[dict]:
     """Query the Q&A library collection.
 
     Returns a list of ``{"text", "metadata", "distance"}`` dicts sorted by
     relevance. ``where`` is passed straight through to ChromaDB for
     metadata filtering (e.g. ``{"source": "job"}``).
+
+    Tenant scoping (T-5.6.6): when ``tenant_id`` is provided, the query is
+    restricted to chunks with matching ``tenant_id`` metadata. Combines
+    with any caller-provided ``where`` via ``$and`` so both filters apply.
+    Passing ``tenant_id=None`` is allowed (e.g. for backfill / admin
+    aggregation) but every user-facing call site MUST pass a non-None
+    value — that's how the cross-tenant isolation is enforced. Legacy
+    rows that pre-date E-5.1 phase 2a (and hence have no ``tenant_id``
+    metadata) are invisible to tenant-scoped queries; the fail-safe
+    direction closes the leak.
     """
     if top_k is None:
         top_k = settings.RAG_TOP_K
@@ -492,13 +529,22 @@ def query_qa_collection(
         logger.exception("Failed to open Q&A ChromaDB collection")
         return []
 
+    # Build the effective where filter combining caller `where` and tenant.
+    effective_where: dict | None
+    if tenant_id is not None and where:
+        effective_where = {"$and": [{"tenant_id": str(tenant_id)}, where]}
+    elif tenant_id is not None:
+        effective_where = {"tenant_id": str(tenant_id)}
+    else:
+        effective_where = where
+
     params: dict[str, Any] = {
         "query_texts": [query_text],
         "n_results": top_k,
         "include": ["documents", "metadatas", "distances"],
     }
-    if where:
-        params["where"] = where
+    if effective_where:
+        params["where"] = effective_where
 
     try:
         results = collection.query(**params)
@@ -521,11 +567,15 @@ def query_qa_collection(
 
 
 def backfill_qa_library() -> int:
-    """Upsert every existing ``QAExchange`` and ``LibraryQAExchange`` row
-    into the Q&A library collection.
+    """Upsert every existing ``QAExchange``, ``LibraryQAExchange``, and
+    ``QAHistoryExchange`` row into the Q&A library collection.
 
     Idempotent: upsert on the fixed ``qa:{id}`` chunk ID means re-running
     only overwrites in place. Safe to call on every process startup.
+
+    T-5.6.6 update: now also covers ``QAHistoryExchange`` rows (previously
+    omitted), and propagates ``tenant_id`` from each row's column into
+    Chroma metadata so per-tenant queries hide other users' history.
 
     Returns the total number of rows upserted (including repeats).
     """
@@ -535,6 +585,7 @@ def backfill_qa_library() -> int:
     from app.database import SessionLocal
     from app.models.library_qa_exchange import LibraryQAExchange
     from app.models.qa_exchange import QAExchange
+    from app.models.qa_history_exchange import QAHistoryExchange
 
     count = 0
     try:
@@ -549,6 +600,9 @@ def backfill_qa_library() -> int:
                 count += 1
         for exchange in db.query(LibraryQAExchange).all():
             if upsert_qa_exchange(exchange, source="library"):
+                count += 1
+        for exchange in db.query(QAHistoryExchange).all():
+            if upsert_qa_exchange(exchange, source="history"):
                 count += 1
     except Exception:
         logger.exception("backfill_qa_library: unexpected error during backfill")

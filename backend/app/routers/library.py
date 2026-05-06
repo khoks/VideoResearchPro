@@ -96,6 +96,12 @@ def ask_library_question(
     current_user=Depends(get_current_user),
 ) -> LibraryQAResponse:
     """Run library-wide Q&A across the global video library and persist the exchange."""
+    # T-5.5.5: per-user quota check BEFORE the (expensive) agent runs.
+    from app.services import quota_metering_service
+    quota_metering_service.enforce_quota_or_raise(
+        db, current_user, "library_qa_exchanges"
+    )
+
     # Import inside the handler so the agent is only loaded when needed
     # (and so tests that patch ``app.routers.library.run_library_qa_agent``
     # work as expected).
@@ -110,6 +116,11 @@ def ask_library_question(
             question=request.question,
             answer_language=request.answer_language,
         )
+
+    # T-5.5.5: track consumption.
+    quota_metering_service.record_usage(
+        db, current_user.id, "library_qa_exchanges"
+    )
     answer = result.get("answer", "")
     references = result.get("references", [])
 

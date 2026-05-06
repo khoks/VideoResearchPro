@@ -68,6 +68,9 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         "youtube_units_per_day": 10_000,
         "llm_tokens_per_day": 200_000,
         "document_count_cap": 500,
+        # T-5.5.5 quota-metered resources (monthly counts).
+        "qa_exchanges_per_month": 50,
+        "knowledge_extractions_per_month": 10,
         "features": frozenset(
             {
                 "topic_jobs",
@@ -83,6 +86,8 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         "youtube_units_per_day": 50_000,
         "llm_tokens_per_day": 2_000_000,
         "document_count_cap": 5_000,
+        "qa_exchanges_per_month": 1_000,
+        "knowledge_extractions_per_month": 200,
         "features": frozenset(
             {
                 "topic_jobs",
@@ -102,6 +107,8 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         "youtube_units_per_day": 250_000,
         "llm_tokens_per_day": 10_000_000,
         "document_count_cap": -1,  # unlimited
+        "qa_exchanges_per_month": -1,
+        "knowledge_extractions_per_month": 2_000,
         "features": frozenset(
             {
                 "topic_jobs",

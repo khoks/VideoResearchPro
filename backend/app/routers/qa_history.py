@@ -94,6 +94,12 @@ async def ask_qa_history(
     current_user=Depends(get_current_user),
 ) -> QAHistoryChatResponse:
     """Run the Q&A history agent, persist the exchange, index it."""
+    # T-5.5.5: per-user quota check BEFORE the (expensive) agent runs.
+    from app.services import quota_metering_service
+    quota_metering_service.enforce_quota_or_raise(
+        db, current_user, "qa_history_chats"
+    )
+
     # Lazy import so tests can patch ``app.routers.qa_history.run_qa_history_chat_agent``.
     from app.agents.qa_history_agent import run_qa_history_chat_agent
     from app.services import llm_service
@@ -105,6 +111,11 @@ async def ask_qa_history(
             answer_language=request.answer_language,
             tenant_id=current_user.id,
         )
+
+    # T-5.5.5: track consumption.
+    quota_metering_service.record_usage(
+        db, current_user.id, "qa_history_chats"
+    )
     answer = result.get("answer", "")
     references = result.get("references", []) or []
 

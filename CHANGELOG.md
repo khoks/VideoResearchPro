@@ -10,6 +10,17 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### T-5.5.5 + T-5.2.5: Quota runtime metering — per-user tracking + enforcement
+
+- **`quota_usage` table** (Alembic `f3a4b5c6d7e8`) — composite-unique on `(user_id, resource, period_kind, period_start)`. Each row's `consumed` is monotonically incremented. Idempotent — rolling daily / monthly periods produce new rows automatically; lifetime resources reuse a single epoch-zero bucket.
+- **`backend/app/services/quota_metering_service.py`** — `record_usage(db, user_id, resource, amount=1)` (fail-safe; never raises), `get_usage`, `get_all_usage` returning `UsageSnapshot[]`, `check_quota`, `enforce_quota_or_raise` (raises HTTP 429 with structured `detail`). 8 resource keys registered: `qa_exchanges` / `library_qa_exchanges` / `qa_history_chats` (monthly), `knowledge_extractions` (monthly), `documents` (lifetime), `llm_tokens_in/out` (daily), `youtube_units` (daily).
+- **Tier capability table extended** with `qa_exchanges_per_month` (Free 50 / Pro 1000 / Studio unlimited) and `knowledge_extractions_per_month` (Free 10 / Pro 200 / Studio 2000). Existing keys (`youtube_units_per_day`, `llm_tokens_per_day`, `document_count_cap`) re-used.
+- **Enforcement wired at 4 hot endpoints**: `POST /jobs/{id}/qa`, `POST /library/qa`, `POST /qa-history/chat`, `POST /videos/{id}/extract-knowledge`. `enforce_quota_or_raise` runs BEFORE the expensive agent so over-cap users get a clean 429 without consuming tokens.
+- **`record_usage` runs AFTER successful agent execution** so failed runs (e.g. provider timeout) don't burn the user's quota.
+- **`GET /api/v1/auth/quota`** — returns `{tier, resources: [{resource, period_kind, period_start, period_end, consumed, limit, over_limit}, ...]}`. Frontend can display "47 / 50 Q&As this month" without inspecting per-resource state.
+- **Failure mode is fail-safe**: `record_usage` swallows all DB errors and rolls back. Quota tracking must not break the call site it's instrumenting (mirror of audit_service / quota_service patterns).
+- **20 new tests** in `tests/test_services/test_quota_metering.py`: period-boundary correctness (daily / monthly / lifetime / unknown raises), record_usage idempotence + zero/negative no-op + per-user/per-resource isolation, tier-aware check_quota, 429 raise with retry-after on over-cap, get_all_usage snapshot, period rollover keeps separate rows, endpoint integration with auth requirement. Backend suite 929 → 949.
+
 ### T-5.4.5: OAuth (Google + GitHub PKCE) — closes E-5.4 fully
 
 - **`oauth_states` + `oauth_identities` tables** (Alembic `e2f3a4b5c6d7`). `oauth_states` is single-use + 10 min TTL with S256 PKCE verifier persisted. `oauth_identities` is the long-lived link with `(provider, provider_user_id)` unique constraint.

@@ -15,6 +15,7 @@ from app.models.oauth import OAuthIdentity, OAuthState
 from app.models.password_reset_token import PasswordResetToken
 from app.models.qa_exchange import QAExchange
 from app.models.qa_history_exchange import QAHistoryExchange
+from app.models.quota_usage import QuotaUsage
 from app.models.session import Session
 from app.models.transcript_cache import TranscriptCache
 from app.models.user import User
@@ -35,6 +36,7 @@ __all__ = [
     "PasswordResetToken",
     "QAExchange",
     "QAHistoryExchange",
+    "QuotaUsage",
     "Session",
     "TranscriptCache",
     "User",

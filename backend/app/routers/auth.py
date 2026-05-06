@@ -244,3 +244,54 @@ def audit_log(
         db, user_id=current_user.id, limit=limit, offset=offset
     )
     return [AuditLogEntry.model_validate(r) for r in rows]
+
+
+# T-5.5.5 / T-5.2.5: per-user quota metering.
+from pydantic import BaseModel  # noqa: E402  (kept colocated for clarity)
+from datetime import datetime as _dt  # noqa: E402
+
+from app.services import quota_metering_service  # noqa: E402
+
+
+class _QuotaResource(BaseModel):
+    resource: str
+    period_kind: str
+    period_start: _dt
+    period_end: _dt | None
+    consumed: int
+    limit: int
+    over_limit: bool
+
+
+class _QuotaResponse(BaseModel):
+    tier: str
+    resources: list[_QuotaResource]
+
+
+@router.get("/quota", response_model=_QuotaResponse)
+def quota(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> _QuotaResponse:
+    """Return the user's current usage vs tier limits across every
+    metered resource. ``limit=-1`` means unlimited; ``over_limit=true``
+    means the user has exceeded the cap and the next quota-bearing
+    request will 429."""
+    snapshots = quota_metering_service.get_all_usage(db, current_user)
+    from app.services.tier_service import get_user_tier
+
+    return _QuotaResponse(
+        tier=get_user_tier(current_user).value,
+        resources=[
+            _QuotaResource(
+                resource=s.resource,
+                period_kind=s.period_kind,
+                period_start=s.period_start,
+                period_end=s.period_end,
+                consumed=s.consumed,
+                limit=s.limit,
+                over_limit=s.over_limit,
+            )
+            for s in snapshots
+        ],
+    )

@@ -115,6 +115,14 @@ def ask_question(
     if request.context:
         enriched_question = f"{request.question}\n\nAdditional context from user:\n{request.context}"
 
+    # T-5.5.5: enforce per-user quota BEFORE running the (expensive)
+    # agent. Free / Pro tiers cap monthly Q&A counts; Studio is
+    # unlimited (limit=-1 → check_quota always allows).
+    from app.services import quota_metering_service
+    quota_metering_service.enforce_quota_or_raise(
+        db, current_user, "qa_exchanges"
+    )
+
     # Run Q&A agent. T-5.6.4: enter BYOK context so any get_llm_for call
     # inside the agent uses the user's BYOK credential when available.
     from app.agents.qa_agent import run_qa_agent
@@ -127,6 +135,9 @@ def ask_question(
             question=enriched_question,
             report_html=report_html,
         )
+
+    # T-5.5.5: record the consumed resource AFTER the agent succeeds.
+    quota_metering_service.record_usage(db, current_user.id, "qa_exchanges")
 
     # Save original question to DB (not the enriched version).
     # Per E-5.1 phase 2a, stamp tenant_id from the authenticated user.

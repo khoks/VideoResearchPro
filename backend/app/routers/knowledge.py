@@ -139,6 +139,12 @@ def extract_knowledge(
             detail="No transcript available for this video",
         )
 
+    # T-5.5.5: per-user quota check BEFORE the (expensive) agent runs.
+    from app.services import quota_metering_service
+    quota_metering_service.enforce_quota_or_raise(
+        db, current_user, "knowledge_extractions"
+    )
+
     # Import inside the handler so tests that patch
     # `app.routers.knowledge.run_knowledge_extract_agent` work without the
     # real LLM being loaded at import time.
@@ -149,6 +155,11 @@ def extract_knowledge(
     # knowledge_synthesize_report (reduce) call sites in the agent.
     with llm_service.byok_context(current_user.id, db):
         result = run_knowledge_extract_agent(video, transcript_text)
+
+    # T-5.5.5: track consumption AFTER successful extraction.
+    quota_metering_service.record_usage(
+        db, current_user.id, "knowledge_extractions"
+    )
 
     merged = {key: list(result.get(key, [])) for key in _KNOWLEDGE_KEYS}
     video.extracted_knowledge_json = json.dumps(merged, ensure_ascii=False)

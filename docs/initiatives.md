@@ -595,7 +595,7 @@ Remaining ⚪ epics — **E-5.3** Stripe / **E-5.7** Data residency / **E-5.8** 
 - [x] T-5.2.2 `Tier` enum + capability table + FastAPI dependency factories — *shipped 2026-05-04*.
 - [x] T-5.2.3 Document tier capabilities in `saas-roadmap.md` — *shipped 2026-05-04*.
 - [ ] T-5.2.4 ⚪ Wire `require_tier` / `require_feature` into actual endpoints (e.g. Author Studio routes when L2 ships, BYOK LLM keys when E-5.6 lands).
-- [ ] T-5.2.5 ⚪ Quota runtime metering (covered by E-5.5).
+- [x] T-5.2.5 Quota runtime metering — *shipped 2026-05-05 (combined with T-5.5.5). New `quota_usage` table + `app/services/quota_metering_service.py` with `record_usage`, `get_usage`, `get_all_usage`, `check_quota`, `enforce_quota_or_raise`. Resource keys: `qa_exchanges` (monthly), `library_qa_exchanges` (monthly), `qa_history_chats` (monthly), `knowledge_extractions` (monthly), `documents` (lifetime), `llm_tokens_in/out` (daily), `youtube_units` (daily). New `qa_exchanges_per_month` + `knowledge_extractions_per_month` keys added to `TIER_CAPABILITIES` (Free 50 / Pro 1000 / Studio unlimited; Free 10 / Pro 200 / Studio 2000 respectively). Wired enforcement at the four hot endpoints: `/jobs/{id}/qa`, `/library/qa`, `/qa-history/chat`, `/videos/{id}/extract-knowledge`. New `GET /auth/quota` endpoint returns the user's full usage snapshot. 20 new tests; backend suite 929 → 949.*
 
 ### E-5.3 ⚪ Stripe integration
 
@@ -643,7 +643,7 @@ Remaining ⚪ epics — **E-5.3** Stripe / **E-5.7** Data residency / **E-5.8** 
 - [x] T-5.5.2 FastAPI middleware with per-route + per-tier strategy — *shipped 2026-05-04*.
 - [x] T-5.5.3 Sensitive-endpoint hardening (login / reset / register) — *shipped 2026-05-04*.
 - [ ] T-5.5.4 ⚪ Redis-backed bucket store for multi-worker SaaS deployment — separate PR; one-function swap per the rate_limit_service docstring + [D-039](decisions.md#d-039--in-memory-rate-limit-backend-as-the-default-redis-swap-deferred-to-multi-worker-saas-2026-05-04) re-evaluation hooks.
-- [ ] T-5.5.5 ⚪ Quota enforcement (covered by E-5.2 T-5.2.5; rate-limit infra above is what it'll layer on).
+- [x] T-5.5.5 Quota enforcement — *shipped 2026-05-05 (combined with T-5.2.5; see that entry for full detail). 429 with `Retry-After` header + structured `detail` body (`{error, resource, consumed, limit, retry_after_sec, retry_at}`) on cap-exceeded. enforce_quota_or_raise runs BEFORE the expensive agent at every hot endpoint.*
 - [ ] T-5.5.6 ⚪ Content policy + takedown workflow for shared reports — SaaS-launch.
 - [ ] T-5.5.7 ⚪ Fraud detection (anomalous-pattern alerting) — SaaS-launch.
 

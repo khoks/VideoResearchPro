@@ -12,6 +12,7 @@ from app.models.job_video import JobVideo
 from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.mfa_secret import MfaSecret
 from app.models.oauth import OAuthIdentity, OAuthState
+from app.models.output import Output
 from app.models.password_reset_token import PasswordResetToken
 from app.models.personal_context import PersonalContext
 from app.models.qa_exchange import QAExchange
@@ -34,6 +35,7 @@ __all__ = [
     "MfaSecret",
     "OAuthIdentity",
     "OAuthState",
+    "Output",
     "PasswordResetToken",
     "PersonalContext",
     "QAExchange",

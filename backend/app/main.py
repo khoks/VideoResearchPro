@@ -11,6 +11,7 @@ from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import (
     admin,
     auth,
+    author,
     channels,
     credentials,
     echo,
@@ -84,6 +85,7 @@ app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(mfa.router, prefix="/api/v1")
 app.include_router(oauth.router, prefix="/api/v1")
 app.include_router(echo.router, prefix="/api/v1")
+app.include_router(author.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
 app.include_router(qa.router, prefix="/api/v1")

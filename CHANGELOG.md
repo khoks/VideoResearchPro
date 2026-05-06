@@ -10,6 +10,22 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### I-6 Author Studio (L2) — foundation + first outputter shipped
+
+- **First L2 code on master.** Schema + Outputter Protocol + lifecycle + REST surface + tier gating + one concrete outputter (Book v1 Markdown). The remaining kinds (site / deck / newsletter / reel) plug into the same registry as future outputter PRs.
+- **`outputs` table** (Alembic `b5c6d7e8f9a0`) — `(id, user_id, kind, title, status, source_ids_json, parameters_json, content_text, content_path, error_message, created_at, updated_at)`. Status state machine: `pending` → `generating` → `completed` | `failed`. Cross-user isolation enforced at every read.
+- **`backend/app/services/output_service.py`** — `Outputter` Protocol + `register_outputter` / `get_outputter` / `list_outputters` registry; CRUD (`create_output` / `get_output` / `list_outputs` / `delete_output`); `run_generation` driver that handles status transitions + catches `OutputError` + unexpected exceptions, capturing the message in `error_message` and transitioning to `FAILED`. `OutputKind` enum reserves `book` / `site` / `deck` / `newsletter` / `reel`.
+- **`backend/app/services/outputters/book_markdown.py`** — `BookMarkdownOutputter` (kind=`book`). Deterministic structural concatenation: each source_id is interpreted as a Job ID, contributing a chapter; chapter body = the job's report (HTML stripped to Markdown-ish) + per-job Q&A (filtered by tenant_id). TOC is auto-generated. Parameters: `include_qa` (default True) / `include_toc` (default True). **No LLM in v1** — the point is validating the schema + lifecycle + REST surface end-to-end. LLM-driven cohesion is T-6.1.2.
+- **`backend/app/routers/author.py`** (new) — `/api/v1/author/*` surface:
+  - `GET /author/kinds` — `{available, supported}` so frontend can disable buttons for not-yet-implemented kinds.
+  - `POST /author/outputs` — create + generate synchronously. Body `{kind, title, source_ids, parameters?}`. Returns the resulting OutputItem. Returns 400 for unknown kind, 501 when the kind is reserved but has no outputter shipped (e.g. `site`).
+  - `GET /author/outputs` — list current user's outputs (kind / status query filters).
+  - `GET /author/outputs/{id}` — get one (404 cross-user).
+  - `GET /author/outputs/{id}/content` — fetch generated content as `text/markdown` (books) or `text/plain` (other text outputs). 404 when no content yet.
+  - `DELETE /author/outputs/{id}` — delete.
+- **All endpoints gated on `require_feature("author_studio")`** — Pro+ tier (already in `TIER_CAPABILITIES`). Free users get 403 across the entire `/author/*` surface.
+- **23 new tests** in `tests/test_routers/test_author.py` — service-layer CRUD + per-user isolation + status transitions; outputter registry round-trip; BookMarkdownOutputter integration (zero-source fails / single-job succeeds / Q&A inclusion / TOC generation / generation failure → status FAILED with error captured); endpoint-layer auth + tier gating + 400 unknown kind + 501 unimplemented kind + 404 cross-user / 200 happy paths. Backend suite 987 → 1010.
+
 ### I-3 Echo (personal-brain L3) — foundation shipped
 
 - **First L3 code on master.** Schema, service layer, cold-start gate, and REST surface all live. Concrete activity-stream connectors (YouTube watch history / Spotify / email / calendar / etc.) and the "speak as me" agent (E-3.4) are deliberately deferred — the foundation is what unblocks them.

@@ -29,6 +29,7 @@ from app.routers import (
 )
 from app.services import chroma_service
 from app.services.llm_smoke import run_startup_probes
+from app.services.schema_init_service import ensure_schema_at_head
 
 # Ensure all app.* loggers emit at INFO level.
 # uvicorn sets up root logger handlers; this just lowers the threshold for our loggers.
@@ -39,8 +40,24 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: create tables and data directories
-    Base.metadata.create_all(bind=engine)
+    # E-4.10: Schema init. Replaces the historical
+    # ``Base.metadata.create_all`` lifespan hook with an Alembic-managed
+    # init that handles fresh installs (run upgrade head) + up-to-date
+    # installs (no-op) + pre-E-4.10 operators stuck at intermediate
+    # revisions with create_all'd tables (auto-stamp head when the live
+    # schema matches the ORM). See ``app/services/schema_init_service.py``.
+    try:
+        result = ensure_schema_at_head(settings.DATABASE_URL, Base.metadata)
+        logger.info(f"schema_init: {result}")
+    except Exception:
+        logger.exception(
+            "schema_init failed catastrophically — app may not work correctly. "
+            "Run `alembic upgrade head` manually and restart, or see "
+            "docs/migration-create-all-conflict-recovery.md for the recovery "
+            "runbook."
+        )
+        raise
+
     os.makedirs(settings.REPORTS_DIR, exist_ok=True)
     os.makedirs(settings.CHROMA_PERSIST_DIR, exist_ok=True)
 

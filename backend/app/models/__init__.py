@@ -10,6 +10,7 @@ from app.models.document import Document
 from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.models.library_qa_exchange import LibraryQAExchange
+from app.models.mfa_secret import MfaSecret
 from app.models.password_reset_token import PasswordResetToken
 from app.models.qa_exchange import QAExchange
 from app.models.qa_history_exchange import QAHistoryExchange
@@ -27,6 +28,7 @@ __all__ = [
     "Job",
     "JobVideo",
     "LibraryQAExchange",
+    "MfaSecret",
     "PasswordResetToken",
     "QAExchange",
     "QAHistoryExchange",

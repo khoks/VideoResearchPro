@@ -10,6 +10,23 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### T-5.4.6: MFA / TOTP — RFC 6238 second factor with recovery codes
+
+- **`mfa_secrets` table** (Alembic `d1e2f3a4b5c6`) — one row per user when MFA is enrolled. TOTP secret encrypted at rest via the same Fernet key BYOK uses (`BYOK_ENCRYPTION_KEY`); recovery codes stored as a JSON list of SHA-256 hashes (raw codes returned to user **once** at enrollment-verification, never again).
+- **Standard RFC 6238 TOTP** via `pyotp` (added to `requirements.txt`). Compatible with Google Authenticator, 1Password, Authy, Bitwarden, Microsoft Authenticator. ±1 window for clock skew (~30 sec drift).
+- **Endpoints under `/api/v1/auth/`**:
+  - `POST /mfa/enroll` — generate secret + provisioning URI; return both. Row starts with `enabled=False`.
+  - `POST /mfa/verify-enrollment` — validate first TOTP code, flip `enabled=True`, return 10 single-use recovery codes.
+  - `GET /mfa/status` — `{enabled: bool}`.
+  - `DELETE /mfa` — disable MFA. Requires valid TOTP / recovery code (defends against session-token thieves).
+  - `POST /login/mfa` — second-step login. Consumes the short-lived (5 min TTL) `mfa_token` from `/login` plus a TOTP / recovery code; on success issues the real access token + writes a session row (T-5.4.7).
+- **Login flow change**: when MFA is enabled, `POST /auth/login` returns `MfaRequiredResponse` (`{requires_mfa: true, mfa_token, expires_in}`) instead of `TokenResponse`. Client branches on `requires_mfa` / `access_token`. The endpoint's `response_model` is now untyped at the FastAPI level so both shapes serialize correctly.
+- **New audit events**: `MFA_ENROLLED`, `MFA_ENABLED`, `MFA_DISABLED`, `MFA_LOGIN_SUCCESS`, `MFA_LOGIN_FAILURE`, `MFA_RECOVERY_CODE_USED`. The password-step success on an MFA-enabled account now records `LOGIN_SUCCESS` with `metadata={"requires_mfa": true}`.
+- **Recovery codes are one-shot** — `verify_at_login` removes the matched hash from the stored list on use.
+- **Re-enrolling an active MFA returns 409** to prevent accidental rotation. To rotate, disable then re-enroll.
+- **Config knob**: `MFA_ISSUER_NAME` (default `Pratidhvani`) — shown by the user's authenticator app next to the account name.
+- **13 new tests** in `tests/test_routers/test_mfa.py` covering: enroll returns secret + URI, wrong code fails, verify-enrollment enables + returns recovery codes (server stores hashes only), 409 on re-enroll, disable requires valid code, login flow without MFA returns access_token, login with MFA returns mfa_token, second-step succeeds with TOTP, second-step succeeds with recovery code (and that same code fails on the next attempt), invalid code 401s, bogus mfa_token 401s, all management endpoints require auth. Backend suite 902 → 915.
+
 ### T-5.4.7: Session management — revoke individual sessions / logout everywhere
 
 - **`sessions` table** (Alembic `c0d1e2f3a4b5_sessions_table.py`) — one row per issued JWT, keyed on the JWT's `jti` claim. Captures IP / User-Agent at issuance; `last_used_at` updated on every authenticated request. Revocation is via `revoked_at` timestamp (audit trail preserved; rows never deleted).

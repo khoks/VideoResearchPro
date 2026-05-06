@@ -10,6 +10,7 @@ from app.models.user import User
 from app.schemas.auth import (
     AuditLogEntry,
     LoginRequest,
+    MfaRequiredResponse,
     PasswordResetConfirmPayload,
     PasswordResetConfirmResponse,
     PasswordResetRequestPayload,
@@ -18,7 +19,7 @@ from app.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
-from app.services import audit_service, auth_service, email_service
+from app.services import audit_service, auth_service, email_service, mfa_service
 from app.services.audit_service import Event
 
 logger = logging.getLogger(__name__)
@@ -56,12 +57,18 @@ def register(
     return UserResponse.model_validate(user)
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login")
 def login(
     payload: LoginRequest,
     request: Request,
     db: Session = Depends(get_db),
-) -> TokenResponse:
+) -> TokenResponse | MfaRequiredResponse:
+    """Returns either a `TokenResponse` (when MFA is not enabled) or
+    an `MfaRequiredResponse` (when MFA is enabled — caller must POST
+    `/auth/login/mfa` with the `mfa_token` + a TOTP / recovery code).
+    The response_model decorator is omitted so FastAPI returns the
+    discriminator-free shape that callers can branch on by checking
+    `requires_mfa` (truthy) or `access_token` (present)."""
     user, outcome = auth_service.authenticate_user_v2(
         db, email=payload.email, password=payload.password
     )
@@ -100,6 +107,26 @@ def login(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
+        )
+
+    # T-5.4.6: when MFA is enabled, the password-step alone is not
+    # enough — return a short-lived mfa_token and require a second
+    # POST to /auth/login/mfa with the TOTP / recovery code.
+    if mfa_service.is_enabled(db, user.id):
+        mfa_token = mfa_service.issue_mfa_step_token(user.id)
+        # Audit the password-step success so audit logs show the second
+        # factor was needed (vs absent).
+        audit_service.record(
+            db,
+            event=Event.LOGIN_SUCCESS,
+            user_id=user.id,
+            request=request,
+            metadata={"requires_mfa": True},
+        )
+        return MfaRequiredResponse(
+            requires_mfa=True,
+            mfa_token=mfa_token,
+            expires_in=mfa_service.MFA_TOKEN_TTL_MIN * 60,
         )
 
     audit_service.record(

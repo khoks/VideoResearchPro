@@ -10,6 +10,16 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### T-5.6.5: Per-tenant Celery queue routing foundation
+
+- **`backend/app/services/task_routing_service.py`** (new) — `queue_for_user` / `queue_for_tier` / `queue_for_tenant_id` resolve a queue name from the user's tier; `dispatch_for_user` / `dispatch_for_tenant_id` are thin wrappers over `task.apply_async(..., queue=<resolved>)`. Three tier queues (`tier_free`, `tier_pro`, `tier_studio`) plus a `default` fallback for system tasks (startup migrations, cleanup, etc.).
+- **Wired at every Celery dispatch site** — `routers/jobs.py` (topic / channel / subscription / resume) + `routers/channels.py` (subscribe / sync). Resume-after-approval and channel-sync use `dispatch_for_tenant_id` since their helpers don't have a User row in scope.
+- **`celery_app.conf.task_default_queue="default"`** — anonymous tasks land on the default queue; user-initiated tasks land on the per-tier queue. Worker startup must include all queues: `celery -A app.tasks.celery_app worker -Q default,tier_free,tier_pro,tier_studio`.
+- **Self-host posture**: one worker consumes all queues. The routing is cosmetic but the queue attribution is visible in logs / Celery inspector.
+- **SaaS posture** (when E-5.8 lands): split worker pools per queue so Studio-tier latency budgets aren't bottlenecked by Free-tier backlog.
+- **Test fixture update** — `conftest.py` now mocks both `.delay` (legacy) and `.apply_async` (T-5.6.5) on the four task patches so tests work regardless of which dispatcher the router uses.
+- **10 new tests** in `test_services/test_task_routing.py` — per-tier queue resolution, None / unknown tenant fallback, dispatch wrappers' kwarg shape, end-to-end queue attribution on `POST /jobs` for Free + Studio users. Backend suite 949 → 959.
+
 ### T-5.5.5 + T-5.2.5: Quota runtime metering — per-user tracking + enforcement
 
 - **`quota_usage` table** (Alembic `f3a4b5c6d7e8`) — composite-unique on `(user_id, resource, period_kind, period_start)`. Each row's `consumed` is monotonically incremented. Idempotent — rolling daily / monthly periods produce new rows automatically; lifetime resources reuse a single epoch-zero bucket.

@@ -59,14 +59,15 @@ def test_subscribe_channel_dispatches_sync(client, db):
     _seed_channel(db, channel_id="UCsub1", subscribed=False)
 
     with patch("app.tasks.job_tasks.execute_subscription_job") as mock_task:
-        mock_task.delay.return_value = MagicMock(id="mock-sub-task-id")
+        mock_task.apply_async.return_value = MagicMock(id="mock-sub-task-id")
         response = client.post("/api/v1/channels/UCsub1/subscribe")
 
     assert response.status_code == 200
     data = response.json()
     assert data["channel_id"] == "UCsub1"
     assert data["job_id"] is not None
-    mock_task.delay.assert_called_once()
+    # T-5.6.5: dispatch via apply_async with per-tier queue, not raw .delay()
+    mock_task.apply_async.assert_called_once()
 
     # DB flipped to subscribed
     from app.models.channel import Channel
@@ -86,14 +87,15 @@ def test_sync_channel_dispatches_job(client, db):
     _seed_channel(db, channel_id="UCsync1", subscribed=True)
 
     with patch("app.tasks.job_tasks.execute_subscription_job") as mock_task:
-        mock_task.delay.return_value = MagicMock(id="mock-sub-task-id")
+        mock_task.apply_async.return_value = MagicMock(id="mock-sub-task-id")
         response = client.post("/api/v1/channels/UCsync1/sync")
 
     assert response.status_code == 200
     data = response.json()
     assert data["channel_id"] == "UCsync1"
     assert data["job_id"] is not None
-    mock_task.delay.assert_called_once()
+    # T-5.6.5: dispatch via apply_async with per-tier queue.
+    mock_task.apply_async.assert_called_once()
 
 
 def test_channel_videos_empty(client, db):

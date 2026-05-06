@@ -37,12 +37,20 @@ def create_job(
     except ValueError as e:
         raise HTTPException(status_code=429, detail=str(e))
 
+    # T-5.6.5: route to a per-tier queue so SaaS deployment can run
+    # dedicated worker pools per tier. On self-host with one worker
+    # picking up all queues, this is cosmetic; on SaaS it isolates
+    # heavy Free-tier workloads from Studio-tier latency budgets.
+    from app.services.task_routing_service import dispatch_for_user
+
     if job_data.job_type == "topic":
-        async_result = execute_topic_job.delay(job.id)
+        async_result = dispatch_for_user(execute_topic_job, current_user, job.id)
     elif job_data.job_type == "subscription":
-        async_result = execute_subscription_job.delay(job.id)
+        async_result = dispatch_for_user(
+            execute_subscription_job, current_user, job.id
+        )
     else:
-        async_result = execute_channel_job.delay(job.id)
+        async_result = dispatch_for_user(execute_channel_job, current_user, job.id)
 
     # Store task id synchronously so cancel can revoke the live task even
     # if the worker hasn't picked it up yet.
@@ -116,7 +124,13 @@ def approve_job(
     job.celery_task_id = None
     db.commit()
 
-    async_result = resume_job_after_approval.delay(job_id)
+    # T-5.6.5: route resume on the same queue as the original job dispatch
+    # by looking up the user via job.tenant_id. Falls back to default queue
+    # for legacy NULL-tenant jobs.
+    from app.services.task_routing_service import dispatch_for_tenant_id
+    async_result = dispatch_for_tenant_id(
+        resume_job_after_approval, db, job.tenant_id, job_id
+    )
     job = job_service.update_job_status(db, job_id, "extracting", progress_pct=30,
                                         progress_message="Starting transcript extraction...")
     if job is not None:

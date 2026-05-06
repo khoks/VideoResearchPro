@@ -19,6 +19,7 @@ from app.routers import (
     knowledge,
     library,
     mfa,
+    oauth,
     qa,
     qa_history,
     sessions,
@@ -80,6 +81,7 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(credentials.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(mfa.router, prefix="/api/v1")
+app.include_router(oauth.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
 app.include_router(qa.router, prefix="/api/v1")

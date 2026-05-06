@@ -549,14 +549,19 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 **Why it exists.** Today's PRs must remain forward-compatible with a future public SaaS — multi-tenant, billed, abuse-resistant, hardened auth.
 **North-star doc:** [saas-roadmap.md](saas-roadmap.md)
 
-**Status (2026-05-04).** Code-shippable epics largely closed:
-- ✅ **E-5.1** Tenancy retrofit (4 phases) — fully closed.
-- 🟡 **E-5.2** Subscription tiers — schema + utility-layer foundation shipped; runtime quota enforcement deferred.
-- 🟡 **E-5.4** Auth hardening — audit log + account lockout + password reset shipped; OAuth / MFA / session mgmt / SMTP delivery still ⚪.
-- 🟡 **E-5.5** Abuse prevention — rate-limit middleware shipped; Redis backend / quota metering / content policy / fraud detection still ⚪.
-- 🟡 **E-5.6** Background-job isolation — BYOK foundation shipped; LLM resolution-path integration / per-tenant Celery routing / per-tenant ChromaDB tenancy still ⚪.
+**Status (2026-05-05).** All code-shippable I-5 work has now landed:
+- ✅ **E-5.1** Tenancy retrofit (4 phases + operator NOT NULL runbook) — fully closed.
+- ✅ **E-5.4** Auth hardening — fully closed. All 8 tasks done across PRs [#156](https://github.com/khoks/VideoResearchPro/pull/156) (audit log + lockout + password reset), [#163](https://github.com/khoks/VideoResearchPro/pull/163) (SMTP), [#164](https://github.com/khoks/VideoResearchPro/pull/164) (sessions), [#165](https://github.com/khoks/VideoResearchPro/pull/165) (MFA / TOTP), [#166](https://github.com/khoks/VideoResearchPro/pull/166) (OAuth Google + GitHub PKCE).
+- 🟡 **E-5.2** Subscription tiers — schema + utility-layer foundation shipped; runtime quota enforcement deferred (T-5.2.5; overlaps E-5.5 T-5.5.5).
+- 🟡 **E-5.5** Abuse prevention — rate-limit middleware shipped; Redis backend / quota metering / content policy / fraud detection deferred to SaaS launch.
+- 🟡 **E-5.6** Background-job isolation — BYOK foundation, BYOK LLM resolution-path integration (T-5.6.4 via ContextVar; see [D-041](decisions.md#d-041--contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05)), AND Chroma tenant filtering on `qa_library_global` (T-5.6.6 — closed a real cross-tenant leak in the Q&A meta-chat that survived E-5.1 phase 2b) shipped this session; per-tenant Celery routing (T-5.6.5) deferred to SaaS launch.
 
 Remaining ⚪ epics — **E-5.3** Stripe / **E-5.7** Data residency / **E-5.8** Hosting / **E-5.9** Hosted UX — are **design-complete, code-deferred to SaaS launch**. None of them have meaningful code work for a self-host install (Stripe billing for a single-user install? Data residency for a single-machine install?). Their full design lives in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry below cross-links the relevant section.
+
+**Decisions captured this session:**
+- [D-041](decisions.md#d-041--contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05) — ContextVar plumbing for BYOK (and future cross-cutting per-user state).
+- [D-042](decisions.md#d-042--oauth-first-login-links-to-existing-user-by-email-2026-05-05) — OAuth first-login links to existing User by email.
+- [D-043](decisions.md#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05) — Single shared `BYOK_ENCRYPTION_KEY` for all encrypted-at-rest credentials.
 
 ### E-5.1 🟢 `tenant_id` audit + retrofit
 

@@ -173,7 +173,13 @@ def _dispatch_subscription_sync(
     db.refresh(job)
 
     try:
-        async_result = execute_subscription_job.delay(job.id)
+        # T-5.6.5: per-tier queue routing — resolve the tier via tenant_id
+        # since the helper doesn't have a User row in scope (it accepts a
+        # tenant_id arg from its caller for back-compat).
+        from app.services.task_routing_service import dispatch_for_tenant_id
+        async_result = dispatch_for_tenant_id(
+            execute_subscription_job, db, tenant_id, job.id
+        )
         job.celery_task_id = async_result.id
         db.commit()
         db.refresh(job)

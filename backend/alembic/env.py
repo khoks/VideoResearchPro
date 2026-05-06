@@ -4,18 +4,12 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.database import Base
-from app.models import (  # noqa: F401
-    ApiQuotaLog,
-    Channel,
-    Document,
-    Job,
-    JobVideo,
-    LibraryQAExchange,
-    QAExchange,
-    QAHistoryExchange,
-    TranscriptCache,
-    User,
-)
+# Wildcard re-import of every model so `--autogenerate` sees the full
+# schema. ``app.models.__init__`` is the single source of truth; if a
+# model isn't listed there it isn't in `Base.metadata` and won't be
+# diffed. Keep this import even though the names are unused — the
+# side effect (registering tables on `Base.metadata`) is what matters.
+from app.models import *  # noqa: F401,F403
 
 config = context.config
 if config.config_file_name is not None:

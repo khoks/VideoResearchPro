@@ -42,7 +42,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Iterable
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -50,9 +49,7 @@ from sqlalchemy.orm import Session
 from app.models.quota_usage import QuotaUsage
 from app.models.user import User
 from app.services.tier_service import (
-    Tier,
     capabilities_for,
-    get_user_tier,
 )
 
 logger = logging.getLogger(__name__)

@@ -11,12 +11,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from app.config import settings
 from app.models.audit_log import AuditLog
 from app.models.password_reset_token import PasswordResetToken
-from app.models.user import User
 from app.services import auth_service
 from app.services.audit_service import Event
 
@@ -276,7 +274,7 @@ def test_password_reset_request_does_not_leak_unknown_email(
 
 
 def test_password_reset_confirm_rotates_password(unauthenticated_client, db):
-    user = auth_service.create_user(db, email="reset2@x.com", password="oldpw12345")
+    auth_service.create_user(db, email="reset2@x.com", password="oldpw12345")
 
     # Request the secret.
     r = unauthenticated_client.post(
@@ -308,7 +306,7 @@ def test_password_reset_confirm_rotates_password(unauthenticated_client, db):
 
 
 def test_password_reset_token_is_single_use(unauthenticated_client, db):
-    user = auth_service.create_user(db, email="reset3@x.com", password="oldpw12345")
+    auth_service.create_user(db, email="reset3@x.com", password="oldpw12345")
 
     r = unauthenticated_client.post(
         "/api/v1/auth/password-reset/request",
@@ -395,7 +393,7 @@ def test_password_reset_clears_lockout(unauthenticated_client, db, monkeypatch):
 
 
 def test_password_reset_creates_audit_events(unauthenticated_client, db):
-    user = auth_service.create_user(db, email="reset6@x.com", password="oldpw12345")
+    auth_service.create_user(db, email="reset6@x.com", password="oldpw12345")
 
     r = unauthenticated_client.post(
         "/api/v1/auth/password-reset/request",

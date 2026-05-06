@@ -13,7 +13,7 @@ Covers:
 """
 from __future__ import annotations
 
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -26,7 +26,6 @@ from app.sources.paste_url.connector import (
     IGPostConnector,
     LIPostConnector,
     TweetConnector,
-    _PasteURLBaseConnector,
     hash_url,
 )
 from app.sources.types import Candidate, ExtractedText

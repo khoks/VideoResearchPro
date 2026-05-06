@@ -1,5 +1,4 @@
 import re
-from urllib.parse import parse_qs, urlparse
 
 
 def extract_video_id(url: str) -> str | None:

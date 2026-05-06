@@ -15,8 +15,8 @@ zero search candidates until the operator configures the token.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Iterator
+from datetime import datetime
+from typing import Iterator
 
 from app.config import settings
 from app.sources import registry

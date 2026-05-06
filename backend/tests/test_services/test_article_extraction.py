@@ -7,7 +7,7 @@ and tested behaviorally (returns None, doesn't crash, doesn't fabricate).
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from unittest.mock import Mock, patch
 
 import httpx

@@ -15,7 +15,6 @@ Each test asserts that:
 import json
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.qa_exchange import QAExchange

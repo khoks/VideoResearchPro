@@ -23,7 +23,6 @@ from cryptography.fernet import Fernet
 from app.config import settings
 from app.services import auth_service, byok_service, llm_service
 from app.services.llm_routing import UseCaseConfig
-from app.services.tier_service import Tier
 
 
 @pytest.fixture(autouse=True)

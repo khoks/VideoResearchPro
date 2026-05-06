@@ -185,7 +185,6 @@ def _build_app_with_dep(dep) -> TestClient:
     """Build a tiny FastAPI app with one route guarded by `dep`, using
     the project's real `get_current_user` flow (so the test exercises
     auth + tier check end-to-end)."""
-    from app.dependencies import get_db
     from app.main import app as _real_app  # noqa: F401  (ensures app is importable)
 
     test_app = FastAPI()

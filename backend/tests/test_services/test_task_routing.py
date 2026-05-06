@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 
 from app.services import auth_service
 from app.services.task_routing_service import (

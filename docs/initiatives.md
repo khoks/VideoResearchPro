@@ -472,7 +472,7 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 **Why it exists.** Long-horizon north star — an app that ingests the user's likes / WhatsApp / Google Keep / quotes / activity / location / interests over time and develops a personality matching them. Eventually capable of "speaking on the user's behalf".
 **North-star doc:** [personal-brain.md](personal-brain.md) · [vision.md](vision.md) Ring 3
 **Decision links:** [D-003](decisions.md#d-003--echo--personal-brain-as-the-long-horizon-north-star-2026-04-24)
-**Status:** 🟡 foundation shipped 2026-05-05. Schema + service-layer + cold-start gate + REST surface all live; concrete activity-stream connectors (YouTube watch / Spotify / email / etc.) and the "speak as me" agent are E-3.2 / E-3.4 follow-ups.
+**Status:** 🟡 foundation shipped 2026-05-05. Schema + service-layer + cold-start gate + REST surface all live; concrete activity-stream connectors (YouTube watch / Spotify / email / etc.) and the "speak as me" agent are E-3.2 / E-3.4 follow-ups. Per [D-044](decisions.md#d-044--foundation-first-then-concrete-implementations-deferred-for-i-3--i-6-2026-05-05), the foundation ships **without** any concrete connector — the registry is empty in v1 — so each connector PR is independently scoped.
 
 ### E-3.1 🟢 Personal context store schema
 
@@ -626,7 +626,7 @@ Full design for each in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry 
 - [x] T-5.2.2 `Tier` enum + capability table + FastAPI dependency factories — *shipped 2026-05-04*.
 - [x] T-5.2.3 Document tier capabilities in `saas-roadmap.md` — *shipped 2026-05-04*.
 - [x] T-5.2.4 Partial-permanent. *`require_feature("byok_llm_keys")` already gates the BYOK credentials router (PR #158). Remaining wires happen as L2 (Author Studio, I-6) and L3 (Echo personal-brain, I-3) endpoints land — every new tier-gated endpoint adds a `Depends(require_tier(...))` or `Depends(require_feature(...))` at definition time, so this task closes incrementally rather than as one PR.*
-- [x] T-5.2.5 Quota runtime metering — *shipped 2026-05-05 (combined with T-5.5.5). New `quota_usage` table + `app/services/quota_metering_service.py` with `record_usage`, `get_usage`, `get_all_usage`, `check_quota`, `enforce_quota_or_raise`. Resource keys: `qa_exchanges` (monthly), `library_qa_exchanges` (monthly), `qa_history_chats` (monthly), `knowledge_extractions` (monthly), `documents` (lifetime), `llm_tokens_in/out` (daily), `youtube_units` (daily). New `qa_exchanges_per_month` + `knowledge_extractions_per_month` keys added to `TIER_CAPABILITIES` (Free 50 / Pro 1000 / Studio unlimited; Free 10 / Pro 200 / Studio 2000 respectively). Wired enforcement at the four hot endpoints: `/jobs/{id}/qa`, `/library/qa`, `/qa-history/chat`, `/videos/{id}/extract-knowledge`. New `GET /auth/quota` endpoint returns the user's full usage snapshot. 20 new tests; backend suite 929 → 949.*
+- [x] T-5.2.5 Quota runtime metering — *shipped 2026-05-05 (combined with T-5.5.5). New `quota_usage` table + `app/services/quota_metering_service.py` with `record_usage`, `get_usage`, `get_all_usage`, `check_quota`, `enforce_quota_or_raise`. Resource keys: `qa_exchanges` (monthly), `library_qa_exchanges` (monthly), `qa_history_chats` (monthly), `knowledge_extractions` (monthly), `documents` (lifetime), `llm_tokens_in/out` (daily), `youtube_units` (daily). New `qa_exchanges_per_month` + `knowledge_extractions_per_month` keys added to `TIER_CAPABILITIES` (Free 50 / Pro 1000 / Studio unlimited; Free 10 / Pro 200 / Studio 2000 respectively). Wired enforcement at the four hot endpoints: `/jobs/{id}/qa`, `/library/qa`, `/qa-history/chat`, `/videos/{id}/extract-knowledge`. New `GET /auth/quota` endpoint returns the user's full usage snapshot. 20 new tests; backend suite 929 → 949. **Linked decision:** [D-045](decisions.md#d-045--quota-metering-enforce-before-record-after-success-2026-05-05) — enforce-before / record-after-success sequencing.*
 
 ### E-5.3 ⚪ Stripe integration
 
@@ -723,7 +723,7 @@ Backend suite 835 → 855.
 
 **Why it exists.** The accumulated library is rich enough to produce books, sites, decks, newsletters, reels — not just answers. Closes the loop: ingest → understand → produce.
 **North-star doc:** [feature-roadmap.md L2](feature-roadmap.md#l2--author-studio-output-generation-)
-**Status:** 🟡 foundation shipped 2026-05-05. Schema + Outputter Protocol + lifecycle + REST surface + tier gating + first concrete outputter (Book v1 Markdown) all live. Sites / decks / newsletters / reels are E-6.2/.3/.4/.5 follow-ups that plug into the same registry.
+**Status:** 🟡 foundation shipped 2026-05-05. Schema + Outputter Protocol + lifecycle + REST surface + tier gating + first concrete outputter (Book v1 Markdown) all live. Sites / decks / newsletters / reels are E-6.2/.3/.4/.5 follow-ups that plug into the same registry. Per [D-044](decisions.md#d-044--foundation-first-then-concrete-implementations-deferred-for-i-3--i-6-2026-05-05), the foundation ships with one minimum-viable outputter (deterministic Book v1) so the abstraction is validated end-to-end with real content; LLM cohesion + the other kinds are individually-scoped follow-ups.
 
 ### E-6.1 🟡 Books (long-form Markdown → PDF / EPUB)
 

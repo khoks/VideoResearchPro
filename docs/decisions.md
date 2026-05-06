@@ -1220,3 +1220,74 @@ Each encryption needs a key. Two options for managing those keys:
 - Add per-user derivation if a high-value tenant requests cryptographic isolation between users at rest.
 
 **Linked initiatives / PRs.** I-5 / E-5.4 / E-5.6 / T-5.4.6 / T-5.6.1. PRs [#158](https://github.com/khoks/VideoResearchPro/pull/158) (introduced the key for BYOK), [#165](https://github.com/khoks/VideoResearchPro/pull/165) (extended its use to MFA).
+
+---
+
+## D-044 — Foundation-first then concrete-implementations-deferred for I-3 / I-6 (2026-05-05)
+
+**Status:** accepted. Resolves the structuring question for [I-3 Echo personal-brain](initiatives.md#i-3--echo-personal-brain-l3) and [I-6 Author Studio](initiatives.md#i-6--author-studio-output-generation-l2) and shipped with PRs [#172](https://github.com/khoks/VideoResearchPro/pull/172) (Echo) and [#173](https://github.com/khoks/VideoResearchPro/pull/173) (Author Studio).
+
+**Context.** Both I-3 (Echo) and I-6 (Author Studio) are large-scope initiatives with the same shape: a small set of cross-cutting infrastructure (schema + abstraction + REST + tier gate) that hosts a larger set of concrete implementations (six Echo connectors: YouTube watch / Spotify / email / calendar / browser / Apple Health; five Author kinds: book / site / deck / newsletter / reel). The structuring question came up: do we ship one connector / outputter together with the foundation in PR 1 (proof-of-concept fully integrated), or ship the foundation alone with zero concrete implementations and let each concrete piece be its own PR?
+
+The trade-off is non-obvious because both shapes look reasonable from the outside:
+
+- **One concrete + foundation in PR 1**: more "real" — the foundation is validated by an end-to-end working feature, not just by tests. Easier to demo the value. But couples the foundation's API surface to one implementation's needs (risk of leaking specifics into the abstraction).
+- **Foundation-only PR + concrete-per-PR**: cleaner separation; the abstraction is forced to be general because no specific consumer exists when it ships. But the foundation's tests are necessarily lower-fidelity (mocked outputters / stub connectors).
+
+**Decision.** **Foundation-first with one trivial concrete implementation** — Echo ships with zero connectors (the registry is empty in v1; concrete connectors are E-3.2.1 through E-3.2.6); Author Studio ships with one minimum-viable outputter (`BookMarkdownOutputter` — deterministic structural concatenation of existing job reports + Q&A, no LLM). The trivial implementation validates that the foundation's REST surface + lifecycle work end-to-end with real content; future PRs add LLM-driven cohesion (T-6.1.2) and the other kinds.
+
+**Alternatives considered.**
+
+- *Ship one full concrete in PR 1 (e.g. YouTube watch history connector + Echo foundation, or LLM-cohesive book + Author foundation).* Rejected. (i) The first concrete implementation is always the most negotiable — its API needs influence the abstraction more than later ones do. (ii) PR review surface bloats — reviewer has to understand both the foundation and the concrete simultaneously. (iii) Schema bake-in: if the first connector turns out to want fields the schema doesn't have, the schema change ships in the same PR and tests have to cover both states.
+- *Foundation-only with NO concrete implementation.* Rejected. The Echo foundation went this way (registry ships empty); the Author Studio foundation didn't because (i) "outputs" with no outputter at all is harder to demonstrate end-to-end without doing tester gymnastics, and (ii) the Book v1 deterministic concatenation is genuinely useful as a baseline (users can compile their existing reports into a Markdown bundle today). The asymmetry is intentional: Echo's connectors all need OAuth flows / external API integration and benefit from being individually-scoped PRs; Author's outputters can have a deterministic v1 that doesn't.
+
+**Consequences.**
+
+- **Echo follow-ups are mechanical**: each of T-3.2.1 through T-3.2.6 is "implement `EchoConnector` interface for X, write OAuth flow tests, register on import". The Protocol contract is fixed; PR review focuses on the connector's own logic.
+- **Author follow-ups split between two layers**: T-6.1.2 (LLM cohesion) extends the existing `BookMarkdownOutputter` and tightens its API contract; T-6.2/.3/.4/.5 each add a new outputter to the registry. Both shapes plug into the same Outputter Protocol — no foundation churn.
+- **Foundation-validation cost**: tests for the Echo foundation use mocked outputters / a fake connector; tests for the Author foundation use the BookMarkdownOutputter as the integration test. If the abstraction turns out to be insufficient for a future connector / outputter, the schema change ships in that connector's PR alongside the new code (instead of being a foundation-amend that risks breaking the deterministic v1 outputter).
+- **CHANGELOG / initiatives.md framing**: every foundation PR explicitly enumerates "what's in this PR" vs "what's NOT in this PR (deliberate)" so reviewers and future contributors don't expect concrete implementations they shouldn't.
+
+**Re-evaluation hooks.**
+
+- If a connector / outputter PR ends up requiring meaningful schema changes (new columns, breaking API shape), revisit whether the foundation was scoped too tightly.
+- If multiple connectors / outputters duplicate non-trivial code, that's a signal the abstraction is missing something — extract into the service layer rather than each implementation.
+
+**Linked initiatives / PRs.** I-3 / I-6 / E-3.1 / E-3.2 / E-3.5 / E-3.6 / E-6.1 / E-6.6. PRs [#172](https://github.com/khoks/VideoResearchPro/pull/172) (Echo foundation, registry empty), [#173](https://github.com/khoks/VideoResearchPro/pull/173) (Author foundation + Book v1).
+
+---
+
+## D-045 — Quota metering: enforce-before, record-after-success (2026-05-05)
+
+**Status:** accepted. Resolves a sequencing question that surfaced while implementing [T-5.5.5 quota runtime metering](initiatives.md#e-55--abuse-prevention) and shipped with [PR #169](https://github.com/khoks/VideoResearchPro/pull/169).
+
+**Context.** The quota metering service exposes two operations to the hot endpoints: `enforce_quota_or_raise` (raises HTTP 429 when over cap) and `record_usage` (increments the counter). Each Q&A / library-Q&A / history-chat / knowledge-extraction endpoint has to decide the order:
+
+- (a) `enforce` then `record` then run the agent → over-cap users 429 cleanly, but a successful enforce + crashed record means we lost a unit of attribution.
+- (b) `enforce` then run the agent then `record` → over-cap users 429 cleanly, AND failed agent runs (provider timeout, malformed response) don't burn quota.
+- (c) Run the agent first, `record` if successful, no enforce → users can exceed their cap by a controllable amount but the metering is purely observational.
+
+The implementation has to make a choice that's consistent across all four hot endpoints (otherwise users see weird behaviour across surfaces).
+
+**Decision.** **(b) enforce-before, record-after-success.** `enforce_quota_or_raise(db, current_user, "<resource>")` runs first; if it raises 429 the agent never starts. After the agent completes successfully, `record_usage(db, current_user.id, "<resource>")` increments the counter. Failed agent runs (any exception bubbling up before the record line) do NOT consume quota.
+
+**Alternatives considered.**
+
+- *(a) enforce-then-record-then-run.* Rejected. A user who exhausts their quota by hitting an endpoint that crashes mid-agent (rare but real — provider 5xx, network blip, malformed response, OOM during context refinement) would still have their quota burned for the failed call. Specifically: a Free-tier user with 49/50 Q&As who hits a flaky LLM provider and gets a 500 has burned their last Q&A on a failure they didn't cause. Not the right UX.
+- *(c) record-only, no enforce.* Rejected. The point of quota is to enforce a cap — observational tracking without enforcement is just analytics. A future "soft warn at 80%, hard block at 100%" UX is achievable on top of (b) by reading the counter to drive frontend warnings before issuing the API call; it doesn't require changing the enforcement direction.
+- *enforce-then-run-then-record-with-decrement-on-failure.* Considered as a hybrid. Rejected for unnecessary complexity: the failure path would need a try/finally with a decrement, the state machine becomes "what happens if the decrement itself crashes?", and the observable behaviour is identical to (b).
+
+**Consequences.**
+
+- **Failed runs don't burn quota.** A Free-tier user can retry a Q&A that hit a provider error without losing a slot. Reasonable UX; matches what users expect from "I tried, it errored, let me try again."
+- **Off-by-one on the limit boundary.** A user at 49/50 successfully completes their 50th Q&A, then their 51st request 429s. They got exactly the cap they paid for. Clean.
+- **Race condition window.** Two concurrent Q&A requests by the same user when they're at 49/50 could both pass `enforce_quota_or_raise` and both succeed, leaving them at 51/50. **Acceptable.** Hard atomicity (SELECT FOR UPDATE / Redis SETNX-style lock) would slow every request for an edge case that buys nothing meaningful for a per-user quota. SaaS deployment with strict billing implications could revisit; self-host doesn't need it.
+- **Non-record on success path crash.** If the agent completes but `record_usage` fails (DB error, etc.) the user got their answer for free. Mirror of (a)'s failure mode but inverted: we'd rather under-count than over-charge. Aligned with the "fail-safe direction" pattern used throughout the project (audit_service, quota_service, BYOK ciphertext-undecryptable).
+- **Pattern is uniform across all four hot endpoints.** `routers/qa.py`, `routers/library.py`, `routers/qa_history.py`, `routers/knowledge.py` all follow the same enforce-then-run-then-record sequence. Future quota-bearing endpoints should match.
+
+**Re-evaluation hooks.**
+
+- If observed quota race-conditions cause real problems (rare but possible if a user runs concurrent retries), add `SELECT FOR UPDATE` or a Redis-based reservation token. The cost is a per-request DB lock.
+- If providers start charging us for failed calls (LLM provider doesn't refund tokens for a 500), revisit whether we should burn quota on failure to match our actual cost. Today providers don't, so we don't either.
+
+**Linked initiatives / PRs.** I-5 / E-5.2 / E-5.5 / T-5.2.5 / T-5.5.5. PR [#169](https://github.com/khoks/VideoResearchPro/pull/169).

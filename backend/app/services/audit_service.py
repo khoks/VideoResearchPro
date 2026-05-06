@@ -33,6 +33,10 @@ class Event(str, Enum):
     PASSWORD_RESET_COMPLETED = "password_reset_completed"
     PASSWORD_RESET_INVALID_TOKEN = "password_reset_invalid_token"
     PASSWORD_CHANGED = "password_changed"
+    # T-5.4.7 session management
+    LOGOUT = "logout"
+    SESSION_REVOKED = "session_revoked"
+    SESSIONS_REVOKED_ALL = "sessions_revoked_all"
 
 
 def _ip_from_request(request: Request | None) -> str | None:

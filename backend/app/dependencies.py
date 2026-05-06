@@ -51,9 +51,23 @@ def _resolve_user(token: str | None, db: Session) -> User:
     if not isinstance(user_id, str):
         raise credentials_exc
 
+    # T-5.4.7: enforce session revocation. If the JWT carries a `jti`
+    # claim and the session row is revoked, reject the request even
+    # though the JWT signature is valid. Tokens without `jti` (issued
+    # before T-5.4.7) skip this check via is_session_active's "missing
+    # row → assume active" semantics for back-compat.
+    jti = payload.get("jti")
+    if isinstance(jti, str) and not auth_service.is_session_active(db, jti):
+        raise credentials_exc
+
     user = auth_service.get_user_by_id(db, user_id)
     if not user:
         raise credentials_exc
+
+    # Best-effort: bump last_used_at so the session-list UI sorts right.
+    if isinstance(jti, str):
+        auth_service.touch_session(db, jti)
+
     return user
 
 
@@ -62,6 +76,21 @@ def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     return _resolve_user(token, db)
+
+
+def get_current_jti(
+    token: str | None = Depends(oauth2_scheme),
+) -> str | None:
+    """Return the `jti` claim of the current request's JWT, or None for
+    legacy tokens issued before T-5.4.7. Used by the logout endpoint to
+    revoke the current session row."""
+    if not token:
+        return None
+    payload = auth_service.decode_token(token)
+    if not payload:
+        return None
+    jti = payload.get("jti")
+    return jti if isinstance(jti, str) else None
 
 
 def get_user_from_query_or_header(

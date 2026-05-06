@@ -100,6 +100,7 @@ async def ask_qa_history(
     result = await run_qa_history_chat_agent(
         question=request.question,
         answer_language=request.answer_language,
+        tenant_id=current_user.id,
     )
     answer = result.get("answer", "")
     references = result.get("references", []) or []

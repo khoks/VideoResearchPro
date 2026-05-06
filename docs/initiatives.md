@@ -661,7 +661,7 @@ Backend suite 835 → 855.
 - [x] T-5.6.3 Provider validation + encryption-rotation tolerance — *shipped 2026-05-04*.
 - [ ] T-5.6.4 ⚪ LLM resolution-path integration — when a user has a BYOK credential for the resolved provider, use it; otherwise fall back to env-var. Cross-cutting plumbing through ~19 LLM use cases (current call sites have no user_id; need to thread it through the agent layer). Separate PR.
 - [ ] T-5.6.5 ⚪ Per-tenant Celery queue routing — separate PR; needs `task_routes` config + worker pools per tier.
-- [ ] T-5.6.6 ⚪ Per-tenant ChromaDB tenancy — separate PR; either tenant-prefix per collection or `metadata.tenant_id` filter on every query.
+- [x] T-5.6.6 Per-tenant ChromaDB tenancy on `qa_library_global` — *shipped 2026-05-05. Closes a real cross-tenant leak in the Q&A History meta-chat: PR #152 filtered SQL reads by tenant_id but the Chroma similarity search bypassed that filter, so a meta-chat question could surface other users' Q&A. Fixed via `metadata.tenant_id` propagation in upsert + `tenant_id` filter on every `query_qa_collection` call. The global document collection (`videoresearchpro_global`) stays unfiltered by design — that's the deduplicated library, not user-scoped data.*
 
 ### E-5.7 ⚪ Data residency
 

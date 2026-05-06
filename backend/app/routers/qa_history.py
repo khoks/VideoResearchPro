@@ -96,12 +96,15 @@ async def ask_qa_history(
     """Run the Q&A history agent, persist the exchange, index it."""
     # Lazy import so tests can patch ``app.routers.qa_history.run_qa_history_chat_agent``.
     from app.agents.qa_history_agent import run_qa_history_chat_agent
+    from app.services import llm_service
 
-    result = await run_qa_history_chat_agent(
-        question=request.question,
-        answer_language=request.answer_language,
-        tenant_id=current_user.id,
-    )
+    # T-5.6.4: BYOK context for the agent's LLM calls (refine + synthesize).
+    with llm_service.byok_context(current_user.id, db):
+        result = await run_qa_history_chat_agent(
+            question=request.question,
+            answer_language=request.answer_language,
+            tenant_id=current_user.id,
+        )
     answer = result.get("answer", "")
     references = result.get("references", []) or []
 

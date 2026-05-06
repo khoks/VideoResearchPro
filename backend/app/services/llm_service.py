@@ -26,8 +26,10 @@ from __future__ import annotations
 
 import logging
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Iterator, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage
@@ -43,6 +45,42 @@ from app.services.llm_routing import (
 )
 
 logger = logging.getLogger(__name__)
+
+# T-5.6.4: BYOK call-site context. Router / Celery handlers set the
+# (tenant_id, db_session) tuple once at the top of their scope; every
+# `get_llm_for` call inside that scope picks them up automatically. This
+# avoids threading kwargs through every agent / LangGraph node.
+_byok_context: ContextVar[tuple[str | None, Any | None]] = ContextVar(
+    "_byok_context", default=(None, None)
+)
+
+
+@contextmanager
+def byok_context(
+    tenant_id: str | None, db: Any | None
+) -> Iterator[None]:
+    """Set the BYOK lookup context for the duration of the with-block.
+
+    Usage in a router::
+
+        with llm_service.byok_context(current_user.id, db):
+            answer, refs = run_qa_agent(...)
+
+    Or in a Celery task::
+
+        with SessionLocal() as db:
+            job = job_service.get_job(db, job_id)
+            with llm_service.byok_context(job.tenant_id, db):
+                run_report_agent(...)
+
+    The context resets automatically on with-block exit (and is safe
+    against exceptions). Nested contexts work via ContextVar tokens.
+    """
+    token = _byok_context.set((tenant_id, db))
+    try:
+        yield
+    finally:
+        _byok_context.reset(token)
 
 # Cache the validated primary model name (OpenAI back-compat path) so we
 # don't retry the /models round-trip on every call. Cleared between tests
@@ -150,6 +188,7 @@ def _build_anthropic(
     temperature: float,
     max_tokens: int | None,
     *,
+    api_key: str | None = None,
     reasoning: ReasoningLevel = "off",
 ) -> BaseChatModel:
     """Build an Anthropic ``ChatAnthropic`` client (lazy import)."""
@@ -159,13 +198,15 @@ def _build_anthropic(
         raise RuntimeError(
             "provider=anthropic requires: pip install langchain-anthropic"
         ) from e
-    if not settings.ANTHROPIC_API_KEY:
+    effective_key = api_key if api_key is not None else settings.ANTHROPIC_API_KEY
+    if not effective_key:
         raise RuntimeError(
-            "provider=anthropic requires ANTHROPIC_API_KEY to be set."
+            "provider=anthropic requires ANTHROPIC_API_KEY to be set "
+            "(or a per-user BYOK credential via /api/v1/auth/credentials)."
         )
     kwargs: dict[str, Any] = {
         "model": model,
-        "api_key": settings.ANTHROPIC_API_KEY,
+        "api_key": effective_key,
         "temperature": temperature,
     }
     if max_tokens:
@@ -179,6 +220,7 @@ def _build_google(
     temperature: float,
     max_tokens: int | None,
     *,
+    api_key: str | None = None,
     reasoning: ReasoningLevel = "off",
 ) -> BaseChatModel:
     """Build a Google Gemini ``ChatGoogleGenerativeAI`` client (lazy import)."""
@@ -188,13 +230,15 @@ def _build_google(
         raise RuntimeError(
             "provider=google requires: pip install langchain-google-genai"
         ) from e
-    if not settings.GOOGLE_API_KEY:
+    effective_key = api_key if api_key is not None else settings.GOOGLE_API_KEY
+    if not effective_key:
         raise RuntimeError(
-            "provider=google requires GOOGLE_API_KEY to be set."
+            "provider=google requires GOOGLE_API_KEY to be set "
+            "(or a per-user BYOK credential via /api/v1/auth/credentials)."
         )
     kwargs: dict[str, Any] = {
         "model": model,
-        "google_api_key": settings.GOOGLE_API_KEY,
+        "google_api_key": effective_key,
         "temperature": temperature,
     }
     if max_tokens:
@@ -233,8 +277,16 @@ def _build_from_config(
     cfg: UseCaseConfig,
     temperature: float,
     max_tokens: int | None,
+    *,
+    byok_api_key: str | None = None,
 ) -> BaseChatModel:
-    """Build a chat client from a resolved ``UseCaseConfig``."""
+    """Build a chat client from a resolved ``UseCaseConfig``.
+
+    T-5.6.4: ``byok_api_key`` overrides the install-wide env-var key for
+    OpenAI / Anthropic / Google providers. The ``local`` provider ignores
+    BYOK — local endpoints are install-wide infrastructure not eligible
+    for per-user routing.
+    """
     if cfg.provider == "local":
         base_url = _local_base_url()
         if not base_url:
@@ -248,7 +300,8 @@ def _build_from_config(
         # Local servers generally don't implement reasoning_effort; pass
         # it through if the user asked for it, but don't force it on by
         # default — cfg.reasoning already defaults to 'off' per-registry
-        # for use cases we ship with local defaults.
+        # for use cases we ship with local defaults. BYOK ignored for
+        # local — there's no per-user alternative endpoint.
         return _build_openai(
             cfg.model,
             temperature,
@@ -259,20 +312,77 @@ def _build_from_config(
         )
     if cfg.provider == "openai":
         return _build_openai(
-            cfg.model, temperature, max_tokens, reasoning=cfg.reasoning
+            cfg.model,
+            temperature,
+            max_tokens,
+            api_key=byok_api_key,
+            reasoning=cfg.reasoning,
         )
     if cfg.provider == "anthropic":
         return _build_anthropic(
-            cfg.model, temperature, max_tokens, reasoning=cfg.reasoning
+            cfg.model,
+            temperature,
+            max_tokens,
+            api_key=byok_api_key,
+            reasoning=cfg.reasoning,
         )
     if cfg.provider == "google":
         return _build_google(
-            cfg.model, temperature, max_tokens, reasoning=cfg.reasoning
+            cfg.model,
+            temperature,
+            max_tokens,
+            api_key=byok_api_key,
+            reasoning=cfg.reasoning,
         )
     raise ValueError(
         f"Unknown provider {cfg.provider!r} in UseCaseConfig. "
         f"Must be one of: openai, anthropic, google, local."
     )
+
+
+def _resolve_byok_api_key(
+    provider: str,
+    tenant_id: str | None,
+    db: Any | None,
+) -> str | None:
+    """Look up the BYOK credential for ``(tenant_id, provider)``, or
+    return None if not applicable.
+
+    Returns None when:
+    - ``tenant_id`` is None (no user context — Celery startup probe, smoke check)
+    - ``db`` is None (caller chose not to plumb a session — equivalent
+      to opting out of BYOK)
+    - The user has the ``byok_llm_keys`` feature OFF (Free / Pro tiers)
+    - No credential is stored for this provider
+    - The stored credential is undecryptable (key rotation; warn and
+      fall back to env-var)
+    - The provider is ``local`` (BYOK doesn't apply)
+    """
+    if tenant_id is None or db is None:
+        return None
+    if provider == "local":
+        return None
+    try:
+        # Tier gate — only Studio gets BYOK. Free / Pro users could still
+        # have rows in user_credentials from before a downgrade; we don't
+        # honour them.
+        from app.services import auth_service, byok_service
+        from app.services.tier_service import has_feature
+
+        user = auth_service.get_user_by_id(db, tenant_id)
+        if user is None:
+            return None
+        if not has_feature(user, "byok_llm_keys"):
+            return None
+        return byok_service.get_credential(db, user_id=tenant_id, provider=provider)
+    except Exception:
+        logger.exception(
+            "BYOK lookup failed for tenant_id=%s provider=%s — falling back "
+            "to install-wide env-var key",
+            tenant_id,
+            provider,
+        )
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -383,15 +493,44 @@ def get_llm_for(
     use_case: UseCase,
     temperature: float = 0.0,
     max_tokens: int | None = None,
+    *,
+    tenant_id: str | None = None,
+    db: Any | None = None,
 ) -> BaseChatModel:
     """Build the LLM for a named call site.
 
     Resolves provider + model + reasoning from the registry (with env
     overrides applied) and builds the appropriate provider client. This
     is the canonical call-site API.
+
+    T-5.6.4 BYOK integration: when both ``tenant_id`` AND ``db`` are
+    passed (or available via ``byok_context(...)``), attempts to look up
+    a per-user BYOK credential for the resolved provider. On hit, uses
+    it; on miss / decrypt-error / non-Studio-tier user, falls back to
+    the install-wide env-var key.
+
+    The cleanest call shape is to set ``byok_context`` once at the
+    router or Celery entry point and let every nested ``get_llm_for``
+    call pick it up. Explicit params are still supported for tests.
     """
     cfg = resolve_config(use_case)
-    return _build_from_config(cfg, temperature, max_tokens)
+
+    # Resolve effective tenant + db from explicit args or context var.
+    if tenant_id is None and db is None:
+        ctx_tenant, ctx_db = _byok_context.get()
+        tenant_id = ctx_tenant
+        db = ctx_db
+    elif (tenant_id is None) ^ (db is None):
+        logger.warning(
+            "get_llm_for: only one of (tenant_id, db) provided; BYOK "
+            "lookup skipped. Both or neither must be passed (or use "
+            "byok_context(...) at the call-site boundary)."
+        )
+
+    byok_api_key = _resolve_byok_api_key(cfg.provider, tenant_id, db)
+    return _build_from_config(
+        cfg, temperature, max_tokens, byok_api_key=byok_api_key
+    )
 
 
 # ---------------------------------------------------------------------------

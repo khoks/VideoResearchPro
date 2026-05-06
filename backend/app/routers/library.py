@@ -100,11 +100,16 @@ def ask_library_question(
     # (and so tests that patch ``app.routers.library.run_library_qa_agent``
     # work as expected).
     from app.agents.qa_agent import run_library_qa_agent
+    from app.services import llm_service
 
-    result = run_library_qa_agent(
-        question=request.question,
-        answer_language=request.answer_language,
-    )
+    # T-5.6.4: BYOK context — Studio users' OpenAI / Anthropic / Google
+    # credentials override the install-wide env-var keys for the duration
+    # of this request.
+    with llm_service.byok_context(current_user.id, db):
+        result = run_library_qa_agent(
+            question=request.question,
+            answer_language=request.answer_language,
+        )
     answer = result.get("answer", "")
     references = result.get("references", [])
 

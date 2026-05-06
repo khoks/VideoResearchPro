@@ -10,6 +10,26 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### T-5.6.4: BYOK LLM resolution-path integration — Studio users' API keys take effect
+
+- **Closes the BYOK feature pathway.** PR #158 shipped the BYOK foundation (CRUD + encryption + Studio gating) but the credentials weren't actually used at the LLM call sites — power users could store keys but every LLM call still used the install-wide env-var. This PR threads the lookup all the way through.
+- **`llm_service.byok_context(tenant_id, db)` ContextVar** — routers and Celery tasks set it once at the entry point; every nested `get_llm_for(...)` call inside reads the context automatically. Avoids threading kwargs through every agent / LangGraph node. Nested contexts work via `ContextVar.set/reset` tokens; resets cleanly on exception.
+- **`get_llm_for(use_case, tenant_id=..., db=...)`** also accepts explicit args for tests + edge cases. When both are passed, BYOK lookup runs; when only one is passed, a warning fires and lookup is skipped.
+- **`_resolve_byok_api_key(provider, tenant_id, db)`** — central lookup. Returns `None` (→ env-var fallback) when:
+  - No user context (tenant_id or db is None)
+  - Provider is `local` (install-wide infrastructure, not eligible)
+  - User's tier doesn't grant `byok_llm_keys` (Free / Pro — defense-in-depth: stale credentials from a downgrade are ignored)
+  - No credential stored for the provider
+  - Stored ciphertext undecryptable (key rotation tolerance)
+- **`_build_anthropic` + `_build_google` accept `api_key` overrides** matching the existing `_build_openai` signature. None means "use env-var"; non-None overrides.
+- **Wire-through points** (`with llm_service.byok_context(user.id, db):`):
+  - `routers/qa.py` — job Q&A (covers 5 use cases: clarification, sub-query expansion, refine, formulate, extract refs).
+  - `routers/library.py` — library Q&A (covers 3 use cases).
+  - `routers/qa_history.py` — meta-chat (covers 2 use cases).
+  - `routers/knowledge.py` — knowledge extraction (covers 2 use cases). Added `current_user=Depends(get_current_user)` to the endpoint.
+  - `tasks/job_tasks.py` — Celery worker paths for search agent (2 use cases) + report agent (5 use cases). Uses `job.tenant_id` from E-5.1 phase 2a write-side stamping.
+- **15 new tests** in `tests/test_services/test_llm_byok_integration.py` — context get/set/nested/reset-on-exception, tier-gating (Free + Pro fall back to env-var even with credential stored), local-provider always env-var, decrypt-failure falls back gracefully, end-to-end OpenAI + Anthropic builder invocation. Backend suite 864 → 879.
+
 ### T-5.6.6: Chroma tenant filtering on `qa_library_global` — closes Q&A meta-chat cross-tenant leak
 
 - **Closes a real security bug** that survived [E-5.1 phase 2b](https://github.com/khoks/VideoResearchPro/pull/152). PR #152 filtered SQL reads by `tenant_id` on the four user-scoped tables, but the `qa_library_global` ChromaDB collection (which the Q&A History meta-chat queries via similarity search) was a **global shared collection with no tenant filter**. A user asking the meta-chat could surface *other users'* Q&A history in the retrieved context.

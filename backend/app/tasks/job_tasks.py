@@ -614,27 +614,33 @@ def execute_topic_job(self, job_id: str) -> None:
         # YouTube path (only when video is requested).
         if wants_video:
             from app.agents.search_agent import run_search_agent
+            from app.services import llm_service
 
             logger.info(
                 f"[job:{job_id}] Starting Search Agent for topic: '{job.topic}'"
             )
-            curated_videos, queries_used = run_search_agent(
-                topic=job.topic,
-                num_videos=job.num_videos,
-                search_instructions=job.search_instructions or "",
-                min_duration=job.min_duration_minutes,
-                max_duration=job.max_duration_minutes,
-                channel_type_filters=(
-                    json.loads(job.channel_type_filters)
-                    if job.channel_type_filters
-                    else []
-                ),
-                preferred_channels=(
-                    json.loads(job.preferred_channels)
-                    if job.preferred_channels
-                    else []
-                ),
-            )
+            # T-5.6.4: BYOK context — Studio users' API keys cover the
+            # search-agent's LLM calls (search_plan_queries +
+            # search_rank_and_curate). job.tenant_id is the user who
+            # submitted the job (E-5.1 phase 2a write-side stamping).
+            with llm_service.byok_context(job.tenant_id, db):
+                curated_videos, queries_used = run_search_agent(
+                    topic=job.topic,
+                    num_videos=job.num_videos,
+                    search_instructions=job.search_instructions or "",
+                    min_duration=job.min_duration_minutes,
+                    max_duration=job.max_duration_minutes,
+                    channel_type_filters=(
+                        json.loads(job.channel_type_filters)
+                        if job.channel_type_filters
+                        else []
+                    ),
+                    preferred_channels=(
+                        json.loads(job.preferred_channels)
+                        if job.preferred_channels
+                        else []
+                    ),
+                )
             logger.info(
                 f"[job:{job_id}] Search Agent complete: found "
                 f"{len(curated_videos)} candidate videos"
@@ -1086,13 +1092,18 @@ def resume_job_after_approval(self, job_id: str) -> None:
                                                "Generating report...")
 
         from app.agents.report_agent import run_report_agent
+        from app.services import llm_service
         logger.info(f"[job:{job_id}] Generating report (job_type={job.job_type}, "
                     f"videos={fetched_count}, chunks={len(all_chunks)})")
-        statistics, report_body = run_report_agent(
-            job_type=job.job_type,
-            topic=job.topic or "Channel Collection",
-            transcript_chunks=all_chunks,
-        )
+        # T-5.6.4: BYOK context — covers report_map_chunks (highest-volume
+        # call site in the codebase), report_reduce_summaries,
+        # report_compose, and the channel-report variants.
+        with llm_service.byok_context(job.tenant_id, db):
+            statistics, report_body = run_report_agent(
+                job_type=job.job_type,
+                topic=job.topic or "Channel Collection",
+                transcript_chunks=all_chunks,
+            )
         logger.info(f"[job:{job_id}] Report agent complete, building HTML...")
 
         # Build and save HTML report

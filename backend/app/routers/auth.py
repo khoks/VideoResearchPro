@@ -18,7 +18,7 @@ from app.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
-from app.services import audit_service, auth_service
+from app.services import audit_service, auth_service, email_service
 from app.services.audit_service import Event
 
 logger = logging.getLogger(__name__)
@@ -142,17 +142,26 @@ def password_reset_request(
         request=request,
         metadata={"email": user.email, "user_existed": True},
     )
-    # Self-host fallback: log the secret to stderr so the operator can
-    # forward it to the user when SMTP isn't configured. SaaS deploys
-    # should set up the email path and ignore this log line.
-    logger.info(
-        "password reset secret for user_id=%s (deliver this to the user; "
-        "TTL %d min): %s",
-        user.id,
-        settings.PASSWORD_RESET_TOKEN_TTL_MIN,
-        secret,
+    # T-5.4.8: deliver via SMTP when configured, log fallback otherwise.
+    subject, body = email_service.render_password_reset_email(
+        recipient_email=user.email,
+        secret=secret,
+        ttl_minutes=settings.PASSWORD_RESET_TOKEN_TTL_MIN,
     )
-    return PasswordResetRequestResponse(debug_secret=secret)
+    smtp_configured = email_service._is_smtp_configured()
+    delivered = email_service.send_email(user.email, subject, body)
+    # Pre-T-5.4.8 self-host fallback: also return the secret in the
+    # response when SMTP is unconfigured so operators can hand it off
+    # immediately. On SaaS (SMTP configured) the secret is NEVER in the
+    # response — email is the only delivery channel.
+    response_secret = None if smtp_configured else secret
+    if not delivered:
+        logger.warning(
+            "password-reset email delivery failed for user_id=%s — "
+            "secret was logged via the email_service fallback path",
+            user.id,
+        )
+    return PasswordResetRequestResponse(debug_secret=response_secret)
 
 
 @router.post("/password-reset/confirm", response_model=PasswordResetConfirmResponse)

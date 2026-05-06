@@ -361,6 +361,18 @@ class Settings(BaseSettings):
     # window AND are single-use.
     PASSWORD_RESET_TOKEN_TTL_MIN: int = 30
 
+    # T-5.4.8: SMTP delivery for password-reset / future verification emails.
+    # When SMTP_HOST is unset, the email_service falls back to logging the
+    # rendered email to stderr so self-host operators can hand-deliver it
+    # without configuring SMTP. Set in production / SaaS.
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_FROM_ADDRESS: str | None = None
+    SMTP_USE_SSL: bool = False
+    SMTP_USE_STARTTLS: bool = True
+
     # E-5.6: BYOK encryption key. 32 url-safe base64-encoded bytes
     # (generate via cryptography.fernet.Fernet.generate_key()). When unset,
     # a process-local key is generated at startup with a loud warning —

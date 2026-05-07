@@ -585,8 +585,9 @@ Strict bidirectional schema-match check (every ORM table in DB AND every DB tabl
 - [x] T-4.10.3 Recovery path is the auto-stamp branch above; no separate runbook needed since it's automatic + observable via the lifespan log line. Operators with drifted schemas hit the manual-intervention error message which carries the exact `stamp` command — *shipped*.
 - [x] T-4.10.4 conftest.py keeps using `Base.metadata.create_all` directly against in-memory SQLite for tests (independent of production lifespan; intentional) — *unchanged*.
 - [x] T-4.10.5 End-to-end test in `tests/test_services/test_schema_init.py::test_real_alembic_recovers_from_create_all_conflict` reproduces the conflict + verifies recovery — *shipped*.
+- [ ] T-4.10.6 ⚪ **Extend schema-match check to compare COLUMNS, not just TABLES.** Surfaced 2026-05-06 during live Chrome testing: a pre-existing dev DB had `users` table created by old `create_all` with the schema-as-of-then; later migration `a8b9c0d1e2f3` adds `failed_login_attempts` + `locked_until` via `op.add_column`. After my fix's `stamped_recovery` ran (table set matches → stamp head), runtime queries against `users.failed_login_attempts` failed with `no such column`. The bidirectional table-match check is necessary but not sufficient; column-match is the missing layer. Either inspect `pragma table_info(<each table>)` and reflect+compare columns vs `Base.metadata.tables[name].columns` OR detect missing columns and apply just the additive ALTERs before stamping. Until this lands, operators with column-drifted DBs must manually reset (`rm data/<db>; restart`) or hand-apply the ALTER TABLE statements.
 
-9 new tests; all 4 paths covered. End-to-end against the project's real ORM + migrations. Backend suite 1013 → 1022.
+9 new tests; all 4 paths covered. End-to-end against the project's real ORM + migrations. Backend suite 1013 → 1022. **Known gap (T-4.10.6)** — column-drift case not auto-recovered.
 
 ### E-4.9 🟢 LLM smoke-probe `gpt-5.4` config audit
 
@@ -601,6 +602,7 @@ Verified post-fix boot: `/api/v1/health` reports `llm.status: ok`, `unavailable_
 - [x] T-4.9.2 Registry rewrite — *shipped*.
 - [x] T-4.9.3 Boot smoke green — *verified*.
 - [ ] T-4.9.4 ⚪ Add a periodic registry-revalidation pass to CI / a scheduled task. The model lineup will drift again as OpenAI deprecates / renames; today there's no automatic warning. Future enhancement.
+- [ ] T-4.9.5 ⚪ **Smoke-probe `max_tokens` is too small for reasoning models.** Surfaced 2026-05-06: `gpt-5.5:low` returned 400 "Could not finish the message because max_tokens or model output limit was reached" against the probe's `max_tokens=16` budget. Reasoning models consume the budget on internal thinking before producing visible output, so 16 isn't enough. The probe should either (a) bump `max_tokens` for reasoning models specifically (e.g. 256 when `reasoning != "off"`), or (b) use a non-reasoning probe model (`gpt-4.1-mini`) regardless of the use case's actual config — probes are liveness checks, not capability tests. Option (b) is cleaner. Pre-existing infra issue surfaced by the gpt-5.4→gpt-5.5 rename.
 
 ---
 

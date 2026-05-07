@@ -10,6 +10,23 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Live Chrome end-to-end test 2026-05-06
+
+- **Walked the full app in Chrome** — backend (uvicorn) + frontend (vite) live; user registered, logged in, navigated, and exercised every new I-3 / I-5 / I-6 surface end-to-end. Verified through the running app (not just unit tests):
+  - Register + login → redirect to `/submit` → JWT issued + session row written.
+  - `/auth/me` / `/auth/quota` / `/auth/sessions` / `/auth/audit-log` all return correct user-scoped data.
+  - Free tier correctly 403s on `/echo/*` / `/auth/credentials` / `/author/*` with `feature not available on 'free' tier` message.
+  - Studio tier upgrade unlocks all four surfaces.
+  - Echo `POST /echo/context` round-trips (creates + lists with `source=manual`).
+  - Echo bad-kind validation returns 400 with the supported-kinds list.
+  - Author Studio empty-source book → row created with `status=failed` + `error_message` populated (matches the lifecycle state machine from D-044 / output_service).
+  - Author Studio unimplemented kind (`site`) → 501 with `Available today: ['book']`.
+  - Job creation + cancel round-trip works (T-5.6.5 per-tier Celery dispatch path exercised).
+  - Frontend renders the Pratidhvani Devanagari + Latin lockup, "Your sources, echoed back." tagline, warm-editorial empty-state copy ("No volumes on your shelf yet. Begin your first research run to start building your personal library.") — matches branding.md.
+- **Two issues filed during live testing** (both follow-ups, not regressions of this session's work):
+  - **T-4.10.6** — schema-match check is bidirectional on TABLES but doesn't compare COLUMNS. A pre-existing DB with old-schema tables (e.g. `users` without `failed_login_attempts`) passes the table-match → `stamped_recovery` stamps head → runtime queries fail on missing columns. Workaround: reset the DB. Real fix: extend the match to columns OR auto-apply the additive ALTERs before stamping.
+  - **T-4.9.5** — LLM smoke probe's `max_tokens=16` budget is too small for reasoning models (gpt-5.5 with `reasoning_effort=low` consumes it on internal thinking before emitting visible output). Probe should either bump max_tokens for reasoning configs OR always use a non-reasoning model for the liveness check.
+
 ### E-4.10 closed: `Base.metadata.create_all` → Alembic-managed schema init (CRITICAL)
 
 - **Closes the production upgrade-path bug.** Operators who installed before the I-3/I-5/I-6 sessions had `audit_log` / `mfa_secrets` / `outputs` / etc. created by the lifespan `create_all` call but `alembic_version` was stale. Running `alembic upgrade head` failed with "table already exists". This PR makes Alembic the single schema-management path AND adds an auto-recovery for the existing-conflict case.

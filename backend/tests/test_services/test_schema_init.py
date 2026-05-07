@@ -331,6 +331,151 @@ def test_real_alembic_fresh_install_reaches_head(tmp_path):
     assert db_tables == orm_tables
 
 
+def test_recovery_adds_missing_columns_for_additive_drift(temp_db, monkeypatch):
+    """T-4.10.6: when create_all ran with an OLDER ORM (no
+    failed_login_attempts col on users) and the new ORM has it,
+    recovery should ADD COLUMN, not just stamp head."""
+    from sqlalchemy import Column, Integer, MetaData, String, Table
+
+    from app.services import schema_init_service as svc
+
+    url, _ = temp_db
+
+    # Build the OLD ORM (no failed_login_attempts).
+    old_md = MetaData()
+    Table("users", old_md, Column("id", Integer, primary_key=True), Column("email", String(64)))
+
+    # Create tables matching the OLD ORM (simulate pre-E-5.4 create_all).
+    eng = create_engine(url)
+    old_md.create_all(bind=eng)
+    eng.dispose()
+    _set_alembic_version(url, "older_rev")
+
+    # Now construct the NEW ORM with the additive column.
+    new_md = MetaData()
+    Table(
+        "users", new_md,
+        Column("id", Integer, primary_key=True),
+        Column("email", String(64)),
+        Column("failed_login_attempts", Integer, nullable=False, server_default="0"),
+    )
+
+    monkeypatch.setattr(svc, "_head_revision", lambda cfg: "head_revision_x")
+
+    def fake_upgrade(cfg, target):
+        raise RuntimeError("(sqlite3.OperationalError) table users already exists")
+
+    stamp_calls: list = []
+
+    def fake_stamp(cfg, target):
+        stamp_calls.append((cfg, target))
+        _set_alembic_version(url, "head_revision_x")
+
+    result = svc.ensure_schema_at_head(
+        url, new_md,
+        cfg=MagicMock(),
+        upgrade_fn=fake_upgrade,
+        stamp_fn=fake_stamp,
+    )
+    assert result == "stamped_recovery"
+
+    # Verify the column was actually added.
+    eng = create_engine(url)
+    insp = inspect(eng)
+    cols = {c["name"] for c in insp.get_columns("users")}
+    eng.dispose()
+    assert "failed_login_attempts" in cols
+
+
+def test_recovery_refuses_when_db_has_extra_columns(temp_db, monkeypatch):
+    """T-4.10.6: if the DB has a column the ORM doesn't, that's
+    destructive drift — refuse to recover (can't safely DROP COLUMN)."""
+    from sqlalchemy import Column, Integer, MetaData, String, Table
+
+    from app.services import schema_init_service as svc
+
+    url, _ = temp_db
+
+    # DB has an extra `legacy_field` column.
+    eng = create_engine(url)
+    with eng.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, email VARCHAR(64), legacy_field VARCHAR(32))"
+        ))
+    eng.dispose()
+    _set_alembic_version(url, "older_rev")
+
+    # ORM doesn't have legacy_field.
+    new_md = MetaData()
+    Table("users", new_md, Column("id", Integer, primary_key=True), Column("email", String(64)))
+
+    monkeypatch.setattr(svc, "_head_revision", lambda cfg: "head_revision_x")
+
+    def fake_upgrade(cfg, target):
+        raise RuntimeError("(sqlite3.OperationalError) table users already exists")
+
+    with pytest.raises(RuntimeError, match="non-additive"):
+        svc.ensure_schema_at_head(
+            url, new_md,
+            cfg=MagicMock(),
+            upgrade_fn=fake_upgrade,
+            stamp_fn=MagicMock(),
+        )
+
+
+def test_real_alembic_recovers_from_column_drift(tmp_path):
+    """End-to-end: simulate the actual production scenario where
+    create_all ran with the pre-E-5.4 ORM (users table without
+    failed_login_attempts), then we upgrade the code and run
+    ensure_schema_at_head. Verify it auto-recovers + the column
+    is now present."""
+    from sqlalchemy import Column, Integer, MetaData, String, Table
+
+    from app.database import Base
+    from app.services.schema_init_service import ensure_schema_at_head
+    import app.models  # noqa: F401  (registers all tables on Base.metadata)
+
+    db_path = tmp_path / "test_column_drift.db"
+    url = f"sqlite:///{db_path}"
+
+    # Step 1: create the schema with an OLD-ORM users table (no
+    # failed_login_attempts / locked_until columns).
+    old_md = MetaData()
+    # Mirror the rest of the schema from the real ORM but rebuild
+    # `users` minus the new columns.
+    for tname, t in Base.metadata.tables.items():
+        if tname == "users":
+            Table(
+                tname, old_md,
+                Column("id", String(36), primary_key=True),
+                Column("email", String(255), unique=True, nullable=False),
+                Column("password_hash", String(255), nullable=False),
+                Column("created_at", String(64), nullable=False),
+                Column("tier", String(16), nullable=False, server_default="free"),
+            )
+        else:
+            t.to_metadata(old_md)
+    eng = create_engine(url)
+    old_md.create_all(bind=eng)
+    eng.dispose()
+
+    # Step 2: stamp at the pre-E-5.4 revision.
+    _set_alembic_version(url, "f7a8b9c0d1e2")
+
+    # Step 3: ensure_schema_at_head should detect the drift, ADD the
+    # missing columns, then stamp head.
+    result = ensure_schema_at_head(url, Base.metadata)
+    assert result == "stamped_recovery"
+
+    # Step 4: the missing columns are now present.
+    eng = create_engine(url)
+    insp = inspect(eng)
+    user_cols = {c["name"] for c in insp.get_columns("users")}
+    eng.dispose()
+    assert "failed_login_attempts" in user_cols
+    assert "locked_until" in user_cols
+
+
 def test_real_alembic_recovers_from_create_all_conflict(tmp_path):
     """End-to-end E-4.10 conflict reproduction: simulate the operator
     state where tables exist (via create_all-like construction) but

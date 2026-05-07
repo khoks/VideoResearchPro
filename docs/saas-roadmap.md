@@ -365,7 +365,7 @@ SaaS users pick a region at signup: US (default), EU, India. Each region is a se
 
 ## 7. Hosted UX
 
-**Status:** ⚪ design-complete; tracked as [E-5.9 in initiatives.md](initiatives.md#e-59-hosted-ux). The marketing landing page already ships ([E-2.5](initiatives.md#e-25--marketing-landing-page-sections)) — that's the only piece of "hosted UX" with code today. The signup flow / billing portal / status page / docs site are all SaaS-launch-time work, gated on E-5.3 (billing) and SaaS infrastructure (E-5.8). No code change today.
+**Status:** ⚪ design-complete; tracked as [E-5.9 in initiatives.md](initiatives.md#e-59-hosted-ux). The marketing landing page already ships ([E-2.5](initiatives.md#e-25-marketing-landing-page-warm-editorial)) — that's the only piece of "hosted UX" with code today. The signup flow / billing portal / status page / docs site are all SaaS-launch-time work, gated on E-5.3 (billing) and SaaS infrastructure (E-5.8). No code change today.
 
 ### Marketing surface
 

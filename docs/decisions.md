@@ -403,7 +403,7 @@ Each source-type registers a small config: which meta chips to show, what the pl
 
 **Consequences.**
 
-- TypeScript sketch in [source-types.md § Polymorphic ApprovalCard TypeScript shape](source-types.md#polymorphic-approvalcard-typescript-shape-proposed-2026-04-26) updated in lockstep: `header` config drops `titleField` / `subtitleField` / `avatarField` (always `document.*`); `MetaChip<T>` adds `formatter?: FormatterName`; new `FilterChip<T>` type and `filterChips: FilterChip<T>[]` field on the config; `customSlot` signature gains a `document: Document` arg.
+- TypeScript sketch in [source-types.md § Polymorphic ApprovalCard TypeScript shape](source-types.md#polymorphic-approvalcard-typescript-shape) updated in lockstep: `header` config drops `titleField` / `subtitleField` / `avatarField` (always `document.*`); `MetaChip<T>` adds `formatter?: FormatterName`; new `FilterChip<T>` type and `filterChips: FilterChip<T>[]` field on the config; `customSlot` signature gains a `document: Document` arg.
 - `<ApprovalCard>` component signature: `(props: { document: Document; metadata: T; classification?: Classification; config: ApprovalCardConfig<T> })`. `<CardHeader>` and `<CardActions>` read directly from `document`; `<CardBody>` / `<CardMetaRow>` / filter UI read from `metadata` via the typed registry.
 - Per-source config size shrinks (no Document-field declarations) and cross-source consistency increases (header layout is structurally identical across all source types).
 - Pydantic ↔ TS drift becomes a PR-review concern. If review fatigue kicks in or a fourth or fifth source type lands and the drift count climbs, revisit (a) and consider promoting to a build-step generator.
@@ -840,7 +840,7 @@ Two ways to resolve:
 
 **Re-evaluation hooks.**
 - Switch to automatic startup migration if (a) the rename frequency climbs to multiple per quarter (the runbook becomes a maintenance burden then), or (b) the project decides to drop self-host support — at which point the runbook audience disappears and the migration becomes a SaaS-internal infra task.
-- For SaaS deployment specifically, this decision will be revisited: SaaS infra controls the data layer end-to-end, and automatic migration is fine when the migrator is the operator. But that's a separate decision for [I-5](initiatives.md#i-5--saas-readiness-long-horizon).
+- For SaaS deployment specifically, this decision will be revisited: SaaS infra controls the data layer end-to-end, and automatic migration is fine when the migrator is the operator. But that's a separate decision for [I-5](initiatives.md#i-5-saas-readiness-long-horizon-code-shippable-work-fully-closed-2026-05-05).
 
 **Linked initiatives / PRs.** I-2 / E-2.6 / T-2.6.6. PR [#137](https://github.com/khoks/VideoResearchPro/pull/137). Precedent referenced from [E-1.9](initiatives.md#e-19-rename-channels-creators-db-orm) when that epic schedules.
 
@@ -848,7 +848,7 @@ Two ways to resolve:
 
 ## D-033 — Whisper-as-service for podcasts: reuse existing OpenAI Whisper path (resolves OQ-4) (2026-05-03)
 
-**Status:** accepted. Resolves [OQ-4](initiatives.md#oq-4) and shipped with PR [#140](https://github.com/khoks/VideoResearchPro/pull/140).
+**Status:** accepted. Resolves [OQ-4](initiatives.md#open-questions-parking-lot) and shipped with PR [#140](https://github.com/khoks/VideoResearchPro/pull/140).
 
 **Context.** [E-1.7](initiatives.md#e-17-podcast-connector) podcast-end-to-end requires audio transcription for episodes that ship without an in-feed transcript. The architectural question (filed as OQ-4 when E-1.7 was scoped): do we run Whisper as a separate service (e.g. a `whisper-service` Docker container with its own queue), or reuse the existing OpenAI Whisper integration path (`youtube_service._transcribe_with_whisper`) that the YouTube connector uses as a fallback?
 
@@ -930,7 +930,7 @@ The dispatcher (`app.services.connector_dispatch.dispatch_search`) was already s
 - *(2) Silent empty-list return.* Rejected — loses the "this connector intentionally has no search" signal. A future contributor reading just `connector.search("query")` couldn't tell if they got `[]` because the search ran and found nothing or because the connector doesn't search at all. The exception-based form is self-documenting.
 
 **Consequences.**
-- The pattern is reusable for future connectors with no discovery surface — `note` (user-authored annotations as a source type, planned for [I-1](initiatives.md#i-1--multi-source-ingest) future), maybe a `book` connector that takes only file uploads. They follow the PDF template: raise `NotImplementedError`, document why in the docstring, the dispatcher handles it.
+- The pattern is reusable for future connectors with no discovery surface — `note` (user-authored annotations as a source type, planned for [I-1](initiatives.md#i-1-multi-source-ingest-closed-2026-05-03) future), maybe a `book` connector that takes only file uploads. They follow the PDF template: raise `NotImplementedError`, document why in the docstring, the dispatcher handles it.
 - The `BaseConnector` contract's existing comment ("Connectors that do not support search (e.g. PDF, where the user uploads files directly) raise NotImplementedError") was prescient — D-035 just cements it as the shipped + tested pattern.
 - Tests for these connectors lock in the contract: `test_search_raises_not_implemented` is a new convention that every no-discovery-surface connector should include.
 - Frontend implication: when a user enables `source_types=["pdf"]` on a topic job with no search query, the dispatch yields zero candidates for that source. The UI either filters out PDF from the topic-job source-type chooser entirely (PDFs come from upload, not topic search), or shows a helpful "Use the upload page to add PDFs" empty-state. Today's frontend doesn't expose `pdf` in the topic-job source-type chooser at all, so the dispatcher behaviour is moot — but if it ever does, the empty-state is the right answer.
@@ -1003,7 +1003,7 @@ Three candidate providers:
 
 ## D-038 — Tenancy retrofit ships in four phases (audit → additive → backfill+writes → reads → NOT NULL) (2026-05-04)
 
-**Status:** accepted. Resolves [E-5.1](initiatives.md#e-51--tenancy-retrofit) and shipped across PRs [#149](https://github.com/khoks/VideoResearchPro/pull/149) (phase 0 audit) → [#150](https://github.com/khoks/VideoResearchPro/pull/150) (phase 1 additive) → [#151](https://github.com/khoks/VideoResearchPro/pull/151) (phase 2a backfill+writes) → [#152](https://github.com/khoks/VideoResearchPro/pull/152) (phase 2b reads). Phase 2c (NOT NULL constraint) deferred to operator runbook per [D-032](#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03) precedent.
+**Status:** accepted. Resolves [E-5.1](initiatives.md#e-51-tenantid-audit-retrofit) and shipped across PRs [#149](https://github.com/khoks/VideoResearchPro/pull/149) (phase 0 audit) → [#150](https://github.com/khoks/VideoResearchPro/pull/150) (phase 1 additive) → [#151](https://github.com/khoks/VideoResearchPro/pull/151) (phase 2a backfill+writes) → [#152](https://github.com/khoks/VideoResearchPro/pull/152) (phase 2b reads). Phase 2c (NOT NULL constraint) deferred to operator runbook per [D-032](#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03) precedent.
 
 **Context.** [E-5.1 audit](saas-tenant-id-audit.md) discovered that, despite shipping JWT auth + email/password registration and four user-scoped tables (`jobs`, `qa_exchanges`, `library_qa_exchanges`, `qa_history_exchanges`), the codebase was **structurally single-tenant** — zero `tenant_id` columns, zero `WHERE user = ?` filters in routers. Any logged-in user could read any other user's jobs, Q&A history, library exchanges. The fix is conceptually simple ("add `tenant_id` everywhere, filter queries by it") but operationally risky: any single-step rollout has a window where existing rows are unattributed, the code is enforcing attribution, and joins crash. Need a phased rollout that's safe at each intermediate state.
 
@@ -1058,7 +1058,7 @@ Three candidate providers:
 
 **Alternatives considered.**
 - *Redis from the start.* Rejected for self-host: the in-memory implementation is roughly 50 lines vs ~150 for the Redis version (atomic INCR + EXPIRE + retry-after computation across the round-trip). For a feature that's optional in dev and uniform in single-worker prod, the simpler implementation wins. Swap is mechanical when SaaS lands.
-- *External library (`slowapi`, `fastapi-limiter`, `limits`).* Rejected. `slowapi` couples to Flask-style decorators that don't compose with our middleware shape; `fastapi-limiter` requires Redis and lacks the per-route override pattern; `limits` is a primitives-only library that wouldn't save much over our 50 lines. The project's pattern (per [E-1.6](initiatives.md#e-16--article-search--rss--brave--rss-feed-discovery), [E-5.4](initiatives.md#e-54-auth-hardening), etc.) is to write the small piece ourselves rather than carry the dep.
+- *External library (`slowapi`, `fastapi-limiter`, `limits`).* Rejected. `slowapi` couples to Flask-style decorators that don't compose with our middleware shape; `fastapi-limiter` requires Redis and lacks the per-route override pattern; `limits` is a primitives-only library that wouldn't save much over our 50 lines. The project's pattern (per [E-1.6](initiatives.md#e-16-article-connector), [E-5.4](initiatives.md#e-54-auth-hardening), etc.) is to write the small piece ourselves rather than carry the dep.
 - *SQL-backed buckets.* Rejected: every rate-limit check would round-trip the DB, and the cleanup path (deleting expired buckets) would need a periodic vacuum task. Hot-path latency would jump from microseconds (in-memory) or milliseconds (Redis) to multi-millisecond.
 
 **Consequences.**

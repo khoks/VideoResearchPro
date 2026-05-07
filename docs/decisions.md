@@ -1291,3 +1291,133 @@ The implementation has to make a choice that's consistent across all four hot en
 - If providers start charging us for failed calls (LLM provider doesn't refund tokens for a 500), revisit whether we should burn quota on failure to match our actual cost. Today providers don't, so we don't either.
 
 **Linked initiatives / PRs.** I-5 / E-5.2 / E-5.5 / T-5.2.5 / T-5.5.5. PR [#169](https://github.com/khoks/VideoResearchPro/pull/169).
+
+---
+
+## D-046 — Comment-tree depth: per-platform env knob, no per-job override (resolves OQ-2) (2026-05-06)
+
+**Status:** accepted. Resolves [OQ-2](initiatives.md#open-questions-parking-lot). Confirms the shipped behavior in [S-1.5.1](initiatives.md#s-151-reddit-search-connector) (PR [#70](https://github.com/khoks/VideoResearchPro/pull/70)) and [S-1.5.2](initiatives.md#s-152-hacker-news-search-connector) (PR [#73](https://github.com/khoks/VideoResearchPro/pull/73)).
+
+**Context.** The Reddit and HN connectors flatten the OP body plus the top-N comments by score (Reddit "score", HN "points") into a single text body. Top-N defaults to 50 across both. OQ-2 was filed when the connectors were first scoped: should the depth be configurable per-job (a UI surface on the topic-job form), per-platform (env knob differing for Reddit vs HN), or both? Filing was deferred to ship-time so the choice could be made against real usage rather than speculatively.
+
+**Decision.** **Per-platform env knob, no per-job override.** `app/config.py` already exposes `REDDIT_COMMENT_DEPTH_DEFAULT` and `HN_COMMENT_DEPTH_DEFAULT` as independent settings (both default 50). The connectors read these directly at fetch time. No `jobs` schema column, no UI surface, no API parameter.
+
+**Alternatives considered.**
+
+- **Per-job override (UI field on topic-job form).** Rejected — speculative complexity. Adding the override means: schema column on `jobs`, validation, frontend form field, persistence through the orchestrator, doc, tests. None of M-1.5 (Reddit / HN end-to-end) or M-1.6 (Mastodon / Bluesky) usage has surfaced a "I want shallower comments for this specific job" need across 60+ shipped jobs.
+- **Single global env knob (one number, applies to all platforms).** Rejected — comment shapes diverge between platforms. Reddit's nested replies are noisier per-comment; HN's flat top-level comments tend to be more substantive. Future tuning likely needs per-platform divergence (e.g. drop Reddit to 30, keep HN at 50). Per-platform separation is already in place; collapsing it would be a regression.
+- **Per-job override AND per-platform default.** Rejected — would land both layers; not warranted.
+
+**Consequences.**
+
+- Per-platform tuning is a one-line env-var change for self-host operators; no code change required.
+- Per-job tuning is not available — operators who want it must currently fork the connector or set the env at deploy time. Acceptable given zero observed demand.
+- Future platforms (Mastodon's reply chains, Bluesky's threads) follow the same pattern — each gets its own `<PLATFORM>_COMMENT_DEPTH_DEFAULT` env var.
+- The `# OQ-2` reference in `app/config.py:42` (next to `REDDIT_COMMENT_DEPTH_DEFAULT`) stays as a breadcrumb for future revisits.
+
+**Re-evaluation hooks.**
+
+- If a user files a real "I want different comment depth for THIS topic job" request, promote to per-job (Story under E-1.5).
+- If the per-platform env-knob default needs to differ in production (e.g. HN should be 80, Reddit 30), that's a deployment-time tweak, not a code change.
+- When Mastodon (S-1.5.6) and Bluesky (S-1.5.7) gain their own depth knobs, audit whether the `<PLATFORM>_COMMENT_DEPTH_DEFAULT` naming convention scales (vs a single keyed dict).
+
+**Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.1 / S-1.5.2 / OQ-2. Confirmed by PRs [#70](https://github.com/khoks/VideoResearchPro/pull/70) (Reddit) + [#73](https://github.com/khoks/VideoResearchPro/pull/73) (HN); no implementation PR is required for this decision (it ratifies shipped behavior).
+
+---
+
+## D-047 — Sibling-PR coordination for `/knowledge-curator` + `/work-tracker`: keep separate PRs (resolves OQ-3) (2026-05-06)
+
+**Status:** accepted. Resolves [OQ-3](initiatives.md#open-questions-parking-lot). Ratifies the shipped pattern documented in [`.claude/skills/work-tracker/SKILL.md`](../.claude/skills/work-tracker/SKILL.md) §"Coordination with /knowledge-curator".
+
+**Context.** Two project skills run on session-end: `/knowledge-curator` opens a `docs/<topic>-<date>` PR for vision/architecture/decision content, and `/work-tracker` opens a `work/<topic>-<date>` PR for `docs/initiatives.md` updates. When both fire on the same session, two PRs land. OQ-3 asked: should they coordinate to share a single PR per session?
+
+**Decision.** **Keep separate PRs as the default.** Each skill owns its own branch + PR; the second skill to fire mentions the sibling PR in its body via "Companion PR: #N" (already documented in SKILL.md line 178). Combining is explicitly **not** scheduled.
+
+**Alternatives considered.**
+
+- **Shared single PR per session** (second skill checks out first skill's branch + amends with a new commit). Rejected — combining couples two unrelated change scopes. A doc-curator PR is a `LGTM, merge` skim; a work-tracker PR has actual scope-change content worth reading independently. If one had an issue, the other would be blocked.
+- **No coordination at all** (each skill ignores the other). Rejected — leaves the user without wayfinding when reading PR bodies. The "Companion PR: #N" cross-reference is cheap and avoids confusion.
+- **First-skill-only mode** (work-tracker collapses into knowledge-curator). Rejected — the two have different ownership boundaries (`initiatives.md` vs everything else); collapsing weakens the discipline.
+
+**Consequences.**
+
+- Two PRs per substantive session; both are independently reviewable + mergeable in either order.
+- Cross-references in body via "Companion PR: #N" provide enough wayfinding.
+- Skill code stays simple; no shared-branch coordination logic to maintain.
+- The "v2 enhancement" language in SKILL.md line 184 ("Combining is a v2 enhancement") is now formally **descoped** — combining is not on the roadmap.
+
+**Re-evaluation hooks.**
+
+- If a future session ever produces 5+ skill PRs in a single chain (today's typical: 0-2), revisit with a shared-branch model.
+- If a session produces a doc curator PR that depends on an `initiatives.md` change in the same session (today's design: they're independent), revisit.
+
+**Linked initiatives / PRs.** I-4 / E-4.1 / E-4.2 / E-4.6 / OQ-3. Ratifies behavior already documented in `.claude/skills/work-tracker/SKILL.md` and `.claude/skills/knowledge-curator/SKILL.md`.
+
+---
+
+## D-048 — PDF connector intake: file upload only for v1 (resolves OQ-5) (2026-05-06)
+
+**Status:** accepted. Resolves [OQ-5](initiatives.md#open-questions-parking-lot). Ratifies the shipped scope of [E-1.8](initiatives.md#e-18-pdf-e-book-connector) (PR [#142](https://github.com/khoks/VideoResearchPro/pull/142)).
+
+**Context.** The PDF connector was scoped with an open question: file upload only, URL only, or both? E-1.8 shipped 2026-05-03 with **file upload only** via `POST /api/v1/library/upload-pdf`. URL-fetch was not implemented. OQ-5 was left open in case post-ship usage demanded URL fetch. Three days post-ship, no demand has surfaced.
+
+**Decision.** **File upload only for v1.** URL-fetch is filed as a future-deferred Story under E-1.8 (no Story number assigned today; create on demand).
+
+**Alternatives considered.**
+
+- **URL-fetch in v1.** Rejected — significant additional surface: SSRF protection, redirect-chain handling, size DoS protection, Content-Type validation, optional auth (paywalled academic PDFs), concurrent-download throttling. None of which is needed for the dominant use cases (academic papers, technical books, manuals — users typically download once, then upload).
+- **Both file upload AND URL-fetch in v1.** Rejected — same as above; doubles the v1 attack surface for unmeasured benefit.
+
+**Consequences.**
+
+- Many privacy-sensitive PDFs (paywalled academic papers, internal company documents, gated educational materials) don't have a public URL the connector could fetch from anyway — file upload covers them inherently.
+- Identity model from [D-034](#d-034--pdf-source-type-identity-uses-first-64kb-sha-256-not-full-file-hash-2026-05-03) (`source_id = pdf:{first_64kb_sha256}`) is bytes-derived, so adding URL-fetch later requires no schema migration: the same bytes hash to the same source_id whether they were uploaded or fetched.
+- The "no discovery surface" pattern from [D-035](#d-035-connectors-with-no-discovery-surface-raise-notimplementederror-dispatcher-treats-as-zero-candidates-2026-05-03) is preserved — URL-fetch would be intake, not discovery.
+- E-1.8 follow-up list in `initiatives.md` already mentions "Frontend file-upload UI" but not URL-fetch — this decision formalizes URL-fetch as deferred.
+
+**Re-evaluation hooks.**
+
+- File a Story under E-1.8 when a real use case for URL-fetch surfaces (e.g. a user wants to bulk-import a list of public arxiv URLs).
+- When that Story lands, share the SSRF-protection model the Article connector ([E-1.6](initiatives.md#e-16-article-connector)) already uses for trafilatura URL fetching — same threat model, same mitigations.
+- A second-tier follow-up: bulk import via a list of URLs (newsletter / RSS-style intake) — that's a separate Story, not part of the v1 URL-fetch one.
+
+**Linked initiatives / PRs.** I-1 / E-1.8 / OQ-5 / D-034 / D-035. Ratifies PR [#142](https://github.com/khoks/VideoResearchPro/pull/142) shipped scope.
+
+---
+
+## D-049 — Echo cold-start readiness threshold: shipped triple is v1; personal-brain.md sub-table is forward-looking spec (resolves OQ-6) (2026-05-06)
+
+**Status:** accepted. Resolves [OQ-6](initiatives.md#open-questions-parking-lot). Ratifies the shipped behavior in [E-3.5](initiatives.md#e-35-cold-start-readiness-threshold) (PR [#172](https://github.com/khoks/VideoResearchPro/pull/172)).
+
+**Context.** The Echo "speak as me" agent should not fire on sparse data — output would be lazy-mimicry, breaking user trust. A cold-start gate is needed. OQ-6 asked: what are the quantitative criteria? `personal-brain.md` proposed a four-row sub-table (Domain 1: 30 facts × 3 categories; Domain 2: 90 days × 200 events; Domain 3: 50 signals × 4 types; Domain 5: 100 shares × 4 content types). PR #172 shipped a simpler three-criterion gate.
+
+**Decision.** **The shipped triple is the authoritative v1.** Three criteria, all measured today:
+
+1. **`total_threshold=100`** — at least 100 PersonalContext rows total across all kinds.
+2. **`sources_threshold=3`** — at least 3 distinct values of `personal_context.source` (one of: `manual`, `youtube_watch_history`, `spotify_history`, `email`, etc.).
+3. **`has_personality_trait=True`** — at least one row with `kind='personality_trait'`.
+
+The personal-brain.md sub-table remains as the **forward-looking spec** for once Domains 2-5 connectors land, at which point `is_ready()` will gain domain-specific minima. Until then, the simpler triple holds.
+
+**Alternatives considered.**
+
+- **Adopt the personal-brain.md sub-table as v1.** Rejected — premature lock-in. Domain 2 (activity events: 90 days × 200 events) and Domain 5 (constant-stream shares: 100 × 4 types) assume connectors that don't exist (E-3.2 deferred). Hardcoding their thresholds before the connectors ship would just be a guess; the implementations themselves will inform reasonable minima.
+- **Single threshold (just total rows).** Rejected — misses signal diversity. A user with 100 rows all of `kind='location'` from a single source isn't ready for "speak as me"; the breadth + personality dimensions matter.
+- **Stricter v1 thresholds (e.g. 200 / 5 / multiple personality kinds).** Rejected — too aggressive for the bootstrapping phase. Operators want to test Echo behavior before they've accumulated months of context; a `sources_threshold=3` is enough breadth to validate the agent without forcing month-long warmup.
+
+**Consequences.**
+
+- v1 is a function with named arguments (`total_threshold=100, sources_threshold=3`) so operators can tune at call time without redeploy.
+- `EchoReadiness` dataclass returns the diagnostics (`total_rows`, `distinct_sources`, `has_personality_trait`, `threshold_total`, `threshold_sources`) so the frontend can show a "you're 60% there" progress UI.
+- `/api/v1/echo/status` exposes the diagnostics over REST.
+- The personal-brain.md sub-table is left intact as the future-spec; its preamble ("Recommended initial threshold (subject to validation)") already flags it as proposed, not committed.
+- When E-3.2 (activity-stream connectors) lands, expand `is_ready()` to include domain-specific minima per the sub-table; that's a separate PR with its own ADR.
+
+**Re-evaluation hooks.**
+
+- When E-3.2 (activity-stream) lands, evolve the threshold to include 90-day × 200-event criteria.
+- When E-3.4 (speak-as-me agent) is wired to actually consume `is_ready()` as a gate, threshold mis-calibration becomes load-bearing — that's the trigger to validate against real users.
+- If self-host operators report Echo "feels off" at the v1 thresholds, raise to 200/5/2-personality-kinds.
+- Promote function args to env vars / a settings object once tuning has stabilized.
+
+**Linked initiatives / PRs.** I-3 / E-3.5 / E-3.2 / E-3.4 / OQ-6. PR [#172](https://github.com/khoks/VideoResearchPro/pull/172) (Echo foundation, registry empty).

@@ -10,6 +10,15 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### E-4.8 / E-4.9 / E-4.10 follow-ups closed 2026-05-06
+
+This batch closes every ⚪ open task that was filed off the live Chrome end-to-end run. Backend suite **1025 passed** post-fix.
+
+- **T-4.10.6 — schema_init column-drift detection** (`backend/app/services/schema_init_service.py`). `_attempt_recovery` now checks bidirectional **table** match → detects **column** drift → if drift is purely additive (`missing_in_db` only), runs `ALTER TABLE ADD COLUMN` for each missing column then stamps head; refuses with a clear "non-additive drift" error if the DB has columns the ORM doesn't (destructive direction is a manual operator call). 3 new tests cover (a) additive recovery, (b) destructive-drift refusal, (c) end-to-end against the real ORM. Operators no longer need to `rm data/<db>` after pulling new migrations onto pre-E-4.10 schemas.
+- **T-4.9.5 — probe budget for reasoning models** (`backend/app/services/llm_service.py::probe_config`). `max_tokens=256` when `cfg.reasoning != "off"`, keeping the minimal 16-token budget for non-reasoning configs. Reasoning models burn budget on internal thinking before any visible output, so 16 isn't enough. Verified live: `/api/v1/health` returns `llm.status: ok` against `gpt-5.5:low`.
+- **T-4.9.4 — periodic LLM registry revalidation CLI** (`backend/scripts/validate_llm_registry.py`, new). Walks unique `(provider, model)` pairs in `USE_CASE_REGISTRY` (post-`resolve_config`, so env overrides apply), calls each provider's `models.list()`, and reports drift. `--strict` exits 1 on any miss for CI use. Suggests near-matches when a model isn't found. Schedule manually or via Windows Task Scheduler.
+- **T-4.8.4 — 13 residual heading-rename anchors fixed**. All cross-doc anchor links now resolve cleanly (`fix_anchor_links.py --report` reports zero broken). Examples: `i-5--saas-readiness-long-horizon` → `i-5-saas-readiness-long-horizon-code-shippable-work-fully-closed-2026-05-05`; `oq-4` rerouted to its parent heading `open-questions-parking-lot` since OQ-* lives in bullet form, not headings.
+
 ### Live Chrome end-to-end test 2026-05-06
 
 - **Walked the full app in Chrome** — backend (uvicorn) + frontend (vite) live; user registered, logged in, navigated, and exercised every new I-3 / I-5 / I-6 surface end-to-end. Verified through the running app (not just unit tests):

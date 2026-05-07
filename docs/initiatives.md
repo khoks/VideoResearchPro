@@ -59,7 +59,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - **S-1.5.9 / S-1.5.10** (BYOK Twitter env detection + paid Twitter connector) — explicitly opt-in per [D-009](decisions.md#d-009-twitter-x-is-byok-opt-in-2026-04-25); not on the critical path for I-1 closure but the natural follow-up if a user supplies a token.
 - **L2 Author Studio** ([I-6](initiatives.md#i-6-author-studio-output-generation-l2)) — output generation for the accumulated library: books, sites, decks, newsletters, reels.
 - **L3 Echo / personal brain** ([I-3](initiatives.md#i-3-echo-personal-brain-l3)) — the long-horizon north star.
-- **L5 SaaS readiness** ([I-5](initiatives.md#i-5--saas-readiness-long-horizon)) — multi-tenancy + billing + abuse prevention + auth hardening + hosting.
+- **L5 SaaS readiness** ([I-5](initiatives.md#i-5-saas-readiness-long-horizon-code-shippable-work-fully-closed-2026-05-05)) — multi-tenancy + billing + abuse prevention + auth hardening + hosting.
 
 **Companion initiative I-2 closed 2026-05-03 morning** alongside the E-2.5 + E-2.6 work. With I-1 closing this evening, **two of six top-level initiatives are now fully shipped**.
 
@@ -293,7 +293,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Re-evaluation hooks (T-1.5.12.2, deferred).**
 - Ship per-segment when (a) we observe materially different reply quality across multiple replies of the same thread getting cited (so jumping to specific reply matters), or (b) a future connector emits content where the per-reply identity is the citable unit (forum threads with multiple long top-level posts, podcast chapter markers, etc.).
-- The chunker rework is also the natural moment to revisit pseudo-timestamp synthesis ([D-013](decisions.md#d-013--pseudo-timestamps-at-3-wps-as-a-shared-cross-source-constant-2026-04-26)) — they could be replaced with explicit per-segment indices once `extra` is preserved end-to-end.
+- The chunker rework is also the natural moment to revisit pseudo-timestamp synthesis ([D-013](decisions.md#d-013-pseudo-timestamps-at-3-wps-for-text-based-connectors-2026-04-25)) — they could be replaced with explicit per-segment indices once `extra` is preserved end-to-end.
 
 ### E-1.6 🟢 Article connector
 
@@ -483,7 +483,7 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 ### E-3.2 🟡 Activity-stream connectors
 
-**Scope.** Pluggable opt-in connectors. Recommended order (per [feature-roadmap.md L3](feature-roadmap.md#l3--echo-personal-brain)): YouTube watch history → Spotify history → email (read-only) → calendar → browser history → Apple Health.
+**Scope.** Pluggable opt-in connectors. Recommended order (per [feature-roadmap.md L3](feature-roadmap.md#l3-echo-the-personal-brain)): YouTube watch history → Spotify history → email (read-only) → calendar → browser history → Apple Health.
 
 **Foundation shipped 2026-05-05** in PR #172. `EchoConnector` Protocol + `register_connector` / `get_connector` / `list_connectors` registry in `echo_service.py`. Each connector implements `authorize_url` / `revoke` / `sync` / `supported_kinds`. Concrete connectors are future PRs:
 
@@ -559,15 +559,15 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 **Linked decision:** [D-012](decisions.md#d-012-capture-novel-potentially-patentable-ideas-in-inventionsmd-2026-04-25)
 **PR:** [#68](https://github.com/khoks/VideoResearchPro/pull/68) (follow-up commit on the bootstrap branch)
 
-### E-4.8 🟡 Cross-doc anchor-link convention fix
+### E-4.8 🟢 Cross-doc anchor-link convention fix
 
-**Bulk-fix shipped 2026-05-06** in [PR #179](https://github.com/khoks/VideoResearchPro/pull/179). `backend/scripts/fix_anchor_links.py` walks every cross-doc link, attempts to collapse `-+ → -` per GitHub's slug rule, and rewrites if the candidate matches a real heading. **132 links rewritten** across `docs/decisions.md` (25), `docs/initiatives.md` (69), `docs/feature-roadmap.md` (16), `docs/saas-roadmap.md` (6), `docs/source-types.md` (12), `docs/architecture.md` (4). Idempotent — re-running on already-fixed docs is a no-op. **13 links remain broken** — these are heading-rename casualties (target heading text changed since the link was authored), not the `--` convention bug.
+**Bulk-fix shipped 2026-05-06** in [PR #179](https://github.com/khoks/VideoResearchPro/pull/179). `backend/scripts/fix_anchor_links.py` walks every cross-doc link, attempts to collapse `-+ → -` per GitHub's slug rule, and rewrites if the candidate matches a real heading. **132 links rewritten** across `docs/decisions.md` (25), `docs/initiatives.md` (69), `docs/feature-roadmap.md` (16), `docs/saas-roadmap.md` (6), `docs/source-types.md` (12), `docs/architecture.md` (4). Idempotent — re-running on already-fixed docs is a no-op. **13 residual heading-rename casualties resolved 2026-05-06** in the follow-up branch — every cross-doc anchor now resolves cleanly.
 
 **Tasks**
 - [x] T-4.8.1 Bulk-fix script — *shipped 2026-05-06*.
 - [x] T-4.8.2 Run + diff review — *shipped 2026-05-06*.
 - [x] T-4.8.3 Manual click-through (post-merge) — pending.
-- [ ] T-4.8.4 ⚪ Address the 13 residual heading-rename casualties (`#i-5--saas-readiness-long-horizon` etc.). Either restore stable-anchor headings or rewrite each link manually. Doc-rename hygiene; not a convention bug.
+- [x] T-4.8.4 🟢 **Heading-rename casualties resolved 2026-05-06** in this branch's follow-up. All 13 residual cross-doc anchors hand-mapped to their renamed-target heading slugs (e.g. `i-5--saas-readiness-long-horizon` → `i-5-saas-readiness-long-horizon-code-shippable-work-fully-closed-2026-05-05`; `oq-4` rerouted to its parent heading `open-questions-parking-lot` since OQ-* lives in bullet form, not headings). `fix_anchor_links.py --report` now reports zero residual broken links across the doc set.
 
 ### E-4.10 🟢 Replace `Base.metadata.create_all` lifespan with Alembic-managed schema
 
@@ -585,9 +585,9 @@ Strict bidirectional schema-match check (every ORM table in DB AND every DB tabl
 - [x] T-4.10.3 Recovery path is the auto-stamp branch above; no separate runbook needed since it's automatic + observable via the lifespan log line. Operators with drifted schemas hit the manual-intervention error message which carries the exact `stamp` command — *shipped*.
 - [x] T-4.10.4 conftest.py keeps using `Base.metadata.create_all` directly against in-memory SQLite for tests (independent of production lifespan; intentional) — *unchanged*.
 - [x] T-4.10.5 End-to-end test in `tests/test_services/test_schema_init.py::test_real_alembic_recovers_from_create_all_conflict` reproduces the conflict + verifies recovery — *shipped*.
-- [ ] T-4.10.6 ⚪ **Extend schema-match check to compare COLUMNS, not just TABLES.** Surfaced 2026-05-06 during live Chrome testing: a pre-existing dev DB had `users` table created by old `create_all` with the schema-as-of-then; later migration `a8b9c0d1e2f3` adds `failed_login_attempts` + `locked_until` via `op.add_column`. After my fix's `stamped_recovery` ran (table set matches → stamp head), runtime queries against `users.failed_login_attempts` failed with `no such column`. The bidirectional table-match check is necessary but not sufficient; column-match is the missing layer. Either inspect `pragma table_info(<each table>)` and reflect+compare columns vs `Base.metadata.tables[name].columns` OR detect missing columns and apply just the additive ALTERs before stamping. Until this lands, operators with column-drifted DBs must manually reset (`rm data/<db>; restart`) or hand-apply the ALTER TABLE statements.
+- [x] T-4.10.6 🟢 **Column-drift detection + auto-recovery shipped 2026-05-06** in this branch's follow-up. `_attempt_recovery` now checks bidirectional **table** match → detects **column** drift via `_column_drift` (compares live `inspect(eng).get_columns(t)` against `orm_metadata.tables[t].columns`) → if drift is purely additive (`missing_in_db` only), runs `ALTER TABLE ADD COLUMN` for each missing column then stamps head; refuses with a clear "non-additive drift" error if the DB has columns the ORM doesn't (destructive direction is a manual operator call). 3 new tests cover (a) additive recovery, (b) destructive-drift refusal, (c) end-to-end against the real ORM with `users.failed_login_attempts` / `users.locked_until` reconstructed. Operators no longer need to `rm data/<db>` after pulling new migrations against pre-E-4.10 schemas.
 
-9 new tests; all 4 paths covered. End-to-end against the project's real ORM + migrations. Backend suite 1013 → 1022. **Known gap (T-4.10.6)** — column-drift case not auto-recovered.
+12 schema_init tests; all paths covered. End-to-end against the project's real ORM + migrations. Full backend suite green: **1025 passed**. Live boot post-fix: `lifespan: schema-init result=stamped_recovery` (when applicable) followed by clean `/api/v1/health` `ok`.
 
 ### E-4.9 🟢 LLM smoke-probe `gpt-5.4` config audit
 
@@ -601,8 +601,8 @@ Verified post-fix boot: `/api/v1/health` reports `llm.status: ok`, `unavailable_
 - [x] T-4.9.1 List OpenAI models — *done via openai-python `models.list()`*.
 - [x] T-4.9.2 Registry rewrite — *shipped*.
 - [x] T-4.9.3 Boot smoke green — *verified*.
-- [ ] T-4.9.4 ⚪ Add a periodic registry-revalidation pass to CI / a scheduled task. The model lineup will drift again as OpenAI deprecates / renames; today there's no automatic warning. Future enhancement.
-- [ ] T-4.9.5 ⚪ **Smoke-probe `max_tokens` is too small for reasoning models.** Surfaced 2026-05-06: `gpt-5.5:low` returned 400 "Could not finish the message because max_tokens or model output limit was reached" against the probe's `max_tokens=16` budget. Reasoning models consume the budget on internal thinking before producing visible output, so 16 isn't enough. The probe should either (a) bump `max_tokens` for reasoning models specifically (e.g. 256 when `reasoning != "off"`), or (b) use a non-reasoning probe model (`gpt-4.1-mini`) regardless of the use case's actual config — probes are liveness checks, not capability tests. Option (b) is cleaner. Pre-existing infra issue surfaced by the gpt-5.4→gpt-5.5 rename.
+- [x] T-4.9.4 🟢 **Registry-revalidation CLI shipped 2026-05-06** in this branch's follow-up. New `backend/scripts/validate_llm_registry.py` walks unique `(provider, model)` pairs in `USE_CASE_REGISTRY` (post-`resolve_config`, so env overrides apply), calls `client.models.list()` per provider, and reports drift. `--strict` exits 1 on any miss for CI use. Suggests near-matches when a model isn't found. OpenAI is the only provider exercised today; Anthropic / Google get a `?` line + skipped count. Verified live: 3 unique pairs all `OK`. Schedule manually or via Windows Task Scheduler.
+- [x] T-4.9.5 🟢 **Probe budget fix shipped 2026-05-06** in this branch's follow-up. Picked option (a) — `probe_config()` now uses `max_tokens=256` when `cfg.reasoning != "off"`, keeps the minimal 16-token budget for non-reasoning configs. Reasoning models burn budget on internal thinking before any visible output, so 256 covers the typical `low` / `medium` budget overhead while still being cheap. Verified live: `/api/v1/health` returns `llm.status: ok`, `unavailable: []` against `gpt-5.5:low`.
 
 ---
 

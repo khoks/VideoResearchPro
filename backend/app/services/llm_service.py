@@ -561,11 +561,23 @@ def probe_config(
     Sync (not async) — called from the FastAPI lifespan via ``asyncio.to_thread``
     or from the stress-test CLI directly. Never raises; every failure is
     captured in ``ProbeResult.error``.
+
+    T-4.9.5: ``max_tokens`` is set to 256 when the use case has a
+    non-``off`` reasoning effort. Reasoning models consume the budget on
+    internal thinking before producing visible output, so a tight
+    budget (16 tokens) yields a 400 "max_tokens reached" error before
+    the model can emit even "ok". Non-reasoning configs keep the
+    minimal 16-token budget — keeps probes cheap.
     """
+    # Reasoning configs need a much larger budget — the internal-
+    # thinking phase consumes tokens before any visible output.
+    is_reasoning = cfg.reasoning != "off"
+    probe_max_tokens = 256 if is_reasoning else 16
+
     # Build the client first — build errors (missing API key, missing
     # pip package) are a legitimate probe failure reason.
     try:
-        llm = _build_from_config(cfg, temperature=0.0, max_tokens=16)
+        llm = _build_from_config(cfg, temperature=0.0, max_tokens=probe_max_tokens)
     except Exception as e:
         return ProbeResult(
             config=cfg, ok=False, latency_ms=0, error=f"build: {e}"

@@ -19,6 +19,10 @@ venv/
 # Data (runtime)
 backend/data/
 backend/data.legacy-backup.*/
+# Stray repo-root copy that appears when a process is launched from the wrong cwd
+# (e.g. uvicorn / pytest run from project root instead of backend/). The real DB
+# + chroma + reports always live under backend/data/.
+/data/
 
 # IDE
 .vscode/

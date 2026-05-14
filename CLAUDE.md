@@ -72,6 +72,16 @@ cd backend && ./venv/Scripts/python -m pytest tests/test_routers/test_jobs.py::t
 cd frontend && npm run build
 ```
 
+### One-shot launcher (recommended for dev)
+```powershell
+# Starts Redis (if needed), backend, Celery, frontend; waits for health;
+# opens browser; blocks until Ctrl+C, then tears everything down.
+./scripts/start.ps1                # foreground; Ctrl+C stops everything
+./scripts/start.ps1 -NoBrowser     # skip auto-open
+./scripts/start.ps1 -NoFrontend    # backend + Celery only
+```
+Logs land in `.uvicorn.*.log` / `.celery.*.log` / `.frontend.*.log` at the repo root (gitignored). For an in-place restart (kill + relaunch detached) use `./scripts/restart_services.ps1`.
+
 ### Infrastructure
 ```bash
 # Redis is installed natively via: winget install Redis.Redis

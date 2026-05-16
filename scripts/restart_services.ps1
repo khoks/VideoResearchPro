@@ -164,12 +164,17 @@ if (-not (Test-Path $venvPython)) {
 }
 
 # ---- 6. Start Celery worker detached ----
-Write-Step "Starting Celery worker -> $celeryOut / $celeryErr"
+# T-5.6.5: per-tier task queues. The dispatcher routes user-initiated
+# work to tier_free / tier_pro / tier_studio; only system-initiated
+# tasks land on `default`. Self-host workers consume all four queues
+# or jobs stay queued forever (see PR #185 for the same fix in
+# scripts/start.ps1; if the queue list drifts in one, drift it in both).
+Write-Step "Starting Celery worker (-Q all-tier-queues) -> $celeryOut / $celeryErr"
 if (-not (Test-Path $venvCelery)) {
     Write-Step "  ERROR: celery not found at $venvCelery"
 } else {
     Start-Process -FilePath $venvCelery `
-        -ArgumentList @('-A', 'app.tasks.celery_app', 'worker', '--loglevel=info', '--pool=solo') `
+        -ArgumentList @('-A', 'app.tasks.celery_app', 'worker', '--loglevel=info', '--pool=solo', '-Q', 'default,tier_free,tier_pro,tier_studio') `
         -WorkingDirectory $backendDir `
         -WindowStyle Hidden `
         -RedirectStandardOutput $celeryOut `

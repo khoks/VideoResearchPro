@@ -1421,3 +1421,38 @@ The personal-brain.md sub-table remains as the **forward-looking spec** for once
 - Promote function args to env vars / a settings object once tuning has stabilized.
 
 **Linked initiatives / PRs.** I-3 / E-3.5 / E-3.2 / E-3.4 / OQ-6. PR [#172](https://github.com/khoks/VideoResearchPro/pull/172) (Echo foundation, registry empty).
+
+---
+
+## D-050 — Self-service tier flip with mock payment until E-5.3 (Stripe) ships (2026-05-15)
+
+**Status:** accepted.
+
+**Context.** Self-host operators today must `UPDATE users SET tier = 'studio' WHERE email = '...'` directly in SQL to evaluate paid-tier features (BYOK, Author Studio, Echo). That's hostile UX — the user has to know the schema, find the DB path, write SQL — and it's an obstacle to "kick the tires on Pro before deciding". The cleanest fix is a self-service Subscription page inside the app + a public Pricing page that explains what each tier unlocks. But the project is pre-Stripe (E-5.3 deferred to SaaS launch per [D-038](#d-038--tenancy-retrofit-ships-in-four-phases-audit-additive-backfillwrites-reads-not-null-2026-05-04) sequencing), so a "real" payment flow isn't shippable today.
+
+**Decision.** Ship a **self-service tier flip endpoint** (`PUT /api/v1/auth/me/tier`) that updates `users.tier` directly, gated on authentication only — no payment integration, no Stripe webhook. The frontend renders a Stripe-style payment modal pre-filled with test values (`4242 4242 4242 4242` etc.) and shows a prominent "DEMO MODE — no real payment will be processed" banner everywhere the upgrade flow is surfaced. The endpoint accepts an optional `mock_payment` field in the request body for forward-compat shape but **ignores it server-side**.
+
+When E-5.3 (Stripe) ships, the same endpoint stays — its implementation flips from "trust the request body" to "verify the Stripe webhook payload + update tier on `checkout.session.completed`". The frontend UX is largely unchanged (real Stripe Checkout redirect replaces the mock modal). No new UI primitives are needed.
+
+**Alternatives considered.**
+
+- **Wait for Stripe to ship E-5.3 before adding any tier-flip UI.** Rejected — keeps the SQL-edit-the-DB friction in place indefinitely, and operators have no way to evaluate paid features before commit. The cost of building a mock flow now is much lower than the user friction of doing nothing.
+- **Build a "request upgrade" form that emails the operator.** Rejected — doesn't actually unlock anything for self-host (the operator and the user are the same person 99% of the time), and adds an email-delivery dependency to a flow that's already trivially expressible.
+- **Allow tier-flip via a one-off CLI script (`./scripts/set_tier.py`).** Rejected — same DB-editing problem in a slightly different shape; doesn't address the "discover paid features → try them" UX gap.
+- **Build the Subscription page without the mock-payment modal (just a "Switch to Pro" button).** Rejected — the modal exists to validate UX shape **before** Stripe lands. Skipping the modal means the team can't catch payment-flow UX issues until E-5.3, when the cost of rework is much higher.
+
+**Consequences.**
+
+- **Operator UX.** Self-hosters can switch tiers in three clicks from `/account/subscription` — no SQL, no schema knowledge required.
+- **Endpoint shape stays stable across the Stripe migration.** When E-5.3 ships, the route name + body schema + response shape don't change — only the implementation. Frontend code remains unchanged.
+- **Auth check is the only gate.** Anyone with valid credentials can flip their own tier to anything they want. On self-host this is harmless (operator-owned account). On SaaS this is a non-starter — but on SaaS, this endpoint is replaced by a Stripe webhook handler, so the "anyone can flip" surface never exists in production.
+- **Audit log.** Every tier change writes a `tier_changed` audit_log event with `{from_tier, to_tier, mock_payment_mode: true}`. SaaS operators investigating "how did this user get Studio" can see the demo-mode marker.
+- **No Stripe-coupling today.** Backend has zero Stripe dependencies; the migration to E-5.3 is a localized swap.
+
+**Re-evaluation hooks.**
+
+- When E-5.3 lands: swap the endpoint's implementation to verify Stripe webhook signature → update tier on `checkout.session.completed`. Swap the frontend's `MockPaymentModal` for a Stripe Checkout redirect. The route + UI scaffolding stay.
+- If self-host operators report confusion ("am I being charged?"), strengthen the demo-mode banners or add a one-time consent dialog on first upgrade.
+- If a SaaS deployment ever ships *before* Stripe lands, the endpoint must be gated behind an environment flag (`ENABLE_SELF_SERVICE_TIER_FLIP=false` in SaaS) — explicitly documented as a deploy-time toggle when SaaS launches.
+
+**Linked initiatives / PRs.** I-5 / E-5.2 / E-5.3 (deferred). PR TBD (this commit).

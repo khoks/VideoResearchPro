@@ -32,8 +32,35 @@ class UserResponse(BaseModel):
     id: str
     email: str
     created_at: datetime
+    tier: str = "free"
 
     model_config = {"from_attributes": True}
+
+
+# E-5.2.X self-service tier flip with mock payment (D-050)
+class ChangeTierRequest(BaseModel):
+    """Body for ``PUT /auth/me/tier``.
+
+    ``mock_payment`` is accepted for forward-compat shape but ignored at
+    the backend today — the entire flow exists for self-host evaluation
+    of paid features before E-5.3 (Stripe) ships. When Stripe lands the
+    same endpoint shape stays; the implementation flips from "trust the
+    request" to "verify the Stripe webhook payload".
+    """
+
+    tier: str = Field(pattern=r"^(free|pro|studio)$")
+    mock_payment: dict | None = None
+
+
+class ChangeTierResponse(BaseModel):
+    tier: str
+    message: str = (
+        "Tier updated. New capabilities are active immediately — "
+        "your next request will reflect the new tier."
+    )
+    # Mock-payment dev-mode flag, surfaced so the frontend can render
+    # the "Demo mode — no real payment processed" banner consistently.
+    mock_payment_mode: bool = True
 
 
 # E-5.4 password-reset flow

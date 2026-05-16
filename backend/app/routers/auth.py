@@ -9,6 +9,8 @@ from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.auth import (
     AuditLogEntry,
+    ChangeTierRequest,
+    ChangeTierResponse,
     LoginRequest,
     MfaRequiredResponse,
     PasswordResetConfirmPayload,
@@ -228,6 +230,62 @@ def password_reset_confirm(
 @router.get("/me", response_model=UserResponse)
 def me(current_user: User = Depends(get_current_user)) -> UserResponse:
     return UserResponse.model_validate(current_user)
+
+
+# E-5.2.X self-service tier flip with mock payment (D-050)
+@router.put("/me/tier", response_model=ChangeTierResponse)
+def change_tier(
+    payload: ChangeTierRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ChangeTierResponse:
+    """Self-service tier flip for the calling user.
+
+    Mock-payment mode: until E-5.3 (Stripe) ships, this endpoint trusts
+    the request body and flips ``users.tier`` immediately. The
+    ``mock_payment`` field is accepted but ignored — it exists so the
+    frontend / API contract doesn't change when E-5.3 lands and the
+    implementation switches to "verify Stripe webhook payload".
+
+    No payment is processed. Self-host operators can use this freely to
+    evaluate Pro / Studio features before the real billing wiring lands.
+
+    Tier reads are looked up fresh from the DB on every request via
+    ``get_current_user``; no JWT refresh is needed for the new tier to
+    take effect.
+    """
+    new_tier = payload.tier.strip().lower()
+    previous_tier = (current_user.tier or "free").strip().lower()
+
+    if new_tier == previous_tier:
+        # No-op flip — still surface the same response shape so the
+        # frontend can render its success state uniformly.
+        return ChangeTierResponse(tier=new_tier, message="No change — already on this tier.")
+
+    current_user.tier = new_tier
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+
+    audit_service.record(
+        db,
+        event=Event.TIER_CHANGED,
+        user_id=current_user.id,
+        request=request,
+        metadata={
+            "from_tier": previous_tier,
+            "to_tier": new_tier,
+            "mock_payment_mode": True,
+        },
+    )
+    logger.info(
+        "tier change: user=%s %s -> %s (mock payment)",
+        current_user.id,
+        previous_tier,
+        new_tier,
+    )
+    return ChangeTierResponse(tier=new_tier)
 
 
 @router.get("/audit-log", response_model=list[AuditLogEntry])

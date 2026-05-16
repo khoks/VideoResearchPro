@@ -5,6 +5,7 @@ import api, { AUTH_TOKEN_KEY } from '../services/api';
 export interface AuthUser {
   id?: string;
   email: string;
+  tier?: 'free' | 'pro' | 'studio';
 }
 
 interface AuthResponse {

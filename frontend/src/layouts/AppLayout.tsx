@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useJobStore, type AppTab } from '../stores/jobStore';
 import { useAuth } from '../contexts/AuthContext';
 import { useSystemStatus } from '../hooks/useSystemStatus';
+import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { SystemStatusBanner } from '../components/common/SystemStatusBanner';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, motion } from '../theme';
@@ -26,6 +27,7 @@ export function AppLayout() {
   const toggleTheme = useJobStore((s) => s.toggleTheme);
   const { user, logout } = useAuth();
   const { refetch: refetchSystemStatus } = useSystemStatus();
+  const { has, tier } = useTierCapabilities();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const handleTabChange = (tab: AppTab) => {
@@ -37,6 +39,9 @@ export function AppLayout() {
       'library-qa': '/library/qa',
       'qa-history': '/qa-history',
       exports: '/exports',
+      author: '/author',
+      echo: '/echo',
+      subscription: '/account/subscription',
     };
     navigate(routeMap[tab]);
     setMobileNavOpen(false);
@@ -53,7 +58,14 @@ export function AppLayout() {
   const isJobsActive = location.pathname.startsWith('/jobs');
   const isQAHistoryActive = location.pathname.startsWith('/qa-history');
   const isExportsActive = location.pathname.startsWith('/exports');
-  const isSubmitActive = location.pathname === '/' || location.pathname === '/submit';
+  const isAuthorActive = location.pathname.startsWith('/author');
+  const isEchoActive = location.pathname.startsWith('/echo');
+  const isSubscriptionActive = location.pathname.startsWith('/account/subscription');
+  const isSubmitActive =
+    !isAuthorActive &&
+    !isEchoActive &&
+    !isSubscriptionActive &&
+    (location.pathname === '/' || location.pathname === '/submit');
 
   const nav = (
     <NavContent
@@ -65,7 +77,13 @@ export function AppLayout() {
         'library-qa': isLibraryQAActive,
         'qa-history': isQAHistoryActive,
         exports: isExportsActive,
+        author: isAuthorActive,
+        echo: isEchoActive,
+        subscription: isSubscriptionActive,
       }}
+      showAuthor={has('author_studio')}
+      showEcho={has('echo_personal_brain')}
+      currentTier={tier}
     />
   );
 
@@ -165,9 +183,12 @@ export function AppLayout() {
 interface NavContentProps {
   onChange: (tab: AppTab) => void;
   active: Record<AppTab, boolean>;
+  showAuthor: boolean;
+  showEcho: boolean;
+  currentTier: 'free' | 'pro' | 'studio';
 }
 
-function NavContent({ onChange, active }: NavContentProps) {
+function NavContent({ onChange, active, showAuthor, showEcho, currentTier }: NavContentProps) {
   return (
     <nav aria-label="Primary" style={{ display: 'flex', flexDirection: 'column', gap: space['5'] }}>
       <NavGroup label="Research">
@@ -182,7 +203,54 @@ function NavContent({ onChange, active }: NavContentProps) {
         <NavItem active={active['qa-history']} onClick={() => onChange('qa-history')}>Echoes (Q&amp;A history)</NavItem>
         <NavItem active={active.exports}      onClick={() => onChange('exports')}>Exports</NavItem>
       </NavGroup>
+      {(showAuthor || showEcho) && (
+        <NavGroup label="Generate">
+          {showAuthor && (
+            <NavItem active={active.author} onClick={() => onChange('author')}>
+              Author Studio
+            </NavItem>
+          )}
+          {showEcho && (
+            <NavItem active={active.echo} onClick={() => onChange('echo')}>
+              Echo
+            </NavItem>
+          )}
+        </NavGroup>
+      )}
+      <NavGroup label="Account">
+        <NavItem active={active.subscription} onClick={() => onChange('subscription')}>
+          Subscription <TierPill tier={currentTier} />
+        </NavItem>
+      </NavGroup>
     </nav>
+  );
+}
+
+function TierPill({ tier }: { tier: 'free' | 'pro' | 'studio' }) {
+  const c = useColors();
+  const tones: Record<typeof tier, { bg: string; fg: string }> = {
+    free: { bg: c.surfaceAlt, fg: c.textSecondary },
+    pro: { bg: c.accentSubtle, fg: c.accent },
+    studio: { bg: c.accent, fg: c.bg },
+  };
+  return (
+    <span
+      style={{
+        marginLeft: space['2'],
+        padding: `1px ${space['2']}`,
+        background: tones[tier].bg,
+        color: tones[tier].fg,
+        fontFamily: fonts.ui,
+        fontSize: 10,
+        fontWeight: fontWeight.semibold,
+        textTransform: 'uppercase',
+        letterSpacing: '0.08em',
+        borderRadius: radius.pill,
+        verticalAlign: 'middle',
+      }}
+    >
+      {tier}
+    </span>
   );
 }
 

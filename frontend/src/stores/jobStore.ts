@@ -10,7 +10,16 @@ export interface Toast {
 
 export type Theme = 'light' | 'dark';
 
-export type AppTab = 'submit' | 'jobs' | 'library' | 'library-qa' | 'qa-history' | 'exports';
+export type AppTab =
+  | 'submit'
+  | 'jobs'
+  | 'library'
+  | 'library-qa'
+  | 'qa-history'
+  | 'exports'
+  | 'author'
+  | 'echo'
+  | 'subscription';
 
 const THEME_KEY = 'vrp:theme';
 

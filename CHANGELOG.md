@@ -10,6 +10,36 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### T-5.2.6 — Tier visibility UI + self-service tier flip (2026-05-15)
+
+The dev-mode "edit users.tier in SQL to evaluate Pro/Studio features" friction is gone. The full upgrade/downgrade flow now lives in the app.
+
+**Public marketing pages (new):**
+- `/landing` — hero, "the shape of the system", "not a balanced encyclopedia", final CTA. Linked from `/login` + `/register` via "What is Pratidhvani?".
+- `/pricing` — three-column tier card grid (Free / Pro / Studio) with feature matrix + current-plan highlight when logged in. Linked from `/login`, `/register`, and the in-app subscription page.
+- `MarketingLayout` with auth-state-aware top bar: shows "Sign in / Get started" when logged out, "Open app →" when logged in.
+
+**In-app subscription manager (new):**
+- `/account/subscription` — Authenticated users see their current tier highlighted, can upgrade through a mock Stripe-style payment modal (pre-filled with `4242 4242 4242 4242` test card), or downgrade through a confirmation dialog listing the features they will lose. Prominent "DEMO MODE — no real payment processed" banners throughout.
+- Sidebar nav grows a new "Account" group with a Subscription link + tier-pill badge (FREE / PRO / STUDIO).
+
+**Capability-aware navigation:**
+- Author Studio and Echo nav items appear in the sidebar only when the user's tier includes them (Pro+ and Studio respectively). Upgrade → flip JWT/tier → nav rerenders automatically.
+
+**Stub feature pages (new — exercise the foundations shipped earlier):**
+- `/author` (Pro+) — Author Studio page exercising the shipped Book v1 outputter (I-6 / PR #173); future Site / Deck / Newsletter / Reel kinds shown as "Coming soon".
+- `/echo` (Studio) — Personal-context manager exercising the shipped Echo CRUD + cold-start readiness gate (I-3 / PR #172); future pull-mode connectors and "speak as me" agent shown as "Coming soon".
+
+**Backend (new endpoint):**
+- `PUT /api/v1/auth/me/tier` — Self-service tier flip. Body: `{tier: "free"|"pro"|"studio", mock_payment?: {...}}`. Updates `users.tier` immediately, writes a `tier_changed` audit_log event, returns `{tier, mock_payment_mode: true, message}`. `mock_payment` field is accepted for forward-compat shape but ignored server-side. When E-5.3 (Stripe) ships, the same endpoint stays — only the implementation flips to "verify Stripe webhook payload".
+- `GET /api/v1/auth/me` now includes `tier` in the response.
+- New `Event.TIER_CHANGED` audit event.
+- 9 new tests in `test_routers/test_auth.py` covering all paths (upgrade, downgrade, idempotent, invalid tier, unauthenticated, audit-log capture, feature-gate unlock after upgrade).
+
+**Decision:** [D-050](docs/decisions.md#d-050--self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15) — the mock-payment + endpoint-stability trade-off and the migration path when Stripe lands.
+
+**Follow-up filed:** [T-5.3.1](docs/initiatives.md#e-53--stripe-integration) — Replace mock-payment with Stripe Checkout once E-5.3 (Stripe) lands.
+
 ### E-4.8 / E-4.9 / E-4.10 follow-ups closed 2026-05-06
 
 This batch closes every ⚪ open task that was filed off the live Chrome end-to-end run. Backend suite **1025 passed** post-fix.

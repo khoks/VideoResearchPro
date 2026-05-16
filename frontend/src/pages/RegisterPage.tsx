@@ -106,6 +106,24 @@ export function RegisterPage() {
           Sign in
         </Link>
       </p>
+      <p
+        style={{
+          marginTop: space['3'],
+          marginBottom: 0,
+          color: c.textMuted,
+          fontFamily: fonts.ui,
+          fontSize: fontSize.xs,
+          textAlign: 'center',
+        }}
+      >
+        <Link to="/landing" style={{ color: c.textMuted, textDecoration: 'underline' }}>
+          What is Pratidhvani?
+        </Link>
+        <span style={{ margin: `0 ${space['2']}` }}>·</span>
+        <Link to="/pricing" style={{ color: c.textMuted, textDecoration: 'underline' }}>
+          See pricing
+        </Link>
+      </p>
     </AuthShell>
   );
 }

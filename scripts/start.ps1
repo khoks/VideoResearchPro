@@ -177,9 +177,15 @@ try {
     $script:children.Add($backend)
 
     # ---- 3. Celery worker ----
-    Write-Step "Starting Celery worker (--pool=solo)..."
+    # T-5.6.5: per-tier task queues. The dispatcher routes user-initiated
+    # work to tier_free / tier_pro / tier_studio based on the user's tier;
+    # only system-initiated tasks land on `default`. The self-host worker
+    # must consume all four queues or jobs stay queued forever (this is the
+    # default failure mode — celery_task_id is set, status stays `pending`,
+    # progress sits at 0%).
+    Write-Step "Starting Celery worker (--pool=solo, -Q all-tier-queues)..."
     $celery = Start-Process -FilePath $venvCelery `
-        -ArgumentList @('-A', 'app.tasks.celery_app', 'worker', '--loglevel=info', '--pool=solo') `
+        -ArgumentList @('-A', 'app.tasks.celery_app', 'worker', '--loglevel=info', '--pool=solo', '-Q', 'default,tier_free,tier_pro,tier_studio') `
         -WorkingDirectory $backendDir `
         -WindowStyle Hidden `
         -RedirectStandardOutput $celeryOut `

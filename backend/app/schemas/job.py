@@ -10,7 +10,7 @@ class JobCreate(BaseModel):
     # Topic fields
     topic: str | None = None
     search_instructions: str | None = None
-    num_videos: int = Field(default=10, ge=1, le=100)
+    num_videos: int = Field(default=10, ge=1, le=500)
     min_duration_minutes: int | None = Field(default=None, ge=1)
     max_duration_minutes: int | None = Field(default=None, ge=1)
     channel_type_filters: list[str] | None = None

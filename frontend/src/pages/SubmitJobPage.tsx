@@ -457,7 +457,7 @@ export function SubmitJobPage() {
                     value={form.numVideos}
                     onChange={(e) => update('numVideos', parseInt(e.target.value || '0', 10) || 0)}
                     min={1}
-                    max={100}
+                    max={500}
                   />
                 )}
               </FormField>

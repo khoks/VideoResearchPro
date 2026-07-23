@@ -43,6 +43,23 @@ class Settings(BaseSettings):
     TRANSCRIPT_BREAKER_COOLDOWN_MAX: float = 900.0
     TRANSCRIPT_BREAKER_MAX_WAIT: float = 300.0
 
+    # IP-block workarounds (S-1.11.10 / D-051 re-evaluation hooks).
+    # Proxy for BOTH the transcript API and yt-dlp audio downloads, e.g.
+    # "http://user:pass@host:port" or "socks5://host:port". Unset = direct.
+    YOUTUBE_PROXY_URL: str = ""
+    # yt-dlp cookie sources for YouTube's "confirm you're not a bot" wall.
+    # COOKIES_FROM_BROWSER uses the operator's own logged-in browser session
+    # (e.g. "chrome", "firefox", "edge", or "chrome:ProfileName") — explicit
+    # opt-in ONLY; requests then carry the operator's YouTube account.
+    # COOKIES_FILE points at a Netscape-format cookies.txt export instead.
+    # FROM_BROWSER wins when both are set.
+    YTDLP_COOKIES_FROM_BROWSER: str = ""
+    YTDLP_COOKIES_FILE: str = ""
+    # Pacing between yt-dlp download attempts (seconds; jitter shared with
+    # the transcript limiter). The 60-video recovery sweep issued ~180
+    # back-to-back download hits and escalated YouTube's blocking.
+    YTDLP_DOWNLOAD_RATE_LIMIT: float = 2.0
+
     # Whisper fallback controls (S-1.11.2 / S-1.11.7 / D-051).
     # Audio larger than 25 MB is split into ~TARGET_MB chunks with
     # OVERLAP_SECONDS of shared audio between neighbours; per-chunk

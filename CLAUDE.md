@@ -264,6 +264,10 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `WHISPER_SEGMENT_TARGET_MB` | No | `20` | Target chunk size when splitting >25 MB audio for Whisper |
 | `WHISPER_SEGMENT_OVERLAP_SECONDS` | No | `15` | Shared audio between neighbouring Whisper chunks |
 | `WHISPER_MAX_PER_JOB` | No | `50` | Max Whisper transcriptions per job (`0` disables Whisper) — bounds OpenAI spend |
+| `YOUTUBE_PROXY_URL` | No | (unset) | Proxy for transcript API + yt-dlp (`http://…` or `socks5://…`) — the D-051 escape hatch for IP blocks |
+| `YTDLP_COOKIES_FROM_BROWSER` | No | (unset) | Opt-in: use the operator's logged-in browser session for yt-dlp (`chrome`, `firefox`, `chrome:Profile`) — passes YouTube's bot-wall; requests then carry the operator's account |
+| `YTDLP_COOKIES_FILE` | No | (unset) | Netscape-format cookies.txt for yt-dlp (browser source wins when both set) |
+| `YTDLP_DOWNLOAD_RATE_LIMIT` | No | `2.0` | Min seconds between yt-dlp download attempts (burst downloads escalate the bot-wall) |
 | `EMBEDDING_MODEL_NAME` | No | `paraphrase-multilingual-MiniLM-L12-v2` | SentenceTransformer model |
 | `CHROMA_GLOBAL_COLLECTION_NAME` | No | `videoresearchpro_global` | Name of the single global Chroma collection |
 | `CHROMA_QA_COLLECTION_NAME` | No | `qa_library_global` | Central Q&A collection name |

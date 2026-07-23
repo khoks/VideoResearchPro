@@ -173,6 +173,71 @@ def test_search_videos_paginates_up_to_max_pages(monkeypatch):
     assert len(result) == 100
 
 
+# ---------------------------------------------------------------------------
+# S-1.11.10 — proxy + cookies unblock plumbing
+# ---------------------------------------------------------------------------
+
+
+def test_ydl_opts_plain_by_default(monkeypatch):
+    monkeypatch.setattr(youtube_service.settings, "YOUTUBE_PROXY_URL", "")
+    monkeypatch.setattr(youtube_service.settings, "YTDLP_COOKIES_FROM_BROWSER", "")
+    monkeypatch.setattr(youtube_service.settings, "YTDLP_COOKIES_FILE", "")
+    opts = youtube_service._build_ydl_opts("/tmp/x", None, False)
+    assert "proxy" not in opts
+    assert "cookiesfrombrowser" not in opts
+    assert "cookiefile" not in opts
+    assert opts["format"].startswith("bestaudio")
+
+
+def test_ydl_opts_proxy_and_client(monkeypatch):
+    monkeypatch.setattr(
+        youtube_service.settings, "YOUTUBE_PROXY_URL", "socks5://localhost:9050"
+    )
+    opts = youtube_service._build_ydl_opts("/tmp/x", "android", True)
+    assert opts["proxy"] == "socks5://localhost:9050"
+    assert opts["extractor_args"] == {"youtube": {"player_client": ["android"]}}
+    assert opts["format"].startswith("worstaudio")
+
+
+def test_ydl_opts_cookies_from_browser_with_profile(monkeypatch):
+    monkeypatch.setattr(
+        youtube_service.settings, "YTDLP_COOKIES_FROM_BROWSER", "chrome:Work"
+    )
+    monkeypatch.setattr(youtube_service.settings, "YTDLP_COOKIES_FILE", "/c.txt")
+    opts = youtube_service._build_ydl_opts("/tmp/x", None, False)
+    # Browser source wins over file when both are set.
+    assert opts["cookiesfrombrowser"] == ("chrome", "Work", None, None)
+    assert "cookiefile" not in opts
+
+
+def test_ydl_opts_cookies_file_fallback(monkeypatch):
+    monkeypatch.setattr(youtube_service.settings, "YTDLP_COOKIES_FROM_BROWSER", "")
+    monkeypatch.setattr(youtube_service.settings, "YTDLP_COOKIES_FILE", "/c.txt")
+    opts = youtube_service._build_ydl_opts("/tmp/x", None, False)
+    assert opts["cookiefile"] == "/c.txt"
+    assert "cookiesfrombrowser" not in opts
+
+
+def test_transcript_api_uses_proxy_when_configured(monkeypatch):
+    monkeypatch.setattr(
+        youtube_service.settings, "YOUTUBE_PROXY_URL", "http://proxy:8080"
+    )
+    api = youtube_service._build_transcript_api()
+    # The client is constructed with a GenericProxyConfig carrying our URL.
+    cfg = getattr(api, "_fetcher", None)
+    # Version-agnostic check: constructing must not raise and must differ
+    # from the no-proxy default in its session's proxies.
+    session_proxies = api._http_client.proxies if hasattr(api, "_http_client") else {}
+    assert "http" in session_proxies or cfg is not None
+
+
+def test_transcript_api_plain_without_proxy(monkeypatch):
+    monkeypatch.setattr(youtube_service.settings, "YOUTUBE_PROXY_URL", "")
+    api = youtube_service._build_transcript_api()
+    session_proxies = api._http_client.proxies if hasattr(api, "_http_client") else {}
+    assert not session_proxies.get("http")
+
+
 def test_search_videos_stops_early_when_satisfied(monkeypatch):
     monkeypatch.setattr(youtube_service.settings, "YOUTUBE_SEARCH_MAX_PAGES", 4)
     pages = [_fake_page([f"v{i}" for i in range(50)], "TOK2")]

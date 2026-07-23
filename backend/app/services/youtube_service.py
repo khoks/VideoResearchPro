@@ -715,6 +715,20 @@ def _save_to_cache(
         db.close()
 
 
+def _build_transcript_api() -> YouTubeTranscriptApi:
+    """Build the transcript client, routing through the configured proxy
+    when ``YOUTUBE_PROXY_URL`` is set (S-1.11.10 / D-051 hook — the
+    escape hatch for cloud-IP / rate-based blocks)."""
+    proxy_url = (settings.YOUTUBE_PROXY_URL or "").strip()
+    if not proxy_url:
+        return YouTubeTranscriptApi()
+    from youtube_transcript_api.proxies import GenericProxyConfig
+
+    return YouTubeTranscriptApi(
+        proxy_config=GenericProxyConfig(http_url=proxy_url, https_url=proxy_url)
+    )
+
+
 def _fetch_transcript_once(
     video_id: str, language: str = "en", job_id: str = ""
 ) -> tuple[list[dict], str] | None:
@@ -724,7 +738,7 @@ def _fetch_transcript_once(
     """
     tag = f"[job:{job_id}]" if job_id else ""
     transcript_limiter.wait()
-    ytt_api = YouTubeTranscriptApi()
+    ytt_api = _build_transcript_api()
 
     # Preferred language order
     preferred = [language, f"{language}-auto", "en", "en-auto"]
@@ -895,6 +909,52 @@ _YTDLP_CLIENT_LADDER: tuple[tuple[str | None, float], ...] = (
     ("ios", 15),
 )
 
+# S-1.11.10: pace yt-dlp attempts the same way transcript fetches are paced —
+# back-to-back download bursts escalate YouTube's bot-wall.
+download_limiter = RateLimiter(
+    rate=settings.YTDLP_DOWNLOAD_RATE_LIMIT,
+    jitter=settings.YOUTUBE_TRANSCRIPT_RATE_JITTER,
+)
+
+
+def _build_ydl_opts(
+    attempt_dir: str, client: str | None, prefer_smallest: bool
+) -> dict:
+    """Assemble yt-dlp options for one download attempt.
+
+    Folds in the S-1.11.10 unblock knobs when configured:
+    - ``YOUTUBE_PROXY_URL`` routes the download through a proxy.
+    - ``YTDLP_COOKIES_FROM_BROWSER`` / ``YTDLP_COOKIES_FILE`` attach the
+      operator's own YouTube session to pass the "confirm you're not a
+      bot" wall (browser source wins; both are explicit opt-in).
+    """
+    fmt = (
+        "worstaudio[ext=m4a]/worstaudio[ext=webm]/worstaudio"
+        if prefer_smallest
+        else "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"
+    )
+    opts: dict = {
+        "format": fmt,
+        "outtmpl": os.path.join(attempt_dir, "audio.%(ext)s"),
+        "quiet": True,
+        "no_warnings": True,
+    }
+    if client:
+        opts["extractor_args"] = {"youtube": {"player_client": [client]}}
+    proxy_url = (settings.YOUTUBE_PROXY_URL or "").strip()
+    if proxy_url:
+        opts["proxy"] = proxy_url
+    from_browser = (settings.YTDLP_COOKIES_FROM_BROWSER or "").strip()
+    cookies_file = (settings.YTDLP_COOKIES_FILE or "").strip()
+    if from_browser:
+        # yt-dlp expects a tuple (browser, profile, keyring, container);
+        # support the "browser" and "browser:Profile" spellings.
+        browser, _, profile = from_browser.partition(":")
+        opts["cookiesfrombrowser"] = (browser, profile or None, None, None)
+    elif cookies_file:
+        opts["cookiefile"] = cookies_file
+    return opts
+
 
 def _download_audio_with_ladder(
     video_id: str, tmpdir: str, tag: str, prefer_smallest: bool = False
@@ -909,26 +969,15 @@ def _download_audio_with_ladder(
     import yt_dlp
 
     url = f"https://www.youtube.com/watch?v={video_id}"
-    fmt = (
-        "worstaudio[ext=m4a]/worstaudio[ext=webm]/worstaudio"
-        if prefer_smallest
-        else "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"
-    )
 
     for client, delay in _YTDLP_CLIENT_LADDER:
         if delay:
             time.sleep(delay)
+        download_limiter.wait()
         # Fresh subdir per attempt so a partial download from a failed rung
         # can't be mistaken for the real artifact.
         attempt_dir = tempfile.mkdtemp(dir=tmpdir)
-        ydl_opts: dict = {
-            "format": fmt,
-            "outtmpl": os.path.join(attempt_dir, "audio.%(ext)s"),
-            "quiet": True,
-            "no_warnings": True,
-        }
-        if client:
-            ydl_opts["extractor_args"] = {"youtube": {"player_client": [client]}}
+        ydl_opts = _build_ydl_opts(attempt_dir, client, prefer_smallest)
         client_label = client or "default"
         try:
             logger.info(

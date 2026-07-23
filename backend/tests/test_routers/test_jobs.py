@@ -110,3 +110,68 @@ def test_get_job_videos_empty(client):
     response = client.get(f"/api/v1/jobs/{job_id}/videos")
     assert response.status_code == 200
     assert response.json() == []
+
+
+# ---------------------------------------------------------------------------
+# Per-tier num_videos ceilings (T-5.2 tier gating)
+# ---------------------------------------------------------------------------
+
+
+def test_create_topic_job_num_videos_over_free_cap_403(client):
+    """Default test user is free tier (cap 100) — 101 must be rejected."""
+    response = client.post("/api/v1/jobs", json={
+        "job_type": "topic",
+        "topic": "cap test",
+        "num_videos": 101,
+    })
+    assert response.status_code == 403
+    detail = response.json()["detail"]
+    assert "num_videos 101 exceeds the free tier cap of 100" in detail
+    assert "Upgrade to raise the limit" in detail
+
+
+def test_create_topic_job_num_videos_at_free_cap_accepted(client):
+    response = client.post("/api/v1/jobs", json={
+        "job_type": "topic",
+        "topic": "cap edge",
+        "num_videos": 100,
+    })
+    assert response.status_code == 201
+    assert response.json()["num_videos"] == 100
+
+
+def test_create_topic_job_studio_500_accepted(client, db, test_user):
+    test_user.tier = "studio"
+    db.commit()
+
+    response = client.post("/api/v1/jobs", json={
+        "job_type": "topic",
+        "topic": "studio cap",
+        "num_videos": 500,
+    })
+    assert response.status_code == 201
+    assert response.json()["num_videos"] == 500
+
+
+def test_create_topic_job_pro_cap_enforced(client, db, test_user):
+    test_user.tier = "pro"
+    db.commit()
+
+    response = client.post("/api/v1/jobs", json={
+        "job_type": "topic",
+        "topic": "pro cap",
+        "num_videos": 251,
+    })
+    assert response.status_code == 403
+    assert "num_videos 251 exceeds the pro tier cap of 250" in response.json()["detail"]
+
+
+def test_create_channel_job_not_subject_to_num_videos_cap(client):
+    """The cap applies to topic jobs only; channel jobs pass through."""
+    response = client.post("/api/v1/jobs", json={
+        "job_type": "channel",
+        "channel_list": ["@3blue1brown"],
+        "videos_per_channel": 5,
+        "num_videos": 400,
+    })
+    assert response.status_code == 201

@@ -1,9 +1,16 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { useJob, useJobVideos, useApproveJob, useCancelJob, useDeleteJob } from '../hooks/useJobs';
 import { useJobProgress } from '../hooks/useJobProgress';
-import { useQAHistory, useAskQuestion, useClarifyQuestion } from '../hooks/useQA';
+import {
+  useQAHistory,
+  useAskQuestion,
+  useAskQuestionStreaming,
+  useClarifyQuestion,
+  QAStreamHttpError,
+  type QAStreamStage,
+} from '../hooks/useQA';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { CitationLink } from '../components/citation';
@@ -31,6 +38,13 @@ import type { QAExchange } from '../types/qa';
 import type { Job } from '../types/job';
 
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
+
+const QA_STREAM_STAGE_LABELS: Record<QAStreamStage, string> = {
+  retrieving: 'Searching your sources…',
+  refining: 'Refining context…',
+  formulating: 'Writing the answer…',
+  extracting_references: 'Linking citations…',
+};
 
 export function JobDetailPage() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -314,12 +328,36 @@ function jobTypeLabel(type: Job['job_type']): string {
   return 'Subscription';
 }
 
+// Defensive parse of `job.channel_list_resolved`. On topic jobs the backend
+// stores a JSON string of shape {"resolved": ["UC..", ...], "unresolved":
+// ["@badhandle", ...]}. The field may also be null, already-deserialized
+// into an object, a plain array (legacy channel jobs), or invalid JSON —
+// every shape other than an object with a non-empty `unresolved` string
+// array yields [] so the caller renders nothing.
+function unresolvedChannelsFrom(raw: unknown): string[] {
+  let value: unknown = raw;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return [];
+  const unresolved = (value as { unresolved?: unknown }).unresolved;
+  if (!Array.isArray(unresolved)) return [];
+  return unresolved.filter((x): x is string => typeof x === 'string');
+}
+
 // Renders every non-empty submission parameter so the user can see exactly
 // what this job was run with — supports the "view it entirely, duplicate,
 // or tweak and re-run" workflow. Empty/null fields are omitted so the card
 // doesn't bloat for minimal topic jobs.
 function JobParamsCard({ job }: { job: Job }) {
   const c = useColors();
+  const unresolvedChannels = unresolvedChannelsFrom(
+    (job as Job & { channel_list_resolved?: unknown }).channel_list_resolved,
+  );
   const rows: Array<[string, ReactNode]> = [];
 
   rows.push([
@@ -354,6 +392,31 @@ function JobParamsCard({ job }: { job: Job }) {
   return (
     <Card>
       <SectionHeader title="Job parameters" />
+      {unresolvedChannels.length > 0 && (
+        <div
+          role="note"
+          style={{
+            marginBottom: space['4'],
+            padding: `${space['2']} ${space['3']}`,
+            background: c.warnSubtle,
+            border: `1px solid ${c.warn}`,
+            borderLeft: `3px solid ${c.warn}`,
+            borderRadius: radius.md,
+            fontFamily: fonts.ui,
+            fontSize: fontSize.sm,
+            color: c.textPrimary,
+            lineHeight: lineHeight.snug,
+            overflowWrap: 'anywhere',
+          }}
+        >
+          <strong style={{ color: c.warn, fontWeight: fontWeight.semibold }}>
+            {unresolvedChannels.length} preferred channel
+            {unresolvedChannels.length === 1 ? '' : 's'} could not be resolved and{' '}
+            {unresolvedChannels.length === 1 ? 'was' : 'were'} skipped:
+          </strong>{' '}
+          {unresolvedChannels.join(', ')}
+        </div>
+      )}
       <dl
         style={{
           margin: 0,
@@ -468,6 +531,25 @@ function VideoApprovalSection({
   const [selected, setSelected] = useState<Set<string>>(
     new Set(videos.map(approvalKey)),
   );
+
+  // Default the selection to ALL candidates once per job's candidate-list
+  // load. The candidate list usually arrives after mount (React Query
+  // populates it on a later render), when the useState initializer has
+  // already run against an empty array — without this the section starts
+  // at 0 selected while the helper copy says "deselect any you don't
+  // want". The ref flag guarantees we initialize exactly once per job, so
+  // re-renders/refetches never clobber the user's deselections.
+  const selectionInitializedForJob = useRef<string | null>(null);
+  useEffect(() => {
+    if (videos.length === 0) return;
+    if (selectionInitializedForJob.current === jobId) return;
+    selectionInitializedForJob.current = jobId;
+    setSelected((prev) =>
+      prev.size === 0 ? new Set(videos.map(approvalKey)) : prev,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId, videos.length]);
+
   const [sortKey, setSortKey] = useState<VideoSortKey>('channel');
   // Per D-021: low-relevance candidates (topic_relevance < 0.5) are
   // hidden from the default approval list. Toggle to show them dimmed.
@@ -592,6 +674,10 @@ function VideoApprovalSection({
                   gap: space['3'],
                   padding: space['2'],
                   borderBottom: `1px solid ${c.border}`,
+                  // Browser-native virtualization: skip layout/paint for
+                  // off-screen candidate rows (lists run to 200+ cards).
+                  contentVisibility: 'auto',
+                  containIntrinsicSize: 'auto 140px',
                 }}
               >
                 <input
@@ -621,23 +707,32 @@ function VideoApprovalSection({
             typeof ApprovalCard
           >[0]['config'];
           return (
-            <ApprovalCard
+            // Wrapper enables browser-native virtualization: off-screen
+            // cards skip layout/paint entirely (lists run to 200+ cards).
+            <div
               key={v.id}
-              document={props.document}
-              metadata={props.metadata}
-              classification={v.classification ?? undefined}
-              config={config}
-              selected={selected.has(key)}
-              onSelectionChange={(next) => {
-                setSelected((prev) => {
-                  const out = new Set(prev);
-                  if (next) out.add(key);
-                  else out.delete(key);
-                  return out;
-                });
+              style={{
+                contentVisibility: 'auto',
+                containIntrinsicSize: 'auto 140px',
               }}
-              showLowRelevance={showLowRelevance}
-            />
+            >
+              <ApprovalCard
+                document={props.document}
+                metadata={props.metadata}
+                classification={v.classification ?? undefined}
+                config={config}
+                selected={selected.has(key)}
+                onSelectionChange={(next) => {
+                  setSelected((prev) => {
+                    const out = new Set(prev);
+                    if (next) out.add(key);
+                    else out.delete(key);
+                    return out;
+                  });
+                }}
+                showLowRelevance={showLowRelevance}
+              />
+            </div>
           );
         })}
       </div>
@@ -736,8 +831,10 @@ function QASection({ jobId }: { jobId: string }) {
   const c = useColors();
   const { data: history } = useQAHistory(jobId);
   const askQuestion = useAskQuestion(jobId);
+  const { askStreaming, stage: streamStage, isStreaming } = useAskQuestionStreaming(jobId);
   const clarifyQuestion = useClarifyQuestion(jobId);
   const qaAvailable = useFeatureAvailable('qa');
+  const pushToast = useJobStore((s) => s.pushToast);
 
   const [question, setQuestion] = useState('');
   const [step, setStep] = useState<'ask' | 'clarify'>('ask');
@@ -745,15 +842,44 @@ function QASection({ jobId }: { jobId: string }) {
   const [clarifications, setClarifications] = useState<string[]>([]);
   const [clarificationAnswers, setClarificationAnswers] = useState<string[]>([]);
 
+  // True while an answer is being produced by either path — the SSE stream
+  // or the non-streaming mutation it falls back to.
+  const answering = isStreaming || askQuestion.isPending;
+  const answeringLabel = streamStage
+    ? QA_STREAM_STAGE_LABELS[streamStage]
+    : 'Analyzing transcripts and composing answer…';
+
   const askInputDisabled = clarifyQuestion.isPending || !qaAvailable;
   const askButtonDisabled = askInputDisabled || !question.trim();
-  const clarifyButtonsDisabled = askQuestion.isPending || !qaAvailable;
+  const clarifyButtonsDisabled = answering || !qaAvailable;
 
   const resetToAsk = () => {
     setStep('ask');
     setInterpretation('');
     setClarifications([]);
     setClarificationAnswers([]);
+  };
+
+  // Streaming-first ask. Falls back to the classic non-streaming mutation
+  // when the stream endpoint isn't deployed (404). Returns true on success
+  // so callers only reset the form when an answer actually landed.
+  const submitQuestion = async (payload: { question: string; context?: string }): Promise<boolean> => {
+    try {
+      await askStreaming(payload);
+      return true;
+    } catch (err) {
+      if (err instanceof QAStreamHttpError && err.status === 404) {
+        try {
+          await askQuestion.mutateAsync(payload);
+          return true;
+        } catch {
+          // Error toast already emitted by the global MutationCache.
+          return false;
+        }
+      }
+      pushToast('error', err instanceof Error ? err.message : 'Q&A request failed.');
+      return false;
+    }
   };
 
   const handleAsk = async (e: React.FormEvent) => {
@@ -774,14 +900,16 @@ function QASection({ jobId }: { jobId: string }) {
 
     const context = [`My interpretation: ${interpretation}`, ...answeredParts].join('\n\n');
 
-    await askQuestion.mutateAsync({ question, context });
+    const ok = await submitQuestion({ question, context });
+    if (!ok) return;
     setQuestion('');
     resetToAsk();
   };
 
   const handleSkipAndAsk = async () => {
     if (!qaAvailable) return;
-    await askQuestion.mutateAsync({ question });
+    const ok = await submitQuestion({ question });
+    if (!ok) return;
     setQuestion('');
     resetToAsk();
   };
@@ -923,7 +1051,7 @@ function QASection({ jobId }: { jobId: string }) {
                           setClarificationAnswers(next);
                         }}
                         placeholder="Your answer (optional)"
-                        disabled={askQuestion.isPending}
+                        disabled={answering}
                       />
                     )}
                   </FormField>
@@ -932,13 +1060,13 @@ function QASection({ jobId }: { jobId: string }) {
             </div>
           )}
 
-          {askQuestion.isPending && <InfoStripe text="Analyzing transcripts and composing answer…" />}
+          {answering && <InfoStripe text={answeringLabel} />}
 
           <div style={{ display: 'flex', gap: space['2'], marginTop: space['3'] }}>
             <Button
               onClick={handleConfirmSearch}
               disabled={clarifyButtonsDisabled}
-              loading={askQuestion.isPending}
+              loading={answering}
               title={!qaAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
             >
               Confirm &amp; search

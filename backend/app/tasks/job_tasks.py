@@ -1,6 +1,7 @@
 import json
 import logging
 import sys
+import time
 from datetime import datetime, timezone
 
 from app.config import settings
@@ -623,8 +624,16 @@ def execute_topic_job(self, job_id: str) -> None:
             # search-agent's LLM calls (search_plan_queries +
             # search_rank_and_curate). job.tenant_id is the user who
             # submitted the job (E-5.1 phase 2a write-side stamping).
+            def _search_progress(pct: int, message: str) -> None:
+                # S-1.11.8: sub-progress during the multi-minute search phase.
+                progress_service.publish_progress(job_id, "searching", pct, message)
+                job.progress_pct = pct
+                job.progress_message = message
+                job.updated_at = datetime.now(timezone.utc)
+                db.commit()
+
             with llm_service.byok_context(job.tenant_id, db):
-                curated_videos, queries_used = run_search_agent(
+                curated_videos, queries_used, unresolved_channels = run_search_agent(
                     topic=job.topic,
                     num_videos=job.num_videos,
                     search_instructions=job.search_instructions or "",
@@ -640,14 +649,31 @@ def execute_topic_job(self, job_id: str) -> None:
                         if job.preferred_channels
                         else []
                     ),
+                    progress_callback=_search_progress,
                 )
             logger.info(
                 f"[job:{job_id}] Search Agent complete: found "
-                f"{len(curated_videos)} candidate videos"
+                f"{len(curated_videos)} candidate videos "
+                f"({len(unresolved_channels)} unresolved channel hints)"
             )
 
             if queries_used:
                 job.search_queries_used = json.dumps(queries_used)
+                db.commit()
+
+            # S-1.11.6: persist the resolution summary so the approval UI can
+            # warn about skipped channel hints. Topic jobs store the object
+            # shape; channel jobs keep their legacy summary format.
+            if job.preferred_channels:
+                resolved_count = (
+                    len(json.loads(job.preferred_channels)) - len(unresolved_channels)
+                )
+                job.channel_list_resolved = json.dumps(
+                    {
+                        "resolved_count": resolved_count,
+                        "unresolved": unresolved_channels,
+                    }
+                )
                 db.commit()
 
         progress_service.publish_progress(
@@ -867,6 +893,14 @@ def resume_job_after_approval(self, job_id: str) -> None:
         fetched_count = 0
         reused_count = 0
         newly_processed_count = 0
+        # S-1.11.7: per-job Whisper budget. Once `whisper_used` hits the cap,
+        # remaining videos get allow_whisper=False — a caption-fetch failure
+        # then records unavailable instead of burning more Whisper spend.
+        whisper_used = 0
+        whisper_budget = max(0, settings.WHISPER_MAX_PER_JOB)
+        whisper_budget_announced = False
+        # S-1.11.8: rolling ETA from observed per-video pacing.
+        extraction_started = time.monotonic()
 
         global_collection_name = getattr(
             settings, "CHROMA_GLOBAL_COLLECTION_NAME", "pratidhvani_global"
@@ -949,6 +983,17 @@ def resume_job_after_approval(self, job_id: str) -> None:
                     f"video_id={video.video_id} '{title_preview}'"
                 )
                 connector = connector_for(video.source_type)
+                fetch_kwargs: dict = {"job_id": job_id, "query": job.topic or ""}
+                if video.source_type == "video":
+                    whisper_allowed = whisper_used < whisper_budget
+                    fetch_kwargs["allow_whisper"] = whisper_allowed
+                    if not whisper_allowed and not whisper_budget_announced:
+                        whisper_budget_announced = True
+                        logger.warning(
+                            f"[job:{job_id}] Whisper budget exhausted "
+                            f"({whisper_used}/{whisper_budget}); remaining videos "
+                            "use caption-fetch only (WHISPER_MAX_PER_JOB)"
+                        )
                 extracted = connector.fetch_text(
                     Candidate(
                         source_type=video.source_type,
@@ -956,9 +1001,10 @@ def resume_job_after_approval(self, job_id: str) -> None:
                         title=video.title,
                         source_url=video.source_url or video.url,
                     ),
-                    job_id=job_id,
-                    query=job.topic or "",
+                    **fetch_kwargs,
                 )
+                if extracted is not None and extracted.text_source == "whisper":
+                    whisper_used += 1
 
                 if extracted:
                     transcript = extracted.segments
@@ -1005,10 +1051,27 @@ def resume_job_after_approval(self, job_id: str) -> None:
             progress_pct = 30 + int(25 * ((i + 1) / total))
             attempted = i + 1
             unavailable_so_far = attempted - fetched_count
+            # S-1.11.8: ETA from the observed overall pacing. Whisper videos
+            # are ~10× slower than caption fetches, so the running average
+            # self-corrects as the path mix shifts.
+            elapsed = time.monotonic() - extraction_started
+            remaining = total - attempted
+            eta_suffix = ""
+            if remaining > 0 and attempted >= 3 and elapsed > 0:
+                eta_min = (elapsed / attempted) * remaining / 60
+                eta_suffix = (
+                    f" · ETA ~{max(1, round(eta_min))}m"
+                    if eta_min >= 1
+                    else " · ETA <1m"
+                )
+            budget_suffix = (
+                " · Whisper budget exhausted" if whisper_budget_announced else ""
+            )
             progress_message = (
                 f"Video {attempted}/{total}: "
                 f"{fetched_count} fetched, {unavailable_so_far} unavailable "
-                f"(reused {reused_count}, new {newly_processed_count})..."
+                f"(reused {reused_count}, new {newly_processed_count})"
+                f"{eta_suffix}{budget_suffix}"
             )
             progress_service.publish_progress(
                 job_id, "extracting", progress_pct, progress_message,

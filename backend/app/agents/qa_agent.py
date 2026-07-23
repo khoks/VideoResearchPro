@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from collections.abc import Callable
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
@@ -26,12 +27,63 @@ logger = logging.getLogger(__name__)
 REPORT_CONTEXT_CHAR_CAP = 50000
 
 
-def _generate_sub_queries(question: str) -> list[str]:
+def _usage_from_response(response) -> tuple[int | None, int | None]:
+    """Extract (input_tokens, output_tokens) from a LangChain AIMessage.
+
+    Prefers ``usage_metadata`` (normalized LangChain field), falls back to
+    ``response_metadata["token_usage"]`` (provider-raw OpenAI shape). Returns
+    (None, None) when the response carries no usage at all (local models).
+    """
+    usage = getattr(response, "usage_metadata", None)
+    if isinstance(usage, dict):
+        input_tokens = usage.get("input_tokens")
+        output_tokens = usage.get("output_tokens")
+        if isinstance(input_tokens, int) or isinstance(output_tokens, int):
+            return (
+                input_tokens if isinstance(input_tokens, int) else 0,
+                output_tokens if isinstance(output_tokens, int) else 0,
+            )
+    meta = getattr(response, "response_metadata", None)
+    if isinstance(meta, dict):
+        token_usage = meta.get("token_usage")
+        if isinstance(token_usage, dict):
+            prompt = token_usage.get("prompt_tokens")
+            completion = token_usage.get("completion_tokens")
+            if isinstance(prompt, int) or isinstance(completion, int):
+                return (
+                    prompt if isinstance(prompt, int) else 0,
+                    completion if isinstance(completion, int) else 0,
+                )
+    return None, None
+
+
+class _TokenTally:
+    """Sums token usage across every LLM call in one agent run.
+
+    Totals stay None (not 0) when no call reported usage, so the DB row
+    remains honestly NULL for providers that don't emit usage metadata.
+    """
+
+    def __init__(self) -> None:
+        self.prompt_tokens: int | None = None
+        self.completion_tokens: int | None = None
+
+    def add(self, response) -> None:
+        prompt, completion = _usage_from_response(response)
+        if prompt is None and completion is None:
+            return
+        self.prompt_tokens = (self.prompt_tokens or 0) + (prompt or 0)
+        self.completion_tokens = (self.completion_tokens or 0) + (completion or 0)
+
+
+def _generate_sub_queries(question: str, tally: _TokenTally | None = None) -> list[str]:
     """Ask the LLM for 2 semantically-focused sub-queries to broaden retrieval."""
     llm = get_llm_for("qa_sub_query_expansion", temperature=0.0)
     prompt = SUB_QUERY_EXPANSION_PROMPT.format(question=question)
     try:
         response = llm.invoke([HumanMessage(content=prompt)])
+        if tally is not None:
+            tally.add(response)
         raw = (response.content or "").strip()
     except Exception:
         logger.exception("Sub-query expansion LLM call failed; falling back to original question only")
@@ -43,13 +95,13 @@ def _generate_sub_queries(question: str) -> list[str]:
     return sub_queries[:2]
 
 
-def retrieve_context(state: QAAgentState) -> dict:
+def retrieve_context(state: QAAgentState, tally: _TokenTally | None = None) -> dict:
     """Retrieve relevant chunks from ChromaDB using multi-query expansion, plus extract report text."""
     job_id = state.get("job_id", "")
     question = state["question"]
 
     # Multi-query expansion: original question + up to 2 LLM-generated sub-queries.
-    sub_queries = _generate_sub_queries(question)
+    sub_queries = _generate_sub_queries(question, tally=tally)
     all_queries = [question] + sub_queries
     logger.info(f"[job:{job_id}] Q&A retrieval using {len(all_queries)} queries")
 
@@ -97,7 +149,7 @@ def retrieve_context(state: QAAgentState) -> dict:
     }
 
 
-def refine_context(state: QAAgentState) -> dict:
+def refine_context(state: QAAgentState, tally: _TokenTally | None = None) -> dict:
     """Use LLM to extract only the relevant passages from RAG + report context."""
     llm = get_llm_for("qa_refine_context", temperature=0.0)
     question = state["question"]
@@ -125,6 +177,8 @@ def refine_context(state: QAAgentState) -> dict:
     )
 
     response = llm.invoke([HumanMessage(content=prompt)])
+    if tally is not None:
+        tally.add(response)
     refined = response.content.strip()
 
     logger.info(f"Refined context: {len(refined)} chars from {len(raw_rag) + len(raw_report)} chars raw")
@@ -154,7 +208,7 @@ def _build_allowed_sources(rag_results: list[dict], include_report: bool) -> str
     return "\n".join(lines) if lines else "(no sources available)"
 
 
-def formulate_answer(state: QAAgentState) -> dict:
+def formulate_answer(state: QAAgentState, tally: _TokenTally | None = None) -> dict:
     """Generate answer using LLM with refined context, constrained to allowed sources."""
     # Temperature 0: citations must be deterministic and grounded.
     llm = get_llm_for("qa_formulate_answer", temperature=0.0)
@@ -173,6 +227,8 @@ def formulate_answer(state: QAAgentState) -> dict:
         SystemMessage(content=QA_SYSTEM_PROMPT),
         HumanMessage(content=prompt),
     ])
+    if tally is not None:
+        tally.add(response)
 
     return {"answer": response.content}
 
@@ -561,7 +617,9 @@ def _references_from_citations(rag_results: list[dict], answer: str) -> list[dic
     return references
 
 
-def _references_via_llm(rag_results: list[dict], answer: str) -> list[dict]:
+def _references_via_llm(
+    rag_results: list[dict], answer: str, tally: _TokenTally | None = None
+) -> list[dict]:
     """Ask the LLM which candidate chunks were actually used in the answer."""
     candidates = rag_results[:20]
     if not candidates:
@@ -586,6 +644,8 @@ def _references_via_llm(rag_results: list[dict], answer: str) -> list[dict]:
     llm = get_llm_for("qa_extract_references", temperature=0.0)
     try:
         response = llm.invoke([HumanMessage(content=prompt)])
+        if tally is not None:
+            tally.add(response)
         content = (response.content or "").strip()
     except Exception:
         logger.exception("Used-sources LLM call failed; returning no LLM-picked refs")
@@ -725,7 +785,7 @@ def _sanitize_citations(answer: str, rag_results: list[dict]) -> tuple[str, int]
     return sanitized, removed
 
 
-def extract_references(state: QAAgentState) -> dict:
+def extract_references(state: QAAgentState, tally: _TokenTally | None = None) -> dict:
     """Sanitize fabricated citations, then extract structured references.
 
     1. Strip any `[Source: ...]` tags whose title/channel doesn't match a real
@@ -745,7 +805,7 @@ def extract_references(state: QAAgentState) -> dict:
 
     references = _references_from_citations(rag_results, sanitized_answer)
     if not references:
-        references = _references_via_llm(rag_results, sanitized_answer)
+        references = _references_via_llm(rag_results, sanitized_answer, tally=tally)
 
     return {"answer": sanitized_answer, "references": references[:10]}
 
@@ -772,15 +832,32 @@ def run_qa_agent(
     job_type: str,
     question: str,
     report_html: str | None = None,
+    progress_callback: Callable[[str], None] | None = None,
+    usage_out: dict | None = None,
 ) -> tuple[str, list[dict]]:
     """
-    Run the Q&A agent.
+    Run the Q&A agent pipeline node-by-node (same order as the compiled graph).
+
+    ``progress_callback`` is invoked with a stage name before each node:
+    "retrieving", "refining", "formulating", "extracting_references".
+    ``usage_out``, when given a dict, is populated with "prompt_tokens" /
+    "completion_tokens" summed across every LLM call in the run (None when
+    no provider reported usage metadata).
 
     Returns:
         (answer_text, references_list)
     """
-    graph = build_qa_graph()
-    result = graph.invoke({
+    tally = _TokenTally()
+
+    def notify(stage: str) -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(stage)
+        except Exception:
+            logger.exception("Q&A progress callback failed for stage %s", stage)
+
+    state: dict = {
         "messages": [],
         "job_id": job_id,
         "job_type": job_type,
@@ -792,8 +869,23 @@ def run_qa_agent(
         "refined_context": "",
         "answer": "",
         "references": [],
-    })
-    return result.get("answer", ""), result.get("references", [])
+    }
+
+    notify("retrieving")
+    state.update(retrieve_context(state, tally=tally))
+    notify("refining")
+    state.update(refine_context(state, tally=tally))
+    notify("formulating")
+    state.update(formulate_answer(state, tally=tally))
+    notify("extracting_references")
+    state.update(extract_references(state, tally=tally))
+
+    state["prompt_tokens"] = tally.prompt_tokens
+    state["completion_tokens"] = tally.completion_tokens
+    if usage_out is not None:
+        usage_out["prompt_tokens"] = tally.prompt_tokens
+        usage_out["completion_tokens"] = tally.completion_tokens
+    return state.get("answer", ""), state.get("references", [])
 
 
 # ---------------------------------------------------------------------------

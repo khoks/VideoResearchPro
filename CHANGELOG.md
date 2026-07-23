@@ -10,6 +10,24 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### 200-video deep-research test → pipeline resilience + UX batch (2026-07-22)
+
+A 200-video / 30-preferred-channel deep-research job (`0d4db8c3`) ran end-to-end in ~96 min and **completed** — and surfaced a batch of scale findings, all fixed in this branch. Headline failure mode: a YouTube transcript-API IP block after ~60 serial fetches cascaded into Whisper-as-primary-path (159/200 videos) and 63 lost videos (36 over the 25MB Whisper cap — disproportionately long-form conference talks — and 27 yt-dlp HTTP 403s); final tally 137/200 fetched. Decision: [D-051](docs/decisions.md#d-051-transcript-pipeline-resilience-bundle-circuit-breaker-segmented-whisper-yt-dlp-client-fallback-2026-07-22); work-state: [E-1.11](docs/initiatives.md#e-111-transcript-pipeline-resilience-at-scale) (+ E-2.7, T-5.2.7).
+
+- **Transcript throttle + IP-block circuit breaker (S-1.11.1)** — pacing 0.5s → 3.0s default with ±40% jitter (`YOUTUBE_TRANSCRIPT_RATE_LIMIT`); after 3 consecutive IP-block signals a cooldown opens (120s, doubling to 900s max) with a post-cooldown probe; while open, videos fall to Whisper only when the remaining wait exceeds a cap — waiting is cheaper than Whisper dollars + data loss.
+- **Segmented Whisper for >25MB audio (S-1.11.2, per D-051)** — ffmpeg stream-copy chunking into ~20MB-target time chunks with 15s overlap; per-chunk transcription; timestamps offset by chunk position on merge; overlap-zone segments deduplicated by midpoint-ownership rule. Smallest-audio-format re-download fallback when ffmpeg is unavailable. Kills the systematic data-loss bias against long-form content.
+- **yt-dlp 403 hardening (S-1.11.3)** — escalating player-client ladder (default → android → ios) with cooldowns between attempts, plus smaller-audio-format preference.
+- **Transcript provenance fix (S-1.11.4)** — `fetch_transcript` returns its source; `transcript_cache` gains a `source` column (Alembic); `documents.transcript_source` is now honest — was hardcoded `'youtube'` (the test run recorded 0 of ~96 Whisper transcripts as `'whisper'`).
+- **Paginated YouTube search (S-1.11.5)** — `pageToken` loop; `YOUTUBE_SEARCH_MAX_PAGES` default 2. Each page costs 100 quota units.
+- **Unresolved-handle surfacing (S-1.11.6)** — topic jobs persist `{"resolved": [], "unresolved": []}` in `channel_list_resolved`; approval UI warns on unresolved channel handles (each previously burned a silent 100-unit search fallback).
+- **Per-job Whisper budget (S-1.11.7)** — `WHISPER_MAX_PER_JOB` env var (default 50); over-budget videos marked unavailable with a reason.
+- **Extraction ETA + search sub-progress (S-1.11.8)** — rolling per-path pacing drives an ETA in extraction progress messages; the search phase emits sub-progress stages instead of sitting at a static 5%.
+- **LLM token accounting (T-5.2.7)** — `qa_exchanges.prompt_tokens` / `completion_tokens` populated; per-user `llm_tokens_in` / `llm_tokens_out` metering recorded on the Q&A path. Per-job LLM spend deferred (needs a `jobs` schema column).
+- **Q&A streaming (S-2.7.2)** — SSE stage events (`retrieving` / `refining` / `formulating` / `extracting_references`); token-level answer streaming deferred.
+- **Approval UX at scale (S-2.7.1)** — default-select-all with consistent helper copy (was 0/200 selected under "Deselect any candidates you don't want"); `content-visibility` virtualization keeps 200+ row lists responsive.
+- **Per-tier `num_videos` ceilings (S-2.7.3)** — free 100 / pro 250 / studio 500; schema absolute cap 500 per PR [#188](https://github.com/khoks/VideoResearchPro/pull/188).
+- **Recovery tooling (S-1.11.9)** — `scripts/retry_unavailable_transcripts.py` re-fetches a job's unavailable documents + chunks + embeds them; validated on job `0d4db8c3`'s 63 lost videos.
+
 ### T-5.2.6 — Tier visibility UI + self-service tier flip (2026-05-15)
 
 The dev-mode "edit users.tier in SQL to evaluate Pro/Studio features" friction is gone. The full upgrade/downgrade flow now lives in the app.

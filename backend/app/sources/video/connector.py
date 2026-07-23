@@ -8,10 +8,10 @@ yt-dlp audio download, subscriber-count enrichment) live in
 normalization: turning provider-specific dicts into `Candidate`,
 `SourceMetadata`, `ExtractedText`, `CreatorMetadata`.
 
-Behavior must remain identical to direct `youtube_service` calls so that
-PR 2 lands without observable changes. Future PRs may extend the
-connector (e.g. emit `text_source="whisper"` once `fetch_transcript`
-reports which path it took).
+Since S-1.11.4 (D-051), `fetch_text` propagates real transcript
+provenance: `text_source` is `"youtube"` for caption fetches and
+`"whisper"` for Whisper transcriptions, as reported by
+`youtube_service.fetch_transcript`.
 """
 from __future__ import annotations
 
@@ -184,24 +184,22 @@ class YouTubeConnector(BaseConnector):
         *,
         job_id: str = "",
         query: str = "",  # noqa: ARG002 — YouTube doesn't classify; signature parity per D-023
+        allow_whisper: bool = True,
     ) -> ExtractedText | None:
         result = youtube_service.fetch_transcript(
             candidate.source_id,
             language=settings.DEFAULT_TRANSCRIPT_LANGUAGE,
             job_id=job_id,
+            allow_whisper=allow_whisper,
         )
         if not result:
             return None
-        segments, language = result
+        segments, language, source = result
         word_count = sum(len(seg.get("text", "").split()) for seg in segments)
-        # Today `fetch_transcript` doesn't tell us whether it took the
-        # YouTube-Transcript-API path or the Whisper fallback (see job_tasks
-        # comment that hardcodes "youtube"). Preserving that behavior
-        # here — improving it is a separate change.
         return ExtractedText(
             segments=segments,
             language=language,
-            text_source="youtube",
+            text_source=source,
             word_count=word_count,
         )
 

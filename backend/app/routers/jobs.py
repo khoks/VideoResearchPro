@@ -8,6 +8,7 @@ from app.models.user import User
 from app.schemas.job import JobCreate, JobResponse, VideoApproval
 from app.schemas.video import VideoResponse
 from app.services import chroma_service, job_service, report_service
+from app.services.tier_service import get_user_tier, quota_limit
 from app.tasks.job_tasks import (
     execute_channel_job,
     execute_subscription_job,
@@ -30,6 +31,21 @@ def create_job(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Per-tier num_videos ceiling for topic jobs (T-5.2 tier gating).
+    # The schema-level le=500 bound still applies; this narrows it to
+    # the user's tier cap (free=100 / pro=250 / studio=500).
+    if job_data.job_type == "topic":
+        cap = quota_limit(current_user, "num_videos_cap")
+        if cap != -1 and job_data.num_videos > cap:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"num_videos {job_data.num_videos} exceeds the "
+                    f"{get_user_tier(current_user).value} tier cap of {cap}. "
+                    f"Upgrade to raise the limit."
+                ),
+            )
+
     try:
         # Per E-5.1 phase 2a, stamp the new row with the creating
         # user's id. Phase 2b adds query-time filtering by tenant_id.

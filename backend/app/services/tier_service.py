@@ -61,6 +61,8 @@ _TIER_RANK: dict[Tier, int] = {
 # - llm_tokens_per_day: cumulative tokens across all use cases.
 # - document_count_cap: max rows in the global library attributable to
 #   this user. -1 = unlimited.
+# - num_videos_cap: max ``num_videos`` a single topic job may request.
+#   Enforced at job creation time in ``routers/jobs.py``.
 # - features: opt-in feature names. Endpoints check via
 #   ``require_feature("author_studio")`` (sugar over ``require_tier``).
 TIER_CAPABILITIES: dict[Tier, dict] = {
@@ -68,6 +70,7 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         "youtube_units_per_day": 10_000,
         "llm_tokens_per_day": 200_000,
         "document_count_cap": 500,
+        "num_videos_cap": 100,
         # T-5.5.5 quota-metered resources (monthly counts).
         "qa_exchanges_per_month": 50,
         "knowledge_extractions_per_month": 10,
@@ -86,6 +89,7 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         "youtube_units_per_day": 50_000,
         "llm_tokens_per_day": 2_000_000,
         "document_count_cap": 5_000,
+        "num_videos_cap": 250,
         "qa_exchanges_per_month": 1_000,
         "knowledge_extractions_per_month": 200,
         "features": frozenset(
@@ -107,6 +111,7 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         "youtube_units_per_day": 250_000,
         "llm_tokens_per_day": 10_000_000,
         "document_count_cap": -1,  # unlimited
+        "num_videos_cap": 500,
         "qa_exchanges_per_month": -1,
         "knowledge_extractions_per_month": 2_000,
         "features": frozenset(
@@ -165,8 +170,8 @@ def quota_limit(user: User, resource: str) -> int:
     """Return the user's tier limit for ``resource``.
 
     ``resource`` is one of ``youtube_units_per_day`` / ``llm_tokens_per_day``
-    / ``document_count_cap``. Returns ``-1`` for unlimited resources
-    (as on Studio's ``document_count_cap``).
+    / ``document_count_cap`` / ``num_videos_cap``. Returns ``-1`` for
+    unlimited resources (as on Studio's ``document_count_cap``).
     """
     return capabilities_for(user)[resource]
 

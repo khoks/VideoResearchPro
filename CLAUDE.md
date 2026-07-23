@@ -253,6 +253,17 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `CELERY_BROKER_URL` | No | `redis://localhost:6379/1` | Celery broker |
 | `CHUNK_SIZE` | No | `512` | RAG chunk size in tokens |
 | `RAG_TOP_K` | No | `15` | Number of RAG results per query |
+| **Transcript-pipeline resilience (E-1.11 / D-051)** | | | |
+| `YOUTUBE_TRANSCRIPT_RATE_LIMIT` | No | `3.0` | Min seconds between transcript fetches (0.5 triggered an IP block at ~60 videos) |
+| `YOUTUBE_TRANSCRIPT_RATE_JITTER` | No | `0.4` | ± fraction of the base rate randomized per wait |
+| `YOUTUBE_SEARCH_MAX_PAGES` | No | `2` | Search pages per broad query (each page = 100 quota units, 50 results) |
+| `TRANSCRIPT_BREAKER_THRESHOLD` | No | `3` | Consecutive IP-block signals before the circuit breaker opens |
+| `TRANSCRIPT_BREAKER_COOLDOWN_BASE` | No | `120` | First cooldown (s); doubles per re-trip |
+| `TRANSCRIPT_BREAKER_COOLDOWN_MAX` | No | `900` | Cooldown ceiling (s) |
+| `TRANSCRIPT_BREAKER_MAX_WAIT` | No | `300` | Max per-video wait (s) for an open breaker before falling to Whisper |
+| `WHISPER_SEGMENT_TARGET_MB` | No | `20` | Target chunk size when splitting >25 MB audio for Whisper |
+| `WHISPER_SEGMENT_OVERLAP_SECONDS` | No | `15` | Shared audio between neighbouring Whisper chunks |
+| `WHISPER_MAX_PER_JOB` | No | `50` | Max Whisper transcriptions per job (`0` disables Whisper) — bounds OpenAI spend |
 | `EMBEDDING_MODEL_NAME` | No | `paraphrase-multilingual-MiniLM-L12-v2` | SentenceTransformer model |
 | `CHROMA_GLOBAL_COLLECTION_NAME` | No | `videoresearchpro_global` | Name of the single global Chroma collection |
 | `CHROMA_QA_COLLECTION_NAME` | No | `qa_library_global` | Central Q&A collection name |

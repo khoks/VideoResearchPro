@@ -436,7 +436,7 @@ def test_execute_topic_job_mixed_video_reddit_hn_combines_both_paths(
     ]
     monkeypatch.setattr(
         "app.agents.search_agent.run_search_agent",
-        lambda **kwargs: (youtube_videos, ["q1"]),
+        lambda **kwargs: (youtube_videos, ["q1"], []),
     )
 
     from app.services import progress_service

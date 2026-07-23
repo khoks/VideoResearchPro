@@ -930,7 +930,7 @@ The dispatcher (`app.services.connector_dispatch.dispatch_search`) was already s
 - *(2) Silent empty-list return.* Rejected — loses the "this connector intentionally has no search" signal. A future contributor reading just `connector.search("query")` couldn't tell if they got `[]` because the search ran and found nothing or because the connector doesn't search at all. The exception-based form is self-documenting.
 
 **Consequences.**
-- The pattern is reusable for future connectors with no discovery surface — `note` (user-authored annotations as a source type, planned for [I-1](initiatives.md#i-1-multi-source-ingest-closed-2026-05-03) future), maybe a `book` connector that takes only file uploads. They follow the PDF template: raise `NotImplementedError`, document why in the docstring, the dispatcher handles it.
+- The pattern is reusable for future connectors with no discovery surface — `note` (user-authored annotations as a source type, planned for [I-1](initiatives.md#i-1-multi-source-ingest-original-scope-closed-2026-05-03-reopened-2026-07-22-for-e-111-scale-resilience) future), maybe a `book` connector that takes only file uploads. They follow the PDF template: raise `NotImplementedError`, document why in the docstring, the dispatcher handles it.
 - The `BaseConnector` contract's existing comment ("Connectors that do not support search (e.g. PDF, where the user uploads files directly) raise NotImplementedError") was prescient — D-035 just cements it as the shipped + tested pattern.
 - Tests for these connectors lock in the contract: `test_search_raises_not_implemented` is a new convention that every no-discovery-surface connector should include.
 - Frontend implication: when a user enables `source_types=["pdf"]` on a topic job with no search query, the dispatch yields zero candidates for that source. The UI either filters out PDF from the topic-job source-type chooser entirely (PDFs come from upload, not topic search), or shows a helpful "Use the upload page to add PDFs" empty-state. Today's frontend doesn't expose `pdf` in the topic-job source-type chooser at all, so the dispatcher behaviour is moot — but if it ever does, the empty-state is the right answer.
@@ -1456,3 +1456,36 @@ When E-5.3 (Stripe) ships, the same endpoint stays — its implementation flips 
 - If a SaaS deployment ever ships *before* Stripe lands, the endpoint must be gated behind an environment flag (`ENABLE_SELF_SERVICE_TIER_FLIP=false` in SaaS) — explicitly documented as a deploy-time toggle when SaaS launches.
 
 **Linked initiatives / PRs.** I-5 / E-5.2 / E-5.3 (deferred). PR TBD (this commit).
+
+---
+
+## D-051 — Transcript-pipeline resilience bundle: circuit breaker + segmented Whisper + yt-dlp client fallback (2026-07-22)
+
+**Status:** accepted.
+
+**Context.** The 2026-07-21/22 200-video deep-research test (job `0d4db8c3`, 30 preferred channels, ~96 min end-to-end, completed) triggered a YouTube transcript-API IP block after ~60 serial fetches — the fixed 0.5s pacing was insufficient at scale. From that point every remaining video fell through to the Whisper path, making Whisper the *primary* transcription path for 159/200 videos (80%). The cascade cost real data: 36 videos were lost to the 25MB Whisper upload cap — disproportionately long-form, high-value sources (conference talks, podcasts: exactly what a research corpus wants most) — and 27 more to yt-dlp HTTP 403 audio-download failures. Final tally: 137/200 fetched. The extraction loop had no throttle, no backoff, and no breaker; nothing detected the block, so the job burned Whisper dollars on every remaining video instead of waiting the block out.
+
+**Decision.** Three coordinated parts, shipped as one bundle:
+
+- **(a) Adaptive pacing + circuit breaker for transcript fetches.** Default pacing raised 0.5s → 3.0s with ±40% jitter. After 3 consecutive IP-block signals, a cooldown opens the breaker (120s, doubling to a 900s max) and pauses transcript attempts; a post-cooldown probe re-tests the transcript API before resuming. While the breaker is open, per-video behavior falls to Whisper only when the remaining wait exceeds a cap — otherwise the loop waits it out. Rationale: waiting is cheaper than Whisper dollars + data loss.
+- **(b) Segmented Whisper for >25MB audio** (user-specified design). Split audio via ffmpeg stream-copy into ~20MB-target time chunks WITH overlap (default 15s), transcribe each chunk separately, then merge with timestamps offset by each chunk's position; overlap-zone segments are deduplicated by a midpoint-ownership rule. Falls back to smallest-audio-format re-download when ffmpeg is unavailable; only bails if the audio is still oversize after that.
+- **(c) yt-dlp 403 recovery.** Escalating retry ladder across YouTube innertube player clients (default → android → ios) with cooldowns between attempts, plus preference for smaller audio formats.
+
+**Alternatives considered.**
+
+- **Proxy rotation for the IP block.** Deferred — external dependency, recurring cost, and ToS posture concerns. Re-enters consideration if blocks persist at pacing=3s (see re-evaluation hooks).
+- **Pre-emptive audio-bitrate capping alone.** Insufficient — very long videos exceed 25MB at any usable bitrate; only segmentation generalizes.
+- **Dropping >25MB videos (status quo).** Unacceptable — a systematic data-loss bias against long-form content, which is the highest-value material for a research tool.
+
+**Consequences.**
+
+- Extraction is slower-but-complete under blocking — the breaker trades wall-clock time for completeness and cost containment.
+- Whisper cost is bounded by a new per-job budget knob (`WHISPER_MAX_PER_JOB`).
+- Provenance is now recorded (`text_source='whisper'|'youtube'`) — fixes the bug where all transcripts were labeled `'youtube'` (the test run recorded 0 of ~96 Whisper transcripts as `'whisper'`), so operators can audit which transcripts cost money and dataset exports can distinguish caption quality.
+
+**Re-evaluation hooks.**
+
+- Proxy support if IP blocks persist even at pacing=3.0s.
+- Local-whisper option for self-host Whisper cost elimination.
+
+**Linked initiatives / PRs.** I-1 / [E-1.11](initiatives.md#e-111-transcript-pipeline-resilience-at-scale) (new). PR: this branch's PR.

@@ -312,7 +312,7 @@ def test_fetch_text_returns_extracted_text_on_success(yt):
     with patch.object(
         yt_connector_mod.youtube_service,
         "fetch_transcript",
-        return_value=(segments, "en"),
+        return_value=(segments, "en", "youtube"),
     ) as mock_fetch:
         out = yt.fetch_text(_candidate("abc123"), job_id="job-42")
 
@@ -343,7 +343,7 @@ def test_fetch_text_handles_segments_without_text(yt):
     with patch.object(
         yt_connector_mod.youtube_service,
         "fetch_transcript",
-        return_value=(segments, "en"),
+        return_value=(segments, "en", "youtube"),
     ):
         out = yt.fetch_text(_candidate())
 

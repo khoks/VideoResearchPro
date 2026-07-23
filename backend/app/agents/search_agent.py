@@ -102,10 +102,11 @@ def resolve_preferred_channels(state: SearchAgentState) -> dict:
     """
     hints = state.get("preferred_channels") or []
     if not hints:
-        return {"preferred_channel_ids": []}
+        return {"preferred_channel_ids": [], "unresolved_channels": []}
 
     connector = connector_for("video")
     resolved: list[str] = []
+    unresolved: list[str] = []
     seen: set[str] = set()
     for hint in hints:
         hint = (hint or "").strip()
@@ -115,18 +116,20 @@ def resolve_preferred_channels(state: SearchAgentState) -> dict:
             cid = connector.resolve_creator_id(hint)
         except Exception:
             logger.exception("resolve_preferred_channels: %r raised, skipping", hint)
+            unresolved.append(hint)
             continue
         if cid and cid not in seen:
             seen.add(cid)
             resolved.append(cid)
         elif not cid:
             logger.warning("resolve_preferred_channels: could not resolve %r", hint)
+            unresolved.append(hint)
 
     logger.info(
-        "resolve_preferred_channels: %d/%d hints resolved",
-        len(resolved), len(hints),
+        "resolve_preferred_channels: %d/%d hints resolved (%d unresolved)",
+        len(resolved), len(hints), len(unresolved),
     )
-    return {"preferred_channel_ids": resolved}
+    return {"preferred_channel_ids": resolved, "unresolved_channels": unresolved}
 
 
 def plan_searches(state: SearchAgentState) -> dict:
@@ -491,10 +494,20 @@ def run_search_agent(
     max_duration: int | None = None,
     channel_type_filters: list[str] | None = None,
     preferred_channels: list[str] | None = None,
-) -> tuple[list[dict], list[str]]:
-    """Run the search agent and return (curated videos, broad queries used)."""
+    progress_callback=None,
+) -> tuple[list[dict], list[str], list[str]]:
+    """Run the search agent.
+
+    Returns ``(curated_videos, search_queries_used, unresolved_channels)``.
+
+    ``progress_callback`` (S-1.11.8), when given, is invoked as
+    ``cb(pct: int, message: str)`` after each pipeline node so the caller
+    can surface sub-progress instead of a static "Searching..." for the
+    whole multi-minute phase. Callback errors are swallowed — progress
+    reporting must never sink the search itself.
+    """
     graph = build_search_graph()
-    result = graph.invoke({
+    initial_state = {
         "messages": [],
         "topic": topic,
         "search_instructions": search_instructions,
@@ -504,9 +517,40 @@ def run_search_agent(
         "channel_type_filters": channel_type_filters or [],
         "preferred_channels": preferred_channels or [],
         "preferred_channel_ids": [],
+        "unresolved_channels": [],
         "channel_keywords": [],
         "discovered_videos": [],
         "curated_videos": [],
         "search_queries_used": [],
-    })
-    return result.get("curated_videos", []), result.get("search_queries_used", [])
+    }
+
+    def _notify(pct: int, message: str) -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(pct, message)
+        except Exception:
+            logger.exception("search progress_callback raised; continuing")
+
+    result: dict = dict(initial_state)
+    for update in graph.stream(initial_state, stream_mode="updates"):
+        for node_name, delta in update.items():
+            if isinstance(delta, dict):
+                result.update(delta)
+            if node_name == "resolve_preferred_channels":
+                n_res = len(result.get("preferred_channel_ids") or [])
+                n_unres = len(result.get("unresolved_channels") or [])
+                unres_note = f" ({n_unres} unresolved)" if n_unres else ""
+                _notify(6, f"Resolved {n_res} preferred channels{unres_note}. Planning queries...")
+            elif node_name == "plan_searches":
+                n_q = len(result.get("search_queries_used") or [])
+                _notify(8, f"Planned {n_q} search queries. Searching YouTube...")
+            elif node_name == "execute_searches":
+                n_found = len(result.get("discovered_videos") or [])
+                _notify(12, f"Found {n_found} candidates. Ranking with AI...")
+
+    return (
+        result.get("curated_videos", []),
+        result.get("search_queries_used", []),
+        result.get("unresolved_channels", []),
+    )

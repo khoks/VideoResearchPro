@@ -299,3 +299,28 @@ def test_user_tier_can_be_upgraded_in_place(db):
     db.refresh(user)
     assert user.tier == "pro"
     assert get_user_tier(user) is Tier.PRO
+
+
+# ---------------------------------------------------------------------------
+# num_videos_cap (per-tier topic-job ceiling)
+# ---------------------------------------------------------------------------
+
+
+def test_num_videos_cap_values_per_tier():
+    assert TIER_CAPABILITIES[Tier.FREE]["num_videos_cap"] == 100
+    assert TIER_CAPABILITIES[Tier.PRO]["num_videos_cap"] == 250
+    assert TIER_CAPABILITIES[Tier.STUDIO]["num_videos_cap"] == 500
+
+
+def test_num_videos_cap_monotonic_with_tier():
+    assert (
+        TIER_CAPABILITIES[Tier.FREE]["num_videos_cap"]
+        <= TIER_CAPABILITIES[Tier.PRO]["num_videos_cap"]
+        <= TIER_CAPABILITIES[Tier.STUDIO]["num_videos_cap"]
+    )
+
+
+def test_num_videos_cap_via_quota_limit():
+    assert quota_limit(_make_user("free"), "num_videos_cap") == 100
+    assert quota_limit(_make_user("pro"), "num_videos_cap") == 250
+    assert quota_limit(_make_user("studio"), "num_videos_cap") == 500

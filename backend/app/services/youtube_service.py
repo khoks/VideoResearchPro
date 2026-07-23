@@ -1,7 +1,11 @@
 import json
 import logging
+import math
 import os
+import shutil
+import subprocess
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -19,10 +23,88 @@ from app.utils.youtube_helpers import parse_iso8601_duration
 
 logger = logging.getLogger(__name__)
 
-transcript_limiter = RateLimiter(rate=settings.YOUTUBE_TRANSCRIPT_RATE_LIMIT)
+transcript_limiter = RateLimiter(
+    rate=settings.YOUTUBE_TRANSCRIPT_RATE_LIMIT,
+    jitter=settings.YOUTUBE_TRANSCRIPT_RATE_JITTER,
+)
 
 # OpenAI Whisper API enforces a 25 MB upload limit per file.
 WHISPER_MAX_FILE_BYTES = 25 * 1024 * 1024
+
+
+class _TranscriptCircuitBreaker:
+    """Shared breaker for YouTube transcript-API IP blocks (S-1.11.1 / D-051).
+
+    After ``threshold`` consecutive block signals the breaker opens for a
+    cooldown that doubles on every re-trip (base → max). Callers consult
+    ``wait_if_open()`` before a fetch: when the remaining cooldown is at
+    most ``max_wait`` it sleeps the block off and allows a probe attempt;
+    longer remainders return False so the caller can fall to Whisper
+    without stalling a single video for many minutes.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._consecutive_blocks = 0
+        self._open_until = 0.0
+        self._current_cooldown = 0.0
+
+    def record_block(self) -> None:
+        with self._lock:
+            self._consecutive_blocks += 1
+            if self._consecutive_blocks >= settings.TRANSCRIPT_BREAKER_THRESHOLD:
+                if self._current_cooldown <= 0:
+                    self._current_cooldown = settings.TRANSCRIPT_BREAKER_COOLDOWN_BASE
+                else:
+                    self._current_cooldown = min(
+                        self._current_cooldown * 2,
+                        settings.TRANSCRIPT_BREAKER_COOLDOWN_MAX,
+                    )
+                self._open_until = time.monotonic() + self._current_cooldown
+                logger.warning(
+                    "Transcript circuit breaker OPEN: %d consecutive IP-block "
+                    "signals; cooling down %.0fs before the next transcript attempt",
+                    self._consecutive_blocks,
+                    self._current_cooldown,
+                )
+
+    def record_success(self) -> None:
+        with self._lock:
+            if self._consecutive_blocks:
+                logger.info(
+                    "Transcript circuit breaker reset after successful fetch"
+                )
+            self._consecutive_blocks = 0
+            self._open_until = 0.0
+            self._current_cooldown = 0.0
+
+    def wait_if_open(self, tag: str = "") -> bool:
+        """Return True when the caller may attempt a transcript fetch.
+
+        Sleeps out short remaining cooldowns (≤ ``TRANSCRIPT_BREAKER_MAX_WAIT``);
+        returns False when the wait would be longer, so the caller skips the
+        transcript path for this video.
+        """
+        with self._lock:
+            remaining = self._open_until - time.monotonic()
+        if remaining <= 0:
+            return True
+        if remaining > settings.TRANSCRIPT_BREAKER_MAX_WAIT:
+            logger.warning(
+                f"{tag} Transcript breaker open for another {remaining:.0f}s "
+                f"(> max wait {settings.TRANSCRIPT_BREAKER_MAX_WAIT:.0f}s); "
+                "skipping transcript attempt for this video"
+            )
+            return False
+        logger.info(
+            f"{tag} Transcript breaker open; waiting {remaining:.0f}s "
+            "before probing the transcript API again..."
+        )
+        time.sleep(remaining)
+        return True
+
+
+transcript_breaker = _TranscriptCircuitBreaker()
 
 # Length (in seconds) of each synthesized pseudo-segment when Whisper
 # returns only a text blob without per-segment timestamps.
@@ -125,21 +207,35 @@ def search_videos(
     if channel_type:
         params["channelType"] = channel_type
 
-    response = _execute_youtube_request(youtube.search().list(**params), "search")
+    # S-1.11.5: paginate up to YOUTUBE_SEARCH_MAX_PAGES (each page costs
+    # 100 quota units) so targets above 50 aren't silently starved by the
+    # single-page cap.
+    max_pages = max(1, settings.YOUTUBE_SEARCH_MAX_PAGES)
+    videos: list[dict] = []
+    page_token: str | None = None
+    for page in range(max_pages):
+        if page_token:
+            params["pageToken"] = page_token
+        response = _execute_youtube_request(youtube.search().list(**params), "search")
+        for item in response.get("items", []):
+            snippet = item["snippet"]
+            videos.append({
+                "video_id": item["id"]["videoId"],
+                "title": snippet["title"],
+                "channel_name": snippet["channelTitle"],
+                "channel_id": snippet["channelId"],
+                "published_at": snippet.get("publishedAt"),
+                "thumbnail_url": snippet.get("thumbnails", {}).get("high", {}).get("url"),
+            })
+        page_token = response.get("nextPageToken")
+        if len(videos) >= max_results or not page_token:
+            break
 
-    videos = []
-    for item in response.get("items", []):
-        snippet = item["snippet"]
-        videos.append({
-            "video_id": item["id"]["videoId"],
-            "title": snippet["title"],
-            "channel_name": snippet["channelTitle"],
-            "channel_id": snippet["channelId"],
-            "published_at": snippet.get("publishedAt"),
-            "thumbnail_url": snippet.get("thumbnails", {}).get("high", {}).get("url"),
-        })
-
-    logger.info(f"search_videos: returned {len(videos)} results for query={query!r}")
+    videos = videos[:max_results]
+    logger.info(
+        f"search_videos: returned {len(videos)} results for query={query!r} "
+        f"({page + 1} page(s))"
+    )
     return videos
 
 
@@ -478,21 +574,27 @@ def resolve_channel_id(channel_input: str, job_id: str = "") -> str | None:
 
 
 def fetch_transcript(
-    video_id: str, language: str = "en", job_id: str = ""
-) -> tuple[list[dict], str] | None:
+    video_id: str,
+    language: str = "en",
+    job_id: str = "",
+    allow_whisper: bool = True,
+) -> tuple[list[dict], str, str] | None:
     """
-    Fetch transcript with caching, retry, and OpenAI Whisper API fallback.
+    Fetch transcript with caching, retry, circuit breaker, and Whisper fallback.
 
     Lookup order:
     1. transcript_cache DB table — cache hit returns immediately.
-    2. YouTube Transcript API up to 3 times with exponential backoff (2s, 4s, 8s).
-    3. Download audio via yt-dlp and transcribe via OpenAI Whisper API.
+    2. YouTube Transcript API up to 3 times with exponential backoff (2s, 4s, 8s),
+       gated by the shared IP-block circuit breaker (S-1.11.1 / D-051).
+    3. Download audio via yt-dlp and transcribe via OpenAI Whisper API
+       (segmented when >25 MB — S-1.11.2), unless ``allow_whisper`` is False
+       (per-job Whisper budget exhausted — S-1.11.7).
 
     Returns:
-        Tuple of (segments, actual_language) on success, or None if unavailable.
+        Tuple of (segments, actual_language, source) on success, or None.
         `segments` is a list of {text, start, duration} dicts.
-        `actual_language` is the BCP-47 code of the transcript that was fetched,
-        or "unknown" when the source cannot report one (e.g. Whisper fallback).
+        `actual_language` is the BCP-47 code, or "unknown" for Whisper.
+        `source` is "youtube" or "whisper" (S-1.11.4 provenance).
     """
     retry_delays = [2, 4, 8]
     tag = f"[job:{job_id}]" if job_id else ""
@@ -503,31 +605,41 @@ def fetch_transcript(
         return cached
 
     ip_blocked = False
-    for attempt, delay in enumerate(retry_delays, start=1):
-        try:
-            result = _fetch_transcript_once(video_id, language, job_id=job_id)
-        except _IpBlockedError as e:
-            # YouTube is actively blocking us — no point retrying in 2-8s.
-            # Skip straight to Whisper fallback. Saves ~14s per blocked video.
-            logger.warning(
-                f"{tag} YouTube is blocking requests for {video_id} ({e}); "
-                "skipping transcript retries and going to Whisper fallback"
-            )
-            ip_blocked = True
-            break
-        if result:
-            logger.info(
-                f"{tag} YouTube transcript succeeded for {video_id} "
-                f"on attempt {attempt}/{len(retry_delays)}"
-            )
-            _save_to_cache(video_id, result[0], result[1], tag)
-            return result
-        if attempt < len(retry_delays):
-            logger.info(
-                f"{tag} Transcript attempt {attempt}/{len(retry_delays)} failed for {video_id}, "
-                f"retrying in {delay}s..."
-            )
-            time.sleep(delay)
+    if transcript_breaker.wait_if_open(tag):
+        for attempt, delay in enumerate(retry_delays, start=1):
+            try:
+                result = _fetch_transcript_once(video_id, language, job_id=job_id)
+            except _IpBlockedError as e:
+                # YouTube is actively blocking us — no point retrying in 2-8s.
+                logger.warning(
+                    f"{tag} YouTube is blocking requests for {video_id} ({e})"
+                )
+                transcript_breaker.record_block()
+                ip_blocked = True
+                break
+            if result:
+                logger.info(
+                    f"{tag} YouTube transcript succeeded for {video_id} "
+                    f"on attempt {attempt}/{len(retry_delays)}"
+                )
+                transcript_breaker.record_success()
+                _save_to_cache(video_id, result[0], result[1], "youtube", tag)
+                return result[0], result[1], "youtube"
+            if attempt < len(retry_delays):
+                logger.info(
+                    f"{tag} Transcript attempt {attempt}/{len(retry_delays)} failed for {video_id}, "
+                    f"retrying in {delay}s..."
+                )
+                time.sleep(delay)
+    else:
+        ip_blocked = True
+
+    if not allow_whisper:
+        logger.warning(
+            f"{tag} Transcript unavailable for {video_id} and Whisper fallback "
+            "is disabled (per-job budget exhausted); recording unavailable"
+        )
+        return None
 
     if not ip_blocked:
         logger.warning(
@@ -536,12 +648,17 @@ def fetch_transcript(
         )
     whisper_result = _transcribe_with_whisper(video_id, job_id=job_id)
     if whisper_result is not None:
-        _save_to_cache(video_id, whisper_result[0], whisper_result[1], tag)
-    return whisper_result
+        _save_to_cache(video_id, whisper_result[0], whisper_result[1], "whisper", tag)
+        return whisper_result[0], whisper_result[1], "whisper"
+    return None
 
 
-def _load_from_cache(video_id: str, tag: str) -> tuple[list[dict], str] | None:
-    """Return cached (segments, language) tuple for video_id, or None on miss."""
+def _load_from_cache(video_id: str, tag: str) -> tuple[list[dict], str, str] | None:
+    """Return cached (segments, language, source) for video_id, or None on miss.
+
+    Rows written before the S-1.11.4 provenance migration have NULL source;
+    those default to "youtube" (the pre-fix writer's dominant path).
+    """
     db = SessionLocal()
     try:
         row = db.query(TranscriptCache).filter(TranscriptCache.video_id == video_id).first()
@@ -552,16 +669,19 @@ def _load_from_cache(video_id: str, tag: str) -> tuple[list[dict], str] | None:
         except (ValueError, TypeError):
             logger.exception(f"{tag} Corrupt transcript cache row for {video_id}; ignoring")
             return None
+        source = getattr(row, "source", None) or "youtube"
         logger.info(
             f"{tag} Transcript cache hit for {video_id}: "
-            f"{len(segments)} segments, language={row.language}"
+            f"{len(segments)} segments, language={row.language}, source={source}"
         )
-        return segments, row.language
+        return segments, row.language, source
     finally:
         db.close()
 
 
-def _save_to_cache(video_id: str, segments: list[dict], language: str, tag: str) -> None:
+def _save_to_cache(
+    video_id: str, segments: list[dict], language: str, source: str, tag: str
+) -> None:
     """Upsert a transcript into the cache. Failures are logged but non-fatal."""
     if not segments:
         return
@@ -575,11 +695,13 @@ def _save_to_cache(video_id: str, segments: list[dict], language: str, tag: str)
                     video_id=video_id,
                     segments_json=payload,
                     language=language,
+                    source=source,
                 )
             )
         else:
             existing.segments_json = payload
             existing.language = language
+            existing.source = source
             existing.fetched_at = datetime.now(timezone.utc)
         db.commit()
         logger.info(
@@ -763,13 +885,250 @@ def _whisper_transcribe_with_retry(
     return None
 
 
+# yt-dlp innertube player-client ladder (S-1.11.3 / D-051). YouTube's 403s on
+# audio downloads are usually client-specific (signature throttling applied to
+# the default web client); retrying via the android or ios innertube clients
+# recovers most of them. Sleep between rungs so a transient block can clear.
+_YTDLP_CLIENT_LADDER: tuple[tuple[str | None, float], ...] = (
+    (None, 0),          # yt-dlp default client selection
+    ("android", 5),
+    ("ios", 15),
+)
+
+
+def _download_audio_with_ladder(
+    video_id: str, tmpdir: str, tag: str, prefer_smallest: bool = False
+) -> str | None:
+    """Download a video's audio via yt-dlp, escalating through player clients
+    on failure. Returns the audio file path, or None when every rung failed.
+
+    ``prefer_smallest`` selects the lowest-bitrate audio format — used for the
+    oversize retry path where fidelity matters less than fitting the Whisper
+    upload cap (speech transcription is robust to low-bitrate audio).
+    """
+    import yt_dlp
+
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    fmt = (
+        "worstaudio[ext=m4a]/worstaudio[ext=webm]/worstaudio"
+        if prefer_smallest
+        else "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"
+    )
+
+    for client, delay in _YTDLP_CLIENT_LADDER:
+        if delay:
+            time.sleep(delay)
+        # Fresh subdir per attempt so a partial download from a failed rung
+        # can't be mistaken for the real artifact.
+        attempt_dir = tempfile.mkdtemp(dir=tmpdir)
+        ydl_opts: dict = {
+            "format": fmt,
+            "outtmpl": os.path.join(attempt_dir, "audio.%(ext)s"),
+            "quiet": True,
+            "no_warnings": True,
+        }
+        if client:
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": [client]}}
+        client_label = client or "default"
+        try:
+            logger.info(
+                f"{tag} Downloading audio for {video_id} via yt-dlp "
+                f"(client={client_label}, format={'smallest' if prefer_smallest else 'best'})..."
+            )
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        except Exception as e:
+            logger.warning(
+                f"{tag} yt-dlp download failed for {video_id} "
+                f"(client={client_label}): {e}"
+            )
+            continue
+        files = [os.path.join(attempt_dir, f) for f in os.listdir(attempt_dir)]
+        if files:
+            return files[0]
+        logger.warning(
+            f"{tag} yt-dlp produced no file for {video_id} (client={client_label})"
+        )
+    logger.error(
+        f"{tag} yt-dlp download failed for {video_id} on all "
+        f"{len(_YTDLP_CLIENT_LADDER)} player clients"
+    )
+    return None
+
+
+def _probe_audio_duration(audio_path: str, tag: str) -> float:
+    """Return the audio duration in seconds via ffprobe, or 0.0 on failure."""
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return 0.0
+    try:
+        out = subprocess.run(
+            [
+                ffprobe, "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                audio_path,
+            ],
+            capture_output=True, text=True, timeout=60, check=True,
+        )
+        return float(out.stdout.strip())
+    except Exception as e:
+        logger.warning(f"{tag} ffprobe duration probe failed: {e}")
+        return 0.0
+
+
+def _split_audio_for_whisper(
+    audio_path: str, tmpdir: str, tag: str
+) -> list[tuple[str, float]] | None:
+    """Split oversize audio into overlapping chunks via ffmpeg stream-copy.
+
+    S-1.11.2 / D-051 (user-specified design): chunks target
+    ``WHISPER_SEGMENT_TARGET_MB`` each and share
+    ``WHISPER_SEGMENT_OVERLAP_SECONDS`` of audio with their successor so
+    words cut at a boundary are fully captured in the next chunk.
+
+    Returns ``[(chunk_path, chunk_start_seconds), ...]`` or None when
+    splitting isn't possible (no ffmpeg / unknown duration / ffmpeg error).
+    """
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        logger.warning(
+            f"{tag} ffmpeg not found on PATH — cannot split oversize audio. "
+            "Install ffmpeg to enable segmented Whisper transcription."
+        )
+        return None
+
+    duration = _probe_audio_duration(audio_path, tag)
+    if duration <= 0:
+        logger.warning(f"{tag} Unknown audio duration; cannot split for Whisper")
+        return None
+
+    size_bytes = os.path.getsize(audio_path)
+    target_bytes = settings.WHISPER_SEGMENT_TARGET_MB * 1024 * 1024
+    n_chunks = max(2, math.ceil(size_bytes / target_bytes))
+    chunk_len = duration / n_chunks
+    overlap = settings.WHISPER_SEGMENT_OVERLAP_SECONDS
+    ext = os.path.splitext(audio_path)[1] or ".m4a"
+
+    logger.info(
+        f"{tag} Splitting {size_bytes / (1024 * 1024):.1f} MB / {duration:.0f}s audio "
+        f"into {n_chunks} chunks of ~{chunk_len:.0f}s (+{overlap:.0f}s overlap)"
+    )
+
+    chunks: list[tuple[str, float]] = []
+    for i in range(n_chunks):
+        start = i * chunk_len
+        # Every chunk except the last extends into its successor by `overlap`.
+        length = chunk_len + (overlap if i < n_chunks - 1 else 0)
+        out_path = os.path.join(tmpdir, f"whisper_chunk_{i:03d}{ext}")
+        cmd = [
+            ffmpeg, "-v", "error", "-y",
+            "-ss", f"{start:.2f}",
+            "-t", f"{length:.2f}",
+            "-i", audio_path,
+            "-c", "copy",
+            out_path,
+        ]
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=300, check=True)
+        except Exception as e:
+            logger.error(f"{tag} ffmpeg chunk {i}/{n_chunks} failed: {e}")
+            return None
+        if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+            logger.error(f"{tag} ffmpeg produced empty chunk {i}/{n_chunks}")
+            return None
+        chunks.append((out_path, start))
+    return chunks
+
+
+def _merge_chunk_transcripts(
+    per_chunk: list[tuple[float, float, list[dict]]],
+    overlap: float,
+    tag: str,
+) -> list[dict]:
+    """Merge per-chunk Whisper segments into one timeline (S-1.11.2).
+
+    ``per_chunk`` is ``[(chunk_start, chunk_len, segments), ...]`` where each
+    segment's ``start`` is chunk-relative. Timestamps are shifted by the
+    chunk's position; segments inside an overlap zone are deduplicated by the
+    midpoint-ownership rule: the boundary between chunk *i* and *i+1* falls at
+    ``overlap / 2`` into the shared audio, and each chunk keeps only segments
+    whose (adjusted) start lies inside its owned span.
+    """
+    merged: list[dict] = []
+    n = len(per_chunk)
+    for i, (chunk_start, chunk_len, segments) in enumerate(per_chunk):
+        own_lo = chunk_start + (overlap / 2 if i > 0 else 0.0)
+        own_hi = (
+            chunk_start + chunk_len + (overlap / 2)
+            if i < n - 1
+            else float("inf")
+        )
+        kept = 0
+        for seg in segments:
+            adjusted_start = float(seg.get("start", 0.0)) + chunk_start
+            if own_lo <= adjusted_start < own_hi:
+                merged.append(
+                    {
+                        "text": seg["text"],
+                        "start": adjusted_start,
+                        "duration": float(seg.get("duration", 0.0)),
+                    }
+                )
+                kept += 1
+        logger.info(
+            f"{tag} Chunk {i + 1}/{n}: kept {kept}/{len(segments)} segments "
+            f"(owned span {own_lo:.0f}s–{'end' if own_hi == float('inf') else f'{own_hi:.0f}s'})"
+        )
+    merged.sort(key=lambda s: s["start"])
+    return merged
+
+
+def _whisper_response_to_segments(response, tag: str, video_id: str) -> tuple[list[dict], str, float]:
+    """Normalize a verbose_json Whisper response to our segment dicts.
+
+    Returns (segments, language, duration). Falls back to pseudo-segments
+    when the response carries only a text blob.
+    """
+    response_language = getattr(response, "language", None) or "unknown"
+    response_duration = float(getattr(response, "duration", 0.0) or 0.0)
+
+    raw_segments = getattr(response, "segments", None) or []
+    if raw_segments:
+        transcript = [
+            {
+                "text": getattr(seg, "text", "").strip(),
+                "start": getattr(seg, "start", 0.0),
+                "duration": getattr(seg, "end", getattr(seg, "start", 0.0))
+                - getattr(seg, "start", 0.0),
+            }
+            for seg in raw_segments
+            if getattr(seg, "text", "").strip()
+        ]
+        return transcript, response_language, response_duration
+
+    text = getattr(response, "text", "").strip()
+    if text:
+        pseudo = _synthesize_pseudo_segments(text, response_duration)
+        logger.info(
+            f"{tag} Whisper returned full text (no segments) for {video_id}: "
+            f"{len(text.split())} words → {len(pseudo)} pseudo-segments"
+        )
+        return pseudo, response_language, response_duration
+    return [], response_language, response_duration
+
+
 def _transcribe_with_whisper(
     video_id: str, job_id: str = ""
 ) -> tuple[list[dict], str] | None:
     """
     Download audio with yt-dlp and transcribe via OpenAI Whisper API.
 
-    Does not require ffmpeg — downloads audio in native format (m4a/webm).
+    Oversize handling (S-1.11.2 / D-051): audio beyond the 25 MB Whisper cap
+    is first re-downloaded at the smallest available bitrate; if still
+    oversize it is split into overlapping ffmpeg stream-copy chunks that are
+    transcribed independently and merged with offset-adjusted timestamps.
+
     Returns (segments, language) tuple on success, or None on failure.
 
     Multilingual note: we do **not** pass a ``language`` hint so Whisper
@@ -784,7 +1143,7 @@ def _transcribe_with_whisper(
     logger.info(f"{tag} Whisper fallback starting for video_id={video_id}")
 
     try:
-        import yt_dlp
+        import yt_dlp  # noqa: F401
     except ImportError:
         logger.error(f"{tag} yt-dlp is not installed. Run: pip install yt-dlp")
         return None
@@ -792,31 +1151,11 @@ def _transcribe_with_whisper(
     from openai import OpenAI
     client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
-    url = f"https://www.youtube.com/watch?v={video_id}"
-
     with tempfile.TemporaryDirectory() as tmpdir:
-        audio_template = os.path.join(tmpdir, "audio.%(ext)s")
-
-        ydl_opts = {
-            "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio",
-            "outtmpl": audio_template,
-            "quiet": True,
-            "no_warnings": True,
-        }
-
-        try:
-            logger.info(f"{tag} Downloading audio for {video_id} via yt-dlp...")
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-        except Exception as e:
-            logger.error(f"{tag} yt-dlp download failed for {video_id}: {e}")
+        audio_path = _download_audio_with_ladder(video_id, tmpdir, tag)
+        if audio_path is None:
             return None
 
-        candidates = [os.path.join(tmpdir, f) for f in os.listdir(tmpdir)]
-        if not candidates:
-            logger.error(f"{tag} No audio file found after yt-dlp download for {video_id}")
-            return None
-        audio_path = candidates[0]
         audio_size_bytes = os.path.getsize(audio_path)
         audio_size_mb = audio_size_bytes / (1024 * 1024)
         logger.info(
@@ -824,15 +1163,69 @@ def _transcribe_with_whisper(
             f"{audio_size_mb:.1f} MB ({os.path.basename(audio_path)})"
         )
 
-        # Whisper rejects uploads larger than 25 MB. Splitting is out of scope;
-        # bail cleanly so callers can record the transcript as unavailable.
+        # Oversize step 1: retry at the smallest available bitrate — cheap,
+        # no ffmpeg needed, and often enough on its own.
         if audio_size_bytes > WHISPER_MAX_FILE_BYTES:
-            logger.warning(
-                f"{tag} Audio for {video_id} is {audio_size_mb:.1f} MB, exceeds Whisper "
-                f"{WHISPER_MAX_FILE_BYTES // (1024 * 1024)} MB limit; skipping Whisper fallback"
+            logger.info(
+                f"{tag} Audio for {video_id} is {audio_size_mb:.1f} MB (> 25 MB); "
+                "retrying with smallest audio format..."
             )
-            return None
+            smaller = _download_audio_with_ladder(
+                video_id, tmpdir, tag, prefer_smallest=True
+            )
+            if smaller is not None and os.path.getsize(smaller) < audio_size_bytes:
+                audio_path = smaller
+                audio_size_bytes = os.path.getsize(audio_path)
+                audio_size_mb = audio_size_bytes / (1024 * 1024)
+                logger.info(
+                    f"{tag} Smallest-format audio for {video_id}: {audio_size_mb:.1f} MB"
+                )
 
+        # Oversize step 2: segmented transcription.
+        if audio_size_bytes > WHISPER_MAX_FILE_BYTES:
+            chunks = _split_audio_for_whisper(audio_path, tmpdir, tag)
+            if not chunks:
+                logger.warning(
+                    f"{tag} Audio for {video_id} is {audio_size_mb:.1f} MB, exceeds Whisper "
+                    f"{WHISPER_MAX_FILE_BYTES // (1024 * 1024)} MB limit and could not be "
+                    "split; skipping Whisper fallback"
+                )
+                return None
+            overlap = settings.WHISPER_SEGMENT_OVERLAP_SECONDS
+            per_chunk: list[tuple[float, float, list[dict]]] = []
+            language = "unknown"
+            n = len(chunks)
+            chunk_len_estimate = 0.0
+            for idx, (chunk_path, chunk_start) in enumerate(chunks):
+                chunk_mb = os.path.getsize(chunk_path) / (1024 * 1024)
+                try:
+                    response = _whisper_transcribe_with_retry(
+                        client, chunk_path, f"{video_id}#chunk{idx + 1}/{n}", tag, chunk_mb
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"{tag} Whisper failed on chunk {idx + 1}/{n} of {video_id}: {e}"
+                    )
+                    return None
+                if response is None:
+                    return None
+                segs, lang, dur = _whisper_response_to_segments(response, tag, video_id)
+                if lang != "unknown":
+                    language = lang
+                # Chunk length (sans tail overlap) — from the response duration.
+                chunk_len = max(0.0, dur - (overlap if idx < n - 1 else 0.0))
+                chunk_len_estimate = chunk_len or chunk_len_estimate
+                per_chunk.append((chunk_start, chunk_len or chunk_len_estimate, segs))
+            merged = _merge_chunk_transcripts(per_chunk, overlap, tag)
+            logger.info(
+                f"{tag} Segmented Whisper transcription succeeded for {video_id}: "
+                f"{len(merged)} segments across {n} chunks (language={language})"
+            )
+            if not merged:
+                return None
+            return merged, language
+
+        # Standard single-file path.
         try:
             response = _whisper_transcribe_with_retry(
                 client, audio_path, video_id, tag, audio_size_mb
@@ -843,34 +1236,9 @@ def _transcribe_with_whisper(
         if response is None:
             return None
 
-        response_language = getattr(response, "language", None) or "unknown"
-        response_duration = float(getattr(response, "duration", 0.0) or 0.0)
-
-        segments = getattr(response, "segments", None) or []
-        if not segments:
-            text = getattr(response, "text", "").strip()
-            if text:
-                pseudo = _synthesize_pseudo_segments(text, response_duration)
-                logger.info(
-                    f"{tag} Whisper returned full text (no segments) for {video_id}: "
-                    f"{len(text.split())} words → {len(pseudo)} pseudo-segments "
-                    f"(duration={response_duration:.1f}s, language={response_language})"
-                )
-                return pseudo, response_language
-            logger.warning(f"{tag} Whisper returned no transcript content for {video_id}")
-            return None
-
-        transcript = [
-            {
-                "text": getattr(seg, "text", "").strip(),
-                "start": getattr(seg, "start", 0.0),
-                "duration": getattr(seg, "end", getattr(seg, "start", 0.0))
-                - getattr(seg, "start", 0.0),
-            }
-            for seg in segments
-            if getattr(seg, "text", "").strip()
-        ]
-
+        transcript, response_language, _ = _whisper_response_to_segments(
+            response, tag, video_id
+        )
         logger.info(
             f"{tag} Whisper transcription succeeded for {video_id}: "
             f"{len(transcript)} segments (language={response_language})"

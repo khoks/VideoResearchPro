@@ -97,7 +97,7 @@ def test_execute_subscription_job_auto_completes_without_approval(patch_session_
         mock_yt.get_channel_metadata = MagicMock(return_value=channel_metadata)
         mock_yt.get_channel_videos_all = MagicMock(return_value=video_ids)
         mock_yt.get_video_details = MagicMock(return_value=details)
-        mock_yt.fetch_transcript = MagicMock(return_value=(fake_segments, "en"))
+        mock_yt.fetch_transcript = MagicMock(return_value=(fake_segments, "en", "youtube"))
         mock_chroma.insert_chunks = MagicMock(return_value=3)
         mock_chroma.delete_video_chunks = MagicMock(return_value=None)
 
@@ -173,7 +173,7 @@ def test_execute_subscription_job_skips_duplicate_videos(patch_session_local, db
         mock_yt.get_channel_metadata = MagicMock(return_value=channel_metadata)
         mock_yt.get_channel_videos_all = MagicMock(return_value=video_ids)
         mock_yt.get_video_details = MagicMock(return_value=details)
-        mock_yt.fetch_transcript = MagicMock(return_value=(fake_segments, "en"))
+        mock_yt.fetch_transcript = MagicMock(return_value=(fake_segments, "en", "youtube"))
         mock_chroma.insert_chunks = MagicMock(return_value=2)
         mock_chroma.delete_video_chunks = MagicMock(return_value=None)
 

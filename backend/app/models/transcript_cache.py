@@ -34,6 +34,10 @@ class TranscriptCache(Base):
     video_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
     segments_json: Mapped[str] = mapped_column(Text)
     language: Mapped[str] = mapped_column(String(10))
+    # S-1.11.4 provenance: "youtube" | "whisper" (video rows), or the
+    # connector's text_source for other types. NULL on pre-migration rows;
+    # readers default those to "youtube".
+    source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )

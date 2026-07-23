@@ -15,6 +15,9 @@ class SearchAgentState(TypedDict):
     preferred_channels: list[str]
     # Channel IDs resolved from `preferred_channels` via the YouTube API.
     preferred_channel_ids: list[str]
+    # Hints that could not be resolved to a channel ID (S-1.11.6) — surfaced
+    # to the user at approval time instead of being silently dropped.
+    unresolved_channels: list[str]
     # LLM-selected keywords used to score preferred-channel uploads for topic relevance.
     channel_keywords: list[str]
     discovered_videos: list[dict]

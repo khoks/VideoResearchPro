@@ -62,6 +62,22 @@ const FEATURES_BY_TIER: Record<Tier, ReadonlyArray<Feature>> = {
   studio: STUDIO_FEATURES,
 };
 
+/**
+ * Max `num_videos` a single topic job may request, per tier. Mirrors
+ * `backend/app/services/tier_service.py::TIER_CAPABILITIES["num_videos_cap"]`
+ * — the backend enforces this with a 403 at job creation; this mirror is
+ * for form UX (input max + helper copy) only.
+ */
+const NUM_VIDEOS_CAP_BY_TIER: Record<Tier, number> = {
+  free: 100,
+  pro: 250,
+  studio: 500,
+};
+
+export function numVideosCapForTier(tier: Tier): number {
+  return NUM_VIDEOS_CAP_BY_TIER[tier] ?? NUM_VIDEOS_CAP_BY_TIER.free;
+}
+
 export function featuresForTier(tier: Tier): ReadonlyArray<Feature> {
   return FEATURES_BY_TIER[tier] ?? FREE_FEATURES;
 }
@@ -83,5 +99,6 @@ export function useTierCapabilities() {
     isLoading,
     has: (feature: Feature) => hasFeatureForTier(tier, feature),
     features: featuresForTier(tier),
+    numVideosCap: numVideosCapForTier(tier),
   };
 }

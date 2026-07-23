@@ -23,8 +23,35 @@ class Settings(BaseSettings):
 
     # YouTube
     YOUTUBE_API_KEY: str = ""
-    YOUTUBE_TRANSCRIPT_RATE_LIMIT: float = 0.5
+    # E-1.11 (D-051): 0.5s pacing triggered a YouTube IP block after ~60
+    # serial transcript fetches in the 200-video test run. 3s + jitter keeps
+    # a 200-video job under the observed block threshold.
+    YOUTUBE_TRANSCRIPT_RATE_LIMIT: float = 3.0
+    YOUTUBE_TRANSCRIPT_RATE_JITTER: float = 0.4  # ± fraction of the base rate
     YOUTUBE_DAILY_QUOTA: int = 10000
+    # Paginated broad search (S-1.11.5). Each page costs 100 quota units;
+    # 2 pages/query = up to 100 results/query at 200 units.
+    YOUTUBE_SEARCH_MAX_PAGES: int = 2
+
+    # Transcript-fetch circuit breaker (S-1.11.1 / D-051). After
+    # `THRESHOLD` consecutive IP-block signals the breaker opens for
+    # `COOLDOWN_BASE` seconds, doubling per re-trip up to `COOLDOWN_MAX`.
+    # While open, a video waits out the remaining cooldown when it is at
+    # most `MAX_WAIT` seconds; longer waits fall through to Whisper.
+    TRANSCRIPT_BREAKER_THRESHOLD: int = 3
+    TRANSCRIPT_BREAKER_COOLDOWN_BASE: float = 120.0
+    TRANSCRIPT_BREAKER_COOLDOWN_MAX: float = 900.0
+    TRANSCRIPT_BREAKER_MAX_WAIT: float = 300.0
+
+    # Whisper fallback controls (S-1.11.2 / S-1.11.7 / D-051).
+    # Audio larger than 25 MB is split into ~TARGET_MB chunks with
+    # OVERLAP_SECONDS of shared audio between neighbours; per-chunk
+    # transcripts are merged with chunk-offset-adjusted timestamps.
+    WHISPER_SEGMENT_TARGET_MB: int = 20
+    WHISPER_SEGMENT_OVERLAP_SECONDS: float = 15.0
+    # Max Whisper transcriptions per job — bounds worst-case OpenAI spend
+    # when a block storm makes Whisper the primary path. 0 disables Whisper.
+    WHISPER_MAX_PER_JOB: int = 50
 
     # Reddit (S-1.5.1) — read-only access via script-app OAuth (client_credentials).
     # The token is for the *app*, not the user; suitable for reading public

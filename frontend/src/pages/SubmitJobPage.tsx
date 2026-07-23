@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useCreateJob } from '../hooks/useJobs';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
+import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { useJobStore } from '../stores/jobStore';
 import {
   Button,
@@ -129,6 +130,7 @@ export function SubmitJobPage() {
   const createJob = useCreateJob();
   const pushToast = useJobStore((s) => s.pushToast);
   const topicJobAvailable = useFeatureAvailable('topic_job');
+  const { tier, numVideosCap } = useTierCapabilities();
 
   const cloneFromInitial = (location.state as { cloneFrom?: Job } | null)?.cloneFrom ?? null;
   const [cloneFrom] = useState<Job | null>(cloneFromInitial);
@@ -449,7 +451,10 @@ export function SubmitJobPage() {
                   />
                 )}
               </FormField>
-              <FormField label="Number of videos">
+              <FormField
+                label="Number of videos"
+                helperText={`Your ${tier} plan allows up to ${numVideosCap} videos per research run.`}
+              >
                 {(id) => (
                   <Input
                     id={id}
@@ -457,7 +462,7 @@ export function SubmitJobPage() {
                     value={form.numVideos}
                     onChange={(e) => update('numVideos', parseInt(e.target.value || '0', 10) || 0)}
                     min={1}
-                    max={500}
+                    max={numVideosCap}
                   />
                 )}
               </FormField>

@@ -401,7 +401,7 @@ def test_run_search_agent_end_to_end(fake_videos):
             v["video_id"]: {"duration_seconds": v["duration_seconds"]} for v in fake_videos
         }
 
-        curated, queries_used = search_agent.run_search_agent(
+        curated, queries_used, _unresolved = search_agent.run_search_agent(
             topic="quantum computing",
             num_videos=2,
             search_instructions="focus on fundamentals",
@@ -454,7 +454,7 @@ def test_run_search_agent_resolves_preferred_channels(fake_videos):
 
         mock_details.side_effect = _details_side_effect
 
-        curated, queries_used = search_agent.run_search_agent(
+        curated, queries_used, _unresolved = search_agent.run_search_agent(
             topic="quantum",
             num_videos=2,
             preferred_channels=["@preferred"],

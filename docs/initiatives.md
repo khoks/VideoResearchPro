@@ -22,7 +22,9 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 ---
 
-## I-1 🟢 Multi-source ingest — **CLOSED 2026-05-03**
+## I-1 🟡 Multi-source ingest — original scope closed 2026-05-03; reopened 2026-07-22 for E-1.11 (scale resilience)
+
+**Scope-changed 2026-07-22:** reopened for [E-1.11](#e-111-transcript-pipeline-resilience-at-scale) — the 200-video deep-research test (job `0d4db8c3`, 2026-07-21/22) surfaced transcript-pipeline failures at scale: an IP-block cascade made Whisper the primary path for 80% of videos, and 63/200 videos were lost (25MB Whisper cap + yt-dlp 403s). The original multi-source scope stays closed; E-1.11 is the scale-resilience follow-on. Linked decision: [D-051](decisions.md#d-051-transcript-pipeline-resilience-bundle-circuit-breaker-segmented-whisper-yt-dlp-client-fallback-2026-07-22).
 
 **Closure 2026-05-03 (evening).** I-1 is **fully closed**. The polymorphic plumbing claim is validated **12 times** end-to-end across every dimension of variation:
 
@@ -401,9 +403,50 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 **Unblocked downstream:** T-1.5.1.4 + T-1.5.2.5 (Reddit/HN storage — shipped 2026-05-02 PR [#113](https://github.com/khoks/VideoResearchPro/pull/113)). T-1.5.3.4 (classifier persistence — also PR #113). M-1.5 e2e tests (still pending orchestrator wiring).
 
+### E-1.11 🟡 Transcript-pipeline resilience at scale
+
+**Filed 2026-07-22** from the 200-video deep-research test (job `0d4db8c3`, 2026-07-21/22, ~96 min end-to-end, completed): **137/200 fetched, 63 lost** — 36 to the 25MB Whisper cap (disproportionately long-form conference talks / podcasts), 27 to yt-dlp HTTP 403s. A YouTube transcript-API IP block after ~60 serial fetches made Whisper the primary path for 80% of videos (159/200 attempts). All stories below ship together in this branch's PR.
+**Linked decision:** [D-051](decisions.md#d-051-transcript-pipeline-resilience-bundle-circuit-breaker-segmented-whisper-yt-dlp-client-fallback-2026-07-22)
+
+#### S-1.11.1 🟡 Transcript throttle + IP-block circuit breaker
+
+**Scope.** Adaptive pacing + circuit breaker for transcript fetches. Config: `YOUTUBE_TRANSCRIPT_RATE_LIMIT` default raised 0.5s → 3.0s with ±40% jitter; breaker opens after 3 consecutive IP-block signals; cooldown 120s doubling to 900s max; post-cooldown probe re-tests before resuming. While open, a video falls to Whisper only when the remaining wait exceeds a cap — otherwise the loop waits it out.
+
+#### S-1.11.2 🟡 Segmented Whisper for >25MB audio
+
+**Scope.** ffmpeg stream-copy chunking into ~20MB-target time chunks with 15s overlap; per-chunk transcription; merge with timestamps offset by each chunk's position; overlap-zone segments deduplicated by midpoint-ownership rule. `worstaudio` (smallest-audio-format) re-download fallback when ffmpeg is unavailable; only bails if still oversize. Design per [D-051](decisions.md#d-051-transcript-pipeline-resilience-bundle-circuit-breaker-segmented-whisper-yt-dlp-client-fallback-2026-07-22) part (b).
+
+#### S-1.11.3 🟡 yt-dlp 403 hardening
+
+**Scope.** Escalating retry ladder across YouTube innertube player clients (default → android → ios) with cooldowns between attempts; smaller-audio-format preference.
+
+#### S-1.11.4 🟡 Transcript provenance fix
+
+**Scope.** `fetch_transcript` returns its source; `transcript_cache` gains a `source` column via Alembic; `documents.transcript_source` is now honest — was hardcoded `'youtube'` (the 200-video run recorded 0 of ~96 Whisper transcripts as `'whisper'`).
+
+#### S-1.11.5 🟡 Paginated YouTube search
+
+**Scope.** `pageToken` loop in `search_videos`; `YOUTUBE_SEARCH_MAX_PAGES` default 2. Quota note: each page costs 100 units.
+
+#### S-1.11.6 🟡 Unresolved-handle surfacing
+
+**Scope.** Topic jobs store `{"resolved": [], "unresolved": []}` in `channel_list_resolved`; approval UI warns when channel handles failed to resolve (previously each failed handle silently burned a 100-unit search fallback with no user-facing signal).
+
+#### S-1.11.7 🟡 Per-job Whisper budget
+
+**Scope.** `WHISPER_MAX_PER_JOB` env var, default 50; videos beyond the budget are marked unavailable with a reason. Per-job UI control ⚪ deferred follow-up.
+
+#### S-1.11.8 🟡 Extraction ETA + search-phase sub-progress
+
+**Scope.** Extraction ETA in progress messages driven by rolling per-path pacing (transcript-API vs Whisper rates differ ~10×); search phase emits sub-progress stages (was a static 5% for the whole ~3.7 min phase).
+
+#### S-1.11.9 🟡 Recovery tooling
+
+**Scope.** `scripts/retry_unavailable_transcripts.py` re-fetches a job's unavailable documents, then chunks + embeds them into the global collection. Validated on job `0d4db8c3`'s 63 lost videos.
+
 ---
 
-## I-2 🟢 Brand & visual identity rollout
+## I-2 🟡 Brand & visual identity rollout
 
 **Closed 2026-05-03.** All 6 epics now 🟢: E-2.1 tokens layer, E-2.2 primitives library, E-2.3 page migration, E-2.4 sidebar nav (all shipped earlier — verified 2026-04-26), E-2.5 marketing landing page (PR [#136](https://github.com/khoks/VideoResearchPro/pull/136), 2026-05-03), E-2.6 code identifier rename (this session — runbook in `docs/migration-code-identifiers.md` covers the operator-coordinated data-bearing renames).
 
@@ -464,6 +507,22 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 - [x] T-2.6.6 Migration runbook covering data preservation for self-hosters running the legacy names. *(shipped 2026-05-03 — `docs/migration-code-identifiers.md`. Three sections — Chroma collection rename, SQLite file rename, optional GitHub repo rename — with pre-flight checklist, idempotent backfill script, post-migration verification, and rollback procedure for each. Promise: never destroys data, every step is reversible.)*
 
 **Sequencing rationale (closed).** Brand copy moved immediately in PR #97 because it's pure cosmetic with no data-motion risk. Data-bearing identifier renames stayed deferred because they're production-data-mutating and need operator coordination. The runbook closes that gap by giving operators a safe-execution checklist; the codebase keeps the legacy defaults so pulling master never causes surprise motion. Operators who want the new names follow the runbook on their own schedule.
+
+### E-2.7 🟡 Research-flow UX polish (from 200-video test)
+
+**Filed 2026-07-22** from the same 200-video deep-research test that produced [E-1.11](#e-111-transcript-pipeline-resilience-at-scale) (job `0d4db8c3`). UX findings at 200-row scale; all stories shipping in the same branch's PR. Linked decision: [D-051](decisions.md#d-051-transcript-pipeline-resilience-bundle-circuit-breaker-segmented-whisper-yt-dlp-client-fallback-2026-07-22) (context only — the UX work carries no ADR of its own).
+
+#### S-2.7.1 🟡 Approval-list UX at scale
+
+**Scope.** Default-select-all on the approval list (was 0/200 selected while the helper copy said "Deselect any candidates you don't want" — contradictory); copy made consistent with the default; `content-visibility` virtualization so 200+ row lists stay responsive (500 would strain the current flat render).
+
+#### S-2.7.2 🟡 Q&A streaming
+
+**Scope.** SSE stage events on the Q&A path — `retrieving` / `refining` / `formulating` / `extracting_references` — so the user sees pipeline progress instead of a spinner. Token-level answer streaming ⚪ deferred.
+
+#### S-2.7.3 🟡 Per-tier `num_videos` ceilings
+
+**Scope.** Per-tier ceilings for topic-job `num_videos`: free 100 / pro 250 / studio 500. Schema absolute cap raised to 500 per PR [#188](https://github.com/khoks/VideoResearchPro/pull/188) (was `le=100` backend + `max={100}` frontend, which silently clamped a 200-video request).
 
 ---
 
@@ -660,7 +719,7 @@ Full design for each in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry 
 
 **Linked decision:** [D-038](decisions.md#d-038-tenancy-retrofit-ships-in-four-phases-audit-additive-backfillwrites-reads-not-null-2026-05-04)
 
-### E-5.2 🟢 Subscription tier gating
+### E-5.2 🟡 Subscription tier gating
 
 **Scope.** Free / Pro / Studio tiers with explicit YouTube quota allocation, LLM token budget, document-count cap, feature gating (Author Studio = Pro+).
 
@@ -673,6 +732,7 @@ Full design for each in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry 
 - [x] T-5.2.4 Partial-permanent. *`require_feature("byok_llm_keys")` already gates the BYOK credentials router (PR #158). Remaining wires happen as L2 (Author Studio, I-6) and L3 (Echo personal-brain, I-3) endpoints land — every new tier-gated endpoint adds a `Depends(require_tier(...))` or `Depends(require_feature(...))` at definition time, so this task closes incrementally rather than as one PR.*
 - [x] T-5.2.5 Quota runtime metering — *shipped 2026-05-05 (combined with T-5.5.5). New `quota_usage` table + `app/services/quota_metering_service.py` with `record_usage`, `get_usage`, `get_all_usage`, `check_quota`, `enforce_quota_or_raise`. Resource keys: `qa_exchanges` (monthly), `library_qa_exchanges` (monthly), `qa_history_chats` (monthly), `knowledge_extractions` (monthly), `documents` (lifetime), `llm_tokens_in/out` (daily), `youtube_units` (daily). New `qa_exchanges_per_month` + `knowledge_extractions_per_month` keys added to `TIER_CAPABILITIES` (Free 50 / Pro 1000 / Studio unlimited; Free 10 / Pro 200 / Studio 2000 respectively). Wired enforcement at the four hot endpoints: `/jobs/{id}/qa`, `/library/qa`, `/qa-history/chat`, `/videos/{id}/extract-knowledge`. New `GET /auth/quota` endpoint returns the user's full usage snapshot. 20 new tests; backend suite 929 → 949. **Linked decision:** [D-045](decisions.md#d-045-quota-metering-enforce-before-record-after-success-2026-05-05) — enforce-before / record-after-success sequencing.*
 - [x] T-5.2.6 🟢 **Tier-visibility UI + self-service tier flip shipped 2026-05-15.** Public marketing pages (`/landing`, `/pricing`) accessible to anyone; in-app `/account/subscription` page with current-tier highlight + mock-payment modal for upgrades + downgrade-confirmation modal listing features lost. New backend endpoint `PUT /api/v1/auth/me/tier` flips `users.tier` immediately (mock-payment-mode) and writes a `tier_changed` audit_log event. New stub frontend pages for Echo (`/echo` — Studio-only, exercises shipped CRUD on `personal_context`) and Author Studio (`/author` — Pro+, exercises shipped Book v1 outputter). Sidebar nav reveals Author / Echo links based on `useTierCapabilities()` mirror of `TIER_CAPABILITIES`; "Subscription" link in Account group shows current tier as a pill badge. 9 new backend tests + frontend type-check clean. **Linked decision:** [D-050](decisions.md#d-050-self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15) — mock payment + endpoint stability across the future Stripe migration.
+- [ ] T-5.2.7 🟡 LLM token accounting — *shipping 2026-07-22 in the pipeline-resilience branch. `qa_exchanges.prompt_tokens` / `completion_tokens` now populated; per-user `llm_tokens_in` / `llm_tokens_out` metering recorded on the Q&A path (feeds the existing daily quota keys from T-5.2.5). Per-JOB LLM spend ⚪ deferred — needs a `jobs` schema column.*
 
 ### E-5.3 ⚪ Stripe integration
 

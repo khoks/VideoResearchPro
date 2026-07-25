@@ -405,7 +405,7 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 ### E-1.11 🟢 Transcript-pipeline resilience at scale
 
-**Shipped:** 2026-07-22 — PR [#189](https://github.com/khoks/VideoResearchPro/pull/189). Recovery validated live on job 0d4db8c3: 31 of 63 lost videos recovered via segmented Whisper + yt-dlp client ladder (168/200 final corpus, 137 youtube + 31 whisper provenance; 32 remain unavailable — persistent 403s/oversize-unsplittable, candidates for a later proxy-based pass per D-051 re-evaluation hooks).
+**Shipped:** 2026-07-22 — PR [#189](https://github.com/khoks/VideoResearchPro/pull/189). Recovery fully validated live on job 0d4db8c3 across three waves: 31/63 recovered 2026-07-22 (segmented Whisper + yt-dlp client ladder while the IP block was active), and the final 32 recovered 2026-07-24 after the block lifted (fast caption path, paced by the new limiter). **Final corpus: 200/200 videos — 162 youtube (591,843 words) + 38 whisper (355,396 words) = 947,239 transcript words.** The wait-out-the-block strategy from D-051 proved correct; cookies/proxy knobs (S-1.11.10) remain available for blocks that persist.
 
 **Filed 2026-07-22** from the 200-video deep-research test (job `0d4db8c3`, 2026-07-21/22, ~96 min end-to-end, completed): **137/200 fetched, 63 lost** — 36 to the 25MB Whisper cap (disproportionately long-form conference talks / podcasts), 27 to yt-dlp HTTP 403s. A YouTube transcript-API IP block after ~60 serial fetches made Whisper the primary path for 80% of videos (159/200 attempts). All stories below ship together in this branch's PR.
 **Linked decision:** [D-051](decisions.md#d-051-transcript-pipeline-resilience-bundle-circuit-breaker-segmented-whisper-yt-dlp-client-fallback-2026-07-22)

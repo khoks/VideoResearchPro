@@ -10,6 +10,10 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### E-1.11 recovery complete — 200/200 corpus (2026-07-24)
+
+- The final 32 unavailable videos of the 200-video test job recovered after the YouTube IP block lifted (~48h), using the paced caption path. Full arc: 137/200 post-run → 168 after the segmented-Whisper/client-ladder wave → **200/200**. Final corpus: 947,239 transcript words (162 youtube / 38 whisper). Zero videos lost.
+
 ### 200-video deep-research test → pipeline resilience + UX batch (2026-07-22)
 
 A 200-video / 30-preferred-channel deep-research job (`0d4db8c3`) ran end-to-end in ~96 min and **completed** — and surfaced a batch of scale findings, all fixed in this branch. Headline failure mode: a YouTube transcript-API IP block after ~60 serial fetches cascaded into Whisper-as-primary-path (159/200 videos) and 63 lost videos (36 over the 25MB Whisper cap — disproportionately long-form conference talks — and 27 yt-dlp HTTP 403s); final tally 137/200 fetched. Decision: [D-051](docs/decisions.md#d-051-transcript-pipeline-resilience-bundle-circuit-breaker-segmented-whisper-yt-dlp-client-fallback-2026-07-22); work-state: [E-1.11](docs/initiatives.md#e-111-transcript-pipeline-resilience-at-scale) (+ E-2.7, T-5.2.7).

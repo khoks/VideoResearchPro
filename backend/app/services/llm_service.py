@@ -131,9 +131,34 @@ def _openai_reasoning_kwargs(reasoning: ReasoningLevel) -> dict[str, Any]:
     return {"model_kwargs": {"reasoning_effort": reasoning}}
 
 
-def _anthropic_reasoning_kwargs(reasoning: ReasoningLevel) -> dict[str, Any]:
+# Claude 5-generation models use adaptive thinking + output_config.effort;
+# the enabled+budget_tokens shape 400s on them ("not supported for this
+# model") — D-053 live-probe catch. Older Claude models keep the legacy shape.
+_ANTHROPIC_ADAPTIVE_THINKING_PREFIXES = (
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-fable-5",
+    "claude-haiku-5",
+)
+
+_ANTHROPIC_EFFORT_MAP = {
+    "minimal": "low",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "auto": "medium",
+}
+
+
+def _anthropic_reasoning_kwargs(reasoning: ReasoningLevel, model: str = "") -> dict[str, Any]:
     if reasoning == "off":
         return {}
+    if model.startswith(_ANTHROPIC_ADAPTIVE_THINKING_PREFIXES):
+        effort = _ANTHROPIC_EFFORT_MAP.get(reasoning, "medium")
+        return {
+            "thinking": {"type": "adaptive"},
+            "model_kwargs": {"output_config": {"effort": effort}},
+        }
     budget = _ANTHROPIC_THINKING_BUDGET.get(reasoning, 4_096)
     return {"thinking": {"type": "enabled", "budget_tokens": budget}}
 
@@ -204,14 +229,20 @@ def _build_anthropic(
             "provider=anthropic requires ANTHROPIC_API_KEY to be set "
             "(or a per-user BYOK credential via /api/v1/auth/credentials)."
         )
+    reasoning_kwargs = _anthropic_reasoning_kwargs(reasoning, model)
+    # Anthropic API constraint: `temperature` may only be 1 when extended
+    # thinking is enabled. Callers pass temperature=0.0 for determinism —
+    # with thinking on, the thinking budget IS the determinism control, so
+    # we honor the constraint rather than 400 (D-053 live-probe catch).
+    effective_temperature = 1.0 if reasoning_kwargs else temperature
     kwargs: dict[str, Any] = {
         "model": model,
         "api_key": effective_key,
-        "temperature": temperature,
+        "temperature": effective_temperature,
     }
     if max_tokens:
         kwargs["max_tokens"] = max_tokens
-    kwargs.update(_anthropic_reasoning_kwargs(reasoning))
+    kwargs.update(reasoning_kwargs)
     return ChatAnthropic(**kwargs)
 
 

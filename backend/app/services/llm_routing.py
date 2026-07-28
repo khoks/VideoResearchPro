@@ -185,6 +185,11 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "gpt-5.6-sol": 922_000,
     "gpt-5.6-terra": 922_000,
     "gpt-4.1-mini": 1_047_576,
+    # measured 2026-07-29 (Anthropic 400: "prompt is too long: N > M maximum")
+    "claude-sonnet-5": 1_000_000,
+    "claude-opus-5": 1_000_000,
+    "claude-fable-5": 1_000_000,
+    "claude-haiku-4-5": 200_000,
     # documented family values (pre-cutoff knowledge, not re-measured)
     "gpt-4.1": 1_047_576,
     "gpt-4.1-nano": 1_047_576,
@@ -231,7 +236,12 @@ def context_window_for(model: str) -> int:
 # unprofiled — deliberately NOT defaults until they stabilize. Anthropic
 # Claude 5 models (sonnet-5 for long-context refine/compose, haiku-4.5
 # for map/classify volume) are strong alternates once ANTHROPIC_API_KEY
-# is configured; today the key is unset so defaults stay OpenAI-only.
+# is configured. D-053 (2026-07-29, key now present): claude-sonnet-5
+# (measured 1M window, ~79 tok/s, ~2x faster than gpt-5.5 on identical
+# generations) owns the four user-facing synthesis sites; qa_history
+# formulate stays on 5.5 pending a quality pass. gpt-5.6-luna/sol/terra
+# profiled: non-reasoning speed tiers (120/60/16 tok/s) — luna is a
+# future volume-tier candidate once dated snapshots + pricing appear.
 #
 # Token estimates are from production observation + tiktoken measurements
 # on representative inputs (2026-04). Order-of-magnitude correct, not
@@ -292,7 +302,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "qa_formulate_answer": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
+        default_config=UseCaseConfig("anthropic", "claude-sonnet-5", "low"),
         summary=(
             "Produce the final user-facing answer with citations. Runs at "
             "temperature 0 so citations remain deterministic."
@@ -352,7 +362,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "library_qa_formulate_answer": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
+        default_config=UseCaseConfig("anthropic", "claude-sonnet-5", "low"),
         summary="Final library-wide answer with citations across videos.",
         typical_input_tokens=5_000,
         p95_input_tokens=15_000,
@@ -415,7 +425,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "knowledge_synthesize_report": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
+        default_config=UseCaseConfig("anthropic", "claude-sonnet-5", "medium"),
         summary=(
             "Reduce phase of the knowledge agent: compose a Markdown "
             "knowledge report from the deduped {topics, concepts, events, "
@@ -502,7 +512,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "report_compose": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
+        default_config=UseCaseConfig("anthropic", "claude-sonnet-5", "medium"),
         summary=(
             "Compose the final HTML report from the reduced summary + "
             "statistics. Produces thousands of tokens of user-facing text."

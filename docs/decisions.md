@@ -1515,3 +1515,29 @@ When E-5.3 (Stripe) ships, the same endpoint stays — its implementation flips 
 **Linked initiatives / PRs.** I-1 / E-1.12 (S-1.12.2 + model re-audit). PRs [#195](https://github.com/khoks/VideoResearchPro/pull/195), [#196](https://github.com/khoks/VideoResearchPro/pull/196).
 
 **Status-changed 2026-07-29:** amended same-day after live validation — `gpt-5.4-mini` with reasoning `low` consumes the visible completion budget (refine returned empty output; same failure class as T-4.9.5). All four mini call sites run reasoning **off**; part (b)'s tier table stands otherwise. Re-validated live on job 0d4db8c3: 11.8K-char grounded answer, 10 citations, 52s vs the 127s pre-audit baseline.
+
+---
+
+## D-053 — Claude 5 adoption for user-facing synthesis + gpt-5.6 empirical profile (2026-07-29)
+
+**Status:** accepted.
+
+**Context.** `ANTHROPIC_API_KEY` was configured (the D-052 precondition), and the user asked for an in-depth gpt-5.6 analysis. All candidates were profiled empirically: measured context windows (oversized-prompt 400s), generation latency/throughput, JSON discipline (rank-style), compression fidelity (refine-style, 3 planted facts), and reasoning behavior.
+
+**Measurements (2026-07-29).** Windows: `claude-sonnet-5` / `claude-opus-5` / `claude-fable-5` = 1,000,000 input tokens; `claude-haiku-4-5` = 200,000. Throughput/latency on a fixed 180-word generation: `gpt-5.6-luna` 120.6 tok/s (5.7s), `gpt-5.4-mini` 88.1 (2.7s), `claude-sonnet-5` 78.7 (5.8s), `gpt-5.5` 78.7 (13.0s), `claude-haiku-4-5` 66.1 (3.8s), `gpt-5.6-sol` 59.9 (12.1s), `gpt-5.6-terra` 15.8 (59.8s), `claude-opus-5` (26.7s, thinking-on default). Every model passed the JSON-rank and 3/3 compression probes — quality separation at this trivial tier is nil; the differentiators are speed, window, reasoning capability, and provenance.
+
+**Decision.**
+
+1. **`claude-sonnet-5` owns the four user-facing synthesis sites**: `qa_formulate_answer` (low), `library_qa_formulate_answer` (low), `report_compose` (medium), `knowledge_synthesize_report` (medium). Rationale: flagship-class output at ~2× gpt-5.5's measured latency, a 1M window that removes compose-input pressure entirely, and citation-faithful long-form synthesis is the family's traditional strength.
+2. **gpt-5.6 trio: profiled, still not adopted.** All three accept `reasoning_effort` but emit ZERO reasoning tokens — they are non-reasoning speed tiers (luna=fast/120 tok/s, sol=mid, terra=slow-heavy). That disqualifies them for `search_rank_and_curate` (the app's biggest reasoning win) and makes them lateral moves elsewhere. luna is the future volume-tier candidate — revisit when dated snapshots + published pricing appear.
+3. **Everything else unchanged**: nano volume tier, 5.4-mini (reasoning off) mid tier, gpt-5.5 keeps rank (`high`) and `qa_history_formulate_answer` (medium) pending a dedicated quality pass; `claude-haiku-4-5` (200K, 66 tok/s) offers no edge over the OpenAI volume tier; `claude-opus-5`/`claude-fable-5` are premium thinking tiers reserved for future Echo "speak as me" quality work.
+
+**Two provider-quirk fixes shipped alongside (live-probe catches):** (a) Anthropic requires `temperature=1` when thinking is enabled — the builder now forces it; (b) Claude 5-generation models reject `thinking.type=enabled`/`budget_tokens` and require `thinking.type=adaptive` + `output_config.effort` — the reasoning mapping is now generation-aware (legacy budget shape retained for Claude ≤4.x).
+
+**Alternatives considered.** Adopting sonnet-5 for refine/reduce too (rejected — 5.4-mini at 88 tok/s reasoning-off is faster and cheaper for mechanical compression, and was just stabilized in PR #196); adopting gpt-5.6-luna for map/classify now (rejected — undated preview, unknown pricing, no track record); opus-5 for rank (rejected — thinking-on default costs 26.7s/call latency where rank runs mid-pipeline).
+
+**Consequences.** The app is now genuinely multi-provider in production defaults (OpenAI volume/mid + Anthropic user-facing synthesis). BYOK Studio users' Anthropic keys now cover the highest-value calls. Rollback of any single site is one `LLM_USE_CASE_CONFIG` env line.
+
+**Re-evaluation hooks.** Re-run the bench battery when gpt-5.6 gets dated snapshots; A/B `qa_history_formulate_answer` on sonnet-5; consider `claude-fable-5`/`claude-opus-5` for E-3.4 "speak as me" when it ships.
+
+**Linked initiatives / PRs.** I-1 / E-1.12 follow-on / D-052. PR: this branch's PR.

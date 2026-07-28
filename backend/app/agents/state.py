@@ -34,6 +34,9 @@ class ReportAgentState(TypedDict):
     report_sections: dict[str, str]
     statistics: dict
     final_html: str
+    # S-1.12.4 loud accounting: map batch/drop counters surfaced as a
+    # processing-note footer in the composed report.
+    processing_notes: dict
 
 
 class KnowledgeAgentState(TypedDict):
@@ -59,6 +62,8 @@ class QAAgentState(TypedDict):
     job_type: str
     question: str
     report_html: str
+    # S-1.12.1: approved video ids scoping this job's retrieval.
+    video_ids: list[str]
     sub_queries: list[str]
     rag_results: list[dict]
     report_context: str | None

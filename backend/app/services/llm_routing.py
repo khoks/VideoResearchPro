@@ -163,6 +163,55 @@ class UseCaseInfo:
 
 
 # ---------------------------------------------------------------------------
+# Model context windows (S-1.12.2 / E-1.12)
+# ---------------------------------------------------------------------------
+#
+# INPUT-token limits, EMPIRICALLY MEASURED 2026-07-29 by sending each model
+# an oversized prompt and parsing the API's own 400 message ("Input tokens
+# exceed the configured limit of N tokens"). Rejected requests are unbilled,
+# so re-measuring after a model refresh is free — see D-052.
+#
+# Callers that assemble large prompts (report map/reduce/channel batching)
+# derive their budgets from the RESOLVED model via `context_window_for()`
+# instead of the legacy global `LLM_MAX_CONTEXT_TOKENS` constant.
+MODEL_CONTEXT_WINDOWS: dict[str, int] = {
+    # measured 2026-07-29
+    "gpt-5.4-nano": 272_000,
+    "gpt-5.4-mini": 272_000,
+    "gpt-5.4": 922_000,
+    "gpt-5.5": 922_000,
+    "gpt-5.5-pro": 922_000,
+    "gpt-5.6-luna": 922_000,
+    "gpt-5.6-sol": 922_000,
+    "gpt-5.6-terra": 922_000,
+    "gpt-4.1-mini": 1_047_576,
+    # documented family values (pre-cutoff knowledge, not re-measured)
+    "gpt-4.1": 1_047_576,
+    "gpt-4.1-nano": 1_047_576,
+    "gpt-4o": 128_000,
+    "gpt-4o-mini": 128_000,
+}
+
+# Unknown models (typos, brand-new releases, local models) get this
+# conservative floor so oversized batches fail split, not silent.
+DEFAULT_CONTEXT_WINDOW: int = 128_000
+
+
+def context_window_for(model: str) -> int:
+    """Input-token window for ``model``, falling back to prefix matching
+    (dated snapshots like ``gpt-5.5-2026-04-23``) then the conservative
+    default."""
+    if model in MODEL_CONTEXT_WINDOWS:
+        return MODEL_CONTEXT_WINDOWS[model]
+    for known, window in sorted(
+        MODEL_CONTEXT_WINDOWS.items(), key=lambda kv: -len(kv[0])
+    ):
+        if model.startswith(known):
+            return window
+    return DEFAULT_CONTEXT_WINDOW
+
+
+# ---------------------------------------------------------------------------
 # Registry. One entry per UseCase literal above.
 # ---------------------------------------------------------------------------
 #
@@ -170,7 +219,17 @@ class UseCaseInfo:
 # with model tiers chosen per use case. Flip an individual call to Claude
 # or Gemini via LLM_USE_CASE_CONFIG without editing this file:
 #
-#   LLM_USE_CASE_CONFIG=knowledge_synthesize_report=anthropic:claude-opus-4-5:medium
+#   LLM_USE_CASE_CONFIG=knowledge_synthesize_report=anthropic:claude-sonnet-5:medium
+#
+# Model lineup re-audited 2026-07-29 (D-052): gpt-5.4 / gpt-5.4-mini are
+# back on the account (they were absent at the E-4.9 audit), enabling a
+# proper three-tier stack — nano (272K) for high-volume mechanical calls,
+# 5.4-mini (272K) for mid-tier synthesis, 5.5 (922K) for flagship
+# user-facing output. gpt-5.6-luna/sol/terra are live but undated and
+# unprofiled — deliberately NOT defaults until they stabilize. Anthropic
+# Claude 5 models (sonnet-5 for long-context refine/compose, haiku-4.5
+# for map/classify volume) are strong alternates once ANTHROPIC_API_KEY
+# is configured; today the key is unset so defaults stay OpenAI-only.
 #
 # Token estimates are from production observation + tiktoken measurements
 # on representative inputs (2026-04). Order-of-magnitude correct, not
@@ -213,7 +272,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "qa_refine_context": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.5", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "low"),
         summary=(
             "Compact the raw RAG hits + report context down to a focused "
             "excerpt that the final-answer LLM can reason over. Input is "
@@ -278,7 +337,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "library_qa_refine_context": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.5", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "low"),
         summary=(
             "Compact the library-wide RAG hits into focused context before "
             "the final answer. Input can be very large."
@@ -425,7 +484,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "report_reduce_summaries": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "low"),
         summary=(
             "Reduce phase: consolidate the per-batch summaries into a "
             "single structured summary."
@@ -457,7 +516,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "report_channel": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "low"),
         summary="Channel-level report composition for channel jobs.",
         typical_input_tokens=6_000,
         p95_input_tokens=15_000,
@@ -482,7 +541,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     # --- Social-media candidate classification (S-1.5.3) ---------------
     "social_classify_stance": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-4.1-mini", "off"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "off"),
         summary=(
             "Per-candidate-Document (and per-comment) classification "
             "returning {stance, sentiment, framing, topic_relevance}. "

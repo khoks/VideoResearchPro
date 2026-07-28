@@ -164,6 +164,18 @@ def test_qa_token_columns_stay_null_without_usage_metadata(client, db, test_user
 
 def test_qa_stream_emits_stage_and_complete_events(client, db, test_user):
     job = _make_completed_job(db, report_path=None, tenant_id=test_user.id)
+    # S-1.12.1: retrieval is scoped to approved job videos — link one so
+    # the mocked Chroma results flow through.
+    from app.models.document import Document
+    from app.models.job_video import JobVideo
+
+    db.add(Document(video_id="v1", source_type="video", source_id="v1",
+                    title="Video A", channel_id="UC1",
+                    url="https://www.youtube.com/watch?v=v1"))
+    db.commit()
+    db.add(JobVideo(job_id=job.id, video_id="v1", approved=True,
+                    selection_reason="search"))
+    db.commit()
     p_chroma, p_llm, p_upsert = _qa_agent_patches()
     with p_chroma, p_llm, p_upsert:
         response = client.post(

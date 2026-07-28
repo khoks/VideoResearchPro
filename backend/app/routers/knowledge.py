@@ -162,6 +162,12 @@ def extract_knowledge(
     )
 
     merged = {key: list(result.get(key, [])) for key in _KNOWLEDGE_KEYS}
+    # S-1.12.8: persist sanity-ceiling metadata (>500K-token transcripts are
+    # truncated by the agent) so the artifact records its partial coverage.
+    # `_load_merged_from_video` filters to _KNOWLEDGE_KEYS, so readers that
+    # only want the four lists are unaffected.
+    if result.get("_processing"):
+        merged["_processing"] = result["_processing"]
     video.extracted_knowledge_json = json.dumps(merged, ensure_ascii=False)
     video.knowledge_report_md = result.get("knowledge_report_md", "") or ""
     video.knowledge_extracted_at = datetime.now(timezone.utc)

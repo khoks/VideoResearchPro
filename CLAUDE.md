@@ -139,7 +139,7 @@ Celery task exits after the search/fetch phase, saving discovered videos and set
 Single multiplexed WebSocket at `/ws/jobs`. Clients send `subscribe`/`unsubscribe` messages per job_id. Celery workers publish progress to Redis pub/sub (`job_progress:{job_id}`). The WebSocket manager listens on Redis and fans out to subscribed clients.
 
 ### RAG Pipeline
-**Single global ChromaDB collection** named `videoresearchpro_global`. Transcripts are chunked at 512 tokens with 50-token overlap, preserving timestamp mappings from YouTube transcript segments. Embeddings are computed exactly once per video using the multilingual `paraphrase-multilingual-MiniLM-L12-v2`.
+**Single global ChromaDB collection** named `videoresearchpro_global`. Transcripts are chunked at 256 tokens with 32-token overlap (env `CHUNK_SIZE`/`CHUNK_OVERLAP`), preserving timestamp mappings from YouTube transcript segments. Embeddings are computed exactly once per video using the multilingual `paraphrase-multilingual-MiniLM-L12-v2`.
 
 - Per-job Q&A filters by `video_id ∈ approved_set` at query time.
 - Library-wide Q&A queries the whole collection with no filter.
@@ -251,7 +251,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `DATABASE_URL` | No | `sqlite:///./data/videoresearchpro.db` | SQLAlchemy connection string |
 | `REDIS_URL` | No | `redis://localhost:6379/0` | Redis for pub/sub |
 | `CELERY_BROKER_URL` | No | `redis://localhost:6379/1` | Celery broker |
-| `CHUNK_SIZE` | No | `512` | RAG chunk size in tokens |
+| `CHUNK_SIZE` | No | `256` | RAG chunk size in tokens (`CHUNK_OVERLAP` default 32) |
 | `RAG_TOP_K` | No | `15` | Number of RAG results per query |
 | **Transcript-pipeline resilience (E-1.11 / D-051)** | | | |
 | `YOUTUBE_TRANSCRIPT_RATE_LIMIT` | No | `3.0` | Min seconds between transcript fetches (0.5 triggered an IP block at ~60 videos) |
@@ -374,7 +374,7 @@ From highest to lowest:
 
 ### Registered use cases
 
-Nineteen named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
+Twenty named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
 
 **Job Q&A (`app/agents/qa_agent.py`):**
 - `qa_clarification` — short follow-up clarifier before answering
@@ -409,7 +409,7 @@ Nineteen named call sites — full rationale, token budgets, and recommended min
 
 ## LLM startup smoke check + fail-soft
 
-`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 19 entries, **dedupes by `(provider, model)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
+`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 20 entries, **dedupes by `(provider, model)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
 
 **Health endpoints:**
 - `GET /api/v1/health` — overall status plus an `llm` field with `status` (`ok` / `degraded` / `down` / `unknown`) and `unavailable_features` (a list of feature names whose required use cases failed probing).

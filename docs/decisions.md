@@ -1489,3 +1489,27 @@ When E-5.3 (Stripe) ships, the same endpoint stays — its implementation flips 
 - Local-whisper option for self-host Whisper cost elimination.
 
 **Linked initiatives / PRs.** I-1 / [E-1.11](initiatives.md#e-111-transcript-pipeline-resilience-at-scale) (new). PR: this branch's PR.
+
+---
+
+## D-052 — Measured context windows + three-tier model stack (E-1.12 model re-audit) (2026-07-29)
+
+**Status:** accepted.
+
+**Context.** The E-1.12 context-scale audit found report batching sized by one global constant (`LLM_MAX_CONTEXT_TOKENS` = 1,047,576, GPT-4.1's window) regardless of the resolved model. The registry documented no window per model, and the OpenAI lineup had shifted again since the E-4.9 audit: `gpt-5.4` / `gpt-5.4-mini` returned to the account (absent in May), and an undated `gpt-5.6-luna/sol/terra` trio appeared. The user asked for a model re-analysis alongside the resilience work. `ANTHROPIC_API_KEY` is not configured, so Claude models cannot be defaults today.
+
+**Decision.** Three coordinated parts:
+
+(a) **Measure, don't guess.** Context windows are now empirically measured by sending each model an oversized prompt and parsing the API's own 400 message ("Input tokens exceed the configured limit of N tokens") — rejected requests are unbilled, so re-measuring after every lineup shift is free. Measured 2026-07-29: `gpt-5.4-nano` / `gpt-5.4-mini` = **272,000** input tokens; `gpt-5.4` / `gpt-5.5` / `gpt-5.5-pro` / `gpt-5.6-*` = **922,000**; `gpt-4.1-mini` = **1,047,576**. Stored in `llm_routing.MODEL_CONTEXT_WINDOWS` with `context_window_for()` prefix matching and a conservative 128K default for unknown models. Batch budgets derive from the RESOLVED model (`report_agent._batch_budget`), capped additionally at a 120K quality ceiling (context-rot guard).
+
+(b) **Three-tier stack** now that `gpt-5.4-mini` is back: nano (272K) for high-volume mechanical calls (map, extract, classify, clarify, expansion, references, plan); **5.4-mini (272K) for mid-tier synthesis** — `qa_refine_context`, `library_qa_refine_context`, `report_reduce_summaries`, `report_channel` (all previously on 5.5 or nano); 5.5 (922K) for flagship user-facing output (formulate ×3, compose, rank, knowledge synthesize). `social_classify_stance` moves `gpt-4.1-mini` → `gpt-5.4-nano` (consistent stack). Net effect: four use cases step DOWN a price tier with no window risk (their inputs are ≤37K vs 272K available).
+
+(c) **Deliberate non-adoptions.** `gpt-5.6-luna/sol/terra`: live, 922K windows, but undated and unprofiled — watch-list, not defaults; re-evaluate when dated snapshots appear. Claude 5 family (`claude-sonnet-5` suits long-context refine/compose; `claude-haiku-4-5` suits map/classify volume): recommended alternates documented in the registry header, adoptable per-use-case via `LLM_USE_CASE_CONFIG` the day `ANTHROPIC_API_KEY` is configured.
+
+**Alternatives considered.** Keeping the global constant (rejected — the measured data proves gpt-5.4-nano's 272K window made every 628K map batch a silent 400; the reference job's report was likely built from a fraction of its corpus). Hardcoding vendor-published windows (rejected — post-cutoff models have no reliable published numbers in-repo; measurement is free and exact). Adopting gpt-5.6 immediately (rejected — no dated snapshot, no track record).
+
+**Consequences.** Batch sizing is now model-truthful; swapping any use case to a smaller-window model automatically shrinks its batches instead of silently dropping content. The measurement probe is rerunnable (documented in the registry header). Registry model drift remains monitorable via `scripts/validate_llm_registry.py --strict`.
+
+**Re-evaluation hooks.** Re-measure + re-tier when gpt-5.6 gets dated snapshots; revisit Claude adoption when the key lands; if 5.4-mini quality on refine/reduce disappoints, the una-tantum bump back to 5.5 is one env line.
+
+**Linked initiatives / PRs.** I-1 / E-1.12 (S-1.12.2 + model re-audit). PR: this branch's PR.

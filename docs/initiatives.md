@@ -448,22 +448,22 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 ---
 
-### E-1.12 ⚪ LLM context-window resilience at scale
+### E-1.12 🟢 LLM context-window resilience at scale
 
-**Filed 2026-07-29** from the context-scale audit (five parallel readers + adversarial verification over every agentic call site, sized against a 200-video / 10.6M-token extreme corpus; reference job 0d4db8c3). Findings summarized in [architecture.md § Context-window & scale behavior](architecture.md#context-window-scale-behavior-audited-2026-07-29). Status ⚪ — proposed, awaiting user go-ahead on scope.
+**Filed 2026-07-29** from the context-scale audit (five parallel readers + adversarial verification over every agentic call site, sized against a 200-video / 10.6M-token extreme corpus; reference job 0d4db8c3). Findings summarized in [architecture.md § Context-window & scale behavior](architecture.md#context-window-scale-behavior-audited-2026-07-29). **Shipped 2026-07-29** (all 9 stories, single PR) plus the D-052 model re-audit: context windows measured empirically (nano/mini 272K, 5.4/5.5/5.6 922K, 4.1-mini 1,047,576), three-tier model stack restored (nano / 5.4-mini / 5.5), four use cases stepped down a price tier. Report batches now derive from the resolved model with a 120K quality cap; reduce recurses to a single summary; map failures bisect-retry then surface as a processing note in the report itself.
 
 **Why it exists.** The report pipeline sizes batches to one global constant (`LLM_MAX_CONTEXT_TOKENS` = 1,047,576) blind to the resolved model; reduce is single-level; failed batches and channel-path overflow are silently dropped; `rank_and_curate` sends the whole pool in one prompt (~300K tokens at the new target=500 cap). Q&A surfaces are corpus-invariant (top-K bounded) and need no work.
 
 **Stories**
-- S-1.12.1 ⚪ **Fix job-scoped Q&A retrieval** — qa_agent.py:111 uses the deprecated `query_collection` signature; job filter ignored → every job Q&A searches the whole global library (CLAUDE.md's scoping claim currently false). One-line fix + regression test. *Correctness bug, not scale.*
-- S-1.12.2 ⚪ Per-model `context_window` in `USE_CASE_REGISTRY`; derive report/channel batch budgets from the resolved model with a safety margin (replaces the global constant).
-- S-1.12.3 ⚪ Recursive reduce: loop pairwise until under budget + final merge; on reduce failure degrade to truncated summaries, never raw pass-through to compose.
-- S-1.12.4 ⚪ Loud accounting for dropped content: failed map batches, channel-path truncation, knowledge 60K tail-chop → progress message + report footnote ("N sources partially processed").
-- S-1.12.5 ⚪ Batch/tournament ranking in `rank_and_curate`; cap map batches ~120K tokens for extraction quality (context-rot mitigation independent of window fit).
-- S-1.12.6 ⚪ Catch context-length 400s → bisect batch and retry (adaptive splitting).
-- S-1.12.7 ⚪ Wire `max_tokens` from registry `typ_out` at all 20 call sites (4 set it today).
-- S-1.12.8 ⚪ Knowledge agent: windowed extraction above 60K instead of silent truncation; synthesize from extraction JSON without re-sending the full transcript.
-- S-1.12.9 ⚪ Doc drift: CLAUDE.md says CHUNK_SIZE 512/50 but config ships 256/32; registry holds 20 use cases, docs say 19.
+- S-1.12.1 🟢 **Fix job-scoped Q&A retrieval** — qa_agent.py:111 uses the deprecated `query_collection` signature; job filter ignored → every job Q&A searches the whole global library (CLAUDE.md's scoping claim currently false). One-line fix + regression test. *Correctness bug, not scale.*
+- S-1.12.2 🟢 Per-model `context_window` in `USE_CASE_REGISTRY`; derive report/channel batch budgets from the resolved model with a safety margin (replaces the global constant).
+- S-1.12.3 🟢 Recursive reduce: loop pairwise until under budget + final merge; on reduce failure degrade to truncated summaries, never raw pass-through to compose.
+- S-1.12.4 🟢 Loud accounting for dropped content: failed map batches, channel-path truncation, knowledge 60K tail-chop → progress message + report footnote ("N sources partially processed").
+- S-1.12.5 🟢 Batch/tournament ranking in `rank_and_curate`; cap map batches ~120K tokens for extraction quality (context-rot mitigation independent of window fit).
+- S-1.12.6 🟢 Catch context-length 400s → bisect batch and retry (adaptive splitting).
+- S-1.12.7 🟢 Wire `max_tokens` from registry `typ_out` at all 20 call sites (4 set it today).
+- S-1.12.8 🟢 Knowledge agent: windowed extraction above 60K instead of silent truncation; synthesize from extraction JSON without re-sending the full transcript.
+- S-1.12.9 🟢 Doc drift: CLAUDE.md says CHUNK_SIZE 512/50 but config ships 256/32; registry holds 20 use cases, docs say 19.
 
 
 ## I-2 🟡 Brand & visual identity rollout

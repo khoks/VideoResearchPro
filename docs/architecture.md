@@ -478,6 +478,18 @@ When a probe fails, the **app stays up**. The frontend shows a banner driven by 
 
 The Celery worker does not share this lifespan — task-time LLM failures surface on the Jobs page via the worker's progress publisher.
 
+### Context-window & scale behavior (audited 2026-07-29)
+
+A full call-site audit against a 200-video / 10.6M-token extreme corpus (real reference job 0d4db8c3: 200 videos, 947K words, 5,164 chunks, longest video 4.4 h). Three context strategies coexist, with very different maturity:
+
+**Retrieval-bounded (all Q&A surfaces) — corpus-invariant by design.** Job Q&A, Library Q&A, and Q&A-history never see the corpus, only top-K retrieval: ≤3 queries × `RAG_TOP_K`(15) chunks, deduped, plus the report text hard-capped at 50,000 chars (`REPORT_CONTEXT_CHAR_CAP`, qa_agent.py). Worst-case refine input ≈ 37K tokens regardless of library size. Q&A-history additionally clips stored answers to 1,500 chars at prompt-assembly.
+
+**Batch-bounded (knowledge agent) — per-video, capped, silently lossy.** Transcripts split into `KNOWLEDGE_EXTRACT_BATCH_TOKENS`(8K) batches under a `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS`(60K) cap. The cap is a silent tail-truncation (no log/marker) — a 4.4 h video (~67K tokens) loses its tail. Synthesize re-sends the full (re-truncated) transcript plus the uncapped merged-extraction JSON: ~75K tokens worst-case in one call.
+
+**Budget-batched (report pipeline) — the known scale hazard.** Map batches are sized to `0.6 × LLM_MAX_CONTEXT_TOKENS` (= 628K tokens against the global 1,047,576 constant) *regardless of which model the use case resolves to* — no per-model context-window table exists, and `min_context_recommended` in the registry is advisory metadata only. Reduce is single-level (one pairwise halving, no recursion, no final merge); reduce failure passes raw map outputs to compose. Failed map batches are silently dropped (`except → warn → continue`). The channel path truncates each channel at 314K tokens with no logging. `search_rank_and_curate` puts the whole candidate pool (cap `num_videos × 5`) in one prompt: ~130K tokens at target=200, ~300K at target=500. Only 4 of 20 registered call sites set `max_tokens`; no code path recognizes a context-length 400 specifically, and one-token startup probes cannot detect window mismatches.
+
+Remediation is tracked as [E-1.12](initiatives.md#e-112-llm-context-window-resilience-at-scale) (proposed). Known correctness bug found by the same audit — job-scoped Q&A retrieval currently ignores the job filter (deprecated `query_collection` signature, qa_agent.py:111) — is filed there as its first story.
+
 ---
 
 ## Auth and tenancy

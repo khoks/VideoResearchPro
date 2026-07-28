@@ -224,7 +224,9 @@ def context_window_for(model: str) -> int:
 # Model lineup re-audited 2026-07-29 (D-052): gpt-5.4 / gpt-5.4-mini are
 # back on the account (they were absent at the E-4.9 audit), enabling a
 # proper three-tier stack — nano (272K) for high-volume mechanical calls,
-# 5.4-mini (272K) for mid-tier synthesis, 5.5 (922K) for flagship
+# 5.4-mini (272K, reasoning OFF — its reasoning burns the visible
+# completion budget; live-validated 2026-07-29) for mid-tier synthesis,
+# 5.5 (922K) for flagship
 # user-facing output. gpt-5.6-luna/sol/terra are live but undated and
 # unprofiled — deliberately NOT defaults until they stabilize. Anthropic
 # Claude 5 models (sonnet-5 for long-context refine/compose, haiku-4.5
@@ -272,7 +274,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "qa_refine_context": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "off"),
         summary=(
             "Compact the raw RAG hits + report context down to a focused "
             "excerpt that the final-answer LLM can reason over. Input is "
@@ -337,7 +339,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "library_qa_refine_context": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "off"),
         summary=(
             "Compact the library-wide RAG hits into focused context before "
             "the final answer. Input can be very large."
@@ -484,7 +486,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "report_reduce_summaries": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "off"),
         summary=(
             "Reduce phase: consolidate the per-batch summaries into a "
             "single structured summary."
@@ -516,7 +518,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "report_channel": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "off"),
         summary="Channel-level report composition for channel jobs.",
         typical_input_tokens=6_000,
         p95_input_tokens=15_000,

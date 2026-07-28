@@ -171,7 +171,8 @@ def _build_raw_context(parsed: list[tuple[dict, str, str]], refs: list[dict]) ->
 def _refine_context(question: str, raw_context: str) -> str:
     if not raw_context:
         return ""
-    llm = get_llm_for("qa_history_refine_context", temperature=0.0)
+    # S-1.12.7: refine emits a compact excerpt — bound the completion.
+    llm = get_llm_for("qa_history_refine_context", temperature=0.0, max_tokens=1500)
     prompt = QA_HISTORY_REFINE_CONTEXT_PROMPT.format(
         question=question,
         raw_context=raw_context,
@@ -197,7 +198,8 @@ def _formulate_answer(
     allowed_sources: str,
     refined_context: str,
 ) -> str:
-    llm = get_llm_for("qa_history_formulate_answer", temperature=0.0)
+    # S-1.12.7: user-facing synthesis answer — bound the completion.
+    llm = get_llm_for("qa_history_formulate_answer", temperature=0.0, max_tokens=3000)
     system_prompt = QA_HISTORY_SYSTEM_PROMPT.format(answer_language=answer_language)
     user_prompt = QA_HISTORY_ANSWER_PROMPT.format(
         question=question,

@@ -47,6 +47,7 @@ def _run(fake_llms, progress_callback=None, usage_out=None):
             job_id="job-1",
             job_type="topic",
             question="tell me",
+            video_ids=["v1"],
             report_html=None,
             progress_callback=progress_callback,
             usage_out=usage_out,

@@ -51,16 +51,16 @@ def test_retrieve_context_queries_chroma_with_top_k():
             "job_type": "topic",
             "question": "what is quantum entanglement?",
             "report_html": None,
+            "video_ids": ["v1"],
         }
         result = qa_agent.retrieve_context(state)
 
     mock_query.assert_called_once()
-    # The third positional is n_results=15 by default for the QA agent
+    # S-1.12.1: new signature — query text first, scope via video_ids kwarg.
     call_kwargs = mock_query.call_args.kwargs
     call_args = mock_query.call_args.args
-    # Signature: query_collection(job_id, query_text, n_results=...)
-    assert call_args[0] == "job-abc"
-    assert call_args[1] == "what is quantum entanglement?"
+    assert call_args[0] == "what is quantum entanglement?"
+    assert call_kwargs["video_ids"] == ["v1"]
     assert call_kwargs.get("n_results") == 15
 
     # Results were enriched with timestamp_display + youtube_link
@@ -296,6 +296,7 @@ def test_run_qa_agent_full_graph():
             job_type="topic",
             question="tell me",
             report_html=None,
+            video_ids=["v1"],
         )
 
     assert answer == "Answer referencing v1 / Video A"

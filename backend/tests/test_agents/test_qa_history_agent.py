@@ -176,6 +176,28 @@ def test_qa_history_agent_survives_missing_chroma_api():
     assert isinstance(result["answer"], str)
 
 
+def test_qa_history_agent_llm_calls_carry_max_tokens():
+    """S-1.12.7: refine is capped at 1500 completion tokens, formulate at 3000."""
+    chunks = [_qa_chunk("ex-1", "q?", "a.")]
+    fake_llms = [
+        _fake_llm("refined"),
+        _fake_llm("answer citing ex-1"),
+    ]
+    with patch.object(
+        qa_history_agent.chroma_service,
+        "query_qa_collection",
+        create=True,
+        return_value=chunks,
+    ), patch.object(
+        qa_history_agent, "get_llm_for", side_effect=fake_llms
+    ) as mock_get_llm_for:
+        _run("what have I asked")
+
+    calls = {c.args[0]: c for c in mock_get_llm_for.call_args_list}
+    assert calls["qa_history_refine_context"].kwargs["max_tokens"] == 1500
+    assert calls["qa_history_formulate_answer"].kwargs["max_tokens"] == 3000
+
+
 def test_qa_history_agent_respects_answer_language():
     """The answer_language parameter threads through to the LLM prompts."""
     chunks = [_qa_chunk("ex-xyz", "q?", "a.", source="history", job_id=None)]

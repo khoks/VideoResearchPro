@@ -10,6 +10,18 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### E-1.12 shipped: context-window resilience + D-052 model re-audit (2026-07-29)
+
+- **Job-scoped Q&A actually scoped now** (S-1.12.1): retrieval filters by the job's approved videos; the deprecated global-search signature is gone. Empty-approval jobs never fall back to a global search.
+- **Measured context windows** (S-1.12.2 / D-052): `MODEL_CONTEXT_WINDOWS` in the registry with values measured from the API's own 400 messages (nano/mini 272K, 5.4/5.5/5.6 922K, 4.1-mini 1,047,576). Report/channel batch budgets derive from the RESOLVED model (× 0.5 safety) with a 120K context-rot quality cap — replacing the model-blind 628K batches that were silently 400-ing against gpt-5.4-nano's 272K window.
+- **Recursive reduce** (S-1.12.3): pairwise rounds until under budget, then a final merge to ONE summary; failed pairs are token-truncated, never passed through raw. Compose gains a last-line input guard.
+- **Loud accounting** (S-1.12.4): failed map batches bisect-retry (S-1.12.6) and any permanent drops appear as a processing-note footer in the report itself; channel-path truncation now logs chunk counts.
+- **Tournament ranking** (S-1.12.5): candidate pools over 400 rank in batched rounds (proportional winners + 20% margin) then a final call — target=500 pools no longer breach windows.
+- **max_tokens everywhere** (S-1.12.7): all 20 registry call sites now cap completions.
+- **Windowed knowledge extraction** (S-1.12.8): the 60K silent truncation is gone — full transcripts batch (sanity ceiling 500K with a `_processing.truncated` marker); synthesize no longer re-sends the whole transcript (20K grounding excerpt + capped extraction JSON).
+- **Model re-tier** (D-052): refine ×2 + reduce + channel-map move to the returned `gpt-5.4-mini`; `social_classify` joins `gpt-5.4-nano`; gpt-5.6-luna/sol/terra observed but deliberately not adopted (undated, unprofiled); Claude 5 alternates documented for when `ANTHROPIC_API_KEY` lands.
+- Doc drift fixed (S-1.12.9): CHUNK_SIZE 256/32, 20 use cases.
+
 ### E-1.11 recovery complete — 200/200 corpus (2026-07-24)
 
 - The final 32 unavailable videos of the 200-video test job recovered after the YouTube IP block lifted (~48h), using the paced caption path. Full arc: 137/200 post-run → 168 after the segmented-Whisper/client-ladder wave → **200/200**. Final corpus: 947,239 transcript words (162 youtube / 38 whisper). Zero videos lost.

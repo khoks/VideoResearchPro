@@ -61,7 +61,8 @@ def clarify_question(
     if job.status != "completed":
         raise HTTPException(status_code=400, detail="Job is not completed yet")
 
-    llm = get_llm_for("qa_clarification", temperature=0.3)
+    # S-1.12.7: clarify returns a tiny JSON blob — cap runaway completions.
+    llm = get_llm_for("qa_clarification", temperature=0.3, max_tokens=400)
 
     prompt = (
         f'The user asked: "{request.question}"\n\n'
@@ -117,6 +118,20 @@ def _run_qa_and_persist(
     if job.job_type == "topic" and job.report_path:
         report_html = report_service.get_report_html(job.report_path)
 
+    # S-1.12.1: job-scoped retrieval filter. The agent's Chroma queries are
+    # restricted to this job's approved videos — the whole point of
+    # job-scoped Q&A (regression: the legacy query signature silently
+    # searched the entire global library).
+    from app.models.job_video import JobVideo
+
+    approved_video_ids = [
+        row[0]
+        for row in db.query(JobVideo.video_id)
+        .filter(JobVideo.job_id == job.id, JobVideo.approved.is_(True))
+        .all()
+        if row[0]
+    ]
+
     # Build enriched question when the user provided clarification context
     enriched_question = request.question
     if request.context:
@@ -134,6 +149,7 @@ def _run_qa_and_persist(
             job_type=job.job_type,
             question=enriched_question,
             report_html=report_html,
+            video_ids=approved_video_ids,
             progress_callback=progress_callback,
             usage_out=usage,
         )

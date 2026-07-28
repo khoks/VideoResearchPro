@@ -380,6 +380,165 @@ def test_rank_and_curate_fills_short_llm_selection(fake_videos):
     assert "v2" in [v["video_id"] for v in result["curated_videos"]]
 
 
+# ---------------------------------------------------------------------------
+# S-1.12.5: batched tournament ranking for oversized candidate pools.
+# ---------------------------------------------------------------------------
+
+def _fake_llm_with_responses(payloads: list[str]) -> MagicMock:
+    """Build an LLM mock whose successive .invoke calls return each payload in turn."""
+    responses = []
+    for payload in payloads:
+        r = MagicMock()
+        r.content = payload
+        responses.append(r)
+    llm = MagicMock()
+    llm.invoke.side_effect = responses
+    return llm
+
+
+def _make_pool(n: int) -> list[dict]:
+    return [
+        {
+            "video_id": f"v{i}",
+            "title": f"Video {i}",
+            "channel_name": f"Ch{i % 7}",
+            "duration_seconds": 600,
+        }
+        for i in range(n)
+    ]
+
+
+def _prompts_of(llm: MagicMock) -> list[str]:
+    """Extract the prompt string passed to each llm.invoke([HumanMessage(...)]) call."""
+    return [call.args[0][0].content for call in llm.invoke.call_args_list]
+
+
+def _rank_state(pool: list[dict], target: int) -> dict:
+    return {
+        "topic": "t",
+        "discovered_videos": pool,
+        "num_videos": target,
+        "search_instructions": "",
+    }
+
+
+def test_rank_and_curate_pool_at_batch_cap_uses_single_llm_call():
+    """Pool <= RANK_BATCH_MAX_CANDIDATES keeps the legacy single-call path."""
+    pool = _make_pool(search_agent.RANK_BATCH_MAX_CANDIDATES)  # exactly 400
+    target = 50
+    llm = _fake_llm_returning(json.dumps([f"v{i}" for i in range(target)]))
+    with patch.object(search_agent, "get_llm_for", return_value=llm):
+        result = search_agent.rank_and_curate(_rank_state(pool, target))
+
+    assert llm.invoke.call_count == 1
+    curated_ids = [v["video_id"] for v in result["curated_videos"]]
+    assert curated_ids == [f"v{i}" for i in range(target)]
+
+
+def test_rank_and_curate_tournament_1000_pool_target_200():
+    """1,000 candidates → round 1 is 3 batches (334/333/333), then 1 final call.
+
+    Each batch asks for ceil(200 * batch/1000) = 67 ids +20% margin = 81;
+    round-1 winners total 243, and the final call selects exactly 200.
+    """
+    pool = _make_pool(1000)
+    target = 200
+    batch1_ids = [f"v{i}" for i in range(0, 81)]       # from batch v0..v333
+    batch2_ids = [f"v{i}" for i in range(334, 415)]    # from batch v334..v666
+    batch3_ids = [f"v{i}" for i in range(667, 748)]    # from batch v667..v999
+    final_ids = (batch1_ids + batch2_ids + batch3_ids)[:target]
+    llm = _fake_llm_with_responses([
+        json.dumps(batch1_ids),
+        json.dumps(batch2_ids),
+        json.dumps(batch3_ids),
+        json.dumps(final_ids),
+    ])
+    with patch.object(search_agent, "get_llm_for", return_value=llm):
+        result = search_agent.rank_and_curate(_rank_state(pool, target))
+
+    assert llm.invoke.call_count == 4  # 3 round-1 batches + 1 final
+    prompts = _prompts_of(llm)
+
+    # Round 1: even split 334/333/333 preserving pool order.
+    assert [p.count("- ID: ") for p in prompts[:3]] == [334, 333, 333]
+    assert "- ID: v0 |" in prompts[0] and "- ID: v333 |" in prompts[0]
+    assert "- ID: v334 |" in prompts[1] and "- ID: v666 |" in prompts[1]
+    assert "- ID: v667 |" in prompts[2] and "- ID: v999 |" in prompts[2]
+    # Each batch asks for the proportional share + 20% margin = 81 ids.
+    assert all("top 81 " in p for p in prompts[:3])
+
+    # Final round: only the 243 round-1 winners, asking for exactly target.
+    assert prompts[3].count("- ID: ") == 243
+    assert "top 200 " in prompts[3]
+    assert "- ID: v334 |" in prompts[3]
+    assert "- ID: v100 |" not in prompts[3]  # non-winner never reaches the final
+
+    curated_ids = [v["video_id"] for v in result["curated_videos"]]
+    assert len(curated_ids) == target
+    assert curated_ids == final_ids
+
+
+def test_rank_and_curate_batch_parse_failure_advances_head_of_list_share():
+    """A round-1 batch returning invalid JSON contributes its head-of-list
+    proportional share to the final round; no exception escapes."""
+    pool = _make_pool(1000)
+    target = 200
+    batch1_ids = [f"v{i}" for i in range(0, 81)]
+    batch3_ids = [f"v{i}" for i in range(667, 748)]
+    # Batch 2 (v334..v666) fails to parse → head-of-list share v334..v414.
+    final_ids = (
+        batch1_ids
+        + [f"v{i}" for i in range(334, 415)]
+        + batch3_ids
+    )[:target]
+    llm = _fake_llm_with_responses([
+        json.dumps(batch1_ids),
+        "{{{ not json at all",
+        json.dumps(batch3_ids),
+        json.dumps(final_ids),
+    ])
+    with patch.object(search_agent, "get_llm_for", return_value=llm):
+        result = search_agent.rank_and_curate(_rank_state(pool, target))
+
+    assert llm.invoke.call_count == 4
+    final_prompt = _prompts_of(llm)[3]
+    # All 243 winners still reach the final round (81 + 81 head-of-list + 81).
+    assert final_prompt.count("- ID: ") == 243
+    for vid in ("v334", "v380", "v414"):
+        assert f"- ID: {vid} |" in final_prompt
+    assert "- ID: v415 |" not in final_prompt  # beyond batch 2's share
+
+    curated_ids = [v["video_id"] for v in result["curated_videos"]]
+    assert len(curated_ids) == target
+    assert curated_ids == final_ids
+
+
+def test_rank_and_curate_final_parse_failure_fills_from_winners_head():
+    """Final-call invalid JSON → head-of-list fill from round-1 winners to
+    exactly target, preserving each batch's returned order."""
+    pool = _make_pool(1000)
+    target = 200
+    # Batch 1 returns its picks in REVERSED order — winners must preserve the
+    # batch's returned order, not pool order.
+    batch1_ids = [f"v{i}" for i in range(80, -1, -1)]
+    batch2_ids = [f"v{i}" for i in range(334, 415)]
+    batch3_ids = [f"v{i}" for i in range(667, 748)]
+    llm = _fake_llm_with_responses([
+        json.dumps(batch1_ids),
+        json.dumps(batch2_ids),
+        json.dumps(batch3_ids),
+        "nonsense",
+    ])
+    with patch.object(search_agent, "get_llm_for", return_value=llm):
+        result = search_agent.rank_and_curate(_rank_state(pool, target))
+
+    assert llm.invoke.call_count == 4
+    expected = (batch1_ids + batch2_ids + batch3_ids)[:target]
+    curated_ids = [v["video_id"] for v in result["curated_videos"]]
+    assert len(curated_ids) == target
+    assert curated_ids == expected
+
+
 def test_run_search_agent_end_to_end(fake_videos):
     """Full graph: LLM + YouTube service all mocked; verifies the wiring works.
 

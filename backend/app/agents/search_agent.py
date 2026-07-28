@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
@@ -50,6 +51,17 @@ logger = logging.getLogger(__name__)
 # How many recent uploads we pull per preferred channel before keyword-filtering.
 # 50 hits the YouTube playlistItems page size for a single quota unit.
 PREFERRED_CHANNEL_FETCH_LIMIT = 50
+
+# S-1.12.5: max candidates a single ranking prompt may carry. Each candidate
+# line is ~90-120 tokens, so 400 candidates is ~48K tokens worst case — safe
+# under any modern context window and below context-rot territory. Pools
+# larger than this run a batched tournament (see ``rank_and_curate``).
+RANK_BATCH_MAX_CANDIDATES = 400
+
+# Round-1 tournament batches advance their proportional share of the target
+# plus this margin (20%), so the final round has slack to correct
+# cross-batch quality imbalance.
+RANK_BATCH_WINNER_MARGIN = 1.2
 
 
 def _candidate_to_legacy_dict(c: Candidate) -> dict:
@@ -420,8 +432,113 @@ def _format_video_line(v: dict) -> str:
     )
 
 
+def _invoke_rank_prompt(
+    llm,
+    topic: str,
+    search_instructions: str,
+    videos: list[dict],
+    ask: int,
+) -> list | None:
+    """Run the ranking prompt over ``videos`` asking for ``ask`` ids.
+
+    Returns the parsed JSON id list, or ``None`` when the response is not a
+    parseable JSON array — callers apply their own head-of-list fallback.
+    """
+    video_list = "\n".join(_format_video_line(v) for v in videos)
+    prompt = RANK_AND_CURATE_PROMPT.format(
+        topic=topic,
+        search_instructions=search_instructions,
+        num_videos=ask,
+        video_list=video_list,
+    )
+    response = llm.invoke([HumanMessage(content=prompt)])
+    try:
+        selected_ids = json.loads(response.content)
+    except (json.JSONDecodeError, TypeError):
+        logger.exception("Failed to parse rank_and_curate LLM response; falling back to head-of-list")
+        return None
+    if not isinstance(selected_ids, list):
+        logger.warning("rank_and_curate LLM response was JSON but not a list; falling back to head-of-list")
+        return None
+    return selected_ids
+
+
+def _run_tournament_round(
+    llm,
+    topic: str,
+    search_instructions: str,
+    pool: list[dict],
+    target: int,
+    round_no: int,
+) -> list[dict]:
+    """One batched tournament round over an oversized candidate pool (S-1.12.5).
+
+    Splits ``pool`` into evenly-sized batches of <= RANK_BATCH_MAX_CANDIDATES
+    (preserving pool order — it interleaves search and preferred-channel
+    provenance), asks the same ranking prompt for each batch's proportional
+    share of ``target`` plus a 20% margin (capped at batch size), and returns
+    the concatenated winners in each batch's returned order. A batch whose
+    response fails to parse contributes its head-of-list proportional share
+    instead — a bad batch never sinks the round.
+    """
+    total = len(pool)
+    num_batches = math.ceil(total / RANK_BATCH_MAX_CANDIDATES)
+    base, rem = divmod(total, num_batches)
+
+    winners: list[dict] = []
+    start = 0
+    for i in range(num_batches):
+        size = base + (1 if i < rem else 0)
+        batch = pool[start:start + size]
+        start += size
+
+        proportional = math.ceil(target * len(batch) / total)
+        ask = min(len(batch), math.ceil(proportional * RANK_BATCH_WINNER_MARGIN))
+
+        selected_ids = _invoke_rank_prompt(llm, topic, search_instructions, batch, ask)
+        if selected_ids is None:
+            # Parse failure: this batch still advances its head-of-list share.
+            winners.extend(batch[:ask])
+            continue
+
+        by_id = {v["video_id"]: v for v in batch}
+        seen: set[str] = set()
+        picked: list[dict] = []
+        for vid in selected_ids:
+            v = by_id.get(vid)
+            if v is not None and vid not in seen:
+                seen.add(vid)
+                picked.append(v)
+            if len(picked) >= ask:
+                break
+        if len(picked) < ask:
+            # LLM under-selected — pad from the batch head so this batch
+            # keeps its full share of final-round candidates.
+            for v in batch:
+                if v["video_id"] not in seen:
+                    picked.append(v)
+                    if len(picked) >= ask:
+                        break
+        winners.extend(picked)
+
+    logger.info(
+        "rank_and_curate: tournament round %d — pool %d → %d batches → %d winners kept",
+        round_no, total, num_batches, len(winners),
+    )
+    return winners
+
+
 def rank_and_curate(state: SearchAgentState) -> dict:
-    """Use LLM to rank and select the best videos."""
+    """Use LLM to rank and select the best videos.
+
+    Pools of up to ``RANK_BATCH_MAX_CANDIDATES`` are ranked in a single LLM
+    call (legacy behaviour, unchanged). Larger pools run a batched tournament
+    (S-1.12.5): round 1 splits the pool into even batches, each batch's
+    ranking call keeps its proportional share of ``target`` (+20% margin),
+    then a final call ranks all round-1 winners down to exactly ``target``.
+    If winners still exceed the cap, batching repeats until a single final
+    call fits.
+    """
     videos = state.get("discovered_videos", [])
     target = state["num_videos"]
 
@@ -429,33 +546,46 @@ def rank_and_curate(state: SearchAgentState) -> dict:
         return {"curated_videos": videos}
 
     llm = get_llm_for("search_rank_and_curate", temperature=0.0)
-    video_list = "\n".join(_format_video_line(v) for v in videos)
+    topic = state["topic"]
+    search_instructions = state.get("search_instructions", "")
 
-    prompt = RANK_AND_CURATE_PROMPT.format(
-        topic=state["topic"],
-        search_instructions=state.get("search_instructions", ""),
-        num_videos=target,
-        video_list=video_list,
-    )
-    response = llm.invoke([HumanMessage(content=prompt)])
+    pool = videos
+    round_no = 0
+    while len(pool) > RANK_BATCH_MAX_CANDIDATES:
+        round_no += 1
+        winners = _run_tournament_round(
+            llm, topic, search_instructions, pool, target, round_no
+        )
+        if len(winners) >= len(pool):
+            # Degenerate case (target * margin ≈ pool size): batching can no
+            # longer shrink the pool. Stop and rank what we have in one call
+            # rather than looping forever.
+            logger.info(
+                "rank_and_curate: round %d did not shrink pool (%d candidates); "
+                "running final rank over all of them",
+                round_no, len(pool),
+            )
+            pool = winners
+            break
+        pool = winners
 
-    try:
-        selected_ids = json.loads(response.content)
-        if isinstance(selected_ids, list):
-            id_set = set(selected_ids[:target])
-            curated = [v for v in videos if v["video_id"] in id_set]
-            # Fill remaining slots if LLM didn't select enough
-            if len(curated) < target:
-                for v in videos:
-                    if v["video_id"] not in id_set:
-                        curated.append(v)
-                        if len(curated) >= target:
-                            break
-            return {"curated_videos": curated}
-    except (json.JSONDecodeError, TypeError):
-        logger.exception("Failed to parse rank_and_curate LLM response; falling back to head-of-list")
+    # Final (or only) ranking call — asks for exactly `target` ids.
+    selected_ids = _invoke_rank_prompt(llm, topic, search_instructions, pool, target)
+    if selected_ids is not None:
+        id_set = set(selected_ids[:target])
+        curated = [v for v in pool if v["video_id"] in id_set]
+        # Fill remaining slots if LLM didn't select enough
+        if len(curated) < target:
+            for v in pool:
+                if v["video_id"] not in id_set:
+                    curated.append(v)
+                    if len(curated) >= target:
+                        break
+        return {"curated_videos": curated}
 
-    return {"curated_videos": videos[:target]}
+    # Final-call parse failure: head-of-list fill from the (already
+    # tournament-filtered) pool to exactly `target`.
+    return {"curated_videos": pool[:target]}
 
 
 def build_search_graph() -> StateGraph:

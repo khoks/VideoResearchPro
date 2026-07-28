@@ -78,7 +78,7 @@ class _TokenTally:
 
 def _generate_sub_queries(question: str, tally: _TokenTally | None = None) -> list[str]:
     """Ask the LLM for 2 semantically-focused sub-queries to broaden retrieval."""
-    llm = get_llm_for("qa_sub_query_expansion", temperature=0.0)
+    llm = get_llm_for("qa_sub_query_expansion", temperature=0.0, max_tokens=300)
     prompt = SUB_QUERY_EXPANSION_PROMPT.format(question=question)
     try:
         response = llm.invoke([HumanMessage(content=prompt)])
@@ -107,8 +107,15 @@ def retrieve_context(state: QAAgentState, tally: _TokenTally | None = None) -> d
 
     # Retrieve per query and dedupe by chunk id (video_id + timestamp + chunk_index).
     merged: dict[str, dict] = {}
+    video_ids = state.get("video_ids") or []
+    if not video_ids:
+        # A topic/channel job with zero approved videos has nothing to
+        # retrieve from; never fall back to a global search here (S-1.12.1).
+        logger.warning(f"[job:{job_id}] Q&A retrieval called with no approved video_ids")
     for q in all_queries:
-        results = chroma_service.query_collection(job_id, q, n_results=settings.RAG_TOP_K)
+        results = chroma_service.query_collection(
+            q, n_results=settings.RAG_TOP_K, video_ids=video_ids or None
+        ) if video_ids else []
         for r in results:
             meta = r.get("metadata", {})
             key = (
@@ -151,7 +158,7 @@ def retrieve_context(state: QAAgentState, tally: _TokenTally | None = None) -> d
 
 def refine_context(state: QAAgentState, tally: _TokenTally | None = None) -> dict:
     """Use LLM to extract only the relevant passages from RAG + report context."""
-    llm = get_llm_for("qa_refine_context", temperature=0.0)
+    llm = get_llm_for("qa_refine_context", temperature=0.0, max_tokens=3000)
     question = state["question"]
     rag_results = state.get("rag_results", [])
     report_context = state.get("report_context")
@@ -211,7 +218,7 @@ def _build_allowed_sources(rag_results: list[dict], include_report: bool) -> str
 def formulate_answer(state: QAAgentState, tally: _TokenTally | None = None) -> dict:
     """Generate answer using LLM with refined context, constrained to allowed sources."""
     # Temperature 0: citations must be deterministic and grounded.
-    llm = get_llm_for("qa_formulate_answer", temperature=0.0)
+    llm = get_llm_for("qa_formulate_answer", temperature=0.0, max_tokens=4500)
 
     rag_results = state.get("rag_results", [])
     include_report = bool(state.get("report_context"))
@@ -641,7 +648,7 @@ def _references_via_llm(
         lines.append(f"{i} | [{source_type}] | {chunk_id} | {title}")
     prompt = USED_SOURCES_PROMPT.format(answer=answer, chunks="\n".join(lines))
 
-    llm = get_llm_for("qa_extract_references", temperature=0.0)
+    llm = get_llm_for("qa_extract_references", temperature=0.0, max_tokens=1500)
     try:
         response = llm.invoke([HumanMessage(content=prompt)])
         if tally is not None:
@@ -832,6 +839,7 @@ def run_qa_agent(
     job_type: str,
     question: str,
     report_html: str | None = None,
+    video_ids: list[str] | None = None,
     progress_callback: Callable[[str], None] | None = None,
     usage_out: dict | None = None,
 ) -> tuple[str, list[dict]]:
@@ -863,6 +871,7 @@ def run_qa_agent(
         "job_type": job_type,
         "question": question,
         "report_html": report_html or "",
+        "video_ids": video_ids or [],
         "sub_queries": [],
         "rag_results": [],
         "report_context": None,
@@ -1002,7 +1011,7 @@ def run_library_qa_agent(
         )
     raw_context = "\n\n".join(raw_parts)
 
-    llm = get_llm_for("library_qa_refine_context", temperature=0.0)
+    llm = get_llm_for("library_qa_refine_context", temperature=0.0, max_tokens=3000)
     refine_prompt = LIBRARY_REFINE_CONTEXT_PROMPT.format(
         question=question,
         raw_context=raw_context,
@@ -1017,7 +1026,7 @@ def run_library_qa_agent(
 
     # 5. Formulate answer with language + allowed-sources constraints.
     allowed_sources = _build_library_allowed_sources(rag_results)
-    answer_llm = get_llm_for("library_qa_formulate_answer", temperature=0.0)
+    answer_llm = get_llm_for("library_qa_formulate_answer", temperature=0.0, max_tokens=4500)
     system_prompt = LIBRARY_QA_SYSTEM_PROMPT.format(answer_language=answer_language)
     user_prompt = LIBRARY_QA_ANSWER_PROMPT.format(
         question=question,

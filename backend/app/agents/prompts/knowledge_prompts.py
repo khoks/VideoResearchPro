@@ -50,7 +50,9 @@ Channel: {channel_name}
 Merged structured extraction (deduplicated union across transcript batches):
 {merged_extraction_json}
 
-Full transcript (for grounding; do not quote at length):
+Transcript excerpt (opening portion only — use it to anchor voice and
+terminology; full coverage comes from the merged extraction above; do not
+quote at length):
 {full_transcript_text}
 
 Write a Markdown knowledge document ABOUT THE CONTENT of this video. The

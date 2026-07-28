@@ -1,10 +1,11 @@
 """Per-video knowledge extraction LangGraph agent (Unit 4).
 
 Flow:
-  split_transcript  — token-budget batches of the full transcript
+  split_transcript  — token-budget batches of the full transcript (no cap)
   extract_per_batch — LLM → structured JSON per batch
   merge_extractions — dedupe union across batches
-  synthesize_report — LLM → Markdown report over merged + transcript
+  synthesize_report — LLM → Markdown report over merged extraction + a
+                      bounded opening excerpt of the transcript
 
 Used by the knowledge router to produce and persist on-demand per-video
 knowledge artifacts on the `videos` row.
@@ -31,6 +32,22 @@ logger = logging.getLogger(__name__)
 
 
 _KNOWLEDGE_KEYS = ("topics", "concepts", "events", "facts")
+
+# S-1.12.8: windowed extraction. The map phase batches the FULL transcript —
+# the old silent 60K truncation is gone. This ceiling is only a sanity guard
+# against pathological inputs (500K tokens is ~350 hours of speech); when it
+# trips, the returned artifact records what was dropped via `_processing`.
+TRANSCRIPT_SANITY_CEILING_TOKENS = 500_000
+
+# Reduce-phase input budgets (S-1.12.8). The synthesis prompt no longer
+# carries the full transcript — coverage comes from the merged extraction;
+# the transcript excerpt only anchors voice/terminology.
+SYNTHESIS_EXCERPT_MAX_TOKENS = 20_000
+SYNTHESIS_EXTRACTION_JSON_MAX_TOKENS = 30_000
+
+# S-1.12.7: registry typ_out for knowledge_extract_batch is 2000 tokens of
+# strict JSON; 1.5x headroom so a dense batch can't run away unbounded.
+EXTRACT_BATCH_MAX_COMPLETION_TOKENS = 3_000
 
 
 def _count_tokens(text: str) -> int:
@@ -61,14 +78,13 @@ def split_transcript(state: KnowledgeAgentState) -> dict:
 
     Splits on paragraph breaks first (preserves semantic boundaries), then
     falls back to whitespace words if a single paragraph exceeds the budget.
-    The total transcript is capped at `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS` so
-    pathologically long videos don't blow up the LLM budget.
+    S-1.12.8: the transcript is batched IN FULL — no per-transcript token cap
+    here. The only ceiling is the `TRANSCRIPT_SANITY_CEILING_TOKENS` guard
+    applied by `run_knowledge_extract_agent` before the graph is invoked.
     """
     text = state.get("full_transcript_text", "") or ""
     if not text.strip():
         return {"transcript_batches": []}
-
-    text = _truncate_to_tokens(text, settings.KNOWLEDGE_MAX_TRANSCRIPT_TOKENS)
 
     budget = max(int(settings.KNOWLEDGE_EXTRACT_BATCH_TOKENS), 500)
 
@@ -160,7 +176,11 @@ def extract_per_batch(state: KnowledgeAgentState) -> dict:
     if not batches:
         return {"per_batch_extractions": []}
 
-    llm = get_llm_for("knowledge_extract_batch", temperature=0.0)
+    llm = get_llm_for(
+        "knowledge_extract_batch",
+        temperature=0.0,
+        max_tokens=EXTRACT_BATCH_MAX_COMPLETION_TOKENS,
+    )
     video_title = state.get("video_title", "") or "Unknown"
     channel_name = state.get("channel_name", "") or "Unknown"
 
@@ -215,16 +235,44 @@ def merge_extractions(state: KnowledgeAgentState) -> dict:
 
 
 def synthesize_report(state: KnowledgeAgentState) -> dict:
-    """Compose the final Markdown knowledge document from merged + transcript."""
+    """Compose the final Markdown knowledge document (S-1.12.8 contract).
+
+    The synthesis prompt is built from two bounded inputs:
+      * the merged extraction JSON — the COVERAGE input; every transcript
+        batch contributed to it, so nothing from the video is missing.
+        Capped at `SYNTHESIS_EXTRACTION_JSON_MAX_TOKENS` (degenerate case).
+      * an OPENING EXCERPT of the transcript — voice/terminology grounding
+        only, first min(KNOWLEDGE_MAX_TRANSCRIPT_TOKENS, 20K) tokens. The
+        full transcript is deliberately NOT re-sent: on long videos that
+        doubled token spend for zero coverage gain.
+    """
     merged = state.get("merged_extraction") or {k: [] for k in _KNOWLEDGE_KEYS}
     full_transcript = state.get("full_transcript_text", "") or ""
-    # Give the synthesis LLM a bounded transcript view (same cap as splitter).
-    transcript_for_prompt = _truncate_to_tokens(
-        full_transcript, settings.KNOWLEDGE_MAX_TRANSCRIPT_TOKENS
+    # Role: voice/grounding excerpt — NOT the coverage input (that's the
+    # merged extraction). First-N tokens only, bounded by the configured
+    # transcript setting but never more than SYNTHESIS_EXCERPT_MAX_TOKENS.
+    excerpt_budget = min(
+        int(settings.KNOWLEDGE_MAX_TRANSCRIPT_TOKENS),
+        SYNTHESIS_EXCERPT_MAX_TOKENS,
     )
+    transcript_excerpt = _truncate_to_tokens(full_transcript, excerpt_budget)
 
-    if not any(merged.get(k) for k in _KNOWLEDGE_KEYS) and not transcript_for_prompt.strip():
+    if not any(merged.get(k) for k in _KNOWLEDGE_KEYS) and not transcript_excerpt.strip():
         return {"knowledge_report_md": ""}
+
+    merged_json = json.dumps(merged, ensure_ascii=False, indent=2)
+    if _count_tokens(merged_json) > SYNTHESIS_EXTRACTION_JSON_MAX_TOKENS:
+        # Degenerate case: an extraction this large means thousands of items.
+        # Truncating the JSON string mid-structure is acceptable damage —
+        # the alternative is blowing the synthesis context window.
+        logger.warning(
+            "Merged extraction JSON exceeds %d tokens for video %s; truncating",
+            SYNTHESIS_EXTRACTION_JSON_MAX_TOKENS,
+            state.get("video_id", ""),
+        )
+        merged_json = _truncate_to_tokens(
+            merged_json, SYNTHESIS_EXTRACTION_JSON_MAX_TOKENS
+        )
 
     llm = get_llm_for(
         "knowledge_synthesize_report",
@@ -234,8 +282,8 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
     prompt = SYNTHESIZE_REPORT_PROMPT.format(
         video_title=state.get("video_title", "") or "Unknown",
         channel_name=state.get("channel_name", "") or "Unknown",
-        merged_extraction_json=json.dumps(merged, ensure_ascii=False, indent=2),
-        full_transcript_text=transcript_for_prompt,
+        merged_extraction_json=merged_json,
+        full_transcript_text=transcript_excerpt,
     )
 
     try:
@@ -272,6 +320,12 @@ def build_knowledge_graph():
 def run_knowledge_extract_agent(video: Any, full_transcript_text: str) -> dict:
     """Run the knowledge agent for one video.
 
+    S-1.12.8: the FULL transcript is batched and extracted — there is no
+    60K truncation. A `TRANSCRIPT_SANITY_CEILING_TOKENS` (500K) guard
+    protects against pathological inputs; when it trips, the input is
+    truncated with a warning and the returned dict gains a ``_processing``
+    key recording the partial coverage.
+
     Args:
         video: the `Document` ORM row (used for title + channel_name).
         full_transcript_text: the full transcript as a single string.
@@ -283,6 +337,12 @@ def run_knowledge_extract_agent(video: Any, full_transcript_text: str) -> dict:
           "events": list[str],
           "facts": list[str],
           "knowledge_report_md": str,
+          # Present ONLY when the sanity ceiling truncated the input:
+          "_processing": {
+              "truncated": True,
+              "processed_tokens": int,   # tokens actually extracted
+              "total_tokens": int,       # tokens in the original transcript
+          },
         }
     """
     video_id = getattr(video, "video_id", "") or ""
@@ -294,13 +354,30 @@ def run_knowledge_extract_agent(video: Any, full_transcript_text: str) -> dict:
     except Exception:
         channel_name = ""
 
+    text = full_transcript_text or ""
+    processing: dict | None = None
+    if text.strip():
+        total_tokens = _count_tokens(text)
+        if total_tokens > TRANSCRIPT_SANITY_CEILING_TOKENS:
+            logger.warning(
+                "Transcript for video %s is %d tokens — over the %d-token "
+                "sanity ceiling; truncating before extraction",
+                video_id, total_tokens, TRANSCRIPT_SANITY_CEILING_TOKENS,
+            )
+            text = _truncate_to_tokens(text, TRANSCRIPT_SANITY_CEILING_TOKENS)
+            processing = {
+                "truncated": True,
+                "processed_tokens": TRANSCRIPT_SANITY_CEILING_TOKENS,
+                "total_tokens": total_tokens,
+            }
+
     graph = build_knowledge_graph()
     result = graph.invoke({
         "messages": [],
         "video_id": video_id,
         "video_title": video_title,
         "channel_name": channel_name,
-        "full_transcript_text": full_transcript_text or "",
+        "full_transcript_text": text,
         "transcript_batches": [],
         "per_batch_extractions": [],
         "merged_extraction": {},
@@ -308,10 +385,13 @@ def run_knowledge_extract_agent(video: Any, full_transcript_text: str) -> dict:
     })
 
     merged = result.get("merged_extraction") or {k: [] for k in _KNOWLEDGE_KEYS}
-    return {
+    out = {
         "topics": list(merged.get("topics", [])),
         "concepts": list(merged.get("concepts", [])),
         "events": list(merged.get("events", [])),
         "facts": list(merged.get("facts", [])),
         "knowledge_report_md": result.get("knowledge_report_md", "") or "",
     }
+    if processing is not None:
+        out["_processing"] = processing
+    return out

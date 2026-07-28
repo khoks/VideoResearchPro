@@ -54,17 +54,32 @@ def test_split_transcript_large_text_multiple_batches(monkeypatch):
     assert len(result["transcript_batches"]) >= 2
 
 
-def test_split_transcript_respects_max_transcript_cap(monkeypatch):
-    """Transcript is truncated to KNOWLEDGE_MAX_TRANSCRIPT_TOKENS before batching."""
-    monkeypatch.setattr(knowledge_agent.settings, "KNOWLEDGE_MAX_TRANSCRIPT_TOKENS", 20)
-    monkeypatch.setattr(knowledge_agent.settings, "KNOWLEDGE_EXTRACT_BATCH_TOKENS", 1000)
-    text = " ".join(["word"] * 5000)
-    result = knowledge_agent.split_transcript({"full_transcript_text": text})
-    # Combined batch size should be bounded roughly by the cap (allow slop).
-    combined_tokens = knowledge_agent._count_tokens(
-        " ".join(result["transcript_batches"])
+def _long_paragraph_text(num_paragraphs: int, words_per_paragraph: int = 400) -> str:
+    """Build a transcript of `num_paragraphs` ~400-token paragraphs. Paragraph
+    structure keeps `split_transcript` on the fast per-paragraph path."""
+    para = "word " * words_per_paragraph
+    return "\n\n".join(para.strip() for _ in range(num_paragraphs))
+
+
+def test_split_transcript_does_not_truncate_over_60k(monkeypatch):
+    """S-1.12.8: the old KNOWLEDGE_MAX_TRANSCRIPT_TOKENS truncation is gone —
+    a >60K-token transcript is batched in full, nothing dropped."""
+    monkeypatch.setattr(
+        knowledge_agent.settings, "KNOWLEDGE_MAX_TRANSCRIPT_TOKENS", 60000
     )
-    assert combined_tokens <= 40
+    monkeypatch.setattr(
+        knowledge_agent.settings, "KNOWLEDGE_EXTRACT_BATCH_TOKENS", 8000
+    )
+    text = _long_paragraph_text(160)  # ~64K tokens
+    input_tokens = knowledge_agent._count_tokens(text)
+    assert input_tokens > 60000
+
+    result = knowledge_agent.split_transcript({"full_transcript_text": text})
+    batches = result["transcript_batches"]
+    assert len(batches) >= 8  # ~64K / 8K budget
+    combined_tokens = knowledge_agent._count_tokens("\n\n".join(batches))
+    # Nothing dropped: rejoined batches carry (approximately) every token.
+    assert combined_tokens >= input_tokens * 0.99
 
 
 # ---------- extract_per_batch ----------
@@ -201,6 +216,106 @@ def test_synthesize_report_invokes_llm_and_strips_code_fence():
     assert "```" not in result["knowledge_report_md"]
 
 
+def test_synthesize_prompt_excludes_transcript_tail(monkeypatch):
+    """S-1.12.8: the synthesis prompt carries only an OPENING excerpt of the
+    transcript (min(KNOWLEDGE_MAX_TRANSCRIPT_TOKENS, 20K) tokens). A marker
+    planted beyond that budget must NOT reach the LLM; the merged extraction
+    JSON must."""
+    monkeypatch.setattr(
+        knowledge_agent.settings, "KNOWLEDGE_MAX_TRANSCRIPT_TOKENS", 60000
+    )
+    # Excerpt budget = min(60000, 20000) = 20000 tokens; marker sits at ~21K.
+    text = "OPENING_ANCHOR_TOKEN " + ("word " * 21000) + " DEEP_TAIL_MARKER_XYZZY"
+    llm = _fake_llm_constant("# Doc")
+    with patch.object(knowledge_agent, "get_llm_for", return_value=llm):
+        result = knowledge_agent.synthesize_report({
+            "merged_extraction": {
+                "topics": ["quantum databases"], "concepts": [],
+                "events": [], "facts": ["PostgreSQL is open source"],
+            },
+            "full_transcript_text": text,
+            "video_title": "V", "channel_name": "C",
+        })
+
+    assert result["knowledge_report_md"] == "# Doc"
+    prompt = llm.invoke.call_args.args[0][0].content
+    assert "DEEP_TAIL_MARKER_XYZZY" not in prompt
+    assert "OPENING_ANCHOR_TOKEN" in prompt
+    # The coverage input (merged extraction JSON) is present.
+    assert "PostgreSQL is open source" in prompt
+    assert "quantum databases" in prompt
+
+
+def test_synthesize_excerpt_bounded_by_setting_when_below_20k(monkeypatch):
+    """The excerpt budget is min(setting, 20K) — a setting below 20K wins."""
+    monkeypatch.setattr(
+        knowledge_agent.settings, "KNOWLEDGE_MAX_TRANSCRIPT_TOKENS", 100
+    )
+    text = ("word " * 300) + " TAIL_MARKER_ABC"
+    llm = _fake_llm_constant("# Doc")
+    with patch.object(knowledge_agent, "get_llm_for", return_value=llm):
+        knowledge_agent.synthesize_report({
+            "merged_extraction": {
+                "topics": ["a"], "concepts": [], "events": [], "facts": [],
+            },
+            "full_transcript_text": text,
+            "video_title": "V", "channel_name": "C",
+        })
+    prompt = llm.invoke.call_args.args[0][0].content
+    assert "TAIL_MARKER_ABC" not in prompt
+
+
+def test_synthesize_caps_merged_extraction_json(monkeypatch):
+    """Degenerate case: a merged extraction JSON over 30K tokens is truncated
+    (head survives, tail dropped) instead of blowing the synthesis context."""
+    monkeypatch.setattr(
+        knowledge_agent.settings, "KNOWLEDGE_MAX_TRANSCRIPT_TOKENS", 60000
+    )
+    facts = [f"fact-{i} " + ("detail " * 20) for i in range(2500)]  # >> 30K tokens
+    llm = _fake_llm_constant("# Doc")
+    with patch.object(knowledge_agent, "get_llm_for", return_value=llm):
+        knowledge_agent.synthesize_report({
+            "merged_extraction": {
+                "topics": [], "concepts": [], "events": [], "facts": facts,
+            },
+            "full_transcript_text": "short transcript",
+            "video_title": "V", "channel_name": "C",
+        })
+    prompt = llm.invoke.call_args.args[0][0].content
+    assert "fact-0 " in prompt
+    assert "fact-2499" not in prompt
+
+
+def test_synthesize_passes_max_tokens_to_llm():
+    """S-1.12.7: knowledge_synthesize_report keeps its 8000-token cap."""
+    with patch.object(knowledge_agent, "get_llm_for") as mock_get_llm:
+        mock_get_llm.return_value = _fake_llm_constant("# Doc")
+        knowledge_agent.synthesize_report({
+            "merged_extraction": {
+                "topics": ["a"], "concepts": [], "events": [], "facts": [],
+            },
+            "full_transcript_text": "x",
+            "video_title": "V", "channel_name": "C",
+        })
+    args, kwargs = mock_get_llm.call_args
+    assert args[0] == "knowledge_synthesize_report"
+    assert kwargs["max_tokens"] == 8000
+
+
+def test_extract_per_batch_passes_max_tokens_to_llm():
+    """S-1.12.7: knowledge_extract_batch gets max_tokens=3000 (registry
+    typ_out 2000 with 1.5x headroom)."""
+    with patch.object(knowledge_agent, "get_llm_for") as mock_get_llm:
+        mock_get_llm.return_value = _fake_llm_constant("{}")
+        knowledge_agent.extract_per_batch({
+            "transcript_batches": ["b"],
+            "video_title": "V", "channel_name": "C",
+        })
+    args, kwargs = mock_get_llm.call_args
+    assert args[0] == "knowledge_extract_batch"
+    assert kwargs["max_tokens"] == 3000
+
+
 def test_synthesize_report_returns_empty_on_llm_error():
     llm = MagicMock()
     llm.invoke.side_effect = RuntimeError("boom")
@@ -261,3 +376,63 @@ def test_run_knowledge_extract_agent_empty_transcript():
     assert result["knowledge_report_md"] == ""
     # LLM never invoked when there are no batches and the synth short-circuits.
     mock_get_llm.assert_not_called()
+
+
+# ---------- S-1.12.8: windowed extraction / sanity ceiling ----------
+
+_EXTRACTION_PAYLOAD = json.dumps({
+    "topics": ["t"], "concepts": [], "events": [], "facts": [],
+})
+
+
+def test_run_agent_over_60k_fully_batched_no_processing_flag(monkeypatch):
+    """(a) A >60K-token transcript is fully batched — every batch hits the
+    map LLM, no truncation, and no `_processing` key on the artifact."""
+    monkeypatch.setattr(
+        knowledge_agent.settings, "KNOWLEDGE_EXTRACT_BATCH_TOKENS", 8000
+    )
+    text = _long_paragraph_text(160)  # ~64K tokens
+    assert knowledge_agent._count_tokens(text) > 60000
+
+    extract_llm = _fake_llm_constant(_EXTRACTION_PAYLOAD)
+    synth_llm = _fake_llm_constant("# Report")
+    video = SimpleNamespace(video_id="v-long", title="Long", channel_name="C")
+
+    with patch.object(
+        knowledge_agent, "get_llm_for", side_effect=[extract_llm, synth_llm]
+    ):
+        result = knowledge_agent.run_knowledge_extract_agent(
+            video=video, full_transcript_text=text
+        )
+
+    assert "_processing" not in result
+    # The whole transcript reached the map phase: ~64K / 8K → >= 8 batches.
+    assert extract_llm.invoke.call_count >= 8
+    assert result["topics"] == ["t"]
+
+
+def test_run_agent_sanity_ceiling_truncates_over_500k(monkeypatch):
+    """(b) A >500K-token transcript trips the sanity ceiling: truncated at
+    500K with `_processing` recording both token counts."""
+    monkeypatch.setattr(
+        knowledge_agent.settings, "KNOWLEDGE_EXTRACT_BATCH_TOKENS", 8000
+    )
+    text = _long_paragraph_text(1300)  # ~522K tokens
+    extract_llm = _fake_llm_constant(_EXTRACTION_PAYLOAD)
+    synth_llm = _fake_llm_constant("# Report")
+    video = SimpleNamespace(video_id="v-huge", title="Huge", channel_name="C")
+
+    with patch.object(
+        knowledge_agent, "get_llm_for", side_effect=[extract_llm, synth_llm]
+    ):
+        result = knowledge_agent.run_knowledge_extract_agent(
+            video=video, full_transcript_text=text
+        )
+
+    proc = result["_processing"]
+    assert proc["truncated"] is True
+    assert proc["processed_tokens"] == knowledge_agent.TRANSCRIPT_SANITY_CEILING_TOKENS
+    assert proc["total_tokens"] > 500_000
+    assert proc["total_tokens"] > proc["processed_tokens"]
+    # Extraction still covered the retained ~500K tokens (~62 batches at 8K).
+    assert extract_llm.invoke.call_count >= 55

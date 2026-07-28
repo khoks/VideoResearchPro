@@ -1512,4 +1512,6 @@ When E-5.3 (Stripe) ships, the same endpoint stays — its implementation flips 
 
 **Re-evaluation hooks.** Re-measure + re-tier when gpt-5.6 gets dated snapshots; revisit Claude adoption when the key lands; if 5.4-mini quality on refine/reduce disappoints, the una-tantum bump back to 5.5 is one env line.
 
-**Linked initiatives / PRs.** I-1 / E-1.12 (S-1.12.2 + model re-audit). PR: this branch's PR.
+**Linked initiatives / PRs.** I-1 / E-1.12 (S-1.12.2 + model re-audit). PRs [#195](https://github.com/khoks/VideoResearchPro/pull/195), [#196](https://github.com/khoks/VideoResearchPro/pull/196).
+
+**Status-changed 2026-07-29:** amended same-day after live validation — `gpt-5.4-mini` with reasoning `low` consumes the visible completion budget (refine returned empty output; same failure class as T-4.9.5). All four mini call sites run reasoning **off**; part (b)'s tier table stands otherwise. Re-validated live on job 0d4db8c3: 11.8K-char grounded answer, 10 citations, 52s vs the 127s pre-audit baseline.

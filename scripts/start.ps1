@@ -34,7 +34,11 @@ Skip starting Vite. Useful when you only want backend + Celery (e.g.
 testing the API directly).
 
 .PARAMETER HealthTimeoutSec
-How long to wait for /api/v1/health before giving up. Default 30.
+How long to wait for /api/v1/health before giving up. Default 120.
+Cold boots (first start after a reboot / AV cache flush) take 45-90 s
+just to import torch + transformers; warm boots pass in ~10-15 s. The
+wait loop returns the moment health responds, so the generous default
+costs nothing on warm starts.
 
 .EXAMPLE
 .\scripts\start.ps1
@@ -52,7 +56,7 @@ How long to wait for /api/v1/health before giving up. Default 30.
 param(
     [switch]$NoBrowser = $false,
     [switch]$NoFrontend = $false,
-    [int]$HealthTimeoutSec = 30
+    [int]$HealthTimeoutSec = 120
 )
 
 $ErrorActionPreference = 'Stop'

@@ -10,6 +10,13 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### D-053: Claude 5 adoption + gpt-5.6 profile (2026-07-29)
+
+- `claude-sonnet-5` (measured 1M window, ~2× gpt-5.5 speed) now owns the four user-facing synthesis sites: job/library answer formulation, report compose, knowledge synthesize.
+- gpt-5.6-luna/sol/terra profiled empirically: non-reasoning speed tiers (120/60/16 tok/s) — luna watch-listed for the volume tier pending dated snapshots + pricing; none adopted.
+- Provider-quirk fixes: Anthropic thinking forces temperature=1; Claude 5 generation uses adaptive thinking + `output_config.effort` (generation-aware mapping, legacy budget shape kept for ≤4.x).
+- `MODEL_CONTEXT_WINDOWS` gains measured Claude entries (sonnet/opus/fable 1M, haiku-4.5 200K).
+
 ### E-1.12 shipped: context-window resilience + D-052 model re-audit (2026-07-29)
 
 - **Job-scoped Q&A actually scoped now** (S-1.12.1): retrieval filters by the job's approved videos; the deprecated global-search signature is gone. Empty-approval jobs never fall back to a global search.

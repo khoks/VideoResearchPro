@@ -36,6 +36,7 @@ from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
 from app.config import settings
+from app.services import llm_routing
 from app.services.llm_routing import (
     ReasoningLevel,
     UseCase,
@@ -75,12 +76,52 @@ def byok_context(
 
     The context resets automatically on with-block exit (and is safe
     against exceptions). Nested contexts work via ContextVar tokens.
+
+    E-1.13: this is also the load point for the user's per-use-case LLM
+    overrides — every user-scoped LLM entry point already brackets with
+    this context manager (D-041), so piggybacking here gives override
+    coverage everywhere BYOK is already correct. Load failures degrade
+    to defaults (never break the wrapped work).
     """
     token = _byok_context.set((tenant_id, db))
+    override_token = None
+    if tenant_id is not None and db is not None:
+        try:
+            override_token = llm_routing.user_override_context.set(
+                _load_user_overrides(tenant_id, db)
+            )
+        except Exception:
+            logger.exception(
+                "Failed to load user LLM overrides for %s; using defaults",
+                tenant_id,
+            )
     try:
         yield
     finally:
+        if override_token is not None:
+            llm_routing.user_override_context.reset(override_token)
         _byok_context.reset(token)
+
+
+def _load_user_overrides(user_id: str, db: Any) -> dict | None:
+    """Load ``user_llm_overrides`` rows into a use_case->config map."""
+    from app.models.user_llm_override import UserLLMOverride
+
+    rows = (
+        db.query(UserLLMOverride)
+        .filter(UserLLMOverride.user_id == user_id)
+        .all()
+    )
+    if not rows:
+        return None
+    overrides: dict = {}
+    for r in rows:
+        if r.use_case not in llm_routing.USE_CASE_REGISTRY:
+            continue  # stale row for a renamed use case — ignore
+        overrides[r.use_case] = llm_routing.UseCaseConfig(
+            provider=r.provider, model=r.model, reasoning=r.reasoning
+        )
+    return overrides or None
 
 # Cache the validated primary model name (OpenAI back-compat path) so we
 # don't retry the /models round-trip on every call. Cleared between tests
@@ -116,16 +157,27 @@ _GOOGLE_THINKING_BUDGET = {
 }
 
 
-def _openai_reasoning_kwargs(reasoning: ReasoningLevel) -> dict[str, Any]:
+def _openai_reasoning_kwargs(reasoning: ReasoningLevel, model: str = "") -> dict[str, Any]:
     """Translate reasoning level to OpenAI ``model_kwargs``.
 
-    ``off`` emits no ``reasoning_effort`` (the model decides — typically
-    fast). Any other level is passed through as-is; OpenAI accepts
-    ``minimal`` / ``low`` / ``medium`` / ``high``. ``auto`` is mapped to
-    ``medium`` because OpenAI has no adaptive knob today.
+    D-054 research findings (2026-07-29):
+    - gpt-5.x models reason ADAPTIVELY: an omitted ``reasoning_effort``
+      defaults to *medium* (measured: 89 hidden reasoning tokens on a
+      trivial prompt on gpt-5.5) — so ``off`` must send an explicit
+      ``"none"`` on the 5.x family to genuinely disable thinking.
+      Pre-5.x models (gpt-4.1*) predate the param; ``off`` still omits.
+    - ``minimal`` was removed from the valid enum on gpt-5.5/5.6
+      ("Supported values: none, low, medium, high, xhigh") — remapped to
+      ``low`` universally.
+    - ``auto`` maps to ``medium`` (OpenAI's adaptive router then decides
+      per request how much of that ceiling to use).
     """
     if reasoning == "off":
+        if model.startswith("gpt-5"):
+            return {"model_kwargs": {"reasoning_effort": "none"}}
         return {}
+    if reasoning == "minimal":
+        return {"model_kwargs": {"reasoning_effort": "low"}}
     if reasoning == "auto":
         return {"model_kwargs": {"reasoning_effort": "medium"}}
     return {"model_kwargs": {"reasoning_effort": reasoning}}
@@ -163,9 +215,27 @@ def _anthropic_reasoning_kwargs(reasoning: ReasoningLevel, model: str = "") -> d
     return {"thinking": {"type": "enabled", "budget_tokens": budget}}
 
 
-def _google_reasoning_kwargs(reasoning: ReasoningLevel) -> dict[str, Any]:
-    # Google accepts thinking_budget even when "off" (value 0 disables it).
-    # Pass through for every level so behavior is deterministic.
+_GOOGLE_THINKING_LEVEL = {
+    "minimal": "low",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "auto": "medium",
+}
+
+
+def _google_reasoning_kwargs(reasoning: ReasoningLevel, model: str = "") -> dict[str, Any]:
+    # Gemini 3.x replaced the integer thinking_budget with thinking_level
+    # (low/medium/high); the two cannot be combined, and thinking_budget=0
+    # is rejected outright (400) by 3.6-flash and 3.5-flash-lite — bench
+    # 2026-07-29, D-054 amendment. For "off" on 3.x we omit the config
+    # entirely: the lite tiers don't think by default, and thinking cannot
+    # be disabled at all on 3.6-flash / 3.x Pro.
+    if model.startswith("gemini-3"):
+        if reasoning == "off":
+            return {}
+        return {"thinking_level": _GOOGLE_THINKING_LEVEL.get(reasoning, "medium")}
+    # Gemini 2.x and earlier: thinking_budget for every level (0 disables).
     budget = _GOOGLE_THINKING_BUDGET.get(reasoning, 0)
     return {"thinking_budget": budget}
 
@@ -200,7 +270,10 @@ def _build_openai(
         kwargs["base_url"] = base_url
     # Merge reasoning kwargs last so explicit caller-provided
     # model_kwargs (none today, but future-proof) are preserved.
-    kwargs.update(_openai_reasoning_kwargs(reasoning))
+    # Local endpoints never get reasoning params (see docstring).
+    kwargs.update(
+        _openai_reasoning_kwargs(reasoning, model if not base_url else "")
+    )
     return ChatOpenAI(**kwargs)
 
 
@@ -275,8 +348,26 @@ def _build_google(
     if max_tokens:
         # Gemini uses `max_output_tokens`, not `max_tokens`.
         kwargs["max_output_tokens"] = max_tokens
-    kwargs.update(_google_reasoning_kwargs(reasoning))
-    return ChatGoogleGenerativeAI(**kwargs)
+    reasoning_kwargs = _google_reasoning_kwargs(reasoning, model)
+    kwargs.update(reasoning_kwargs)
+    try:
+        return ChatGoogleGenerativeAI(**kwargs)
+    except (TypeError, ValueError) as e:
+        # Older langchain-google-genai releases predate thinking_level
+        # (Gemini 3.x). Degrade to no thinking config rather than failing
+        # the whole call — reasoning becomes provider-default.
+        if not reasoning_kwargs:
+            raise
+        logger.warning(
+            "ChatGoogleGenerativeAI rejected reasoning kwargs %s (%s); "
+            "retrying without them — upgrade langchain-google-genai to "
+            "control Gemini 3.x thinking.",
+            reasoning_kwargs,
+            e,
+        )
+        for k in reasoning_kwargs:
+            kwargs.pop(k, None)
+        return ChatGoogleGenerativeAI(**kwargs)
 
 
 def _local_base_url() -> str | None:

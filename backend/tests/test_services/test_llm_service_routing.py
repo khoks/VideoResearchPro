@@ -118,8 +118,8 @@ def test_get_llm_for_uses_registry_default_config(_clear_overrides: None) -> Non
 
     kwargs = mock_openai.call_args.kwargs
     assert kwargs["model"] == expected.model
-    # reasoning="off" → no model_kwargs; provider=openai → no base_url.
-    assert "model_kwargs" not in kwargs
+    # reasoning="off" on gpt-5.x → explicit "none" (D-054); no base_url.
+    assert kwargs["model_kwargs"] == {"reasoning_effort": "none"}
     assert "base_url" not in kwargs
 
 

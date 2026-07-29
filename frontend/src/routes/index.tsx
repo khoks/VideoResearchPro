@@ -13,6 +13,7 @@ import { ExportsPage } from '../pages/ExportsPage';
 import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
 import { SubscriptionPage } from '../pages/SubscriptionPage';
+import { AIModelsPage } from '../pages/AIModelsPage';
 import { EchoPage } from '../pages/EchoPage';
 import { AuthorPage } from '../pages/AuthorPage';
 import { useAuth } from '../contexts/AuthContext';
@@ -71,6 +72,7 @@ export const router = createBrowserRouter([
           { path: 'author', element: <AuthorPage /> },
           { path: 'echo', element: <EchoPage /> },
           { path: 'account/subscription', element: <SubscriptionPage /> },
+          { path: 'account/ai-models', element: <AIModelsPage /> },
         ],
       },
     ],

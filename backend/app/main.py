@@ -20,6 +20,7 @@ from app.routers import (
     jobs,
     knowledge,
     library,
+    llm_settings,
     mfa,
     oauth,
     qa,
@@ -111,4 +112,5 @@ app.include_router(qa_history.router, prefix="/api/v1")
 app.include_router(knowledge.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(exports.router, prefix="/api/v1")
+app.include_router(llm_settings.router, prefix="/api/v1")
 app.include_router(ws.router)

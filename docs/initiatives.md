@@ -476,6 +476,21 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 **North-star doc:** [branding.md](branding.md) · [ui-design.md](ui-design.md)
 **Decision links:** [D-001](decisions.md#d-001--rebrand-to-pratidhvani-प्रतिध्वनि-2026-04-24), [D-002](decisions.md#d-002-warm-editorial-visual-identity-2026-04-24)
 
+### E-1.13 🟡 Per-user LLM overrides + cost calculator
+
+**Filed + shipped-in-branch 2026-07-29.** Linked decision: [D-054](decisions.md#d-054-per-user-llm-overrides-cost-calculator-gpt-56-adaptive-reasoning-findings-2026-07-29).
+
+**Scope.** Expose all 20 per-use-case LLM settings (provider/model/reasoning) in user settings with DB-backed overrides that dynamically supersede registry defaults (ContextVar layer inside `byok_context` per D-041), plus a cost calculator benchmarked on the real 200-video job with researched cross-provider pricing (OpenAI / Anthropic / Google, source-cited, `as_of` stamped).
+
+**Stories**
+- S-1.13.1 🟡 `user_llm_overrides` schema + Alembic + top-precedence resolve layer
+- S-1.13.2 🟡 Settings REST surface (GET/PUT/DELETE + POST estimate)
+- S-1.13.3 🟡 `model_pricing.py` (researched 2026-07-29) + `cost_estimator.py` (benchmark = job 0d4db8c3 actuals; formulas mirror shipped pipeline mechanics)
+- S-1.13.4 🟡 `/account/ai-models` settings panel + live cost calculator UI
+- S-1.13.5 🟡 OpenAI adapter fixes from the D-054 research (`off`→explicit `none` on gpt-5.x; `minimal`→`low`)
+- S-1.13.6 ⚪ Responses-API path for guaranteed `max` reasoning on `search_rank_and_curate` (follow-up)
+- S-1.13.7 🟡 Gemini bench integration — windows recorded in `MODEL_CONTEXT_WINDOWS`, pricing notes flag free-tier-blocked Pro models, Gemini-3.x `thinking_level` adapter fix. Key finding: our key is free-tier (Pro hard-blocked, ~250K tok/min cap); flash-lite approved for volume-tier user overrides. See D-054 amendment.
+
 ### E-2.1 🟢 Tokens layer (`frontend/src/theme.ts`)
 
 **Shipped** in an earlier session (verified live on master 2026-04-26). `frontend/src/theme.ts` exports `colors` (warm-editorial light + dark), `fonts` (Fraunces / Source Serif / Inter / Tiro Devanagari / JetBrains Mono), `fontSize` (modular scale), `lineHeight`, `fontWeight`, `space` (4px scale), `radius`, `shadow`, `motion`, `z`, `breakpoints`, `measure`. Helpers `pickColor(token, mode)`, `transitionAll(d)`, `focusRing(mode)`. CSS-var mirror in `frontend/src/index.css` (`--color-*` etc.) so native pseudo-elements (`::placeholder`, scrollbar) share the palette.

@@ -36,12 +36,15 @@ def _reset_validated_model_cache() -> None:
 @pytest.mark.parametrize(
     "reasoning, expected_effort",
     [
-        ("off", None),
-        ("minimal", "minimal"),
+        # D-054: gpt-5.x reasons adaptively when the param is omitted, so
+        # "off" sends an explicit "none"; "minimal" left the 5.x enum and
+        # remaps to "low".
+        ("off", "none"),
+        ("minimal", "low"),
         ("low", "low"),
         ("medium", "medium"),
         ("high", "high"),
-        ("auto", "medium"),  # OpenAI has no adaptive knob -- map to medium.
+        ("auto", "medium"),
     ],
 )
 def test_build_openai_passes_reasoning_effort(
@@ -57,10 +60,7 @@ def test_build_openai_passes_reasoning_effort(
         )
 
     kwargs = mock_openai.call_args.kwargs
-    if expected_effort is None:
-        assert "model_kwargs" not in kwargs
-    else:
-        assert kwargs["model_kwargs"] == {"reasoning_effort": expected_effort}
+    assert kwargs["model_kwargs"] == {"reasoning_effort": expected_effort}
 
 
 # ---------------------------------------------------------------------------
@@ -141,3 +141,40 @@ def test_build_google_passes_thinking_budget(
 
     kwargs = fake_chat_google.call_args.kwargs
     assert kwargs["thinking_budget"] == expected_budget
+
+
+@pytest.mark.parametrize(
+    "reasoning, expected_level",
+    [
+        ("off", None),  # omit entirely — budget=0 400s on 3.6-flash / 3.5-flash-lite
+        ("minimal", "low"),
+        ("low", "low"),
+        ("medium", "medium"),
+        ("high", "high"),
+        ("auto", "medium"),
+    ],
+)
+def test_build_google_gemini3_uses_thinking_level(
+    reasoning: str,
+    expected_level: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gemini 3.x: thinking_level replaces thinking_budget (D-054 amendment)."""
+    monkeypatch.setattr(llm_service.settings, "GOOGLE_API_KEY", "goog-test")
+
+    fake_chat_google = MagicMock()
+    fake_module = MagicMock(ChatGoogleGenerativeAI=fake_chat_google)
+    with patch.dict("sys.modules", {"langchain_google_genai": fake_module}):
+        llm_service._build_google(
+            model="gemini-3.5-flash-lite",
+            temperature=0.0,
+            max_tokens=None,
+            reasoning=reasoning,  # type: ignore[arg-type]
+        )
+
+    kwargs = fake_chat_google.call_args.kwargs
+    assert "thinking_budget" not in kwargs
+    if expected_level is None:
+        assert "thinking_level" not in kwargs
+    else:
+        assert kwargs["thinking_level"] == expected_level

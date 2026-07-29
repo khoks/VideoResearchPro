@@ -10,6 +10,13 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### E-1.13: Per-user LLM overrides + cost calculator + D-054 (2026-07-29)
+
+- **AI models settings page** (`/account/ai-models`): all 20 LLM use cases exposed with provider/model/reasoning pickers; overrides persist per-user in the new `user_llm_overrides` table and take top precedence in `resolve_config` (loaded via the existing `byok_context` ContextVar bracket — routers and Celery tasks covered with zero call-site changes; load failures degrade to defaults).
+- **Cost calculator**: live per-use-case and total cost preview against the real 200-video benchmark job (947,239 transcript words) using researched 2026-07-29 pricing across OpenAI / Anthropic / Google (`model_pricing.py`, `as_of`-stamped; long-context tiers and intro-pricing notes included). Defaults land at ≈ $4.36 for the full benchmark workload.
+- **gpt-5.6 adapter verdict (D-054)**: the family reasons *adaptively* — 0 reasoning tokens on easy prompts is expected, not an adapter bug. Fixes shipped anyway: `off` now sends explicit `reasoning_effort="none"` on gpt-5.x (omitted param silently defaults to medium adaptive), `minimal` remaps to `low` (removed from the 5.5/5.6 enum).
+- **Gemini integrated (S-1.13.7)**: windows recorded (flash family 1,048,576), pricing table + free-tier caveats (Pro models hard-blocked on free tier; ~250K tok/min effective cap), and a generation-aware adapter — Gemini 3.x uses `thinking_level` (legacy `thinking_budget=0` 400s on 3.6-flash / 3.5-flash-lite). Bench: flash-lite ≈1.3s round-trips with flawless JSON — approved for volume-tier overrides.
+
 ### D-053: Claude 5 adoption + gpt-5.6 profile (2026-07-29)
 
 - `claude-sonnet-5` (measured 1M window, ~2× gpt-5.5 speed) now owns the four user-facing synthesis sites: job/library answer formulation, report compose, knowledge synthesize.

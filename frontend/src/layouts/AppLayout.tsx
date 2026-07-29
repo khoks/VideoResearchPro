@@ -42,6 +42,7 @@ export function AppLayout() {
       author: '/author',
       echo: '/echo',
       subscription: '/account/subscription',
+      'ai-models': '/account/ai-models',
     };
     navigate(routeMap[tab]);
     setMobileNavOpen(false);
@@ -61,10 +62,12 @@ export function AppLayout() {
   const isAuthorActive = location.pathname.startsWith('/author');
   const isEchoActive = location.pathname.startsWith('/echo');
   const isSubscriptionActive = location.pathname.startsWith('/account/subscription');
+  const isAIModelsActive = location.pathname.startsWith('/account/ai-models');
   const isSubmitActive =
     !isAuthorActive &&
     !isEchoActive &&
     !isSubscriptionActive &&
+    !isAIModelsActive &&
     (location.pathname === '/' || location.pathname === '/submit');
 
   const nav = (
@@ -80,6 +83,7 @@ export function AppLayout() {
         author: isAuthorActive,
         echo: isEchoActive,
         subscription: isSubscriptionActive,
+        'ai-models': isAIModelsActive,
       }}
       showAuthor={has('author_studio')}
       showEcho={has('echo_personal_brain')}
@@ -220,6 +224,9 @@ function NavContent({ onChange, active, showAuthor, showEcho, currentTier }: Nav
       <NavGroup label="Account">
         <NavItem active={active.subscription} onClick={() => onChange('subscription')}>
           Subscription <TierPill tier={currentTier} />
+        </NavItem>
+        <NavItem active={active['ai-models']} onClick={() => onChange('ai-models')}>
+          AI models
         </NavItem>
       </NavGroup>
     </nav>

@@ -226,14 +226,22 @@ _GOOGLE_THINKING_LEVEL = {
 
 def _google_reasoning_kwargs(reasoning: ReasoningLevel, model: str = "") -> dict[str, Any]:
     # Gemini 3.x replaced the integer thinking_budget with thinking_level
-    # (low/medium/high); the two cannot be combined, and thinking_budget=0
-    # is rejected outright (400) by 3.6-flash and 3.5-flash-lite — bench
-    # 2026-07-29, D-054 amendment. For "off" on 3.x we omit the config
-    # entirely: the lite tiers don't think by default, and thinking cannot
-    # be disabled at all on 3.6-flash / 3.x Pro.
+    # (low/medium/high); the two cannot be combined. Measured matrix
+    # (paid-tier bench 2026-07-29, D-054 amendments):
+    #   * lite tiers don't think by default, but reject thinking_budget=0
+    #     (400) — "off" must OMIT the config entirely.
+    #   * 3.5-flash accepts thinking_budget=0 — a true disable.
+    #   * 3.6-flash and 3.x Pro cannot disable thinking (budget=0 and
+    #     level=minimal both 400; "low" is the floor). Omitting the config
+    #     triggers DYNAMIC thinking that spends MORE than explicit high
+    #     (628 vs 473 thoughts on the same prompt), so "off" pins "low".
     if model.startswith("gemini-3"):
         if reasoning == "off":
-            return {}
+            if "flash-lite" in model:
+                return {}
+            if model.startswith("gemini-3.5-flash"):
+                return {"thinking_budget": 0}
+            return {"thinking_level": "low"}
         return {"thinking_level": _GOOGLE_THINKING_LEVEL.get(reasoning, "medium")}
     # Gemini 2.x and earlier: thinking_budget for every level (0 disables).
     budget = _GOOGLE_THINKING_BUDGET.get(reasoning, 0)

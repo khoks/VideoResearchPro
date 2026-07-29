@@ -169,6 +169,24 @@ try {
         Start-Sleep -Milliseconds 500
     }
 
+    # backend/.env is authoritative for this app's secrets. pydantic-settings
+    # gives real OS environment variables precedence over .env, so a
+    # machine-level key set for some other tool silently shadows the
+    # project's key (bit us twice: GOOGLE_API_KEY and OPENAI_API_KEY —
+    # D-054 amendment). Clear any inherited var that .env defines so the
+    # children resolve from the file.
+    $dotenvPath = Join-Path $backendDir '.env'
+    if (Test-Path $dotenvPath) {
+        Select-String -Path $dotenvPath -Pattern '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value } |
+            ForEach-Object {
+                if (Test-Path "Env:$_") {
+                    Write-Step "  clearing inherited env var $_ (shadowed by backend/.env)" 'Yellow'
+                    Remove-Item "Env:$_"
+                }
+            }
+    }
+
     # ---- 2. Backend (uvicorn) ----
     Write-Step "Starting backend (uvicorn :8000)..."
     $backend = Start-Process -FilePath $venvPython `

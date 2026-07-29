@@ -10,6 +10,12 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Gemini paid tier validated + env-shadow launcher fix (2026-07-29)
+
+- **Paid Tier 1 active** (project my-project-7282026): gemini-3.1-pro unlocked and verified end-to-end through the app; 1M window confirmed by the API's own rejection message (1,048,576); 295K/475K single-request long-context calls processed in under 4s on the flash family.
+- **3.1-pro profiled**: perfect JSON + needle recall, but thinking is mandatory (`low` floor, thoughts deduct from `max_output_tokens`) and visible decode is ~32 tok/s — sonnet-5 keeps user-facing synthesis; 3.1-pro is the best-benched candidate for `search_rank_and_curate`. Adapter now maps `off` per the measured 3.x matrix (Pro/3.6-flash → `thinking_level=low`, 3.5-flash → `budget=0`, lite → omit).
+- **Launcher env-shadow fix**: machine-level `GOOGLE_API_KEY`/`OPENAI_API_KEY` were silently overriding `backend/.env` (pydantic-settings precedence) — `start.ps1`/`restart_services.ps1` now clear any inherited var that `.env` defines, making `.env` authoritative for the app.
+
 ### E-1.13: Per-user LLM overrides + cost calculator + D-054 (2026-07-29)
 
 - **AI models settings page** (`/account/ai-models`): all 20 LLM use cases exposed with provider/model/reasoning pickers; overrides persist per-user in the new `user_llm_overrides` table and take top precedence in `resolve_config` (loaded via the existing `byok_context` ContextVar bracket — routers and Celery tasks covered with zero call-site changes; load failures degrade to defaults).

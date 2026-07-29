@@ -178,3 +178,22 @@ def test_build_google_gemini3_uses_thinking_level(
         assert "thinking_level" not in kwargs
     else:
         assert kwargs["thinking_level"] == expected_level
+
+
+@pytest.mark.parametrize(
+    "model, expected_kwargs",
+    [
+        # Pro cannot disable thinking; omitting triggers costlier dynamic
+        # thinking, so "off" pins the floor (paid-tier bench, D-054).
+        ("gemini-3.1-pro-preview", {"thinking_level": "low"}),
+        ("gemini-3.6-flash", {"thinking_level": "low"}),
+        # 3.5-flash is the one 3.x model where budget=0 truly disables.
+        ("gemini-3.5-flash", {"thinking_budget": 0}),
+        # Lite tiers don't think by default but 400 on budget=0 — omit.
+        ("gemini-3.5-flash-lite", {}),
+        ("gemini-3.1-flash-lite", {}),
+    ],
+)
+def test_google_gemini3_off_matrix(model: str, expected_kwargs: dict) -> None:
+    """reasoning='off' maps per the measured Gemini 3.x thinking matrix."""
+    assert llm_service._google_reasoning_kwargs("off", model) == expected_kwargs

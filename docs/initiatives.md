@@ -483,13 +483,13 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 **Scope.** Expose all 20 per-use-case LLM settings (provider/model/reasoning) in user settings with DB-backed overrides that dynamically supersede registry defaults (ContextVar layer inside `byok_context` per D-041), plus a cost calculator benchmarked on the real 200-video job with researched cross-provider pricing (OpenAI / Anthropic / Google, source-cited, `as_of` stamped).
 
 **Stories**
-- S-1.13.1 🟡 `user_llm_overrides` schema + Alembic + top-precedence resolve layer
-- S-1.13.2 🟡 Settings REST surface (GET/PUT/DELETE + POST estimate)
-- S-1.13.3 🟡 `model_pricing.py` (researched 2026-07-29) + `cost_estimator.py` (benchmark = job 0d4db8c3 actuals; formulas mirror shipped pipeline mechanics)
-- S-1.13.4 🟡 `/account/ai-models` settings panel + live cost calculator UI
-- S-1.13.5 🟡 OpenAI adapter fixes from the D-054 research (`off`→explicit `none` on gpt-5.x; `minimal`→`low`)
+- S-1.13.1 🟢 `user_llm_overrides` schema + Alembic + top-precedence resolve layer — **Shipped:** 2026-07-29 — PR [#199](https://github.com/khoks/VideoResearchPro/pull/199)
+- S-1.13.2 🟢 Settings REST surface (GET/PUT/DELETE + POST estimate) — **Shipped:** 2026-07-29 — PR [#199](https://github.com/khoks/VideoResearchPro/pull/199)
+- S-1.13.3 🟢 `model_pricing.py` (researched 2026-07-29) + `cost_estimator.py` (benchmark = job 0d4db8c3 actuals; formulas mirror shipped pipeline mechanics) — **Shipped:** 2026-07-29 — PR [#199](https://github.com/khoks/VideoResearchPro/pull/199)
+- S-1.13.4 🟢 `/account/ai-models` settings panel + live cost calculator UI — **Shipped:** 2026-07-29 — PR [#199](https://github.com/khoks/VideoResearchPro/pull/199)
+- S-1.13.5 🟢 OpenAI adapter fixes from the D-054 research (`off`→explicit `none` on gpt-5.x; `minimal`→`low`) — **Shipped:** 2026-07-29 — PR [#199](https://github.com/khoks/VideoResearchPro/pull/199)
 - S-1.13.6 ⚪ Responses-API path for guaranteed `max` reasoning on `search_rank_and_curate` (follow-up)
-- S-1.13.7 🟡 Gemini bench integration — windows recorded in `MODEL_CONTEXT_WINDOWS`, pricing notes flag free-tier-blocked Pro models, Gemini-3.x `thinking_level` adapter fix. Key finding: our key is free-tier (Pro hard-blocked, ~250K tok/min cap); flash-lite approved for volume-tier user overrides. See D-054 amendment.
+- S-1.13.7 🟡 Gemini bench integration — free-tier phase shipped in PR [#199](https://github.com/khoks/VideoResearchPro/pull/199) (windows, pricing notes, `thinking_level` adapter). **Scope-changed 2026-07-29:** paid Tier-1 billing activated (key project my-project-7282026); gemini-3.1-pro unlocked and verified end-to-end through the app; paid-tier validation (Pro bench, 1M-window check, Tier-1 rate limits) + launcher env-shadow fix in flight. See D-054 amendments.
 
 ### E-2.1 🟢 Tokens layer (`frontend/src/theme.ts`)
 

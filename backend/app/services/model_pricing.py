@@ -56,9 +56,9 @@ MODEL_PRICING: dict[str, ModelPricing] = {
     "gemini-3.6-flash": ModelPricing(1.50, 7.50, note="output includes thinking; thinks by default — pin low effort"),
     "gemini-3.5-flash": ModelPricing(1.50, 9.00, note="output includes thinking"),
     "gemini-3.5-flash-lite": ModelPricing(0.30, 2.50),
-    "gemini-3.1-pro-preview": ModelPricing(2.00, 12.00, 200_000, 4.00, 18.00, note="paid billing required — free tier blocks Pro models"),
+    "gemini-3.1-pro-preview": ModelPricing(2.00, 12.00, 200_000, 4.00, 18.00, note="requires paid billing (active on this deployment since 2026-07-29)"),
     "gemini-3.1-flash-lite": ModelPricing(0.25, 1.50),
-    "gemini-2.5-pro": ModelPricing(1.25, 10.00, 200_000, 2.50, 15.00, note="paid billing required — free tier blocks Pro models"),
+    "gemini-2.5-pro": ModelPricing(1.25, 10.00, 200_000, 2.50, 15.00, note="requires paid billing (active on this deployment since 2026-07-29)"),
     "gemini-2.5-flash": ModelPricing(0.30, 2.50),
     "gemini-2.5-flash-lite": ModelPricing(0.10, 0.40),
 }

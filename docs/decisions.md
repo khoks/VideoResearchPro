@@ -1541,3 +1541,32 @@ When E-5.3 (Stripe) ships, the same endpoint stays — its implementation flips 
 **Re-evaluation hooks.** Re-run the bench battery when gpt-5.6 gets dated snapshots; A/B `qa_history_formulate_answer` on sonnet-5; consider `claude-fable-5`/`claude-opus-5` for E-3.4 "speak as me" when it ships.
 
 **Linked initiatives / PRs.** I-1 / E-1.12 follow-on / D-052. PR: this branch's PR.
+
+---
+
+## D-054 — Per-user LLM overrides + cost calculator; gpt-5.6 adaptive-reasoning findings (2026-07-29)
+
+**Status:** accepted.
+
+**Context.** The user asked to expose per-use-case model settings (provider/model/reasoning) in user settings with DB-backed overrides that dynamically supersede registry defaults, plus a cost calculator benchmarked on the real 200-video job with current cross-provider pricing; and to investigate why gpt-5.6 emitted no reasoning tokens in the D-053 bench.
+
+**Decision.**
+
+1. **Override architecture:** new `user_llm_overrides` table (one row per user x use case, Alembic `b2c3d4e5f6a8`); `resolve_config` gains a top-precedence per-user layer via a ContextVar populated inside `llm_service.byok_context` — piggybacking on the D-041 pattern means every user-scoped LLM entry point (routers + Celery tasks) gets override coverage with zero new call-site changes. Load failures degrade to defaults. REST surface: `GET/PUT/DELETE /api/v1/settings/llm[...]` + `POST /api/v1/settings/llm/estimate`; UI at `/account/ai-models`.
+2. **Cost calculator:** `model_pricing.py` (researched 2026-07-29 from the three official pricing pages, source URLs inline; includes OpenAI >272K long-context tiers, sonnet-5 intro-pricing note, Gemini 200K tiering) + `cost_estimator.py` whose workload formulas mirror the SHIPPED pipeline mechanics (model-window-derived map batches, tournament rank rounds, measured QA token actuals) against the job-0d4db8c3 benchmark (200 videos / 947,239 words) plus assumed interactive usage. Unknown-pricing models are flagged, never guessed.
+3. **gpt-5.6 verdict (research + 40 probes): the adapter was NOT broken — the 5.6 family reasons ADAPTIVELY.** `reasoning_effort` is a ceiling; an internal router decides per request (easy prompts → 0 tokens at any effort; hard prompts → real reasoning on both API surfaces). Public record: three-tier family launched 2026-07-09 (sol flagship, terra =5.5-at-half-price, luna fast/cheap); new `xhigh`/`max` levels, `max` being Responses-API-only and the only forced-reasoning level. Zero-reasoning-tokens must not be used as an adapter-health signal.
+4. **Adapter fixes from the findings:** (a) `off` now sends explicit `reasoning_effort="none"` on gpt-5.x — an OMITTED param defaults to medium adaptive (measured 89 hidden reasoning tokens on a trivial gpt-5.5 prompt), so our volume tier was silently paying thinking tokens; (b) `minimal` remaps to `low` (removed from the 5.5/5.6 enum — was a hard 400 for operators); (c) a Responses-API path for guaranteed `max` reasoning on rank is filed as follow-up, not shipped.
+
+**Consequences.** Users self-serve model choice per function with immediate effect and cost preview; the registry stays the default layer; SaaS BYOK users can point expensive use cases at their own keys/models. Pricing is a static researched table with an `as_of` stamp — staleness is visible and re-research is cheap.
+
+**Re-evaluation hooks.** Refresh `model_pricing.py` when sonnet-5 intro pricing lapses (2026-09-01) or any provider reprices; consider gpt-5.6-luna ($1/$6, fastest measured) for the volume tier after a dated snapshot lands; Responses-API `max` for `search_rank_and_curate`; Gemini adoption per the bench (windows to be recorded when the bench lands).
+
+**Linked initiatives / PRs.** E-1.13 (new). PR: this branch's PR.
+
+**Amended 2026-07-29 — Gemini bench landed (S-1.13.7).** Findings from the live models.list + bench run on our key:
+
+1. **The key is FREE TIER, and since April 2026 all Gemini Pro models are paid-only** — every Pro probe (3.1-pro-preview, 3-pro-preview, 2.5-pro) returned 429 with `limit: 0` RPM/RPD. Free-tier flash quota observed: 250K input tokens/min/model, which also makes the advertised 1M window unverifiable end-to-end (a 1.1M-token probe was quota-rejected before reaching the context validator). Practical free-tier per-request ceiling: ~250K input tokens.
+2. **Windows recorded** (models.list metadata): all current flash/pro text models report 1,048,576 in / 65,536 out. Added to `MODEL_CONTEXT_WINDOWS` with the free-tier caveat inline.
+3. **Bench (4 usable models):** `gemini-3.5-flash-lite` / `gemini-3.1-flash-lite` are excellent volume-tier fits — ~1.3 s round-trips, 147–169 tok/s, flawless bare-JSON discipline, 3/3 planted-fact recall, no thinking by default. `gemini-3.6-flash` thinks by default and burned 2,397 thought tokens to emit 99 (24×) — usable for mid-synthesis only with effort pinned low. `gemini-3.5-flash` similar but thinking is fully disableable.
+4. **Adapter fix:** Gemini 3.x replaced integer `thinking_budget` with `thinking_level` (low/medium/high); the two can't be combined, and `thinking_budget=0` is a hard 400 on 3.6-flash and 3.5-flash-lite. `_google_reasoning_kwargs` is now generation-aware: 3.x → `thinking_level` (or omit entirely for `off`); 2.x → legacy `thinking_budget`. Construction falls back without reasoning kwargs if the installed langchain-google-genai predates `thinking_level`.
+5. **Adoption stance:** flash-lite is approved for user-override volume use cases now (free today, $0.30/$2.50 paid); flagship-tier Gemini (3.1-pro) is blocked until a paid billing account exists; do not route p95-45K-input use cases at free-tier Gemini at concurrency (250K/min quota).

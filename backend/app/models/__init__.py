@@ -21,6 +21,7 @@ from app.models.quota_usage import QuotaUsage
 from app.models.session import Session
 from app.models.transcript_cache import TranscriptCache
 from app.models.user import User
+from app.models.user_llm_override import UserLLMOverride
 from app.models.user_credential import UserCredential
 
 __all__ = [
@@ -44,5 +45,6 @@ __all__ = [
     "Session",
     "TranscriptCache",
     "User",
+    "UserLLMOverride",
     "UserCredential",
 ]

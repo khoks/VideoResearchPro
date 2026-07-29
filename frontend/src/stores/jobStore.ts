@@ -19,7 +19,8 @@ export type AppTab =
   | 'exports'
   | 'author'
   | 'echo'
-  | 'subscription';
+  | 'subscription'
+  | 'ai-models';
 
 const THEME_KEY = 'vrp:theme';
 

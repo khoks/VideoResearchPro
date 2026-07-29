@@ -58,12 +58,20 @@ Think about four things:
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Literal
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# E-1.13: per-user overrides for the current request/Celery task. Populated
+# by ``llm_service.byok_context`` (which already brackets every user-scoped
+# LLM entry point per D-041); maps use_case -> UseCaseConfig.
+user_override_context: ContextVar[dict | None] = ContextVar(
+    "user_llm_overrides", default=None
+)
 
 # ---------------------------------------------------------------------------
 # Types
@@ -190,6 +198,17 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "claude-opus-5": 1_000_000,
     "claude-fable-5": 1_000_000,
     "claude-haiku-4-5": 200_000,
+    # Gemini: models.list metadata (2026-07-29). NOTE: on the FREE tier the
+    # effective per-request ceiling is ~250K tokens/min/model and all Pro
+    # models are hard-blocked (limit 0) — see D-054 amendment.
+    "gemini-3.6-flash": 1_048_576,
+    "gemini-3.5-flash": 1_048_576,
+    "gemini-3.5-flash-lite": 1_048_576,
+    "gemini-3.1-flash-lite": 1_048_576,
+    "gemini-3.1-pro-preview": 1_048_576,
+    "gemini-2.5-pro": 1_048_576,
+    "gemini-2.5-flash": 1_048_576,
+    "gemini-2.5-flash-lite": 1_048_576,
     # documented family values (pre-cutoff knowledge, not re-measured)
     "gpt-4.1": 1_047_576,
     "gpt-4.1-nano": 1_047_576,
@@ -710,10 +729,13 @@ def resolve_config(use_case: UseCase) -> UseCaseConfig:
 
     Precedence (highest first):
 
-    1. ``LLM_USE_CASE_CONFIG`` — inline per-use-case provider/model/reasoning
-    2. ``LLM_ROUTE_OVERRIDES`` legacy — flips provider to ``local`` when
+    1. Per-user override (E-1.13) — set for the current request/task via
+       ``llm_service.byok_context`` loading ``user_llm_overrides`` rows
+       into ``user_override_context``
+    2. ``LLM_USE_CASE_CONFIG`` — inline per-use-case provider/model/reasoning
+    3. ``LLM_ROUTE_OVERRIDES`` legacy — flips provider to ``local`` when
        route=fast, or keeps the default when route=primary
-    3. Registry ``default_config``
+    4. Registry ``default_config``
 
     Raises ``KeyError`` for unknown use cases (programmer error).
     """
@@ -724,6 +746,10 @@ def resolve_config(use_case: UseCase) -> UseCaseConfig:
             f"UseCase literal."
         )
     info = USE_CASE_REGISTRY[use_case]
+
+    user_overrides = user_override_context.get()
+    if user_overrides and use_case in user_overrides:
+        return user_overrides[use_case]
 
     inline = _parse_use_case_config(
         getattr(settings, "LLM_USE_CASE_CONFIG", "") or ""

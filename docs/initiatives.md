@@ -24,6 +24,8 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 ## I-1 🟡 Multi-source ingest — original scope closed 2026-05-03; reopened 2026-07-22 for E-1.11 (scale resilience)
 
+**Scope-changed 2026-07-29 (II):** the reopened scale/quality track now also carries [E-1.13](#e-113-per-user-llm-overrides-cost-calculator) (per-user model overrides + cost calculator, 🟢) and [E-1.14](#e-114-model-tier-quality-evaluation-harness) (model-tier quality evaluation, 🟡). Trajectory of the reopening: E-1.11 made ingest survive scale → E-1.12 made the agents survive scale → E-1.13 made model choice configurable and costed → E-1.14 measures whether the chosen models are good enough. Linked decisions: [D-054](decisions.md#d-054-per-user-llm-overrides-cost-calculator-gpt-56-adaptive-reasoning-findings-2026-07-29), [D-055](decisions.md#d-055-intelligence-delta-evaluation-methodology-production-input-replay-blind-ab-judging-2026-07-29).
+
 **Scope-changed 2026-07-22:** reopened for [E-1.11](#e-111-transcript-pipeline-resilience-at-scale) — the 200-video deep-research test (job `0d4db8c3`, 2026-07-21/22) surfaced transcript-pipeline failures at scale: an IP-block cascade made Whisper the primary path for 80% of videos, and 63/200 videos were lost (25MB Whisper cap + yt-dlp 403s). The original multi-source scope stays closed; E-1.11 is the scale-resilience follow-on. Linked decision: [D-051](decisions.md#d-051-transcript-pipeline-resilience-bundle-circuit-breaker-segmented-whisper-yt-dlp-client-fallback-2026-07-22).
 
 **Closure 2026-05-03 (evening).** I-1 is **fully closed**. The polymorphic plumbing claim is validated **12 times** end-to-end across every dimension of variation:
@@ -465,20 +467,10 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 - S-1.12.8 🟢 Knowledge agent: windowed extraction above 60K instead of silent truncation; synthesize from extraction JSON without re-sending the full transcript.
 - S-1.12.9 🟢 Doc drift: CLAUDE.md says CHUNK_SIZE 512/50 but config ships 256/32; registry holds 20 use cases, docs say 19.
 
+### E-1.13 🟢 Per-user LLM overrides + cost calculator
 
-## I-2 🟡 Brand & visual identity rollout
-
-**Closed 2026-05-03.** All 6 epics now 🟢: E-2.1 tokens layer, E-2.2 primitives library, E-2.3 page migration, E-2.4 sidebar nav (all shipped earlier — verified 2026-04-26), E-2.5 marketing landing page (PR [#136](https://github.com/khoks/VideoResearchPro/pull/136), 2026-05-03), E-2.6 code identifier rename (this session — runbook in `docs/migration-code-identifiers.md` covers the operator-coordinated data-bearing renames).
-
-**Status reconciliation 2026-04-26 (historical).** A backlog audit on 2026-04-26 revealed I-2 was substantially shipped — 4 of 6 epics were already 🟢. The earlier characterization in feature-roadmap.md ("documented but zero code shifted") was inaccurate; the warm-editorial migration largely landed in earlier sessions and was not reflected here. After E-2.5 + E-2.6 closed on 2026-05-03, I-2 is fully closed.
-
-**Why it exists.** Switch the running app from generic-AI-SaaS aesthetics (purple-blue gradient, default sans) to warm-editorial Pratidhvani identity (paper background, oxblood / forest-teal / vintage gold, Fraunces / Source Serif). Visual identity should match the personal-library / research-journal vision.
-**North-star doc:** [branding.md](branding.md) · [ui-design.md](ui-design.md)
-**Decision links:** [D-001](decisions.md#d-001--rebrand-to-pratidhvani-प्रतिध्वनि-2026-04-24), [D-002](decisions.md#d-002-warm-editorial-visual-identity-2026-04-24)
-
-### E-1.13 🟡 Per-user LLM overrides + cost calculator
-
-**Filed + shipped-in-branch 2026-07-29.** Linked decision: [D-054](decisions.md#d-054-per-user-llm-overrides-cost-calculator-gpt-56-adaptive-reasoning-findings-2026-07-29).
+**Filed 2026-07-29. Shipped 2026-07-29** — PRs [#199](https://github.com/khoks/VideoResearchPro/pull/199) + [#200](https://github.com/khoks/VideoResearchPro/pull/200). Linked decision: [D-054](decisions.md#d-054-per-user-llm-overrides-cost-calculator-gpt-56-adaptive-reasoning-findings-2026-07-29).
+**Filing-error fixed 2026-07-29:** this epic was originally written under the I-2 heading (brand identity) by mistake; moved here under I-1 where it belongs. ID unchanged.
 
 **Scope.** Expose all 20 per-use-case LLM settings (provider/model/reasoning) in user settings with DB-backed overrides that dynamically supersede registry defaults (ContextVar layer inside `byok_context` per D-041), plus a cost calculator benchmarked on the real 200-video job with researched cross-provider pricing (OpenAI / Anthropic / Google, source-cited, `as_of` stamped).
 
@@ -489,7 +481,41 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 - S-1.13.4 🟢 `/account/ai-models` settings panel + live cost calculator UI — **Shipped:** 2026-07-29 — PR [#199](https://github.com/khoks/VideoResearchPro/pull/199)
 - S-1.13.5 🟢 OpenAI adapter fixes from the D-054 research (`off`→explicit `none` on gpt-5.x; `minimal`→`low`) — **Shipped:** 2026-07-29 — PR [#199](https://github.com/khoks/VideoResearchPro/pull/199)
 - S-1.13.6 ⚪ Responses-API path for guaranteed `max` reasoning on `search_rank_and_curate` (follow-up)
-- S-1.13.7 🟡 Gemini bench integration — free-tier phase shipped in PR [#199](https://github.com/khoks/VideoResearchPro/pull/199) (windows, pricing notes, `thinking_level` adapter). **Scope-changed 2026-07-29:** paid Tier-1 billing activated (key project my-project-7282026); gemini-3.1-pro unlocked and verified end-to-end through the app; paid-tier validation (Pro bench, 1M-window check, Tier-1 rate limits) + launcher env-shadow fix in flight. See D-054 amendments.
+- S-1.13.7 🟢 Gemini integration — **Shipped:** 2026-07-29 — PRs [#199](https://github.com/khoks/VideoResearchPro/pull/199) (windows, pricing, `thinking_level` adapter) + [#200](https://github.com/khoks/VideoResearchPro/pull/200) (paid Tier-1 validation). *Scope-changed 2026-07-29:* started as a free-tier bench, expanded when paid billing was activated — 1M window verified end-to-end (API-stated 1,048,576), quota lift proven (295K/475K single requests), gemini-3.1-pro benched and verified live through the app, generation-aware `off` mapping per the measured 3.x thinking matrix, plus the launcher env-shadow fix (OS-level `GOOGLE_API_KEY`/`OPENAI_API_KEY` were overriding `backend/.env`). See D-054 amendments I + II.
+
+### E-1.14 🟡 Model-tier quality evaluation harness
+
+**Filed 2026-07-29.** Linked decision: [D-055](decisions.md#d-055-intelligence-delta-evaluation-methodology-production-input-replay-blind-ab-judging-2026-07-29). Realizes invention [N-001](inventions.md#n-001-production-replay-blind-delta-harness-for-per-call-site-model-tier-selection-2026-07-29). Docs PR: [#201](https://github.com/khoks/VideoResearchPro/pull/201).
+
+**Why it exists.** Every model-tier decision through D-052/D-053/D-054 rested on proxy evidence — latency, context windows, JSON discipline, task-shape reasoning. None of it measured the thing that matters: **how much answer quality the cheap tiers actually give up on our corpus.** E-1.14 answers that empirically, per use case, and the verdicts feed back into `USE_CASE_REGISTRY` defaults and the E-1.13 override guidance.
+
+**Method** (D-055): rebuild a completed job's exact per-call-site inputs from stored state using the app's own deterministic transforms, replay them through frontier models at maximum thinking, blind A/B judge against what production stored, with judges verifying claims against the live corpus rather than scoring prose.
+
+**Reference run.** Job `0d4db8c3` — 200 videos, 1,057,331 transcript words, 5,149 chunks, 12 map batches at ≤120K tokens.
+
+**Stories**
+- S-1.14.1 🟢 Deterministic input-replay prep — rebuild chunks/batches/stats/retrieval from stored job state via the app's own chunker + batch budgeting; dump stored artifacts (report, Q&A, knowledge) for pairing. *Verified: reproduced 5,149 chunks / 12 batches.*
+- S-1.14.2 🟡 Challenger replication at max effort across the pipeline — map ×12, reduce, compose, full Q&A chain ×2, knowledge chain ×2, query planning. *Mixed provenance: Q&A + knowledge on Fable 5, report chain on Opus 5 after a subscription-limit switch — must be labelled per artifact, not averaged.*
+- S-1.14.3 🟡 Blind pairing + rubric judging with retrieval-grounded verification (Q&A citations re-checked against the corpus; knowledge claims against raw transcripts; fabrication hunting).
+- S-1.14.4 🟡 Loss attribution for unpersisted stages — diff max-effort map extraction against the shipped report to enumerate concrete facts the cheap map+reduce chain dropped.
+- S-1.14.5 🟡 Selection-criteria audit standing in for `search_rank_and_curate` (true re-rank impossible — rejected pool not persisted). *Early finding: default selection graded 6.5/10 — ~20-24 questionable picks, IBM Technology at 10% of corpus despite not being a preferred channel, 12 of 30 preferred channels absent, zero flagship model-release coverage despite instructions naming GPT-5.x / Claude / Gemini.*
+- S-1.14.6 ⚪ Persist agent intermediates + rejected candidate pool (behind a debug/sampling flag) so quality is continuously monitorable instead of replay-only — see [architecture.md § Agent-intermediate retention gap](architecture.md#agent-intermediate-retention-gap-identified-2026-07-29).
+- S-1.14.7 ⚪ Fold verdicts into registry defaults + surface measured per-use-case delta as guidance in the `/account/ai-models` panel (turns the override knob from raw into guided).
+
+**Open questions**
+- OQ-7: does the harness generalize to a scheduled regression check (re-run on every model-lineup shift), or stay a manual audit? Depends on S-1.14.6 landing.
+- OQ-8: judging currently uses a single model family; is a multi-judge panel needed to control for self-preference bias when the challenger shares that family?
+
+
+## I-2 🟡 Brand & visual identity rollout
+
+**Closed 2026-05-03.** All 6 epics now 🟢: E-2.1 tokens layer, E-2.2 primitives library, E-2.3 page migration, E-2.4 sidebar nav (all shipped earlier — verified 2026-04-26), E-2.5 marketing landing page (PR [#136](https://github.com/khoks/VideoResearchPro/pull/136), 2026-05-03), E-2.6 code identifier rename (this session — runbook in `docs/migration-code-identifiers.md` covers the operator-coordinated data-bearing renames).
+
+**Status reconciliation 2026-04-26 (historical).** A backlog audit on 2026-04-26 revealed I-2 was substantially shipped — 4 of 6 epics were already 🟢. The earlier characterization in feature-roadmap.md ("documented but zero code shifted") was inaccurate; the warm-editorial migration largely landed in earlier sessions and was not reflected here. After E-2.5 + E-2.6 closed on 2026-05-03, I-2 is fully closed.
+
+**Why it exists.** Switch the running app from generic-AI-SaaS aesthetics (purple-blue gradient, default sans) to warm-editorial Pratidhvani identity (paper background, oxblood / forest-teal / vintage gold, Fraunces / Source Serif). Visual identity should match the personal-library / research-journal vision.
+**North-star doc:** [branding.md](branding.md) · [ui-design.md](ui-design.md)
+**Decision links:** [D-001](decisions.md#d-001--rebrand-to-pratidhvani-प्रतिध्वनि-2026-04-24), [D-002](decisions.md#d-002-warm-editorial-visual-identity-2026-04-24)
 
 ### E-2.1 🟢 Tokens layer (`frontend/src/theme.ts`)
 

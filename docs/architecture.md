@@ -528,6 +528,15 @@ Per-call accounting is **not** in `api_quota_log` today (deferred to the SaaS ph
 
 Structured logs via stdlib `logging` with a simple JSON formatter. Celery task logs include `job_id` in every record. Errors caught by FastAPI exception handlers are logged with the request path and user_id.
 
+### Agent-intermediate retention gap (identified 2026-07-29)
+
+Two classes of agent state are **discarded** once a job completes, and their absence blocks retrospective quality auditing:
+
+- **Map/reduce intermediates.** `report_map_chunks` output (per-batch extraction JSON) and the reduced summary live only in LangGraph state for the duration of the task. Once `compose_report` runs, only the final HTML survives. There is therefore no way to ask "what did the map phase actually extract, and what did reduce drop?" after the fact — a regression in map quality is invisible unless it is large enough to degrade the finished report.
+- **Rejected search candidates.** `search_rank_and_curate` ranks a candidate pool (417 candidates on job `0d4db8c3`) down to the approved set, but only the winners are persisted via `job_documents`. The rejected remainder is never written, so selection quality cannot be re-scored later and a re-rank against the original pool is impossible.
+
+Consequence, established empirically by the [D-055](decisions.md#d-055-intelligence-delta-evaluation-methodology-production-input-replay-blind-ab-judging-2026-07-29) evaluation: intermediate-stage quality can only be measured by *replaying* the original inputs (rebuildable, because transcripts and chunking are deterministic) rather than by inspecting what the run actually produced. Persisting these artifacts — even sampled or behind a debug flag — is the prerequisite for continuous per-use-case quality monitoring, and is tracked as follow-up work under [E-1.14](initiatives.md#e-114-model-tier-quality-evaluation-harness).
+
 ---
 
 ## Dataset exports

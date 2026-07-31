@@ -625,10 +625,18 @@ def run_search_agent(
     channel_type_filters: list[str] | None = None,
     preferred_channels: list[str] | None = None,
     progress_callback=None,
+    candidates_out: list[dict] | None = None,
 ) -> tuple[list[dict], list[str], list[str]]:
     """Run the search agent.
 
     Returns ``(curated_videos, search_queries_used, unresolved_channels)``.
+
+    ``candidates_out`` (S-1.14.6), when given, is extended with the FULL
+    discovered pool — including the candidates ranking rejected. The return
+    signature is deliberately unchanged: rejected candidates are diagnostic
+    data for measuring selection quality, not part of the job's result. Until
+    this existed the pool was discarded, which is why D-055 could not re-rank
+    a real job and had to settle for auditing the picks it kept.
 
     ``progress_callback`` (S-1.11.8), when given, is invoked as
     ``cb(pct: int, message: str)`` after each pipeline node so the caller
@@ -678,6 +686,12 @@ def run_search_agent(
             elif node_name == "execute_searches":
                 n_found = len(result.get("discovered_videos") or [])
                 _notify(12, f"Found {n_found} candidates. Ranking with AI...")
+
+    if candidates_out is not None:
+        try:
+            candidates_out.extend(result.get("discovered_videos") or [])
+        except Exception:
+            logger.exception("Capturing the candidate pool failed; continuing")
 
     return (
         result.get("curated_videos", []),

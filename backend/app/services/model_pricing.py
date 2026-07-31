@@ -21,7 +21,7 @@ Prices change; re-run the pricing research and update this table (the
 """
 from dataclasses import dataclass, field
 
-PRICING_AS_OF = "2026-07-29"
+PRICING_AS_OF = "2026-07-30"
 
 
 @dataclass(frozen=True)
@@ -41,9 +41,12 @@ MODEL_PRICING: dict[str, ModelPricing] = {
     "gpt-5.4-nano": ModelPricing(0.20, 1.25),
     "gpt-5.5": ModelPricing(5.00, 30.00, 272_000, 10.00, 45.00),
     "gpt-5.5-pro": ModelPricing(30.00, 180.00, note="no >272K tier published"),
-    "gpt-5.6-luna": ModelPricing(1.00, 6.00),
-    "gpt-5.6-sol": ModelPricing(5.00, 30.00),
-    "gpt-5.6-terra": ModelPricing(2.50, 15.00),
+    # 2026-07-30: OpenAI cut Luna 80% and Terra 20% (verified on the official
+    # pricing page, not the announcement). Luna now matches gpt-5.4-nano on
+    # input and undercuts it on output.
+    "gpt-5.6-luna": ModelPricing(0.20, 1.20, 272_000, 0.40, 1.80),
+    "gpt-5.6-sol": ModelPricing(5.00, 30.00, 272_000, 10.00, 45.00),
+    "gpt-5.6-terra": ModelPricing(2.00, 12.00, 272_000, 4.00, 18.00),
     "gpt-4.1-mini": ModelPricing(0.40, 1.60),
     # --- Anthropic --------------------------------------------------------
     "claude-fable-5": ModelPricing(10.00, 50.00),

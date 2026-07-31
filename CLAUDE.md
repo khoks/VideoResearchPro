@@ -142,7 +142,7 @@ Single multiplexed WebSocket at `/ws/jobs`. Clients send `subscribe`/`unsubscrib
 **Single global ChromaDB collection** named `videoresearchpro_global`. Transcripts are chunked at 256 tokens with 32-token overlap (env `CHUNK_SIZE`/`CHUNK_OVERLAP`), preserving timestamp mappings from YouTube transcript segments. Embeddings are computed exactly once per video using the multilingual `paraphrase-multilingual-MiniLM-L12-v2`.
 
 - Per-job Q&A filters by `video_id ∈ approved_set` at query time.
-- Library-wide Q&A queries the whole collection with no filter.
+- Library-wide Q&A filters by `video_id ∈ the asking tenant's visible set` (D-063). Chroma has no tenant concept, so the caller must pass the set — an **empty** list means "this tenant has ingested nothing" and must retrieve nothing, never degrade into an unrestricted search.
 
 ### LangGraph Agents
 - **Search Agent**: generate_search_queries → execute_searches → rank_and_curate (topic jobs only)
@@ -321,7 +321,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 - **Q&A context refinement**: Raw RAG+report context is compacted by an LLM before the answer LLM sees it — prevents "no relevant context" on large noisy inputs
 - **HTML report rendering**: Uses `jinja2.Environment` with custom `number_format` filter (not `Template.globals`)
 - **WebSocket cache invalidation**: `useJobProgress` invalidates the `jobVideos` query on `awaiting_approval` status change so the approval list auto-populates
-- **Global document library**: Documents are never job-owned. Any job selects from the global library via `job_videos`. The ORM class is `Document` (`app.models.document`); the table is `documents`. Legacy column name `video_id` is preserved on the PK and FK until a future PR promotes it to a UUID.
+- **Global document library — shared cache, private catalogue** ([D-063](docs/decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)): Documents are never job-owned, and `documents` remains a single global deduplicated store so transcripts, embeddings and knowledge artifacts are computed once and reused across every job and user. **But no user sees a document they did not ingest.** Visibility is an explicit per-tenant grant in `document_visibility(video_id, tenant_id, source)`, written by *every* ingest path — job selection, PDF upload, pasted URL, channel sync — including on dedup hits, because a cache hit means the bytes exist but this tenant may never have seen them. Ownership is **never** derived from `job_documents`: PDF uploads and pasted URLs create documents with no job, and deriving would make a user's own upload invisible to them. Any new user-facing read of `documents` must filter through `visibility_service.visible_video_ids(db, tenant_id)`, and any new ingest path must call `visibility_service.grant(...)`. The ORM class is `Document` (`app.models.document`); the table is `documents`. Legacy column name `video_id` is preserved on the PK and FK until a future PR promotes it to a UUID.
 - **Single global Chroma collection**: All chunks live in `videoresearchpro_global`. Per-job scoping is a metadata filter at query time. Deleting a job does NOT delete chunks.
 - **Per-use-case LLM config**: Call sites resolve their (provider, model, reasoning) triple via `app/services/llm_routing.py::resolve_config(use_case)`. Override per use case with `LLM_USE_CASE_CONFIG` (see "LLM configuration" below). The legacy `get_llm(..., purpose='fast')` / `LLM_ROUTE_OVERRIDES` knobs are still honored as deprecated fallbacks.
 

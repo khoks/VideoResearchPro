@@ -19,6 +19,8 @@ from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.qa_exchange import QAExchange
 from app.models.qa_history_exchange import QAHistoryExchange
 from app.models.document import Document
+from app.models.job import Job
+from app.models.job_video import JobVideo
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +47,12 @@ _YIELD_PER = 100
 # ---------------------------------------------------------------------------
 
 
-def iter_qa_rows(db: Session) -> Iterator[tuple[str, str]]:
-    """Yield ``(question, answer)`` pairs across every Q&A source.
+def iter_qa_rows(db: Session, tenant_id: str) -> Iterator[tuple[str, str]]:
+    """Yield ``(question, answer)`` pairs across every Q&A source, for ONE tenant.
+
+    S-5.7.1: this previously unioned all three tables unfiltered, so any
+    authenticated user could download every other user's questions and answers
+    as fine-tune data — the highest-severity leak in the audit.
 
     Sources: ``qa_exchanges`` (job-scoped), ``library_qa_exchanges``
     (library-scoped), and ``qa_history_exchanges`` (history-chat).
@@ -60,17 +66,17 @@ def iter_qa_rows(db: Session) -> Iterator[tuple[str, str]]:
             QAExchange.created_at.label("created_at"),
             QAExchange.question.label("question"),
             QAExchange.answer.label("answer"),
-        ).statement,
+        ).filter(QAExchange.tenant_id == tenant_id).statement,
         db.query(
             LibraryQAExchange.created_at.label("created_at"),
             LibraryQAExchange.question.label("question"),
             LibraryQAExchange.answer.label("answer"),
-        ).statement,
+        ).filter(LibraryQAExchange.tenant_id == tenant_id).statement,
         db.query(
             QAHistoryExchange.created_at.label("created_at"),
             QAHistoryExchange.question.label("question"),
             QAHistoryExchange.answer.label("answer"),
-        ).statement,
+        ).filter(QAHistoryExchange.tenant_id == tenant_id).statement,
     ]
 
     stmt = union_all(*selects).order_by("created_at")
@@ -80,13 +86,29 @@ def iter_qa_rows(db: Session) -> Iterator[tuple[str, str]]:
         yield row[1], row[2]
 
 
-def iter_knowledge_rows(db: Session) -> Iterator[tuple[list[str], list[str], list[str], str]]:
-    """Yield ``(topics, concepts, events, knowledge_report_md)`` for every
-    video with a populated knowledge report.
+def iter_knowledge_rows(
+    db: Session, tenant_id: str
+) -> Iterator[tuple[list[str], list[str], list[str], str]]:
+    """Yield ``(topics, concepts, events, knowledge_report_md)`` for the videos
+    THIS tenant ingested.
+
+    S-5.7.1: `documents` is the shared global cache and carries no tenant of
+    its own, so ownership is derived from the jobs that selected the document
+    (shared cache, private catalogue). Without this the export shipped every
+    user's knowledge artifacts to anyone who asked.
     """
+    owned = (
+        db.query(JobVideo.video_id)
+        .join(Job, Job.id == JobVideo.job_id)
+        .filter(Job.tenant_id == tenant_id)
+        .subquery()
+    )
     q = (
         db.query(Document)
-        .filter(Document.knowledge_report_md.isnot(None))
+        .filter(
+            Document.knowledge_report_md.isnot(None),
+            Document.video_id.in_(db.query(owned.c.video_id)),
+        )
         .order_by(Document.created_at.asc())
         .execution_options(yield_per=_YIELD_PER)
     )
@@ -150,31 +172,31 @@ def _knowledge_user_prompt(topics: list[str], concepts: list[str], events: list[
     )
 
 
-def _iter_qa_triples(db: Session) -> Iterator[tuple[str, str, str]]:
-    for question, answer in iter_qa_rows(db):
+def _iter_qa_triples(db: Session, tenant_id: str) -> Iterator[tuple[str, str, str]]:
+    for question, answer in iter_qa_rows(db, tenant_id):
         yield QA_SYSTEM_PROMPT, question, answer
 
 
-def _iter_knowledge_triples(db: Session) -> Iterator[tuple[str, str, str]]:
-    for topics, concepts, events, report in iter_knowledge_rows(db):
+def _iter_knowledge_triples(db: Session, tenant_id: str) -> Iterator[tuple[str, str, str]]:
+    for topics, concepts, events, report in iter_knowledge_rows(db, tenant_id):
         yield KNOWLEDGE_SYSTEM_PROMPT, _knowledge_user_prompt(topics, concepts, events), report
 
 
-def stream_qa_openai(db: Session) -> Iterator[str]:
-    for sys_, user, assistant in _iter_qa_triples(db):
+def stream_qa_openai(db: Session, tenant_id: str) -> Iterator[str]:
+    for sys_, user, assistant in _iter_qa_triples(db, tenant_id):
         yield serialize_openai_chat(sys_, user, assistant)
 
 
-def stream_qa_tuple(db: Session) -> Iterator[str]:
-    for sys_, user, assistant in _iter_qa_triples(db):
+def stream_qa_tuple(db: Session, tenant_id: str) -> Iterator[str]:
+    for sys_, user, assistant in _iter_qa_triples(db, tenant_id):
         yield serialize_tuple(sys_, user, assistant)
 
 
-def stream_knowledge_openai(db: Session) -> Iterator[str]:
-    for sys_, user, assistant in _iter_knowledge_triples(db):
+def stream_knowledge_openai(db: Session, tenant_id: str) -> Iterator[str]:
+    for sys_, user, assistant in _iter_knowledge_triples(db, tenant_id):
         yield serialize_openai_chat(sys_, user, assistant)
 
 
-def stream_knowledge_tuple(db: Session) -> Iterator[str]:
-    for sys_, user, assistant in _iter_knowledge_triples(db):
+def stream_knowledge_tuple(db: Session, tenant_id: str) -> Iterator[str]:
+    for sys_, user, assistant in _iter_knowledge_triples(db, tenant_id):
         yield serialize_tuple(sys_, user, assistant)

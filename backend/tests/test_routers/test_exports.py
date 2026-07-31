@@ -29,21 +29,28 @@ from app.services.dataset_service import (
 # ---------------------------------------------------------------------------
 
 
-def _make_job(db):
+def _make_job(db, tenant_id=None):
     """Minimum-viable Job row to satisfy QAExchange.job_id FK."""
     from app.models.job import Job
 
-    job = Job(job_type="topic", topic="test", status="completed", num_videos=1)
+    job = Job(
+        job_type="topic", topic="test", status="completed", num_videos=1,
+        tenant_id=tenant_id,
+    )
     db.add(job)
     db.commit()
     db.refresh(job)
     return job
 
 
-def _seed_qa_rows(db):
+def _seed_qa_rows(db, tenant_id):
     """Seed two job-scoped and one library-scoped exchange with distinct timestamps
-    so the ORDER BY ordering is observable in the streamed output."""
-    job = _make_job(db)
+    so the ORDER BY ordering is observable in the streamed output.
+
+    S-5.7.1: exports are tenant-scoped, so every seeded row must be stamped
+    with the authenticated caller's tenant or the export correctly yields
+    nothing."""
+    job = _make_job(db, tenant_id)
     base = datetime(2024, 1, 1, tzinfo=timezone.utc)
     db.add_all([
         QAExchange(
@@ -52,6 +59,7 @@ def _seed_qa_rows(db):
             answer="job answer 1",
             references="[]",
             created_at=base,
+            tenant_id=tenant_id,
         ),
         QAExchange(
             job_id=job.id,
@@ -59,12 +67,14 @@ def _seed_qa_rows(db):
             answer="job answer 2",
             references="[]",
             created_at=base + timedelta(minutes=2),
+            tenant_id=tenant_id,
         ),
         LibraryQAExchange(
             question="library question 1",
             answer="library answer 1",
             references_json="[]",
             created_at=base + timedelta(minutes=1),
+            tenant_id=tenant_id,
         ),
     ])
     db.commit()
@@ -81,8 +91,8 @@ def _parse_jsonl(body: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def test_qa_openai_returns_valid_jsonl_with_messages_envelope(client, db):
-    _seed_qa_rows(db)
+def test_qa_openai_returns_valid_jsonl_with_messages_envelope(client, db, test_user):
+    _seed_qa_rows(db, test_user.id)
 
     response = client.get("/api/v1/exports/qa-dataset/openai.jsonl")
 
@@ -99,8 +109,8 @@ def test_qa_openai_returns_valid_jsonl_with_messages_envelope(client, db):
         assert msgs[0]["content"] == QA_SYSTEM_PROMPT
 
 
-def test_qa_openai_is_ordered_by_created_at_ascending(client, db):
-    _seed_qa_rows(db)
+def test_qa_openai_is_ordered_by_created_at_ascending(client, db, test_user):
+    _seed_qa_rows(db, test_user.id)
 
     response = client.get("/api/v1/exports/qa-dataset/openai.jsonl")
     records = _parse_jsonl(response.text)
@@ -115,8 +125,8 @@ def test_qa_openai_is_ordered_by_created_at_ascending(client, db):
 # ---------------------------------------------------------------------------
 
 
-def test_qa_tuple_returns_valid_jsonl_with_flat_keys(client, db):
-    _seed_qa_rows(db)
+def test_qa_tuple_returns_valid_jsonl_with_flat_keys(client, db, test_user):
+    _seed_qa_rows(db, test_user.id)
 
     response = client.get("/api/v1/exports/qa-dataset/tuple.jsonl")
 
@@ -157,7 +167,7 @@ def test_knowledge_openai_serializes_report(client, db, monkeypatch):
     """Verify the OpenAI chat format for knowledge rows."""
     from app.services import dataset_service
 
-    def fake_iter(_db):
+    def fake_iter(_db, _tenant_id):
         yield (
             ["AI safety", "alignment"],
             ["RLHF", "constitutional AI"],
@@ -195,9 +205,9 @@ def test_exports_require_auth(unauthenticated_client):
         assert resp.status_code == 401, f"expected 401 on {path}, got {resp.status_code}"
 
 
-def test_exports_accept_query_token_fallback(unauthenticated_client, auth_token, db):
+def test_exports_accept_query_token_fallback(unauthenticated_client, auth_token, db, test_user):
     # Browser downloads can't set Authorization — same pattern as the report route.
-    _seed_qa_rows(db)
+    _seed_qa_rows(db, test_user.id)
     response = unauthenticated_client.get(
         f"/api/v1/exports/qa-dataset/openai.jsonl?token={auth_token}"
     )

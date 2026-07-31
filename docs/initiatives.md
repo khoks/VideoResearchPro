@@ -748,6 +748,7 @@ Verified post-fix boot: `/api/v1/health` reports `llm.status: ok`, `unavailable_
 
 ---
 
+
 ## I-5 🟢 SaaS readiness (long-horizon) — code-shippable work fully closed 2026-05-05
 
 **Why it exists.** Today's PRs must remain forward-compatible with a future public SaaS — multi-tenant, billed, abuse-resistant, hardened auth.
@@ -780,6 +781,29 @@ Full design for each in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry 
 - [D-041](decisions.md#d-041-contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05) — ContextVar plumbing for cross-cutting per-user state.
 - [D-042](decisions.md#d-042-oauth-first-login-links-to-existing-user-by-email-2026-05-05) — OAuth first-login email-based linking.
 - [D-043](decisions.md#d-043-single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05) — Single shared Fernet key for all encrypted-at-rest credentials.
+
+
+### E-5.10 🟡 Per-user isolation (R2)
+
+**Why it exists.** The user's requirement: work done by one user must not be visible to another in any section. An audit found five live leak classes and, underneath them, a missing ownership model — `documents` is a shared cache with no tenant, and three ingest paths create documents with no job either.
+**Linked decision:** [D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)
+
+#### S-5.10.1 🟢 Close the five leak classes + document_visibility
+**Shipped:** 2026-07-31
+- [x] T-5.10.1.1 `document_visibility` model + migration `d4e5f6a7b8c0` with backfill (203 grants, 0 orphans)
+- [x] T-5.10.1.2 Grants wired at every ingest path incl. PDF/paste **dedup hits**; job path grants over the whole link set at 3 phase boundaries
+- [x] T-5.10.1.3 Library browse scoped; job-topic and job-count joins tenant-filtered
+- [x] T-5.10.1.4 Cross-tenant delete closed — tenant is part of the lookup, so a foreign id 404s indistinguishably
+- [x] T-5.10.1.5 Dataset exports scoped; signature change makes a missed call site a hard error, not a silent leak
+- [x] T-5.10.1.6 WebSocket job-ownership check, fails closed, injectable session
+- [x] T-5.10.1.7 Vector retrieval scoped to the visible set; empty list stays empty
+- [x] T-5.10.1.8 11 regression tests asserting absence of foreign data
+
+#### S-5.10.2 🔵 Remaining isolation surfaces
+- [ ] T-5.10.2.1 `channels` is unscoped — subscriptions are global; decide per-tenant subscription vs shared channel catalogue
+- [ ] T-5.10.2.2 `api_quota_log` unscoped (low sensitivity, but it leaks usage volume)
+- [ ] T-5.10.2.3 Q&A-history Chroma collection (`qa_library_global`) — verify tenant filtering matches the transcript collection
+- [ ] T-5.10.2.4 Re-run the D-055 evaluation harness: library Q&A now answers from a per-user corpus, which may change quality on small accounts
 
 ### E-5.1 🟢 `tenant_id` audit + retrofit
 

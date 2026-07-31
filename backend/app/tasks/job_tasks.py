@@ -482,6 +482,38 @@ def _dispatch_and_store_non_video_sources(
     return stored
 
 
+def _grant_job_document_visibility(db, job) -> None:
+    """Grant the job's owner visibility over every document the job selected.
+
+    S-5.7.1 / D-063 — shared cache, private catalogue. Documents are global and
+    carry no tenant of their own, so the ingesting tenant needs an explicit
+    grant or the job's own results become invisible to them.
+
+    Deliberately grants over the WHOLE current link set rather than at each
+    JobVideo insertion point: there are two such sites today and more will be
+    added per source type, and a missed one silently hides results. Idempotent,
+    so calling it at several phase boundaries is free.
+    """
+    from app.models.job_video import JobVideo
+    from app.services import visibility_service
+
+    tenant_id = getattr(job, "tenant_id", None)
+    if not tenant_id:
+        return
+    try:
+        ids = [
+            row[0]
+            for row in db.query(JobVideo.video_id).filter(
+                JobVideo.job_id == job.id, JobVideo.video_id.isnot(None)
+            )
+        ]
+        visibility_service.grant(db, ids, tenant_id, visibility_service.SOURCE_JOB)
+    except Exception:
+        logger.exception(
+            "[job:%s] visibility grant failed; job continues", getattr(job, "id", "?")
+        )
+
+
 def _persist_search_candidates(
     db, job_id: str, pool: list[dict], curated: list[dict]
 ) -> None:
@@ -713,6 +745,7 @@ def execute_topic_job(self, job_id: str) -> None:
                 f"({len(unresolved_channels)} unresolved channel hints)"
             )
             _persist_search_candidates(db, job_id, candidate_pool, curated_videos)
+            _grant_job_document_visibility(db, job)
 
             if queries_used:
                 job.search_queries_used = json.dumps(queries_used)
@@ -944,6 +977,10 @@ def resume_job_after_approval(self, job_id: str) -> None:
                     celery_task_id=self.request.id)
         progress_service.publish_status_change(job_id, "awaiting_approval", "extracting",
                                                f"Extracting transcripts for {total} videos...")
+
+        # Approval may have changed the selected set; re-grant over the final
+        # list (idempotent).
+        _grant_job_document_visibility(db, job)
 
         all_chunks: list[dict] = []
         new_chunks: list[dict] = []
@@ -1287,6 +1324,10 @@ def _run_extraction_and_rag(self, db, job) -> None:
         job_id, job.status, "extracting",
         f"Extracting transcripts for {total} videos...",
     )
+
+    # Resume-after-approval path: the approved set is final here, and this
+    # entry point never passes through the search phase (idempotent).
+    _grant_job_document_visibility(db, job)
 
     all_chunks: list[dict] = []
     new_chunks: list[dict] = []

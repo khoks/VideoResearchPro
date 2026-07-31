@@ -22,6 +22,7 @@ from app.schemas.library_qa import (
 )
 from app.schemas.library_video import LibrarySort, LibraryVideoResponse
 from app.services import chroma_service
+from app.services import visibility_service
 from app.services.llm_service import get_llm_for
 from app.sources.pdf.connector import (
     SOURCE_ID_PREFIX as PDF_SOURCE_ID_PREFIX,
@@ -112,10 +113,18 @@ def ask_library_question(
     # T-5.6.4: BYOK context — Studio users' OpenAI / Anthropic / Google
     # credentials override the install-wide env-var keys for the duration
     # of this request.
+    # S-5.7.1: retrieval is restricted to the documents this tenant may see.
+    # An empty list is meaningful — "you have ingested nothing" — and correctly
+    # returns no context rather than falling back to a library-wide search.
+    visible = [
+        row[0] for row in visibility_service.visible_video_ids(db, current_user.id)
+    ]
+
     with llm_service.byok_context(current_user.id, db):
         result = run_library_qa_agent(
             question=request.question,
             answer_language=request.answer_language,
+            visible_video_ids=visible,
         )
 
     # T-5.5.5: track consumption.
@@ -209,9 +218,24 @@ def get_library_qa_history(
 def delete_library_qa_exchange(
     exchange_id: str,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ) -> None:
-    """Delete a single library Q&A exchange."""
-    exchange = db.get(LibraryQAExchange, exchange_id)
+    """Delete a single library Q&A exchange.
+
+    S-5.7.1: this previously fetched by primary key alone and deleted, so any
+    authenticated user could destroy any other user's exchange by guessing or
+    observing an id. The tenant filter is part of the lookup — not a check
+    after the fact — so a foreign id is indistinguishable from a missing one
+    and the 404 leaks nothing about what exists.
+    """
+    exchange = (
+        db.query(LibraryQAExchange)
+        .filter(
+            LibraryQAExchange.id == exchange_id,
+            LibraryQAExchange.tenant_id == current_user.id,
+        )
+        .first()
+    )
     if not exchange:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -234,15 +258,31 @@ def list_library_videos(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ) -> list[LibraryVideoResponse]:
-    """Browse the global, deduplicated video library.
+    """Browse the caller's view of the deduplicated video library.
 
     Filters: free-text search across title and channel name, transcript
     language, channel_id, and transcript_status. Sort by recency or duration.
     Each row carries an aggregated `job_count` and `job_titles[]` so the UI
     can show "appears in N research runs" without follow-up requests.
+
+    S-5.7.1 — shared cache, private catalogue: `documents` remains the global
+    deduplicated store (that is what makes transcripts and embeddings
+    compute-once), but this listing is restricted to documents THIS tenant
+    ingested. Previously it returned every document plus the *job topics* of
+    every other user — leaking not just what others had ingested but what they
+    were researching.
     """
-    q = db.query(Document).outerjoin(Channel, Document.channel_id == Channel.channel_id)
+    q = (
+        db.query(Document)
+        .outerjoin(Channel, Document.channel_id == Channel.channel_id)
+        .filter(
+            Document.video_id.in_(
+                visibility_service.visible_video_ids(db, current_user.id)
+            )
+        )
+    )
 
     if search:
         like = f"%{search}%"
@@ -274,7 +314,12 @@ def list_library_videos(
     rows = (
         db.query(JobVideo.video_id, Job.topic)
         .join(Job, Job.id == JobVideo.job_id)
-        .filter(JobVideo.video_id.in_(video_ids))
+        .filter(
+            JobVideo.video_id.in_(video_ids),
+            # Never surface another tenant's research topic against a shared
+            # document — the topic string is the more sensitive half of this.
+            Job.tenant_id == current_user.id,
+        )
         .all()
     )
     titles_by_video: dict[str, list[str]] = {}
@@ -287,7 +332,8 @@ def list_library_videos(
 
     counts_by_video: dict[str, int] = dict(
         db.query(JobVideo.video_id, func.count(func.distinct(JobVideo.job_id)))
-        .filter(JobVideo.video_id.in_(video_ids))
+        .join(Job, Job.id == JobVideo.job_id)
+        .filter(JobVideo.video_id.in_(video_ids), Job.tenant_id == current_user.id)
         .group_by(JobVideo.video_id)
         .all()
     )
@@ -338,6 +384,7 @@ def list_library_videos(
 async def upload_pdf(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """Upload a PDF and ingest it into the global library.
 
@@ -378,6 +425,11 @@ async def upload_pdf(
         .one_or_none()
     )
     if existing is not None:
+        # Dedup hit: the bytes are already cached, but this tenant may never
+        # have seen them. Grant, then return (S-5.7.1).
+        visibility_service.grant(
+            db, [existing.video_id], current_user.id, visibility_service.SOURCE_PDF
+        )
         return {
             "document_id": existing.document_id,
             "source_id": existing.source_id,
@@ -426,6 +478,9 @@ async def upload_pdf(
     db.add(doc)
     db.commit()
     db.refresh(doc)
+    visibility_service.grant(
+        db, [doc.video_id], current_user.id, visibility_service.SOURCE_PDF
+    )
 
     # Run extraction immediately (PDFs don't have an async fetch
     # phase like videos / podcasts — extraction is pure-CPU and
@@ -510,6 +565,7 @@ async def upload_pdf(
 def paste_urls(
     payload: dict,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """Ingest 1-N pasted URLs into the global library.
 
@@ -556,6 +612,9 @@ def _ingest_single_paste_url(url: str, db: Session) -> dict:
         .one_or_none()
     )
     if existing is not None:
+        visibility_service.grant(
+            db, [existing.video_id], current_user.id, visibility_service.SOURCE_PASTE
+        )
         return {
             "url": url,
             "document_id": existing.document_id,
@@ -613,6 +672,9 @@ def _ingest_single_paste_url(url: str, db: Session) -> dict:
     db.add(doc)
     db.commit()
     db.refresh(doc)
+    visibility_service.grant(
+        db, [doc.video_id], current_user.id, visibility_service.SOURCE_PASTE
+    )
 
     # Chunk + embed via the polymorphic chunker. _build_video_metadata
     # carries the per-document polymorphic fields (source_type,

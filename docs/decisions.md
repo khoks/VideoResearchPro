@@ -1848,3 +1848,45 @@ Concrete failures that decided it: sonnet named **18 distinct tools/models vs op
 **Open, deliberately not fixed here.** The executive summary still mis-dates the corpus ("2024-2025-era" when the bulk is 2026), leaks pipeline metadata into prose, and contradicts its own video count in Conclusions — T-1.14.14.4 did not fully land. Filed as S-1.14.15 rather than bundled, so the tier decision is not confounded by a simultaneous prompt change.
 
 **Linked initiatives / PRs.** S-1.14.14 (closed), S-1.14.15 (new); follows D-061.
+
+
+## D-063 — Per-user isolation: shared cache, private catalogue (2026-07-31)
+
+**Status:** accepted.
+
+**Context.** Requirement: work done by one user must not be visible to another user in any section of the app. An audit found this was not true, and the gap was not a missing `WHERE` clause — it was a missing ownership model.
+
+`documents`, `transcript_cache`, `job_documents`, `channels` and `job_search_candidates` carry **no tenant column at all**, by design: CLAUDE.md states documents are *never job-owned*, one global deduplicated library with two global Chroma collections, so transcripts, embeddings and knowledge artifacts are computed once and reused across every job and user. That is what makes the economics work — and it is directly incompatible with "no user sees another user's work".
+
+**Five leak classes were live and reproducible against real data.** Demonstrated on the running instance: user `5c2b8dda` browsing the library saw user `d6cdfa65`'s 200-video corpus **and the job topic** `"new AI enhancements around LLM models…"`.
+
+| Leak | Site | Impact |
+|---|---|---|
+| Library browse | `library.py` `list_library_videos` | Every tenant's documents **plus their job topics** — the topic string being the more sensitive half |
+| Cross-tenant delete | `library.py:209` | `db.get(pk)` then delete: any user could **destroy** any other user's Q&A exchange |
+| Dataset exports | `routers/exports.py` | Zero `current_user` references; streamed **every** tenant's Q&A and knowledge as fine-tune data |
+| WebSocket | `ws.py:52` | Subscribed to any `job_id` sent — another tenant's progress, status and error text |
+| **Vector retrieval** | `chroma_service.query_collection` | Library Q&A searched **every tenant's transcripts**; Chroma has no tenant concept so nothing in the query layer could catch it |
+
+**Decision. Shared cache, private catalogue** (option 3 of three offered; the user chose it over full partitioning and over shared-corpus-private-activity).
+
+`documents` remains the global deduplicated store. Visibility is recorded **explicitly** in a new `document_visibility(video_id, tenant_id, source)` table — one grant per (document, tenant). Two users ingesting the same video share the cached transcript and embeddings, each hold their own grant, and neither can see that the other has one.
+
+**Why explicit rather than derived.** The first implementation derived ownership from `job_documents → jobs.tenant_id`, which reads correctly and is wrong: `upload_pdf`, `paste_urls` and channel sync all create documents with **no job**. Job-derived ownership would have made a user's own uploaded PDF invisible to them — trading a privacy leak for data loss. A failing test asserting `job_count == 0` is what surfaced it. Under the explicit model that assertion is now *meaningful*: "I ingested this, no job used it."
+
+`source` (`job` / `pdf_upload` / `paste_url` / `channel_sync`) is recorded per grant so a forgotten ingest path is greppable rather than invisible.
+
+**Implementation notes.**
+
+- Grants are wired at **every** ingest path, including the **dedup hit** on PDF and paste — a cache hit means the bytes exist but *this* tenant may never have seen them.
+- The job path grants over the job's **whole current link set** at three phase boundaries rather than at each `JobVideo` insertion: there are two insertion sites today and more will be added per source type, and a missed one silently hides results. Idempotent, so repeated calls are free.
+- Retrieval scoping passes the visible set from the router into `run_library_qa_agent`. An **empty** list means "this tenant has ingested nothing" and correctly retrieves nothing — it must never degrade into an unrestricted search, which is the obvious way this would silently regress. There is a test for exactly that.
+- The WebSocket ownership check **fails closed** and takes an injectable session factory: it runs in the socket loop with no `Depends(get_db)`, and was otherwise querying the *dev* database during tests.
+
+**Migration.** `d4e5f6a7b8c0` creates the table and **backfills from existing job ownership**: 203 grants written, **0 documents left ungranted**, nobody loses access on deploy. Documents belonging to no job could not be attributed retroactively and would have been left invisible — none existed, but the migration says so explicitly so a different deployment knows to re-grant.
+
+**Consequences.** The library is no longer a shared browsing surface; each user sees only what they ingested. Dedup economics are untouched. Two behavioural changes worth noting: library Q&A now answers from a smaller corpus per user, which may change answer quality on small accounts (worth re-running the D-055 harness later), and `channels` remains unscoped — subscriptions are still global, filed as follow-up.
+
+**Tests.** 11 regression tests asserting the **absence** of foreign data — the only direction that would have caught any of these. Two of them found real bugs in the fix itself: `session_factory()` outside the `try` (a DB blip would have crashed the socket loop rather than denying) and the test-database issue above.
+
+**Linked initiatives / PRs.** E-5.10 / S-5.10.1. Supersedes the library-is-global assumption in CLAUDE.md, which is updated in the same change.

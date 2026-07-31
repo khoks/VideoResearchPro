@@ -903,8 +903,13 @@ def run_qa_agent(
 # ---------------------------------------------------------------------------
 
 
-def _query_library(query_text: str) -> list[dict]:
-    """Query the global library ChromaDB collection.
+def _query_library(query_text: str, video_ids: list[str] | None = None) -> list[dict]:
+    """Query the library ChromaDB collection, restricted to ``video_ids``.
+
+    S-5.7.1: this previously always passed ``video_ids=None``, i.e. searched
+    EVERY tenant's transcripts. The caller now supplies the set the asking
+    tenant may see. ``None`` means unrestricted and is reserved for internal
+    / single-tenant use — user-facing callers must pass an explicit list.
 
     Unit 2 introduces a new ``query_collection`` signature that accepts
     ``video_ids=None`` for library-wide search. Call that first; fall back to
@@ -918,7 +923,7 @@ def _query_library(query_text: str) -> list[dict]:
         return chroma_service.query_collection(
             query_text,
             n_results=settings.RAG_TOP_K,
-            video_ids=None,
+            video_ids=video_ids,
             distance_threshold=settings.RAG_DISTANCE_THRESHOLD,
         )
     except TypeError:
@@ -976,10 +981,16 @@ def _build_library_allowed_sources(rag_results: list[dict]) -> str:
 def run_library_qa_agent(
     question: str,
     answer_language: str = "en",
+    visible_video_ids: list[str] | None = None,
 ) -> dict:
     """Run library-wide Q&A against the global video library.
 
-    Flow: sub-query expansion -> chroma retrieve across all videos -> dedupe
+    ``visible_video_ids`` restricts retrieval to the documents the asking
+    tenant may see (S-5.7.1). Passing an EMPTY list means "this tenant has
+    ingested nothing" and correctly retrieves nothing; passing None is
+    unrestricted and must not be used for user-facing calls.
+
+    Flow: sub-query expansion -> chroma retrieve over the visible set -> dedupe
     -> LLM context refinement -> LLM answer with language + citation rules
     -> citation sanitizer.
 
@@ -994,7 +1005,7 @@ def run_library_qa_agent(
     # 2. Library-wide ChromaDB retrieval.
     raw: list[dict] = []
     for q in all_queries:
-        raw.extend(_query_library(q))
+        raw.extend(_query_library(q, visible_video_ids))
 
     # 3. Dedupe + enrich.
     rag_results = _dedupe_chunks(raw)

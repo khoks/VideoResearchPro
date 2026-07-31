@@ -105,9 +105,15 @@ def test_post_library_qa_clarify_returns_interpretation_and_clarifications(clien
 # ---------------------------------------------------------------------------
 
 
-def _seed_library(db) -> dict:
+def _seed_library(db, tenant_id: str) -> dict:
     """Two channels, four videos with varied transcript states/durations,
-    and two jobs sharing one video so the aggregation has something to count."""
+    and two jobs sharing one video so the aggregation has something to count.
+
+    S-5.7.1: documents are a shared cache with no tenant of their own, so the
+    caller only sees what `document_visibility` grants them. All four videos are
+    granted to ``tenant_id``; only two are attached to jobs, which is what keeps
+    the `job_count == 0` assertion meaningful — that is now precisely the
+    "ingested via paste/PDF, never used by a job" case."""
     base = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
     ch_a = Channel(channel_id="UCaaaaaaaaaaaaaaaaaaaaa1", name="Alpha Channel", subscribed=True)
@@ -166,8 +172,8 @@ def _seed_library(db) -> dict:
     db.add_all([v1, v2, v3, v4])
     db.commit()
 
-    job_a = Job(job_type="topic", topic="DNS basics", status="completed")
-    job_b = Job(job_type="topic", topic="Networking 101", status="completed")
+    job_a = Job(job_type="topic", topic="DNS basics", status="completed", tenant_id=tenant_id)
+    job_b = Job(job_type="topic", topic="Networking 101", status="completed", tenant_id=tenant_id)
     db.add_all([job_a, job_b])
     db.commit()
 
@@ -177,6 +183,13 @@ def _seed_library(db) -> dict:
         JobVideo(job_id=job_b.id, video_id=v2.video_id, approved=True),
     ])
     db.commit()
+
+    from app.services import visibility_service
+
+    visibility_service.grant(
+        db, [v.video_id for v in (v1, v2, v3, v4)], tenant_id,
+        visibility_service.SOURCE_JOB,
+    )
 
     return {
         "channels": {"alpha": ch_a, "beta": ch_b},
@@ -191,8 +204,8 @@ def test_get_library_videos_empty(client):
     assert response.json() == []
 
 
-def test_get_library_videos_returns_all_with_aggregation(client, db):
-    seed = _seed_library(db)
+def test_get_library_videos_returns_all_with_aggregation(client, db, test_user):
+    seed = _seed_library(db, test_user.id)
     response = client.get("/api/v1/library/videos")
     assert response.status_code == 200
     items = response.json()
@@ -215,8 +228,8 @@ def test_get_library_videos_returns_all_with_aggregation(client, db):
     assert v3["transcript_language"] == "hi"
 
 
-def test_get_library_videos_search_matches_title_or_channel(client, db):
-    _seed_library(db)
+def test_get_library_videos_search_matches_title_or_channel(client, db, test_user):
+    _seed_library(db, test_user.id)
 
     title_match = client.get("/api/v1/library/videos", params={"search": "DNS"})
     assert title_match.status_code == 200
@@ -227,8 +240,8 @@ def test_get_library_videos_search_matches_title_or_channel(client, db):
     assert {it["video_id"] for it in channel_match.json()} == {"vid003beta", "vid004beta"}
 
 
-def test_get_library_videos_filters_language_channel_status(client, db):
-    seed = _seed_library(db)
+def test_get_library_videos_filters_language_channel_status(client, db, test_user):
+    seed = _seed_library(db, test_user.id)
 
     en_only = client.get("/api/v1/library/videos", params={"language": "en"})
     assert {it["video_id"] for it in en_only.json()} == {"vid001alpha"}
@@ -243,8 +256,8 @@ def test_get_library_videos_filters_language_channel_status(client, db):
     assert {it["video_id"] for it in pending.json()} == {"vid002alpha"}
 
 
-def test_get_library_videos_sort_variants(client, db):
-    _seed_library(db)
+def test_get_library_videos_sort_variants(client, db, test_user):
+    _seed_library(db, test_user.id)
 
     newest = client.get("/api/v1/library/videos", params={"sort": "newest"}).json()
     assert [it["video_id"] for it in newest][0] == "vid004beta"
@@ -259,8 +272,8 @@ def test_get_library_videos_sort_variants(client, db):
     assert [it["video_id"] for it in shortest][0] == "vid004beta"
 
 
-def test_get_library_videos_pagination(client, db):
-    _seed_library(db)
+def test_get_library_videos_pagination(client, db, test_user):
+    _seed_library(db, test_user.id)
     first = client.get("/api/v1/library/videos", params={"limit": 2, "offset": 0}).json()
     second = client.get("/api/v1/library/videos", params={"limit": 2, "offset": 2}).json()
     assert len(first) == 2

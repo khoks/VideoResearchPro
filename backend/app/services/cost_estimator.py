@@ -80,14 +80,23 @@ def _workload(use_case: str, model: str) -> tuple[int, int, int]:
         rounds = ceil(b["rank_pool"] / _RANK_BATCH)
         return rounds + 1, pool_tokens + rounds * 400 + 30_000, (rounds + 1) * 2_000
     if use_case == "report_map_chunks":
+        # S-1.14.8: the completion budget is derived from the batch (20% of
+        # its input), not a flat 2,000. Measured on the reference corpus:
+        # ~15-21K output tokens per 120K batch.
         batches = ceil(b["formatted_map_tokens"] / _map_budget(model))
-        return batches, b["formatted_map_tokens"] + batches * 250, batches * 2_000
+        per_batch_out = int(_map_budget(model) * 0.15)   # observed, below the 0.20 ceiling
+        return batches, b["formatted_map_tokens"] + batches * 250, batches * per_batch_out
     if use_case == "report_reduce_summaries":
-        batches = ceil(b["formatted_map_tokens"] / _map_budget(model))
-        merged = int(batches * 2_000 * 1.3)
-        return 1, merged, 4_000
+        # Reduce is deterministic now (D-056) — no LLM call on topic jobs.
+        return 0, 0, 0
     if use_case == "report_compose":
-        return 1, 12_000, 16_000
+        # Sectioned composition (D-056): the consolidated extraction is split
+        # across section calls, so input tracks the corpus and output is
+        # roughly proportional to it rather than a single 16K completion.
+        batches = ceil(b["formatted_map_tokens"] / _map_budget(model))
+        consolidated = batches * int(_map_budget(model) * 0.15)
+        calls = max(2, ceil(consolidated / 120_000) + 1)
+        return calls, consolidated + calls * 600, int(consolidated * 0.5)
     if use_case == "qa_clarification" or use_case == "library_qa_clarification":
         n = b["clarify_uses_assumed"]
         return n, n * 500, n * 200

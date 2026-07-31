@@ -193,26 +193,45 @@ def test_reduce_summaries_channel_job_short_circuits():
     assert result == {"chunk_summaries": [{"a": 1}, {"b": 2}]}
 
 
-def test_reduce_summaries_single_summary_returns_noop():
+def test_reduce_summaries_single_summary_is_normalized_losslessly():
+    """S-1.14.8: reduce normalizes even one summary, and never drops content.
+
+    An unexpected shape (no facts/comments/... keys) is preserved rather than
+    discarded — silent narrowing is the defect this stage exists to prevent.
+    """
     state = {
         "job_type": "topic",
         "chunk_summaries": [{"a": 1}],
         "topic": "x",
     }
     result = report_agent.reduce_summaries(state)
-    # No reduction needed → empty dict (don't overwrite state)
-    assert result == {}
+    merged = result["chunk_summaries"][0]
+    assert set(merged) == set(report_agent._REDUCE_KEYS)
+    assert any('"a": 1' in str(f.get("content", "")) for f in merged["facts"])
 
 
-def test_reduce_summaries_consolidates_multiple():
-    summaries = [{"a": 1}, {"b": 2}, {"c": 3}]
+def test_reduce_summaries_consolidates_without_an_llm():
+    """S-1.14.8 / D-055: reduce is deterministic now.
+
+    The old LLM merge-and-dedupe applied a flat 6,000-token output cap on
+    every pairwise round and was measured destroying ~91% of items and 46% of
+    videos on a real corpus — with zero true duplicates to remove.
+    """
+    summaries = [
+        {"facts": [{"content": "one", "video_url": "u1"}]},
+        {"facts": [{"content": "two", "video_url": "u2"}]},
+        {"conclusions": [{"content": "three", "video_url": "u3"}]},
+    ]
     with patch.object(report_agent, "get_llm_for") as mock_get_llm:
-        mock_get_llm.return_value = _fake_llm_returning('{"merged": true}')
         result = report_agent.reduce_summaries(
             {"job_type": "topic", "chunk_summaries": summaries, "topic": "x"}
         )
 
-    assert result == {"chunk_summaries": [{"merged": True}]}
+    mock_get_llm.assert_not_called()
+    merged = result["chunk_summaries"][0]
+    assert len(merged["facts"]) == 2
+    assert len(merged["conclusions"]) == 1
+    assert result["processing_notes"]["reduce_items_trimmed"] == 0
 
 
 # ---------- compose_report ----------
@@ -239,7 +258,10 @@ def test_compose_report_invokes_llm():
         }
         result = report_agent.compose_report(state)
 
+    # Composition is sectioned now (S-1.14.8), so the body is assembled from
+    # per-section calls plus a deterministic Statistics block.
     assert "<section>Report body</section>" in result["final_html"]
+    assert "Statistics" in result["final_html"]
 
 
 def test_compose_report_returns_error_html_on_failure():

@@ -41,7 +41,7 @@ from app.agents.prompts.search_prompts import (
 )
 from app.agents.state import SearchAgentState
 from app.services import youtube_service
-from app.services.llm_service import get_llm_for
+from app.services.llm_service import get_llm_for, response_text
 from app.sources import connector_for
 from app.sources.types import Candidate, SourceMetadata
 from app.utils.youtube_helpers import format_duration
@@ -174,7 +174,7 @@ def plan_searches(state: SearchAgentState) -> dict:
     broad_queries: list[str] = []
     channel_keywords: list[str] = []
     try:
-        plan = json.loads(response.content)
+        plan = json.loads(response_text(response))
         if isinstance(plan, dict):
             raw_q = plan.get("broad_queries") or []
             if isinstance(raw_q, list):
@@ -453,7 +453,7 @@ def _invoke_rank_prompt(
     )
     response = llm.invoke([HumanMessage(content=prompt)])
     try:
-        selected_ids = json.loads(response.content)
+        selected_ids = json.loads(response_text(response))
     except (json.JSONDecodeError, TypeError):
         logger.exception("Failed to parse rank_and_curate LLM response; falling back to head-of-list")
         return None

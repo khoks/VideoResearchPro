@@ -1,6 +1,7 @@
 """E-1.12 — report-pipeline context resilience tests (S-1.12.2/.3/.4/.6)
 plus the S-1.12.1 job-scope retrieval fix.
 """
+import json
 from unittest.mock import MagicMock, patch
 
 from app.agents import report_agent
@@ -90,38 +91,48 @@ def test_map_bisect_records_permanent_drop():
 # ---------------------------------------------------------------------------
 
 
-def test_reduce_recurses_to_single_summary(monkeypatch):
-    summaries = [{"facts": [f"fact-{i}" * 200]} for i in range(8)]
-    merged = MagicMock()
-    merged.content = '{"facts": ["merged"]}'
-    llm = MagicMock()
-    llm.invoke.return_value = merged
-    # Force multiple pairwise rounds: budget smaller than any 2-summary dump.
-    monkeypatch.setattr(report_agent, "_batch_budget", lambda *a, **k: 500)
+def test_reduce_always_ends_with_exactly_one_summary(monkeypatch):
+    """S-1.14.8: replaces the recursive pairwise-merge contract.
+
+    Compose consumes one consolidated dataset. Reduce now reaches that
+    deterministically — no LLM rounds, and content is preserved rather than
+    squeezed through a per-round output cap (D-055).
+    """
+    summaries = [
+        {"facts": [{"content": f"fact-{i}" * 200, "video_url": f"u{i}"}]}
+        for i in range(8)
+    ]
     state = {"job_type": "topic", "topic": "t", "chunk_summaries": summaries}
-    with patch.object(report_agent, "get_llm_for", return_value=llm):
+    with patch.object(report_agent, "get_llm_for") as mock_get_llm:
         out = reduce_summaries(state)
-    # Bounded rounds then final merge — always ends single (or bounded list).
-    assert len(out["chunk_summaries"]) >= 1
-    assert llm.invoke.call_count >= 4  # multiple pairwise rounds happened
+
+    mock_get_llm.assert_not_called()
+    assert len(out["chunk_summaries"]) == 1
+    # All eight batches survive: one fact each, none dropped.
+    assert len(out["chunk_summaries"][0]["facts"]) == 8
 
 
-def test_reduce_pair_failure_truncates_instead_of_raw_passthrough(monkeypatch):
-    big = {"facts": ["x" * 40_000]}
-    summaries = [big, big, big, big]
-    llm = MagicMock()
-    llm.invoke.side_effect = RuntimeError("merge down")
-    monkeypatch.setattr(report_agent, "_batch_budget", lambda *a, **k: 1_000)
-    state = {"job_type": "topic", "topic": "t", "chunk_summaries": summaries}
-    with patch.object(report_agent, "get_llm_for", return_value=llm):
-        out = reduce_summaries(state)
-    result = out["chunk_summaries"]
-    # Nothing unbounded survives: every failed member is token-truncated.
-    for item in result:
-        if "truncated_summary" in item:
-            assert len(item["truncated_summary"]) < 20_000
-    assert all("truncated_summary" in i or "facts" not in i or len(str(i)) < 25_000 for i in result)
+def test_no_composition_call_ever_exceeds_its_budget():
+    """S-1.14.8 replaces the reduce pair-failure guard, but keeps its promise:
+    nothing unbounded reaches a composition call.
 
+    A single item larger than the whole section budget is truncated rather
+    than sent, so an over-budget prompt is unreachable.
+    """
+    budget = 1_000
+    items = [
+        {"content": "x" * 40_000, "video_url": "u1"},
+        {"content": "small", "video_url": "u2"},
+    ]
+    groups = report_agent._split_items_to_budget(items, budget)
+    assert groups
+    for group in groups:
+        cost = report_agent._count_tokens(json.dumps(group, default=str))
+        assert cost <= budget * 1.3, f"group of {cost} tokens exceeds budget {budget}"
+    # The oversized item is still represented, just clipped.
+    flat = [i for g in groups for i in g]
+    assert len(flat) == 2
+    assert any(i["video_url"] == "u1" for i in flat)
 
 # ---------------------------------------------------------------------------
 # S-1.12.4 — loud accounting in compose

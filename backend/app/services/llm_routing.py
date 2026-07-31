@@ -236,6 +236,50 @@ def context_window_for(model: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Model OUTPUT ceilings (S-1.14.8 / D-055)
+# ---------------------------------------------------------------------------
+#
+# Max completion tokens per request, EMPIRICALLY MEASURED 2026-07-30 with the
+# same free technique used for the input windows: request an absurd
+# ``max_tokens`` and parse the API's own 400 ("This model supports at most N
+# completion tokens" / "> N, which is the maximum allowed number of output
+# tokens"). Rejected requests are unbilled, so re-measuring is free.
+#
+# These exist because the report pipeline was starving itself: map emitted at
+# most 3,000 tokens per ~116K-token batch and reduce 6,000 per merge, against
+# ceilings of 128,000. Call sites now derive their completion budget from the
+# work in front of them and clamp to these values instead of hardcoding a
+# constant that silently truncates.
+MODEL_MAX_OUTPUT_TOKENS: dict[str, int] = {
+    "gpt-5.4": 128_000,
+    "gpt-5.4-mini": 128_000,
+    "gpt-5.4-nano": 128_000,
+    "gpt-5.5": 128_000,
+    "claude-sonnet-5": 128_000,
+    "claude-opus-5": 128_000,
+    "claude-fable-5": 128_000,
+    "claude-haiku-4-5": 64_000,
+}
+
+# Conservative floor for unmeasured models (older OpenAI chat models and most
+# local servers cap here or lower).
+DEFAULT_MAX_OUTPUT_TOKENS = 4_096
+
+
+def max_output_for(model: str) -> int:
+    """Max completion tokens for ``model`` (prefix match for dated snapshots),
+    falling back to a conservative default for unmeasured models."""
+    if model in MODEL_MAX_OUTPUT_TOKENS:
+        return MODEL_MAX_OUTPUT_TOKENS[model]
+    for known, limit in sorted(
+        MODEL_MAX_OUTPUT_TOKENS.items(), key=lambda kv: -len(kv[0])
+    ):
+        if model.startswith(known):
+            return limit
+    return DEFAULT_MAX_OUTPUT_TOKENS
+
+
+# ---------------------------------------------------------------------------
 # Registry. One entry per UseCase literal above.
 # ---------------------------------------------------------------------------
 #
@@ -321,18 +365,24 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "qa_formulate_answer": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("anthropic", "claude-sonnet-5", "low"),
+        default_config=UseCaseConfig("anthropic", "claude-sonnet-5", "medium"),
         summary=(
             "Produce the final user-facing answer with citations. Runs at "
             "temperature 0 so citations remain deterministic."
         ),
         typical_input_tokens=5_000,
         p95_input_tokens=15_000,
-        typical_output_tokens=3_000,
+        typical_output_tokens=4_500,
         min_context_recommended=32_768,
         rationale=(
             "User judges the system on this output. Flagship + medium "
-            "reasoning reduces citation hallucinations."
+            "reasoning reduces citation hallucinations. Reasoning raised "
+            "low->medium 2026-07-30 (S-1.14.8): blind judging in D-055 scored "
+            "this call 4/10 on completeness (it answered one half of a "
+            "two-part question) and 4/10 on synthesis — a judge described the "
+            "output as 'an annotated bibliography' that enumerates sources "
+            "instead of explaining mechanism. The gap was synthesis depth, "
+            "not budget; measured output stayed under the old 4,500 cap."
         ),
     ),
     "qa_extract_references": UseCaseInfo(
@@ -381,7 +431,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "library_qa_formulate_answer": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("anthropic", "claude-sonnet-5", "low"),
+        default_config=UseCaseConfig("anthropic", "claude-sonnet-5", "medium"),
         summary="Final library-wide answer with citations across videos.",
         typical_input_tokens=5_000,
         p95_input_tokens=15_000,
@@ -402,6 +452,8 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         typical_output_tokens=1_000,
         min_context_recommended=16_384,
         rationale=(
+            "Reasoning raised low->medium 2026-07-30 (S-1.14.8) to mirror "
+            "qa_formulate_answer; same synthesis-depth finding applies. "
             "Smaller input than qa_refine_context — gpt-5.4-nano + low "
             "reasoning is sufficient. Flip to local if you want to cut "
             "per-turn latency."
@@ -503,11 +555,16 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "Map phase: extract key facts from each batch of transcript "
             "chunks. Batches are token-budgeted up to LLM_MAX_CONTEXT_TOKENS."
         ),
-        typical_input_tokens=4_000,
-        p95_input_tokens=32_000,
-        typical_output_tokens=2_000,
+        typical_input_tokens=110_000,
+        p95_input_tokens=120_000,
+        typical_output_tokens=20_000,
         min_context_recommended=32_768,
         rationale=(
+            "Sizing corrected 2026-07-30 (S-1.14.8): the registry claimed "
+            "p95_input=32,000 while E-1.12 had raised real batches to ~116,000, "
+            "and the call site pinned max_tokens=3,000 — so D-055 measured only "
+            "5.9% of the extractable content surviving this stage. The completion "
+            "budget is now derived from the batch size at the call site. "
             "Highest-volume LLM call in the codebase (dozens per job). "
             "Reasoning OFF is mandatory at this volume — thinking tokens "
             "dominate cost otherwise. Good candidate for local routing."
@@ -525,6 +582,14 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         typical_output_tokens=4_000,
         min_context_recommended=32_768,
         rationale=(
+            "DEPRECATED as an LLM call 2026-07-30 (S-1.14.8). reduce_summaries "
+            "is now deterministic: a lossless structural union, with even "
+            "per-video trimming only past a cost guard. D-055 found ZERO "
+            "duplicates in map output on the reference corpus, so the old "
+            "LLM merge-and-dedupe could only destroy content — it applied a "
+            "flat 6,000-token cap every pairwise round and dropped 46% of "
+            "videos wholesale. Entry retained so existing user overrides and "
+            "env config keep resolving; changing it has no effect on topic jobs. "
             "Consolidation benefits from a little planning. Low reasoning "
             "on the economy model is the right trade-off."
         ),

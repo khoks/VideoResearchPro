@@ -1657,3 +1657,58 @@ A perfect lossless consolidation measures 369,801 tokens against `compose`'s eff
 **Validation.** Reduce over the real 12 map extractions of job `0d4db8c3`: **5,861 items in, 5,861 out, 0.00% loss, all 200 videos and 92 channels retained** (previously 91.2% of items and 46% of videos lost), zero LLM calls. A real compose call over a cross-corpus sample of 190 facts produced 6,903 words naming 34 distinct channels — versus 3,848 words and 2 channels for the entire shipped report. Full production chain end-to-end on 6 videos: **104 timestamp links, 104 working, 0 dead, 6/6 videos correctly linked, 0 fabricated**. Backend suite 1,132 passing.
 
 **Linked initiatives / PRs.** S-1.14.8, S-1.14.9; supersedes the reduce mechanics of S-1.12.3.
+
+## D-057 — Volume tier moves to gpt-5.6-luna; selection is now measurable (2026-07-30)
+
+**Status:** accepted.
+
+**Context.** On 2026-07-30 OpenAI cut gpt-5.6-luna by 80% and terra by 20%. Verified on the official pricing page (not the announcement): **luna $0.20 / $1.20**, terra $2.00 / $12.00, both with >272K long-context tiers. Luna therefore *matches* `gpt-5.4-nano` on input ($0.20) and *undercuts* it on output ($1.20 vs $1.25) — our economy tier could get strictly better at no cost. Vendor benchmarks measure generic intelligence, so we tested on the job we actually give it.
+
+**Decision.** All nine `gpt-5.4-nano` sites move to `gpt-5.6-luna` at the same reasoning level. The default stack is now three tiers: **luna** (volume) / **gpt-5.4-mini** (mid) / **gpt-5.5** + **claude-sonnet-5** (flagship).
+
+**Evidence** — head-to-head on two real 120K-token map batches, same prompt and completion budget:
+
+| Batch (true videos) | Model | Items | Distinct titles | JSON | Time | Cost |
+|---|---|---|---|---|---|---|
+| batch_03 (25) | gpt-5.4-nano `off` | 133 | **52** | ok | 100s | $0.0420 |
+| batch_03 (25) | **luna `off`** | **212** | **25** | ok | 78s | $0.0418 |
+| batch_03 (25) | luna `high` | 0 | — | **FAILED** | 129s | $0.0523 |
+| batch_07 (17) | gpt-5.4-nano `off` | 0 | — | **FAILED** | 127s | $0.0460 |
+| batch_07 (17) | **luna `off`** | **284** | 15 | ok | 109s | $0.0487 |
+| batch_07 (17) | luna `high` | 246 | 16 | ok | 107s | $0.0476 |
+
+Three findings drove the call: (a) luna extracts **1.6-2x more items** at parity cost and lower latency; (b) its **attribution is exact** — 25 distinct titles for a 25-video batch, where nano emitted **52 title variants of the same 25 videos**, fragmenting citation grouping (neither model fabricated: 0% of titles were outside the corpus); (c) **nano returned unparseable JSON on one of two batches**, which in production triggers bisect-retry — double cost and possible content loss.
+
+**Luna must stay at `reasoning=off` for extraction.** At `high` it spent all 24,000 completion tokens thinking and emitted nothing (batch_03) — the OpenAI gotcha where `max_completion_tokens` includes reasoning tokens, which has now bitten three times (T-4.9.5, PR #196, here).
+
+Measured `MODEL_MAX_OUTPUT_TOKENS` for the 5.6 family (128,000 each). Without this luna fell through to the conservative 4,096 default and would have silently clamped the map budget.
+
+**Cost calculator corrected.** It still modelled the pre-D-056 pipeline (2,000 output tokens/batch, one compose call). Updated to the shipped behaviour: map output derives from the batch, reduce is $0 (deterministic), compose is sectioned. The benchmark job moves **$4.36 → $5.88** — reports cost more because they no longer discard the corpus.
+
+**Consequences.** Caveat: n=2 batches. The signals (a hard JSON failure, 2x attribution variance, 1.6-2x yield at equal price) are strong enough to act on, and any user can revert per use case from `/account/ai-models`. Re-measure when the next model lands.
+
+**Linked initiatives / PRs.** S-1.14.6, S-1.14.12; follows D-056.
+
+## D-058 — Report pipeline fix validated on the reference job (2026-07-30)
+
+**Status:** accepted.
+
+**Context.** [D-056](#d-056--report-pipeline-budgets-derived-from-work-lossless-reduce-sectioned-compose-2026-07-30) fixed the report funnel but was validated only at component level. The report for job `0d4db8c3` was regenerated through the production path (same 200 videos, same 5,149 chunks, same criteria) for a direct A/B against the 2026-07-22 report.
+
+**Result** — 41.5 minutes, 7 section calls, 0 failed:
+
+| Measure | Before | After |
+|---|---|---|
+| Body words | 5,610 | **25,692** (4.6x) |
+| Videos linked | **0** | **125** |
+| Corpus titles mentioned | 4 | 38 |
+| Channels named | 67 | **92 / 92** |
+| Timestamp links | 143, **all dead** | 1,058, **0 dead** |
+| Quantitative claims | **0** | **130** |
+| Sub-sections (h3) | 9 | 82 |
+
+Reduce logged `lossless merge fits (217,115 tokens); 1,451 items across 119 videos, 0 LLM calls` — the stage that previously squeezed everything through a flat 6,000-token cap.
+
+**Residual gap.** Coverage is 125/200 videos, not 200 — because *map extraction* covered only 119 videos. That run used gpt-5.4-nano; per [D-057](#d-057--volume-tier-moves-to-gpt-56-luna-selection-is-now-measurable-2026-07-30) luna extracts 1.6-2x more items with exact attribution, so the next run should improve further. The binding constraint has moved from the pipeline to the extraction model, which is the correct place for it to be.
+
+**Linked initiatives / PRs.** S-1.14.10 (partially answered), S-1.14.8.

@@ -255,6 +255,9 @@ MODEL_MAX_OUTPUT_TOKENS: dict[str, int] = {
     "gpt-5.4-mini": 128_000,
     "gpt-5.4-nano": 128_000,
     "gpt-5.5": 128_000,
+    "gpt-5.6-luna": 128_000,
+    "gpt-5.6-terra": 128_000,
+    "gpt-5.6-sol": 128_000,
     "claude-sonnet-5": 128_000,
     "claude-opus-5": 128_000,
     "claude-fable-5": 128_000,
@@ -313,7 +316,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     # --- Job Q&A --------------------------------------------------------
     "qa_clarification": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "off"),
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
         summary=(
             "Generate a short clarifying follow-up question after the user "
             "asks about a job's videos (e.g. 'Did you mean the pricing "
@@ -331,7 +334,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "qa_sub_query_expansion": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "off"),
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
         summary=(
             "Rephrase the user's question into 2 semantically-focused "
             "sub-queries to broaden RAG retrieval coverage."
@@ -387,7 +390,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "qa_extract_references": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "off"),
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
         summary=(
             "Parse the answer back into a structured reference list "
             "(video_id, timestamp, quote). Must be accurate."
@@ -405,7 +408,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     # --- Library-wide Q&A ----------------------------------------------
     "library_qa_clarification": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "off"),
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
         summary=(
             "Same as qa_clarification, but for questions asked across the "
             "whole video library instead of a single job."
@@ -442,7 +445,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     # --- Q&A History (Personal Wiki meta-chat) -------------------------
     "qa_history_refine_context": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "low"),
         summary=(
             "Compact a handful of retrieved past Q&A exchanges into focused "
             "context before the history-chat final answer."
@@ -478,7 +481,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     # --- Per-video Knowledge extraction --------------------------------
     "knowledge_extract_batch": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "off"),
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
         summary=(
             "Map phase of the knowledge agent: extract structured "
             "{topics, concepts, events, facts} JSON from a batch of "
@@ -515,7 +518,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     # --- Topic search --------------------------------------------------
     "search_plan_queries": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "low"),
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "low"),
         summary=(
             "Plan 3-5 YouTube search queries from a user's topic + "
             "instructions prompt."
@@ -550,7 +553,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     # --- Report generation (map-reduce over transcripts) ---------------
     "report_map_chunks": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "off"),
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
         summary=(
             "Map phase: extract key facts from each batch of transcript "
             "chunks. Batches are token-budgeted up to LLM_MAX_CONTEXT_TOKENS."
@@ -637,7 +640,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     # --- Social-media candidate classification (S-1.5.3) ---------------
     "social_classify_stance": UseCaseInfo(
         default_route="fast",
-        default_config=UseCaseConfig("openai", "gpt-5.4-nano", "off"),
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
         summary=(
             "Per-candidate-Document (and per-comment) classification "
             "returning {stance, sentiment, framing, topic_relevance}. "

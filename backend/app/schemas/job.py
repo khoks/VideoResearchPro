@@ -21,6 +21,11 @@ class JobCreate(BaseModel):
     # pattern where the LLM stuffs channel names into YouTube query strings.
     preferred_channels: list[str] | None = None
 
+    # R4: optional depth override for the generated report. Omitted or
+    # 'auto' lets the corpus size bracket decide, which is the default
+    # experience — the control is additive and never required.
+    output_length: Literal["auto", "brief", "standard", "deep"] | None = None
+
     # Channel fields
     channel_list: list[str] | None = None
     videos_per_channel: int | None = Field(default=10, ge=1, le=50)

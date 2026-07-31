@@ -539,6 +539,26 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 **North-star doc:** [branding.md](branding.md) · [ui-design.md](ui-design.md)
 **Decision links:** [D-001](decisions.md#d-001--rebrand-to-pratidhvani-प्रतिध्वनि-2026-04-24), [D-002](decisions.md#d-002-warm-editorial-visual-identity-2026-04-24)
 
+### E-1.15 🟡 Output length policy (R4)
+
+**Why it exists.** User requirement: output length should follow the corpus size bracket, with per-bracket defaults and an optional non-obstructive user override at submission time.
+**Linked decision:** [D-064](decisions.md#d-064--output-length-corpus-brackets-with-an-optional-user-override-2026-07-31)
+
+#### S-1.15.1 🟢 Report-side brackets + user override
+**Shipped:** 2026-07-31
+- [x] T-1.15.1.1 `output_length.py` — brackets, per-bracket defaults, user multipliers, prose guidance
+- [x] T-1.15.1.2 `jobs.output_length` column + migration `e5f6a7b8c9d1`; `auto` normalised to NULL
+- [x] T-1.15.1.3 Threaded through `JobCreate` -> `job_service` -> `run_report_agent` -> `compose_report`
+- [x] T-1.15.1.4 "Report depth" selector on the submit form, defaults to Auto, only sent when chosen
+- [x] T-1.15.1.5 10 tests incl. the ANTI-CAP invariant (deep-on-small < brief-on-large), unknown-value fallback, and that the `deep` brief forbids padding
+
+#### S-1.15.2 🔵 Q&A and knowledge length policy — R4 is NOT complete without this
+Q&A is corpus-blind: `formulate_answer` has a fixed 4,500-token budget and never receives video/word counts. Deferred into the R3+R5 batch because all three rewrite the same Q&A prompt files.
+- [ ] T-1.15.2.1 Pass corpus statistics into the job and library Q&A agents
+- [ ] T-1.15.2.2 Apply the same scale-plus-guidance policy to `qa_formulate_answer` / `library_qa_formulate_answer`
+- [ ] T-1.15.2.3 Per-request length override on the Q&A endpoints (job-level default, request-level override)
+- [ ] T-1.15.2.4 Knowledge synthesis already scales with extraction size (S-1.14.8) — confirm it honours an explicit preference too
+
 ### E-2.1 🟢 Tokens layer (`frontend/src/theme.ts`)
 
 **Shipped** in an earlier session (verified live on master 2026-04-26). `frontend/src/theme.ts` exports `colors` (warm-editorial light + dark), `fonts` (Fraunces / Source Serif / Inter / Tiro Devanagari / JetBrains Mono), `fontSize` (modular scale), `lineHeight`, `fontWeight`, `space` (4px scale), `radius`, `shadow`, `motion`, `z`, `breakpoints`, `measure`. Helpers `pickColor(token, mode)`, `transitionAll(d)`, `focusRing(mode)`. CSS-var mirror in `frontend/src/index.css` (`--color-*` etc.) so native pseudo-elements (`::placeholder`, scrollbar) share the palette.

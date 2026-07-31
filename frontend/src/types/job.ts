@@ -35,6 +35,8 @@ export interface Job {
   has_report: boolean;
 }
 
+export type OutputLength = 'auto' | 'brief' | 'standard' | 'deep';
+
 export interface JobCreate {
   job_type: JobType;
   topic?: string;
@@ -46,6 +48,8 @@ export interface JobCreate {
   preferred_channels?: string[];
   channel_list?: string[];
   videos_per_channel?: number;
+  /** R4: optional report depth. Omitted/'auto' lets corpus size decide. */
+  output_length?: OutputLength;
 }
 
 export interface VideoApproval {

@@ -22,6 +22,7 @@ from app.services.llm_routing import (
     max_output_for,
     resolve_config,
 )
+from app.services import output_length as output_length_policy
 from app.utils.youtube_helpers import format_timestamp
 
 logger = logging.getLogger(__name__)
@@ -508,6 +509,17 @@ def compose_report(state: ReportAgentState) -> dict:
     section_input_budget = _batch_budget("report_compose", fraction=0.6)
     ceiling = max_output_for(resolve_config("report_compose").model)
 
+    # R4 / D-064: depth policy. The multiplier shifts where we sit on the
+    # derived curve; the guidance is what actually moves length (D-062). This
+    # is NOT a cap — the budget still tracks corpus size continuously.
+    length_pref = state.get("output_length")
+    length_scale = output_length_policy.resolve_scale(statistics, length_pref)
+    length_guidance = output_length_policy.guidance(statistics, length_pref)
+    logger.info(
+        "compose_report: length policy %s",
+        output_length_policy.describe(statistics, length_pref),
+    )
+
     parts: list[str] = []
     digest: list[str] = []
     sections_failed = 0
@@ -522,8 +534,11 @@ def compose_report(state: ReportAgentState) -> dict:
         for idx, group in enumerate(groups, 1):
             material = json.dumps(group, indent=2, default=str)
             material_tokens = _count_tokens(material)
-            # Prose expands on structured input; allow generous headroom.
-            max_tokens = min(int(material_tokens * 1.2) + 1_000, ceiling)
+            # Prose expands on structured input; allow generous headroom,
+            # then apply the depth policy (R4).
+            max_tokens = min(
+                int(material_tokens * 1.2 * length_scale) + 1_000, ceiling
+            )
             part_note = f", part {idx} of {len(groups)}" if len(groups) > 1 else ""
             heading_note = (
                 " (this is a continuation — use <h3> sub-headings only, omit the <h2>)"
@@ -532,7 +547,11 @@ def compose_report(state: ReportAgentState) -> dict:
             prompt = COMPOSE_SECTION_PROMPT.format(
                 topic=topic,
                 section_title=spec["title"],
-                section_guidance=spec["guidance"],
+                section_guidance=(
+                    spec["guidance"] + "\n\n" + length_guidance
+                    if length_guidance
+                    else spec["guidance"]
+                ),
                 item_count=len(group),
                 part_note=part_note,
                 material=material,
@@ -879,12 +898,16 @@ def run_report_agent(
     job_type: str,
     topic: str,
     transcript_chunks: list[dict],
+    output_length: str | None = None,
 ) -> tuple[dict, str]:
     """
     Run the report agent.
 
     Returns:
-        (statistics_dict, report_html_body). For channel jobs the body is a
+    ``output_length`` (R4) is the user's optional depth override —
+    None/'auto' lets the corpus size bracket decide. It scales the derived
+    completion budget and changes the composer's brief; it is never a cap.
+
         lightweight per-channel narrative; for topic jobs it is the full
         research report composed from map-reduce summaries.
     """
@@ -893,6 +916,7 @@ def run_report_agent(
         "messages": [],
         "job_type": job_type,
         "topic": topic,
+        "output_length": output_length,
         "transcript_chunks": transcript_chunks,
         "chunk_summaries": [],
         "report_sections": {},

@@ -1,6 +1,7 @@
 from app.models.api_quota_log import ApiQuotaLog
 from app.models.audit_log import AuditLog
 from app.models.channel import Channel
+from app.models.channel_subscription import ChannelSubscription
 # `Creator` is the going-forward name for `Channel` per E-1.9.
 # Both names refer to the same class while the underlying table is
 # still `channels`; the SQL rename is operator-coordinated per
@@ -30,6 +31,7 @@ __all__ = [
     "ApiQuotaLog",
     "AuditLog",
     "Channel",
+    "ChannelSubscription",
     "Creator",
     "Document",
     "DocumentVisibility",

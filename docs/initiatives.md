@@ -819,11 +819,20 @@ Full design for each in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry 
 - [x] T-5.10.1.7 Vector retrieval scoped to the visible set; empty list stays empty
 - [x] T-5.10.1.8 11 regression tests asserting absence of foreign data
 
-#### S-5.10.2 🔵 Remaining isolation surfaces
-- [ ] T-5.10.2.1 `channels` is unscoped — subscriptions are global; decide per-tenant subscription vs shared channel catalogue
-- [ ] T-5.10.2.2 `api_quota_log` unscoped (low sensitivity, but it leaks usage volume)
-- [ ] T-5.10.2.3 Q&A-history Chroma collection (`qa_library_global`) — verify tenant filtering matches the transcript collection
-- [ ] T-5.10.2.4 Re-run the D-055 evaluation harness: library Q&A now answers from a per-user corpus, which may change quality on small accounts
+#### S-5.10.2 🟢 Channels per-tenant — shipped 2026-07-31
+Linked decision: [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31). User decision: channels become per-tenant.
+- [x] T-5.10.2.1 `channel_subscriptions` model + migration `f6a7b8c9d1e2` with backfill (95 rows, 92/3 split matching document visibility)
+- [x] T-5.10.2.2 `source_weight` moved per-tenant — it was a documented *user-set* trust score stored globally, so one user re-weighted everyone's retrieval ranking
+- [x] T-5.10.2.3 `subscription_service` as the single accessor; channel list, detail, subscribe/unsubscribe/sync and video listing all scoped
+- [x] T-5.10.2.4 8 isolation tests: subscribe/weight/sync-timestamp do not cross tenants; video counts show only visible documents
+- [ ] T-5.10.2.5 `api_quota_log` unscoped (low sensitivity — leaks usage volume only)
+- [ ] T-5.10.2.6 Q&A-history Chroma collection — verify tenant filtering matches the transcript collection
+- [ ] T-5.10.2.7 Re-run the D-055 harness: library Q&A now answers from a per-user corpus
+
+#### S-5.10.3 🔵 Drop the legacy global columns on `channels`
+`subscribed`, `source_weight`, `last_synced_at` are retained on `channels` so a partial rollout stays recoverable. Remove once nothing reads them.
+- [ ] T-5.10.3.1 Audit remaining readers of the legacy columns (subscription sync task, any scripts)
+- [ ] T-5.10.3.2 Migration to drop them, with a downgrade that restores from `channel_subscriptions`
 
 ### E-5.1 🟢 `tenant_id` audit + retrofit
 

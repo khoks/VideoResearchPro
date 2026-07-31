@@ -1803,3 +1803,48 @@ A judge also flagged that production mis-states the corpus size and vintage in i
 **Consequences.** The claim "the defaults are far behind a premium model" is no longer supported: on identical input the measured mean is 6.94 vs 8.72, and the three remaining defects are prompt/retry work rather than model tier. Whether to close the rest by prompt work or by moving `report_compose` up a tier should be decided AFTER the prompt fixes, since two of the three gaps are addressable for free.
 
 **Linked initiatives / PRs.** S-1.14.10 (closed), S-1.14.14 (new); follows D-056 / D-057 / D-060.
+
+
+## D-062 — `report_compose` upgraded to claude-opus-5 (2026-07-31)
+
+**Status:** accepted.
+
+**Context.** [D-061](#d-061--s-11410-re-judge-the-intelligence-gap-after-the-fixes-2026-07-31) left three residual defects, all judged prompt/retry rather than model capability. S-1.14.14 shipped fixes for all three and the report was regenerated and re-judged on the same corpus.
+
+**What the prompt fixes moved — and what they did not.**
+
+| Lens | v2 | v3 (after fixes) | Control | Gap |
+|---|---|---|---|---|
+| Coverage | 7.33 | **8.00** | 8.67 | moderate → **minor** |
+| Rigour | 7.17 | 7.33 | 8.67 | moderate |
+| Synthesis / insight | 6.33 | **6.33** | 8.67 | moderate |
+| Overall | 6.94 | **7.22** | 8.67 | |
+
+Attribution flipped outright: **6 → 9, now ahead of the control's 7** — a judge who had called production untraceable now preferred it for chasing a claim back to its video. Mechanically: citations with a source named nearby went 30% → 63%, sub-sections named after a channel 16% → 7%, corpus titles mentioned 3 → 139 of 200. The retry fix held (7 sections, 0 failed, where a `529` had previously eaten one).
+
+**Synthesis did not move at all — 6.33 in both rounds.** That is the diagnostic result. The v2 round predates the new citation formatting, so verbosity cannot explain it, and theme-first structuring did not shift it either. Prompt work moved everything it could; this was the residue.
+
+**Decision.** `report_compose` moves `claude-sonnet-5` → `claude-opus-5` (reasoning medium), per the rule recorded in S-1.14.14 **before** results were seen.
+
+**Evidence — head-to-head, identical section input (340 comment items, 36K tokens), two blind judges:**
+
+| Dimension | sonnet-5 | opus-5 |
+|---|---|---|
+| Synthesis | 6-7 | **9** |
+| Tension handling | 6 | **9** |
+| Signal density | 6-6.5 | **9** |
+| Specificity | 5.5-6 | **9-10** |
+| Grounding | 7 | **8.5-9** |
+| Readability | **7.5-8** | 7 |
+
+**The length hypothesis was tested and REJECTED.** Opus ran 2.6x longer, and the prior that this was padding is the obvious objection — so both judges were instructed to suspect it and to count claims per unit length. Both found opus *denser*: hand-counted propositions across three matched sections gave 3.42 vs 2.42 per 100 words; an independent proxy (citation anchors per 1,000 words) gave 21.2 vs 17.7. Roughly **3.5x total informational payload**, not 2.6x the words.
+
+Concrete failures that decided it: sonnet named **18 distinct tools/models vs opus's 47** and 4 numeric specifics vs 11; dropped roughly **8 debates present in the corpus**; **contradicted itself** — declaring "a near-consensus emerges that context engineering has displaced prompt engineering" while itself holding the rebuttal quote (Zen van Riel calling the terms "largely gimmicks") filed two sections earlier under the wrong argument; and **invented two unverifiable host names** where opus correctly hedged to "the Google Cloud Tech hosts".
+
+**Cost.** `report_compose` $3.03 → $7.58; benchmark total **$7.65 → $12.20** (+$4.55 per 200-video job). This is the most expensive single change available in the stack, which is why it was made last and only on measurement.
+
+**Consequences.** sonnet-5's one win is readability (8 vs 7) — a real trade, accepted because a 3-point synthesis gap on the flagship deliverable outweighs it. Any user can revert per use case from `/account/ai-models`. Note the ordering that made this decision cheap and correct: the funnel fix, volume-tier swap, extraction ceiling and prompt fixes all landed FIRST, so the tier premium buys only what nothing else could.
+
+**Open, deliberately not fixed here.** The executive summary still mis-dates the corpus ("2024-2025-era" when the bulk is 2026), leaks pipeline metadata into prose, and contradicts its own video count in Conclusions — T-1.14.14.4 did not fully land. Filed as S-1.14.15 rather than bundled, so the tier decision is not confounded by a simultaneous prompt change.
+
+**Linked initiatives / PRs.** S-1.14.14 (closed), S-1.14.15 (new); follows D-061.

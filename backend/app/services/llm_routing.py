@@ -599,7 +599,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "report_compose": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("anthropic", "claude-sonnet-5", "medium"),
+        default_config=UseCaseConfig("anthropic", "claude-opus-5", "medium"),
         summary=(
             "Compose the final HTML report from the reduced summary + "
             "statistics. Produces thousands of tokens of user-facing text."
@@ -609,6 +609,18 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         typical_output_tokens=16_000,
         min_context_recommended=131_072,
         rationale=(
+            "Upgraded sonnet-5 -> opus-5 2026-07-31 (D-062) on measured evidence, "
+            "not intuition. Synthesis was the ONE dimension that never moved: "
+            "6.33/10 across two independent blind rounds while attribution, "
+            "coverage and citation integrity all responded to prompt work. A "
+            "head-to-head on identical section input had both judges pick opus "
+            "(synthesis 9 vs 6-7, tension-handling 9 vs 6). The length prior was "
+            "tested and REJECTED: opus ran 2.6x longer AND ~1.4x denser in claims "
+            "per 100 words, so ~3.5x total payload. sonnet dropped ~8 debates "
+            "present in the corpus, named 18 tools vs 47, contradicted itself by "
+            "declaring a consensus it held the rebuttal to, and invented two "
+            "unverifiable host names. sonnet wins readability only (8 vs 7). "
+            "Costs +$4.55 on the 200-video benchmark ($7.65 -> $12.20). "
             "Long, polished output that the user reads top-to-bottom. "
             "Flagship + medium reasoning."
         ),

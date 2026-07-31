@@ -1758,3 +1758,48 @@ It was invisible while `gpt-5.4-nano` was the volume model (it produced ~217K, u
 **Consequences.** Extraction should no longer be budget-bound; the remaining delta versus the max-effort control is model quality alone. That is the correct place for the constraint, and it makes the pending S-1.14.10 re-judge interpretable - any residual quality gap can now be attributed to the model rather than to plumbing.
 
 **Linked initiatives / PRs.** S-1.14.13, S-1.14.10; amends D-056.
+
+
+## D-061 — S-1.14.10 re-judge: the intelligence gap after the fixes (2026-07-31)
+
+**Status:** accepted.
+
+**Context.** [D-055](#d-055--intelligence-delta-evaluation-methodology-production-input-replay-blind-ab-judging-2026-07-29) measured the production report at **3.5/10 against a max-effort control at 8.5/10, gap SEVERE**. Every structural cause of that verdict has since changed (D-056 funnel fix, D-057 Luna volume tier, D-060 extraction ratio), so the verdict was re-run on the same 200-video corpus with the same blind method.
+
+**Method.** Production report regenerated end-to-end through the shipped pipeline (48.8 min, `gpt-5.6-luna` @ ratio 0.40, sectioned compose). Blind-paired against the max-effort control, both normalised to plain text and capped at 180,000 chars so neither wins on medium or length. **Three independent judges** on different lenses (coverage/breadth, factual rigour with live retrieval, synthesis/insight) plus a mechanical citation-integrity audit. Orientation hidden from all four.
+
+**Result — the gap narrowed from SEVERE to MODERATE, unanimously.**
+
+| Lens | Production | Max-effort |
+|---|---|---|
+| Coverage / breadth | 7.33 | 9.00 |
+| Factual rigour | 7.17 | 8.50 |
+| Synthesis / insight | 6.33 | 8.67 |
+| **Mean** | **6.94** | **8.72** |
+
+Versus D-055's 3.5 vs 8.5. All three judges picked max-effort, all three classified the gap as `moderate` (was `severe`).
+
+**Pipeline metrics across the four variants** (same corpus throughout):
+
+| Variant | Words | Videos linked | Citations | Dead links |
+|---|---|---|---|---|
+| Shipped 2026-07-22 (starved) | 5,610 | 0 | 143 | 143 |
+| Fixed pipeline + nano | 25,692 | 125 | 1,058 | 0 |
+| **Fixed + luna @0.40 (current)** | **30,864** | **185** | **1,489** | 0 |
+| Max-effort control | 26,631 | 200 | 946 | 0 |
+
+Extraction went 1,451 items / 119 videos → **3,233 items / 189 videos** from the Luna swap plus lifting our own 0.20 ceiling — roughly 55% of the control's 5,861, up from 25%. Production now exceeds the control on words and citations; it trails on coverage (185 vs 200 videos) and on quantitative density (179 vs 229 percentage claims).
+
+**Zero fabrications in either report.** The audit resolved every title-bearing citation in both against the 200-video corpus; the only near-misses were inexact renderings of real titles.
+
+**What actually remains — three fixable defects, none of them model capability:**
+
+1. **Inline attribution (6 vs 9).** 75% of production's citations render as a bare `( 12:34 )` with no source named in the visible text. NOTE: this is not broken citation — all 1,489 anchors carry a correct video URL, and the control's anchors are *also* 100% bare timestamps; the control simply writes `Title — Channel · mm:ss` in the prose beside each one. Production even names more distinct channels overall (92/92 vs 91/92). This is a `COMPOSE_SECTION_PROMPT` wording fix.
+2. **Source-by-source digest instead of cross-source synthesis (5 vs 9 on insight).** Production's Key Facts are organised per channel ("Cole Medin's workflow", "IndyDevDan: ..."), which preserves fidelity but leaves cross-video comparison to the reader. The control organises into themes and then into named debates with each side given its strongest cited voice. Also a prompt fix.
+3. **No retry on transient provider errors.** The Speaker Contributions section was lost to an Anthropic `529 Overloaded`. The accounting worked — the failure was logged and disclosed in the report footer rather than shipping a silently short report — but compose should retry 5xx with backoff before giving up.
+
+A judge also flagged that production mis-states the corpus size and vintage in its framing, and garbles several proper names in its reference section.
+
+**Consequences.** The claim "the defaults are far behind a premium model" is no longer supported: on identical input the measured mean is 6.94 vs 8.72, and the three remaining defects are prompt/retry work rather than model tier. Whether to close the rest by prompt work or by moving `report_compose` up a tier should be decided AFTER the prompt fixes, since two of the three gaps are addressable for free.
+
+**Linked initiatives / PRs.** S-1.14.10 (closed), S-1.14.14 (new); follows D-056 / D-057 / D-060.

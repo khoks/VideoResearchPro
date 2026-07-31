@@ -56,6 +56,15 @@ PREFERRED_CHANNEL_FETCH_LIMIT = 50
 # line is ~90-120 tokens, so 400 candidates is ~48K tokens worst case — safe
 # under any modern context window and below context-rot territory. Pools
 # larger than this run a batched tournament (see ``rank_and_curate``).
+# S-1.14.13 selection quotas. Measured motivation (D-057 reference pool):
+# only 12 of 30 preferred channels reached the corpus even though 14 of the
+# 18 missing ones had candidates in the pool, while one NON-preferred channel
+# took 10.5% of the 200 picks. The rank prompt already asks for preferred
+# coverage and does not deliver it, so these are enforced in code.
+_MAX_CHANNEL_SHARE = 0.08          # no channel above ~8% of the selection
+_MIN_PER_CHANNEL_CAP = 3           # ...but always allow at least 3
+_MIN_SUBSTANTIVE_SECONDS = 120     # Shorts-length clips carry no transcript
+
 RANK_BATCH_MAX_CANDIDATES = 400
 
 # Round-1 tournament batches advance their proportional share of the target
@@ -393,18 +402,22 @@ def execute_searches(state: SearchAgentState) -> dict:
             v["channel_subscribers"] = subs.get(v.get("channel_id"))
 
     # Fine-grained duration filtering using minute bounds.
+    preferred_id_set = set(preferred_ids or [])
     filtered = []
+    dropped_shorts = 0
     for v in all_videos.values():
-        dur_min = v.get("duration_seconds", 0) / 60
-        if min_dur is not None and dur_min < min_dur:
-            continue
-        if max_dur is not None and dur_min > max_dur:
-            continue
-        filtered.append(v)
+        keep, was_short = _passes_duration_filter(
+            v, min_dur, max_dur, preferred_id_set
+        )
+        if was_short:
+            dropped_shorts += 1
+        if keep:
+            filtered.append(v)
 
     logger.info(
-        "execute_searches: %d videos after merge+filter (broad+preferred)",
+        "execute_searches: %d videos after merge+filter (broad+preferred)%s",
         len(filtered),
+        f"; dropped {dropped_shorts} sub-{_MIN_SUBSTANTIVE_SECONDS}s clips" if dropped_shorts else "",
     )
     return {
         "discovered_videos": filtered,
@@ -528,6 +541,132 @@ def _run_tournament_round(
     return winners
 
 
+def _passes_duration_filter(
+    v: dict,
+    min_dur: int | None,
+    max_dur: int | None,
+    preferred_id_set: set,
+) -> tuple[bool, bool]:
+    """Duration gate for a discovered candidate.
+
+    Returns ``(keep, dropped_as_short)``.
+
+    T-1.14.13.4: when the user set no floor of their own, Shorts-length clips
+    are pruned — they survive ranking on engagement signals and then carry a
+    few seconds of transcript each.
+
+    **Preferred channels are exempt.** Measured on the D-057 reference pool:
+    applying the floor to them too cost 6 of 29 preferred channels their only
+    candidates, buying ~6% more corpus minutes. An explicit "include this
+    creator" outranks an inferred "prefer substantive", so the filter only
+    prunes candidates the user did not name.
+    """
+    dur_s = v.get("duration_seconds", 0) or 0
+    dur_min = dur_s / 60
+    if min_dur is not None and dur_min < min_dur:
+        return False, False
+    if max_dur is not None and dur_min > max_dur:
+        return False, False
+    if (
+        min_dur is None
+        and 0 < dur_s < _MIN_SUBSTANTIVE_SECONDS
+        and v.get("channel_id") not in preferred_id_set
+    ):
+        return False, True
+    return True, False
+
+
+def _channel_key(v: dict) -> str:
+    """Stable channel identity for quota accounting."""
+    return str(v.get("channel_id") or v.get("channel_name") or "")
+
+
+def _enforce_selection_quotas(
+    curated: list[dict],
+    full_pool: list[dict],
+    preferred_ids: list[str],
+    target: int,
+) -> tuple[list[dict], dict]:
+    """Guarantee preferred-channel coverage and cap channel concentration.
+
+    S-1.14.13. ``RANK_AND_CURATE_PROMPT`` already tells the model to prefer
+    preferred-channel videos, and it does not comply reliably: on the D-057
+    reference pool only **12 of 30** preferred channels reached the corpus
+    while **14 of the 18 missing ones had candidates sitting in the rejected
+    pool**, and one non-preferred channel took 10.5% of the selection. A
+    prompt cannot make a guarantee; this pass can.
+
+    Merit ordering is still the model's — this only reserves a slot for each
+    preferred channel that actually has a candidate, and stops any single
+    channel from crowding out the rest. Quotas are drawn from the FULL pool,
+    not the post-tournament survivors, because a preferred channel can be
+    eliminated in an early round.
+    """
+    if target <= 0 or not full_pool:
+        return curated[:target], {}
+
+    preferred = {p for p in (preferred_ids or []) if p}
+    per_channel_cap = max(_MIN_PER_CHANNEL_CAP, int(target * _MAX_CHANNEL_SHARE))
+
+    # The model's ordering is the merit signal; pool order is the fallback.
+    rank_of = {v.get("video_id"): i for i, v in enumerate(curated)}
+    ordered_pool = sorted(
+        full_pool, key=lambda v: rank_of.get(v.get("video_id"), 10**6)
+    )
+
+    chosen: list[dict] = []
+    chosen_ids: set[str] = set()
+    per_channel: dict[str, int] = {}
+
+    def _take(v: dict) -> bool:
+        vid = v.get("video_id")
+        if not vid or vid in chosen_ids:
+            return False
+        chosen.append(v)
+        chosen_ids.add(vid)
+        per_channel[_channel_key(v)] = per_channel.get(_channel_key(v), 0) + 1
+        return True
+
+    # Pass 1 — one slot for each preferred channel that has any candidate,
+    # taking that channel's best-ranked video.
+    covered: set[str] = set()
+    if preferred:
+        for v in ordered_pool:
+            if len(chosen) >= target:
+                break
+            ch = _channel_key(v)
+            if ch in preferred and ch not in covered:
+                if _take(v):
+                    covered.add(ch)
+
+    # Pass 2 — fill on merit, respecting the per-channel cap.
+    for v in ordered_pool:
+        if len(chosen) >= target:
+            break
+        if per_channel.get(_channel_key(v), 0) >= per_channel_cap:
+            continue
+        _take(v)
+
+    # Pass 3 — if the cap left us short (few channels available), relax it
+    # rather than return an under-filled selection.
+    if len(chosen) < target:
+        for v in ordered_pool:
+            if len(chosen) >= target:
+                break
+            _take(v)
+
+    available_preferred = {
+        _channel_key(v) for v in full_pool if _channel_key(v) in preferred
+    }
+    notes = {
+        "preferred_available": len(available_preferred),
+        "preferred_covered": len(covered),
+        "per_channel_cap": per_channel_cap,
+        "max_channel_count": max(per_channel.values()) if per_channel else 0,
+    }
+    return chosen[:target], notes
+
+
 def rank_and_curate(state: SearchAgentState) -> dict:
     """Use LLM to rank and select the best videos.
 
@@ -541,9 +680,28 @@ def rank_and_curate(state: SearchAgentState) -> dict:
     """
     videos = state.get("discovered_videos", [])
     target = state["num_videos"]
+    preferred_ids = state.get("preferred_channel_ids") or []
 
     if len(videos) <= target:
         return {"curated_videos": videos}
+
+    def _finalize(picked: list[dict]) -> dict:
+        """Apply the S-1.14.13 quotas to whatever ranking produced."""
+        final, notes = _enforce_selection_quotas(picked, videos, preferred_ids, target)
+        if notes:
+            logger.info(
+                "rank_and_curate: quotas — preferred %d/%d covered, "
+                "per-channel cap %d, largest channel %d of %d picks",
+                notes["preferred_covered"], notes["preferred_available"],
+                notes["per_channel_cap"], notes["max_channel_count"], len(final),
+            )
+            missed = notes["preferred_available"] - notes["preferred_covered"]
+            if missed > 0:
+                logger.warning(
+                    "rank_and_curate: %d preferred channel(s) had candidates but "
+                    "could not be fitted into %d slots", missed, target,
+                )
+        return {"curated_videos": final}
 
     llm = get_llm_for("search_rank_and_curate", temperature=0.0)
     topic = state["topic"]
@@ -572,20 +730,22 @@ def rank_and_curate(state: SearchAgentState) -> dict:
     # Final (or only) ranking call — asks for exactly `target` ids.
     selected_ids = _invoke_rank_prompt(llm, topic, search_instructions, pool, target)
     if selected_ids is not None:
-        id_set = set(selected_ids[:target])
-        curated = [v for v in pool if v["video_id"] in id_set]
-        # Fill remaining slots if LLM didn't select enough
+        # Preserve the model's ORDER — it is the merit signal the quota pass
+        # ranks against (the old code returned pool order, discarding it).
+        by_id = {v["video_id"]: v for v in pool}
+        curated = [by_id[i] for i in selected_ids[:target] if i in by_id]
         if len(curated) < target:
+            chosen = {v["video_id"] for v in curated}
             for v in pool:
-                if v["video_id"] not in id_set:
+                if v["video_id"] not in chosen:
                     curated.append(v)
                     if len(curated) >= target:
                         break
-        return {"curated_videos": curated}
+        return _finalize(curated)
 
     # Final-call parse failure: head-of-list fill from the (already
     # tournament-filtered) pool to exactly `target`.
-    return {"curated_videos": pool[:target]}
+    return _finalize(pool[:target])
 
 
 def build_search_graph() -> StateGraph:

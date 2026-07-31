@@ -482,6 +482,60 @@ def _dispatch_and_store_non_video_sources(
     return stored
 
 
+def _persist_search_candidates(
+    db, job_id: str, pool: list[dict], curated: list[dict]
+) -> None:
+    """Store the full search candidate pool with a ``selected`` flag (S-1.14.6).
+
+    Rejected candidates were previously discarded, which made selection
+    quality unmeasurable — D-055 could not re-rank a real job because the
+    ~217 rejects of a 200-video job no longer existed anywhere. Best-effort
+    by design: a diagnostic write must never fail a job.
+    """
+    if not pool:
+        return
+    try:
+        from app.models.job_search_candidate import JobSearchCandidate
+
+        selected_ids = {
+            v.get("video_id") for v in (curated or []) if v.get("video_id")
+        }
+        rows = []
+        for v in pool:
+            vid = v.get("video_id")
+            if not vid:
+                continue
+            rows.append(
+                JobSearchCandidate(
+                    job_id=job_id,
+                    video_id=vid,
+                    title=(v.get("title") or "")[:500] or None,
+                    channel_name=(v.get("channel_name") or "")[:255] or None,
+                    channel_id=(v.get("channel_id") or "")[:64] or None,
+                    published_at=(str(v.get("published_at")) or "")[:64] or None,
+                    duration_seconds=v.get("duration_seconds"),
+                    selected=vid in selected_ids,
+                    payload_json=json.dumps(v, default=str),
+                )
+            )
+        if rows:
+            db.bulk_save_objects(rows)
+            db.commit()
+            logger.info(
+                "[job:%s] Persisted %d search candidates (%d selected, %d rejected)",
+                job_id, len(rows), len(selected_ids),
+                max(0, len(rows) - len(selected_ids)),
+            )
+    except Exception:
+        logger.exception(
+            "[job:%s] Persisting search candidates failed; job continues", job_id
+        )
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
 def _build_video_metadata(video: Document, language: str | None) -> dict:
     """Build the metadata dict passed to ``chunk_transcript`` for a Document row.
 
@@ -632,6 +686,7 @@ def execute_topic_job(self, job_id: str) -> None:
                 job.updated_at = datetime.now(timezone.utc)
                 db.commit()
 
+            candidate_pool: list[dict] = []
             with llm_service.byok_context(job.tenant_id, db):
                 curated_videos, queries_used, unresolved_channels = run_search_agent(
                     topic=job.topic,
@@ -650,12 +705,14 @@ def execute_topic_job(self, job_id: str) -> None:
                         else []
                     ),
                     progress_callback=_search_progress,
+                    candidates_out=candidate_pool,
                 )
             logger.info(
                 f"[job:{job_id}] Search Agent complete: found "
                 f"{len(curated_videos)} candidate videos "
                 f"({len(unresolved_channels)} unresolved channel hints)"
             )
+            _persist_search_candidates(db, job_id, candidate_pool, curated_videos)
 
             if queries_used:
                 job.search_queries_used = json.dumps(queries_used)

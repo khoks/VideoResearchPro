@@ -115,27 +115,47 @@ SECTION: {section_title}
 Source material for this section ({item_count} items{part_note}):
 {material}
 
-Requirements:
-- Write ONLY this section's HTML. Start with <h2>{section_title}</h2>{heading_note}
-- Cover the material comprehensively. Every distinct item above deserves to be
-  represented — group related items under <h3> sub-headings where that aids the
-  reader, but do NOT collapse many specific claims into one vague sentence.
+STRUCTURE — organise by IDEA, never by source:
+- Group the material into <h3> sub-sections named for the THEME, DEBATE or
+  CLAIM they cover (e.g. "Context rot and the practical window",
+  "Spec-driven development and its critics").
+- NEVER title a sub-section after a channel or a speaker
+  (not "Cole Medin's workflow", not "IndyDevDan: agent teams"). A reader
+  should be able to compare what several sources say about one idea without
+  reassembling it themselves.
+- When several sources touch the same point, synthesise them into one passage
+  and cite each. When they disagree, say so explicitly and give each side its
+  strongest cited evidence rather than averaging them away.
+
+ATTRIBUTION — the source must be readable, not just clickable:
+- Every claim carries its source IN THE VISIBLE TEXT, in this form:
+    Video Title — Channel Name (<a href="VIDEO_URL&t=SECONDS" target="_blank">MM:SS</a>)
+- A bare timestamp such as "(12:34)" is NOT acceptable: readers scanning the
+  page cannot tell whose claim it is, and the report becomes untraceable when
+  printed or quoted. The link is in addition to the label, not instead of it.
+- Where the item has no video_url, still name the title and channel and omit
+  only the anchor.
+- Never attribute one channel's material to another, and never invent a
+  speaker or channel name that is not in the material above.
+
+SUBSTANCE:
+- Cover the material comprehensively. Every distinct item deserves to be
+  represented; do not collapse many specific claims into one vague sentence.
 - Preserve specificity: named models, tools, versions, organizations, numbers,
-  percentages and dates are the value of this report. Never round away a figure
+  percentages and dates ARE the value of this report. Never round a figure away
   or replace a named entity with a generic noun.
-- Attribute every claim. Include a clickable timestamp link wherever the item
-  supplies one: <a href="VIDEO_URL&t=SECONDS" target="_blank">TIMESTAMP_DISPLAY</a>
-  Omit the link only when the item has no video_url.
-- Where sources disagree, present the disagreement and cite both sides rather
-  than flattening it.
+
+FORMAT:
+- Write ONLY this section's HTML. Start with <h2>{section_title}</h2>{heading_note}
 - No <html>, <head>, <body>, <style> or <script> tags. Semantic HTML only
   (h2, h3, p, ul, li, table) with CSS classes.
 - Output the HTML only — no preamble, no commentary about your process.
 """
 
+
 COMPOSE_SUMMARY_PROMPT = """You are writing the Executive Summary for a research report on: {topic}
 
-Corpus statistics:
+VERIFIED corpus statistics — these numbers are computed, not estimated:
 {statistics}
 
 The report's body sections (already written) cover:
@@ -143,15 +163,21 @@ The report's body sections (already written) cover:
 
 Write the Executive Summary:
 - Start with <h2>Executive Summary</h2>
-- State what the corpus actually contains and the most important findings across
-  it — the through-lines, the tensions between sources, and what a reader should
-  take away. Lead with substance, not throat-clearing.
+- Any figure you give for corpus size, video count, word count or date range
+  MUST come from the verified statistics above, quoted exactly. Do NOT estimate,
+  round, or infer these numbers, and do not describe the corpus's vintage or
+  scale beyond what those statistics state. Inventing a total is the single
+  worst failure this section can make.
+- State the most important findings ACROSS the corpus — the through-lines, the
+  tensions between sources, and what a reader should take away. Lead with
+  substance, not throat-clearing.
 - Be concrete: name the models, tools, organizations and figures that matter.
-- Do NOT claim breadth the body does not support. If the body draws on a subset
-  of the corpus, describe what IS covered rather than asserting totals.
+- Do NOT claim breadth the body does not support. If the body draws on a subset,
+  describe what IS covered rather than asserting totals.
 - 4-8 paragraphs. No <html>/<head>/<body> tags. Semantic HTML only.
 - Output the HTML only.
 """
+
 
 # Per-section guidance + which consolidated key feeds each. Order here is the
 # order sections appear in the report body.

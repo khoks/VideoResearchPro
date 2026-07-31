@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 
 import tiktoken
 from langchain_core.messages import HumanMessage
@@ -538,8 +539,10 @@ def compose_report(state: ReportAgentState) -> dict:
                 heading_note=heading_note,
             )
             try:
-                llm = get_llm_for("report_compose", temperature=0.2, max_tokens=max_tokens)
-                html = response_text(llm.invoke([HumanMessage(content=prompt)]))
+                html = _invoke_with_retry(
+                    "report_compose", prompt, max_tokens=max_tokens, temperature=0.2,
+                    label=f"compose_report[{spec['title']}{part_note}]",
+                )
                 parts.append(html)
                 digest.append(f"{spec['title']}{part_note}: {len(group)} items")
             except Exception as e:
@@ -554,16 +557,16 @@ def compose_report(state: ReportAgentState) -> dict:
     # Executive summary LAST, so it summarizes what was actually written.
     summary_html = ""
     try:
-        summary_llm = get_llm_for(
-            "report_compose", temperature=0.2, max_tokens=min(4_000, ceiling)
-        )
-        summary_html = response_text(summary_llm.invoke([HumanMessage(
-            content=COMPOSE_SUMMARY_PROMPT.format(
+        summary_html = _invoke_with_retry(
+            "report_compose",
+            COMPOSE_SUMMARY_PROMPT.format(
                 topic=topic,
                 statistics=json.dumps(statistics, indent=2),
                 section_digest="\n".join(f"- {d}" for d in digest),
-            )
-        )]))
+            ),
+            max_tokens=min(4_000, ceiling), temperature=0.2,
+            label="compose_report[executive summary]",
+        )
     except Exception as e:
         logger.error("compose_report: executive summary failed (%s)", e)
 
@@ -628,6 +631,50 @@ def _strip_broken_links(html: str) -> tuple[str, int]:
     """
     fixed, n = _BROKEN_ANCHOR.subn(r"\1", html)
     return fixed, n
+
+
+# S-1.14.14: transient provider failures cost whole report sections. A single
+# Anthropic 529 ("Overloaded") lost the Speaker Contributions section of the
+# D-061 evaluation run — an expensive, fully recoverable loss.
+_TRANSIENT_MARKERS = (
+    "429", "500", "502", "503", "529",
+    "overloaded", "rate limit", "timeout", "timed out",
+    "temporarily unavailable", "service unavailable", "connection reset",
+)
+_COMPOSE_RETRIES = 3
+_COMPOSE_BACKOFF_SECONDS = (5, 20, 45)
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Whether ``exc`` looks like a retryable provider hiccup rather than a
+    permanent error (bad request, auth, context overflow)."""
+    msg = str(exc).lower()
+    if "context" in msg and ("length" in msg or "window" in msg):
+        return False
+    if "invalid" in msg or "authentication" in msg or "permission" in msg:
+        return False
+    return any(m in msg for m in _TRANSIENT_MARKERS)
+
+
+def _invoke_with_retry(use_case: str, prompt: str, *, max_tokens: int, temperature: float,
+                       label: str) -> str:
+    """Invoke ``use_case`` with backoff on transient provider errors."""
+    last: Exception | None = None
+    for attempt in range(_COMPOSE_RETRIES):
+        try:
+            llm = get_llm_for(use_case, temperature=temperature, max_tokens=max_tokens)
+            return response_text(llm.invoke([HumanMessage(content=prompt)]))
+        except Exception as e:  # noqa: BLE001 - classified below
+            last = e
+            if attempt == _COMPOSE_RETRIES - 1 or not _is_transient(e):
+                raise
+            wait = _COMPOSE_BACKOFF_SECONDS[min(attempt, len(_COMPOSE_BACKOFF_SECONDS) - 1)]
+            logger.warning(
+                "%s: transient provider error (%s); retrying in %ds (attempt %d/%d)",
+                label, str(e)[:120], wait, attempt + 2, _COMPOSE_RETRIES,
+            )
+            time.sleep(wait)
+    raise last if last else RuntimeError("unreachable")
 
 
 def _split_items_to_budget(items: list, budget: int) -> list[list]:

@@ -32,9 +32,11 @@ _MEDIA_TYPE = "application/x-ndjson"
 router = APIRouter(
     prefix="/exports",
     tags=["exports"],
-    # All four endpoints are read-only downloads — query-token fallback is OK.
-    dependencies=[Depends(get_user_from_query_or_header)],
 )
+
+# S-5.7.1: the router-level dependency only proved you were logged in; every
+# endpoint then streamed EVERY tenant's data. The user is now bound per
+# endpoint so the identity actually reaches the query layer.
 
 
 def _attachment(filename: str) -> dict[str, str]:
@@ -43,36 +45,48 @@ def _attachment(filename: str) -> dict[str, str]:
 
 
 @router.get("/qa-dataset/openai.jsonl")
-def export_qa_openai(db: Session = Depends(get_db)) -> StreamingResponse:
+def export_qa_openai(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_user_from_query_or_header),
+) -> StreamingResponse:
     return StreamingResponse(
-        dataset_service.stream_qa_openai(db),
+        dataset_service.stream_qa_openai(db, current_user.id),
         media_type=_MEDIA_TYPE,
         headers=_attachment("qa-dataset-openai.jsonl"),
     )
 
 
 @router.get("/qa-dataset/tuple.jsonl")
-def export_qa_tuple(db: Session = Depends(get_db)) -> StreamingResponse:
+def export_qa_tuple(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_user_from_query_or_header),
+) -> StreamingResponse:
     return StreamingResponse(
-        dataset_service.stream_qa_tuple(db),
+        dataset_service.stream_qa_tuple(db, current_user.id),
         media_type=_MEDIA_TYPE,
         headers=_attachment("qa-dataset-tuple.jsonl"),
     )
 
 
 @router.get("/knowledge-dataset/openai.jsonl")
-def export_knowledge_openai(db: Session = Depends(get_db)) -> StreamingResponse:
+def export_knowledge_openai(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_user_from_query_or_header),
+) -> StreamingResponse:
     return StreamingResponse(
-        dataset_service.stream_knowledge_openai(db),
+        dataset_service.stream_knowledge_openai(db, current_user.id),
         media_type=_MEDIA_TYPE,
         headers=_attachment("knowledge-dataset-openai.jsonl"),
     )
 
 
 @router.get("/knowledge-dataset/tuple.jsonl")
-def export_knowledge_tuple(db: Session = Depends(get_db)) -> StreamingResponse:
+def export_knowledge_tuple(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_user_from_query_or_header),
+) -> StreamingResponse:
     return StreamingResponse(
-        dataset_service.stream_knowledge_tuple(db),
+        dataset_service.stream_knowledge_tuple(db, current_user.id),
         media_type=_MEDIA_TYPE,
         headers=_attachment("knowledge-dataset-tuple.jsonl"),
     )

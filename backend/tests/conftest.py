@@ -130,10 +130,16 @@ def unauthenticated_client(db):
 
 
 @pytest.fixture
-def seeded_global_library(db):
-    """Pre-populate the global `videos` and `channels` tables with synthetic data.
+def seeded_global_library(db, test_user):
+    """Pre-populate the global `videos` and `channels` tables with synthetic data,
+    OWNED by ``test_user``.
 
     Shared by any test that needs an existing library without re-creating it.
+
+    S-5.7.1: `documents` is a shared cache with no tenant of its own; ownership
+    is derived from the jobs that selected a document. Library listings are now
+    scoped that way, so seeded documents must be linked to a job owned by the
+    authenticated test user or they are (correctly) invisible.
     """
     from app.models.channel import Channel
     from app.models.document import Document
@@ -170,9 +176,29 @@ def seeded_global_library(db):
         )
     db.add_all(videos)
     db.commit()
+    # Ownership: one job for the authenticated test user, selecting all seeded
+    # documents. Without this the library listing correctly returns nothing.
+    from app.models.job import Job
+    from app.models.job_video import JobVideo
+
+    job = Job(
+        id="seeded-library-job",
+        tenant_id=test_user.id,
+        job_type="topic",
+        topic="Seeded library job",
+        status="completed",
+        created_at=now,
+    )
+    db.add(job)
+    db.commit()
+    db.add_all(
+        [JobVideo(job_id=job.id, video_id=v.video_id, approved=True) for v in videos]
+    )
+    db.commit()
+
     for v in videos:
         db.refresh(v)
     for c in channels:
         db.refresh(c)
 
-    return {"videos": videos, "channels": channels}
+    return {"videos": videos, "channels": channels, "job": job}

@@ -7,6 +7,7 @@ from app.models.channel import Channel
 # `docs/migration-channels-to-creators.md`.
 from app.models.creator import Creator
 from app.models.document import Document
+from app.models.document_visibility import DocumentVisibility
 from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.models.job_search_candidate import JobSearchCandidate
@@ -31,6 +32,7 @@ __all__ = [
     "Channel",
     "Creator",
     "Document",
+    "DocumentVisibility",
     "Job",
     "JobVideo",
     "JobSearchCandidate",

@@ -83,10 +83,16 @@ def _truncate_to_tokens(text: str, max_tokens: int) -> str:
 # ``MODEL_MAX_OUTPUT_TOKENS``), so the caps were self-inflicted.
 
 # Share of a batch's INPUT tokens we allow the extraction to occupy. The
-# E-1.14 max-effort control extracted at ~44% (608,718 out of 1,393,656);
-# 0.20 is deliberately below that — enough headroom that extraction is never
-# the binding constraint, without paying for exhaustive restatement.
-_MAP_EXTRACTION_RATIO = 0.20
+# E-1.14 max-effort control extracted at ~44% (608,718 out of 1,393,656).
+#
+# Raised 0.20 -> 0.40 on 2026-07-30 (S-1.14.13). At 0.20 we were capping the
+# whole run at 288K extraction tokens against the control's 609K — i.e. we
+# had re-imposed a budget ceiling below what the corpus supports, which is
+# the same class of defect D-056 set out to remove. With the volume tier now
+# on gpt-5.6-luna at $1.20/M output (D-057), closing that gap costs roughly
+# $0.34 on the 200-video benchmark. Still below the control so we are not
+# paying for exhaustive restatement.
+_MAP_EXTRACTION_RATIO = 0.40
 
 # Floor so tiny batches still get a workable completion budget.
 _MIN_COMPLETION_TOKENS = 3_000

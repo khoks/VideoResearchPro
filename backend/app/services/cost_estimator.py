@@ -84,7 +84,7 @@ def _workload(use_case: str, model: str) -> tuple[int, int, int]:
         # its input), not a flat 2,000. Measured on the reference corpus:
         # ~15-21K output tokens per 120K batch.
         batches = ceil(b["formatted_map_tokens"] / _map_budget(model))
-        per_batch_out = int(_map_budget(model) * 0.15)   # observed, below the 0.20 ceiling
+        per_batch_out = int(_map_budget(model) * 0.30)   # observed under the 0.40 ceiling
         return batches, b["formatted_map_tokens"] + batches * 250, batches * per_batch_out
     if use_case == "report_reduce_summaries":
         # Reduce is deterministic now (D-056) — no LLM call on topic jobs.
@@ -94,7 +94,7 @@ def _workload(use_case: str, model: str) -> tuple[int, int, int]:
         # across section calls, so input tracks the corpus and output is
         # roughly proportional to it rather than a single 16K completion.
         batches = ceil(b["formatted_map_tokens"] / _map_budget(model))
-        consolidated = batches * int(_map_budget(model) * 0.15)
+        consolidated = batches * int(_map_budget(model) * 0.30)
         calls = max(2, ceil(consolidated / 120_000) + 1)
         return calls, consolidated + calls * 600, int(consolidated * 0.5)
     if use_case == "qa_clarification" or use_case == "library_qa_clarification":

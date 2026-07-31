@@ -1712,3 +1712,49 @@ Reduce logged `lossless merge fits (217,115 tokens); 1,451 items across 119 vide
 **Residual gap.** Coverage is 125/200 videos, not 200 — because *map extraction* covered only 119 videos. That run used gpt-5.4-nano; per [D-057](#d-057--volume-tier-moves-to-gpt-56-luna-selection-is-now-measurable-2026-07-30) luna extracts 1.6-2x more items with exact attribution, so the next run should improve further. The binding constraint has moved from the pipeline to the extraction model, which is the correct place for it to be.
 
 **Linked initiatives / PRs.** S-1.14.10 (partially answered), S-1.14.8.
+
+
+## D-059 — Selection quotas: preferred-channel guarantee + concentration cap (2026-07-30)
+
+**Status:** accepted.
+
+**Context.** S-1.14.6 made selection measurable for the first time by persisting the rejected candidate pool. A fresh search on the reference criteria captured **651 candidates -> 200 selected / 451 rejected**, and the rejects indicted the ranker: only **12 of 29** resolvable preferred channels reached the corpus, while **14 of the 18 missing ones had candidates sitting in the rejected pool** (@fireship 7, @matthew_berman 7, @theprimetimeagen 7, @openai 6, @dwarkeshpatel 5 ...). Meanwhile **IBM Technology - not a preferred channel - took 10.5%** of the 200 picks. This was not a discovery failure: the videos were found, then discarded.
+
+Critically, `RANK_AND_CURATE_PROMPT` *already* instructs the model to prefer preferred-channel videos. It does not comply reliably. A prompt cannot make a guarantee.
+
+**Decision.** Enforce two selection invariants deterministically, after ranking:
+
+1. **Preferred-channel guarantee** - every preferred channel with at least one candidate gets a slot, taking that channel's best-ranked video. Quotas draw from the FULL pool, not the post-tournament survivors, because a preferred channel can be eliminated in an early round.
+2. **Concentration cap** - no channel exceeds `max(3, 8% of target)`. If too few channels exist to fill the target under the cap, it relaxes rather than under-delivering.
+
+Merit ordering remains the model's; quotas only reserve slots and cap crowding. `rank_and_curate` now also preserves the model's returned ORDER (the previous code returned pool order, silently discarding the ranking signal).
+
+**Measured effect on the real 651-candidate pool:**
+
+| | Before | After |
+|---|---|---|
+| Preferred channels covered | 12 / 29 | **29 / 29** |
+| Largest channel share | 21 (10.5%) | **16 (8.0%)** |
+| Distinct channels | 86 | **103** |
+
+**Shorts filter - scoped down by measurement.** Sub-120s clips are pruned when the user set no duration floor of their own, because they survive ranking on engagement signals and carry a few seconds of transcript. **Preferred channels are exempt**: applying the floor to them too cost **6 of 29** preferred channels their only candidates in exchange for ~6% more corpus minutes. An explicit "include this creator" outranks an inferred "prefer substantive".
+
+**Rejected: the non-English title filter** originally scoped in T-1.14.13.4. It contradicts the product's deliberate multilingual design (multilingual embeddings, `task="transcribe"` preserving the speaker's language, an `answer_language` parameter). Filtering non-English candidates at search time would silently undo that.
+
+**Consequences.** Selection is now measurable *and* enforced. Three existing ranking tests asserted byte-equality with the model's returned ids; they encoded the pre-quota contract and were updated (their fixture puts 1,000 videos on 7 channels, so the cap necessarily reshuffles).
+
+**Linked initiatives / PRs.** S-1.14.13; enabled by S-1.14.6.
+
+## D-060 — Extraction ratio raised 0.20 -> 0.40 (2026-07-30)
+
+**Status:** accepted.
+
+**Context.** D-056 replaced hardcoded completion caps with budgets derived from the work, using `_MAP_EXTRACTION_RATIO = 0.20` - deliberately below the E-1.14 max-effort control's measured 44%. Reviewing the full picture after D-057, that choice was itself a ceiling: 0.20 caps a 200-video run at **288,000 extraction tokens against the control's 608,718**, so even a perfect model could emit less than half of what the corpus supports. That is the same class of defect D-056 set out to remove, re-introduced one layer up.
+
+It was invisible while `gpt-5.4-nano` was the volume model (it produced ~217K, under even its 288K allowance - model-limited, not budget-limited). Moving to `gpt-5.6-luna`, which measured 1.6-2x nano's yield, would have made the ratio the binding constraint immediately.
+
+**Decision.** Raise to **0.40** - run ceiling 576,000 tokens, effectively matching the control. Still below 0.44 so we are not paying for exhaustive restatement. At Luna's $1.20/M output this costs ~**$0.34** on the 200-video benchmark; the full benchmark estimate moves **$5.88 -> $7.65**.
+
+**Consequences.** Extraction should no longer be budget-bound; the remaining delta versus the max-effort control is model quality alone. That is the correct place for the constraint, and it makes the pending S-1.14.10 re-judge interpretable - any residual quality gap can now be attributed to the model rather than to plumbing.
+
+**Linked initiatives / PRs.** S-1.14.13, S-1.14.10; amends D-056.

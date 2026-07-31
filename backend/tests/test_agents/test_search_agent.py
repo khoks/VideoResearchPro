@@ -475,7 +475,12 @@ def test_rank_and_curate_tournament_1000_pool_target_200():
 
     curated_ids = [v["video_id"] for v in result["curated_videos"]]
     assert len(curated_ids) == target
-    assert curated_ids == final_ids
+    # S-1.14.13: selection quotas run after ranking, so the final list is
+    # no longer byte-identical to the model's ids — `_make_pool` puts 1,000
+    # videos on just 7 channels, so the concentration cap necessarily
+    # reshuffles. The tournament mechanics above are what this test guards.
+    assert set(curated_ids) <= {v["video_id"] for v in pool}
+    assert len(set(curated_ids)) == target
 
 
 def test_rank_and_curate_batch_parse_failure_advances_head_of_list_share():
@@ -510,7 +515,12 @@ def test_rank_and_curate_batch_parse_failure_advances_head_of_list_share():
 
     curated_ids = [v["video_id"] for v in result["curated_videos"]]
     assert len(curated_ids) == target
-    assert curated_ids == final_ids
+    # S-1.14.13: selection quotas run after ranking, so the final list is
+    # no longer byte-identical to the model's ids — `_make_pool` puts 1,000
+    # videos on just 7 channels, so the concentration cap necessarily
+    # reshuffles. The tournament mechanics above are what this test guards.
+    assert set(curated_ids) <= {v["video_id"] for v in pool}
+    assert len(set(curated_ids)) == target
 
 
 def test_rank_and_curate_final_parse_failure_fills_from_winners_head():
@@ -536,7 +546,12 @@ def test_rank_and_curate_final_parse_failure_fills_from_winners_head():
     expected = (batch1_ids + batch2_ids + batch3_ids)[:target]
     curated_ids = [v["video_id"] for v in result["curated_videos"]]
     assert len(curated_ids) == target
-    assert curated_ids == expected
+    # S-1.14.13: selection quotas run after ranking, so the final list is
+    # no longer byte-identical to the model's ids — `_make_pool` puts 1,000
+    # videos on just 7 channels, so the concentration cap necessarily
+    # reshuffles. The tournament mechanics above are what this test guards.
+    assert set(curated_ids) <= {v["video_id"] for v in pool}
+    assert len(set(curated_ids)) == target
 
 
 def test_run_search_agent_end_to_end(fake_videos):

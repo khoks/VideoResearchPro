@@ -22,9 +22,20 @@ Extract all substantive knowledge present in this batch into FOUR lists:
 4. facts — concrete factual claims (measurable, verifiable, or attributable statements)
 
 Rules:
-- Preserve proper nouns (people, places, organizations, product names) in the
-  ORIGINAL script from the transcript. Do not transliterate them. If the
-  transcript is in a non-English language, keep the original names as written.
+- OUTPUT LANGUAGE IS ENGLISH. Whatever the transcript's language, every item
+  you emit is written in English. This is an extraction step feeding an
+  English report — a Devanagari or Arabic-script item here propagates all the
+  way to the final output.
+- Proper nouns (people, places, organizations, product names) keep their
+  ORIGINAL script, followed by a romanised form and, where the name carries
+  meaning the reader needs, a gloss:
+  ``महाभारत (Mahābhārata)`` — or ``महाभारत (Mahābhārata, "great epic of the
+  Bharatas")`` when the meaning matters.
+- Direct quotes, verses and formal speech keep all three: the original script,
+  a romanised transliteration, then an English translation —
+  ``अहिंसा परमो धर्मः (ahiṃsā paramo dharmaḥ) — "non-violence is the highest
+  virtue"``. Authenticity and accessibility both matter here; do not collapse
+  to one form.
 - Keep each item concise but self-contained (one clause or short sentence).
 - Do not invent information. Every item must be grounded in this batch.
 - If the speaker clearly speculates or hedges ("I think", "probably"), prefix
@@ -67,10 +78,16 @@ STYLE REQUIREMENTS (non-negotiable):
 - Mark speculation EXPLICITLY. If a claim is speculative, hedged, or
   forward-looking, prefix the sentence with "Speculation: " or wrap the
   speculative portion in a sentence clearly labeled as such.
-- Preserve proper nouns (people, places, organizations, product names) in
-  the ORIGINAL script from the transcript. If the source language is not
-  English, keep the original-script names intact rather than transliterating
-  or translating them.
+- THE REPORT IS WRITTEN IN ENGLISH, whatever the source language.
+- Proper nouns keep their ORIGINAL script followed by a romanised form:
+  ``महाभारत (Mahābhārata)``. Where the name carries meaning the reader needs,
+  add a short gloss.
+- Direct quotes, verses, and historically significant speech keep all three —
+  original script, transliteration, then English translation:
+  ``अहिंसा परमो धर्मः (ahiṃsā paramo dharmaḥ) — "non-violence is the highest
+  virtue"``. The original preserves authenticity and impact; the
+  transliteration makes it pronounceable; the translation makes it usable.
+  Do not drop any of the three for a quote that matters.
 - Prefer well-formed paragraphs over bullet lists for prose sections. Bullet
   lists are fine for enumerations (events, key concepts).
 

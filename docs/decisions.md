@@ -1920,3 +1920,44 @@ Grounding the requirement first showed **most of it already shipped**: since [D-
 **Consequences / incomplete.** This covers the **report** surface only. **Q&A remains corpus-blind**: `formulate_answer` still gets a fixed 4,500-token budget and never sees video/word counts. The requirement explicitly covers Q&A, so R4 is not fully satisfied — the remainder is deliberately deferred into the R3+R5 work because all three touch the same Q&A prompt files and doing it now would churn prompts hardened against measured defects twice. Tracked as S-1.15.2.
 
 **Linked initiatives / PRs.** E-1.15 / S-1.15.1; constrained by D-055, D-056, D-062.
+
+
+## D-065 — Channel subscriptions become per-tenant; transliteration reversed (2026-07-31)
+
+**Status:** accepted. Both decisions made explicitly by the user on 2026-07-31.
+
+### Part 1 — channel subscription state is per-tenant
+
+**Context.** [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31) closed five leak classes but left `channels` unscoped, filed as S-5.10.2. The user's decision: channels become per-tenant.
+
+Splitting the table showed the more interesting problem was **not** `subscribed`. `channels.source_weight` is documented in the model itself as *"user-set trust score that drives retrieval re-ranking"* — a per-user preference by definition — yet it was stored globally. **One user re-weighting a source silently re-ranked every other user's retrieval.** That would never have surfaced as a privacy complaint; it would have looked like unexplained ranking drift.
+
+**Decision.** Same shape as D-063: the record is shared, the state is private.
+
+| Field | Home | Why |
+|---|---|---|
+| name, subscriber_count, uploads_playlist_id | `channels` (shared) | Public facts, identical for everyone, worth deduplicating |
+| `subscribed` | `channel_subscriptions` | One user following a channel must not enroll others |
+| `source_weight` | `channel_subscriptions` | Per-user by intent; was globally mutable |
+| `last_synced_at` | `channel_subscriptions` | Two tenants subscribing at different times must not skip each other's backlog |
+
+`subscription_service` is the single accessor, mirroring `visibility_service`, so a new surface cannot accidentally read the legacy global columns. `visible_channel_ids` resolves to channels the tenant holds subscription state for OR that produced a document visible to them. Channel video counts are scoped through document visibility — a global count leaks how much others ingested.
+
+**Migration `f6a7b8c9d1e2`** backfills by attributing each channel's state to every tenant with visibility on one of its documents: 95 subscriptions written, 92 to one tenant and 3 to the other, matching the document split exactly.
+
+**Legacy columns are deliberately NOT dropped** in this revision. Unmigrated code paths still read `channels.subscribed`, and dropping them here would make a partial rollout unrecoverable. Removal is a follow-up once nothing reads them (S-5.10.3).
+
+### Part 2 — reverse the anti-transliteration instruction
+
+**Context.** `knowledge_prompts.py` instructed the model *"Do not transliterate them"* and *"keep the original-script names intact rather than transliterating or translating them"* — in both the extract and synthesis phases. That was a deliberate earlier choice to preserve authenticity, and it directly contradicts requirement R5, which asks for quotes to be transliterated **and** translated **and** kept in the original script. Reversing a deliberate instruction warrants a record rather than a silent edit; the user confirmed the three-part form.
+
+**Decision.** Non-English material now renders in three parts:
+
+- **Proper nouns**: original script + romanisation, plus a gloss where the name carries meaning the reader needs — `महाभारत (Mahābhārata)`.
+- **Quotes, verses, historically significant speech**: all three — `अहिंसा परमो धर्मः (ahiṃsā paramo dharmaḥ) — "non-violence is the highest virtue"`. The original preserves authenticity and impact, the transliteration makes it pronounceable, the translation makes it usable. None may be dropped for a quote that matters.
+
+**An English-output contract was added to both knowledge prompts at the same time.** The audit found *no* prompt in `report_prompts.py` or `knowledge_prompts.py` instructed English output, so a Hindi corpus produced a Devanagari report. The extract phase is where that starts: an item emitted in Devanagari there propagates untouched to the final output, so the contract belongs at the extraction boundary, not only at composition.
+
+**Consequences.** This covers the knowledge prompts only. R5 still needs: the English contract across the seven report prompts, per-segment language detection (the per-video label is wrong for code-mixed speech — Hinglish and Arabic/Persian/Urdu mixing inside one sentence), and a `quote_render` use case. Those land with R3, since both rewrite the same files.
+
+**Linked initiatives / PRs.** S-5.10.2 (closed), S-5.10.3 (new), E-1.16 (R5, in progress). Follows D-063.

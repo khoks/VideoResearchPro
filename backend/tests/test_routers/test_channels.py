@@ -2,7 +2,14 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 
-def _seed_channel(db, channel_id="UCabcdefghijklmnopqrstuv", **overrides):
+def _seed_channel(db, channel_id="UCabcdefghijklmnopqrstuv", tenant_id=None, **overrides):
+    """Seed a channel and, when ``tenant_id`` is given, that tenant's
+    subscription state.
+
+    D-065: subscription state moved off `channels` (where it was global —
+    one user subscribing changed everyone's view) into per-tenant rows, and
+    channel listings are scoped to what the tenant can see. Seeds therefore
+    need a tenant or the channel is correctly invisible."""
     from app.models.channel import Channel
 
     channel = Channel(
@@ -16,6 +23,15 @@ def _seed_channel(db, channel_id="UCabcdefghijklmnopqrstuv", **overrides):
     db.add(channel)
     db.commit()
     db.refresh(channel)
+
+    if tenant_id is not None:
+        from app.services import subscription_service
+
+        sub = subscription_service.get_or_create(db, channel.channel_id, tenant_id)
+        sub.subscribed = overrides.get("subscribed", False)
+        sub.last_synced_at = overrides.get("last_synced_at")
+        db.commit()
+
     return channel
 
 
@@ -25,9 +41,9 @@ def test_list_channels_empty(client):
     assert response.json() == []
 
 
-def test_list_channels_returns_seeded(client, db):
-    _seed_channel(db, channel_id="UC000000000000000000000A", name="Alpha")
-    _seed_channel(db, channel_id="UC000000000000000000000B", name="Bravo")
+def test_list_channels_returns_seeded(client, db, test_user):
+    _seed_channel(db, tenant_id=test_user.id, channel_id="UC000000000000000000000A", name="Alpha")
+    _seed_channel(db, tenant_id=test_user.id, channel_id="UC000000000000000000000B", name="Bravo")
 
     response = client.get("/api/v1/channels")
     assert response.status_code == 200
@@ -38,8 +54,8 @@ def test_list_channels_returns_seeded(client, db):
     assert all("video_count" in c for c in data)
 
 
-def test_get_channel_detail(client, db):
-    _seed_channel(db, channel_id="UCxx1", name="Solo", subscribed=True)
+def test_get_channel_detail(client, db, test_user):
+    _seed_channel(db, tenant_id=test_user.id, channel_id="UCxx1", name="Solo", subscribed=True)
 
     response = client.get("/api/v1/channels/UCxx1")
     assert response.status_code == 200
@@ -55,8 +71,8 @@ def test_get_channel_not_found(client):
     assert response.status_code == 404
 
 
-def test_subscribe_channel_dispatches_sync(client, db):
-    _seed_channel(db, channel_id="UCsub1", subscribed=False)
+def test_subscribe_channel_dispatches_sync(client, db, test_user):
+    _seed_channel(db, tenant_id=test_user.id, channel_id="UCsub1", subscribed=False)
 
     with patch("app.tasks.job_tasks.execute_subscription_job") as mock_task:
         mock_task.apply_async.return_value = MagicMock(id="mock-sub-task-id")
@@ -69,22 +85,24 @@ def test_subscribe_channel_dispatches_sync(client, db):
     # T-5.6.5: dispatch via apply_async with per-tier queue, not raw .delay()
     mock_task.apply_async.assert_called_once()
 
-    # DB flipped to subscribed
-    from app.models.channel import Channel
-    refreshed = db.query(Channel).filter(Channel.channel_id == "UCsub1").first()
-    assert refreshed.subscribed is True
+    # D-065: subscription state is per tenant now, not a global column on
+    # `channels` — assert the caller's row flipped, and only theirs.
+    from app.services import subscription_service
+
+    assert subscription_service.get_or_create(db, "UCsub1", test_user.id).subscribed is True
+    assert subscription_service.get_or_create(db, "UCsub1", "someone-else").subscribed is False
 
 
-def test_unsubscribe_channel(client, db):
-    _seed_channel(db, channel_id="UCunsub1", subscribed=True)
+def test_unsubscribe_channel(client, db, test_user):
+    _seed_channel(db, tenant_id=test_user.id, channel_id="UCunsub1", subscribed=True)
 
     response = client.post("/api/v1/channels/UCunsub1/unsubscribe")
     assert response.status_code == 200
     assert response.json()["subscribed"] is False
 
 
-def test_sync_channel_dispatches_job(client, db):
-    _seed_channel(db, channel_id="UCsync1", subscribed=True)
+def test_sync_channel_dispatches_job(client, db, test_user):
+    _seed_channel(db, tenant_id=test_user.id, channel_id="UCsync1", subscribed=True)
 
     with patch("app.tasks.job_tasks.execute_subscription_job") as mock_task:
         mock_task.apply_async.return_value = MagicMock(id="mock-sub-task-id")
@@ -98,16 +116,16 @@ def test_sync_channel_dispatches_job(client, db):
     mock_task.apply_async.assert_called_once()
 
 
-def test_channel_videos_empty(client, db):
-    _seed_channel(db, channel_id="UCvids1")
+def test_channel_videos_empty(client, db, test_user):
+    _seed_channel(db, tenant_id=test_user.id, channel_id="UCvids1")
     response = client.get("/api/v1/channels/UCvids1/videos")
     assert response.status_code == 200
     assert response.json() == []
 
 
-def test_channel_videos_lists_only_channel_videos(client, db):
-    _seed_channel(db, channel_id="UCvids2", name="Vids2")
-    _seed_channel(db, channel_id="UCother", name="Other")
+def test_channel_videos_lists_only_channel_videos(client, db, test_user):
+    _seed_channel(db, tenant_id=test_user.id, channel_id="UCvids2", name="Vids2")
+    _seed_channel(db, tenant_id=test_user.id, channel_id="UCother", name="Other")
 
     from app.models.document import Document
 
@@ -132,6 +150,13 @@ def test_channel_videos_lists_only_channel_videos(client, db):
     )
     db.add_all([v1, v2, v_other])
     db.commit()
+
+    # D-063: the listing shows only documents this tenant ingested.
+    from app.services import visibility_service
+
+    visibility_service.grant(
+        db, ["vid1", "vid2", "other"], test_user.id, visibility_service.SOURCE_JOB
+    )
 
     response = client.get("/api/v1/channels/UCvids2/videos")
     assert response.status_code == 200

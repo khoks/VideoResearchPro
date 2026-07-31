@@ -262,3 +262,77 @@ def test_compose_output_contains_no_dead_links() -> None:
         })
     assert 'href="&t=' not in out["final_html"]
     assert "0:09" in out["final_html"]
+
+
+# --- S-1.14.14: transient provider errors must not cost a section ----------
+def test_transient_errors_are_retried_then_succeed() -> None:
+    """A single Anthropic 529 lost a whole report section in the D-061 run."""
+    calls = {"n": 0}
+
+    def _flaky(use_case, **kw):
+        m = MagicMock()
+
+        def _invoke(_msgs):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise RuntimeError("Error code: 529 - {'type': 'overloaded_error'}")
+            return MagicMock(content="<h2>Key Facts</h2><p>ok</p>")
+
+        m.invoke.side_effect = _invoke
+        return m
+
+    with patch.object(ra, "get_llm_for", side_effect=_flaky), \
+            patch.object(ra.time, "sleep"):
+        out = ra._invoke_with_retry(
+            "report_compose", "prompt", max_tokens=100, temperature=0.2, label="t"
+        )
+    assert "Key Facts" in out
+    assert calls["n"] == 3
+
+
+def test_permanent_errors_are_not_retried() -> None:
+    """Retrying a bad request just burns time and money."""
+    calls = {"n": 0}
+
+    def _bad(use_case, **kw):
+        m = MagicMock()
+
+        def _invoke(_msgs):
+            calls["n"] += 1
+            raise RuntimeError("invalid_request_error: unknown model")
+
+        m.invoke.side_effect = _invoke
+        return m
+
+    with patch.object(ra, "get_llm_for", side_effect=_bad), patch.object(ra.time, "sleep"):
+        try:
+            ra._invoke_with_retry("report_compose", "p", max_tokens=100, temperature=0.2, label="t")
+        except RuntimeError:
+            pass
+    assert calls["n"] == 1
+
+
+def test_transient_classifier_distinguishes_causes() -> None:
+    assert ra._is_transient(RuntimeError("Error code: 529 - Overloaded"))
+    assert ra._is_transient(RuntimeError("rate limit exceeded"))
+    assert ra._is_transient(RuntimeError("502 Bad Gateway"))
+    # Permanent: retrying cannot help.
+    assert not ra._is_transient(RuntimeError("context length exceeded"))
+    assert not ra._is_transient(RuntimeError("invalid_request_error"))
+    assert not ra._is_transient(RuntimeError("authentication failed"))
+
+
+def test_retry_exhaustion_still_reports_the_section_as_failed() -> None:
+    def _always_529(use_case, **kw):
+        m = MagicMock()
+        m.invoke.side_effect = RuntimeError("Error code: 529 - Overloaded")
+        return m
+
+    with patch.object(ra, "get_llm_for", side_effect=_always_529), \
+            patch.object(ra.time, "sleep"):
+        out = ra.compose_report({
+            "chunk_summaries": [{"facts": [_item("v1", "f")]}],
+            "statistics": {}, "job_type": "topic", "topic": "t",
+        })
+    # Every section died; the failure is explicit, never silent.
+    assert "failed" in out["final_html"].lower()

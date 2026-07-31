@@ -10,6 +10,21 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### E-1.14: report pipeline rebuilt, stack re-tiered, gap closed on measurement (2026-07-31)
+
+Full chronology and the wrong turns: [docs/notes/2026-07-31-report-quality-arc.md](docs/notes/2026-07-31-report-quality-arc.md).
+
+A blind evaluation ([D-055](docs/decisions.md)) scored the shipped 200-video report **3.5/10 against a max-effort control at 8.5 — gap SEVERE**. It cited **2 channels out of 92** and **4 videos out of 200** while claiming to synthesize 137. Root cause was not model quality:
+
+- **Report funnel fixed ([D-056](docs/decisions.md))** — map emitted ≤3,000 tokens per ~116K-token batch and reduce applied a flat 6,000-token cap on *every* pairwise round, so ≤0.43% of the corpus reached the writer. Completion budgets now derive from the work (measured `MODEL_MAX_OUTPUT_TOKENS`: 128K across the stack). Reduce is deterministic and lossless — a control found **zero** duplicates, so the LLM merge could only destroy content. Compose is sectioned, so report length scales with corpus size; Statistics is rendered in code.
+- **Two live bugs found while validating** — reasoning models return content *blocks* rather than a string once they actually think, so every `.content` read would have corrupted output exactly on the hardest prompts (latent since D-053); and **every timestamp citation in every report was a dead link**, because the map prompt asked for a `video_url` the chunk header never supplied.
+- **Volume tier → `gpt-5.6-luna` ([D-057](docs/decisions.md))** — OpenAI's 80% price cut put it at input parity with `gpt-5.4-nano` and below it on output. Measured on our own batches: 1.6–2× item yield, exact attribution (25 titles for a 25-video batch vs nano's 52 variants), and no JSON failures where nano failed 1 of 2.
+- **Extraction ceiling raised 0.20 → 0.40 ([D-060](docs/decisions.md))** — our own budget capped a run at 288K tokens against the control's 609K. The same defect D-056 removed, re-introduced one layer up.
+- **Selection quotas ([D-059](docs/decisions.md))** — with the rejected candidate pool now persisted ([S-1.14.6](docs/initiatives.md)), a real A/B showed only **12 of 29** preferred channels reached the corpus while **14 of the 18 missing had candidates in the rejects**. Preferred coverage is now guaranteed in code (**12/29 → 29/29**), with a per-channel concentration cap (10.5% → 8.0%).
+- **`report_compose` → `claude-opus-5` ([D-062](docs/decisions.md))** — made **last**, and only on evidence. Synthesis was the one dimension that never moved (6.33 across two blind rounds) while attribution, coverage and citation integrity all responded to prompt work. Head-to-head on identical input: synthesis 9 vs 6–7, tension-handling 9 vs 6. The length prior was tested and **refuted** — opus ran 2.6× longer *and* ~1.4× denser.
+
+**Measured arc on the same corpus:** body words 5,610 → **37,380**; videos linked 0 → **188**; citations 143 (all dead) → **1,540** (none dead); blind score **3.50 → 7.22** against the control's 8.67, gap **severe → moderate**. Benchmark cost $4.36 → **$12.20** per 200-video job — reports cost more because they no longer discard the corpus.
+
 ### Gemini paid tier validated + env-shadow launcher fix (2026-07-29)
 
 - **Paid Tier 1 active** (project my-project-7282026): gemini-3.1-pro unlocked and verified end-to-end through the app; 1M window confirmed by the API's own rejection message (1,048,576); 295K/475K single-request long-context calls processed in under 4s on the flash family.

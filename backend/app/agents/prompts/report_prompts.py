@@ -96,3 +96,107 @@ Write an HTML report body with these sections:
 Return ONLY the HTML content for the report body (no <html>, <head>, <body> tags - just the content).
 Use semantic HTML (h2, h3, p, ul, li) with CSS classes consistent with a research report.
 """
+
+
+# --- S-1.14.8: sectioned composition ---------------------------------------
+#
+# COMPOSE_REPORT_PROMPT above asks one call to write all seven sections from
+# the entire corpus. D-055 measured what that produces on a 200-video job: a
+# 3,848-word report citing 2 channels, with zero quantitative claims, because
+# a single completion cannot carry a large corpus no matter how good the
+# model. Composition is now per-section, so report depth scales with how much
+# material the corpus actually yielded.
+
+COMPOSE_SECTION_PROMPT = """You are writing ONE section of a research report on: {topic}
+
+SECTION: {section_title}
+{section_guidance}
+
+Source material for this section ({item_count} items{part_note}):
+{material}
+
+Requirements:
+- Write ONLY this section's HTML. Start with <h2>{section_title}</h2>{heading_note}
+- Cover the material comprehensively. Every distinct item above deserves to be
+  represented — group related items under <h3> sub-headings where that aids the
+  reader, but do NOT collapse many specific claims into one vague sentence.
+- Preserve specificity: named models, tools, versions, organizations, numbers,
+  percentages and dates are the value of this report. Never round away a figure
+  or replace a named entity with a generic noun.
+- Attribute every claim. Include a clickable timestamp link wherever the item
+  supplies one: <a href="VIDEO_URL&t=SECONDS" target="_blank">TIMESTAMP_DISPLAY</a>
+  Omit the link only when the item has no video_url.
+- Where sources disagree, present the disagreement and cite both sides rather
+  than flattening it.
+- No <html>, <head>, <body>, <style> or <script> tags. Semantic HTML only
+  (h2, h3, p, ul, li, table) with CSS classes.
+- Output the HTML only — no preamble, no commentary about your process.
+"""
+
+COMPOSE_SUMMARY_PROMPT = """You are writing the Executive Summary for a research report on: {topic}
+
+Corpus statistics:
+{statistics}
+
+The report's body sections (already written) cover:
+{section_digest}
+
+Write the Executive Summary:
+- Start with <h2>Executive Summary</h2>
+- State what the corpus actually contains and the most important findings across
+  it — the through-lines, the tensions between sources, and what a reader should
+  take away. Lead with substance, not throat-clearing.
+- Be concrete: name the models, tools, organizations and figures that matter.
+- Do NOT claim breadth the body does not support. If the body draws on a subset
+  of the corpus, describe what IS covered rather than asserting totals.
+- 4-8 paragraphs. No <html>/<head>/<body> tags. Semantic HTML only.
+- Output the HTML only.
+"""
+
+# Per-section guidance + which consolidated key feeds each. Order here is the
+# order sections appear in the report body.
+REPORT_SECTIONS = (
+    {
+        "key": "facts",
+        "title": "Key Facts",
+        "guidance": (
+            "Every factual claim made across the corpus, with its source and timestamp. "
+            "This is the report's substance — organise it into thematic sub-sections "
+            "(<h3>) so a reader can navigate, and keep the specific numbers, model "
+            "names, versions and measurements intact."
+        ),
+    },
+    {
+        "key": "comments",
+        "title": "Analysis & Commentary",
+        "guidance": (
+            "Opinions, arguments and interpretations from the speakers. Organise by "
+            "the debate or theme at issue, give each position its strongest cited "
+            "voice, and make disagreements explicit rather than averaging them away."
+        ),
+    },
+    {
+        "key": "conclusions",
+        "title": "Conclusions",
+        "guidance": (
+            "Conclusions the sources themselves reach, plus the cross-cutting "
+            "conclusions the corpus supports as a whole. Distinguish the two."
+        ),
+    },
+    {
+        "key": "references",
+        "title": "Historical & External References",
+        "guidance": (
+            "References to papers, studies, products, events and prior work mentioned "
+            "across the corpus, with who cited them and where."
+        ),
+    },
+    {
+        "key": "speakers",
+        "title": "Speaker Contributions",
+        "guidance": (
+            "Notable speakers and what each contributed. Group by speaker, note their "
+            "affiliation or channel, and summarise their distinctive positions."
+        ),
+    },
+)

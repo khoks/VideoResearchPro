@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 import tiktoken
 from langchain_core.messages import HumanMessage
@@ -8,13 +9,18 @@ from langgraph.graph import END, StateGraph
 from app.agents.prompts.report_prompts import (
     CHANNEL_COMPOSE_PROMPT,
     CHANNEL_MAP_PROMPT,
-    COMPOSE_REPORT_PROMPT,
+    COMPOSE_SECTION_PROMPT,
+    COMPOSE_SUMMARY_PROMPT,
     MAP_CHUNK_PROMPT,
-    REDUCE_PROMPT,
+    REPORT_SECTIONS,
 )
 from app.agents.state import ReportAgentState
-from app.services.llm_service import get_llm_for
-from app.services.llm_routing import context_window_for, resolve_config
+from app.services.llm_service import get_llm_for, response_text
+from app.services.llm_routing import (
+    context_window_for,
+    max_output_for,
+    resolve_config,
+)
 from app.utils.youtube_helpers import format_timestamp
 
 logger = logging.getLogger(__name__)
@@ -29,9 +35,13 @@ _QUALITY_BATCH_CAP = 120_000
 # (we count with cl100k, gpt-5.x bills o200k), and output headroom.
 _WINDOW_SAFETY_FRACTION = 0.5
 
-# Recursion bound for the reduce loop — 2^6 = 64× compression is beyond any
-# realistic corpus; this is a runaway guard, not a sizing decision.
-_MAX_REDUCE_ROUNDS = 6
+# Total consolidated material compose may consume across ALL of its section
+# calls (S-1.14.8). Compose now splits each section into as many calls as the
+# material needs, so this is a COST guard, not a capability limit — reduce
+# stays lossless below it. Sized well above the E-1.14 reference corpus (200
+# videos / 1.06M transcript words consolidated to ~370K tokens) so a typical
+# job never compresses at all.
+_MAX_COMPOSE_INPUT_TOKENS = 1_000_000
 
 
 def _count_tokens(text: str) -> int:
@@ -62,6 +72,37 @@ def _truncate_to_tokens(text: str, max_tokens: int) -> str:
         return enc.decode(tokens[:max_tokens])
     except Exception:
         return text[: max_tokens * 4]
+
+
+# --- S-1.14.8: completion budgets scale with the work, not a constant -------
+#
+# D-055 measured the defect these replace: map emitted <=3,000 tokens per
+# ~116K-token batch (5.9% of what was extractable) and reduce <=6,000 per
+# merge, so <=0.43% of a 1.39M-token corpus reached the writer and the
+# shipped report cited 2 channels out of 92. Ceilings are 128K (measured,
+# ``MODEL_MAX_OUTPUT_TOKENS``), so the caps were self-inflicted.
+
+# Share of a batch's INPUT tokens we allow the extraction to occupy. The
+# E-1.14 max-effort control extracted at ~44% (608,718 out of 1,393,656);
+# 0.20 is deliberately below that — enough headroom that extraction is never
+# the binding constraint, without paying for exhaustive restatement.
+_MAP_EXTRACTION_RATIO = 0.20
+
+# Floor so tiny batches still get a workable completion budget.
+_MIN_COMPLETION_TOKENS = 3_000
+
+
+def _completion_budget(use_case: str, work_tokens: int, ratio: float) -> int:
+    """Completion budget for ``use_case`` derived from the size of the work in
+    front of it, clamped to the resolved model's measured output ceiling.
+
+    ``work_tokens`` is the input the call must account for; ``ratio`` is how
+    much of it the output may occupy.
+    """
+    cfg = resolve_config(use_case)
+    ceiling = max_output_for(cfg.model)
+    want = max(int(work_tokens * ratio), _MIN_COMPLETION_TOKENS)
+    return min(want, ceiling)
 
 
 def compute_statistics(state: ReportAgentState) -> dict:
@@ -138,12 +179,20 @@ def map_chunks(state: ReportAgentState) -> dict:
     if not chunks:
         return {"chunk_summaries": []}
 
-    llm = get_llm_for("report_map_chunks", temperature=0.0, max_tokens=3000)
     budget_per_batch = _batch_budget("report_map_chunks")
+    # S-1.14.8: the completion budget tracks the batch it must summarize.
+    # Previously pinned at 3,000 while batches grew to ~116K (E-1.12), which
+    # silently discarded ~94% of the extractable content (D-055).
+    map_max_tokens = _completion_budget(
+        "report_map_chunks", budget_per_batch, _MAP_EXTRACTION_RATIO
+    )
+    llm = get_llm_for("report_map_chunks", temperature=0.0, max_tokens=map_max_tokens)
     logger.info(
-        "map_chunks: %d chunks, batch budget %d tokens (model %s)",
-        len(chunks), budget_per_batch,
+        "map_chunks: %d chunks, batch budget %d tokens, completion budget %d "
+        "(model %s, output ceiling %d)",
+        len(chunks), budget_per_batch, map_max_tokens,
         resolve_config("report_map_chunks").model,
+        max_output_for(resolve_config("report_map_chunks").model),
     )
 
     # Group chunks into batches
@@ -154,9 +203,17 @@ def map_chunks(state: ReportAgentState) -> dict:
     for chunk in chunks:
         text = chunk.get("text", "")
         meta = chunk.get("metadata", {})
+        # S-1.14.9: the URL must be IN the header. MAP_CHUNK_PROMPT asks for a
+        # `video_url` on every extracted item, but nothing ever supplied one —
+        # so every citation in every report rendered as href="&t=123", a dead
+        # link. Costs ~12 tokens per chunk; buys working citations.
+        # The chunker emits `video_url`; `url`/`permalink` are the pre-chunk
+        # and non-video-source spellings.
+        url = meta.get("video_url") or meta.get("url") or meta.get("permalink") or ""
         formatted = (
             f"[{meta.get('video_title', 'Unknown')} | {meta.get('channel_name', 'Unknown')} | "
-            f"{format_timestamp(meta.get('timestamp_start', 0))}]\n{text}"
+            f"{format_timestamp(meta.get('timestamp_start', 0))}"
+            f"{' | ' + url if url else ''}]\n{text}"
         )
         tokens = _count_tokens(formatted)
 
@@ -180,9 +237,9 @@ def map_chunks(state: ReportAgentState) -> dict:
         )
         response = llm.invoke([HumanMessage(content=prompt)])
         try:
-            return json.loads(response.content)
+            return json.loads(response_text(response))
         except json.JSONDecodeError:
-            return {"raw": response.content}
+            return {"raw": response_text(response)}
 
     # Process each batch with one level of bisect-retry (S-1.12.6): a
     # failed batch (context overflow, transient 4xx/5xx) is split in half
@@ -234,85 +291,184 @@ def map_chunks(state: ReportAgentState) -> dict:
     return {"chunk_summaries": summaries, "processing_notes": notes}
 
 
-def reduce_summaries(state: ReportAgentState) -> dict:
-    """Reduce: recursively consolidate batch summaries into ONE dataset.
+_REDUCE_KEYS = ("facts", "comments", "conclusions", "references", "speakers")
 
-    S-1.12.3: pairwise rounds repeat until the working set fits the final
-    merge budget, then a single merge call produces exactly one summary.
-    No path passes unbounded raw content downstream — failed pairs are
-    token-truncated instead of kept whole, so compose input is always
-    bounded by the smaller of the reduce/compose budgets.
+
+def _item_video(item: dict) -> str:
+    """Stable per-video identity for an extracted item.
+
+    Keys on ``video_url`` first because two DISTINCT videos in the reference
+    corpus differ only by letter case in their titles (S-1.14.9) — a
+    case-insensitive title key silently merges them.
+    """
+    if not isinstance(item, dict):
+        return ""
+    return str(item.get("video_url") or item.get("video_title") or "")
+
+
+def _merge_structurally(summaries: list) -> tuple[dict, dict]:
+    """Lossless union of batch summaries — no LLM, no semantic judgement.
+
+    S-1.14.8 / D-055: a control pass over the reference corpus found ZERO
+    duplicates within ``(category, video)`` — no exact, substring, or
+    Jaccard>=0.90 matches — so the previous LLM "merge and deduplicate" pass
+    could only ever destroy content. Only byte-identical items (same content,
+    same video, same timestamp) are collapsed here; everything else survives.
+    The same claim from a different source is DISTINCT attribution in a
+    citation-backed report and is deliberately kept.
+    """
+    merged: dict[str, list] = {k: [] for k in _REDUCE_KEYS}
+    seen: set = set()
+    exact_dupes = 0
+    unparsed = 0
+
+    for summary in summaries:
+        if not isinstance(summary, dict):
+            unparsed += 1
+            continue
+        if not any(k in summary for k in _REDUCE_KEYS):
+            # A map batch that failed JSON parsing ({"raw": ...}), a
+            # truncated carry-over, or any unexpected shape. Preserve the
+            # content as a fact rather than dropping it — silent narrowing
+            # is the exact defect this function exists to prevent.
+            raw = summary.get("raw") or summary.get("truncated_summary")
+            content = str(raw) if raw else json.dumps(summary, default=str)
+            merged["facts"].append(
+                {"content": content, "video_title": "", "channel_name": ""}
+            )
+            unparsed += 1
+            continue
+        for key in _REDUCE_KEYS:
+            for item in summary.get(key) or []:
+                if not isinstance(item, dict):
+                    # A bare string/number is a legitimate model output shape.
+                    # Coerce rather than skip — dropping it is exactly the
+                    # silent narrowing this stage is meant to eliminate.
+                    item = {"content": str(item), "video_title": "", "channel_name": ""}
+                identity = (
+                    key,
+                    _item_video(item),
+                    str(item.get("content", "")),
+                    str(item.get("timestamp_seconds", "")),
+                )
+                if identity in seen:
+                    exact_dupes += 1
+                    continue
+                seen.add(identity)
+                merged[key].append(item)
+
+    notes = {
+        "reduce_exact_duplicates_collapsed": exact_dupes,
+        "reduce_unparsed_batches": unparsed,
+        "reduce_items_in": sum(len(v) for v in merged.values()) + exact_dupes,
+    }
+    return merged, notes
+
+
+def _compress_evenly(merged: dict, budget: int, topic: str) -> tuple[dict, dict]:
+    """Fit ``merged`` into ``budget`` tokens WITHOUT dropping any video.
+
+    The shipped pipeline's failure mode was non-uniform loss: whole videos
+    vanished (46% of them in the D-055 control) while survivors kept full
+    detail. Here every video gets a proportional quota, so a 200-video corpus
+    yields a report that mentions 200 videos.
+    """
+    by_video: dict[str, dict[str, list]] = {}
+    for key in _REDUCE_KEYS:
+        for item in merged.get(key) or []:
+            by_video.setdefault(_item_video(item), {k: [] for k in _REDUCE_KEYS})[key].append(item)
+
+    n_videos = max(1, len(by_video))
+    per_video_budget = max(200, budget // n_videos)
+
+    kept: dict[str, list] = {k: [] for k in _REDUCE_KEYS}
+    trimmed = 0
+    for _vid, groups in by_video.items():
+        spent = 0
+        # Round-robin across categories so no category is starved for a video.
+        pools = {k: list(v) for k, v in groups.items()}
+        closed: set = set()
+        while spent < per_video_budget and any(
+            pools[k] for k in _REDUCE_KEYS if k not in closed
+        ):
+            for key in _REDUCE_KEYS:
+                if key in closed or not pools[key]:
+                    continue
+                item = pools[key][0]
+                cost = _count_tokens(json.dumps(item, default=str))
+                if spent + cost > per_video_budget:
+                    # Stop this category for this video, but LEAVE the
+                    # remaining items in the pool so they are counted as
+                    # trimmed rather than silently discarded.
+                    closed.add(key)
+                    continue
+                pools[key].pop(0)
+                kept[key].append(item)
+                spent += cost
+        trimmed += sum(len(v) for v in pools.values())
+
+    return kept, {
+        "reduce_items_trimmed": trimmed,
+        "reduce_videos_represented": n_videos,
+        "reduce_per_video_token_quota": per_video_budget,
+    }
+
+
+def reduce_summaries(state: ReportAgentState) -> dict:
+    """Reduce: consolidate batch summaries into ONE dataset, losslessly when
+    it fits and evenly across videos when it does not.
+
+    Replaces the S-1.12.3 recursive pairwise LLM merge, which D-055 measured
+    as the dominant source of report content loss: it applied a flat 6,000
+    token output cap on EVERY round, collapsing a 1.39M-token corpus to
+    <=0.43% before the writer ever saw it, and dropped whole videos rather
+    than compressing uniformly.
     """
     summaries = state.get("chunk_summaries", [])
     if not summaries or state["job_type"] == "channel":
         return {"chunk_summaries": summaries}
 
-    if len(summaries) == 1:
-        return {}  # No reduction needed
+    notes = dict(state.get("processing_notes") or {})
 
-    llm = get_llm_for("report_reduce_summaries", temperature=0.0, max_tokens=6000)
-    # The merged output must fit COMPOSE's prompt too, so target the
-    # tighter of the two budgets.
-    target_budget = min(
-        _batch_budget("report_reduce_summaries", fraction=0.6),
-        _batch_budget("report_compose", fraction=0.6),
-    )
+    # Step 1 — lossless structural union. No LLM, no content judgement.
+    merged, merge_notes = _merge_structurally(summaries)
+    notes.update(merge_notes)
 
-    def _merge_call(items: list) -> dict:
-        prompt = REDUCE_PROMPT.format(
-            topic=state.get("topic", ""),
-            batch_summaries=json.dumps(items, indent=2, default=str),
-        )
-        response = llm.invoke([HumanMessage(content=prompt)])
-        return json.loads(response.content)
+    # Compose splits each section across as many calls as its material needs,
+    # so the only bound here is the cost guard — not a per-call window.
+    target_budget = _MAX_COMPOSE_INPUT_TOKENS
+    total_tokens = _count_tokens(json.dumps(merged, default=str))
+    notes["reduce_tokens_lossless"] = total_tokens
+    notes["reduce_budget"] = target_budget
 
-    current = list(summaries)
-    rounds = 0
-    while rounds < _MAX_REDUCE_ROUNDS:
-        total_tokens = _count_tokens(json.dumps(current, indent=2, default=str))
-        if total_tokens <= target_budget:
-            break
-        rounds += 1
+    if total_tokens <= target_budget:
         logger.info(
-            "reduce_summaries: round %d — %d summaries / %d tokens over "
-            "budget %d; pairwise merging",
-            rounds, len(current), total_tokens, target_budget,
+            "reduce_summaries: lossless merge fits (%d <= %d tokens); "
+            "%d items across %d videos, 0 LLM calls",
+            total_tokens, target_budget,
+            sum(len(v) for v in merged.values()),
+            len({_item_video(i) for v in merged.values() for i in v}),
         )
-        merged_round: list = []
-        per_item_cap = max(2_000, target_budget // max(4, len(current)))
-        for i in range(0, len(current), 2):
-            pair = current[i:i + 2]
-            if len(pair) == 1:
-                merged_round.append(pair[0])
-                continue
-            try:
-                merged_round.append(_merge_call(pair))
-            except Exception:
-                # Never pass unbounded raw content on — truncate each
-                # member to its share of the budget and keep going.
-                logger.exception(
-                    "Reduce pair failed; keeping token-truncated members"
-                )
-                for member in pair:
-                    truncated = _truncate_to_tokens(
-                        json.dumps(member, default=str), per_item_cap
-                    )
-                    merged_round.append({"truncated_summary": truncated})
-        current = merged_round
+        notes["reduce_items_trimmed"] = 0
+        return {"chunk_summaries": [merged], "processing_notes": notes}
 
-    if len(current) == 1:
-        return {"chunk_summaries": current}
-
-    # Final merge into exactly one summary.
-    try:
-        return {"chunk_summaries": [_merge_call(current)]}
-    except Exception:
-        logger.exception(
-            "Final reduce merge failed; passing %d bounded summaries to compose",
-            len(current),
+    # Step 2 — over budget: compress per-video EVENLY so no video is lost.
+    logger.info(
+        "reduce_summaries: %d tokens over budget %d (%.1fx); compressing "
+        "evenly across videos",
+        total_tokens, target_budget, total_tokens / max(1, target_budget),
+    )
+    compressed, trim_notes = _compress_evenly(merged, target_budget, state.get("topic", ""))
+    notes.update(trim_notes)
+    if trim_notes.get("reduce_items_trimmed"):
+        logger.warning(
+            "reduce_summaries: %d items trimmed to fit compose budget "
+            "(%d videos each kept, quota %d tokens/video)",
+            trim_notes["reduce_items_trimmed"],
+            trim_notes["reduce_videos_represented"],
+            trim_notes["reduce_per_video_token_quota"],
         )
-        # Bounded by construction (the loop above), so this is safe.
-        return {"chunk_summaries": current}
+    return {"chunk_summaries": [compressed], "processing_notes": notes}
 
 
 def compose_report(state: ReportAgentState) -> dict:
@@ -334,44 +490,210 @@ def compose_report(state: ReportAgentState) -> dict:
             )
         return {"final_html": f"<p>No transcript data available for analysis.{detail}</p>"}
 
-    llm = get_llm_for("report_compose", temperature=0.2, max_tokens=16000)
-    consolidated = json.dumps(summaries[0] if len(summaries) == 1 else summaries, indent=2, default=str)
+    # Always normalize, even for a single summary: the union is idempotent on
+    # already-consolidated input, and it guarantees an unexpected map shape
+    # still reaches the writer instead of composing an empty report.
+    consolidated, _ = _merge_structurally(summaries)
 
-    # Last-line guard (S-1.12.2): never send compose an over-budget prompt.
-    compose_budget = _batch_budget("report_compose", fraction=0.6)
-    consolidated_tokens = _count_tokens(consolidated)
-    if consolidated_tokens > compose_budget:
-        logger.warning(
-            "compose_report: consolidated data %d tokens exceeds budget %d; truncating",
-            consolidated_tokens, compose_budget,
+    topic = state.get("topic", "")
+    # Input budget per composition call. Each section is its own call, so this
+    # bounds a SECTION's material rather than the whole corpus (S-1.14.8).
+    section_input_budget = _batch_budget("report_compose", fraction=0.6)
+    ceiling = max_output_for(resolve_config("report_compose").model)
+
+    parts: list[str] = []
+    digest: list[str] = []
+    sections_failed = 0
+
+    for spec in REPORT_SECTIONS:
+        items = consolidated.get(spec["key"]) or []
+        if not items:
+            continue
+        # Split a large section across several calls so total output scales
+        # with the corpus instead of being clipped by one completion cap.
+        groups = _split_items_to_budget(items, section_input_budget)
+        for idx, group in enumerate(groups, 1):
+            material = json.dumps(group, indent=2, default=str)
+            material_tokens = _count_tokens(material)
+            # Prose expands on structured input; allow generous headroom.
+            max_tokens = min(int(material_tokens * 1.2) + 1_000, ceiling)
+            part_note = f", part {idx} of {len(groups)}" if len(groups) > 1 else ""
+            heading_note = (
+                " (this is a continuation — use <h3> sub-headings only, omit the <h2>)"
+                if idx > 1 else ""
+            )
+            prompt = COMPOSE_SECTION_PROMPT.format(
+                topic=topic,
+                section_title=spec["title"],
+                section_guidance=spec["guidance"],
+                item_count=len(group),
+                part_note=part_note,
+                material=material,
+                heading_note=heading_note,
+            )
+            try:
+                llm = get_llm_for("report_compose", temperature=0.2, max_tokens=max_tokens)
+                html = response_text(llm.invoke([HumanMessage(content=prompt)]))
+                parts.append(html)
+                digest.append(f"{spec['title']}{part_note}: {len(group)} items")
+            except Exception as e:
+                sections_failed += 1
+                logger.error(
+                    "compose_report: section %s%s failed (%s)", spec["title"], part_note, e
+                )
+
+    if not parts:
+        return {"final_html": "<p>Report generation failed: no sections could be composed.</p>"}
+
+    # Executive summary LAST, so it summarizes what was actually written.
+    summary_html = ""
+    try:
+        summary_llm = get_llm_for(
+            "report_compose", temperature=0.2, max_tokens=min(4_000, ceiling)
         )
-        consolidated = _truncate_to_tokens(consolidated, compose_budget)
+        summary_html = response_text(summary_llm.invoke([HumanMessage(
+            content=COMPOSE_SUMMARY_PROMPT.format(
+                topic=topic,
+                statistics=json.dumps(statistics, indent=2),
+                section_digest="\n".join(f"- {d}" for d in digest),
+            )
+        )]))
+    except Exception as e:
+        logger.error("compose_report: executive summary failed (%s)", e)
 
-    prompt = COMPOSE_REPORT_PROMPT.format(
-        topic=state.get("topic", ""),
-        statistics=json.dumps(statistics, indent=2),
-        consolidated_data=consolidated,
+    # Statistics are arithmetic, not judgement — render them deterministically
+    # so the section is always exact and complete (the LLM-written version
+    # undercounted the corpus by 31.5% and dropped ~20 channels; D-055).
+    stats_html = _render_statistics_html(statistics)
+
+    html = "\n".join([p for p in [summary_html, *parts, stats_html] if p])
+    html, broken = _strip_broken_links(html)
+    if broken:
+        logger.warning(
+            "compose_report: unwrapped %d anchor(s) with no usable URL "
+            "(extracted items lacked video_url)", broken,
+        )
+
+    logger.info(
+        "compose_report: %d section call(s), %d failed, %d chars out (model %s)",
+        len(parts) + (1 if summary_html else 0), sections_failed, len(html),
+        resolve_config("report_compose").model,
     )
 
-    try:
-        response = llm.invoke([HumanMessage(content=prompt)])
-        html = response.content
-    except Exception as e:
-        logger.error(f"Report composition failed: {e}")
-        return {"final_html": f"<p>Report generation failed: {e}</p>"}
-
-    # S-1.12.4: loud accounting — any content dropped upstream is disclosed
-    # in the report itself, not just in worker logs.
+    # S-1.12.4 / S-1.14.8: loud accounting — anything dropped anywhere in the
+    # pipeline is disclosed in the report itself, not just in worker logs.
+    disclosures: list[str] = []
     if notes.get("map_chunks_dropped"):
+        disclosures.append(
+            f"{notes['map_chunks_dropped']} of {notes.get('map_chunks_total', '?')} "
+            "transcript segments could not be analyzed "
+            f"({notes.get('map_batches_failed', 0)} failed batch(es) after retry)"
+        )
+    if notes.get("reduce_items_trimmed"):
+        disclosures.append(
+            f"{notes['reduce_items_trimmed']} extracted items were trimmed to fit the "
+            f"composition budget, applied evenly across "
+            f"{notes.get('reduce_videos_represented', '?')} videos so every source "
+            "remains represented"
+        )
+    if sections_failed:
+        disclosures.append(f"{sections_failed} report section(s) failed to compose")
+    if disclosures:
         html += (
             "\n<p style=\"color:#8a6d3b;border:1px solid #c9ba9b;padding:8px 12px;"
             "border-radius:4px;margin-top:24px\"><strong>Processing note:</strong> "
-            f"{notes['map_chunks_dropped']} of {notes.get('map_chunks_total', '?')} "
-            "transcript segments could not be analyzed "
-            f"({notes.get('map_batches_failed', 0)} failed batch(es) after retry) "
-            "and are not reflected in this report.</p>"
+            + "; ".join(disclosures) + ".</p>"
         )
     return {"final_html": html}
+
+
+_BROKEN_ANCHOR = re.compile(
+    r'<a\s[^>]*href="(?!https?://)[^"]*"[^>]*>(.*?)</a>', re.I | re.S
+)
+
+
+def _strip_broken_links(html: str) -> tuple[str, int]:
+    """Unwrap anchors whose href is not a real URL.
+
+    Defence in depth for S-1.14.9: when an extracted item carries no
+    ``video_url`` the prompt says to omit the link, but models still emit
+    ``href="&t=123"``. A dead link is worse than plain text — the timestamp
+    label is preserved, the broken anchor is not.
+    """
+    fixed, n = _BROKEN_ANCHOR.subn(r"\1", html)
+    return fixed, n
+
+
+def _split_items_to_budget(items: list, budget: int) -> list[list]:
+    """Split ``items`` into groups that each fit ``budget`` tokens.
+
+    Last-line guard (inherited from S-1.12.2): a single item larger than the
+    whole budget is truncated rather than sent, so no composition call can
+    ever receive an over-budget prompt.
+    """
+    groups: list[list] = []
+    current: list = []
+    current_tokens = 0
+    for item in items:
+        cost = _count_tokens(json.dumps(item, default=str))
+        if cost > budget:
+            content = str(item.get("content", "")) if isinstance(item, dict) else str(item)
+            logger.warning(
+                "compose: single item of %d tokens exceeds the %d-token "
+                "section budget; truncating it",
+                cost, budget,
+            )
+            # Leave room for the item's own metadata keys.
+            item = {**(item if isinstance(item, dict) else {}),
+                    "content": _truncate_to_tokens(content, max(200, int(budget * 0.8)))}
+            cost = _count_tokens(json.dumps(item, default=str))
+        if current and current_tokens + cost > budget:
+            groups.append(current)
+            current, current_tokens = [], 0
+        current.append(item)
+        current_tokens += cost
+    if current:
+        groups.append(current)
+    return groups or [[]]
+
+
+def _render_statistics_html(statistics: dict) -> str:
+    """Render the Statistics section deterministically from computed values."""
+    if not statistics:
+        return ""
+    rows = sorted(
+        statistics.get("channel_breakdown") or [],
+        key=lambda c: c.get("word_count", 0),
+        reverse=True,
+    )
+    total_words = statistics.get("total_words", 0) or 0
+    out = [
+        '<div class="section"><h2>Statistics</h2>',
+        "<ul>",
+        f"<li>Videos analyzed: {statistics.get('video_count', 0):,}</li>",
+        f"<li>Transcripts: {statistics.get('transcript_count', 0):,}</li>",
+        f"<li>Total words: {total_words:,}</li>",
+        f"<li>Total minutes: {statistics.get('total_minutes', 0):,}</li>",
+        f"<li>Channels represented: {len(rows):,}</li>",
+        "</ul>",
+    ]
+    if rows:
+        out.append(
+            '<table class="stats-table"><thead><tr><th>Channel</th>'
+            "<th>Videos</th><th>Words</th><th>Minutes</th><th>Share</th>"
+            "</tr></thead><tbody>"
+        )
+        for c in rows:
+            words = c.get("word_count", 0) or 0
+            share = (words / total_words * 100) if total_words else 0
+            out.append(
+                f"<tr><td>{c.get('channel_name', 'Unknown')}</td>"
+                f"<td>{c.get('video_count', 0):,}</td><td>{words:,}</td>"
+                f"<td>{c.get('minutes', 0):,}</td><td>{share:.1f}%</td></tr>"
+            )
+        out.append("</tbody></table>")
+    out.append("</div>")
+    return "\n".join(out)
 
 
 def _group_chunks_by_channel(chunks: list[dict]) -> dict[str, list[dict]]:
@@ -436,13 +758,13 @@ def compose_channel_report(state: ReportAgentState) -> dict:
         try:
             response = llm.invoke([HumanMessage(content=prompt)])
             try:
-                parsed = json.loads(response.content)
+                parsed = json.loads(response_text(response))
             except json.JSONDecodeError:
                 logger.warning("Channel map for %r returned non-JSON output", channel_name)
                 parsed = {
                     "channel_name": channel_name,
                     "themes": [],
-                    "highlights": [response.content.strip()[:500]],
+                    "highlights": [response_text(response).strip()[:500]],
                 }
             parsed.setdefault("channel_name", channel_name)
             channel_summaries.append(parsed)
@@ -461,7 +783,7 @@ def compose_channel_report(state: ReportAgentState) -> dict:
     )
     try:
         response = compose_llm.invoke([HumanMessage(content=compose_prompt)])
-        return {"final_html": response.content}
+        return {"final_html": response_text(response)}
     except Exception as e:
         logger.exception("Channel report composition failed")
         return {"final_html": f"<p>Channel narrative generation failed: {e}</p>"}

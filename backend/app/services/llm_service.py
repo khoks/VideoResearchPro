@@ -664,6 +664,41 @@ def get_llm_for(
 
 
 # ---------------------------------------------------------------------------
+# Response text extraction
+# ---------------------------------------------------------------------------
+def response_text(response) -> str:
+    """Extract the assistant's TEXT from a chat response.
+
+    Reasoning-capable providers return a LIST of content blocks rather than a
+    string once the model actually thinks — Anthropic emits
+    ``[{"type": "thinking", ...}, {"type": "text", "text": ...}]``. The shape
+    is decided per request (adaptive reasoning), so the same use case returns
+    a plain string for an easy prompt and a block list for a hard one; every
+    call site reading ``.content`` directly would silently get a list exactly
+    when the work was substantial.
+
+    Thinking/redacted blocks are dropped — they are the model's scratchpad,
+    never user-facing output and never valid JSON for the parsing call sites.
+    """
+    content = getattr(response, "content", response)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                if block.get("type") in ("thinking", "redacted_thinking"):
+                    continue
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts)
+    return "" if content is None else str(content)
+
+
+# ---------------------------------------------------------------------------
 # Probe helper for smoke checks and stress tests.
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
@@ -739,6 +774,7 @@ def probe_config(
 
 # Keep resolve_route importable from here for any external caller.
 __all__ = [
+    "response_text",
     "get_llm",
     "get_llm_for",
     "probe_config",

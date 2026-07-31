@@ -19,7 +19,7 @@ from app.agents.prompts.qa_prompts import (
 from app.agents.state import QAAgentState
 from app.config import settings
 from app.services import chroma_service
-from app.services.llm_service import get_llm_for
+from app.services.llm_service import get_llm_for, response_text
 from app.utils.youtube_helpers import build_youtube_url, extract_video_id, format_timestamp
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,7 @@ def _generate_sub_queries(question: str, tally: _TokenTally | None = None) -> li
         response = llm.invoke([HumanMessage(content=prompt)])
         if tally is not None:
             tally.add(response)
-        raw = (response.content or "").strip()
+        raw = response_text(response).strip()
     except Exception:
         logger.exception("Sub-query expansion LLM call failed; falling back to original question only")
         return []
@@ -186,7 +186,7 @@ def refine_context(state: QAAgentState, tally: _TokenTally | None = None) -> dic
     response = llm.invoke([HumanMessage(content=prompt)])
     if tally is not None:
         tally.add(response)
-    refined = response.content.strip()
+    refined = response_text(response).strip()
 
     logger.info(f"Refined context: {len(refined)} chars from {len(raw_rag) + len(raw_report)} chars raw")
 
@@ -237,7 +237,7 @@ def formulate_answer(state: QAAgentState, tally: _TokenTally | None = None) -> d
     if tally is not None:
         tally.add(response)
 
-    return {"answer": response.content}
+    return {"answer": response_text(response)}
 
 
 def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
@@ -653,7 +653,7 @@ def _references_via_llm(
         response = llm.invoke([HumanMessage(content=prompt)])
         if tally is not None:
             tally.add(response)
-        content = (response.content or "").strip()
+        content = response_text(response).strip()
     except Exception:
         logger.exception("Used-sources LLM call failed; returning no LLM-picked refs")
         return []
@@ -1017,7 +1017,7 @@ def run_library_qa_agent(
         raw_context=raw_context,
     )
     refined_response = llm.invoke([HumanMessage(content=refine_prompt)])
-    refined_context = (refined_response.content or "").strip() or "No context available."
+    refined_context = response_text(refined_response).strip() or "No context available."
 
     logger.info(
         "Library Q&A refined context: %d chars from %d chars raw",
@@ -1038,7 +1038,7 @@ def run_library_qa_agent(
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_prompt),
     ])
-    answer = answer_response.content or ""
+    answer = response_text(answer_response)
 
     # 6. Sanitize fabricated citations using the shared helper, then extract
     # structured references.

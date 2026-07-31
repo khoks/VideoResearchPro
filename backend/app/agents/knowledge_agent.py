@@ -26,7 +26,8 @@ from app.agents.prompts.knowledge_prompts import (
 )
 from app.agents.state import KnowledgeAgentState
 from app.config import settings
-from app.services.llm_service import get_llm_for
+from app.services.llm_service import get_llm_for, response_text
+from app.services.llm_routing import max_output_for, resolve_config
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +194,7 @@ def extract_per_batch(state: KnowledgeAgentState) -> dict:
         )
         try:
             response = llm.invoke([HumanMessage(content=prompt)])
-            parsed = _parse_extraction(response.content)
+            parsed = _parse_extraction(response_text(response))
         except Exception:
             logger.exception("Knowledge extract batch %d failed; continuing", i)
             parsed = {k: [] for k in _KNOWLEDGE_KEYS}
@@ -274,10 +275,23 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
             merged_json, SYNTHESIS_EXTRACTION_JSON_MAX_TOKENS
         )
 
+    # S-1.14.8: the synthesis budget tracks how much was actually extracted.
+    # A flat 8,000 capped a 4-hour video's report at the same length as a
+    # 10-minute one; D-055 scored the default 4/10 on signal density against a
+    # max-effort control that ran ~2.5x longer on the same transcript.
+    _synth_cfg = resolve_config("knowledge_synthesize_report")
+    synth_max_tokens = min(
+        max(int(_count_tokens(merged_json) * 1.0), 8_000),
+        max_output_for(_synth_cfg.model),
+    )
     llm = get_llm_for(
         "knowledge_synthesize_report",
         temperature=0.2,
-        max_tokens=8000,
+        max_tokens=synth_max_tokens,
+    )
+    logger.info(
+        "synthesize_report: extraction %d tokens -> completion budget %d (model %s)",
+        _count_tokens(merged_json), synth_max_tokens, _synth_cfg.model,
     )
     prompt = SYNTHESIZE_REPORT_PROMPT.format(
         video_title=state.get("video_title", "") or "Unknown",
@@ -288,7 +302,7 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
 
     try:
         response = llm.invoke([HumanMessage(content=prompt)])
-        md = (response.content or "").strip()
+        md = response_text(response).strip()
         # Strip a surrounding code fence the model might add despite instructions.
         if md.startswith("```"):
             lines = md.splitlines()

@@ -26,7 +26,7 @@ from app.agents.prompts.qa_history_prompts import (
 )
 from app.config import settings
 from app.services import chroma_service
-from app.services.llm_service import get_llm_for
+from app.services.llm_service import get_llm_for, response_text
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +184,7 @@ def _refine_context(question: str, raw_context: str) -> str:
             "Q&A history refine LLM call failed; falling back to raw context"
         )
         return raw_context
-    refined = (response.content or "").strip()
+    refined = response_text(response).strip()
     logger.info(
         "Q&A history refined context: %d chars from %d chars raw",
         len(refined), len(raw_context),
@@ -211,7 +211,7 @@ def _formulate_answer(
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_prompt),
     ])
-    return response.content or ""
+    return response_text(response)
 
 
 def _filter_cited_references(answer: str, refs: list[dict]) -> list[dict]:

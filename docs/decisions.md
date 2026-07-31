@@ -1890,3 +1890,33 @@ Concrete failures that decided it: sonnet named **18 distinct tools/models vs op
 **Tests.** 11 regression tests asserting the **absence** of foreign data — the only direction that would have caught any of these. Two of them found real bugs in the fix itself: `session_factory()` outside the `try` (a DB blip would have crashed the socket loop rather than denying) and the test-database issue above.
 
 **Linked initiatives / PRs.** E-5.10 / S-5.10.1. Supersedes the library-is-global assumption in CLAUDE.md, which is updated in the same change.
+
+
+## D-064 — Output length: corpus brackets with an optional user override (2026-07-31)
+
+**Status:** accepted.
+
+**Context.** Requirement (R4): report/Q&A/knowledge length should depend on the size bracket of the corpus, with defaults per bracket and an optional user override chosen at job submission, presented non-obstructively.
+
+Grounding the requirement first showed **most of it already shipped**: since [D-056](#d-056--report-pipeline-budgets-derived-from-work-lossless-reduce-sectioned-compose-2026-07-30) report length scales *continuously* with corpus — `_completion_budget` derives from the work in front of each call and compose splits each section across as many calls as its material needs. What was missing was an explicit bracket concept and any user control.
+
+**The trap.** Implementing "bracket" as a **cap** would re-introduce exactly the defect D-055/D-056 removed: hardcoded `max_tokens=3000` on map and `6000` on reduce, which made a 200-video job produce a report citing 2 channels out of 92. [D-062](#d-062--report_compose-upgraded-to-claude-opus-5-2026-07-31) then showed length intuitions here were wrong twice — opus ran 2.6x longer *and* ~1.4x denser, so the extra length carried extra information rather than padding.
+
+**Decision.** Brackets are **not caps**. `app/services/output_length.py` does two things:
+
+1. **Scales the derived budget** by a multiplier. The budget still tracks corpus size continuously; the multiplier only shifts where on that curve the report sits. "Deep" on a small corpus therefore never exceeds what the corpus supports, because the derived figure remains the base — there is a test asserting deep-on-small < brief-on-large.
+2. **Changes the composer's brief.** D-062 measured that a model writes to the brief it is given far more than to the token ceiling it is handed, so each preference carries prose guidance. The `deep` brief explicitly forbids padding ("length must be earned by content — never pad, restate, or inflate"), pinned by a test.
+
+**Brackets** (from the statistics the report agent already computes): `xlarge` (>=120 videos or >=500K words), `large` (>=40 / >=150K), `medium` (>=10 / >=30K), `small`. Defaults are *inverse* to size — small corpora are written up more fully per source (little material, so treat it properly); xlarge is already large at 1.0 and needs no inflation.
+
+**User override:** `brief` 0.45 / `standard` 1.0 / `deep` 1.6, applied instead of the bracket default. `jobs.output_length` (migration `e5f6a7b8c9d1`), NULL == "no preference expressed" — `auto` is normalised to NULL at creation so the column means exactly one thing. Existing jobs keep today's behaviour untouched.
+
+**Extraction is deliberately NOT scaled.** Fidelity of what we pull out of the corpus is not a user preference; only how much of it gets written up is. `_MAP_EXTRACTION_RATIO` stays at 0.40 regardless.
+
+**UI.** A "Report depth" select beside "Number of videos", defaulting to *Auto (recommended)*, sent only when the user actively picks something. Additive and ignorable, per the requirement that it be non-obstructive.
+
+**Robustness.** An unknown value (stale row, hand-edited DB) falls back to the bracket default rather than raising — an odd string must never fail a job. Tested.
+
+**Consequences / incomplete.** This covers the **report** surface only. **Q&A remains corpus-blind**: `formulate_answer` still gets a fixed 4,500-token budget and never sees video/word counts. The requirement explicitly covers Q&A, so R4 is not fully satisfied — the remainder is deliberately deferred into the R3+R5 work because all three touch the same Q&A prompt files and doing it now would churn prompts hardened against measured defects twice. Tracked as S-1.15.2.
+
+**Linked initiatives / PRs.** E-1.15 / S-1.15.1; constrained by D-055, D-056, D-062.

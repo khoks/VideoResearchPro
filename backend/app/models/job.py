@@ -45,6 +45,13 @@ class Job(Base):
     channel_list: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
     videos_per_channel: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # R4 / D-064: optional user override of report depth. NULL == 'auto',
+    # meaning the corpus size bracket decides. Never a hard cap — it scales
+    # the derived budget and changes the composer's brief (see
+    # app/services/output_length.py for why capping would re-introduce the
+    # defect D-056 removed).
+    output_length: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
     # Search metadata
     search_queries_used: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
 

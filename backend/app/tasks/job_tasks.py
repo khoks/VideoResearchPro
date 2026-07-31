@@ -1260,6 +1260,8 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 job_type=job.job_type,
                 topic=job.topic or "Channel Collection",
                 transcript_chunks=all_chunks,
+                # R4: NULL means the corpus bracket decides.
+                output_length=job.output_length,
             )
         logger.info(f"[job:{job_id}] Report agent complete, building HTML...")
 

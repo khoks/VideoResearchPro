@@ -34,6 +34,9 @@ class ReportAgentState(TypedDict):
     report_sections: dict[str, str]
     statistics: dict
     final_html: str
+    # R4 / D-064: user's optional depth override ('brief'|'standard'|'deep');
+    # None means 'auto' — the corpus size bracket decides.
+    output_length: str | None
     # S-1.12.4 loud accounting: map batch/drop counters surfaced as a
     # processing-note footer in the composed report.
     processing_notes: dict

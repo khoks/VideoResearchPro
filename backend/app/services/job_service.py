@@ -37,6 +37,13 @@ def create_job(
         preferred_channels=json.dumps(job_data.preferred_channels) if job_data.preferred_channels else None,
         channel_list=json.dumps(job_data.channel_list) if job_data.channel_list else None,
         videos_per_channel=job_data.videos_per_channel,
+        # R4: normalise 'auto' to NULL so the column means exactly one thing —
+        # "the user expressed no preference, let the corpus bracket decide".
+        output_length=(
+            job_data.output_length
+            if getattr(job_data, "output_length", None) not in (None, "auto")
+            else None
+        ),
         tenant_id=tenant_id,
     )
     db.add(job)

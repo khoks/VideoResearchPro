@@ -9,6 +9,7 @@ import {
   Card,
   FormField,
   Input,
+  Select,
   Textarea,
 } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
@@ -21,7 +22,7 @@ import {
   radius,
   space,
 } from '../theme';
-import type { Job, JobCreate, JobType } from '../types/job';
+import type { Job, JobCreate, JobType, OutputLength } from '../types/job';
 
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
@@ -50,6 +51,7 @@ interface PersistedFormState {
   channelList: string;
   videosPerChannel: number;
   subscriptionChannels: string;
+  outputLength: OutputLength;
 }
 
 const DEFAULT_FORM: PersistedFormState = {
@@ -57,6 +59,7 @@ const DEFAULT_FORM: PersistedFormState = {
   topic: '',
   searchInstructions: '',
   numVideos: 10,
+  outputLength: 'auto',
   minDuration: '',
   maxDuration: '',
   channelFilters: [],
@@ -98,6 +101,7 @@ function jobToFormState(job: Job): PersistedFormState {
     topic: job.topic ?? '',
     searchInstructions: job.search_instructions ?? '',
     numVideos: job.num_videos ?? 10,
+    outputLength: 'auto',
     minDuration: job.min_duration_minutes != null ? String(job.min_duration_minutes) : '',
     maxDuration: job.max_duration_minutes != null ? String(job.max_duration_minutes) : '',
     channelFilters: validFilters,
@@ -207,6 +211,7 @@ export function SubmitJobPage() {
     setValidationError(null);
 
     const data: JobCreate = { job_type: form.jobType };
+    if (form.outputLength !== 'auto') data.output_length = form.outputLength;
 
     if (form.jobType === 'topic') {
       if (!form.topic.trim()) {
@@ -464,6 +469,26 @@ export function SubmitJobPage() {
                     min={1}
                     max={numVideosCap}
                   />
+                )}
+              </FormField>
+              {/* R4: optional depth override. Defaults to Auto so the control
+                  is additive — a user who ignores it gets the corpus-size
+                  default, which is the behaviour that already shipped. */}
+              <FormField
+                label="Report depth"
+                helperText="Auto sizes the report to how much material the corpus actually yields."
+              >
+                {(id) => (
+                  <Select
+                    id={id}
+                    value={form.outputLength}
+                    onChange={(e) => update('outputLength', e.target.value as OutputLength)}
+                  >
+                    <option value="auto">Auto (recommended)</option>
+                    <option value="brief">Brief — headline findings only</option>
+                    <option value="standard">Standard</option>
+                    <option value="deep">Deep — develop the reasoning</option>
+                  </Select>
                 )}
               </FormField>
               <div className="form-row" style={{ display: 'flex', gap: space['4'] }}>

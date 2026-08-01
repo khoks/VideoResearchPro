@@ -119,14 +119,35 @@ def test_budget_exhaustion_stops_further_work():
     run.assert_not_called()
 
 
-def test_exhaustion_is_announced_once_not_per_video(caplog):
+def test_exhaustion_is_announced_once_not_per_video():
     """Silent exhaustion is indistinguishable from 'the selector found
-    nothing' — but 200 identical warnings is its own kind of unreadable."""
+    nothing' — but 200 identical warnings is its own kind of unreadable.
+
+    Asserted against the logger rather than `caplog`: caplog only sees a
+    record if nothing in the process has disabled logging, removed pytest's
+    root handler, or cut propagation, so a caplog assertion here silently
+    becomes a test of global logging state instead of this function's
+    behaviour. It failed in the full suite for exactly that reason while
+    passing in isolation. Patching the logger pins what is actually being
+    claimed: one warning, no matter how many videos follow.
+    """
     budget = VisualBudget(0)
-    with patch("app.config.settings.VISUAL_ENABLED", True), caplog.at_level("WARNING"):
+    with patch("app.config.settings.VISUAL_ENABLED", True), \
+         patch("app.tasks.job_tasks.logger") as log:
         for _ in range(5):
             _with_visuals(None, _job(), _video(), SEGMENTS, budget, "j1")
-    assert sum("budget exhausted" in r.message for r in caplog.records) == 1
+
+    warnings = [
+        c for c in log.warning.call_args_list
+        if "budget exhausted" in str(c.args[0])
+    ]
+    assert len(warnings) == 1, (
+        f"expected exactly one exhaustion warning across 5 videos, "
+        f"got {len(warnings)}"
+    )
+    # The operator has to be able to act on it, so the message must name the
+    # knob that caused it.
+    assert "VISUAL_MAX_FRAMES_PER_JOB" in str(warnings[0].args[0])
 
 
 # ---------------------------------------------------------------------------

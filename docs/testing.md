@@ -49,9 +49,10 @@ For single-surface bugs, write a regular `test_routers/` or `test_services/` tes
 
 ---
 
-## 3. The four test isolation tricks
+## 3. The five test isolation tricks
 
-The whole strategy hangs on four substitutions for external systems.
+Four are substitutions for external systems. The fifth (3.5) is about global
+process state that no fixture owns.
 
 ### 3.1. Database: in-memory SQLite with `StaticPool`
 
@@ -134,6 +135,45 @@ def test_qa_agent_handles_empty_context(monkeypatch):
 Real provider SDKs are never instantiated in tests. The `LLM_USE_CASE_CONFIG` env var is also irrelevant — patches short-circuit it.
 
 For testing the **routing logic itself** (provider selection, env parsing, fail-soft probing), see `tests/test_services/test_llm_routing.py`, `test_llm_service_routing.py`, and `test_llm_smoke.py`.
+
+---
+
+### 3.5. Logging: assert on the logger, not on `caplog`
+
+`caplog` is a fixture over **global** logging state. A record only reaches it
+if nothing else in the process has disabled logging, replaced the root
+handler list, or cut propagation on an ancestor logger. Nothing guarantees
+that across a 1,300-test suite, and nothing warns you when it stops being
+true — the assertion just silently starts measuring the wrong thing.
+
+This is not hypothetical. `test_exhaustion_is_announced_once_not_per_video`
+(R1 frame budget) passed on its own, passed after `test_agents`,
+`test_models`, `test_routers` and `test_utils`, and failed in the full suite
+with `assert 0 == 1` — zero records captured — once `test_services` had run
+first. The code under test was emitting the warning correctly the whole time.
+
+**When the claim is "this code logs X", patch the logger:**
+
+```python
+def test_exhaustion_is_announced_once_not_per_video():
+    budget = VisualBudget(0)
+    with patch("app.tasks.job_tasks.logger") as log:
+        for _ in range(5):
+            _with_visuals(None, job, video, segments, budget, "j1")
+
+    warnings = [c for c in log.warning.call_args_list
+                if "budget exhausted" in str(c.args[0])]
+    assert len(warnings) == 1
+```
+
+This is stricter than the `caplog` form, not weaker: it pins *which* logger
+emitted, *how many times*, and is immune to whatever ran before it.
+
+`caplog` is still fine when the log line genuinely is the observable — e.g.
+`test_email_service.py` asserting that an unconfigured-SMTP fallback prints
+the body it would have sent. The rule is about which thing you are claiming:
+**behaviour of your function → patch the logger; content of a log-as-output
+surface → `caplog` is the subject.**
 
 ---
 

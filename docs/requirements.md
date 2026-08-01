@@ -271,3 +271,13 @@ Things that are intentionally **not** requirements today:
 - SaaS forward-compat — [saas-roadmap.md](saas-roadmap.md)
 - Personal Brain forward-compat — [personal-brain.md](personal-brain.md)
 - Multi-source forward-compat — [source-types.md](source-types.md)
+
+### FR-19 — Visual understanding (opt-in)
+
+A job may request visual analysis at submission (`visual_analysis: true`). When the install also enables it (`VISUAL_ENABLED`), each ingested video is analysed for moments where on-screen content carries information the speech does not; stills are captured at those moments, described by a multimodal model in the context of the surrounding speech, and merged into the transcript as `[VISUAL @ mm:ss — …]` annotations.
+
+- Frames are keyed on the document and reused by every job referencing it, like transcripts and embeddings.
+- Per-video and per-job frame caps bound cost; unused allowance returns to the job pool, and reused frames cost nothing.
+- Annotations are marked in chunk text so they survive chunking, and every prompt reading transcript text is instructed to treat them as on-screen evidence rather than speech.
+- Failure is isolated: a blocked download, an unusable selection, or a failed description never prevents a job from completing.
+- Off by default. See [D-067](decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31).

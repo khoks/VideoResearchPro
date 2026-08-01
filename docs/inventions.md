@@ -83,3 +83,43 @@ The bias is toward **over-capture**: a false positive (filing something that tur
 - [`vision.md`](vision.md) — vision describes goals; this log captures specific *means*.
 - [`feature-roadmap.md`](feature-roadmap.md) — once an invention realizes as a feature, the roadmap entry should add `Realizes invention [N-NNN](inventions.md#n-NNN-...).`
 - [`docs/notes/`](notes/) — verbatim user messages preserved as raw safekeeping artifacts.
+
+
+### N-002 — Proportion-driven rendering policy for code-mixed speech (2026-07-31)
+
+**Status:** captured
+
+**Source.** User, session 2026-07-31, while reviewing R5. Introduced unprompted and explicitly flagged: *"R5 seems to be a candidate for novel invention if we carefully detect and handle the balance of words from different scripts and grammar used and syntax used in different portions of the speech."* Verbatim message preserved at [docs/notes/2026-07-31-novel-code-mixing-rendering.md](notes/2026-07-31-novel-code-mixing-rendering.md).
+
+**Summary.** Speakers across the Middle East, South Asia and East Asia routinely mix languages *inside a single clause* — one language supplying grammar and syntax, another supplying vocabulary. Existing language identification answers "what language is this document/segment?" with one label, which is the wrong question for such speech: the honest answer is "two, structurally interleaved". The proposal is to treat measured **proportion** not as a classification output but as a **rendering policy**, and to decouple the language used for *analysis* from the language used for *quotation*.
+
+**Mechanism.**
+
+1. **Measure the balance, not the label.** For a span of speech, measure the proportion of words attributable to each language, and — the distinguishing part — which language supplies the *matrix* (grammar/syntax) versus which supplies *embedded* vocabulary. The worked example is English-matrix with Hindi-embedded clauses:
+
+   > "and this is how we were preparing *taaki baadme koi kasar koi zarra na reh jaye* and so we kept on you know adding *hum jodte rahe cheezein*"
+
+2. **Bidirectional handling.** Analysis, extraction, ranking and reporting run on an **English** rendering, so every downstream stage sees one language. Quotation retains the **original**, with transliteration and translation alongside — so authenticity survives without contaminating the analysis path.
+
+3. **Proportion thresholds select the quoting form**, rather than one global rule:
+   - dominant single language (user's suggestion: >60%) → keep the whole sentence in that language's script;
+   - heavy interleaving → Roman transliteration throughout, so a reader can follow one script;
+   - light borrowing → simplify to English entirely.
+
+4. **Transcript-level "spirit" resolution.** Optionally resolve the *primary language of communication* for the whole transcript and let that set the script policy, rather than deciding sentence by sentence — avoiding a report that flickers between scripts paragraph to paragraph.
+
+**Why this is potentially novel.**
+
+- **Language ID returns a label; this returns a policy.** Standard detectors (lingua, CLD3, fastText, langdetect) emit `{lang: confidence}` per document or per segment. None of them prescribe *how to render* the text downstream, and none model matrix-vs-embedded structure — which is the linguistically meaningful distinction in code-switching (cf. Myers-Scotton's Matrix Language Frame model, which is descriptive linguistics rather than a rendering system).
+- **The analysis/quotation split is unusual.** Translation pipelines normally pick one target and convert wholesale; RAG systems normally embed the source as-is. Doing both deliberately — normalise for machine reasoning, preserve for human citation — is a system-design choice we have not seen packaged as a policy.
+- **Thresholds as product behaviour.** Treating "60% one language" as a *rendering* decision rather than a *classification* decision inverts the usual use of confidence scores.
+
+**Prior-art notes.** Adjacent work we already know of: Myers-Scotton's Matrix Language Frame (linguistic theory of code-switching, not an engineering system); romanisation standards (IAST, ISO 15919, ALA-LC) which define *how* to transliterate but not *when*; multilingual embeddings such as `paraphrase-multilingual-MiniLM-L12-v2` which place mixed text in shared vector space without addressing rendering; LID benchmarks for code-switched text (e.g. LinCE) which measure token-level tagging accuracy rather than downstream presentation. None of these combine proportion measurement, matrix/embedded structure, and a bidirectional analyse-in-English / quote-in-original policy. **A proper prior-art search has NOT been done** — this entry is captured on the inclusive-capture principle, and may later be marked superseded.
+
+**The gap it targets is real and currently unsolved in this codebase.** `app/services/language_service.py` (D-066) profiles Unicode scripts and is exact for Devanagari/Arabic mixed with Latin — but the user's own example is *entirely Latin script*, so the service reads it as English. `test_romanised_code_mixing_is_NOT_detected_by_design` pins that limitation deliberately. This invention is what would close it.
+
+**Commercial / strategic implications.** The addressable content this unlocks is large: Hindi/Urdu, Arabic/Persian and Southeast Asian creator ecosystems are enormous and poorly served by English-first research tooling. A system that ingests code-mixed speech and produces clean English analysis *with citable original-language quotes* is a differentiator for a research product aimed at those markets — and, per [vision.md](vision.md), for a personal brain that learns a multilingual user's actual voice. Whether to pursue disclosure, patent, or deliberate open publication is the user's call with counsel.
+
+**Linked decisions / initiatives / PRs.** [D-066](decisions.md#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31), E-1.16 (R5), S-1.16.2 (implementation of this mechanism).
+
+**Verbatim source.** [docs/notes/2026-07-31-novel-code-mixing-rendering.md](notes/2026-07-31-novel-code-mixing-rendering.md)

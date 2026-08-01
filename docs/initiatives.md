@@ -574,19 +574,39 @@ Q&A is corpus-blind: `formulate_answer` has a fixed 4,500-token budget and never
 - [ ] T-1.16.1.7 Persist the per-document language profile (`documents.language_mix`) so the per-video label stops being the only signal
 - [ ] T-1.16.1.8 English-preference in `search_rank_and_curate` ranking — a preference, never a filter (D-059)
 
+#### S-1.16.2 🔵 Proportion-driven rendering for code-mixed speech — implements [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31)
+The shipped script profiler is exact for script mixing and **blind to romanised code-mixing** — the user's own example ("...taaki baadme koi kasar koi zarra na reh jaye...") is entirely Latin and reads as English today. This story closes that gap.
+- [ ] T-1.16.2.1 Detect romanised non-English spans. Script analysis cannot; candidates are an LLM pass over the transcript (cheap, volume tier) or a lexicon/n-gram approach. **Measure before choosing** — do not assume a library solves it
+- [ ] T-1.16.2.2 Estimate matrix vs embedded language per span (which language supplies grammar, which supplies vocabulary) — the distinguishing part of N-002
+- [ ] T-1.16.2.3 Proportion thresholds as a RENDERING policy: dominant-language (>60%) keeps that script; heavy interleaving → Roman transliteration; light borrowing → plain English
+- [ ] T-1.16.2.4 Transcript-level "primary language of communication" resolution, so a report does not flicker between scripts paragraph to paragraph
+- [ ] T-1.16.2.5 Bidirectional split: analysis/extraction/ranking run on the English rendering; quotation retains original + transliteration + translation
+- [ ] T-1.16.2.6 Evaluate on real code-mixed transcripts before claiming it works — the honest failure mode here is silently passing Hinglish through as English
+
 ### E-1.17 🟡 Temporal / era awareness (R3)
 
 **Why it exists.** A corpus spans time. A claim made in 2024 is not the same claim in 2026; relevance and meaning shift with publication date.
 **Linked decision:** [D-066](decisions.md#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31)
 
-#### S-1.17.1 🟢 Dates reach the prompts — shipped 2026-07-31
+**SCOPE CORRECTION 2026-07-31.** The requirement has TWO dimensions and only one was built. The user's words: *"the time when the videos were posted, AND which era/timeperiod they are talking about"*, affecting *"knowledge extraction, search ranking, qna, reporting"*. Publication date is done. **The era a video DISCUSSES is not**, and **search ranking received no temporal signal at all**. E-1.17 stays 🟡 until S-1.17.2 lands; describing R3 as "core shipped" was an overstatement.
+
+#### S-1.17.1 🟢 Publication date reaches the prompts — shipped 2026-07-31
 - [x] T-1.17.1.1 `compute_statistics` derives earliest/latest/median publish date + per-year counts
 - [x] T-1.17.1.2 Map chunk headers carry `published <date>`
 - [x] T-1.17.1.3 `TEMPORAL_AWARENESS` / `TEMPORAL_EXTRACTION_NOTE` fragments; guardrail conflict resolved by SUPPLYING verified dates rather than relaxing D-062's anti-invention rule
 - [x] T-1.17.1.4 Q&A receives publication span and weights recency for time-sensitive questions
 - [ ] T-1.17.1.5 Date into the Q&A allowed-sources list so citations show source vintage inline
 - [ ] T-1.17.1.6 `published_ts` / `published_year` in Chroma metadata to enable recency-weighted retrieval
-- [ ] T-1.17.1.7 Optional `temporal_scope_extract` use case — the ERA a document discusses, distinct from when it was published
+- [x] ~~T-1.17.1.7 Optional `temporal_scope_extract`~~ — promoted out of "optional" into S-1.17.2; it is half the requirement, not a nice-to-have
+
+#### S-1.17.2 🔵 The era a source DISCUSSES, and temporal signal in ranking — the missing half of R3
+A 2026 video about a 2019 paper is a 2026 source about a 2019 event. Nothing in the pipeline currently distinguishes those, and the search ranker has never seen a date.
+- [ ] T-1.17.2.1 `temporal_scope_extract` use case — per-document `{era_start, era_end, era_confidence, is_retrospective}` distinct from `published_at`. Economy tier, structured JSON, map-phase volume
+- [ ] T-1.17.2.2 Persist as `documents.discussed_era_json`; surface in chunk metadata so retrieval can filter/weight on it
+- [ ] T-1.17.2.3 Temporal signal in `search_rank_and_curate` — recency preference where the topic is fast-moving, foundational-content preference where it is evergreen. Must be a RANKING input, never a filter (same reasoning as D-059's language decision)
+- [ ] T-1.17.2.4 Knowledge extraction: anchor relative time ("last year", "the new model") against the document's publish date so extracted events carry absolute dates
+- [ ] T-1.17.2.5 Report: distinguish "claim was true as of <date>" from "claim is true now", and surface supersession where a later source contradicts an earlier one
+- [ ] T-1.17.2.6 Q&A: weight recency for time-sensitive questions, and say so in the answer when sources disagree along a time axis
 
 ### E-2.1 🟢 Tokens layer (`frontend/src/theme.ts`)
 

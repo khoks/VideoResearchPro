@@ -35,7 +35,9 @@ from app.services.llm_routing import (
     USE_CASE_REGISTRY,
     UseCase,
     UseCaseConfig,
+    is_vision_use_case,
     resolve_config,
+    warn_if_not_vision_capable,
 )
 from app.services.llm_service import ProbeResult, probe_config
 
@@ -84,6 +86,13 @@ FEATURE_TO_USE_CASES: dict[str, list[UseCase]] = {
         "report_reduce_summaries",
         "report_channel",
         "report_compose_channel_section",
+    ],
+    # R1. Deliberately its own feature rather than folded into topic_job:
+    # visual analysis is opt-in, so a vision outage must grey out the
+    # visual toggle without making the whole job type look unavailable.
+    "visual_analysis": [
+        "visual_select_moments",
+        "visual_describe_frame",
     ],
 }
 
@@ -207,21 +216,32 @@ _STATUS = LLMStatus()
 # ---------------------------------------------------------------------------
 # Probe orchestration
 # ---------------------------------------------------------------------------
-def _dedupe_key(cfg: UseCaseConfig) -> tuple[str, str]:
+_ProbeKey = tuple[str, str, bool]
+
+
+def _dedupe_key(cfg: UseCaseConfig, vision: bool) -> _ProbeKey:
     """Two configs with the same ``(provider, model)`` are treated as
     equivalent for probing purposes — reasoning differences don't change
-    reachability."""
-    return (cfg.provider, cfg.model)
+    reachability.
+
+    ``vision`` is part of the key, not a detail of it. A text-only probe
+    against a text-only model succeeds; if a multimodal use case shared a
+    probe with a text one on the same (provider, model), a model that
+    cannot accept images would be reported healthy and fail on the first
+    real frame. The two probes ask different questions, so they cannot
+    share an answer.
+    """
+    return (cfg.provider, cfg.model, vision)
 
 
-def _collect_probe_targets() -> dict[tuple[str, str], tuple[UseCaseConfig, list[str]]]:
-    """Group the 19 registry entries by their resolved ``(provider, model)``.
+def _collect_probe_targets() -> dict[_ProbeKey, tuple[UseCaseConfig, list[str]]]:
+    """Group registry entries by their resolved ``(provider, model, vision)``.
 
     Returns ``{key: (representative_config, [use_cases_using_it])}``. Probe
     the representative once; fan the result out to every use case in the
     list.
     """
-    targets: dict[tuple[str, str], tuple[UseCaseConfig, list[str]]] = {}
+    targets: dict[_ProbeKey, tuple[UseCaseConfig, list[str]]] = {}
     for use_case in USE_CASE_REGISTRY:
         try:
             cfg = resolve_config(use_case)
@@ -231,7 +251,10 @@ def _collect_probe_targets() -> dict[tuple[str, str], tuple[UseCaseConfig, list[
                 use_case,
             )
             continue
-        key = _dedupe_key(cfg)
+        vision = is_vision_use_case(use_case)
+        if vision:
+            warn_if_not_vision_capable(use_case, cfg)
+        key = _dedupe_key(cfg, vision)
         if key not in targets:
             targets[key] = (cfg, [])
         targets[key][1].append(use_case)
@@ -281,11 +304,14 @@ async def run_startup_probes(
         sum(len(ucs) for _, ucs in targets.values()),
     )
 
-    async def _probe_one(cfg: UseCaseConfig) -> ProbeResult:
+    async def _probe_one(cfg: UseCaseConfig, vision: bool) -> ProbeResult:
         try:
             return await asyncio.wait_for(
                 asyncio.to_thread(
-                    probe_config, cfg, timeout_seconds=timeout_seconds_per_probe
+                    probe_config,
+                    cfg,
+                    timeout_seconds=timeout_seconds_per_probe,
+                    vision=vision,
                 ),
                 timeout=timeout_seconds_per_probe + 5,
             )
@@ -308,9 +334,9 @@ async def run_startup_probes(
             )
 
     keys = list(targets.keys())
-    configs = [targets[k][0] for k in keys]
     probe_results = await asyncio.gather(
-        *(_probe_one(c) for c in configs), return_exceptions=False
+        *(_probe_one(targets[k][0], k[2]) for k in keys),
+        return_exceptions=False,
     )
 
     statuses: list[UseCaseStatus] = []

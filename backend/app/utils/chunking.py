@@ -47,9 +47,21 @@ def _expand_segments_to_sentences(
     The parent segment's ``extra`` dict propagates to every sentence-level
     sub-segment — all sentences within one segment share the same
     provenance (same reply, same author, etc.).
+
+    Segments carrying ``extra["atomic"]`` are exempt (R1). A visual
+    annotation is a single indivisible unit whose `[VISUAL @ mm:ss — ...]`
+    wrapper is what tells every downstream model these words were never
+    spoken. Sentence-splitting it would leave the opening marker on the
+    first fragment and the closing bracket on the last, with the middle
+    sentences reading as speech — the precise failure this feature must
+    not have. The interpolated per-sentence timestamps would be fiction
+    too: an annotation describes one instant, not a span to divide up.
     """
     expanded: list[_Seg] = []
     for text, start, end, extra in segments:
+        if extra.get("atomic"):
+            expanded.append((text, start, end, extra))
+            continue
         sentences = _split_into_sentences(text)
         if len(sentences) <= 1:
             expanded.append((text, start, end, extra))
@@ -180,14 +192,38 @@ def chunk_transcript(
         citation accuracy).
         """
         chunk_text = " ".join(it[0] for it in items)
+
+        # R1: visual annotations are excluded from the dominant-segment
+        # vote. `dominant` decides whose REPLY this chunk is attributed to,
+        # and an annotation belongs to no reply — letting a long
+        # description outvote the speech would blank the chunk's
+        # comment_id/author and mis-attribute the citation. They are
+        # aggregated separately below instead.
+        speech_items = [it for it in items if not (it[3] or {}).get("atomic")]
+        vote_items = speech_items or items
+
         # Dominant segment — most tokens wins. Ties broken by first-
         # occurrence (Python max() is stable, returns the first
         # equal-key element).
         dominant = max(
-            items,
+            vote_items,
             key=lambda it: _count_tokens(it[0]),
         )
         dominant_extra = dominant[3] or {}
+
+        # R1: aggregate ACROSS ALL segments rather than promoting one.
+        # The dominant heuristic exists to pick a single citation target;
+        # visual presence is not a competition — a chunk with 240 tokens of
+        # speech and one 12-token annotation genuinely has both, and the
+        # annotation would always lose a dominance vote it should never
+        # have been entered into.
+        visual_ts = [
+            it[3]["frame_timestamp"]
+            for it in items
+            if (it[3] or {}).get("kind") == "visual"
+            and it[3].get("frame_timestamp") is not None
+        ]
+
         return {
             "text": chunk_text,
             "timestamp_start": items[0][1],
@@ -200,6 +236,9 @@ def chunk_transcript(
             "comment_url": dominant_extra.get("comment_url") or "",
             "segment_author": dominant_extra.get("author") or "",
             "segment_depth": dominant_extra.get("depth"),
+            # R1 visual context.
+            "visual_frame_count": len(visual_ts),
+            "visual_timestamps": ",".join(f"{t:.0f}" for t in sorted(visual_ts)),
         }
 
     for text, seg_start, seg_end, extra in segments:
@@ -316,6 +355,13 @@ def chunk_transcript(
                 "segment_author": str(segment_author),
                 "segment_kind": str(segment_kind),
                 "segment_depth": segment_depth,
+                # R1 visual context. The annotation TEXT is already inside
+                # `text` — these exist so retrieval can filter/boost on
+                # visual evidence and so a citation can point at the frame
+                # that grounded it. Chroma stores flat scalars only, hence
+                # the comma-joined timestamp string.
+                "visual_frame_count": int(chunk.get("visual_frame_count") or 0),
+                "visual_timestamps": str(chunk.get("visual_timestamps") or ""),
             },
         })
 

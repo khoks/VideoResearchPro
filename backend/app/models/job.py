@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -51,6 +51,16 @@ class Job(Base):
     # app/services/output_length.py for why capping would re-introduce the
     # defect D-056 removed).
     output_length: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+    # R1 / E-1.18: per-job opt-in to visual understanding (frame capture +
+    # description). Off by default and AND-ed with the install-wide
+    # `VISUAL_ENABLED` setting — both must be true. Opt-in rather than
+    # opt-out because the feature adds video-stream downloads on top of the
+    # audio-only traffic that already triggered a YouTube IP block once
+    # (D-051), and because it is the app's only multimodal spend.
+    visual_analysis: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="0"
+    )
 
     # Search metadata
     search_queries_used: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array

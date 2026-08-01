@@ -26,6 +26,15 @@ class JobCreate(BaseModel):
     # experience — the control is additive and never required.
     output_length: Literal["auto", "brief", "standard", "deep"] | None = None
 
+    # R1: opt-in visual understanding — capture frames at moments the
+    # transcript suggests something is being SHOWN, describe them, and merge
+    # the descriptions into the transcript as clearly-marked annotations.
+    # Opt-in rather than default because it adds video-stream downloads on
+    # top of the audio traffic that already triggered a YouTube IP block
+    # once (D-051), and because it is the app's only multimodal spend.
+    # AND-ed with the install-wide VISUAL_ENABLED setting.
+    visual_analysis: bool = False
+
     # Channel fields
     channel_list: list[str] | None = None
     videos_per_channel: int | None = Field(default=10, ge=1, le=50)
@@ -60,6 +69,8 @@ class JobResponse(BaseModel):
     preferred_channels: list[str] | None = None
     channel_list: list[str] | None = None
     videos_per_channel: int | None = None
+    output_length: str | None = None
+    visual_analysis: bool = False
     search_queries_used: list[str] | None = None
     channel_list_resolved: list[dict] | None = None
     progress_pct: int

@@ -650,6 +650,100 @@ def _load_cached_segments(video_id: str) -> tuple[list[dict], str] | None:
         db.close()
 
 
+class VisualBudget:
+    """Per-job frame budget for R1 visual analysis.
+
+    Held by the extraction loop and decremented as documents consume it, so
+    a 200-video corpus cannot multiply the per-video cap into an unbounded
+    bill. When the budget runs out the remaining documents are skipped with
+    an explicit log line — a silent stop would look identical to "the
+    selector found nothing", which is the one thing this must never be
+    confused with.
+    """
+
+    def __init__(self, total: int) -> None:
+        self.remaining = max(0, total)
+        self.exhausted_announced = False
+
+    def take(self, want: int) -> int:
+        allowed = min(want, self.remaining)
+        self.remaining -= allowed
+        return allowed
+
+
+def _with_visuals(
+    db,
+    job: Job,
+    video: Document,
+    segments: list[dict],
+    budget: VisualBudget | None,
+    job_id: str,
+) -> list[dict]:
+    """Run visual analysis for ``video`` and return annotated segments.
+
+    Returns ``segments`` unchanged whenever visual analysis is off, out of
+    budget, or fails. This is opt-in enrichment on top of a working
+    product: nothing here may break a job that would otherwise complete.
+
+    The returned list is a new object — `visual_service.annotate_segments`
+    never mutates its input, which matters because these segments come from
+    the globally-shared `transcript_cache`.
+    """
+    if budget is None or not settings.VISUAL_ENABLED:
+        return segments
+    if not getattr(job, "visual_analysis", False):
+        return segments
+    if video.source_type != "video":
+        # Frame capture is YouTube-specific today. A Reddit thread has no
+        # video stream to seek into.
+        return segments
+
+    allowance = budget.take(settings.VISUAL_MAX_FRAMES_PER_VIDEO)
+    if allowance <= 0:
+        if not budget.exhausted_announced:
+            budget.exhausted_announced = True
+            logger.warning(
+                f"[job:{job_id}] Visual frame budget exhausted "
+                f"(VISUAL_MAX_FRAMES_PER_JOB={settings.VISUAL_MAX_FRAMES_PER_JOB}); "
+                "remaining videos are processed without visual analysis"
+            )
+        return segments
+
+    try:
+        from app.agents.visual_agent import run_visual_agent
+        from app.services.visual_service import annotate_segments
+
+        frames, spent = run_visual_agent(
+            db,
+            video_id=video.video_id,
+            video_title=video.title or "",
+            channel_name=video.channel_name or "",
+            segments=segments,
+            duration_seconds=video.duration_seconds,
+            max_frames=allowance,
+        )
+        # Charge only what was actually captured, and hand the rest back.
+        # `spent` is 0 when the document's frames already existed — re-running
+        # a job over a processed corpus costs nothing, and charging for it
+        # would drain the budget in the first few documents and silently drop
+        # annotations from every one after that.
+        budget.remaining += max(0, allowance - spent)
+        annotated = annotate_segments(segments, frames)
+        if len(annotated) != len(segments):
+            logger.info(
+                f"[job:{job_id}] Visual: {len(annotated) - len(segments)} annotations "
+                f"merged for video_id={video.video_id}"
+            )
+        return annotated
+    except Exception:
+        logger.exception(
+            f"[job:{job_id}] Visual analysis failed for video_id={video.video_id}; "
+            "continuing without annotations"
+        )
+        budget.remaining += allowance
+        return segments
+
+
 def _get_job(db, job_id: str) -> Job | None:
     return db.query(Job).filter(Job.id == job_id).first()
 
@@ -999,6 +1093,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
         global_collection_name = getattr(
             settings, "CHROMA_GLOBAL_COLLECTION_NAME", "pratidhvani_global"
         )
+        visual_budget = VisualBudget(settings.VISUAL_MAX_FRAMES_PER_JOB)
 
         for i, video in enumerate(approved_videos):
             if _is_cancelled(db, job_id):
@@ -1017,7 +1112,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 if cached is not None:
                     segments, cached_language = cached
                     chunks = chunk_transcript(
-                        segments,
+                        _with_visuals(db, job, video, segments, visual_budget, job_id),
                         chunk_size=settings.CHUNK_SIZE,
                         chunk_overlap=settings.CHUNK_OVERLAP,
                         video_metadata=_build_video_metadata(video, cached_language),
@@ -1047,7 +1142,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 if cached is not None:
                     segments, cached_language = cached
                     chunks = chunk_transcript(
-                        segments,
+                        _with_visuals(db, job, video, segments, visual_budget, job_id),
                         chunk_size=settings.CHUNK_SIZE,
                         chunk_overlap=settings.CHUNK_OVERLAP,
                         video_metadata=_build_video_metadata(video, cached_language),
@@ -1116,7 +1211,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                         video.transcript_source = extracted.text_source
 
                     chunks = chunk_transcript(
-                        transcript,
+                        _with_visuals(db, job, video, transcript, visual_budget, job_id),
                         chunk_size=settings.CHUNK_SIZE,
                         chunk_overlap=settings.CHUNK_OVERLAP,
                         video_metadata=_build_video_metadata(video, actual_language),
@@ -1340,6 +1435,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
     global_collection_name = getattr(
         settings, "CHROMA_GLOBAL_COLLECTION_NAME", "pratidhvani_global"
     )
+    visual_budget = VisualBudget(settings.VISUAL_MAX_FRAMES_PER_JOB)
 
     for i, video in enumerate(approved_videos):
         if _is_cancelled(db, job_id):
@@ -1358,7 +1454,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
             if cached is not None:
                 segments, cached_language = cached
                 chunks = chunk_transcript(
-                    segments,
+                    _with_visuals(db, job, video, segments, visual_budget, job_id),
                     chunk_size=settings.CHUNK_SIZE,
                     chunk_overlap=settings.CHUNK_OVERLAP,
                     video_metadata=_build_video_metadata(video, cached_language),
@@ -1379,7 +1475,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
             if cached is not None:
                 segments, cached_language = cached
                 chunks = chunk_transcript(
-                    segments,
+                    _with_visuals(db, job, video, segments, visual_budget, job_id),
                     chunk_size=settings.CHUNK_SIZE,
                     chunk_overlap=settings.CHUNK_OVERLAP,
                     video_metadata=_build_video_metadata(video, cached_language),
@@ -1429,7 +1525,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
                     video.transcript_source = extracted.text_source
 
                 chunks = chunk_transcript(
-                    transcript,
+                    _with_visuals(db, job, video, transcript, visual_budget, job_id),
                     chunk_size=settings.CHUNK_SIZE,
                     chunk_overlap=settings.CHUNK_OVERLAP,
                     video_metadata=_build_video_metadata(video, actual_language),

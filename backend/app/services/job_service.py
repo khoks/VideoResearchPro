@@ -44,6 +44,11 @@ def create_job(
             if getattr(job_data, "output_length", None) not in (None, "auto")
             else None
         ),
+        # R1: the request half of the visual gate. The install-wide
+        # VISUAL_ENABLED setting is the other half and is checked at
+        # extraction time, so a job can record the user's intent even on an
+        # install where the feature is currently switched off.
+        visual_analysis=bool(getattr(job_data, "visual_analysis", False)),
         tenant_id=tenant_id,
     )
     db.add(job)

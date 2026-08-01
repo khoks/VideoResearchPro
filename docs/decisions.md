@@ -2007,3 +2007,35 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 **A caught failure worth recording.** Mid-implementation, a prompt-binding edit silently failed to apply, so `MAP_CHUNK_PROMPT.format()` raised `KeyError` for every batch. The S-1.12.6 bisect-retry caught it, logged a warning, and continued — producing an empty extraction with a polite processing note. The accounting behaved exactly as designed, and the run would have looked green. Unit tests caught it. The lesson for future work here: a swallowed exception plus a fallback path can hide total failure, so map/reduce stages need a test that asserts a *non-empty* result, not merely that the pipeline completed.
 
 **Linked initiatives / PRs.** E-1.16 (R5), E-1.17 (R3), S-1.15.2 (closed). Follows D-059, D-062, D-064, D-065.
+
+### D-067 — Visual understanding: separate frames table, marker-in-text annotation, opt-in per job (2026-07-31)
+
+**Status:** accepted
+
+**Context.** R1 asks the app to work out where something visually important happens in a video, capture screenshots there, describe them *in transcript context*, and attach the descriptions back to the transcript **clearly annotated** so downstream prompts read them as visual aid, never as spoken words. Three sub-decisions had real alternatives.
+
+**Decision.**
+
+1. **Frames live in their own `visual_frames` table, merged into the transcript at chunk time — never by rewriting `transcript_cache`.**
+2. **The annotation marker travels inside the chunk TEXT** (`[VISUAL @ mm:ss — ...]`), not only in metadata.
+3. **Opt-in per job (`jobs.visual_analysis`) AND-ed with an install-wide `VISUAL_ENABLED`.** Both must be true.
+
+**Alternatives considered.**
+
+- *Annotate `transcript_cache` in place.* Simplest merge — and wrong. That table is the globally-shared compute-once layer: one row per video, reused by every job and every tenant (D-063). One job's opt-in feature would rewrite everyone else's source text, re-annotation would be destructive, and a transcript that was never annotated would be indistinguishable from one where the selector legitimately found nothing.
+- *Carry the visual marker in chunk metadata only.* Cleaner separation, but chunking splits, merges, overlaps and re-packs segments, and the dominant-segment heuristic (D-031) promotes exactly one segment's metadata to chunk level. A 12-token annotation beside 240 tokens of speech loses that vote every time. Text physically inside the chunk reaches the model regardless of which chunk it lands in.
+- *Default visual analysis on.* Rejected on two grounds. Frame capture needs a **video** stream, strictly more yt-dlp traffic than the audio-only path that already triggered a YouTube IP block costing 63 videos mid-job (D-051). And it is the app's only multimodal spend — a 200-video corpus at 12 frames each is 2,400 vision calls.
+
+**Consequences.**
+
+- Two chunking changes were required and are load-bearing. `extra["atomic"]` exempts annotations from sentence-splitting, which would otherwise leave the opening marker on one fragment and the closing bracket on another, with the middle sentences reading as speech. Visual presence is aggregated across all segments in a chunk rather than promoted by the dominance vote, and annotations are excluded from that vote so they cannot steal a social chunk's reply attribution.
+- `visual_describe_frame` is the app's **first multimodal use case**, and the first registry entry whose model is not freely swappable. `VISION_USE_CASES` marks it; `warn_if_not_vision_capable` advises without blocking (same fail-soft rule as the rest of `llm_routing`); the smoke check's dedupe key gained a `vision` dimension, because a text-only probe against a text-only model *succeeds* — a misconfigured vision use case would otherwise report healthy at startup and fail on the first real frame.
+- Every prompt family that reads transcript text now carries `VISUAL_ANNOTATION_CONTRACT`, which states that these spans were never spoken, must not be attributed to the speaker, must be cited as "on screen at mm:ss", and lose to the words where the two conflict.
+- The `informative` flag is a model judgement biased toward inclusion. Explicit calibration in the prompt catches descriptions that describe an *absence* of content, but borderline frames still pass. This is deliberate: the structural guarantees (marked, never read as speech) are enforced in code; content quality is not, and is measured separately in S-1.18.3.
+
+**Measured, not assumed.** A 200-second video downloaded at 1.9 MB with the `worstvideo[height>=360]` selector, and the describer read a model name off a code slide, a Pydantic class definition with its pass/fail literal field, and a session UUID from a UI — none of which appear in the transcript.
+
+**A bug this caught.** The first version of the vision probe's embedded PNG was written from memory: plausible-looking, malformed, and rejected by OpenAI with `image_parse_error`. Every vision probe would have reported the model unreachable — a startup banner blaming the provider for our own broken bytes. The constant is now generated, verified with an independent decoder, and pinned by a test that walks the chunk CRCs.
+
+**Linked initiatives / PRs.** E-1.18 (R1). Follows D-031 (dominant-segment heuristic), D-051 (bot-wall), D-063 (shared cache, private catalogue).
+

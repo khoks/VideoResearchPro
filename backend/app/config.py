@@ -217,6 +217,54 @@ class Settings(BaseSettings):
     PDF_MAX_BYTES: int = 100 * 1024 * 1024  # 100 MB
 
     # -------------------------------------------------------------------
+    # Visual understanding (R1 / E-1.18) — frame capture + description
+    # -------------------------------------------------------------------
+    # Everything here is OFF by default and opt-in per job. Two reasons,
+    # both learned the hard way:
+    #
+    # 1. Cost. Frame description is the only multimodal call site in the
+    #    app. A 200-video corpus at 12 frames/video is 2,400 vision calls.
+    # 2. Bot-wall risk. Capturing frames needs a *video* stream, not the
+    #    audio-only stream the Whisper path downloads. That is strictly
+    #    more yt-dlp traffic against YouTube, and D-051 records what
+    #    happened last time we got greedy: an IP block that cost 63
+    #    videos mid-job.
+    #
+    # `VISUAL_ENABLED` is the install-wide kill switch; a job also has to
+    # ask for it (`jobs.visual_analysis`). Both must be true.
+    VISUAL_ENABLED: bool = False
+    # Where extracted JPEGs live. Frames are keyed by document, not by
+    # job — like transcripts and embeddings they are computed once and
+    # reused by every job that references the document.
+    VISUAL_FRAMES_DIR: str = "./data/frames"
+    # Per-document cap on captured frames. The selector is asked for at
+    # most this many moments; anything beyond is truncated, and the
+    # truncation is logged rather than silently dropped.
+    VISUAL_MAX_FRAMES_PER_VIDEO: int = 12
+    # Per-job ceiling across all documents. Bounds worst-case spend on a
+    # large corpus even when every video wants its full per-video quota.
+    VISUAL_MAX_FRAMES_PER_JOB: int = 200
+    # Minimum spacing between two selected moments. Without this the
+    # selector clusters around a single dense passage ("as you can see…"
+    # repeated over one slide) and burns the quota on near-duplicates.
+    VISUAL_MIN_GAP_SECONDS: float = 20.0
+    # Downscale width before sending to the vision model. Vision cost
+    # scales with pixel count; 1280px is comfortably enough to read a
+    # slide or a chart axis label.
+    VISUAL_FRAME_MAX_WIDTH: int = 1280
+    # ffmpeg -q:v for the extracted JPEG (2 = near-lossless, 31 = worst).
+    # 5 keeps small text legible at a fraction of PNG size.
+    VISUAL_FRAME_JPEG_QUALITY: int = 5
+    # Hard cap on the intermediate video download. A frame grab needs
+    # video, and we deliberately fetch the *worst* stream that still
+    # clears 360p. If even that exceeds this cap we skip the document
+    # rather than pull hundreds of MB for 12 JPEGs.
+    VISUAL_MAX_VIDEO_DOWNLOAD_MB: int = 400
+    # Per-document wall-clock budget for download + extraction. A single
+    # slow document must not stall a 200-video job.
+    VISUAL_CAPTURE_TIMEOUT_SEC: int = 900
+
+    # -------------------------------------------------------------------
     # Article connector — search engine + RSS (E-1.6 T-1.6.2 + T-1.6.3)
     # -------------------------------------------------------------------
     # Search-engine integration is opt-in via API key. Brave Search is

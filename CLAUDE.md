@@ -38,7 +38,7 @@ Both skills can be invoked manually any time. If a session was purely tactical (
 - **Backend**: Python 3.12+ + FastAPI + SQLAlchemy 2.x (SQLite) + Alembic migrations
 - **Task Queue**: Celery + Redis (broker on db1, results on db2, pub/sub on db0)
 - **Vector DB**: ChromaDB with PersistentClient, sentence-transformers `paraphrase-multilingual-MiniLM-L12-v2` embeddings (two global collections: `videoresearchpro_global` for transcript chunks, `qa_library_global` for Q&A exchanges)
-- **AI Agents**: LangGraph (5 agents: Search, Report, Q&A, Q&A-History, Knowledge) + per-use-case LLM config (OpenAI / Anthropic / Google / local OpenAI-compatible)
+- **AI Agents**: LangGraph (6 agents: Search, Report, Q&A, Q&A-History, Knowledge, Visual) + per-use-case LLM config (OpenAI / Anthropic / Google / local OpenAI-compatible)
 - **Auth**: JWT, email+password, user-scoped jobs + Q&A history + knowledge artifacts
 - **YouTube**: YouTube Data API v3 + `youtube-transcript-api` + OpenAI Whisper fallback
 
@@ -176,7 +176,10 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/app/agents/report_agent.py` | Map-reduce LangGraph agent for HTML reports |
 | `backend/app/agents/search_agent.py` | LangGraph agent for YouTube video discovery |
 | `backend/app/agents/qa_agent.py` | LangGraph agent for Q&A with context refinement + citations |
-| `backend/app/utils/chunking.py` | Transcript chunking with timestamp mapping |
+| `backend/app/utils/chunking.py` | Transcript chunking with timestamp mapping (+ atomic visual annotations) |
+| `backend/app/agents/visual_agent.py` | R1 visual pipeline: select moments -> capture -> describe -> persist |
+| `backend/app/services/frame_service.py` | yt-dlp video fetch + ffmpeg frame extraction |
+| `backend/app/services/visual_service.py` | Pure merge of frame descriptions into transcript segments |
 | `backend/app/websocket/manager.py` | Redis pub/sub → WebSocket fan-out |
 | `backend/app/services/youtube_service.py` | YouTube API + transcript fetching with language fallback + rate limiting |
 | `backend/app/services/chroma_service.py` | ChromaDB collection management (singleton client) |
@@ -281,6 +284,16 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `LLM_FAST_BASE_URL` | No | (unset) | **Deprecated.** Legacy alias for `LLM_LOCAL_BASE_URL`; still honored when the canonical name is unset |
 | `LLM_FAST_API_KEY` | No | `not-needed` | **Deprecated.** Legacy alias for `LLM_LOCAL_API_KEY` |
 | `LLM_MODEL` | No | `gpt-5` | **Deprecated.** Legacy primary-model name retained for back-compat; per-use-case defaults live in `app/services/llm_routing.py::USE_CASE_REGISTRY` |
+| **Visual understanding (R1 / E-1.18)** | | | |
+| `VISUAL_ENABLED` | No | `False` | Install-wide switch for frame capture + description. AND-ed with the per-job `visual_analysis` opt-in — both must be true. Off by default: capture needs a *video* stream (more yt-dlp traffic than the audio path that caused the D-051 IP block) and it is the app's only multimodal spend |
+| `VISUAL_FRAMES_DIR` | No | `./data/frames` | Where extracted JPEGs live, keyed by document so they are computed once and reused |
+| `VISUAL_MAX_FRAMES_PER_VIDEO` | No | `12` | Per-document frame cap |
+| `VISUAL_MAX_FRAMES_PER_JOB` | No | `200` | Per-job ceiling across all documents; unused per-video allowance returns to the pool |
+| `VISUAL_MIN_GAP_SECONDS` | No | `20.0` | Minimum spacing between selected moments — without it the selector clusters on one dense passage |
+| `VISUAL_FRAME_MAX_WIDTH` | No | `1280` | Downscale width before the vision call (cost scales with pixel count) |
+| `VISUAL_FRAME_JPEG_QUALITY` | No | `5` | ffmpeg `-q:v` for extracted stills (2 = near-lossless, 31 = worst) |
+| `VISUAL_MAX_VIDEO_DOWNLOAD_MB` | No | `400` | Skip the document rather than pull more than this for a handful of JPEGs |
+| `VISUAL_CAPTURE_TIMEOUT_SEC` | No | `900` | Per-document wall-clock budget for download + extraction |
 | **Auth hardening (E-5.4)** | | | |
 | `LOCKOUT_FAILURE_THRESHOLD` | No | `5` | Failed-login count before account locks. Set `0` to disable lockout (not recommended). |
 | `LOCKOUT_DURATION_MIN` | No | `15` | How long an account stays locked (minutes). |
@@ -322,6 +335,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 - **HTML report rendering**: Uses `jinja2.Environment` with custom `number_format` filter (not `Template.globals`)
 - **WebSocket cache invalidation**: `useJobProgress` invalidates the `jobVideos` query on `awaiting_approval` status change so the approval list auto-populates
 - **Global document library — shared cache, private catalogue** ([D-063](docs/decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)): Documents are never job-owned, and `documents` remains a single global deduplicated store so transcripts, embeddings and knowledge artifacts are computed once and reused across every job and user. **But no user sees a document they did not ingest.** Visibility is an explicit per-tenant grant in `document_visibility(video_id, tenant_id, source)`, written by *every* ingest path — job selection, PDF upload, pasted URL, channel sync — including on dedup hits, because a cache hit means the bytes exist but this tenant may never have seen them. Ownership is **never** derived from `job_documents`: PDF uploads and pasted URLs create documents with no job, and deriving would make a user's own upload invisible to them. Any new user-facing read of `documents` must filter through `visibility_service.visible_video_ids(db, tenant_id)`, and any new ingest path must call `visibility_service.grant(...)`. The ORM class is `Document` (`app.models.document`); the table is `documents`. Legacy column name `video_id` is preserved on the PK and FK until a future PR promotes it to a UUID.
+- **Visual annotations are marked in the TEXT, never only in metadata** ([D-067](docs/decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31)): frame descriptions are merged as `[VISUAL @ mm:ss - ...]` spans inside the chunk text. Chunking splits, merges and re-packs segments, and the dominant-segment heuristic promotes exactly one segment's metadata — so metadata alone is not a survivable channel. Any prompt that reads transcript text MUST include `VISUAL_ANNOTATION_CONTRACT` from `app/agents/prompts/shared.py`, or the model will read machine-written descriptions as things the speaker said. Frames live in `visual_frames` and are merged at chunk time; **never** annotate `transcript_cache`, which is globally shared.
 - **Single global Chroma collection**: All chunks live in `videoresearchpro_global`. Per-job scoping is a metadata filter at query time. Deleting a job does NOT delete chunks.
 - **Per-use-case LLM config**: Call sites resolve their (provider, model, reasoning) triple via `app/services/llm_routing.py::resolve_config(use_case)`. Override per use case with `LLM_USE_CASE_CONFIG` (see "LLM configuration" below). The legacy `get_llm(..., purpose='fast')` / `LLM_ROUTE_OVERRIDES` knobs are still honored as deprecated fallbacks.
 
@@ -377,7 +391,7 @@ From highest to lowest:
 
 ### Registered use cases
 
-Twenty named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
+Twenty-two named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
 
 **Job Q&A (`app/agents/qa_agent.py`):**
 - `qa_clarification` — short follow-up clarifier before answering
@@ -403,6 +417,10 @@ Twenty named call sites — full rationale, token budgets, and recommended minim
 - `search_plan_queries` — plan 3-5 YouTube search queries from topic + instructions
 - `search_rank_and_curate` — rank + dedup results into the final video list (biggest reasoning-mode win in the app)
 
+**Visual understanding (`app/agents/visual_agent.py`):**
+- `visual_select_moments` — read a timestamped transcript, decide where the picture carries information the words do not
+- `visual_describe_frame` — **MULTIMODAL.** Describe one captured still in transcript context. Listed in `VISION_USE_CASES`; its model is **not freely swappable** (a text-only model does not fail helpfully — it describes the image from surrounding text)
+
 **Report generation (`app/agents/report_agent.py`):**
 - `report_map_chunks` — map phase; per-batch fact extraction (highest-volume call in the codebase)
 - `report_reduce_summaries` — reduce phase; consolidate per-batch summaries
@@ -412,7 +430,7 @@ Twenty named call sites — full rationale, token budgets, and recommended minim
 
 ## LLM startup smoke check + fail-soft
 
-`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 20 entries, **dedupes by `(provider, model)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
+`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 22 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
 
 **Health endpoints:**
 - `GET /api/v1/health` — overall status plus an `llm` field with `status` (`ok` / `degraded` / `down` / `unknown`) and `unavailable_features` (a list of feature names whose required use cases failed probing).

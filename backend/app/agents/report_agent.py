@@ -21,6 +21,7 @@ from app.agents.prompts.shared import (
     QUOTE_RENDERING_RULES,
     TEMPORAL_AWARENESS,
     TEMPORAL_EXTRACTION_NOTE,
+    VISUAL_ANNOTATION_CONTRACT,
 )
 from app.agents.state import ReportAgentState
 from app.services import language_service
@@ -278,6 +279,7 @@ def map_chunks(state: ReportAgentState) -> dict:
             english_contract=ENGLISH_OUTPUT_CONTRACT,
             code_mixing=CODE_MIXING_NOTE,
             temporal_extraction=TEMPORAL_EXTRACTION_NOTE,
+            visual_annotations=VISUAL_ANNOTATION_CONTRACT,
         )
         response = llm.invoke([HumanMessage(content=prompt)])
         try:
@@ -584,6 +586,7 @@ def compose_report(state: ReportAgentState) -> dict:
                 english_contract=ENGLISH_OUTPUT_CONTRACT,
                 quote_rules=QUOTE_RENDERING_RULES,
                 temporal=TEMPORAL_AWARENESS,
+                visual_annotations=VISUAL_ANNOTATION_CONTRACT,
                 topic=topic,
                 section_title=spec["title"],
                 section_guidance=(
@@ -620,6 +623,7 @@ def compose_report(state: ReportAgentState) -> dict:
             COMPOSE_SUMMARY_PROMPT.format(
                 english_contract=ENGLISH_OUTPUT_CONTRACT,
                 temporal=TEMPORAL_AWARENESS,
+                visual_annotations=VISUAL_ANNOTATION_CONTRACT,
                 topic=topic,
                 statistics=json.dumps(statistics, indent=2),
                 section_digest="\n".join(f"- {d}" for d in digest),

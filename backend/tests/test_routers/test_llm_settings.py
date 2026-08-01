@@ -8,7 +8,11 @@ def test_get_llm_settings_shape(client, test_user):
     r = client.get("/api/v1/settings/llm")
     assert r.status_code == 200
     d = r.json()
-    assert len(d["use_cases"]) == 20
+    # Bound to the registry rather than a literal: a hardcoded count turns
+    # every new use case into a spurious failure in an unrelated test.
+    from app.services.llm_routing import USE_CASE_REGISTRY
+
+    assert len(d["use_cases"]) == len(USE_CASE_REGISTRY)
     row = next(u for u in d["use_cases"] if u["use_case"] == "qa_formulate_answer")
     assert row["override"] is None
     assert row["default"]["provider"] in ("openai", "anthropic")

@@ -116,7 +116,69 @@ UseCase = Literal[
     "report_compose",
     "report_channel",
     "report_compose_channel_section",
+    # Visual understanding (R1) — app/agents/visual_agent.py
+    "visual_select_moments",
+    "visual_describe_frame",
 ]
+
+# Use cases whose prompts carry IMAGES, not just text.
+#
+# This matters for two things that would otherwise fail silently:
+#
+# 1. **Model choice is not freely swappable.** Every other entry in the
+#    registry can be pointed at any model of any provider. A vision entry
+#    cannot — a text-only model does not error helpfully on an image part,
+#    it either 400s with a schema complaint or, worse, ignores the image
+#    and confabulates a description from the surrounding text. That failure
+#    reads as a working feature producing bad output.
+# 2. **The startup smoke check would lie.** `llm_smoke.probe_config` sends a
+#    text-only probe. A vision use case misconfigured onto a text model
+#    would probe green and fail on the first real call.
+VISION_USE_CASES: frozenset[str] = frozenset({"visual_describe_frame"})
+
+# Models known to accept image inputs. Used to WARN on a misconfiguration,
+# never to block one — same fail-soft rule as the rest of this module
+# (D-036): an operator pointing a vision use case at an unlisted model gets
+# a loud log line, not a dead app, because this list will always lag new
+# model releases.
+VISION_CAPABLE_MODELS: frozenset[str] = frozenset({
+    "gpt-5.4", "gpt-5.4-mini", "gpt-5.5", "gpt-5.5-pro",
+    "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra",
+    "gpt-4.1", "gpt-4.1-mini",
+    "claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5",
+    "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite", "gemini-3.1-pro-preview",
+    "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite",
+})
+
+
+def is_vision_use_case(use_case: str) -> bool:
+    """True when this call site sends images and needs a vision model."""
+    return use_case in VISION_USE_CASES
+
+
+def warn_if_not_vision_capable(use_case: str, cfg: "UseCaseConfig") -> bool:
+    """Log when a vision use case resolves to a model we don't know to be
+    multimodal. Returns True when the pairing looks safe.
+
+    Deliberately advisory. `local` is exempt because we have no way to know
+    what an operator has loaded into LM Studio, and refusing to run would be
+    worse than letting them find out.
+    """
+    if not is_vision_use_case(use_case):
+        return True
+    if cfg.provider == "local":
+        return True
+    if cfg.model in VISION_CAPABLE_MODELS:
+        return True
+    logger.warning(
+        "Use case %r sends images but resolved to %s:%s, which is not in "
+        "VISION_CAPABLE_MODELS. If that model is text-only it will either "
+        "reject the request or silently describe the image from surrounding "
+        "text. Verify before relying on the output.",
+        use_case, cfg.provider, cfg.model,
+    )
+    return False
 
 
 @dataclass(frozen=True)
@@ -647,6 +709,58 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "Section-level composition (multiple per job). Flagship + low "
             "reasoning keeps quality up without burning tokens at high "
             "volume."
+        ),
+    ),
+    # --- Visual understanding (R1 / E-1.18) ----------------------------
+    "visual_select_moments": UseCaseInfo(
+        default_route="primary",
+        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
+        summary=(
+            "Read a timestamped transcript and decide WHERE something "
+            "visually important happens — a demo, a slide, a chart, a "
+            "screen share, a physical object being shown. Returns "
+            "[{timestamp_seconds, reason, expected_content}]. Text-only; "
+            "it never sees an image."
+        ),
+        typical_input_tokens=12_000,
+        p95_input_tokens=40_000,
+        typical_output_tokens=800,
+        min_context_recommended=128_000,
+        rationale=(
+            "This is a JUDGEMENT call, not extraction, and it is the "
+            "expensive decision in the pipeline: every moment it picks "
+            "costs a video seek plus a vision call, and every moment it "
+            "misses is invisible forever. Reasoning MEDIUM on flagship. "
+            "One call per video, so the cost is amortised over the frames "
+            "it authorises — under-spending here to save one call is a "
+            "false economy. p95 input is a full long-form transcript."
+        ),
+    ),
+    "visual_describe_frame": UseCaseInfo(
+        default_route="primary",
+        default_config=UseCaseConfig("openai", "gpt-5.5", "low"),
+        summary=(
+            "MULTIMODAL. Describe one captured frame IN TRANSCRIPT "
+            "CONTEXT: what is on screen, and specifically what it adds "
+            "beyond what is being said. Also judges whether the frame is "
+            "informative at all. See VISION_USE_CASES — the model here is "
+            "not freely swappable."
+        ),
+        typical_input_tokens=2_500,
+        p95_input_tokens=5_000,
+        typical_output_tokens=250,
+        min_context_recommended=32_768,
+        rationale=(
+            "Volume is the constraint: up to VISUAL_MAX_FRAMES_PER_JOB "
+            "calls, each carrying an image. Reasoning LOW rather than off "
+            "— the task is not pure transcription, it has to decide what "
+            "in the frame is NEW relative to the words, and reasoning-off "
+            "reliably degrades into 'a man is speaking to a camera'. Not "
+            "on the economy tier: a mis-read chart axis becomes a "
+            "confident false statement in the report, and unlike a weak "
+            "text summary nothing downstream can catch it. Image tokens "
+            "dominate the input cost, so the model-tier delta on the text "
+            "half is a rounding error."
         ),
     ),
     # --- Social-media candidate classification (S-1.5.3) ---------------

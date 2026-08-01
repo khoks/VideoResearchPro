@@ -152,6 +152,24 @@ This is not hypothetical. `test_exhaustion_is_announced_once_not_per_video`
 with `assert 0 == 1` — zero records captured — once `test_services` had run
 first. The code under test was emitting the warning correctly the whole time.
 
+**The root cause turned out to be a production bug, not a test problem.**
+`alembic/env.py` calls `fileConfig(...)`, whose `disable_existing_loggers`
+argument defaults to `True`: it sets `.disabled` on every logger not named
+in `alembic.ini`, which is all of `app.*`. `test_schema_init.py` runs real
+migrations in-process, so every `caplog` test after it saw nothing — and so
+did `app/main.py`'s startup path, which migrates in-process on a fresh
+install and then silently lost its entire application log for the life of
+the process, starting with the very `logger.info(f"schema_init: {result}")`
+that reports the migration. A standalone `alembic upgrade` is unaffected,
+which is why it went unnoticed. Fixed by passing
+`disable_existing_loggers=False`; pinned by
+`test_startup_migration_does_not_disable_app_loggers`.
+
+A disabled logger is worth recognising on sight: it reports
+`propagate=True` and a sane effective level and drops records anyway, so
+every obvious diagnostic looks healthy. Check `logger.disabled` and
+`logger.isEnabledFor(level)` early.
+
 **When the claim is "this code logs X", patch the logger:**
 
 ```python

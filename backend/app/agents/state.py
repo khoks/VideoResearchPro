@@ -73,3 +73,5 @@ class QAAgentState(TypedDict):
     refined_context: str
     answer: str
     references: list[dict]
+    corpus_statistics: dict | None
+    output_length: str | None

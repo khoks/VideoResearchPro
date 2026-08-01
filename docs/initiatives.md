@@ -552,12 +552,41 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 - [x] T-1.15.1.4 "Report depth" selector on the submit form, defaults to Auto, only sent when chosen
 - [x] T-1.15.1.5 10 tests incl. the ANTI-CAP invariant (deep-on-small < brief-on-large), unknown-value fallback, and that the `deep` brief forbids padding
 
-#### S-1.15.2 🔵 Q&A and knowledge length policy — R4 is NOT complete without this
+#### S-1.15.2 🟢 Q&A length policy — shipped 2026-07-31 (D-066). R4 now complete across report and Q&A.
 Q&A is corpus-blind: `formulate_answer` has a fixed 4,500-token budget and never receives video/word counts. Deferred into the R3+R5 batch because all three rewrite the same Q&A prompt files.
 - [ ] T-1.15.2.1 Pass corpus statistics into the job and library Q&A agents
 - [ ] T-1.15.2.2 Apply the same scale-plus-guidance policy to `qa_formulate_answer` / `library_qa_formulate_answer`
 - [ ] T-1.15.2.3 Per-request length override on the Q&A endpoints (job-level default, request-level override)
 - [ ] T-1.15.2.4 Knowledge synthesis already scales with extraction size (S-1.14.8) — confirm it honours an explicit preference too
+
+### E-1.16 🟡 Linguistic agnosticism with English output (R5)
+
+**Why it exists.** Search should favour English, but topics like Hindu/Indian subjects legitimately surface Hindi sources. Every intermediate and final output must nonetheless be English, with quotes preserved in original script + transliteration + translation.
+**Linked decisions:** [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31), [D-066](decisions.md#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31)
+
+#### S-1.16.1 🟢 Language contract + script profiling — shipped 2026-07-31
+- [x] T-1.16.1.1 `prompts/shared.py` — one definition of the English contract, quote rules and code-mixing note, injected per stage (map gets no quote rules: it emits JSON)
+- [x] T-1.16.1.2 English contract added to report + job-Q&A prompts. The audit found NONE existed — a Hindi corpus produced a Devanagari report
+- [x] T-1.16.1.3 `language_service.py` — Unicode script profiling, `switch_points`, `needs_translation`. Combining-mark bug fixed (Devanagari was undercounted ~40%, hiding language switches)
+- [x] T-1.16.1.4 Anti-transliteration instruction reversed to the three-part form (D-065)
+- [x] T-1.16.1.5 12 tests, including one asserting the romanised-Hinglish gap PERSISTS by design
+- [ ] T-1.16.1.6 Wire `language_service.describe_for_prompt` into the per-job prompt path so a non-English corpus announces itself to the composer
+- [ ] T-1.16.1.7 Persist the per-document language profile (`documents.language_mix`) so the per-video label stops being the only signal
+- [ ] T-1.16.1.8 English-preference in `search_rank_and_curate` ranking — a preference, never a filter (D-059)
+
+### E-1.17 🟡 Temporal / era awareness (R3)
+
+**Why it exists.** A corpus spans time. A claim made in 2024 is not the same claim in 2026; relevance and meaning shift with publication date.
+**Linked decision:** [D-066](decisions.md#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31)
+
+#### S-1.17.1 🟢 Dates reach the prompts — shipped 2026-07-31
+- [x] T-1.17.1.1 `compute_statistics` derives earliest/latest/median publish date + per-year counts
+- [x] T-1.17.1.2 Map chunk headers carry `published <date>`
+- [x] T-1.17.1.3 `TEMPORAL_AWARENESS` / `TEMPORAL_EXTRACTION_NOTE` fragments; guardrail conflict resolved by SUPPLYING verified dates rather than relaxing D-062's anti-invention rule
+- [x] T-1.17.1.4 Q&A receives publication span and weights recency for time-sensitive questions
+- [ ] T-1.17.1.5 Date into the Q&A allowed-sources list so citations show source vintage inline
+- [ ] T-1.17.1.6 `published_ts` / `published_year` in Chroma metadata to enable recency-weighted retrieval
+- [ ] T-1.17.1.7 Optional `temporal_scope_extract` use case — the ERA a document discusses, distinct from when it was published
 
 ### E-2.1 🟢 Tokens layer (`frontend/src/theme.ts`)
 

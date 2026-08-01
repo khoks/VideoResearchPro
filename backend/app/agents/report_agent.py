@@ -15,7 +15,15 @@ from app.agents.prompts.report_prompts import (
     MAP_CHUNK_PROMPT,
     REPORT_SECTIONS,
 )
+from app.agents.prompts.shared import (
+    CODE_MIXING_NOTE,
+    ENGLISH_OUTPUT_CONTRACT,
+    QUOTE_RENDERING_RULES,
+    TEMPORAL_AWARENESS,
+    TEMPORAL_EXTRACTION_NOTE,
+)
 from app.agents.state import ReportAgentState
+from app.services import language_service
 from app.services.llm_service import get_llm_for, response_text
 from app.services.llm_routing import (
     context_window_for,
@@ -131,6 +139,10 @@ def compute_statistics(state: ReportAgentState) -> dict:
     channel_agg: dict[str, dict] = {}
     unique_videos: set[str] = set()
     last_ends: dict[str, float] = {}
+    # R3 / D-066: publish dates per video. The corpus spans time, and a claim
+    # made in 2024 is not the same claim made in 2026 — but no prompt has ever
+    # been told when anything was published.
+    published_by_video: dict[str, str] = {}
 
     for chunk in chunks:
         meta = chunk.get("metadata", {})
@@ -138,6 +150,9 @@ def compute_statistics(state: ReportAgentState) -> dict:
         channel = meta.get("channel_name", "Unknown")
         words = meta.get("word_count", len(chunk.get("text", "").split()))
         ts_end = meta.get("timestamp_end", 0) or 0
+        pub = meta.get("published_at") or ""
+        if vid and pub and vid not in published_by_video:
+            published_by_video[vid] = str(pub)[:10]
 
         total_words += words
 
@@ -167,12 +182,27 @@ def compute_statistics(state: ReportAgentState) -> dict:
         for name, agg in channel_agg.items()
     ]
 
+    dates = sorted(d for d in published_by_video.values() if d)
+    year_counts: dict[str, int] = {}
+    for d in dates:
+        year_counts[d[:4]] = year_counts.get(d[:4], 0) + 1
+
     statistics = {
         "video_count": len(unique_videos),
         "transcript_count": len(unique_videos),
         "total_words": total_words,
         "total_minutes": total_minutes,
         "channel_breakdown": channel_breakdown,
+        # R3: verified publication span. These are COMPUTED, which is exactly
+        # what lets the summary describe the corpus's vintage without breaking
+        # the D-062 anti-invention rule — it quotes these rather than guessing.
+        # The v3 report mis-dated the corpus "2024-2025-era" when the bulk was
+        # 2026 precisely because it had no such figure to quote.
+        "earliest_published": dates[0] if dates else None,
+        "latest_published": dates[-1] if dates else None,
+        "median_published": dates[len(dates) // 2] if dates else None,
+        "videos_by_year": dict(sorted(year_counts.items(), reverse=True)),
+        "dated_video_count": len(dates),
     }
 
     return {"statistics": statistics}
@@ -218,9 +248,12 @@ def map_chunks(state: ReportAgentState) -> dict:
         # The chunker emits `video_url`; `url`/`permalink` are the pre-chunk
         # and non-video-source spellings.
         url = meta.get("video_url") or meta.get("url") or meta.get("permalink") or ""
+        # R3: the extractor cannot date a claim it was never told the date of.
+        pub = str(meta.get("published_at") or "")[:10]
         formatted = (
             f"[{meta.get('video_title', 'Unknown')} | {meta.get('channel_name', 'Unknown')} | "
             f"{format_timestamp(meta.get('timestamp_start', 0))}"
+            f"{' | published ' + pub if pub else ''}"
             f"{' | ' + url if url else ''}]\n{text}"
         )
         tokens = _count_tokens(formatted)
@@ -242,6 +275,9 @@ def map_chunks(state: ReportAgentState) -> dict:
         prompt = MAP_CHUNK_PROMPT.format(
             topic=state.get("topic", ""),
             chunks="\n\n".join(batch_items),
+            english_contract=ENGLISH_OUTPUT_CONTRACT,
+            code_mixing=CODE_MIXING_NOTE,
+            temporal_extraction=TEMPORAL_EXTRACTION_NOTE,
         )
         response = llm.invoke([HumanMessage(content=prompt)])
         try:
@@ -545,6 +581,9 @@ def compose_report(state: ReportAgentState) -> dict:
                 if idx > 1 else ""
             )
             prompt = COMPOSE_SECTION_PROMPT.format(
+                english_contract=ENGLISH_OUTPUT_CONTRACT,
+                quote_rules=QUOTE_RENDERING_RULES,
+                temporal=TEMPORAL_AWARENESS,
                 topic=topic,
                 section_title=spec["title"],
                 section_guidance=(
@@ -579,6 +618,8 @@ def compose_report(state: ReportAgentState) -> dict:
         summary_html = _invoke_with_retry(
             "report_compose",
             COMPOSE_SUMMARY_PROMPT.format(
+                english_contract=ENGLISH_OUTPUT_CONTRACT,
+                temporal=TEMPORAL_AWARENESS,
                 topic=topic,
                 statistics=json.dumps(statistics, indent=2),
                 section_digest="\n".join(f"- {d}" for d in digest),

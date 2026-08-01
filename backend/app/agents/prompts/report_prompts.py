@@ -1,3 +1,11 @@
+from app.agents.prompts.shared import (
+    CODE_MIXING_NOTE,
+    ENGLISH_OUTPUT_CONTRACT,
+    QUOTE_RENDERING_RULES,
+    TEMPORAL_AWARENESS,
+    TEMPORAL_EXTRACTION_NOTE,
+)
+
 MAP_CHUNK_PROMPT = """You are analyzing YouTube video transcripts for a research report on: {topic}
 
 Extract ALL of the following from these transcript segments:
@@ -12,6 +20,12 @@ For each item, include:
 - The video title and channel
 - The approximate timestamp
 - The speaker (if identifiable)
+
+{english_contract}
+
+{code_mixing}
+
+{temporal_extraction}
 
 Transcript segments:
 {chunks}
@@ -115,6 +129,12 @@ SECTION: {section_title}
 Source material for this section ({item_count} items{part_note}):
 {material}
 
+{english_contract}
+
+{quote_rules}
+
+{temporal}
+
 STRUCTURE — organise by IDEA, never by source:
 - Group the material into <h3> sub-sections named for the THEME, DEBATE or
   CLAIM they cover (e.g. "Context rot and the practical window",
@@ -160,6 +180,10 @@ VERIFIED corpus statistics — these numbers are computed, not estimated:
 
 The report's body sections (already written) cover:
 {section_digest}
+
+{english_contract}
+
+{temporal}
 
 Write the Executive Summary:
 - Start with <h2>Executive Summary</h2>

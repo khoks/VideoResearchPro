@@ -1961,3 +1961,49 @@ Splitting the table showed the more interesting problem was **not** `subscribed`
 **Consequences.** This covers the knowledge prompts only. R5 still needs: the English contract across the seven report prompts, per-segment language detection (the per-video label is wrong for code-mixed speech — Hinglish and Arabic/Persian/Urdu mixing inside one sentence), and a `quote_render` use case. Those land with R3, since both rewrite the same files.
 
 **Linked initiatives / PRs.** S-5.10.2 (closed), S-5.10.3 (new), E-1.16 (R5, in progress). Follows D-063.
+
+
+## D-066 — Language contract, temporal awareness, and corpus-aware Q&A length (2026-07-31)
+
+**Status:** accepted. Covers R5 (linguistics), R3 (time) and the deferred Q&A half of R4, batched because all three rewrite the same prompt files and those prompts are hardened against measured defects — churning them once beats three times.
+
+### Part 1 — R5: English output, with authenticity preserved
+
+**The finding that set the shape.** The audit checked CLAUDE.md's three multilingual claims and found **one false**: no prompt in `report_prompts.py` or `knowledge_prompts.py` instructed English output at all. A Hindi corpus produced a Devanagari report end to end. Multilingual *embeddings* were real; multilingual *output handling* did not exist.
+
+**Decision.** One definition, injected — `app/agents/prompts/shared.py` holds `ENGLISH_OUTPUT_CONTRACT`, `QUOTE_RENDERING_RULES`, `CODE_MIXING_NOTE`, `TEMPORAL_AWARENESS` and `TEMPORAL_EXTRACTION_NOTE`, composed into each prompt at its call site. Nine hand-maintained copies of a rule drift; one definition does not. Fragments are applied selectively — the map stage gets the English contract and code-mixing note but **not** quote-rendering rules, because it emits structured JSON and cannot act on them; sending them would be tokens spent on an unusable instruction.
+
+The contract is enforced at the **extraction** boundary, not only at composition: an item emitted in Devanagari during map propagates untouched into the final deliverable, so translation has to happen there.
+
+**Language detection: exact where possible, honest where not.** `language_service.py` profiles Unicode scripts rather than calling a detection library, because the requirement decomposes into two problems with different answers:
+
+1. **Script mixing** (Devanagari+Latin, Arabic+Latin) — solved exactly. No model, no dependency, no confidence threshold. This is the case that actually threatens the pipeline.
+2. **Romanised code-mixing** — Hinglish in Latin letters ("mujhe ye samajh nahi aaya") is invisible to script analysis, and statistical detectors are at their *weakest* here: short text, Hindi grammar, Latin characters. Adding `lingua` would buy a heavy dependency and false confidence on the one case it handles worst. Handled at the prompt layer instead, where the model reads the actual text. **A test asserts this gap persists**, with a note instructing a future maintainer to update this ADR rather than flip the assertion.
+
+`profile_segments` also emits `switch_points` — the indices where a transcript's dominant script changes. A per-video language label is a lie for a 2-hour lecture that switches at minute 40; this is the thing that label cannot express.
+
+**Bug found while building it.** Indic and Arabic scripts carry much of their content in combining marks (Mn/Mc), for which `isalpha()` is False. Counting only "letters" undercounted Devanagari by ~40% in a realistic code-mixed sentence — enough to flip the dominant script from Devanagari to Latin and hide a language switch entirely. Marks now count toward their script.
+
+**Also reversed** (see D-065): `knowledge_prompts.py`'s explicit "Do not transliterate them", replaced with the three-part rendering — original script, transliteration, English translation — for quotes whose exact wording is part of their value. Ordinary conversational speech is translated plainly; the three-part form is reserved rather than applied indiscriminately.
+
+**Search stays a preference, not a filter.** R5 asks that search favour English sources. [D-059](#d-059--selection-quotas-preferred-channel-guarantee--concentration-cap-2026-07-30) explicitly rejected a non-English *filter* as contradicting the multilingual design, and that reasoning holds: a Hindu-topics job legitimately surfaces Hindi content. English preference belongs in ranking, not exclusion.
+
+### Part 2 — R3: publication date and era
+
+**Context.** `documents.published_at` was captured and stored, and reached Chroma chunk metadata — but reached **no prompt**. Nothing in the pipeline knew when anything was published.
+
+**Decision.** `compute_statistics` now derives `earliest_published`, `latest_published`, `median_published`, `videos_by_year` and `dated_video_count`; map chunk headers carry `| published <date>`.
+
+**The guardrail conflict, resolved by supplying data rather than relaxing rules.** D-062 added an instruction *forbidding* the summary from describing corpus vintage beyond verified figures — precisely because the v3 report invented "2024-2025-era" when the bulk was 2026. R3 asks for exactly that commentary. Relaxing the guardrail would reinstate the hallucination; instead the verified span is now computed and supplied, so the model quotes rather than guesses.
+
+`TEMPORAL_AWARENESS` instructs that a claim about "the latest model" is a claim about the world *at that date*, that date-tracking disagreements be stated as trajectories rather than silently resolved, and — critically — that no date be inferred that was not given. That last clause is what keeps it compatible with the Q&A grounding rule ("do not draw on general knowledge").
+
+### Part 3 — S-1.15.2: Q&A stops being corpus-blind
+
+Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 videos or 200. It now receives corpus statistics and publication span, scaling through the same D-064 policy as the report: multiply a derived budget, change the brief, never impose a cap.
+
+**Consequences.** R4 is now complete across report and Q&A. R5 and R3 are complete at the prompt and data layers. Not yet done: `quote_render` as a separate use case was **deliberately not added** — the R5 investigator's own note was that a separate translate pass doubles cost on `report_map_chunks`, the highest-volume site, and loses source-attribution binding. The prompt contract does the work at zero extra calls.
+
+**A caught failure worth recording.** Mid-implementation, a prompt-binding edit silently failed to apply, so `MAP_CHUNK_PROMPT.format()` raised `KeyError` for every batch. The S-1.12.6 bisect-retry caught it, logged a warning, and continued — producing an empty extraction with a polite processing note. The accounting behaved exactly as designed, and the run would have looked green. Unit tests caught it. The lesson for future work here: a swallowed exception plus a fallback path can hide total failure, so map/reduce stages need a test that asserts a *non-empty* result, not merely that the pipeline completed.
+
+**Linked initiatives / PRs.** E-1.16 (R5), E-1.17 (R3), S-1.15.2 (closed). Follows D-059, D-062, D-064, D-065.

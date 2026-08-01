@@ -1,3 +1,11 @@
+from app.agents.prompts.shared import (
+    CODE_MIXING_NOTE,
+    compose_block,
+    ENGLISH_OUTPUT_CONTRACT,
+    QUOTE_RENDERING_RULES,
+    TEMPORAL_AWARENESS,
+)
+
 REFINE_CONTEXT_PROMPT = """You are a context extraction assistant. Your job is to read raw context from video transcripts and a research report, then extract ONLY the passages that are relevant to the user's question.
 
 Question: {question}
@@ -63,7 +71,21 @@ Citation format for the research report:
 Other guidelines:
 - Synthesize across multiple allowed sources when relevant.
 - Mention the speaker's name when known from the context.
-- Structure the answer clearly (paragraphs or short sections); end with a brief "References" list of the cited sources."""
+- Structure the answer clearly (paragraphs or short sections); end with a brief "References" list of the cited sources.
+
+"""
+
+# R5 / R3: job-scoped Q&A previously had NO language contract at all — the
+# comment further down says the *library* prompts are the ones that "add
+# language-handling rules", and this one was simply left out. Appended rather
+# than inlined so the fragments stay defined once (see prompts/shared.py).
+QA_SYSTEM_PROMPT = compose_block(
+    QA_SYSTEM_PROMPT,
+    ENGLISH_OUTPUT_CONTRACT,
+    QUOTE_RENDERING_RULES,
+    CODE_MIXING_NOTE,
+    TEMPORAL_AWARENESS,
+)
 
 
 QA_ANSWER_PROMPT = """Answer the question below using ONLY the curated context extracts and the allowed source list. Any source not on the allowed list — including external papers, organizations, websites, or other YouTube channels — must NOT appear in your answer.
@@ -77,6 +99,9 @@ Relevant context (extracted from those sources):
 {refined_context}
 
 Write a thorough, well-structured answer with citations to the allowed sources. For each factual claim, attach a `[Source: "TITLE" by CHANNEL at TIMESTAMP]` reference using the EXACT title and channel from the allowed-sources list. If the context does not contain enough information to answer some part of the question, say so for that part rather than inventing a source.
+
+{corpus_note}
+{length_guidance}
 """
 
 

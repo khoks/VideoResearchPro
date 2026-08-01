@@ -329,6 +329,9 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 
 - Whisper is called with `task="transcribe"` (not `translate`), preserving the speaker's language(s). Mixed-language audio (e.g., Hindi-English code-mixed) is transcribed faithfully, with proper nouns in their original script.
 - The multilingual embedding model (`paraphrase-multilingual-MiniLM-L12-v2`) ensures a Hindi transcript and its English question land in similar vector space.
+- **Output is ALWAYS English** (D-066), whatever the source language. The contract is defined once in `app/agents/prompts/shared.py` and injected into every report, knowledge and Q&A prompt — enforced at the EXTRACTION boundary, because an item emitted in the source script propagates untouched to the final deliverable. Before D-066 no prompt instructed English output at all, so a Hindi corpus produced a Devanagari report.
+- **Quotes keep three forms**: original script + transliteration + English translation, e.g. `अहिंसा परमो धर्मः (ahiṃsā paramo dharmaḥ) — "non-violence is the highest virtue"`. Reserved for material whose exact wording matters; ordinary speech is translated plainly.
+- **Language detection is script-based** (`app/services/language_service.py`), exact for script mixing and explicitly NOT able to see romanised code-mixing (Hinglish in Latin letters) — that case is handled by the prompt contract. A test pins the gap; do not "fix" it by flipping the assertion.
 - The Q&A agent accepts an `answer_language` parameter (default English) and is instructed to translate quoted non-English context into English (preserving proper nouns) while responding in the requested language.
 
 ## LLM configuration

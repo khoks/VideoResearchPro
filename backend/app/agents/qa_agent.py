@@ -20,6 +20,8 @@ from app.agents.state import QAAgentState
 from app.config import settings
 from app.services import chroma_service
 from app.services.llm_service import get_llm_for, response_text
+from app.services.llm_routing import max_output_for, resolve_config
+from app.services import output_length as output_length_policy
 from app.utils.youtube_helpers import build_youtube_url, extract_video_id, format_timestamp
 
 logger = logging.getLogger(__name__)
@@ -217,17 +219,40 @@ def _build_allowed_sources(rag_results: list[dict], include_report: bool) -> str
 
 def formulate_answer(state: QAAgentState, tally: _TokenTally | None = None) -> dict:
     """Generate answer using LLM with refined context, constrained to allowed sources."""
-    # Temperature 0: citations must be deterministic and grounded.
-    llm = get_llm_for("qa_formulate_answer", temperature=0.0, max_tokens=4500)
-
     rag_results = state.get("rag_results", [])
     include_report = bool(state.get("report_context"))
     allowed_sources = _build_allowed_sources(rag_results, include_report)
+
+    # S-1.15.2 (the deferred half of R4): Q&A was corpus-blind — a fixed 4,500
+    # token budget and no idea whether it was answering from 3 videos or 200.
+    # Same policy as the report: scale a derived budget and change the brief,
+    # never impose a cap (D-064).
+    statistics = state.get("corpus_statistics") or {}
+    length_pref = state.get("output_length")
+    scale = output_length_policy.resolve_scale(statistics, length_pref)
+    length_guidance = output_length_policy.guidance(statistics, length_pref)
+    max_tokens = min(int(4_500 * scale), max_output_for(resolve_config("qa_formulate_answer").model))
+
+    corpus_note = ""
+    if statistics.get("video_count"):
+        corpus_note = (
+            f"CORPUS: this answer draws on {statistics['video_count']} source(s)"
+            + (
+                f" published between {statistics['earliest_published']} and "
+                f"{statistics['latest_published']}"
+                if statistics.get("earliest_published") else ""
+            )
+            + ". Weight recency where the question is time-sensitive."
+        )
+
+    llm = get_llm_for("qa_formulate_answer", temperature=0.0, max_tokens=max_tokens)
 
     prompt = QA_ANSWER_PROMPT.format(
         question=state["question"],
         allowed_sources=allowed_sources,
         refined_context=state.get("refined_context", "No context available."),
+        corpus_note=corpus_note,
+        length_guidance=length_guidance,
     )
 
     response = llm.invoke([
@@ -842,6 +867,8 @@ def run_qa_agent(
     video_ids: list[str] | None = None,
     progress_callback: Callable[[str], None] | None = None,
     usage_out: dict | None = None,
+    corpus_statistics: dict | None = None,
+    output_length: str | None = None,
 ) -> tuple[str, list[dict]]:
     """
     Run the Q&A agent pipeline node-by-node (same order as the compiled graph).
@@ -878,6 +905,9 @@ def run_qa_agent(
         "refined_context": "",
         "answer": "",
         "references": [],
+        # S-1.15.2 / R3 — both optional; absent means today's behaviour.
+        "corpus_statistics": corpus_statistics or {},
+        "output_length": output_length,
     }
 
     notify("retrieving")

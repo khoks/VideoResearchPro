@@ -10,6 +10,62 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### E-1.18: visual understanding — the picture, read in the transcript's context (2026-07-31)
+
+Requirement R1. The app can now work out *where* in a video something is being
+shown, capture stills there, describe what is on screen, and merge those
+descriptions back into the transcript as annotations that downstream prompts
+read as visual aid and never as speech. Off by default; opt-in per job.
+See [D-067](docs/decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31).
+
+#### Added
+- `visual_frames` table and `jobs.visual_analysis` (migration `a7b8c9d1e2f3`).
+  Frames are keyed on the document, so like transcripts and embeddings they are
+  computed once and reused by every job that references it.
+- `app/services/frame_service.py` — one yt-dlp download per document, N ffmpeg
+  seeks against the local file. Twelve frames from one download rather than
+  twelve downloads: measured at 1.9 MB for a 200-second video.
+- `app/agents/visual_agent.py` — select moments from the transcript, capture,
+  describe each still against the speech around it, persist. Fail-soft at every
+  level: a blocked download, an unparseable selection, or a failed description
+  never breaks a job that would otherwise complete.
+- `app/services/visual_service.py` — a pure merge that annotates a copy and
+  never touches the globally-shared `transcript_cache`.
+- Two use cases: `visual_select_moments` (text-only judgement about where the
+  picture matters) and `visual_describe_frame` (the app's **first multimodal
+  call site**).
+- `VISUAL_ANNOTATION_CONTRACT` — the reader-side half of the requirement, in
+  report map/section/summary prompts, the Q&A system prompt, and knowledge
+  extraction. Annotations are never spoken words, are never attributed to the
+  speaker, are cited as "on screen at mm:ss", and lose to the words on conflict.
+
+#### Changed
+- Chunking: segments marked `extra["atomic"]` are exempt from sentence
+  splitting, so a multi-sentence annotation is not torn into fragments carrying
+  half a marker each. Visual presence is aggregated across every segment in a
+  chunk instead of being promoted by the dominant-segment vote — a 12-token
+  annotation beside 240 tokens of speech would lose that vote every time — and
+  annotations are excluded from the vote so they cannot steal a social chunk's
+  reply attribution.
+- The startup smoke check dedupes on `(provider, model, vision)`. A text-only
+  probe against a text-only model succeeds, so without the third dimension a
+  vision use case pointed at a text model reported healthy and failed on the
+  first real frame.
+- `probe_config` reads responses through `response_text`, so a reasoning model's
+  content-block list no longer raises out of a function documented as never
+  raising.
+
+#### Fixed
+- The vision probe's embedded PNG was malformed — written from memory rather
+  than generated. OpenAI rejected it with `image_parse_error`, which would have
+  made every vision probe report the model unreachable. Now generated, verified
+  with an independent decoder, and pinned by a test that walks the chunk CRCs.
+
+#### Notes
+- What is **not** yet true: nothing surfaces frames in the UI (S-1.18.2), and
+  nothing yet establishes that annotations make output *better* — only that they
+  arrive intact (S-1.18.3).
+
 ### E-1.14: report pipeline rebuilt, stack re-tiered, gap closed on measurement (2026-07-31)
 
 Full chronology and the wrong turns: [docs/notes/2026-07-31-report-quality-arc.md](docs/notes/2026-07-31-report-quality-arc.md).

@@ -6,6 +6,7 @@ Two prompts:
 - SYNTHESIZE_REPORT_PROMPT: reduce pass — ask the LLM to write a Wikipedia-style
   report-voice Markdown document from the merged extraction + full transcript.
 """
+from app.agents.prompts.shared import VISUAL_ANNOTATION_CONTRACT
 
 EXTRACT_BATCH_PROMPT = """You are extracting structured knowledge from one batch of a YouTube video transcript.
 
@@ -41,6 +42,10 @@ Rules:
 - If the speaker clearly speculates or hedges ("I think", "probably"), prefix
   the item with "Speculation: ".
 - Skip filler, greetings, call-to-action phrases, and sponsor reads.
+
+{visual_annotations}
+- An item grounded in an annotation rather than in speech must say so:
+  "On screen at 4:12: revenue rises from $2.1M to $5.8M across the year."
 
 OUTPUT FORMAT (STRICT):
 - Respond with a SINGLE JSON object and NOTHING else.

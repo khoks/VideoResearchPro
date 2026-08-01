@@ -120,7 +120,14 @@ Create a new job and dispatch its Celery task. The body discriminates on `job_ty
 }
 ```
 
-Returns 201 + `JobResponse`.
+Optional fields accepted on every job type:
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `output_length` | `"auto"` \| `"brief"` \| `"standard"` \| `"deep"` | `"auto"` | R4 report-depth override. `auto` lets the corpus-size bracket decide. Scales a derived budget; never a hard cap ([D-064](decisions.md)) |
+| `visual_analysis` | bool | `false` | R1 opt-in to frame capture + description. Requires the install-wide `VISUAL_ENABLED`; the job records the request either way, but no frames are captured when the install has it off ([D-067](decisions.md)) |
+
+Returns 201 + `JobResponse`. Both fields are echoed back on `JobResponse`.
 
 ### `GET /api/v1/jobs`
 List the current user's jobs. Returns `list[JobResponse]`.

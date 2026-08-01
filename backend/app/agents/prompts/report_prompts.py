@@ -4,6 +4,7 @@ from app.agents.prompts.shared import (
     QUOTE_RENDERING_RULES,
     TEMPORAL_AWARENESS,
     TEMPORAL_EXTRACTION_NOTE,
+    VISUAL_ANNOTATION_CONTRACT,
 )
 
 MAP_CHUNK_PROMPT = """You are analyzing YouTube video transcripts for a research report on: {topic}
@@ -26,6 +27,8 @@ For each item, include:
 {code_mixing}
 
 {temporal_extraction}
+
+{visual_annotations}
 
 Transcript segments:
 {chunks}
@@ -135,6 +138,8 @@ Source material for this section ({item_count} items{part_note}):
 
 {temporal}
 
+{visual_annotations}
+
 STRUCTURE — organise by IDEA, never by source:
 - Group the material into <h3> sub-sections named for the THEME, DEBATE or
   CLAIM they cover (e.g. "Context rot and the practical window",
@@ -184,6 +189,8 @@ The report's body sections (already written) cover:
 {english_contract}
 
 {temporal}
+
+{visual_annotations}
 
 Write the Executive Summary:
 - Start with <h2>Executive Summary</h2>

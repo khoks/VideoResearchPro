@@ -26,6 +26,7 @@ from app.models.transcript_cache import TranscriptCache
 from app.models.user import User
 from app.models.user_llm_override import UserLLMOverride
 from app.models.user_credential import UserCredential
+from app.models.visual_frame import VisualFrame
 
 __all__ = [
     "ApiQuotaLog",
@@ -53,4 +54,5 @@ __all__ = [
     "User",
     "UserLLMOverride",
     "UserCredential",
+    "VisualFrame",
 ]

@@ -20,6 +20,7 @@ import tiktoken
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
 
+from app.agents.prompts.shared import VISUAL_ANNOTATION_CONTRACT
 from app.agents.prompts.knowledge_prompts import (
     EXTRACT_BATCH_PROMPT,
     SYNTHESIZE_REPORT_PROMPT,
@@ -191,6 +192,7 @@ def extract_per_batch(state: KnowledgeAgentState) -> dict:
             video_title=video_title,
             channel_name=channel_name,
             batch_text=batch_text,
+            visual_annotations=VISUAL_ANNOTATION_CONTRACT,
         )
         try:
             response = llm.invoke([HumanMessage(content=prompt)])

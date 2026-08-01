@@ -165,7 +165,9 @@ async def test_run_startup_probes_dedupes_unique_configs(
 
     call_count = {"n": 0}
 
-    def fake_probe(cfg: UseCaseConfig, *, timeout_seconds: float = 10.0) -> ProbeResult:
+    def fake_probe(
+        cfg: UseCaseConfig, *, timeout_seconds: float = 10.0, vision: bool = False
+    ) -> ProbeResult:
         call_count["n"] += 1
         return ProbeResult(config=cfg, ok=True, latency_ms=5, error=None)
 
@@ -176,8 +178,18 @@ async def test_run_startup_probes_dedupes_unique_configs(
 
     await llm_smoke.run_startup_probes(timeout_seconds_per_probe=1.0)
 
-    assert call_count["n"] == 2, (
-        f"expected probe_config called once per unique config; got {call_count['n']}"
+    # Two configs, plus one probe per vision use case. A vision probe asks a
+    # different question (does this model accept an image?) so it cannot
+    # share an answer with a text probe on the same (provider, model) — see
+    # test_vision_routing.py. Derived, not hardcoded, so adding a vision use
+    # case does not fail this test spuriously.
+    from app.services.llm_routing import VISION_USE_CASES
+
+    vision_keys = {mapping[uc] for uc in VISION_USE_CASES if uc in mapping}
+    expected = 2 + len(vision_keys)
+    assert call_count["n"] == expected, (
+        f"expected probe_config called once per unique (config, vision) pair; "
+        f"got {call_count['n']}, expected {expected}"
     )
 
     # Every use case is fanned out with ok=True.
@@ -202,7 +214,9 @@ async def test_run_startup_probes_catches_probe_exceptions(
     def fake_resolve(use_case: str) -> UseCaseConfig:
         return bad_cfg if use_case == bad_use_case else good_cfg
 
-    def fake_probe(cfg: UseCaseConfig, *, timeout_seconds: float = 10.0) -> ProbeResult:
+    def fake_probe(
+        cfg: UseCaseConfig, *, timeout_seconds: float = 10.0, vision: bool = False
+    ) -> ProbeResult:
         if cfg == bad_cfg:
             raise RuntimeError("provider SDK exploded")
         return ProbeResult(config=cfg, ok=True, latency_ms=5, error=None)

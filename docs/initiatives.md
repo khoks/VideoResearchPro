@@ -583,6 +583,41 @@ The shipped script profiler is exact for script mixing and **blind to romanised 
 - [ ] T-1.16.2.5 Bidirectional split: analysis/extraction/ranking run on the English rendering; quotation retains original + transliteration + translation
 - [ ] T-1.16.2.6 Evaluate on real code-mixed transcripts before claiming it works — the honest failure mode here is silently passing Hinglish through as English
 
+### E-1.18 🟡 Visual understanding (R1)
+
+**Scope.** Work out where something visually important happens in a video, capture stills there, describe them in transcript context, and merge the descriptions back as clearly-marked annotations that downstream prompts read as visual aid and never as speech.
+**Linked decision:** [D-067](decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31)
+**Roadmap:** [L6 — Visual understanding](feature-roadmap.md#l6--visual-understanding-)
+**Architecture:** [Visual Agent](architecture.md#visual-agent-visual_agentpy) · **Requirement:** FR-19
+
+#### S-1.18.1 🟢 Backend pipeline — select, capture, describe, merge — shipped 2026-07-31
+- [x] T-1.18.1.1 `visual_frames` table + `jobs.visual_analysis` (migration `a7b8c9d1e2f3`)
+- [x] T-1.18.1.2 `frame_service` — one yt-dlp download, N ffmpeg seeks; `worstvideo[height>=360]`; size cap, wall-clock budget, path-traversal guard
+- [x] T-1.18.1.3 `visual_select_moments` + `visual_describe_frame` use cases; `VISION_USE_CASES`, `warn_if_not_vision_capable`, vision-aware smoke probe
+- [x] T-1.18.1.4 `visual_agent` — select then capture then describe then persist, fail-soft at every level
+- [x] T-1.18.1.5 `visual_service.annotate_segments` — pure merge, never mutates the shared transcript
+- [x] T-1.18.1.6 Chunking: `atomic` segments exempt from sentence-splitting; visual presence aggregated rather than promoted by the dominance vote
+- [x] T-1.18.1.7 `VISUAL_ANNOTATION_CONTRACT` into report map/section/summary, Q&A system prompt, knowledge extraction
+- [x] T-1.18.1.8 Per-job frame budget with unused-allowance return and once-only exhaustion warning
+- [x] T-1.18.1.9 Tests: 101 across annotation survival, budget accounting, vision routing, real-ffmpeg extraction, prompt-placeholder binding
+
+#### S-1.18.2 🔵 Surfacing frames to the user
+The backend produces frames and descriptions; nothing shows them yet.
+- [ ] T-1.18.2.1 Job-creation UI: the opt-in toggle, disabled when `/health` reports the `visual_analysis` feature down
+- [ ] T-1.18.2.2 Serve frame images (auth + `document_visibility` check — a frame is as private as its document)
+- [ ] T-1.18.2.3 Show the frame inline where a report or answer cites "on screen at mm:ss"
+- [ ] T-1.18.2.4 On-demand per-document extraction endpoint, mirroring `/videos/{id}/extract-knowledge`
+
+#### S-1.18.3 🔵 Measure whether visual annotations improve output
+Nothing yet establishes that annotations make reports or answers *better* — only that they arrive intact.
+- [ ] T-1.18.3.1 Same corpus, visual on vs off, blind-judged (the E-1.14 harness)
+- [ ] T-1.18.3.2 Measure the `informative` false-positive rate against human labels; retune the calibration or the tier if it is high
+- [ ] T-1.18.3.3 Cost per job at realistic frame counts, against the quality delta
+
+#### S-1.18.4 🔵 Beyond YouTube
+- [ ] T-1.18.4.1 PDFs: page images are already available without any download
+- [ ] T-1.18.4.2 Articles: figures and charts referenced by the text
+
 ### E-1.17 🟡 Temporal / era awareness (R3)
 
 **Why it exists.** A corpus spans time. A claim made in 2024 is not the same claim in 2026; relevance and meaning shift with publication date.

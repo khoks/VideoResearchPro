@@ -220,6 +220,32 @@ The remaining I-5 epics (**E-5.3 Stripe**, **E-5.7 Data residency**, **E-5.8 Hos
 
 ---
 
+### L6 — Visual understanding 🟡
+
+**Motivation.** A transcript is a lossy recording of a video. When a speaker says "as you can see here, revenue nearly tripled", the sentence is *complete only with the picture*. Everything the app does downstream — reports, Q&A, knowledge extraction — reasons over text that silently drops the half of the source that was shown rather than said. On technical and educational content, which is most of the corpus, that half is often where the substance is: the code on the slide, the axis labels, the UI being demonstrated.
+
+**Sketch.** Four stages, keyed on the document so the work is done once and reused:
+
+- A text-only selector reads the timestamped transcript and picks moments where the picture likely carries information the words do not — deictic language, figures read aloud, demonstrations, slides, screen shares.
+- One video download per document, then `ffmpeg` seeks per selected timestamp. Never N downloads: that is how the transcript pipeline got IP-blocked ([D-051](decisions.md#d-051)).
+- Each still is described by a multimodal model **together with the speech around it**, answering one question: what does the picture add that the words do not? Frames judged uninformative or illegible are stored but never merged.
+- Descriptions merge into the transcript at chunk time as `[VISUAL @ mm:ss — …]` spans, with a matching reader contract in every prompt that sees transcript text.
+
+**Schema impact.** New `visual_frames` table (document, timestamp, image path, selection reason, description, informative, status). New `jobs.visual_analysis` opt-in column. New chunk metadata `visual_frame_count` / `visual_timestamps`.
+
+**API impact.** `POST /api/v1/jobs` accepts `visual_analysis: bool`. Frame-serving and on-demand per-document extraction endpoints are not built yet.
+
+**Open questions.**
+
+- **Does it actually improve output?** Unmeasured. The pipeline is verified to produce accurate descriptions and to deliver them intact, but no experiment yet shows reports or answers are *better* with them on. This is the question that decides whether the feature earns its cost (S-1.18.3).
+- **The `informative` flag is a model judgement biased toward inclusion.** Prompt calibration catches descriptions that describe an *absence* of content; borderline frames still pass. False-positive rate is unmeasured.
+- **Cost at realistic scale.** A 200-video corpus at 12 frames each is 2,400 vision calls. Opt-in and capped for now; whether the default caps are the right ones is an empirical question.
+- **Beyond YouTube.** PDFs already have page images available with no download at all, and articles carry figures. Both are cheaper than video and neither is built.
+
+**Status.** 🟡 in-progress. Backend pipeline shipped 2026-07-31 (E-1.18 / [D-067](decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31)); nothing surfaces frames in the UI, and the value question above is open.
+
+---
+
 ## Medium-scale features (M1-M12)
 
 Days each. Each one is shippable as a single PR or a small series.

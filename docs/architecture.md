@@ -142,6 +142,7 @@ backend/
 │   │   ├── qa_agent.py          # question → retrieve → refine → answer + citations
 │   │   ├── qa_history_agent.py  # meta-chat across qa_library_global
 │   │   ├── knowledge_agent.py   # transcript → batched extract → synthesized MD
+│   │   ├── visual_agent.py      # select moments → capture stills → describe → persist
 │   │   ├── prompts/             # prompt templates per agent
 │   │   └── tools/               # @tool functions (youtube_search, rag_search)
 │   ├── tasks/
@@ -220,6 +221,7 @@ User ──┬──< Job ──< JobVideo >── Document ──> Channel
 
 Document ──< KnowledgeArtifact (columns on Document, not a separate table)
 Document ──< TranscriptCache (1:1 by document_id; FK ON DELETE CASCADE)
+Document ──< VisualFrame (0:N by (document, timestamp); FK ON DELETE CASCADE)
 
 ApiQuotaLog (append-only ledger of YouTube + LLM calls)
 ```
@@ -433,6 +435,27 @@ batch_transcript → map_extract_per_batch → merge_with_dedupe → synthesize_
 
 Output written to `Document.extracted_knowledge_json` and `Document.knowledge_report_md`. Triggered by `POST /api/v1/videos/{id}/extract-knowledge`. Returns 409 if already extracted unless `?force=true`.
 
+### Visual Agent (`visual_agent.py`)
+
+Per-document visual understanding (R1, [D-067](decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31)). Pipeline:
+
+```
+select_moments → capture_frames → describe_frames → persist
+```
+
+- **select_moments** (`use_case=visual_select_moments`, text-only) reads the timestamped transcript and returns `[{timestamp_seconds, reason, expected_content}]` for moments where the picture carries information the words do not — deictic language ("as you can see here"), figures read aloud, demonstrations, slides, screen shares. Zero is a valid answer. Spacing (`VISUAL_MIN_GAP_SECONDS`) and the per-video cap are re-enforced in code afterwards, because the prompt asks and the code guarantees.
+- **capture_frames** (`services/frame_service.py`) downloads the video **once** with `worstvideo[height>=360]` and runs `ffmpeg -ss T -frames:v 1` per timestamp against the local file. One download rather than N is the whole design: N downloads is how the transcript pipeline got IP-blocked in [D-051](decisions.md#d-051).
+- **describe_frames** (`use_case=visual_describe_frame`) is the app's **only multimodal call site**. Each still goes to the model together with the speech within ±30s, answering one question: what does the picture add that the words do not? Returns `{informative, description, reads_as, legibility}`; frames the model judges uninformative or unreadable are stored but never merged.
+- **persist** writes `visual_frames` rows. A failed commit rolls back explicitly — the session is shared with the extraction loop, and leaving it poisoned would turn one bad persist into a dead job.
+
+Merging happens later and elsewhere: `services/visual_service.annotate_segments` is a pure function producing a NEW segment list, called at chunk time. It never touches `transcript_cache`, which is globally shared across jobs and tenants.
+
+**Annotations are marked in the chunk TEXT**, as `[VISUAL @ mm:ss — …]`, not only in metadata. Chunking splits, merges, overlaps and re-packs segments, and the dominant-segment heuristic promotes exactly one segment's metadata to chunk level — a 12-token annotation beside 240 tokens of speech loses that vote every time. Text physically inside the chunk arrives regardless. Two chunking rules support this: `extra["atomic"]` exempts annotations from sentence-splitting, and visual presence is aggregated across all segments rather than voted on (annotations are excluded from the vote so they cannot steal a social chunk's reply attribution).
+
+The reader-side half is `prompts/shared.py::VISUAL_ANNOTATION_CONTRACT`, injected into every prompt family that reads transcript text. It states that these spans were never spoken, must not be attributed to the speaker, must be cited as "on screen at mm:ss", and lose to the words where the two conflict. **Any new prompt that reads transcript text must include it**, or the model reads machine-written description as something a human said.
+
+Gated by `VISUAL_ENABLED` (install) AND `jobs.visual_analysis` (per job); both must be true. Off by default — it is the only multimodal spend and the only path that downloads video rather than audio.
+
 ### Q&A History Agent (`qa_history_agent.py`)
 
 Meta-chat across past exchanges. Pipeline:
@@ -557,6 +580,7 @@ Four streaming JSONL endpoints (`routers/exports.py`):
 - **Whisper** is invoked with `task="transcribe"` (not `translate`) so mixed-language audio (e.g. Hindi-English code-mixed) is preserved faithfully.
 - The **embedding model** is multilingual (`paraphrase-multilingual-MiniLM-L12-v2`), so a Hindi transcript and an English question land in similar vector space.
 - The **Q&A agent** accepts an `answer_language` parameter and is instructed to translate quoted non-English context into the target language while preserving proper nouns in their original script.
+- **Visual annotations are always written in English**, whatever the spoken language, because they are our text rather than the speaker's. `visual_service.strip_annotations` exists so that speech-only surfaces — dataset exports, word counts, and the language profiler — measure the source and not our own commentary.
 
 ---
 

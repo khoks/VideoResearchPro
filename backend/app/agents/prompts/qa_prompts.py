@@ -4,6 +4,7 @@ from app.agents.prompts.shared import (
     ENGLISH_OUTPUT_CONTRACT,
     QUOTE_RENDERING_RULES,
     TEMPORAL_AWARENESS,
+    VISUAL_ANNOTATION_CONTRACT,
 )
 
 REFINE_CONTEXT_PROMPT = """You are a context extraction assistant. Your job is to read raw context from video transcripts and a research report, then extract ONLY the passages that are relevant to the user's question.
@@ -85,6 +86,7 @@ QA_SYSTEM_PROMPT = compose_block(
     QUOTE_RENDERING_RULES,
     CODE_MIXING_NOTE,
     TEMPORAL_AWARENESS,
+    VISUAL_ANNOTATION_CONTRACT,
 )
 
 

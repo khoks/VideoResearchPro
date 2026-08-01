@@ -716,10 +716,26 @@ class ProbeResult:
     error: str | None = None
 
 
+# A 16x16 solid-grey PNG, base64. The payload for vision probes: the only
+# thing that proves a model accepts image parts is sending one. Deliberately
+# tiny — image tokens scale with pixel count and this runs on every startup.
+#
+# Generated and verified with an independent decoder (ffprobe reports
+# `png,16,16,gray`), not written from memory. The first attempt at this
+# constant was plausible-looking but malformed, and OpenAI rejected it with
+# `image_parse_error` — which would have made every vision probe report the
+# model as unreachable. `test_probe_image_is_a_valid_png` pins the bytes.
+_PROBE_IMAGE_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAAAAAA6mKC9AAAAD0lEQVR4nGNoQAMM"
+    "I1sAAAUMgAFaSOXNAAAAAElFTkSuQmCC"
+)
+
+
 def probe_config(
     cfg: UseCaseConfig,
     *,
     timeout_seconds: float = 10.0,
+    vision: bool = False,
 ) -> ProbeResult:
     """Fire a one-token probe against ``cfg`` and return the outcome.
 
@@ -733,6 +749,12 @@ def probe_config(
     budget (16 tokens) yields a 400 "max_tokens reached" error before
     the model can emit even "ok". Non-reasoning configs keep the
     minimal 16-token budget — keeps probes cheap.
+
+    ``vision=True`` (R1) attaches a 16x16 image to the probe. Required for
+    multimodal use cases: a text-only probe against a text-only model
+    succeeds, so without this a `visual_describe_frame` misconfigured onto
+    a non-vision model would report healthy at startup and fail on the
+    first real frame.
     """
     # Reasoning configs need a much larger budget — the internal-
     # thinking phase consumes tokens before any visible output.
@@ -752,16 +774,30 @@ def probe_config(
     # caller's wall-clock timeout. Providers that take longer than
     # timeout_seconds still count as "responded" if they eventually
     # succeed — the goal is "does it work at all", not "is it fast".
+    if vision:
+        probe_content: Any = [
+            {"type": "text", "text": "Reply with the single word: ok"},
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{_PROBE_IMAGE_B64}"},
+            },
+        ]
+    else:
+        probe_content = "Reply with the single word: ok"
+
     start = time.monotonic()
     try:
-        resp = llm.invoke([HumanMessage(content="Reply with the single word: ok")])
+        resp = llm.invoke([HumanMessage(content=probe_content)])
     except Exception as e:
         elapsed_ms = int((time.monotonic() - start) * 1000)
         return ProbeResult(
             config=cfg, ok=False, latency_ms=elapsed_ms, error=str(e)[:300]
         )
     elapsed_ms = int((time.monotonic() - start) * 1000)
-    content = getattr(resp, "content", "") or ""
+    # `response_text` rather than `.content` — reasoning configs return a
+    # LIST of content blocks, and `list.strip()` would raise out of a
+    # function documented as never raising.
+    content = response_text(resp)
     if not content.strip():
         return ProbeResult(
             config=cfg,

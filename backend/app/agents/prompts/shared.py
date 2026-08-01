@@ -69,6 +69,35 @@ TEMPORAL_EXTRACTION_NOTE = """TIME:
   A 2026 video discussing a 2019 paper is a 2026 source about a 2019 event."""
 
 
+# --- R1: visual annotations ------------------------------------------------
+
+# The marker every visual annotation is wrapped in. Defined here, next to the
+# instruction that teaches models to read it, so the two can never drift apart.
+# `visual_service` imports these rather than re-spelling the literals.
+VISUAL_MARKER_OPEN = "[VISUAL"
+VISUAL_MARKER_CLOSE = "]"
+
+VISUAL_ANNOTATION_CONTRACT = """ON-SCREEN VISUAL ANNOTATIONS — READ CAREFULLY:
+- Some transcripts contain spans of the form
+  `[VISUAL @ mm:ss — <description of what is on screen>]`.
+- These are NOT spoken words. Nobody said them. They are machine-generated
+  descriptions of what was VISIBLE on screen at that timestamp, inserted
+  because the speaker was showing something the words alone do not carry.
+- Use them as evidence about what the source showed. Never quote them as
+  speech, never attribute them to the speaker, and never write "the speaker
+  said" about their contents.
+- When you cite one, say what it is: "on screen at mm:ss, <...>" or "the
+  video displays <...> at mm:ss". A reader must be able to tell a claim
+  grounded in the audio from one grounded in the picture.
+- They are descriptions produced by a model looking at one still frame, so
+  they are less reliable than the transcript itself. Where an annotation and
+  the spoken words conflict, prefer the words and note the discrepancy rather
+  than silently picking one.
+- If a passage has no annotations, that means no frames were captured there —
+  it does not mean nothing was shown. Never infer absence of visuals from
+  absence of annotations."""
+
+
 def compose_block(*fragments: str) -> str:
     """Join fragments with blank lines, skipping empties.
 

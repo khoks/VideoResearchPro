@@ -587,6 +587,8 @@ The shipped script profiler is exact for script mixing and **blind to romanised 
 
 **Scope.** Work out where something visually important happens in a video, capture stills there, describe them in transcript context, and merge the descriptions back as clearly-marked annotations that downstream prompts read as visual aid and never as speech.
 **Linked decision:** [D-067](decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31)
+**Roadmap:** [L6 — Visual understanding](feature-roadmap.md#l6--visual-understanding-)
+**Architecture:** [Visual Agent](architecture.md#visual-agent-visual_agentpy) · **Requirement:** FR-19
 
 #### S-1.18.1 🟢 Backend pipeline — select, capture, describe, merge — shipped 2026-07-31
 - [x] T-1.18.1.1 `visual_frames` table + `jobs.visual_analysis` (migration `a7b8c9d1e2f3`)

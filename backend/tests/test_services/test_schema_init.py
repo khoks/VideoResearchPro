@@ -505,3 +505,47 @@ def test_real_alembic_recovers_from_create_all_conflict(tmp_path):
     final_rev = _read_alembic_version(url)
     assert final_rev is not None
     assert final_rev != "f7a8b9c0d1e2"  # advanced
+
+
+# ---------------------------------------------------------------------------
+# In-process migrations must not silence application logging
+# ---------------------------------------------------------------------------
+def test_startup_migration_does_not_disable_app_loggers(temp_db):
+    """`alembic/env.py` calls `fileConfig`, whose `disable_existing_loggers`
+    defaults to True — it sets `.disabled` on every logger not named in
+    `alembic.ini`, which is all of `app.*`.
+
+    That only bites when a migration runs IN-PROCESS with the app already
+    imported, which is exactly what `app/main.py`'s lifespan does on a fresh
+    install. The result was a process whose entire application log went
+    silent for its lifetime — including the very next line,
+    `logger.info(f"schema_init: {result}")`, so even the message reporting
+    the migration was swallowed. A standalone `alembic upgrade` is
+    unaffected, which is why it went unnoticed.
+
+    A disabled logger reports `propagate=True` and a sane effective level
+    and drops records anyway, so nothing looks wrong from the outside. Found
+    via a caplog assertion that passed alone and captured zero records in
+    the full suite — see docs/testing.md §3.5.
+    """
+    import logging
+
+    from app.database import Base
+    from app.services.schema_init_service import ensure_schema_at_head
+
+    url, _path = temp_db
+
+    logging.getLogger("app").setLevel(logging.INFO)
+    app_logger = logging.getLogger("app")
+    child = logging.getLogger("app.tasks.job_tasks")
+    assert not app_logger.disabled and not child.disabled, "precondition"
+
+    result = ensure_schema_at_head(url, Base.metadata)
+    assert result == "fresh_install", (
+        f"expected the migration to actually run (got {result!r}); a no-op "
+        "would not exercise env.py and the test would pass vacuously"
+    )
+
+    assert not app_logger.disabled, "alembic disabled the 'app' logger"
+    assert not child.disabled, "alembic disabled 'app.tasks.job_tasks'"
+    assert child.isEnabledFor(logging.WARNING)

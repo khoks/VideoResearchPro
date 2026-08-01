@@ -13,7 +13,20 @@ from app.models import *  # noqa: F401,F403
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # `disable_existing_loggers` defaults to True, which sets `.disabled`
+    # on every logger that already exists and is not named in alembic.ini —
+    # i.e. all of `app.*`. Those loggers then drop records silently while
+    # still reporting `propagate=True` and a sane level, so nothing looks
+    # wrong anywhere.
+    #
+    # It only bites when a migration runs IN-PROCESS with the app already
+    # imported: the test suite (`test_schema_init.py`), and any startup path
+    # that migrates before serving. A standalone `alembic upgrade` is
+    # unaffected, which is why this survived unnoticed.
+    #
+    # Found via a caplog assertion that passed alone and captured zero
+    # records in the full suite — see docs/testing.md §3.5.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

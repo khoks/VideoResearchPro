@@ -10,6 +10,29 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Fixed: in-process migrations silently disabled all application logging (2026-07-31)
+
+`alembic/env.py` called `fileConfig(config.config_file_name)`. That argument's
+`disable_existing_loggers` defaults to **True**, which sets `.disabled` on every
+logger not named in `alembic.ini` — i.e. the whole `app.*` tree.
+
+It only bites when a migration runs **in-process with the app already imported**.
+`app/main.py`'s lifespan does exactly that via `ensure_schema_at_head`, so on a
+fresh install the process lost its entire application log for its lifetime,
+beginning with the `logger.info(f"schema_init: {result}")` on the next line that
+reports the migration outcome. A standalone `alembic upgrade` is unaffected,
+which is why this survived unnoticed.
+
+A disabled logger reports `propagate=True` and a sane effective level and drops
+records anyway, so nothing looks wrong from the outside.
+
+- Fixed by passing `disable_existing_loggers=False`.
+- Pinned by `test_startup_migration_does_not_disable_app_loggers`, which asserts
+  the migration actually ran (`fresh_install`) so it cannot pass vacuously.
+- Found from a flaky R1 test: a `caplog` assertion that passed alone and
+  captured zero records in the full suite, because `test_schema_init.py` runs
+  real migrations. Written up in [docs/testing.md](docs/testing.md) §3.5.
+
 ### E-1.18: visual understanding — the picture, read in the transcript's context (2026-07-31)
 
 Requirement R1. The app can now work out *where* in a video something is being

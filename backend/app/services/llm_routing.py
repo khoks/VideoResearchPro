@@ -1159,13 +1159,15 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             decision_id="D-073",
             decided_on="2026-10-19",
             flagship_delta=(
-                "Blind grading of 33 frames, two graders each, who opened the "
-                "image: gpt-5.5 4.52/5 (3 of 66 gradings unusable), "
-                "gemini-3.1-flash-lite 4.21 (5 unusable), gpt-5.6-luna 3.97 "
-                "(22 unusable). At report level the small per-frame gap was "
-                "not small: with gpt-5.5 descriptions the annotated report "
-                "beat the plain one with 3 of 3 judges, with flash-lite it "
-                "tied, 1 of 3 (D-075)."
+                "Blind per-frame grading, two graders per frame, each opening "
+                "the image. First pass (33 frames): gpt-5.5 4.52/5 (3 of 66 "
+                "gradings unusable), gemini-3.1-flash-lite 4.21 (5), "
+                "gpt-5.6-luna 3.97 (22). Second pass (31 frames): "
+                "gemini-3.5-flash 4.70 (0 of 62), gpt-5.5 4.54 (5), "
+                "gpt-5.4-mini 4.37 (5), claude-haiku-4-5 2.39 (55). At report "
+                "level the small per-frame gap was not small: with gpt-5.5 "
+                "descriptions the annotated report beat the plain one with 3 "
+                "of 3 judges, with flash-lite it tied, 1 of 3 (D-075)."
             ),
             downgrade_risk=(
                 "Per-frame grades did not predict the report-level loss, so a "
@@ -1177,8 +1179,11 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             ),
             measured_cost=(
                 "Per video: $0.008 on gemini-3.1-flash-lite against $0.133 on "
-                "gpt-5.5; gpt-5.6-luna $0.004."
+                "gpt-5.5; gemini-3.5-flash $0.051, claude-haiku-4-5 $0.026, "
+                "gpt-5.4-mini $0.018, gpt-5.6-luna $0.004."
             ),
+            # Both verdicts are on VISION_CAPABLE_MODELS: accepting an image
+            # is not the same as reading one.
             model_verdicts=(
                 ModelVerdict(
                     model="gpt-5.6-luna",
@@ -1189,6 +1194,16 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
                         "reported as output, wrong variable names."
                     ),
                     decision_id="D-073",
+                ),
+                ModelVerdict(
+                    model="claude-haiku-4-5",
+                    verdict="unacceptable",
+                    why=(
+                        "55 of 62 gradings unusable (2.39/5), with 146 "
+                        "misreads and 68 hallucinated details counted across "
+                        "them, although it accepts images."
+                    ),
+                    decision_id="D-075",
                 ),
             ),
             related_decisions=("D-071", "D-075"),

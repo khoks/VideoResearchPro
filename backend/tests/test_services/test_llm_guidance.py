@@ -114,6 +114,17 @@ def test_luna_is_unacceptable_for_frame_description() -> None:
     ]
 
 
+def test_haiku_is_unacceptable_for_frame_description_despite_vision() -> None:
+    """D-075's per-frame pass: 55 of 62 gradings unusable. The model accepts
+    images, so the vision check alone would have passed it."""
+    cfg = UseCaseConfig("anthropic", "claude-haiku-4-5", "off")
+    assert cfg.model in llm_routing.VISION_CAPABLE_MODELS
+    warnings = assess_choice("visual_describe_frame", cfg)
+    assert [(w["kind"], w["decision_id"]) for w in warnings] == [
+        ("unacceptable", "D-075")
+    ]
+
+
 def test_text_only_model_on_a_vision_use_case_warns() -> None:
     warnings = assess_choice(
         "visual_describe_frame", UseCaseConfig("openai", "gpt-5.4-nano", "off")

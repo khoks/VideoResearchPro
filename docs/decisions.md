@@ -2291,7 +2291,7 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
    - sharing a prompt contract with a graded site (the library answer);
    - moving tier alongside a graded site (the eight volume-tier sites that followed `report_map_chunks` to luna in D-057).
 2. **Verdicts are per model and scoped to reasoning levels, in two strengths.**
-   - `unacceptable`: the measurement produced unusable output. Examples: luna on frames (22 of 66 gradings), nano on map batches (unparseable JSON on 1 of 2), luna or gpt-5.4-mini with reasoning on (empty output).
+   - `unacceptable`: the measurement produced unusable output. Examples: luna on frames (22 of 66 gradings), claude-haiku-4-5 on frames (55 of 62, although it accepts images), nano on map batches (unparseable JSON on 1 of 2), luna or gpt-5.4-mini with reasoning on (empty output).
    - `weaker`: measurably below the default on the decision's own grading, but usable. Examples: sonnet-5 on compose; mini and flash-lite on frame selection, judged by agreement with the default's picks, which D-073 itself says is not a quality measure.
 
    Model ids match exactly, as on `VISION_CAPABLE_MODELS`, so `gpt-5.5` cannot catch `gpt-5.5-pro`.

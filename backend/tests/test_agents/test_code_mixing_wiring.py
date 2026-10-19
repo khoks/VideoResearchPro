@@ -164,3 +164,43 @@ def test_knowledge_extraction_is_told_the_videos_language_and_quote_form():
     english = " ".join(s["text"] for s in ENGLISH_SEGMENTS)
     (prompt,) = _knowledge_prompts(english)
     assert "SOURCE LANGUAGE" not in prompt
+
+
+# --- found by the held-out evaluation (T-1.16.2.6) -------------------------------------
+def test_an_english_primary_source_with_real_hindi_still_carries_the_profile():
+    """Comment threads under Hinglish videos are English-primary with 13–17%
+    Hindi words. The first cut treated "English-primary, plain-English quote
+    mode" as English and wrote nothing, so their Hindi comments never got a
+    speech note. A 3% presence floor separates them from English talks
+    (0.0–0.6%, all 214 in the library)."""
+    thread = [{"text": t, "start": float(i), "duration": 1.0} for i, t in enumerate([
+        "Great video sir, very helpful for beginners like me",
+        "Sir ye aapne bahut ache se samjhaya hai, mujhe sab samajh aa gaya",
+        "Please make a video on mutual funds and SIP",
+        "Thanks for the clear explanation of emergency funds",
+        "Can you explain term insurance next time",
+        "Very informative, keep it up",
+    ])]
+    meta = _chunks(thread, "th1", "Comments")[0]["metadata"]
+    assert meta["code_mix_primary"] == "en"
+    assert 0.03 <= meta["code_mix_share"] < 0.5
+    # Its Hindi comments are quoted in the Roman script they were typed in.
+    from app.services import code_mixing_service
+
+    assert code_mixing_service.quote_form(meta).startswith("quote in Roman script")
+
+
+def test_compose_lets_an_english_original_stay_english_in_a_hindi_source():
+    """The source decides the script; the span still decides whether it is
+    English. The held-out run quoted an English sentence from a Hindi talk in
+    full three-part form before this."""
+    chunks = _chunks(HINDI_SEGMENTS, "hi1", "ML in Hindi")
+    hindi = {"content": "Machines find patterns.", "original": "मशीन पैटर्न ढूंढती है और खुद से सीखती है",
+             "video_title": "ML in Hindi", "video_url": "https://www.youtube.com/watch?v=hi1"}
+    english = {"content": "We are not entrepreneurs.", "original": "We are not entrepreneurs bhai, we need a salary",
+               "video_title": "ML in Hindi", "video_url": "https://www.youtube.com/watch?v=hi1"}
+    consolidated = {"facts": [hindi, english]}
+    metas = [c["metadata"] for c in chunks]
+    assert report_agent._attach_quote_forms(consolidated, report_agent._quote_forms_by_source(metas)) == 2
+    assert hindi["quote_form"].startswith("quote in Devanagari")
+    assert english["quote_form"].startswith("plain English")

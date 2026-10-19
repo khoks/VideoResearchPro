@@ -129,3 +129,18 @@ D-075 ordered a per-frame pass to pick a candidate before any report-level run. 
 | claude-haiku-4-5 | 2.39 | **55 / 62** | 0 | 146 | 68 | $0.026 |
 
 claude-haiku-4-5 accepts images and is on `VISION_CAPABLE_MODELS`, yet its descriptions are unusable on this corpus; the registry now lists it as unacceptable for `visual_describe_frame` (S-1.14.7), alongside gpt-5.6-luna. Per D-075 the default changes only on a report-level run; gemini-3.5-flash is the candidate.
+
+## Run 4 and where the attribution errors live (T-1.18.5.6 / S-1.18.8, appended 2026-10-19)
+
+Gemini 3.5 Flash is the most accurate. The one figure this run checked by hand is the holiday-spike annotation, whose code on screen reads `54060.10`: Flash read it exactly, gpt-5.5 read `54000.10`, and the speech transcript garbled it to "54,60.10". But graders picked gpt-5.5 as the most useful description far more often, for completeness. Haiku is unusable for frames even though it is on the vision allowlist.
+
+**Run 4** (gemini-3.5-flash descriptions, same code and unannotated arm as runs 2–3): 9,612 words; judges prefer ON **2/3**; mean substance 7.67 vs 8.00; 2 confirmed attribution errors; 0 confirmed fabrications in ON (1 in OFF).
+
+**Report-level ranking follows "picked best", not accuracy:** gpt-5.5 (37 best) → 3/3; Gemini 3.5 Flash (22) → 2/3; Flash-Lite (5 of 66) → 1/3. What helps the composer is what a frame description says, not only whether each reading is exact.
+
+**Where the attribution errors live.** Of the five confirmed errors after the S-1.18.6 rule (runs 2–4), **four are in the one Bengali-language video** (CodeWithMunnaX, 1 of 11 videos). In each, the composer misjudged what was said, because the speech is Bengali:
+- it called a ValueError "not spoken" when the presenter read it aloud in Bengali;
+- it credited the presenter with dataset names that appear only on screen;
+- it said the screen displayed a version number the presenter only spoke.
+
+The English-language videos produced one error across the same three runs. The modality boundary is hardest exactly where the composer cannot read the speech, which is an argument for labelling said/shown at the map stage (S-1.18.8). There the model reads one chunk of native-language speech at a time and the label is fixed before composition. It also ties R1 to R5.

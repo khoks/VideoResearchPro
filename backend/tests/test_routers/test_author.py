@@ -219,8 +219,9 @@ def test_run_generation_book_includes_toc(db, monkeypatch):
     )
     row = run_generation(db, user, row)
     assert "## Table of Contents" in row.content_text
-    assert "[First Topic](#first-topic)" in row.content_text
-    assert "[Second Topic](#second-topic)" in row.content_text
+    # T-6.1.4.4: the TOC links to the id the heading "## 1. First Topic" gets.
+    assert "[First Topic](#1-first-topic)" in row.content_text
+    assert "[Second Topic](#2-second-topic)" in row.content_text
 
 
 def test_run_generation_failure_lands_status_failed(db):
@@ -492,8 +493,12 @@ def test_book_chapter_is_the_reports_markdown_with_headings_demoted(db, tmp_path
     assert "## 1. pratidhvani smoke test" in md
     assert "#### Executive Summary" in md and "\n## Executive Summary" not in md
     assert "Research Report: pratidhvani smoke test" not in md  # report H1 dropped
-    # Citations survive as Markdown links with their timestamps; tables survive.
-    assert md.count("&t=") == _FIXTURE_REPORT.read_text(encoding="utf-8").count("&t=")
+    # Every citation survives as a numbered endnote (S-6.1.4). This run has
+    # no library documents, so the bare `&t=` anchors cannot be resolved:
+    # they keep their labels and lose the dead link. Tables survive.
+    cited = _FIXTURE_REPORT.read_text(encoding="utf-8").count("&t=")
+    assert md.count("Source not identified") == cited
+    assert "](&t=" not in md
     assert "| Videos Analyzed | Transcripts Fetched | Total Words | Total Minutes |" in md
     # No HTML or stylesheet left (the regex stripper used to leak both).
     assert "<div" not in md and "font-family" not in md

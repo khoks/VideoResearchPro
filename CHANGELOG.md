@@ -33,7 +33,6 @@ PR [#PR_S612](https://github.com/khoks/VideoResearchPro/pull/PR_S612). Plan: [do
   renders the manuscript's tables through `remark-gfm` (MIT); without it
   they showed as a run of pipes.
 
-
 ### Reading room: citation cards, endnotes and print (2026-10-19)
 
 S-8.8.2. Every citation chip in a report now opens a card naming its source,

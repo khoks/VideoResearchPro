@@ -2224,3 +2224,28 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 **Consequences.** The smoke probe now exercises the Google provider at startup, which is why `langchain-google-genai` had to become a declared dependency (PR #231). Frame resolution is the next lever (T-1.18.5.5). The S-1.18.2 UI decision waits for the protocol re-run after S-1.18.6.
 
 **Linked initiatives / PRs.** S-1.18.5 (closed except .4/.5), S-1.18.6, D-071.
+
+
+## D-074 — Notes: one stream per document, soft delete only, lossless W3C JSON-LD export, Echo feeder reported not gated (2026-10-19)
+
+**Status:** accepted. Item 1 takes the [M5 plan](plans/m5-notes.md#open-questions)'s open question 2 at its recommended default; the user may revisit it.
+
+**Context.** Notes (M5, [E-8.5](initiatives.md#e-85--notes--the-users-own-voice-in-the-library-m5)) are the first text in the system written BY the user rather than ingested FOR them, and the richest input Echo's voice capture (E-3.3) will have. Building S-8.5.1 and S-8.5.3 forced four choices the plan left open or did not name. At the time, the library shelf still addressed a document by its legacy YouTube `video_id` while the job page used `document_id`. Deletion semantics would decide whether an export can carry a withdrawn note. "Exportable" had to name a format. The plan said notes feed Echo readiness, but readiness's per-language voice floor belongs to S-3.5.1.
+
+**Decision.**
+1. **One note stream per document.** A `document` or `knowledge_artifact` note accepts either id and is stored under the canonical `document_id`. It therefore shows on every surface that shows the document, including every job that contains it. A note meant for one run is a `job` note. Responses carry `target_video_id` for surfaces still keyed on the legacy id.
+2. **Soft delete only.** `DELETE /notes/{id}` sets `deleted_at`. The row leaves every live read and list but stays for exports and for Echo. No purge endpoint exists yet.
+3. **The lossless export is W3C Web Annotation JSON-LD.** `GET /exports/notes.jsonl` writes one annotation per line under the `anno.jsonld` context, with withdrawn notes carrying a `deleted` timestamp. `note_export_service.parse_note_jsonld` is the exact inverse, and a test holds every stored column of every row to it. The Markdown export is for reading. This is also the GDPR Article 20 copy of user-provided data.
+4. **Echo feeder, reported not gated.** `GET /echo/status` reports `notes_total` and `notes_words`, and the readiness panel shows them. `ready` does not change until S-3.5.1 sets the voice floor.
+5. **Missing and foreign are the same 404**, for both note ids and targets, as the library Q&A delete already does.
+
+**Alternatives considered.**
+- *Scope document notes to the job they were written from.* Rejected for v1. A note on a document is about the document, the plan recommended this, and a run-scoped thought already has the `job` target type.
+- *Store whichever id the caller sent.* Rejected. One document would get two note streams that never meet, and D-070 has since made `document_id` the only visibility key.
+- *Hard delete.* Rejected. It loses the user's own words from the export and from Echo, and a withdrawal is itself a signal. A purge for erasure requests can come with the SaaS erasure flow.
+- *A bespoke JSON export.* Rejected. The W3C shape is portable to Hypothes.is-style tools at no extra cost, and the round-trip test makes it lossless anyway.
+- *Gate readiness on notes now with a provisional floor.* Deferred to S-3.5.1, which owns the per-language minima and the evidence behind them.
+
+**Consequences.** S-8.5.2 must exclude withdrawn notes from the `notes_global` collection, and a document note must reach every job that contains the document, not only the one it was written from. Inline panels fetch one list per target type per page, capped at 2,000 rows, so a heavy user sees only the newest 2,000 of a type inline while the `/notes` page and the export see everything. A purge endpoint is owed before SaaS (see [saas-roadmap.md](saas-roadmap.md)).
+
+**Linked initiatives / PRs.** [S-8.5.1](initiatives.md#s-851--notes-schema-rest-and-inline-ui) (PR [#243](https://github.com/khoks/VideoResearchPro/pull/243)), [S-8.5.3](initiatives.md#s-853--your-notes-view-search-and-export) (PR [#246](https://github.com/khoks/VideoResearchPro/pull/246)), S-8.5.2, S-3.5.1, [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).

@@ -465,6 +465,12 @@ function ReadinessView({ readiness }: { readiness: ReturnType<typeof computeRead
           </li>
         ))}
       </ul>
+      {readiness.voice && (
+        <p style={{ margin: 0, fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.snug }}>
+          Your voice so far: {readiness.voice.notes} {readiness.voice.notes === 1 ? 'note' : 'notes'} ·{' '}
+          {readiness.voice.words.toLocaleString()} words. Notes feed Echo's voice capture; they are not a gate yet.
+        </p>
+      )}
       <p style={{ margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, fontStyle: 'italic', color: c.textMuted, lineHeight: lineHeight.normal }}>
         {readiness.ready
           ? 'The "speak as me" agent (E-3.4) has not shipped, so nothing acts on this yet.'

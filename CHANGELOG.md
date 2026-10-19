@@ -33,7 +33,6 @@ PR [#PR_S671](https://github.com/khoks/VideoResearchPro/pull/PR_S671). Plan: [do
   state` in dev (and as an uncaught error on the job page) when a second
   subscribe arrived while the socket was connecting.
 
-
 ### Code-mixed speech: held-out evaluation, and two fixes it forced (2026-10-19, T-1.16.2.6)
 
 PR [#276](https://github.com/khoks/VideoResearchPro/pull/276). Closes S-1.16.2 (invention N-002 now

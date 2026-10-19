@@ -70,6 +70,10 @@ export interface Readiness {
   /** 0..100. 100 when the backend says ready, else the mean of the gates. */
   percent: number;
   parts: ReadinessPart[];
+  /** Domain 3 feeder: what the user has written in their own words (notes).
+   * Reported, not a gate, until S-3.5.1 sets the voice floor. Null when the
+   * backend predates the field. */
+  voice: { notes: number; words: number } | null;
 }
 
 function clamp01(n: number): number {
@@ -124,7 +128,11 @@ export function computeReadiness(status: EchoStatus, connectorsAvailable: number
 
   const mean = (rowsFraction + sourcesFraction + personalityFraction) / 3;
   const percent = status.ready ? 100 : Math.min(99, Math.round(mean * 100));
-  return { ready: status.ready, percent, parts };
+  const voice =
+    typeof status.notes_total === 'number'
+      ? { notes: status.notes_total, words: status.notes_words ?? 0 }
+      : null;
+  return { ready: status.ready, percent, parts, voice };
 }
 
 // ---------------------------------------------------------------------------

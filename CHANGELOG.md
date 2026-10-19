@@ -44,6 +44,25 @@ endpoint the command palette (S-8.2.2) will call; no UI in this PR.
   with the index present.
 
 
+
+### Notes: the "Your notes" page, exports and the Echo feeder (S-8.5.3, 2026-10-19)
+
+Second and last Phase 1 PR of the notes lane. Story [S-8.5.3](docs/initiatives.md#s-853--your-notes-view-search-and-export), PR [#246](https://github.com/khoks/VideoResearchPro/pull/246).
+
+- **`/notes` page** ("Your notes" under Knowledge in the sidebar): every note,
+  grouped by target type, newest first, with a debounced search, type chips
+  with counts, a "Show withdrawn" toggle, inline edit and delete, and a link
+  from each note to the page its target lives on.
+- **Exports.** `GET /api/v1/exports/notes.jsonl` streams W3C Web Annotation
+  JSON-LD, one per line, withdrawn notes included with `deleted`;
+  `note_export_service.parse_note_jsonld` is the exact inverse and the
+  round-trip test holds every column to it. `GET /api/v1/exports/notes.md`
+  streams a readable document grouped by target. Both on the Exports page.
+- **Echo feeder.** `GET /echo/status` reports `notes_total` and `notes_words`
+  (Domain 3); the readiness panel shows them. Reported, not gated, until
+  S-3.5.1 sets the voice floor.
+- Not done: the command-palette entry (the palette does not exist yet) and
+  retrieval (S-8.5.2, after E-7.1).
 ### Reading room: reports render natively, no token in the URL (2026-10-19)
 
 S-8.8.1, the first story of the E-8.8 reading room

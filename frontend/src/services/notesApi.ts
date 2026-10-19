@@ -50,6 +50,8 @@ export interface Note {
    * surface still keyed on `video_id` can find notes stored under the
    * canonical `document_id`. */
   target_video_id: string | null;
+  /** `qa_exchange` only: the job that holds the exchange. */
+  target_parent_id?: string | null;
 }
 
 export interface NoteListResponse {
@@ -103,6 +105,33 @@ export const notesApi = {
       .delete<{ deleted: boolean; deleted_at: string }>(`/notes/${encodeURIComponent(id)}`)
       .then((r) => r.data),
 };
+
+/**
+ * Where a note's target lives in the app, for the notes page. Sources have
+ * no page of their own yet, so document and knowledge-report notes point
+ * at the shelf; a Q&A answer points at its job page.
+ */
+export function noteTargetHref(
+  note: Pick<Note, 'target_type' | 'target_id' | 'target_parent_id'>,
+): string | null {
+  switch (note.target_type) {
+    case 'job':
+      return `/jobs/${note.target_id}`;
+    case 'qa_exchange':
+      return note.target_parent_id ? `/jobs/${note.target_parent_id}` : null;
+    case 'library_qa_exchange':
+      return '/library/qa';
+    case 'qa_history_exchange':
+      return `/qa-history#exchange-${note.target_id}`;
+    case 'channel':
+      return `/library/channels/${encodeURIComponent(note.target_id)}`;
+    case 'document':
+    case 'knowledge_artifact':
+      return '/library';
+    default:
+      return null;
+  }
+}
 
 /** Human label for a target type, used by the notes page and the inline lists. */
 export function noteTargetTypeLabel(type: NoteTargetType): string {

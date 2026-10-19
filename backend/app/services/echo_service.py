@@ -264,6 +264,10 @@ class EchoReadiness:
     has_personality_trait: bool
     threshold_total: int
     threshold_sources: int
+    # Domain 3 feeder (S-8.5.3): what the user has written in their own words.
+    # Reported, not gated — S-3.5.1 sets the per-language voice floor.
+    notes_total: int = 0
+    notes_words: int = 0
 
 
 # Tunable thresholds. Conservative defaults — Echo features should not
@@ -304,6 +308,9 @@ def is_ready(
         and len(sources) >= sources_threshold
         and has_personality
     )
+    from app.services import note_service
+
+    voice = note_service.voice_stats(db, user_id)
     return EchoReadiness(
         ready=ready,
         total_rows=total,
@@ -311,4 +318,6 @@ def is_ready(
         has_personality_trait=has_personality,
         threshold_total=total_threshold,
         threshold_sources=sources_threshold,
+        notes_total=voice.notes_total,
+        notes_words=voice.words_total,
     )

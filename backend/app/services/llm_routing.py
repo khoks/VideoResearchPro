@@ -1162,14 +1162,18 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
                 "Blind grading of 33 frames, two graders each, who opened the "
                 "image: gpt-5.5 4.52/5 (3 of 66 gradings unusable), "
                 "gemini-3.1-flash-lite 4.21 (5 unusable), gpt-5.6-luna 3.97 "
-                "(22 unusable). Flash-lite's misses were mostly casing and "
-                "label misreads at 360p, which gpt-5.5 also made, less often."
+                "(22 unusable). At report level the small per-frame gap was "
+                "not small: with gpt-5.5 descriptions the annotated report "
+                "beat the plain one with 3 of 3 judges, with flash-lite it "
+                "tied, 1 of 3 (D-075)."
             ),
             downgrade_risk=(
-                "A misread chart axis becomes a confident false statement in "
-                "the report, and nothing downstream can catch it. A model "
-                "that cannot see images does not fail loudly: it describes "
-                "the frame from the surrounding transcript."
+                "Per-frame grades did not predict the report-level loss, so a "
+                "cheaper describer can look fine frame by frame and still "
+                "erase the benefit of the visual pass. A misread chart axis "
+                "becomes a confident false statement nothing downstream "
+                "catches, and a model that cannot see images does not fail "
+                "loudly: it describes the frame from the transcript."
             ),
             measured_cost=(
                 "Per video: $0.008 on gemini-3.1-flash-lite against $0.133 on "
@@ -1187,7 +1191,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
                     decision_id="D-073",
                 ),
             ),
-            related_decisions=("D-071",),
+            related_decisions=("D-071", "D-075"),
         ),
     ),
     # --- Discussed-era extraction (R3 / S-1.17.2) ----------------------

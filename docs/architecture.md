@@ -507,7 +507,7 @@ Each registry entry also carries `guidance`, which records what the E-1.14 measu
 - `/settings/llm`, as the data behind the `/account/ai-models` page;
 - the page itself, which re-applies the rule client-side.
 
-Warnings are advisory: no layer refuses a config (see [D-075](decisions.md#d-075--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19)).
+Warnings are advisory: no layer refuses a config (see [D-076](decisions.md#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19)).
 
 ### Reasoning levels
 

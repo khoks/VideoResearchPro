@@ -1835,11 +1835,13 @@ Linked decision: D-074.
 - [ ] T-8.6.4.1 A new data migration that copies `STARTERS` / `_upsert` from `f1a2b3c4d5e6_starter_templates.py` (never edit that file) and adds `podcast-digest` and `mixed-source-debate`
 **Blocked-on:** [S-1.5.13](#s-1513--accept-source_types-on-job-creation).
 
-### E-8.7 🟡 Channel intelligence (M7)
+### E-8.7 🟢 Channel intelligence (M7)
+
+**Shipped:** 2026-10-19 — PRs [#237](https://github.com/khoks/VideoResearchPro/pull/237), [#280](https://github.com/khoks/VideoResearchPro/pull/280), [#285](https://github.com/khoks/VideoResearchPro/pull/285), [#291](https://github.com/khoks/VideoResearchPro/pull/291); the concept graph (T-8.7.3.2) shipped in S-8.9.2 ([#301](https://github.com/khoks/VideoResearchPro/pull/301)). The plan's topic-cluster item (k-means over chunk embeddings), never a board task, folds into the gated [S-8.9.3](#s-893--topic-clusters).
 
 **Scope.** A per-channel view with analytics computed from what the library already holds: publishing cadence, top topics and concepts aggregated from knowledge artifacts, a keyword cloud from transcripts, the user's own Q&A activity against the channel, and a concept graph. Stance over time is scoped to sources that carry classification (social connectors); YouTube has none today, so that panel is explicitly data-dependent.
 **Plan:** [`docs/plans/m7-channel-intelligence.md`](plans/m7-channel-intelligence.md)
-**Linked decision:** [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19) (read-only trust-weight slot)
+**Linked decision:** [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19) (read-only trust-weight slot), [D-091](decisions.md#d-091--channel-intelligence-aggregates-computed-on-read-and-cached-per-reader-behind-an-input-fingerprint-derived-links-resolved-at-read-time-2026-10-19) (aggregates on read behind a fingerprint, links resolved at read time)
 **Acceptance.** Opening a channel the user follows shows cadence, top topics (with the videos behind each), a keyword cloud and the user's questions about it; panels whose inputs are missing say what to do ("Extract knowledge for 12 more videos to populate topics") instead of showing nothing; a channel with 500 documents renders within two seconds from a cached aggregate.
 
 #### S-8.7.1 🟢 Channel detail page
@@ -1911,6 +1913,7 @@ Linked decision: D-074.
 
 **Scope.** A library-overview graph: documents, channels, Q&A exchanges and knowledge topics as nodes; citations, authorship and shared topics as edges; tenant-scoped; filterable by shelf, channel or job; a "local graph" around any node. Useful rather than a hairball: size caps, degree-based sizing, clustering by channel or topic, and a focused mode by default.
 **Plan:** [`docs/plans/m9-citation-graph.md`](plans/m9-citation-graph.md)
+**Linked decision:** [D-092](decisions.md#d-092--library-graph-computed-per-request-sigma-used-directly-as-a-lazy-chunk-three-group-colours-the-accessibility-layer-inside-the-story-2026-10-19)
 **Acceptance.** `/library/graph` renders the user's library in under three seconds at 2,000 nodes; clicking a document shows its neighbours and a detail card; filtering by shelf narrows the graph; nothing from another tenant appears; the graph degrades to a list on narrow screens.
 
 #### S-8.9.1 🟢 Graph endpoint
@@ -1933,6 +1936,7 @@ Linked decision: D-074.
 
 #### S-8.9.3 ⚪ Topic clusters
 - [ ] T-8.9.3.1 Cluster documents by embedding centroid (k-means over stored chunk means) and colour the graph by cluster; only if S-8.9.2's topic edges prove too sparse
+- Scope-changed 2026-10-19: also carries M7's channel topic clusters (the same k-means, scoped to one channel), which S-8.7.2 did not build. The gate needs the library map tried on a real library; S-8.9.2 colours only the three largest Louvain groups (D-092), so clusters would need their own encoding, not a fourth hue
 
 ### E-8.10 🟡 Onboarding wizard and empty states (M10)
 

@@ -7,6 +7,8 @@ import { SubmitJobPage } from '../pages/SubmitJobPage';
 import { JobsListPage } from '../pages/JobsListPage';
 import { JobDetailPage } from '../pages/JobDetailPage';
 import { ReportReaderPage } from '../pages/ReportReaderPage';
+import { KnowledgeReaderPage } from '../pages/KnowledgeReaderPage';
+import { OutputReaderPage } from '../pages/OutputReaderPage';
 import { LibraryPage } from '../pages/LibraryPage';
 import { LibraryQAPage } from '../pages/LibraryQAPage';
 import { ChannelPage } from '../pages/ChannelPage';
@@ -72,6 +74,8 @@ export const router = createBrowserRouter([
           { path: 'jobs', element: <JobsListPage /> },
           { path: 'jobs/:jobId', element: <JobDetailPage /> },
           { path: 'reports/:jobId', element: <ReportReaderPage /> },
+          { path: 'knowledge/:videoId', element: <KnowledgeReaderPage /> },
+          { path: 'author/outputs/:outputId', element: <OutputReaderPage /> },
           { path: 'library', element: <LibraryPage /> },
           { path: 'library/qa', element: <LibraryQAPage /> },
           { path: 'library/channels/:channelId', element: <ChannelPage /> },

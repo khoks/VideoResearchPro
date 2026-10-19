@@ -14,6 +14,8 @@ export {
   type ReportCitation,
 } from './parseReport';
 export { ReaderShell, type ReaderShellProps } from './ReaderShell';
+export { parseMarkdownDoc, type ParsedMarkdown, type ParseMarkdownOptions } from './parseMarkdown';
+export { StatTiles, type StatTile } from './StatTiles';
 export { ReaderCitation } from './ReaderCitation';
 export { CitationCard, type CitationStill } from './CitationCard';
 export { CitationCardProvider, useCitationUi, CITATION_CARD_ID } from './CitationContext';

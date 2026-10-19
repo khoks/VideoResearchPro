@@ -54,12 +54,21 @@ class InvalidParameters(Exception):
 # Parameters
 # ---------------------------------------------------------------------------
 
+def needs_channels(params: TemplateParameters) -> bool:
+    """A channel or subscription recipe with no channels: the reader adds
+    them each run (the channel starters, S-8.6.2), as they add a topic."""
+    return params.job_type in ("channel", "subscription") and not params.channel_list
+
+
 def validate_parameters(params: TemplateParameters) -> None:
-    """Raise ``InvalidParameters`` unless the parameters plus a topic make a
-    valid ``JobCreate`` — the same validation a submission goes through."""
+    """Raise ``InvalidParameters`` unless the parameters plus the run-time
+    fields (a topic; channels when the recipe leaves them open) make a valid
+    ``JobCreate`` — the same validation a submission goes through."""
     payload = params.model_dump()
     if params.job_type == "topic":
         payload["topic"] = "placeholder topic"
+    if needs_channels(params):
+        payload["channel_list"] = ["@placeholder"]
     try:
         JobCreate(**payload)
     except ValidationError as exc:

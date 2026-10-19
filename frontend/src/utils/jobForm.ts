@@ -90,6 +90,11 @@ export function parseDraft(raw: string | null): JobFormState {
   }
 }
 
+/** A channel or subscription recipe that leaves the channels to each run. */
+export function templateNeedsChannels(params: TemplateParameters): boolean {
+  return params.job_type !== 'topic' && !(params.channel_list && params.channel_list.length > 0);
+}
+
 /** "Duplicate": every parameter of the run, including depth and the visual flag. */
 export function jobToFormState(job: Job): JobFormState {
   return {
@@ -154,9 +159,13 @@ export type FormResult = { ok: true; data: JobCreate } | { ok: false; error: str
 
 /**
  * The form as a `JobCreate`, or the first problem a reader must fix.
- * `requireTopic: false` builds a template's parameters, which have no topic.
+ * `requireTopic` / `requireChannels: false` build a template's parameters,
+ * which may leave the topic (always) and the channels (S-8.6.2) to each run.
  */
-export function formToJobCreate(form: JobFormState, { requireTopic = true } = {}): FormResult {
+export function formToJobCreate(
+  form: JobFormState,
+  { requireTopic = true, requireChannels = true } = {},
+): FormResult {
   const data: JobCreate = { job_type: form.jobType };
   if (form.outputLength !== 'auto') data.output_length = form.outputLength;
   if (form.visualAnalysis) data.visual_analysis = true;
@@ -182,12 +191,12 @@ export function formToJobCreate(form: JobFormState, { requireTopic = true } = {}
 
   const raw = form.jobType === 'channel' ? form.channelList : form.subscriptionChannels;
   const entries = parseChannelList(raw);
-  if (entries.length === 0) {
+  if (entries.length === 0 && requireChannels) {
     return { ok: false, error: 'Provide at least one channel URL, handle, or UC-ID.' };
   }
   const invalid = validateChannels(entries);
   if (invalid.length > 0) return { ok: false, error: `Invalid channel entries: ${truncatedList(invalid)}` };
-  data.channel_list = entries;
+  if (entries.length > 0) data.channel_list = entries;
   if (form.jobType === 'channel') {
     data.videos_per_channel = form.videosPerChannel;
     data.num_videos = form.numVideos;
@@ -199,7 +208,7 @@ export function formToJobCreate(form: JobFormState, { requireTopic = true } = {}
 
 /** The form's frozen half, as a template version stores it. */
 export function formToTemplateParameters(form: JobFormState): { ok: true; params: TemplateParameters } | { ok: false; error: string } {
-  const result = formToJobCreate(form, { requireTopic: false });
+  const result = formToJobCreate(form, { requireTopic: false, requireChannels: false });
   if (!result.ok) return result;
   const { topic: _topic, ...rest } = result.data;
   void _topic;

@@ -539,10 +539,10 @@ Named, reusable research recipes (E-8.6 / M6; plan: [`docs/plans/m6-job-template
 }
 ```
 
-Parameters are validated the way a submission is (`JobCreate`, with a placeholder topic); a recipe that would fail is a **422**, and unknown fields are refused rather than dropped. Names are unique per reader among live templates, case-insensitively (409). `{{topic}}` in `search_instructions` is replaced by the run's topic at submission.
+Parameters are validated the way a submission is (`JobCreate`, with a placeholder topic, and placeholder channels when a channel or subscription recipe leaves `channel_list` empty, meaning "add the channels each run"); a recipe that would fail is a **422**, and unknown fields are refused rather than dropped. Names are unique per reader among live templates, case-insensitively (409). `{{topic}}` in `search_instructions` is replaced by the run's topic at submission.
 
 ### `GET /api/v1/job-templates`
-The caller's templates A→Z, then the built-ins A→Z.
+The caller's templates A→Z, then the built-ins A→Z. The five starters (S-8.6.2) have stable `builtin_key`s: `topic-scan`, `deep-dive`, `quick-brief`, `channel-deep-dive`, `subscription-follow`.
 
 ### `POST /api/v1/job-templates`
 Body `{ "name", "description"?, "parameters" }`. 201.
@@ -699,7 +699,7 @@ Query param: `?force=true` to re-run if already extracted. Returns 409 if alread
 ```
 
 ### `GET /api/v1/videos/{video_id}/knowledge`
-Fetch the stored knowledge artifact. Returns 404 if not yet extracted.
+Fetch the stored knowledge artifact. Returns 404 if not yet extracted. The path segment may be the YouTube `video_id` or the `document_id`. Besides the four lists, `knowledge_report_md` and `knowledge_extracted_at`, the response names its source (S-8.8.3): `document_id`, `source_type`, `title`, `channel_name`, `url`, `published_at`. `video_id` is NULL for non-video documents; before S-8.8.3 it was declared non-nullable, so a PDF's artifact failed serialisation.
 
 ---
 

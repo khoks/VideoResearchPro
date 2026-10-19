@@ -191,7 +191,7 @@ Below threshold: bubble dimmed, banner explains what's missing. Crossing thresho
 - How does weighting interact with subscriptions (auto-pulled content)? Recommend channel weight applies; user can override per-document.
 - **Shape of v1 (raised 2026-10-18, undecided).** Option one is weighted retrieval alone: multiply similarity by trust weight before re-ranking, which is a contained retrieval change. Option two puts weight bands in the answer ("your trusted creators say X; others say Y"), which reshapes the Q&A agent.
 
-**Status.** ⚪ proposed. Targeted Phase 4 (2027 Q1). Only the weight column exists, so retrieval is unweighted today. Tracked as [I-7](initiatives.md#i-7-curated-source-ranking-l4).
+**Status.** ⚪ proposed. Targeted Phase 4 (2027 Q1). Only the weight column exists, so retrieval is unweighted today. Tracked as [I-7](initiatives.md#i-7--curated-source-ranking-l4).
 
 ---
 

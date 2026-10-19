@@ -5,6 +5,7 @@
 
 import type { BadgeTone } from '../components/primitives';
 import type { KindsResponse, OutputItem } from '../services/authorApi';
+import type { WSProgressMessage } from '../types/ws';
 import { detailFromErrorBody, type HttpErrorLike } from './ingestResults';
 
 export interface KindMeta {
@@ -85,6 +86,8 @@ export function outputStatusTone(status: string): BadgeTone {
       return 'error';
     case 'generating':
       return 'info';
+    case 'cancelled':
+      return 'warn';
     case 'pending':
     default:
       return 'neutral';
@@ -101,6 +104,8 @@ export function outputStatusLabel(status: string): string {
       return 'Generating';
     case 'pending':
       return 'Pending';
+    case 'cancelled':
+      return 'Cancelled';
     default:
       return status.replace(/_/g, ' ');
   }
@@ -179,4 +184,44 @@ export function outputSizeLabel(output: Pick<OutputItem, 'kind' | 'source_ids' |
     parts.push(`${output.word_count.toLocaleString('en-US')} ${output.word_count === 1 ? 'word' : 'words'}`);
   }
   return parts.join(' · ');
+}
+
+/** S-6.7.1: an output the worker still owns (live progress, cancellable). */
+export function isActiveOutput(status: string): boolean {
+  return status === 'pending' || status === 'generating';
+}
+
+/** A `pending` row with no task id was created before generation moved to the
+ * worker, when a kind without a generator left its row behind. It never runs. */
+export function isOrphanedPending(output: Pick<OutputItem, 'status' | 'celery_task_id'>): boolean {
+  return output.status === 'pending' && !output.celery_task_id;
+}
+
+/** The progress line under an active row: "40% · Chapter 2 of 5: Tariffs". */
+export function outputProgressLine(output: Pick<OutputItem, 'progress_pct' | 'progress_message'>): string {
+  const pct = Math.max(0, Math.min(100, Math.round(output.progress_pct ?? 0)));
+  const message = (output.progress_message ?? '').trim();
+  return message ? `${pct}% · ${message}` : `${pct}%`;
+}
+
+/** Fold one socket message into an output row. Returns the same object when
+ * the message is for another id, so React Query keeps referential equality. */
+export function applyOutputProgress<T extends Pick<OutputItem, 'id' | 'status' | 'progress_pct' | 'progress_message' | 'error_message'>>(
+  output: T,
+  msg: WSProgressMessage,
+): T {
+  if (msg.job_id !== output.id) return output;
+  return {
+    ...output,
+    status: msg.new_status ?? msg.status ?? output.status,
+    progress_pct: msg.progress_pct ?? output.progress_pct,
+    progress_message: msg.message ?? output.progress_message,
+    error_message: msg.error ?? output.error_message,
+  };
+}
+
+/** Statuses after which the row's content and lists must be refetched. */
+export function isTerminalMessage(msg: WSProgressMessage): boolean {
+  const s = msg.new_status ?? msg.status;
+  return msg.type === 'job_error' || s === 'completed' || s === 'failed' || s === 'cancelled';
 }

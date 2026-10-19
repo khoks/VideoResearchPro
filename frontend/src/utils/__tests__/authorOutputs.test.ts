@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { outputSizeLabel, parseCreateIntent } from '../authorOutputs';
+import {
+  applyOutputProgress,
+  isActiveOutput,
+  isOrphanedPending,
+  isTerminalMessage,
+  outputProgressLine,
+  outputSizeLabel,
+  outputStatusLabel,
+  outputStatusTone,
+  parseCreateIntent,
+} from '../authorOutputs';
+import type { WSProgressMessage } from '../../types/ws';
 
 describe('parseCreateIntent', () => {
   it('opens a book with the linked run pre-selected', () => {
@@ -35,5 +46,44 @@ describe('outputSizeLabel', () => {
 
   it('says sources for other kinds', () => {
     expect(outputSizeLabel({ kind: 'deck', source_ids: ['a', 'b'], word_count: 0 })).toBe('2 sources · 0 words');
+  });
+});
+
+describe('S-6.7.1 progress helpers', () => {
+  const row = { id: 'o1', status: 'pending', progress_pct: 0, progress_message: 'Queued', error_message: null };
+  const msg = (m: Partial<WSProgressMessage>): WSProgressMessage => ({ type: 'job_progress', job_id: 'o1', timestamp: '', ...m });
+
+  it('folds a progress message into the matching row only', () => {
+    const next = applyOutputProgress(row, msg({ status: 'generating', progress_pct: 50, message: 'Chapter 1 of 2: T' }));
+    expect(next).toMatchObject({ status: 'generating', progress_pct: 50, progress_message: 'Chapter 1 of 2: T' });
+    expect(applyOutputProgress(row, msg({ job_id: 'other', progress_pct: 90 }))).toBe(row);
+  });
+
+  it('takes new_status from a status change and error text from an error', () => {
+    expect(applyOutputProgress(row, msg({ type: 'job_status_change', new_status: 'completed' })).status).toBe('completed');
+    expect(applyOutputProgress(row, msg({ type: 'job_error', status: 'failed', error: 'boom' })).error_message).toBe('boom');
+  });
+
+  it('knows which messages end a run', () => {
+    expect(isTerminalMessage(msg({ type: 'job_status_change', new_status: 'completed' }))).toBe(true);
+    expect(isTerminalMessage(msg({ type: 'job_status_change', new_status: 'cancelled' }))).toBe(true);
+    expect(isTerminalMessage(msg({ type: 'job_error' }))).toBe(true);
+    expect(isTerminalMessage(msg({ type: 'job_status_change', new_status: 'generating' }))).toBe(false);
+    expect(isTerminalMessage(msg({ progress_pct: 40 }))).toBe(false);
+  });
+
+  it('labels active, orphaned and cancelled rows', () => {
+    expect(isActiveOutput('pending') && isActiveOutput('generating')).toBe(true);
+    expect(isActiveOutput('completed') || isActiveOutput('cancelled')).toBe(false);
+    expect(isOrphanedPending({ status: 'pending', celery_task_id: null })).toBe(true);
+    expect(isOrphanedPending({ status: 'pending', celery_task_id: 'abc' })).toBe(false);
+    expect(outputStatusLabel('cancelled')).toBe('Cancelled');
+    expect(outputStatusTone('cancelled')).toBe('warn');
+  });
+
+  it('formats the progress line', () => {
+    expect(outputProgressLine({ progress_pct: 49.6, progress_message: ' Chapter 2 of 5: Tariffs ' })).toBe('50% · Chapter 2 of 5: Tariffs');
+    expect(outputProgressLine({ progress_pct: 140, progress_message: null })).toBe('100%');
+    expect(outputProgressLine({})).toBe('0%');
   });
 });

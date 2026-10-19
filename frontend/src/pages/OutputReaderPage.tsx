@@ -7,12 +7,22 @@
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthorOutput, useAuthorOutputContent } from '../hooks/useAuthor';
+import { useOutputsProgress } from '../hooks/useOutputProgress';
+import { ProgressBar } from '../components/common/ProgressBar';
 import { Button, EmptyState, Spinner } from '../components/primitives';
 import { ReaderShell, StatTiles, formatPublished, parseMarkdownDoc } from '../components/reader';
 import { useColors } from '../hooks/useTheme';
 import { useJobStore } from '../stores/jobStore';
 import { downloadUrl } from '../utils/download';
-import { kindMeta, outputDownloadFilename, outputMediaType, outputStatusLabel } from '../utils/authorOutputs';
+import {
+  isActiveOutput,
+  isOrphanedPending,
+  kindMeta,
+  outputDownloadFilename,
+  outputMediaType,
+  outputProgressLine,
+  outputStatusLabel,
+} from '../utils/authorOutputs';
 import { fonts, fontSize, space } from '../theme';
 
 function httpStatus(err: unknown): number | undefined {
@@ -30,6 +40,10 @@ export function OutputReaderPage() {
   const pushToast = useJobStore((s) => s.pushToast);
   const output = useAuthorOutput(outputId ?? null);
   const readable = output.data?.status === 'completed' && output.data.has_content;
+  // S-6.7.1: opened while the worker is still writing it — follow its
+  // progress and render as soon as it completes.
+  const live = !!output.data && isActiveOutput(output.data.status) && !isOrphanedPending(output.data);
+  useOutputsProgress(live && outputId ? [outputId] : []);
   const content = useAuthorOutputContent(readable ? (outputId ?? null) : null);
 
   const parsed = useMemo(
@@ -85,6 +99,21 @@ export function OutputReaderPage() {
   }
 
   const item = output.data;
+  if (live) {
+    return (
+      <EmptyState
+        title={`Writing ${item.title}…`}
+        description={
+          <span style={{ display: 'flex', flexDirection: 'column', gap: space['2'], minWidth: 240 }} aria-live="polite">
+            <ProgressBar value={item.progress_pct ?? 0} tone="info" />
+            <span>{outputProgressLine(item)}</span>
+          </span>
+        }
+        action={back}
+      />
+    );
+  }
+
   if (!readable || !parsed || content.data == null) {
     return (
       <EmptyState

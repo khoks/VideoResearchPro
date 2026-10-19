@@ -1,11 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   useAuthorKinds,
   useAuthorOutputs,
   useCreateOutput,
+  useCancelOutput,
   useDeleteOutput,
 } from '../hooks/useAuthor';
+import { useOutputsProgress } from '../hooks/useOutputProgress';
+import { ProgressBar } from '../components/common/ProgressBar';
 import { useJobs } from '../hooks/useJobs';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { useJobStore } from '../stores/jobStore';
@@ -28,9 +31,12 @@ import { formatDate } from '../utils/formatters';
 import { downloadUrl } from '../utils/download';
 import {
   describeCreateError,
+  isActiveOutput,
+  isOrphanedPending,
   kindMeta,
   outputDownloadFilename,
   outputMediaType,
+  outputProgressLine,
   outputSizeLabel,
   outputStatusLabel,
   outputStatusTone,
@@ -75,6 +81,32 @@ export function AuthorPage() {
     allowed,
   );
   const deleteMut = useDeleteOutput();
+  const cancelMut = useCancelOutput();
+  // S-6.7.1: the output this visit just queued; it opens when it finishes.
+  const [awaiting, setAwaiting] = useState<string | null>(null);
+  const activeIds = useMemo(
+    () => (outputs.data ?? []).filter((o) => isActiveOutput(o.status) && !isOrphanedPending(o)).map((o) => o.id),
+    [outputs.data],
+  );
+  useOutputsProgress(awaiting && !activeIds.includes(awaiting) ? [...activeIds, awaiting] : activeIds);
+  useEffect(() => {
+    if (!awaiting) return;
+    const row = outputs.data?.find((o) => o.id === awaiting);
+    if (!row || isActiveOutput(row.status)) return;
+    setAwaiting(null);
+    if (row.status === 'completed') {
+      pushToast('success', `“${row.title}” is ready.`);
+      navigate(`/author/outputs/${row.id}`);
+    } else if (row.status === 'failed') {
+      pushToast('error', row.error_message ?? 'Generation failed.');
+    }
+  }, [awaiting, outputs.data, navigate, pushToast]);
+
+  const cancel = (output: OutputItem) =>
+    cancelMut.mutate(output.id, {
+      onSuccess: () => pushToast('info', `Cancelled “${output.title}”.`),
+      onError: () => pushToast('error', 'Could not cancel; it may already have finished.'),
+    });
 
   const forbidden = isForbidden(kinds.error) || isForbidden(outputs.error);
   const partition = useMemo(() => partitionKinds(kinds.data), [kinds.data]);
@@ -262,6 +294,8 @@ export function AuthorPage() {
                     onView={() => navigate(`/author/outputs/${row.id}`)}
                     onDownload={() => download(row)}
                     onDelete={() => setDeleting(row)}
+                    onCancel={() => cancel(row)}
+                    cancelling={cancelMut.isPending && cancelMut.variables === row.id}
                   />
                 ))}
               </ul>
@@ -281,8 +315,10 @@ export function AuthorPage() {
           onCreated={(output) => {
             setCreatingKind(null);
             if (searchParams.has('new')) setSearchParams({}, { replace: true });
-            // S-8.8.3: a finished output opens in the reading room.
+            // S-8.8.3: a finished output opens in the reading room; a queued
+            // one (S-6.7.1) opens when the worker finishes it.
             if (output.status === 'completed') navigate(`/author/outputs/${output.id}`);
+            else if (isActiveOutput(output.status)) setAwaiting(output.id);
           }}
         />
       )}
@@ -395,11 +431,15 @@ function OutputRow({
   onView,
   onDownload,
   onDelete,
+  onCancel,
+  cancelling,
 }: {
   output: OutputItem;
   onView: () => void;
   onDownload: () => void;
   onDelete: () => void;
+  onCancel: () => void;
+  cancelling: boolean;
 }) {
   const c = useColors();
   return (
@@ -443,6 +483,11 @@ function OutputRow({
                   </Button>
                 </>
               )}
+              {isActiveOutput(output.status) && !isOrphanedPending(output) && (
+                <Button size="sm" variant="tertiary" onClick={onCancel} loading={cancelling}>
+                  Cancel
+                </Button>
+              )}
               <Button size="sm" variant="tertiary" onClick={onDelete} style={{ color: c.error }}>
                 Delete
               </Button>
@@ -461,7 +506,15 @@ function OutputRow({
               {output.error_message}
             </div>
           )}
-          {output.status === 'pending' && !output.has_content && (
+          {isActiveOutput(output.status) && !isOrphanedPending(output) && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: space['1'] }} aria-live="polite">
+              <ProgressBar value={output.progress_pct ?? 0} tone="info" />
+              <span style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>
+                {outputProgressLine(output)}
+              </span>
+            </div>
+          )}
+          {isOrphanedPending(output) && !output.has_content && (
             <div style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted, fontStyle: 'italic' }}>
               Created but never generated. This happens when the kind had no generator at the
               time; delete it or wait for that generator to ship.
@@ -534,7 +587,7 @@ function CreateOutputModal({
           } else if (output.status === 'failed') {
             pushToast('error', output.error_message ?? `${meta.label} generation failed.`);
           } else {
-            pushToast('info', `${meta.label} created with status ${output.status}.`);
+            pushToast('info', `Generating “${output.title}” in the background; it opens when it is ready.`);
           }
           onCreated(output);
         },
@@ -555,15 +608,16 @@ function CreateOutputModal({
             Cancel
           </Button>
           <Button onClick={submit} disabled={!canSubmit} loading={create.isPending}>
-            {create.isPending ? 'Generating…' : 'Generate'}
+            {create.isPending ? 'Queueing…' : 'Generate'}
           </Button>
         </>
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}>
         <p style={{ margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal }}>
-          {meta.description} Generation runs at once and takes a few seconds; the manuscript is
-          deterministic (no model involved yet), so what you pick is what you get.
+          {meta.description} Generation runs in the background and shows its progress in the
+          list below; the manuscript is deterministic (no model involved yet), so what you pick is
+          what you get.
         </p>
 
         <FormField label="Title" required>

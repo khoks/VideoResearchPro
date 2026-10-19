@@ -12,7 +12,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
-PREVIOUS = "a3b4c5d6e7f9"
+PREVIOUS = "72d7e46ef057"
 THIS = "007c708bb890"
 
 _BACKEND = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))

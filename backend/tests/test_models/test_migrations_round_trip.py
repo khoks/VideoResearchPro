@@ -35,6 +35,7 @@ LANE_MIGRATIONS = [
     ("d8e9f0a1b2c3", {"shelves", "shelf_jobs"}),
     ("e9f0a1b2c3d4", {"tags", "taggings"}),
     ("f0a1b2c3d4e5", {"job_templates", "job_template_versions"}),
+    ("b4c5d6e7f8a0", {"channel_intelligence_cache"}),
     ("007c708bb890", {"shares_inbox"}),
     # S-8.2.1: the search index is created only when SQLite has FTS5 with the
     # trigram tokenizer; elsewhere the migration deliberately creates nothing.

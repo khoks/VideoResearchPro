@@ -1,7 +1,7 @@
 """Echo shares inbox + tenant_id on personal_context (S-3.7.1)
 
 Revision ID: 007c708bb890
-Revises: a3b4c5d6e7f9
+Revises: 72d7e46ef057
 Create Date: 2026-10-19
 
 The first new Echo table. ``shares_inbox`` holds everything the user forwards
@@ -14,7 +14,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "007c708bb890"
-down_revision = "a3b4c5d6e7f9"
+down_revision = "72d7e46ef057"
 branch_labels = None
 depends_on = None
 

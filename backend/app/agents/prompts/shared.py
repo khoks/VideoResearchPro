@@ -102,6 +102,15 @@ VISUAL_ANNOTATION_CONTRACT = """ON-SCREEN VISUAL ANNOTATIONS — READ CAREFULLY:
 - Use them as evidence about what the source showed. Never quote them as
   speech, never attribute them to the speaker, and never write "the speaker
   said" about their contents.
+- ATTRIBUTION BOUNDARY: a sentence credited to a speaker — "X says / notes /
+  explains ...", quoted speech, or a clause ending in "— Name (mm:ss)" — may
+  contain ONLY what that speaker said. A detail that exists only in an
+  annotation never goes inside such a sentence, not even bundled with things
+  the speaker did say. Put it in a separate clause marked as shown on screen:
+  "the speaker describes a regression plot with a fitted line (10:21); the
+  chart on screen also shows a confidence band." Noting that a spoken figure
+  is "also visible on screen" stays correct — that is the screen confirming
+  speech, not speech invented from the screen.
 - When you cite one, say what it is: "on screen at mm:ss, <...>" or "the
   video displays <...> at mm:ss". A reader must be able to tell a claim
   grounded in the audio from one grounded in the picture.

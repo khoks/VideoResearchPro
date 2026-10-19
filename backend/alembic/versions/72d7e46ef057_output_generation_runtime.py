@@ -1,7 +1,7 @@
 """outputs: celery_task_id + progress columns — generation moves to the worker (S-6.7.1)
 
 Revision ID: 72d7e46ef057
-Revises: a3b4c5d6e7f9
+Revises: b4c5d6e7f8a0
 Create Date: 2026-10-19
 
 `POST /author/outputs` used to generate inside the request. Generation now
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "72d7e46ef057"
-down_revision = "a3b4c5d6e7f9"
+down_revision = "b4c5d6e7f8a0"  # re-parented onto S-8.7.2 (merged first)
 branch_labels = None
 depends_on = None
 

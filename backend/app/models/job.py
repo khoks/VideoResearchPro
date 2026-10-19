@@ -101,3 +101,9 @@ class Job(Base):
     qa_exchanges: Mapped[list["QAExchange"]] = relationship(  # noqa: F821
         back_populates="job", cascade="all, delete-orphan"
     )
+    # E-8.1 shelves: deleting a job takes it off every shelf; the shelves
+    # themselves stay. The ORM owns this cascade because SQLite does not
+    # enforce `ON DELETE CASCADE` without a pragma this app never sets.
+    shelf_jobs: Mapped[list["ShelfJob"]] = relationship(  # noqa: F821
+        "ShelfJob", back_populates="job", cascade="all, delete-orphan"
+    )

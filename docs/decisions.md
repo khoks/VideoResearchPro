@@ -2762,3 +2762,34 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 - Zero-knowledge mode (S-3.10.3) is untouched.
 
 **Linked initiatives / PRs.** [S-3.7.1](initiatives.md#s-371--shares_inbox-quick-share-and-the-inbox-page), [S-3.10.1](initiatives.md#s-3101--full-export), [S-3.10.2](initiatives.md#s-3102--full-delete) (PR [#286](https://github.com/khoks/VideoResearchPro/pull/286)), S-3.7.2, E-3.3, E-3.2, [D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) (the same feeder-not-gate choice for shares).
+
+## D-090 — Map batches never mix sources: `source` batching at a 30K cap, a truncated map response is a failure, and map calls run concurrently (2026-10-19)
+
+**Status:** accepted, **post hoc** (see Context). Reversible with one setting (`REPORT_MAP_BATCHING=packed`). Run 7 tests it at report level against a pre-registered rule, and a failure there reverts the default.
+
+**Context.** R1 run 6 lost on substance because the annotated report never engaged two of its ten channels. The persisted intermediates (S-1.14.6, D-088) put the loss at the map stage. The map model (gpt-5.6-luna, reasoning off) writes about 100 to 140 items per call whatever a batch holds, so sources late in a 120K-token batch got none: 0.23 items per chunk in a 400-chunk batch against 1.4 to 1.6 in a 27-chunk one. Measuring smaller caps exposed a second defect. The completion budget was 40% of the cap, so small batches were cut off; the truncated JSON came back as `{"raw": ...}`, counted as success, and reached the composer as one half-written unattributed "fact". Run 6's attribution errors traced to the same batching. One was cross-source: a version number shown on screen in Simplilearn's video was credited as "also on screen" to CodeWithMunnaX, who only said it. Packing Hindi and Bengali sources together also produced wrong-script `original`s (16 at a 30K cap). The experiment ([notes/2026-10-19-map-coverage.md](notes/2026-10-19-map-coverage.md)) had a pre-registered rule: largest config with no zero-item source and a per-source density floor of at least 0.4 times the median, in both arms. No config met it. Packed 60K passed once and failed its required repeat. The threshold itself was mis-specified: with no competition at all, long non-English lectures extract at 0.78 items per chunk against 2 to 4 for short English tutorials, a density difference that no batching removes.
+
+**Decision.**
+1. `REPORT_MAP_BATCHING=source`: a new source always starts a new map call, and a source larger than `REPORT_MAP_BATCH_TOKENS` (30K) is split into calls of its own.
+2. A map response that stops for length, or is not a JSON object, raises `MapOutputError` and goes through the existing bisect-retry. A batch that still fails is dropped and disclosed, never passed on as raw text.
+3. The map completion budget equals the batch cap (`_MAP_EXTRACTION_RATIO` 1.0), clamped to the model's output ceiling. Only generated tokens are billed.
+4. Map calls run on `REPORT_MAP_CONCURRENCY` (4) threads, with results and counters merged in batch order.
+5. *From an adversarial review of this change (8 confirmed findings, 4 distinct defects, all fixed before merge):*
+   - each call's `max_tokens` is sized to its own batch (rounded to 4,096), not the cap;
+   - a batch is capped at 1.5× the model's output ceiling, and a truncated response keeps halving (up to 2⁴ pieces), so a model with the 4,096-token default ceiling no longer loses every batch;
+   - transient errors (429, 5xx, 529) back off and retry before any bisect;
+   - `quote_fidelity.VideoText` locks its cached matcher; concurrent batches on one source raised IndexError or anchored on another thread's fragment.
+
+**Alternatives considered.**
+- *Keep packed at 120K and add a coverage guarantee (re-map empty sources).* It fixes the zero but leaves late sources at 0.1 to 0.3 items per chunk, and it keeps both cross-source failures.
+- *Packed at 60K.* About 2× the items and a worst-source density of about 0.3. It failed its pre-registered repeat and still mixes sources (wrong-script quotes 0 to 1, a cross-source label channel kept open).
+- *Packed at 30K.* Good coverage, but 16 wrong-script quotes in the annotated arm: more, smaller mixed batches make cross-source contamination worse.
+- *Prompt the model to cover every listed source.* Asks the model to behave rather than removing the competition; D-075 showed prompt rules move errors rather than remove them.
+
+**Consequences.**
+- About 13 map calls instead of 2 on an 11-video job (about 150 s at concurrency 4 against 55 to 95 s), roughly one call per source on large corpora, and about 4.5× the map items for compose to absorb. Run 7 measures the effect on the finished report and on compose cost.
+- Every source gets its own extraction, so no source can be starved, and no call can attribute one video's speech, script or screen to another.
+- Within-source mislabelling persists: about 1% of `shown`/`both` items have no span from their own source within ±60 s, in every config.
+- `{"raw": ...}` summaries no longer come from map. Reduce keeps its defensive handling for other shapes, and `MAP_UNPARSED` records no longer occur from this path.
+
+**Linked initiatives / PRs.** S-1.14.19 (E-1.14), E-1.18 (R1 run 6 and run 7), D-075, D-088, #294 (R5 quote verification, which this makes mostly unnecessary for wrong-script quotes but keeps as the check).

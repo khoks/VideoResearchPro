@@ -301,6 +301,20 @@ class Settings(BaseSettings):
     # checkable on real runs. Off = nothing is captured or written.
     REPORT_INTERMEDIATES_ENABLED: bool = True
 
+    # S-1.14.19: map-stage batching (docs/notes/2026-10-19-map-coverage.md).
+    # The map model writes roughly 100-140 items per call whatever a batch
+    # holds, so a large batch starves the sources late in it. `packed` fills
+    # batches in source order up to REPORT_MAP_BATCH_TOKENS (also capped by
+    # the model's window); `source` never puts two sources in one call (a
+    # long source still splits at the cap), which also stops one video's
+    # on-screen span or script leaking into another video's items. Default
+    # `source` at 30K per D-090 (the old behaviour: `packed`, 120_000).
+    REPORT_MAP_BATCHING: str = "source"
+    REPORT_MAP_BATCH_TOKENS: int = 30_000
+    # Map calls in flight at once. Batches are independent and results are
+    # kept in batch order, so the report never depends on completion order.
+    REPORT_MAP_CONCURRENCY: int = 4
+
     # R5 / S-1.16.2 (invention N-002): how a code-mixed span is QUOTED,
     # decided from its measured Hindi share and matrix (grammar) language.
     # - Hindi grammar and Hindi share >= DOMINANT -> the whole quote in

@@ -647,6 +647,19 @@ A 2026 video about a 2019 paper is a 2026 source about a 2019 event. Linked deci
 - [x] T-1.17.2.5 Report: `TEMPORAL_AWARENESS` now distinguishes "true AS OF <date>" from "true now" and requires supersession to be named; map headers carry `discusses <era>`; the corpus-facts block carries the discussed-era span
 - [x] T-1.17.2.6 Q&A: the CORPUS note tells the answer model to weight recency for time-sensitive questions, the discussed era for period questions, and to say so with dates when sources disagree along a time axis; the refiner is told to keep dates with extracts so the answer step can see the axis
 
+#### S-1.17.3 ⚪ Backfill era + numeric publish fields into pre-R3 Chroma chunks
+Deferred by [D-071](decisions.md#d-071--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19): chunks embedded before 2026-10-19 carry no `era_*` / `published_ts` metadata and read as unknown. A document gains its era the next time a job re-chunks it, but its OLD chunks in Chroma do not. Worth doing only once something reads the fields at retrieval time (recency-weighted retrieval, era filters). Chroma supports metadata updates without re-embedding, so this is a metadata-only pass, not a re-index.
+- [ ] T-1.17.3.1 Script: for every document with `discussed_era_json` or `published_at`, update the metadata of its existing chunks in `videoresearchpro_global` (no re-embedding)
+- [ ] T-1.17.3.2 Idempotent and resumable; logs how many chunks gained each field
+
+#### S-1.17.4 ⚪ Measure the temporal ranking signal
+The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned preferences, not measured ones. Replay the D-057 reference pool (S-1.14.6 persisted the rejected candidates) with and without the temporal guidance and judge the selections blind, the E-1.14 way. Also decides OQ-9.
+- [ ] T-1.17.4.1 Re-rank the persisted candidate pool of job `0d4db8c3` with `temporal_profile` forced to each of `dominant` / `secondary` / `minimal`; diff the selections
+- [ ] T-1.17.4.2 Blind-judge the three selections for topical fit and vintage balance
+
+**Open questions**
+- OQ-9: how strongly should `dominant` recency outweigh relevance for a fast-moving topic? Today: "strongly prefer the most recent among on-topic candidates; keep an older one only when clearly foundational". Stricter behaves like a filter; looser collapses into `secondary`. Raised in [D-071](decisions.md#d-071--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19); for the user to decide, ideally after S-1.17.4.
+
 ## I-2 🟢 Brand & visual identity rollout
 
 **Closed 2026-05-03.** All 6 epics now 🟢: E-2.1 tokens layer, E-2.2 primitives library, E-2.3 page migration, E-2.4 sidebar nav (all shipped earlier — verified 2026-04-26), E-2.5 marketing landing page (PR [#136](https://github.com/khoks/VideoResearchPro/pull/136), 2026-05-03), E-2.6 code identifier rename (this session — runbook in `docs/migration-code-identifiers.md` covers the operator-coordinated data-bearing renames).

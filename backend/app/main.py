@@ -25,10 +25,11 @@ from app.routers import (
     oauth,
     qa,
     qa_history,
+    search,
     sessions,
     ws,
 )
-from app.services import chroma_service
+from app.services import chroma_service, search_service
 from app.services.llm_smoke import run_startup_probes
 from app.services.schema_init_service import ensure_schema_at_head
 
@@ -58,6 +59,16 @@ async def lifespan(app: FastAPI):
             "runbook."
         )
         raise
+
+    # S-8.2.1: the search index. Migration d8e9f0a1b2c3 created the FTS5
+    # tables if SQLite had FTS5 at the time; this re-probes on every boot so
+    # a Python upgrade that gains FTS5 later still gets them, and records
+    # the backend for /health. Never blocks startup: LIKE is the fallback.
+    try:
+        backend = search_service.ensure_index_for_url(settings.DATABASE_URL)
+        logger.info("search: backend=%s", backend)
+    except Exception:
+        logger.exception("search: index setup failed; searching with LIKE")
 
     os.makedirs(settings.REPORTS_DIR, exist_ok=True)
     os.makedirs(settings.CHROMA_PERSIST_DIR, exist_ok=True)
@@ -110,6 +121,7 @@ app.include_router(qa.router, prefix="/api/v1")
 app.include_router(library.router, prefix="/api/v1")
 app.include_router(qa_history.router, prefix="/api/v1")
 app.include_router(knowledge.router, prefix="/api/v1")
+app.include_router(search.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(exports.router, prefix="/api/v1")
 app.include_router(llm_settings.router, prefix="/api/v1")

@@ -51,7 +51,8 @@ Overall app status plus a summary of LLM probe results.
   "llm": {
     "status": "ok",            // ok | degraded | down | unknown
     "unavailable_features": [] // feature names that are non-functional
-  }
+  },
+  "search_backend": "fts5"     // fts5 | like — S-8.2.1; "like" when SQLite lacks FTS5
 }
 ```
 
@@ -303,6 +304,35 @@ Body `{ "urls": ["https://…", …] }`, 1–100 entries. Each URL is resolved t
 
 ### `GET /api/v1/library/pdf/{digest}.pdf`
 Serves the uploaded bytes (`application/pdf`) for the document whose `source_id` is `pdf:<digest>`; 404 if the document or the file is missing. Citations deep-link here with `#page=N`. The route sits under the router-level bearer-auth dependency and does **not** accept `?token=`, so a plain link or a new tab 401s; the frontend fetches the bytes with the header and opens a blob URL. Adopting the `?token=` fallback the export routes use is an open follow-up.
+
+---
+
+## Search
+
+### `GET /api/v1/search`
+Grouped, tenant-scoped keyword search across jobs, documents, channels, Q&A exchanges and knowledge reports (S-8.2.1; the command palette of S-8.2.2 calls it). Backend: `backend/app/routers/search.py`, `services/search_service.py`.
+
+Query params: `q` (1–200 chars; whitespace-separated tokens of three or more characters are AND-ed and matched as case-insensitive substrings), `types` (comma-separated subset of `jobs,documents,channels,qa,knowledge`; default all; 400 on an unknown type), `limit` (items per group, 1–25, default 5).
+
+```json
+{
+  "q": "rate cuts",
+  "backend": "fts5",
+  "groups": [
+    { "type": "jobs", "items": [
+      { "id": "<job_id>", "title": "Rate cuts research", "subtitle": "topic · completed · 2026-10-19", "href": "/jobs/<job_id>", "score": 3.5 }
+    ]},
+    { "type": "documents", "items": [
+      { "id": "<document_id>", "title": "Interest rate cuts explained", "subtitle": "Channel · 2026-09-01", "href": "/library?video=<video_id>", "score": 2.9 }
+    ]},
+    { "type": "channels", "items": [{ "id": "<channel_id>", "title": "…", "subtitle": "42 subscribers", "href": "/library/channels/<channel_id>", "score": 1.1 }] },
+    { "type": "qa", "items": [{ "id": "<exchange_id>", "title": "What are rate cuts?", "subtitle": "Library Q&A · 2026-10-01", "href": "/library/qa?exchange=<exchange_id>", "score": 2.0 }] },
+    { "type": "knowledge", "items": [{ "id": "<document_id>", "title": "…", "subtitle": "Knowledge report · Channel", "href": "/library?video=<video_id>&view=knowledge", "score": 0.8 }] }
+  ]
+}
+```
+
+Groups come back in that fixed order, only the requested ones, each possibly empty. Every group is scoped to the caller — jobs by `tenant_id`, documents and knowledge by `document_visibility`, channels by subscription or a visible document, Q&A by `tenant_id` on each of the three exchange tables — so a tenant who has ingested nothing gets empty groups, never everything (D-063). `score` is higher-is-better (`-bm25`, title weighted over body, recency tie-break); on the `like` backend every score is `0.0` and items are ordered by recency. `backend` is the engine used for *this* query: `like` also when FTS5 is present but every token is shorter than three characters. Q&A hrefs carry `?exchange=<id>` on the originating page (`/jobs/<job_id>`, `/library/qa`, `/qa-history`); document and knowledge hrefs carry `?video=<id>` (and `&view=knowledge`) on `/library`, which the palette PR teaches the library page to honour.
 
 ---
 

@@ -1534,20 +1534,20 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 
 **Shipped 2026-05-05** in PR #173. New `outputs` table (Alembic `b5c6d7e8f9a0`) with status state machine (`pending` → `generating` → `completed` | `failed`); `Outputter` Protocol + `register_outputter` / `get_outputter` / `list_outputters` registry; `run_generation` driver that handles status transitions + error capture; `OutputKind` enum (`book` / `site` / `deck` / `newsletter` / `reel`). REST surface under `/api/v1/author/*` — `GET /kinds`, `POST /outputs` (creates + generates synchronously for v1; 501 when no outputter for the kind), `GET /outputs` (kind/status filters), `GET /outputs/{id}`, `GET /outputs/{id}/content` (PlainTextResponse with media-type), `DELETE /outputs/{id}`. All gated on `require_feature("author_studio")` (Pro+).
 
-### E-6.7 🔵 Generation runtime (async, progress, downloads, citations)
+### E-6.7 🟡 Generation runtime (async, progress, downloads, citations)
 
 **Filed 2026-10-18.** Cross-cutting pieces every kind needs that the foundation deliberately left out ([D-044](decisions.md#d-044--foundation-first-then-concrete-implementations-deferred-for-i-3--i-6-2026-05-05)).
 **Scope.** Move generation into the Celery worker with WebSocket progress, add binary artifact storage and a download endpoint, and add the `output_citations` table the roadmap sketched so every kind cites the same way.
 **Acceptance.** Creating an output returns immediately with `pending`; the Author page shows live progress over the existing `/ws/jobs` channel; a completed binary output downloads with the right media type; every output lists its citations through `GET /outputs/{id}/citations`.
 
-#### S-6.7.1 🔵 Celery-backed generation with progress
-**PR:** TBD
-- [ ] T-6.7.1.1 `generate_output` Celery task dispatched through `task_routing_service.dispatch_for_user`; `outputs.celery_task_id`; `POST /outputs` no longer generates inline (a `sync=true` query keeps the test path)
-- [ ] T-6.7.1.2 Progress published on `job_progress:{output_id}` so `useJobProgress` and the WebSocket manager need no new channel; `AuthorPage` subscribes
-- [ ] T-6.7.1.3 Cancel endpoint mirroring `/jobs/{id}/cancel`
-- [ ] T-6.7.1.4 Tests with `.delay()` mocked at the router boundary (the conftest pattern)
-- [ ] T-6.7.1.5 Refuse a kind with no outputter before writing the row: today `POST /author/outputs` creates a `pending` row and then returns 501 (the UI never offers such kinds, so only API callers hit it). Filed 2026-10-19 by S-6.1.1
-- [ ] T-6.7.1.6 Fix `wsClient.ts`'s dev-mode `InvalidStateError: Still in CONNECTING state` (its `onopen` sends on a socket that a second connect has replaced) before AuthorPage subscribes to progress. Seen in the S-6.1.2 live check, 2026-10-19. Also seen on `JobDetailPage` in the lane A live checks (S-8.8.2, S-8.12.1), where it surfaces as an uncaught page error, so it is not Author-specific
+#### S-6.7.1 🟢 Celery-backed generation with progress
+**PR:** [#281](https://github.com/khoks/VideoResearchPro/pull/281) — *shipped 2026-10-19.* Cancellation is cooperative as well as a revoke: the solo-pool Windows worker cannot be interrupted mid-task, so `output_service.report_progress` (called by outputters between units of work) raises `OutputCancelled` once the row is cancelled, and a cancel that lands after the last report still wins over `completed`. The socket's ownership check (`routers/ws.py::_owns_job`) accepts an output id the caller owns, since outputs share the job channel.
+- [x] T-6.7.1.1 `author.generate_output` Celery task (`tasks/output_tasks.py`, autodiscovered) dispatched through `task_routing_service.dispatch_for_user`; `outputs.celery_task_id`, `progress_pct`, `progress_message` (migration `72d7e46ef057`); `POST /outputs` returns `pending` at once and `?sync=true` generates inline; a broker failure is recorded on the row as `failed` — *shipped 2026-10-19*
+- [x] T-6.7.1.2 Every status change and per-chapter progress published on `job_progress:{output_id}`; `useOutputsProgress` folds them into the outputs list and the reader; the Author page shows a progress bar and opens the book it just queued when it finishes; the reader at `/author/outputs/:id` follows a book still being written — *shipped 2026-10-19*
+- [x] T-6.7.1.3 `POST /author/outputs/{id}/cancel`: 404 for another user's output, 400 once finished, revokes the task, new `cancelled` status; Cancel button on active rows — *shipped 2026-10-19*
+- [x] T-6.7.1.4 `conftest.py` mocks `app.routers.author.generate_output` like the job tasks; tests cover dispatch to the tier queue, sync path, broker failure, cancel (revoke, publish, 404, 400), socket ownership of outputs, cancel mid-generation ending `cancelled` with no content, per-chapter progress, and the task body against the test engine — *shipped 2026-10-19*
+- [x] T-6.7.1.5 *Shipped 2026-10-19; the test asserts zero rows.* Refuse a kind with no outputter before writing the row: today `POST /author/outputs` creates a `pending` row and then returns 501 (the UI never offers such kinds, so only API callers hit it). Filed 2026-10-19 by S-6.1.1
+- [x] T-6.7.1.6 *Shipped 2026-10-19: a connecting socket is reused, handlers talk to their own socket, a replaced socket's close never reconnects; vitest with a fake WebSocket that throws like the browser.* Fix `wsClient.ts`'s dev-mode `InvalidStateError: Still in CONNECTING state` (its `onopen` sends on a socket that a second connect has replaced) before AuthorPage subscribes to progress. Seen in the S-6.1.2 live check, 2026-10-19. Also seen on `JobDetailPage` in the lane A live checks (S-8.8.2, S-8.12.1), where it surfaces as an uncaught page error, so it is not Author-specific
 
 #### S-6.7.2 🔵 Binary artifacts and downloads
 **PR:** TBD

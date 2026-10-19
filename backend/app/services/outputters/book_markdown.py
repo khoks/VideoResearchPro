@@ -33,7 +33,7 @@ from app.models.output import Output
 from app.models.qa_exchange import QAExchange
 from app.models.user import User
 from app.services import report_service
-from app.services.output_service import OutputError
+from app.services.output_service import OutputError, report_progress
 
 logger = logging.getLogger(__name__)
 
@@ -147,9 +147,13 @@ class BookMarkdownOutputter:
 
         # Collect chapters first so the TOC can reference them.
         chapters: list[tuple[str, str, str]] = []
-        for jid in source_ids:
+        total = len(source_ids)
+        for i, jid in enumerate(source_ids, start=1):
             title, body = _job_chapter(db, user, jid, include_qa=include_qa)
             chapters.append((title, _slugify(title), body))
+            # S-6.7.1: one progress step per chapter (10..90 %); also the
+            # point where a user's cancel takes effect.
+            report_progress(db, output, 10 + int(80 * i / total), f"Chapter {i} of {total}: {title}")
 
         manuscript: list[str] = [
             f"# {output.title}",

@@ -101,6 +101,11 @@ def create_job(
     db.commit()
     db.refresh(job)
 
+    # S-8.10.1: `first_job_created` activation event, once per account.
+    from app.services import onboarding_service
+
+    onboarding_service.note_job_created(db, current_user, job)
+
     return job_service.job_to_response_dict(job)
 
 

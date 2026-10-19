@@ -187,6 +187,16 @@ describe('CommandPalette', () => {
     expect(loadRecent()[0]).toMatchObject({ href: '/jobs/job-1', kind: 'Runs' });
   });
 
+  it('reopens the first-run wizard from the Getting started action (S-8.10.1)', async () => {
+    searchMock.mockResolvedValue({ q: 'getting started', backend: 'fts5', groups: [] });
+    mount();
+    await openWith({ ctrlKey: true });
+    await type('getting started');
+    expect(options()).toContain('Getting started');
+    press('Enter');
+    expect(path).toBe('/welcome');
+  });
+
   it('says so when nothing matches, and keeps working when search fails', async () => {
     searchMock.mockResolvedValueOnce({ q: 'zzzz', backend: 'fts5', groups: [] });
     mount();

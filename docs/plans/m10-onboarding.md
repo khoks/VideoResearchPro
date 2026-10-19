@@ -45,7 +45,7 @@ A new account lands on the submit page with nothing explained and nothing to sho
 
 ## Risks
 
-- **Rate limits and approval**: the first job must tolerate `awaiting_approval` (topic jobs pause for approval) or use a channel job which does not; recommended: a channel job of five videos.
+- **Rate limits and approval**: the first job must tolerate `awaiting_approval` (topic jobs pause for approval) or use a channel job which does not; recommended: a channel job of five videos. *Correction 2026-10-19 (S-8.10.1): channel jobs pause too (`job_tasks` channel fetch ends at `awaiting_approval`), so the shipped wizard approves inline in step 3.*
 - **Redirect loops**: the "redirect from `/` while incomplete" rule must exempt `/welcome`, auth pages and the skip path.
 - **Copy** is editorial work; the audit is as much writing as code.
 

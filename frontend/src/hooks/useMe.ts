@@ -9,6 +9,8 @@ export interface MeResponse {
   email: string;
   created_at: string;
   tier: Tier;
+  /** S-8.10.1: set when the first-run wizard is finished. */
+  onboarded_at?: string | null;
 }
 
 const ME_QUERY_KEY = ['auth', 'me'] as const;

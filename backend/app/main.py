@@ -25,6 +25,7 @@ from app.routers import (
     mfa,
     notes,
     oauth,
+    onboarding,
     qa,
     qa_history,
     reports,
@@ -126,6 +127,7 @@ app.include_router(credentials.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(mfa.router, prefix="/api/v1")
 app.include_router(oauth.router, prefix="/api/v1")
+app.include_router(onboarding.router, prefix="/api/v1")
 app.include_router(echo.router, prefix="/api/v1")
 app.include_router(author.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")

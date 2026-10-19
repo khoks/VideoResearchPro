@@ -28,7 +28,8 @@ export function RegisterPage() {
     }
     try {
       await register(email, password);
-      navigate('/submit', { replace: true });
+      // `/` sends a new account to the first-run wizard (S-8.10.1).
+      navigate('/', { replace: true });
     } catch (err) {
       const detail = extractError(err);
       setError(detail ?? 'Registration failed. Try a different email.');

@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Notes: the "Your notes" page, exports and the Echo feeder (S-8.5.3, 2026-10-19)
 
-Second and last Phase 1 PR of the notes lane. Story [S-8.5.3](docs/initiatives.md#s-853--your-notes-view-search-and-export), PR [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__).
+Second and last Phase 1 PR of the notes lane. Story [S-8.5.3](docs/initiatives.md#s-853--your-notes-view-search-and-export), PR [#246](https://github.com/khoks/VideoResearchPro/pull/246).
 
 - **`/notes` page** ("Your notes" under Knowledge in the sidebar): every note,
   grouped by target type, newest first, with a debounced search, type chips

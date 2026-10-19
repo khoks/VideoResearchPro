@@ -7,6 +7,7 @@ import {
 } from '../hooks/useLibraryQA';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { CitationLink } from '../components/citation';
+import { DockedComposer, QADock, QAThread } from '../components/qa/Composer';
 import { NotesPanel } from '../components/notes';
 import {
   Badge,
@@ -126,6 +127,7 @@ export function LibraryQAPage() {
       </header>
 
       <Card>
+        <QADock>
         <div
           style={{
             display: 'flex',
@@ -191,6 +193,7 @@ export function LibraryQAPage() {
                 {FEATURE_UNAVAILABLE_MSG}.
               </div>
             )}
+            <DockedComposer>
             <form
               onSubmit={handleAsk}
               style={{
@@ -223,6 +226,7 @@ export function LibraryQAPage() {
                 Ask
               </Button>
             </form>
+            </DockedComposer>
             {clarifyQuestion.isPending && <InfoStripe text="Listening for the echo of your question…" />}
           </>
         )}
@@ -370,7 +374,7 @@ export function LibraryQAPage() {
         )}
 
         {history && history.length > 0 && (
-          <div
+          <QAThread
             style={{
               display: 'flex',
               flexDirection: 'column',
@@ -381,8 +385,9 @@ export function LibraryQAPage() {
             {history.map((qa) => (
               <LibraryQAExchangeCard key={qa.id} qa={qa} />
             ))}
-          </div>
+          </QAThread>
         )}
+        </QADock>
       </Card>
     </div>
   );

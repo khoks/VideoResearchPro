@@ -230,8 +230,13 @@ User ──┬──< Job ──< JobVideo >── Document ──> Channel
        │
        ├──< LibraryQAExchange
        ├──< QAHistoryExchange
-       └──< Note ──> (document | knowledge_artifact | job | qa_exchange |
-                      library_qa_exchange | qa_history_exchange | channel)
+       ├──< Note ──> (document | knowledge_artifact | job | qa_exchange |
+       │              library_qa_exchange | qa_history_exchange | channel)
+       ├──< Shelf ──< ShelfJob >── Job                      (M1, per tenant)
+       ├──< Tag ──< Tagging ──> Document                    (M1, per tenant)
+       └──< JobTemplate ──< JobTemplateVersion              (M6; tenant NULL = built-in)
+                 ▲
+                 └── Job.template_id + template_version (provenance, no FK)
 
 Document ──< KnowledgeArtifact (columns on Document, not a separate table)
 Document ──  DiscussedEra (column `discussed_era_json` on Document — R3, see below)
@@ -258,6 +263,7 @@ ApiQuotaLog (append-only ledger of YouTube + LLM calls)
 
   All three are stored separately for SQL-level filtering but indexed together in `qa_library_global` so meta-chat retrieval crosses surfaces.
 - **Notes are the user's own text, private per tenant** (M5). `notes(id, tenant_id, target_type, target_id, selector_json, body_md, motivation, created_at, updated_at, deleted_at)`. The target set is closed; the target is checked through visibility or ownership on every write; a document note is stored under `document_id`, so one document has one note stream. Delete is soft, and the JSON-LD export carries withdrawals losslessly. Notes are not in Chroma until S-8.5.2. See [D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19).
+- **Shelves, tags and templates are per tenant** (M1, M6). `shelves` + `shelf_jobs` group runs (a run on many shelves; deleting either side removes only memberships, through ORM cascades because SQLite here never enforces FK cascades). `tags` + `taggings` label documents per reader, even on shared documents; every count and filter re-applies visibility. `job_templates` + immutable `job_template_versions` hold reusable recipes; runs record `(template_id, template_version)` and templates are soft-deleted so that provenance survives. See [D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19) and [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19).
 - **Knowledge artifacts live on the Document row.** Three nullable columns (`extracted_knowledge_json`, `knowledge_report_md`, `knowledge_extracted_at`). One artifact per document.
 - **Jobs carry a status enum**: `pending → searching → awaiting_approval → extracting → building_rag → generating_report → completed`. Terminal: `completed`, `failed`, `cancelled`. Subscription jobs skip `awaiting_approval` and `generating_report`.
 
@@ -317,6 +323,8 @@ Topic jobs carry a `source_types_json` column — a JSON-encoded array of `sourc
 Both paths converge into the same `awaiting_approval` flow. The combined candidate count drives the user-visible "Found N candidates" message; an empty result across all sources fails the job with a clear "No candidates for source_types=[...]" error rather than dropping the user onto an empty approval list.
 
 Per-source-type errors (connector raised, missing connector, NotImplementedError for PDF-style sources) are captured per source in `DispatchResult.errors_by_source_type` and logged; they don't fail the job — other source types' candidates still flow through.
+
+> **Unreachable from the API (found 2026-10-19).** `JobCreate` has no `source_types` field and nothing writes `jobs.source_types_json`, so every topic run created through `POST /jobs` takes the `["video"]` default and the non-video branch above never runs. The worker side is intact; the missing link is the request schema, persistence, response and a submit-form picker. Found while building job templates ([D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19)).
 
 ### Approval pause mechanism
 

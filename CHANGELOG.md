@@ -10,6 +10,24 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Visual contract: speaker-attribution boundary (2026-10-19)
+
+The R1 measurement ([D-071](docs/decisions.md#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19)) found two report
+sentences that credited a named speaker with a detail present only in a
+`[VISUAL @ mm:ss — …]` span. `VISUAL_ANNOTATION_CONTRACT` forbade reading spans
+as speech but said nothing about mixing the two inside one attributed clause.
+
+- **One new bullet, `ATTRIBUTION BOUNDARY`, in `prompts/shared.py`:** a sentence
+  credited to a speaker may contain only what that speaker said; a screen-only
+  detail goes in a separate clause marked as shown on screen; a spoken figure
+  noted as "also visible on screen" stays correct. Inherited by all six
+  transcript-reading prompts with no call-site change.
+- **Pinned at the model boundary:** `test_prompt_contracts.py` asserts the rule
+  exactly once per composed prompt, and runs a transcript where speech and span
+  disagree through the production merge, chunker and report map stage with a
+  stubbed LLM. The protocol re-run (T-1.18.6.3) follows.
+  (S-1.18.6, PR [#234](https://github.com/khoks/VideoResearchPro/pull/234))
+
 ### R3 closed, R4's Q&A half wired, executive-summary defects fixed (2026-10-19)
 
 Requirement R3 asked for two dates per source — when it was posted and which

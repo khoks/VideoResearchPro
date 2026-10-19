@@ -539,10 +539,10 @@ Named, reusable research recipes (E-8.6 / M6; plan: [`docs/plans/m6-job-template
 }
 ```
 
-Parameters are validated the way a submission is (`JobCreate`, with a placeholder topic); a recipe that would fail is a **422**, and unknown fields are refused rather than dropped. Names are unique per reader among live templates, case-insensitively (409). `{{topic}}` in `search_instructions` is replaced by the run's topic at submission.
+Parameters are validated the way a submission is (`JobCreate`, with a placeholder topic, and placeholder channels when a channel or subscription recipe leaves `channel_list` empty, meaning "add the channels each run"); a recipe that would fail is a **422**, and unknown fields are refused rather than dropped. Names are unique per reader among live templates, case-insensitively (409). `{{topic}}` in `search_instructions` is replaced by the run's topic at submission.
 
 ### `GET /api/v1/job-templates`
-The caller's templates A→Z, then the built-ins A→Z.
+The caller's templates A→Z, then the built-ins A→Z. The five starters (S-8.6.2) have stable `builtin_key`s: `topic-scan`, `deep-dive`, `quick-brief`, `channel-deep-dive`, `subscription-follow`.
 
 ### `POST /api/v1/job-templates`
 Body `{ "name", "description"?, "parameters" }`. 201.

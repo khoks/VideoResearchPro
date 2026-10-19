@@ -1,14 +1,16 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.job import JobCreate, JobResponse, VideoApproval
 from app.schemas.shelf import ShelfResponse
+from app.schemas.job_template import JobTemplateResponse, SaveAsTemplate
 from app.schemas.video import VideoResponse
 from app.services import chroma_service, job_service, report_service, shelf_service
+from app.services import job_template_service
 from app.services.tier_service import get_user_tier, quota_limit
 from app.tasks.job_tasks import (
     execute_channel_job,
@@ -29,9 +31,27 @@ router = APIRouter(
 @router.post("", response_model=JobResponse, status_code=201)
 def create_job(
     job_data: JobCreate,
+    template_id: str | None = None,
+    template_version: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # E-8.6 provenance: a run started from a template records which version.
+    # The body is still the full JobCreate (validated as any submission is),
+    # so a stale template cannot create an invalid run.
+    resolved_version: int | None = None
+    if template_id is not None:
+        template = job_template_service.get_template(db, template_id, current_user.id)
+        if template is None:
+            raise HTTPException(status_code=404, detail="Template not found")
+        resolved_version = template_version or template.latest_version
+        if job_template_service.get_version(db, template, resolved_version) is None:
+            raise HTTPException(status_code=404, detail="Template version not found")
+        if template.job_type != job_data.job_type:
+            raise HTTPException(
+                status_code=422,
+                detail=f"This template is for {template.job_type} runs, not {job_data.job_type} runs.",
+            )
     # Per-tier num_videos ceiling for topic jobs (T-5.2 tier gating).
     # The schema-level le=500 bound still applies; this narrows it to
     # the user's tier cap (free=100 / pro=250 / studio=500).
@@ -50,7 +70,13 @@ def create_job(
     try:
         # Per E-5.1 phase 2a, stamp the new row with the creating
         # user's id. Phase 2b adds query-time filtering by tenant_id.
-        job = job_service.create_job(db, job_data, tenant_id=current_user.id)
+        job = job_service.create_job(
+            db,
+            job_data,
+            tenant_id=current_user.id,
+            template_id=template_id,
+            template_version=resolved_version,
+        )
     except ValueError as e:
         raise HTTPException(status_code=429, detail=str(e))
 
@@ -201,6 +227,39 @@ def delete_job(
 
     if not job_service.delete_job(db, job_id):
         raise HTTPException(status_code=404, detail="Job not found")
+
+
+@router.post(
+    "/{job_id}/save-as-template",
+    response_model=JobTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def save_job_as_template(
+    job_id: str,
+    body: SaveAsTemplate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Freeze this run's recipe (everything but the topic) as version 1 of a
+    new template (E-8.6)."""
+    job = job_service.get_job(db, job_id, tenant_id=current_user.id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    params = job_template_service.parameters_from_job(job)
+    try:
+        template = job_template_service.create_template(
+            db, current_user.id, body.name, params, body.description
+        )
+    except job_template_service.TemplateNameTaken:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"You already have a template named '{body.name}'.",
+        )
+    except job_template_service.InvalidParameters as exc:
+        raise HTTPException(
+            status_code=422, detail=f"This run cannot be saved as a template: {exc.message}"
+        )
+    return job_template_service.template_to_dict(db, template, current_user)
 
 
 @router.get("/{job_id}/shelves", response_model=list[ShelfResponse])

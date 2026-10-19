@@ -1,8 +1,24 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useCreateJob } from '../hooks/useJobs';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
+import { useCreateTemplate, useJobTemplates, useUpdateTemplate } from '../hooks/useJobTemplates';
+import { SaveTemplateModal, TemplatePicker } from '../components/templates';
+import type { JobTemplate } from '../services/jobTemplatesApi';
+import {
+  CHANNEL_TYPE_OPTIONS,
+  DEFAULT_FORM,
+  formToJobCreate,
+  formToTemplateParameters,
+  jobToFormState,
+  parseChannelList,
+  parseDraft,
+  templateToFormState,
+  validateChannels,
+  type ChannelTypeOption,
+  type JobFormState,
+} from '../utils/jobForm';
 import { useJobStore } from '../stores/jobStore';
 import {
   Button,
@@ -22,109 +38,30 @@ import {
   radius,
   space,
 } from '../theme';
-import type { Job, JobCreate, JobType, OutputLength } from '../types/job';
+import type { Job, JobType, OutputLength } from '../types/job';
 
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
-const CHANNEL_TYPE_OPTIONS = [
-  'educational',
-  'academic',
-  'news',
-  'entertainment',
-  'podcast',
-  'tutorial',
-] as const;
-
-type ChannelTypeOption = (typeof CHANNEL_TYPE_OPTIONS)[number];
-
 const FORM_STATE_KEY = 'vrp:submit-form';
 
-interface PersistedFormState {
-  jobType: JobType;
-  topic: string;
-  searchInstructions: string;
-  numVideos: number;
-  minDuration: string;
-  maxDuration: string;
-  channelFilters: ChannelTypeOption[];
-  preferredChannels: string;
-  channelList: string;
-  videosPerChannel: number;
-  subscriptionChannels: string;
-  outputLength: OutputLength;
-}
-
-const DEFAULT_FORM: PersistedFormState = {
-  jobType: 'topic',
-  topic: '',
-  searchInstructions: '',
-  numVideos: 10,
-  outputLength: 'auto',
-  minDuration: '',
-  maxDuration: '',
-  channelFilters: [],
-  preferredChannels: '',
-  channelList: '',
-  videosPerChannel: 10,
-  subscriptionChannels: '',
-};
+type PersistedFormState = JobFormState;
 
 function loadForm(): PersistedFormState {
   if (typeof window === 'undefined') return DEFAULT_FORM;
   try {
-    const raw = window.localStorage.getItem(FORM_STATE_KEY);
-    if (!raw) return DEFAULT_FORM;
-    const parsed = JSON.parse(raw) as Partial<PersistedFormState>;
-    return {
-      ...DEFAULT_FORM,
-      ...parsed,
-      channelFilters: Array.isArray(parsed.channelFilters)
-        ? parsed.channelFilters.filter((c): c is ChannelTypeOption =>
-            (CHANNEL_TYPE_OPTIONS as readonly string[]).includes(c),
-          )
-        : [],
-    };
+    return parseDraft(window.localStorage.getItem(FORM_STATE_KEY));
   } catch {
     return DEFAULT_FORM;
   }
 }
 
-function jobToFormState(job: Job): PersistedFormState {
-  const channelLines = (list: string[] | null | undefined) =>
-    list && list.length > 0 ? list.join('\n') : '';
-  const validFilters = (job.channel_type_filters ?? []).filter(
-    (c): c is ChannelTypeOption =>
-      (CHANNEL_TYPE_OPTIONS as readonly string[]).includes(c),
-  );
-  return {
-    jobType: job.job_type,
-    topic: job.topic ?? '',
-    searchInstructions: job.search_instructions ?? '',
-    numVideos: job.num_videos ?? 10,
-    outputLength: 'auto',
-    minDuration: job.min_duration_minutes != null ? String(job.min_duration_minutes) : '',
-    maxDuration: job.max_duration_minutes != null ? String(job.max_duration_minutes) : '',
-    channelFilters: validFilters,
-    preferredChannels: channelLines(job.preferred_channels),
-    channelList: job.job_type === 'channel' ? channelLines(job.channel_list) : '',
-    videosPerChannel: job.videos_per_channel ?? 10,
-    subscriptionChannels:
-      job.job_type === 'subscription' ? channelLines(job.channel_list) : '',
-  };
-}
-
-const CHANNEL_URL_RE =
-  /^(?:@[\w.-]{1,}|UC[\w-]{22}|(?:https?:\/\/)?(?:www\.)?youtube\.com\/(?:@[\w.-]{1,}|channel\/[\w-]{1,}|c\/[\w.-]{1,}|user\/[\w.-]{1,})\/?)$/i;
-
-function parseChannelList(raw: string): string[] {
-  return raw
-    .split('\n')
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function validateChannels(lines: string[]): string[] {
-  return lines.filter((line) => !CHANNEL_URL_RE.test(line));
+interface TemplateOrigin {
+  id: string;
+  name: string;
+  version: number;
+  builtin: boolean;
+  jobType: JobType;
+  problems: string[];
 }
 
 export function SubmitJobPage() {
@@ -136,8 +73,16 @@ export function SubmitJobPage() {
   const topicJobAvailable = useFeatureAvailable('topic_job');
   const { tier, numVideosCap } = useTierCapabilities();
 
-  const cloneFromInitial = (location.state as { cloneFrom?: Job } | null)?.cloneFrom ?? null;
-  const [cloneFrom] = useState<Job | null>(cloneFromInitial);
+  const routeState = location.state as { cloneFrom?: Job; fromTemplateId?: string } | null;
+  const cloneFromInitial = routeState?.cloneFrom ?? null;
+  const [cloneFrom, setCloneFrom] = useState<Job | null>(cloneFromInitial);
+
+  // E-8.6 templates: the origin is recorded on the run as provenance.
+  const templatesQuery = useJobTemplates();
+  const createTemplate = useCreateTemplate();
+  const updateTemplate = useUpdateTemplate();
+  const [fromTemplate, setFromTemplate] = useState<TemplateOrigin | null>(null);
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   const [form, setForm] = useState<PersistedFormState>(() =>
     cloneFromInitial ? jobToFormState(cloneFromInitial) : loadForm(),
@@ -154,6 +99,68 @@ export function SubmitJobPage() {
 
   const update = <K extends keyof PersistedFormState>(key: K, value: PersistedFormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
+
+  const applyTemplate = (t: JobTemplate) => {
+    setForm((f) => templateToFormState(t.parameters, f.topic));
+    setFromTemplate({
+      id: t.id,
+      name: t.name,
+      version: t.version,
+      builtin: t.builtin,
+      jobType: t.job_type,
+      problems: t.problems,
+    });
+    setCloneFrom(null);
+    setValidationError(null);
+  };
+
+  // "Use" on the Templates page arrives with the id; apply it once loaded.
+  const pendingTemplateId = useRef<string | null>(routeState?.fromTemplateId ?? null);
+  useEffect(() => {
+    const id = pendingTemplateId.current;
+    if (!id || !templatesQuery.data) return;
+    pendingTemplateId.current = null;
+    const t = templatesQuery.data.find((x) => x.id === id);
+    if (t) applyTemplate(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templatesQuery.data]);
+
+  const saveChangesToTemplate = () => {
+    if (!fromTemplate) return;
+    const result = formToTemplateParameters(form);
+    if (!result.ok) {
+      setValidationError(result.error);
+      return;
+    }
+    const before = fromTemplate.version;
+    updateTemplate.mutate(
+      { id: fromTemplate.id, body: { parameters: result.params } },
+      {
+        onSuccess: (t) => {
+          setFromTemplate((o) => (o ? { ...o, version: t.version, problems: t.problems } : o));
+          pushToast(
+            'success',
+            t.version === before ? 'Nothing changed; the template is as it was.' : `Saved as version ${t.version}.`,
+          );
+        },
+      },
+    );
+  };
+
+  const saveFormAsTemplate = async (values: { name: string; description: string | null }) => {
+    const result = formToTemplateParameters(form);
+    if (!result.ok) throw new Error(result.error);
+    const t = await createTemplate.mutateAsync({ ...values, parameters: result.params });
+    setFromTemplate({
+      id: t.id,
+      name: t.name,
+      version: t.version,
+      builtin: false,
+      jobType: t.job_type,
+      problems: t.problems,
+    });
+    pushToast('success', `Saved template "${t.name}".`);
+  };
 
   const toggleChannelFilter = (opt: ChannelTypeOption) => {
     setForm((f) => ({
@@ -210,59 +217,20 @@ export function SubmitJobPage() {
     e.preventDefault();
     setValidationError(null);
 
-    const data: JobCreate = { job_type: form.jobType };
-    if (form.outputLength !== 'auto') data.output_length = form.outputLength;
-
-    if (form.jobType === 'topic') {
-      if (!form.topic.trim()) {
-        setValidationError('Topic is required.');
-        return;
-      }
-      data.topic = form.topic.trim();
-      data.num_videos = form.numVideos;
-      data.search_instructions = form.searchInstructions || undefined;
-      if (form.minDuration) data.min_duration_minutes = parseInt(form.minDuration, 10);
-      if (form.maxDuration) data.max_duration_minutes = parseInt(form.maxDuration, 10);
-      if (form.channelFilters.length > 0) data.channel_type_filters = [...form.channelFilters];
-
-      const preferredLines = parseChannelList(form.preferredChannels);
-      if (preferredLines.length > 0) {
-        const invalid = validateChannels(preferredLines);
-        if (invalid.length > 0) {
-          setValidationError(
-            `Invalid preferred-channel entries: ${invalid.slice(0, 3).join(', ')}${
-              invalid.length > 3 ? '…' : ''
-            }`,
-          );
-          return;
-        }
-        data.preferred_channels = preferredLines;
-      }
-    } else {
-      const raw = form.jobType === 'channel' ? form.channelList : form.subscriptionChannels;
-      const lines = parseChannelList(raw);
-      if (lines.length === 0) {
-        setValidationError('Provide at least one channel URL, handle, or UC-ID.');
-        return;
-      }
-      const invalid = validateChannels(lines);
-      if (invalid.length > 0) {
-        setValidationError(
-          `Invalid channel entries: ${invalid.slice(0, 3).join(', ')}${invalid.length > 3 ? '…' : ''}`,
-        );
-        return;
-      }
-      data.channel_list = lines;
-      if (form.jobType === 'channel') {
-        data.videos_per_channel = form.videosPerChannel;
-        data.num_videos = form.numVideos;
-        if (form.minDuration) data.min_duration_minutes = parseInt(form.minDuration, 10);
-        if (form.maxDuration) data.max_duration_minutes = parseInt(form.maxDuration, 10);
-      }
+    const result = formToJobCreate(form);
+    if (!result.ok) {
+      setValidationError(result.error);
+      return;
     }
+    const data = result.data;
+    // Switching the research type leaves the template behind.
+    const provenance =
+      fromTemplate && fromTemplate.jobType === form.jobType
+        ? { templateId: fromTemplate.id, templateVersion: fromTemplate.version }
+        : undefined;
 
     try {
-      const job = await createJob.mutateAsync(data);
+      const job = await createJob.mutateAsync({ data, provenance });
       try {
         window.localStorage.removeItem(FORM_STATE_KEY);
       } catch {
@@ -278,6 +246,8 @@ export function SubmitJobPage() {
   const handleReset = () => {
     setForm(DEFAULT_FORM);
     setValidationError(null);
+    setFromTemplate(null);
+    setCloneFrom(null);
     try {
       window.localStorage.removeItem(FORM_STATE_KEY);
     } catch {
@@ -347,7 +317,11 @@ export function SubmitJobPage() {
               lineHeight: lineHeight.tight,
             }}
           >
-            {cloneFrom ? 'Duplicate a research run' : 'Begin a new research run'}
+            {cloneFrom
+              ? 'Duplicate a research run'
+              : fromTemplate
+                ? 'Research from a template'
+                : 'Begin a new research run'}
           </h1>
           <p
             style={{
@@ -366,6 +340,18 @@ export function SubmitJobPage() {
           Reset form
         </Button>
       </header>
+
+      <TemplatePicker templates={templatesQuery.data ?? []} onPick={applyTemplate} />
+
+      {fromTemplate && (
+        <TemplateOriginBanner
+          origin={fromTemplate}
+          typeChanged={fromTemplate.jobType !== form.jobType}
+          saving={updateTemplate.isPending}
+          onSaveChanges={saveChangesToTemplate}
+          onDetach={() => setFromTemplate(null)}
+        />
+      )}
 
       <div
         role="tablist"
@@ -676,6 +662,34 @@ export function SubmitJobPage() {
             </>
           )}
 
+          {form.visualAnalysis && (
+            <div
+              style={{
+                display: 'flex',
+                gap: space['3'],
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                background: c.infoSubtle,
+                border: `1px solid ${c.info}`,
+                borderRadius: radius.md,
+                padding: `${space['3']} ${space['4']}`,
+                fontFamily: fonts.ui,
+                fontSize: fontSize.sm,
+                color: c.textPrimary,
+                lineHeight: lineHeight.snug,
+              }}
+            >
+              <span style={{ flex: '1 1 280px' }}>
+                <strong style={{ fontWeight: fontWeight.semibold }}>Visual analysis is on</strong>, carried
+                from the run or template you started from. It captures frames where the transcript
+                suggests something is being shown, and costs more per video.
+              </span>
+              <Button size="sm" variant="tertiary" type="button" onClick={() => update('visualAnalysis', false)}>
+                Turn off
+              </Button>
+            </div>
+          )}
+
           <div
             style={{
               background: c.surfaceAlt,
@@ -747,7 +761,7 @@ export function SubmitJobPage() {
             </p>
           )}
 
-          <div style={{ marginTop: space['2'] }}>
+          <div style={{ marginTop: space['2'], display: 'flex', gap: space['3'], alignItems: 'center', flexWrap: 'wrap' }}>
             <Button
               type="submit"
               disabled={submitDisabled}
@@ -757,9 +771,29 @@ export function SubmitJobPage() {
             >
               Begin research
             </Button>
+            <Button
+              type="button"
+              variant="tertiary"
+              onClick={() => {
+                const result = formToTemplateParameters(form);
+                if (!result.ok) {
+                  setValidationError(result.error);
+                  return;
+                }
+                setSavingTemplate(true);
+              }}
+            >
+              Save as template
+            </Button>
           </div>
         </form>
       </Card>
+
+      <SaveTemplateModal
+        open={savingTemplate}
+        onClose={() => setSavingTemplate(false)}
+        onSubmit={saveFormAsTemplate}
+      />
     </div>
   );
 }
@@ -796,5 +830,57 @@ function TypeToggle({
     >
       {children}
     </button>
+  );
+}
+
+function TemplateOriginBanner({
+  origin,
+  typeChanged,
+  saving,
+  onSaveChanges,
+  onDetach,
+}: {
+  origin: TemplateOrigin;
+  typeChanged: boolean;
+  saving: boolean;
+  onSaveChanges: () => void;
+  onDetach: () => void;
+}) {
+  const c = useColors();
+  return (
+    <Card
+      sunken
+      style={{
+        marginBottom: space['4'],
+        padding: `${space['3']} ${space['4']}`,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: space['2'],
+      }}
+    >
+      <div style={{ display: 'flex', gap: space['3'], alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textSecondary, flex: '1 1 260px' }}>
+          From {origin.builtin ? 'starter' : 'template'}{' '}
+          <strong style={{ color: c.textPrimary, fontWeight: fontWeight.semibold }}>{origin.name}</strong>
+          {!origin.builtin && <> · v{origin.version}</>}.{' '}
+          {typeChanged
+            ? 'You switched the research type, so this run will not be recorded as from the template.'
+            : 'Type a topic; any other change applies to this run only.'}
+        </span>
+        {!origin.builtin && !typeChanged && (
+          <Button size="sm" variant="secondary" type="button" onClick={onSaveChanges} loading={saving}>
+            Save changes as v{origin.version + 1}
+          </Button>
+        )}
+        <Button size="sm" variant="tertiary" type="button" onClick={onDetach}>
+          Detach
+        </Button>
+      </div>
+      {origin.problems.length > 0 && (
+        <p role="alert" style={{ margin: 0, fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.warn }}>
+          {origin.problems.join(' ')}
+        </p>
+      )}
+    </Card>
   );
 }

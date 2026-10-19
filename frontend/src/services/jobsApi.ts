@@ -1,10 +1,17 @@
 import api from './api';
-import type { Job, JobCreate, VideoApproval } from '../types/job';
+import type { Job, JobCreate, JobProvenance, VideoApproval } from '../types/job';
 import type { Video } from '../types/video';
 import type { ReportBody } from '../types/report';
 
 export const jobsApi = {
-  create: (data: JobCreate) => api.post<Job>('/jobs', data).then(r => r.data),
+  create: (data: JobCreate, provenance?: JobProvenance) =>
+    api
+      .post<Job>('/jobs', data, {
+        params: provenance
+          ? { template_id: provenance.templateId, template_version: provenance.templateVersion }
+          : undefined,
+      })
+      .then(r => r.data),
   list: (params?: { status?: string; limit?: number; offset?: number }) =>
     api.get<Job[]>('/jobs', { params }).then(r => r.data),
   get: (id: string) => api.get<Job>(`/jobs/${id}`).then(r => r.data),

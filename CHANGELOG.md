@@ -10,6 +10,23 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Code-mixed speech: one primary language per transcript (2026-10-19, T-1.16.2.4)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Fourth task of N-002;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- **`code_mixing_service.profile_transcript`** finds a source's primary
+  language of communication: the grammar that frames most of its speech,
+  measured over sentence-sized windows. It decides the quote script once
+  per source. `resolve_quote_mode` lets a span choose only whether it is
+  English, so a report no longer switches scripts from quote to quote:
+  25 changes across seven Devanagari Hinglish transcripts and 128 across
+  eleven romanised comment threads are now zero.
+- **Fixed:** words in Bengali, Kannada, Tamil and other non-Latin scripts
+  counted as neutral, so four transcripts in the library (two Bengali, two
+  Kannada) measured 0% non-English. Every non-Latin script now counts, and
+  the profile reports which one (`native_script`).
+
 ### Code-mixed speech: proportion thresholds as a rendering policy (2026-10-19, T-1.16.2.3)
 
 PR [#262](https://github.com/khoks/VideoResearchPro/pull/262). Third task of N-002;

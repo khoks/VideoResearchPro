@@ -167,7 +167,26 @@ List the videos selected for this job. Returns `list[VideoResponse]`. Each row i
 ## Per-job Q&A and reports
 
 ### `GET /api/v1/jobs/{job_id}/report`
-Serve the generated HTML report. Content-type `text/html`. Returns 404 if no report has been generated yet (channel jobs always have a stats-only report; subscription jobs never have one). Auth: bearer header **or** `?token=` query string (iframe-friendly).
+Serve the generated HTML report. Content-type `text/html`. Returns 404 if no report has been generated yet (channel jobs always have a stats-only report; subscription jobs never have one). Auth: bearer header **or** `?token=` query string (iframe-friendly). Kept for the job page's quick-peek modal and "Open in new tab"; the reader uses the body route below. The query-token fallback is slated for removal (T-8.8.1.5) once the modal no longer needs it.
+
+### `GET /api/v1/jobs/{job_id}/report/body`
+The native reader's payload (S-8.8.1). Splits the stored report back into its parts so the frontend renders the chrome itself and only the written sections go through the sanitiser:
+
+```json
+{
+  "job_id": "…",
+  "job_type": "topic",
+  "title": "Research Report: …",
+  "html": "<section class=\"report\"><h2>Executive Summary</h2>…",
+  "statistics": {
+    "video_count": 11, "transcript_count": 11, "total_words": 55389, "total_minutes": 226,
+    "channel_breakdown": [{ "channel_name": "…", "video_count": 3, "word_count": 12000, "minutes": 61 }]
+  },
+  "generated_at": "2026-10-19 07:14 UTC"
+}
+```
+
+`html` is **not** sanitised server-side — it is the LLM-written markup with the template's header, statistics grid and stylesheet removed; the client runs it through DOMPurify before parsing. `statistics` is `null` when the grid is absent or unreadable; a report in an unrecognised shape comes back as the whole `<body>`. Auth: bearer header **only** — no `?token=` fallback, so no token ever appears in a URL. 404 when the job is not the caller's, has no report, or the file is missing.
 
 ### `POST /api/v1/jobs/{job_id}/qa/clarify`
 Pre-answer clarification step. Asks the LLM to produce an interpretation and three follow-up clarifying questions. Used by the frontend before running the full Q&A.

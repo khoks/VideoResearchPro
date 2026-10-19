@@ -1,6 +1,7 @@
 import api from './api';
 import type { Job, JobCreate, VideoApproval } from '../types/job';
 import type { Video } from '../types/video';
+import type { ReportBody } from '../types/report';
 
 export const jobsApi = {
   create: (data: JobCreate) => api.post<Job>('/jobs', data).then(r => r.data),
@@ -12,4 +13,6 @@ export const jobsApi = {
   delete: (id: string) => api.delete(`/jobs/${id}`),
   getVideos: (id: string) => api.get<Video[]>(`/jobs/${id}/videos`).then(r => r.data),
   getReport: (id: string) => api.get<string>(`/jobs/${id}/report`).then(r => r.data),
+  /** S-8.8.1: reader payload `{title, html, statistics}` under header auth only. */
+  getReportBody: (id: string) => api.get<ReportBody>(`/jobs/${id}/report/body`).then(r => r.data),
 };

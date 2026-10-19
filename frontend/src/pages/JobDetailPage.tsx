@@ -274,9 +274,13 @@ export function JobDetailPage() {
       )}
 
       {showReportButton && (
-        <Button onClick={openReportModal} style={{ alignSelf: 'flex-start' }}>
-          View report
-        </Button>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: space['2'], alignSelf: 'flex-start' }}>
+          {/* S-8.8.1: the reading room is the primary way in; the iframe modal stays as a quick peek. */}
+          <Button onClick={() => navigate(`/reports/${job.id}`)}>Read report</Button>
+          <Button variant="secondary" onClick={openReportModal}>
+            Quick peek
+          </Button>
+        </div>
       )}
 
       {isReportModalOpen && showReportButton && (

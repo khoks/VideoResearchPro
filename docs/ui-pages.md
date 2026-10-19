@@ -16,6 +16,7 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/submit` | `SubmitJobPage` | protected | Start a new research run |
 | `/jobs` | `JobsListPage` | protected | All jobs the user owns |
 | `/jobs/:jobId` | `JobDetailPage` | protected | Single job: status, approval, report, Q&A |
+| `/reports/:jobId` | `ReportReaderPage` | protected | Reading room: the run's report rendered natively with outline, drop cap, citations and progress |
 | `/library` | `LibraryPage` | protected | Browse the global video library |
 | `/library/qa` | `LibraryQAPage` | protected | Ask across the entire library |
 | `/library/channels/:channelId` | `ChannelPage` | protected | One channel: header, subscribe / sync, trust-weight slot, its documents |
@@ -100,7 +101,7 @@ Sections (rendered conditionally on `job.status` and `job.job_type`):
 | **Search results / Approval** | status == `awaiting_approval` (topic only) | Table of candidate videos with checkboxes, "Approve selected" button. Auto-populates when WS reports the status change. |
 | **Your notes on this run** | always, once the job loads | Section-variant notes panel (M5 / S-8.5.1): the user's own Markdown on the run, newest first, with add / edit / delete. |
 | **Approved videos** | status ∈ {extracting, building_rag, ...completed} | Read-only list of approved videos with per-video transcript status. Each row has a "Knowledge" button that opens the `VideoKnowledgeDrawer`, and an inline notes control: a note on a document shows on every surface that shows the document (the shelf, every job containing it). |
-| **Report** | `job.report_path` is set | "Open report" button → opens the HTML in an iframe modal. |
+| **Report** | `job.report_path` is set | "Read report" (primary) → navigates to the reading room at `/reports/:jobId`; "Quick peek" (secondary) → the legacy HTML in an iframe modal, which also owns "Open in new tab". |
 | **Q&A panel** | status == `completed` | Question textarea, "Clarify first" optional toggle, language selector, "Ask" button. Below: list of past exchanges with citations rendered as chips that deep-link to `&t=` timestamps. Each exchange card carries the inline notes control (target `qa_exchange`). |
 | **Knowledge drawer** | user clicks the Knowledge button on a video row | Slides in from the right; shows the structured `{topics, concepts, events, facts}` + Markdown report; "Generate" button if not yet extracted. |
 
@@ -112,6 +113,30 @@ Sections (rendered conditionally on `job.status` and `job.job_type`):
 | LLM down for `knowledge_synthesize_report` | Knowledge drawer's "Generate" button disabled with a tooltip. |
 | Job failed | Status pill in error color; banner with the failure message; offer to "Retry from extraction" if applicable. |
 | Job cancelled | Status pill in muted color; the prior progress is shown frozen. |
+
+### `ReportReaderPage` — `/reports/:jobId`
+**Purpose.** The reading room (E-8.8, [plan](plans/m8-reading-room.md)). Replaces reading a report inside an iframe: the page fetches `GET /jobs/{id}/report/body` with the bearer header (no `?token=` in any URL), sanitises the HTML with DOMPurify, parses it into React with `html-react-parser`, and renders it through `ReaderShell` — the shell that knowledge artifacts and books will share (S-8.8.3).
+
+What the reader does to the report's own markup:
+
+| Element | Treatment |
+|---------|-----------|
+| `h2` / `h3` | Stable ids (unicode-aware slugs, deduped), collected into the sticky outline; `tabIndex=-1` so outline jumps move focus. A body `h1` is demoted to `h2` or dropped when it repeats the title. |
+| `<a href="…&t=SECONDS">` | Citation chip (mono, pill) opening the source at the timestamp. Pre-S-1.14.9 reports carry bare `href="&t=123"` anchors with no video URL; those render as a non-link timestamp chip rather than a dead link. An anchor the browser repaired out of a truncated tag is never linked. |
+| `<table>` | Wrapped in a horizontal scroll region (WCAG 1.4.10). |
+| First substantial paragraph | Drop cap: `::first-letter` float everywhere, `initial-letter` where supported. |
+| `<style>`, `<script>`, event handlers, `style=` attributes, embeds, forms, SVG, MathML | Removed by the sanitiser. |
+
+Layout: 75ch serif measure, `text-wrap: pretty` on prose and `balance` on headings, statistics tiles under the title, a sticky `<nav aria-label="Outline">` on the right with `aria-current` tracking scroll (one IntersectionObserver), and a floating "Reading · n%" pill (decorative; the figure is repeated in the outline). The outline hides under 960px (the M12 pass refines the rest).
+
+| State | What renders |
+|-------|--------------|
+| Loading | Spinner with "Opening the report…". |
+| 404 (no report for this run) | `EmptyState` "No report for this run yet" + back link. |
+| Other error | `EmptyState` with the API's `detail` + back link. |
+| Report with no headings (e.g. "No transcript data available") | Body only; the outline nav is omitted. |
+
+Not yet (later stories): hover/focus citation cards and the print stylesheet (S-8.8.2); knowledge artifacts and Author outputs in the same shell (S-8.8.3); the mobile pass (S-8.12.1).
 
 ### `LibraryPage` — `/library`
 **Purpose.** Browse the caller's view of the global, deduplicated library and add sources that do not come through a research run. Three tabs: **Sources**, **Channels**, **Add sources**.

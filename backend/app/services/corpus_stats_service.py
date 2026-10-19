@@ -41,13 +41,17 @@ def empty_statistics() -> dict:
     }
 
 
-def corpus_statistics_for_video_ids(db: Any, video_ids: Iterable[str]) -> dict:
+def corpus_statistics_for_document_ids(db: Any, document_ids: Iterable[str]) -> dict:
     """Statistics for an explicit document set. Empty set -> zero statistics.
+
+    ``document_ids`` are ``documents.document_id`` values (D-070) — the legacy
+    ``video_id`` is NULL for every non-video source, so a set keyed on it
+    would silently omit PDFs and pasted pages from the figures.
 
     Zero statistics classify as the `small` bracket, which is correct for a
     job with no approved documents — not a fallback to be papered over.
     """
-    ids = sorted({v for v in video_ids if v})
+    ids = sorted({d for d in document_ids if d})
     if not ids:
         return empty_statistics()
 
@@ -55,13 +59,13 @@ def corpus_statistics_for_video_ids(db: Any, video_ids: Iterable[str]) -> dict:
     for i in range(0, len(ids), _SQL_IN_CHUNK):
         rows.extend(
             db.query(
-                Document.video_id,
+                Document.document_id,
                 Document.transcript_word_count,
                 Document.word_count,
                 Document.published_at,
                 Document.discussed_era_json,
             )
-            .filter(Document.video_id.in_(ids[i:i + _SQL_IN_CHUNK]))
+            .filter(Document.document_id.in_(ids[i:i + _SQL_IN_CHUNK]))
             .all()
         )
 
@@ -69,10 +73,10 @@ def corpus_statistics_for_video_ids(db: Any, video_ids: Iterable[str]) -> dict:
     dates: list[str] = []
     eras: list[dict | None] = []
     seen: set[str] = set()
-    for vid, t_words, words, published_at, era_raw in rows:
-        if vid in seen:
+    for did, t_words, words, published_at, era_raw in rows:
+        if did in seen:
             continue
-        seen.add(vid)
+        seen.add(did)
         total_words += int(t_words or words or 0)
         shown = temporal_service.published_display(published_at)
         if shown:
@@ -96,10 +100,11 @@ def corpus_statistics_for_video_ids(db: Any, video_ids: Iterable[str]) -> dict:
     }
 
 
-def approved_video_ids_for_job(db: Any, job_id: str) -> list[str]:
+def approved_document_ids_for_job(db: Any, job_id: str) -> list[str]:
+    """The job's approved ``document_id`` set — what its Q&A retrieves from."""
     return [
         row[0]
-        for row in db.query(JobVideo.video_id)
+        for row in db.query(JobVideo.document_id)
         .filter(JobVideo.job_id == job_id, JobVideo.approved.is_(True))
         .all()
         if row[0]
@@ -108,12 +113,12 @@ def approved_video_ids_for_job(db: Any, job_id: str) -> list[str]:
 
 def corpus_statistics_for_job(db: Any, job_id: str) -> dict:
     """Statistics over a job's APPROVED documents — the set its Q&A retrieves from."""
-    return corpus_statistics_for_video_ids(db, approved_video_ids_for_job(db, job_id))
+    return corpus_statistics_for_document_ids(db, approved_document_ids_for_job(db, job_id))
 
 
 def corpus_statistics_for_tenant(db: Any, tenant_id: str) -> dict:
     """Statistics over everything the tenant may see (D-063) — the library Q&A set."""
     from app.services import visibility_service
 
-    ids = [row[0] for row in visibility_service.visible_video_ids(db, tenant_id).all()]
-    return corpus_statistics_for_video_ids(db, ids)
+    ids = [row[0] for row in visibility_service.visible_document_ids(db, tenant_id).all()]
+    return corpus_statistics_for_document_ids(db, ids)

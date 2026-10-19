@@ -125,18 +125,12 @@ def _run_qa_and_persist(
         report_html = report_service.get_report_html(job.report_path)
 
     # S-1.12.1: job-scoped retrieval filter. The agent's Chroma queries are
-    # restricted to this job's approved videos — the whole point of
+    # restricted to this job's approved documents — the whole point of
     # job-scoped Q&A (regression: the legacy query signature silently
-    # searched the entire global library).
-    from app.models.job_video import JobVideo
-
-    approved_video_ids = [
-        row[0]
-        for row in db.query(JobVideo.video_id)
-        .filter(JobVideo.job_id == job.id, JobVideo.approved.is_(True))
-        .all()
-        if row[0]
-    ]
+    # searched the entire global library). D-070: keyed on `document_id`,
+    # so a job's Reddit / HN / PDF documents are retrievable too — the
+    # legacy `video_id` is NULL for them.
+    approved_document_ids = corpus_stats_service.approved_document_ids_for_job(db, job.id)
 
     # Build enriched question when the user provided clarification context
     enriched_question = request.question
@@ -154,8 +148,8 @@ def _run_qa_and_persist(
     # including on the 200-video corpus — was classified `small` and never
     # saw the publication span (D-066 amendment). A request-level override
     # beats the job's setting; both NULL means the corpus bracket decides.
-    corpus_statistics = corpus_stats_service.corpus_statistics_for_video_ids(
-        db, approved_video_ids
+    corpus_statistics = corpus_stats_service.corpus_statistics_for_document_ids(
+        db, approved_document_ids
     )
     output_length = request.output_length or job.output_length
 
@@ -166,7 +160,7 @@ def _run_qa_and_persist(
             job_type=job.job_type,
             question=enriched_question,
             report_html=report_html,
-            video_ids=approved_video_ids,
+            document_ids=approved_document_ids,
             progress_callback=progress_callback,
             usage_out=usage,
             corpus_statistics=corpus_statistics,

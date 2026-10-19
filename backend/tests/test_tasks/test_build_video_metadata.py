@@ -187,3 +187,27 @@ def test_permalink_falls_back_to_url_when_source_url_missing():
     doc = _doc(source_url=None)
     md = _build_video_metadata(doc, language=None)
     assert md["permalink"] == "https://youtube.com/watch?v=abc123"
+
+
+def test_document_id_is_emitted_for_every_source_type():
+    """D-070: retrieval filters Chroma on `document_id`, so the helper must
+    carry it for video and non-video documents alike — `video_id` is None
+    for the latter and used to be the only key a chunk had."""
+    video = _doc(document_id="doc-video-uuid")
+    assert _build_video_metadata(video, language=None)["document_id"] == "doc-video-uuid"
+
+    pdf = _doc(
+        document_id="doc-pdf-uuid", video_id=None, source_type="pdf",
+        source_id="pdf:abc", source_url="/api/v1/library/pdf/abc.pdf",
+        channel_name="", channel_id=None, duration_seconds=None,
+    )
+    md = _build_video_metadata(pdf, language=None)
+    assert md["document_id"] == "doc-pdf-uuid"
+    assert md["video_id"] is None
+    assert md["source_type"] == "pdf"
+
+
+def test_document_id_defaults_to_empty_when_the_row_has_none():
+    """Duck-typed callers without the attribute get "" (the chunker then
+    OMITS the field rather than writing a sentinel)."""
+    assert _build_video_metadata(_doc(), language=None)["document_id"] == ""

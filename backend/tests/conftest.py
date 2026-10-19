@@ -39,6 +39,7 @@ def _isolate_app_lifespan():
 
     _chroma_for_lifespan = MagicMock(wraps=_real_chroma)
     _chroma_for_lifespan.backfill_qa_library = MagicMock(return_value=None)
+    _chroma_for_lifespan.backfill_chunk_document_ids = MagicMock(return_value=0)
     with (
         patch("app.main.run_startup_probes", new=AsyncMock(return_value=None)),
         patch("app.main.chroma_service", new=_chroma_for_lifespan),

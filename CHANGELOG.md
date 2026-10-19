@@ -46,6 +46,56 @@ S-8.8.1, the first story of the E-8.8 reading room
 - Found on the way: one stored report (`419e691d…`) was cut mid-tag by the
   writer, so the browser folds two headings into an attribute value. The
   reader cannot recover them; the fix belongs in the compose step.
+### Document visibility keyed on `document_id`; non-video documents visible and retrievable (2026-10-19)
+
+Since D-063 (2026-07-31) every PDF, pasted page, Reddit and HN document was
+ingested but visible to nobody: the per-tenant grant referenced the legacy
+`documents.video_id`, which is NULL for non-video sources. Shipping the fix
+found two more layers of the same defect. Decision
+[D-070](docs/decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19),
+story S-5.10.4, PR [#241](https://github.com/khoks/VideoResearchPro/pull/241).
+
+- **Grants keyed on the primary key.** Migration `3653e565c1fc` adds
+  `document_visibility.document_id`, backfills from `documents`, moves the
+  unique constraint and retires `video_id` (round trip pinned). `grant()`
+  takes document ids; `visible_video_ids()` is `visible_document_ids()` with
+  no shim; the listing, channel views, subscription lookup and corpus
+  statistics filter on `document_id`.
+- **Non-video chunks are written at all.** `insert_chunks` had skipped every
+  chunk without a `video_id`, so no PDF or pasted page had ever been
+  embedded. Chunk ids stay `{video_id}:{index}` for videos and are
+  `{document_id}:{index}` for everything else.
+- **Retrieval filters on `document_id`** for library Q&A and job Q&A alike
+  (a topic job's Reddit / HN / PDF documents are now in scope). Legacy chunks
+  are stamped by a metadata-only backfill at API startup — no re-embedding,
+  one filter path rather than a transition window.
+- **An empty scope retrieves nothing.** `query_collection(document_ids=[])`
+  used to fall through to an unrestricted search, so a user with nothing
+  ingested was answered from every other tenant's transcripts.
+- **Library listing shape.** `id` is the document id; `video_id` and
+  `duration_seconds` are nullable; `source_type` is sent. The frontend type
+  widened to match.
+- **Tests.** The strict xfail from PR #224 is un-marked; new upload-PDF router
+  tests; a two-tenant test proving user B cannot see user A's pasted page or
+  PDF in the listing, in search, or in the Q&A scope; real-Chroma tests for
+  the write, the scope and the backfill. 1,454 pass.
+
+### Shelves: schema, service and REST (2026-10-19)
+
+Second PR of the organisation lane ([S-8.1.1](docs/initiatives.md#s-811--shelves-schema-service-and-rest),
+PR [#242](https://github.com/khoks/VideoResearchPro/pull/242)). Named, per-tenant collections of jobs; no UI yet.
+
+- **Tables** `shelves` and `shelf_jobs` (migration `d8e9f0a1b2c3`), a job on
+  many shelves, names unique per tenant case-insensitively, colour as one of
+  ten palette names.
+- **REST** `/api/v1/shelves`, `/shelves/{id}/jobs/{job_id}`,
+  `/jobs/{id}/shelves`. Reads on every tier; writes need the `shelves`
+  capability, so a shelf outlives a downgrade read-only.
+- **Cascade.** Deleting a shelf keeps its jobs; deleting a job leaves every
+  shelf, through the ORM (SQLite never enforced the FK cascade here).
+- **Round-trip test** for lane migrations: upgrade, downgrade, upgrade.
+
+
 ### Notes: schema, REST and the inline note control (S-8.5.1, 2026-10-19)
 
 The first text in the system written BY the user rather than ingested FOR

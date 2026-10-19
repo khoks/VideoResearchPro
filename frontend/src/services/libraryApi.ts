@@ -6,8 +6,10 @@ export type TranscriptStatus = 'fetched' | 'pending' | 'unavailable';
 export type LibrarySort = 'newest' | 'oldest' | 'longest' | 'shortest';
 
 export interface LibraryVideoResponse {
+  /** `documents.document_id` — the primary key every source type has (D-070). */
   id: string;
-  video_id: string;
+  /** Legacy YouTube id; null for PDFs, pasted pages and every other non-video source. */
+  video_id: string | null;
   title: string;
   /** Null for sources that have no channel (PDFs, pasted pages). */
   channel_id: string | null;
@@ -18,7 +20,7 @@ export interface LibraryVideoResponse {
   /** Null for text sources; the backend column is nullable. */
   duration_seconds: number | null;
   published_at: string | null;
-  /** Not sent by the backend yet; the row falls back to sniffing `url`. */
+  /** Sent by the backend since D-070; the row still falls back to sniffing `url` for older responses. */
   source_type?: string;
   transcript_status: TranscriptStatus | string;
   transcript_language: string | null;

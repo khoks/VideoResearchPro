@@ -19,7 +19,7 @@
 | [E-7.1](../initiatives.md#e-71--trust-weighted-retrieval-v1) trust-weighted retrieval | Lands the re-rank that M5 notes and M1 shelf scopes reuse; its weight control needs the channel page M7 creates (see Phase 1). |
 | Report quality: [S-1.14.6](../initiatives.md#e-114--model-tier-quality-evaluation-harness) intermediates, S-1.14.7 registry guidance, S-1.14.15 summary defects | Quality of the thing every output kind is built from. |
 | [T-5.4.9](../initiatives.md#e-54--auth-hardening) replace `python-jose` | Small, security; found by this research (unfixed critical CVE, mitigated today by pinned algorithms). One PR. |
-| [S-5.10.4](../initiatives.md#s-5104--key-document-visibility-on-document_id) visibility on `document_id` ([D-070](../decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)) | Non-video documents are invisible and unretrievable until this lands; shelves, tags, notes, channel aggregates and importers all read through the visibility helper. Sequenced after the Q&A rewrite like E-7.1. |
+| [S-5.10.4](../initiatives.md#s-5104--key-document-visibility-on-document_id) visibility on `document_id` ([D-070](../decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)) | **Shipped 2026-10-19 (PR [#241](https://github.com/khoks/VideoResearchPro/pull/241)).** Non-video documents were invisible and unretrievable until it landed; shelves, tags, notes, channel aggregates and importers all read through the visibility helper. Sequenced after the Q&A rewrite like E-7.1. |
 
 ## Phase 1 — workbench foundations (four parallel lanes)
 

@@ -28,6 +28,7 @@ from app.routers import (
     qa_history,
     reports,
     sessions,
+    shelves,
     ws,
 )
 from app.services import chroma_service
@@ -72,6 +73,14 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Q&A library backfill failed; continuing startup")
 
+    # D-070: stamp `document_id` onto transcript chunks that predate the
+    # retrieval filter change. Metadata-only (no re-embedding), idempotent,
+    # and a Chroma failure here must not stop the app either.
+    try:
+        chroma_service.backfill_chunk_document_ids()
+    except Exception:
+        logger.exception("Chunk document_id backfill failed; continuing startup")
+
     try:
         await run_startup_probes()
     except Exception:
@@ -108,6 +117,7 @@ app.include_router(echo.router, prefix="/api/v1")
 app.include_router(author.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
+app.include_router(shelves.router, prefix="/api/v1")
 app.include_router(qa.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
 app.include_router(library.router, prefix="/api/v1")

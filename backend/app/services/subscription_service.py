@@ -70,7 +70,7 @@ def visible_channel_ids(db: Session, tenant_id: str):
     )
     from_docs = (
         db.query(Document.channel_id)
-        .join(DocumentVisibility, DocumentVisibility.video_id == Document.video_id)
+        .join(DocumentVisibility, DocumentVisibility.document_id == Document.document_id)
         .filter(
             DocumentVisibility.tenant_id == tenant_id,
             Document.channel_id.isnot(None),

@@ -87,8 +87,9 @@ def test_library_listing_filtered_by_channel_matches_channel_videos(
     db.commit()
     # Only two of the three are visible to the caller; the third belongs to
     # another tenant and must appear in neither listing.
-    visibility_service.grant(db, ["pagevid0000", "pagevid0001"], test_user.id)
-    visibility_service.grant(db, ["pagevid0002"], OTHER)
+    # D-070: grants are keyed on document_id, not the legacy YouTube id.
+    visibility_service.grant(db, [docs[0].document_id, docs[1].document_id], test_user.id)
+    visibility_service.grant(db, [docs[2].document_id], OTHER)
 
     via_library = client.get("/api/v1/library/videos", params={"channel_id": CH})
     via_channel = client.get(f"/api/v1/channels/{CH}/videos")

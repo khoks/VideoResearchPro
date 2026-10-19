@@ -73,8 +73,9 @@ class QAAgentState(TypedDict):
     job_type: str
     question: str
     report_html: str
-    # S-1.12.1: approved video ids scoping this job's retrieval.
-    video_ids: list[str]
+    # S-1.12.1: the job's approved document ids scoping its retrieval —
+    # `documents.document_id` values since D-070, never the legacy video_id.
+    document_ids: list[str]
     sub_queries: list[str]
     rag_results: list[dict]
     report_context: str | None

@@ -29,7 +29,8 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/exports` | `ExportsPage` | protected | Dataset export endpoints + downloads |
 | `/notes` | `NotesPage` | protected | Every note the user wrote, grouped by target, searchable, exportable |
 | `/author` | `AuthorPage` | protected, Pro+ | Author Studio: bind finished runs into a book; other kinds shown as coming later |
-| `/echo` | `EchoPage` | protected, Studio | Echo: personal-context store, readiness meter, sources and connectors |
+| `/echo` | `EchoPage` | protected, Studio | Echo: personal-context store, readiness meter, sources and connectors, export and delete |
+| `/echo/inbox` | `EchoInboxPage` | protected, Studio | Echo's shares inbox: everything the user forwarded, with state and authorship |
 | `/account/subscription` | `SubscriptionPage` | protected | Tier, upgrade / downgrade (demo billing) |
 | `/account/ai-models` | `AIModelsPage` | protected | Per-use-case LLM overrides and BYOK keys |
 | `*` | (redirect → `/`) | — | 404 → home |
@@ -234,7 +235,7 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 ### `LibraryQAPage` — `/library/qa`
 **Purpose.** Ask questions across the entire library, with no per-job filter.
 
-Layout: question textarea + clarify-first toggle + language selector at the top; past exchanges below ordered ascending by `created_at`, each with citation chips that link to the source video at the cited timestamp and the inline notes control (target `library_qa_exchange`).
+Layout: question textarea + clarify-first toggle + language selector at the top; past exchanges below ordered ascending by `created_at`, each with citation chips that link to the source video at the cited timestamp and the inline notes control (target `library_qa_exchange`). A YouTube chip whose video the reader can see also names its channel as a link to `/library/channels/:id` (S-8.7.4); the same holds for the Q&A panel on a run's page.
 
 | State | What renders |
 |-------|--------------|
@@ -298,19 +299,32 @@ Sections: **What you can make** (one card per kind from `GET /author/kinds`: `av
 ### `EchoPage` — `/echo` (Studio)
 **Purpose.** Echo's personal-context store. Backend: `backend/app/routers/echo.py`. Honest about scope: the store and readiness gates are real; connectors (E-3.2) and the "speak as me" agent (E-3.4) are not, and the page says so wherever it would otherwise imply them.
 
-Sections: **Readiness**, **Connectors** (with **Sources on record**), **What Echo knows** (grouped by the 10 kinds), a **Not here yet** footer, and three modals (add / edit, forget, revoke).
+Sections: **Readiness**, **Connectors** (with **Sources on record**), **What Echo knows** (grouped by the 10 kinds), **Your Echo data** (S-3.10.1 / S-3.10.2), a **Not here yet** footer, and three modals (add / edit, forget, revoke). The subtitle links to the shares inbox.
 
 | State | What renders |
 |-------|--------------|
 | Below tier, or API 403 | Editorial lock: "Echo opens at Studio." → `/account/subscription?upgrade=studio`. |
-| Readiness | Large percentage (mean of the three gates; 100 only when the backend says `ready`), then one meter per gate: facts recorded vs `threshold_total`, distinct sources vs `threshold_sources`, personality trait recorded / missing. The sources hint states plainly that the gate cannot be met while no connector exists. Below the meters, "Your voice so far: N notes · W words" from `notes_total` / `notes_words` (S-8.5.3), stated as a feeder, not a gate. |
+| Readiness | Large percentage (mean of the three gates; 100 only when the backend says `ready`), then one meter per gate: facts recorded vs `threshold_total`, distinct sources vs `threshold_sources`, personality trait recorded / missing. The sources hint states plainly that the gate cannot be met while no connector exists. Below the meters, "Your voice so far: N notes · W words" from `notes_total` / `notes_words` (S-8.5.3), stated as a feeder, not a gate. Then "Shared with Echo: N items in the shares inbox" from `shares_total`, also not a gate. |
 | Connectors empty | "No connectors yet." with the planned list. Sources on record lists each `source` with its row count and a **Revoke** button (confirm → `DELETE /echo/sources/{source}`; the toast reports `deleted_count`). |
 | Context browser | Filters: kind, source, "Show expired" (`include_expired`). Every known kind renders as a card, empty or not, each with an **Add** shortcut preselecting that kind; rows show label, value, source pill, confidence, captured date, expiry (an **Expired** pill when past). **Edit** reopens the form with kind and label locked (the backend upserts on `(kind, key)`; renaming means forget + add). **Forget** confirms, then `DELETE /echo/context/{kind}/{key}`. |
 | Add / edit modal | Kind, label (≤128 chars, no `/` because the key travels as a path segment; warns when the label already exists under that kind and would overwrite), the fact, confidence 0–1, optional expiry date (sent as end-of-day UTC). Source is always `manual`. |
 | Loading | Skeleton rows / paragraphs per card. |
 | Error | Inline retry line per card; the browser uses an editorial error state with Retry. |
+| Your Echo data | `EchoDataCard`: what the archive holds, then "Echo holds: N facts · N shares · N files · N search vectors" from `GET /echo/brain/footprint`. **Export everything** downloads the zip through an authenticated blob fetch (no token in the URL). **Delete everything Echo knows** opens a modal that restates the counts, says there is no undo, and enables **Delete permanently** only after the user types DELETE; the toast reports "Echo now holds nothing about you." when the server's after-count is zero. Both buttons are disabled when Echo holds nothing. |
 
 Pure logic (gates, grouping, expiry, label validation) lives in `frontend/src/utils/echoReadiness.ts`.
+
+### `EchoInboxPage` — `/echo/inbox` (Studio)
+**Purpose.** The shares inbox (S-3.7.1): everything the user handed to Echo, newest first, with no approval step. Same Studio lock as `EchoPage`. Header: back link to Echo and an **Add to Echo** button.
+
+| State | What renders |
+|-------|--------------|
+| Default | Search (debounced; text, links, file names, annotations) and a state filter; then one card per share: content-type badge, **Your words** or **Context only** (tooltip explains the default), processing state ("Waiting for processing" until S-3.7.2 exists), shared date; the link, the text (scrollable block, gold rule for the user's own words) or the file name, size and **Download**; the "why" annotation. Actions: **Add why** / **Edit why** inline, **These are my words** / **Not my words**, **Delete** (confirm: the share, its file and anything derived are removed). |
+| More than 100 | "Show N more" grows the page by 100. |
+| Empty | "Nothing shared yet." pointing at Add to Echo; with filters, "Nothing matches." |
+| Loading / error | Skeleton rows; editorial error with Retry. |
+
+Pure logic (quick-share parsing, labels, sizes, footprint sums) lives in `frontend/src/utils/echoShares.ts`, unit-tested.
 
 ### `KnowledgeReaderPage` — `/knowledge/:videoId`
 **Purpose.** A source's knowledge report in the reading room (S-8.8.3). `GET /videos/{id}/knowledge` (YouTube id or `document_id`, resolved through the tenant's visibility grants) supplies the Markdown and, since S-8.8.3, the source's title, channel, kind, URL and dates. The Markdown's leading `# Title` becomes the page title and leaves the body; "From <source title> · <channel> · Extracted <date>" sits under it; tiles count topics, concepts, events and facts; toolbar: Back, Open the source, Print or save as PDF.
@@ -358,6 +372,7 @@ Where results land: a run → `/jobs/<id>`; a question → its page with `?excha
 - Today: top horizontal tab bar with the protected pages.
 - Post-redesign (per [branding.md](branding.md) §sidebar-mockup): slim left sidebar grouped by purpose (Library / Research / Knowledge / Author/future / Settings).
 - Persistent global elements: top-right user avatar + sign-out, top-right LLM-status dot (green/yellow/red), `ToastContainer`.
+- **Add to Echo** (S-3.7.1, tiers with `echo_personal_brain` only): a dashed button above the user chrome in the sidebar and the mobile drawer. It opens `QuickShare`'s dialog: one box (a single http(s) link becomes a link share; anything else is text), **Attach a file instead** (up to 25 MB), an optional "why", and **These are my own words** (off by default; the hint explains context-only). Shares go straight into the inbox.
 
 The sidebar's **Shelves** group (after Library) lists the reader's shelves with a colour dot, the first eight then "Show all N", plus **Manage shelves** (or **Start a shelf** when there are none); it is hidden for a reader who has no shelves and no `shelves` capability. Shelf entries navigate by path because the `AppTab` union is fixed.
 

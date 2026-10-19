@@ -25,6 +25,8 @@ export interface OutputItem {
   celery_task_id?: string | null;
   /** S-6.7.2: formats `download` can serve, text first (`md` for books). */
   formats?: string[];
+  /** S-6.7.3: rows in `output_citations` for this output. */
+  citation_count?: number;
 }
 
 /** `available` = kinds with a concrete outputter; `supported` = every kind

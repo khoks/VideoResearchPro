@@ -39,6 +39,8 @@ export interface Reference {
   source_type?: ReferenceSourceType;
 
   // YouTube fields (legacy, still primary for video sources)
+  /** Present on library Q&A references; job references carry it in the URL. */
+  video_id?: string;
   video_url: string;
   video_title: string;
   channel_name: string;

@@ -158,6 +158,17 @@ VISUAL_ANNOTATION_CONTRACT = """ON-SCREEN VISUAL ANNOTATIONS — READ CAREFULLY:
   Hindi or Bengali, native digits included (০.১৩.২), is speech."""
 
 
+# T-1.18.1.13: the Q&A refine step rewrites raw chunks into extracts before
+# the answer prompt sees them. A span paraphrased into prose at that step
+# reaches the answer model as speech, and the answer-stage contract can no
+# longer apply. Both refine prompts carry the contract plus this rule.
+VISUAL_SPAN_EXTRACT_RULE = """VISUAL SPANS IN EXTRACTS: when an extract draws on a `[VISUAL @ mm:ss — ...]`
+span, copy the span whole, marker and timestamp included, as its own extract.
+Never fold an annotation's content into an extract of speech, and never
+restate it as plain prose: the answer step tells what was shown from what was
+said only by the marker."""
+
+
 # --- R1 / S-1.18.8: modality provenance -------------------------------------
 #
 # D-075: prompt rules alone moved attribution errors from one direction to

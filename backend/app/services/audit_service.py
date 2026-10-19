@@ -53,6 +53,9 @@ class Event(str, Enum):
     ONBOARDING_SKIPPED = "onboarding_skipped"
     FIRST_JOB_CREATED = "first_job_created"
     FIRST_REPORT_OPENED = "first_report_opened"
+    # S-3.10.1 / S-3.10.2 Echo privacy (counts only in metadata, never content)
+    ECHO_EXPORTED = "echo_exported"
+    ECHO_BRAIN_DELETED = "echo_brain_deleted"
 
 
 def _ip_from_request(request: Request | None) -> str | None:

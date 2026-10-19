@@ -632,9 +632,11 @@ The shipped script profiler is exact for script mixing and **blind to romanised 
   - [x] Part A, quotation — shipped 2026-10-19 (PR [#268](https://github.com/khoks/VideoResearchPro/pull/268)). `code_mix_*` chunk metadata (none for English); `speech: <language> — <quote form>` on every non-English source header in the report map, job and library Q&A; map items carry `original` wording beside English `content`, compose attaches the source's `quote_form`; knowledge extraction gets a measured `SOURCE LANGUAGE` line. The report pipeline previously kept no original wording at all
   - [x] Part B, ranking on English — shipped 2026-10-19 (PR [#271](https://github.com/khoks/VideoResearchPro/pull/271), [D-084](decisions.md#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19)). Non-English chunks are embedded as an English rendering (`code_mixing_render_english`, metadata `text_en`) inside `chroma_service.insert_chunks`; stored text stays the original. Measured first: MRR 0.565 Devanagari / 0.402 romanised / 0.805 English rendering (55 independent questions, 132 real chunks). No backfill
 - [x] T-1.16.2.6 Evaluate on real code-mixed transcripts before claiming it works — shipped 2026-10-19 (PR [#276](https://github.com/khoks/VideoResearchPro/pull/276)). Held-out sources only: 80 unseen comments (17/18 Hindi-bearing caught), the map stage before/after on a held-out lecture and two comment threads (**0 Hinglish passed through in six runs, with or without N-002**; originals kept 0 → 25 on the lecture), the production composer (8/8 three-part quotes), retrieval through the production renderer (MRR 0.554 → 0.762). The predicted failure happened at FETCH instead: 2 of 13 Hindi videos arrived as auto-dubbed tracks (S-1.11.11). Two fixes forced: a 3% presence floor so English-primary sources with real Hindi carry the profile, and per-item quote resolution in compose. [Section 11](notes/2026-10-19-code-mixing-detection.md#11-end-to-end-evaluation-on-held-out-sources-t-11626)
+- [x] T-1.16.2.10 Verify kept `original` wording in code — fixed 2026-10-19 (PR [#294](https://github.com/khoks/VideoResearchPro/pull/294)). Regression from #268 found in R1 run 5: Hindi speakers quoted in Bengali script, strings in no transcript. Map originals are now checked against their own source with `quote_fidelity` (the run-6 gate's rule): mixed-script words, wrong script and unaligned wording are dropped, the English point kept, the drop disclosed. Drops exactly what the audit fails on run 5 (4/37 off, 12/51 on). Compose material no longer JSON-escapes non-Latin text. [Section 12](notes/2026-10-19-code-mixing-detection.md#12-regression-invented-original-wording-and-the-fix-2026-10-19)
 - [ ] T-1.16.2.7 Native-speaker spot check of the labelled set (42 Hindi-bearing Latin units + 10 Devanagari units, ~30 min) before its numbers compare future detectors (D-080 open question 1)
 - [ ] T-1.16.2.8 English CONTENT words in Devanagari (मशीन लर्निंग) — the tagger's measured blind spot; a hybrid (LLM on Devanagari) or a transliteration lexicon. Would also make a 50% dominant threshold unnecessary (D-080 open question 3)
 - [ ] T-1.16.2.9 Measure a stronger multilingual embedder (E5/BGE-M3) on the D-084 pool before the library grows; it would replace or complement the English rendering
+- [ ] T-1.16.2.11 Reconcile the native-script quote form with the quote-fidelity audit for ROMANISED Hindi-dominant sources. N-002 says such a source is quoted in Devanagari with its romanised original as the transliteration, but the R1 report-level audit (`audit_quote_fidelity.py --check`) looks every Devanagari run up in the corpus and would fail a re-scripted quote as `absent`. Either the audit learns that a Devanagari quote may stand for a romanised original (transliterate before matching), or the quote form keeps Roman for romanised sources. Raised 2026-10-19 with the fix in #294; not hit by job 419e691d, which has no romanised sources
 
 ### E-1.18 🟡 Visual understanding (R1)
 
@@ -655,8 +657,8 @@ The shipped script profiler is exact for script mixing and **blind to romanised 
 - [x] T-1.18.1.9 Tests: 101 across annotation survival, budget accounting, vision routing, real-ffmpeg extraction, prompt-placeholder binding
 - [ ] T-1.18.1.10 🔵 **Annotations never reach Chroma for a video that was already embedded** (found 2026-10-18 while designing the R1 measurement). `job_tasks.py` re-chunks a reused video through `_with_visuals` so the *report* sees the spans, but the RAG phase skips "already-embedded chunks", so Q&A retrieval over a previously ingested video never sees a `[VISUAL @ …]` span. Visual analysis therefore only helps Q&A on videos new to the library. Fix options: re-embed a document's chunks when frames exist and its stored chunks carry no visual markers, or store annotated chunks under distinct ids. Decide after S-1.18.3 says whether annotations help at all.
 - [ ] T-1.18.1.11 🔵 **Knowledge extraction never sees annotations either.** `routers/knowledge.py` builds its transcript straight from `transcript_cache.segments_json`, so the `VISUAL_ANNOTATION_CONTRACT` injected into `knowledge_agent.py` describes spans the model will never receive. Same decision point as T-1.18.1.10.
-- [ ] T-1.18.1.12 🔵 **The channel-report map prompt carries no visual contract** (found 2026-10-19 while landing S-1.18.6, PR [#234](https://github.com/khoks/VideoResearchPro/pull/234); [D-067](decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31) amended the same day). `_with_visuals` in `job_tasks.py` gates frame capture on `VISUAL_ENABLED`, `jobs.visual_analysis` and `source_type == "video"`, never on job type, so a channel job that opts in gets annotated chunks and `CHANNEL_MAP_PROMPT` formats them with no `{visual_annotations}` placeholder (T-1.18.1.7 never listed the channel-report family). Fix: placeholder + call-site kwarg in `report_agent.py`, and add `CHANNEL_MAP_PROMPT` to both parametrised lists in `tests/test_agents/test_prompt_contracts.py`.
-- [ ] T-1.18.1.13 🔵 **The two Q&A refine prompts carry no visual contract.** `REFINE_CONTEXT_PROMPT` and `LIBRARY_REFINE_CONTEXT_PROMPT` rewrite raw chunks into extracts before the answer prompt sees them, so a span can be paraphrased into plain prose before the answer-stage contract applies. Masked today by T-1.18.1.10 (spans rarely reach Chroma for an already-embedded video); land together with it.
+- [x] T-1.18.1.12 🟢 *Fixed 2026-10-19: `{visual_annotations}` in `CHANNEL_MAP_PROMPT`, passed at the call site, and added to both parametrised lists plus a stubbed-LLM test that a span reaches the channel map prompt with the rule in force.* **The channel-report map prompt carries no visual contract** (found 2026-10-19 while landing S-1.18.6, PR [#234](https://github.com/khoks/VideoResearchPro/pull/234); [D-067](decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31) amended the same day). `_with_visuals` in `job_tasks.py` gates frame capture on `VISUAL_ENABLED`, `jobs.visual_analysis` and `source_type == "video"`, never on job type, so a channel job that opts in gets annotated chunks and `CHANNEL_MAP_PROMPT` formats them with no `{visual_annotations}` placeholder (T-1.18.1.7 never listed the channel-report family). Fix: placeholder + call-site kwarg in `report_agent.py`, and add `CHANNEL_MAP_PROMPT` to both parametrised lists in `tests/test_agents/test_prompt_contracts.py`.
+- [x] T-1.18.1.13 🟢 *Fixed 2026-10-19, ahead of T-1.18.1.10 because the gap is live today for videos new to the library: both refine prompts take `REFINE_VISUAL_RULES` (the contract plus `VISUAL_SPAN_EXTRACT_RULE`, which tells the extractor to copy a span whole, marker included, and never fold it into a speech extract). Pinned by the call-site, rule-once and stubbed-LLM tests; mutation-checked.* **The two Q&A refine prompts carry no visual contract.** `REFINE_CONTEXT_PROMPT` and `LIBRARY_REFINE_CONTEXT_PROMPT` rewrite raw chunks into extracts before the answer prompt sees them, so a span can be paraphrased into plain prose before the answer-stage contract applies. Masked today by T-1.18.1.10 (spans rarely reach Chroma for an already-embedded video); land together with it.
 
 #### S-1.18.2 🔵 Surfacing frames to the user
 The backend produces frames and descriptions; nothing shows them yet. *Verified 2026-10-18: no frontend reference to `visual_analysis` and no frame-serving route.*
@@ -884,6 +886,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.2.1.4 `sync_echo_connector` Celery task; scheduler kind `echo_sync` on the S-8.3.1 tick for incremental syncs
 - [ ] T-3.2.1.5 Consent screen component showing `consent_disclosure` and the event types before the OAuth redirect
 - [ ] T-3.2.1.6 Tests with a fake connector: backfill, idempotent incremental, revoke cascade, isolation
+- [ ] T-3.2.1.8 Register `activity_events` and the connector-grant table for export and erasure (`echo_privacy_service.ECHO_TABLES`, `echo_vectors.echo_collection_names()`; [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 2). The full delete must also revoke and remove stored OAuth tokens: the first Echo credential store, which T-3.10.2.1 already names
 
 #### S-3.2.2 🔵 YouTube likes and subscriptions connector
 **PR:** TBD
@@ -921,6 +924,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.3.1.2 `GET/POST/PATCH/DELETE /echo/signals`, `GET /echo/signals/export`; suppression is a tombstone so re-extraction cannot resurrect a deleted signal
 - [ ] T-3.3.1.3 Signals panel on the Echo page grouped by type, with examples and a one-click "that's not me"
 - [ ] T-3.3.1.4 Isolation and tombstone tests
+- [ ] T-3.3.1.5 Register `voice_signals` for export and erasure (`echo_privacy_service.ECHO_TABLES`, `echo_vectors.echo_collection_names()`; [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 2); `echo_intake_service.delete_share` tombstones the signals listed in `derived_signal_ids_json`; signals derive only from the user's own words (`author_is_tenant`), never from context-only shares
 
 #### S-3.3.2 🔵 Signal extraction
 **PR:** TBD. Depends on E-8.5 (notes) for its richest input. That input exists since 2026-10-19 (S-8.5.1 / S-8.5.3): read live notes through `note_service.iter_notes(include_deleted=False)` and treat a withdrawn note as a reason to suppress any signal derived from it, not as a missing row ([D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19)).
@@ -935,6 +939,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.3.3.1 `personal_context_global` Chroma collection (same embedder) holding facts and signals with `tenant_id` metadata; `query_personal_context(tenant_id, text)` with the fail-closed tenant filter the Q&A collection uses
 - [ ] T-3.3.3.2 Upsert on write, delete on tombstone, backfill on worker start (the `backfill_qa_library` pattern)
 - [ ] T-3.3.3.3 Tests: isolation; tombstoned signals absent
+- [ ] T-3.3.3.4 Write vectors with `tenant_id` metadata only into `CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME`, which the full delete already sweeps; add a `test_echo_privacy` case that a fact's vector is gone after `DELETE /echo/brain`
 
 #### S-3.3.4 🔵 Voice-match evaluation harness
 **PR:** TBD. The gate for E-3.4; the [D-055](decisions.md#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29) method applied to voice.
@@ -954,6 +959,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.4.1.2 `POST /echo/draft {message, audience?, register?}` → `{draft, confidence, voice_match_score, citations, deviation_notes}`; 409 with readiness diagnostics when not ready; gated on `echo_speak_as_me`
 - [ ] T-3.4.1.3 Guardrails from `personal-brain.md`: no claims outside ingested sources and facts; names of non-public people flagged before drafting
 - [ ] T-3.4.1.4 Tests with the LLM patched; readiness gate; citation grounding
+- [ ] T-3.4.1.5 Context-only shares may ground a draft but are never quoted verbatim in it ([D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 1); `echo_drafts` is registered for export and erasure; test both
 
 #### S-3.4.2 🔵 Feedback loop and limits
 **PR:** TBD
@@ -979,19 +985,23 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 
 **Shipped 2026-05-05** in PR #172. Two new feature flags: `echo_personal_brain` (gates the entire `/echo/*` surface) + `echo_speak_as_me` (gates the future "speak as me" agent — E-3.4). Both are Studio-tier-only at the `TIER_CAPABILITIES` level. Frontend shows the Echo surface only when `has_feature("echo_personal_brain")` returns true.
 
-### E-3.7 🔵 Constant-stream intake (Domain 5)
+### E-3.7 🟡 Constant-stream intake (Domain 5)
+
+**Progress 2026-10-19.** S-3.7.1 shipped with the privacy pair S-3.10.1 / S-3.10.2 ([#286](https://github.com/khoks/VideoResearchPro/pull/286)). Processing (S-3.7.2) is next.
+**Linked decision:** [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) (context-only by default, the brain as a registry, the whole archive, delete order).
 
 **Filed 2026-10-18.** The roadmap's first-to-ship Echo component: the user forwards liked videos, reels, memes, WhatsApp threads, Keep notes, quotes, bookmarks and voice memos all day with no approval step, because the act of sharing is the curation. Everything lands in one `shares_inbox`, is processed into text, embedded, and cross-feeds facts (E-3.1), signals (E-3.3), events (E-3.2) and, when the share is an ingestible source, the library through the normal ingest path.
 **Plan:** [`docs/plans/l3-echo-personal-brain.md`](plans/l3-echo-personal-brain.md) § Domain 5
 **Acceptance.** A user pastes a YouTube URL, drops a screenshot of a meme, and uploads a WhatsApp export; within a minute each appears in the inbox with extracted text, the video is offered to the library, the meme's text is searchable, the WhatsApp thread shows a "redact the other party" option; readiness moves; deleting a share removes its derived signals.
 
-#### S-3.7.1 🔵 `shares_inbox`, quick-share and the inbox page
-**PR:** TBD. The first Echo PR.
-- [ ] T-3.7.1.1 `shares_inbox(id, tenant_id, user_id, received_at, surface, content_type, raw_payload_json, file_path, extracted_text, user_annotation, processing_state, derived_fact_ids_json, derived_signal_ids_json, linked_document_id, embedding_id)`; same revision adds `tenant_id` to `personal_context` with backfill `= user_id`
-- [ ] T-3.7.1.2 `POST /echo/shares` (URL, text or file; `surface=manual_quick_share`), `GET /echo/shares`, `PATCH /echo/shares/{id}` (annotation, content_type), `DELETE /echo/shares/{id}` (cascades to derived rows); gated on `echo_personal_brain`
-- [ ] T-3.7.1.3 "Add to Echo" quick-share in the sidebar chrome and an `/echo/inbox` page with state, text preview and actions
-- [ ] T-3.7.1.4 Files stored under `ECHO_SHARES_DIR/<tenant>/` with the frame-service traversal guard; size cap
-- [ ] T-3.7.1.5 Isolation and cascade tests
+#### S-3.7.1 🟢 `shares_inbox`, quick-share and the inbox page
+**PR:** [#286](https://github.com/khoks/VideoResearchPro/pull/286) — merged 2026-10-19, together with S-3.10.1 and S-3.10.2 so the first new Echo table arrived with its export and erasure.
+**Calls made in the PR.** (1) **Third-party content is context-only by default**, the plan's recommendation for its open question 2: `author_is_tenant` is false unless the user ticks "These are my own words"; a context-only share may be retrieved as context once S-3.7.2 embeds it, but is never quoted and never enters a dataset or derived export. Marking one's own words is authorship, not an override; the per-thread override the open question asks about was not built. (2) Every share starts `pending`, text included: its words are stored as `extracted_text` at once, but embedding and signals are S-3.7.2's. (3) The stored file name is the share id plus a sanitised extension, never the client's name; downloads are attachments with `nosniff`; a row whose path points outside its tenant directory is never followed. (4) `linked_document_id` instead of the sketch's `linked_source_id` (documents are the library's unit), and `updated_at` added.
+- [x] T-3.7.1.1 `shares_inbox(id, tenant_id, user_id, received_at, surface, content_type, raw_payload_json, file_path, extracted_text, user_annotation, processing_state, derived_fact_ids_json, derived_signal_ids_json, linked_document_id, embedding_id)`; same revision adds `tenant_id` to `personal_context` with backfill `= user_id`
+- [x] T-3.7.1.2 `POST /echo/shares` (URL, text or file; `surface=manual_quick_share`), `GET /echo/shares`, `PATCH /echo/shares/{id}` (annotation, content_type), `DELETE /echo/shares/{id}` (cascades to derived rows); gated on `echo_personal_brain`
+- [x] T-3.7.1.3 "Add to Echo" quick-share in the sidebar chrome and an `/echo/inbox` page with state, text preview and actions
+- [x] T-3.7.1.4 Files stored under `ECHO_SHARES_DIR/<tenant>/` with the frame-service traversal guard; size cap
+- [x] T-3.7.1.5 Isolation and cascade tests (`tests/test_routers/test_echo_shares.py`: gating, every content type, traversal and size cap, a tampered path, two tenants on every verb, the per-share cascade to file, vector and derived facts)
 
 #### S-3.7.2 🔵 Processing pipeline
 **PR:** TBD
@@ -1000,6 +1010,8 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 - [ ] T-3.7.2.3 Share → activity event (`connector=internal`, `event_type=shared_to_pratidhvani`) and → signal-extraction queue (S-3.3.2)
 - [ ] T-3.7.2.4 Fail-soft: a share whose processing fails stays browsable with the failure shown
 - [ ] T-3.7.2.5 Tests per content type with external calls patched
+- [ ] T-3.7.2.6 Embed each share under `echo_vectors.share_vector_id(id)` with `tenant_id` metadata in `CHROMA_SHARES_COLLECTION_NAME`, and set `embedding_id`. The per-share delete and the full delete (S-3.10.2) find vectors only by that id and that metadata
+- [ ] T-3.7.2.7 A context-only share (`author_is_tenant` false) feeds context retrieval but never voice-signal extraction as the user's own words; the user's own words (`author_is_tenant` true) do
 
 #### S-3.7.3 🔵 Drag-drop and browser extension
 **PR:** TBD
@@ -1050,17 +1062,21 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 #### S-3.9.3 ⚪ Routing
 - [ ] T-3.9.3.1 Per-user override of the `echo_draft` use case to the tuned model through the E-1.13 override mechanism; delete weights on revoke
 
-### E-3.10 🔵 Privacy model: export, delete, zero-knowledge
+### E-3.10 🟡 Privacy model: export, delete, zero-knowledge
+
+**Linked decision:** [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19).
+**Open question (the user's):** should context-only share text stay in the whole-brain archive (built, D-089 item 3), or move to a separate flagged section? Not omitted either way, or the archive stops being lossless.
+**Progress 2026-10-19.** Export and delete shipped with the first new Echo table ([#286](https://github.com/khoks/VideoResearchPro/pull/286)). **Rule for every later Echo story:** a new Echo table goes into `echo_privacy_service.ECHO_TABLES`, a new Echo Chroma collection into `echo_vectors.echo_collection_names()`, and a new Echo file store under the tenant directory, or the export misses it and the delete leaves it behind. The connector-grant table (E-3.2) is the first credential store this applies to.
 
 **Filed 2026-10-18.** The hard constraint from `personal-brain.md`: self-host data is local; every connector is opt-in, scoped and revocable; the whole brain is exportable and deletable; SaaS offers a zero-knowledge mode.
 **Acceptance.** A user downloads one archive containing facts, events, signals, shares and drafts; a full delete leaves no row, file, token or Chroma vector attributed to them; every connector's consent text is shown before activation and stored with the grant.
 
-#### S-3.10.1 🔵 Full export
-**PR:** TBD
-- [ ] T-3.10.1.1 `GET /echo/export` streaming a zip of JSONL per table plus files; audit event
-#### S-3.10.2 🔵 Full delete
-**PR:** TBD
-- [ ] T-3.10.2.1 `DELETE /echo/brain` cascading across every Echo table, file directory, credential and Chroma collection; verified by a test that counts zero rows afterwards
+#### S-3.10.1 🟢 Full export
+**PR:** [#286](https://github.com/khoks/VideoResearchPro/pull/286) — merged 2026-10-19.
+- [x] T-3.10.1.1 `GET /echo/export` streaming a zip of JSONL per table plus files; audit event. Built in a temporary file (constant memory) and removed after sending. `manifest.json` carries row counts, every file with size and SHA-256, and any file a row points at that was missing. `echo_privacy_service.read_archive` is the exact inverse, and `test_echo_privacy.py` holds every column of every row and every file's bytes to it. The archive includes context-only share content: it is the user's own copy of what they handed over (Article 20). The audit event carries counts only
+#### S-3.10.2 🟢 Full delete
+**PR:** [#286](https://github.com/khoks/VideoResearchPro/pull/286) — merged 2026-10-19.
+- [x] T-3.10.2.1 `DELETE /echo/brain?confirm=delete-everything` cascading across every Echo table, file directory, credential and Chroma collection; verified by a test that counts zero rows afterwards. The test looks in each store directly (rows, the tenant directory, both Echo collections) for both tenants: the deleting tenant's footprint is zero and the other tenant's is unchanged. Order is vectors, files, then rows in one commit, so a failing store stops the delete before the rows that would let a retry find what is left (tested). The service re-counts every store afterwards and fails rather than report success with data left. No Echo credential exists yet; the library, notes, account and BYOK keys are outside Echo and untouched. `GET /echo/brain/footprint` shows the same counts
 #### S-3.10.3 ⚪ Zero-knowledge mode (SaaS)
 - [ ] T-3.10.3.1 Design only: client-side encryption of share payloads and signals with a user-held key; the plan records that server-side embedding and extraction cannot run on ciphertext, so this mode disables them. Decision deferred to SaaS launch.
 
@@ -1535,7 +1551,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 
 **Shipped 2026-05-05** in PR #173. New `outputs` table (Alembic `b5c6d7e8f9a0`) with status state machine (`pending` → `generating` → `completed` | `failed`); `Outputter` Protocol + `register_outputter` / `get_outputter` / `list_outputters` registry; `run_generation` driver that handles status transitions + error capture; `OutputKind` enum (`book` / `site` / `deck` / `newsletter` / `reel`). REST surface under `/api/v1/author/*` — `GET /kinds`, `POST /outputs` (creates + generates synchronously for v1; 501 when no outputter for the kind), `GET /outputs` (kind/status filters), `GET /outputs/{id}`, `GET /outputs/{id}/content` (PlainTextResponse with media-type), `DELETE /outputs/{id}`. All gated on `require_feature("author_studio")` (Pro+).
 
-### E-6.7 🟡 Generation runtime (async, progress, downloads, citations)
+### E-6.7 🟢 Generation runtime (async, progress, downloads, citations)
 
 **Filed 2026-10-18.** Cross-cutting pieces every kind needs that the foundation deliberately left out ([D-044](decisions.md#d-044--foundation-first-then-concrete-implementations-deferred-for-i-3--i-6-2026-05-05)).
 **Scope.** Move generation into the Celery worker with WebSocket progress, add binary artifact storage and a download endpoint, and add the `output_citations` table the roadmap sketched so every kind cites the same way.
@@ -1557,11 +1573,11 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [x] T-6.7.2.3 Deleting an output removes its directory (and an emptied user directory); a cancelled or failed run discards its partial files; `scripts/sweep_output_artifacts.py` lists directories with no row or under the wrong owner, `--apply` deletes them — *shipped 2026-10-19*
 - [x] T-6.7.2.4 Tests: binary and text downloads with media types and names, extra format beside the text, missing format 404 and malformed format 422, cross-user 404, query token 401, tampered `content_path` never served, unsafe ids rejected, delete and cancel/failure leave no files, orphan sweep dry run then apply, Devanagari file names. Frontend: one download button per format, Read only for text outputs, vitest for the helpers — *shipped 2026-10-19*
 
-#### S-6.7.3 🔵 `output_citations`
-**PR:** TBD
-- [ ] T-6.7.3.1 `output_citations(id, output_id, document_id NULL, source_type, source_id, url, label, position, created_at)`; written by every outputter through one helper
-- [ ] T-6.7.3.2 `GET /api/v1/author/outputs/{id}/citations`; counts on the outputs list
-- [ ] T-6.7.3.3 Tests on the v1 book: every Markdown link becomes a row
+#### S-6.7.3 🟢 `output_citations`
+**PR:** [#293](https://github.com/khoks/VideoResearchPro/pull/293) — *shipped 2026-10-19.* The resolver is a port of the reading room's (`frontend/src/components/reader/citations.ts`, S-8.8.2), so a link resolves to the same source in the reader and in a book. Without it most rows would be dead: both stored real reports carry only bare `&t=` anchors (written before S-1.14.9). Schema adds `seconds` and `resolved_by` to the plan's columns, so endnotes can print the timestamp and say honestly when a citation found no source.
+- [x] T-6.7.3.1 `output_citations(id, output_id, position, label, url, seconds, document_id NULL, source_type, source_id, resolved_by, created_at)` (migration `c5ee7a568ef8`); written through `output_citation_service.record_citations` (replace-all, no commit of its own, so a failed or cancelled run leaves no rows); `extract_markdown_citations` resolves a link by YouTube id, then URL, then a known title or sole channel in the text around it, against the chapter run's documents **visible to the tenant**; an unmatched bare anchor gets no URL rather than an invented one; deleted with the output — *shipped 2026-10-19*
+- [x] T-6.7.3.2 `GET /api/v1/author/outputs/{id}/citations` (ordered, with the document's title and channel; 404 for another user's output); `OutputItem.citation_count` on create, get and the list (one grouped query); the Author row and the reader's stat tiles show it — *shipped 2026-10-19*
+- [x] T-6.7.3.3 Tests: the reader's resolver cases ported (YouTube id, URL ignoring `t` and `www`, title, title within the list item, longest title, hashtag stem, sole channel, shared channel not enough, unresolved, unmatched absolute, anchors/images/relative skipped, garbage href); the stored smoke-test report against its three real sources gives **30 rows for 30 anchors, all resolved**, with rebuilt `watch?v=…&t=…` URLs; the same run without visibility grants resolves nothing; a failed run writes no rows; REST counts, ordering and isolation — *shipped 2026-10-19*
 
 ---
 
@@ -1829,12 +1845,12 @@ Linked decision: D-074.
 - [x] Tests: `utils/batchExtract.ts` unit tests (quota cap, outcome classes, stop on quota, stop on request); aggregate gains `coverage.extractable` and example URLs (router test). The cache fingerprint now carries a payload version so rows written by older code recompute
 - [ ] ~~T-8.7.3.2 Concept graph panel reusing the E-8.9 graph component filtered to the channel~~ — *moved 2026-10-19 to [S-8.9.2](#s-892--graph-ui): the graph component does not exist until that story; it adds the channel-filtered view*
 
-#### S-8.7.4 🔵 Citation chips link to the channel page
-**PR:** TBD
+#### S-8.7.4 🟢 Citation chips link to the channel page
+**PR:** [#291](https://github.com/khoks/VideoResearchPro/pull/291) (merged 2026-10-19)
 **Filed 2026-10-19:** the part of T-8.7.1.2 that S-8.7.1 could not do. `Reference` has no `channel_id`, and adding it edits `qa_agent._chunk_to_reference`, a shared hot spot.
-- [ ] T-8.7.4.1 Add `channel_id` to video references in `_chunk_to_reference` (Chroma chunk metadata already carries it) and to `Reference` / `LibraryReference`
-- [ ] T-8.7.4.2 `CitationLink` renders the channel name as a link to `/library/channels/:id`
-**Sequencing:** Phase 2, with the other `qa_agent.py` edits ([build order](plans/build-order.md#shared-hot-spots-serialise-anything-that-touches-these)).
+**Scope-changed 2026-10-19:** built without touching `qa_agent.py` or `routers/qa.py` (E-7.1 is working there): the link is resolved at read time instead of stored on references.
+- [x] ~~T-8.7.4.1 Add `channel_id` to video references in `_chunk_to_reference`~~ — *replaced by `GET /api/v1/library/video-channels?video_ids=` (visibility-scoped, absent for unknown or invisible ids, ≤ 200 per call). Every existing answer gains the link; nothing stored changes*
+- [x] T-8.7.4.2 `CitationLink` names the channel of a visible YouTube citation as a link to `/library/channels/:id`; the video id comes from `video_id` or the URL; one batched request per screen (`utils/batchLoader.ts`, unit-tested). Live: three citations resolved in one call, two linked, the unknown one kept its plain label
 
 ### E-8.8 🟡 Reading room — the report as a native reading view (M8)
 

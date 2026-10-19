@@ -18,9 +18,12 @@
  * before this PR.
  */
 import type { CSSProperties } from 'react';
+import { Link } from 'react-router-dom';
 import { useColors } from '../../hooks/useTheme';
+import { useVideoChannel } from '../../hooks/useVideoChannel';
 import { fonts, fontSize } from '../../theme';
 import type { Reference } from '../../types/qa';
+import { youtubeVideoId } from '../../utils/videoId';
 
 export interface CitationLinkProps {
   reference: Reference;
@@ -185,6 +188,43 @@ function renderCitation(ref: Reference): RenderedCitation {
 export function CitationLink({ reference, newTab = true, style }: CitationLinkProps) {
   const c = useColors();
   const { href, label } = renderCitation(reference);
+  // S-8.7.4: a YouTube citation names its channel as a link to the channel
+  // page, when the reader can see the cited video (resolved at read time,
+  // batched across every chip on screen; no change to stored references).
+  const isVideo = (reference.source_type ?? 'video') === 'video';
+  const videoId = isVideo ? youtubeVideoId(reference) : null;
+  const { data: channel } = useVideoChannel(videoId);
+
+  if (isVideo && channel) {
+    const sourceLabel = [reference.video_title, reference.timestamp_display].filter(Boolean).join(' · ');
+    const channelName = reference.channel_name || channel.channel_name;
+    return (
+      <span style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, ...style }}>
+        <a
+          href={href}
+          target={newTab ? '_blank' : undefined}
+          rel={newTab ? 'noopener noreferrer' : undefined}
+          style={{ color: c.accent, textDecoration: 'none', fontSize: 'inherit' }}
+        >
+          {sourceLabel || label}
+        </a>
+        {channelName && (
+          <>
+            <span aria-hidden style={{ color: c.textMuted }}>
+              {' · '}
+            </span>
+            <Link
+              to={`/library/channels/${channel.channel_id}`}
+              title={`Open ${channelName} in your library`}
+              style={{ color: c.textSecondary, textDecoration: 'underline', textUnderlineOffset: 2, fontSize: 'inherit' }}
+            >
+              {channelName}
+            </Link>
+          </>
+        )}
+      </span>
+    );
+  }
 
   return (
     <a

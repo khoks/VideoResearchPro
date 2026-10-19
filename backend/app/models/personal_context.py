@@ -55,6 +55,10 @@ class PersonalContext(Base):
     user_id: Mapped[str] = mapped_column(
         String(36), nullable=False, index=True
     )
+    # S-3.7.1: per-tenant from here on, like every other user-scoped table
+    # (saas-roadmap invariant). Backfilled `= user_id`; on self-host a
+    # tenant is a user. The full Echo export and delete key on it.
+    tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     # One of: location, interest, hobby, work, talent, skill,
     # personality_trait, life_event, daily_routine, place. The service
     # registry validates known kinds; unknown kinds are accepted but
@@ -82,3 +86,10 @@ class PersonalContext(Base):
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, default=None
     )
+
+    def __init__(self, **kwargs) -> None:
+        # A caller that only knows the user (every call site before
+        # S-3.7.1) still writes a valid row: on self-host tenant == user.
+        if not kwargs.get("tenant_id") and kwargs.get("user_id"):
+            kwargs["tenant_id"] = kwargs["user_id"]
+        super().__init__(**kwargs)

@@ -20,6 +20,7 @@ from app.models.mfa_secret import MfaSecret
 from app.models.note import Note
 from app.models.oauth import OAuthIdentity, OAuthState
 from app.models.output import Output
+from app.models.output_citation import OutputCitation
 from app.models.password_reset_token import PasswordResetToken
 from app.models.personal_context import PersonalContext
 from app.models.qa_exchange import QAExchange
@@ -27,6 +28,7 @@ from app.models.qa_history_exchange import QAHistoryExchange
 from app.models.quota_usage import QuotaUsage
 from app.models.scheduled_run import ScheduledRun
 from app.models.session import Session
+from app.models.share import Share
 from app.models.shelf import Shelf
 from app.models.shelf_job import ShelfJob
 from app.models.tag import Tag
@@ -58,6 +60,7 @@ __all__ = [
     "OAuthIdentity",
     "OAuthState",
     "Output",
+    "OutputCitation",
     "PasswordResetToken",
     "PersonalContext",
     "QAExchange",
@@ -65,6 +68,7 @@ __all__ = [
     "QuotaUsage",
     "ScheduledRun",
     "Session",
+    "Share",
     "Shelf",
     "ShelfJob",
     "Tag",

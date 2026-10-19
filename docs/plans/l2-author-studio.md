@@ -14,7 +14,7 @@ The library can answer questions; it cannot yet produce anything a reader would 
 | Outputter registry | `backend/app/services/output_service.py` | `Outputter.generate(db, user, output)`, `register_outputter`, `run_generation` with `pending → generating → completed | failed`. |
 | Book v1 | `backend/app/services/outputters/book_markdown.py` | Reads each job's HTML report through `report_service.get_report_html`, strips tags with a regex (`_strip_html_to_markdownish`), appends the job's Q&A, writes Markdown to `content_text`. Raises `OutputError` on an empty `source_ids` list. |
 | REST | `backend/app/routers/author.py` | `GET /kinds`, `POST /outputs` (creates **and generates synchronously inside the request**; 501 for kinds without an outputter), `GET /outputs`, `GET /outputs/{id}`, `GET /outputs/{id}/content` (text only), `DELETE`. No download route, no citations route, no cancel. |
-| `/author` page | `frontend/src/pages/AuthorPage.tsx` | Posts `{kind: 'book', title}` with **no `source_ids`**. Every book created from the UI therefore lands as `failed` with "Cannot generate a book with zero source IDs". The roadmap's claim that the page "exercises the shipped Book v1 outputter" is wrong; only the REST tests do. |
+| `/author` page | `frontend/src/pages/AuthorPage.tsx` | At audit time (2026-10-18) the stub posted `{kind: 'book', title}` with **no `source_ids`**, so every book created from the UI landed as `failed`. PR #224 (2026-10-19, [D-069](../decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)) replaced it with a chapter picker over finished runs, an outputs list, a reader modal, download and delete; the four other kinds render as "coming later". |
 | `output_citations` table | — | Sketched in the roadmap, never built. |
 | Report source format | `backend/app/agents/prompts/report_prompts.py`, `utils/html_builder.py` | The compose prompt emits semantic HTML sections; `html_builder` wraps them with a `<style>` block and a statistics grid and `save_report` writes one file at `jobs.report_path`. **There is no Markdown source.** |
 | Scheduler | `backend/app/tasks/celery_app.py` | No beat configured; nothing in the app runs on a schedule. |
@@ -35,7 +35,7 @@ The library can answer questions; it cannot yet produce anything a reader would 
 
 ### Book (E-6.1)
 
-- **Source picker first** (S-6.1.1): the page is unusable until it sends `source_ids`.
+- **Source picker** (S-6.1.1): shipped by PR #224 the day after the audit; what remains is the job-page shortcut, the server-side empty-`source_ids` guard and counts on the outputs list.
 - **Cohesion** (S-6.1.3): two use cases. `author_book_outline` reads chapter summaries and returns order, part grouping, transition briefs, introduction and conclusion briefs as JSON; `author_book_prose` writes the front and back matter, transitions and a glossary. **Chapter bodies are never rewritten by the LLM**, so citations cannot be invented (the S-1.14.9 class of defect). `parameters_json.cohesion ∈ {none, light, full}`; `none` is the shipped v1. `VISUAL_ANNOTATION_CONTRACT` and the English-output contract ([D-066](../decisions.md#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31)) are injected. Failed calls are disclosed in the manuscript (the [D-056](../decisions.md#d-056--report-pipeline-budgets-derived-from-work-lossless-reduce-sectioned-compose-2026-07-30) posture).
 - **Endnotes** (S-6.1.4): every link in the chapter Markdown becomes a numbered endnote carrying title, channel, timestamp and URL and an `output_citations` row.
 - **PDF** (S-6.1.5): **WeasyPrint** (BSD-3-Clause, v70.0 of 2026-09-08). It consumes HTML directly, needs no Node or Chromium, and is the only candidate with the CSS Paged Media and GCPM features a book needs: running chapter headers via `string-set`, footnotes via `float: footnote`, a PDF outline from headings, named front-matter pages. Markdown → HTML through `python-markdown` or `markdown-it-py` (both permissive) with the reader stylesheet from M8. Windows developers install MSYS2 Pango once (`pacman -S mingw-w64-ucrt-x86_64-pango`, `WEASYPRINT_DLL_DIRECTORIES`); Linux needs `libpango-1.0-0 libpangoft2-1.0-0`. Playwright's `page.pdf()` (Apache-2.0, already optional) is the fallback only; Chromium has no running headers or footnotes.
@@ -113,9 +113,9 @@ Narration over **stills the app already owns**: R1 `visual_frames`, generated ti
 - Frontend: type-check; Playwright smoke for pick → generate → progress → download.
 - Quality: the book cohesion pass judged blind against the `none` baseline with the E-1.14 method before `full` becomes the default.
 
-## First PR (S-6.1.1 + the empty-`source_ids` guard)
+## First PR (S-6.1.2, the Markdown source)
 
-`AuthorPage` gains a job picker (completed topic and channel jobs, multi-select, ordered) and sends `source_ids`; `JobDetailPage` gains "Compile into a book"; the router rejects an empty `source_ids` for `kind=book` with 400 instead of creating a `failed` row; output rows show chapter and word counts. Backend test for the 400; frontend type-check. No schema change. This makes the shipped foundation usable before anything new is built.
+With the picker already shipped (PR #224), the first new PR is the shared enabler: `report_service.report_markdown(job)` on markdownify with the citation-preserving converter subclass, cached beside the HTML; `BookMarkdownOutputter` reads it instead of the tag-stripping regex; `GET /jobs/{id}/report.md`; round-trip tests on three stored real reports. The small S-6.1.1 remainder (400 guard, job-page shortcut, counts) can ride along or follow. No schema change.
 
 ## Open questions (the user's call)
 

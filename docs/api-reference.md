@@ -1,6 +1,6 @@
 # Pratidhvani — API Reference
 
-**Status:** canonical (2026-04-24). This is the **single source of truth** for the REST and WebSocket API. All other docs link here rather than duplicating endpoint lists.
+**Status:** canonical (2026-04-24, last refreshed 2026-10-19). This is the **single source of truth** for the REST and WebSocket API. All other docs link here rather than duplicating endpoint lists.
 
 The API is mounted under `/api/v1/` (except the WebSocket, which is mounted at the root). All HTTP responses are JSON (content-type `application/json`) unless explicitly noted otherwise (HTML for reports, NDJSON for dataset exports). Authentication is via `Authorization: Bearer <jwt>` for everything except `/auth/register`, `/auth/login`, and `/health` family endpoints. The HTML report endpoint additionally accepts a `?token=` query string fallback (because iframes can't set `Authorization` headers).
 
@@ -260,6 +260,34 @@ Query params:
 ]
 ```
 
+`channel_id`, `channel_name`, `thumbnail_url` and `duration_seconds` are empty or null for PDFs and pasted pages. Until [D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19) lands, those documents do not appear in this listing at all (see the D-063 amendment).
+
+### `POST /api/v1/library/upload-pdf`
+Multipart upload, field `file`, `.pdf` only, at most `PDF_MAX_BYTES` (100 MB). Extracts text page by page, chunks and embeds synchronously, and grants the document to the caller. Returns 201.
+
+```json
+{ "document_id": "...", "source_id": "pdf:<first-64KB sha256>", "page_count": 12, "word_count": 4810, "deduped": false }
+```
+
+`deduped: true` means the same bytes were already on the shelf; the existing document is returned and the caller is granted visibility over it. Errors: 400 not a `.pdf` or empty; 413 over the size limit; 422 uploaded but no extractable text (image-only or corrupt; the document row is kept with `transcript_status=unavailable`).
+
+### `POST /api/v1/library/paste-urls`
+Body `{ "urls": ["https://…", …] }`, 1–100 entries. Each URL is resolved to a source type by host (`facebook.com` / `fb.com` → `fb_post`, `instagram.com` → `ig_post`, `linkedin.com` → `li_post`, `twitter.com` / `x.com` → `tweet`, anything else → `article`), fetched through the article-extraction primitives, and ingested. The batch never fails on one bad URL; each row carries its own status. Returns 201.
+
+```json
+{ "results": [
+  { "url": "…", "document_id": "…", "source_id": "article:<sha>", "source_type": "article", "word_count": 1200, "status": "created", "deduped": false },
+  { "url": "…", "document_id": "…", "source_id": "…", "source_type": "tweet", "word_count": 40, "status": "deduped", "deduped": true },
+  { "url": "…", "source_type": "article", "status": "extraction_failed" },
+  { "url": "", "status": "invalid_url" }
+] }
+```
+
+400 when `urls` is missing, empty or longer than 100. `invalid_url` rows carry no `source_type`; `extraction_failed` rows carry no `document_id`.
+
+### `GET /api/v1/library/pdf/{digest}.pdf`
+Serves the uploaded bytes (`application/pdf`) for the document whose `source_id` is `pdf:<digest>`; 404 if the document or the file is missing. Citations deep-link here with `#page=N`. The route sits under the router-level bearer-auth dependency and does **not** accept `?token=`, so a plain link or a new tab 401s; the frontend fetches the bytes with the header and opens a blob URL. Adopting the `?token=` fallback the export routes use is an open follow-up.
+
 ---
 
 ## Channels
@@ -369,6 +397,58 @@ System prompts are baked into `services/dataset_service.py` as module constants 
 
 ---
 
+## Author Studio
+
+All `/author` endpoints require `require_feature("author_studio")` (Pro and above); a lower tier gets 403. Backend: `backend/app/routers/author.py` (I-6, PR #173). Page: [`AuthorPage`](ui-pages.md#authorpage--author-pro).
+
+### `GET /api/v1/author/kinds`
+`{ "available": ["book"], "supported": ["book", "deck", "newsletter", "reel", "site"] }`. `available` lists kinds with a registered outputter; `supported` is every kind the schema accepts. Create a kind that is supported but not available and you get 501.
+
+### `POST /api/v1/author/outputs`
+Create and generate in one synchronous call. Body `{ "kind": "book", "title": "…", "source_ids": ["<job_id>", …], "parameters": { "include_qa": true, "include_toc": true } }`. For `book`, `source_ids` are job IDs, one chapter per run (its report, and its Q&A if `include_qa`); a run without a report yields a placeholder chapter. Returns the `OutputItem` in `completed` or `failed` state (`error_message` populated on failure). 400 unknown kind or empty title; 501 kind without an outputter, which leaves a `pending` row behind.
+
+```json
+{ "id": "...", "kind": "book", "title": "...", "status": "completed", "source_ids": ["..."], "parameters": {}, "error_message": null, "created_at": "...", "updated_at": "...", "has_content": true }
+```
+
+### `GET /api/v1/author/outputs`
+List the caller's outputs. Query params: `kind`, `status` (`pending` / `generating` / `completed` / `failed`).
+
+### `GET /api/v1/author/outputs/{output_id}`
+One output; 404 for another user's (existence-leak posture).
+
+### `GET /api/v1/author/outputs/{output_id}/content`
+The generated text as `text/markdown` for books, `text/plain` otherwise. 404 when the row has no content yet. Header-auth only, so a browser download goes through a fetch and a blob, not an `<a href>`.
+
+### `DELETE /api/v1/author/outputs/{output_id}`
+`{ "deleted": true }`; 404 if absent.
+
+---
+
+## Echo
+
+All `/echo` endpoints require `require_feature("echo_personal_brain")` (Studio only). Backend: `backend/app/routers/echo.py` (I-3, PR #172). Page: [`EchoPage`](ui-pages.md#echopage--echo-studio).
+
+### `GET /api/v1/echo/status`
+Cold-start readiness: `{ "ready": false, "total_rows": 1, "distinct_sources": 1, "has_personality_trait": true, "threshold_total": 100, "threshold_sources": 3 }`. `ready` is the AND of the three gates.
+
+### `GET /api/v1/echo/context`
+The caller's personal-context rows. Query params: `kind`, `source`, `include_expired` (default false). Rows: `{ id, kind, key, value, source, confidence, captured_at, expires_at }`. `kind` is closed to ten values (`location`, `interest`, `hobby`, `work`, `talent`, `skill`, `personality_trait`, `life_event`, `daily_routine`, `place`); anything else is 400.
+
+### `POST /api/v1/echo/context`
+Body `{ "kind": "...", "key": "...", "value": "...", "confidence": 1.0, "expires_at": null }`; `source` is fixed to `manual`. Upserts on `(kind, key)`: re-posting an existing pair updates `value`, `confidence`, `expires_at` and `captured_at` in place, so this is also the edit endpoint. Non-string values are JSON-encoded.
+
+### `DELETE /api/v1/echo/context/{kind}/{key}`
+Deletes one row; 404 if absent. The key is a path segment and Starlette decodes `%2F` before routing, so a key containing `/` cannot be addressed; the frontend refuses such keys at entry.
+
+### `DELETE /api/v1/echo/sources/{source}`
+Revoke a source: deletes every row attributed to it for the caller. `{ "deleted_count": n }`, idempotent.
+
+### `GET /api/v1/echo/connectors`
+`{ "connectors": [], "supported_kinds": [...] }`. The connector registry is empty until E-3.2 ships a concrete connector.
+
+---
+
 ## Admin
 
 ### `POST /api/v1/admin/restart`
@@ -428,9 +508,9 @@ Heartbeats every 30 seconds (server pings, client pongs). Auth is enforced via t
 
 The shape above will evolve in three ways as the [feature-roadmap](feature-roadmap.md) lands:
 
-1. **L1 Multi-source ingest.** `/jobs` POST grows additional `job_type` values (`url_list`, `upload`). `VideoResponse` is replaced by a `DocumentResponse` with `source_type` and per-type metadata. `video_id` path parameters become `document_id` (the legacy path stays as an alias for one release). See [source-types.md](source-types.md).
+1. **L1 Multi-source ingest.** Landed differently from this sketch: uploads and pasted URLs are library-scoped (`/library/upload-pdf`, `/library/paste-urls`) rather than new `job_type` values, per [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19). Still ahead: `VideoResponse` → `DocumentResponse` with `source_type`, and `video_id` path parameters becoming `document_id` (the legacy path stays as an alias for one release). See [source-types.md](source-types.md) and [D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).
 2. **L5 SaaS.** All resource paths gain an implicit `tenant_id` filter via the JWT claim. Public per-tenant aliases (e.g. `/t/{tenant_slug}/...`) appear for shared/published resources. See [saas-roadmap.md](saas-roadmap.md).
-3. **L3 Personal Brain.** New routes under `/brain/...` for personal facts, activity stream, voice signals, and the "speak as me" agent. Marked clearly as L3 once shipped. See [personal-brain.md](personal-brain.md).
+3. **L3 Personal Brain.** The context store, readiness gate and connector registry shipped under `/echo/*` (above), not `/brain/*`. Still ahead: activity stream, voice signals, and the "speak as me" agent. See [personal-brain.md](personal-brain.md).
 
 ---
 

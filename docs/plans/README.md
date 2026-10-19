@@ -6,12 +6,12 @@
 
 ## Conventions
 
-- A plan never claims something is shipped unless the file and line it lives in is named. Roadmap sketches were wrong often enough this week (`source_weight` "re-ranks retrieval" and was read by nothing; the Author page "exercises the shipped Book v1 outputter" and cannot produce a successful book) that every "already exists" below was checked with `grep`.
+- A plan never claims something is shipped unless the file and line it lives in is named. Roadmap sketches were wrong often enough this week (`source_weight` "re-ranks retrieval" and was read by nothing; the 2026-10-18 Author page "exercised the shipped Book v1 outputter" and could not produce a successful book until PR #224 replaced it the next day) that every "already exists" below was checked with `grep`.
 - Library choices name the SPDX licence. Copyleft dependencies (AGPL, GPL, LGPL) are rejected for anything imported into the server; separate optional binaries are acceptable only when auto-detected, never required. `pymupdf` (AGPL-3.0) is a pre-existing exception recorded in `requirements.txt`.
 - Prices and limits carry the date they were fetched. They move; re-check before committing a registry entry.
 - Open questions are the user's to answer. A plan recommends and says why, but does not decide on the user's behalf where the readings differ materially (public sharing before billing, zero-knowledge mode, TTS provider for self-host).
 - When an approach in a plan is adopted, it becomes a `D-NNN` entry in [`decisions.md`](../decisions.md); the plan then links to it. Until then the plan's "Chosen approach" is a recommendation.
-- Anchors are written by hand in GitHub's form (lowercase, punctuation dropped, every space a hyphen). `backend/scripts/fix_anchor_links.py` collapses the `--` that GitHub keeps and must not be run on these files (T-4.8.5).
+- Anchors are written by hand in GitHub's form (lowercase, punctuation dropped, every space a hyphen). `backend/scripts/fix_anchor_links.py --check` (rewritten in PR #229 to match GitHub's slugger) reports broken links without rewriting anything; its rewrite mode collapsed `--` before that PR (T-4.8.5), so prefer `--check`.
 
 ## Index
 
@@ -45,4 +45,4 @@ These came up while researching the items above and affect more than one plan. T
 - **OpenAI's self-serve fine-tuning is winding down** (no new jobs after 2027-01-06; fine-tunable models retire 2027-01-14). Echo Mode B must be provider-agnostic; local LoRA on open weights is the only durable path and is documented to trade quality for style unless guarded.
 - **The scheduler is shared.** M3 builds one Celery beat tick; the newsletter (E-6.4) and Echo connector syncs (S-3.2.1) run on it. Exactly one beat process; add it to `scripts/start.ps1`.
 - **Reading view is shared.** M8's reader shell renders reports, knowledge artifacts, public shares (M11) and Author outputs (E-6.1). M12 refines it for phones.
-- **Tenant rule for every new table:** per-user attributes of shared records live in per-tenant side tables (tags, notes, shares), and every new read of `documents` goes through `visibility_service.visible_video_ids` ([D-063](../decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)).
+- **Tenant rule for every new table:** per-user attributes of shared records live in per-tenant side tables (tags, notes, shares), and every new read of `documents` goes through `visibility_service.visible_video_ids` ([D-063](../decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)). **Note (2026-10-19):** visibility is keyed on the legacy `video_id`, so non-video documents are never granted or retrieved; [D-070](../decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19) / [S-5.10.4](../initiatives.md#s-5104--key-document-visibility-on-document_id) re-keys it on `document_id` and renames the helper to `visible_document_ids`. Every plan here that says `visible_video_ids` means that helper, whichever name it carries when the plan is built.

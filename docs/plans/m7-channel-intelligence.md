@@ -8,7 +8,7 @@ The user follows channels but cannot see what a channel *says* over time: its re
 
 ## Verified current state (2026-10-18)
 
-- **There is no channel detail page.** `/library` has a Channels tab rendering `ChannelRow`; the API has `GET /channels/{id}` and `GET /channels/{id}/videos` (tenant-scoped through `subscription_service` and visibility); nothing routes to a per-channel view. M7 must create one.
+- **There is no channel detail page.** `/library` has a Channels tab rendering `ChannelRow` (and, since PR #224, an "Add sources" tab); the API has `GET /channels/{id}` and `GET /channels/{id}/videos` (tenant-scoped through `subscription_service` and visibility, the latter being re-keyed on `document_id` by S-5.10.4); nothing routes to a per-channel view. M7 must create one.
 - Knowledge artifacts: `documents.extracted_knowledge_json` (`topics`, `concepts`, `events`, `facts`) and `knowledge_report_md`, present only where the user ran extraction (on demand, quota-metered: Free 10, Pro 200, Studio 2,000 per month).
 - Stance / sentiment / framing: written to `source_metadata_json.classification` **only by social connectors** (`sources/{reddit,hn,mastodon,bluesky,podcast}` call `social_classify`); YouTube documents carry none. "Evolving stance over time" therefore has no data for the dominant source type.
 - Transcripts: `transcript_cache` holds every document's segments; Chroma holds chunk embeddings retrievable with `collection.get(where={"video_id": {"$in": [...]}}, include=["embeddings"])`.

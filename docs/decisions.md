@@ -1,6 +1,6 @@
 # Pratidhvani — Decision Log
 
-**Status:** living doc (last refreshed 2026-04-25). Owner: [`/knowledge-curator`](../.claude/skills/knowledge-curator/SKILL.md) skill.
+**Status:** living doc (last refreshed 2026-10-19). Owner: [`/knowledge-curator`](../.claude/skills/knowledge-curator/SKILL.md) skill.
 
 This is the chronological record of every product / engineering decision made on this project that is **not** trivially recoverable from `git log`. Use it to recall *why* a path was chosen and what alternatives were rejected, so future-you doesn't relitigate settled questions.
 
@@ -1891,6 +1891,8 @@ Concrete failures that decided it: sonnet named **18 distinct tools/models vs op
 
 **Linked initiatives / PRs.** E-5.10 / S-5.10.1. Supersedes the library-is-global assumption in CLAUDE.md, which is updated in the same change.
 
+**Amended 2026-10-19: the explicit model never covered non-video sources.** The first frontend caller of `upload-pdf` and `paste-urls` (PR [#224](https://github.com/khoks/VideoResearchPro/pull/224)) found that `document_visibility.video_id` is a foreign key to `documents.video_id`, the legacy YouTube-id column, which is NULL for every `source_type` other than `video`. `visibility_service.grant()` drops falsy ids, so the grants this entry says are "wired at every ingest path, including the dedup hit on PDF and paste" are silently never written for a PDF or a pasted page, and every reader filters on the same column. The migration's "0 documents left ungranted" was true only because no non-video document existed on that instance. In effect the model protected against leaks but delivered the data-loss outcome this entry set out to avoid, for exactly the ingest paths it named. A strict `xfail` pins it; the fix is [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).
+
 
 ## D-064 — Output length: corpus brackets with an optional user override (2026-07-31)
 
@@ -2047,7 +2049,82 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **Linked initiatives / PRs.** E-1.18 (R1). Follows D-031 (dominant-segment heuristic), D-051 (bot-wall), D-063 (shared cache, private catalogue).
 
-## D-068 — Two dates per source; era at ingest; time as a ranking preference; Q&A statistics from the database (2026-10-19)
+
+## D-068 — Curated source ranking v1: per-tenant trust weight re-ranks retrieval; perspective banding deferred (2026-10-18)
+
+**Status:** accepted. Taken by Claude under the user's 2026-10-18 directive to "take a wise decision around L4 and document its rationale"; the user set the goal, not the shape.
+
+**Context.** The product thesis is *curated, not balanced*, yet curation stops at approval: every approved source counts equally in retrieval. The audit of 2026-10-18 found that `channel_subscriptions.source_weight` (per-tenant since [D-065](#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)) is read by nothing, despite its docstring calling it "the trust score that re-ranks retrieval". Two shapes were on the table for [L4](feature-roadmap.md#l4--curated-source-ranking-): weighted retrieval, or perspective banding in the answer ("your trusted creators say X; others say Y").
+
+**Decision.** Ship weighted retrieval first, as a pure re-rank, and defer banding.
+
+1. **Weights are a ranking input resolved at query time, never stored on chunks and never a filter.** Chunks are shared across tenants ([D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)), so a per-tenant number cannot live in Chroma metadata. The weight is looked up per `channel_id` from the asking tenant's subscriptions and applied after retrieval.
+2. **Formula, pre-registered so the measurement cannot be tuned afterwards:** retrieve `3 × top_k` candidates, drop those failing `RAG_DISTANCE_THRESHOLD` on the *raw* distance, then sort by `distance / weight` and keep `top_k`. Weight range 0.0–2.0, default 1.0; a weight of 0 is clamped to 0.05 so the source sinks to the bottom but can still surface when nothing else matches. Weighting after the threshold means a trusted source cannot pull an off-topic chunk into the answer; it only reorders what is relevant.
+3. **Weights become settable:** `PUT /api/v1/channels/{id}/weight` through `subscription_service`, plus a control on the channel page. Sources without a channel (Reddit, HN, PDFs) stay at 1.0 until creators generalise (E-1.9 Phase 2).
+4. **Scope:** job-scoped and library Q&A. The report has no retrieval step (it maps every approved chunk), so weights do not apply there yet.
+5. **Measured before being called done:** the same question set with weights on and off, judged blind with the E-1.14 method.
+
+**Alternatives considered.**
+
+- *Perspective banding first.* Rejected for now: there are no user-set weights yet to band on, so it would be built on defaults; it reshapes `qa_agent.py`, which the R3/R4 batch is rewriting; and its value is unmeasurable until weights exist. Filed as E-7.2.
+- *Weight as a filter* (drop low-trust sources). Rejected: [D-059](#d-059--selection-quotas-preferred-channel-guarantee--concentration-cap-2026-07-30) and [D-066](#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31) established "preference, never filter"; exclusion already happens at approval.
+- *Boost before the relevance threshold.* Rejected: it would let a trusted but off-topic chunk displace a relevant one.
+- *Per-document `author_trust_weight`.* Deferred: channel-level first, per the roadmap's own recommendation.
+
+**Consequences.** E-7.1 is sequenced after the R3/R4 batch lands, because both touch `qa_agent.py`. The `channel_subscription.py` docstring becomes true rather than being rewritten. Retrieval pool size triples for weighted queries; the cost is one Chroma call either way.
+
+**Linked initiatives / PRs.** I-7 / E-7.1 / S-7.1.1. Follows D-059, D-063, D-065.
+
+
+## D-069 — Shipped-backend surfaces: ingest as a Library tab, Author Studio as one page, readiness as a gate mean (2026-10-19)
+
+**Status:** accepted. Three UX choices taken by Claude while building PR [#224](https://github.com/khoks/VideoResearchPro/pull/224) under the user's instruction to pick what matches [ui-design.md](ui-design.md) and record why; the user asked for the surfaces, not their shape.
+
+**Context.** The 2026-10-18 audit found four backend capabilities with no frontend caller: `POST /library/upload-pdf`, `POST /library/paste-urls`, and the Author Studio and Echo routers behind stub pages. Each needed a home and a shape, and the original tracking items implied shapes that no longer fit the backend as shipped.
+
+**Decision.**
+
+1. **Ingest controls live on an "Add sources" tab of `/library`, not on the Submit page and not in a modal.** Both endpoints are library-scoped by design (their docstrings say so: a PDF joins the global library and library-wide Q&A regardless of any job) and start no job, so the research-run form is the wrong home. The per-file and per-URL result tables need room and should outlive a dialog. The page already uses tabs for its sections, and [ui-design.md §2.1](ui-design.md) groups the Library sidebar as Shelves / All sources / Channels, where a third tab sits naturally.
+2. **Author Studio is a single `/author` page, not "a Pro+ button on a job page" (T-6.1.5's original wording) and not a per-kind route tree.** A book spans several runs, so a per-job button would hide the only input that matters. Kinds come from `GET /author/kinds`: only `available` kinds get a create flow; the rest render as "coming later" with no button, so a 501 is never offered. Per-kind sub-routes (`/author/books`, …) wait until the kind filter is not enough.
+3. **Echo readiness is shown as the mean of the three cold-start gates, capped at 99 % until the backend says `ready`, with each gate drawn against its own threshold.** The gates are AND-ed server-side, so no single number is exact; a mean tells the user how far along they are without claiming more than the backend does, and the per-gate meters keep it honest. The sources gate carries an explicit line that it cannot be met while the connector registry is empty.
+
+**Alternatives considered.**
+
+- *Ingest on the Submit page as new job types.* Rejected: no job is created, and the roadmap's old `url_list` / `upload` job-type idea ([api-reference.md § Forward-compat](api-reference.md#forward-compat)) was superseded when the endpoints shipped library-scoped.
+- *Ingest in a modal from a header button.* Rejected: results vanish on close, and a 100-URL batch takes minutes.
+- *Author create button on `JobDetailPage`.* Rejected as above; a job page could later offer "add this run to a book" as a shortcut into the same flow.
+- *Readiness as "N of 3 gates met".* Rejected: it reads 0 of 3 for a user with 90 facts recorded, which is discouraging and wrong in spirit.
+
+**Consequences.** `/author` and `/echo` are real pages with their own state matrices in [ui-pages.md](ui-pages.md); `/brain/*` from the forward-looking table is realised as `/echo`. The frontend gained React-free result-state modules (`utils/ingestResults.ts`, `utils/authorOutputs.ts`, `utils/echoReadiness.ts`) that are test-ready; there is still no frontend unit-test runner, which [testing.md](testing.md) lists as open work. Two backend contract gaps the UI works around are recorded in [api-reference.md](api-reference.md): the PDF serve route is header-auth only, and an Echo key containing `/` cannot be deleted.
+
+**Linked initiatives / PRs.** T-1.5.8.3, E-1.8 follow-up, T-6.1.5, I-3 status / PR #224.
+
+
+## D-070 — Document visibility keyed on `document_id`, not the legacy `video_id` (2026-10-19)
+
+**Status:** proposed. Diagnosed in PR [#224](https://github.com/khoks/VideoResearchPro/pull/224); the fix is a separate backend PR sequenced after the R3/R5 retrieval work that is editing `qa_agent.py` and the library Q&A route.
+
+**Context.** See the 2026-10-19 amendment to [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31). `document_visibility(video_id, tenant_id, source)` references `documents.video_id`, which the E-1.10 cutover ([D-017](#d-017--e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26)) made a nullable back-compat column that is NULL for every non-video source. `grant()` drops falsy ids, the listing (`library.py`), library Q&A (`library.py` → `qa_agent._query_library`) and `channels.py` all filter on that column, and `LibraryVideoResponse` still declares `id`, `video_id` and `duration_seconds` non-nullable. Uploaded PDFs, pasted pages, Reddit, HN and podcast documents are therefore invisible and unretrievable for every tenant, and have been since D-063 landed. The "twelve source types end-to-end" claim in the roadmap is true of ingest and false of retrieval for the eight non-video types.
+
+**Decision (proposed).** Key visibility on `documents.document_id` end to end:
+
+1. Migration: add `document_visibility.document_id` (FK `documents.document_id`, cascade), backfill by joining `documents` on `video_id`, move the unique constraint to `(document_id, tenant_id)`, retire the `video_id` column (SQLite batch mode).
+2. `grant()` takes document ids; its five call sites (`library.py` ×4, `job_tasks.py` ×1) pass `document_id`. `visible_video_ids()` becomes `visible_document_ids()`.
+3. Readers filter `Document.document_id`. Retrieval filters Chroma on a `document_id` metadata field; `_build_video_metadata` must write it for every source type, and the transition for legacy video chunks that carry only `video_id` is the one open design question (backfill Chroma metadata, or accept `video_id` as a fallback key for `source_type='video'` during a transition).
+4. `LibraryVideoResponse.id = document_id`, `duration_seconds` nullable, `source_type` added. The frontend already tolerates this ([D-069](#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)).
+5. The strict `xfail` in `tests/test_routers/test_library_paste_urls.py` is un-marked, an equivalent upload-PDF router test is added, and a two-tenant isolation test proves user B cannot see user A's pasted page.
+
+**Alternatives considered.**
+
+- *Backfill a synthetic `video_id` for non-video rows.* Rejected: it reverses D-017 and makes a 20-character YouTube-id column carry UUIDs.
+- *Derive visibility from `job_documents` for the gap cases.* Rejected by D-063 itself: PDFs and pasted pages have no job.
+- *Keep `video_id` grants for videos and add a parallel table for other sources.* Rejected: two code paths for one invariant is how the first gap went unnoticed.
+
+**Consequences.** One migration touching a table with live grants; the retrieval filter changes shape, so it must land after, not alongside, the in-flight `qa_agent.py` work. Once merged, the D-063 "0 documents left ungranted" guarantee is re-established for every source type and the roadmap's L1 end-to-end claim becomes true again.
+
+**Linked initiatives / PRs.** S-5.10.1 (reopened by this gap), E-1.8, S-1.5.8 / PR #224 (diagnosis). Follows D-017, D-063.
+
+## D-071 — Two dates per source; era at ingest; time as a ranking preference; Q&A statistics from the database (2026-10-19)
 
 **Status:** accepted
 

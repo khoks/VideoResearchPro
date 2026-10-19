@@ -599,13 +599,19 @@ def paste_urls(
 
     results: list[dict] = []
     for raw in urls:
-        result = _ingest_single_paste_url(raw, db)
+        result = _ingest_single_paste_url(raw, db, current_user)
         results.append(result)
     return {"results": results}
 
 
-def _ingest_single_paste_url(url: str, db: Session) -> dict:
-    """Ingest a single URL — typed result dict for the batch response."""
+def _ingest_single_paste_url(url: str, db: Session, current_user) -> dict:
+    """Ingest a single URL — typed result dict for the batch response.
+
+    ``current_user`` is threaded through because the visibility grant
+    (D-063) is per tenant — before 2026-10-19 this helper referenced
+    ``current_user`` from the caller's scope, which does not exist at
+    module level, so every non-invalid URL raised ``NameError``.
+    """
     if not isinstance(url, str) or not url.strip():
         return {"url": str(url), "status": "invalid_url"}
     url = url.strip()

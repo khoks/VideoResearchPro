@@ -16,7 +16,7 @@ Requirement R3 asked for two dates per source — when it was posted and which
 period it discusses — used in extraction, ranking, Q&A and reporting. Only the
 first existed. Requirement R4's Q&A half had shipped as agent plumbing that no
 router fed, so every job answer was classified as a small corpus. Decision
-[D-068](docs/decisions.md#d-068--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19).
+[D-071](docs/decisions.md#d-071--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19).
 
 - **Discussed era.** New `temporal_scope_extract` use case (registry entry 23,
   economy tier, reasoning off) dates the SUBJECT MATTER of each document once
@@ -46,6 +46,39 @@ router fed, so every job answer was classified as a small corpus. Decision
   counts. `describe_for_prompt` is finally wired (per map batch and corpus-
   level). `scripts/judge_report_sections.py` judges section by section;
   `scripts/regenerate_report.py` re-runs a job's report phase for measurement.
+### Frontend for four shipped-but-unreachable backend capabilities (2026-10-19)
+
+An audit on 2026-10-18 found four backend surfaces with no caller: PDF
+upload and paste-URL ingest (May 2026, PRs #142 / #144), and the Author
+Studio and Echo routers behind stub pages (PRs #172 / #173). All four are
+now usable from the React app; nothing in the agents, prompts or retrieval
+code changed.
+
+- **Library → Add sources tab.** Drop zone / picker for PDFs (sequential
+  uploads, per-file progress, Added / Already in library / Failed with the
+  server's reason) and a one-URL-per-line paste form with a per-URL result
+  table (detected type, word count, created / deduped / extraction_failed /
+  invalid_url). Pure result-state logic in `frontend/src/utils/ingestResults.ts`.
+- **Author Studio (`/author`, Pro+).** Kinds from `GET /author/kinds`; only
+  kinds with a generator get a create flow, the rest are "coming later".
+  Create-a-book picks chapters from finished runs; outputs list with filters,
+  a Markdown reader, authenticated download, delete.
+- **Echo (`/echo`, Studio).** Readiness meter against the three cold-start
+  gates with an honest line that the sources gate cannot be met until a
+  connector exists; context browser grouped by the 10 kinds with add / edit
+  (upsert) / forget; sources-on-record with revoke; empty connectors state.
+- **Fixed:** `POST /library/paste-urls` raised `NameError` on every non-blank
+  URL (`_ingest_single_paste_url` read `current_user` from a scope that did
+  not have it). Pinned by `tests/test_routers/test_library_paste_urls.py`.
+- **Found, not fixed (strict xfail pins it):** `document_visibility` is keyed
+  on the legacy `documents.video_id`, which is NULL for every non-video
+  source, so `visibility_service.grant()` never writes a grant for a PDF or a
+  pasted page and the library listing and library Q&A never show them. Needs
+  visibility keyed on `document_id` end to end; the Q&A side is owned by the
+  concurrent retrieval work, so it is a separate PR.
+- `docs/ui-pages.md` gained sections for the new tab and both pages;
+  `docs/initiatives.md` closes T-1.5.8.3, the E-1.8 upload follow-up and
+  T-6.1.5, and updates the I-3 status line.
 
 ### Fixed: in-process migrations silently disabled all application logging (2026-07-31)
 

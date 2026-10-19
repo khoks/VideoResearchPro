@@ -4,10 +4,14 @@ Endpoints under ``/api/v1/author/*``:
 
 - ``GET /author/kinds`` — list registered output kinds (those with a
   concrete outputter shipped). v1: ``["book"]``.
-- ``POST /author/outputs`` — create + immediately generate. Body
-  ``{kind, title, source_ids, parameters?}``. Returns the resulting
-  Output row. Status will be ``completed`` on success or ``failed``
-  with ``error_message`` populated on failure.
+- ``POST /author/outputs`` — create a ``pending`` row and dispatch
+  ``generate_output`` to the worker on the owner's tier queue (S-6.7.1).
+  Body ``{kind, title, source_ids, parameters?}``. Progress arrives on the
+  `/ws/jobs` socket under the output's id. ``?sync=true`` generates inline
+  and returns the finished row (the test path). A kind with no outputter
+  is 501 before any row is written.
+- ``POST /author/outputs/{id}/cancel`` — cancel a pending or generating
+  output (S-6.7.1).
 - ``GET /author/outputs`` — list current user's outputs (kind / status
   query filters).
 - ``GET /author/outputs/{id}`` — get one (404 cross-user — existence-leak posture).
@@ -32,7 +36,7 @@ from sqlalchemy.orm import Session
 from app.services import outputters  # noqa: F401
 from app.dependencies import get_db
 from app.models.user import User
-from app.services import output_service
+from app.services import output_service, task_routing_service
 from app.services.output_service import (
     OutputError,
     OutputKind,
@@ -40,6 +44,7 @@ from app.services.output_service import (
     UnsupportedKindError,
 )
 from app.services.tier_service import require_feature
+from app.tasks.output_tasks import generate_output
 
 router = APIRouter(prefix="/author", tags=["author"])
 
@@ -60,6 +65,11 @@ class OutputItem(BaseModel):
     created_at: datetime
     updated_at: datetime
     has_content: bool
+    # S-6.7.1: what the worker last reported. A row with no task id and a
+    # `pending` status predates S-6.7.1 (it was never queued).
+    progress_pct: int = 0
+    progress_message: str | None = None
+    celery_task_id: str | None = None
     # S-6.1.1: whitespace-separated words in the generated text; None
     # until there is content. The page shows it beside the chapter count.
     word_count: int | None = None
@@ -102,6 +112,9 @@ def _to_item(row) -> OutputItem:
         updated_at=row.updated_at,
         has_content=bool(row.content_text or row.content_path),
         word_count=len(row.content_text.split()) if row.content_text else None,
+        progress_pct=row.progress_pct or 0,
+        progress_message=row.progress_message,
+        celery_task_id=row.celery_task_id,
     )
 
 
@@ -127,12 +140,16 @@ def list_kinds(
 @router.post("/outputs", response_model=OutputItem)
 def create_and_generate(
     payload: CreateOutputPayload,
+    sync: bool = Query(False, description="Generate inline and return the finished row (tests, scripts)"),
     current_user: User = Depends(require_feature("author_studio")),
     db: Session = Depends(get_db),
 ) -> OutputItem:
-    """Create the row + run generation synchronously. v1's outputters
-    are deterministic and fast (no LLM); a future PR can wrap this in
-    a Celery task when generation gets expensive."""
+    """Create the row and queue its generation in the worker (S-6.7.1).
+
+    Returns the `pending` row at once; the worker publishes progress on
+    `job_progress:{output_id}`. ``sync=true`` runs generation inside the
+    request instead and returns the finished row.
+    """
     # S-6.1.1: a book is one chapter per run, so zero runs is a request
     # error, not a generation failure. Refusing here means no `failed`
     # row is left behind for the user to clean up.
@@ -140,6 +157,18 @@ def create_and_generate(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A book needs at least one run: source_ids is empty.",
+        )
+    # T-6.7.1.5: a kind with no outputter is refused before any row is
+    # written. It used to leave a `pending` row behind, which no worker
+    # would ever pick up.
+    if payload.kind in SUPPORTED_KINDS and output_service.get_outputter(payload.kind) is None:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=(
+                f"Output kind '{payload.kind}' is supported by the schema "
+                f"but no concrete outputter is registered yet. "
+                f"Available today: {output_service.list_outputters()}."
+            ),
         )
     try:
         row = output_service.create_output(
@@ -159,21 +188,40 @@ def create_and_generate(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
         )
 
-    if output_service.get_outputter(payload.kind) is None:
-        # Kind is in the enum but no outputter shipped (e.g. site /
-        # deck / newsletter / reel today). Leave the row in pending
-        # state so future PRs can pick it up; return 501 + a clear
-        # message.
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail=(
-                f"Output kind '{payload.kind}' is supported by the schema "
-                f"but no concrete outputter is registered yet. "
-                f"Available today: {output_service.list_outputters()}."
-            ),
-        )
+    if sync:
+        row = output_service.run_generation(db, current_user, row)
+        return _to_item(row)
 
-    row = output_service.run_generation(db, current_user, row)
+    try:
+        result = task_routing_service.dispatch_for_user(generate_output, current_user, row.id)
+    except Exception as e:  # noqa: BLE001 — broker down: say so on the row
+        output_service.transition_to(
+            db, row, output_service.OutputStatus.FAILED,
+            error_message=f"Could not queue generation: {e}", progress_message="Failed",
+        )
+        db.refresh(row)
+        return _to_item(row)
+    row.celery_task_id = getattr(result, "id", None)
+    row.progress_message = "Queued"
+    db.commit()
+    db.refresh(row)
+    return _to_item(row)
+
+
+@router.post("/outputs/{output_id}/cancel", response_model=OutputItem)
+def cancel_output_endpoint(
+    output_id: str,
+    current_user: User = Depends(require_feature("author_studio")),
+    db: Session = Depends(get_db),
+) -> OutputItem:
+    """Cancel a pending or generating output; mirrors `/jobs/{id}/cancel`.
+    404 for another user's output, 400 once it has finished."""
+    try:
+        row = output_service.cancel_output(db, current_user.id, output_id)
+    except OutputError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Output not found")
     return _to_item(row)
 
 

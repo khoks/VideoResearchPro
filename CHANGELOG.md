@@ -10,6 +10,29 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Author Studio generates in the worker, with live progress and cancel (2026-10-19, S-6.7.1)
+
+PR [#PR_S671](https://github.com/khoks/VideoResearchPro/pull/PR_S671). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **`POST /api/v1/author/outputs` returns `pending` at once** and queues the
+  new `author.generate_output` Celery task on the owner's tier queue;
+  `?sync=true` keeps inline generation for tests and scripts. `outputs` gains
+  `celery_task_id`, `progress_pct` and `progress_message` (migration
+  `72d7e46ef057`). A kind with no outputter is now 501 before any row is
+  written.
+- **Progress on the existing socket.** Status changes and per-chapter
+  progress publish on `job_progress:{output_id}`; the socket's ownership
+  check accepts outputs. The Author page shows a progress bar, opens the
+  book it just queued when it finishes, and the reader follows a book still
+  being written.
+- **`POST /api/v1/author/outputs/{id}/cancel`** and a `cancelled` status.
+  Cancellation is cooperative, since the solo-pool worker cannot be
+  interrupted: the next progress report stops the run, and a late cancel
+  still wins over `completed`.
+- **Fixed:** `wsClient.ts` threw `InvalidStateError: Still in CONNECTING
+  state` in dev (and as an uncaught error on the job page) when a second
+  subscribe arrived while the socket was connecting.
+
 ### Said or shown: modality provenance through the report pipeline (2026-10-19, S-1.18.8 T-1 to T-3)
 
 D-075 found that prompt rules moved visual attribution errors from one

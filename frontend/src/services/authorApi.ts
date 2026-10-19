@@ -2,7 +2,7 @@ import api from './api';
 
 // Mirrors backend/app/routers/author.py (I-6 foundation, PR #173).
 
-export type OutputStatus = 'pending' | 'generating' | 'completed' | 'failed';
+export type OutputStatus = 'pending' | 'generating' | 'completed' | 'failed' | 'cancelled';
 
 export interface OutputItem {
   id: string;
@@ -18,6 +18,11 @@ export interface OutputItem {
   has_content: boolean;
   /** Words in the generated text; null until there is content (S-6.1.1). */
   word_count?: number | null;
+  /** S-6.7.1: what the worker last reported. A `pending` row with no task id
+   * predates S-6.7.1 and was never queued. */
+  progress_pct?: number;
+  progress_message?: string | null;
+  celery_task_id?: string | null;
 }
 
 /** `available` = kinds with a concrete outputter; `supported` = every kind
@@ -58,10 +63,14 @@ export const authorApi = {
       })
       .then(r => r.data),
 
-  /** Create + generate synchronously. Returns the row in `completed` or
-   * `failed` state; a kind without an outputter returns HTTP 501. */
+  /** Create the row and queue generation in the worker (S-6.7.1). Returns
+   * the `pending` row at once; progress arrives over the job socket under
+   * the output's id. A kind without an outputter is 501 (no row written). */
   createOutput: (payload: CreateOutputPayload) =>
     api.post<OutputItem>('/author/outputs', payload).then(r => r.data),
+
+  cancelOutput: (id: string) =>
+    api.post<OutputItem>(`/author/outputs/${id}/cancel`).then(r => r.data),
 
   deleteOutput: (id: string) =>
     api.delete<{ deleted: boolean }>(`/author/outputs/${id}`).then(r => r.data),

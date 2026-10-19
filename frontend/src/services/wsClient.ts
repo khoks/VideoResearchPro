@@ -10,7 +10,19 @@ function resolveWsUrl(): string {
   return `${protocol}//${window.location.host}/ws/jobs`;
 }
 
-class WSClient {
+/**
+ * One multiplexed socket for job and Author output progress (both publish on
+ * `job_progress:{id}`; the server checks the caller owns the id).
+ *
+ * T-6.7.1.6: `connect()` used to skip only an OPEN socket, so a second
+ * subscribe while the first socket was still CONNECTING (React StrictMode
+ * mounts effects twice) opened a second socket and overwrote `this.ws`. The
+ * first socket's `onopen` then sent on the replacement, which was still
+ * connecting: `InvalidStateError: Still in CONNECTING state`. Now a
+ * connecting socket is reused, every handler talks to the socket it belongs
+ * to, and a replaced socket's close never schedules a reconnect.
+ */
+export class WSClient {
   private ws: WebSocket | null = null;
   private subscriptions = new Map<string, Set<Callback>>();
   private reconnectAttempts = 0;
@@ -18,30 +30,39 @@ class WSClient {
   private reconnectDelay = 1000;
   private pingInterval: number | null = null;
 
+  private static send(socket: WebSocket | null, data: string | object): void {
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    socket.send(typeof data === 'string' ? data : JSON.stringify(data));
+  }
+
   connect(): void {
-    if (this.ws?.readyState === WebSocket.OPEN) return;
+    const state = this.ws?.readyState;
+    if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) return;
 
     const baseUrl = resolveWsUrl();
     const token = localStorage.getItem(AUTH_TOKEN_KEY);
     const url = token
       ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
       : baseUrl;
-    this.ws = new WebSocket(url);
+    const socket = new WebSocket(url);
+    this.ws = socket;
 
-    this.ws.onopen = () => {
+    socket.onopen = () => {
+      if (this.ws !== socket) {
+        socket.close();
+        return;
+      }
       this.reconnectAttempts = 0;
       this.reconnectDelay = 1000;
       // Re-subscribe to all active subscriptions
       for (const jobId of this.subscriptions.keys()) {
-        this.ws?.send(JSON.stringify({ action: 'subscribe', job_id: jobId }));
+        WSClient.send(socket, { action: 'subscribe', job_id: jobId });
       }
-      // Start ping interval
-      this.pingInterval = window.setInterval(() => {
-        this.ws?.send('ping');
-      }, 30000);
+      if (this.pingInterval) clearInterval(this.pingInterval);
+      this.pingInterval = window.setInterval(() => WSClient.send(socket, 'ping'), 30000);
     };
 
-    this.ws.onmessage = (event) => {
+    socket.onmessage = (event) => {
       if (event.data === 'pong') return;
       try {
         const msg: WSProgressMessage = JSON.parse(event.data);
@@ -52,13 +73,16 @@ class WSClient {
       }
     };
 
-    this.ws.onclose = () => {
+    socket.onclose = () => {
+      if (this.ws !== socket) return;
       if (this.pingInterval) clearInterval(this.pingInterval);
+      this.pingInterval = null;
+      this.ws = null;
       this.handleReconnect();
     };
 
-    this.ws.onerror = () => {
-      this.ws?.close();
+    socket.onerror = () => {
+      socket.close();
     };
   }
 
@@ -79,13 +103,10 @@ class WSClient {
     }
     this.subscriptions.get(jobId)!.add(callback);
 
-    // Connect if not already
+    // Connect if not already; an open socket gets the subscribe now, a
+    // connecting one sends it from onopen.
     this.connect();
-
-    // Send subscribe message
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ action: 'subscribe', job_id: jobId }));
-    }
+    WSClient.send(this.ws, { action: 'subscribe', job_id: jobId });
 
     // Return unsubscribe function
     return () => {
@@ -93,18 +114,18 @@ class WSClient {
       callbacks?.delete(callback);
       if (callbacks?.size === 0) {
         this.subscriptions.delete(jobId);
-        if (this.ws?.readyState === WebSocket.OPEN) {
-          this.ws.send(JSON.stringify({ action: 'unsubscribe', job_id: jobId }));
-        }
+        WSClient.send(this.ws, { action: 'unsubscribe', job_id: jobId });
       }
     };
   }
 
   disconnect(): void {
     if (this.pingInterval) clearInterval(this.pingInterval);
+    this.pingInterval = null;
     this.subscriptions.clear();
-    this.ws?.close();
+    const socket = this.ws;
     this.ws = null;
+    socket?.close();
   }
 }
 

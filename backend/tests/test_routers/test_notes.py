@@ -19,7 +19,7 @@ What these assert, in the order the story lists them:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -278,7 +278,7 @@ def test_knowledge_artifact_must_exist(client, world):
 # ---------------------------------------------------------------------------
 
 
-def test_legacy_video_id_and_document_id_address_one_note_stream(client, world):
+def test_legacy_video_id_and_document_id_address_one_note_stream(client, db, world):
     mine = world["mine"]
     a = _post(client, "document", mine["document_video_id"], "written from the shelf")
     b = _post(client, "document", mine["document"], "written from the job page")
@@ -291,8 +291,16 @@ def test_legacy_video_id_and_document_id_address_one_note_stream(client, world):
     assert {n["body_md"] for n in by_video["items"]} == {
         "written from the shelf", "written from the job page",
     }
-    # Newest first.
-    assert by_doc["items"][0]["body_md"] == "written from the job page"
+
+    # Newest first. Two requests can land in the same clock tick on Windows,
+    # so pin the second note a second later rather than trust the clock.
+    row_b = db.get(Note, b.json()["id"])
+    row_b.created_at = db.get(Note, a.json()["id"]).created_at + timedelta(seconds=1)
+    db.commit()
+    by_doc = client.get(NOTES, params={"target": f"document:{mine['document']}"}).json()
+    assert [n["body_md"] for n in by_doc["items"]] == [
+        "written from the job page", "written from the shelf",
+    ]
 
 
 def test_list_by_target_rejects_bad_shapes_and_foreign_targets(client, world):

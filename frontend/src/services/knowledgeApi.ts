@@ -6,6 +6,15 @@ export interface KnowledgeArtifact {
   events: string[];
   facts: string[];
   knowledge_report_md: string;
+  knowledge_extracted_at?: string | null;
+  // S-8.8.3: the source the artifact is about (absent from older backends).
+  video_id?: string | null;
+  document_id?: string | null;
+  source_type?: string;
+  title?: string | null;
+  channel_name?: string | null;
+  url?: string | null;
+  published_at?: string | null;
 }
 
 export const knowledgeApi = {

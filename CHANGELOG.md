@@ -23,6 +23,39 @@ Sixth and last PR of the organisation lane ([S-8.6.2](docs/initiatives.md#s-862-
 - Podcast digest and mixed-source debate, proposed by the plan, wait for
   `source_types` on job creation.
 
+
+### Reading room: knowledge reports and books in the same shell (2026-10-19)
+
+S-8.8.3. Knowledge artifacts and Author Studio books now read in the same
+reading room as reports: outline, measure, drop cap, progress and print.
+
+- **`/knowledge/:videoId`** (YouTube id or `document_id`). The knowledge
+  drawer on the job page stays as the quick peek and gains "Open in reader".
+- **`/author/outputs/:outputId`** replaces the Author page's viewer modal;
+  Read and a freshly generated book both open it. The book outputter's
+  table-of-contents links, written against a different slug than the
+  headings, are repointed so every one lands.
+- **One Markdown pipeline** (`parseMarkdownDoc`): react-markdown's own steps
+  plus remark-gfm, run once so the outline exists before the body renders.
+  Raw HTML is dropped; unsafe URLs are blanked.
+- **Fix:** `GET /videos/{id}/knowledge` names its source (title, channel,
+  kind, URL, dates) and no longer fails for documents without a YouTube id.
+### Code-mixed speech: one primary language per transcript (2026-10-19, T-1.16.2.4)
+
+PR [#264](https://github.com/khoks/VideoResearchPro/pull/264). Fourth task of N-002;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- **`code_mixing_service.profile_transcript`** finds a source's primary
+  language of communication: the grammar that frames most of its speech,
+  measured over sentence-sized windows. It decides the quote script once
+  per source. `resolve_quote_mode` lets a span choose only whether it is
+  English, so a report no longer switches scripts from quote to quote:
+  25 changes across seven Devanagari Hinglish transcripts and 128 across
+  eleven romanised comment threads are now zero.
+- **Fixed:** words in Bengali, Kannada, Tamil and other non-Latin scripts
+  counted as neutral, so four transcripts in the library (two Bengali, two
+  Kannada) measured 0% non-English. Every non-Latin script now counts, and
+  the profile reports which one (`native_script`).
 ### Job templates; Duplicate keeps depth and the visual flag (2026-10-19)
 
 Fifth PR of the organisation lane ([S-8.6.1](docs/initiatives.md#s-861--templates-schema-rest-and-submit-page-integration), PR [#263](https://github.com/khoks/VideoResearchPro/pull/263)).

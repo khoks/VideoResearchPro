@@ -21,6 +21,19 @@ export function useAuthorOutputs(params?: ListOutputsParams, enabled = true) {
   });
 }
 
+/** One output's metadata, for the reader at /author/outputs/:id (S-8.8.3). */
+export function useAuthorOutput(id: string | null) {
+  return useQuery({
+    queryKey: ['author', 'output', id],
+    queryFn: () => authorApi.getOutput(id!),
+    enabled: !!id,
+    retry: (count, err: unknown) => {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      return status !== 403 && status !== 404 && count < 1;
+    },
+  });
+}
+
 export function useAuthorOutputContent(id: string | null) {
   return useQuery({
     queryKey: ['author', 'content', id],

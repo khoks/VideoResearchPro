@@ -699,7 +699,7 @@ Query param: `?force=true` to re-run if already extracted. Returns 409 if alread
 ```
 
 ### `GET /api/v1/videos/{video_id}/knowledge`
-Fetch the stored knowledge artifact. Returns 404 if not yet extracted.
+Fetch the stored knowledge artifact. Returns 404 if not yet extracted. The path segment may be the YouTube `video_id` or the `document_id`. Besides the four lists, `knowledge_report_md` and `knowledge_extracted_at`, the response names its source (S-8.8.3): `document_id`, `source_type`, `title`, `channel_name`, `url`, `published_at`. `video_id` is NULL for non-video documents; before S-8.8.3 it was declared non-nullable, so a PDF's artifact failed serialisation.
 
 ---
 

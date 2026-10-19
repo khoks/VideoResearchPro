@@ -30,6 +30,18 @@ The first new Echo table, shipped with its export and its erasure. PR [#286](htt
   `GET /api/v1/echo/brain/footprint` shows the counts.
 - **UI.** "Add to Echo" in the sidebar, an `/echo/inbox` page, and a "Your Echo
   data" card on the Echo page with export and a typed-confirmation delete.
+### Channel Intelligence tab (2026-10-19)
+
+[S-8.7.3](docs/initiatives.md#s-873--intelligence-tab-ui), PR [#285](https://github.com/khoks/VideoResearchPro/pull/285).
+
+- **Intelligence** beside **Documents** on every channel page: publishing
+  cadence, lengths, topics and concepts with their documents, the words the
+  channel keeps using, your questions that cite it, and stance where it exists.
+- **Extract knowledge for N documents** fills the knowledge gap from the page,
+  within your monthly quota, one document at a time, stoppable.
+- **Charts** follow the dataviz method (validated colours per theme, keyboard
+  readouts, a table view on every chart): `ColumnChart`, `BarList`.
+
 ### Author Studio downloads: binary artifacts on disk, one endpoint per output (2026-10-19, S-6.7.2)
 
 PR [#284](https://github.com/khoks/VideoResearchPro/pull/284). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).

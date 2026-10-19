@@ -86,10 +86,15 @@ def test_aggregate_over_my_visible_documents(client, db, test_user, other):
     assert r.status_code == 200, r.text
     data = r.json()
 
-    assert data["coverage"] == {
-        "documents": 3, "with_knowledge": 2, "without_knowledge": 1,
-        "ratio": pytest.approx(0.6667, abs=1e-4), "with_transcript": 2,
+    coverage = data["coverage"]
+    assert {k: coverage[k] for k in ("documents", "with_knowledge", "without_knowledge", "with_transcript")} == {
+        "documents": 3, "with_knowledge": 2, "without_knowledge": 1, "with_transcript": 2,
     }
+    assert coverage["ratio"] == pytest.approx(0.6667, abs=1e-4)
+    # The document without knowledge has no transcript, so nothing is extractable.
+    assert coverage["extractable"] == []
+    example = next(t for t in data["topics"] if t["label"] == "Monetary policy")["examples"][0]
+    assert example["url"].startswith("https://www.youtube.com/watch?v=intelvid00")
     # Cadence is contiguous Jan..Mar 2026 with the gap month at zero.
     assert data["cadence"] == {
         "months": [{"month": "2026-01", "count": 1}, {"month": "2026-02", "count": 0}, {"month": "2026-03", "count": 1}],
@@ -154,6 +159,16 @@ def test_cache_hits_then_recomputes_when_inputs_change(client, db, test_user, ot
     assert third["cached"] is False
     assert "Fiscal policy" in {t["label"] for t in third["topics"]}
     assert third["coverage"]["with_knowledge"] == 3
+
+
+def test_extractable_lists_documents_with_a_transcript_and_no_knowledge(client, db, test_user, other):
+    _seed(db, test_user.id, other.id)
+    ready = _doc(db, "intelvid030", "Ready to extract", published=datetime(2026, 5, 1), minutes=20,
+                 transcript=["quantitative easing explained"], granted=[test_user.id])
+    _doc(db, "intelvid031", "Their ready doc", published=datetime(2026, 5, 2), minutes=20,
+         transcript=["hidden"], granted=[other.id])
+    coverage = client.get(f"/api/v1/channels/{CH}/intelligence").json()["coverage"]
+    assert [d["id"] for d in coverage["extractable"]] == [ready.document_id]
 
     # A newly granted document does too; refresh forces it regardless.
     assert client.get(f"/api/v1/channels/{CH}/intelligence", params={"refresh": True}).json()["cached"] is False

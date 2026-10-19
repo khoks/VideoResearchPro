@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Scheduler tick — the first scheduled work in the app (2026-10-19, S-8.3.1)
 
-PR [#PR_S831](https://github.com/khoks/VideoResearchPro/pull/PR_S831). Plan:
+PR [#238](https://github.com/khoks/VideoResearchPro/pull/238). Plan:
 [docs/plans/m3-saved-searches-alerts.md](docs/plans/m3-saved-searches-alerts.md).
 Saved searches (S-8.3.2), the newsletter (E-6.4) and Echo syncs (S-3.2.1)
 will all run on this; none of them exists yet, so nothing is scheduled today.
@@ -43,6 +43,7 @@ will all run on this; none of them exists yet, so nothing is scheduled today.
   and row counts. Settings: `SCHEDULER_ENABLED`, `SCHEDULER_TICK_SECONDS`,
   `SCHEDULER_LEASE_SECONDS`, `SCHEDULER_GRACE_SECONDS`,
   `SCHEDULER_BATCH_SIZE`, `SCHEDULER_MAX_RETRY_TICKS`.
+
 ### Visual contract: speaker-attribution boundary (2026-10-19)
 
 The R1 measurement ([D-071](docs/decisions.md#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19)) found two report

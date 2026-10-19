@@ -22,6 +22,7 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/author/outputs/:outputId` | `OutputReaderPage` | protected, Pro+ | Reading room for an Author Studio output (books today) |
 | `/library` | `LibraryPage` | protected | Browse the global video library |
 | `/library/qa` | `LibraryQAPage` | protected | Ask across the entire library |
+| `/library/graph` | `GraphPage` (lazy) | protected | The library map: sources, channels, topics and your questions as a graph, or as a table |
 | `/library/channels/:channelId` | `ChannelPage` | protected | One channel: header, subscribe / sync, trust-weight slot, its documents |
 | `/shelves` | `ShelvesPage` | protected (writes Pro+) | The reader's shelves: create, edit, delete |
 | `/shelves/:shelfId` | `ShelfPage` | protected (writes Pro+) | One shelf: its runs and the union of their sources |
@@ -205,7 +206,7 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 | **Header** | Eyebrow "Channel", name, subscribers · volumes on your shelf · last synced. Actions: Subscribe / Subscribed (per tenant, [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)), Sync now (the dispatched sync job is watched until it ends, then counts and the list refresh), "YouTube →" when the channel has a public URL. |
 | **Trust weight** | Sunken card (`data-slot="trust-weight"`): a badge (`1.0 · neutral`, otherwise promoted / demoted), a 0.0–2.0 slider in steps of 0.1 that holds a draft, **Save** (`PUT /channels/{id}/weight`, disabled until the draft differs) and **Reset** to 1.0. A failed save shows an inline alert. The copy states the measured trade-off ([D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18), T-7.1.1.5): raising a weight also narrows answers toward the channel, and near 0 a channel appears only when little else matches. |
 | **Documents** | Heading with the visible count, filter card (search titles, transcript status, sort), the rows (`channelLink={false}` so they do not link back to the page), pager at 50 per page. |
-| **Documents / Intelligence tabs** | Below the trust-weight slot; the tab is in `?tab=intelligence` so it can be linked (S-8.7.3). **Documents** is the filtered list above. **Intelligence** reads `GET /channels/{id}/intelligence` over the documents of the channel the reader can see: a "Read … over N documents" line with **Refresh**; a **coverage** card (share of documents with a knowledge report, a meter, how many lack a transcript) with **Extract knowledge for N documents**; **Publishing** (monthly columns, keyboard-readable with ←/→, Show as table); **Length** (six duration buckets and the median); **Topics** and **Concepts** (ranked bars; each row opens to its example documents, linked to the source); **Words it keeps using** (a text keyword cloud, alphabetical, sized by weight); **Your questions about it** (the reader's job and library answers that cite the channel, linked); **Stance and sentiment** (stacked monthly columns with a legend where social classification exists, otherwise the reason). Each panel shows the aggregate's `notes` when it is empty or partial. |
+| **Documents / Intelligence tabs** | Below the trust-weight slot; the tab is in `?tab=intelligence` so it can be linked (S-8.7.3). **Documents** is the filtered list above. **Intelligence** reads `GET /channels/{id}/intelligence` over the documents of the channel the reader can see: a "Read … over N documents" line with **Refresh**; a **coverage** card (share of documents with a knowledge report, a meter, how many lack a transcript) with **Extract knowledge for N documents**; **Publishing** (monthly columns, keyboard-readable with ←/→, Show as table); **Length** (six duration buckets and the median); **Topics** and **Concepts** (ranked bars; each row opens to its example documents, linked to the source); **Words it keeps using** (a text keyword cloud, alphabetical, sized by weight); **Your questions about it** (the reader's job and library answers that cite the channel, linked); **Stance and sentiment** (stacked monthly columns with a legend where social classification exists, otherwise the reason); **Concept map** (S-8.9.2: **Show the concept map** loads the library map scoped to this channel, topics and questions only, in place; **Open in the library map** goes to `/library/graph?channel_id=`). Each panel shows the aggregate's `notes` when it is empty or partial. |
 | **Extract knowledge for N documents** | Plans at most the reader's remaining monthly knowledge extractions (`GET /auth/quota`), confirms ("This makes N knowledge reports, one after another, about a minute each, and uses N of your … Keep this page open"), then runs the existing `POST /videos/{id}/extract-knowledge` one document at a time with a progress bar, the current title and **Stop after this one**. Stops at the first quota refusal; skips no-transcript / already-done; summarises made / skipped / failed; refreshes the aggregate. Disabled while the knowledge LLM is down. |
 
 | State | What renders |
@@ -260,6 +261,27 @@ Layout: question textarea + clarify-first toggle + language selector at the top;
 | Asking | Streaming answer area appears; citations populate as the agent extracts references. |
 | Empty | "No echoes yet. Ask your first question to begin." |
 | LLM down | Banner + Ask disabled. |
+
+### `GraphPage` — `/library/graph`
+**Purpose.** The library map (S-8.9.2, [M9 plan](plans/m9-citation-graph.md)): the reader's sources, their channels and topics, and the questions they asked of them, from `GET /library/graph`. Loaded lazily, so sigma and the layout worker download only here and in a channel's concept map. Reached from the sidebar (**Library map**, under Library) and the channel page.
+
+| Element | Behaviour |
+|---------|-----------|
+| **Filters** | One row: **Map / Table**; **Show** ▸ Channels, # Topics, ? Your questions; **Shelf**; **Single-link nodes** (off by default on the whole-library view, with the hidden count). Scope chips below: "Centred on …" with a 1–3 step **Depth** slider, "Channel: …", "Run: …", each removable. Everything is in the URL (`focus`, `depth`, `shelf_id`, `channel_id`, `job_id`, `types` (`none` = sources only), `leaves=1`, `view`); a new centre is a Back step, filter changes replace the entry. |
+| **Summary and legend** | The server's one-paragraph summary, plus how many single-link nodes are hidden. The legend names the three largest groups (colour dot, size, main topics), then "Other groups" in grey, and the glyph key. |
+| **Map** | A 560 px canvas (360 in the concept map). Size shows connections; colour shows the group; a glyph shows the kind. Hover shows a label; click opens the card and dims everything outside the node's neighbourhood; double-click re-centres. Nine buttons top right: zoom in / out, reset, pan in four directions. The layout animates once and freezes ("Arranging the map…" meanwhile); with reduced motion it is computed before the first frame. |
+| **Keyboard** | The map is one tab stop. Arrows move to the nearest node that way (neighbours first); Enter opens the card, Escape closes it, Home returns to the most connected node (or the centre), + / − / 0 zoom, Shift + arrow pans. A ring marks the focused node and a live region reads "Topic: Housing. 5 connections. Group 2." The key help sits under the canvas. |
+| **Detail card** | Name, kind, group, connections here and in the whole library, date or source count; links: **Open the source** (new tab), **Channel page**, **Open the answer** (`/library/qa?exchange=` or `/jobs/:id?exchange=`); **Centre the map here**; "Connected to" lists up to eight neighbours as buttons. |
+| **Table** | The same nodes as the map, most connected first: name (opens the card), kind, group, links, connected to (four, then "and N more"); **Show all N connections** adds the edge table (from, relation, to). The default view under 640 px. |
+
+| State | What renders |
+|-------|--------------|
+| Loading | A card skeleton; a filter change keeps the old map until the new one arrives ("Updating…"). |
+| Empty library | "Nothing to map yet": the map draws your sources, their channels and topics, and your questions. |
+| Empty scope | "None of your sources falls in this view." |
+| All single-link | "Every node here has a single link" with **Show single-link nodes**. |
+| Unknown centre | "The node you asked for is not on your map, so the whole library is shown." |
+| Foreign shelf or run | "Not found": that shelf or run is not yours, or it no longer exists (the endpoint's 404). |
 
 ### `QAHistoryChatPage` — `/qa-history`
 **Purpose.** Meta-chat across every Q&A the user has ever run, powered by `qa_library_global`.
@@ -392,7 +414,7 @@ Where results land: a run → `/jobs/<id>`; a question → its page with `?excha
 
 While the wizard is unfinished and not skipped, a **Start here** group at the top of the sidebar holds **Getting started** (`/welcome`); it disappears on finish or skip (the palette action remains).
 
-The sidebar's **Shelves** group (after Library) lists the reader's shelves with a colour dot, the first eight then "Show all N", plus **Manage shelves** (or **Start a shelf** when there are none); it is hidden for a reader who has no shelves and no `shelves` capability. Shelf entries navigate by path because the `AppTab` union is fixed.
+The **Library** group holds All sources, Ask the library and **Library map** (`/library/graph`, S-8.9.2; it navigates by path). The sidebar's **Shelves** group (after Library) lists the reader's shelves with a colour dot, the first eight then "Show all N", plus **Manage shelves** (or **Start a shelf** when there are none); it is hidden for a reader who has no shelves and no `shelves` capability. Shelf entries navigate by path because the `AppTab` union is fixed.
 
 ### Auth context
 - `AuthContext` holds `{ token, user, isAuthenticated, login, logout }`. Token persists in `localStorage` under `pratidhvani_token` (was `vrp_token`; rename pending). Axios interceptor attaches it on every request and bounces 401 → `/login`.

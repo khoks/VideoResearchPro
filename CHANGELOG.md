@@ -10,6 +10,22 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: question suggestions endpoint (2026-10-19)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). S-8.4.1, plan [m4-question-suggestions](docs/plans/m4-question-suggestions.md).
+
+- `GET /api/v1/suggestions?context=job:<id>|document:<id>|library` returns up to
+  five next questions: generated from the context (report headings, knowledge
+  topics, source titles) and the reader's own nearest past questions,
+  de-duplicated against what was already asked and diversified.
+- New use case `qa_suggest_questions` (volume tier, reasoning off), metered
+  under the daily token keys. When it is unavailable the reader's past
+  questions still come back.
+- Cached per reader and context (`suggestion_cache`, `SUGGESTIONS_CACHE_TTL_MIN`,
+  default 60); a new question on the context recomputes it.
+- `POST /api/v1/suggestions/feedback` and the `suggestion_shown` /
+  `suggestion_clicked` audit events, so click-through is measurable from day one.
+
 ### Changed: empty states say what is true (2026-10-19)
 
 PR [#302](https://github.com/khoks/VideoResearchPro/pull/302). S-8.10.2, plan [m10-onboarding](docs/plans/m10-onboarding.md).

@@ -232,6 +232,8 @@ DELETE /api/v1/library/qa/{id}         # Delete a library Q&A exchange (optional
 GET    /api/v1/library/videos          # Browse global video library
 
 GET    /api/v1/search?q=&types=&limit= # Grouped tenant-scoped keyword search (FTS5, LIKE fallback)
+GET    /api/v1/suggestions?context=      # "You might ask…": job:<id> | document:<id> | library (S-8.4.1)
+POST   /api/v1/suggestions/feedback      # A suggestion was used (fill | ask), for click-through
 
 GET    /api/v1/channels                # List all channels
 GET    /api/v1/channels/{id}           # Single channel detail
@@ -320,6 +322,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | **Temporal awareness (R3 / E-1.17)** | | | |
 | `TEMPORAL_SCOPE_ENABLED` | No | `True` | Per-document discussed-era extraction on first ingest (`temporal_scope_extract`, one economy-tier call per NEW document). Off = every era reads as unknown, which is also how a missing value is treated |
 | `TEMPORAL_SCOPE_WINDOW_TOKENS` | No | `1500` | Size of each of the three transcript windows (opening / middle / close) sampled for the era call |
+| `SUGGESTIONS_CACHE_TTL_MIN` | No | `60` | How long a context's question suggestions (S-8.4.1) are reused before recomputing; a new exchange, report or knowledge state invalidates sooner. `0` = never reuse |
 | `REPORT_INTERMEDIATES_ENABLED` | No | `True` | Persist the report pipeline's per-batch map extractions and reduced dataset to `job_report_intermediates` (S-1.14.6), about twice the reduced dataset's size per run. Audit with `backend/scripts/audit_report_intermediates.py` |
 | **Code-mixed speech (R5 / N-002 / D-080)** | | | |
 | `CODE_MIX_DOMINANT_SHARE` | No | `0.6` | A Hindi-grammar span with at least this Hindi share is quoted in Devanagari (with transliteration + translation). The threshold is the user's; a lower one is more robust to the tagger's Devanagari blind spot (open question in D-080) |
@@ -432,7 +435,7 @@ From highest to lowest:
 
 ### Registered use cases
 
-Twenty-five named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
+Twenty-six named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
 
 ### Measured guidance (S-1.14.7)
 
@@ -473,6 +476,9 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 - `code_mixing_detect` — word-level language of 25 snippets per call: each snippet's Hindi runs verbatim plus its matrix (grammar) language. The evaluation reference, not on the ingest path: the lexicon tagger was more precise on romanised text at equal recall (D-080). Reasoning OFF, fail-soft, not a feature gate
 - `code_mixing_render_english` — English rendering of a non-English chunk, used only as what the chunk is EMBEDDED as (stored text stays the original; rendering kept as metadata `text_en`). Six chunks per call, once per document, inside `chroma_service.insert_chunks`. Retrieval MRR 0.565 → 0.805 on Devanagari chunks, 0.402 → 0.805 romanised (D-084). Reasoning OFF, fail-soft, not a feature gate
 
+**Question suggestions (`app/services/suggestion_service.py`, M4 / S-8.4.1):**
+- `qa_suggest_questions` — "You might ask…": seven next questions from a summary of a run, a source or the library plus what was already asked there; merged with the caller's nearest past questions, de-duplicated, MMR-diversified, cached per (tenant, context) in `suggestion_cache`. Volume tier, reasoning OFF (900-token cap), fail-soft (history only), not a feature gate. The first LLM spend in I-8; impressions and clicks go to `audit_log`
+
 **Report generation (`app/agents/report_agent.py`):**
 - `report_map_chunks` — map phase; per-batch fact extraction (highest-volume call in the codebase)
 - `report_reduce_summaries` — reduce phase; consolidate per-batch summaries
@@ -482,7 +488,7 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 
 ## LLM startup smoke check + fail-soft
 
-`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 25 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
+`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 26 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
 
 **Health endpoints:**
 - `GET /api/v1/health` — overall status plus an `llm` field with `status` (`ok` / `degraded` / `down` / `unknown`) and `unavailable_features` (a list of feature names whose required use cases failed probing).

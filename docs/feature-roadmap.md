@@ -308,7 +308,7 @@ Use the `qa_library_global` collection to suggest follow-up questions when the u
 
 **UI:** "You might ask..." card below the Q&A input.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.4](initiatives.md#e-84--question-suggestions-m4); plan [`plans/m4-question-suggestions.md`](plans/m4-question-suggestions.md). Nearest past questions from `qa_library_global` plus a cheap-tier generation call, cached per context; the first piece of Echo's anticipation capability.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.4](initiatives.md#e-84--question-suggestions-m4); plan [`plans/m4-question-suggestions.md`](plans/m4-question-suggestions.md). Nearest past questions from `qa_library_global` plus a cheap-tier generation call, cached per context; the first piece of Echo's anticipation capability. **🟡 2026-10-19:** the endpoint shipped (S-8.4.1, PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)): `GET /suggestions` for runs, sources and the library, `qa_suggest_questions` on the volume tier with reasoning off, a fingerprinted per-context cache, click logging. The cards (S-8.4.2) are next.
 
 ---
 

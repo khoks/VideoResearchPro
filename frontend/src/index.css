@@ -211,3 +211,235 @@ button {
     scroll-behavior: auto !important;
   }
 }
+
+/* --- Reading room (E-8.8) ----------------------------------------------
+   The report body is arbitrary sanitised HTML, so its typography has to be
+   real CSS rules rather than inline styles. Everything else in the reader
+   (header, outline, progress pill) is inline-styled from theme.ts. Values
+   mirror the tokens: Fraunces display, Source Serif body, the 4 px scale. */
+
+.reader-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  column-gap: 3rem;
+  align-items: start;
+}
+
+.reader-outline {
+  position: sticky;
+  top: 1.5rem;
+  max-height: calc(100vh - 3rem);
+  overflow-y: auto;
+}
+
+/* The outline column only earns its place when the prose still gets a real
+   measure beside it: under 1200px the 240px app sidebar plus a 240px outline
+   would squeeze the body to about 45ch, so the outline goes first. */
+@media (max-width: 1199px) {
+  .reader-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .reader-outline {
+    display: none;
+  }
+}
+
+.reader-body {
+  font-family: 'Source Serif Pro', 'Fraunces', Georgia, serif;
+  font-size: 1.125rem;
+  line-height: 1.7;
+  max-width: 75ch;
+  color: var(--color-text);
+  hanging-punctuation: first last;
+  overflow-wrap: anywhere;
+}
+
+.reader-body h2,
+.reader-body h3,
+.reader-body h4,
+.reader-body h5,
+.reader-body h6 {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--color-text);
+  text-wrap: balance;
+  scroll-margin-top: 4.5rem;
+}
+
+.reader-body h2:focus-visible,
+.reader-body h3:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.reader-body h2 {
+  font-size: 1.5rem;
+  margin: 3rem 0 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.reader-body > h2:first-child,
+.reader-body > *:first-child > h2:first-child {
+  margin-top: 0;
+}
+
+.reader-body h3 {
+  font-size: 1.25rem;
+  margin: 2rem 0 0.75rem;
+}
+
+.reader-body h4,
+.reader-body h5,
+.reader-body h6 {
+  font-size: 1.0625rem;
+  margin: 1.5rem 0 0.5rem;
+}
+
+.reader-body p {
+  margin: 0 0 1rem;
+  text-wrap: pretty;
+}
+
+.reader-body ul,
+.reader-body ol {
+  margin: 0 0 1rem 1.5rem;
+  padding: 0;
+}
+
+.reader-body li {
+  margin-bottom: 0.5rem;
+}
+
+.reader-body li > p {
+  margin-bottom: 0.5rem;
+}
+
+.reader-body blockquote {
+  margin: 0 0 1rem;
+  padding: 0.25rem 0 0.25rem 1rem;
+  border-left: 3px solid var(--color-gold);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.reader-body code {
+  font-family: 'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
+  font-size: 0.875em;
+  background: var(--color-surface-alt);
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+}
+
+.reader-body pre {
+  overflow-x: auto;
+  margin: 0 0 1rem;
+  padding: 1rem;
+  background: var(--color-surface-alt);
+  border-radius: 6px;
+  line-height: 1.5;
+}
+
+.reader-body pre code {
+  background: none;
+  padding: 0;
+}
+
+.reader-body a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-color: var(--color-border-strong);
+  text-underline-offset: 0.15em;
+}
+
+.reader-body hr {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: 2rem 0;
+}
+
+.reader-body img {
+  max-width: 100%;
+  height: auto;
+}
+
+.reader-body strong {
+  font-weight: 600;
+}
+
+/* Source lines the report writer emits under each fact. */
+.reader-body .source,
+.reader-body .meta {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+/* Tables scroll sideways in their own region (WCAG 1.4.10) instead of
+   widening the page. */
+.reader-table-scroll {
+  overflow-x: auto;
+  margin: 0 0 1.5rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.reader-table-scroll:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.reader-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.reader-body th,
+.reader-body td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.reader-body th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Drop cap on the first substantial paragraph (ui-design §2.3). The float
+   is the design everywhere; `initial-letter` takes over where it exists
+   (Chromium, Safari with the prefix) — Firefox still lacks it. */
+.reader-dropcap::first-letter {
+  float: left;
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 600;
+  font-size: 3.6em;
+  line-height: 0.8;
+  padding: 0.1em 0.12em 0 0;
+  color: var(--color-accent);
+}
+
+@supports (initial-letter: 3) or (-webkit-initial-letter: 3) {
+  .reader-dropcap::first-letter {
+    float: none;
+    font-size: inherit;
+    line-height: inherit;
+    padding: 0 0.12em 0 0;
+    -webkit-initial-letter: 3;
+    initial-letter: 3;
+  }
+}
+
+.reader-citation:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}

@@ -9,6 +9,9 @@ export interface EchoStatus {
   has_personality_trait: boolean;
   threshold_total: number;
   threshold_sources: number;
+  /** Domain 3 feeder (S-8.5.3): live notes and their words. Reported, not a gate. */
+  notes_total?: number;
+  notes_words?: number;
 }
 
 export interface PersonalContextItem {

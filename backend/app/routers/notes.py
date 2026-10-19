@@ -74,6 +74,7 @@ def _to_response(
         deleted_at=_aware(note.deleted_at),
         target_label=target.label if target else None,
         target_video_id=target.video_id if target else None,
+        target_parent_id=target.parent_id if target else None,
     )
 
 

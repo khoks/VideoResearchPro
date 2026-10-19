@@ -102,6 +102,9 @@ class NoteResponse(BaseModel):
     # shelf, the knowledge drawer) can match a note stored under the
     # canonical ``document_id``. Goes away with D-070.
     target_video_id: str | None = None
+    # ``qa_exchange`` targets only: the job that holds the exchange, so the
+    # notes page can link to the page the answer lives on.
+    target_parent_id: str | None = None
 
 
 class NoteListResponse(BaseModel):

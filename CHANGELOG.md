@@ -10,6 +10,23 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Books carry numbered endnotes (2026-10-19, S-6.1.4)
+
+PR [#PR_S614](https://github.com/khoks/VideoResearchPro/pull/PR_S614). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **Endnotes.** Every citation in a book is now its working timestamp link
+  plus a GFM footnote, `[1:15](https://…&t=75)[^7]`, numbered across chapters
+  in reading order, with `## Endnotes` listing `*Title* — Channel, 1:15. <url>`.
+  Footnote `n` is `output_citations` position `n`. Bare `&t=` anchors from
+  older reports get their resolved URL; one nothing matches keeps its label,
+  loses the dead link, and its endnote says the source was not identified.
+- **Q&A cites from stored references**, not from links in the answer prose.
+- **Table of contents** links to the ids the chapter headings actually get
+  (`#1-first-topic`, Devanagari included), in the reader, on GitHub and in
+  the coming EPUB/PDF.
+- **Fixed:** in a tight list a later item's bare anchor could borrow an
+  earlier item's title; the citation context is now the list item.
+
 ### Author Studio citations: every source an output cites, resolved like the reader (2026-10-19, S-6.7.3)
 
 PR [#293](https://github.com/khoks/VideoResearchPro/pull/293). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).

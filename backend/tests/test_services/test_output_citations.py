@@ -67,6 +67,34 @@ def test_title_found_earlier_in_the_same_list_item():
     assert extract_markdown_citations(md, [d])[0].resolved_by == "title"
 
 
+def test_tight_list_items_do_not_borrow_an_earlier_items_title():
+    """Items without blank lines share one block; each anchor reads only its
+    own item, as the reader reads only its own `<li>`."""
+    d = _doc(video_id="abcdefghijk", title="Inflation and the long run")
+    md = "- *Inflation and the long run*, [1:15](&t=75)\n- someone else, [0:09](&t=9)\n"
+    first, second = extract_markdown_citations(md, [d])
+    assert first.resolved_by == "title"
+    assert second.resolved_by is None and second.url is None
+
+
+def test_loose_item_continuation_reaches_back_to_its_own_marker_only():
+    d = _doc(video_id="abcdefghijk", title="Inflation and the long run")
+    md = (
+        "- *Inflation and the long run* first item\n\n"
+        "- **Fact:** other item\n\n"
+        "  **Source:** [0:09](&t=9)\n"
+    )
+    [c] = extract_markdown_citations(md, [d])
+    assert c.resolved_by is None, "the title belongs to the previous item, not this one"
+
+
+def test_loose_item_continuation_finds_its_own_title():
+    d = _doc(video_id="abcdefghijk", title="Inflation and the long run")
+    md = "- **Fact:** prices rose in *Inflation and the long run*.\n\n  **Source:** [0:09](&t=9)\n"
+    [c] = extract_markdown_citations(md, [d])
+    assert c.resolved_by == "title"
+
+
 def test_longest_title_wins_over_its_prefix():
     one = _doc(video_id="aaaaaaaaaaa", title="Rate cuts explained")
     two = _doc(video_id="bbbbbbbbbbb", title="Rate cuts explained part 2")
@@ -173,7 +201,12 @@ def test_every_citation_in_the_real_report_becomes_a_resolved_row(db, tmp_path, 
     assert out.status == "completed"
 
     rows = db.query(OutputCitation).filter(OutputCitation.output_id == out.id).order_by(OutputCitation.position).all()
-    assert len(rows) == 30 == out.content_text.count("](&t=")
+    assert len(rows) == 30
+    # S-6.1.4: every bare anchor became its resolved link plus endnote n.
+    assert "](&t=" not in out.content_text
+    assert out.content_text.count("](https://www.youtube.com/watch?v=") == 30  # endnotes use <autolinks>
+    for n in range(1, 31):
+        assert f"[^{n}]:" in out.content_text and f"[^{n}]" in out.content_text.split("## Endnotes")[0]
     assert [r.position for r in rows] == list(range(1, 31))
     assert all(r.resolved_by in ("title", "channel") for r in rows), {r.resolved_by for r in rows}
     for r in rows:

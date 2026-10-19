@@ -2447,7 +2447,19 @@ their scripts"). N-002's own rule for heavy interleaving is "one script
 throughout", so this is not done. Details in [the detection
 note](notes/2026-10-19-code-mixing-detection.md#8-proportion-thresholds-as-a-rendering-policy-t-11623).
 
-**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1, T-1.16.2.2, T-1.16.2.3), E-1.16, N-002.
+**Addendum (2026-10-19): one primary language per transcript,
+T-1.16.2.4.** `profile_transcript` resolves a source's primary language from
+the grammar of its sentence-sized windows, not from word counts, and applies
+the policy once. A span decides only whether it is English, and the source
+decides the script. On the library this removes 25 script changes across
+seven Devanagari Hinglish transcripts and 128 across eleven romanised comment
+threads. Measuring it exposed a silent failure: only Devanagari, Arabic and
+Gurmukhi words had counted as non-English, so two Bengali and two Kannada
+transcripts read as 0% non-English. Every non-Latin script now counts, and
+the profile records which one (`native_script`). Details in [the detection
+note](notes/2026-10-19-code-mixing-detection.md#9-transcript-level-primary-language-t-11624).
+
+**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1 to T-1.16.2.4), E-1.16, N-002.
 
 ## D-081 — Frame describer default: spend against report-level quality (2026-10-19)
 

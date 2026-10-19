@@ -314,6 +314,58 @@ at 0.80, so a lower threshold hides more of the detector's bias. The default
 stays at the user's 60%. The measurement says 50% would be more robust until
 English nouns in Devanagari become visible to the tagger.
 
+## 9. Transcript-level primary language (T-1.16.2.4)
+
+Deciding the script quote by quote makes a report flicker. One quote from a
+speaker comes out in Devanagari, and the next in Roman because its window
+carried more English nouns. `profile_transcript(segments)` instead resolves
+the transcript's **primary language of communication** once, and that fixes
+the script for every quote from the source.
+
+- **Windows.** Consecutive caption segments are merged into windows of 12–40
+  words, about a sentence. A 2–5 second caption cuts clauses in half, which
+  is useless for a grammar vote.
+- **Primary language.** This is the language whose grammar frames at least
+  half the speech, weighted by words: `matrix_hi_share` ≥ 0.5 means a
+  non-English primary. A Hindi lecture dense with English terms is
+  therefore Hindi, which a word count would get wrong.
+- **One decision per source.** `quote_mode` is the policy applied to the
+  transcript as a whole. `resolve_quote_mode(span_mode, profile)` lets a
+  span decide only whether it is English. If it keeps its wording, the
+  transcript chooses the script. A Hindi clause inside an English-primary
+  source stays in the Roman script it was written or spoken in.
+- **Script.** `native_script` records which script the non-English words are
+  in ("Devanagari", "Bengali"; "Latin" when romanised), so a native-script
+  quote from a Bengali source is shown in Bengali.
+
+**A silent failure found while measuring.** The tagger counted only
+Devanagari, Arabic and Gurmukhi words as non-English, and every other script
+fell to "neutral". The library holds two Bengali transcripts (one of them the
+auto-dubbed Hindi lecture from section 1) and two Kannada ones. All four
+measured 0% non-English and would have been quoted as plain English, which
+is exactly the failure this story exists to prevent, in a script nobody was
+watching. Any non-Latin script is now non-English. The labelled-set scores
+do not change, apart from one kaomoji now counting as non-English.
+
+**Measured on the library** (every transcript with any non-English word,
+except the five held back for T-1.16.2.6):
+
+| Source | Transcripts | Primary | Quote mode | Script changes, quote by quote | After resolution |
+|---|---|---|---|---|---|
+| Devanagari Hinglish (Hindi ASR) | 7 | hi | native script | 25 | 0 |
+| Bengali (incl. 1 auto-dub) | 2 | other | native script (Bengali) | 2 | 0 |
+| Kannada | 2 | other | native script (Kannada) | 0 | 0 |
+| Indian English podcasts, English talks | 18 | en | plain English | 0 | 0 |
+| **YouTube comment threads (romanised)** | 11 | en (all) | plain English ×9, Roman ×2 | **128** | 0 |
+
+The comment threads show the problem plainly. One commenter writes a
+Hindi-dominant line (native script by the span policy) and the next mixes
+heavily (Roman), so a quote-by-quote report would switch scripts 128 times
+across 11 threads. Resolved, every quoted Hindi line from those threads stays
+in Roman. None of the 40 sources is a borderline case today. The closest are
+the two comment threads with a third of their words in Hindi (`matrix_hi`
+0.35 and 0.45), which resolve to English-primary with Roman quotes.
+
 ## Reproduce
 
 ```bash

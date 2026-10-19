@@ -366,6 +366,74 @@ in Roman. None of the 40 sources is a borderline case today. The closest are
 the two comment threads with a third of their words in Hindi (`matrix_hi`
 0.35 and 0.45), which resolve to English-primary with Roman quotes.
 
+## 10. The bidirectional split (T-1.16.2.5)
+
+N-002's second mechanism: the analysis runs on an English rendering, and
+quotation keeps the original. The pipeline had half of this by accident and
+lost the other half.
+
+**What was missing.** Every analysis prompt already carries D-066's English
+contract, so extraction emits English. But the report's map stage emits
+**only** English: its items have no field for the speaker's words. By the
+time compose applies D-066's three-part quote rule, no original wording is
+left to quote. Q&A reads raw chunks, so its answer model sees the original,
+but nothing told it that a romanised passage was Hindi or how to show one.
+
+**Part A: quotation (PR 5a).**
+
+- *Chunk metadata.* `chunk_transcript` profiles the whole transcript once and
+  writes `code_mix_primary`, `code_mix_script`, `code_mix_share`,
+  `code_mix_matrix_share` and `code_mix_quote` onto every chunk, plus
+  `code_mix_chunk_share` and `code_mix_chunk_matrix` per chunk. English
+  sources get none of these, so their chunks are byte-identical to before.
+  Every ingest path goes through the chunker (jobs, PDFs, pasted URLs).
+  Chunks embedded earlier carry nothing and read as English.
+- *Source headers.* The report map, job Q&A context and allowed-source lines
+  (job and library) append `speech: <language>[, this passage in Hindi
+  grammar] — <quote form>` to every non-English source. `CODE_MIXING_NOTE`
+  tells the model what the note means: romanised Hindi is Hindi, and a
+  passage marked as Hindi grammar is read in Hindi even when most of its
+  words are English.
+- *Kept wording travels.* Map items may carry `original`, the speaker's exact
+  words, for quotable wording from a non-English source, while `content`
+  stays English. The lossless reduce passes it through untouched. Compose
+  attaches the source's `quote_form` from chunk metadata, deterministically,
+  and a new `CODE_MIXED_QUOTE_FORMS` fragment beside D-066's rules defines
+  the forms and requires one form per source.
+- *Knowledge extraction.* It reads one video, so it profiles that video's
+  transcript and puts a measured `SOURCE LANGUAGE` line in both of its
+  prompts.
+- *Library Q&A* gets the recognition note but not the English quote forms:
+  it answers in a requested language and has its own excerpt rule.
+
+Tests drive each production caller and assert on what reaches the model
+(`tests/test_agents/test_code_mixing_wiring.py`). Profiling adds about 0.85 s
+per 7,400-word Hindi transcript at chunk time and almost nothing for English.
+
+**Part B: retrieval runs on English (measured here, built in PR 5b).**
+"Ranking on the English rendering" is the one stage with no model in the
+loop: retrieval is raw embedding similarity. `scripts/measure_code_mixed_retrieval.py`
+holds content fixed and varies only the script. It takes 132 real chunks from
+three Hindi-ASR lectures, chunked as ingest chunks them. gpt-5.6-luna renders
+each chunk in English and in typed-Hinglish Roman script. A different model
+(gpt-5.4-mini) then writes one English question per sampled chunk from the
+Devanagari alone, so the questions share no wording with the English
+rendering. 55 questions are ranked against the whole pool with the
+production embedder:
+
+| Pool written in | recall@1 | recall@5 | recall@15 | MRR | median rank |
+|---|---|---|---|---|---|
+| Devanagari (as ingested) | 0.418 | 0.727 | 0.818 | 0.565 | 2 |
+| Romanised Hindi | 0.273 | 0.582 | 0.745 | 0.402 | 5 |
+| English rendering | **0.745** | **0.891** | **0.927** | **0.805** | 1 |
+
+The multilingual embedder handles Devanagari Hindi passably and romanised
+Hindi badly. Romanised text loses a fifth of its recall at the production
+depth (`RAG_TOP_K` = 15) relative to Devanagari, and a third of its MRR. An
+English rendering lifts both scripts above either original. With questions
+written by the rendering model itself, the ordering is the same (MRR 0.523 /
+0.372 / 0.766), so the gain is not that model echoing its own wording.
+
 ## Reproduce
 
 ```bash

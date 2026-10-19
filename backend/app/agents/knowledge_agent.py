@@ -76,6 +76,17 @@ def _truncate_to_tokens(text: str, max_tokens: int) -> str:
         return text[: max_tokens * 4]
 
 
+def _language_note(full_transcript_text: str) -> str:
+    """Measured language note for this video (fail-soft: "" on any error)."""
+    try:
+        from app.services import code_mixing_service
+
+        return code_mixing_service.describe_source_for_prompt(full_transcript_text)
+    except Exception:
+        logger.exception("Code-mixing profile failed; knowledge prompt carries no language note")
+        return ""
+
+
 def _temporal_note(published_at: str, discussed_era: str) -> str:
     """The dating context both knowledge prompts carry (R3 / T-1.17.2.4).
 
@@ -209,6 +220,9 @@ def extract_per_batch(state: KnowledgeAgentState) -> dict:
     temporal_note = _temporal_note(
         state.get("published_at") or "", state.get("discussed_era") or ""
     )
+    # N-002 / T-1.16.2.5: the video's measured language mix and quote form.
+    # Empty for English videos.
+    language_note = _language_note(state.get("full_transcript_text") or "")
 
     extractions: list[dict] = []
     for i, batch_text in enumerate(batches):
@@ -216,6 +230,7 @@ def extract_per_batch(state: KnowledgeAgentState) -> dict:
             video_title=video_title,
             channel_name=channel_name,
             temporal_note=temporal_note,
+            language_note=language_note,
             batch_text=batch_text,
             visual_annotations=VISUAL_ANNOTATION_CONTRACT,
         )
@@ -326,6 +341,7 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
         temporal_note=_temporal_note(
             state.get("published_at") or "", state.get("discussed_era") or ""
         ),
+        language_note=_language_note(full_transcript),
         merged_extraction_json=merged_json,
         full_transcript_text=transcript_excerpt,
     )

@@ -1939,7 +1939,7 @@ Linked decision: D-074.
 - [ ] T-8.9.3.1 Cluster documents by embedding centroid (k-means over stored chunk means) and colour the graph by cluster; only if S-8.9.2's topic edges prove too sparse
 - Scope-changed 2026-10-19: also carries M7's channel topic clusters (the same k-means, scoped to one channel), which S-8.7.2 did not build. The gate needs the library map tried on a real library; S-8.9.2 colours only the three largest Louvain groups (D-092), so clusters would need their own encoding, not a fourth hue
 
-### E-8.10 🟡 Onboarding wizard and empty states (M10)
+### E-8.10 🟢 Onboarding wizard and empty states (M10)
 
 **Scope.** A first-run flow: pick channels → start a first job from a starter template → watch it run → open the report in the reader; dismissible, resumable, recorded server-side so it survives devices. Plus an audit of every empty state against the editorial voice and a first-run checklist. High leverage for SaaS conversion later, useful for self-hosters now.
 **Plan:** [`docs/plans/m10-onboarding.md`](plans/m10-onboarding.md)
@@ -1958,10 +1958,13 @@ Linked decision: D-074.
 
 Scope-changed 2026-10-19: (1) step 1 takes channel links or handles instead of "existing search + subscribe": the channels list is per tenant (D-065), so a new account has nothing to pick from, and subscribe starts a full-channel ingest, the opposite of a small first run. (2) The plan's risk note said a channel job does not pause for approval; it does (`job_tasks` channel fetch ends at `awaiting_approval`), so step 3 approves inline. (3) Milestones are derived on read from `jobs` and `audit_log`, so `tasks/job_tasks.py` gained no onboarding code. (4) Plan open questions, taken at the recommended defaults: Q1 a channel job of five videos; Q2 accounts that already have runs are not sent to the wizard, while new and mid-wizard accounts are. (5) The sidebar link shows until the wizard is finished or skipped; after a skip the palette's **Getting started** action reopens it.
 
-#### S-8.10.2 🔵 Empty-state audit
-**PR:** TBD
-- [ ] T-8.10.2.1 Every page's zero-data state uses the `EmptyState` primitive with editorial copy and one action (jobs, library, channels, Q&A history, exports, author, echo, shelves, notes, saved searches)
-- [ ] T-8.10.2.2 First-run checklist card on the jobs page until three milestones are hit
+#### S-8.10.2 🟢 Empty-state audit
+**PR:** [#302](https://github.com/khoks/VideoResearchPro/pull/302)
+**Shipped:** 2026-10-19 — PR [#302](https://github.com/khoks/VideoResearchPro/pull/302)
+- [x] T-8.10.2.1 Every page's zero-data state uses the `EmptyState` primitive with editorial copy and one action (jobs, library, channels, Q&A history, exports, author, echo, shelves, notes; there is no saved-searches page). Each list now tells loading, error (with Retry), zero data and "nothing matches" (with Clear filters) apart
+- [x] T-8.10.2.2 First-run checklist card on the jobs page until three milestones are hit: a run, a report opened, a question asked (`milestones.questions`, new); hidden on request through `PATCH /auth/me/onboarding {checklist_dismissed}`, kept on the server
+
+Scope-changed 2026-10-19: the audit found three states that said something untrue, and fixed them. The jobs page showed the first-run copy when a status filter had no hits. The library's Sources tab said "Nothing matches these filters." with no filter set. Two lists had no error state. The exports page's documented row counts never existed, so ui-pages now describes the real page and a "no questions yet" note. The plan's per-page snapshot tests became behaviour tests plus a guard against generic copy.
 
 ### E-8.11 ⚪ Public report sharing (M11)
 

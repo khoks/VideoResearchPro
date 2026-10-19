@@ -16,6 +16,9 @@ class OnboardingState(BaseModel):
     started_at: str | None = None
     completed_at: str | None = None
     dismissed_at: str | None = None
+    #: S-8.10.2: the jobs page's first-run checklist was hidden.
+    checklist_dismissed: bool = False
+    checklist_dismissed_at: str | None = None
 
 
 class FirstJob(BaseModel):
@@ -29,6 +32,8 @@ class OnboardingMilestones(BaseModel):
     jobs: int
     first_job: FirstJob | None = None
     report_opened: bool = False
+    #: Questions asked on any surface (runs, the library, the history chat).
+    questions: int = 0
 
 
 class OnboardingResponse(BaseModel):
@@ -48,3 +53,5 @@ class OnboardingPatch(BaseModel):
     first_job_id: str | None = None
     completed: bool = False
     dismissed: bool = False
+    #: Hide the jobs-page checklist (S-8.10.2). Does not start the wizard.
+    checklist_dismissed: bool = False

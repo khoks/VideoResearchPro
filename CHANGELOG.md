@@ -23,6 +23,19 @@ PR [#307](https://github.com/khoks/VideoResearchPro/pull/307). Follow-up to #294
   check. On run 7: 66 of the 68 recovered, and no previously kept quote lost.
 - The map prompt says `original` is the speaker's words only; the report adds
   the transliteration and translation.
+### Changed: empty states say what is true (2026-10-19)
+
+PR [#302](https://github.com/khoks/VideoResearchPro/pull/302). S-8.10.2, plan [m10-onboarding](docs/plans/m10-onboarding.md).
+
+- Lists tell loading, a failed fetch (with **Retry**), "nothing yet" (with the
+  one action that fills it) and "nothing matches" (with **Clear filters**) apart.
+  Fixed on the way: the runs page showed the first-run copy when a status filter
+  had no hits, and the library said "Nothing matches these filters." with no
+  filter set.
+- A **Getting started** checklist on the runs page (start a run, read a report,
+  ask a question) until all three are done, hideable for good.
+- Library Q&A with an empty library says there is nothing to ask and links to
+  **Add sources**; the exports page says when the Q&A files would be empty.
 
 ### Books download as EPUB and PDF (2026-10-19, S-6.1.5)
 

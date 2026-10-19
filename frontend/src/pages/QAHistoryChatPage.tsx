@@ -13,6 +13,7 @@ import {
   EmptyState,
   Input,
   Select,
+  Skeleton,
   Spinner,
 } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
@@ -63,7 +64,7 @@ function referenceSourceLabel(ref: QAHistoryReference): string {
 
 export function QAHistoryChatPage() {
   const c = useColors();
-  const { data: history, isLoading } = useQAHistoryChatHistory();
+  const { data: history, isLoading, isError, refetch } = useQAHistoryChatHistory();
   const askChat = useAskQAHistoryChat();
   const qaHistoryAvailable = useFeatureAvailable('qa_history');
 
@@ -182,12 +183,26 @@ export function QAHistoryChatPage() {
         </div>
 
         {isLoading && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: space['6'] }}>
-            <Spinner size={28} />
+          <div aria-busy style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
+            <Skeleton variant="card" height={96} />
+            <Skeleton variant="card" height={96} />
           </div>
         )}
 
-        {!isLoading && sortedHistory.length === 0 && (
+        {isError && (
+          <EmptyState
+            size="sm"
+            title="Couldn't load your echoes."
+            description="Something blocked the request. You can still ask a new question below."
+            action={
+              <Button size="sm" variant="secondary" onClick={() => void refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        )}
+
+        {!isLoading && !isError && sortedHistory.length === 0 && (
           <EmptyState
             size="sm"
             title="No echoes yet."

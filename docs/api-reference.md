@@ -51,7 +51,8 @@ Overall app status plus a summary of LLM probe results.
   "llm": {
     "status": "ok",            // ok | degraded | down | unknown
     "unavailable_features": [] // feature names that are non-functional
-  }
+  },
+  "search_backend": "fts5"     // fts5 | like — S-8.2.1; "like" when SQLite lacks FTS5
 }
 ```
 
@@ -167,7 +168,26 @@ List the videos selected for this job. Returns `list[VideoResponse]`. Each row i
 ## Per-job Q&A and reports
 
 ### `GET /api/v1/jobs/{job_id}/report`
-Serve the generated HTML report. Content-type `text/html`. Returns 404 if no report has been generated yet (channel jobs always have a stats-only report; subscription jobs never have one). Auth: bearer header **or** `?token=` query string (iframe-friendly).
+Serve the generated HTML report. Content-type `text/html`. Returns 404 if no report has been generated yet (channel jobs always have a stats-only report; subscription jobs never have one). Auth: bearer header **or** `?token=` query string (iframe-friendly). Kept for the job page's quick-peek modal and "Open in new tab"; the reader uses the body route below. The query-token fallback is slated for removal (T-8.8.1.5) once the modal no longer needs it.
+
+### `GET /api/v1/jobs/{job_id}/report/body`
+The native reader's payload (S-8.8.1). Splits the stored report back into its parts so the frontend renders the chrome itself and only the written sections go through the sanitiser:
+
+```json
+{
+  "job_id": "…",
+  "job_type": "topic",
+  "title": "Research Report: …",
+  "html": "<section class=\"report\"><h2>Executive Summary</h2>…",
+  "statistics": {
+    "video_count": 11, "transcript_count": 11, "total_words": 55389, "total_minutes": 226,
+    "channel_breakdown": [{ "channel_name": "…", "video_count": 3, "word_count": 12000, "minutes": 61 }]
+  },
+  "generated_at": "2026-10-19 07:14 UTC"
+}
+```
+
+`html` is **not** sanitised server-side — it is the LLM-written markup with the template's header, statistics grid and stylesheet removed; the client runs it through DOMPurify before parsing. `statistics` is `null` when the grid is absent or unreadable; a report in an unrecognised shape comes back as the whole `<body>`. Auth: bearer header **only** — no `?token=` fallback, so no token ever appears in a URL. 404 when the job is not the caller's, has no report, or the file is missing.
 
 ### `POST /api/v1/jobs/{job_id}/qa/clarify`
 Pre-answer clarification step. Asks the LLM to produce an interpretation and three follow-up clarifying questions. Used by the frontend before running the full Q&A.
@@ -306,6 +326,35 @@ Serves the uploaded bytes (`application/pdf`) for the document whose `source_id`
 
 ---
 
+## Search
+
+### `GET /api/v1/search`
+Grouped, tenant-scoped keyword search across jobs, documents, channels, Q&A exchanges and knowledge reports (S-8.2.1; the command palette of S-8.2.2 calls it). Backend: `backend/app/routers/search.py`, `services/search_service.py`.
+
+Query params: `q` (1–200 chars; whitespace-separated tokens of three or more characters are AND-ed and matched as case-insensitive substrings), `types` (comma-separated subset of `jobs,documents,channels,qa,knowledge`; default all; 400 on an unknown type), `limit` (items per group, 1–25, default 5).
+
+```json
+{
+  "q": "rate cuts",
+  "backend": "fts5",
+  "groups": [
+    { "type": "jobs", "items": [
+      { "id": "<job_id>", "title": "Rate cuts research", "subtitle": "topic · completed · 2026-10-19", "href": "/jobs/<job_id>", "score": 3.5 }
+    ]},
+    { "type": "documents", "items": [
+      { "id": "<document_id>", "title": "Interest rate cuts explained", "subtitle": "Channel · 2026-09-01", "href": "/library?document=<document_id>", "score": 2.9 }
+    ]},
+    { "type": "channels", "items": [{ "id": "<channel_id>", "title": "…", "subtitle": "42 subscribers", "href": "/library/channels/<channel_id>", "score": 1.1 }] },
+    { "type": "qa", "items": [{ "id": "<exchange_id>", "title": "What are rate cuts?", "subtitle": "Library Q&A · 2026-10-01", "href": "/library/qa?exchange=<exchange_id>", "score": 2.0 }] },
+    { "type": "knowledge", "items": [{ "id": "<document_id>", "title": "…", "subtitle": "Knowledge report · Channel", "href": "/library?document=<document_id>&view=knowledge", "score": 0.8 }] }
+  ]
+}
+```
+
+Groups come back in that fixed order, only the requested ones, each possibly empty. Every group is scoped to the caller — jobs by `tenant_id`, documents and knowledge by `document_visibility` keyed on `document_id` (D-070), channels by subscription or a visible document, Q&A by `tenant_id` on each of the three exchange tables — so a tenant who has ingested nothing gets empty groups, never everything (D-063). `score` is higher-is-better (`-bm25`, title weighted over body, recency tie-break); on the `like` backend every score is `0.0` and items are ordered by recency. `backend` is the engine used for *this* query: `like` also when FTS5 is present but every token is shorter than three characters. Q&A hrefs carry `?exchange=<id>` on the originating page (`/jobs/<job_id>`, `/library/qa`, `/qa-history`); document and knowledge hrefs carry `?document=<document_id>` (and `&view=knowledge`) on `/library` — the canonical id, because most non-video documents have no `video_id`, which the palette PR teaches the library page to honour.
+
+---
+
 ## Channels
 
 All `/channels` endpoints require auth. The channel *record* is shared; subscription state (`subscribed`, `source_weight`, `last_synced_at`) is the caller's own ([D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)), and every count or listing covers only documents the caller can see ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)).
@@ -361,6 +410,7 @@ Named, per-tenant collections of jobs (E-8.1 / M1; plan: [`docs/plans/m1-shelves
   "description": null,
   "color": "green",          // one of: default gray brown orange yellow green blue purple pink red
   "job_count": 3,
+  "job_ids": ["…", "…", "…"], // most recently added first; one cached listing answers "which shelves is this run on"
   "created_at": "…",
   "updated_at": "…"
 }
@@ -377,6 +427,9 @@ Body `{ "name", "description"?, "color"? }`. Returns 201 `ShelfResponse`. Pro+.
 ### `GET /api/v1/shelves/{shelf_id}`
 `ShelfDetailResponse`: the shelf plus `jobs: JobResponse[]`, most recently added first. Any tier.
 
+### `GET /api/v1/shelves/{shelf_id}/documents`
+The union of the documents selected by the shelf's jobs, each once, filtered through the caller's visibility (D-063). Takes the library listing's `search`, `language`, `channel_id`, `transcript_status`, `sort`, `limit`, `offset` and returns the same `LibraryVideoResponse[]` rows (with `job_count` / `job_titles` across all the caller's runs). **An empty shelf returns `[]`, never the whole library.** Any tier.
+
 ### `PUT /api/v1/shelves/{shelf_id}`
 Partial update: fields left out are untouched; `"description": null` clears it; renaming onto another shelf's name is a 409. Returns `ShelfResponse`. Pro+.
 
@@ -392,7 +445,7 @@ Put a job on the shelf. Idempotent: 200 with the (unchanged) `ShelfResponse` whe
 ### `GET /api/v1/jobs/{job_id}/shelves`
 Shelves the job sits on, A→Z. Any tier; the job must be the caller's.
 
-Deleting a job removes it from every shelf (an ORM cascade on `Job`, because SQLite does not enforce `ON DELETE CASCADE` without a pragma this app never sets). Still to come: `GET /shelves/{id}/documents` (S-8.1.2) and `POST /shelves/{id}/qa` (S-8.1.4).
+Deleting a job removes it from every shelf (an ORM cascade on `Job`, because SQLite does not enforce `ON DELETE CASCADE` without a pragma this app never sets). Still to come: `POST /shelves/{id}/qa` (S-8.1.4).
 
 ---
 
@@ -477,6 +530,20 @@ Knowledge artifacts in tuple shape.
 
 System prompts are baked into `services/dataset_service.py` as module constants — see [finetune_design.md](finetune_design.md) for prompt content.
 
+### `GET /api/v1/exports/notes.jsonl`
+The caller's notes as W3C Web Annotations, one JSON-LD object per line under the `http://www.w3.org/ns/anno.jsonld` context, oldest first (S-8.5.3). Withdrawn notes are included with their `deleted` timestamp; `?include_deleted=false` leaves them out. Lossless: `services/note_export_service.py::parse_note_jsonld` is the exact inverse. `?token=` accepted like the other exports.
+
+```json
+{"@context":"http://www.w3.org/ns/anno.jsonld","id":"urn:uuid:…","type":"Annotation","motivation":"highlighting",
+ "created":"2026-10-01T09:01:00+00:00","modified":"…","generator":{"type":"Software","name":"Pratidhvani"},
+ "body":{"type":"TextualBody","value":"…markdown…","format":"text/markdown"},
+ "target":{"id":"urn:pratidhvani:document:<document_id>","type":"document","label":"…","selector":{"type":"TextQuoteSelector","exact":"…","start_seconds":83.5}},
+ "deleted":null,"pratidhvani":{"version":1,"target_type":"document","target_id":"…","target_video_id":"…"}}
+```
+
+### `GET /api/v1/exports/notes.md`
+The same notes as a Markdown document (`text/markdown`): `## <target type>` → `### <target label>` with the raw `type:id` key → `#### <date>` per note, body verbatim, every column in an HTML comment, withdrawn notes marked in the heading. Same `include_deleted` and `?token=` handling.
+
 ---
 
 ## Author Studio
@@ -512,7 +579,7 @@ The generated text as `text/markdown` for books, `text/plain` otherwise. 404 whe
 All `/echo` endpoints require `require_feature("echo_personal_brain")` (Studio only). Backend: `backend/app/routers/echo.py` (I-3, PR #172). Page: [`EchoPage`](ui-pages.md#echopage--echo-studio).
 
 ### `GET /api/v1/echo/status`
-Cold-start readiness: `{ "ready": false, "total_rows": 1, "distinct_sources": 1, "has_personality_trait": true, "threshold_total": 100, "threshold_sources": 3 }`. `ready` is the AND of the three gates.
+Cold-start readiness: `{ "ready": false, "total_rows": 1, "distinct_sources": 1, "has_personality_trait": true, "threshold_total": 100, "threshold_sources": 3, "notes_total": 4, "notes_words": 120 }`. `ready` is the AND of the three gates. `notes_total` / `notes_words` (S-8.5.3) count the caller's live notes as the Domain 3 feeder; they are reported, not gated, until S-3.5.1 sets the voice floor.
 
 ### `GET /api/v1/echo/context`
 The caller's personal-context rows. Query params: `kind`, `source`, `include_expired` (default false). Rows: `{ id, kind, key, value, source, confidence, captured_at, expires_at }`. `kind` is closed to ten values (`location`, `interest`, `hobby`, `work`, `talent`, `skill`, `personality_trait`, `life_event`, `daily_routine`, `place`); anything else is 400.
@@ -548,10 +615,11 @@ All `/notes` endpoints require auth. Backend: `backend/app/routers/notes.py`, se
   "body_md": "**Bold** claim.", "motivation": "commenting",
   "selector": {"type": "TextQuoteSelector", "exact": "…", "prefix": "…", "suffix": "…", "start_seconds": 83.5} | null,
   "created_at": "2026-10-19T11:24:45.598818Z", "updated_at": "…", "deleted_at": null,
-  "target_label": "My video about tariffs", "target_video_id": "minevid0001"
+  "target_label": "My video about tariffs", "target_video_id": "minevid0001",
+  "target_parent_id": null
 }
 ```
-`selector` follows the W3C Web Annotation `TextQuoteSelector` plus `start_seconds` so a note can anchor to a transcript moment like a Q&A citation. Timestamps are UTC with an explicit offset. `target_label` is null once the target is gone (a deleted job); the note itself survives its target.
+`selector` follows the W3C Web Annotation `TextQuoteSelector` plus `start_seconds` so a note can anchor to a transcript moment like a Q&A citation. Timestamps are UTC with an explicit offset. `target_label` is null once the target is gone (a deleted job); the note itself survives its target. `target_parent_id` is set for `qa_exchange` targets only (the job that holds the exchange).
 
 ### `GET /api/v1/notes`
 Query params: `target` (`<target_type>:<id>`, scopes to one target; 404 when that target is not visible, 422 when malformed), `target_type`, `q` (substring filter on the body), `include_deleted` (default false), `limit` (default 500, max 2000), `offset`. Newest first. Returns `{ "items": [...], "total": n, "limit": l, "offset": o }`.

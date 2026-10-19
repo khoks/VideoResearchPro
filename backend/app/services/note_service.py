@@ -28,7 +28,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.channel import Channel
@@ -80,6 +80,9 @@ class ResolvedTarget:
     target_id: str  # canonical
     label: str | None
     video_id: str | None = None
+    # qa_exchange only: the job that holds the exchange, so a list of notes
+    # can link back to the page the answer lives on.
+    parent_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -104,18 +107,9 @@ def _job_label(job: Job) -> str:
 
 def _visible_document(db: Session, tenant_id: str, raw_id: str) -> Document | None:
     """The document ``raw_id`` names, by canonical or legacy id, if this tenant
-    may see it (D-063). One query; the visibility subquery is keyed on
-    ``document_id`` (D-070), so a note can target a PDF or a pasted page."""
-    return (
-        db.query(Document)
-        .filter(
-            or_(Document.document_id == raw_id, Document.video_id == raw_id),
-            Document.document_id.in_(
-                visibility_service.visible_document_ids(db, tenant_id)
-            ),
-        )
-        .first()
-    )
+    may see it (D-063). Keyed on ``document_id`` (D-070), so a note can target
+    a PDF or a pasted page; shared with the knowledge router."""
+    return visibility_service.visible_document(db, tenant_id, raw_id)
 
 
 def resolve_target(
@@ -164,7 +158,9 @@ def resolve_target(
         )
         if row is None:
             raise NoteTargetNotFound(f"qa_exchange {target_id} not owned")
-        return ResolvedTarget(target_type, row.id, _truncate(row.question))
+        return ResolvedTarget(
+            target_type, row.id, _truncate(row.question), parent_id=row.job_id
+        )
 
     if target_type == "library_qa_exchange":
         row = (
@@ -369,6 +365,33 @@ def iter_notes(
 
 
 # ---------------------------------------------------------------------------
+# Echo feeder (Domain 3): how much the user has written, in their own words
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class VoiceStats:
+    notes_total: int
+    words_total: int
+
+
+def voice_stats(db: Session, tenant_id: str) -> VoiceStats:
+    """Live notes and their word count for ``tenant_id``. Reported on
+    ``GET /echo/status`` as the Domain 3 feeder (S-8.5.3 / S-3.5.1); it does
+    not gate readiness until S-3.5.1 sets the per-language floor."""
+    bodies = [
+        row[0]
+        for row in db.query(Note.body_md).filter(
+            Note.tenant_id == tenant_id, Note.deleted_at.is_(None)
+        )
+    ]
+    return VoiceStats(
+        notes_total=len(bodies),
+        words_total=sum(len(b.split()) for b in bodies),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Target summaries (label + legacy id), batched per type
 # ---------------------------------------------------------------------------
 
@@ -401,8 +424,13 @@ def describe_targets(
         for j in db.query(Job).filter(Job.id.in_(ids)):
             out[("job", j.id)] = ResolvedTarget("job", j.id, _truncate(_job_label(j)))
 
+    if ids := by_type.get("qa_exchange"):
+        for row in db.query(QAExchange).filter(QAExchange.id.in_(ids)):
+            out[("qa_exchange", row.id)] = ResolvedTarget(
+                "qa_exchange", row.id, _truncate(row.question), parent_id=row.job_id
+            )
+
     for t, model in (
-        ("qa_exchange", QAExchange),
         ("library_qa_exchange", LibraryQAExchange),
         ("qa_history_exchange", QAHistoryExchange),
     ):

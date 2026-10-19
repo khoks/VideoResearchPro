@@ -3,11 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useJobs, useCancelJob, useDeleteJob } from '../hooks/useJobs';
 import { useAllJobsProgress } from '../hooks/useJobProgress';
 import { ProgressBar } from '../components/common/ProgressBar';
+import { JobShelfChips, ShelfPicker } from '../components/shelves';
 import { Button, Card, EmptyState, Input, Select, Spinner, StatusPill } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
 import { formatDate, statusTone } from '../utils/formatters';
-import type { Job, JobStatus } from '../types/job';
+import type { JobStatus } from '../types/job';
+import { jobDisplayTitle, jobTypeLabel } from '../utils/jobTitle';
 
 const PAGE_SIZE = 20;
 
@@ -26,22 +28,7 @@ const STATUS_OPTIONS: { value: '' | JobStatus; label: string }[] = [
 
 type SortOrder = 'newest' | 'oldest';
 
-function jobTitle(job: Job): string {
-  if (job.job_type === 'topic') return job.topic ?? 'Untitled topic';
-  const channels = job.channel_list;
-  if (job.job_type === 'subscription') {
-    const list = channels && channels.length > 0 ? channels.join(', ') : '';
-    return `Subscription: ${list}`;
-  }
-  if (channels && channels.length > 0) return channels.join(', ');
-  return 'Channel Collection';
-}
-
-function jobTypeLabel(type: Job['job_type']): string {
-  if (type === 'topic') return 'Topic';
-  if (type === 'channel') return 'Channel';
-  return 'Subscription';
-}
+const jobTitle = jobDisplayTitle;
 
 export function JobsListPage() {
   const navigate = useNavigate();
@@ -221,9 +208,11 @@ export function JobsListPage() {
                   </span>
                 </div>
                 <div
-                  style={{ display: 'flex', gap: space['2'] }}
+                  style={{ display: 'flex', gap: space['2'], alignItems: 'center' }}
                   onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
                 >
+                  <ShelfPicker jobId={job.id} />
                   <Button
                     size="sm"
                     variant="tertiary"
@@ -251,6 +240,7 @@ export function JobsListPage() {
                   )}
                 </div>
               </div>
+              <JobShelfChips jobId={job.id} style={{ marginBottom: space['2'] }} />
               <ProgressBar value={job.progress_pct} tone={statusTone(job.status)} />
               <div
                 style={{

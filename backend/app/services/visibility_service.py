@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.document_visibility import DocumentVisibility
@@ -95,4 +96,27 @@ def visible_document_ids(db: Session, tenant_id: str):
     """
     return db.query(DocumentVisibility.document_id).filter(
         DocumentVisibility.tenant_id == tenant_id
+    )
+
+
+def visible_document(db: Session, tenant_id: str, raw_id: str):
+    """The document ``raw_id`` names, if ``tenant_id`` may see it; else None.
+
+    ``raw_id`` may be the primary key (``document_id``) or the legacy YouTube
+    id (``video_id``) — URL paths written before E-1.10 still carry the
+    latter. Callers turn ``None`` into a 404 so a document that exists but
+    belongs to someone else is indistinguishable from one that does not
+    exist (the T-5.10.1.4 rule). One query.
+    """
+    from app.models.document import Document
+
+    if not raw_id or not tenant_id:
+        return None
+    return (
+        db.query(Document)
+        .filter(
+            or_(Document.document_id == raw_id, Document.video_id == raw_id),
+            Document.document_id.in_(visible_document_ids(db, tenant_id)),
+        )
+        .first()
     )

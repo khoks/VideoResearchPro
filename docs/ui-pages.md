@@ -16,11 +16,15 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/submit` | `SubmitJobPage` | protected | Start a new research run |
 | `/jobs` | `JobsListPage` | protected | All jobs the user owns |
 | `/jobs/:jobId` | `JobDetailPage` | protected | Single job: status, approval, report, Q&A |
+| `/reports/:jobId` | `ReportReaderPage` | protected | Reading room: the run's report rendered natively with outline, drop cap, citations and progress |
 | `/library` | `LibraryPage` | protected | Browse the global video library |
 | `/library/qa` | `LibraryQAPage` | protected | Ask across the entire library |
 | `/library/channels/:channelId` | `ChannelPage` | protected | One channel: header, subscribe / sync, trust-weight slot, its documents |
+| `/shelves` | `ShelvesPage` | protected (writes Pro+) | The reader's shelves: create, edit, delete |
+| `/shelves/:shelfId` | `ShelfPage` | protected (writes Pro+) | One shelf: its runs and the union of their sources |
 | `/qa-history` | `QAHistoryChatPage` | protected | Meta-chat across all past Q&A |
 | `/exports` | `ExportsPage` | protected | Dataset export endpoints + downloads |
+| `/notes` | `NotesPage` | protected | Every note the user wrote, grouped by target, searchable, exportable |
 | `/author` | `AuthorPage` | protected, Pro+ | Author Studio: bind finished runs into a book; other kinds shown as coming later |
 | `/echo` | `EchoPage` | protected, Studio | Echo: personal-context store, readiness meter, sources and connectors |
 | `/account/subscription` | `SubscriptionPage` | protected | Tier, upgrade / downgrade (demo billing) |
@@ -79,6 +83,8 @@ The protected routes share `<AppLayout>` (top-tabs nav today, sidebar after the 
 
 Columns: title, type icon, status pill, video count, created_at, last activity. Row hover reveals "Open" / "Cancel" / "Delete".
 
+**Shelves** (S-8.1.2): each card carries an **Add to shelf** button ("On N shelves" once shelved) that opens a popover of checkboxes, one per shelf, saved on toggle, with an inline "New shelf…" field that creates and adds in one step; the shelves a run is on show as colour chips under the title, each linking to its shelf. Membership comes from the one cached `GET /shelves` (each shelf carries `job_ids`), so a page of cards costs one request. Readers without the `shelves` capability see the chips but no picker unless the run is already shelved.
+
 | State | What renders |
 |-------|--------------|
 | Default | Sortable table; default sort by `last activity` desc. |
@@ -94,12 +100,12 @@ Sections (rendered conditionally on `job.status` and `job.job_type`):
 
 | Section | When shown | Notes |
 |---------|------------|-------|
-| **Header** | always | Title, type, status pill, created_at, "Cancel" / "Delete" overflow menu. |
+| **Header** | always | Title, type, status pill, created_at, "Cancel" / "Delete" overflow menu. Shelf chips under the meta line and the **Add to shelf** picker beside the status pill (S-8.1.2). |
 | **Progress** | status ∈ {searching, extracting, building_rag, generating_report} | Phase, progress bar (`completed / total`), message line, last-event timestamp. Driven by `useJobProgress`. |
 | **Search results / Approval** | status == `awaiting_approval` (topic only) | Table of candidate videos with checkboxes, "Approve selected" button. Auto-populates when WS reports the status change. |
 | **Your notes on this run** | always, once the job loads | Section-variant notes panel (M5 / S-8.5.1): the user's own Markdown on the run, newest first, with add / edit / delete. |
 | **Approved videos** | status ∈ {extracting, building_rag, ...completed} | Read-only list of approved videos with per-video transcript status. Each row has a "Knowledge" button that opens the `VideoKnowledgeDrawer`, and an inline notes control: a note on a document shows on every surface that shows the document (the shelf, every job containing it). |
-| **Report** | `job.report_path` is set | "Open report" button → opens the HTML in an iframe modal. |
+| **Report** | `job.report_path` is set | "Read report" (primary) → navigates to the reading room at `/reports/:jobId`; "Quick peek" (secondary) → the legacy HTML in an iframe modal, which also owns "Open in new tab". |
 | **Q&A panel** | status == `completed` | Question textarea, "Clarify first" optional toggle, language selector, "Ask" button. Below: list of past exchanges with citations rendered as chips that deep-link to `&t=` timestamps. Each exchange card carries the inline notes control (target `qa_exchange`). |
 | **Knowledge drawer** | user clicks the Knowledge button on a video row | Slides in from the right; shows the structured `{topics, concepts, events, facts}` + Markdown report; "Generate" button if not yet extracted. |
 
@@ -111,6 +117,30 @@ Sections (rendered conditionally on `job.status` and `job.job_type`):
 | LLM down for `knowledge_synthesize_report` | Knowledge drawer's "Generate" button disabled with a tooltip. |
 | Job failed | Status pill in error color; banner with the failure message; offer to "Retry from extraction" if applicable. |
 | Job cancelled | Status pill in muted color; the prior progress is shown frozen. |
+
+### `ReportReaderPage` — `/reports/:jobId`
+**Purpose.** The reading room (E-8.8, [plan](plans/m8-reading-room.md)). Replaces reading a report inside an iframe: the page fetches `GET /jobs/{id}/report/body` with the bearer header (no `?token=` in any URL), sanitises the HTML with DOMPurify, parses it into React with `html-react-parser`, and renders it through `ReaderShell` — the shell that knowledge artifacts and books will share (S-8.8.3).
+
+What the reader does to the report's own markup:
+
+| Element | Treatment |
+|---------|-----------|
+| `h2` / `h3` | Stable ids (unicode-aware slugs, deduped), collected into the sticky outline; `tabIndex=-1` so outline jumps move focus. A body `h1` is demoted to `h2` or dropped when it repeats the title. |
+| `<a href="…&t=SECONDS">` | Citation chip (mono, pill) opening the source at the timestamp. Pre-S-1.14.9 reports carry bare `href="&t=123"` anchors with no video URL; those render as a non-link timestamp chip rather than a dead link. An anchor the browser repaired out of a truncated tag is never linked. |
+| `<table>` | Wrapped in a horizontal scroll region (WCAG 1.4.10). |
+| First substantial paragraph | Drop cap: `::first-letter` float everywhere, `initial-letter` where supported. |
+| `<style>`, `<script>`, event handlers, `style=` attributes, embeds, forms, SVG, MathML | Removed by the sanitiser. |
+
+Layout: 75ch serif measure, `text-wrap: pretty` on prose and `balance` on headings, statistics tiles under the title, a sticky `<nav aria-label="Outline">` on the right with `aria-current` tracking scroll (one IntersectionObserver), and a floating "Reading · n%" pill (decorative; the figure is repeated in the outline). The outline hides under 960px (the M12 pass refines the rest).
+
+| State | What renders |
+|-------|--------------|
+| Loading | Spinner with "Opening the report…". |
+| 404 (no report for this run) | `EmptyState` "No report for this run yet" + back link. |
+| Other error | `EmptyState` with the API's `detail` + back link. |
+| Report with no headings (e.g. "No transcript data available") | Body only; the outline nav is omitted. |
+
+Not yet (later stories): hover/focus citation cards and the print stylesheet (S-8.8.2); knowledge artifacts and Author outputs in the same shell (S-8.8.3); the mobile pass (S-8.12.1).
 
 ### `LibraryPage` — `/library`
 **Purpose.** Browse the caller's view of the global, deduplicated library and add sources that do not come through a research run. Three tabs: **Sources**, **Channels**, **Add sources**.
@@ -156,6 +186,28 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 | Empty (filters) | "Nothing matches these filters." with "Clear filters". |
 | Syncing | Sync button reads "Syncing…" with a spinner until the job completes, fails or is cancelled. |
 
+### `ShelvesPage` — `/shelves`
+**Purpose.** Every shelf the reader owns (S-8.1.2, [M1](plans/m1-shelves.md)): name with its colour dot, description, run count, last update. Pro and Studio readers get **New shelf**, **Edit** (name, description, one of ten palette colours) and **Delete** (a confirmation that says the runs stay). A reader whose plan no longer includes shelves keeps the list read-only with an upgrade line; a Free reader with none sees "Shelves come with Pro."
+
+| State | What renders |
+|-------|--------------|
+| Loading | Two row skeletons. |
+| Empty (Pro+) | "No shelves yet." with **New shelf**. |
+| Empty (Free) | "Shelves come with Pro." with **See plans**. |
+| Error | Editorial error card with Retry. |
+| Name collision | The form shows the server's 409 text inline ("You already have a shelf named …"). |
+
+### `ShelfPage` — `/shelves/:shelfId`
+**Purpose.** One shelf as a filtered view of the library. Header: eyebrow with the colour dot, name, description, "N runs · updated …" (plus "read-only on your plan" when the tier lacks shelves), Edit / Delete for Pro+. **Runs**: one row per run (title link, status pill, type, sources · created), **Remove** for Pro+. **Sources**: the union of the runs' documents, each once, through `GET /shelves/{id}/documents` (visibility-scoped, D-063), with the library's search / transcript / sort filters and paging (`DocumentsBrowser`, shared with the channel page). The shelf-scoped question box arrives with S-8.1.4.
+
+| State | What renders |
+|-------|--------------|
+| Loading | Header skeleton. |
+| 404 (foreign or deleted) | "This shelf isn't here." with **All shelves**. |
+| No runs | "No runs on this shelf yet." with **Go to active runs**. |
+| No sources | "No sources on this shelf yet." |
+| Deleted from here | Navigates to `/shelves`. |
+
 ### `LibraryQAPage` — `/library/qa`
 **Purpose.** Ask questions across the entire library, with no per-job filter.
 
@@ -182,8 +234,21 @@ Layout: chat-like — past meta-questions and meta-answers. Each meta-answer cit
 | Asking | Inline "thinking" indicator with skeleton paragraphs. |
 | LLM down for `qa_history_formulate_answer` | Banner + Ask disabled. |
 
+### `NotesPage` — `/notes`
+**Purpose.** "Your notes": everything the user has written on sources, runs, answers and channels (M5 / S-8.5.3). Sidebar entry under **Knowledge**.
+
+Layout: header with **Export Markdown** / **Export JSON-LD**; a controls card (search box, debounced, server-side substring filter; type chips with counts, one at a time or All; a **Show withdrawn** toggle); then one section per target type in a fixed order (Sources, Knowledge reports, Research runs, Q&A answers, Library Q&A answers, Q&A history answers, Channels), notes newest first within each. Each note is a `NoteCard` with an "on <type>: <target>" line linking to the page the target lives on (run, channel page, library Q&A, history anchor; sources link to the shelf because they have no page of their own yet). Edit and delete inline; withdrawn notes render read-only with their withdrawal date.
+
+| State | What renders |
+|-------|--------------|
+| Default | Grouped sections. The page fetches the newest 2000 (the server's page cap) and groups client-side so the chips carry counts. |
+| More than 2000 | A line under the controls: "Showing the newest N of M. Narrow with a search to reach the rest; the export carries everything." |
+| Empty (nothing written) | "Nothing written yet." with where notes come from. Export buttons disabled. |
+| Empty (search) | "Nothing matches “…”." with a Clear search action. |
+| Loading / error | Spinner; inline error with Retry. |
+
 ### `ExportsPage` — `/exports`
-**Purpose.** Download dataset exports for fine-tuning. Four endpoints: Q&A in OpenAI chat format, Q&A in tuple format, Knowledge in OpenAI chat format, Knowledge in tuple format.
+**Purpose.** Download dataset exports for fine-tuning, plus the user's own notes. Four dataset endpoints: Q&A in OpenAI chat format, Q&A in tuple format, Knowledge in OpenAI chat format, Knowledge in tuple format; and two notes exports, Markdown and JSON-LD (S-8.5.3).
 
 Layout: card grid, one card per dataset. Each card shows: dataset name, current row count, last-modified hint, "Download" button (initiates a streaming download), "Copy URL" button.
 
@@ -216,7 +281,7 @@ Sections: **Readiness**, **Connectors** (with **Sources on record**), **What Ech
 | State | What renders |
 |-------|--------------|
 | Below tier, or API 403 | Editorial lock: "Echo opens at Studio." → `/account/subscription?upgrade=studio`. |
-| Readiness | Large percentage (mean of the three gates; 100 only when the backend says `ready`), then one meter per gate: facts recorded vs `threshold_total`, distinct sources vs `threshold_sources`, personality trait recorded / missing. The sources hint states plainly that the gate cannot be met while no connector exists. |
+| Readiness | Large percentage (mean of the three gates; 100 only when the backend says `ready`), then one meter per gate: facts recorded vs `threshold_total`, distinct sources vs `threshold_sources`, personality trait recorded / missing. The sources hint states plainly that the gate cannot be met while no connector exists. Below the meters, "Your voice so far: N notes · W words" from `notes_total` / `notes_words` (S-8.5.3), stated as a feeder, not a gate. |
 | Connectors empty | "No connectors yet." with the planned list. Sources on record lists each `source` with its row count and a **Revoke** button (confirm → `DELETE /echo/sources/{source}`; the toast reports `deleted_count`). |
 | Context browser | Filters: kind, source, "Show expired" (`include_expired`). Every known kind renders as a card, empty or not, each with an **Add** shortcut preselecting that kind; rows show label, value, source pill, confidence, captured date, expiry (an **Expired** pill when past). **Edit** reopens the form with kind and label locked (the backend upserts on `(kind, key)`; renaming means forget + add). **Forget** confirms, then `DELETE /echo/context/{kind}/{key}`. |
 | Add / edit modal | Kind, label (≤128 chars, no `/` because the key travels as a path segment; warns when the label already exists under that kind and would overwrite), the fact, confidence 0–1, optional expiry date (sent as end-of-day UTC). Source is always `manual`. |
@@ -245,6 +310,8 @@ Tabs: **Structured** (topics / concepts / events / facts) and **Report** (Markdo
 - Today: top horizontal tab bar with the protected pages.
 - Post-redesign (per [branding.md](branding.md) §sidebar-mockup): slim left sidebar grouped by purpose (Library / Research / Knowledge / Author/future / Settings).
 - Persistent global elements: top-right user avatar + sign-out, top-right LLM-status dot (green/yellow/red), `ToastContainer`.
+
+The sidebar's **Shelves** group (after Library) lists the reader's shelves with a colour dot, the first eight then "Show all N", plus **Manage shelves** (or **Start a shelf** when there are none); it is hidden for a reader who has no shelves and no `shelves` capability. Shelf entries navigate by path because the `AppTab` union is fixed.
 
 ### Auth context
 - `AuthContext` holds `{ token, user, isAuthenticated, login, logout }`. Token persists in `localStorage` under `pratidhvani_token` (was `vrp_token`; rename pending). Axios interceptor attaches it on every request and bounces 401 → `/login`.
@@ -285,8 +352,8 @@ These pages are defined ahead of time so today's components have a place to land
 
 | Path (proposed) | Status | Owner doc |
 |-----------------|--------|-----------|
-| `/shelves` | M1 | [feature-roadmap.md](feature-roadmap.md) |
-| `/shelves/:slug` | M1 | [feature-roadmap.md](feature-roadmap.md) |
+| `/shelves` | **built** (2026-10-19), see [`ShelvesPage`](#shelvespage--shelves) | [plans/m1-shelves.md](plans/m1-shelves.md) |
+| `/shelves/:slug` | **built** (2026-10-19) as `/shelves/:shelfId` (ids, not slugs: names are renameable), see [`ShelfPage`](#shelfpage--shelvesshelfid) | [plans/m1-shelves.md](plans/m1-shelves.md) |
 | `/notes` | M5 | [feature-roadmap.md](feature-roadmap.md) |
 | `/author` | **built** (2026-10-19) as a single page, see [`AuthorPage`](#authorpage--author-pro) | [feature-roadmap.md](feature-roadmap.md) |
 | `/author/books` / `/author/sites` / `/author/decks` | L2; per-kind sub-routes only if the single page outgrows its kind filter | [feature-roadmap.md](feature-roadmap.md) |

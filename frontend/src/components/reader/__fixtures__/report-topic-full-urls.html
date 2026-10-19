@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Research Report: matplotlib and seaborn data visualization tutorials</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+         line-height: 1.6; color: #1a1a2e; background: #f8f9fa; }
+  .report { max-width: 960px; margin: 0 auto; padding: 2rem; }
+  .report-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                   color: white; padding: 2rem; border-radius: 12px; margin-bottom: 2rem; }
+  .report-header h1 { font-size: 1.8rem; margin-bottom: 0.5rem; }
+  .report-header .meta { opacity: 0.9; font-size: 0.9rem; }
+  .section { background: white; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;
+             box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .section h2 { color: #667eea; font-size: 1.3rem; margin-bottom: 1rem;
+                border-bottom: 2px solid #667eea; padding-bottom: 0.5rem; }
+  .section h3 { color: #333; font-size: 1.1rem; margin: 1rem 0 0.5rem; }
+  .section ul { padding-left: 1.5rem; }
+  .section li { margin-bottom: 0.5rem; }
+  .source { font-size: 0.85rem; color: #666; }
+  .source a { color: #667eea; text-decoration: none; }
+  .source a:hover { text-decoration: underline; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+  .stat-card { background: #f0f2ff; padding: 1rem; border-radius: 8px; text-align: center; }
+  .stat-card .value { font-size: 1.8rem; font-weight: bold; color: #667eea; }
+  .stat-card .label { font-size: 0.85rem; color: #666; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #eee; }
+  th { background: #f0f2ff; color: #333; font-weight: 600; }
+  tr:hover { background: #f8f9ff; }
+</style>
+</head>
+<body>
+<div class="report">
+  <div class="report-header">
+    <h1>Research Report: matplotlib and seaborn data visualization tutorials</h1>
+    <div class="meta">
+      Generated on 2026-10-19 07:14 UTC | Topic Research Report
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Statistics</h2>
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="value">11</div>
+        <div class="label">Videos Analyzed</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">11</div>
+        <div class="label">Transcripts Fetched</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">55,389</div>
+        <div class="label">Total Words</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">226</div>
+        <div class="label">Total Minutes</div>
+      </div>
+    </div>
+    
+    <h3>Per-Channel Breakdown</h3>
+    <table>
+      <thead><tr><th>Channel</th><th>Videos</th><th>Words</th><th>Minutes</th></tr></thead>
+      <tbody>
+        
+        <tr>
+          <td>Data Analytics Lab</td>
+          <td>2</td>
+          <td>12,174</td>
+          <td>47</td>
+        </tr>
+        
+        <tr>
+          <td>Gate Smashers</td>
+          <td>1</td>
+          <td>2,374</td>
+          <td>9</td>
+        </tr>
+        
+        <tr>
+          <td>Simplilearn</td>
+          <td>1</td>
+          <td>6,174</td>
+          <td>22</td>
+        </tr>
+        
+        <tr>
+          <td>Pivotalstats</td>
+          <td>1</td>
+          <td>3,528</td>
+          <td>14</td>
+        </tr>
+        
+        <tr>
+          <td>NeuralNine</td>
+          <td>1</td>
+          <td>5,756</td>
+          <td>23</td>
+        </tr>
+        
+        <tr>
+          <td>DeepLoop Circle</td>
+          <td>1</td>
+          <td>6,540</td>
+          <td>29</td>
+        </tr>
+        
+        <tr>
+          <td>Absent Data</td>
+          <td>1</td>
+          <td>3,776</td>
+          <td>16</td>
+        </tr>
+        
+        <tr>
+          <td>Onur Baltaci</td>
+          <td>1</td>
+          <td>2,730</td>
+          <td>12</td>
+        </tr>
+        
+        <tr>
+          <td>CodeWithMunnaX</td>
+          <td>1</td>
+          <td>5,494</td>
+          <td>28</td>
+        </tr>
+        
+        <tr>
+          <td>Academind</td>
+          <td>1</td>
+          <td>6,843</td>
+          <td>27</td>
+        </tr>
+        
+      </tbody>
+    </table>
+    
+  </div>
+
+  <h2>Executive Summary</h2>
+
+<p>This report synthesises 11 videos (11 transcripts, 55,389 words, 226 minutes of runtime) drawn from 10 channels: Data Analytics Lab (2 videos, 12,174 words, 47 minutes), Academind (6,843 words, 27 minutes), DeepLoop Circle (6,540 words, 29 minutes), Simplilearn (6,174 words, 22 minutes), NeuralNine (5,756 words, 23 minutes), CodeWithMunnaX (5,494 words, 28 minutes), Absent Data (3,776 words, 16 minutes), Pivotalstats (3,528 words, 14 minutes), Onur Baltaci (2,730 words, 12 minutes) and Gate Smashers (2,374 words, 9 minutes). All 11 videos carry publication dates, spanning 2018-11-22 to 2026-09-28, with a median publication date of 2025-04-13; by year the distribution is 3 videos in 2026, 3 in 2025, 2 in 2023, 2 in 2022 and 1 in 2018. The body sections record 160 key facts, 41 analytical observations, 24 conclusions, 23 historical or external references and 12 speaker contributions.</p>
+
+<p>The strongest through-line is architectural rather than cosmetic: across channels, instructors converge on the account that seaborn is a wrapper built on top of matplotlib, not a replacement for it. The practical consequence, repeated in several videos, is that a seaborn plot is still a matplotlib <code>Axes</code> object, so titles, axis labels, tick rotation, figure sizing and saving are routinely handed back to matplotlib calls (<code>plt.title</code>, <code>plt.xlabel</code>, <code>plt.figure(figsize=...)</code>, <code>plt.savefig</code>, <code>plt.show</code>) even inside a seaborn-first workflow. Tutorials that teach seaborn without the matplotlib substrate are implicitly criticised in the Analysis section for leaving learners unable to fix a plot once the one-line default is not enough.</p>
+
+<p>A second consistent division is the pyplot state-machine interface versus the explicit object-oriented interface (<code>fig, ax = plt.subplots()</code>). Beginner-oriented videos lean on <code>plt.plot</code>-style sequential calls because they are shorter to demonstrate; the longer, more advanced treatments push the figure/axes model as the only workable approach for multi-panel layouts, shared axes and reusable plotting functions. This is the corpus's clearest pedagogical tension, and it does not resolve cleanly along date lines — it tracks the intended audience and video length more than vintage.</p>
+
+<p>On the tooling stack, the corpus is near-unanimous: pandas DataFrames are the assumed input format, NumPy supplies synthetic data for demonstrations, and Jupyter Notebook or Google Colab is the default execution environment, with <code>%matplotlib inline</code> appearing in notebook-based walkthroughs. Installation is shown via <code>pip install matplotlib</code> and <code>pip install seaborn</code>, with the conventional aliases <code>import matplotlib.pyplot as plt</code> and <code>import seaborn as sns</code>. Named built-in datasets — most often seaborn's <code>tips</code>, <code>iris</code>, <code>titanic</code> and <code>flights</code> — recur as the shared teaching corpus across otherwise unrelated channels.</p>
+
+<p>Chart-type coverage is broad but unevenly weighted. Line, bar, scatter, histogram and pie charts form the matplotlib core; seaborn segments concentrate on the statistical plots that are genuinely awkward in raw matplotlib — <code>heatmap</code> (especially for correlation matrices), <code>boxplot</code>, <code>violinplot</code>, <code>pairplot</code>, <code>countplot</code>, <code>distplot</code>/<code>histplot</code>, <code>regplot</code>/<code>lmplot</code> and the figure-level <code>FacetGrid</code> family. Styling guidance clusters on <code>sns.set_style</code>, <code>sns.set_theme</code>, palettes and the <code>hue</code> parameter as the cheapest way to add a categorical dimension.</p>
+
+<p>Where sources disagree, the disagreement is partly a dating artefact and should be read as such. The single 2018 video in the corpus reflects the seaborn API of its day — including functions such as <code>distplot</code> that were later deprecated in favour of <code>histplot</code>/<code>displot</code> — and was accurate as of 2018-11-22; the 2025 and 2026 videos use the newer names and the <code>set_theme</code> convention. Readers should treat older syntax demonstrations as historically correct rather than wrong, and prefer the newer API names for current work. Similar drift affects default styling: what a video describes as matplotlib's or seaborn's "default" appearance is a claim about that package version at that publication date.</p>
+
+<p>The Speaker Contributions section attributes 12 distinct contributions, and the Historical &amp; External References section records 23 pointers outside the videos themselves — chiefly to the official matplotlib and seaborn documentation, gallery pages, pandas, NumPy, Anaconda/Jupyter, and in places to adjacent libraries such as Plotly offered as an interactive alternative. These external anchors matter because several instructors explicitly concede that no tutorial can enumerate matplotlib's parameter surface, and direct viewers to the gallery and docs as the real reference.</p>
+
+<p>The practical takeaway for a reader is threefold. First, learn the matplotlib figure/axes model before adopting seaborn, because seaborn's convenience evaporates the moment customisation is required. Second, treat API-specific instructions in this corpus as dated claims — check function names against current documentation, since the corpus itself demonstrates deprecation within its own span. Third, the highest-value seaborn material is the statistical plotting that matplotlib does not offer directly (correlation heatmaps, pairplots, distribution comparisons with <code>hue</code>); the overlapping basics — line, bar, scatter — are covered by nearly every video here and are the least differentiated content in the set.</p>
+<h2>Key Facts</h2>
+
+<p class="note">All claims below are attributed to the specific tutorial and timestamp in which they appear. No publication dates were supplied with these sources, so claims are dated only by their position within each video; statements about "current" versions (for example the Seaborn version reported on screen) should be read as describing the demonstration environment at recording time, not necessarily the present.</p>
+
+<h3>How the three libraries are positioned relative to one another</h3>
+
+<ul>
+  <li>Matplotlib is described as a Python library used especially for data visualization and data analysis — Easiest Way to Plot 📈using Matplotlib in Python 🐍 — Gate Smashers (<a href="https://www.youtube.com/watch?v=0sk72TEs3zc&t=0" target="_blank">0:00</a>) — and as one of the most popular Python libraries for data visualization and chart creation — Python - Matplotlib Tutorial for Beginners — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1" target="_blank">0:01</a>).</li>
+  <li>Matplotlib is called a foundation for static visualizations ranging from basic line plots to complex heatmaps — Comprehensive Guide on MATPLOTLIB, SEABORN & PLOTLY | Python Data Analysis — Pivotalstats (<a href="https://www.youtube.com/watch?v=UZDP9IPMqcs&t=0" target="_blank">0:00</a>).</li>
+  <li>Seaborn is presented as one of the most-used Python libraries for data visualization — Seaborn Python Tutorial: How to Analyze Data Like a Data Analyst (Step-by-Step Guide) — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=0" target="_blank">0:00</a>) — and as a high-level Python library built on Matplotlib for attractive statistical graphics — How to Visualize Data in Python Using Seaborn | Seaborn Tutorial. — Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=0" target="_blank">0:00</a>); Seaborn Course: Learn Data Visualization in Python — Onur Baltaci (<a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=0" target="_blank">0:00</a>).</li>
+  <li>Seaborn is described as a wrapper around Matplotlib that makes attractive and complex statistical graphs easier to create — Seaborn Is The Easier Matplotlib — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=4" target="_blank">0:04</a>).</li>
+  <li>The division of labour is stated explicitly: Seaborn draws the statistical visualization, while Matplotlib is used to customize figure size, titles, and axis labels — Seaborn Python Tutorial — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=62" target="_blank">1:02</a>).</li>
+  <li>Seaborn is recommended for fast statistical plots and automatic aggregation such as means with confidence intervals, while Matplotlib is recommended for pixel-level control, custom chart types, and further fine-tuning — Seaborn Tutorial For Beginners 2026 | Seaborn Library In Python | Seaborn Explained — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=186" target="_blank">3:06</a>).</li>
+  <li>Seaborn is said to reduce Matplotlib's code complexity, supply more modern-looking statistical graphs, and offer higher-level abstractions focused on relationships rather than drawing instructions — The Only Seaborn Video You'll Ever Need | Full Python Data Visualization Guide — DeepLoop Circle (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=0" target="_blank">0:00</a>). A similar claim: Seaborn produces more aesthetically pleasing statistical charts with less code than Matplotlib — Comprehensive Guide on MATPLOTLIB, SEABORN & PLOTLY — Pivotalstats (<a href="https://www.youtube.com/watch?v=UZDP9IPMqcs&t=382" target="_blank">6:22</a>).</li>
+  <li>Matplotlib is characterised as suitable for general visualization and Seaborn for statistical visualization and statistical operations, with Matplotlib generally requiring separate code for axes and titles — 01. Seaborn in Python | Introduction to Seaborn — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1" target="_blank">0:01</a>, <a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=60" target="_blank">1:00</a>). The same tutorial concludes that Matplotlib is more flexible for general visualizations while Seaborn is higher-level and statistics-focused, and that the two can perform broadly overlapping plotting tasks (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=477" target="_blank">7:57</a>); it restates this as "operations that can be performed in Matplotlib can also be performed with Seaborn," with Seaborn additionally representing data based on statistical operations — Seaborn in Python | Introduction to Seaborn — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1287" target="_blank">21:27</a>, <a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1280" target="_blank">21:20</a>).</li>
+  <li>Plotly is presented as a library for interactive visualizations suitable for web dashboards and reports, with charts supporting zooming and region selection — Comprehensive Guide on MATPLOTLIB, SEABORN & PLOTLY — Pivotalstats (<a href="https://www.youtube.com/watch?v=UZDP9IPMqcs&t=500" target="_blank">8:20</a>). Plotly 3D scatter plots can use Date, Close, and Volume as the three axes and be viewed from different angles (<a href="https://www.youtube.com/watch?v=UZDP9IPMqcs&t=570" target="_blank">9:30</a>). The closing summary: Matplotlib is foundational and static, Seaborn is quick and aesthetically pleasing for statistical insights, and Plotly is dynamic and interactive (<a href="https://www.youtube.com/watch?v=UZDP9IPMqcs&t=731" target="_blank">12:11</a>).</li>
+  <li>A quantitative usage claim: line charts, bar charts, and pie charts account for about 80% of data visualizations worldwide — Easiest Way to Plot 📈using Matplotlib in Python 🐍 — Gate Smashers (<a href="https://www.youtube.com/watch?v=0sk72TEs3zc&t=57" target="_blank">0:57</a>).</li>
+</ul>
+
+<h3>Installation, imports and working environment</h3>
+
+<ul>
+  <li>Prerequisites for the Matplotlib walkthrough are Python, a Jupyter Notebook, and Matplotlib installed on the machine — Python - Matplotlib Tutorial for Beginners — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1" target="_blank">0:01</a>).</li>
+  <li><code>matplotlib.pyplot</code> is a submodule of Matplotlib for creating charts; the common import form is <code>import matplotlib.pyplot as plt</code>, and in a Jupyter Notebook <code>%matplotlib inline</code> displays charts inside the notebook rather than in a separate window — Python - Matplotlib Tutorial for Beginners — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=49" target="_blank">0:49</a>).</li>
+  <li>Seaborn is installed with <code>pip install seaborn</code>; version <strong>0.13.2</strong> was reported in the demonstration environment — 01. Seaborn in Python | Introduction to Seaborn — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=100" target="_blank">1:40</a>).</li>
+  <li>The conventional alias <code>sns</code> is used rather than writing <code>seaborn</code> repeatedly; <code>dir(sns)</code> lists available members, and the instructor states there are about 100 methods — 01. Seaborn in Python — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=202" target="_blank">3:22</a>).</li>
+  <li>In Jupyter, <code>plt.show</code> is not strictly required, but it is needed when running a script; the presenter uses it as general best practice — Matplotlib Tutorial for Beginners: Line Charts, Scatter Plots & BoxPlots — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=448" target="_blank">7:28</a>).</li>
+  <li>Jupyter notebooks allow individual code cells to be run while variables and datasets stay in memory, which is convenient for visualization work — Seaborn Is The Easier Matplotlib — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=4" target="_blank">0:04</a>).</li>
+  <li>Google Colab is said to provide built-in datasets, including the penguins dataset, and cloud execution can reduce local-storage needs — The Only Seaborn Video You'll Ever Need — DeepLoop Circle (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=108" target="_blank">1:48</a>).</li>
+</ul>
+
+<h3>Datasets used across the tutorials</h3>
+
+<ul>
+  <li><strong>Retail sales (2010–2012).</strong> Contains store, store size, store type, department, weekly sales, temperature, fuel price, consumer price index, unemployment, and holiday status — Matplotlib Tutorial for Beginners — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=0" target="_blank">0:00</a>). It is split into three CSV files: sales (weekly store-department sales), stores (store, type, size) and features (macroeconomic and calendar information) (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=46" target="_blank">0:46</a>). The three dataframes are merged first on Store and then on Store and Date so weekly temperature, fuel price and other feature values align with the correct store and week (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=130" target="_blank">2:10</a>). Cleaning converts Date to datetime, extracts month and year, retains Stores 1–5 and Departments 1–5, drops duplicates, and restricts the demonstration to 2012 (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=215" target="_blank">3:35</a>).</li>
+  <li><strong>Kaggle coffee-sales CSV.</strong> Contains transaction amount, hour, payment method, coffee type, time of day, weekday, month, and exact transaction time — Seaborn Python Tutorial — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=84" target="_blank">1:24</a>).</li>
+  <li><strong>Apple stock (Yahoo Finance).</strong> Fields are Date, Open, High, Low, Close, Adjusted Close and Volume; the video uses the last seven days of stock data — Comprehensive Guide on MATPLOTLIB, SEABORN & PLOTLY — Pivotalstats (<a href="https://www.youtube.com/watch?v=UZDP9IPMqcs&t=0" target="_blank">0:00</a>).</li>
+  <li><strong>Hard-coded Apple and Microsoft prices</strong> for approximately mid-November 2014 through 2018 — Python - Matplotlib Tutorial for Beginners — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=132" target="_blank">2:12</a>). The Apple values are approximately <code>[93.95, 112.15, 104.05, 144.85, 169.49]</code>, the Microsoft values approximately <code>[39.01, 50.29, 57.05, 69.98, 94.39]</code>, and the years <code>[2014, 2015, 2016, 2017, 2018]</code>; on screen at 3:18 these lists are visible in the Jupyter Notebook (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=198" target="_blank">3:18</a>).</li>
+  <li><strong>Seaborn built-in datasets.</strong> Tips, Titanic and Iris are named as built-in learning datasets — Seaborn Tutorial For Beginners 2026 — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=186" target="_blank">3:06</a>). Tips, iris, titanic and planets are loadable with <code>sns.load_dataset</code> — Seaborn Is The Easier Matplotlib — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=67" target="_blank">1:07</a>). Dataset names are also discoverable via <code>sns.get_dataset_names</code>, covering Titanic and brain-network data — 01. Seaborn in Python — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=586" target="_blank">9:46</a>); the same series restates that Seaborn includes built-in datasets users can load and graph (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1589" target="_blank">26:29</a>).</li>
+  <li><strong>Iris.</strong> 150 samples with 50 rows per species, making it balanced in the final dashboard — Seaborn Tutorial For Beginners 2026 — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=1135" target="_blank">18:55</a>).</li>
+  <li><strong>Penguins.</strong> Includes species, island, bill length, bill depth, flipper length, body mass and sex; displayed counts are Adelie 152, Gentoo 124 and Chinstrap 68 — The Only Seaborn Video You'll Ever Need — DeepLoop Circle (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=225" target="_blank">3:45</a>).</li>
+  <li><strong>Synthetic Category/Value1/Value2/Value3 frame</strong> used throughout the Seaborn course — Seaborn Course: Learn Data Visualization in Python — Onur Baltaci (<a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=54" target="_blank">0:54</a>).</li>
+</ul>
+
+<h3>Matplotlib plotting basics: lines, scatter and multiple series</h3>
+
+<ul>
+  <li>A single list passed to <code>plt.plot</code> is interpreted as y-values, with x-values automatically assigned 0, 1, 2 and so on — Easiest Way to Plot 📈using Matplotlib in Python 🐍 — Gate Smashers (<a href="https://www.youtube.com/watch?v=0sk72TEs3zc&t=182" target="_blank">3:02</a>).</li>
+  <li>Line charts are presented as especially useful for continuous data such as stock and temperature data — Gate Smashers (<a href="https://www.youtube.com/watch?v=0sk72TEs3zc&t=299" target="_blank">4:59</a>). Matplotlib line plots can specify x and y values, line width, markers, colors, title, axis labels, grid visibility and output-file saving (<a href="https://www.youtube.com/watch?v=0sk72TEs3zc&t=339" target="_blank">5:39</a>).</li>
+  <li><code>plt.plot(year, apl_price)</code> creates a basic line chart with years on x and Apple prices on y; <code>plt.show()</code> displays it — Python - Matplotlib Tutorial for Beginners — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=191" target="_blank">3:11</a>). The initial chart rises overall, dips around 2016, then increases sharply through 2018; on screen at 4:42 the chart has no title, legend or axis labels, and year ticks are shown with decimal formatting (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=282" target="_blank">4:42</a>).</li>
+  <li>Axis labels are added with <code>plt.xlabel()</code> and <code>plt.ylabel()</code>, e.g. "Year" and "Stock Price" — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=285" target="_blank">4:45</a>). A second series plotted against the same years is automatically assigned a different color by default (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=348" target="_blank">5:48</a>). <code>plt.scatter(year, ms_price)</code> converts the Microsoft series to a scatter chart (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=399" target="_blank">6:39</a>), and two series can be shown as line charts in one figure via separate <code>plt.plot()</code> calls (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=425" target="_blank">7:05</a>).</li>
+  <li>A Matplotlib line chart of retail data uses <code>plt.plot</code> with Date on x and Weekly_Sales on y for Store 1, Department 1 — Matplotlib Tutorial for Beginners — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=277" target="_blank">4:37</a>). A multi-line chart is produced by looping over Stores 1–5 and plotting Department 1 sales for each store, with labels added to create a legend (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=647" target="_blank">10:47</a>).</li>
+  <li>Scatter plots are used to find or compare the relationship between two variables — Seaborn in Python | Introduction to Seaborn — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=981" target="_blank">16:21</a>); line plots show a trend or trending pattern (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1035" target="_blank">17:15</a>); bar plots compare categorical data (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1058" target="_blank">17:38</a>).</li>
+</ul>
+
+<h3>Figures, axes and subplot grids in Matplotlib</h3>
+
+<ul>
+  <li>Matplotlib's plotting model comprises a figure, axes, and the actual chart content: the figure defines the overall space while each axis/plot area defines an individual visual with its x-axis, y-axis and plotted content — Python - Matplotlib Tutorial for Beginners — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=649" target="_blank">10:49</a>).</li>
+  <li><code>plt.figure()</code> creates a figure; the <code>figsize</code> parameter defines its dimensions, with defaults of approximately <strong>6.4 by 4.8 inches</strong> — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=723" target="_blank">12:03</a>).</li>
+  <li><code>add_subplot()</code> adds charts to a figure, with subplot codes defining rows, columns and position; with a 1-by-2 grid, <code>add_subplot(121)</code> and <code>add_subplot(122)</code> create two side-by-side subplots sharing the figure's space — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=865" target="_blank">14:25</a>). Apple prices are plotted with <code>chart_1.plot(year, apple_price)</code> and Microsoft with <code>chart_2.scatter(year, ms_price)</code>, then shown with <code>plt.show()</code>; on screen at 17:18 the output contains two side-by-side plots (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1038" target="_blank">17:18</a>). The final digit of the subplot code specifies position — 1 is the left plot, 2 the right — and swapping them switches the charts (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1038" target="_blank">17:18</a>).</li>
+  <li>A 2-by-2 grid can contain four chart positions, with figure size controlling the overall space and subplot position determining where each chart appears; on screen at 19:39 Microsoft occupies the upper-left and Apple the lower-right, the other two positions blank — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1179" target="_blank">19:39</a>).</li>
+  <li><code>plt.subplots()</code> is a quicker way to create a figure and multiple axes in one line, with grid and figure size specified directly — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1348" target="_blank">22:28</a>). <code>plt.subplots(1, 2, figsize=(20, 5))</code> produces the same basic grid as the longer <code>figure</code>/<code>add_subplot</code> approach; changing to three rows and two columns creates six grid positions (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1417" target="_blank">23:37</a>). Returned axes can be indexed — in a 2-by-2 grid, <code>[0,1]</code> and <code>[1,0]</code> refer to first row/second column and second row/first column (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1493" target="_blank">24:53</a>). In the final 2-by-2 example the Microsoft scatter plot occupies the upper-right and the Apple line plot the lower-left, leaving upper-left and lower-right blank; on screen at 26:44 this arrangement is visible (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1604" target="_blank">26:44</a>).</li>
+  <li>Figure sizing is also handled with <code>figsize</code> in the retail walkthrough, which uses a 10×5 figure together with <code>xlabel</code>, <code>ylabel</code>, <code>title</code> and dollar formatting for sales — Matplotlib Tutorial for Beginners — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=392" target="_blank">6:32</a>).</li>
+</ul>
+
+<h3>Axis limits, ticks and date formatting</h3>
+
+<ul>
+  <li>Axis limits can be set manually with <code>plt.axis([xmin, xmax, ymin, ymax])</code>; the example uses <code>[2013, 2019, 20, 180]</code> — Python - Matplotlib Tutorial for Beginners — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=557" target="_blank">9:17</a>). This makes the x-axis run from roughly 2013 to 2019 and the y-axis from 20 to 180, and Matplotlib also changes the decimal formatting automatically in the displayed axes; visible on screen at 10:49 (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=649" target="_blank">10:49</a>).</li>
+  <li><code>matplotlib.ticker.MaxNLocator</code> configures tick locating and formatting; with <code>integer=True</code> it places ticks at suitable integer locations and removes decimal year labels — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1181" target="_blank">19:41</a>). The result is whole-year x-axis labels from 2014 through 2018; on screen at 22:28 both the line and scatter charts show integer year ticks (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1348" target="_blank">22:28</a>).</li>
+  <li>Matplotlib's dates module can set x-axis tick frequency with <code>WeekdayLocator</code> and format dates with <code>DateFormatter</code>; the tutorial displays abbreviated month and day values every four weeks — Matplotlib Tutorial for Beginners — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=507" target="_blank">8:27</a>).</li>
+  <li>Overlapping date labels can be handled with <code>plt.xticks(rotation=75)</code> or automatically with <code>fig.autofmt_xdate</code> — Comprehensive Guide on MATPLOTLIB, SEABORN & PLOTLY — Pivotalstats (<a href="https://www.youtube.com/watch?v=UZDP9IPMqcs&t=294" target="_blank">4:54</a>).</li>
+</ul>
+
+<h3>Matplotlib bars, histograms, box plots, annotations, styles and export</h3>
+
+<ul>
+  <li>The bar-chart example groups the cleaned retail data by Store and sums Weekly_Sales for 2012, producing total yearly sales for Stores 1–5 — Matplotlib Tutorial for Beginners — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=848" target="_blank">14:08</a>). Bar colors can be specified by named colors or hexadecimal values (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=948" target="_blank">15:48</a>).</li>
+  <li>Matplotlib line colors can be specified with short codes such as <code>k</code> for black and <code>g</code> for green, and line styles including dashed and dotted can be set; viewers are referred to the video description for the full list of colors and line properties — Python - Matplotlib Tutorial for Beginners — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=425" target="_blank">7:05</a>).</li>
+  <li>Matplotlib histograms use <code>bins</code> to group values, <code>color</code> to set bar color, and <code>alpha</code> to control transparency — Comprehensive Guide on MATPLOTLIB, SEABORN & PLOTLY — Pivotalstats (<a href="https://www.youtube.com/watch?v=UZDP9IPMqcs&t=122" target="_blank">2:02</a>).</li>
+  <li>The scatter-plot example places temperature on x and weekly sales on y for all stores and departments — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=948" target="_blank">15:48</a>). The box-plot example groups Weekly_Sales by IsHoliday, producing separate distributions for holiday and non-holiday weeks (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=1032" target="_blank">17:12</a>).</li>
+  <li>Annotations can add text and arrows to identify notable points, such as a suspected holiday-related sales spike — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=1110" target="_blank">18:30</a>).</li>
+  <li>Matplotlib includes predefined styles such as <code>ggplot</code> and <code>fivethirtyeight</code>; the tutorial applies <code>fivethirtyeight</code> via <code>plt.style.use</code> — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=1305" target="_blank">21:45</a>).</li>
+  <li>Figures are saved with <code>fig.savefig</code>; <code>bbox_inches='tight'</code> helps prevent labels and other chart elements from being cut off — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=1359" target="_blank">22:39</a>).</li>
+</ul>
+
+<h3>Seaborn API conventions and theming</h3>
+
+<ul>
+  <li>Seaborn syntax commonly uses <code>data</code>, <code>x</code> and <code>y</code> parameters, with <code>hue</code> mapping colors to categorical or numerical data — Seaborn Tutorial For Beginners 2026 — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=116" target="_blank">1:56</a>). The <code>hue</code>, <code>size</code> and <code>style</code> parameters encode additional dimensions in one chart (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=581" target="_blank">9:41</a>).</li>
+  <li>Seaborn has five built-in themes — <code>whitegrid</code>, <code>darkgrid</code>, <code>white</code>, <code>dark</code> and <code>ticks</code> — and a theme can be applied globally at the start of a notebook — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=497" target="_blank">8:17</a>).</li>
+  <li>Seaborn's <code>histplot</code> can create a histogram from a plain list in one line and automatically supplies a count axis, while Matplotlib methods such as <code>plt.show</code>, <code>plt.title</code> and axis-label functions remain available for customization — 01. Seaborn in Python — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=384" target="_blank">6:24</a>). Similarly, <code>sns.lineplot</code> can plot supplied x and y lists while Matplotlib adds titles and axis labels (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=721" target="_blank">12:01</a>).</li>
+  <li>Matplotlib settings such as figure size, titles, axis labels, colors, font sizes and grids can be applied to a Seaborn graph — Seaborn in Python | Introduction to Seaborn — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=853" target="_blank">14:13</a>). The instructor demonstrates <code>plt.figure(figsize=(10,5))</code>, <code>sns.histplot(data)</code>, a red title reading "Data Distribution," and <code>plt.grid()</code>; on screen at 15:50 a Google Colab notebook displays this code and a histogram output, although the captured frame does not visibly show grid lines (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=950" target="_blank">15:50</a>) — a discrepancy between the spoken instruction and the single captured frame. Seaborn also supports changing graph and tick font sizes, increasing or decreasing tick values, and working with axis labels and figure-level settings (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=952" target="_blank">15:52</a>).</li>
+  <li>Colors can be changed through color properties and palettes, including <code>sns.color_palette</code> with "rainbow" and "magma," or by assigning explicit colors such as red, yellow, pink, black and blue — Seaborn in Python — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1455" target="_blank">24:15</a>).</li>
+  <li>A planned follow-up lesson is to cover figure-level graphs and axes-level graphs, completing axes-level material first — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1622" target="_blank">27:02</a>).</li>
+</ul>
+
+<h3>A reproducible error: RGBA sequence length</h3>
+
+<ul>
+  <li>The demonstrated color-palette attempt produces a <code>ValueError: RGBA sequence should have length 3 or 4</code>; the instructor explains that an RGB/RGBA color sequence should have length 3 or 4. On screen at 25:10 the traceback is visible in the Matplotlib/Seaborn code — Seaborn in Python | Introduction to Seaborn — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1480" target="_blank">24:40</a>).</li>
+</ul>
+
+<h3>Distribution plots: histograms and KDE</h3>
+
+<ul>
+  <li><code>sns.histplot</code> creates a histogram; the number of bins controls the number of value groups, and <code>KDE=True</code> overlays a smoothed density curve — Seaborn Python Tutorial — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=163" target="_blank">2:43</a>).</li>
+  <li>Histograms display the distribution of one variable by dividing values into bins, with KDE overlaying a smooth curve — The Only Seaborn Video You'll Ever Need — DeepLoop Circle (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=629" target="_blank">10:29</a>). A histogram (Seaborn's hist plot) is for the distribution of numerical data — Seaborn in Python — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1133" target="_blank">18:53</a>).</li>
+  <li>KDE plots show a smooth density curve without histogram bars, and <code>fill</code> shades the area under the curve — Seaborn Tutorial For Beginners 2026 — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=242" target="_blank">4:02</a>). KDE plots are described as a smoothed probability-density version of a histogram that can reveal patterns not obvious in traditional histograms — Seaborn Course — Onur Baltaci (<a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=531" target="_blank">8:51</a>).</li>
+  <li>KDE and rug plots can be combined to show both a smoothed distribution and individual observations, with <code>hue</code> separating diet groups in the exercise dataset — How to Visualize Data in Python Using Seaborn — Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=421" target="_blank">7:01</a>).</li>
+</ul>
+
+<h3>Categorical plots: box, violin, bar and count</h3>
+
+<ul>
+  <li>A box plot's center line is the median, the box contains the middle 50% of values, whiskers extend toward high and low values, and isolated dots are outliers — Seaborn Tutorial For Beginners 2026 — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=420" target="_blank">7:00</a>). Seaborn box plots show medians, quartiles, minimum and maximum ranges, and outliers, with the example comparing tips across days and sex — Seaborn Is The Easier Matplotlib — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=538" target="_blank">8:58</a>). Box plots are also summarised as a tool to identify outliers and examine distribution — Seaborn in Python — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1121" target="_blank">18:41</a>).</li>
+  <li>A violin plot combines a box plot with a KDE curve; greater width indicates more observations in that range, and <code>split=True</code> divides the violin into hue-group halves — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=457" target="_blank">7:37</a>). Box plots show median, quartiles and outliers while violin plots add a density curve, with wider regions indicating greater density — The Only Seaborn Video You'll Ever Need — DeepLoop Circle (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=922" target="_blank">15:22</a>); the penguin box plot groups body mass by species and sex and the violin plot shows body-mass distribution and density for those groups (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=1103" target="_blank">18:23</a>). Violin plots are summarised as being for distribution comparison — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1170" target="_blank">19:30</a>).</li>
+  <li>Seaborn bar plots display confidence intervals automatically, whereas Matplotlib requires those intervals to be calculated manually — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=368" target="_blank">6:08</a>).</li>
+  <li>A count plot counts rows in each category rather than averaging a numerical column — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=389" target="_blank">6:29</a>). Count plots show the frequency of each category and can reveal dominant categories or class imbalance — Seaborn Course — Onur Baltaci (<a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=477" target="_blank">7:57</a>); they identify which category occurs most often — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1085" target="_blank">18:05</a>). In the Titanic example a count plot initially counts male and female passengers, then uses <code>hue='alive'</code> to split counts by survival status — Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=72" target="_blank">1:12</a>).</li>
+  <li>Seaborn's univariate plot catalogue is listed as histograms, box plots, violin plots, rug plots, KDE plots, strip plots, swarm plots, ECDF plots and count plots — Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=238" target="_blank">3:58</a>); bivariate plots are listed as scatter, line, rug, hex, pair, KDE, bar and point plots (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=477" target="_blank">7:57</a>).</li>
+  <li>A worked bar-plot example maps Category to x and Value1 to bar height, with bar height representing each category's numerical value — Seaborn Course — Onur Baltaci (<a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=54" target="_blank">0:54</a>). Another demonstrates <code>sns.barplot(x=x, y=y)</code> with the names Raunak, Suman, Rahul, Mukesh and Mannu as x values and numerical y values — Seaborn in Python — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1314" target="_blank">21:54</a>); the instructor states that a Seaborn bar plot and a Matplotlib <code>plt.bar(x, y)</code> graph can produce the same graph, with Seaborn making visualization easier and basing the operation on statistical processing (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1351" target="_blank">22:31</a>). A title and axis labels are then added; on screen at 24:15 the chart displays "X Values" and "Y Values" with categorical names on the x-axis and numerical bar heights (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1406" target="_blank">23:26</a>).</li>
+</ul>
+
+<h3>Relational plots: scatter, line, regression and joint plots</h3>
+
+<ul>
+  <li>In the tips scatter plot, x is total bill, y is tip, <code>hue</code> colors points by smoker status, and <code>style</code> changes point shape by lunch versus dinner — Seaborn Tutorial For Beginners 2026 — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=299" target="_blank">4:59</a>).</li>
+  <li>Seaborn scatterplot can map a categorical variable to <code>hue</code> and a numerical variable to point size, automatically producing a multi-dimensional visualization — Seaborn Is The Easier Matplotlib — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=203" target="_blank">3:23</a>).</li>
+  <li>Scatter plots show the relationship and concentration of data using generally numerical x and y variables, with categorical variables available through <code>hue</code> — The Only Seaborn Video You'll Ever Need — DeepLoop Circle (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=308" target="_blank">5:08</a>); the penguin scatter plot uses <code>flipper_length_mm</code> and <code>body_mass_g</code> with <code>hue='species'</code> producing separate colors for Adelie, Chinstrap and Gentoo (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=432" target="_blank">7:12</a>).</li>
+  <li>A scatter plot mapping Value1 to x, Value2 to y and Category to <code>hue</code> allows relationships and category-based groupings to be observed — Seaborn Course — Onur Baltaci (<a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=100" target="_blank">1:40</a>); the line plot connecting Value1 values across categories is described as useful for trends, seasonal variation and systematic fluctuations (<a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=211" target="_blank">3:31</a>).</li>
+  <li>Seaborn line plots automatically calculate group means and add shaded confidence intervals — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=313" target="_blank">5:13</a>).</li>
+  <li>A Seaborn line plot can add circular point markers with <code>marker='o'</code>, and the same data can be displayed with <code>scatterplot</code> simply by changing the function — Seaborn Python Tutorial — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=890" target="_blank">14:50</a>).</li>
+  <li>Regression plots show two numerical variables, a fitted regression line and a confidence band to help assess the direction and strength of a relationship — Seaborn Course — Onur Baltaci (<a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=621" target="_blank">10:21</a>).</li>
+  <li>Joint plots combine a central scatter plot with marginal distributions; regression, KDE and hexagonal variants are available — Seaborn Is The Easier Matplotlib — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=710" target="_blank">11:50</a>). In the diamonds example, carat is on x and price on y; an <code>lmplot</code> adds a fitted regression line and a joint plot combines the scatter plot with marginal histograms — Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=548" target="_blank">9:08</a>).</li>
+</ul>
+
+<h3>Multi-plot grids: pair plots, FacetGrid and clustermap</h3>
+
+<ul>
+  <li>A pair plot compares every numerical variable with every other numerical variable; the four Iris numerical features produce a 4×4 grid containing 16 charts — Seaborn Tutorial For Beginners 2026 — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=604" target="_blank">10:04</a>).</li>
+  <li>A pair plot displays numerical features against one another with diagonal panels showing each feature's distribution — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=909" target="_blank">15:09</a>). Pair plots create a separate plot for each combination of columns, typically scatter plots off the diagonal and KDE distributions on the diagonal — DeepLoop Circle (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=1599" target="_blank">26:39</a>); the Seaborn Course describes the same arrangement with KDE plots on the diagonal representing univariate distributions — Onur Baltaci (<a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=376" target="_blank">6:16</a>). A pair plot automatically provides univariate and bivariate views for a dataset's variables — Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=845" target="_blank">14:05</a>), and is summarised as a tool to examine multiple relationships among variables — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1157" target="_blank">19:17</a>).</li>
+  <li><code>FacetGrid</code> can map plots across row and column categories; the example creates box plots split by smoker and sex — Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=768" target="_blank">12:48</a>).</li>
+  <li>Seaborn's <code>clustermap</code> groups observations into clusters and may be useful for visualizing clusters in unsupervised learning — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=1194" target="_blank">19:54</a>).</li>
+</ul>
+
+<h3>Heatmaps and reported correlation values</h3>
+
+<ul>
+  <li>A correlation heatmap has 1.00 on the diagonal because each variable is perfectly correlated with itself; in the displayed tips data, total_bill–tip is <strong>0.68</strong>, total_bill–size is <strong>0.60</strong>, and tip–size is <strong>0.49</strong> — Seaborn Tutorial For Beginners 2026 — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=652" target="_blank">10:52</a>).</li>
+  <li>The diamonds correlation heatmap shows a carat–price correlation of approximately <strong>0.92</strong> and carat–x, carat–y and carat–z correlations of approximately <strong>0.98</strong>, <strong>0.95</strong> and <strong>0.95</strong> — How to Visualize Data in Python Using Seaborn — Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=875" target="_blank">14:35</a>).</li>
+  <li>A correlation heatmap over Value1, Value2 and Value3 has diagonal cells equal to 1 because each variable is perfectly correlated with itself, and correlations range from −1 to 1 — Seaborn Course — Onur Baltaci (<a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=298" target="_blank">4:58</a>).</li>
+  <li>Values closer to 1 indicate stronger positive relationships, values near 0 indicate weak relationships, and negative values indicate inverse relationships — The Only Seaborn Video You'll Ever Need — DeepLoop Circle (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=1273" target="_blank">21:13</a>). For correlation heatmaps the data must be numerical and non-null: categorical columns such as island, species and sex are excluded and missing rows are dropped (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=1436" target="_blank">23:56</a>).</li>
+  <li>A correlation heatmap is presented as a more readable alternative to a table of correlation numbers, using colors to reveal high and low correlations — Seaborn Is The Easier Matplotlib — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=1010" target="_blank">16:50</a>). Heat maps are summarised as a way to visualize a correlation matrix — Seaborn in Python — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1146" target="_blank">19:06</a>).</li>
+  <li>A Seaborn heatmap requires a two-dimensional array; the one-dimensional weekday totals are reshaped into one row before plotting — Seaborn Python Tutorial — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=1111" target="_blank">18:31</a>).</li>
+</ul>
+
+<h3>Substantive findings from the worked coffee-sales analysis</h3>
+
+<ul>
+  <li>The coffee-sales histogram peaks around <strong>35–37 dollars</strong>, leading the presenter to state that many transactions are around 35 dollars — Seaborn Python Tutorial — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=382" target="_blank">6:22</a>).</li>
+  <li>A box plot compares amount spent across Morning, Afternoon and Night using Time_of_Day on x and money on y (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=394" target="_blank">6:34</a>); the median amount spent rises over the day and is highest at night (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=544" target="_blank">9:04</a>).</li>
+  <li>The transaction-count bar chart indicates that the number of transactions is approximately similar across morning, afternoon and night (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=555" target="_blank">9:15</a>). Adding <code>hue='Coffee_name'</code> breaks counts down by drink type with colored grouped bars and a legend (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=719" target="_blank">11:59</a>), showing Americanos ordered most often in the morning while lattes and cappuccinos increase later in the day (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=763" target="_blank">12:43</a>).</li>
+  <li>Grouping by hour shows a sales peak around <strong>10:00 a.m.</strong> and another rise around <strong>16:00</strong>, interpreted as approximately 4:00 p.m. (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=828" target="_blank">13:48</a>).</li>
+  <li>The weekday totals table shows <strong>Tuesday</strong> with the highest total spending and <strong>Sunday</strong> with the lowest among the listed weekdays (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=1021" target="_blank">17:01</a>).</li>
+  <li>The analysis concludes: transactions are generally around 35 dollars, evening median spending is higher because of more lattes and cappuccinos, sales peak around 10:00 a.m., and Tuesday is the strongest sales day (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=1243" target="_blank">20:43</a>).</li>
+</ul>
+
+<h3>Substantive findings from other worked examples</h3>
+
+<ul>
+  <li><strong>Retail holidays.</strong> The presenter observes more sales outliers for non-holiday weeks than for holiday weeks in the displayed box plot — Matplotlib Tutorial for Beginners — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=1096" target="_blank">18:16</a>).</li>
+  <li><strong>Tips.</strong> The tips scatter plot is interpreted as showing that larger bills generally receive larger tips — Seaborn Tutorial For Beginners 2026 — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=313" target="_blank">5:13</a>). The tips histogram indicates many tips are around <strong>2–4 dollars</strong>, while tips near 10 dollars are uncommon — Seaborn Is The Easier Matplotlib — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=316" target="_blank">5:16</a>). A bar plot comparing tips by sex shows a slightly higher average for males, although the presenter notes this could reflect larger meal sizes rather than gender itself (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=483" target="_blank">8:03</a>).</li>
+  <li><strong>Titanic.</strong> A count plot shows third class with the most passengers but the lowest survival rate — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=389" target="_blank">6:29</a>). Because the <code>survived</code> column is binary, a Seaborn bar plot mean represents survival rate, so a bar at 0.75 means 75% survival (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=703" target="_blank">11:43</a>). In the Titanic correlation example, adult-male status is described as negatively associated with survival, suggesting adult men had lower survival probability — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=1118" target="_blank">18:38</a>).</li>
+  <li><strong>Flights/passengers.</strong> A Seaborn line plot of yearly passengers shows an upward trend from approximately <strong>130 to 470 between 1950 and 1960</strong>, with a confidence band — How to Visualize Data in Python Using Seaborn — Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=529" target="_blank">8:49</a>).</li>
+</ul>
+<h2>Analysis &amp; Commentary</h2>
+
+<p>The commentary in this corpus clusters around a handful of live arguments: whether Seaborn supersedes Matplotlib or merely wraps it, whether a "default" chart is ever acceptable output, how much interpretation a tutorial owes the data it plots, and how difficult the subject actually is. The instructors do not agree, and on several points they contradict each other directly.</p>
+
+<h3>Is Seaborn a replacement for Matplotlib, or a convenience layer on it?</h3>
+
+<p>The strongest version of the "Seaborn wins on effort" position comes from NeuralNine, who repeatedly stresses that the advantage is ease of use rather than capability: the same visualizations are possible in Matplotlib, but Seaborn requires less code and fewer conventions to remember — <em>Seaborn Is The Easier Matplotlib</em> — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=203" target="_blank">03:23</a>). Pivotalstats pushes the aesthetic case: Seaborn's output is more pleasing than Matplotlib's with minimal effort — <em>Comprehensive Guide on MATPLOTLIB, SEABORN &amp; PLOTLY | Python Data Analysis</em> — Pivotalstats (<a href="https://www.youtube.com/watch?v=UZDP9IPMqcs&t=382" target="_blank">06:22</a>). Simplilearn frames the library in near-promotional terms as elegant, accessible, and capable of significantly improving a learner's visualization skills — <em>Seaborn Tutorial For Beginners 2026 | Seaborn Library In Python | Seaborn Explained</em> — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=1" target="_blank">00:01</a>).</p>
+
+<p>CodeWithMunnaX draws the boundary more sharply, and in Matplotlib's favour on one axis: Seaborn is simpler for statistical operations, but Matplotlib remains more flexible for building arbitrary graphs — <em>01. Seaborn in Python | Introduction to Seaborn | Data Visualization Tutorial for Beginners</em> — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=477" target="_blank">07:57</a>). The same instructor is notably unimpressed by one of his own comparisons, remarking that there is no meaningful difference between the demonstrated Seaborn and Matplotlib bar charts — while still maintaining that Seaborn makes visualization easier (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1380" target="_blank">23:00</a>). That is a quietly important concession: the aesthetic superiority Pivotalstats asserts is not visible in every chart type. He also insists on continuity rather than replacement — Seaborn is "generally like Matplotlib" but built on top of it, useful because it works with statistical operations (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1280" target="_blank">21:20</a>) — and notes that Matplotlib concepts learned previously carry straight over into Seaborn's histogram example (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=912" target="_blank">15:12</a>).</p>
+
+<p>Against all of this stands Academind, who declines the framing entirely and argues that Matplotlib itself is easy at the outset: the closing verdict is that the viewer should now have a basic idea of how easy Matplotlib is to use initially, while recognising it is powerful and supports much more — <em>Python - Matplotlib Tutorial for Beginners</em> — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1600" target="_blank">26:40</a>). If Matplotlib's barrier is low, the ease-of-use argument for Seaborn loses much of its force.</p>
+
+<h3>Is the default chart ever good enough?</h3>
+
+<p>Two instructors take an explicitly hostile view of raw output. Data Analytics Lab says the initial Matplotlib line chart does not look good because it lacks labels and a title and has overlapping, unreadable dates — <em>Matplotlib Tutorial for Beginners: Line Charts, Scatter Plots &amp; BoxPlots | Python Data Visualization</em> — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=363" target="_blank">06:03</a>). Academind reaches the same judgement independently: the basic line chart is simple to create, but the initial year formatting is not good because of decimal labels — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=273" target="_blank">04:33</a>) — and he states the principle plainly, that creating the chart is not the end because labels and other formatting can still be added (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=285" target="_blank">04:45</a>).</p>
+
+<p>Where they diverge is on what "fixed" looks like. Data Analytics Lab makes stylistic choices and defends them as taste: bold axis labels and titles look better, so he uses bold text routinely (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=448" target="_blank">07:28</a>); formatted month-and-day ticks with light dashed grid lines are more readable than monthly ticks alone (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=568" target="_blank">09:28</a>); and the fivethirtyeight style makes the chart look different and visually appealing (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=1305" target="_blank">21:45</a>).</p>
+
+<p>Simplilearn's design guidance sits uneasily beside that enthusiasm for decoration. Its checklist is reductive: lead with the insight, use colour purposefully, reduce chart junk, choose an appropriate chart, and annotate key points directly on the chart — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=956" target="_blank">15:56</a>). "Reduce chart junk" and "add grid lines, bold everything, apply a magazine style" are not the same instinct, even if both speakers would call their result more readable. The one point of genuine convergence is annotation: Data Analytics Lab describes annotations as a simple way to add meaning to a chart (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=1305" target="_blank">21:45</a>), which is Simplilearn's fifth rule stated in different words.</p>
+
+<p>Simplilearn also supplies the corpus's only hard numeric design constraint: hue works best with roughly two to six categories — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=1016" target="_blank">16:56</a>). Nobody else offers a threshold.</p>
+
+<h3>What a chart is <em>for</em>: persuasion, exploration, or storytelling</h3>
+
+<p>Gate Smashers makes the most forceful case that visualization is rhetoric rather than reporting, using a restaurant-plating analogy to argue that good representation affects how people perceive the underlying result — <em>Easiest Way to Plot 📈using Matplotlib in Python 🐍</em> — Gate Smashers (<a href="https://www.youtube.com/watch?v=0sk72TEs3zc&t=15" target="_blank">00:15</a>). The same instructor grounds the field's career case in volume: demand for data visualization and analysis is increasing because the amount of data is growing substantially, including in AI-related fields (<a href="https://www.youtube.com/watch?v=0sk72TEs3zc&t=194" target="_blank">03:14</a>).</p>
+
+<p>Data Analytics Lab prefers a narrative framing, calling visualization one of the most important tasks in data analysis and positioning Seaborn as the means to tell a story like a data analyst — <em>Seaborn Python Tutorial: How to Analyze Data Like a Data Analyst (Step-by-Step Guide)</em> — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=0" target="_blank">00:00</a>). DeepLoop Circle's Vivek takes the most instrumental line, characterising Seaborn's modern plots chiefly as a way to make presentations easier — <em>The Only Seaborn Video You'll Ever Need | Full Python Data Visualization Guide</em> — DeepLoop Circle (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=1647" target="_blank">27:27</a>).</p>
+
+<p>NeuralNine, by contrast, treats plotting as an investigative instrument rather than a communication one, calling heatmaps one of his favourite plots and saying he uses them frequently when exploring datasets for prediction — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=1010" target="_blank">16:50</a>). That is a different purpose from plating food attractively: the audience is the analyst, not a stakeholder.</p>
+
+<h3>Interpreting the data, not just drawing it</h3>
+
+<p>Only a minority of speakers actually reason about what their charts show. Data Analytics Lab's coffee-shop analysis is the clearest case: he flags as interesting that median spending is higher in the evening, because he expected morning coffee spending to be higher — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=544" target="_blank">09:04</a>) — and then does the responsible thing by naming two competing explanations rather than one, speculating that the higher evening median may result either from more evening transactions or from people buying more expensive drinks (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=555" target="_blank">09:15</a>). He calls the finding that drink preferences vary by time of day a fairly interesting insight (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=770" target="_blank">12:50</a>).</p>
+
+<p>Simplilearn applies the same discipline to a correlation coefficient, reading the 0.68 total-bill/tip relationship as strong but not perfect precisely because some people tip poorly on large bills and generously on small ones — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=686" target="_blank">11:26</a>). Both speakers refuse to let a number stand without a behavioural account of its residual noise.</p>
+
+<p>Notably, Data Analytics Lab is also willing to criticise his own choice of chart, conceding that the scatter plot is not the best use case for hourly coffee-sales data and that scatter plots are generally better for examining correlations between continuous variables — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=947" target="_blank">15:47</a>). Onur Baltaci's taxonomy agrees on that allocation: bar plots simple and effective, scatter plots for relationships between continuous variables, line plots for trends and systematic fluctuations — <em>Seaborn Course: Learn Data Visualization in Python</em> — Onur Baltaci (<a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=100" target="_blank">01:40</a>).</p>
+
+<h3>How much to show at once: minimal plots versus layered composites</h3>
+
+<p>There is a real disagreement here about chart density. Simplilearn recommends KDE plots when a clean distribution shape is preferred without histogram bars cluttering the chart — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=258" target="_blank">04:18</a>), which is the "reduce chart junk" principle applied to distribution plotting. Absent Data argues the opposite: combining statistical charts provides more information, and viewers are encouraged toward creative combinations of KDE, rug, scatter, histogram and marginal plots — <em>How to Visualize Data in Python Using Seaborn | Seaborn Tutorial.</em> — Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=421" target="_blank">07:01</a>). One treats the histogram bars as clutter to be removed; the other treats stacking marginal and rug layers on top of them as added information.</p>
+
+<p>Data Analytics Lab occupies a third position on binning that neither accommodates: choosing the number of histogram bins requires trial and error to find what works best for the use case — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=234" target="_blank">03:54</a>). That is an admission that the "clean shape" Simplilearn prefers is partly an artefact of a parameter the analyst tunes by hand.</p>
+
+<h3>Figure-level architecture: pedagogy versus convenience</h3>
+
+<p>Academind supplies the corpus's most developed argument about Matplotlib's object model, and it is explicitly a trade-off rather than a recommendation. He defends the manual subplot grid as useful for understanding how Matplotlib works, while conceding that defining every subplot by hand is inconvenient once many are needed — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=723" target="_blank">12:03</a>) — and then endorses the one-line <code>plt.subplots()</code> approach as more convenient than manual creation (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1348" target="_blank">22:28</a>). His mnemonic is that the structure is easier to remember when the figure is described as defining the overall space and each chart or axis as occupying an area within it (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=649" target="_blank">10:49</a>). On layout he again makes an aesthetic judgement rather than a rule, calling the one-row, two-column grid sufficient and visually preferable for the tutorial's purposes (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1181" target="_blank">19:41</a>).</p>
+
+<p>CodeWithMunnaX reaches the same topic but defers it, saying the tutorial has covered enough for that video and framing figure-level versus axes-level graphs as the next step — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1589" target="_blank">26:29</a>). So the corpus contains one worked argument for teaching the underlying structure first and one decision to postpone it.</p>
+
+<h3>Claims about difficulty — and what the demonstrations show</h3>
+
+<p>Several speakers make strong easiness claims. Absent Data is the most aggressive, asserting that viewers can learn Seaborn in minutes and should not need to pay for Seaborn tutorials — Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=0" target="_blank">00:00</a>). CodeWithMunnaX characterises the listed Seaborn graphs as very easy and tells viewers simply to remember their purposes in simplified terms (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=981" target="_blank">16:21</a>). Data Analytics Lab calls the bar-chart method straightforward — changing <code>plot</code> to <code>bar</code> produces a bar chart — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=948" target="_blank">15:48</a>).</p>
+
+<p>Those claims are worth setting against the friction visible in the same videos. During his colour-palette demonstration CodeWithMunnaX hits an error, checks the code, and attributes part of the difficulty to an Internet connectivity problem (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1480" target="_blank">24:40</a>) — a reminder that Seaborn's bundled example datasets are fetched over the network. And Academind is candid that his illustrative material is thin, calling the hard-coded stock-price data "not really spectacular" while judging it sufficient for the tutorial's purposes — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=132" target="_blank">02:12</a>). The easiness on display is partly the easiness of small, pre-cleaned, hard-coded inputs; both Data Analytics Lab's bin-tuning admission and the connectivity failure suggest the real workflow is less frictionless than the headline claims imply.</p>
+<h2>Conclusions</h2>
+
+<p>This section separates two kinds of conclusion. The first group is what the individual tutorials themselves state as their own closing findings — about libraries, APIs, chart types, and in one case about a specific dataset. The second group consists of conclusions that no single video states but that the corpus as a whole supports when the sources are read against one another.</p>
+
+<h3>Conclusions the sources state about Matplotlib's mechanics</h3>
+
+<p>The Matplotlib tutorials converge on the view that the library's value is unlocked less by the plotting call itself than by what surrounds it. The Academind tutorial concludes that basic plotting is performed with <code>plt.plot</code>, followed by formatting and display commands — Python - Matplotlib Tutorial for Beginners — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=649" target="_blank">10:49</a>) — and that Matplotlib's figure, subplot and axes model is what enables users to create and individually address multiple charts within a single figure (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=723" target="_blank">12:03</a>). Two narrower practical conclusions follow from the same video: that <code>MaxNLocator(integer=True)</code> is a simple way to make year tick formatting more readable (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1181" target="_blank">19:41</a>), and that <code>plt.subplots()</code> is a faster and more convenient route to multiple subplots than repeatedly calling <code>figure</code> and <code>add_subplot</code> by hand (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1348" target="_blank">22:28</a>).</p>
+
+<p>Running parallel to this, the Data Analytics Lab tutorial concludes that adding labels, formatted dates, grid lines, legends and annotations makes Matplotlib charts substantially more readable and meaningful — Matplotlib Tutorial for Beginners: Line Charts, Scatter Plots &amp; BoxPlots | Python Data Visualization — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=392" target="_blank">6:32</a>) — and that a five-store multi-line chart is built by repeatedly calling <code>plot</code> inside a loop and adding a single legend after the lines are generated (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=647" target="_blank">10:47</a>). That video closes by defining its own scope: the basic chart set covered is line, multi-line, bar, scatter and box plots, with stacked bars and subplots deferred to a later video (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=1389" target="_blank">23:09</a>).</p>
+
+<p>On the overall character of the library, Academind's final conclusion is that Matplotlib is easy to begin with but powerful enough to support much deeper customisation and further study — Python - Matplotlib Tutorial for Beginners — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1600" target="_blank">26:40</a>). Gate Smashers reaches a more modest closing position, treating the basic line chart as an initial step with more examples to follow — Easiest Way to Plot 📈using Matplotlib in Python 🐍 — Gate Smashers (<a href="https://www.youtube.com/watch?v=0sk72TEs3zc&t=430" target="_blank">7:10</a>).</p>
+
+<h3>Conclusions the sources state about Seaborn's role and capabilities</h3>
+
+<p>The Seaborn tutorials conclude, with notable consistency, that the library's selling point is speed and economy of code. NeuralNine concludes that Seaborn is easy to use, produces informative charts quickly, and offers many further advanced examples through its documentation — Seaborn Is The Easier Matplotlib — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=1292" target="_blank">21:32</a>). Absent Data concludes that Seaborn provides a quick and easy way to create a broad range of visualisations with minimal code — How to Visualize Data in Python Using Seaborn | Seaborn Tutorial. — Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=875" target="_blank">14:35</a>). Onur Baltaci concludes that Seaborn plots are useful for exploratory analysis, relationship detection, trend identification and understanding distributions — Seaborn Course: Learn Data Visualization in Python — Onur Baltaci (<a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=438" target="_blank">7:18</a>).</p>
+
+<p>On where the boundary with Matplotlib lies, CodeWithMunnaX reaches the most explicit position: there is no strict capability boundary between the two, operations possible in one are broadly possible in the other, but Seaborn incorporates statistical operations and simplifies the plotting process — 01. Seaborn in Python | Introduction to Seaborn | Data Visualization Tutorial for Beginners — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=553" target="_blank">9:13</a>). The same instructor restates this later as the conclusion that Seaborn can perform Matplotlib-like visualisation while also handling statistical-operation-based data representation (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1280" target="_blank">21:20</a>), and concludes that Matplotlib features learned previously carry over to Seaborn graphs, including styling and presentation features (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=912" target="_blank">15:12</a>). Two further structural conclusions from that video: Seaborn supports both individual and built-in datasets and can generate graphs from them (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1589" target="_blank">26:29</a>), and Seaborn has both figure-level and axes-level graphs, a distinction deferred to the next video in the series (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1622" target="_blank">27:02</a>).</p>
+
+<h3>Conclusions about which plot to reach for</h3>
+
+<p>CodeWithMunnaX closes with an explicit mapping of plot type to analytical purpose, concluding that the key uses to remember are: scatter plots for relationships between two variables, count plots for categorical frequencies, box plots for distributions and outliers, hist plots for distributions, heat maps for correlations, pair plots for multiple relationships, and violin plots for comparing distributions — Seaborn in Python | Introduction to Seaborn | Data Visualization Tutorial for Beginners — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1182" target="_blank">19:42</a>). DeepLoop Circle sharpens one pair of these, concluding that heatmaps and pair plots are complementary rather than substitutable: heatmaps summarise correlations in a matrix, while pair plots display separate relationships for column combinations — The Only Seaborn Video You'll Ever Need | Full Python Data Visualization Guide — DeepLoop Circle, presenter Vivek (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=1273" target="_blank">21:13</a>).</p>
+
+<h3>Conclusions about library choice and curriculum scope</h3>
+
+<p>Pivotalstats reaches the most permissive conclusion on tool selection: users may choose Matplotlib, Seaborn, Plotly, or combine them, depending on project goals — Comprehensive Guide on MATPLOTLIB, SEABORN &amp; PLOTLY | Python Data Analysis — Pivotalstats (<a href="https://www.youtube.com/watch?v=UZDP9IPMqcs&t=806" target="_blank">13:26</a>). Simplilearn's closing claim is about pedagogical reach rather than tooling: that Seaborn can take a learner from installation and syntax through plot types, customisation, real-world projects, and on to a professional multi-panel dashboard — Seaborn Tutorial For Beginners 2026 | Seaborn Library In Python | Seaborn Explained — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=1206" target="_blank">20:06</a>).</p>
+
+<h3>Substantive conclusions drawn from the worked dataset</h3>
+
+<p>One source concludes about the world rather than about software. The coffee-shop analysis in Seaborn Python Tutorial: How to Analyze Data Like a Data Analyst (Step-by-Step Guide) — Data Analytics Lab concludes that the higher evening median is more plausibly explained by drink mix than by transaction volume, because transaction counts are similar while more expensive lattes and cappuccinos are ordered at night (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=704" target="_blank">11:44</a>). Relatedly, it concludes that morning-rush sales are largely associated with cheaper Americanos while later-day purchases contain more lattes and cappuccinos (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=763" target="_blank">12:43</a>), and that Tuesday is generally the best sales day in the dataset (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=1243" target="_blank">20:43</a>). These are conclusions about one particular dataset, not general claims, and should not be generalised beyond it.</p>
+
+<h3>Cross-cutting conclusions the corpus supports as a whole</h3>
+
+<p>The following are not stated by any single video; they emerge from reading the sources together.</p>
+
+<ul>
+  <li><strong>The corpus does not frame Matplotlib and Seaborn as competitors.</strong> CodeWithMunnaX's "no strict capability boundary" position (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=553" target="_blank">9:13</a>), its observation that prior Matplotlib styling knowledge transfers to Seaborn graphs (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=912" target="_blank">15:12</a>), and Pivotalstats' explicit endorsement of combining libraries (<a href="https://www.youtube.com/watch?v=UZDP9IPMqcs&t=806" target="_blank">13:26</a>) together support treating the two as layered rather than alternative. Even NeuralNine's framing — the title is "Seaborn Is The Easier Matplotlib" — is a claim about ease, not about replacement.</li>
+  <li><strong>The division of labour the corpus implies is: Matplotlib for figure architecture and control, Seaborn for statistical defaults.</strong> The Matplotlib-side conclusions are overwhelmingly structural and mechanical — figure/subplot/axes addressing, <code>plt.subplots()</code>, tick locators, legends, grid lines, annotations (Academind <a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=723" target="_blank">12:03</a>, <a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1348" target="_blank">22:28</a>, <a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1181" target="_blank">19:41</a>; Data Analytics Lab <a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=392" target="_blank">6:32</a>). The Seaborn-side conclusions are overwhelmingly about statistical content and analytical intent — distributions, correlations, relationships, outliers (CodeWithMunnaX <a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1182" target="_blank">19:42</a>; Onur Baltaci <a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=438" target="_blank">7:18</a>; DeepLoop Circle <a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=1273" target="_blank">21:13</a>). No source argues this split explicitly, but the distribution of their conclusions is what makes it visible.</li>
+  <li><strong>"Minimal code" is the single most frequently reached conclusion about Seaborn, and it is reached independently.</strong> NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=1292" target="_blank">21:32</a>), Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=875" target="_blank">14:35</a>) and CodeWithMunnaX's "simplifies the plotting process" (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=553" target="_blank">9:13</a>) converge on it from different videos and different framings. The convergence strengthens the claim considerably beyond what any one tutorial establishes.</li>
+  <li><strong>Charts in this corpus are treated as instruments of inference, not output artefacts.</strong> The clearest demonstration is the coffee-shop chain of reasoning, where a plot's visible pattern (higher evening median) is interrogated against a rival explanation (transaction volume) and resolved in favour of drink mix — Seaborn Python Tutorial — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=704" target="_blank">11:44</a>). Onur Baltaci's conclusion about exploratory analysis and relationship detection (<a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=438" target="_blank">7:18</a>) and CodeWithMunnaX's purpose-indexed plot list (<a href="https://www.youtube.com/watch?v=5
+<h2>Historical &amp; External References</h2>
+
+<p>Across this corpus of matplotlib and seaborn tutorials, the external references fall into a small number of recurring categories: external data sources (Kaggle, Yahoo Finance, Google Colab, pandas-datareader), the canonical built-in demonstration datasets that ship with Seaborn, official library documentation, deprecated API history, statistical concepts borrowed from outside the plotting libraries, and cross-references to other videos in the same creators' series or to commercial training programmes. Each is catalogued below by theme.</p>
+
+<h3>External dataset sources: Kaggle, Yahoo Finance, Colab and pandas-datareader</h3>
+
+<p>Several creators pull their teaching data from outside the plotting libraries entirely, and name the provenance explicitly. The retail sales dataset used for line charts, scatter plots and boxplots is identified as a Kaggle dataset, with a link promised in the video description — <em>Matplotlib Tutorial for Beginners: Line Charts, Scatter Plots &amp; BoxPlots | Python Data Visualization</em> — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=46" target="_blank">0:46</a>). The same channel identifies its coffee-sales dataset as a Kaggle dataset, again with a promised description link, in <em>Seaborn Python Tutorial: How to Analyze Data Like a Data Analyst (Step-by-Step Guide)</em> — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=84" target="_blank">1:24</a>).</p>
+
+<p>For financial data, the presenter names Yahoo Finance as the source of the Apple stock data used in the walkthrough — <em>Comprehensive Guide on MATPLOTLIB, SEABORN &amp; PLOTLY | Python Data Analysis</em> — Pivotalstats (<a href="https://www.youtube.com/watch?v=UZDP9IPMqcs&t=0" target="_blank">0:00</a>).</p>
+
+<p>The broadest enumeration of possible sources comes from <em>Seaborn Is The Easier Matplotlib</em> — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=67" target="_blank">1:07</a>), where the presenter lists Kaggle, local CSV files, stock data obtained via pandas-datareader, and Seaborn's own built-in dataset names as alternative places to get data for visualisation practice.</p>
+
+<p>A fourth route is the hosting platform itself: the presenter references Google Colab's built-in datasets, specifically the penguins dataset, and promises a code link in the description — <em>The Only Seaborn Video You'll Ever Need | Full Python Data Visualization Guide</em> — DeepLoop Circle, Vivek (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=108" target="_blank">1:48</a>, and again at 28:36).</p>
+
+<h3>The canonical Seaborn demonstration datasets</h3>
+
+<p>The single most-cited body of prior work in this corpus is Seaborn's own bundled dataset collection, which functions as a shared reference canon across unrelated channels. The Simplilearn tutorial introduces the classics by name and by what each is conventionally used to teach: <strong>tips</strong> for restaurant bills, <strong>Titanic</strong> for passenger survival, and <strong>Iris</strong> for flower measurements and machine-learning demonstrations — <em>Seaborn Tutorial For Beginners 2026 | Seaborn Library In Python | Seaborn Explained</em> — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=186" target="_blank">3:06</a>).</p>
+
+<p>The widest sweep through the catalogue is in <em>How to Visualize Data in Python Using Seaborn | Seaborn Tutorial.</em> — Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=0" target="_blank">0:00</a>), where the presenter references Seaborn's available datasets and in the course of the tutorial loads Titanic, exercise, diamonds, flights, passenger and tips.</p>
+
+<p>Rather than naming datasets from memory, one instructor goes to the registry itself, referencing Seaborn's built-in dataset catalogue through <code>sns.get_dataset_names</code> and then demonstrating loading of the Titanic and brain-network datasets — <em>01. Seaborn in Python | Introduction to Seaborn | Data Visualization Tutorial for Beginners</em> — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=586" target="_blank">9:46</a>). The same instructor returns to the built-in datasets and to the general concepts of loading and obtaining datasets later in the lesson — <em>Seaborn in Python | Introduction to Seaborn | Data Visualization Tutorial for Beginners</em> — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1589" target="_blank">26:29</a>).</p>
+
+<p>The Titanic dataset in particular carries an analytic result that is treated as established prior work rather than rediscovered: the presenter refers back to a previous Titanic video of his own and its finding that passenger class is highly correlated with survival — <em>Seaborn Is The Easier Matplotlib</em> — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=945" target="_blank">15:45</a>).</p>
+
+<p>These same datasets also structure the project work at the end of a tutorial: Titanic survival analysis, restaurant-tip analysis and an Iris dashboard are the three practical projects in <em>Seaborn Tutorial For Beginners 2026 | Seaborn Library In Python | Seaborn Explained</em> — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=752" target="_blank">12:32</a>–20:06).</p>
+
+<h3>API history: the deprecation of <code>distplot</code></h3>
+
+<p>Two independent channels reference the same piece of library history — the retirement of Seaborn's <code>distplot</code> — and they agree on the replacement, which makes this the corpus's clearest case of a documented API trajectory rather than a matter of taste.</p>
+
+<ul>
+  <li>The Simplilearn tutorial mentions the future warning associated with the older <code>distplot</code> function and recommends replacing it with <code>histplot</code> with KDE enabled — <em>Seaborn Tutorial For Beginners 2026 | Seaborn Library In Python | Seaborn Explained</em> — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=1016" target="_blank">16:56</a>).</li>
+  <li><em>Seaborn Is The Easier Matplotlib</em> — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=411" target="_blank">6:51</a>) states that <code>distplot</code> is deprecated and recommends <code>histplot</code> instead.</li>
+</ul>
+
+<p>Both sources point the viewer in the same direction; the distinction is only one of emphasis, with Simplilearn framing it as a <em>FutureWarning</em> the learner will see in their own output and additionally specifying that the KDE overlay must be re-enabled explicitly to reproduce the old behaviour.</p>
+
+<h3>Official documentation as a cited authority</h3>
+
+<p>The Matplotlib documentation is invoked directly as a reference work rather than paraphrased: the instructor points viewers to the documentation for ticker configuration, tick locating, formatting and line properties, with links said to be available in the video description — <em>Python - Matplotlib Tutorial for Beginners</em> — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=486" target="_blank">8:06</a>–9:17, and again at 20:58–22:07).</p>
+
+<p>The same tutorial references Python Jupyter Notebook functionality — specifically the <code>%matplotlib inline</code> setting for displaying plots inside notebooks — as external tooling the viewer is expected to rely on, in <em>Python - Matplotlib Tutorial for Beginners</em> — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=49" target="_blank">0:49</a>).</p>
+
+<h3>Statistical and conceptual prior work</h3>
+
+<p>Where the tutorials reach outside software, they reach for standard statistics. Pearson correlation coefficients are invoked to explain what a correlation heatmap is actually showing — <em>Seaborn Tutorial For Beginners 2026 | Seaborn Library In Python | Seaborn Explained</em> — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=652" target="_blank">10:52</a>).</p>
+
+<p>Histograms are treated as prior knowledge the learner already has, referenced as a previously studied visualisation for distributions of numerical data — <em>Seaborn in Python | Introduction to Seaborn | Data Visualization Tutorial for Beginners</em> — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1133" target="_blank">18:53</a>).</p>
+
+<h3>Matplotlib as the prior library Seaborn inherits from</h3>
+
+<p>One instructor treats Matplotlib itself as the referenced prior work underpinning the lesson, naming it as the library whose plotting concepts and formatting operations carry over to Seaborn — <em>Seaborn in Python | Introduction to Seaborn | Data Visualization Tutorial for Beginners</em> — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=912" target="_blank">15:12</a>–21:40). This framing is consistent with the premise of <em>Seaborn Is The Easier Matplotlib</em> — NeuralNine, whose title positions Seaborn relative to the earlier library.</p>
+
+<h3>Cross-references within creators' own series</h3>
+
+<p>Several videos are explicitly positioned as episodes rather than standalone works, pointing backwards and forwards to sibling content:</p>
+
+<ul>
+  <li>The instructor references a prior Python chart-types video, available through the description or an on-screen link — <em>Easiest Way to Plot 📈using Matplotlib in Python 🐍</em> — Gate Smashers (<a href="https://www.youtube.com/watch?v=0sk72TEs3zc&t=86" target="_blank">1:26</a>).</li>
+  <li>The tutorial refers back to a preceding video in the series for the basic installation steps for Python data analysis tools — <em>Python - Matplotlib Tutorial for Beginners</em> — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1" target="_blank">0:01</a>).</li>
+  <li>The instructor forward-references the next video in the series, which will cover figure-level and axes-level graphs — <em>Seaborn in Python | Introduction to Seaborn | Data Visualization Tutorial for Beginners</em> — CodeWithMunnaX (<a href="https://www.youtube.com/watch?v=5AuuOZ4vuxI&t=1622" target="_blank">27:02</a>).</li>
+  <li>As noted above, the NeuralNine presenter cites his own earlier Titanic video for the passenger-class/survival correlation (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=945" target="_blank">15:45</a>).</li>
+</ul>
+
+<h3>Commercial training products referenced</h3>
+
+<p>One video embeds a reference to a commercial product: the segment promotes the Simply Learn Data Analyst program, enumerating Excel, SQL, Python, R, Tableau and Power BI as covered tools, alongside live classes, projects, a capstone, certificates and job-assistance services — <em>Seaborn Tutorial For Beginners 2026 | Seaborn Library In Python | Seaborn Explained</em> — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=59" target="_blank">0:59</a>–1:56). Readers should note this is the publishing channel's own offering rather than a third-party citation.</p>
+
+<h3>Dated external events: the stock-price data in the Academind tutorial</h3>
+
+<p>The one reference in the corpus tied to specific real-world dates is the stock dataset in the Academind walkthrough. The prices are described as taken at approximately mid-November of each year from 2014 through 2018, and the video itself was published on 2018-11-22 — so the data events concern the years preceding publication, with the final data point falling roughly a week before the video went out — <em>Python - Matplotlib Tutorial for Beginners</em> — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=132" target="_blank">2:12</a>–3:11). Any claim in that tutorial about price levels or trends is therefore a claim about the world as of November 2
+<h2>Speaker Contributions</h2>
+
+<p>The corpus is unusual in one respect that shapes everything below: of the twelve contributions captured, only two carry a personal name. The remainder are delivered by instructors identified solely by the channel that publishes them. The sub-sections below group the contributors by what they contribute — a named presence, a library focus, a comparative framing — rather than running through them one channel at a time.</p>
+
+<h3>Named presenters versus channel-anonymous instructors</h3>
+
+<p>Two speakers put a name to the instruction. Vivek identifies himself by name at the opening of <em>The Only Seaborn Video You'll Ever Need | Full Python Data Visualization Guide</em> — DeepLoop Circle (<a href="https://www.youtube.com/watch?v=6lgc8xPTDS0&t=0" target="_blank">00:00</a>), within the first twelve seconds of the video, pairing a personal introduction with a comprehensive-coverage promise in the title itself. Onur Baltaci is identified through the channel and video attribution of <em>Seaborn Course: Learn Data Visualization in Python</em> — Onur Baltaci (<a href="https://www.youtube.com/watch?v=I1Hsa9TSO5U&t=0" target="_blank">00:00</a>), where presenter and channel are the same entity, so the teaching carries his name by default rather than by self-introduction.</p>
+
+<p>Against those two, the bulk of the material is delivered by unnamed instructors whose authority rests on the channel brand. This is true of both Data Analytics Lab videos — <em>Matplotlib Tutorial for Beginners: Line Charts, Scatter Plots &amp; BoxPlots | Python Data Visualization</em> (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=0" target="_blank">00:00</a>) and <em>Seaborn Python Tutorial: How to Analyze Data Like a Data Analyst (Step-by-Step Guide)</em> (<a href="https://www.youtube.com/watch?v=OEWAgzYv2mE&t=0" target="_blank">00:00</a>) — of <em>Easiest Way to Plot 📈 using Matplotlib in Python 🐍</em> — Gate Smashers (<a href="https://www.youtube.com/watch?v=0sk72TEs3zc&t=0" target="_blank">00:00</a>), of <em>Seaborn Tutorial For Beginners 2026 | Seaborn Library In Python | Seaborn Explained</em> — Simplilearn (<a href="https://www.youtube.com/watch?v=Fnn7rCrN_88&t=1" target="_blank">00:01</a>), of <em>Comprehensive Guide on MATPLOTLIB, SEABORN &amp; PLOTLY | Python Data Analysis</em> — Pivotalstats (<a href="https://www.youtube.com/watch?v=UZDP9IPMqcs&t=0" target="_blank">00:00</a>), of <em>Seaborn Is The Easier Matplotlib</em> — NeuralNine (<a href="https://www.youtube.com/watch?v=ooqXQ37XHMM&t=4" target="_blank">00:04</a>), of <em>How to Visualize Data in Python Using Seaborn | Seaborn Tutorial.</em> — Absent Data (<a href="https://www.youtube.com/watch?v=LnGz20B3nTU&t=0" target="_blank">00:00</a>), of both CodeWithMunnaX segments, and of <em>Python - Matplotlib Tutorial for Beginners</em> — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1" target="_blank">00:01</a>). For a reader wanting to trace a claim back to a person, the practical unit of attribution in this corpus is therefore the channel, not the individual.</p>
+
+<h3>Matplotlib-first contributions</h3>
+
+<p>Three contributors approach the topic through Matplotlib as the primary subject. The Data Analytics Lab presenter covers a specific chart inventory — line charts, scatter plots and boxplots — across a roughly twenty-four-minute beginner session in <em>Matplotlib Tutorial for Beginners: Line Charts, Scatter Plots &amp; BoxPlots | Python Data Visualization</em> — Data Analytics Lab (<a href="https://www.youtube.com/watch?v=50SGBO3Psqk&t=0" target="_blank">00:00–24:06</a>). The Gate Smashers instructor takes the opposite tack on length, compressing plotting with Matplotlib into an eight-and-a-half-minute treatment explicitly framed as the "easiest way" in <em>Easiest Way to Plot 📈 using Matplotlib in Python 🐍</em> — Gate Smashers (<a href="https://www.youtube.com/watch?v=0sk72TEs3zc&t=0" target="_blank">00:00–08:28</a>). The Academind instructor's distinctive contribution is environmental rather than topical: the demonstration is carried out in a Jupyter Notebook throughout <em>Python - Matplotlib Tutorial for Beginners</em> — Academind (<a href="https://www.youtube.com/watch?v=qErBw-R2Ybk&t=1" target="_blank">00:01–26:54</a>), making it the clearest example in the corpus of teaching Matplotlib inside the notebook workflow rather than a bare script.</p>
+
+<h3>Seaborn as the centre of gravity</h3>
+
+<p>Seaborn dominates the corpus numerically, and the contributors differ chiefly in how they frame the beginner's entry point. The Simplilearn instructor presents a library-level explanation — "Seaborn Library In Python | Seaborn Explained" — across roughly twenty-one minutes in <em>
+<div class="section"><h2>Statistics</h2>
+<ul>
+<li>Videos analyzed: 11</li>
+<li>Transcripts: 11</li>
+<li>Total words: 55,389</li>
+<li>Total minutes: 226</li>
+<li>Channels represented: 10</li>
+</ul>
+<table class="stats-table"><thead><tr><th>Channel</th><th>Videos</th><th>Words</th><th>Minutes</th><th>Share</th></tr></thead><tbody>
+<tr><td>Data Analytics Lab</td><td>2</td><td>12,174</td><td>47</td><td>22.0%</td></tr>
+<tr><td>Academind</td><td>1</td><td>6,843</td><td>27</td><td>12.4%</td></tr>
+<tr><td>DeepLoop Circle</td><td>1</td><td>6,540</td><td>29</td><td>11.8%</td></tr>
+<tr><td>Simplilearn</td><td>1</td><td>6,174</td><td>22</td><td>11.1%</td></tr>
+<tr><td>NeuralNine</td><td>1</td><td>5,756</td><td>23</td><td>10.4%</td></tr>
+<tr><td>CodeWithMunnaX</td><td>1</td><td>5,494</td><td>28</td><td>9.9%</td></tr>
+<tr><td>Absent Data</td><td>1</td><td>3,776</td><td>16</td><td>6.8%</td></tr>
+<tr><td>Pivotalstats</td><td>1</td><td>3,528</td><td>14</td><td>6.4%</td></tr>
+<tr><td>Onur Baltaci</td><td>1</td><td>2,730</td><td>12</td><td>4.9%</td></tr>
+<tr><td>Gate Smashers</td><td>1</td><td>2,374</td><td>9</td><td>4.3%</td></tr>
+</tbody></table>
+</div>
+</div>
+</body>
+</html>

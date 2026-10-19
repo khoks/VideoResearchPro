@@ -76,7 +76,7 @@ Settings: `NOTE_RETRIEVAL_WEIGHT` (1.5), `CHROMA_NOTES_COLLECTION_NAME`. Search 
 ## Open questions
 
 1. Keep the 1.5 weight from the L4 sketch as the starting value, or start at 1.0 and let the measurement set it?
-2. Should notes on a *document* be visible on every job that contains the document (recommended: yes, they are about the document)?
+2. Should notes on a *document* be visible on every job that contains the document (recommended: yes, they are about the document)? **Taken at the default in S-8.5.1** (one note stream per `document_id`; a run-scoped thought is a `job` note). See [D-074](../decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19); the user may revisit.
 
 ## Sources (fetched 2026-10-19)
 

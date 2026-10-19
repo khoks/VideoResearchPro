@@ -1893,6 +1893,8 @@ Concrete failures that decided it: sonnet named **18 distinct tools/models vs op
 
 **Amended 2026-10-19: the explicit model never covered non-video sources.** The first frontend caller of `upload-pdf` and `paste-urls` (PR [#224](https://github.com/khoks/VideoResearchPro/pull/224)) found that `document_visibility.video_id` is a foreign key to `documents.video_id`, the legacy YouTube-id column, which is NULL for every `source_type` other than `video`. `visibility_service.grant()` drops falsy ids, so the grants this entry says are "wired at every ingest path, including the dedup hit on PDF and paste" are silently never written for a PDF or a pasted page, and every reader filters on the same column. The migration's "0 documents left ungranted" was true only because no non-video document existed on that instance. In effect the model protected against leaks but delivered the data-loss outcome this entry set out to avoid, for exactly the ingest paths it named. A strict `xfail` pins it; the fix is [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).
 
+**Amended 2026-10-19 (II): three reads the five leak classes did not list.** Auditing every `documents` reader after D-070 merged found reads that never checked the tenant at all: both knowledge endpoints (read the shared artifact, or spend an extraction, on any document by id), the PDF serve route (the digest was the only gate), and the book outputter (any job id compiled into a book). Fixed in PR [#248](https://github.com/khoks/VideoResearchPro/pull/248) (S-5.10.6) with a shared `visibility_service.visible_document(db, tenant_id, id)` for single-document lookups. The lesson is the one D-070 already drew: an invariant written as "every read goes through the visibility service" holds only as far as someone has listed the reads, so new routes that take a document or job id in the path are where to look first.
+
 
 ## D-064 — Output length: corpus brackets with an optional user override (2026-07-31)
 
@@ -2222,3 +2224,57 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 **Consequences.** The smoke probe now exercises the Google provider at startup, which is why `langchain-google-genai` had to become a declared dependency (PR #231). Frame resolution is the next lever (T-1.18.5.5). The S-1.18.2 UI decision waits for the protocol re-run after S-1.18.6.
 
 **Linked initiatives / PRs.** S-1.18.5 (closed except .4/.5), S-1.18.6, D-071.
+
+
+## D-074 — Notes: one stream per document, soft delete only, lossless W3C JSON-LD export, Echo feeder reported not gated (2026-10-19)
+
+**Status:** accepted. Item 1 takes the [M5 plan](plans/m5-notes.md#open-questions)'s open question 2 at its recommended default; the user may revisit it.
+
+**Context.** Notes (M5, [E-8.5](initiatives.md#e-85--notes--the-users-own-voice-in-the-library-m5)) are the first text in the system written BY the user rather than ingested FOR them, and the richest input Echo's voice capture (E-3.3) will have. Building S-8.5.1 and S-8.5.3 forced four choices the plan left open or did not name. At the time, the library shelf still addressed a document by its legacy YouTube `video_id` while the job page used `document_id`. Deletion semantics would decide whether an export can carry a withdrawn note. "Exportable" had to name a format. The plan said notes feed Echo readiness, but readiness's per-language voice floor belongs to S-3.5.1.
+
+**Decision.**
+1. **One note stream per document.** A `document` or `knowledge_artifact` note accepts either id and is stored under the canonical `document_id`. It therefore shows on every surface that shows the document, including every job that contains it. A note meant for one run is a `job` note. Responses carry `target_video_id` for surfaces still keyed on the legacy id.
+2. **Soft delete only.** `DELETE /notes/{id}` sets `deleted_at`. The row leaves every live read and list but stays for exports and for Echo. No purge endpoint exists yet.
+3. **The lossless export is W3C Web Annotation JSON-LD.** `GET /exports/notes.jsonl` writes one annotation per line under the `anno.jsonld` context, with withdrawn notes carrying a `deleted` timestamp. `note_export_service.parse_note_jsonld` is the exact inverse, and a test holds every stored column of every row to it. The Markdown export is for reading. This is also the GDPR Article 20 copy of user-provided data.
+4. **Echo feeder, reported not gated.** `GET /echo/status` reports `notes_total` and `notes_words`, and the readiness panel shows them. `ready` does not change until S-3.5.1 sets the voice floor.
+5. **Missing and foreign are the same 404**, for both note ids and targets, as the library Q&A delete already does.
+
+**Alternatives considered.**
+- *Scope document notes to the job they were written from.* Rejected for v1. A note on a document is about the document, the plan recommended this, and a run-scoped thought already has the `job` target type.
+- *Store whichever id the caller sent.* Rejected. One document would get two note streams that never meet, and D-070 has since made `document_id` the only visibility key.
+- *Hard delete.* Rejected. It loses the user's own words from the export and from Echo, and a withdrawal is itself a signal. A purge for erasure requests can come with the SaaS erasure flow.
+- *A bespoke JSON export.* Rejected. The W3C shape is portable to Hypothes.is-style tools at no extra cost, and the round-trip test makes it lossless anyway.
+- *Gate readiness on notes now with a provisional floor.* Deferred to S-3.5.1, which owns the per-language minima and the evidence behind them.
+
+**Consequences.** S-8.5.2 must exclude withdrawn notes from the `notes_global` collection, and a document note must reach every job that contains the document, not only the one it was written from. Inline panels fetch one list per target type per page, capped at 2,000 rows, so a heavy user sees only the newest 2,000 of a type inline while the `/notes` page and the export see everything. A purge endpoint is owed before SaaS (see [saas-roadmap.md](saas-roadmap.md)).
+
+**Linked initiatives / PRs.** [S-8.5.1](initiatives.md#s-851--notes-schema-rest-and-inline-ui) (PR [#243](https://github.com/khoks/VideoResearchPro/pull/243)), [S-8.5.3](initiatives.md#s-853--your-notes-view-search-and-export) (PR [#246](https://github.com/khoks/VideoResearchPro/pull/246)), S-8.5.2, S-3.5.1, [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).
+
+## D-075 — R1 after three runs: the modality boundary needs provenance, not prompt rules (2026-10-19)
+
+**Status:** accepted. Follows [D-071](#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19) and [D-073](#d-073--frame-description-moves-to-gemini-31-flash-lite-on-image-grounded-grading-selection-stays-on-gpt-55-2026-10-19); the measurements are in [the protocol note](notes/2026-10-18-r1-visual-measurement.md#re-runs-after-the-contract-fix-t-11863-appended-2026-10-19).
+
+**Context.** S-1.18.6 added an attribution-boundary rule to `VISUAL_ANNOTATION_CONTRACT`, and D-073 moved frame description to gemini-3.1-flash-lite to meet the cost ceiling. Two re-runs on the same job then tested each change on its own: run 2 with Flash-Lite descriptions, run 3 with gpt-5.5 descriptions, both under the new rule, both judged blind by three model families and adversarially verified.
+
+**Findings.**
+
+1. The substance gain is real, but only with a strong describer: run 3 won 3/3 at matched length; run 2 tied (1/3). A cheap describer that grades only 0.3 points lower per frame erased the benefit at report level.
+2. The rule changed the direction of attribution errors, not their number. Every run had one or two confirmed errors per ~10,000-word report. Before the rule, screen details were credited to speakers; after it, spoken details were credited to the screen.
+3. A deterministic post-check cannot enforce the boundary on this corpus. It recalled 2 of 5 confirmed errors, flooded reports with false positives, and is structurally blind to Hindi and Bengali speech.
+
+**Decision.**
+
+- **The UI (S-1.18.2) stays deferred.** No configuration has yet met all three pre-registered criteria.
+- **Fix the cause, not the wording.** At the map stage, each extracted fact is labelled with its modality, `said`, `shown` or `both`, taken from the chunk it came from. The label travels through the lossless reduce (D-056) and is rendered for the composer. The composer then attributes from labels instead of inferring modality from interleaved text, and a check can compare the report against item provenance rather than raw transcripts. Filed as S-1.18.8, sequenced after S-1.14.6, which persists map items so their labels can be audited.
+- **The describer is chosen at report level, not per frame.** Per-frame grading did not predict the report-level loss, so the next tier change needs a report-level run. Three mid-priced describers (gpt-5.4-mini, claude-haiku-4-5, gemini-3.5-flash) are graded per frame first to pick a candidate (S-1.18.5).
+- **Multilingual verification rule.** A claim is not called fabricated until the non-Latin speech has been checked, native digits included. Judges and checkers that read only Latin script inflate fabrication counts on this corpus.
+
+**Alternatives considered.**
+
+- *Tighten the prompt again with the converse rule ("say 'on screen' only where a span exists").* Rejected as the primary fix: the last prompt rule moved the error rather than removing it, and a third rule may move it again. It is cheap, so it can ride along with S-1.18.8, but it is not relied on.
+- *Ship the deterministic check as a warning in the processing note.* Rejected: about eight false flags per report would teach readers to ignore the note.
+- *An LLM audit pass after compose.* Viable (the sweep found what the judges missed). It is deferred, not rejected: provenance makes errors less likely at the source, and an audit would then have less to catch. It is reconsidered after the S-1.18.8 measurement.
+
+**Consequences.** The visual feature stays opt-in and off by default, now with measured quality and known failure modes. S-1.18.8 touches the map and compose prompts and the item schema, so it is serialised after the R5 session's prompt work and after S-1.14.6.
+
+**Linked initiatives / PRs.** S-1.18.2 (deferred), S-1.18.5, S-1.18.6 (T-3 done), S-1.18.7 (measured), S-1.18.8 (new), S-1.14.6.

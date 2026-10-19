@@ -54,6 +54,7 @@ Production targets the same shape, with SQLite swapped for Postgres and ChromaDB
   - Creates `data/` directories (DB, ChromaDB, reports).
   - Creates SQLAlchemy tables (idempotent; Alembic migrations are the source of truth, but `Base.metadata.create_all` is the dev fallback).
   - Runs `services/llm_smoke.run_startup_probes` — see "LLM smoke + fail-soft" below.
+  - Ensures the search index (S-8.2.1): `services/search_service.ensure_index_for_url` probes SQLite for FTS5 with the trigram tokenizer, creates any missing `fts_*` virtual tables and their `AFTER INSERT / UPDATE / DELETE` triggers, rebuilds the ones just created from their base tables, and records the backend (`fts5` or `like`) that `GET /health` reports as `search_backend`. Migration `a9f3c1e7b5d2` does the same conditionally, so a fresh install is indexed before the first request; the lifespan re-probe is what picks up a Python upgrade that gains FTS5 later. Never blocks startup. The worker needs nothing: the triggers live in the database, so ingest writes from any process are indexed.
 - On shutdown: flushes any pending Chroma writes, closes the embedding model, releases Redis connections.
 - Does **not** run Celery tasks itself. It only `.delay()`-dispatches them.
 
@@ -87,7 +88,7 @@ Three logical databases on the same instance:
 
 ### SQLite
 
-`data/videoresearchpro.db` (env `DATABASE_URL`). All structured state: users, jobs, documents (formerly `videos`; renamed in L1 PR 4), channels, transcript cache, Q&A exchanges, knowledge artifact metadata. Alembic migrations under `backend/alembic/`.
+`data/videoresearchpro.db` (env `DATABASE_URL`). All structured state: users, jobs, documents (formerly `videos`; renamed in L1 PR 4), channels, transcript cache, Q&A exchanges, knowledge artifact metadata, scheduled runs. Alembic migrations under `backend/alembic/`. Beside the ORM tables sit the S-8.2.1 search index's FTS5 virtual tables (`fts_documents`, `fts_jobs`, `fts_channels`, `fts_qa`, `fts_knowledge`, plus SQLite's `fts_*_data` / `_idx` / `_content` / `_docsize` / `_config` shadow tables): one trigram-tokenised table per entity, each row carrying the entity id as an `UNINDEXED` column and a copy of the indexed text, kept current by triggers. They have no ORM model and `schema_init_service` ignores the `fts_` prefix when comparing the live schema to the ORM. External-content mode was rejected because it maps on rowid and every base table has a string primary key, whose rowids are not stable across `VACUUM`.
 
 ### ChromaDB
 
@@ -228,7 +229,9 @@ User ──┬──< Job ──< JobVideo >── Document ──> Channel
        │           └── status, type, parameters (JSON)
        │
        ├──< LibraryQAExchange
-       └──< QAHistoryExchange
+       ├──< QAHistoryExchange
+       └──< Note ──> (document | knowledge_artifact | job | qa_exchange |
+                      library_qa_exchange | qa_history_exchange | channel)
 
 Document ──< KnowledgeArtifact (columns on Document, not a separate table)
 Document ──  DiscussedEra (column `discussed_era_json` on Document — R3, see below)
@@ -254,6 +257,7 @@ ApiQuotaLog (append-only ledger of YouTube + LLM calls)
   - `qa_history_exchanges` (meta-chat surface)
 
   All three are stored separately for SQL-level filtering but indexed together in `qa_library_global` so meta-chat retrieval crosses surfaces.
+- **Notes are the user's own text, private per tenant** (M5). `notes(id, tenant_id, target_type, target_id, selector_json, body_md, motivation, created_at, updated_at, deleted_at)`. The target set is closed; the target is checked through visibility or ownership on every write; a document note is stored under `document_id`, so one document has one note stream. Delete is soft, and the JSON-LD export carries withdrawals losslessly. Notes are not in Chroma until S-8.5.2. See [D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19).
 - **Knowledge artifacts live on the Document row.** Three nullable columns (`extracted_knowledge_json`, `knowledge_report_md`, `knowledge_extracted_at`). One artifact per document.
 - **Jobs carry a status enum**: `pending → searching → awaiting_approval → extracting → building_rag → generating_report → completed`. Terminal: `completed`, `failed`, `cancelled`. Subscription jobs skip `awaiting_approval` and `generating_report`.
 

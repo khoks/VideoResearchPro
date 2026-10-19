@@ -9,6 +9,8 @@ from `base` stays runnable with the new revision in it.
 Each entry names the revision and the tables it owns. Add a row per schema
 change rather than a new test file.
 """
+import sqlite3
+
 import pytest
 from alembic import command
 from alembic.script import ScriptDirectory
@@ -16,8 +18,29 @@ from sqlalchemy import create_engine, inspect
 
 from app.services.schema_init_service import _alembic_config
 
+def _has_fts5_trigram() -> bool:
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.execute("CREATE VIRTUAL TABLE t USING fts5(x, tokenize='trigram')")
+        return True
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        conn.close()
+
+
 LANE_MIGRATIONS = [
+    ("c7d8e9f0a1b2", {"scheduled_runs"}),
+    ("c2d3e4f5a6b7", {"notes"}),
     ("d8e9f0a1b2c3", {"shelves", "shelf_jobs"}),
+    # S-8.2.1: the search index is created only when SQLite has FTS5 with the
+    # trigram tokenizer; elsewhere the migration deliberately creates nothing.
+    pytest.param(
+        "a9f3c1e7b5d2",
+        {"fts_documents", "fts_jobs", "fts_channels", "fts_qa", "fts_knowledge"},
+        marks=pytest.mark.skipif(not _has_fts5_trigram(), reason="SQLite without FTS5 trigram"),
+        id="a9f3c1e7b5d2-search-index",
+    ),
 ]
 
 

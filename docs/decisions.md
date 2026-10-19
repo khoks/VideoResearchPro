@@ -2277,7 +2277,7 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **Consequences.** The visual feature stays opt-in and off by default, now with measured quality and known failure modes. S-1.18.8 touches the map and compose prompts and the item schema, so it is serialised after the R5 session's prompt work and after S-1.14.6.
 
-**Implemented 2026-10-19 (S-1.18.8 T-1 to T-3, PR #TBD).** Choices made inside this decision, open to revision:
+**Implemented 2026-10-19 (S-1.18.8 T-1 to T-3, PR [#277](https://github.com/khoks/VideoResearchPro/pull/277)).** Choices made inside this decision, open to revision:
 
 - *Code overrides the model where code can know.* An item from a source with no visual annotation is `said`, whatever the model labelled it; the model's value is kept as `modality_model` in the persisted map record (S-1.14.6) so its labelling can still be audited.
 - *Unknown is a label, not a default.* A missing or unusable label becomes `unknown` and renders as `[UNLABELLED]`, which sends the composer back to the contract's own rules. Defaulting to `said` would recreate the error this decision exists to remove.

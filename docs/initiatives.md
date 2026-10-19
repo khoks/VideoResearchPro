@@ -529,6 +529,8 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
   - [x] T-1.14.15.4 Judging harness — `backend/scripts/judge_report_sections.py` splits a report on `<h2>` and judges each section in full; no document-level cap remains
 - **S-1.14.11 🟢 Reasoning-model response shape — shipped 2026-07-30.** Anthropic returns `[thinking_block, text_block]` instead of a string once the model actually thinks, so `response.content` yielded a list exactly on the hardest prompts. Latent in production since D-053 moved these sites to claude-sonnet-5. Fixed centrally via `llm_service.response_text()` at all 18 response-reading call sites, with regression tests.
 
+- S-1.14.17 ⚪ A composed section can end mid-tag. Found 2026-10-19 by S-8.8.1's parser fixtures: the stored report for job `419e691d…` (the R1 measurement run) has a `<a href="https://www.youtube.com/watch?v=5` cut off where one section ends and the next begins, so every HTML parser folds the next section's `<h2>` and `<h3>` into that attribute value and two headings vanish from the outline, the iframe and the reader alike. Likely a completion-budget cut in `report_compose`; the compose step should detect an unbalanced tail (unterminated tag or attribute) and either retry the section or close it cleanly, and disclose it in the processing note like the other drops. Not a reader concern — the reader refuses to link the garbage href and nothing more can be recovered client-side.
+
 **Open questions**
 - OQ-7: does the harness generalize to a scheduled regression check (re-run on every model-lineup shift), or stay a manual audit? Depends on S-1.14.6 landing.
 - OQ-8: judging currently uses a single model family; is a multi-judge panel needed to control for self-preference bias when the challenger shares that family?
@@ -847,7 +849,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.3.1.4 Isolation and tombstone tests
 
 #### S-3.3.2 🔵 Signal extraction
-**PR:** TBD. Depends on E-8.5 (notes) for its richest input.
+**PR:** TBD. Depends on E-8.5 (notes) for its richest input. That input exists since 2026-10-19 (S-8.5.1 / S-8.5.3): read live notes through `note_service.iter_notes(include_deleted=False)` and treat a withdrawn note as a reason to suppress any signal derived from it, not as a missing row ([D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19)).
 - [ ] T-3.3.2.1 `echo_extract_signals` use case (economy tier, structured JSON): given a batch of the user's own text with provenance, emit candidate signals with examples; merged by `(signal_type, value)` with weight accumulation
 - [ ] T-3.3.2.2 Cheap stylometric baseline computed without an LLM (function-word profile, sentence-length distribution, punctuation habits, character n-grams; language-agnostic) plus one open author-embedding per note on the existing CPU embedding worker (Apache-2.0 or MIT model, named in the plan; English-trained, so the embedding is English-only until validated), stored as `cadence` signals and a per-language style centroid
 - [ ] T-3.3.2.3 Inputs: notes, Q&A questions, shares with `user_annotation`, connector `text_content` where the user is the author; incoming content is never a voice input
@@ -897,6 +899,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.5.1.1 `is_ready` v2 scoring facts, events (count and span), signals (count and types), shares (count and content types) and notes against the `personal-brain.md` minima, plus a per-language voice floor (the plan suggests about 30 notes or 2,000 words per language, to be tuned) and centroid stability; per-domain progress in `EchoReadiness`. No comparable product publishes a numeric threshold; the literature's anchors are about five exemplars for prompt-time voice and 32 to 100 examples for fine-tuning
 - [ ] T-3.5.1.2 `GET /echo/status` returns per-domain progress; the meter shows what is missing in words
 - [ ] T-3.5.1.3 Thresholds in settings; tests per domain and for the all-domains gate
+Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` reports `notes_total` and `notes_words` (live notes) since S-8.5.3 (PR [#246](https://github.com/khoks/VideoResearchPro/pull/246)), counted by `note_service.voice_stats`. This story turns them into a per-language gate; until then they are reported only ([D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) item 4).
 
 ### E-3.6 🟢 Tier gating (Studio-only initially)
 
@@ -1568,6 +1571,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.2.2.2 Palette on `cmdk` (MIT, about 15 kB gzipped, unstyled, React 19 peer dependency, `shouldFilter={false}` for server results) with ARIA combobox/listbox semantics, inline styles plus at most one scoped `<style>` block for its data-attribute states, grouped results, recent items (localStorage), navigation actions ("New research", "Open library Q&A", "Toggle theme")
 - [ ] T-8.2.2.3 Debounced query, request cancellation, empty and loading states
 - [ ] T-8.2.2.4 Remove the stale `ui-design.md` claim or make it true (`g + r` style chords) in the same PR
+- [ ] T-8.2.2.5 Notes group in the palette: "Your notes" (`/notes`), "Export notes as Markdown" and "Export notes as JSON-LD" (`/exports/notes.md` / `.jsonl`). Moved here from T-8.5.3.2, which shipped before the palette existed
 
 #### S-8.2.3 ⚪ Semantic group
 - [ ] T-8.2.3.1 `semantic=true` adds a group from `qa_library_global` and the transcript collection (visible set only), merged with the keyword results by reciprocal rank fusion (rank-only, so FTS5 scores and Chroma distances need no calibration); labelled separately in the palette
@@ -1621,6 +1625,9 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 
 ### E-8.5 🟡 Notes — the user's own voice in the library (M5)
 
+**Progress 2026-10-19.** S-8.5.1 and S-8.5.3 shipped (Phase 1, lane D). S-8.5.2 remains and is sequenced after E-7.1.
+**Linked decision:** [D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) (one note stream per document, soft delete only, lossless JSON-LD export, Echo feeder reported not gated).
+
 **Scope.** Free-text Markdown notes on any entity (document, job, Q&A exchange, channel, knowledge artifact), private to the author, searchable, exportable, and **citable**: a note is retrieved alongside transcripts and cited as "you wrote this on <date>" with a 1.5× retrieval weight applied through the [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18) re-rank. Foundational for [E-3.3](#e-33--voice--personality-capture-domain-3): notes are the highest-density personality signal.
 **Plan:** [`docs/plans/m5-notes.md`](plans/m5-notes.md)
 **Acceptance.** A user adds a note to a document; the note appears inline under it and in the "Your notes" view; a library question whose answer the note bears on cites the note with its date and ranks it above an equally relevant transcript chunk; another tenant never sees or retrieves it; the user exports all notes as Markdown.
@@ -1641,12 +1648,16 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.5.2.3 `_chunk_to_reference` emits a `note` reference `{note_id, target, created_at, quote}`; `<CitationLink>` renders "you wrote this on YYYY-MM-DD" and links to the note's target
 - [ ] T-8.5.2.4 Re-embed on edit, delete chunks on delete; backfill script for existing notes
 - [ ] T-8.5.2.5 Tests: note cited; weight ordering; absent for other tenants; empty visible set still returns the tenant's notes only when they match
+- [ ] T-8.5.2.7 Withdrawn notes (`deleted_at` set) never enter `notes_global`, and soft-deleting a note removes its vector ([D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) item 2); test both
+- [ ] T-8.5.2.8 A `document` note is retrievable from job-scoped Q&A on EVERY job that contains the document, not only the one it was written from (D-074 item 1): match note `target_id` against the job's approved `document_id` set
+- [ ] T-8.5.2.9 The citation reuses the shipped `NoteCard` phrasing ("You wrote this on <date>") so the inline list, the notes page and the answer read the same
+Linked decision: D-074.
 
-#### S-8.5.3 🔵 "Your notes" view, search and export
-**PR:** TBD
-- [ ] T-8.5.3.1 `/notes` page: all notes newest first, grouped by target type, filter by target, full-text filter
-- [ ] T-8.5.3.2 `GET /api/v1/exports/notes.md` and `.jsonl` (streaming, like the dataset exports); included in the command palette groups (E-8.2)
-- [ ] T-8.5.3.3 Notes counted toward Echo readiness as the Domain 3 feeder ([S-3.5.1](#s-351--five-domain-readiness))
+#### S-8.5.3 🟢 "Your notes" view, search and export
+**PR:** [#246](https://github.com/khoks/VideoResearchPro/pull/246) — merged 2026-10-19. Lane D of Phase 1 is complete; S-8.5.2 (retrieval and citations) waits for E-7.1 in Phase 2.
+- [x] T-8.5.3.1 `/notes` page: all notes newest first, grouped by target type, filter by target, full-text filter. Fetches the newest 2000 (the server's page cap) and groups client-side so the type chips carry counts; says so when more exist. A "Show withdrawn" toggle lists soft-deleted notes read-only. Each note links to the page its target lives on (run, channel page, library Q&A, history anchor); sources have no page of their own yet, so those link to the shelf
+- [x] T-8.5.3.2 `GET /api/v1/exports/notes.jsonl` (W3C Web Annotation JSON-LD under the `anno.jsonld` context, one per line, oldest first, withdrawn notes included with `deleted`; `note_export_service.parse_note_jsonld` is the exact inverse and the round-trip test holds every column to it) and `GET /api/v1/exports/notes.md` (grouped by target type and target, every column in an HTML comment per note). Both stream like the dataset exports and accept `?token=`. On the Exports page and the notes page. **Not in the command palette**: E-8.2's palette UI (S-8.2.2) does not exist yet; add the group there when it lands (filed as [T-8.2.2.5](#s-822--palette-ui-and-shortcuts))
+- [x] T-8.5.3.3 `GET /echo/status` reports `notes_total` and `notes_words` (live notes) as the Domain 3 feeder; the Echo readiness panel shows them. **Reported, not gated**: the per-language voice floor is S-3.5.1's to set, so `ready` does not move
 
 ### E-8.6 🔵 Job templates (M6)
 
@@ -1699,13 +1710,13 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 **Plan:** [`docs/plans/m8-reading-room.md`](plans/m8-reading-room.md)
 **Acceptance.** A report opens at `/reports/:jobId` with no iframe and no token in the URL; the outline tracks scroll; hovering a citation shows source title, channel and timestamp; Ctrl-P produces a clean document with citations as footnotes; keyboard navigation reaches every citation; the page holds 75ch measure at desktop and reflows at 640px.
 
-#### S-8.8.1 🔵 Report content endpoint and sanitised renderer
-**PR:** TBD
-- [ ] T-8.8.1.1 The reader fetches the report body through the authenticated API (Authorization header, no `?token=` in any URL) as `{title, html, statistics}`; the legacy HTML route stays for "Open in new tab"
-- [ ] T-8.8.1.2 Client-side pipeline: DOMPurify (dual MPL-2.0 / Apache-2.0, elect Apache-2.0; about 12 kB gzipped; forbid `style` and `script`) then `html-react-parser` (MIT, about 11 kB) with a `replace` hook that turns `&t=` anchors into `<CitationLink>`, assigns heading ids and collects the outline, and wraps tables in a scroll container; reports stay HTML (converting them to Markdown is lossy)
-- [ ] T-8.8.1.5 Retire the query-string JWT fallback on the report route (`get_user_from_query_or_header`) once the iframe is gone; it is a log-leak surface
-- [ ] T-8.8.1.3 `/reports/:jobId` route, `ReaderShell` layout (65 to 75ch measure, drop cap via `::first-letter` with `initial-letter` under `@supports` because Firefox still lacks it, IntersectionObserver outline, reading-progress bar, `text-wrap: pretty` as enhancement), `JobDetailPage` "Read" button; modal kept as quick peek
-- [ ] T-8.8.1.4 Tests: parser on three stored real reports; sanitiser rejects script / event handlers; type-check
+#### S-8.8.1 🟢 Report content endpoint and sanitised renderer
+**PR:** [#244](https://github.com/khoks/VideoResearchPro/pull/244) — shipped 2026-10-19. The body route lives in a new `routers/reports.py` (the Q&A router is a shared hot spot and was left untouched); the plan's open question 1 was taken at its recommended default (retire `?token=` later, T-8.8.1.5 stays open) and question 2 likewise (the modal survives as "Quick peek"). A vitest + jsdom runner (`npm test`) arrived with this story — the frontend had none.
+- [x] T-8.8.1.1 The reader fetches the report body through the authenticated API (Authorization header, no `?token=` in any URL) as `{title, html, statistics}`; the legacy HTML route stays for "Open in new tab"
+- [x] T-8.8.1.2 Client-side pipeline: DOMPurify (dual MPL-2.0 / Apache-2.0, elect Apache-2.0; about 12 kB gzipped; forbid `style` and `script`) then `html-react-parser` (MIT, about 11 kB) with a `replace` hook that turns `&t=` anchors into `<CitationLink>`, assigns heading ids and collects the outline, and wraps tables in a scroll container; reports stay HTML (converting them to Markdown is lossy) — *shipped as `components/reader/{sanitize,parseReport}`; the chip is `ReaderCitation` (the existing `CitationLink` takes a Q&A `Reference`, which a report anchor cannot supply). Bare pre-S-1.14.9 `href="&t=123"` anchors render as non-link chips; an href the browser repaired out of a truncated tag is never linked.*
+- [ ] T-8.8.1.5 Retire the query-string JWT fallback on the report route (`get_user_from_query_or_header`) once the iframe is gone; it is a log-leak surface — *open: needs an edit to `routers/qa.py` (a serialised hot spot) and the quick-peek modal still uses the fallback*
+- [x] T-8.8.1.3 `/reports/:jobId` route, `ReaderShell` layout (65 to 75ch measure, drop cap via `::first-letter` with `initial-letter` under `@supports` because Firefox still lacks it, IntersectionObserver outline, reading-progress bar, `text-wrap: pretty` as enhancement), `JobDetailPage` "Read" button; modal kept as quick peek
+- [x] T-8.8.1.4 Tests: parser on three stored real reports; sanitiser rejects script / event handlers; type-check — *the three fixtures are committed under `components/reader/__fixtures__`; one of them (`419e691d…`) was cut mid-tag by the writer so the browser folds two of its headings into an attribute value — the reader cannot recover them, the compose step should refuse to emit a truncated section (filed as a note under E-1.14)*
 
 #### S-8.8.2 🔵 Citation hover cards and footnotes
 **PR:** TBD

@@ -6,6 +6,7 @@ import { PricingPage } from '../pages/marketing/PricingPage';
 import { SubmitJobPage } from '../pages/SubmitJobPage';
 import { JobsListPage } from '../pages/JobsListPage';
 import { JobDetailPage } from '../pages/JobDetailPage';
+import { ReportReaderPage } from '../pages/ReportReaderPage';
 import { LibraryPage } from '../pages/LibraryPage';
 import { LibraryQAPage } from '../pages/LibraryQAPage';
 import { ChannelPage } from '../pages/ChannelPage';
@@ -13,6 +14,7 @@ import { ShelvesPage } from '../pages/ShelvesPage';
 import { ShelfPage } from '../pages/ShelfPage';
 import { QAHistoryChatPage } from '../pages/QAHistoryChatPage';
 import { ExportsPage } from '../pages/ExportsPage';
+import { NotesPage } from '../pages/NotesPage';
 import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
 import { SubscriptionPage } from '../pages/SubscriptionPage';
@@ -68,6 +70,7 @@ export const router = createBrowserRouter([
           { path: 'submit', element: <SubmitJobPage /> },
           { path: 'jobs', element: <JobsListPage /> },
           { path: 'jobs/:jobId', element: <JobDetailPage /> },
+          { path: 'reports/:jobId', element: <ReportReaderPage /> },
           { path: 'library', element: <LibraryPage /> },
           { path: 'library/qa', element: <LibraryQAPage /> },
           { path: 'library/channels/:channelId', element: <ChannelPage /> },
@@ -75,6 +78,7 @@ export const router = createBrowserRouter([
           { path: 'shelves/:shelfId', element: <ShelfPage /> },
           { path: 'qa-history', element: <QAHistoryChatPage /> },
           { path: 'exports', element: <ExportsPage /> },
+          { path: 'notes', element: <NotesPage /> },
           { path: 'author', element: <AuthorPage /> },
           { path: 'echo', element: <EchoPage /> },
           { path: 'account/subscription', element: <SubscriptionPage /> },

@@ -26,6 +26,61 @@ Third PR of the organisation lane ([S-8.1.2](docs/initiatives.md#s-812--shelves-
 - **Label palette.** Ten named colours in `theme.ts`, every pair at ≥ 4.5:1 in
   both modes; shelves store the name, never a hex.
 
+
+### Notes: the "Your notes" page, exports and the Echo feeder (S-8.5.3, 2026-10-19)
+
+Second and last Phase 1 PR of the notes lane. Story [S-8.5.3](docs/initiatives.md#s-853--your-notes-view-search-and-export), PR [#246](https://github.com/khoks/VideoResearchPro/pull/246).
+
+- **`/notes` page** ("Your notes" under Knowledge in the sidebar): every note,
+  grouped by target type, newest first, with a debounced search, type chips
+  with counts, a "Show withdrawn" toggle, inline edit and delete, and a link
+  from each note to the page its target lives on.
+- **Exports.** `GET /api/v1/exports/notes.jsonl` streams W3C Web Annotation
+  JSON-LD, one per line, withdrawn notes included with `deleted`;
+  `note_export_service.parse_note_jsonld` is the exact inverse and the
+  round-trip test holds every column to it. `GET /api/v1/exports/notes.md`
+  streams a readable document grouped by target. Both on the Exports page.
+- **Echo feeder.** `GET /echo/status` reports `notes_total` and `notes_words`
+  (Domain 3); the readiness panel shows them. Reported, not gated, until
+  S-3.5.1 sets the voice floor.
+- Not done: the command-palette entry (the palette does not exist yet) and
+  retrieval (S-8.5.2, after E-7.1).
+### Reading room: reports render natively, no token in the URL (2026-10-19)
+
+S-8.8.1, the first story of the E-8.8 reading room
+([plan](docs/plans/m8-reading-room.md)). Reports used to be read inside an
+`<iframe>` whose `src` carried the JWT as `?token=`; they now open at
+`/reports/:jobId` as a native reading view.
+
+- **`GET /api/v1/jobs/{id}/report/body`** returns `{title, html, statistics,
+  generated_at}` under header auth only. `report_service.extract_report_body`
+  splits a stored report back into those parts by reading the template's own
+  markers (and falls back to the whole `<body>` for an unrecognised file).
+  Lives in a new `routers/reports.py` so the Q&A router stays untouched. The
+  legacy HTML route and its query-token fallback stay for the quick-peek modal
+  (T-8.8.1.5 retires them later).
+- **Sanitise then parse.** `DOMPurify` (dual MPL-2.0 / Apache-2.0; the
+  project elects Apache-2.0) with `style`, `script`, embeds, forms, SVG and
+  MathML forbidden and `style=` attributes dropped, then `html-react-parser`
+  with one `replace` hook: heading ids and the outline, `&t=` anchors to
+  citation chips (bare pre-S-1.14.9 anchors become non-link chips, never dead
+  links; an href the browser repaired out of a truncated tag is never linked),
+  tables in a scroll region, the drop-cap paragraph.
+- **`ReaderShell`** (`components/reader/`): 75ch serif measure, drop cap via
+  `::first-letter` with `initial-letter` under `@supports`, sticky outline
+  with `aria-current` driven by one IntersectionObserver, rAF-throttled
+  reading-progress pill, `text-wrap: pretty` / `balance`. Knowledge artifacts
+  and books will reuse it (S-8.8.3).
+- **Job page:** "Read report" is the primary action; the iframe modal survives
+  as "Quick peek" and still owns "Open in new tab".
+- **Tests:** a vitest + jsdom runner lands in the frontend (`npm test`) with a
+  hostile-markup sanitiser test and a parser test over three stored real
+  reports (one with bare anchors, one with full URLs, one channel report);
+  backend tests cover the extractor against the real template and the route's
+  header-only auth.
+- Found on the way: one stored report (`419e691d…`) was cut mid-tag by the
+  writer, so the browser folds two headings into an attribute value. The
+  reader cannot recover them; the fix belongs in the compose step.
 ### Document visibility keyed on `document_id`; non-video documents visible and retrievable (2026-10-19)
 
 Since D-063 (2026-07-31) every PDF, pasted page, Reddit and HN document was

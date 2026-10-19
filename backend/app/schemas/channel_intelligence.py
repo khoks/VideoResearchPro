@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class DocumentRef(BaseModel):
     id: str
     title: str
+    url: str | None = None
 
 
 class Coverage(BaseModel):
@@ -16,6 +17,9 @@ class Coverage(BaseModel):
     without_knowledge: int
     ratio: float  # 0..1; 0 when there are no documents
     with_transcript: int
+    # Documents a knowledge report can be made for right now: no artifact
+    # yet, transcript cached. What "Extract knowledge for all" runs over.
+    extractable: list[DocumentRef] = []
 
 
 class MonthCount(BaseModel):

@@ -10,6 +10,18 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Channel Intelligence tab (2026-10-19)
+
+[S-8.7.3](docs/initiatives.md#s-873--intelligence-tab-ui), PR [#285](https://github.com/khoks/VideoResearchPro/pull/285).
+
+- **Intelligence** beside **Documents** on every channel page: publishing
+  cadence, lengths, topics and concepts with their documents, the words the
+  channel keeps using, your questions that cite it, and stance where it exists.
+- **Extract knowledge for N documents** fills the knowledge gap from the page,
+  within your monthly quota, one document at a time, stoppable.
+- **Charts** follow the dataviz method (validated colours per theme, keyboard
+  readouts, a table view on every chart): `ColumnChart`, `BarList`.
+
 ### Author Studio downloads: binary artifacts on disk, one endpoint per output (2026-10-19, S-6.7.2)
 
 PR [#284](https://github.com/khoks/VideoResearchPro/pull/284). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).

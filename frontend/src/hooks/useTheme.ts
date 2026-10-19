@@ -9,7 +9,16 @@
 
 import { useMemo } from 'react';
 import { useJobStore } from '../stores/jobStore';
-import { colors, isPaletteColor, palette, type Mode, type ColorToken, shadow } from '../theme';
+import {
+  chartColors,
+  colors,
+  isPaletteColor,
+  palette,
+  type ChartColorToken,
+  type Mode,
+  type ColorToken,
+  shadow,
+} from '../theme';
 
 export type ResolvedColors = { [K in ColorToken]: string };
 
@@ -39,4 +48,13 @@ export function useShadows() {
 export function usePaletteColor(name: string): { bg: string; fg: string } {
   const mode = useThemeMode();
   return palette[isPaletteColor(name) ? name : 'default'][mode];
+}
+
+/** Chart mark colours for the current mode (see `chartColors` in theme.ts). */
+export function useChartColors(): Record<ChartColorToken, string> {
+  const mode = useThemeMode();
+  return useMemo(() => {
+    const entries = (Object.keys(chartColors) as ChartColorToken[]).map((k) => [k, chartColors[k][mode]] as const);
+    return Object.fromEntries(entries) as Record<ChartColorToken, string>;
+  }, [mode]);
 }

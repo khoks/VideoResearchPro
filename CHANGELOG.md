@@ -26,6 +26,24 @@ PR [#264](https://github.com/khoks/VideoResearchPro/pull/264). Fourth task of N-
   counted as neutral, so four transcripts in the library (two Bengali, two
   Kannada) measured 0% non-English. Every non-Latin script now counts, and
   the profile reports which one (`native_script`).
+### Job templates; Duplicate keeps depth and the visual flag (2026-10-19)
+
+Fifth PR of the organisation lane ([S-8.6.1](docs/initiatives.md#s-861--templates-schema-rest-and-submit-page-integration), PR [#263](https://github.com/khoks/VideoResearchPro/pull/263)).
+
+- **Templates.** Save a run (or the submit form) as a named recipe; start a run
+  from it and type only the topic. Parameters are versioned (`PUT` with new
+  parameters makes the next version; the newest 20 are kept), runs record the
+  version they used, and a deleted template keeps that provenance.
+  `{{topic}}` in instructions is filled with the run's topic.
+- **Where.** "Save as template" on a run and on the submit form, "Start from a
+  template" and a "Save changes as vN" banner on the submit form, a
+  `/templates` page with history.
+- **Fixed.** Duplicate reset report depth to Auto and dropped the visual flag.
+  The form's logic moved to `utils/jobForm.ts` with unit tests; the visual flag
+  is carried, not offered (the opt-in stays deferred per D-071 / D-075).
+- **Not yet.** The relative publish window needs the search agent's prompt and
+  is split out.
+
 
 ### Code-mixed speech: proportion thresholds as a rendering policy (2026-10-19, T-1.16.2.3)
 

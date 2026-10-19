@@ -1731,15 +1731,16 @@ Linked decision: D-074.
 **Plan:** [`docs/plans/m6-job-templates.md`](plans/m6-job-templates.md)
 **Acceptance.** A user saves a completed topic job as "Weekly AI policy scan", later picks it from the submit page, changes only the topic, and the new job runs with the saved instructions, filters, preferred channels, source types, depth and visual flag; built-in starter templates appear for every user and cannot be edited.
 
-#### S-8.6.1 🔵 Templates schema, REST and submit-page integration
-**PR:** TBD
-- [ ] T-8.6.1.0 First fix the Duplicate flow it builds on: PR [#228](https://github.com/khoks/VideoResearchPro/pull/228) made the job API return `output_length` and `visual_analysis`, but `jobToFormState` in `SubmitJobPage.tsx` still hard-codes `outputLength: 'auto'` and the form has no visual-analysis field at all
-- [ ] T-8.6.1.1 `job_templates(id, tenant_id NULL for built-ins, builtin_key, name, description, job_type, version, parameters_json, is_latest, created_at)` with immutable rows per save (integer `version`, the Grafana model) and `jobs.template_id` + `jobs.template_version` for provenance; `parameters_json` is the `JobCreate` payload minus the variable fields
-- [ ] T-8.6.1.6 Variable fields: `topic`, job name, and a *relative* publish window — `JobCreate` has no date-range field today, so add `published_after_days` rather than absolute dates so templates stay reusable
-- [ ] T-8.6.1.2 `GET/POST/PUT/DELETE /api/v1/job-templates`, `POST /api/v1/jobs/{id}/save-as-template`; built-ins read-only
-- [ ] T-8.6.1.3 "Save as template" on `JobDetailPage`; "From template" picker on `SubmitJobPage` reusing the `cloneFrom` form-state path
-- [ ] T-8.6.1.4 Validation re-runs `JobCreate` model validation at instantiation so a stale template cannot create an invalid job
-- [ ] T-8.6.1.5 Tests incl. isolation and built-in immutability
+#### S-8.6.1 🟢 Templates schema, REST and submit-page integration
+**PR:** [#263](https://github.com/khoks/VideoResearchPro/pull/263) (merged 2026-10-19)
+- [x] T-8.6.1.0 Duplicate fixed: `jobToFormState` (now in `frontend/src/utils/jobForm.ts`, unit-tested with vitest) carries `output_length` and `visual_analysis`. **No visual-analysis opt-in was added to the form**: that toggle is T-1.18.2.1, deferred by D-071 / D-075. A carried flag shows as an info box with "Turn off"
+- [x] T-8.6.1.1 Schema (migration `f0a1b2c3d4e5`): `job_templates(id, tenant_id NULL for built-ins, builtin_key UNIQUE, name, description, job_type, latest_version, created_at, updated_at, deleted_at)` + `job_template_versions(template_id, version, parameters_json, created_at)`, immutable rows per saved change, newest 20 kept; `jobs.template_id` + `jobs.template_version` for provenance. Split from the plan's single table so a template's id survives a rename; soft delete so provenance keeps resolving
+- [ ] T-8.6.1.6 **Split out, not built.** The relative publish window (`published_after_days`) must reach the search agent's ranking prompt as a preference, and `backend/app/agents` was off-limits to this lane (the plan allows the split; its open question 1 is whether the window is wanted now). Variable fields today: `topic` only (`JobCreate` has no job name). `{topic}` in instructions is filled at submission
+- [x] T-8.6.1.2 `GET/POST /api/v1/job-templates`, `GET/PUT/DELETE /job-templates/{id}` (PUT with new parameters → next version), `GET /job-templates/{id}/versions`, `POST /api/v1/jobs/{id}/save-as-template`, `POST /jobs?template_id=&template_version=` (provenance); built-ins 403 on write
+- [x] T-8.6.1.3 "Save as template" on `JobDetailPage`; "Start from a template" picker, origin banner with "Save changes as vN+1", and "Save as template" on `SubmitJobPage`; a `/templates` page (use, history, rename, delete)
+- [x] T-8.6.1.4 Parameters are validated through `JobCreate` on every save (422 otherwise; unknown fields refused), the submission is a full `JobCreate` again, and each listing reports `problems` for the caller (a tier cap below the recipe's `num_videos`). A test pins that frozen ∪ variable fields = `JobCreate`'s fields, so a new field forces a decision
+- [x] T-8.6.1.5 Tests incl. isolation (every endpoint against a second reader) and built-in immutability; live check in the browser pane (save a deep visual run as a template, Duplicate keeps depth and the flag, pick the template, save v2 from the form, history, Use)
+- **Finding, not fixed (outside this lane):** `JobCreate` has **no `source_types` field** and nothing writes `jobs.source_types_json`, so every topic run searches video only. The worker's multi-source dispatch (`job_tasks._resolve_source_types` → `connector_dispatch`) is unreachable from the API. The plan listed `source_types` as a frozen template field on the assumption it existed; templates freeze what `JobCreate` really accepts. Starter templates that need it (podcast digest, mixed-source debate) wait for that wiring (S-8.6.2)
 
 #### S-8.6.2 🔵 Starter templates
 **PR:** TBD

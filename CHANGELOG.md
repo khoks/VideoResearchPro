@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Romanised code-mixing detection, measured (2026-10-19, T-1.16.2.1)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Decision
+PR [#258](https://github.com/khoks/VideoResearchPro/pull/258). Decision
 [D-076](docs/decisions.md#d-076--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19);
 method and numbers in
 [docs/notes/2026-10-19-code-mixing-detection.md](docs/notes/2026-10-19-code-mixing-detection.md).

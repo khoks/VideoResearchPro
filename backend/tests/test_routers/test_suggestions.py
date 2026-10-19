@@ -192,6 +192,13 @@ def test_mmr_spreads_subjects_before_repeating_one():
     assert sorted(c.question[0] for c in picked) == ["a", "b", "c"]
 
 
+def test_an_empty_library_gets_no_suggestions_and_no_model_call(db, test_user):
+    with patch.object(suggestion_service, "get_llm_for") as factory:
+        out = suggestion_service.suggestions_for(db, test_user, "library")
+    factory.assert_not_called()
+    assert out == {"context": "library", "suggestions": [], "generated": False, "cached": False}
+
+
 # ------------------------------------------------------------------ cache
 
 

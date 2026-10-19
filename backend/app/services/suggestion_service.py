@@ -123,6 +123,8 @@ class Context:
     asked: list[str]
     #: Changes when the context's inputs change; a cache row with another one is stale.
     fingerprint: str
+    #: Sources behind the context. Zero means there is nothing to ask about.
+    sources: int = 1
 
 
 @dataclass
@@ -283,6 +285,7 @@ def _job_context(db: Session, user: User, job_id: str) -> Context:
         query_text=" ".join([label, *headings[:6], *topics[:6]]),
         asked=[r.question for r in asked_rows],
         fingerprint=_fingerprint(len(asked_rows), latest, job.completed_at, job.report_path, len(topics)),
+        sources=len(docs),
     )
 
 
@@ -340,6 +343,7 @@ def _library_context(db: Session, user: User) -> Context:
         query_text=" ".join([*topics[:8], *titles[:4]]),
         asked=[r.question for r in asked_rows],
         fingerprint=_fingerprint(len(asked_rows), latest, len(docs), newest),
+        sources=len(docs),
     )
 
 
@@ -514,6 +518,11 @@ def suggestions_for(
 ) -> dict[str, Any]:
     """``{context, suggestions: [{question, rationale, source}], cached, generated}``."""
     ctx = resolve_context(db, user, raw_context)
+    if ctx.sources == 0:
+        # An empty library (or a run whose sources are gone): a model would
+        # only invent questions about nothing, and no past question can be
+        # answered here either. No call, nothing cached.
+        return {"context": ctx.key, "suggestions": [], "generated": False, "cached": False}
     now = now or datetime.now(timezone.utc)
     row = (
         db.query(SuggestionCache)

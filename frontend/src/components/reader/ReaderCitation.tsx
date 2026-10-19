@@ -1,19 +1,29 @@
 /**
- * Inline citation chip inside report prose (S-8.8.1).
+ * Inline citation chip inside report prose (S-8.8.1, cards S-8.8.2).
  *
- * A resolved citation links to the source at its timestamp. An unresolved one
- * (pre-S-1.14.9 reports whose anchors carried only `&t=`) keeps the timestamp
- * visible but is not a link — a dead link is worse than plain text.
+ * The chip keeps the writer's own text (usually the `mm:ss` stamp, which is
+ * part of the sentence) and adds a footnote number that shows in print. A
+ * chip with a link opens the source at the timestamp; one without (a
+ * pre-S-1.14.9 report whose source the reader could not recover) is a
+ * button, so keyboard users still reach it and its card.
  *
- * S-8.8.2 upgrades this to numbered chips with hover / focus cards.
+ * Hover and focus open the shared card through `CitationCardProvider`;
+ * without a provider (tests, other surfaces) the chip renders plainly.
  */
-import type { CSSProperties } from 'react';
+import type { CSSProperties, FocusEvent, MouseEvent } from 'react';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, radius, space } from '../../theme';
+import { useCitationUi } from './CitationContext';
 import type { ReportCitation } from './parseReport';
 
 export function ReaderCitation({ citation }: { citation: ReportCitation }) {
   const c = useColors();
+  const ui = useCitationUi();
+  const resolved = ui?.index?.byIndex.get(citation.index) ?? null;
+  const href = resolved?.resolvedHref ?? citation.href;
+  const source = resolved?.source ?? null;
+  const footnote = resolved?.footnote ?? citation.index;
+
   const base: CSSProperties = {
     display: 'inline-block',
     fontFamily: fonts.mono,
@@ -27,28 +37,49 @@ export function ReaderCitation({ citation }: { citation: ReportCitation }) {
     textDecoration: 'none',
   };
 
-  if (citation.href) {
+  const describe = source ? `${source.title}${source.channel_name ? `, ${source.channel_name}` : ''}` : null;
+  const handlers = ui
+    ? {
+        onMouseEnter: (e: MouseEvent<HTMLElement>) => ui.show(citation.index, e.currentTarget),
+        onMouseLeave: () => ui.hide(),
+        onFocus: (e: FocusEvent<HTMLElement>) => ui.show(citation.index, e.currentTarget, true),
+        onBlur: () => ui.hide(true),
+      }
+    : {};
+  const fn = (
+    <sup className="reader-fn" aria-hidden="true">
+      {footnote}
+    </sup>
+  );
+
+  if (href) {
     return (
       <a
         className="reader-citation"
-        href={citation.href}
+        href={href}
         target="_blank"
         rel="noopener noreferrer"
-        title={`Open the source at ${citation.label}`}
+        aria-label={`${citation.label}${describe ? `, ${describe}` : ''}, opens in a new tab`}
         style={{ ...base, color: c.accent, background: c.accentSubtle }}
+        {...handlers}
       >
         {citation.label}
+        {fn}
       </a>
     );
   }
 
   return (
-    <span
+    <button
+      type="button"
       className="reader-citation reader-citation--unresolved"
-      title="Timestamp in the source; this report did not record the link"
-      style={{ ...base, color: c.textMuted, background: c.surfaceAlt }}
+      aria-label={`${citation.label}, ${describe ?? 'source not recorded in this report'}`}
+      onClick={ui ? (e) => ui.toggle(citation.index, e.currentTarget) : undefined}
+      style={{ ...base, color: c.textMuted, background: c.surfaceAlt, cursor: ui ? 'pointer' : 'default' }}
+      {...handlers}
     >
       {citation.label}
-    </span>
+      {fn}
+    </button>
   );
 }

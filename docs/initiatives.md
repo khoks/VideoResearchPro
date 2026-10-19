@@ -1805,12 +1805,14 @@ Linked decision: D-074.
 - [x] T-8.7.1.2 Links from `ChannelRow` and `VideoRow`. Citation chips are **not** linked: `Reference` has no `channel_id`, and adding it edits `qa_agent._chunk_to_reference` (a shared hot spot); one line there plus a `Link` in `CitationLink` when that file is free
 - [x] Found and fixed on the way: the Channels tab keyed Subscribe / Sync on a `channel.id` the API never sent (`/channels/undefined/...`); `ChannelResponse` now carries `id`, `url`, `source_weight`, `created_at`
 
-#### S-8.7.2 🔵 Intelligence aggregate endpoint
-**PR:** TBD
-- [ ] T-8.7.2.1 `GET /api/v1/channels/{id}/intelligence` over the tenant's visible documents of the channel: cadence per month, duration distribution, topic / concept counts from `extracted_knowledge_json`, keyword cloud (TF-IDF over cached transcripts, top 60), knowledge coverage ratio, Q&A exchanges citing the channel
-- [ ] T-8.7.2.2 Stance / sentiment timeline from `source_metadata_json.classification` where present; omitted with an explanation otherwise
-- [ ] T-8.7.2.3 Cached in a `channel_intelligence_cache(channel_id, tenant_id, computed_at, payload_json)` row, recomputed on demand or when the document set changes
-- [ ] T-8.7.2.4 Tests on seeded knowledge artifacts; isolation
+#### S-8.7.2 🟢 Intelligence aggregate endpoint
+**PR:** [#280](https://github.com/khoks/VideoResearchPro/pull/280) (merged 2026-10-19)
+- [x] T-8.7.2.1 `GET /api/v1/channels/{id}/intelligence` over the tenant's visible documents of the channel: contiguous monthly cadence, duration buckets and median, top-25 topics / concepts (merged case-insensitively, per document, with example documents), top-60 keyword cloud (TF-IDF over cached transcripts with a function-word + spoken-filler stop list; scikit-learn's Glasgow list dropped words like "interest"), coverage, the caller's job and library exchanges citing the channel (live), and per-panel `notes` saying why a panel is empty
+- [x] T-8.7.2.2 Stance / sentiment monthly series from `source_metadata_json.classification` where present; `null` plus a note otherwise
+- [x] T-8.7.2.3 `channel_intelligence_cache(channel_id, tenant_id, fingerprint, computed_at, payload_json)` (migration `b4c5d6e7f8a0`). Recomputed when a fingerprint of the inputs changes (visible document set, knowledge times, transcripts) or on `?refresh=true`: this answers M7 open question 2 ("invalidate on sync and on new knowledge") without hooks in either path. **Computed in the request, not a Celery task**: the solo worker is routinely busy for hours with ingest. Measured 1.6 s cold and 13 ms cached on a synthetic 500-document channel
+- [x] T-8.7.2.4 Tests: seeded artifacts and transcripts, two readers on one channel (counts, topics, keywords and Q&A never cross; caches separate), an empty visible set is empty, cache hit then recompute on new knowledge, stance series, 404
+- **Not built (plan item outside the board's tasks):** topic clusters by k-means over Chroma chunk embeddings. Needs a new Chroma read helper while E-7.1 is editing retrieval, and overlaps the gated S-8.9.3
+- `scikit-learn` is now declared in `requirements.txt` (it was only a transitive dependency of sentence-transformers)
 
 #### S-8.7.3 🔵 Intelligence tab UI
 **PR:** TBD

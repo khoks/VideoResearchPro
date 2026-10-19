@@ -122,7 +122,7 @@ Targeted Phase 2 (2026 Q3) for non-foundation source types. Detailed design in [
 
 ### L3 — Echo (the personal brain) 🟡
 
-**Progress 2026-10-19.** The shares inbox (Domain 5, S-3.7.1) shipped with the whole-brain export and delete (S-3.10.1 / S-3.10.2) in [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__). Third-party content is context-only by default; see [personal-brain.md](personal-brain.md#privacy-carry-over).
+**Progress 2026-10-19.** The shares inbox (Domain 5, S-3.7.1) shipped with the whole-brain export and delete (S-3.10.1 / S-3.10.2) in [#286](https://github.com/khoks/VideoResearchPro/pull/286). Third-party content is context-only by default; see [personal-brain.md](personal-brain.md#privacy-carry-over).
 
 **Motivation.** The widest ring of the vision (see [vision.md](vision.md) Ring 3). Pratidhvani learns enough about the user — through opt-in life connectors *and* constant-stream sharing of liked videos / reels / memes / WhatsApp threads / Keep notes / quotes — that it can suggest questions before they ask, anticipate their needs, capture their personality, and eventually speak on their behalf.
 

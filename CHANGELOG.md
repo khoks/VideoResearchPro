@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Echo: the shares inbox, with whole-brain export and delete (S-3.7.1, S-3.10.1, S-3.10.2, 2026-10-19)
 
-The first new Echo table, shipped with its export and its erasure. PR [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__). Plan: [docs/plans/l3-echo-personal-brain.md](docs/plans/l3-echo-personal-brain.md).
+The first new Echo table, shipped with its export and its erasure. PR [#286](https://github.com/khoks/VideoResearchPro/pull/286). Plan: [docs/plans/l3-echo-personal-brain.md](docs/plans/l3-echo-personal-brain.md).
 
 - **Shares inbox.** `shares_inbox` (migration `007c708bb890`, which also gives
   `personal_context` a `tenant_id` backfilled from `user_id`). `/api/v1/echo/shares`

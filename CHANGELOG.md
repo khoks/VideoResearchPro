@@ -27,6 +27,34 @@ PR [#PR_S614](https://github.com/khoks/VideoResearchPro/pull/PR_S614). Plan: [do
 - **Fixed:** in a tight list a later item's bare anchor could borrow an
   earlier item's title; the citation context is now the list item.
 
+### Library graph endpoint (2026-10-19)
+
+[S-8.9.1](docs/initiatives.md#s-891--graph-endpoint), PR [#297](https://github.com/khoks/VideoResearchPro/pull/297).
+
+- **`GET /api/v1/library/graph`**: your visible documents, their channels and
+  topics, and your answers that cite them, as nodes and edges, with stable
+  ids, a cap that keeps the most connected, a local view around any node,
+  shelf / job / channel filters and a one-paragraph summary. Nothing of
+  another reader's appears; an empty library is an empty graph.
+
+### Fixed: invented "original" quotes in code-mixed reports (2026-10-19)
+
+PR [#294](https://github.com/khoks/VideoResearchPro/pull/294). Regression from #268, found in the R1 run-5 replay;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- The map stage could put **words a speaker never said** into a report
+  quote. Hindi speakers were quoted in Bengali script, with Bengali letters
+  spliced into Devanagari words, when one batch mixed Bengali and Hindi
+  sources. Every kept `original` is now checked in code against its own
+  source's speech. A quote with mixed-script words, the wrong script, or
+  wording not found (verbatim or ≥ 80% aligned) is dropped, the English
+  point is kept, and the report's processing note says how many were left out.
+- One rule for the pipeline and the R1 run-6 gate: `app/services/quote_fidelity.py`,
+  now imported by `scripts/audit_quote_fidelity.py`. On run 5 the pipeline
+  drops exactly what the audit fails.
+- Compose material no longer reaches the composer as `\uXXXX` escapes for
+  Devanagari and Bengali text.
+
 ### Author Studio citations: every source an output cites, resolved like the reader (2026-10-19, S-6.7.3)
 
 PR [#293](https://github.com/khoks/VideoResearchPro/pull/293). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).

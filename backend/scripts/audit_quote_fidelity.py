@@ -43,64 +43,31 @@ import argparse
 import json
 import re
 import sys
-import unicodedata
 from collections import Counter
-from dataclasses import asdict, dataclass, field
-from difflib import SequenceMatcher
+from dataclasses import asdict, dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 
-NEAR = 0.8
-MIN_FRAGMENT_CHARS = 6
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+# The normalisation, script flags and matching live in
+# app/services/quote_fidelity.py so the report pipeline drops exactly what this
+# audit fails (the pipeline's `_verify_originals` uses the same functions).
+from app.services.quote_fidelity import (  # noqa: E402,F401  (normalise, NEAR: re-exported)
+    NEAR,
+    VideoText,
+    dominant_native_script,
+    fragments,
+    match_level as _level,
+    mixed_script_words,
+    normalise,
+)
+
 MIN_REPORT_RUN_TOKENS = 3
 
-_NATIVE_DIGITS = str.maketrans("०१२३४५६७८९০১২৩৪৫৬৭৮৯", "01234567890123456789")
-_DROP = {"़", "়", "‌", "‍", "﻿"}   # nukta (Deva, Beng), ZWNJ, ZWJ, BOM
-_ELLIPSIS = re.compile(r"\.{3,}|…")
 _HEADER = re.compile(r"^=== (.*) \((https?://\S+?)\) ===$")
 _VIDEO_ID = re.compile(r"(?:[?&]v=|youtu\.be/)([A-Za-z0-9_-]{11})")
-_NATIVE_CHAR = re.compile(r"[ऀ-ॿঀ-৿]")
-
-
-# --------------------------------------------------------------------------
-# Normalisation and scripts
-# --------------------------------------------------------------------------
-
-
-def normalise(text: str) -> str:
-    t = unicodedata.normalize("NFKC", text or "").translate(_NATIVE_DIGITS).lower()
-    out = []
-    for ch in t:
-        if ch in _DROP:
-            continue
-        cat = unicodedata.category(ch)
-        out.append(" " if cat[0] in "PSZC" else ch)
-    return re.sub(r"\s+", " ", "".join(out)).strip()
-
-
-def _script(ch: str) -> str | None:
-    if not ch.isalpha() and unicodedata.category(ch) not in ("Mn", "Mc"):
-        return None
-    try:
-        return unicodedata.name(ch).split()[0]
-    except ValueError:
-        return None
-
-
-def dominant_native_script(text: str) -> str | None:
-    """Most frequent non-Latin script among letters, or None for Latin-only text."""
-    counts = Counter(s for s in map(_script, text or "") if s and s != "LATIN")
-    return counts.most_common(1)[0][0] if counts else None
-
-
-def mixed_script_words(text: str) -> list[str]:
-    """Words whose letters come from two or more non-Latin scripts."""
-    out = []
-    for word in (text or "").split():
-        scripts = {s for s in map(_script, word) if s and s != "LATIN"}
-        if len(scripts) > 1:
-            out.append(word)
-    return out
+_NATIVE_CHAR = re.compile(r"[\u0900-\u097f\u0980-\u09ff]")
 
 
 def video_id(url: str | None) -> str:
@@ -111,49 +78,6 @@ def video_id(url: str | None) -> str:
 # --------------------------------------------------------------------------
 # Evidence
 # --------------------------------------------------------------------------
-
-
-@dataclass
-class VideoText:
-    title: str
-    speech: str          # normalised, captions joined
-    visual: str          # normalised
-    script: str | None   # dominant non-Latin script of the raw speech
-    _matcher: SequenceMatcher | None = field(default=None, repr=False)
-
-    def _anchor(self, piece: str) -> int:
-        """Where in the speech the fragment ``piece`` most plausibly starts."""
-        if self._matcher is None:
-            self._matcher = SequenceMatcher(None, autojunk=False)
-            self._matcher.set_seq2(self.speech)
-        self._matcher.set_seq1(piece)
-        m = self._matcher.find_longest_match(0, len(piece), 0, len(self.speech))
-        return m.b - m.a
-
-    def coverage(self, fragment: str) -> float:
-        """Share of the fragment's characters that align with one stretch of speech.
-
-        Anchored on the longest common run of the whole fragment and of each
-        half, so one common phrase elsewhere cannot hide the true location.
-        Alignment tolerates the spelling the model regularises (a caption's
-        "ম্যাটপ্লোটলিব এ" quoted as "ম্যাটপ্লটলিবে") without accepting a
-        sentence the speaker never said.
-        """
-        n = len(fragment)
-        if not n or not self.speech:
-            return 0.0
-        half = n // 2
-        anchors = {self._anchor(fragment)}
-        if half >= MIN_FRAGMENT_CHARS:
-            anchors.add(self._anchor(fragment[:half]))
-            anchors.add(self._anchor(fragment[half:]) - half)
-        best = 0.0
-        for start in anchors:
-            lo = max(0, start - n // 4)
-            window = self.speech[lo:lo + n + n // 2]
-            sm = SequenceMatcher(None, fragment, window, autojunk=False)
-            best = max(best, sum(b.size for b in sm.get_matching_blocks()) / n)
-        return best
 
 
 def parse_transcript(text: str) -> dict[str, VideoText]:
@@ -180,22 +104,6 @@ def parse_transcript(text: str) -> dict[str, VideoText]:
 # --------------------------------------------------------------------------
 # Matching
 # --------------------------------------------------------------------------
-
-
-def fragments(quote: str) -> list[str]:
-    parts = [normalise(p) for p in _ELLIPSIS.split(quote or "")]
-    kept = [p for p in parts if len(p) >= MIN_FRAGMENT_CHARS]
-    return kept or ([normalise(quote)] if normalise(quote) else [])
-
-
-def _level(frags: list[str], haystack: str, video: VideoText | None = None) -> str | None:
-    if not frags or not haystack:
-        return None
-    if all(f in haystack for f in frags):
-        return "verbatim"
-    if video is not None and all(video.coverage(f) >= NEAR for f in frags):
-        return "near"
-    return None
 
 
 def classify(quote: str, own: str, corpus: dict[str, VideoText]) -> tuple[str, str | None]:

@@ -1180,6 +1180,16 @@ Linked decision: [D-065](decisions.md#d-065--channel-subscriptions-become-per-te
 - [ ] T-5.10.5.2 Run `chroma_service.backfill_chunk_document_ids` on Celery worker startup as well as in the API lifespan: a worker-only start after the upgrade leaves pre-2026-10-19 chunks unretrievable until the API boots once
 - [ ] T-5.10.5.3 `temporal_service.known_eras_for` is keyed on YouTube ids by design (search candidates are not documents yet) — confirm and note it in the function docstring so the next audit does not re-flag it
 
+#### S-5.10.6 🟢 Close three cross-tenant reads S-5.10.1 missed — shipped 2026-10-19
+**PR:** [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Found by auditing every `documents` reader on master after S-5.10.4 merged, at the request of the session driving the backlog.
+**Linked decision:** [D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31) (amended 2026-10-19 (II))
+**Acceptance (met).** Each read below 404s for a tenant who did not ingest the document or own the job, indistinguishably from a missing id, and the owner's access is unchanged. Each fix has a two-tenant test that fails on the unfixed code.
+**Tasks**
+- [x] T-5.10.6.1 `GET /videos/{id}/knowledge` and `POST /videos/{id}/extract-knowledge` looked the document up by `video_id` with no tenant check: any signed-in user could read another tenant's knowledge report, or spend an extraction on a document only another tenant had ingested. Both now resolve through the new `visibility_service.visible_document`, which also accepts the `document_id`
+- [x] T-5.10.6.2 `GET /library/pdf/{digest}.pdf` checked only that the PDF existed: anyone holding the digest got another tenant's file. Now filtered on the caller's visible set
+- [x] T-5.10.6.3 The Author Studio book outputter loaded each source job by id alone, so a book listing another user's job id compiled that user's topic and report. The tenant is now part of the lookup
+- [x] T-5.10.6.4 `note_service._visible_document` delegates to the shared helper instead of carrying its own copy
+
 ### E-5.1 🟢 `tenant_id` audit + retrofit
 
 **Scope.** Add `tenant_id` / `workspace_id` columns to every user-scoped table; convert today's implicit JWT scoping to an explicit column for future per-tenant rate limiting + multi-workspace.

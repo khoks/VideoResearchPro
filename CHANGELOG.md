@@ -10,6 +10,20 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Three cross-tenant reads closed (2026-10-19, S-5.10.6)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). An audit of every `documents` reader after D-070 found three that
+never checked the tenant. Each now 404s for anyone who did not ingest the
+document or own the job, exactly like a missing id; each has a two-tenant test
+that fails on the old code.
+
+- **Knowledge endpoints.** `GET /videos/{id}/knowledge` and
+  `POST /videos/{id}/extract-knowledge` resolve through
+  `visibility_service.visible_document`, which also accepts the `document_id`.
+- **PDF serve route.** `GET /library/pdf/{digest}.pdf` serves only the
+  caller's own PDFs; holding the digest is no longer enough.
+- **Book outputter.** A book can only compile the author's own jobs.
+
 ### Document visibility keyed on `document_id`; non-video documents visible and retrievable (2026-10-19)
 
 Since D-063 (2026-07-31) every PDF, pasted page, Reddit and HN document was

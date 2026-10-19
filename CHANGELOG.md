@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Author Studio downloads: binary artifacts on disk, one endpoint per output (2026-10-19, S-6.7.2)
 
-PR [#PR_S672](https://github.com/khoks/VideoResearchPro/pull/PR_S672). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+PR [#284](https://github.com/khoks/VideoResearchPro/pull/284). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
 
 - **Artifacts on disk** under `OUTPUTS_DIR` (default `./data/outputs`), one
   directory per output: `<user_id>/<output_id>/artifact.<format>`, written

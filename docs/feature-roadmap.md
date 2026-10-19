@@ -340,7 +340,7 @@ Save a job's parameters as a template; one-click instantiate with fresh date ran
 
 ---
 
-### M7 — Channel intelligence dashboard 🟡
+### M7 — Channel intelligence dashboard 🟢
 
 Per-channel analytics: word-cloud, recurring topics, evolving stance over time, knowledge-graph of frequent concepts.
 
@@ -350,7 +350,7 @@ Per-channel analytics: word-cloud, recurring topics, evolving stance over time, 
 
 **UI:** New tab on the channel detail page.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.7](initiatives.md#e-87--channel-intelligence-m7); plan [`plans/m7-channel-intelligence.md`](plans/m7-channel-intelligence.md). Audit: there is no channel detail page to put a tab on (E-8.7 creates one), and stance / sentiment exist only for social sources, so "evolving stance over time" has no data for YouTube channels and is scoped accordingly. **🟡 2026-10-19:** the channel detail page shipped (`/library/channels/:id`, PR #237) with a read-only trust-weight slot for E-7.1; the intelligence endpoint and tab (S-8.7.2, S-8.7.3) are Phase 4.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.7](initiatives.md#e-87--channel-intelligence-m7); plan [`plans/m7-channel-intelligence.md`](plans/m7-channel-intelligence.md). Audit: there is no channel detail page to put a tab on (E-8.7 creates one), and stance / sentiment exist only for social sources, so "evolving stance over time" has no data for YouTube channels and is scoped accordingly. **🟡 2026-10-19:** the channel detail page shipped (`/library/channels/:id`, PR #237) with a read-only trust-weight slot for E-7.1; the intelligence endpoint and tab (S-8.7.2, S-8.7.3) are Phase 4. **🟢 2026-10-19:** shipped. `GET /channels/{id}/intelligence` (PR [#280](https://github.com/khoks/VideoResearchPro/pull/280)) computes cadence, durations, topics and concepts, a TF-IDF keyword cloud, stance where classified, and the reader's own questions, cached per reader behind an input fingerprint; the Intelligence tab (PR [#285](https://github.com/khoks/VideoResearchPro/pull/285)) charts them and runs knowledge extraction for the uncovered documents; citation chips link to the channel page (PR [#291](https://github.com/khoks/VideoResearchPro/pull/291)); the concept map is the library map scoped to the channel (PR [#301](https://github.com/khoks/VideoResearchPro/pull/301)). See [D-091](decisions.md#d-091--channel-intelligence-aggregates-computed-on-read-and-cached-per-reader-behind-an-input-fingerprint-derived-links-resolved-at-read-time-2026-10-19). Topic clusters by embedding fold into the gated S-8.9.3.
 
 ---
 
@@ -368,7 +368,7 @@ Replace iframe-modal HTML report with a native MDX-rendered reading view: typogr
 
 ---
 
-### M9 — Citation graph / knowledge map 🔵
+### M9 — Citation graph / knowledge map 🟡
 
 Visualize how Q&As cite documents, how documents relate to topics, how topics cluster. New library-overview page.
 
@@ -378,7 +378,7 @@ Visualize how Q&As cite documents, how documents relate to topics, how topics cl
 
 **UI:** Force-directed graph (d3 / cytoscape); zoom, pan, click-to-detail.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.9](initiatives.md#e-89--citation-graph-and-knowledge-map-m9); plan [`plans/m9-citation-graph.md`](plans/m9-citation-graph.md). Tenant-scoped nodes from documents, channels, Q&A references and knowledge topics; focused local-graph mode by default so it is not a hairball.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.9](initiatives.md#e-89--citation-graph-and-knowledge-map-m9); plan [`plans/m9-citation-graph.md`](plans/m9-citation-graph.md). Tenant-scoped nodes from documents, channels, Q&A references and knowledge topics; focused local-graph mode by default so it is not a hairball. **🟡 2026-10-19:** the endpoint (PR [#297](https://github.com/khoks/VideoResearchPro/pull/297)) and the library map at `/library/graph` (PR [#301](https://github.com/khoks/VideoResearchPro/pull/301)) shipped: sigma 4 + graphology as a lazy chunk, three group colours, a keyboard model and a table view; the whole-library view ships capped at 300 nodes with single-link nodes hidden. See [D-092](decisions.md#d-092--library-graph-computed-per-request-sigma-used-directly-as-a-lazy-chunk-three-group-colours-the-accessibility-layer-inside-the-story-2026-10-19). Remaining: S-8.9.3 topic clusters, gated on topic edges proving too sparse on a real library.
 
 ---
 

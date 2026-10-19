@@ -43,6 +43,21 @@ endpoint the command palette (S-8.2.2) will call; no UI in this PR.
   schema to the ORM, so the recovery path and the parity check keep working
   with the index present.
 
+### Shelves: schema, service and REST (2026-10-19)
+
+Second PR of the organisation lane ([S-8.1.1](docs/initiatives.md#s-811--shelves-schema-service-and-rest),
+PR [#242](https://github.com/khoks/VideoResearchPro/pull/242)). Named, per-tenant collections of jobs; no UI yet.
+
+- **Tables** `shelves` and `shelf_jobs` (migration `d8e9f0a1b2c3`), a job on
+  many shelves, names unique per tenant case-insensitively, colour as one of
+  ten palette names.
+- **REST** `/api/v1/shelves`, `/shelves/{id}/jobs/{job_id}`,
+  `/jobs/{id}/shelves`. Reads on every tier; writes need the `shelves`
+  capability, so a shelf outlives a downgrade read-only.
+- **Cascade.** Deleting a shelf keeps its jobs; deleting a job leaves every
+  shelf, through the ORM (SQLite never enforced the FK cascade here).
+- **Round-trip test** for lane migrations: upgrade, downgrade, upgrade.
+
 
 ### Notes: schema, REST and the inline note control (S-8.5.1, 2026-10-19)
 

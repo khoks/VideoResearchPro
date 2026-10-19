@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Research Report: How DNS resolution works</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+         line-height: 1.6; color: #1a1a2e; background: #f8f9fa; }
+  .report { max-width: 960px; margin: 0 auto; padding: 2rem; }
+  .report-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                   color: white; padding: 2rem; border-radius: 12px; margin-bottom: 2rem; }
+  .report-header h1 { font-size: 1.8rem; margin-bottom: 0.5rem; }
+  .report-header .meta { opacity: 0.9; font-size: 0.9rem; }
+  .section { background: white; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;
+             box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .section h2 { color: #667eea; font-size: 1.3rem; margin-bottom: 1rem;
+                border-bottom: 2px solid #667eea; padding-bottom: 0.5rem; }
+  .section h3 { color: #333; font-size: 1.1rem; margin: 1rem 0 0.5rem; }
+  .section ul { padding-left: 1.5rem; }
+  .section li { margin-bottom: 0.5rem; }
+  .source { font-size: 0.85rem; color: #666; }
+  .source a { color: #667eea; text-decoration: none; }
+  .source a:hover { text-decoration: underline; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+  .stat-card { background: #f0f2ff; padding: 1rem; border-radius: 8px; text-align: center; }
+  .stat-card .value { font-size: 1.8rem; font-weight: bold; color: #667eea; }
+  .stat-card .label { font-size: 0.85rem; color: #666; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #eee; }
+  th { background: #f0f2ff; color: #333; font-weight: 600; }
+  tr:hover { background: #f8f9ff; }
+</style>
+</head>
+<body>
+<div class="report">
+  <div class="report-header">
+    <h1>Research Report: How DNS resolution works</h1>
+    <div class="meta">
+      Generated on 2026-04-20 02:42 UTC | Topic Research Report
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Statistics</h2>
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="value">3</div>
+        <div class="label">Videos Analyzed</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">3</div>
+        <div class="label">Transcripts Fetched</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">1,322</div>
+        <div class="label">Total Words</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">7</div>
+        <div class="label">Total Minutes</div>
+      </div>
+    </div>
+    
+    <h3>Per-Channel Breakdown</h3>
+    <table>
+      <thead><tr><th>Channel</th><th>Videos</th><th>Words</th><th>Minutes</th></tr></thead>
+      <tbody>
+        
+        <tr>
+          <td>Fireship</td>
+          <td>1</td>
+          <td>501</td>
+          <td>2</td>
+        </tr>
+        
+        <tr>
+          <td>The Cloud Girl</td>
+          <td>1</td>
+          <td>658</td>
+          <td>4</td>
+        </tr>
+        
+        <tr>
+          <td>Zach Gollwitzer</td>
+          <td>1</td>
+          <td>163</td>
+          <td>1</td>
+        </tr>
+        
+      </tbody>
+    </table>
+    
+  </div>
+
+  <section class="report">
+  <header class="report-header">
+    <h1 class="report-title">Research Report: How DNS Resolution Works</h1>
+    <p class="report-subtitle">Based on analysis of 3 YouTube videos and 3 transcripts</p>
+  </header>
+
+  <section class="section executive-summary">
+    <h2>Executive Summary</h2>
+    <p>
+      Across all three videos, DNS is consistently described as the system that translates human-readable domain names into IP addresses so browsers can locate servers on the internet. The videos agree on the core resolution path: a lookup first checks local caches, then a recursive resolver, which in turn consults root servers, top-level domain (TLD) servers, and finally the authoritative name server.
+    </p>
+    <p>
+      A major recurring theme is speed and efficiency. Although DNS resolution can involve multiple steps and servers, the process typically completes in a fraction of a second. This is largely because caching is heavily used at the browser, operating system, and ISP or public resolver levels.
+    </p>
+    <p>
+      The videos also broaden the explanation beyond lookup flow by covering DNS as a distributed database and by introducing common DNS record types such as A, CNAME, MX, TXT, SOA, and NS. Taken together, the sources present DNS as both a naming system and a globally distributed infrastructure layer essential to how the web works.
+    </p>
+  </section>
+
+  <section class="section key-facts">
+    <h2>Key Facts</h2>
+    <ul class="fact-list">
+      <li>
+        <p>DNS stands for Domain Name System.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>DNS maps human-readable URLs or host names, like www.fireship.io, to the IP address of the server that hosts that site.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>When you type a URL into the browser, it makes a DNS query to determine which unique IP address is associated with that host name.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>A browser or operating system cache is checked first for a DNS record.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>If the cache is empty, the IP address lookup is handled by a DNS Recursive Resolver.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The DNS Recursive Resolver is called recursive because it needs to make multiple requests to other servers.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>DNS resolution starts with the root name server, which responds with the address of a top-level domain DNS server.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>Top-level domain DNS servers store data about top-level domains like .com or .io.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The resolver then receives the IP address of the authoritative name server from the TLD server.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The authoritative name server is the final source of truth that contains the requested website's IP address.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The DNS answer is sent back to the client and cached for future use.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>DNS can be thought of as a globally distributed database.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=56" target="_blank">0:56</a>
+        </p>
+      </li>
+      <li>
+        <p>When you register a domain name, it is handled by a registrar accredited by ICANN.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=56" target="_blank">0:56</a>
+        </p>
+      </li>
+      <li>
+        <p>The domain record is maintained by a registry operator, who stores DNS settings and propagates them to other DNS servers around the world.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=56" target="_blank">0:56</a>
+        </p>
+      </li>
+      <li>
+        <p>As the registrant, you are assigned a zone file where you can configure the settings of your domain.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=56" target="_blank">0:56</a>
+        </p>
+      </li>
+      <li>
+        <p>Every zone has a start of authority record to tell other DNS servers who is in charge of that domain.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=56" target="_blank">0:56</a>
+        </p>
+      </li>
+      <li>
+        <p>An A record means address and maps a domain or subdomain to the IP address of its host.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=56" target="_blank">0:56</a>
+        </p>
+      </li>
+      <li>
+        <p>A CNAME record is used to forward a domain to another domain on the internet instead of an IP address.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=56" target="_blank">0:56</a>
+        </p>
+      </li>
+      <li>
+        <p>MX records are used for email.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=56" target="_blank">0:56</a>
+        </p>
+      </li>
+      <li>
+        <p>Text records can store arbitrary data and are often used to communicate with third parties to verify ownership of the domain.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=56" target="_blank">0:56</a>
+        </p>
+      </li>
+      <li>
+        <p>NS stands for Name Server record.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=113" target="_blank">1:53</a>
+        </p>
+      </li>
+      <li>
+        <p>There are almost always two NS records for better reliability.</p>
+        <p class="source">Source: <strong>Fireship</strong>, <em>DNS Explained in 100 Seconds</em> —
+          <a href="&t=113" target="_blank">1:53</a>
+        </p>
+      </li>
+      <li>
+        <p>DNS maps domain names to IP addresses.</p>
+        <p class="source">Source: <strong>The Cloud Girl</strong>, <em>What is DNS? | How a DNS Server (Domain Name System) works | DNS Explained</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>When a user requests a website, the query reaches the internet service provider's DNS resolver.</p>
+        <p class="source">Source: <strong>The Cloud Girl</strong>, <em>What is DNS? | How a DNS Server (Domain Name System) works | DNS Explained</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The resolver queries the DNS root server with the domain name.</p>
+        <p class="source">Source: <strong>The Cloud Girl</strong>, <em>What is DNS? | How a DNS Server (Domain Name System) works | DNS Explained</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The root server refers the resolver to the .dev top-level domain name server for a .dev domain.</p>
+        <p class="source">Source: <strong>The Cloud Girl</strong>, <em>What is DNS? | How a DNS Server (Domain Name System) works | DNS Explained</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The TLD name server refers the resolver to the authoritative name server for the domain.</p>
+        <p class="source">Source: <strong>The Cloud Girl</strong>, <em>What is DNS? | How a DNS Server (Domain Name System) works | DNS Explained</em> —
+          <a href="&t=85" target="_blank">1:25</a>
+        </p>
+      </li>
+      <li>
+        <p>The authoritative name server returns the IP address for the host.</p>
+        <p class="source">Source: <strong>The Cloud Girl</strong>, <em>What is DNS? | How a DNS Server (Domain Name System) works | DNS Explained</em> —
+          <a href="&t=85" target="_blank">1:25</a>
+        </p>
+      </li>
+      <li>
+        <p>The example IP address given for www.thecloudgil.dev is 192.0.2.40.</p>
+        <p class="source">Source: <strong>The Cloud Girl</strong>, <em>What is DNS? | How a DNS Server (Domain Name System) works | DNS Explained</em> —
+          <a href="&t=85" target="_blank">1:25</a>
+        </p>
+      </li>
+      <li>
+        <p>After receiving the IP address, the DNS resolver sends it back to the user's computer.</p>
+        <p class="source">Source: <strong>The Cloud Girl</strong>, <em>What is DNS? | How a DNS Server (Domain Name System) works | DNS Explained</em> —
+          <a href="&t=85" target="_blank">1:25</a>
+        </p>
+      </li>
+      <li>
+        <p>The user's computer then sends the request to the web server at that IP address, and the web server responds with the web page.</p>
+        <p class="source">Source: <strong>The Cloud Girl</strong>, <em>What is DNS? | How a DNS Server (Domain Name System) works | DNS Explained</em> —
+          <a href="&t=85" target="_blank">1:25</a>
+        </p>
+      </li>
+      <li>
+        <p>Browsers cache DNS results or queries.</p>
+        <p class="source">Source: <strong>The Cloud Girl</strong>, <em>What is DNS? | How a DNS Server (Domain Name System) works | DNS Explained</em> —
+          <a href="&t=170" target="_blank">2:50</a>
+        </p>
+      </li>
+      <li>
+        <p>Internet service providers also cache DNS records.</p>
+        <p class="source">Source: <strong>The Cloud Girl</strong>, <em>What is DNS? | How a DNS Server (Domain Name System) works | DNS Explained</em> —
+          <a href="&t=170" target="_blank">2:50</a>
+        </p>
+      </li>
+      <li>
+        <p>If a DNS result is found in cache, the resolver does not need to go through the entire recursive query process.</p>
+        <p class="source">Source: <strong>The Cloud Girl</strong>, <em>What is DNS? | How a DNS Server (Domain Name System) works | DNS Explained</em> —
+          <a href="&t=170" target="_blank">2:50</a>
+        </p>
+      </li>
+      <li>
+        <p>DNS records do not often change.</p>
+        <p class="source">Source: <strong>The Cloud Girl</strong>, <em>What is DNS? | How a DNS Server (Domain Name System) works | DNS Explained</em> —
+          <a href="&t=170" target="_blank">2:50</a>
+        </p>
+      </li>
+      <li>
+        <p>The first step after typing in Amazon.com is DNS resolution to find the IP address.</p>
+        <p class="source">Source: <strong>Zach Gollwitzer</strong>, <em>How DNS Resolution works (amazon.com as example)</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>DNS resolution generally happens in less than a tenth of a second.</p>
+        <p class="source">Source: <strong>Zach Gollwitzer</strong>, <em>How DNS Resolution works (amazon.com as example)</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The DNS lookup first checks the browser cache.</p>
+        <p class="source">Source: <strong>Zach Gollwitzer</strong>, <em>How DNS Resolution works (amazon.com as example)</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>If the record is not in the browser cache, the OS cache is checked next.</p>
+        <p class="source">Source: <strong>Zach Gollwitzer</strong>, <em>How DNS Resolution works (amazon.com as example)</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>If the record is not in the OS cache, the lookup goes to a DNS resolver.</p>
+        <p class="source">Source: <strong>Zach Gollwitzer</strong>, <em>How DNS Resolution works (amazon.com as example)</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The example resolver used is Google's public DNS at 8.8.8.8.</p>
+        <p class="source">Source: <strong>Zach Gollwitzer</strong>, <em>How DNS Resolution works (amazon.com as example)</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The DNS resolver acts as a middleman.</p>
+        <p class="source">Source: <strong>Zach Gollwitzer</strong>, <em>How DNS Resolution works (amazon.com as example)</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The resolver looks at the root name servers, then finds the top-level domain name server for Amazon.com, which then points to the authoritative name server.</p>
+        <p class="source">Source: <strong>Zach Gollwitzer</strong>, <em>How DNS Resolution works (amazon.com as example)</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The authoritative name server can be thought of as a DNS dashboard.</p>
+        <p class="source">Source: <strong>Zach Gollwitzer</strong>, <em>How DNS Resolution works (amazon.com as example)</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>For Amazon.com, the authoritative name server can be found with an NS lookup.</p>
+        <p class="source">Source: <strong>Zach Gollwitzer</strong>, <em>How DNS Resolution works (amazon.com as example)</em> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+    </ul>
+  </section>
+
+  <section class="section analysis-commentary">
+    <h2>Analysis &amp; Commentary</h2>
+    <ul class="comment-list">
+      <li>
+        <p>DNS is like the phone book of the internet.</p>
+        <p class="source">Commentary: <strong>Jeff Delaney</strong>, Fireship —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>That sounds complicated, but it all happens within a fraction of a second.</p>
+        <p class="source">Commentary: <strong>Jeff Delaney</strong>, Fireship —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>You can think of DNS as a globally distributed database.</p>
+        <p class="source">Commentary: <strong>Jeff Delaney</strong>, Fireship —
+          <a href="&t=56" target="_blank">0:56</a>
+        </p>
+      </li>
+      <li>
+        <p>DNS handles more requests than any other database in the world.</p>
+        <p class="source">Commentary: <strong>Jeff Delaney</strong>, Fireship —
+          <a href="&t=56" target="_blank">0:56</a>
+        </p>
+      </li>
+      <li>
+        <p>The A record is identified as the most important DNS record.</p>
+        <p class="source">Commentary: <strong>Jeff Delaney</strong>, Fireship —
+          <a href="&t=56" target="_blank">0:56</a>
+        </p>
+      </li>
+      <li>
+        <p>The NS record is described as a URL that the internet can ping to find our IP address.</p>
+        <p class="source">Commentary: <strong>Jeff Delaney</strong>, Fireship —
+          <a href="&t=113" target="_blank">1:53</a>
+        </p>
+      </li>
+      <li>
+        <p>Who remembers phone numbers? That's what contacts in your phone book are for.</p>
+        <p class="source">Commentary: <strong>The Cloud Girl</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>DNS is a giant contact list of the internet.</p>
+        <p class="source">Commentary: <strong>The Cloud Girl</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The root server 'basically says' it does not know the IP address but knows to go to the .dev TLD name server.</p>
+        <p class="source">Commentary: <strong>The Cloud Girl</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The TLD server 'says' it does not know the whole IP address but knows the domain server that would know it.</p>
+        <p class="source">Commentary: <strong>The Cloud Girl</strong> —
+          <a href="&t=85" target="_blank">1:25</a>
+        </p>
+      </li>
+      <li>
+        <p>The sample IP address for thecloudgil.dev 'could be anything' and is given as 192.0.2.40 maybe.</p>
+        <p class="source">Commentary: <strong>The Cloud Girl</strong> —
+          <a href="&t=85" target="_blank">1:25</a>
+        </p>
+      </li>
+      <li>
+        <p>How many times does your friend's phone number change? Not very often, and DNS is kind of like that too.</p>
+        <p class="source">Commentary: <strong>The Cloud Girl</strong> —
+          <a href="&t=85" target="_blank">1:25</a>
+        </p>
+      </li>
+      <li>
+        <p>It is safe to cache DNS results at multiple locations.</p>
+        <p class="source">Commentary: <strong>The Cloud Girl</strong> —
+          <a href="&t=85" target="_blank">1:25</a>
+        </p>
+      </li>
+      <li>
+        <p>If the user goes to the same site again, the browser knows because it has cached the DNS record.</p>
+        <p class="source">Commentary: <strong>The Cloud Girl</strong> —
+          <a href="&t=170" target="_blank">2:50</a>
+        </p>
+      </li>
+      <li>
+        <p>If the browser cache misses, the record would likely be found in the ISP cache.</p>
+        <p class="source">Commentary: <strong>The Cloud Girl</strong> —
+          <a href="&t=170" target="_blank">2:50</a>
+        </p>
+      </li>
+      <li>
+        <p>The full recursive query process is avoided in most cases because DNS records don't often change.</p>
+        <p class="source">Commentary: <strong>The Cloud Girl</strong> —
+          <a href="&t=170" target="_blank">2:50</a>
+        </p>
+      </li>
+      <li>
+        <p>Usually, if you visit a site a lot, the browser cache will find the DNS record.</p>
+        <p class="source">Commentary: <strong>Zach Gollwitzer</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The authoritative name server can be thought of as a DNS dashboard.</p>
+        <p class="source">Commentary: <strong>Zach Gollwitzer</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+    </ul>
+  </section>
+
+  <section class="section conclusions">
+    <h2>Conclusions</h2>
+    <ul class="conclusion-list">
+      <li>
+        <p>DNS resolution, though involving multiple servers and steps, completes very quickly.</p>
+        <p class="source">Conclusion from <strong>Fireship</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>Caching is an important part of DNS because resolved addresses are stored for future use.</p>
+        <p class="source">Conclusion from <strong>Fireship</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>DNS works through a hierarchy of root servers, TLD servers, and authoritative name servers to resolve names to IP addresses.</p>
+        <p class="source">Conclusion from <strong>Fireship</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>Because DNS records do not change often, caching DNS results in browsers and ISPs is generally safe and effective.</p>
+        <p class="source">Conclusion from <strong>The Cloud Girl</strong> —
+          <a href="&t=85" target="_blank">1:25</a>
+        </p>
+      </li>
+      <li>
+        <p>In most cases, DNS lookups are answered from cache rather than requiring the full recursive lookup process.</p>
+        <p class="source">Conclusion from <strong>The Cloud Girl</strong> —
+          <a href="&t=170" target="_blank">2:50</a>
+        </p>
+      </li>
+      <li>
+        <p>The demonstrated DNS flow shows that a domain request is resolved step by step before the browser can contact the web server.</p>
+        <p class="source">Conclusion from <strong>The Cloud Girl</strong> —
+          <a href="&t=85" target="_blank">1:25</a>
+        </p>
+      </li>
+      <li>
+        <p>DNS resolution is the first major step that occurs after entering a domain like Amazon.com.</p>
+        <p class="source">Conclusion from <strong>Zach Gollwitzer</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>Caching at the browser and OS level can often satisfy DNS queries before an external resolver is needed.</p>
+        <p class="source">Conclusion from <strong>Zach Gollwitzer</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+    </ul>
+  </section>
+
+  <section class="section references">
+    <h2>Historical &amp; External References</h2>
+    <ul class="reference-list">
+      <li>
+        <p>ICANN is mentioned as the non-profit organization that accredits domain registrars.</p>
+        <p class="source">Reference: <strong>Fireship</strong> —
+          <a href="&t=56" target="_blank">0:56</a>
+        </p>
+      </li>
+      <li>
+        <p>Top-level domains .com and .io are mentioned as examples.</p>
+        <p class="source">Reference: <strong>Fireship</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The example domain www.fireship.io is referenced.</p>
+        <p class="source">Reference: <strong>Fireship</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The example domain www.thecloudgil.dev / thecloudgil.dev is referenced.</p>
+        <p class="source">Reference: <strong>The Cloud Girl</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The .dev top-level domain is referenced.</p>
+        <p class="source">Reference: <strong>The Cloud Girl</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>The documentation/example IP address 192.0.2.40 is referenced.</p>
+        <p class="source">Reference: <strong>The Cloud Girl</strong> —
+          <a href="&t=85" target="_blank">1:25</a>
+        </p>
+      </li>
+      <li>
+        <p>Amazon.com is used as the example domain for DNS resolution.</p>
+        <p class="source">Reference: <strong>Zach Gollwitzer</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>Google's public DNS at 8.8.8.8 is referenced as the example resolver.</p>
+        <p class="source">Reference: <strong>Zach Gollwitzer</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+      <li>
+        <p>NS lookup is referenced as a way to find Amazon.com's authoritative name server.</p>
+        <p class="source">Reference: <strong>Zach Gollwitzer</strong> —
+          <a href="&t=0" target="_blank">0:00</a>
+        </p>
+      </li>
+    </ul>
+  </section>
+
+  <section class="section speaker-contributions">
+    <h2>Speaker Contributions</h2>
+
+    <article class="speaker">
+      <h3>Jeff Delaney — Fireship</h3>
+      <p>
+        Jeff Delaney provided the most compact but wide-ranging overview. His contribution covered the basic DNS lookup path, recursive resolution, caching, the distributed database perspective, and several foundational DNS record types including A, CNAME, MX, TXT, SOA, and NS.
+      </p>
+      <p class="source">
+        Speaker reference:
+        <a href="&t=0" target="_blank">0:00</a>
+      </p>
+    </article>
+
+    <article class="speaker">
+      <h3>The Cloud Girl — The Cloud Girl</h3>
+      <p>
+        The Cloud Girl focused on a step-by-step educational walkthrough of the resolver flow, especially the sequence from ISP resolver to root server to TLD server to authoritative server. This source also emphasized practical caching behavior and how users ultimately reach the web server after resolution.
+      </p>
+      <p class="source">
+        Speaker reference:
+        <a href="&t=0" target="_blank">0:00</a>
+      </p>
+    </article>
+
+    <article class="speaker">
+      <h3>Zach Gollwitzer — Zach Gollwitzer</h3>
+      <p>
+        Zach Gollwitzer contributed a concise example-driven explanation using Amazon.com. His main additions were the browser-cache-to-OS-cache lookup order, the role of a public resolver such as 8.8.8.8, and the practical note that authoritative name servers can be identified through an NS lookup.
+      </p>
+      <p class="source">
+        Speaker reference:
+        <a href="&t=0" target="_blank">0:00</a>
+      </p>
+    </article>
+  </section>
+
+  <section class="section statistics">
+    <h2>Statistics</h2>
+
+    <table class="stats-table">
+      <tbody>
+        <tr>
+          <th>Video Count</th>
+          <td>3</td>
+        </tr>
+        <tr>
+          <th>Transcript Count</th>
+          <td>3</td>
+        </tr>
+        <tr>
+          <th>Total Words</th>
+          <td>1322</td>
+        </tr>
+        <tr>
+          <th>Total Minutes</th>
+          <td>7</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Per-Channel Breakdown</h3>
+    <table class="channel-table">
+      <thead>
+        <tr>
+          <th>Channel</th>
+          <th>Video Count</th>
+          <th>Word Count</th>
+          <th>Minutes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Fireship</td>
+          <td>1</td>
+          <td>501</td>
+          <td>2</td>
+        </tr>
+        <tr>
+          <td>The Cloud Girl</td>
+          <td>1</td>
+          <td>658</td>
+          <td>4</td>
+        </tr>
+        <tr>
+          <td>Zach Gollwitzer</td>
+          <td>1</td>
+          <td>163</td>
+          <td>1</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</section>
+</div>
+</body>
+</html>

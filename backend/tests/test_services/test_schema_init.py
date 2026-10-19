@@ -325,7 +325,7 @@ def test_real_alembic_fresh_install_reaches_head(tmp_path):
     # Schema matches ORM bidirectionally — through the service's own view of
     # the live tables, which ignores the S-8.2.1 search index (`fts_*`: FTS5
     # virtual tables and their shadow tables, created by migration
-    # d8e9f0a1b2c3 without ORM models).
+    # a9f3c1e7b5d2 without ORM models).
     from app.services import schema_init_service, search_service
 
     eng = create_engine(url)

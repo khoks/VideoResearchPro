@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.job import JobCreate, JobResponse, VideoApproval
+from app.schemas.shelf import ShelfResponse
 from app.schemas.video import VideoResponse
-from app.services import chroma_service, job_service, report_service
+from app.services import chroma_service, job_service, report_service, shelf_service
 from app.services.tier_service import get_user_tier, quota_limit
 from app.tasks.job_tasks import (
     execute_channel_job,
@@ -200,6 +201,22 @@ def delete_job(
 
     if not job_service.delete_job(db, job_id):
         raise HTTPException(status_code=404, detail="Job not found")
+
+
+@router.get("/{job_id}/shelves", response_model=list[ShelfResponse])
+def get_job_shelves(
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Shelves this job sits on (E-8.1). Read for every tier; the job must be
+    the caller's, so a guessed id is a 404."""
+    job = job_service.get_job(db, job_id, tenant_id=current_user.id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    shelves = shelf_service.shelves_for_job(db, job.id, current_user.id)
+    counts = shelf_service.job_counts(db, [s.id for s in shelves])
+    return [shelf_service.shelf_to_dict(s, counts.get(s.id, 0)) for s in shelves]
 
 
 @router.get("/{job_id}/videos", response_model=list[VideoResponse])

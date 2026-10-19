@@ -81,7 +81,7 @@ def _head_revision(cfg) -> str:
 
 # Tables that legitimately exist in the DB without an ORM model: the S-8.2.1
 # search index (FTS5 virtual tables and their SQLite shadow tables, all
-# prefixed `fts_`). They are created conditionally by migration d8e9f0a1b2c3
+# prefixed `fts_`). They are created conditionally by migration a9f3c1e7b5d2
 # and by `search_service.ensure_index`, never by `Base.metadata`.
 _NON_ORM_TABLE_PREFIXES = ("fts_",)
 

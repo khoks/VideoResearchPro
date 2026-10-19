@@ -33,7 +33,8 @@ def test_fresh_account_is_sent_to_the_wizard(client):
     assert data["started"] is False
     assert data["onboarded_at"] is None
     assert data["state"]["step"] == 1
-    assert data["milestones"] == {"jobs": 0, "first_job": None, "report_opened": False}
+    assert data["milestones"] == {"jobs": 0, "first_job": None, "report_opened": False, "questions": 0}
+    assert data["state"]["checklist_dismissed"] is False
 
 
 def test_progress_is_kept_on_the_server_and_resumes(client, db, test_user):
@@ -135,3 +136,35 @@ def test_first_report_opened_is_recorded_once_by_the_reader(client, db, test_use
         assert client.get(f"/api/v1/jobs/{job.id}/report/body").status_code == 200
     assert _events(db, test_user.id, "first_report_opened") == 1
     assert client.get(URL).json()["milestones"]["report_opened"] is True
+
+
+def test_questions_milestone_counts_every_surface(client, db, test_user):
+    """S-8.10.2: the checklist's third item. A run, the library and the
+    history chat each count; another account's questions do not."""
+    from app.models.library_qa_exchange import LibraryQAExchange
+    from app.models.qa_exchange import QAExchange
+    from app.models.qa_history_exchange import QAHistoryExchange
+
+    job = Job(job_type="topic", topic="t", status="completed", num_videos=1, tenant_id=test_user.id)
+    db.add(job)
+    db.commit()
+    db.add_all([
+        QAExchange(job_id=job.id, tenant_id=test_user.id, question="q1", answer="a", references="[]"),
+        LibraryQAExchange(tenant_id=test_user.id, question="q2", answer="a"),
+        QAHistoryExchange(tenant_id=test_user.id, question="q3", answer="a"),
+        LibraryQAExchange(tenant_id="someone-else", question="theirs", answer="a"),
+    ])
+    db.commit()
+    assert client.get(URL).json()["milestones"]["questions"] == 3
+
+
+def test_hiding_the_checklist_does_not_start_the_wizard(client, db, test_user):
+    data = client.patch(URL, json={"checklist_dismissed": True}).json()
+    assert data["state"]["checklist_dismissed"] is True
+    assert data["state"]["checklist_dismissed_at"]
+    assert data["started"] is False
+    assert data["should_onboard"] is True  # a fresh account is still sent to /welcome
+    assert _events(db, test_user.id, "onboarding_started") == 0
+    # and it survives a later wizard patch
+    client.patch(URL, json={"step": 2})
+    assert client.get(URL).json()["state"]["checklist_dismissed"] is True

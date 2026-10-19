@@ -8,6 +8,9 @@ export interface OnboardingState {
   started_at: string | null;
   completed_at: string | null;
   dismissed_at: string | null;
+  /** S-8.10.2: the jobs page's first-run checklist was hidden. */
+  checklist_dismissed: boolean;
+  checklist_dismissed_at: string | null;
 }
 
 export interface OnboardingFirstJob {
@@ -22,7 +25,8 @@ export interface Onboarding {
   onboarded_at: string | null;
   state: OnboardingState;
   started: boolean;
-  milestones: { jobs: number; first_job: OnboardingFirstJob | null; report_opened: boolean };
+  /** `questions` counts runs, library and history-chat questions alike. */
+  milestones: { jobs: number; first_job: OnboardingFirstJob | null; report_opened: boolean; questions: number };
   /** Whether `/` sends this account to `/welcome`. */
   should_onboard: boolean;
 }
@@ -33,6 +37,8 @@ export interface OnboardingPatch {
   first_job_id?: string;
   completed?: boolean;
   dismissed?: boolean;
+  /** Hide the jobs-page checklist; does not start the wizard. */
+  checklist_dismissed?: boolean;
 }
 
 /** The server caps the channel list at five (`onboarding_service.MAX_CHANNELS`). */

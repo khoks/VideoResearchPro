@@ -2484,3 +2484,50 @@ Every configuration still has one or two attribution errors per report, so the U
 All single-run evidence. The S-1.18.8 protocol re-run should carry both of the first two describers as arms, so the default can be revisited on two runs each.
 
 **Linked initiatives / PRs.** T-1.18.5.6, S-1.18.8. Follows D-073, D-075.
+
+
+## D-082 — Job templates: identity plus immutable versions, provenance without a foreign key, starters in a self-contained data migration (2026-10-19)
+
+**Status:** accepted. Taken by Claude while building [E-8.6](initiatives.md#e-86--job-templates-m6) (S-8.6.1, S-8.6.2) under the lane brief to follow the [M6 plan](plans/m6-job-templates.md) and take its recommended defaults.
+
+**Context.** The plan chose Grafana-style versioned templates and sketched one table, `job_templates(..., version, parameters_json, is_latest)` unique on `(tenant_id, name, version)`, with `jobs.template_id` + `jobs.template_version` for provenance. In that shape a template's identity is its name, so a rename either breaks the chain or rewrites history. Building it also surfaced three gaps the plan assumed away: the Duplicate flow it builds on dropped fields; `JobCreate` has no `source_types` (nothing writes `jobs.source_types_json`), although the plan froze it into templates and two proposed starters needed it; and channel-type starters cannot know a reader's channels.
+
+**Decision.** Two tables: `job_templates` holds identity and editable metadata (name, description, `builtin_key`, soft-delete `deleted_at`), and `job_template_versions` holds immutable parameter rows (newest 20 kept). A run records `(template_id, template_version)` with **no foreign key**, so provenance outlives a soft delete. Template parameters are exactly `JobCreate` minus the run-time fields. A test pins `frozen ∪ variable = JobCreate fields`, so a new field must be classified rather than silently dropped by every template. Every save is validated as a submission would be.
+
+1. **Run-time fields:** the topic always; channels only when a channel or subscription recipe leaves `channel_list` empty ("add them each run"). `{topic}` in instructions is filled server-side at submission for every topic run.
+2. **Starters** are seeded by a data migration (`f1a2b3c4d5e6`) that carries its own frozen copy of the definitions and an idempotent, versioned upsert: identical is a no-op, changed parameters become the next version. A revision is a new migration that copies them; app code never feeds a migration.
+3. **Starter set.** Topic scan, Deep dive, Quick brief, Channel deep-dive and Subscription follow. The plan's podcast digest and mixed-source debate wait for `source_types` on job creation.
+4. **The visual-analysis flag is carried, never offered.** Duplicate and templates keep a run's `visual_analysis`; the submit form shows it with "Turn off" but has no opt-in, because that toggle is T-1.18.2.1, deferred by [D-071](#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19) and [D-075](#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19). No starter turns it on.
+5. **The relative publish window (`published_after_days`) is split out:** it must reach the search agent's ranking prompt as a preference, which the lane could not edit.
+
+**Alternatives considered.**
+- *The plan's single table.* Rejected: identity keyed on the name breaks under rename, for no gain over a version table.
+- *A foreign key from `jobs.template_id`.* Rejected: with a hard delete it would null provenance; with soft delete it adds a constraint SQLite here does not enforce anyway.
+- *Starter definitions in app code, read by the migration.* Rejected: an old revision would change meaning whenever the module changed.
+- *A visual-analysis checkbox on the form* (the Duplicate story's literal ask). Rejected: it is the deferred R1 opt-in by another name.
+- *Shipping the two source-type starters anyway.* Rejected: `JobCreate` would ignore `source_types`, so they would silently run video-only.
+
+**Consequences.** Templates survive renames and deletes without breaking provenance, and a stale template cannot create an invalid run. Whoever wires `source_types` must extend `TemplateParameters` (the pinning test fails until they do) and may then add the two starters in a new data migration. The publish window and the wizard's starter step (T-8.6.2.2) remain open.
+
+**Linked initiatives / PRs.** E-8.6 / S-8.6.1 / S-8.6.2, PRs [#263](https://github.com/khoks/VideoResearchPro/pull/263), [#265](https://github.com/khoks/VideoResearchPro/pull/265). Follows D-059 (preference, never filter), D-071, D-075.
+
+## D-083 — Organisation features: access and scope defaults on the plans' open questions (2026-10-19)
+
+**Status:** accepted as defaults. The questions were the user's call per the [M1](plans/m1-shelves.md) and [M6](plans/m6-job-templates.md) plans; the lane brief said to take each plan's recommended default and say so. Each is a one-line change if the user wants otherwise.
+
+**Context.** Shelves, tags, templates and the channel page (E-8.1, E-8.6, E-8.7) shipped as PRs [#237](https://github.com/khoks/VideoResearchPro/pull/237), [#242](https://github.com/khoks/VideoResearchPro/pull/242), [#250](https://github.com/khoks/VideoResearchPro/pull/250), [#257](https://github.com/khoks/VideoResearchPro/pull/257), [#263](https://github.com/khoks/VideoResearchPro/pull/263) and [#265](https://github.com/khoks/VideoResearchPro/pull/265). Each plan left open questions; building them also forced a few shape choices the plans did not cover.
+
+**Decision.**
+1. **Shelves are readable on every tier; writing them needs the `shelves` capability** (Pro, Studio). A downgraded reader keeps their shelves read-only (M1 open question 1, the plan's recommendation).
+2. **Tags and templates are not tier-gated.** They cost the operator nothing, the `shelves` capability is about grouping runs, and the pricing page advertises neither.
+3. **Tags are rows** (`tags` + polymorphic `taggings`), as the M1 plan chose, not the free-string `document_tags` the board first listed. Rename keeps the id, merge is one update, and names are unique per reader on `lower(name)`. `taggings.target_type` accepts only `document` in v1 (M1 open question 2); jobs and channels need no schema change.
+4. **Colour is one of ten named palette tokens** (Notion's set) stored by name, every pair at least 4.5:1 in both modes, never colour alone.
+5. **Membership is embedded in the shelves listing** (`job_ids` on each shelf), so one cached `GET /shelves` answers "which shelves is this run on" for a page of cards instead of one request per card.
+6. **The channel page shows the trust weight read-only** in the slot where [D-068](#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18)'s control will go. A control that saved a number nothing reads would mislead.
+7. **Shelf URLs use ids, not slugs**, because names are renameable.
+
+**Alternatives considered.** Hide shelves after a downgrade (loses the reader's organisation over a billing change). Gate tags as Pro (annoys without saving cost). Free-string tags (rejected by the M1 plan: leaks across tenants on a shared table, rename is a mass update). One membership request per job card (twenty requests per page). A writable weight control before E-7.1 (writes a value nothing reads).
+
+**Consequences.** S-8.1.4 shelf-scoped Q&A resolves its set through `query_library_documents(..., job_ids=)` and inherits the empty-set rule (an empty shelf retrieves nothing). E-7.1 replaces the read-only weight slot with its control. If shelves move to read-and-write for all, or tags and templates become paid, it is one `require_feature` change per route plus the frontend mirror.
+
+**Linked initiatives / PRs.** E-8.1 / E-8.6 / E-8.7, the PRs above. Follows D-063, D-065, D-068.

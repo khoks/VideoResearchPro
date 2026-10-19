@@ -5,6 +5,7 @@ import {
   formToTemplateParameters,
   jobToFormState,
   parseDraft,
+  templateNeedsChannels,
   templateToFormState,
 } from '../jobForm';
 import type { Job } from '../../types/job';
@@ -101,8 +102,14 @@ describe('templates (S-8.6.1)', () => {
     expect(result).toEqual({ ok: true, params });
   });
 
-  it('refuses a channel recipe with no channels', () => {
+  it('lets a channel recipe leave the channels to each run (S-8.6.2)', () => {
     const result = formToTemplateParameters({ ...DEFAULT_FORM, jobType: 'channel' });
+    expect(result.ok && result.params.channel_list).toBe(null);
+    expect(result.ok && templateNeedsChannels(result.params)).toBe(true);
+  });
+
+  it('still requires channels to submit a channel run', () => {
+    const result = formToJobCreate({ ...DEFAULT_FORM, jobType: 'channel' });
     expect(result.ok).toBe(false);
   });
 });

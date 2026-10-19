@@ -541,6 +541,14 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 - S-1.14.17 ⚪ A composed section can end mid-tag. Found 2026-10-19 by S-8.8.1's parser fixtures: the stored report for job `419e691d…` (the R1 measurement run) has a `<a href="https://www.youtube.com/watch?v=5` cut off where one section ends and the next begins, so every HTML parser folds the next section's `<h2>` and `<h3>` into that attribute value and two headings vanish from the outline, the iframe and the reader alike. Likely a completion-budget cut in `report_compose`; the compose step should detect an unbalanced tail (unterminated tag or attribute) and either retry the section or close it cleanly, and disclose it in the processing note like the other drops. Not a reader concern — the reader refuses to link the garbage href and nothing more can be recovered client-side.
 
+- S-1.14.18 ⚪ Refresh the guidance that S-1.14.7 shows as stale or unmeasured. Filed 2026-10-19. Linked decision: [D-075](decisions.md#d-075--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19). Several `measured` entries show users numbers taken on a tier the slot no longer runs, and some of the busiest slots are unmeasured. Each task below is a D-055-style replay on the reference job. A changed verdict is a registry edit plus a decision entry.
+  - [ ] T-1.14.18.1 `qa_formulate_answer` at medium reasoning (graded at low in D-055; moved by D-056)
+  - [ ] T-1.14.18.2 `search_plan_queries` on gpt-5.6-luna (graded on gpt-5.4-nano)
+  - [ ] T-1.14.18.3 `knowledge_synthesize_report` on claude-sonnet-5 (graded against whatever produced the stored artifact)
+  - [ ] T-1.14.18.4 Isolate `qa_refine_context` from the D-055 chain (it is now the only unmeasured step between retrieval and a graded answer)
+  - [ ] T-1.14.18.5 `search_rank_and_curate` head-to-head on the persisted candidate pool (S-1.14.6). This makes the slot replayable for the first time
+  - [ ] T-1.14.18.6 Luna on frame selection with captured alternative frames, so agreement can be replaced by graded quality (shares the run with T-1.18.5.5)
+
 **Open questions**
 - OQ-7: does the harness generalize to a scheduled regression check (re-run on every model-lineup shift), or stay a manual audit? Depends on S-1.14.6 landing.
 - OQ-8: judging currently uses a single model family; is a multi-judge panel needed to control for self-preference bias when the challenger shares that family?

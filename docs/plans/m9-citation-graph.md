@@ -67,6 +67,8 @@ The graph endpoint and service with isolation and cap tests, returning nodes, ed
 1. `sigma` (richer, 113 kB, WebGL) or `react-force-graph-2d` (simpler, 60 kB, canvas)?
 2. Should the global view exist in v1 at all, or local graphs only until the hairball question is answered on real data?
 
+Taken at their defaults in S-8.9.2 (2026-10-19), both still the user's to revisit: **sigma** (used directly, without `@react-sigma/core`); the **global view ships**, capped at 300 nodes with single-link nodes hidden, and the local view opens from any node, channel or run.
+
 ## Sources (fetched 2026-10-19)
 
 npm and Bundlephobia for `d3-force`, `react-force-graph-2d`, `sigma`, `graphology`, `@react-sigma/core`, `graphology-layout-forceatlas2`, `graphology-communities-louvain`, `cytoscape`, `react-cytoscapejs`, `vis-network`, `reagraph`, `@antv/g6`; cytoscape 3.31 WebGL preview post; graphology layout docs; Obsidian graph view help and forum; KeyLines and Oracle accessibility guidance; Vite build options; WCAG 2.2. Full URLs with per-claim verification tags are in the raw research notes under [`research/`](research/) (`l2-author-studio.md`, `l3-echo-connectors.md`, `l3-echo-personality.md`, `m1-m6.md`, `m7-m12.md`).

@@ -24,6 +24,45 @@ PR [#302](https://github.com/khoks/VideoResearchPro/pull/302). S-8.10.2, plan [m
 - Library Q&A with an empty library says there is nothing to ask and links to
   **Add sources**; the exports page says when the Q&A files would be empty.
 
+### Added: the library map (2026-10-19)
+
+[S-8.9.2](docs/initiatives.md#s-892--graph-ui), PR [#301](https://github.com/khoks/VideoResearchPro/pull/301), plan [m9-citation-graph](docs/plans/m9-citation-graph.md).
+
+- **`/library/graph`** (sidebar: Library map): your sources, their channels and
+  topics, and your questions as a graph that lays itself out once and stays
+  still. The three largest groups are coloured, a glyph marks each kind, and a
+  click opens a card with links to the source, its channel or the answer.
+  Filter by kind and shelf, centre on any node with a depth of one to three
+  steps; the view lives in the URL.
+- Usable without a mouse or a canvas: the map is one tab stop with arrow keys
+  between nodes, Enter and Escape for the card, buttons for every pan and zoom,
+  a spoken name for each node, the summary in words, and a table of the same
+  nodes, which is the default on a phone.
+- A channel's Intelligence tab gains a **Concept map** of that channel.
+- The graph code is its own lazy chunk (125 kB gzipped).
+
+### Trust-weighted retrieval v1, measured (2026-10-19, S-7.1.1)
+
+PR [#287](https://github.com/khoks/VideoResearchPro/pull/287). Decision [D-068](docs/decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18); measurement [protocol and results](docs/notes/2026-10-19-e71-trust-weighting-measurement.md).
+
+- **`PUT /api/v1/channels/{id}/weight`** sets the caller's trust weight for a
+  channel (0.0–2.0, 1.0 neutral). The channel page's trust-weight card
+  became a slider with Save and Reset.
+- **Job and library Q&A re-rank by it**, exactly as D-068 pre-registered:
+  3 × top-K candidates, the raw relevance threshold first, then
+  `distance / weight`, top-K kept. Weights are resolved per tenant at request
+  time and never stored on chunks. With no weights set, retrieval is
+  unchanged.
+- **Measured before calling it done.** The mechanism works (promoted channels
+  23% → 57% of the context, demoted 10% → 0%, nothing over the
+  threshold). At strong weights it also narrows answers: library-Q&A judges
+  preferred unweighted answers 21 to 7, failing the pre-registered relevance
+  clause. Recorded in D-068; the formula is reopened as S-7.1.2 rather than
+  tuned to pass.
+- Tests: two tenants through the real routers (one tenant's weights never move
+  another's ranking), a real-Chroma test that a trusted off-topic chunk
+  never reaches the answer, and the endpoint's bounds.
+
 ### Added: first-run onboarding wizard (2026-10-19)
 
 PR [#299](https://github.com/khoks/VideoResearchPro/pull/299). S-8.10.1, plan [m10-onboarding](docs/plans/m10-onboarding.md).

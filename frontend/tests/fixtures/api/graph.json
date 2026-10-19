@@ -1,0 +1,323 @@
+{
+  "nodes": [
+    {
+      "id": "channel:UCsynthetic0000000000001",
+      "type": "channel",
+      "label": "Synthetic channel",
+      "degree": 9,
+      "meta": {
+        "channel_id": "UCsynthetic0000000000001"
+      }
+    },
+    {
+      "id": "topic:interest rates",
+      "type": "topic",
+      "label": "Interest rates",
+      "degree": 5,
+      "meta": {
+        "documents": 4
+      }
+    },
+    {
+      "id": "topic:housing",
+      "type": "topic",
+      "label": "Housing",
+      "degree": 5,
+      "meta": {
+        "documents": 4
+      }
+    },
+    {
+      "id": "topic:trade",
+      "type": "topic",
+      "label": "Trade",
+      "degree": 3,
+      "meta": {
+        "documents": 4
+      }
+    },
+    {
+      "id": "document:00000000-0000-4000-8000-000000000001",
+      "type": "document",
+      "label": "Synthetic source 1",
+      "degree": 3,
+      "meta": {
+        "document_id": "00000000-0000-4000-8000-000000000001",
+        "url": "https://example.com/synthetic-1",
+        "source_type": "video",
+        "channel_id": "UCsynthetic0000000000001",
+        "published_at": "2026-02-01T00:00:00"
+      }
+    },
+    {
+      "id": "document:00000000-0000-4000-8000-000000000002",
+      "type": "document",
+      "label": "Synthetic source 2",
+      "degree": 3,
+      "meta": {
+        "document_id": "00000000-0000-4000-8000-000000000002",
+        "url": "https://example.com/synthetic-2",
+        "source_type": "video",
+        "channel_id": "UCsynthetic0000000000001",
+        "published_at": "2026-03-01T00:00:00"
+      }
+    },
+    {
+      "id": "document:00000000-0000-4000-8000-000000000003",
+      "type": "document",
+      "label": "Synthetic source 3",
+      "degree": 3,
+      "meta": {
+        "document_id": "00000000-0000-4000-8000-000000000003",
+        "url": "https://example.com/synthetic-3",
+        "source_type": "video",
+        "channel_id": "UCsynthetic0000000000001",
+        "published_at": "2026-04-01T00:00:00"
+      }
+    },
+    {
+      "id": "document:00000000-0000-4000-8000-000000000004",
+      "type": "document",
+      "label": "Synthetic source 4",
+      "degree": 3,
+      "meta": {
+        "document_id": "00000000-0000-4000-8000-000000000004",
+        "url": "https://example.com/synthetic-4",
+        "source_type": "video",
+        "channel_id": "UCsynthetic0000000000001",
+        "published_at": "2026-05-01T00:00:00"
+      }
+    },
+    {
+      "id": "document:00000000-0000-4000-8000-000000000006",
+      "type": "document",
+      "label": "Synthetic source 6",
+      "degree": 3,
+      "meta": {
+        "document_id": "00000000-0000-4000-8000-000000000006",
+        "url": "https://example.com/synthetic-6",
+        "source_type": "video",
+        "channel_id": "UCsynthetic0000000000001",
+        "published_at": "2026-07-01T00:00:00"
+      }
+    },
+    {
+      "id": "document:00000000-0000-4000-8000-000000000005",
+      "type": "document",
+      "label": "Synthetic source 5",
+      "degree": 2,
+      "meta": {
+        "document_id": "00000000-0000-4000-8000-000000000005",
+        "url": "https://example.com/synthetic-5",
+        "source_type": "video",
+        "channel_id": "UCsynthetic0000000000001",
+        "published_at": "2026-06-01T00:00:00"
+      }
+    },
+    {
+      "id": "document:00000000-0000-4000-8000-000000000007",
+      "type": "document",
+      "label": "Synthetic source 7",
+      "degree": 2,
+      "meta": {
+        "document_id": "00000000-0000-4000-8000-000000000007",
+        "url": "https://example.com/synthetic-7",
+        "source_type": "video",
+        "channel_id": "UCsynthetic0000000000001",
+        "published_at": "2026-08-01T00:00:00"
+      }
+    },
+    {
+      "id": "document:00000000-0000-4000-8000-000000000008",
+      "type": "document",
+      "label": "Synthetic source 8",
+      "degree": 2,
+      "meta": {
+        "document_id": "00000000-0000-4000-8000-000000000008",
+        "url": "https://example.com/synthetic-8",
+        "source_type": "video",
+        "channel_id": "UCsynthetic0000000000001",
+        "published_at": "2026-09-01T00:00:00"
+      }
+    },
+    {
+      "id": "exchange:library:synthetic-qa-1",
+      "type": "exchange",
+      "label": "Synthetic question: what moves rates?",
+      "degree": 2,
+      "meta": {
+        "kind": "library",
+        "exchange_id": "synthetic-qa-1",
+        "job_id": null
+      }
+    },
+    {
+      "id": "document:00000000-0000-4000-8000-000000000009",
+      "type": "document",
+      "label": "Synthetic source 9",
+      "degree": 1,
+      "meta": {
+        "document_id": "00000000-0000-4000-8000-000000000009",
+        "url": "https://example.com/synthetic-9",
+        "source_type": "video",
+        "channel_id": "UCsynthetic0000000000001",
+        "published_at": "2026-01-01T00:00:00"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "document:00000000-0000-4000-8000-000000000001",
+      "target": "channel:UCsynthetic0000000000001",
+      "type": "published_by",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000002",
+      "target": "channel:UCsynthetic0000000000001",
+      "type": "published_by",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000003",
+      "target": "channel:UCsynthetic0000000000001",
+      "type": "published_by",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000004",
+      "target": "channel:UCsynthetic0000000000001",
+      "type": "published_by",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000005",
+      "target": "channel:UCsynthetic0000000000001",
+      "type": "published_by",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000006",
+      "target": "channel:UCsynthetic0000000000001",
+      "type": "published_by",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000007",
+      "target": "channel:UCsynthetic0000000000001",
+      "type": "published_by",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000008",
+      "target": "channel:UCsynthetic0000000000001",
+      "type": "published_by",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000009",
+      "target": "channel:UCsynthetic0000000000001",
+      "type": "published_by",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000001",
+      "target": "topic:interest rates",
+      "type": "about",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000002",
+      "target": "topic:interest rates",
+      "type": "about",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000003",
+      "target": "topic:interest rates",
+      "type": "about",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000004",
+      "target": "topic:interest rates",
+      "type": "about",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000003",
+      "target": "topic:housing",
+      "type": "about",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000004",
+      "target": "topic:housing",
+      "type": "about",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000005",
+      "target": "topic:housing",
+      "type": "about",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000006",
+      "target": "topic:housing",
+      "type": "about",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000006",
+      "target": "topic:trade",
+      "type": "about",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000007",
+      "target": "topic:trade",
+      "type": "about",
+      "weight": 1
+    },
+    {
+      "source": "document:00000000-0000-4000-8000-000000000008",
+      "target": "topic:trade",
+      "type": "about",
+      "weight": 1
+    },
+    {
+      "source": "topic:housing",
+      "target": "topic:interest rates",
+      "type": "co_occurs",
+      "weight": 2
+    },
+    {
+      "source": "exchange:library:synthetic-qa-1",
+      "target": "document:00000000-0000-4000-8000-000000000001",
+      "type": "cites",
+      "weight": 1
+    },
+    {
+      "source": "exchange:library:synthetic-qa-1",
+      "target": "document:00000000-0000-4000-8000-000000000002",
+      "type": "cites",
+      "weight": 1
+    }
+  ],
+  "truncated": false,
+  "total": {
+    "documents": 9,
+    "channels": 1,
+    "topics": 3,
+    "exchanges": 1
+  },
+  "shown": {
+    "documents": 9,
+    "channels": 1,
+    "topics": 3,
+    "exchanges": 1
+  },
+  "summary": "Synthetic fixture. Showing 9 documents, 3 topics, 1 channel and 1 of your answers. They form 1 connected group; the largest holds 14 nodes, mostly about Interest rates, Housing, Trade.",
+  "focus": null
+}

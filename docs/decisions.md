@@ -2056,7 +2056,7 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 ## D-068 — Curated source ranking v1: per-tenant trust weight re-ranks retrieval; perspective banding deferred (2026-10-18)
 
-**Status:** accepted. Taken by Claude under the user's 2026-10-18 directive to "take a wise decision around L4 and document its rationale"; the user set the goal, not the shape.
+**Status:** accepted; v1 shipped 2026-10-19 in PR [#287](https://github.com/khoks/VideoResearchPro/pull/287) and measured (T-7.1.1.5). Two of the four pre-registered clauses failed (relevance narrowly; faithfulness, on counts both arms inflate), so the formula is reopened as S-7.1.2 — see the amendment at the end of this entry. Taken by Claude under the user's 2026-10-18 directive to "take a wise decision around L4 and document its rationale"; the user set the goal, not the shape.
 
 **Context.** The product thesis is *curated, not balanced*, yet curation stops at approval: every approved source counts equally in retrieval. The audit of 2026-10-18 found that `channel_subscriptions.source_weight` (per-tenant since [D-065](#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)) is read by nothing, despite its docstring calling it "the trust score that re-ranks retrieval". Two shapes were on the table for [L4](feature-roadmap.md#l4--curated-source-ranking-): weighted retrieval, or perspective banding in the answer ("your trusted creators say X; others say Y").
 
@@ -2077,7 +2077,15 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **Consequences.** E-7.1 is sequenced after the R3/R4 batch lands, because both touch `qa_agent.py`. The `channel_subscription.py` docstring becomes true rather than being rewritten. Retrieval pool size triples for weighted queries; the cost is one Chroma call either way.
 
-**Linked initiatives / PRs.** I-7 / E-7.1 / S-7.1.1. Follows D-059, D-063, D-065.
+**Linked initiatives / PRs.** I-7 / E-7.1 / S-7.1.1 (PR [#287](https://github.com/khoks/VideoResearchPro/pull/287)), S-7.1.2. Follows D-059, D-063, D-065.
+
+**Amended 2026-10-19: measured, and it costs relevance at strong weights.** The formula above shipped unchanged in PR [#287](https://github.com/khoks/VideoResearchPro/pull/287) and was measured with the protocol pre-registered in [notes/2026-10-19-e71-trust-weighting-measurement.md](notes/2026-10-19-e71-trust-weighting-measurement.md): 10 questions, job and library Q&A, weights 2.0 on three channels and 0 on three others of the reference job's ten largest, three blind judges, three-lens claim verification.
+
+- **The mechanism works as specified.** Promoted channels went from 23% to 57% of the retrieved context, demoted ones from 10% to 0%, and no weighted chunk failed the raw threshold.
+- **It costs breadth, and judges noticed.** Distinct channels per answer fell from about 20 to 13. Mean relevance stayed level (8.53 vs 8.58), but 61% of non-tie verdicts preferred the unweighted answer against a 60% limit, almost all of it on library Q&A (21 to 7). Job Q&A, which also reads the report, slightly preferred weighting (15 to 13). Confirmed unsupported claims: ON 110, OFF 95, which also fails the faithfulness clause (ON ≤ OFF + 2); both counts are inflated by date claims the judges' excerpts could not show, so the gap is suggestive rather than conclusive.
+- **A weight of 0 excludes in practice.** Point 2's "can still surface when nothing else matches" did not happen once in 20 weighted answers: a 3× pool always holds enough other relevant chunks.
+
+Per the rule written before the run, the mechanism stays (it changes nothing until a user sets a weight), the result is recorded here, and the formula is reopened as **S-7.1.2** rather than tuned to pass: candidates are a per-channel share cap in the spirit of D-059's concentration cap, a softened transform (`distance / weight^α`, α < 1), and a true last-resort rule for low weights. Each is to be compared on the same questions and weights. E-7.2 (banding) stays deferred; this measurement is the evidence it was waiting for, and it says concentration, not ordering, is the problem to solve first.
 
 
 ## D-069 — Shipped-backend surfaces: ingest as a Library tab, Author Studio as one page, readiness as a gate mean (2026-10-19)
@@ -2785,3 +2793,62 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 - `{"raw": ...}` summaries no longer come from map. Reduce keeps its defensive handling for other shapes, and `MAP_UNPARSED` records no longer occur from this path.
 
 **Linked initiatives / PRs.** S-1.14.19 (E-1.14), E-1.18 (R1 run 6 and run 7), D-075, D-088, #294 (R5 quote verification, which this makes mostly unnecessary for wrong-script quotes but keeps as the check).
+
+
+---
+
+## D-091 — Channel intelligence: aggregates computed on read and cached per reader behind an input fingerprint; derived links resolved at read time (2026-10-19)
+
+**Status:** accepted.
+
+**Context.** M7 (E-8.7) needed per-channel figures (cadence, durations, topics and concepts, a keyword cloud, stance, the reader's own questions) over the documents of the channel **this reader** can see (D-063), and a way for citation chips to reach the channel page. The plan left open how to keep the figures fresh (open question 2: "invalidate on sync and on new knowledge"), and the obvious link fix, a `channel_id` on every stored reference, sat in `qa_agent._chunk_to_reference`, which E-7.1 was rewriting at the same time.
+
+**Decision.** Compute `GET /channels/{id}/intelligence` in the request and cache the payload per `(channel_id, tenant_id)` in `channel_intelligence_cache`, keyed by a fingerprint of the inputs (the visible document set, knowledge-extraction times, cached transcripts) plus a payload version, with `?refresh=true` to force it. Keywords are TF-IDF over cached transcripts with a project function-word and spoken-filler stop list. Citation chips find their channel at read time through a batched, visibility-scoped `GET /library/video-channels?video_ids=`, never a stored field. "Extract knowledge for N documents" runs from the browser, one document at a time, against the existing endpoint and the reader's quota.
+
+**Alternatives considered.**
+- *Materialise nightly on the scheduler.* Stale between runs, and a per-tenant table for every channel whether anyone opens it or not. Measured instead: 1.6 s cold and 13 ms cached at 500 documents, so on-read is affordable.
+- *Invalidate from the sync and extraction paths.* Hooks in two hot paths that every future input would also need; the fingerprint notices any input change without them.
+- *scikit-learn's built-in English stop list.* Its Glasgow list drops content words such as "interest", which a finance channel needs.
+- *Store `channel_id` on references.* Edits a shared hot spot mid-rewrite, and every answer written before the change would stay unlinked; read-time resolution links every existing answer and cannot leak a channel the reader cannot see.
+- *A Celery batch-extraction task.* A new task, progress channel and cancel path for something the existing endpoint already does per document.
+
+**Consequences.**
+- The first open after any input change pays the computation (about 1.6 s at 500 documents); a channel of several thousand documents would need the scheduler after all.
+- Changing the payload shape means bumping `PAYLOAD_VERSION` so older cached rows recompute.
+- A chip's channel costs one extra batched request per screen.
+- Batch extraction stops when the tab closes; it is resumable because it only offers documents without a report.
+- Topic clusters (k-means over chunk embeddings) were not built; they fold into the gated S-8.9.3.
+
+**Linked initiatives / PRs.** E-8.7 (S-8.7.2 #280, S-8.7.3 #285, S-8.7.4 #291), M7 plan, D-063, D-070.
+
+---
+
+## D-092 — Library graph: computed per request, sigma used directly as a lazy chunk, three group colours, the accessibility layer inside the story (2026-10-19)
+
+**Status:** accepted.
+
+**Context.** M9 (E-8.9) needed a library graph that is useful rather than a hairball, tenant-scoped, readable without a mouse, and within the app's bundle budget. The plan left two questions to the user: `sigma` or `react-force-graph-2d`, and whether a whole-library view should ship in v1.
+
+**Decision.**
+- `GET /library/graph` builds nodes and edges per request from the reader's visible documents (documents, their channels, topics on at least two documents, the reader's answers that cite them; `co_occurs` edges between topics sharing two or more documents, five per topic). No edge table. Degree, then recency, choose nodes under a cap (default 300, max 2,000), and the response carries a one-paragraph summary.
+- The UI is `sigma` 4 with `graphology` used directly (no `@react-sigma/core`), ForceAtlas2 in its web worker frozen after it settles, and seeded Louvain groups, all in a lazy route chunk (125 kB gzipped).
+- The whole-library view ships, capped at 300 nodes with single-link nodes hidden; the local view opens from any node, channel or run.
+- Only the three largest groups are coloured, in the first three slots of the reference categorical order validated against **all pairs** on both surfaces; the rest are grey, and a glyph marks each node kind.
+- The accessibility layer is part of the first UI PR: one tab stop with arrow keys to the nearest node (neighbours first), Enter and Escape for the detail card, buttons for every pan and zoom gesture, a live region, the summary in words, and a table of the same nodes that is the default under 640 px. Reduced motion computes the layout before the first frame.
+
+**Alternatives considered.**
+- *A persisted `graph_edges` table.* Premature: the graph builds in about 0.07 s at 2,000 documents and 500 answers.
+- *`react-force-graph-2d`.* Smaller (60 kB), but canvas-only with d3-force; sigma's WebGL leaves headroom and its camera and coordinate API is what the keyboard ring needs.
+- *`@react-sigma/core`.* One more dependency wrapping calls the canvas makes directly anyway.
+- *Local graphs only in v1.* Leaves the reader no overview; the cap and leaf hiding keep the global view legible, and the open question stays open for a real library.
+- *A colour per group.* A fourth hue fails the all-pairs separation floors (orange against yellow), and on a node-link map any two groups can touch.
+- *Accessibility as a follow-up.* A canvas has no DOM; shipping it without the table and keyboard model fails WCAG 1.1.1, 2.1.1 and 2.5.7 from day one.
+
+**Consequences.**
+- Libraries well beyond 5,000 nodes would need the edge table and server-side layout.
+- Group colours follow group size, so a filter that changes the groups can recolour them; the legend names each group by its main topics.
+- sigma 4's defaults need care: `itemSizesReference: "screen"`, a full `refresh()` after a reducer's inputs change, and mount only once the container has a width.
+- Measured: 300 nodes, the page's request, draw in 1.3 s on the dev server; 2,000 nodes in 2.2 s, 3.0 s under reduced motion.
+- S-8.9.3 (topic clusters by embedding centroid) stays gated on topic edges proving too sparse on a real library.
+
+**Linked initiatives / PRs.** E-8.9 (S-8.9.1 #297, S-8.9.2 #301), M9 plan, D-063, D-070.

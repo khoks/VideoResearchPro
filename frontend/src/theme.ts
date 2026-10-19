@@ -101,6 +101,20 @@ export const chartColors = {
 
 export type ChartColorToken = keyof typeof chartColors;
 
+/**
+ * Group colours for the library map (S-8.9.2): the first three slots of the
+ * dataviz reference categorical order (blue, orange, aqua), validated on
+ * 2026-10-19 against `surface` in each mode with EVERY pair compared, which
+ * is what a node-link map needs (any two groups can touch). A fourth hue
+ * fails the all-pairs floors, so smaller groups fold to "other", drawn in
+ * `chartColors.neutral`. Light aqua sits under 3:1 on the light surface, so
+ * the map always ships a legend that names each group and the table view.
+ */
+export const groupColors = {
+  light: ['#2a78d6', '#eb6834', '#1baf7a'],
+  dark: ['#3987e5', '#d95926', '#199e70'],
+} as const;
+
 export const fonts = {
   display:    '"Fraunces", Georgia, serif',
   body:       '"Source Serif Pro", "Fraunces", Georgia, serif',

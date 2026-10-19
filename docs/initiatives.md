@@ -1591,27 +1591,36 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 
 ---
 
-## I-7 ⚪ Curated source ranking (L4)
+## I-7 🟡 Curated source ranking (L4)
 
 **Filed 2026-10-18** from a "what's remaining" code audit.
 **Why it exists.** The product is meant to be *curated, not balanced*: the user's trust in a source should shape retrieval ordering, answer composition and disagreement surfacing. Today curation stops at approval, and every approved source counts equally after that.
 **North-star doc:** [feature-roadmap.md L4](feature-roadmap.md#l4--curated-source-ranking-) · [vision.md](vision.md)
 **Decision links:** [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31) (amended 2026-10-18)
 
-**Current state.** Only a seed exists: `channel_subscriptions.source_weight` (per-tenant, default 1.0, moved there by D-065). Nothing reads it, no endpoint sets it, and no UI exposes it. `channel_subscription.py` nonetheless documents it as "the trust score that re-ranks retrieval".
+**Current state (2026-10-19).** Trust-weighted retrieval v1 shipped (S-7.1.1, PR [#287](https://github.com/khoks/VideoResearchPro/pull/287)): `PUT /channels/{id}/weight`, the D-068 re-rank in job and library Q&A, and a slider on the channel page. Measured: it moves the context as intended, and at strong weights it costs breadth enough that library-Q&A judges preferred unweighted answers, so the formula is reopened (S-7.1.2). *Before:* only the `channel_subscriptions.source_weight` column existed; nothing read it.
 
-### E-7.1 🔵 Trust-weighted retrieval (v1)
+### E-7.1 🟡 Trust-weighted retrieval (v1)
 
 **Decided 2026-10-18 by [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18):** weighted retrieval first, as a pure re-rank (`distance / weight` after the raw relevance threshold, over a 3× pool), weights resolved per tenant at query time and never stored on chunks or used as a filter. Perspective banding is E-7.2. **Sequenced after the R3/R4 batch**, which is rewriting `qa_agent.py`.
 
-#### S-7.1.1 ⚪ Make `source_weight` re-rank retrieval
-**PR:** TBD
-**Acceptance.** A user who raises one channel's weight sees that channel's chunks rank higher in their own job and library Q&A, and no other tenant's ranking changes.
-- [ ] T-7.1.1.1 `PUT /api/v1/channels/{id}/weight` writing `channel_subscriptions.source_weight` through `subscription_service`
-- [ ] T-7.1.1.2 Apply the weight when re-ranking job and library retrieval. Weights are per-tenant and chunks are global ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)), so resolve them at query time and never store them in chunk metadata
-- [ ] T-7.1.1.3 Weight control on the channel page — *the page and a read-only `TrustWeightSlot` (`data-slot="trust-weight"`) shipped in S-8.7.1, PR [#237](https://github.com/khoks/VideoResearchPro/pull/237); replace the slot with the control ([D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19))*
-- [ ] T-7.1.1.4 Make the `channel_subscription.py` docstring true, or correct it
-- [ ] T-7.1.1.5 Measure: the same questions with and without weighting, judged blind (E-1.14 harness)
+#### S-7.1.1 🟢 Make `source_weight` re-rank retrieval — shipped 2026-10-19
+**PR:** [#287](https://github.com/khoks/VideoResearchPro/pull/287)
+**Acceptance (met).** A user who raises one channel's weight sees that channel's chunks rank higher in their own job and library Q&A, and no other tenant's ranking changes (`tests/test_routers/test_channel_weight.py`, two tenants through the real routers and agent). A weight-2.0 off-topic chunk never reaches the answer (`tests/test_agents/test_trust_weighting.py`, real Chroma, distances measured as preconditions).
+- [x] T-7.1.1.1 `PUT /api/v1/channels/{id}/weight` (0.0–2.0, 422 outside) through `subscription_service.set_weight`; `channel_weights(db, tenant)` returns only non-neutral rows
+- [x] T-7.1.1.2 Both Q&A routers resolve the asker's weights at request time and pass them to the agent; `qa_agent._scoped_query` implements D-068 exactly (3× pool, raw threshold first, `distance / weight`, 0 → 0.05, no channel → 1.0). With no weights it is one top-K query, unchanged. Never stored on chunks, never a filter
+- [x] T-7.1.1.3 The channel page's trust-weight slot became a slider with Save / Reset; its copy states the measured trade-off
+- [x] T-7.1.1.4 `channel_subscription.py` docstring is now true and says where the weight is applied
+- [x] T-7.1.1.5 Measured per [the pre-registered protocol](notes/2026-10-19-e71-trust-weighting-measurement.md): mechanism and threshold clauses met; relevance clause **not met** (61% of non-tie verdicts favoured OFF against a 60% limit, concentrated in library Q&A); faithfulness clause **not met** too (confirmed unsupported claims ON 110 / OFF 95, both inflated by date claims). Recorded in D-068; formula reopened as S-7.1.2. Scripts: `measure_trust_weighting.py`, `judge_qa_pairs.py`
+
+#### S-7.1.2 ⚪ Reopen the re-rank formula: concentration and last-resort weights
+**PR:** TBD. Filed 2026-10-19 from T-7.1.1.5's result ([D-068 amendment](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18)).
+**Why.** At 2.0 / 0 the re-rank took promoted channels from about a quarter to more than half of each answer's context, cut distinct channels per answer by a third, and judges preferred unweighted library answers 21 to 7. A weight of 0 never let a source surface, contrary to D-068's intent.
+**Acceptance.** A revised formula, chosen before measuring, re-run on the same ten questions and the same weights, meets all four clauses of the original rule, or the result is recorded and weights are capped in the UI instead.
+- [ ] T-7.1.2.1 Pre-register the candidates and pick one before running: a per-channel share cap on the top-K (D-059's concentration-cap pattern), `distance / weight^α` with α < 1, or both
+- [ ] T-7.1.2.2 Make low weights a real last resort: a weight below a cut-off only fills slots left empty after everything else that passes the threshold
+- [ ] T-7.1.2.3 Re-run `measure_trust_weighting.py` + `judge_qa_pairs.py` against the same baseline; add publication dates to the judge and verifier excerpts so date claims stop inflating both arms' unsupported-claim counts
+- [ ] T-7.1.2.4 Test milder settings (1.5 / 0.5) alongside the original strong ones
 
 ### E-7.2 ⚪ Perspective banding in answers
 
@@ -1826,11 +1835,13 @@ Linked decision: D-074.
 - [ ] T-8.6.4.1 A new data migration that copies `STARTERS` / `_upsert` from `f1a2b3c4d5e6_starter_templates.py` (never edit that file) and adds `podcast-digest` and `mixed-source-debate`
 **Blocked-on:** [S-1.5.13](#s-1513--accept-source_types-on-job-creation).
 
-### E-8.7 🟡 Channel intelligence (M7)
+### E-8.7 🟢 Channel intelligence (M7)
+
+**Shipped:** 2026-10-19 — PRs [#237](https://github.com/khoks/VideoResearchPro/pull/237), [#280](https://github.com/khoks/VideoResearchPro/pull/280), [#285](https://github.com/khoks/VideoResearchPro/pull/285), [#291](https://github.com/khoks/VideoResearchPro/pull/291); the concept graph (T-8.7.3.2) shipped in S-8.9.2 ([#301](https://github.com/khoks/VideoResearchPro/pull/301)). The plan's topic-cluster item (k-means over chunk embeddings), never a board task, folds into the gated [S-8.9.3](#s-893--topic-clusters).
 
 **Scope.** A per-channel view with analytics computed from what the library already holds: publishing cadence, top topics and concepts aggregated from knowledge artifacts, a keyword cloud from transcripts, the user's own Q&A activity against the channel, and a concept graph. Stance over time is scoped to sources that carry classification (social connectors); YouTube has none today, so that panel is explicitly data-dependent.
 **Plan:** [`docs/plans/m7-channel-intelligence.md`](plans/m7-channel-intelligence.md)
-**Linked decision:** [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19) (read-only trust-weight slot)
+**Linked decision:** [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19) (read-only trust-weight slot), [D-091](decisions.md#d-091--channel-intelligence-aggregates-computed-on-read-and-cached-per-reader-behind-an-input-fingerprint-derived-links-resolved-at-read-time-2026-10-19) (aggregates on read behind a fingerprint, links resolved at read time)
 **Acceptance.** Opening a channel the user follows shows cadence, top topics (with the videos behind each), a keyword cloud and the user's questions about it; panels whose inputs are missing say what to do ("Extract knowledge for 12 more videos to populate topics") instead of showing nothing; a channel with 500 documents renders within two seconds from a cached aggregate.
 
 #### S-8.7.1 🟢 Channel detail page
@@ -1896,10 +1907,13 @@ Linked decision: D-074.
 - [ ] T-8.8.4.3 Run the frontend suites in CI: `npm test` (vitest) and `npm run test:mobile` (Playwright, needs `npx playwright install --with-deps chromium webkit` in the runner). Today CI runs pytest, ruff and the frontend build only ([testing.md §5.4](testing.md#54-ci))
 - [ ] T-8.8.4.4 Report the compose step's truncated section ([S-1.14.17](#e-114--model-tier-quality-evaluation-harness)) in the reader when it happens again: the reader cannot repair it, but it could show the processing note instead of silently losing two headings. Only after S-1.14.17 decides how the compose step discloses it
 
-### E-8.9 🔵 Citation graph and knowledge map (M9)
+### E-8.9 🟡 Citation graph and knowledge map (M9)
+
+**Status 2026-10-19.** S-8.9.1 and S-8.9.2 shipped (PRs [#297](https://github.com/khoks/VideoResearchPro/pull/297), [#301](https://github.com/khoks/VideoResearchPro/pull/301)); the epic stays 🟡 for S-8.9.3, which its plan gates on topic edges proving too sparse on a real library.
 
 **Scope.** A library-overview graph: documents, channels, Q&A exchanges and knowledge topics as nodes; citations, authorship and shared topics as edges; tenant-scoped; filterable by shelf, channel or job; a "local graph" around any node. Useful rather than a hairball: size caps, degree-based sizing, clustering by channel or topic, and a focused mode by default.
 **Plan:** [`docs/plans/m9-citation-graph.md`](plans/m9-citation-graph.md)
+**Linked decision:** [D-092](decisions.md#d-092--library-graph-computed-per-request-sigma-used-directly-as-a-lazy-chunk-three-group-colours-the-accessibility-layer-inside-the-story-2026-10-19)
 **Acceptance.** `/library/graph` renders the user's library in under three seconds at 2,000 nodes; clicking a document shows its neighbours and a detail card; filtering by shelf narrows the graph; nothing from another tenant appears; the graph degrades to a list on narrow screens.
 
 #### S-8.9.1 🟢 Graph endpoint
@@ -1909,15 +1923,20 @@ Linked decision: D-074.
 - [x] T-8.9.1.3 Tests: two-reader isolation (nothing of theirs in the payload, their topic absent, my answer citing only their document has no node), an empty visible set is an empty graph, cap and truncation with degree order, focus at depth 1 and 2, channel / job / shelf filters (foreign → 404, empty shelf → empty), types filter, job exchanges
 - Found on the way: a topic label's display spelling depended on row order when casings tied; both this and the channel aggregate now break ties toward the capitalised spelling
 
-#### S-8.9.2 🔵 Graph UI
-**PR:** TBD
-- [ ] T-8.9.2.1 Lazy-loaded graph route on `sigma` + `graphology` + `@react-sigma/core` with the ForceAtlas2 web-worker layout and Louvain communities (all MIT, about 113 kB gzipped; `react-force-graph-2d`, MIT, 60 kB, is the smaller alternative), inline-styled chrome, zoom / pan, hover labels, click → detail card with links to the document, job or exchange; layout frozen after convergence
-- [ ] T-8.9.2.2 Filters (shelf, channel, type), local-graph mode, legend, reduced-motion respect
-- [ ] T-8.9.2.4 The channel page's concept graph (moved from T-8.7.3.2): the graph filtered to the channel, reachable from the Intelligence tab
-- [ ] T-8.9.2.3 Accessibility, which is real work for a canvas: an equivalent node / edge table view, keyboard focus over nodes with a drawn focus ring, button alternatives to drag and pan (WCAG 2.5.7), a one-paragraph textual summary; the table doubles as the narrow-screen fallback
+#### S-8.9.2 🟢 Graph UI
+**PR:** [#301](https://github.com/khoks/VideoResearchPro/pull/301) (merged 2026-10-19)
+**Scope-changed 2026-10-19:** sigma is used directly, without `@react-sigma/core` (one less dependency; the canvas needs sigma's camera and coordinate calls anyway). Plan open questions taken at their defaults: sigma over `react-force-graph-2d`; the global view ships, capped at 300 nodes with single-link nodes hidden, and the local view comes from any node, channel or run scope.
+- [x] T-8.9.2.1 Lazy route `/library/graph` (`pages/GraphPage.tsx` via `React.lazy`) on `sigma` 4 + `graphology` + `graphology-layout-forceatlas2` + `graphology-communities-louvain`: its own chunk, 125 kB gzipped, nothing in the main bundle. ForceAtlas2 runs in its web worker and stops once settled (1.2–4 s by size). Louvain groups (seeded, so stable) colour the three largest groups; the rest are grey. A glyph marks each kind (`▸` channel, `#` topic, `?` question). Hover labels, click → detail card (source, channel page, the answer on its run or library page, "Centre the map here"), double-click re-centres, a selection dims everything but its neighbourhood
+- [x] T-8.9.2.2 Filters in one row: Map / Table, kinds (channels, topics, your questions), shelf, single-link nodes (with the hidden count); scope chips for the centred node (with a 1–3 step depth slider), channel and run. All of it lives in the URL (`focus`, `depth`, `shelf_id`, `channel_id`, `job_id`, `types`, `leaves`, `view`), and a new centre is a Back step. A legend names each coloured group with its main topics. Reduced motion computes the layout before the first frame and moves the camera without animation
+- [x] T-8.9.2.4 The channel page's concept map (moved from T-8.7.3.2): a **Concept map** panel in the Intelligence tab, scoped to the channel (topics and questions), loaded only when opened, plus "Open in the library map"
+- [x] T-8.9.2.3 Accessibility: the map is one tab stop (`role="application"`, described by the summary and the key help); arrows move to the nearest node that way, neighbours first; Enter opens the card, Escape closes it, Home returns to the start, + / − / 0 zoom, Shift + arrows pan; a focus ring follows the node through zoom and layout; a live region names each node. Nine buttons replace every drag and wheel gesture (WCAG 2.5.7). The table view lists the same nodes (and, on demand, every connection), opens the same card, and is the default under 640 px. The server's one-paragraph summary heads the map
+- Tests: `utils/__tests__/graphModel.test.ts` (10: leaf hiding, groups, colour cap, glyphs, empty graphs, table = drawn set, arrow choice, announcement); `tests/graph.spec.ts` (5, desktop Chromium, synthetic fixture: tab stop and keys, table parity and the card's link, reduced motion never animates, the animated layout freezes, 375 px opens on the table)
+- Measured (dev server, from navigation start, app load included): 300 nodes, the page's request, first draw 1.3 s; 2,000 nodes 2.2 s animated and 3.0 s under reduced motion, where the layout is computed before the first frame. The scratch library (52 nodes) checked live in both themes
+- Found on the way: sigma 4 measures node sizes in graph units by default (`itemSizesReference: "positions"`), which drew every node tens of pixels wide; and its reducers only run on a full `refresh()`
 
 #### S-8.9.3 ⚪ Topic clusters
 - [ ] T-8.9.3.1 Cluster documents by embedding centroid (k-means over stored chunk means) and colour the graph by cluster; only if S-8.9.2's topic edges prove too sparse
+- Scope-changed 2026-10-19: also carries M7's channel topic clusters (the same k-means, scoped to one channel), which S-8.7.2 did not build. The gate needs the library map tried on a real library; S-8.9.2 colours only the three largest Louvain groups (D-092), so clusters would need their own encoding, not a fourth hue
 
 ### E-8.10 🟢 Onboarding wizard and empty states (M10)
 

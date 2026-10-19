@@ -12,6 +12,7 @@ import { useJobStore } from '../stores/jobStore';
 import {
   chartColors,
   colors,
+  groupColors,
   isPaletteColor,
   palette,
   type ChartColorToken,
@@ -48,6 +49,21 @@ export function useShadows() {
 export function usePaletteColor(name: string): { bg: string; fg: string } {
   const mode = useThemeMode();
   return palette[isPaletteColor(name) ? name : 'default'][mode];
+}
+
+/** Library-map colours for the current mode (see `groupColors` in theme.ts):
+ * one per large group, `other` for the rest, and the two edge strengths. */
+export function useGroupColors(): { groups: readonly string[]; other: string; edge: string; edgeStrong: string } {
+  const mode = useThemeMode();
+  return useMemo(
+    () => ({
+      groups: groupColors[mode],
+      other: chartColors.neutral[mode],
+      edge: chartColors.muted[mode],
+      edgeStrong: chartColors.neutral[mode],
+    }),
+    [mode],
+  );
 }
 
 /** Chart mark colours for the current mode (see `chartColors` in theme.ts). */

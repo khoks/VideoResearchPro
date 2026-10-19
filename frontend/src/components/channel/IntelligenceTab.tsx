@@ -5,6 +5,7 @@ import type { ChannelIntelligence, LabelCount, MonthCounts } from '../../service
 import { BarList, ColumnChart, type ColumnRow } from '../charts';
 import { Button, Card, EmptyState, Skeleton } from '../primitives';
 import { BatchExtract } from './BatchExtract';
+import { ConceptMap } from './ConceptMap';
 import { KeywordCloud } from './KeywordCloud';
 import { useChartColors, useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
@@ -127,6 +128,10 @@ export function IntelligenceTab({ channelId }: { channelId: string }) {
 
       <Panel title="Words it keeps using" note={data.notes.keywords}>
         {data.keywords.length > 0 ? <KeywordCloud keywords={data.keywords} /> : null}
+      </Panel>
+
+      <Panel title="Concept map">
+        <ConceptMap channelId={channelId} />
       </Panel>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: space['4'] }}>

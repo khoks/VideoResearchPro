@@ -66,9 +66,10 @@ export function AppLayout() {
     navigate('/login', { replace: true });
   };
 
-  // `/library/qa` is a prefix of `/library`, so test it first.
+  // `/library/qa` and `/library/graph` are prefixed by `/library`, so test them first.
   const isLibraryQAActive = location.pathname.startsWith('/library/qa');
-  const isLibraryActive = !isLibraryQAActive && location.pathname.startsWith('/library');
+  const isLibraryMapActive = location.pathname.startsWith('/library/graph');
+  const isLibraryActive = !isLibraryQAActive && !isLibraryMapActive && location.pathname.startsWith('/library');
   const isJobsActive = location.pathname.startsWith('/jobs');
   const isQAHistoryActive = location.pathname.startsWith('/qa-history');
   const isExportsActive = location.pathname.startsWith('/exports');
@@ -257,6 +258,7 @@ function NavContent({
       <NavGroup label="Library">
         <NavItem active={active.library}     onClick={() => onChange('library')}>All sources</NavItem>
         <NavItem active={active['library-qa']} onClick={() => onChange('library-qa')}>Ask the library</NavItem>
+        <NavItem active={pathname.startsWith('/library/graph')} onClick={() => onNavigatePath('/library/graph')}>Library map</NavItem>
       </NavGroup>
       <ShelvesNavGroup pathname={pathname} onNavigate={onNavigatePath} canWrite={canWriteShelves} />
       <NavGroup label="Knowledge">

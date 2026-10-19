@@ -428,6 +428,8 @@ Query: `focus` (a node id: its neighbourhood to `depth` hops, 1–3; an unknown 
 
 Ids are stable across requests. Topics come from knowledge reports and need at least two of the caller's documents; `co_occurs` links topics sharing at least two documents (the five strongest per topic). Answers are the caller's own job and library exchanges that cite at least one visible document. Under the cap, nodes are chosen by degree, then recency (the focus always first). `summary` is the textual alternative to the canvas. Computed per request: about 0.07 s at 2,000 documents and 500 answers.
 
+An absent or empty `types` means every type, so a client that wants sources only sends `types=document` (the library map does, S-8.9.2). The map asks for `limit=300`.
+
 ### `GET /api/v1/library/video-channels`
 `?video_ids=a,b,c` → `{ "<video_id>": { "channel_id": "UC…", "channel_name": "…" } }` (S-8.7.4). Maps cited YouTube videos to their channel so a citation chip can link to the channel page. Only videos the caller can see answer; unknown or invisible ids are simply absent (never an error, never a hint that another reader holds them). At most 200 distinct ids per call. Resolved at read time, so every existing answer gains the link without changing stored references. The frontend batches every chip on screen into one call.
 
@@ -540,7 +542,7 @@ All `/channels` endpoints require auth. The channel *record* is shared; subscrip
   "name": "Alpha Channel",
   "url": "https://www.youtube.com/channel/UCaaa...",   // null for creator types with no derivable page
   "subscribed": true,
-  "source_weight": 1.0,             // the caller's trust weight; read-only until S-7.1.1 ships PUT /channels/{id}/weight (D-068)
+  "source_weight": 1.0,             // the caller's trust weight, 0.0-2.0, 1.0 neutral; set with PUT /channels/{id}/weight (D-068)
   "subscriber_count": 12345,
   "uploads_playlist_id": "UUaaa...",
   "last_synced_at": "2026-10-19T08:00:00",
@@ -560,6 +562,11 @@ Flip the caller's subscription on and dispatch a sync job. Returns `SubscribeRes
 
 ### `POST /api/v1/channels/{channel_id}/unsubscribe`
 Flip the caller's subscription off; other tenants are unaffected. Returns the updated `ChannelResponse`. Does not remove documents already in the library.
+
+### `PUT /api/v1/channels/{channel_id}/weight`
+Set the caller's trust weight for the channel ([D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18), S-7.1.1). Body `{"weight": <0.0-2.0>}`; 1.0 is neutral. Returns the updated `ChannelResponse`; 422 outside the range, 404 for an unknown channel. Only the caller's `channel_subscriptions` row changes, so no other tenant's ranking moves.
+
+The weight re-ranks the caller's **job and library Q&A** retrieval: 3 × top-K candidates, drop any over `RAG_DISTANCE_THRESHOLD` on the raw distance, sort by `distance / weight`, keep top-K. 0.0 is clamped to 0.05 at query time; sources without a channel weigh 1.0. It is never a filter and never stored on chunks. Measured effect and its relevance cost: [notes/2026-10-19-e71-trust-weighting-measurement.md](notes/2026-10-19-e71-trust-weighting-measurement.md).
 
 ### `POST /api/v1/channels/{channel_id}/sync`
 Dispatch a fresh subscription sync for the channel. Returns `SubscribeResponse`.

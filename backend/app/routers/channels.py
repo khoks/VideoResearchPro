@@ -9,7 +9,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.channel import Channel
 from app.models.job import Job
 from app.models.document import Document
-from app.schemas.channel import ChannelResponse, SubscribeResponse
+from app.schemas.channel import ChannelResponse, ChannelWeightRequest, SubscribeResponse
 from app.schemas.channel_intelligence import ChannelIntelligenceResponse
 from app.schemas.video import VideoResponse
 from app.services import channel_intelligence_service, subscription_service, visibility_service
@@ -131,6 +131,27 @@ def unsubscribe_channel(
 
     # Only THIS tenant unsubscribes — other subscribers are unaffected.
     subscription_service.set_subscribed(db, channel.channel_id, current_user.id, False)
+    return _channel_to_response(db, channel, current_user.id)
+
+
+@router.put("/{channel_id}/weight", response_model=ChannelResponse)
+def set_channel_weight(
+    channel_id: str,
+    body: ChannelWeightRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Set THIS tenant's trust weight for the channel (S-7.1.1 / D-068).
+
+    Only the caller's `channel_subscriptions` row changes; another tenant's
+    weight, and therefore their ranking, is untouched (D-065). The weight
+    re-ranks the caller's job and library Q&A retrieval and is never a
+    filter: 0.0 sinks a channel, it does not remove it.
+    """
+    channel = db.query(Channel).filter(Channel.channel_id == channel_id).first()
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    subscription_service.set_weight(db, channel.channel_id, current_user.id, body.weight)
     return _channel_to_response(db, channel, current_user.id)
 
 

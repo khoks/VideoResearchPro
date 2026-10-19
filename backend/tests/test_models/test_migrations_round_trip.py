@@ -17,6 +17,7 @@ from sqlalchemy import create_engine, inspect
 from app.services.schema_init_service import _alembic_config
 
 LANE_MIGRATIONS = [
+    ("c2d3e4f5a6b7", {"notes"}),
     ("d8e9f0a1b2c3", {"shelves", "shelf_jobs"}),
 ]
 

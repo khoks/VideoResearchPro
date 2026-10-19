@@ -13,13 +13,17 @@ import {
   space,
 } from '../theme';
 
+interface Download {
+  label: string;
+  url: string;
+  filename: string;
+  variant: 'primary' | 'secondary';
+}
+
 interface DatasetCard {
   title: string;
   description: string;
-  openaiUrl: string;
-  openaiFilename: string;
-  tupleUrl: string;
-  tupleFilename: string;
+  downloads: Download[];
 }
 
 export function ExportsPage() {
@@ -32,19 +36,28 @@ export function ExportsPage() {
       title: 'Q&A dataset',
       description:
         'Every question you asked together with the assistant answer, packaged for fine-tuning.',
-      openaiUrl: exportsApi.getQaOpenaiUrl(token),
-      openaiFilename: 'qa-dataset-openai.jsonl',
-      tupleUrl: exportsApi.getQaTupleUrl(token),
-      tupleFilename: 'qa-dataset-tuple.jsonl',
+      downloads: [
+        { label: 'OpenAI JSONL', url: exportsApi.getQaOpenaiUrl(token), filename: 'qa-dataset-openai.jsonl', variant: 'primary' },
+        { label: 'Tuple JSONL', url: exportsApi.getQaTupleUrl(token), filename: 'qa-dataset-tuple.jsonl', variant: 'secondary' },
+      ],
     },
     {
       title: 'Knowledge dataset',
       description:
         'Transcript chunks and report excerpts from your library, ready to feed into a model.',
-      openaiUrl: exportsApi.getKnowledgeOpenaiUrl(token),
-      openaiFilename: 'knowledge-dataset-openai.jsonl',
-      tupleUrl: exportsApi.getKnowledgeTupleUrl(token),
-      tupleFilename: 'knowledge-dataset-tuple.jsonl',
+      downloads: [
+        { label: 'OpenAI JSONL', url: exportsApi.getKnowledgeOpenaiUrl(token), filename: 'knowledge-dataset-openai.jsonl', variant: 'primary' },
+        { label: 'Tuple JSONL', url: exportsApi.getKnowledgeTupleUrl(token), filename: 'knowledge-dataset-tuple.jsonl', variant: 'secondary' },
+      ],
+    },
+    {
+      title: 'Your notes',
+      description:
+        'Every note you have written, withdrawn ones included. Markdown to read; JSON-LD (W3C Web Annotation) to keep every field exactly, and to take with you.',
+      downloads: [
+        { label: 'Markdown', url: exportsApi.getNotesMarkdownUrl(token), filename: 'notes.md', variant: 'primary' },
+        { label: 'JSON-LD', url: exportsApi.getNotesJsonldUrl(token), filename: 'notes.jsonl', variant: 'secondary' },
+      ],
     },
   ];
 
@@ -81,7 +94,7 @@ export function ExportsPage() {
             maxWidth: measure.reading,
           }}
         >
-          Download your personal wiki as JSONL fine-tune datasets. Each set ships in two shapes: the OpenAI chat format and a plain tuple format.
+          Download your personal wiki as JSONL fine-tune datasets, each in the OpenAI chat format and a plain tuple format, and your own notes as Markdown or JSON-LD.
         </p>
       </header>
 
@@ -112,18 +125,11 @@ export function ExportsPage() {
               {card.description}
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: space['2'] }}>
-              <Button
-                variant="primary"
-                onClick={() => handleDownload(card.openaiUrl, card.openaiFilename)}
-              >
-                OpenAI JSONL
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => handleDownload(card.tupleUrl, card.tupleFilename)}
-              >
-                Tuple JSONL
-              </Button>
+              {card.downloads.map((d) => (
+                <Button key={d.label} variant={d.variant} onClick={() => handleDownload(d.url, d.filename)}>
+                  {d.label}
+                </Button>
+              ))}
             </div>
           </Card>
         ))}

@@ -1,6 +1,6 @@
 # Pratidhvani — System Architecture
 
-**Status:** current as of 2026-04-24; sections amended through 2026-10-18. Brand-name forward; the codebase still ships under `videoresearchpro` package paths and Chroma collection names — see [feature-roadmap.md](feature-roadmap.md) §Rebrand-asset-rollout for the rename plan.
+**Status:** current as of 2026-04-24; sections amended through 2026-10-19. Brand-name forward; the codebase still ships under `videoresearchpro` package paths and Chroma collection names — see [feature-roadmap.md](feature-roadmap.md) §Rebrand-asset-rollout for the rename plan.
 
 This document is the single source of truth for **how the running system is wired**. The vision (why it exists) lives in [vision.md](vision.md). The future shape (multi-source ingest, Author Studio, Personal Brain, SaaS) lives in [feature-roadmap.md](feature-roadmap.md), [source-types.md](source-types.md), [personal-brain.md](personal-brain.md), and [saas-roadmap.md](saas-roadmap.md). API endpoints live in [api-reference.md](api-reference.md). Page-level UI lives in [ui-pages.md](ui-pages.md). This file owns: process topology, data model, request lifecycles, agent pipelines, and the cross-cutting concerns that bind them.
 
@@ -220,6 +220,7 @@ User ──┬──< Job ──< JobVideo >── Document ──> Channel
        └──< QAHistoryExchange
 
 Document ──< KnowledgeArtifact (columns on Document, not a separate table)
+Document ──  DiscussedEra (column `discussed_era_json` on Document — R3, see below)
 Document ──< TranscriptCache (1:1 by document_id; FK ON DELETE CASCADE)
 Document ──< VisualFrame (0:N by (document, timestamp); FK ON DELETE CASCADE)
 
@@ -227,6 +228,8 @@ ApiQuotaLog (append-only ledger of YouTube + LLM calls)
 ```
 
 > **Schema state (post-E-1.10, 2026-05-02).** The primary key on `documents` is now `document_id` (UUID4, str(36)). The legacy `video_id` column survives as a NULLABLE back-compat reading column populated for `source_type='video'` rows (NULL for Reddit / HN / other source types). The join table is renamed to `job_documents` (Python class still `JobVideo` for import back-compat) with composite PK `(job_id, document_id)`. `transcript_cache` PK is also now `document_id` with FK to `documents.document_id`. See [D-017](decisions.md#d-017-e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26) for the cutover rationale and [PR #112](https://github.com/khoks/VideoResearchPro/pull/112) for the migration.
+
+> **Two dates per source (R3, 2026-10-19).** `documents.published_at` is when a source was POSTED; `documents.discussed_era_json` is the period it is ABOUT — `{era_start, era_end, era_confidence, is_retrospective, era_label}`, integer years (negative = BCE), extracted once per document by the `temporal_scope_extract` use case the first time any job chunks it (`job_tasks._ensure_era`, fail-soft, failures not persisted), then reused by every later job like transcripts and embeddings. NULL means not yet extracted; null years mean undatable. Both read as UNKNOWN downstream, never as "discusses now". See [D-071](decisions.md#d-071--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19).
 
 ### Key invariants
 
@@ -350,6 +353,8 @@ The frontend's `useJobProgress` hook drives React Query cache invalidation off W
 
 `utils/chunking.py` splits a YouTube transcript (a list of segments with `text`, `start`, `duration`) into ~512-token chunks with 50-token overlap. Each chunk preserves a `start_time` and `end_time` derived from the segments it spans. Multilingual scripts are tokenized via the embedder's tokenizer to keep chunk sizes aligned with the embedding context window.
 
+Since 2026-10-19 each chunk also carries its source's two dates as flat scalars — `published_at` (ISO string, legacy) plus numeric `published_ts` / `published_year`, and `era_start` / `era_end` / `era_confidence` / `is_retrospective` from the document's discussed era. **Unknown values are omitted, never written as sentinels**, so a Chroma range filter such as `{"published_ts": {"$gte": ...}}` excludes undated chunks instead of matching them against 1970. Chunks embedded before that date carry none of these and read as unknown; there is no backfill (D-071).
+
 ### Embedding
 
 `embedding_service.py` wraps a single `SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")` instance. Loaded once per process (FastAPI and Celery each load their own). CPU-only by default; the model is small enough for that to be fine on commodity hardware.
@@ -366,7 +371,8 @@ Chunk inserts are batched. Failures retry once and then surface as a `building_r
 ### Retrieval
 
 - **Per-job Q&A** filters by `video_id ∈ approved_set`. Top-K = 15 by default (env `RAG_TOP_K`).
-- **Library-wide Q&A** filters by nothing. Top-K = 15 by default.
+- **Library-wide Q&A** filters by `video_id ∈ the tenant's visible set` (D-063). Top-K = 15 by default.
+- **Corpus statistics come from SQLite, not from the hits.** Retrieval returns a handful of chunks, which say nothing about the corpus they came from, so `services/corpus_stats_service.py` computes `{video_count, total_words, earliest/latest/median published, videos_by_year, era span}` for the approved (job) or visible (library) document set in the router and passes them, with the length preference, into the Q&A agent. The output-length policy and the temporal note are dead code without them — which is exactly how R4's Q&A half shipped unwired from 2026-07-31 to 2026-10-18 (D-066 amendment, D-071).
 - **Q&A history meta-chat** queries `qa_library_global` with no filter. Returns top-15 past exchanges.
 - **Video knowledge extraction** doesn't use RAG — it works directly on the cached transcript (chunk-by-chunk via the knowledge agent's map-reduce).
 
@@ -384,9 +390,9 @@ Topic jobs only. Pipeline:
 generate_search_queries → execute_searches → rank_and_curate
 ```
 
-- **generate_search_queries** (`use_case=search_plan_queries`) plans 3-5 YouTube search queries from the user's topic + free-text instructions.
+- **generate_search_queries** (`use_case=search_plan_queries`) plans 3-5 YouTube search queries from the user's topic + free-text instructions, and since 2026-10-19 a `temporal_profile` — a deliberate per-topic decision on how time should weigh in ranking (`recency_weight` of `dominant` / `secondary` / `minimal`, an optional `target_era`, a rationale).
 - **execute_searches** runs each query against YouTube Data API v3 in parallel (asyncio).
-- **rank_and_curate** (`use_case=search_rank_and_curate`) deduplicates and ranks the results into the final candidate list — the largest reasoning-mode win in the codebase.
+- **rank_and_curate** (`use_case=search_rank_and_curate`) deduplicates and ranks the results into the final candidate list — the largest reasoning-mode win in the codebase. The prompt receives the temporal profile, each candidate's publish date and (when the library has already dated it) its discussed era, a `Script:` hint for non-Latin titles, and an English preference. All of these are ranking PREFERENCES; no candidate is ever excluded for its date or language (D-059, D-071).
 
 ### Report Agent (`report_agent.py`)
 
@@ -415,7 +421,7 @@ clarify (optional) → expand_sub_queries → retrieve_context → refine_contex
 - **expand_sub_queries** (`use_case=qa_sub_query_expansion`) rewrites the question into 2 sub-queries for broader RAG recall.
 - **retrieve_context** queries ChromaDB with the original + sub-queries.
 - **refine_context** (`use_case=qa_refine_context` / `library_qa_refine_context`) compacts ~45K raw RAG+report context into ~3K focused excerpts before the answer LLM sees it. This is the fix for "no relevant context" failures on large noisy inputs.
-- **formulate_answer** (`use_case=qa_formulate_answer` / `library_qa_formulate_answer`) — final user-facing answer, temperature 0, accepts an `answer_language` parameter (default English).
+- **formulate_answer** (`use_case=qa_formulate_answer` / `library_qa_formulate_answer`) — final user-facing answer, temperature 0, accepts an `answer_language` parameter (default English). Both sites share `_answer_policy`: the completion budget and the brief follow the corpus bracket (D-064) from the router-supplied statistics, with an optional per-request `output_length`; the prompt carries a CORPUS note (publication span, discussed-era span, "say so when sources disagree along a time axis") and allowed-source lines of the form `"Title" by Channel | published <date> | discusses <era>`.
 - **extract_references** (`use_case=qa_extract_references`) parses the answer back into structured `(video_id, ts, quote)` so the frontend can render citation chips with `&t=` timestamp links.
 
 Topic jobs use RAG + report. Channel jobs use RAG only. Subscription jobs are queryable only via library-wide Q&A.
@@ -490,8 +496,8 @@ Unsupported levels degrade gracefully with a warning log; never fatal.
 
 `services/llm_smoke.run_startup_probes` runs once from the FastAPI lifespan. It:
 
-1. Resolves the effective `UseCaseConfig` for all 19 use cases.
-2. Dedupes by `(provider, model)` — each unique pair probed once.
+1. Resolves the effective `UseCaseConfig` for all 23 use cases.
+2. Dedupes by `(provider, model, vision)` — each unique pair probed once. `temporal_scope_extract` is probed but gates no feature: a failure leaves each document's era unknown and the job completes.
 3. Fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous).
 4. Stores per-use-case results on a process-global `LLMStatus` singleton.
 

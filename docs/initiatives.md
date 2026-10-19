@@ -1915,8 +1915,8 @@ Linked decision: D-074.
 **Acceptance.** A new account lands on `/welcome`, completes three steps in under five minutes to a running job, can skip at any point and reopen from the sidebar; `users.onboarded_at` is set on completion; activation events are logged; every list page has an empty state with one primary action.
 
 #### S-8.10.1 🟢 Wizard
-**PR:** [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)
-**Shipped:** 2026-10-19 — PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)
+**PR:** [#299](https://github.com/khoks/VideoResearchPro/pull/299)
+**Shipped:** 2026-10-19 — PR [#299](https://github.com/khoks/VideoResearchPro/pull/299)
 - [x] T-8.10.1.1 `users.onboarded_at` + `onboarding_state_json` (step, choices); `PATCH /api/v1/auth/me/onboarding` (plus `GET`, and `onboarded_at` on `/auth/me`)
 - [x] T-8.10.1.2 `/welcome` route as a plain stepper page (no tour library: Shepherd.js ≥ 14 and Intro.js are AGPL-3.0, and overlay walkthroughs underperform task-flow wizards) with three steps: channels via existing search + subscribe, a deliberately tiny first job (3 to 5 videos from one channel, so the transcript throttle does not make "see the result" take half an hour) from a starter template, progress + "read it"; redirect from `/` while incomplete, skip link always visible
 - [x] T-8.10.1.3 Activation events in `audit_log` (`onboarding_started`, `first_job_created`, `first_report_opened`, plus `onboarding_completed` and `onboarding_skipped`)

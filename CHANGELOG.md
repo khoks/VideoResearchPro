@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Added: first-run onboarding wizard (2026-10-19)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). S-8.10.1, plan [m10-onboarding](docs/plans/m10-onboarding.md).
+PR [#299](https://github.com/khoks/VideoResearchPro/pull/299). S-8.10.1, plan [m10-onboarding](docs/plans/m10-onboarding.md).
 
 - A new account now lands on **`/welcome`**: choose one to five channels, start a
   five-video channel run from the Channel deep-dive starter, approve what it
@@ -29,7 +29,7 @@ PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). S-8.10.1, pla
 
 ### Fixed: new accounts were signed out right after registering (2026-10-19)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). `POST /auth/register` returns the user without a token, and the
+PR [#299](https://github.com/khoks/VideoResearchPro/pull/299). `POST /auth/register` returns the user without a token, and the
 frontend stored that missing token, so every new account landed on `/login`.
 Registration now signs in with the same credentials.
 

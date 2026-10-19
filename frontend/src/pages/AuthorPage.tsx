@@ -1,9 +1,7 @@
 import { useMemo, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
 import { useNavigate } from 'react-router-dom';
 import {
   useAuthorKinds,
-  useAuthorOutputContent,
   useAuthorOutputs,
   useCreateOutput,
   useDeleteOutput,
@@ -63,7 +61,6 @@ export function AuthorPage() {
   const [kindFilter, setKindFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [creatingKind, setCreatingKind] = useState<string | null>(null);
-  const [viewing, setViewing] = useState<OutputItem | null>(null);
   const [deleting, setDeleting] = useState<OutputItem | null>(null);
 
   const kinds = useAuthorKinds(allowed);
@@ -93,7 +90,6 @@ export function AuthorPage() {
     deleteMut.mutate(deleting.id, {
       onSuccess: () => {
         pushToast('success', `Deleted “${deleting.title}”.`);
-        if (viewing?.id === deleting.id) setViewing(null);
         setDeleting(null);
       },
       onError: () => pushToast('error', 'Delete failed. The output may already be gone.'),
@@ -257,7 +253,7 @@ export function AuthorPage() {
                   <OutputRow
                     key={row.id}
                     output={row}
-                    onView={() => setViewing(row)}
+                    onView={() => navigate(`/author/outputs/${row.id}`)}
                     onDownload={() => download(row)}
                     onDelete={() => setDeleting(row)}
                   />
@@ -274,13 +270,10 @@ export function AuthorPage() {
           onClose={() => setCreatingKind(null)}
           onCreated={(output) => {
             setCreatingKind(null);
-            if (output.status === 'completed') setViewing(output);
+            // S-8.8.3: a finished output opens in the reading room.
+            if (output.status === 'completed') navigate(`/author/outputs/${output.id}`);
           }}
         />
-      )}
-
-      {viewing && (
-        <ViewerModal output={viewing} onClose={() => setViewing(null)} onDownload={() => download(viewing)} />
       )}
 
       <Modal
@@ -674,49 +667,5 @@ function CheckboxRow({ checked, onChange, label }: { checked: boolean; onChange:
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ accentColor: c.accent }} />
       {label}
     </label>
-  );
-}
-
-function ViewerModal({ output, onClose, onDownload }: { output: OutputItem; onClose: () => void; onDownload: () => void }) {
-  const c = useColors();
-  const content = useAuthorOutputContent(output.id);
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title={output.title}
-      maxWidth={900}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onDownload} disabled={!content.data}>
-            Download {output.kind === 'book' ? '.md' : '.txt'}
-          </Button>
-          <Button onClick={onClose}>Close</Button>
-        </>
-      }
-    >
-      {content.isLoading ? (
-        <div style={{ textAlign: 'center', padding: space['6'] }}>
-          <Spinner size={28} />
-        </div>
-      ) : content.isError ? (
-        <p style={{ margin: 0, fontFamily: fonts.ui, color: c.error }}>
-          The manuscript could not be fetched. It may have no content yet (status: {output.status}).
-        </p>
-      ) : (
-        <div
-          style={{
-            fontFamily: fonts.body,
-            fontSize: fontSize.md,
-            lineHeight: lineHeight.loose,
-            color: c.textPrimary,
-            maxWidth: measure.reading,
-            margin: '0 auto',
-          }}
-        >
-          <ReactMarkdown>{content.data ?? ''}</ReactMarkdown>
-        </div>
-      )}
-    </Modal>
   );
 }

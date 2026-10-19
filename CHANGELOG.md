@@ -10,6 +10,23 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Reading room: knowledge reports and books in the same shell (2026-10-19)
+
+S-8.8.3. Knowledge artifacts and Author Studio books now read in the same
+reading room as reports: outline, measure, drop cap, progress and print.
+
+- **`/knowledge/:videoId`** (YouTube id or `document_id`). The knowledge
+  drawer on the job page stays as the quick peek and gains "Open in reader".
+- **`/author/outputs/:outputId`** replaces the Author page's viewer modal;
+  Read and a freshly generated book both open it. The book outputter's
+  table-of-contents links, written against a different slug than the
+  headings, are repointed so every one lands.
+- **One Markdown pipeline** (`parseMarkdownDoc`): react-markdown's own steps
+  plus remark-gfm, run once so the outline exists before the body renders.
+  Raw HTML is dropped; unsafe URLs are blanked.
+- **Fix:** `GET /videos/{id}/knowledge` names its source (title, channel,
+  kind, URL, dates) and no longer fails for documents without a YouTube id.
+
 ### Reading room: citation cards, endnotes and print (2026-10-19)
 
 S-8.8.2. Every citation chip in a report now opens a card naming its source,

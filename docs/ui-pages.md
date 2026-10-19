@@ -17,6 +17,8 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/jobs` | `JobsListPage` | protected | All jobs the user owns |
 | `/jobs/:jobId` | `JobDetailPage` | protected | Single job: status, approval, report, Q&A |
 | `/reports/:jobId` | `ReportReaderPage` | protected | Reading room: the run's report rendered natively with outline, drop cap, citations and progress |
+| `/knowledge/:videoId` | `KnowledgeReaderPage` | protected | Reading room for a source's knowledge report (YouTube id or `document_id`) |
+| `/author/outputs/:outputId` | `OutputReaderPage` | protected, Pro+ | Reading room for an Author Studio output (books today) |
 | `/library` | `LibraryPage` | protected | Browse the global video library |
 | `/library/qa` | `LibraryQAPage` | protected | Ask across the entire library |
 | `/library/channels/:channelId` | `ChannelPage` | protected | One channel: header, subscribe / sync, trust-weight slot, its documents |
@@ -265,16 +267,15 @@ Layout: card grid, one card per dataset. Each card shows: dataset name, current 
 ### `AuthorPage` — `/author` (Pro+)
 **Purpose.** Author Studio. Turn finished research runs into long-form output. Backend: `backend/app/routers/author.py`. Only `book` has a generator today; the page never offers a kind that would 501.
 
-Sections: **What you can make** (one card per kind from `GET /author/kinds`: `available` kinds get a "New …" button, the rest read "Coming later · E-6.x"), **Your outputs** (kind / status filters, one row per output), a **create modal**, a **reader modal**, and a **delete confirmation**.
+Sections: **What you can make** (one card per kind from `GET /author/kinds`: `available` kinds get a "New …" button, the rest read "Coming later · E-6.x"), **Your outputs** (kind / status filters, one row per output), a **create modal**, and a **delete confirmation**. Reading happens in the reading room at `/author/outputs/:outputId` (S-8.8.3), which replaced the page's own reader modal.
 
 | State | What renders |
 |-------|--------------|
 | Below tier, or API 403 | Editorial lock: "Author Studio opens at Pro." with a "See plans" button → `/account/subscription?upgrade=pro`. |
 | Kinds loading | Three skeleton cards. |
-| Create (book) | Modal: title; chapter picker over the user's topic / channel runs (filterable; runs not completed or without a report are listed but disabled with the reason); "Include each run's Q&A" and "Table of contents" toggles. Generate runs synchronously; a `completed` result opens the reader, a `failed` one toasts `error_message`. |
+| Create (book) | Modal: title; chapter picker over the user's topic / channel runs (filterable; runs not completed or without a report are listed but disabled with the reason); "Include each run's Q&A" and "Table of contents" toggles. Generate runs synchronously; a `completed` result opens it in the reading room, a `failed` one toasts `error_message`. |
 | Outputs empty | "Nothing authored yet." with a "New book" button; with filters active, "Nothing matches these filters." |
-| Output row | Status pill (Ready / Failed / Generating / Pending), title, kind, source count, created date; **Read** and **Download** when `has_content`; **Delete** always. Failed rows show `error_message` in full; pending rows explain they were created when their kind had no generator. |
-| Reader | Modal at reading measure rendering the Markdown from `GET /author/outputs/{id}/content`; footer Download (fetches with the bearer header, saves a blob as `<slug>.md`) and Close. |
+| Output row | Status pill (Ready / Failed / Generating / Pending), title, kind, source count, created date; **Read** (→ `/author/outputs/:id`) and **Download** when `has_content`; **Delete** always. Failed rows show `error_message` in full; pending rows explain they were created when their kind had no generator. |
 | Delete | Confirmation modal; the runs the book was built from are untouched. |
 
 ### `EchoPage` — `/echo` (Studio)
@@ -294,8 +295,29 @@ Sections: **Readiness**, **Connectors** (with **Sources on record**), **What Ech
 
 Pure logic (gates, grouping, expiry, label validation) lives in `frontend/src/utils/echoReadiness.ts`.
 
+### `KnowledgeReaderPage` — `/knowledge/:videoId`
+**Purpose.** A source's knowledge report in the reading room (S-8.8.3). `GET /videos/{id}/knowledge` (YouTube id or `document_id`, resolved through the tenant's visibility grants) supplies the Markdown and, since S-8.8.3, the source's title, channel, kind, URL and dates. The Markdown's leading `# Title` becomes the page title and leaves the body; "From <source title> · <channel> · Extracted <date>" sits under it; tiles count topics, concepts, events and facts; toolbar: Back, Open the source, Print or save as PDF.
+
+Rendering goes through `parseMarkdownDoc` (`components/reader/parseMarkdown.tsx`): remark-parse → remark-gfm → remark-rehype → one tree transform → hast-util-to-jsx-runtime, run once in a `useMemo` so the outline exists before the body renders. The transform assigns heading ids with the same slugger reports use, collects `h2`/`h3` into the outline, demotes stray `h1`s, wraps tables in a scroll region, marks the drop-cap paragraph, sends external links to a new tab, and repoints in-page links whose target was slugged differently. Raw HTML in the Markdown is dropped, never rendered, and link and image URLs pass react-markdown's `defaultUrlTransform`.
+
+| State | What renders |
+|-------|--------------|
+| Loading | Spinner, "Opening the knowledge report…". |
+| Not extracted (404) | `EmptyState` "No knowledge report for this source yet" + Back. |
+| Error | `EmptyState` with the message + Back. |
+
+### `OutputReaderPage` — `/author/outputs/:outputId` (Pro+)
+**Purpose.** An Author Studio output in the reading room (S-8.8.3). Metadata from `GET /author/outputs/{id}`, Markdown from `/content`, rendered through `parseMarkdownDoc` like a knowledge report. The book's `# Title` is the page title; the outline lists the table of contents and one entry per chapter; the outputter's table-of-contents links are written against its own slug of the bare chapter title (`#chapter-title`) while the heading reads "1. Chapter title", and the transform repoints them so every link lands. Tiles: sources, sections, words. Toolbar: back to Author Studio, Download (the loaded Markdown as a blob, same filename as the Author page), Print or save as PDF.
+
+| State | What renders |
+|-------|--------------|
+| Loading | Spinner, "Opening the manuscript…". |
+| 403 | `EmptyState` "Author Studio is not on your plan". |
+| 404 | `EmptyState` "This output does not exist" (deleted, or another account's). |
+| Not completed / no content | `EmptyState` with the status, or the failure message. |
+
 ### `VideoKnowledgeDrawer` (inside `JobDetailPage`)
-**Purpose.** View or generate the per-video knowledge artifact.
+**Purpose.** View or generate the per-video knowledge artifact. The drawer is the quick peek; "Open in reader" (primary, once an artifact exists) goes to `/knowledge/:videoId`.
 
 Tabs: **Structured** (topics / concepts / events / facts) and **Report** (Markdown render).
 

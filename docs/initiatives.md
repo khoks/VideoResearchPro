@@ -1366,7 +1366,7 @@ Backend suite 835 → 855.
 **Scope-changed 2026-10-19:** the picker shipped in PR [#224](https://github.com/khoks/VideoResearchPro/pull/224) a day after this story was filed; what remains is below.
 - [x] T-6.1.1.1 `AuthorPage` job picker sending `source_ids`; runs without a report are listed but disabled — *shipped 2026-10-19, PR #224*
 - [ ] T-6.1.1.2 "Add this run to a book" shortcut on `JobDetailPage` into the same create flow (the alternative [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19) names)
-- [ ] T-6.1.1.3 Output row shows chapter count and word count; "View" opens the shared reader shell (S-8.8.3) instead of the page's own modal
+- [ ] T-6.1.1.3 Output row shows chapter count and word count; "View" opens the shared reader shell (S-8.8.3) instead of the page's own modal — *the "View" half shipped with S-8.8.3 (PR [#PR_S883](https://github.com/khoks/VideoResearchPro/pull/PR_S883)); chapter and word counts on the row remain (the reader shows them)*
 - [ ] T-6.1.1.4 Frontend type-check; a backend test asserting the router rejects an empty `source_ids` for `kind=book` with 400 rather than creating a `failed` row
 
 #### S-6.1.2 🔵 Markdown source for reports
@@ -1754,10 +1754,10 @@ Linked decision: D-074.
 - [x] T-8.8.2.2 Print stylesheet: outline removed, citations rendered as numbered footnotes, page breaks before `h2` — *plus a "Sources cited" endnote list that opens itself on `beforeprint`, monochrome output in either theme, the health banner and toasts hidden; verified with Chromium print emulation and a 37-page A4 PDF of the R1 report*
 - [x] T-8.8.2.3 Hook for R1 frames: when [S-1.18.2](#s-1182--surfacing-frames-to-the-user) ships, the popover shows the still — *the slot ships (`CitationCardProvider`'s `resolveStill`, tested with a stub); no data until S-1.18.2 serves `visual_frames`*
 
-#### S-8.8.3 🔵 Knowledge artifacts and books in the same shell
-**PR:** TBD
-- [ ] T-8.8.3.1 `/knowledge/:videoId` route rendering the Markdown knowledge report through `ReaderShell` (react-markdown + heading ids)
-- [ ] T-8.8.3.2 Author Studio outputs (`/author/outputs/:id`) read in the same shell
+#### S-8.8.3 🟢 Knowledge artifacts and books in the same shell
+**PR:** [#PR_S883](https://github.com/khoks/VideoResearchPro/pull/PR_S883) — shipped 2026-10-19.
+- [x] T-8.8.3.1 `/knowledge/:videoId` route rendering the Markdown knowledge report through `ReaderShell` (react-markdown + heading ids) — *react-markdown's own pipeline (remark-parse → remark-gfm → remark-rehype → hast-util-to-jsx-runtime) run once with a tree transform between, instead of `<ReactMarkdown>` plus `rehype-slug`: the shell needs the outline before the body renders, and two passes that must agree on every heading id drift. Same slugger as reports, so no `rehype-slug` dependency. The knowledge response now names its source (title, channel, kind, URL, dates) and `video_id` became nullable (a PDF's artifact failed serialisation). The drawer stays as the quick peek with "Open in reader".*
+- [x] T-8.8.3.2 Author Studio outputs (`/author/outputs/:id`) read in the same shell — *the Author page's reader modal is gone; Read and a fresh `completed` output both navigate here. The book outputter's table-of-contents anchors are written against its own slug of the bare chapter title while the heading reads "1. Title"; the transform repoints them (checked on a real 81 kB manuscript built by `BookMarkdownOutputter` from two stored runs).*
 
 ### E-8.9 🔵 Citation graph and knowledge map (M9)
 

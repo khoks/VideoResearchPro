@@ -96,6 +96,12 @@ def _build_response(video: Document) -> KnowledgeExtractResponse:
         facts=merged["facts"],
         knowledge_report_md=video.knowledge_report_md or "",
         knowledge_extracted_at=video.knowledge_extracted_at,
+        document_id=video.document_id,
+        source_type=video.source_type or "video",
+        title=video.title,
+        channel_name=video.channel_name or None,
+        url=video.source_url or video.url or None,
+        published_at=video.published_at,
     )
 
 

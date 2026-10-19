@@ -1896,7 +1896,9 @@ Linked decision: D-074.
 - [ ] T-8.8.4.3 Run the frontend suites in CI: `npm test` (vitest) and `npm run test:mobile` (Playwright, needs `npx playwright install --with-deps chromium webkit` in the runner). Today CI runs pytest, ruff and the frontend build only ([testing.md §5.4](testing.md#54-ci))
 - [ ] T-8.8.4.4 Report the compose step's truncated section ([S-1.14.17](#e-114--model-tier-quality-evaluation-harness)) in the reader when it happens again: the reader cannot repair it, but it could show the processing note instead of silently losing two headings. Only after S-1.14.17 decides how the compose step discloses it
 
-### E-8.9 🔵 Citation graph and knowledge map (M9)
+### E-8.9 🟡 Citation graph and knowledge map (M9)
+
+**Status 2026-10-19.** S-8.9.1 and S-8.9.2 shipped (PRs [#297](https://github.com/khoks/VideoResearchPro/pull/297), [#301](https://github.com/khoks/VideoResearchPro/pull/301)); the epic stays 🟡 for S-8.9.3, which its plan gates on topic edges proving too sparse on a real library.
 
 **Scope.** A library-overview graph: documents, channels, Q&A exchanges and knowledge topics as nodes; citations, authorship and shared topics as edges; tenant-scoped; filterable by shelf, channel or job; a "local graph" around any node. Useful rather than a hairball: size caps, degree-based sizing, clustering by channel or topic, and a focused mode by default.
 **Plan:** [`docs/plans/m9-citation-graph.md`](plans/m9-citation-graph.md)
@@ -1909,12 +1911,16 @@ Linked decision: D-074.
 - [x] T-8.9.1.3 Tests: two-reader isolation (nothing of theirs in the payload, their topic absent, my answer citing only their document has no node), an empty visible set is an empty graph, cap and truncation with degree order, focus at depth 1 and 2, channel / job / shelf filters (foreign → 404, empty shelf → empty), types filter, job exchanges
 - Found on the way: a topic label's display spelling depended on row order when casings tied; both this and the channel aggregate now break ties toward the capitalised spelling
 
-#### S-8.9.2 🔵 Graph UI
-**PR:** TBD
-- [ ] T-8.9.2.1 Lazy-loaded graph route on `sigma` + `graphology` + `@react-sigma/core` with the ForceAtlas2 web-worker layout and Louvain communities (all MIT, about 113 kB gzipped; `react-force-graph-2d`, MIT, 60 kB, is the smaller alternative), inline-styled chrome, zoom / pan, hover labels, click → detail card with links to the document, job or exchange; layout frozen after convergence
-- [ ] T-8.9.2.2 Filters (shelf, channel, type), local-graph mode, legend, reduced-motion respect
-- [ ] T-8.9.2.4 The channel page's concept graph (moved from T-8.7.3.2): the graph filtered to the channel, reachable from the Intelligence tab
-- [ ] T-8.9.2.3 Accessibility, which is real work for a canvas: an equivalent node / edge table view, keyboard focus over nodes with a drawn focus ring, button alternatives to drag and pan (WCAG 2.5.7), a one-paragraph textual summary; the table doubles as the narrow-screen fallback
+#### S-8.9.2 🟢 Graph UI
+**PR:** [#301](https://github.com/khoks/VideoResearchPro/pull/301) (merged 2026-10-19)
+**Scope-changed 2026-10-19:** sigma is used directly, without `@react-sigma/core` (one less dependency; the canvas needs sigma's camera and coordinate calls anyway). Plan open questions taken at their defaults: sigma over `react-force-graph-2d`; the global view ships, capped at 300 nodes with single-link nodes hidden, and the local view comes from any node, channel or run scope.
+- [x] T-8.9.2.1 Lazy route `/library/graph` (`pages/GraphPage.tsx` via `React.lazy`) on `sigma` 4 + `graphology` + `graphology-layout-forceatlas2` + `graphology-communities-louvain`: its own chunk, 125 kB gzipped, nothing in the main bundle. ForceAtlas2 runs in its web worker and stops once settled (1.2–4 s by size). Louvain groups (seeded, so stable) colour the three largest groups; the rest are grey. A glyph marks each kind (`▸` channel, `#` topic, `?` question). Hover labels, click → detail card (source, channel page, the answer on its run or library page, "Centre the map here"), double-click re-centres, a selection dims everything but its neighbourhood
+- [x] T-8.9.2.2 Filters in one row: Map / Table, kinds (channels, topics, your questions), shelf, single-link nodes (with the hidden count); scope chips for the centred node (with a 1–3 step depth slider), channel and run. All of it lives in the URL (`focus`, `depth`, `shelf_id`, `channel_id`, `job_id`, `types`, `leaves`, `view`), and a new centre is a Back step. A legend names each coloured group with its main topics. Reduced motion computes the layout before the first frame and moves the camera without animation
+- [x] T-8.9.2.4 The channel page's concept map (moved from T-8.7.3.2): a **Concept map** panel in the Intelligence tab, scoped to the channel (topics and questions), loaded only when opened, plus "Open in the library map"
+- [x] T-8.9.2.3 Accessibility: the map is one tab stop (`role="application"`, described by the summary and the key help); arrows move to the nearest node that way, neighbours first; Enter opens the card, Escape closes it, Home returns to the start, + / − / 0 zoom, Shift + arrows pan; a focus ring follows the node through zoom and layout; a live region names each node. Nine buttons replace every drag and wheel gesture (WCAG 2.5.7). The table view lists the same nodes (and, on demand, every connection), opens the same card, and is the default under 640 px. The server's one-paragraph summary heads the map
+- Tests: `utils/__tests__/graphModel.test.ts` (10: leaf hiding, groups, colour cap, glyphs, empty graphs, table = drawn set, arrow choice, announcement); `tests/graph.spec.ts` (5, desktop Chromium, synthetic fixture: tab stop and keys, table parity and the card's link, reduced motion never animates, the animated layout freezes, 375 px opens on the table)
+- Measured (dev server, from navigation start, app load included): 300 nodes, the page's request, first draw 1.3 s; 2,000 nodes 2.2 s animated and 3.0 s under reduced motion, where the layout is computed before the first frame. The scratch library (52 nodes) checked live in both themes
+- Found on the way: sigma 4 measures node sizes in graph units by default (`itemSizesReference: "positions"`), which drew every node tens of pixels wide; and its reducers only run on a full `refresh()`
 
 #### S-8.9.3 ⚪ Topic clusters
 - [ ] T-8.9.3.1 Cluster documents by embedding centroid (k-means over stored chunk means) and colour the graph by cluster; only if S-8.9.2's topic edges prove too sparse

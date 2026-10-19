@@ -292,6 +292,13 @@ class Settings(BaseSettings):
     # subject; the middle and close catch a source that pivots.
     TEMPORAL_SCOPE_WINDOW_TOKENS: int = 1500
 
+    # S-8.4.1: how long a context's question suggestions are reused before
+    # they are recomputed, even if nothing on the context changed. A new
+    # exchange, report or knowledge state invalidates sooner (fingerprint).
+    # The plan's proposed hour (docs/plans/m4-question-suggestions.md, open
+    # question 2). 0 = never reuse.
+    SUGGESTIONS_CACHE_TTL_MIN: int = 60
+
     # S-1.14.6: persist the report pipeline's map/reduce intermediates
     # (per-batch extraction JSON, the reduced dataset) to
     # `job_report_intermediates`, so stage quality can be audited after a

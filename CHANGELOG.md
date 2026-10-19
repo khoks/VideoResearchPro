@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Fixed: invented "original" quotes in code-mixed reports (2026-10-19)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Regression from #268, found in the R1 run-5 replay;
+PR [#294](https://github.com/khoks/VideoResearchPro/pull/294). Regression from #268, found in the R1 run-5 replay;
 [D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
 
 - The map stage could put **words a speaker never said** into a report

@@ -96,9 +96,10 @@ Sections (rendered conditionally on `job.status` and `job.job_type`):
 | **Header** | always | Title, type, status pill, created_at, "Cancel" / "Delete" overflow menu. |
 | **Progress** | status ∈ {searching, extracting, building_rag, generating_report} | Phase, progress bar (`completed / total`), message line, last-event timestamp. Driven by `useJobProgress`. |
 | **Search results / Approval** | status == `awaiting_approval` (topic only) | Table of candidate videos with checkboxes, "Approve selected" button. Auto-populates when WS reports the status change. |
-| **Approved videos** | status ∈ {extracting, building_rag, ...completed} | Read-only list of approved videos with per-video transcript status. Each row has a "Knowledge" button that opens the `VideoKnowledgeDrawer`. |
+| **Your notes on this run** | always, once the job loads | Section-variant notes panel (M5 / S-8.5.1): the user's own Markdown on the run, newest first, with add / edit / delete. |
+| **Approved videos** | status ∈ {extracting, building_rag, ...completed} | Read-only list of approved videos with per-video transcript status. Each row has a "Knowledge" button that opens the `VideoKnowledgeDrawer`, and an inline notes control: a note on a document shows on every surface that shows the document (the shelf, every job containing it). |
 | **Report** | `job.report_path` is set | "Open report" button → opens the HTML in an iframe modal. |
-| **Q&A panel** | status == `completed` | Question textarea, "Clarify first" optional toggle, language selector, "Ask" button. Below: list of past exchanges with citations rendered as chips that deep-link to `&t=` timestamps. |
+| **Q&A panel** | status == `completed` | Question textarea, "Clarify first" optional toggle, language selector, "Ask" button. Below: list of past exchanges with citations rendered as chips that deep-link to `&t=` timestamps. Each exchange card carries the inline notes control (target `qa_exchange`). |
 | **Knowledge drawer** | user clicks the Knowledge button on a video row | Slides in from the right; shows the structured `{topics, concepts, events, facts}` + Markdown report; "Generate" button if not yet extracted. |
 
 | State | What renders |
@@ -113,7 +114,7 @@ Sections (rendered conditionally on `job.status` and `job.job_type`):
 ### `LibraryPage` — `/library`
 **Purpose.** Browse the caller's view of the global, deduplicated library and add sources that do not come through a research run. Three tabs: **Sources**, **Channels**, **Add sources**.
 
-**Sources tab.** Filters: search text, language, channel, transcript status. Sort: newest / oldest / longest / shortest. Rows for PDFs and pasted pages carry a source-type pill instead of a channel, and no duration.
+**Sources tab.** Filters: search text, language, channel, transcript status. Sort: newest / oldest / longest / shortest. Rows for PDFs and pasted pages carry a source-type pill instead of a channel, and no duration. Every row ends with the inline notes control ("N notes · + Add a note"); the channel rows on the **Channels** tab carry the same control, and typing in it never opens the channel.
 
 | State | What renders |
 |-------|--------------|
@@ -135,7 +136,7 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 ### `LibraryQAPage` — `/library/qa`
 **Purpose.** Ask questions across the entire library, with no per-job filter.
 
-Layout: question textarea + clarify-first toggle + language selector at the top; past exchanges below ordered ascending by `created_at`, each with citation chips that link to the source video at the cited timestamp.
+Layout: question textarea + clarify-first toggle + language selector at the top; past exchanges below ordered ascending by `created_at`, each with citation chips that link to the source video at the cited timestamp and the inline notes control (target `library_qa_exchange`).
 
 | State | What renders |
 |-------|--------------|
@@ -148,7 +149,7 @@ Layout: question textarea + clarify-first toggle + language selector at the top;
 ### `QAHistoryChatPage` — `/qa-history`
 **Purpose.** Meta-chat across every Q&A the user has ever run, powered by `qa_library_global`.
 
-Layout: chat-like — past meta-questions and meta-answers. Each meta-answer cites past *exchanges* (not videos directly), and each citation deep-links to the originating job-detail or library-Q&A page.
+Layout: chat-like — past meta-questions and meta-answers. Each meta-answer cites past *exchanges* (not videos directly), and each citation deep-links to the originating job-detail or library-Q&A page. Each card carries the inline notes control (target `qa_history_exchange`).
 
 | State | What renders |
 |-------|--------------|
@@ -210,7 +211,7 @@ Tabs: **Structured** (topics / concepts / events / facts) and **Report** (Markdo
 |-------|--------------|
 | Not yet extracted | "No knowledge report yet for this video." + "Generate" button. |
 | Extracting | Progress indicator, disabled drawer-close (so user doesn't accidentally lose progress). |
-| Extracted | Two tabs populated; "Regenerate" button at the bottom (calls the endpoint with `?force=true`). |
+| Extracted | Two tabs populated; "Regenerate" button at the bottom (calls the endpoint with `?force=true`). Below the report: "Your notes on this report" (section-variant notes panel, target `knowledge_artifact`; the target only exists once extraction has run). |
 | LLM down | "Generate" disabled with a tooltip pointing at health status. |
 
 ---
@@ -237,6 +238,9 @@ Tabs: **Structured** (topics / concepts / events / facts) and **Report** (Markdo
 
 ### Error boundaries
 - Each page is wrapped in a route-level error boundary that renders an editorial error state with a "Reload" button. The toast queue surfaces transient errors (network blips, 500s) without nuking the page.
+
+### Notes (inline, M5)
+`frontend/src/components/notes/` — `NotesPanel` (two variants: `inline`, a one-line "N notes · + Add a note" control that expands inside a row or card; `section`, an always-open list with a heading for page-level cards), `NoteCard` ("You wrote this on <date>", Markdown body, edit / delete with an inline confirm) and `NoteEditor` (plain textarea with Write / Preview tabs through `react-markdown`; Ctrl+Enter saves, Escape cancels). Data: one `GET /notes?target_type=…` per type per page, shared by every panel on the page through React Query; each panel selects its own target's notes, matching on the canonical id or, for documents, the legacy `video_id`. The panel stops click and key events so it can live inside cards that open on click or Enter.
 
 ### Empty states (editorial voice)
 Every page has at least one purposeful empty state. The voice is consistent (per [branding.md](branding.md) §voice): "library", "volumes", "echoes". No "No data." or "Empty list".

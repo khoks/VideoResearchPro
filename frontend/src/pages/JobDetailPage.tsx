@@ -14,6 +14,7 @@ import {
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { CitationLink } from '../components/citation';
+import { NotesPanel } from '../components/notes';
 import { ApprovalCard, SOURCE_CONFIGS } from '../components/approval';
 import {
   Badge,
@@ -189,6 +190,15 @@ export function JobDetailPage() {
 
       <JobParamsCard job={job} />
 
+      <Card>
+        <NotesPanel
+          targetType="job"
+          targetId={job.id}
+          variant="section"
+          title="Your notes on this run"
+        />
+      </Card>
+
       {isSubscription && isSyncing && syncCounts && <SubscriptionSyncCard counts={syncCounts} />}
 
       {showApproval && videos && (
@@ -236,6 +246,11 @@ export function JobDetailPage() {
                   >
                     {v.channel_name} · {formatDuration(v.duration_seconds ?? 0)} · {v.transcript_status}
                   </div>
+                  <NotesPanel
+                    targetType="document"
+                    targetId={v.document_id || v.video_id || v.id}
+                    matchIds={[v.document_id, v.video_id, v.id]}
+                  />
                 </div>
                 {v.transcript_status === 'fetched' && (
                   <Button
@@ -1220,6 +1235,7 @@ function QAExchangeCard({ qa }: { qa: QAExchange }) {
           </div>
         </div>
       )}
+      <NotesPanel targetType="qa_exchange" targetId={qa.id} />
     </div>
   );
 }

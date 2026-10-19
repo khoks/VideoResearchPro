@@ -26,6 +26,7 @@ from app.routers import (
     oauth,
     qa,
     qa_history,
+    reports,
     search,
     sessions,
     shelves,
@@ -129,6 +130,7 @@ app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
 app.include_router(shelves.router, prefix="/api/v1")
 app.include_router(qa.router, prefix="/api/v1")
+app.include_router(reports.router, prefix="/api/v1")
 app.include_router(library.router, prefix="/api/v1")
 app.include_router(qa_history.router, prefix="/api/v1")
 app.include_router(knowledge.router, prefix="/api/v1")

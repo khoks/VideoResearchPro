@@ -29,6 +29,23 @@ PR [#303](https://github.com/khoks/VideoResearchPro/pull/303). Plan: [docs/plans
 - New settings: `AUTHOR_PDF_ENGINE` (auto, weasyprint, chromium, off) and
   `AUTHOR_PDF_TIMEOUT_SEC`.
 
+### Added: the library map (2026-10-19)
+
+[S-8.9.2](docs/initiatives.md#s-892--graph-ui), PR [#301](https://github.com/khoks/VideoResearchPro/pull/301), plan [m9-citation-graph](docs/plans/m9-citation-graph.md).
+
+- **`/library/graph`** (sidebar: Library map): your sources, their channels and
+  topics, and your questions as a graph that lays itself out once and stays
+  still. The three largest groups are coloured, a glyph marks each kind, and a
+  click opens a card with links to the source, its channel or the answer.
+  Filter by kind and shelf, centre on any node with a depth of one to three
+  steps; the view lives in the URL.
+- Usable without a mouse or a canvas: the map is one tab stop with arrow keys
+  between nodes, Enter and Escape for the card, buttons for every pan and zoom,
+  a spoken name for each node, the summary in words, and a table of the same
+  nodes, which is the default on a phone.
+- A channel's Intelligence tab gains a **Concept map** of that channel.
+- The graph code is its own lazy chunk (125 kB gzipped).
+
 ### Trust-weighted retrieval v1, measured (2026-10-19, S-7.1.1)
 
 PR [#287](https://github.com/khoks/VideoResearchPro/pull/287). Decision [D-068](docs/decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18); measurement [protocol and results](docs/notes/2026-10-19-e71-trust-weighting-measurement.md).

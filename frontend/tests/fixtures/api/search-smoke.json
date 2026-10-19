@@ -1,0 +1,44 @@
+{
+  "q": "smoke",
+  "backend": "fts5",
+  "groups": [
+    {
+      "type": "qa",
+      "items": [
+        {
+          "id": "synthetic-qa-2",
+          "title": "Is smoking the only cause of lung cancer the sources mention?",
+          "subtitle": "Run · pratidhvani smoke test",
+          "href": "/jobs/1c222ce6-086e-464d-a366-403111963d39?exchange=synthetic-qa-2",
+          "score": 4
+        }
+      ]
+    },
+    {
+      "type": "jobs",
+      "items": [
+        {
+          "id": "1c222ce6-086e-464d-a366-403111963d39",
+          "title": "pratidhvani smoke test",
+          "subtitle": "Topic · completed",
+          "href": "/jobs/1c222ce6-086e-464d-a366-403111963d39",
+          "score": 3
+        }
+      ]
+    },
+    {
+      "type": "documents",
+      "items": [
+        {
+          "id": "doc-synthetic-1",
+          "title": "Smoking: The Leading Cause of Lung Cancer | Medicover Nellore",
+          "subtitle": "Medicover Hospitals Nellore",
+          "href": "/library?document=doc-synthetic-1",
+          "score": 2
+        }
+      ]
+    },
+    { "type": "channels", "items": [] },
+    { "type": "knowledge", "items": [] }
+  ]
+}

@@ -286,3 +286,24 @@ def test_get_library_videos_pagination(client, db, test_user):
 def test_get_library_videos_requires_auth(unauthenticated_client):
     response = unauthenticated_client.get("/api/v1/library/videos")
     assert response.status_code == 401
+
+
+def test_library_list_filters_to_one_document(client, db, test_user):
+    """S-8.2.2: a palette result opens `/library?document=<id>`, which asks
+    the listing for that one row. Before this filter existed the page showed
+    the whole library and the user had to find the row again."""
+    seeded = _seed_library(db, test_user.id)
+    v3 = seeded["videos"]["v3"]
+    response = client.get("/api/v1/library/videos", params={"document_id": v3.document_id})
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert [r["title"] for r in rows] == ["Beta Hindi Tutorial"]
+
+
+def test_library_document_filter_stays_inside_visibility(client, db, test_user):
+    """Another tenant's document id matches nothing rather than leaking it."""
+    seeded = _seed_library(db, "someone-else")
+    foreign = seeded["videos"]["v1"]
+    response = client.get("/api/v1/library/videos", params={"document_id": foreign.document_id})
+    assert response.status_code == 200
+    assert response.json() == []

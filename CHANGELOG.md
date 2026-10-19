@@ -30,6 +30,23 @@ The first new Echo table, shipped with its export and its erasure. PR [#286](htt
   `GET /api/v1/echo/brain/footprint` shows the counts.
 - **UI.** "Add to Echo" in the sidebar, an `/echo/inbox` page, and a "Your Echo
   data" card on the Echo page with export and a typed-confirmation delete.
+### Command palette and keyboard shortcuts (2026-10-19)
+
+S-8.2.2 ([plan](docs/plans/m2-command-palette.md)). Find any run, source,
+channel, question or knowledge report from anywhere, and get around without
+the mouse.
+
+- **Mod-K** (Cmd on macOS, Ctrl elsewhere) or **Ctrl-Alt-K**, or the new
+  **Search…** button: grouped results from `GET /search`, navigation
+  actions, notes exports, theme, recent items. Built on `cmdk` (MIT), loaded
+  on first open.
+- **Shortcuts:** `/` focuses the page's search box, and `g r` / `g l` /
+  `g k` / `g a` jump to research, library, knowledge and author — the chords
+  `ui-design.md` had long described without an implementation. None fire
+  while typing; the palette turns them off (WCAG 2.1.4).
+- **Results land on the item:** a source narrows the library to its row, a
+  question scrolls to and focuses its exchange, a knowledge report opens the
+  reader.
 ### Channel Intelligence tab (2026-10-19)
 
 [S-8.7.3](docs/initiatives.md#s-873--intelligence-tab-ui), PR [#285](https://github.com/khoks/VideoResearchPro/pull/285).

@@ -114,6 +114,7 @@ export function JobsListPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by topic or channel name…"
+              data-page-search
               aria-label="Search jobs"
             />
           </div>

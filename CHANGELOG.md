@@ -32,6 +32,32 @@ PR [#299](https://github.com/khoks/VideoResearchPro/pull/299). S-8.10.1, plan [m
 PR [#299](https://github.com/khoks/VideoResearchPro/pull/299). `POST /auth/register` returns the user without a token, and the
 frontend stored that missing token, so every new account landed on `/login`.
 Registration now signs in with the same credentials.
+### Books carry numbered endnotes (2026-10-19, S-6.1.4)
+
+PR [#298](https://github.com/khoks/VideoResearchPro/pull/298). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **Endnotes.** Every citation in a book is now its working timestamp link
+  plus a GFM footnote, `[1:15](https://…&t=75)[^7]`, numbered across chapters
+  in reading order, with `## Endnotes` listing `*Title* — Channel, 1:15. <url>`.
+  Footnote `n` is `output_citations` position `n`. Bare `&t=` anchors from
+  older reports get their resolved URL; one nothing matches keeps its label,
+  loses the dead link, and its endnote says the source was not identified.
+- **Q&A cites from stored references**, not from links in the answer prose.
+- **Table of contents** links to the ids the chapter headings actually get
+  (`#1-first-topic`, Devanagari included), in the reader, on GitHub and in
+  the coming EPUB/PDF.
+- **Fixed:** in a tight list a later item's bare anchor could borrow an
+  earlier item's title; the citation context is now the list item.
+
+### Library graph endpoint (2026-10-19)
+
+[S-8.9.1](docs/initiatives.md#s-891--graph-endpoint), PR [#297](https://github.com/khoks/VideoResearchPro/pull/297).
+
+- **`GET /api/v1/library/graph`**: your visible documents, their channels and
+  topics, and your answers that cite them, as nodes and edges, with stable
+  ids, a cap that keeps the most connected, a local view around any node,
+  shelf / job / channel filters and a one-paragraph summary. Nothing of
+  another reader's appears; an empty library is an empty graph.
 
 ### Fixed: invented "original" quotes in code-mixed reports (2026-10-19)
 

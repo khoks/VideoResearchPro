@@ -1464,12 +1464,12 @@ Backend suite 835 → 855.
 - [ ] T-6.1.3.5 Cost estimate per book surfaced before generation via `cost_estimator`
 - [ ] T-6.1.3.6 Tests with the LLM factory patched; golden manuscript on a two-job fixture
 
-#### S-6.1.4 🔵 Endnote citations
-**PR:** TBD. Depends on E-6.7's `output_citations`.
-- [ ] T-6.1.4.1 Every `&t=` / permalink link in chapter Markdown becomes a numbered endnote; the endnote carries title, channel, timestamp and URL and writes an `output_citations` row
-- [ ] T-6.1.4.2 Q&A sections cite through their stored references rather than re-parsing prose
-- [ ] T-6.1.4.3 Tests: citation count equals endnote count; no dead links (the S-1.14.9 class of defect)
-- [ ] T-6.1.4.4 Table-of-contents links resolve: today the TOC links `#first-topic` while the chapter heading is `## 1. First Topic`, whose generated id differs; fold into the no-dead-links test. Filed 2026-10-19 by S-6.1.2; [D-079](decisions.md#d-079--report-markdown-source-on-markdownify-new-report-routes-are-header-bearer-only-2026-10-19)
+#### S-6.1.4 🟢 Endnote citations
+**PR:** [#298](https://github.com/khoks/VideoResearchPro/pull/298) — *shipped 2026-10-19.* Endnotes are GFM footnotes (`[^n]`), which the reading room (remark-gfm), GitHub and the EPUB/PDF converters all render as linked superscripts with back-links; endnote `n` is always `output_citations` position `n`. Found while testing: a tight list (items without blank lines) let a later item's bare anchor borrow an earlier item's title; citation context is now the list item, as the reader's `<li>`.
+- [x] T-6.1.4.1 `cite_markdown` rewrites every citation in a chapter as its working link plus `[^n]` (a resolved bare `&t=` anchor gets its rebuilt URL; an unresolved one keeps its label and loses the dead link), numbered across chapters in reading order; `endnote_definitions` writes `[^n]: *Title* — Channel, m:ss. <url>` under `## Endnotes`, or `Source not identified (cited as …)` — *shipped 2026-10-19*
+- [x] T-6.1.4.2 `cite_references` cites each answer from its stored `references` (`Sources: [1:35](url)[^31], …`); links in the answer prose are reduced to text; a reference resolves to a document only if it is among the run's visible documents, otherwise it keeps its own link, title and channel — *shipped 2026-10-19*
+- [x] T-6.1.4.3 Tests: on two real-report chapters, references run 1..60 in reading order, one definition each, matching `output_citations` positions, with title, channel, timestamp and URL; every link in the manuscript is absolute or an in-page anchor to an existing heading; unresolved citations disclosed; Q&A cited from references; tight and loose list contexts; a vitest renders a book through the reading room's own parser and finds every footnote and TOC target — *shipped 2026-10-19*
+- [x] T-6.1.4.4 *Shipped 2026-10-19: the TOC links to `heading_slug("n. Title")`, a port of the reader's slug, so `#1-first-topic` (and Devanagari ids) exist in the reader, on GitHub and in the EPUB/PDF HTML.* Table-of-contents links resolve: today the TOC links `#first-topic` while the chapter heading is `## 1. First Topic`, whose generated id differs; fold into the no-dead-links test. Filed 2026-10-19 by S-6.1.2; [D-079](decisions.md#d-079--report-markdown-source-on-markdownify-new-report-routes-are-header-bearer-only-2026-10-19)
 
 #### S-6.1.5 🔵 PDF and EPUB downloads
 **PR:** TBD. Absorbs T-6.1.3 and T-6.1.4.
@@ -1892,11 +1892,12 @@ Linked decision: D-074.
 **Plan:** [`docs/plans/m9-citation-graph.md`](plans/m9-citation-graph.md)
 **Acceptance.** `/library/graph` renders the user's library in under three seconds at 2,000 nodes; clicking a document shows its neighbours and a detail card; filtering by shelf narrows the graph; nothing from another tenant appears; the graph degrades to a list on narrow screens.
 
-#### S-8.9.1 🔵 Graph endpoint
-**PR:** TBD
-- [ ] T-8.9.1.1 `GET /api/v1/library/graph?focus=&depth=&shelf_id=&channel_id=&limit=` → `{nodes, edges, truncated}`; nodes from visible documents, subscribed channels, the tenant's exchanges (references → documents), topics from knowledge artifacts (shared-topic edges above a frequency floor)
-- [ ] T-8.9.1.2 Degree and recency used to pick nodes under the cap; stable ids for caching
-- [ ] T-8.9.1.3 Tests: isolation, cap, focus mode
+#### S-8.9.1 🟢 Graph endpoint
+**PR:** [#297](https://github.com/khoks/VideoResearchPro/pull/297) (merged 2026-10-19)
+- [x] T-8.9.1.1 `GET /api/v1/library/graph?focus=&depth=&shelf_id=&job_id=&channel_id=&types=&limit=` → `{nodes, edges, truncated, total, shown, summary, focus}`. Nodes: visible documents, their channels (channels with no visible document would be isolated, so they are left out), the tenant's job and library exchanges that cite a visible document (references matched by video id or URL), and topics from knowledge artifacts on at least two visible documents. Edges `published_by`, `about`, `cites`, and derived `co_occurs` (topics sharing at least two documents, five strongest per topic). A foreign shelf or job is a 404
+- [x] T-8.9.1.2 Degree then recency pick nodes under the cap (focus first); ids are stable (`document:`, `channel:`, `topic:<lowercased>`, `exchange:<kind>:`); a one-paragraph `summary` (counts, "N of M shown", connected groups and the largest group's main topics) as the textual alternative. Computed per request: about 0.07 s at 2,000 documents and 500 answers, so no edge table
+- [x] T-8.9.1.3 Tests: two-reader isolation (nothing of theirs in the payload, their topic absent, my answer citing only their document has no node), an empty visible set is an empty graph, cap and truncation with degree order, focus at depth 1 and 2, channel / job / shelf filters (foreign → 404, empty shelf → empty), types filter, job exchanges
+- Found on the way: a topic label's display spelling depended on row order when casings tied; both this and the channel aggregate now break ties toward the capitalised spelling
 
 #### S-8.9.2 🔵 Graph UI
 **PR:** TBD

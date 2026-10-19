@@ -28,7 +28,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Scope-changed 2026-10-19:** the PDF upload and paste-URL surfaces shipped (T-1.5.8.3, E-1.8 follow-up, PR [#224](https://github.com/khoks/VideoResearchPro/pull/224)), and building them exposed that the "12 source types end-to-end" closure below is true of ingest but not of retrieval: since [D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31) every non-video document is ingested without a visibility grant and is therefore never listed or retrieved. Tracked under E-5.10 as [S-5.10.4](#s-5104--key-document-visibility-on-document_id) ([D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)); I-1 stays 🟡 until it lands.
 
-**Scope-changed 2026-07-29 (II):** the reopened scale/quality track now also carries [E-1.13](#e-113-per-user-llm-overrides-cost-calculator) (per-user model overrides + cost calculator, 🟢) and [E-1.14](#e-114-model-tier-quality-evaluation-harness) (model-tier quality evaluation, 🟡). Trajectory of the reopening: E-1.11 made ingest survive scale → E-1.12 made the agents survive scale → E-1.13 made model choice configurable and costed → E-1.14 measures whether the chosen models are good enough. Linked decisions: [D-054](decisions.md#d-054-per-user-llm-overrides-cost-calculator-gpt-56-adaptive-reasoning-findings-2026-07-29), [D-055](decisions.md#d-055-intelligence-delta-evaluation-methodology-production-input-replay-blind-ab-judging-2026-07-29).
+**Scope-changed 2026-07-29 (II):** the reopened scale/quality track now also carries [E-1.13](#e-113-per-user-llm-overrides-cost-calculator) (per-user model overrides + cost calculator, 🟢) and [E-1.14](#e-114-model-tier-quality-evaluation-harness) (model-tier quality evaluation, 🟡). Trajectory of the reopening: E-1.11 made ingest survive scale → E-1.12 made the agents survive scale → E-1.13 made model choice configurable and costed → E-1.14 measures whether the chosen models are good enough. Linked decisions: [D-054](decisions.md#d-054-per-user-llm-overrides-cost-calculator-gpt-56-adaptive-reasoning-findings-2026-07-29), [D-055](decisions.md#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29).
 
 **Scope-changed 2026-07-22:** reopened for [E-1.11](#e-111-transcript-pipeline-resilience-at-scale) — the 200-video deep-research test (job `0d4db8c3`, 2026-07-21/22) surfaced transcript-pipeline failures at scale: an IP-block cascade made Whisper the primary path for 80% of videos, and 63/200 videos were lost (25MB Whisper cap + yt-dlp 403s). The original multi-source scope stays closed; E-1.11 is the scale-resilience follow-on. Linked decision: [D-051](decisions.md#d-051-transcript-pipeline-resilience-bundle-circuit-breaker-segmented-whisper-yt-dlp-client-fallback-2026-07-22).
 
@@ -490,7 +490,7 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 ### E-1.14 🟡 Model-tier quality evaluation harness
 
-**Filed 2026-07-29.** Linked decision: [D-055](decisions.md#d-055-intelligence-delta-evaluation-methodology-production-input-replay-blind-ab-judging-2026-07-29). Realizes invention [N-001](inventions.md#n-001-production-replay-blind-delta-harness-for-per-call-site-model-tier-selection-2026-07-29). Docs PR: [#201](https://github.com/khoks/VideoResearchPro/pull/201).
+**Filed 2026-07-29.** Linked decision: [D-055](decisions.md#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29). Realizes invention [N-001](inventions.md#n-001-production-replay-blind-delta-harness-for-per-call-site-model-tier-selection-2026-07-29). Docs PR: [#201](https://github.com/khoks/VideoResearchPro/pull/201).
 
 **Why it exists.** Every model-tier decision through D-052/D-053/D-054 rested on proxy evidence — latency, context windows, JSON discipline, task-shape reasoning. None of it measured the thing that matters: **how much answer quality the cheap tiers actually give up on our corpus.** E-1.14 answers that empirically, per use case, and the verdicts feed back into `USE_CASE_REGISTRY` defaults and the E-1.13 override guidance.
 
@@ -501,12 +501,12 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 **Stories**
 - S-1.14.1 🟢 Deterministic input-replay prep — rebuild chunks/batches/stats/retrieval from stored job state via the app's own chunker + batch budgeting; dump stored artifacts (report, Q&A, knowledge) for pairing. *Verified: reproduced 5,149 chunks / 12 batches.*
 - S-1.14.2 🟢 Challenger replication at max effort across the pipeline — map ×12 (5,861 items, 200/200 videos), reduce, compose, full Q&A chain ×2, knowledge chain ×2, query planning. *Mixed provenance: Q&A + knowledge on Fable 5, report chain on Opus 5 after a subscription-limit switch — labelled per artifact, not averaged.*
-- S-1.14.3 🟢 Blind pairing + rubric judging with retrieval-grounded verification. **Result: max-effort won all 6 comparisons** — report severe, knowledge ×2 / Q&A-context / query-plan moderate, Q&A-patterns minor. Scores in [D-055 Results](decisions.md#d-055-intelligence-delta-evaluation-methodology-production-input-replay-blind-ab-judging-2026-07-29).
+- S-1.14.3 🟢 Blind pairing + rubric judging with retrieval-grounded verification. **Result: max-effort won all 6 comparisons** — report severe, knowledge ×2 / Q&A-context / query-plan moderate, Q&A-patterns minor. Scores in [D-055 Results](decisions.md#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29).
 - S-1.14.4 🟢 Loss attribution for unpersisted stages. **Result: 60 of 60 sampled facts from two batches absent from the shipped report (100% loss).** Root cause is the map/reduce token funnel, not model IQ — see S-1.14.8.
 - S-1.14.5 🟢 Selection-criteria audit standing in for `search_rank_and_curate` (true re-rank impossible — rejected pool not persisted). *Finding: default selection graded 6.5/10 — ~20-24 questionable picks, IBM Technology at 10% of corpus despite not being a preferred channel, 12 of 30 preferred channels absent, zero flagship model-release coverage despite instructions naming GPT-5.x / Claude / Gemini.*
 - S-1.14.6 🟡 Persist agent intermediates + rejected candidate pool (behind a debug/sampling flag) so quality is continuously monitorable instead of replay-only — see [architecture.md § Agent-intermediate retention gap](architecture.md#agent-intermediate-retention-gap-identified-2026-07-29). **Candidate-pool half shipped 2026-07-30**, PR [#205](https://github.com/khoks/VideoResearchPro/pull/205): `job_search_candidates` stores the whole pool with a `selected` flag. **Still open:** map/reduce intermediates (per-batch extraction JSON, reduced summary). *Status reconciled 2026-10-18; it had been left at ⚪.*
 - S-1.14.7 ⚪ Fold verdicts into registry defaults + surface measured per-use-case delta as guidance in the `/account/ai-models` panel (turns the override knob from raw into guided).
-- **S-1.14.8 🟢 Fix the report information funnel — shipped 2026-07-30.** Linked decision: [D-056](decisions.md#d-056-report-pipeline-budgets-derived-from-work-lossless-reduce-sectioned-compose-2026-07-30). Validated on job `0d4db8c3`: reduce now loses **0.00%** (5,861 items in / out, 200 videos + 92 channels retained, vs 91.2% of items and 46% of videos lost before).
+- **S-1.14.8 🟢 Fix the report information funnel — shipped 2026-07-30.** Linked decision: [D-056](decisions.md#d-056--report-pipeline-budgets-derived-from-work-lossless-reduce-sectioned-compose-2026-07-30). Validated on job `0d4db8c3`: reduce now loses **0.00%** (5,861 items in / out, 200 videos + 92 channels retained, vs 91.2% of items and 46% of videos lost before).
   - [x] T-1.14.8.1 `report_map_chunks` completion budget derived from batch size (3,000 → ~24,000); registry `p95_input` corrected 32,000 → 120,000; new measured `MODEL_MAX_OUTPUT_TOKENS` (128K / 64K haiku)
   - [x] T-1.14.8.2 Reduce rewritten deterministic + lossless; even per-video compression past a 1M-token cost guard so no video is dropped wholesale
   - [x] T-1.14.8.3 Compose sectioned — one call per section, split further as material requires, so report length scales with corpus; Statistics rendered in code
@@ -727,9 +727,19 @@ A 2026 video about a 2019 paper is a 2026 source about a 2019 event. Nothing in 
 ## I-3 🟡 Echo (personal-brain L3)
 
 **Why it exists.** Long-horizon north star — an app that ingests the user's likes / WhatsApp / Google Keep / quotes / activity / location / interests over time and develops a personality matching them. Eventually capable of "speaking on the user's behalf".
-**North-star doc:** [personal-brain.md](personal-brain.md) · [vision.md](vision.md) Ring 3
-**Decision links:** [D-003](decisions.md#d-003-echo-personal-brain-as-the-long-horizon-north-star-2026-04-24)
-**Status:** 🟡 foundation shipped 2026-05-05; **frontend Echo surface shipped 2026-10-19** (PR [#224](https://github.com/khoks/VideoResearchPro/pull/224)). Schema + service-layer + cold-start gate + REST surface all live, and `/echo` now exercises all of it: a readiness meter ("you're N% there", the mean of the three gates with each gate shown against its threshold, and an honest line that the sources gate cannot be met while the connector registry is empty), a context browser grouped by the 10 kinds with add / edit (edit = upsert on the same `(kind, key)`; labels cannot be renamed) / forget, a sources-on-record list with revoke (`DELETE /echo/sources/{source}`, confirm first), and an empty-state connectors card. Pure logic in `frontend/src/utils/echoReadiness.ts`. Concrete activity-stream connectors (YouTube watch / Spotify / email / etc.) and the "speak as me" agent are E-3.2 / E-3.4 follow-ups. Per [D-044](decisions.md#d-044-foundation-first-then-concrete-implementations-deferred-for-i-3-i-6-2026-05-05), the foundation ships **without** any concrete connector — the registry is empty in v1 — so each connector PR is independently scoped. Known edge: `DELETE /echo/context/{kind}/{key}` takes the key as a path segment, so a key containing `/` cannot be deleted; the form refuses such labels. Linked decision: [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19).
+**North-star doc:** [personal-brain.md](personal-brain.md) · [vision.md](vision.md) Ring 3 · **Plan:** [`docs/plans/l3-echo-personal-brain.md`](plans/l3-echo-personal-brain.md) · **Sequence:** [`docs/plans/build-order.md`](plans/build-order.md)
+**Decision links:** [D-003](decisions.md#d-003--echo--personal-brain-as-the-long-horizon-north-star-2026-04-24), [D-049](decisions.md#d-049--echo-cold-start-readiness-threshold-shipped-triple-is-v1-personal-brainmd-sub-table-is-forward-looking-spec-resolves-oq-6-2026-05-06), [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)
+**Status:** 🟡 foundation shipped 2026-05-05; **frontend Echo surface shipped 2026-10-19** (PR [#224](https://github.com/khoks/VideoResearchPro/pull/224)). Schema + service-layer + cold-start gate + REST surface all live, and `/echo` now exercises all of it: a readiness meter ("you're N% there", the mean of the three gates with each gate shown against its threshold, and an honest line that the sources gate cannot be met while the connector registry is empty), a context browser grouped by the 10 kinds with add / edit (edit = upsert on the same `(kind, key)`; labels cannot be renamed) / forget, a sources-on-record list with revoke (`DELETE /echo/sources/{source}`, confirm first), and an empty-state connectors card. Pure logic in `frontend/src/utils/echoReadiness.ts`. Concrete activity-stream connectors (YouTube watch / Spotify / email / etc.) and the "speak as me" agent are E-3.2 / E-3.4 follow-ups. Per [D-044](decisions.md#d-044--foundation-first-then-concrete-implementations-deferred-for-i-3--i-6-2026-05-05), the foundation ships **without** any concrete connector — the registry is empty in v1 — so each connector PR is independently scoped. Known edge: `DELETE /echo/context/{kind}/{key}` takes the key as a path segment, so a key containing `/` cannot be deleted; the form refuses such labels. Linked decision: [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19).
+
+**Planned 2026-10-18.** The roadmap's five components now map onto epics in the roadmap's own order: constant-stream intake (new E-3.7) → manual personality signals and retrieval (E-3.3) → activity connectors (E-3.2) → "speak as me" plus the always-evokable surface (E-3.4, new E-3.8) → opt-in fine-tuning (new E-3.9), with the privacy model as its own epic (new E-3.10). Findings from the code audit that change the plan:
+- The foundation stores everything in `personal_context(user_id, kind, key, value, source, confidence, captured_at, expires_at)` with a unique `(user_id, kind, key)`. That shape fits *facts*; it cannot hold *events* (many rows per kind) or *shares*. The `activity_events`, `shares_inbox` and `voice_signals` tables from `personal-brain.md` do not exist and are not derivable from the foundation; each lands with its epic.
+- `personal_context` carries `user_id` only, not the `tenant_id` + `user_id` pair `personal-brain.md` §"What this means for today's PRs" asks for. Today `tenant_id == user.id` everywhere (E-5.1), so nothing breaks; the pair is added when the first new Echo table lands (S-3.7.1) and backfilled on `personal_context` in the same revision.
+- No Chroma collection exists for personal context; `is_ready` counts rows, sources and one `personality_trait` only (the D-049 v1 triple).
+- No `backend/app/connectors/` package exists; the `EchoConnector` Protocol lives in `echo_service.py` with `authorize_url / revoke / sync / supported_kinds`, which is narrower than the `personal-brain.md` contract (no `initial_backfill`, `incremental_sync`, `consent_disclosure`, `privacy_weight`). S-3.2.1 widens it before the first connector.
+- **YouTube watch history is not obtainable through the YouTube Data API**; only liked videos, subscriptions and playlists are. Watch history arrives only as a Google Takeout export. T-3.2.1 is therefore split into an API connector (likes, subscriptions) and a Takeout importer (S-3.7.5).
+- **Several connectors in the roadmap list are export-file imports, not APIs.** Spotify's 2026 developer-mode rules (Premium owner, five allow-listed users, 250k-MAU business for more) make it a self-host-only live tail, with the lifetime streaming-history export as the real source; Strava's 2026 API policy forbids feeding API data to any AI application; Goodreads' API is gone and Letterboxd's refuses LLM and personal projects; Apple Health has no web API. The plan records sources. Consequence: the connector registry gains a second kind, the export-archive importer (`accepts(filename) / parse(stream)`), and S-3.7.5 carries most of the roadmap's Domain 2 catalogue.
+- **Google verification is per project.** Adding `youtube.readonly` and `calendar.readonly` (both *sensitive*, reviewed in days, no security assessment) to the login client puts the whole consent screen under review, and unverified sensitive-scope apps carry an irreversible 100-user lifetime cap. Gmail read-only is *restricted* (annual CASA assessment) and stays deferred.
+- The `/echo` page (PR #224) is the context store, the readiness meter and the sources list; there is no floating bubble, no shortcut and no chat — that is E-3.8.
 
 ### E-3.1 🟢 Personal context store schema
 
@@ -738,35 +748,209 @@ A 2026 video about a 2019 paper is a 2026 source about a 2019 event. Nothing in 
 
 10 supported kinds: `location` / `interest` / `hobby` / `work` / `talent` / `skill` / `personality_trait` / `life_event` / `daily_routine` / `place`. Set is closed at the API layer (unknown kinds → 400); extend by editing `SUPPORTED_KINDS` + adding a test.
 
-### E-3.2 🟡 Activity-stream connectors
+### E-3.2 🟡 Activity-stream connectors (Domain 2)
 
-**Scope.** Pluggable opt-in connectors. Recommended order (per [feature-roadmap.md L3](feature-roadmap.md#l3-echo-the-personal-brain)): YouTube watch history → Spotify history → email (read-only) → calendar → browser history → Apple Health.
+**Scope.** Pluggable opt-in connectors. Recommended order (per [feature-roadmap.md L3](feature-roadmap.md#l3--echo-the-personal-brain-)): YouTube watch history → Spotify history → email (read-only) → calendar → browser history → Apple Health.
 
 **Foundation shipped 2026-05-05** in PR #172. `EchoConnector` Protocol + `register_connector` / `get_connector` / `list_connectors` registry in `echo_service.py`. Each connector implements `authorize_url` / `revoke` / `sync` / `supported_kinds`. Concrete connectors are future PRs:
 
-- [ ] T-3.2.1 ⚪ YouTube watch history connector
-- [ ] T-3.2.2 ⚪ Spotify history connector
-- [ ] T-3.2.3 ⚪ Email (read-only OAuth) connector
-- [ ] T-3.2.4 ⚪ Calendar connector
-- [ ] T-3.2.5 ⚪ Browser history connector
-- [ ] T-3.2.6 ⚪ Apple Health connector
+- [ ] T-3.2.1 ⚪ YouTube watch history connector. *Split 2026-10-18: likes + subscriptions via the Data API (S-3.2.2); watch history only via Takeout import (S-3.7.5).*
+- [ ] T-3.2.2 ⚪ Spotify history connector. *Now S-3.2.3.*
+- [ ] T-3.2.3 ⚪ Email (read-only OAuth) connector. *Deferred: highest privacy weight and Google's restricted-scope assessment; see plan.*
+- [ ] T-3.2.4 ⚪ Calendar connector. *Now S-3.2.5.*
+- [ ] T-3.2.5 ⚪ Browser history connector. *Deferred to the browser extension in S-3.7.3.*
+- [ ] T-3.2.6 ⚪ Apple Health connector. *Deferred: export-file import only; no web API exists.*
 
-### E-3.3 ⚪ Voice & style capture
+**Scope-changed 2026-10-18:** connectors ship as stories below on a widened contract with two kinds, OAuth pull connectors and export-archive importers; the ordering follows the plan's privacy-weight-first rule (cheapest, lowest-sensitivity signals first): GitHub → YouTube likes + Calendar (one Google review) → Spotify live tail (self-host only). Email, browser history and health are deferred rather than scheduled; Strava, Goodreads, Letterboxd and Apple Health are importers under S-3.7.5 because no permitted API exists.
+**Acceptance.** A user connects an account from the Echo page, sees exactly what will be ingested before consenting, watches a first sync land events, sees them in a timeline, and revokes with every row from that connector deleted within the same request.
+
+#### S-3.2.1 🔵 Connector runtime and `activity_events`
+**PR:** TBD. Lands before any concrete connector.
+- [ ] T-3.2.1.1 `activity_events(id, tenant_id, user_id, connector, event_type, occurred_at, ingested_at, payload_json, text_content, linked_document_id, embedding_id)` with index `(user_id, connector, occurred_at)`; `(connector, external_id)` unique for idempotent re-sync
+- [ ] T-3.2.1.2 Widen `EchoConnector` to the `personal-brain.md` contract: `name`, `privacy_weight`, `consent_disclosure`, `authorize_url`, `handle_callback`, `revoke`, `initial_backfill`, `incremental_sync`, `event_types`; connectors live under `backend/app/connectors/<name>/`
+- [ ] T-3.2.1.3 OAuth tokens stored through the existing Fernet credential store (`byok_service` pattern, [D-043](decisions.md#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05)); `GET /echo/connectors/{name}/authorize`, `GET /echo/connectors/{name}/callback`, `POST /echo/connectors/{name}/sync`, `DELETE /echo/connectors/{name}` (revoke deletes events and tokens). Google connectors use a **separate OAuth client** (`OAUTH_GOOGLE_CONNECTOR_CLIENT_ID/SECRET`) so a rejected sensitive-scope review never breaks sign-in
+- [ ] T-3.2.1.7 Second registry kind for export-archive importers (`name`, `accepts(filename)`, `parse(stream) -> events | shares | facts`), used by S-3.7.5; file importers never fake `authorize_url`
+- [ ] T-3.2.1.4 `sync_echo_connector` Celery task; scheduler kind `echo_sync` on the S-8.3.1 tick for incremental syncs
+- [ ] T-3.2.1.5 Consent screen component showing `consent_disclosure` and the event types before the OAuth redirect
+- [ ] T-3.2.1.6 Tests with a fake connector: backfill, idempotent incremental, revoke cascade, isolation
+
+#### S-3.2.2 🔵 YouTube likes and subscriptions connector
+**PR:** TBD
+- [ ] T-3.2.2.1 Google OAuth with `youtube.readonly` (reusing the OAuth client from E-5.4); events `liked`, `subscribed`, `playlist_added`
+- [ ] T-3.2.2.2 Liked videos already in the library get `linked_document_id`; others are offered as paste-ingest candidates (never auto-ingested, per the vision's approval principle)
+- [ ] T-3.2.2.3 Derived facts: top channels → `interest` rows with confidence from frequency
+- [ ] T-3.2.2.4 Tests on recorded API fixtures
+
+#### S-3.2.3 ⚪ Spotify live tail (self-host only)
+**Status.** ⚪ proposed, self-host only. Since 2026-02-11 a development-mode Spotify app needs a Premium-subscribed owner and allows five users; extended quota needs a registered business with 250k monthly users. Not a SaaS feature. The lifetime "Extended streaming history" export (S-3.7.5) is the bootstrap and the only complete source.
+- [ ] T-3.2.3.1 OAuth; recently-played (API returns only the latest ~50 plays, so sync frequency matters), saved shows and episodes; events `played_episode`, `played_track`, `saved`; disabled gracefully when the owner's Premium lapses
+- [ ] T-3.2.3.2 Podcast episodes already in the library linked by RSS GUID where the show matches
+- [ ] T-3.2.3.3 Tests on fixtures
+
+#### S-3.2.4 🔵 GitHub connector
+**PR:** TBD
+- [ ] T-3.2.4.1 OAuth (reusing the GitHub client from E-5.4) with `read:user` and events read; the events feed holds only 300 events / 30 days, so a nightly scheduled sync is required and older commits are walked per repository; commit messages and PR descriptions as `text_content` (voice signal feeder for E-3.3)
+- [ ] T-3.2.4.2 Derived `skill` facts from languages
+
+#### S-3.2.5 🔵 Calendar connector
+**PR:** TBD
+- [ ] T-3.2.5.1 Google Calendar read-only; events `event_attended` with titles only by default (attendees and descriptions opt-in); derived `daily_routine` facts
+- [ ] T-3.2.5.2 Tests on fixtures
+
+### E-3.3 🔵 Voice & personality capture (Domain 3)
 
 **Scope.** Store user writing samples, Q&A patterns, opinion threads. Train fine-tune adapters on user-tagged content for persona.
 
-### E-3.4 ⚪ "Speak as me" agent
+**Scope-changed 2026-10-18.** Mode A only in this epic: `voice_signals` as inspectable, editable, exportable, revocable rows, extracted by an LLM pass over the user's own text (notes from E-8.5, questions, journal entries, shares, outgoing messages from connectors), embedded with the personal facts for retrieval. Fine-tuning moves to E-3.9.
+**Acceptance.** After a user has written twenty notes and asked fifty questions, the Echo page shows a signals panel listing style and personality signals with the verbatim examples they were learned from; the user deletes one and it never returns; the user exports the profile as JSON; the "speak as me" agent (E-3.4) retrieves these signals and a blind judge prefers drafts with them over drafts without.
+
+#### S-3.3.1 🔵 `voice_signals` schema, CRUD and the signals panel
+**PR:** TBD
+- [ ] T-3.3.1.1 `voice_signals(id, tenant_id, user_id, signal_type, value, weight, examples_json, language, register, derived_from, consent_version, created_at, updated_at, suppressed_at)`; `signal_type` closed set covering the style and personality layers in `personal-brain.md` Domain 3; `language` ∈ {en, hi-Deva, hi-Latn, mixed} and `register` ∈ {intimate, casual, professional, public} because bilingual users measurably shift voice per language (see plan)
+- [ ] T-3.3.1.2 `GET/POST/PATCH/DELETE /echo/signals`, `GET /echo/signals/export`; suppression is a tombstone so re-extraction cannot resurrect a deleted signal
+- [ ] T-3.3.1.3 Signals panel on the Echo page grouped by type, with examples and a one-click "that's not me"
+- [ ] T-3.3.1.4 Isolation and tombstone tests
+
+#### S-3.3.2 🔵 Signal extraction
+**PR:** TBD. Depends on E-8.5 (notes) for its richest input.
+- [ ] T-3.3.2.1 `echo_extract_signals` use case (economy tier, structured JSON): given a batch of the user's own text with provenance, emit candidate signals with examples; merged by `(signal_type, value)` with weight accumulation
+- [ ] T-3.3.2.2 Cheap stylometric baseline computed without an LLM (function-word profile, sentence-length distribution, punctuation habits, character n-grams; language-agnostic) plus one open author-embedding per note on the existing CPU embedding worker (Apache-2.0 or MIT model, named in the plan; English-trained, so the embedding is English-only until validated), stored as `cadence` signals and a per-language style centroid
+- [ ] T-3.3.2.3 Inputs: notes, Q&A questions, shares with `user_annotation`, connector `text_content` where the user is the author; incoming content is never a voice input
+- [ ] T-3.3.2.4 Runs as a Celery task after each batch of N new inputs; `language` set from `language_service`
+- [ ] T-3.3.2.5 Tests with the LLM patched; the stylometric baseline on fixtures
+
+#### S-3.3.3 🔵 Personal retrieval collection
+**PR:** TBD
+- [ ] T-3.3.3.1 `personal_context_global` Chroma collection (same embedder) holding facts and signals with `tenant_id` metadata; `query_personal_context(tenant_id, text)` with the fail-closed tenant filter the Q&A collection uses
+- [ ] T-3.3.3.2 Upsert on write, delete on tombstone, backfill on worker start (the `backfill_qa_library` pattern)
+- [ ] T-3.3.3.3 Tests: isolation; tombstoned signals absent
+
+#### S-3.3.4 🔵 Voice-match evaluation harness
+**PR:** TBD. The gate for E-3.4; the [D-055](decisions.md#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29) method applied to voice.
+- [ ] T-3.3.4.1 Three tiers, per the plan: (i) an automatic authorship-verification score against the user's held-out texts per language, (ii) an LLM judge that may abstain, used only for the in-UI voice-match number, (iii) a blinded "which of these did you write?" pairwise test with the user as judge, the only credible product gate
+- [ ] T-3.3.4.2 Pre-registered pass rule before the first run; a quality guard (preference against a neutral draft) so a style win never ships unreadable text
+
+### E-3.4 🔵 "Speak as me" agent (Domain 4)
 
 **Scope.** Given an incoming message, draft a response in the user's voice using their accumulated knowledge + context. Privacy: self-host local; SaaS opt-in encrypted. Will use `echo_service.is_ready(user)` as the cold-start gate before activating.
 
-### E-3.5 🟢 Cold-start readiness threshold
+**Scope-changed 2026-10-18.** Pipeline fixed as `classify_intent → retrieve_relevant_knowledge → retrieve_voice_signals → retrieve_personal_context → draft → self_critique_against_voice → finalize`; drafts only, never sends; every draft carries citations, a voice-match score, deviation notes and a disclosure footer.
+**Acceptance.** A ready user pastes an incoming message, gets a draft with citations to sources, facts and past Q&As, a voice-match score and deviation notes; editing the draft records the diff as a new signal; a not-ready user gets the readiness meter instead; the daily draft cap holds.
+
+#### S-3.4.1 🔵 Agent and endpoint
+**PR:** TBD. Depends on S-3.3.3 and S-3.3.4.
+- [ ] T-3.4.1.1 `echo_agent.py` LangGraph graph with the seven nodes; `echo_classify_intent`, `echo_draft`, `echo_critique` use cases registered (`echo_draft` on the synthesis tier). Retrieval picks about five exemplars chosen for *style diversity within the target language and register*, not topical similarity (topical matching measurably hurt attribution in the literature); the critic scores tone, vocabulary, sentence structure and topicality against the trait card for two to three rounds with knockout
+- [ ] T-3.4.1.2 `POST /echo/draft {message, audience?, register?}` → `{draft, confidence, voice_match_score, citations, deviation_notes}`; 409 with readiness diagnostics when not ready; gated on `echo_speak_as_me`
+- [ ] T-3.4.1.3 Guardrails from `personal-brain.md`: no claims outside ingested sources and facts; names of non-public people flagged before drafting
+- [ ] T-3.4.1.4 Tests with the LLM patched; readiness gate; citation grounding
+
+#### S-3.4.2 🔵 Feedback loop and limits
+**PR:** TBD
+- [ ] T-3.4.2.1 `POST /echo/draft/{id}/feedback {final_text}` stores the diff as a `voice_signals` candidate with `derived_from=draft_edit`
+- [ ] T-3.4.2.2 `ECHO_DRAFTS_PER_DAY` quota key through `quota_metering_service`; a visible, user-removable disclosure line ("Drafted with Echo, reviewed by <user>") on by default, the "reviewed by" clause being what the EU AI Act Art. 50(4) editorial-responsibility exception keys on if a draft is ever published; `audit_log` event per draft; the provenance guard (only the tenant's own authored text feeds a voice) enforced in code, which makes impersonating anyone else structurally impossible
+- [ ] T-3.4.2.3 Tests: quota; feedback creates a signal
+
+### E-3.5 🟡 Cold-start readiness threshold
 
 **Scope.** Quantify "enough data has been ingested to safely activate Echo features" and gate Ring 3 surface behind this threshold.
 **Shipped 2026-05-05** in PR #172. `echo_service.is_ready(db, user_id, total_threshold=100, sources_threshold=3)` returns an `EchoReadiness` dataclass: `(ready, total_rows, distinct_sources, has_personality_trait, threshold_total, threshold_sources)`. Default thresholds are conservative (100 rows / 3 sources / ≥1 personality_trait); operators tune via the function args. Endpoint `GET /api/v1/echo/status` exposes the readiness diagnostics so the frontend can show "you're 60% there" progress UI. *Built 2026-10-19 on `/echo` (PR #224): the percentage is the mean of the three gates, capped at 99 until `ready`, each gate drawn against its threshold ([D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)).*
 
+**Scope-changed 2026-10-18:** 🟢 → 🟡. [D-049](decisions.md#d-049--echo-cold-start-readiness-threshold-shipped-triple-is-v1-personal-brainmd-sub-table-is-forward-looking-spec-resolves-oq-6-2026-05-06) named the four-domain table in `personal-brain.md` as the forward-looking spec; once shares, events and signals exist (E-3.7, E-3.2, E-3.3) the v1 triple is no longer the right gate.
+
+#### S-3.5.1 🔵 Five-domain readiness
+**PR:** TBD. After S-3.7.1, S-3.2.1 and S-3.3.1 exist.
+- [ ] T-3.5.1.1 `is_ready` v2 scoring facts, events (count and span), signals (count and types), shares (count and content types) and notes against the `personal-brain.md` minima, plus a per-language voice floor (the plan suggests about 30 notes or 2,000 words per language, to be tuned) and centroid stability; per-domain progress in `EchoReadiness`. No comparable product publishes a numeric threshold; the literature's anchors are about five exemplars for prompt-time voice and 32 to 100 examples for fine-tuning
+- [ ] T-3.5.1.2 `GET /echo/status` returns per-domain progress; the meter shows what is missing in words
+- [ ] T-3.5.1.3 Thresholds in settings; tests per domain and for the all-domains gate
+
 ### E-3.6 🟢 Tier gating (Studio-only initially)
 
 **Shipped 2026-05-05** in PR #172. Two new feature flags: `echo_personal_brain` (gates the entire `/echo/*` surface) + `echo_speak_as_me` (gates the future "speak as me" agent — E-3.4). Both are Studio-tier-only at the `TIER_CAPABILITIES` level. Frontend shows the Echo surface only when `has_feature("echo_personal_brain")` returns true.
+
+### E-3.7 🔵 Constant-stream intake (Domain 5)
+
+**Filed 2026-10-18.** The roadmap's first-to-ship Echo component: the user forwards liked videos, reels, memes, WhatsApp threads, Keep notes, quotes, bookmarks and voice memos all day with no approval step, because the act of sharing is the curation. Everything lands in one `shares_inbox`, is processed into text, embedded, and cross-feeds facts (E-3.1), signals (E-3.3), events (E-3.2) and, when the share is an ingestible source, the library through the normal ingest path.
+**Plan:** [`docs/plans/l3-echo-personal-brain.md`](plans/l3-echo-personal-brain.md) § Domain 5
+**Acceptance.** A user pastes a YouTube URL, drops a screenshot of a meme, and uploads a WhatsApp export; within a minute each appears in the inbox with extracted text, the video is offered to the library, the meme's text is searchable, the WhatsApp thread shows a "redact the other party" option; readiness moves; deleting a share removes its derived signals.
+
+#### S-3.7.1 🔵 `shares_inbox`, quick-share and the inbox page
+**PR:** TBD. The first Echo PR.
+- [ ] T-3.7.1.1 `shares_inbox(id, tenant_id, user_id, received_at, surface, content_type, raw_payload_json, file_path, extracted_text, user_annotation, processing_state, derived_fact_ids_json, derived_signal_ids_json, linked_document_id, embedding_id)`; same revision adds `tenant_id` to `personal_context` with backfill `= user_id`
+- [ ] T-3.7.1.2 `POST /echo/shares` (URL, text or file; `surface=manual_quick_share`), `GET /echo/shares`, `PATCH /echo/shares/{id}` (annotation, content_type), `DELETE /echo/shares/{id}` (cascades to derived rows); gated on `echo_personal_brain`
+- [ ] T-3.7.1.3 "Add to Echo" quick-share in the sidebar chrome and an `/echo/inbox` page with state, text preview and actions
+- [ ] T-3.7.1.4 Files stored under `ECHO_SHARES_DIR/<tenant>/` with the frame-service traversal guard; size cap
+- [ ] T-3.7.1.5 Isolation and cascade tests
+
+#### S-3.7.2 🔵 Processing pipeline
+**PR:** TBD
+- [ ] T-3.7.2.1 `process_share` Celery task: URL → `paste_url_resolver` / article extraction / YouTube metadata; image → local OCR first (Apache-2.0 engine with a Devanagari model, chosen in the plan) with a vision-LLM fallback for stylised text that is off when the tenant's LLM is local-only; audio → the existing Whisper path; text → as is
+- [ ] T-3.7.2.2 Embedding into a `shares_global` collection with `tenant_id`; shares resolving to a source are offered to the library (one-click ingest through the paste path, visibility granted to the sharer only)
+- [ ] T-3.7.2.3 Share → activity event (`connector=internal`, `event_type=shared_to_pratidhvani`) and → signal-extraction queue (S-3.3.2)
+- [ ] T-3.7.2.4 Fail-soft: a share whose processing fails stays browsable with the failure shown
+- [ ] T-3.7.2.5 Tests per content type with external calls patched
+
+#### S-3.7.3 🔵 Drag-drop and browser extension
+**PR:** TBD
+- [ ] T-3.7.3.1 Drop zone on every page (files, URLs, text) posting to `/echo/shares` with `surface=drag_drop`
+- [ ] T-3.7.3.2 Manifest V3 extension (`extension/`): context-menu "Share to Pratidhvani" on page, link, selection and image; token pasted from the app's sessions page; posts with `surface=browser_ext`
+- [ ] T-3.7.3.3 Optional history capture in the extension (per-domain allow-list, never incognito) lands as `activity_events` through the connector runtime; opt-in per category
+
+#### S-3.7.4 ⚪ Email-in inbox
+- [ ] T-3.7.4.1 Self-host: IMAP poller for a dedicated mailbox (settings `ECHO_IMAP_*`), each message a share with `surface=email_in`
+- [ ] T-3.7.4.2 SaaS: inbound-webhook provider (choice in the plan), per-user address, signature verification
+
+#### S-3.7.5 🔵 Export-file importers
+**PR:** TBD. The only route to several high-value signals.
+- [ ] T-3.7.5.1 WhatsApp `.txt` export parser (date / sender / message lines, media placeholders), with "redact other party" producing a sender-only copy before storage
+- [ ] T-3.7.5.2 Google Takeout: YouTube watch and search history JSON → `activity_events` (`connector=youtube_takeout`); Keep notes JSON → shares
+- [ ] T-3.7.5.3 Spotify "Extended streaming history" JSON → events (the complete source; the API is a 50-item tail); Goodreads and Letterboxd CSV → `read` / `watched` events; Strava bulk export → workout events (user-owned data outside Strava's API policy; confirm with counsel per the plan); Apple Health `export.xml` → `daily_routine` facts via a streaming parser (exports run to gigabytes)
+- [ ] T-3.7.5.6 `author_is_tenant` flag on every imported message: third-party text (the other side of a WhatsApp thread) is retrievable as context, never quoted verbatim in outputs and excluded from dataset exports
+- [ ] T-3.7.5.4 Upload endpoint with format detection; streaming parse so a 100 MB export does not load into memory
+- [ ] T-3.7.5.5 Tests on fixture exports for every format
+
+#### S-3.7.6 ⚪ OS share target
+- [ ] T-3.7.6.1 Web-app manifest `share_target` (depends on S-8.12.2) so Android shares land in the inbox; iOS via a Shortcut that posts to `/echo/shares`
+
+### E-3.8 🔵 Always-evokable Echo surface
+
+**Filed 2026-10-18.** The floating bubble on every page: one click or `Ctrl-E` expands a chat panel; below readiness it shows the meter and what is missing; above it, it answers *as the user* by routing to the E-3.4 agent for drafts and to the library / history agents for questions, and surfaces anticipation cards (unread saved items, suggested questions from E-8.4).
+**Acceptance.** The bubble is present for Studio users on every authenticated page, opens with its shortcut, shows readiness progress in words, and once ready holds a conversation whose answers cite sources, facts and past Q&As; it never covers the Q&A composer on mobile.
+
+#### S-3.8.1 🔵 Bubble, panel and shortcut
+**PR:** TBD. Depends on the `useShortcuts` hook from S-8.2.2.
+- [ ] T-3.8.1.1 `EchoBubble` mounted in `AppLayout` behind `has('echo_personal_brain')`; panel with readiness state and chat, labelled as AI (EU AI Act Art. 50(1) applies to a conversational surface from 2026-08-02). Shortcut: **not** `Cmd-E` as the roadmap sketched (it is macOS's system-wide "Use Selection for Find" and clashes in Safari and Chrome); the plan proposes `Ctrl/Cmd-Shift-E` plus an "Ask Echo" entry in the `Ctrl-K` palette
+- [ ] T-3.8.1.2 `POST /echo/chat` routing by intent to draft, library Q&A or history Q&A; exchanges stored as `qa_history_exchanges` with `source=echo` so they enter the Q&A library index
+- [ ] T-3.8.1.3 Mobile placement above the docked composer (S-8.12.1)
+
+#### S-3.8.2 🔵 Anticipation cards
+**PR:** TBD
+- [ ] T-3.8.2.1 Cards in the panel: suggested questions for the current page (E-8.4), shares not yet read, saved searches that changed (E-8.3)
+
+### E-3.9 ⚪ Mode B: opt-in per-user fine-tuning
+
+**Filed 2026-10-18.** After Mode A is stable and the readiness data shows the corpus warrants it: curate per-theme datasets (problem-solution, recommendation lens, situational priority, opinion-formation, methodology) from the user's signals and exchanges, train an adapter, and route `echo_draft` to it with retrieval still augmenting. Provider and cost model are open questions in the plan.
+**Status.** ⚪ proposed. Not scheduled until S-3.3.4 shows Mode A plateauing. **Research 2026-10-19:** OpenAI is winding down its self-serve fine-tuning platform (no new jobs after 2027-01-06; the fine-tunable models retire 2027-01-14), Anthropic fine-tuning exists only for Claude 3 Haiku on Bedrock in one region, and the one head-to-head study found direct LoRA style tuning raises style accuracy while collapsing preferred quality. Mode B therefore has to be provider-agnostic from the first line, with local LoRA on open weights as the durable path and a quality guard before any adapter is served.
+
+#### S-3.9.1 ⚪ Theme datasets
+- [ ] T-3.9.1.1 `dataset_service` gains per-theme Echo exports built from exchanges, drafts the user accepted and signals with examples, in the OpenAI chat JSONL already shipped (byte-compatible with Hugging Face TRL's `messages` format) plus thin Bedrock-Claude and Vertex variants, every example tagged with `language`, `register`, `source_id` and `consent_version` so themes can be curated and revoked
+#### S-3.9.2 ⚪ Training adapter
+- [ ] T-3.9.2.1 Provider abstraction: local LoRA on an open-weights model (Apache-2.0 tooling; about 6 GB VRAM floor for an 8B QLoRA, 12 to 16 GB realistic) first, hosted supervised fine-tune where a provider still offers it; job tracking, cost shown beforehand; persona-vector style regression prompts and a preference-rate quality guard before serving
+#### S-3.9.3 ⚪ Routing
+- [ ] T-3.9.3.1 Per-user override of the `echo_draft` use case to the tuned model through the E-1.13 override mechanism; delete weights on revoke
+
+### E-3.10 🔵 Privacy model: export, delete, zero-knowledge
+
+**Filed 2026-10-18.** The hard constraint from `personal-brain.md`: self-host data is local; every connector is opt-in, scoped and revocable; the whole brain is exportable and deletable; SaaS offers a zero-knowledge mode.
+**Acceptance.** A user downloads one archive containing facts, events, signals, shares and drafts; a full delete leaves no row, file, token or Chroma vector attributed to them; every connector's consent text is shown before activation and stored with the grant.
+
+#### S-3.10.1 🔵 Full export
+**PR:** TBD
+- [ ] T-3.10.1.1 `GET /echo/export` streaming a zip of JSONL per table plus files; audit event
+#### S-3.10.2 🔵 Full delete
+**PR:** TBD
+- [ ] T-3.10.2.1 `DELETE /echo/brain` cascading across every Echo table, file directory, credential and Chroma collection; verified by a test that counts zero rows afterwards
+#### S-3.10.3 ⚪ Zero-knowledge mode (SaaS)
+- [ ] T-3.10.3.1 Design only: client-side encryption of share payloads and signals with a user-held key; the plan records that server-side embedding and extraction cannot run on ciphertext, so this mode disables them. Decision deferred to SaaS launch.
 
 ---
 
@@ -900,7 +1084,7 @@ Full design for each in [`saas-roadmap.md`](saas-roadmap.md); each epic's entry 
 - [D-040](decisions.md#d-040-failed-logins-for-unknown-emails-do-not-create-user-rows-lock-arbitrary-account-defence-2026-05-04) — Failed logins for unknown emails do NOT create User rows.
 - [D-041](decisions.md#d-041-contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05) — ContextVar plumbing for cross-cutting per-user state.
 - [D-042](decisions.md#d-042-oauth-first-login-links-to-existing-user-by-email-2026-05-05) — OAuth first-login email-based linking.
-- [D-043](decisions.md#d-043-single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05) — Single shared Fernet key for all encrypted-at-rest credentials.
+- [D-043](decisions.md#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05) — Single shared Fernet key for all encrypted-at-rest credentials.
 
 
 ### E-5.10 🟡 Per-user isolation (R2)
@@ -979,8 +1163,8 @@ Linked decision: [D-065](decisions.md#d-065--channel-subscriptions-become-per-te
 - [x] T-5.2.2 `Tier` enum + capability table + FastAPI dependency factories — *shipped 2026-05-04*.
 - [x] T-5.2.3 Document tier capabilities in `saas-roadmap.md` — *shipped 2026-05-04*.
 - [x] T-5.2.4 Partial-permanent. *`require_feature("byok_llm_keys")` already gates the BYOK credentials router (PR #158). Remaining wires happen as L2 (Author Studio, I-6) and L3 (Echo personal-brain, I-3) endpoints land — every new tier-gated endpoint adds a `Depends(require_tier(...))` or `Depends(require_feature(...))` at definition time, so this task closes incrementally rather than as one PR.*
-- [x] T-5.2.5 Quota runtime metering — *shipped 2026-05-05 (combined with T-5.5.5). New `quota_usage` table + `app/services/quota_metering_service.py` with `record_usage`, `get_usage`, `get_all_usage`, `check_quota`, `enforce_quota_or_raise`. Resource keys: `qa_exchanges` (monthly), `library_qa_exchanges` (monthly), `qa_history_chats` (monthly), `knowledge_extractions` (monthly), `documents` (lifetime), `llm_tokens_in/out` (daily), `youtube_units` (daily). New `qa_exchanges_per_month` + `knowledge_extractions_per_month` keys added to `TIER_CAPABILITIES` (Free 50 / Pro 1000 / Studio unlimited; Free 10 / Pro 200 / Studio 2000 respectively). Wired enforcement at the four hot endpoints: `/jobs/{id}/qa`, `/library/qa`, `/qa-history/chat`, `/videos/{id}/extract-knowledge`. New `GET /auth/quota` endpoint returns the user's full usage snapshot. 20 new tests; backend suite 929 → 949. **Linked decision:** [D-045](decisions.md#d-045-quota-metering-enforce-before-record-after-success-2026-05-05) — enforce-before / record-after-success sequencing.*
-- [x] T-5.2.6 🟢 **Tier-visibility UI + self-service tier flip shipped 2026-05-15.** Public marketing pages (`/landing`, `/pricing`) accessible to anyone; in-app `/account/subscription` page with current-tier highlight + mock-payment modal for upgrades + downgrade-confirmation modal listing features lost. New backend endpoint `PUT /api/v1/auth/me/tier` flips `users.tier` immediately (mock-payment-mode) and writes a `tier_changed` audit_log event. New stub frontend pages for Echo (`/echo` — Studio-only, exercises shipped CRUD on `personal_context`) and Author Studio (`/author` — Pro+, exercises shipped Book v1 outputter). Sidebar nav reveals Author / Echo links based on `useTierCapabilities()` mirror of `TIER_CAPABILITIES`; "Subscription" link in Account group shows current tier as a pill badge. 9 new backend tests + frontend type-check clean. **Linked decision:** [D-050](decisions.md#d-050-self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15) — mock payment + endpoint stability across the future Stripe migration.
+- [x] T-5.2.5 Quota runtime metering — *shipped 2026-05-05 (combined with T-5.5.5). New `quota_usage` table + `app/services/quota_metering_service.py` with `record_usage`, `get_usage`, `get_all_usage`, `check_quota`, `enforce_quota_or_raise`. Resource keys: `qa_exchanges` (monthly), `library_qa_exchanges` (monthly), `qa_history_chats` (monthly), `knowledge_extractions` (monthly), `documents` (lifetime), `llm_tokens_in/out` (daily), `youtube_units` (daily). New `qa_exchanges_per_month` + `knowledge_extractions_per_month` keys added to `TIER_CAPABILITIES` (Free 50 / Pro 1000 / Studio unlimited; Free 10 / Pro 200 / Studio 2000 respectively). Wired enforcement at the four hot endpoints: `/jobs/{id}/qa`, `/library/qa`, `/qa-history/chat`, `/videos/{id}/extract-knowledge`. New `GET /auth/quota` endpoint returns the user's full usage snapshot. 20 new tests; backend suite 929 → 949. **Linked decision:** [D-045](decisions.md#d-045--quota-metering-enforce-before-record-after-success-2026-05-05) — enforce-before / record-after-success sequencing.*
+- [x] T-5.2.6 🟢 **Tier-visibility UI + self-service tier flip shipped 2026-05-15.** Public marketing pages (`/landing`, `/pricing`) accessible to anyone; in-app `/account/subscription` page with current-tier highlight + mock-payment modal for upgrades + downgrade-confirmation modal listing features lost. New backend endpoint `PUT /api/v1/auth/me/tier` flips `users.tier` immediately (mock-payment-mode) and writes a `tier_changed` audit_log event. New stub frontend pages for Echo (`/echo` — Studio-only, exercises shipped CRUD on `personal_context`) and Author Studio (`/author` — Pro+, exercises shipped Book v1 outputter). Sidebar nav reveals Author / Echo links based on `useTierCapabilities()` mirror of `TIER_CAPABILITIES`; "Subscription" link in Account group shows current tier as a pill badge. 9 new backend tests + frontend type-check clean. **Linked decision:** [D-050](decisions.md#d-050--self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15) — mock payment + endpoint stability across the future Stripe migration.
 - [x] T-5.2.7 🟢 LLM token accounting — *shipped 2026-07-22, PR [#189](https://github.com/khoks/VideoResearchPro/pull/189) (checkbox reconciled 2026-10-18). `qa_exchanges.prompt_tokens` / `completion_tokens` now populated; per-user `llm_tokens_in` / `llm_tokens_out` metering recorded on the Q&A path (feeds the existing daily quota keys from T-5.2.5). Per-JOB LLM spend ⚪ deferred — needs a `jobs` schema column.*
 
 ### E-5.3 ⚪ Stripe integration
@@ -992,7 +1176,10 @@ Linked decision: [D-065](decisions.md#d-065--channel-subscriptions-become-per-te
 **Tasks**
 - [ ] T-5.3.1 ⚪ **Replace mock-payment with Stripe Checkout (resolves D-050).** When SaaS launches, swap `PUT /api/v1/auth/me/tier`'s implementation from "trust the request" to "verify Stripe webhook signature on `checkout.session.completed` → update tier". Frontend swaps the `MockPaymentModal` for a Stripe Checkout redirect; the rest of the in-app `/account/subscription` UI is unchanged (TierCard grid, downgrade modal, capability-aware nav). Self-host operators retain the existing mock-payment path via `ENABLE_SELF_SERVICE_TIER_FLIP=true` flag (default in SaaS: `false`). Blocked-on the rest of E-5.3 landing first (Stripe customer/subscription objects, webhook endpoint, kill switch).
 
-### E-5.4 🟢 Auth hardening
+### E-5.4 🟡 Auth hardening
+
+**Scope-changed 2026-10-19:** 🟢 → 🟡. Research for M11 found that `python-jose` 3.5.0 (the latest release, 2025-05-28) carries CVE-2026-85394 (CVSS 9.3, published 2026-09-03, no fixed version): a DER-encoded public key is accepted as an HMAC secret, an incomplete fix of CVE-2024-33663. The app decodes JWTs with it in `auth_service.py`, `mfa_service.py` and `middleware/rate_limit.py`. All three sites pin `algorithms=[settings.JWT_ALGORITHM]`, which neutralises the known confusion path, but the dependency is unfixed and effectively unmaintained.
+- [ ] T-5.4.9 🔵 Replace `python-jose` with `PyJWT` (MIT, actively released) at the three call sites, keep `algorithms` pinned, keep the `jti` session semantics; one PR, tests unchanged. M11 share tokens must never be JWTs regardless
 
 **Scope.** OAuth (Google / GitHub), MFA, session management, password reset, account lockout, audit log.
 
@@ -1010,7 +1197,7 @@ Linked decision: [D-065](decisions.md#d-065--channel-subscriptions-become-per-te
 - [x] T-5.4.3 Password reset flow (request + confirm + token table) — *shipped 2026-05-04*.
 - [x] T-5.4.4 `GET /auth/audit-log` per-user read endpoint — *shipped 2026-05-04*.
 - [x] T-5.4.5 OAuth (Google + GitHub) — *shipped 2026-05-05. OAuth 2.0 + PKCE flow with two configured providers (config-driven, adding a third is ~30 lines). New tables `oauth_states` (10 min TTL, single-use, S256 PKCE verifier persisted) + `oauth_identities` (`(provider, provider_user_id)` unique). New endpoints: `GET /auth/oauth/providers`, `GET /auth/oauth/{provider}/start`, `GET /auth/oauth/{provider}/callback`. First OAuth login finds-or-creates the User by email; existing-email users get the identity linked to their existing account (no duplicates). All callback failures return generic 401 (don't leak which step failed). 14 new tests with mocked provider responses; backend suite 915 → 929. **E-5.4 fully closed** — all 8 tasks done. **Linked decision:** [D-042](decisions.md#d-042-oauth-first-login-links-to-existing-user-by-email-2026-05-05) — email-based linking trade-off + provider verification expectations.*
-- [x] T-5.4.6 MFA (TOTP) — *shipped 2026-05-05. RFC 6238 TOTP via `pyotp`. New `mfa_secrets` table (encrypted secret + JSON-hashed recovery codes; Alembic `d1e2f3a4b5c6_mfa_secrets_table.py`). Endpoints: `POST /auth/mfa/enroll` (returns `secret` + `provisioning_uri` for QR rendering), `POST /auth/mfa/verify-enrollment` (validates first TOTP code → enabled=True; returns 10 single-use recovery codes ONCE), `GET /auth/mfa/status`, `DELETE /auth/mfa` (requires valid TOTP / recovery code), `POST /auth/login/mfa` (second-step using short-lived 5-min mfa_token from /auth/login). Login flow change: when MFA is enabled, `/auth/login` returns `MfaRequiredResponse` instead of `TokenResponse`; client must call `/auth/login/mfa` with the returned mfa_token + a code to receive the real access token. ±1 TOTP window for clock skew. Encryption reuses BYOK Fernet key (see [D-043](decisions.md#d-043-single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05) for the single-shared-key rationale). 13 new tests; backend suite 902 → 915.*
+- [x] T-5.4.6 MFA (TOTP) — *shipped 2026-05-05. RFC 6238 TOTP via `pyotp`. New `mfa_secrets` table (encrypted secret + JSON-hashed recovery codes; Alembic `d1e2f3a4b5c6_mfa_secrets_table.py`). Endpoints: `POST /auth/mfa/enroll` (returns `secret` + `provisioning_uri` for QR rendering), `POST /auth/mfa/verify-enrollment` (validates first TOTP code → enabled=True; returns 10 single-use recovery codes ONCE), `GET /auth/mfa/status`, `DELETE /auth/mfa` (requires valid TOTP / recovery code), `POST /auth/login/mfa` (second-step using short-lived 5-min mfa_token from /auth/login). Login flow change: when MFA is enabled, `/auth/login` returns `MfaRequiredResponse` instead of `TokenResponse`; client must call `/auth/login/mfa` with the returned mfa_token + a code to receive the real access token. ±1 TOTP window for clock skew. Encryption reuses BYOK Fernet key (see [D-043](decisions.md#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05) for the single-shared-key rationale). 13 new tests; backend suite 902 → 915.*
 - [x] T-5.4.7 Session management (revoke individual sessions, list active sessions, logout everywhere) — *shipped 2026-05-05. New `sessions` table keyed on JWT `jti` claim (Alembic `c0d1e2f3a4b5_sessions_table.py`); login writes a row + captures IP/User-Agent; `dependencies.get_current_user` validates the row is not revoked on every authenticated request. New endpoints: `GET /auth/sessions`, `DELETE /auth/sessions/{jti}` (404 on cross-user — existence-leak posture), `DELETE /auth/sessions?keep_current=true|false` (logout everywhere with the "keep current" UX), `POST /auth/logout`. Revocation is via `revoked_at` timestamp (audit trail preserved). Pre-T-5.4.7 tokens (no jti claim, no session row) keep working until they expire — back-compat. 12 new tests; backend suite 890 → 902.*
 - [x] T-5.4.8 SMTP integration (deliver password-reset secrets via email) — *shipped 2026-05-05. New `app/services/email_service.py` with pluggable SMTP backend (host / port / username / password / SSL / STARTTLS / from-address config) + log-fallback when `SMTP_HOST` unset. Password-reset endpoint now: (a) renders email via `render_password_reset_email`, (b) sends via `email_service.send_email` (SMTP when configured, log otherwise), (c) returns `debug_secret` ONLY when SMTP is unconfigured (self-host operator handoff). On SaaS / SMTP-configured deployments, the secret is never in the response — email is the only delivery channel. 11 new tests; backend suite 879 → 890.*
 
@@ -1080,39 +1267,161 @@ Backend suite 835 → 855.
 ## I-6 🟡 Author Studio (output generation L2)
 
 **Why it exists.** The accumulated library is rich enough to produce books, sites, decks, newsletters, reels — not just answers. Closes the loop: ingest → understand → produce.
-**North-star doc:** [feature-roadmap.md L2](feature-roadmap.md#l2-author-studio-output-generation)
-**Status:** 🟡 foundation shipped 2026-05-05. Schema + Outputter Protocol + lifecycle + REST surface + tier gating + first concrete outputter (Book v1 Markdown) all live. Sites / decks / newsletters / reels are E-6.2/.3/.4/.5 follow-ups that plug into the same registry. Per [D-044](decisions.md#d-044-foundation-first-then-concrete-implementations-deferred-for-i-3-i-6-2026-05-05), the foundation ships with one minimum-viable outputter (deterministic Book v1) so the abstraction is validated end-to-end with real content; LLM cohesion + the other kinds are individually-scoped follow-ups.
+**North-star doc:** [feature-roadmap.md L2](feature-roadmap.md#l2--author-studio-output-generation-) · **Plan:** [`docs/plans/l2-author-studio.md`](plans/l2-author-studio.md) · **Sequence:** [`docs/plans/build-order.md`](plans/build-order.md)
+**Decision links:** [D-044](decisions.md#d-044--foundation-first-then-concrete-implementations-deferred-for-i-3--i-6-2026-05-05), [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)
+**Status:** 🟡 foundation shipped 2026-05-05. Schema + Outputter Protocol + lifecycle + REST surface + tier gating + first concrete outputter (Book v1 Markdown) all live. Sites / decks / newsletters / reels are E-6.2/.3/.4/.5 follow-ups that plug into the same registry. Per [D-044](decisions.md#d-044--foundation-first-then-concrete-implementations-deferred-for-i-3--i-6-2026-05-05), the foundation ships with one minimum-viable outputter (deterministic Book v1) so the abstraction is validated end-to-end with real content; LLM cohesion + the other kinds are individually-scoped follow-ups.
+
+**Planned 2026-10-18.** Every epic below now carries a scope, an acceptance statement and PR-sized stories; the research behind the choices (PDF and EPUB toolchains, site generation without Node, python-pptx, scheduler, TTS providers, the B-roll licensing risk) is in the plan. Two corrections from the code audit:
+- The stub `/author` page of 2026-10-18 **could not produce a successful book**: it posted `{kind, title}` with no `source_ids`, and `BookMarkdownOutputter.generate` raises `OutputError` on an empty list, so every output created from the UI landed as `failed`. PR [#224](https://github.com/khoks/VideoResearchPro/pull/224) replaced it on 2026-10-19 with a chapter picker ([D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)); S-6.1.1 now carries only the remainder.
+- The roadmap's `output_citations` table and `GET /outputs/{id}/download` were never built; `outputs` has `content_text` / `content_path` only, generation is synchronous inside the request, and there is no Celery task for outputs. Carried by E-6.7.
 
 ### E-6.1 🟡 Books (long-form Markdown → PDF / EPUB)
 
 **v1 shipped 2026-05-05** in PR #173. `BookMarkdownOutputter` performs deterministic structural concatenation of selected job reports + per-job Q&A history into a Markdown manuscript with TOC. No LLM in v1 — that's the point: validate the schema + lifecycle + REST surface end-to-end before adding cohesion.
 
-**Tasks**
+**Scope (2026-10-18).** Make the book real: a source picker, a true Markdown source for reports, an LLM cohesion pass, endnote citations with deep links, and PDF / EPUB downloads. Books are the first Author kind to finish because every other kind reuses its pieces (Markdown source, citation contract, async generation).
+**Acceptance.** A user picks three completed jobs, titles the book, and gets a manuscript with an LLM-written introduction, ordered chapters with transitions, a glossary, numbered endnotes that deep-link to timestamps, and a downloadable PDF and EPUB; generation runs in the worker with progress; a failed chapter is disclosed in the manuscript rather than silently dropped (the D-056 posture).
+
+**Tasks (epic-level, pre-2026-10-18 numbering kept)**
 - [x] T-6.1.1 v1 deterministic Markdown bundle — *shipped 2026-05-05*.
-- [ ] T-6.1.2 ⚪ LLM-driven cohesion (chapter ordering, transition prose, auto-generated introductions, glossary extraction).
-- [ ] T-6.1.3 ⚪ PDF conversion via `anthropic-skills:docx` or `pypandoc`.
-- [ ] T-6.1.4 ⚪ EPUB conversion.
-- [x] T-6.1.5 🟢 Frontend "Author Studio" surface — *shipped 2026-10-19 PR [#224](https://github.com/khoks/VideoResearchPro/pull/224). Scope moved from "a Pro+ button on a job page" to the full `/author` page, because a book spans several runs. Kinds come from `GET /author/kinds`: `available` kinds get a create flow, the rest render as "Coming later · E-6.x" with no button (a 501 is never offered). The create modal names the book, picks chapters from the user's finished topic / channel runs (runs without a report or not yet completed are listed but disabled, so the 501 / empty-chapter paths are unreachable from the UI), and toggles `include_qa` / `include_toc`. Outputs list with kind / status filters, failed rows show `error_message` in full, pending rows explain they were created when their kind had no generator. Reader modal renders the Markdown at reading measure; Download fetches `/content` with the bearer header and saves a blob (`<a href>` cannot carry the token); Delete confirms first. Tier-locked state when `has('author_studio')` is false or the API 403s. Linked decision: [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19).*
+- [ ] T-6.1.2 ⚪ LLM-driven cohesion (chapter ordering, transition prose, auto-generated introductions, glossary extraction). *Now S-6.1.3.*
+- [ ] T-6.1.3 ⚪ PDF conversion. *Now S-6.1.5 (the plan rejects `anthropic-skills:docx` and `pypandoc` as the primary path; see plan).*
+- [ ] T-6.1.4 ⚪ EPUB conversion. *Now S-6.1.5.*
+- [x] T-6.1.5 🟢 Frontend "Author Studio" surface — *shipped 2026-10-19 PR [#224](https://github.com/khoks/VideoResearchPro/pull/224). Scope moved from "a Pro+ button on a job page" to the full `/author` page, because a book spans several runs. Kinds come from `GET /author/kinds`: `available` kinds get a create flow, the rest render as "Coming later · E-6.x" with no button (a 501 is never offered). The create modal names the book, picks chapters from the user's finished topic / channel runs (runs without a report or not yet completed are listed but disabled, so the 501 / empty-chapter paths are unreachable from the UI), and toggles `include_qa` / `include_toc`. Outputs list with kind / status filters, failed rows show `error_message` in full, pending rows explain they were created when their kind had no generator. Reader modal renders the Markdown at reading measure; Download fetches `/content` with the bearer header and saves a blob (`<a href>` cannot carry the token); Delete confirms first. Tier-locked state when `has('author_studio')` is false or the API 403s. Linked decision: [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19). What remains of the original scope: the job-page shortcut and the server-side guard (S-6.1.1) and reading outputs in the shared reader shell (S-8.8.3).*
 
-### E-6.2 ⚪ Static personal-wiki site (Astro / 11ty under `outputs/sites/`)
+#### S-6.1.1 🟡 Source picker and a working Author page
+**Scope-changed 2026-10-19:** the picker shipped in PR [#224](https://github.com/khoks/VideoResearchPro/pull/224) a day after this story was filed; what remains is below.
+- [x] T-6.1.1.1 `AuthorPage` job picker sending `source_ids`; runs without a report are listed but disabled — *shipped 2026-10-19, PR #224*
+- [ ] T-6.1.1.2 "Add this run to a book" shortcut on `JobDetailPage` into the same create flow (the alternative [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19) names)
+- [ ] T-6.1.1.3 Output row shows chapter count and word count; "View" opens the shared reader shell (S-8.8.3) instead of the page's own modal
+- [ ] T-6.1.1.4 Frontend type-check; a backend test asserting the router rejects an empty `source_ids` for `kind=book` with 400 rather than creating a `failed` row
 
-Outputter scaffolded by I-6 foundation; concrete `SiteAstroOutputter` is a future PR. The schema's `kind="site"` is supported; the route returns 501 until an outputter ships.
+#### S-6.1.2 🔵 Markdown source for reports
+**PR:** TBD. Shared enabler for the book, the reading room (E-8.8) and public sharing (E-8.11).
+- [ ] T-6.1.2.1 `report_service.report_markdown(job)` converting the stored HTML body to Markdown with a deterministic converter (library in the plan), preserving `&t=` citation links as Markdown links and the Statistics table; cached at `<report_path>.md`
+- [ ] T-6.1.2.2 `BookMarkdownOutputter` uses it instead of the tag-stripping fallback; `_strip_html_to_markdownish` retired
+- [ ] T-6.1.2.3 `GET /api/v1/jobs/{id}/report.md` (same auth as the HTML route)
+- [ ] T-6.1.2.4 Round-trip tests on three stored real reports (headings, links, tables survive)
 
-### E-6.3 ⚪ Slides (PPTX via `anthropic-skills:pptx`)
+#### S-6.1.3 🔵 LLM cohesion pass
+**PR:** TBD. Absorbs T-6.1.2.
+- [ ] T-6.1.3.1 `author_book_outline` use case: given chapter summaries, return order, part grouping, one-paragraph transitions, introduction and conclusion briefs (structured JSON)
+- [ ] T-6.1.3.2 `author_book_prose` use case: write introduction, transitions, conclusion and glossary from the outline plus source excerpts; `VISUAL_ANNOTATION_CONTRACT` and the English-output contract injected ([D-066](decisions.md#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31))
+- [ ] T-6.1.3.3 Chapter bodies stay the report Markdown (never rewritten by the LLM, so citations cannot be invented); an in-manuscript processing note discloses any failed call
+- [ ] T-6.1.3.4 `parameters_json` gains `cohesion: "none" | "light" | "full"`; `none` is the shipped v1 path
+- [ ] T-6.1.3.5 Cost estimate per book surfaced before generation via `cost_estimator`
+- [ ] T-6.1.3.6 Tests with the LLM factory patched; golden manuscript on a two-job fixture
+
+#### S-6.1.4 🔵 Endnote citations
+**PR:** TBD. Depends on E-6.7's `output_citations`.
+- [ ] T-6.1.4.1 Every `&t=` / permalink link in chapter Markdown becomes a numbered endnote; the endnote carries title, channel, timestamp and URL and writes an `output_citations` row
+- [ ] T-6.1.4.2 Q&A sections cite through their stored references rather than re-parsing prose
+- [ ] T-6.1.4.3 Tests: citation count equals endnote count; no dead links (the S-1.14.9 class of defect)
+
+#### S-6.1.5 🔵 PDF and EPUB downloads
+**PR:** TBD. Absorbs T-6.1.3 and T-6.1.4.
+- [ ] T-6.1.5.1 Markdown → HTML (typographic stylesheet shared with the reader) → PDF through the converter chosen in the plan; `content_path` set; served by E-6.7's download endpoint
+- [ ] T-6.1.5.2 EPUB 3 from the same HTML (converter chosen in the plan; licence recorded in `requirements.txt` comments as for PyMuPDF)
+- [ ] T-6.1.5.3 Optional install: both converters live in `requirements-author.txt`; the outputter reports 501 with install instructions when missing (the Playwright precedent)
+- [ ] T-6.1.5.4 Tests: generated files open (PDF page count, EPUB container validity); a Devanagari quote renders (font embedding)
+
+### E-6.2 🔵 Static personal-wiki site
+
+Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported and the route returns 501 until an outputter ships.
+
+**Scope (2026-10-18).** A downloadable static site built from a shelf or a set of jobs: one page per report (reader typography), one per knowledge artifact, an index, tag pages, client-side search, citation links out to sources. Built by the backend with Jinja2 templates, **not** by Astro or 11ty: the plan rejects a Node toolchain inside the Python worker. Hosting integrations are a later story.
+**Acceptance.** A user picks a shelf, generates a site, downloads a zip, opens `index.html` from disk and can read every report, search by title, and follow citations; the site has no app chrome and makes no network calls except to sources.
+
+#### S-6.2.1 🔵 `SiteOutputter` (zip of static HTML)
+**PR:** TBD. Depends on S-6.1.2 (Markdown source) and S-8.1.1 (shelves) for the picker.
+- [ ] T-6.2.1.1 `source_ids` accepts `shelf:<id>` and `job:<id>`; resolves to visible documents and the tenant's exchanges only
+- [ ] T-6.2.1.2 Jinja2 templates under `app/templates/site/` (index, report, knowledge, tag, about) with the reader stylesheet inlined
+- [ ] T-6.2.1.3 Client-side search index (prebuilt JSON + a small vanilla script; no CDN)
+- [ ] T-6.2.1.4 Zip written to `content_path`; download through E-6.7
+- [ ] T-6.2.1.5 Tests: every link inside the zip resolves; no absolute app URLs
+
+#### S-6.2.2 ⚪ Publish integrations
+- [ ] T-6.2.2.1 GitHub Pages push (user-supplied token through the BYOK credential store) and Netlify drop; design only until S-6.2.1 is used
+
+### E-6.3 🔵 Slides (PPTX)
 
 `kind="deck"` reserved; outputter pending.
 
-### E-6.4 ⚪ Newsletter / digest (recurring scheduled output)
+**Scope (2026-10-18).** A deck from one job or a knowledge artifact: an LLM-planned outline (8 to 15 slides), each slide carrying its citations in the notes and a sources slide at the end, rendered with `python-pptx` (the `anthropic-skills:pptx` skill named in the roadmap is a harness skill, not a library the worker can call).
+**Acceptance.** A user picks a job, gets a `.pptx` whose every content slide has at least one citation in its notes, and the sources slide lists every cited source with a link.
 
-`kind="newsletter"` reserved; outputter pending. Will need a scheduled-task wiring (Celery beat) for the recurring aspect.
+#### S-6.3.1 🔵 `DeckOutputter`
+**PR:** TBD
+- [ ] T-6.3.1.1 `author_deck_outline` use case (structured JSON: title, slides[{heading, bullets, speaker_notes, citations}])
+- [ ] T-6.3.1.2 `python-pptx` renderer with one editorial template (title, section, bullets, quote, sources); brand tokens from `docs/branding.md`
+- [ ] T-6.3.1.3 Citations copied into slide notes and the sources slide; `output_citations` rows
+- [ ] T-6.3.1.4 Tests: slide count within bounds, notes non-empty, file opens
 
-### E-6.5 ⚪ Video / reel (TTS narration + clip-stitched B-roll)
+### E-6.4 🔵 Newsletter / digest (recurring scheduled output)
 
-`kind="reel"` reserved; outputter pending. Heaviest of the kinds — requires TTS provider + ffmpeg pipeline.
+`kind="newsletter"` reserved; outputter pending.
+
+**Scope (2026-10-18).** A periodic email digest: what entered the library since the last issue, new Q&As, a featured deep-dive (one report section or knowledge artifact), and pinned saved-search changes (E-8.3). Runs on the scheduler E-8.3 builds (S-8.3.1); sends through the existing `email_service`.
+**Acceptance.** A user enables a weekly digest; an issue is generated and emailed every week with only material newer than the previous issue; an issue with nothing new is skipped and says so in the outputs list; the digest is also readable in-app as an output.
+
+#### S-6.4.1 🔵 `NewsletterOutputter`
+**PR:** TBD. Depends on S-8.3.1.
+- [ ] T-6.4.1.1 `parameters_json` carries `since` (last issue timestamp) and section toggles; content from documents, exchanges and outputs newer than `since`, visible to the tenant
+- [ ] T-6.4.1.2 `author_newsletter_compose` use case for the featured section only; the rest is deterministic
+- [ ] T-6.4.1.3 Plain-HTML email template (no external CSS, inlined styles) plus a Markdown `content_text` for in-app reading
+- [ ] T-6.4.1.4 Tests: `since` boundary, empty issue skipped
+
+#### S-6.4.2 🔵 Subscription and delivery
+**PR:** TBD
+- [ ] T-6.4.2.1 `newsletter_subscriptions(id, tenant_id, cadence, sections_json, last_issue_at, enabled)` + REST + a toggle on the Author page
+- [ ] T-6.4.2.2 Scheduler kind `newsletter` → generate output → `email_service.send_email` → in-app notification; idempotent per `(subscription, period)`
+- [ ] T-6.4.2.3 Tests: one send per period; unsubscribe stops the next run
+
+### E-6.5 ⚪ Video / reel (TTS narration + stills)
+
+`kind="reel"` reserved; outputter pending. Heaviest of the kinds — requires a TTS provider + an ffmpeg pipeline.
+
+**Scope (2026-10-18).** A short vertical video: an LLM-written script from a knowledge artifact or report section, narrated by TTS, over **stills the app already owns** (R1 `visual_frames` captured by E-1.18, generated title cards, and source thumbnails) with captions burned in. The roadmap's "clip-stitched B-roll from source videos" is **not** in v1: re-publishing downloaded YouTube video is a Terms-of-Service risk the plan records, and the stills path needs no new downloads.
+**Status.** ⚪ proposed. Ships last; the TTS provider choice (local model for self-host, paid API for SaaS) is an open question in the plan.
+**Acceptance.** A user picks a knowledge artifact, gets a 60 to 90 second 1080×1920 MP4 with narration, captions and a sources end-card; generation cost is shown beforehand; a missing TTS provider yields 501 with setup instructions.
+
+#### S-6.5.1 ⚪ Script and storyboard
+- [ ] T-6.5.1.1 `author_reel_script` use case: scenes[{narration, on_screen_text, source_ref, frame_hint}] within a duration budget
+#### S-6.5.2 ⚪ Narration
+- [ ] T-6.5.2.1 `tts_service` provider abstraction (`openai` / `local`), per-use-case config like `llm_routing`, cached audio per scene
+#### S-6.5.3 ⚪ Assembly
+- [ ] T-6.5.3.1 ffmpeg pipeline: stills + Ken Burns pan, captions, narration mix, end-card; `content_path` MP4; download through E-6.7
+- [ ] T-6.5.3.2 Tests: duration within budget; file probes as valid MP4
 
 ### E-6.6 🟢 Foundation (schema + outputter Protocol + lifecycle + tier gate)
 
 **Shipped 2026-05-05** in PR #173. New `outputs` table (Alembic `b5c6d7e8f9a0`) with status state machine (`pending` → `generating` → `completed` | `failed`); `Outputter` Protocol + `register_outputter` / `get_outputter` / `list_outputters` registry; `run_generation` driver that handles status transitions + error capture; `OutputKind` enum (`book` / `site` / `deck` / `newsletter` / `reel`). REST surface under `/api/v1/author/*` — `GET /kinds`, `POST /outputs` (creates + generates synchronously for v1; 501 when no outputter for the kind), `GET /outputs` (kind/status filters), `GET /outputs/{id}`, `GET /outputs/{id}/content` (PlainTextResponse with media-type), `DELETE /outputs/{id}`. All gated on `require_feature("author_studio")` (Pro+).
+
+### E-6.7 🔵 Generation runtime (async, progress, downloads, citations)
+
+**Filed 2026-10-18.** Cross-cutting pieces every kind needs that the foundation deliberately left out ([D-044](decisions.md#d-044--foundation-first-then-concrete-implementations-deferred-for-i-3--i-6-2026-05-05)).
+**Scope.** Move generation into the Celery worker with WebSocket progress, add binary artifact storage and a download endpoint, and add the `output_citations` table the roadmap sketched so every kind cites the same way.
+**Acceptance.** Creating an output returns immediately with `pending`; the Author page shows live progress over the existing `/ws/jobs` channel; a completed binary output downloads with the right media type; every output lists its citations through `GET /outputs/{id}/citations`.
+
+#### S-6.7.1 🔵 Celery-backed generation with progress
+**PR:** TBD
+- [ ] T-6.7.1.1 `generate_output` Celery task dispatched through `task_routing_service.dispatch_for_user`; `outputs.celery_task_id`; `POST /outputs` no longer generates inline (a `sync=true` query keeps the test path)
+- [ ] T-6.7.1.2 Progress published on `job_progress:{output_id}` so `useJobProgress` and the WebSocket manager need no new channel; `AuthorPage` subscribes
+- [ ] T-6.7.1.3 Cancel endpoint mirroring `/jobs/{id}/cancel`
+- [ ] T-6.7.1.4 Tests with `.delay()` mocked at the router boundary (the conftest pattern)
+
+#### S-6.7.2 🔵 Binary artifacts and downloads
+**PR:** TBD
+- [ ] T-6.7.2.1 `OUTPUTS_DIR` setting; artifacts under `<OUTPUTS_DIR>/<tenant>/<output_id>/`; path-traversal guard (the `frame_service` precedent)
+- [ ] T-6.7.2.2 `GET /api/v1/author/outputs/{id}/download` streaming `content_path` with media type by kind; same query-token fallback the report route uses for browser navigation
+- [ ] T-6.7.2.3 Delete removes files; orphan sweep script
+- [ ] T-6.7.2.4 Tests: cross-user 404, traversal rejected, media types
+
+#### S-6.7.3 🔵 `output_citations`
+**PR:** TBD
+- [ ] T-6.7.3.1 `output_citations(id, output_id, document_id NULL, source_type, source_id, url, label, position, created_at)`; written by every outputter through one helper
+- [ ] T-6.7.3.2 `GET /api/v1/author/outputs/{id}/citations`; counts on the outputs list
+- [ ] T-6.7.3.3 Tests on the v1 book: every Markdown link becomes a row
 
 ---
 
@@ -1142,18 +1451,316 @@ Outputter scaffolded by I-6 foundation; concrete `SiteAstroOutputter` is a futur
 
 **Scope.** Segment retrieval by trust band and let the answer surface "your trusted creators say X; others say Y", with disagreement detection between bands. Deferred by D-068 until user-set weights exist and E-7.1's measurement is in.
 
+## I-8 🔵 Research workbench features (M1 to M12)
+
+**Filed 2026-10-18** under the user's directive to turn the larger roadmap items into tracked, researched, buildable plans. One epic per medium-scale roadmap item; every epic links to a research plan under [`docs/plans/`](plans/README.md) that records the chosen approach, the alternatives rejected, schema and API deltas, the modules touched, risks, the test strategy and the first PR. Recommended sequence across I-3 / I-6 / I-8: [`docs/plans/build-order.md`](plans/build-order.md).
+
+**Why it exists.** Ring 1 of the vision is a personal wiki that *reads like a research journal*. Ingest, reports and Q&A are shipped; what is missing is the workbench around them: ways to organise (shelves, tags, templates), find (command palette, suggestions), annotate (notes), monitor (saved searches), read (reading room, mobile), see the shape of the library (channel intelligence, citation graph), start (onboarding) and share (public reports). Several of these are also feeders for later initiatives: notes feed Echo's voice capture (I-3), shelves scope site output (I-6), the scheduler built for saved searches runs the newsletter (I-6).
+**North-star doc:** [feature-roadmap.md M1 to M12](feature-roadmap.md#medium-scale-features-m1-m12) · [vision.md Ring 1](vision.md)
+**Decision links:** [D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31) (every new user-facing read of shared tables goes through visibility; every new per-user attribute on a shared record lives in a per-tenant side table), [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18) (the `distance / weight` re-rank that M5's note weight reuses), [D-050](decisions.md#d-050--self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15) (tier gates exist for `shelves`, `saved_searches`, `public_report_sharing` with no feature behind them yet).
+
+**Verified state 2026-10-18 (what the code audit found before planning):**
+- No `shelves`, `notes`, `saved_searches`, `job_templates`, `report_shares` or `document_tags` table exists; no Alembic revision references them. `TIER_CAPABILITIES` already lists `shelves`, `saved_searches` and `public_report_sharing` as Pro+ features and `useTierCapabilities.ts` mirrors them: gates with nothing behind them.
+- No `/api/v1/search` endpoint. The only free-text search is `GET /library/videos?search=` (SQL `ILIKE` on title and channel name).
+- No keyboard-shortcut hook: `ui-design.md` §2.1 says `g + r` shortcuts exist "via a global `useShortcuts` hook"; no such hook is in `frontend/src`. The only key handlers are the Modal's Escape and one in `VideoKnowledgePage`.
+- Reports are LLM-written semantic-HTML bodies wrapped by `utils/html_builder.py` and stored as files at `jobs.report_path`; there is no Markdown source. They render in an `<iframe>` modal whose URL carries the JWT as `?token=` (`routers/qa.py` `get_report`).
+- A "Duplicate" flow exists (`JobsListPage` → `/submit` with `cloneFrom` state; `SubmitJobPage` persists a draft in `localStorage`). There is no named template concept.
+- Celery has no beat scheduler configured (`tasks/celery_app.py`); channel sync is manual (`POST /channels/{id}/sync`).
+- Stance / sentiment / framing classification exists only for social sources (`sources/{reddit,hn,mastodon,bluesky,podcast}` call `social_classify`); YouTube documents carry none, so "stance over time" per channel has no data for the dominant source type.
+- Per-video knowledge artifacts are `{topics, concepts, events, facts}` lists plus Markdown, on the `documents` row; extraction is on demand and quota-metered, so channel-level aggregation depends on coverage.
+- Q&A references carry `source_type`, source id, timestamp and quote (`qa_agent._chunk_to_reference`); every exchange is also embedded in `qa_library_global` with `tenant_id`, `source`, `exchange_id` and `job_id` metadata, the substrate for suggestions (M4) and the graph (M9).
+- There is no channel detail page: `/library` has a Channels tab (`ChannelRow`), the API has `GET /channels/{id}`, nothing routes to a per-channel view.
+- Responsive handling is two CSS media rules in `index.css` (sidebar collapse under 960px, `.form-row` stacking under 640px); no reading-specific mobile work exists.
+- `users` has no `onboarded_at`; there is no first-run flow.
+
+### E-8.1 🔵 Shelves — collections, tags and shelf-scoped views (M1)
+
+**Scope.** Named collections of jobs (many-to-many), per-tenant tags on documents, a shelf detail page that is a filtered library view, and Q&A scoped to a shelf. Tags are a per-tenant side table because `documents` is a shared cache ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)): a tag is private to the user who applied it.
+**Plan:** [`docs/plans/m1-shelves.md`](plans/m1-shelves.md)
+**Acceptance.** A user creates a shelf, adds jobs to it from the jobs list and job page, opens the shelf and sees only those jobs and their documents, asks a question scoped to the shelf and gets citations only from documents on it. Another tenant sees none of it.
+
+#### S-8.1.1 🔵 Shelves schema, service and REST
+**PR:** TBD
+- [ ] T-8.1.1.1 `shelves(id, tenant_id, name, description, color, created_at, updated_at)` + `shelf_jobs(shelf_id, job_id, added_at)` with an Alembic revision; unique `(tenant_id, name)`
+- [ ] T-8.1.1.2 `shelf_service` as the single accessor (tenant is part of every lookup; foreign ids 404)
+- [ ] T-8.1.1.3 `GET/POST/PUT/DELETE /api/v1/shelves`, `POST/DELETE /api/v1/shelves/{id}/jobs/{job_id}`, `GET /api/v1/jobs/{id}/shelves`; gated on `require_feature("shelves")`
+- [ ] T-8.1.1.4 Deleting a job removes its `shelf_jobs` rows; deleting a shelf never deletes jobs
+- [ ] T-8.1.1.5 Router + isolation tests (cross-tenant add / list / delete all 404)
+
+#### S-8.1.2 🔵 Shelves UI
+**PR:** TBD
+- [ ] T-8.1.2.1 Sidebar "Shelves" group listing the user's shelves (collapsed past 8, "Manage shelves" link)
+- [ ] T-8.1.2.2 "Add to shelf" control on `JobsListPage` cards and `JobDetailPage` header (multi-select, create inline)
+- [ ] T-8.1.2.3 `/shelves/:id` page: shelf header, its jobs, the union of their documents (reuses the library `VideoRow`), empty state
+- [ ] T-8.1.2.4 Frontend type-check and a Playwright smoke for create → add → open
+
+#### S-8.1.3 🔵 Document tags (per tenant)
+**PR:** TBD
+- [ ] T-8.1.3.1 `document_tags(id, document_id, tenant_id, tag, created_at)`, unique `(document_id, tenant_id, tag)`, index on `(tenant_id, tag)`
+- [ ] T-8.1.3.2 `GET /library/tags` (counts), `PUT/DELETE /library/videos/{id}/tags/{tag}`; `GET /library/videos?tag=` filter joined through the visibility set
+- [ ] T-8.1.3.3 Tag chips on `VideoRow` with inline add; filter rail entry on the Library page
+- [ ] T-8.1.3.4 Tests: tags never cross tenants; filter respects visibility
+
+#### S-8.1.4 🔵 Shelf-scoped Q&A
+**PR:** TBD
+- [ ] T-8.1.4.1 `POST /api/v1/shelves/{id}/qa` resolving the shelf's job set to a document set and calling the library Q&A agent with that `video_ids` filter (an empty shelf retrieves nothing)
+- [ ] T-8.1.4.2 Exchanges stored as `library_qa_exchanges` with a `scope_json` column (`{"shelf_id": …}`) so history and the Q&A library index keep working
+- [ ] T-8.1.4.3 Q&A panel on the shelf page reusing the library Q&A components
+- [ ] T-8.1.4.4 Tests: scope restricts citations; empty scope never widens
+
+### E-8.2 🔵 Command palette and global search (M2)
+
+**Scope.** `Cmd-K` / `Ctrl-K` palette with navigation actions and grouped search across jobs, documents, channels, Q&A exchanges, knowledge artifacts, shelves and notes, backed by one tenant-scoped search endpoint. Keyword search first; semantic results as a second, clearly labelled group.
+**Plan:** [`docs/plans/m2-command-palette.md`](plans/m2-command-palette.md)
+**Acceptance.** From any page, `Ctrl-K` opens the palette; typing three characters returns grouped results within 300 ms on a 5,000-document library; Enter navigates; arrow keys and Escape work; a screen reader announces the result count. No result from another tenant ever appears.
+
+#### S-8.2.1 🔵 Search endpoint
+**PR:** TBD
+- [ ] T-8.2.1.1 `GET /api/v1/search?q=&types=&limit=` returning `{groups: [{type, items: [{id, title, subtitle, href, score}]}]}`; each group is a tenant-scoped query (`jobs.tenant_id`, `document_visibility`, `channel_subscriptions`, `*_qa_exchanges.tenant_id`)
+- [ ] T-8.2.1.2 SQLite FTS5 external-content tables over document titles and descriptions, job topics, channel names, Q&A questions and knowledge Markdown, maintained by triggers (created with `op.execute`, conditionally); FTS5 is compiled into the python.org, macOS and uv builds and was verified in this project's venv (SQLite 3.49.1), but Linux distro Pythons link the system library, so a startup probe falls back to `LIKE` with a logged warning
+- [ ] T-8.2.1.3 Prefix and trigram substring matching; `bm25` ranking with recency tie-break; per-group cap
+- [ ] T-8.2.1.4 Isolation and latency tests (seeded 5,000 documents; assert under budget), on both the FTS5 and the fallback path
+
+#### S-8.2.2 🔵 Palette UI and shortcuts
+**PR:** TBD
+- [ ] T-8.2.2.1 `useShortcuts` hook (the one `ui-design.md` already describes): `Ctrl/Cmd-K` palette with `Ctrl-Alt-K` as the alternate chord (Chrome and Firefox bind `Ctrl-K` to the address bar; a page handler that calls `preventDefault` wins once the page has focus), `Escape` close, `/` focuses page search only when no input is focused and can be disabled in settings (WCAG 2.1.4 character-key shortcuts); ignores typing inside inputs
+- [ ] T-8.2.2.2 Palette on `cmdk` (MIT, about 15 kB gzipped, unstyled, React 19 peer dependency, `shouldFilter={false}` for server results) with ARIA combobox/listbox semantics, inline styles plus at most one scoped `<style>` block for its data-attribute states, grouped results, recent items (localStorage), navigation actions ("New research", "Open library Q&A", "Toggle theme")
+- [ ] T-8.2.2.3 Debounced query, request cancellation, empty and loading states
+- [ ] T-8.2.2.4 Remove the stale `ui-design.md` claim or make it true (`g + r` style chords) in the same PR
+
+#### S-8.2.3 ⚪ Semantic group
+- [ ] T-8.2.3.1 `semantic=true` adds a group from `qa_library_global` and the transcript collection (visible set only), merged with the keyword results by reciprocal rank fusion (rank-only, so FTS5 scores and Chroma distances need no calibration); labelled separately in the palette
+
+### E-8.3 🔵 Saved searches and alerts (M3)
+
+**Scope.** Pin a library question, re-run it on a schedule, detect whether new library content materially changed the answer, and notify by email and in-app. Carries the project's first scheduler, which [E-6.4](#e-64--newsletter--digest-recurring-scheduled-output) reuses.
+**Plan:** [`docs/plans/m3-saved-searches-alerts.md`](plans/m3-saved-searches-alerts.md)
+**Acceptance.** A user pins a question with a weekly schedule; a week later the question re-runs without anyone online; if the cited document set or the answer changed beyond the threshold they receive an email and an in-app notification linking to the diff; re-runs count against the user's monthly library Q&A quota; a paused search never runs.
+
+#### S-8.3.1 🔵 Scheduler tick (shared infrastructure)
+**PR:** TBD
+- [ ] T-8.3.1.1 Celery beat entry `scheduler.tick` every 5 minutes (the worker already runs; beat starts from `scripts/start.ps1`), plus a `SCHEDULER_ENABLED` setting
+- [ ] T-8.3.1.2 `scheduled_runs(id, tenant_id, kind, target_id, next_run_at, interval, last_run_at, last_status, enabled)` table; the tick selects due rows with a short lease so two workers never run the same row
+- [ ] T-8.3.1.3 Per-kind dispatch (`saved_search`, `newsletter`) through `task_routing_service.dispatch_for_user` so tier queues apply
+- [ ] T-8.3.1.4 Tests: due selection, lease, clock skew, disabled rows
+
+#### S-8.3.2 🔵 Saved searches schema, REST and pin UI
+**PR:** TBD
+- [ ] T-8.3.2.1 `saved_searches(id, tenant_id, question, answer_language, scope_json, schedule, last_run_at, last_answer_hash, last_reference_ids_json, last_answer_embedding_id, notify_email, enabled)`; schedules are human presets (`daily` / `weekly` / `monthly`), not cron
+- [ ] T-8.3.2.2 `GET/POST/PATCH/DELETE /api/v1/saved-searches`, `POST /api/v1/saved-searches/{id}/run-now`; gated on `require_feature("saved_searches")`
+- [ ] T-8.3.2.3 "Pin this question" on library Q&A answer cards; `/saved-searches` list page with last result and next run
+- [ ] T-8.3.2.4 Isolation tests; quota enforced before each run ([D-045](decisions.md#d-045--quota-metering-enforce-before-record-after-success-2026-05-05)); a per-tier cap on active saved searches in `TIER_CAPABILITIES` (comparable products cap at 3 to 15)
+
+#### S-8.3.3 🔵 Re-run, change detection and notification
+**PR:** TBD
+- [ ] T-8.3.3.1 Celery task runs the library Q&A agent with the saved scope and stores a `saved_search_runs` row (answer, references, embedding, changed flag, diff summary)
+- [ ] T-8.3.3.2 Change detector in three stages: skip the re-run entirely when no document visible to the tenant has been granted since the last run (cost then scales with ingest, not with the number of saved searches); otherwise cited-document-set Jaccard below a threshold OR answer-embedding distance above a threshold → "changed"; an LLM judge (cheap tier) only when those two disagree, and it writes the notification text; thresholds in settings, pre-registered before tuning and calibrated on the app's own Q&A history
+- [ ] T-8.3.3.3 Email via `email_service.send_email` (already fail-soft when SMTP is unset) and an in-app `notifications` row
+- [ ] T-8.3.3.4 `notifications(id, tenant_id, kind, title, body, href, read_at, created_at)` + `GET /api/v1/notifications`, bell in the sidebar chrome
+- [ ] T-8.3.3.5 Tests: unchanged answers do not notify; a run that fails leaves the previous result intact
+
+### E-8.4 🔵 Question suggestions (M4)
+
+**Scope.** "You might ask…" suggestions on the job page, the library Q&A page and the knowledge page, generated from the user's own past questions (nearest neighbours in `qa_library_global`) plus the current context, deduplicated and cached. Directly answers the user's "learn from past questions" ask and is the first piece of Echo's *anticipation* capability.
+**Plan:** [`docs/plans/m4-question-suggestions.md`](plans/m4-question-suggestions.md)
+**Acceptance.** Opening a completed job shows three to five suggested questions within two seconds; clicking one fills the composer; suggestions never repeat a question already asked on that job; a user with no history still gets context-derived suggestions; a second open within the cache window makes no LLM call.
+
+#### S-8.4.1 🔵 Suggestion endpoint
+**PR:** TBD
+- [ ] T-8.4.1.1 `GET /api/v1/suggestions?context=job:<id>|document:<id>|library` → `{suggestions: [{question, rationale, source}]}`; tenant-scoped retrieval of past questions, context summary from report sections or knowledge topics
+- [ ] T-8.4.1.2 `qa_suggest_questions` use case in `USE_CASE_REGISTRY` (economy tier, structured JSON, low reasoning); diversity pass so the five differ
+- [ ] T-8.4.1.3 Cache per `(tenant, context)` for a configurable window; invalidated when a new exchange lands on that context
+- [ ] T-8.4.1.4 Tests with the LLM patched at the factory boundary; no-history and cache-hit paths
+
+#### S-8.4.2 🔵 Suggestion cards
+**PR:** TBD
+- [ ] T-8.4.2.1 Card below the composer on `JobDetailPage`, `LibraryQAPage`, `VideoKnowledgePage`; click fills, Shift-click asks immediately
+- [ ] T-8.4.2.2 Click-through recorded as an `audit_log` event so the feature can be measured
+- [ ] T-8.4.2.3 Hidden when `/health` reports the Q&A feature down
+
+### E-8.5 🔵 Notes — the user's own voice in the library (M5)
+
+**Scope.** Free-text Markdown notes on any entity (document, job, Q&A exchange, channel, knowledge artifact), private to the author, searchable, exportable, and **citable**: a note is retrieved alongside transcripts and cited as "you wrote this on <date>" with a 1.5× retrieval weight applied through the [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18) re-rank. Foundational for [E-3.3](#e-33--voice--personality-capture-domain-3): notes are the highest-density personality signal.
+**Plan:** [`docs/plans/m5-notes.md`](plans/m5-notes.md)
+**Acceptance.** A user adds a note to a document; the note appears inline under it and in the "Your notes" view; a library question whose answer the note bears on cites the note with its date and ranks it above an equally relevant transcript chunk; another tenant never sees or retrieves it; the user exports all notes as Markdown.
+
+#### S-8.5.1 🔵 Notes schema, REST and inline UI
+**PR:** TBD
+- [ ] T-8.5.1.1 `notes(id, tenant_id, target_type, target_id, selector_json, body_md, motivation, created_at, updated_at, deleted_at)` with index `(tenant_id, target_type, target_id)`; `target_type` closed set validated at the API layer; `selector_json` follows the W3C Web Annotation shape (`TextQuoteSelector` plus `start_seconds`) so a note can cite a transcript span with a `&t=` link exactly like a Q&A citation; `deleted_at` so exports can carry deletions
+- [ ] T-8.5.1.2 `GET/POST/PUT/DELETE /api/v1/notes`, `GET /api/v1/notes?target=document:<id>`; target existence checked through the tenant's visibility / ownership
+- [ ] T-8.5.1.3 "Add a note" control and inline note list on `VideoRow`, `JobDetailPage`, Q&A answer cards, `ChannelRow`, `VideoKnowledgePage`; plain textarea with Markdown preview (react-markdown is already a dependency)
+- [ ] T-8.5.1.4 Isolation tests; a note on a document the tenant cannot see is rejected
+
+#### S-8.5.2 🔵 Notes in retrieval and citations
+**PR:** TBD. **Sequenced after [E-7.1](#e-71--trust-weighted-retrieval-v1)**, which lands the `distance / weight` re-rank this story reuses, and after the R3/R4 batch that is rewriting `qa_agent.py`.
+- [ ] T-8.5.2.1 A separate `notes_global` Chroma collection (same embedder, one document per note, `tenant_id` / `target_type` / `target_id` / `note_id` metadata, queried with the fail-closed tenant filter the Q&A collection uses) rather than mixing private notes into the shared transcript collection; the job and library retrieval paths query both and merge by raw distance
+- [ ] T-8.5.2.2 Weight `1.5` for notes in the D-068 re-rank (setting `NOTE_RETRIEVAL_WEIGHT`), applied after the raw relevance threshold like channel weights. The collections use Chroma's default squared-L2 space (the app never sets `hnsw:space`), so `distance / 1.5` is monotone but not a 1.5× cosine boost; keep the formula for consistency with channel weights and measure with the E-1.14 method before tuning
+- [ ] T-8.5.2.6 Prompts that read note text carry a marker contract like D-067's (`[NOTE by you, YYYY-MM-DD]`) so the model never attributes the user's words to a speaker
+- [ ] T-8.5.2.3 `_chunk_to_reference` emits a `note` reference `{note_id, target, created_at, quote}`; `<CitationLink>` renders "you wrote this on YYYY-MM-DD" and links to the note's target
+- [ ] T-8.5.2.4 Re-embed on edit, delete chunks on delete; backfill script for existing notes
+- [ ] T-8.5.2.5 Tests: note cited; weight ordering; absent for other tenants; empty visible set still returns the tenant's notes only when they match
+
+#### S-8.5.3 🔵 "Your notes" view, search and export
+**PR:** TBD
+- [ ] T-8.5.3.1 `/notes` page: all notes newest first, grouped by target type, filter by target, full-text filter
+- [ ] T-8.5.3.2 `GET /api/v1/exports/notes.md` and `.jsonl` (streaming, like the dataset exports); included in the command palette groups (E-8.2)
+- [ ] T-8.5.3.3 Notes counted toward Echo readiness as the Domain 3 feeder ([S-3.5.1](#s-351--five-domain-readiness))
+
+### E-8.6 🔵 Job templates (M6)
+
+**Scope.** Save a job's parameters as a named template; instantiate with a new topic and run. Generalises the shipped "Duplicate" flow from "copy one job" to "named reusable recipe", and seeds the starter templates the onboarding wizard (E-8.10) offers.
+**Plan:** [`docs/plans/m6-job-templates.md`](plans/m6-job-templates.md)
+**Acceptance.** A user saves a completed topic job as "Weekly AI policy scan", later picks it from the submit page, changes only the topic, and the new job runs with the saved instructions, filters, preferred channels, source types, depth and visual flag; built-in starter templates appear for every user and cannot be edited.
+
+#### S-8.6.1 🔵 Templates schema, REST and submit-page integration
+**PR:** TBD
+- [ ] T-8.6.1.0 First fix the Duplicate flow it builds on: PR [#228](https://github.com/khoks/VideoResearchPro/pull/228) made the job API return `output_length` and `visual_analysis`, but `jobToFormState` in `SubmitJobPage.tsx` still hard-codes `outputLength: 'auto'` and the form has no visual-analysis field at all
+- [ ] T-8.6.1.1 `job_templates(id, tenant_id NULL for built-ins, builtin_key, name, description, job_type, version, parameters_json, is_latest, created_at)` with immutable rows per save (integer `version`, the Grafana model) and `jobs.template_id` + `jobs.template_version` for provenance; `parameters_json` is the `JobCreate` payload minus the variable fields
+- [ ] T-8.6.1.6 Variable fields: `topic`, job name, and a *relative* publish window — `JobCreate` has no date-range field today, so add `published_after_days` rather than absolute dates so templates stay reusable
+- [ ] T-8.6.1.2 `GET/POST/PUT/DELETE /api/v1/job-templates`, `POST /api/v1/jobs/{id}/save-as-template`; built-ins read-only
+- [ ] T-8.6.1.3 "Save as template" on `JobDetailPage`; "From template" picker on `SubmitJobPage` reusing the `cloneFrom` form-state path
+- [ ] T-8.6.1.4 Validation re-runs `JobCreate` model validation at instantiation so a stale template cannot create an invalid job
+- [ ] T-8.6.1.5 Tests incl. isolation and built-in immutability
+
+#### S-8.6.2 🔵 Starter templates
+**PR:** TBD
+- [ ] T-8.6.2.1 Five seeded templates (topic scan, channel deep-dive, podcast digest, mixed-source debate, subscription follow) inserted by migration, versioned by a `builtin_key`
+- [ ] T-8.6.2.2 Used by the onboarding wizard (E-8.10) as the first-job step
+
+### E-8.7 🔵 Channel intelligence (M7)
+
+**Scope.** A per-channel view with analytics computed from what the library already holds: publishing cadence, top topics and concepts aggregated from knowledge artifacts, a keyword cloud from transcripts, the user's own Q&A activity against the channel, and a concept graph. Stance over time is scoped to sources that carry classification (social connectors); YouTube has none today, so that panel is explicitly data-dependent.
+**Plan:** [`docs/plans/m7-channel-intelligence.md`](plans/m7-channel-intelligence.md)
+**Acceptance.** Opening a channel the user follows shows cadence, top topics (with the videos behind each), a keyword cloud and the user's questions about it; panels whose inputs are missing say what to do ("Extract knowledge for 12 more videos to populate topics") instead of showing nothing; a channel with 500 documents renders within two seconds from a cached aggregate.
+
+#### S-8.7.1 🔵 Channel detail page
+**PR:** TBD
+- [ ] T-8.7.1.1 `/library/channels/:id` route and page (header, subscribe / weight controls from [S-7.1.1](#s-711--make-source_weight-re-rank-retrieval), documents list via `GET /channels/{id}/videos`)
+- [ ] T-8.7.1.2 Links from `ChannelRow`, `VideoRow`, citation chips
+
+#### S-8.7.2 🔵 Intelligence aggregate endpoint
+**PR:** TBD
+- [ ] T-8.7.2.1 `GET /api/v1/channels/{id}/intelligence` over the tenant's visible documents of the channel: cadence per month, duration distribution, topic / concept counts from `extracted_knowledge_json`, keyword cloud (TF-IDF over cached transcripts, top 60), knowledge coverage ratio, Q&A exchanges citing the channel
+- [ ] T-8.7.2.2 Stance / sentiment timeline from `source_metadata_json.classification` where present; omitted with an explanation otherwise
+- [ ] T-8.7.2.3 Cached in a `channel_intelligence_cache(channel_id, tenant_id, computed_at, payload_json)` row, recomputed on demand or when the document set changes
+- [ ] T-8.7.2.4 Tests on seeded knowledge artifacts; isolation
+
+#### S-8.7.3 🔵 Intelligence tab UI
+**PR:** TBD
+- [ ] T-8.7.3.1 Tab with cadence bars, topic list with drill-down, keyword cloud (own SVG layout, no library), coverage call-to-action, "Extract knowledge for all" batch action that respects the knowledge quota
+- [ ] T-8.7.3.2 Concept graph panel reusing the E-8.9 graph component filtered to the channel
+
+### E-8.8 🔵 Reading room — the report as a native reading view (M8)
+
+**Scope.** Replace the iframe modal with a full-page reader at `/reports/:jobId`: sanitised report HTML rendered in React with the app's typography, drop cap, sticky outline built from the report's own headings, reading progress, citation hover cards, print stylesheet. The modal stays as a quick peek. The same reader shell renders knowledge artifacts and, later, public shares (E-8.11) and books (E-6.1).
+**Plan:** [`docs/plans/m8-reading-room.md`](plans/m8-reading-room.md)
+**Acceptance.** A report opens at `/reports/:jobId` with no iframe and no token in the URL; the outline tracks scroll; hovering a citation shows source title, channel and timestamp; Ctrl-P produces a clean document with citations as footnotes; keyboard navigation reaches every citation; the page holds 75ch measure at desktop and reflows at 640px.
+
+#### S-8.8.1 🔵 Report content endpoint and sanitised renderer
+**PR:** TBD
+- [ ] T-8.8.1.1 The reader fetches the report body through the authenticated API (Authorization header, no `?token=` in any URL) as `{title, html, statistics}`; the legacy HTML route stays for "Open in new tab"
+- [ ] T-8.8.1.2 Client-side pipeline: DOMPurify (dual MPL-2.0 / Apache-2.0, elect Apache-2.0; about 12 kB gzipped; forbid `style` and `script`) then `html-react-parser` (MIT, about 11 kB) with a `replace` hook that turns `&t=` anchors into `<CitationLink>`, assigns heading ids and collects the outline, and wraps tables in a scroll container; reports stay HTML (converting them to Markdown is lossy)
+- [ ] T-8.8.1.5 Retire the query-string JWT fallback on the report route (`get_user_from_query_or_header`) once the iframe is gone; it is a log-leak surface
+- [ ] T-8.8.1.3 `/reports/:jobId` route, `ReaderShell` layout (65 to 75ch measure, drop cap via `::first-letter` with `initial-letter` under `@supports` because Firefox still lacks it, IntersectionObserver outline, reading-progress bar, `text-wrap: pretty` as enhancement), `JobDetailPage` "Read" button; modal kept as quick peek
+- [ ] T-8.8.1.4 Tests: parser on three stored real reports; sanitiser rejects script / event handlers; type-check
+
+#### S-8.8.2 🔵 Citation hover cards and footnotes
+**PR:** TBD
+- [ ] T-8.8.2.1 Citation anchors (`&t=` links) upgraded to superscript chips with hover / focus cards (Popover API, positioned with `getBoundingClientRect` since CSS anchor positioning is still partial) showing title, channel, timestamp, quote where available; polymorphic by `source_type`
+- [ ] T-8.8.2.2 Print stylesheet: outline removed, citations rendered as numbered footnotes, page breaks before `h2`
+- [ ] T-8.8.2.3 Hook for R1 frames: when [S-1.18.2](#s-1182--surfacing-frames-to-the-user) ships, the popover shows the still
+
+#### S-8.8.3 🔵 Knowledge artifacts and books in the same shell
+**PR:** TBD
+- [ ] T-8.8.3.1 `/knowledge/:videoId` route rendering the Markdown knowledge report through `ReaderShell` (react-markdown + heading ids)
+- [ ] T-8.8.3.2 Author Studio outputs (`/author/outputs/:id`) read in the same shell
+
+### E-8.9 🔵 Citation graph and knowledge map (M9)
+
+**Scope.** A library-overview graph: documents, channels, Q&A exchanges and knowledge topics as nodes; citations, authorship and shared topics as edges; tenant-scoped; filterable by shelf, channel or job; a "local graph" around any node. Useful rather than a hairball: size caps, degree-based sizing, clustering by channel or topic, and a focused mode by default.
+**Plan:** [`docs/plans/m9-citation-graph.md`](plans/m9-citation-graph.md)
+**Acceptance.** `/library/graph` renders the user's library in under three seconds at 2,000 nodes; clicking a document shows its neighbours and a detail card; filtering by shelf narrows the graph; nothing from another tenant appears; the graph degrades to a list on narrow screens.
+
+#### S-8.9.1 🔵 Graph endpoint
+**PR:** TBD
+- [ ] T-8.9.1.1 `GET /api/v1/library/graph?focus=&depth=&shelf_id=&channel_id=&limit=` → `{nodes, edges, truncated}`; nodes from visible documents, subscribed channels, the tenant's exchanges (references → documents), topics from knowledge artifacts (shared-topic edges above a frequency floor)
+- [ ] T-8.9.1.2 Degree and recency used to pick nodes under the cap; stable ids for caching
+- [ ] T-8.9.1.3 Tests: isolation, cap, focus mode
+
+#### S-8.9.2 🔵 Graph UI
+**PR:** TBD
+- [ ] T-8.9.2.1 Lazy-loaded graph route on `sigma` + `graphology` + `@react-sigma/core` with the ForceAtlas2 web-worker layout and Louvain communities (all MIT, about 113 kB gzipped; `react-force-graph-2d`, MIT, 60 kB, is the smaller alternative), inline-styled chrome, zoom / pan, hover labels, click → detail card with links to the document, job or exchange; layout frozen after convergence
+- [ ] T-8.9.2.2 Filters (shelf, channel, type), local-graph mode, legend, reduced-motion respect
+- [ ] T-8.9.2.3 Accessibility, which is real work for a canvas: an equivalent node / edge table view, keyboard focus over nodes with a drawn focus ring, button alternatives to drag and pan (WCAG 2.5.7), a one-paragraph textual summary; the table doubles as the narrow-screen fallback
+
+#### S-8.9.3 ⚪ Topic clusters
+- [ ] T-8.9.3.1 Cluster documents by embedding centroid (k-means over stored chunk means) and colour the graph by cluster; only if S-8.9.2's topic edges prove too sparse
+
+### E-8.10 🔵 Onboarding wizard and empty states (M10)
+
+**Scope.** A first-run flow: pick channels → start a first job from a starter template → watch it run → open the report in the reader; dismissible, resumable, recorded server-side so it survives devices. Plus an audit of every empty state against the editorial voice and a first-run checklist. High leverage for SaaS conversion later, useful for self-hosters now.
+**Plan:** [`docs/plans/m10-onboarding.md`](plans/m10-onboarding.md)
+**Acceptance.** A new account lands on `/welcome`, completes three steps in under five minutes to a running job, can skip at any point and reopen from the sidebar; `users.onboarded_at` is set on completion; activation events are logged; every list page has an empty state with one primary action.
+
+#### S-8.10.1 🔵 Wizard
+**PR:** TBD
+- [ ] T-8.10.1.1 `users.onboarded_at` + `onboarding_state_json` (step, choices); `PATCH /api/v1/auth/me/onboarding`
+- [ ] T-8.10.1.2 `/welcome` route as a plain stepper page (no tour library: Shepherd.js ≥ 14 and Intro.js are AGPL-3.0, and overlay walkthroughs underperform task-flow wizards) with three steps: channels via existing search + subscribe, a deliberately tiny first job (3 to 5 videos from one channel, so the transcript throttle does not make "see the result" take half an hour) from a starter template, progress + "read it"; redirect from `/` while incomplete, skip link always visible
+- [ ] T-8.10.1.3 Activation events in `audit_log` (`onboarding_started`, `first_job_created`, `first_report_opened`)
+- [ ] T-8.10.1.4 Tests: redirect logic, resumability, skip
+
+#### S-8.10.2 🔵 Empty-state audit
+**PR:** TBD
+- [ ] T-8.10.2.1 Every page's zero-data state uses the `EmptyState` primitive with editorial copy and one action (jobs, library, channels, Q&A history, exports, author, echo, shelves, notes, saved searches)
+- [ ] T-8.10.2.2 First-run checklist card on the jobs page until three milestones are hit
+
+### E-8.11 ⚪ Public report sharing (M11)
+
+**Scope.** A signed, expiring, revocable URL for a single report, rendered read-only on a public route through the E-8.8 reader with `noindex` and a sandboxing CSP, with view counts, a manage-shares list and takedown hooks. Tier gate `public_report_sharing` already exists.
+**Plan:** [`docs/plans/m11-public-report-sharing.md`](plans/m11-public-report-sharing.md)
+**Status.** ⚪ proposed, not accepted: whether sharing launches before billing and the abuse-prevention items it depends on (T-5.5.6 content policy and takedown) is the user's call and is recorded as the plan's first open question. Design is complete so the decision can be taken on a concrete proposal.
+**Acceptance.** The owner creates a share with an expiry, copies a URL, and a logged-out visitor reads the report in the reader with no app chrome, no Q&A, no links into the app; the owner revokes it and the next visit returns 404; search engines are told not to index; the public route is rate-limited per IP; takedowns are logged.
+
+#### S-8.11.1 ⚪ Share tokens and public route
+- [ ] T-8.11.1.1 `report_shares(id, tenant_id, job_id, token_hash, expires_at, revoked_at, view_count, created_at)`; opaque `secrets.token_urlsafe(32)` tokens (256 bits) stored as SHA-256, never JWTs (the app's JWT library carries an unfixed critical CVE, see T-5.4.9); default expiry 30 days with an explicit "no expiry" choice; per-tenant cap on active shares; `SHARING_ENABLED` kill switch
+- [ ] T-8.11.1.2 `POST /api/v1/jobs/{id}/share`, `GET /api/v1/jobs/{id}/shares`, `DELETE /api/v1/shares/{id}`; public `GET /s/{token}` JSON for the reader and a raw-HTML variant under `Content-Security-Policy: sandbox; default-src 'none'` (header, not meta); `X-Robots-Tag: noindex, nofollow` plus the meta tag (and the path must stay crawlable or the noindex is never seen), `Referrer-Policy: no-referrer`, `Cache-Control: private, no-store`; per-IP rate limit; a separate origin for shares is the plan's recommendation for SaaS
+- [ ] T-8.11.1.3 Public reader route in the frontend (`/s/:token`) using `ReaderShell` with chrome stripped
+- [ ] T-8.11.1.4 Tests: expiry, revocation, hashed storage, headers, no leakage of job metadata beyond the report
+
+#### S-8.11.2 ⚪ Share UI and takedown hooks
+- [ ] T-8.11.2.1 "Share" on the reader and job page; manage list with view counts and revoke
+- [ ] T-8.11.2.2 `audit_log` events `share_created` / `share_revoked` / `takedown`; an operator endpoint to revoke by token (T-5.5.6)
+
+### E-8.12 🔵 Mobile reading mode (M12)
+
+**Scope.** Reading-first responsive refinements for reports, Q&A answers and knowledge artifacts: type scale, touch targets, safe areas, dynamic viewport height, a bottom-docked Q&A composer, and device-emulated screenshot tests. Builds on the E-8.8 reader; not a general mobile redesign.
+**Plan:** [`docs/plans/m12-mobile-reading.md`](plans/m12-mobile-reading.md)
+**Acceptance.** On a 375px-wide viewport the reader, the job Q&A thread and a knowledge artifact are readable without horizontal scroll, every control meets the 44px target, the composer stays reachable while the keyboard is open, and Playwright device-emulation screenshots are checked in for the three pages.
+
+#### S-8.12.1 🔵 Reading pages responsive pass
+**PR:** TBD
+- [ ] T-8.12.1.1 Fluid type scale and measure tokens in `theme.ts`; reader drops the outline under 960px and keeps drop cap and citations (per `ui-design.md` §2.4)
+- [ ] T-8.12.1.2 Touch targets ≥ 24px everywhere (WCAG 2.2 SC 2.5.8) and ≥ 44px on primary controls (Apple HIG; inline citation chips are exempt); `env(safe-area-inset-*)` with `viewport-fit=cover`; `100dvh` / `svh` for docked panels; inputs at ≥ 16px to stop iOS zoom and never `maximum-scale=1` (ignored by iOS and a WCAG 1.4.4 failure); 320px reflow (WCAG 1.4.10)
+- [ ] T-8.12.1.3 Bottom-docked Q&A composer on `JobDetailPage` and `LibraryQAPage` under 640px, pinned above the keyboard with the VisualViewport API (rAF-throttled)
+- [ ] T-8.12.1.4 Playwright device-emulation screenshot tests (iPhone and Pixel profiles) for the three reading pages
+
+#### S-8.12.2 🔵 Web-app manifest
+- [ ] T-8.12.2.1 `manifest.webmanifest` (`display: standalone`, icons, `theme_color`; about 30 lines; Safari 26 opens any Home-Screen site as a web app with or without one) and an icon that depends on the logo work in the rebrand table; a service worker is deferred because it complicates JWT-gated fetches and report invalidation and offline reading is not a stated requirement
+
 ---
 
 ## Open questions parking lot
 
 These are real questions raised in conversation that don't yet have a Story home. When one of them is answered the answer becomes a Decision (`D-NNN`) and the question is converted into one or more Stories.
 
+**Planning questions filed 2026-10-19 (the user's call; each lives in its plan, listed here so they are findable):** public sharing before billing and takedown tooling ([m11](plans/m11-public-report-sharing.md)); self-host TTS default and whether clip-stitched B-roll ever exists ([l2](plans/l2-author-studio.md)); private-by-key versus nothing for SaaS Echo, third-party-content default, the bubble shortcut, whether Gmail or Mode B are pursued at all ([l3](plans/l3-echo-personal-brain.md)); per-tier caps on saved searches ([m3](plans/m3-saved-searches-alerts.md)); the note weight's starting value ([m5](plans/m5-notes.md)); a relative publish window in templates ([m6](plans/m6-job-templates.md)); stance classification for YouTube documents ([m7](plans/m7-channel-intelligence.md)); graph library and whether a global view ships ([m9](plans/m9-citation-graph.md)); channel or topic job for the first run ([m10](plans/m10-onboarding.md)); the scoped `<style>` block for the palette ([m2](plans/m2-command-palette.md)).
+
 - **OQ-1.** ✅ **Resolved 2026-04-26 by [D-021](decisions.md#d-021-topic-relevance-threshold-050-2026-04-26): `TOPIC_RELEVANCE_THRESHOLD = 0.50`.** Candidates below 0.50 hidden from default approval list but kept in the database; "Show low-relevance candidates" filter chip toggles cutoff to 0.0. Calibrated scoring (1.0 unambiguous / 0.5 adjacent / 0.0 unrelated) baked into the prompt with borderline 0.4–0.6 exemplars. Re-evaluation hooks documented (precision low → bump 0.60; recall low → drop 0.40; per-source-type override is the next escalation).
 - **OQ-2.** ✅ **Resolved 2026-05-06 by [D-046](decisions.md#d-046-comment-tree-depth-per-platform-env-knob-no-per-job-override-resolves-oq-2-2026-05-06): per-platform env knob, no per-job override.** `app/config.py` exposes `REDDIT_COMMENT_DEPTH_DEFAULT` and `HN_COMMENT_DEPTH_DEFAULT` as independent settings (both default 50). No `jobs` schema column, no UI surface, no API parameter. Future platforms follow the same pattern (`<PLATFORM>_COMMENT_DEPTH_DEFAULT`). Per-job override revisits if real demand surfaces; per-platform tuning is a one-line env-var change.
 - **OQ-3.** ✅ **Resolved 2026-05-06 by [D-047](decisions.md#d-047-sibling-pr-coordination-for-knowledge-curator-work-tracker-keep-separate-prs-resolves-oq-3-2026-05-06): keep separate PRs as the default.** Each skill owns its own branch + PR; the second-to-fire mentions the sibling via "Companion PR: #N" (already in SKILL.md). Combining is formally **descoped** — the v2 enhancement language in SKILL.md is no longer scheduled. Decoupling avoids one PR blocking the other and keeps each independently reviewable.
 - **OQ-4.** Whisper for podcast Mode A vs external service (Deepgram / AssemblyAI) for SaaS tier? (Tied to E-1.7)
 - **OQ-5.** ✅ **Resolved 2026-05-06 by [D-048](decisions.md#d-048-pdf-connector-intake-file-upload-only-for-v1-resolves-oq-5-2026-05-06): file upload only for v1.** Ratifies E-1.8 shipped scope (PR [#142](https://github.com/khoks/VideoResearchPro/pull/142)). URL-fetch deferred to a future Story under E-1.8; identity model (D-034 first-64KB SHA-256) is bytes-derived so URL-fetch lands without schema change. SSRF-protection model from E-1.6 trafilatura URL fetching can be reused when the URL-fetch Story ships.
-- **OQ-6.** ✅ **Resolved 2026-05-06 by [D-049](decisions.md#d-049-echo-cold-start-readiness-threshold-shipped-triple-is-v1-personal-brainmd-sub-table-is-forward-looking-spec-resolves-oq-6-2026-05-06): shipped triple is v1.** Three criteria: `total_threshold=100` rows, `sources_threshold=3` distinct sources, `has_personality_trait=True`. The personal-brain.md four-row sub-table (Domains 1/2/3/5 minima) remains the forward-looking spec for once Domain 2 (activity stream) connectors land. Re-evaluation hook: when E-3.4 (speak-as-me agent) consumes `is_ready()` as a gate, mis-calibration becomes load-bearing — validate against real users at that point.
+- **OQ-6.** ✅ **Resolved 2026-05-06 by [D-049](decisions.md#d-049--echo-cold-start-readiness-threshold-shipped-triple-is-v1-personal-brainmd-sub-table-is-forward-looking-spec-resolves-oq-6-2026-05-06): shipped triple is v1.** Three criteria: `total_threshold=100` rows, `sources_threshold=3` distinct sources, `has_personality_trait=True`. The personal-brain.md four-row sub-table (Domains 1/2/3/5 minima) remains the forward-looking spec for once Domain 2 (activity stream) connectors land. Re-evaluation hook: when E-3.4 (speak-as-me agent) consumes `is_ready()` as a gate, mis-calibration becomes load-bearing — validate against real users at that point.
 - **OQ-7.** ✅ **Resolved 2026-04-26 by [D-017](decisions.md#d-017-e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26): hard cutover.** Single Alembic migration adds `document_id UUID` + `source_id text`, backfills both, drops legacy `video_id` PK, adds `(source_type, source_id)` unique constraint, retargets `job_videos` + `transcript_cache` FKs in one transaction. T-1.10.8 (round-trip migration test + 168-test suite + e2e smoke) is gating. Pre-cutover backup `cp data/videoresearchpro.db data/videoresearchpro.db.pre-e110.bak` documented as a self-host fallback.
 - **OQ-8.** ✅ **Resolved 2026-04-26 by [D-018](decisions.md#d-018-polymorphic-approvalcard-typescript-shape-four-sub-decisions-2026-04-26).** Locked-in shape lives in [source-types.md § Polymorphic ApprovalCard TypeScript shape](source-types.md#polymorphic-approvalcard-typescript-shape). User's overarching framing: *"keep the system a bit open ended for future enhancements and not too strict"*.
   - **(a)** ` SourceMetadata` hand-rolled in TS, kept synced with backend Pydantic by convention. Drift is a PR-review concern. Revisit if drift count climbs.

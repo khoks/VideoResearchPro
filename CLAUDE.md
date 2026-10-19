@@ -20,6 +20,7 @@ The product is intentionally *curated, not balanced* — the opposite of Wikiped
 - **Visual identity:** [docs/branding.md](docs/branding.md) and [docs/ui-design.md](docs/ui-design.md)
 - **Decision log (ADRs):** [docs/decisions.md](docs/decisions.md)
 - **Initiatives / epics / stories / tasks:** [docs/initiatives.md](docs/initiatives.md)
+- **Researched build plans for L2 / L3 / M1 to M12, and the build order:** [docs/plans/README.md](docs/plans/README.md), [docs/plans/build-order.md](docs/plans/build-order.md)
 - **Inventions / novel-idea log:** [docs/inventions.md](docs/inventions.md)
 - **Recent changes:** [CHANGELOG.md](CHANGELOG.md)
 

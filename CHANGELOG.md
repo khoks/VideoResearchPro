@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Author Studio citations: every source an output cites, resolved like the reader (2026-10-19, S-6.7.3)
 
-PR [#PR_S673](https://github.com/khoks/VideoResearchPro/pull/PR_S673). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+PR [#293](https://github.com/khoks/VideoResearchPro/pull/293). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
 
 - **`output_citations`** (migration `c5ee7a568ef8`): one row per citation in
   output order, written by every outputter through

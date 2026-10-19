@@ -10,6 +10,24 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Command palette and keyboard shortcuts (2026-10-19)
+
+S-8.2.2 ([plan](docs/plans/m2-command-palette.md)). Find any run, source,
+channel, question or knowledge report from anywhere, and get around without
+the mouse.
+
+- **Mod-K** (Cmd on macOS, Ctrl elsewhere) or **Ctrl-Alt-K**, or the new
+  **Search…** button: grouped results from `GET /search`, navigation
+  actions, notes exports, theme, recent items. Built on `cmdk` (MIT), loaded
+  on first open.
+- **Shortcuts:** `/` focuses the page's search box, and `g r` / `g l` /
+  `g k` / `g a` jump to research, library, knowledge and author — the chords
+  `ui-design.md` had long described without an implementation. None fire
+  while typing; the palette turns them off (WCAG 2.1.4).
+- **Results land on the item:** a source narrows the library to its row, a
+  question scrolls to and focuses its exchange, a knowledge report opens the
+  reader.
+
 ### Said or shown: modality provenance through the report pipeline (2026-10-19, S-1.18.8 T-1 to T-3)
 
 D-075 found that prompt rules moved visual attribution errors from one

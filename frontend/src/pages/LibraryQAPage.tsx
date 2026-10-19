@@ -8,6 +8,7 @@ import {
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { CitationLink } from '../components/citation';
 import { DockedComposer, QADock, QAThread } from '../components/qa/Composer';
+import { useExchangeFocus } from '../hooks/useExchangeFocus';
 import { NotesPanel } from '../components/notes';
 import {
   Badge,
@@ -96,6 +97,9 @@ export function LibraryQAPage() {
     setQuestion('');
     resetToAsk();
   };
+
+  // `?exchange=<id>` from the palette lands on that card (S-8.2.2).
+  useExchangeFocus(!!history?.length);
 
   return (
     <div style={{ maxWidth: measure.grid, margin: '0 auto' }}>
@@ -438,6 +442,7 @@ function LibraryQAExchangeCard({ qa }: { qa: LibraryQAExchange }) {
 
   return (
     <div
+      id={`exchange-${qa.id}`}
       style={{
         padding: space['4'],
         background: c.surfaceAlt,

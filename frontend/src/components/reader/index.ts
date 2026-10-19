@@ -15,6 +15,19 @@ export {
 } from './parseReport';
 export { ReaderShell, type ReaderShellProps } from './ReaderShell';
 export { ReaderCitation } from './ReaderCitation';
+export { CitationCard, type CitationStill } from './CitationCard';
+export { CitationCardProvider, useCitationUi, CITATION_CARD_ID } from './CitationContext';
+export { Endnotes } from './Endnotes';
+export {
+  resolveCitations,
+  timestampHref,
+  type CitationIndex,
+  type CitationSource,
+  type Endnote,
+  type ResolvedCitation,
+} from './citations';
+export { describeSource, formatPublished, type SourceDescription } from './sourceLabels';
+export { placeCard, type Placement } from './placeCard';
 export { Outline } from './Outline';
 export { ReadingProgress, useReadingProgress } from './ReadingProgress';
 export { useActiveHeading } from './useActiveHeading';

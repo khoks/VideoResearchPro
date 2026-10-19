@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { EchoDataCard } from '../components/echo/EchoDataCard';
 import {
   useDeleteContext,
   useEchoConnectors,
@@ -190,7 +191,8 @@ export function EchoPage() {
             margin: `${space['2']} 0 0`,
           }}
         >
-          What the library knows about its reader.
+          What the library knows about its reader.{' '}
+          <Link to="/echo/inbox" style={{ color: c.accent, fontStyle: 'normal' }}>Open the shares inbox →</Link>
         </p>
       </header>
 
@@ -339,6 +341,10 @@ export function EchoPage() {
             )}
           </section>
 
+          <div style={{ marginTop: space['6'] }}>
+            <EchoDataCard />
+          </div>
+
           <Card sunken style={{ marginTop: space['6'] }}>
             <h3 style={{ margin: 0, fontFamily: fonts.display, fontSize: fontSize.md, color: c.textPrimary }}>
               Not here yet
@@ -469,6 +475,12 @@ function ReadinessView({ readiness }: { readiness: ReturnType<typeof computeRead
         <p style={{ margin: 0, fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.snug }}>
           Your voice so far: {readiness.voice.notes} {readiness.voice.notes === 1 ? 'note' : 'notes'} ·{' '}
           {readiness.voice.words.toLocaleString()} words. Notes feed Echo's voice capture; they are not a gate yet.
+        </p>
+      )}
+      {readiness.shares !== null && (
+        <p style={{ margin: 0, fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.snug }}>
+          Shared with Echo: {readiness.shares} {readiness.shares === 1 ? 'item' : 'items'} in the{' '}
+          <Link to="/echo/inbox" style={{ color: c.accent }}>shares inbox</Link>. Not a gate yet.
         </p>
       )}
       <p style={{ margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, fontStyle: 'italic', color: c.textMuted, lineHeight: lineHeight.normal }}>

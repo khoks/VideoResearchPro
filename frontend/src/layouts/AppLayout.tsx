@@ -4,9 +4,12 @@ import { useJobStore, type AppTab } from '../stores/jobStore';
 import { useAuth } from '../contexts/AuthContext';
 import { useSystemStatus } from '../hooks/useSystemStatus';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
+import { QuickShare } from '../components/echo/QuickShare';
 import { useShelves } from '../hooks/useShelves';
 import { ShelfDot } from '../components/shelves/ShelfDot';
 import { SystemStatusBanner } from '../components/common/SystemStatusBanner';
+import { CommandPalette } from '../components/palette/CommandPalette';
+import { SearchButton } from '../components/palette/SearchButton';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, motion } from '../theme';
 
@@ -106,12 +109,20 @@ export function AppLayout() {
   );
 
   const chrome = (
-    <UserChrome
-      email={user?.email}
-      theme={theme}
-      onToggleTheme={toggleTheme}
-      onLogout={handleLogout}
-    />
+    <>
+      {/* S-3.7.1: "Add to Echo" quick-share, for tiers with Echo. */}
+      {has('echo_personal_brain') && (
+        <div style={{ marginBottom: space['3'] }}>
+          <QuickShare />
+        </div>
+      )}
+      <UserChrome
+        email={user?.email}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onLogout={handleLogout}
+      />
+    </>
   );
 
   return (
@@ -140,7 +151,10 @@ export function AppLayout() {
         }}
       >
         <BrandLockup onClick={() => handleTabChange('submit')} />
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', marginTop: space['6'] }}>
+        <div style={{ marginTop: space['5'] }}>
+          <SearchButton />
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', marginTop: space['5'] }}>
           {nav}
         </div>
         <div style={{ marginTop: space['4'] }}>{chrome}</div>
@@ -164,10 +178,13 @@ export function AppLayout() {
           }}
         >
           <BrandLockup compact onClick={() => handleTabChange('submit')} />
-          <HamburgerButton
-            open={mobileNavOpen}
-            onClick={() => setMobileNavOpen((open) => !open)}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: space['1'] }}>
+            <SearchButton compact />
+            <HamburgerButton
+              open={mobileNavOpen}
+              onClick={() => setMobileNavOpen((open) => !open)}
+            />
+          </div>
         </header>
         {/* Mobile drawer (renders inline below the header when open). */}
         {mobileNavOpen && (
@@ -191,6 +208,8 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      {/* S-8.2.2: Mod-K / Ctrl-Alt-K anywhere, `/` and the `g` chords. */}
+      <CommandPalette />
     </div>
   );
 }

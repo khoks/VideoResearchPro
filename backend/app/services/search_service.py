@@ -508,7 +508,9 @@ def _knowledge_item(doc: Document, score: float) -> SearchItem:
         id=doc.document_id,
         title=doc.title or "(untitled)",
         subtitle=" · ".join(b for b in ["Knowledge report", doc.channel_name or ""] if b),
-        href=f"/library?document={doc.document_id}&view=knowledge",
+        # S-8.2.2: knowledge reports have their own reader (S-8.8.3), which
+        # resolves a document_id through the tenant's visibility grants.
+        href=f"/knowledge/{doc.document_id}",
         score=score,
     )
 

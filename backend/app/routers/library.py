@@ -307,6 +307,7 @@ def list_library_videos(
     channel_id: str | None = None,
     transcript_status: str | None = None,
     tag: str | None = None,
+    document_id: str | None = None,
     sort: LibrarySort = "newest",
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -335,6 +336,7 @@ def list_library_videos(
         channel_id=channel_id,
         transcript_status=transcript_status,
         tag_id=tag,
+        document_id=document_id,
         sort=sort,
         limit=limit,
         offset=offset,
@@ -354,6 +356,7 @@ def query_library_documents(
     limit: int = 50,
     offset: int = 0,
     job_ids: list[str] | None = None,
+    document_id: str | None = None,
 ) -> list[LibraryVideoResponse]:
     """The library listing as a plain function, so other surfaces (the shelf
     page, S-8.1.2) can reuse the filters, the visibility scope and the
@@ -392,6 +395,11 @@ def query_library_documents(
         q = q.filter(Document.channel_id == channel_id)
     if transcript_status:
         q = q.filter(Document.transcript_status == transcript_status)
+    if document_id:
+        # S-8.2.2: a palette result lands on its one row
+        # (`/library?document=<id>`). Inside the visibility scope above, so
+        # another tenant's id matches nothing.
+        q = q.filter(Document.document_id == document_id)
     if tag_id:
         # The tenant is part of the subquery, so another reader's tag id
         # matches nothing rather than revealing what they tagged.

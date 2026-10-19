@@ -220,7 +220,7 @@ AUTHOR  (greyed; unlocks at L2)
 - Width: 240 px expanded, 56 px collapsed (icons only). Collapse state persists in `uiStore`.
 - Active item: oxblood `accent` text + 2 px left border in `accent`. Inactive: `textSecondary`.
 - Group headers: `ui` font, `xs` size, `textMuted`, uppercase, letter-spacing 0.08em.
-- Keyboard shortcuts: `g + r` → research, `g + l` → library, `g + k` → knowledge, `g + a` → author. (Implemented via a global `useShortcuts` hook.)
+- Keyboard shortcuts (`frontend/src/hooks/useShortcuts.ts`, S-8.2.2): **Mod-K** opens the command palette (Cmd on macOS, Ctrl elsewhere; macOS keeps Ctrl-K as the fields' kill-line) and **Ctrl-Alt-K** is the alternate, since Chrome and Firefox bind Ctrl-K to the address bar until the page has focus. **`/`** focuses the page's own search box (`data-page-search`) or opens the palette. **`g r`** → research, **`g l`** → library, **`g k`** → knowledge (Echoes), **`g a`** → author. Single keys and the `g` chords never fire while typing in a field, and the palette's "Turn single-key shortcuts off" switches them off per browser (WCAG 2.1 SC 2.1.4). A **Search…** button under the brand lockup (and a 44 px search icon in the mobile bar) opens the same palette for pointer and touch users.
 
 ### 2.2. Page padding & measure
 

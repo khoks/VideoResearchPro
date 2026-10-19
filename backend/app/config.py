@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     CHROMA_PERSIST_DIR: str = "./data/chroma"
     CHROMA_GLOBAL_COLLECTION_NAME: str = "pratidhvani_global"
     CHROMA_QA_COLLECTION_NAME: str = "qa_library_global"
+    # Echo (I-3) collections. Private per tenant: every query carries a
+    # fail-closed tenant filter, and `DELETE /echo/brain` removes the
+    # tenant's vectors from each. Created by the processing story
+    # (S-3.7.2); erasure already sweeps them if they exist.
+    CHROMA_SHARES_COLLECTION_NAME: str = "shares_global"
+    CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME: str = "personal_context_global"
 
     # YouTube
     YOUTUBE_API_KEY: str = ""
@@ -216,6 +222,15 @@ class Settings(BaseSettings):
     # worker. Larger files (academic books, technical manuals) can
     # be split before upload.
     PDF_MAX_BYTES: int = 100 * 1024 * 1024  # 100 MB
+
+    # Echo shares inbox (S-3.7.1). Files land under
+    # `ECHO_SHARES_DIR/<tenant>/` and nowhere else; the full Echo delete
+    # removes that directory. The cap bounds one quick-share upload (a
+    # screenshot, a voice memo, a small export), not the bulk importers
+    # that S-3.7.5 adds.
+    ECHO_SHARES_DIR: str = "./data/echo/shares"
+    ECHO_SHARE_MAX_BYTES: int = 25 * 1024 * 1024  # 25 MB
+    ECHO_SHARE_TEXT_MAX_CHARS: int = 50_000
 
     # -------------------------------------------------------------------
     # Visual understanding (R1 / E-1.18) — frame capture + description

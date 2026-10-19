@@ -232,6 +232,8 @@ User ──┬──< Job ──< JobVideo >── Document ──> Channel
        ├──< QAHistoryExchange
        ├──< Note ──> (document | knowledge_artifact | job | qa_exchange |
        │              library_qa_exchange | qa_history_exchange | channel)
+       ├──< PersonalContext                                 (Echo facts, per tenant)
+       ├──< Share ──> file under ECHO_SHARES_DIR/<tenant>/  (Echo shares inbox, per tenant)
        ├──< Shelf ──< ShelfJob >── Job                      (M1, per tenant)
        ├──< Tag ──< Tagging ──> Document                    (M1, per tenant)
        └──< JobTemplate ──< JobTemplateVersion              (M6; tenant NULL = built-in)
@@ -262,6 +264,7 @@ ApiQuotaLog (append-only ledger of YouTube + LLM calls)
   - `qa_history_exchanges` (meta-chat surface)
 
   All three are stored separately for SQL-level filtering but indexed together in `qa_library_global` so meta-chat retrieval crosses surfaces.
+- **Echo's data is a registered set of stores, per tenant** (I-3). `personal_context` (facts) and `shares_inbox` (everything the user forwards; files under `ECHO_SHARES_DIR/<tenant>/`) are listed in `echo_privacy_service.ECHO_TABLES`, and Echo's Chroma collections (`shares_global`, `personal_context_global`) in `echo_vectors.echo_collection_names()`. `GET /echo/export` writes all of it into one lossless archive; `DELETE /echo/brain` removes vectors, then files, then rows, and re-counts every store. A share is context-only unless the user marks it as their own words. See [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19).
 - **Notes are the user's own text, private per tenant** (M5). `notes(id, tenant_id, target_type, target_id, selector_json, body_md, motivation, created_at, updated_at, deleted_at)`. The target set is closed; the target is checked through visibility or ownership on every write; a document note is stored under `document_id`, so one document has one note stream. Delete is soft, and the JSON-LD export carries withdrawals losslessly. Notes are not in Chroma until S-8.5.2. See [D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19).
 - **Shelves, tags and templates are per tenant** (M1, M6). `shelves` + `shelf_jobs` group runs (a run on many shelves; deleting either side removes only memberships, through ORM cascades because SQLite here never enforces FK cascades). `tags` + `taggings` label documents per reader, even on shared documents; every count and filter re-applies visibility. `job_templates` + immutable `job_template_versions` hold reusable recipes; runs record `(template_id, template_version)` and templates are soft-deleted so that provenance survives. See [D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19) and [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19).
 - **Knowledge artifacts live on the Document row.** Three nullable columns (`extracted_knowledge_json`, `knowledge_report_md`, `knowledge_extracted_at`). One artifact per document.

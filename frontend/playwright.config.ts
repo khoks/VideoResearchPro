@@ -37,10 +37,14 @@ export default defineConfig({
     },
   },
   projects: [
-    { name: 'iphone-13', use: { ...devices['iPhone 13'] } },
-    { name: 'pixel-7', use: { ...devices['Pixel 7'] } },
+    // Phone projects: the reading pages and the manifest (S-8.12.x).
+    { name: 'iphone-13', testIgnore: /palette\.spec\.ts/, use: { ...devices['iPhone 13'] } },
+    { name: 'pixel-7', testIgnore: /palette\.spec\.ts/, use: { ...devices['Pixel 7'] } },
+    // Desktop: the keyboard-driven command palette (S-8.2.2).
+    { name: 'desktop-chromium', testMatch: /palette\.spec\.ts/, use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },
     {
       name: 'narrow-320',
+      testIgnore: /palette\.spec\.ts/,
       use: {
         browserName: 'chromium',
         viewport: { width: 320, height: 640 },

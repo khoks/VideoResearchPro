@@ -10,6 +10,24 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Installable web app: manifest and the echo mark (2026-10-19)
+
+S-8.12.2. Pratidhvani installs from the browser and from the iOS and
+Android home screens with its own name, colours and icon.
+
+- `manifest.webmanifest` (standalone, paper background, `theme_color`
+  `#7a2c1a`), linked from `index.html` with `theme-color`, an Apple touch
+  icon and the page title from `branding.md` §8. No service worker, by
+  design (JWT-gated fetches and report invalidation; offline reading is not
+  a requirement).
+- The icon renders the echo mark `branding.md` §3 recommends: three
+  concentric arcs fading inward. `logo-mark.svg`, a light / dark
+  `favicon.svg` (Vite's bolt is gone), 192 / 512 / maskable PNGs and a 180 px
+  touch icon, all re-rendered from the SVG by `npm run icons`. Interim until
+  the rebrand's logo work lands.
+- Tests check real icon sizes and opaque backgrounds, the page's links, and
+  Chromium's own installability verdict.
+
 ### Mobile reading pass: toolbar, docked composer, device tests (2026-10-19)
 
 S-8.12.1 ([plan](docs/plans/m12-mobile-reading.md)). Reports, knowledge

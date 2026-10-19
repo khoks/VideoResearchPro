@@ -10,7 +10,8 @@
     "test": "vitest run",
     "preview": "vite preview",
     "test:mobile": "playwright test",
-    "test:mobile:update": "playwright test --update-snapshots"
+    "test:mobile:update": "playwright test --update-snapshots",
+    "icons": "node scripts/render-icons.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.95.2",

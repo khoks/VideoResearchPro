@@ -21,6 +21,10 @@ Token languages are "en", "hi" and "ne" (neutral: numbers, fillers, bare
 punctuation). Hindi and Urdu are one class here: spoken Hindustani is the
 same language whichever script the transcriber chose, and the pipeline's
 decision — translate it, and how to quote it — does not differ between them.
+A word in any other non-Latin script (Bengali, Tamil...) is also tagged "hi"
+— read it as "the source's non-English language": the decisions are the
+same, and `profile_transcript` reports which script it is, so a native-script
+quote is shown in Bengali rather than Devanagari.
 """
 from __future__ import annotations
 
@@ -276,8 +280,11 @@ def tag_tokens(text: str) -> list[tuple[Token, str]]:
         if tok.script == "Latin":
             runs[-1].append(i)
             continue
-        if tok.script in ("Devanagari", "Arabic", "Gurmukhi"):
-            tags[i] = "en" if tok.norm in ENGLISH_IN_DEVANAGARI else "hi"
+        # Any other script is a non-English language. Until 2026-10-19 only
+        # Devanagari/Arabic/Gurmukhi were tagged and everything else fell to
+        # "neutral" — so a Bengali transcript measured 0% non-English and
+        # would have been quoted as plain English.
+        tags[i] = "en" if tok.norm in ENGLISH_IN_DEVANAGARI else "hi"
         runs.append([])
     for run in runs:
         path = _viterbi([emission(tokens[i].norm, lex) for i in run])
@@ -489,6 +496,153 @@ def rendering_mode(
     if matrix != "hi" and share <= borrowing:
         return PLAIN_ENGLISH
     if matrix == "hi" and share >= dominant:
+        return NATIVE_SCRIPT
+    return ROMAN
+
+
+# --- transcript-level primary language (T-1.16.2.4) -----------------------------
+#
+# Deciding the script sentence by sentence makes a report flicker: one quote
+# in Devanagari, the next from the same speaker in Roman, because one window
+# happened to carry more English nouns. The transcript has ONE primary
+# language of communication — the language whose grammar frames most of its
+# speech — and that decides the script for every quote from it. A span still
+# decides whether it is English at all (an English sentence in a Hindi talk is
+# simply English), but never which script its kept wording is shown in.
+
+# Analysis windows: consecutive caption segments merged until they hold this
+# many words — roughly a sentence. A caption segment alone (2-5 seconds) cuts
+# clauses in half, which is useless for a grammar vote.
+WINDOW_MIN_WORDS = 12
+WINDOW_MAX_WORDS = 40
+
+
+def transcript_windows(segments_or_text: Any) -> list[str]:
+    """Sentence-sized windows over a transcript (segments or plain text)."""
+    if isinstance(segments_or_text, str):
+        pieces = [segments_or_text]
+    else:
+        pieces = [
+            (s.get("text") or "") if isinstance(s, dict) else str(s)
+            for s in (segments_or_text or [])
+        ]
+    windows: list[str] = []
+    cur: list[str] = []
+    n = 0
+    for piece in pieces:
+        for word in piece.split():
+            cur.append(word)
+            n += 1
+            if n >= WINDOW_MAX_WORDS:
+                windows.append(" ".join(cur))
+                cur, n = [], 0
+        if n >= WINDOW_MIN_WORDS:
+            windows.append(" ".join(cur))
+            cur, n = [], 0
+    if cur:
+        if windows and n < WINDOW_MIN_WORDS // 2:
+            windows[-1] = windows[-1] + " " + " ".join(cur)
+        else:
+            windows.append(" ".join(cur))
+    return windows
+
+
+def script_flicker(modes: list[str]) -> int:
+    """Script changes between consecutive quotable windows (roman <-> native).
+
+    Plain-English windows are skipped: they carry no script decision.
+    """
+    scripted = [m for m in modes if m in (ROMAN, NATIVE_SCRIPT)]
+    return sum(1 for a, b in zip(scripted, scripted[1:]) if a != b)
+
+
+def profile_transcript(
+    segments_or_text: Any,
+    dominant: float | None = None,
+    borrowing: float | None = None,
+) -> dict[str, Any]:
+    """The transcript's primary language of communication and its quote script.
+
+    Returns::
+
+        {primary_language, native_script, hi_share, matrix_hi_share,
+         quote_mode, windows, window_modes, flicker_unresolved}
+
+    - ``native_script``: the script the non-English words are written in
+      ("Devanagari", "Bengali"...; "Latin" when they are romanised), which
+      is the script a native-script quote is shown in. None when the
+      transcript has no non-English words.
+    - ``hi_share``: non-English words over non-English + English words.
+    - ``matrix_hi_share``: share of language-bearing words in windows whose
+      GRAMMAR is Hindi. The primary language is the one framing at least
+      half the speech — so a Hindi talk dense with English terms is still
+      Hindi, which a word count would get wrong.
+    - ``quote_mode``: the policy applied ONCE to the transcript as a whole
+      (``rendering_mode`` on its overall share and primary language). Use
+      ``resolve_quote_mode`` to apply it to a span.
+    - ``window_modes``: counts of the per-window modes, and
+      ``flicker_unresolved``: how many script changes a quote-by-quote
+      policy would have produced — the thing this resolution removes.
+    """
+    windows = transcript_windows(segments_or_text)
+    en = hi = 0
+    weight = {"en": 0, "hi": 0}
+    modes: list[str] = []
+    scripts: Counter[str] = Counter()
+    for w in windows:
+        tagged = tag_tokens(w)
+        scripts.update(tok.script for tok, tag in tagged if tag == "hi")
+        a = shares(tag for _, tag in tagged)
+        a["matrix"] = matrix_language(tagged)
+        en += a["en_tokens"]
+        hi += a["hi_tokens"]
+        lang_words = a["en_tokens"] + a["hi_tokens"]
+        if a["matrix"] in weight:
+            weight[a["matrix"]] += lang_words
+        modes.append(rendering_mode(a, dominant, borrowing))
+    total = en + hi
+    framed = weight["en"] + weight["hi"]
+    matrix_hi_share = round(weight["hi"] / framed, 4) if framed else 0.0
+    native = scripts.most_common(1)[0][0] if scripts else None
+    if not total:
+        primary = "none"
+    elif matrix_hi_share < 0.5:
+        primary = "en"
+    else:
+        # "hi" covers Hindi/Urdu however it is written (Devanagari,
+        # Arabic script, or romanised). A non-English language in any other
+        # script is "other"; `native_script` says which.
+        primary = "hi" if native in ("Devanagari", "Arabic", "Latin") else "other"
+    overall = {
+        "hi_share": round(hi / total, 4) if total else 0.0,
+        # The policy's "hi" means "a non-English grammar": "other" is one.
+        "matrix": "hi" if primary in ("hi", "other") else primary,
+    }
+    return {
+        "primary_language": primary,
+        "native_script": native,
+        "hi_share": overall["hi_share"],
+        "matrix_hi_share": matrix_hi_share,
+        "quote_mode": rendering_mode(overall, dominant, borrowing),
+        "windows": len(windows),
+        "window_modes": dict(Counter(modes)),
+        "flicker_unresolved": script_flicker(modes),
+    }
+
+
+def resolve_quote_mode(span_mode: str, transcript_profile: dict[str, Any]) -> str:
+    """Apply the transcript's script to one span's decision.
+
+    A span keeps its own answer to "is this English?" — an English sentence
+    in a Hindi talk renders as English. If the span keeps its wording, the
+    TRANSCRIPT chooses the script, so every quote from one source is shown
+    the same way. An English-primary transcript's occasional Hindi clause is
+    shown in Roman script, the script the rest of the source reads in.
+    """
+    if span_mode == PLAIN_ENGLISH:
+        return PLAIN_ENGLISH
+    doc_mode = (transcript_profile or {}).get("quote_mode")
+    if doc_mode == NATIVE_SCRIPT:
         return NATIVE_SCRIPT
     return ROMAN
 

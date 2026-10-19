@@ -193,7 +193,7 @@ Below threshold: bubble dimmed, banner explains what's missing. Crossing thresho
 - How does weighting interact with subscriptions (auto-pulled content)? Recommend channel weight applies; user can override per-document.
 - **Shape of v1: resolved 2026-10-18 by [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18).** Weighted retrieval first (re-rank by `distance / weight` after the raw relevance threshold, weights resolved per tenant at query time); perspective banding deferred to E-7.2 until weights exist and the re-rank is measured.
 
-**Status.** ⚪ proposed. Targeted Phase 4 (2027 Q1). Only the weight column exists, so retrieval is unweighted today. Tracked as [I-7](initiatives.md#i-7--curated-source-ranking-l4).
+**Status.** 🟡 in progress. Trust-weighted retrieval v1 shipped 2026-10-19 (S-7.1.1, PR [#287](https://github.com/khoks/VideoResearchPro/pull/287)): a per-tenant weight per channel, set on the channel page, re-ranks job and library Q&A as `distance / weight` after the relevance threshold ([D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18)). Measured: it moves the context as intended but, at strong weights, narrows answers enough that library-Q&A judges preferred unweighted ones, so the formula is reopened (S-7.1.2) before perspective banding (E-7.2). Tracked as [I-7](initiatives.md#i-7--curated-source-ranking-l4).
 
 ---
 

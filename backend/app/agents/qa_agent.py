@@ -192,6 +192,98 @@ def _answer_policy(
     return max_tokens, corpus_note, guidance
 
 
+# ---------------------------------------------------------------------------
+# D-068 / S-7.1.1 — trust-weighted re-rank
+# ---------------------------------------------------------------------------
+# Pre-registered in D-068 before any measurement, so it is not tuned here:
+# retrieve 3 x top_k, drop anything failing RAG_DISTANCE_THRESHOLD on the RAW
+# distance, sort by distance / weight, keep top_k. Weights come from the
+# asking tenant's subscriptions keyed on the chunk's `channel_id`; a chunk with
+# no channel (Reddit, HN, PDF, pasted page) weighs 1.0. Weighting after the
+# threshold is the point: a trusted source reorders what is relevant and can
+# never pull an off-topic passage into the answer.
+TRUST_POOL_MULTIPLIER = 3
+MIN_TRUST_WEIGHT = 0.05
+MAX_TRUST_WEIGHT = 2.0
+
+
+def _trust_weight(meta: dict, channel_weights: dict[str, float] | None) -> float:
+    """The weight this tenant gives the chunk's channel, clamped to
+    [MIN_TRUST_WEIGHT, MAX_TRUST_WEIGHT]; 1.0 when it has no channel or no
+    weight. 0 becomes the floor so the source sinks but is never excluded."""
+    if not channel_weights:
+        return 1.0
+    channel_id = (meta or {}).get("channel_id") or ""
+    if not channel_id or channel_id not in channel_weights:
+        return 1.0
+    try:
+        weight = float(channel_weights[channel_id])
+    except (TypeError, ValueError):
+        return 1.0
+    if weight != weight:  # NaN
+        return 1.0
+    return min(MAX_TRUST_WEIGHT, max(MIN_TRUST_WEIGHT, weight))
+
+
+def _weighted_distance(chunk: dict, channel_weights: dict[str, float] | None) -> float:
+    return float(chunk.get("distance", 1.0)) / _trust_weight(
+        chunk.get("metadata", {}) or {}, channel_weights
+    )
+
+
+def _weights_active(channel_weights: dict[str, float] | None) -> bool:
+    """True when at least one weight differs from neutral. With none, the
+    re-rank is the identity and retrieval runs exactly as before D-068."""
+    if not channel_weights:
+        return False
+    for w in channel_weights.values():
+        try:
+            if abs(float(w) - 1.0) > 1e-9:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _rerank_by_trust(
+    results: list[dict], channel_weights: dict[str, float] | None, top_k: int
+) -> list[dict]:
+    """D-068 steps 2-3 over a retrieved pool: the raw-distance threshold
+    first, then ``distance / weight`` ascending, then ``top_k``.
+
+    ``query_collection`` already drops chunks over the threshold; it is
+    re-applied here so the guarantee does not depend on a caller passing it.
+    """
+    threshold = settings.RAG_DISTANCE_THRESHOLD
+    relevant = [r for r in results if float(r.get("distance", 1.0)) <= threshold]
+    relevant.sort(key=lambda r: _weighted_distance(r, channel_weights))
+    return relevant[:top_k]
+
+
+def _scoped_query(
+    query_text: str,
+    document_ids: list[str] | None,
+    channel_weights: dict[str, float] | None = None,
+) -> list[dict]:
+    """One retrieval call, shared by job and library Q&A.
+
+    Unweighted (the default for every tenant until they set a weight): one
+    query for ``top_k``, identical to the pre-D-068 behaviour. Weighted: one
+    query for ``3 x top_k``, then the re-rank. Still one Chroma call either way.
+    """
+    top_k = settings.RAG_TOP_K
+    weighted = _weights_active(channel_weights)
+    results = chroma_service.query_collection(
+        query_text,
+        n_results=top_k * TRUST_POOL_MULTIPLIER if weighted else top_k,
+        document_ids=document_ids,
+        distance_threshold=settings.RAG_DISTANCE_THRESHOLD,
+    )
+    if not weighted:
+        return results
+    return _rerank_by_trust(results, channel_weights, top_k)
+
+
 def retrieve_context(state: QAAgentState, tally: _TokenTally | None = None) -> dict:
     """Retrieve relevant chunks from ChromaDB using multi-query expansion, plus extract report text."""
     job_id = state.get("job_id", "")
@@ -209,10 +301,13 @@ def retrieve_context(state: QAAgentState, tally: _TokenTally | None = None) -> d
         # A topic/channel job with zero approved documents has nothing to
         # retrieve from; never fall back to a global search here (S-1.12.1).
         logger.warning(f"[job:{job_id}] Q&A retrieval called with no approved document_ids")
+    channel_weights = state.get("channel_weights") or {}
+    if _weights_active(channel_weights):
+        logger.info(
+            f"[job:{job_id}] Q&A retrieval trust-weighted over {len(channel_weights)} channel(s)"
+        )
     for q in all_queries:
-        results = chroma_service.query_collection(
-            q, n_results=settings.RAG_TOP_K, document_ids=document_ids
-        ) if document_ids else []
+        results = _scoped_query(q, document_ids, channel_weights) if document_ids else []
         for r in results:
             meta = r.get("metadata", {})
             key = (
@@ -224,7 +319,11 @@ def retrieve_context(state: QAAgentState, tally: _TokenTally | None = None) -> d
             if existing is None or r.get("distance", 1.0) < existing.get("distance", 1.0):
                 merged[key] = r
 
-    rag_results = sorted(merged.values(), key=lambda x: x.get("distance", 1.0))
+    # D-068: the merged order follows the same weighted score that chose the
+    # chunks; with no weights it is plain distance, as before.
+    rag_results = sorted(
+        merged.values(), key=lambda x: _weighted_distance(x, channel_weights)
+    )
 
     # Enrich with formatted data
     for r in rag_results:
@@ -962,6 +1061,7 @@ def run_qa_agent(
     usage_out: dict | None = None,
     corpus_statistics: dict | None = None,
     output_length: str | None = None,
+    channel_weights: dict[str, float] | None = None,
 ) -> tuple[str, list[dict]]:
     """
     Run the Q&A agent pipeline node-by-node (same order as the compiled graph).
@@ -969,6 +1069,10 @@ def run_qa_agent(
     ``document_ids`` is the job's approved ``documents.document_id`` set
     (D-070); retrieval is restricted to chunks whose ``document_id`` metadata
     is in it, and an empty set retrieves nothing.
+
+    ``channel_weights`` are the asking tenant's non-neutral trust weights
+    (D-068), resolved by the router; retrieval re-ranks by them after the
+    relevance threshold. Absent or empty, retrieval is unweighted.
 
     ``progress_callback`` is invoked with a stage name before each node:
     "retrieving", "refining", "formulating", "extracting_references".
@@ -996,6 +1100,7 @@ def run_qa_agent(
         "question": question,
         "report_html": report_html or "",
         "document_ids": document_ids or [],
+        "channel_weights": channel_weights or {},
         "sub_queries": [],
         "rag_results": [],
         "report_context": None,
@@ -1030,7 +1135,11 @@ def run_qa_agent(
 # ---------------------------------------------------------------------------
 
 
-def _query_library(query_text: str, document_ids: list[str] | None = None) -> list[dict]:
+def _query_library(
+    query_text: str,
+    document_ids: list[str] | None = None,
+    channel_weights: dict[str, float] | None = None,
+) -> list[dict]:
     """Query the library ChromaDB collection, restricted to ``document_ids``.
 
     S-5.7.1: this previously always passed no scope, i.e. searched EVERY
@@ -1044,12 +1153,7 @@ def _query_library(query_text: str, document_ids: list[str] | None = None) -> li
     # `query_or_job_id` for backward compat with the old per-job signature,
     # so `query_text=` as a kwarg raises TypeError.
     try:
-        return chroma_service.query_collection(
-            query_text,
-            n_results=settings.RAG_TOP_K,
-            document_ids=document_ids,
-            distance_threshold=settings.RAG_DISTANCE_THRESHOLD,
-        )
+        return _scoped_query(query_text, document_ids, channel_weights)
     except TypeError:
         logger.exception(
             "chroma_service.query_collection unexpected signature; "
@@ -1058,8 +1162,13 @@ def _query_library(query_text: str, document_ids: list[str] | None = None) -> li
         return []
 
 
-def _dedupe_chunks(chunks: list[dict]) -> list[dict]:
-    """Dedupe RAG chunks by (document, chunk_index); keep closest distance."""
+def _dedupe_chunks(
+    chunks: list[dict], channel_weights: dict[str, float] | None = None
+) -> list[dict]:
+    """Dedupe RAG chunks by (document, chunk_index); keep closest distance.
+
+    Ordered by the D-068 weighted score, which is plain distance when
+    ``channel_weights`` is empty."""
     merged: dict[str, dict] = {}
     for r in chunks:
         meta = r.get("metadata", {})
@@ -1067,7 +1176,7 @@ def _dedupe_chunks(chunks: list[dict]) -> list[dict]:
         existing = merged.get(key)
         if existing is None or r.get("distance", 1.0) < existing.get("distance", 1.0):
             merged[key] = r
-    return sorted(merged.values(), key=lambda x: x.get("distance", 1.0))
+    return sorted(merged.values(), key=lambda x: _weighted_distance(x, channel_weights))
 
 
 def _enrich_chunks(chunks: list[dict]) -> None:
@@ -1113,6 +1222,7 @@ def run_library_qa_agent(
     visible_document_ids: list[str] | None = None,
     corpus_statistics: dict | None = None,
     output_length: str | None = None,
+    channel_weights: dict[str, float] | None = None,
 ) -> dict:
     """Run library-wide Q&A against the global video library.
 
@@ -1142,10 +1252,10 @@ def run_library_qa_agent(
     # 2. Library-wide ChromaDB retrieval.
     raw: list[dict] = []
     for q in all_queries:
-        raw.extend(_query_library(q, visible_document_ids))
+        raw.extend(_query_library(q, visible_document_ids, channel_weights))
 
-    # 3. Dedupe + enrich.
-    rag_results = _dedupe_chunks(raw)
+    # 3. Dedupe + enrich (ordered by the D-068 weighted score).
+    rag_results = _dedupe_chunks(raw, channel_weights)
     _enrich_chunks(rag_results)
 
     # 4. Refine context.

@@ -8,6 +8,7 @@ columns on `channels`.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -17,6 +18,14 @@ from app.models.document import Document
 from app.models.document_visibility import DocumentVisibility
 
 logger = logging.getLogger(__name__)
+
+# D-068: the user-settable range. 1.0 is neutral. 0.0 is allowed as input and
+# clamped to a floor at query time (`qa_agent.MIN_TRUST_WEIGHT`), so a
+# distrusted source sinks to the bottom but can still surface when nothing
+# else matches — a weight is a preference, never a filter.
+MIN_SOURCE_WEIGHT = 0.0
+MAX_SOURCE_WEIGHT = 2.0
+NEUTRAL_SOURCE_WEIGHT = 1.0
 
 
 def get_or_create(db: Session, channel_id: str, tenant_id: str) -> ChannelSubscription:
@@ -49,6 +58,50 @@ def set_subscribed(
     db.commit()
     db.refresh(row)
     return row
+
+
+def set_weight(
+    db: Session, channel_id: str, tenant_id: str, weight: float
+) -> ChannelSubscription:
+    """Set THIS tenant's trust weight for a channel (D-068). Raises
+    ``ValueError`` outside ``[MIN_SOURCE_WEIGHT, MAX_SOURCE_WEIGHT]``."""
+    try:
+        value = float(weight)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"weight must be a number, got {weight!r}") from e
+    if math.isnan(value) or not (MIN_SOURCE_WEIGHT <= value <= MAX_SOURCE_WEIGHT):
+        raise ValueError(
+            f"weight must be between {MIN_SOURCE_WEIGHT} and {MAX_SOURCE_WEIGHT}, got {value}"
+        )
+    row = get_or_create(db, channel_id, tenant_id)
+    row.source_weight = value
+    db.commit()
+    db.refresh(row)
+    logger.info(
+        "subscription: tenant %s set weight %.2f on channel %s",
+        tenant_id[:8], value, channel_id,
+    )
+    return row
+
+
+def channel_weights(db: Session, tenant_id: str) -> dict[str, float]:
+    """THIS tenant's non-neutral trust weights, ``{channel_id: weight}``.
+
+    Resolved at query time by the Q&A routers and handed to the agent
+    (D-068): chunks are shared across tenants (D-063), so a per-tenant
+    number can never live in chunk metadata. Neutral rows are left out, so
+    an empty dict means "no weighting" and retrieval runs exactly as it did
+    before weights existed.
+    """
+    return {
+        channel_id: float(weight)
+        for channel_id, weight in db.query(
+            ChannelSubscription.channel_id, ChannelSubscription.source_weight
+        ).filter(
+            ChannelSubscription.tenant_id == tenant_id,
+            ChannelSubscription.source_weight != NEUTRAL_SOURCE_WEIGHT,
+        )
+    }
 
 
 def mark_synced(db: Session, channel_id: str, tenant_id: str) -> None:

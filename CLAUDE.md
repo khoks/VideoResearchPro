@@ -149,6 +149,7 @@ Single multiplexed WebSocket at `/ws/jobs`. Clients send `subscribe`/`unsubscrib
 
 - Per-job Q&A filters by `document_id ∈ the job's approved set` at query time (`chroma_service.query_collection(..., document_ids=[...])`).
 - Library-wide Q&A filters by `document_id ∈ the asking tenant's visible set` (D-063, keyed on the primary key per D-070). Chroma has no tenant concept, so the caller must pass the set — an **empty** list means "this tenant has ingested nothing" and retrieves nothing (enforced inside `query_collection`; only `None` is unrestricted, and no user-facing caller passes it).
+- **Trust weights re-rank, never filter** ([D-068](docs/decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18)): job and library Q&A routers resolve the asker's weights with `subscription_service.channel_weights`; `qa_agent._scoped_query` draws 3 × top-K, applies `RAG_DISTANCE_THRESHOLD` to the RAW distance first, then sorts by `distance / weight`. Never store a weight on a chunk (chunks are shared across tenants). No weights set means one top-K query, identical to before.
 - Every chunk carries a `document_id` metadata field, written by `_build_video_metadata` for every source type; chunks embedded before 2026-10-19 are stamped by `backfill_chunk_document_ids` at API startup. Chunk ids are `{video_id}:{index}` for YouTube documents and `{document_id}:{index}` for everything else — a storage key only.
 
 ### LangGraph Agents
@@ -237,6 +238,7 @@ GET    /api/v1/channels/{id}           # Single channel detail
 POST   /api/v1/channels/{id}/subscribe
 POST   /api/v1/channels/{id}/unsubscribe
 POST   /api/v1/channels/{id}/sync      # Trigger a fresh sync
+PUT    /api/v1/channels/{id}/weight    # Set the caller's trust weight 0.0-2.0 (D-068 re-rank)
 GET    /api/v1/channels/{id}/videos
 
 POST   /api/v1/qa-history/chat               # Ask meta-question across all Q&A history

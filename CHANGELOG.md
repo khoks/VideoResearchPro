@@ -10,6 +10,28 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Mobile reading pass: toolbar, docked composer, device tests (2026-10-19)
+
+S-8.12.1 ([plan](docs/plans/m12-mobile-reading.md)). Reports, knowledge
+reports, books and both Q&A threads read properly on a phone.
+
+- **Reading toolbar** below 1200 px: Contents (the outline as a bottom
+  sheet), text size in five steps, theme, percentage; 44 px controls above
+  the home indicator. Fluid reading type (16 → 18 px) from new `theme.ts`
+  tokens.
+- **Docked Q&A composer** on the job and library pages under 640 px: under
+  the thread, stuck to the bottom, lifted above the keyboard with the
+  VisualViewport API.
+- **Touch:** a chip's first tap previews its card, the second opens the
+  source; 44 px primary controls; 16 px fields so iOS does not zoom;
+  `viewport-fit=cover` with safe-area padding; phone page padding per
+  ui-design.
+- **Device tests:** `npm run test:mobile` runs Playwright against an iPhone,
+  a Pixel and a 320 px phone in both themes with fixture-served APIs and 18
+  checked-in baselines.
+- **Fix:** clicking an unresolved citation chip opened its card and closed
+  it in the same click, because the click's focus opened it first.
+
 ### Reading room: knowledge reports and books in the same shell (2026-10-19)
 
 S-8.8.3. Knowledge artifacts and Author Studio books now read in the same

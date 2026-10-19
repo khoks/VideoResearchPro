@@ -8,10 +8,12 @@
  * the content is arbitrary sanitised HTML and inline styles cannot reach
  * into it. Everything the shell owns is inline-styled from the tokens.
  */
-import { useRef, type ReactNode } from 'react';
+import { useRef, type CSSProperties, type ReactNode } from 'react';
 import { useColors } from '../../hooks/useTheme';
-import { fonts, fontSize, fontWeight, lineHeight, measure, space } from '../../theme';
+import { readerScaleFor, useReaderStore } from '../../stores/readerStore';
+import { fluidType, fonts, fontSize, fontWeight, lineHeight, measure, space } from '../../theme';
 import { Outline } from './Outline';
+import { ReaderToolbar } from './ReaderToolbar';
 import { ReadingProgress, useReadingProgress } from './ReadingProgress';
 import { useActiveHeading } from './useActiveHeading';
 import type { OutlineEntry } from './parseReport';
@@ -38,6 +40,8 @@ export function ReaderShell({ kicker, title, meta, actions, before, outline, chi
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const activeId = useActiveHeading(bodyRef, outline);
   const progress = useReadingProgress();
+  const step = useReaderStore((s) => s.step);
+  const bodyStyle = { '--reader-scale': readerScaleFor(step) } as CSSProperties;
 
   return (
     <article className="reader-grid reader-print-root">
@@ -62,11 +66,12 @@ export function ReaderShell({ kicker, title, meta, actions, before, outline, chi
             style={{
               margin: 0,
               fontFamily: fonts.display,
-              fontSize: fontSize['2xl'],
+              fontSize: fluidType.readerH1,
               fontWeight: fontWeight.semibold,
               lineHeight: lineHeight.tight,
               color: c.textPrimary,
               textWrap: 'balance',
+              overflowWrap: 'anywhere',
             }}
           >
             {title}
@@ -99,13 +104,14 @@ export function ReaderShell({ kicker, title, meta, actions, before, outline, chi
           )}
         </header>
         {before}
-        <div ref={bodyRef} className="reader-body">
+        <div ref={bodyRef} className="reader-body" style={bodyStyle}>
           {children}
         </div>
         {after}
       </div>
       <Outline entries={outline} activeId={activeId} progress={progress} />
       <ReadingProgress value={progress} />
+      <ReaderToolbar outline={outline} activeId={activeId} progress={progress} />
     </article>
   );
 }

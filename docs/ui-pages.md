@@ -113,7 +113,7 @@ Sections (rendered conditionally on `job.status` and `job.job_type`):
 | **Your notes on this run** | always, once the job loads | Section-variant notes panel (M5 / S-8.5.1): the user's own Markdown on the run, newest first, with add / edit / delete. |
 | **Approved videos** | status ∈ {extracting, building_rag, ...completed} | Read-only list of approved videos with per-video transcript status. Each row has a "Knowledge" button that opens the `VideoKnowledgeDrawer`, and an inline notes control: a note on a document shows on every surface that shows the document (the shelf, every job containing it). |
 | **Report** | `job.report_path` is set | "Read report" (primary) → navigates to the reading room at `/reports/:jobId`; "Quick peek" (secondary) → the legacy HTML in an iframe modal, which also owns "Open in new tab". |
-| **Q&A panel** | status == `completed` | Question textarea, "Clarify first" optional toggle, language selector, "Ask" button. Below: list of past exchanges with citations rendered as chips that deep-link to `&t=` timestamps. Each exchange card carries the inline notes control (target `qa_exchange`). |
+| **Q&A panel** | status == `completed` | Question textarea, "Clarify first" optional toggle, language selector, "Ask" button. Below: list of past exchanges with citations rendered as chips that deep-link to `&t=` timestamps. Each exchange card carries the inline notes control (target `qa_exchange`). Under 640 px the composer moves below the thread and docks at the bottom of the screen while the panel is in view, above the keyboard (S-8.12.1). |
 | **Knowledge drawer** | user clicks the Knowledge button on a video row | Slides in from the right; shows the structured `{topics, concepts, events, facts}` + Markdown report; "Generate" button if not yet extracted. |
 
 | State | What renders |
@@ -151,7 +151,7 @@ Layout: 75ch serif measure, `text-wrap: pretty` on prose and `balance` on headin
 
 **Print (S-8.8.2).** "Print or save as PDF" in the toolbar, or Ctrl-P: app chrome, outline, progress pill, toolbar, card, health banner and toasts are hidden; text prints black on white whatever the theme; every `h2` after the first starts a page; tables, lists items, blockquotes and code avoid breaking; chips print as the writer's text plus a bracketed footnote number; the endnote list opens itself on `beforeprint` and prints each source's URL; other links print their URL after the text; `@page` margin 2 cm. The 102 kB R1 report prints to 37 A4 pages.
 
-Not yet (later stories): knowledge artifacts and Author outputs in the same shell (S-8.8.3); the mobile pass (S-8.12.1), including a tap-to-preview pattern for chips on touch screens, where hover does not exist.
+**Small screens (S-8.12.1).** Below 1200 px the outline column and progress pill give way to a bottom reading toolbar: Contents (the outline as a bottom sheet, focus on the current section, Escape closes and returns focus), A− / A+ text size (five steps, kept per browser), theme, and the percentage. On touch, the first tap on a citation chip previews its card; a second tap, or the card's "Open at" link, opens the source; a tap elsewhere closes it. The same toolbar serves the knowledge and book readers.
 
 ### `LibraryPage` — `/library`
 **Purpose.** Browse the caller's view of the global, deduplicated library and add sources that do not come through a research run. Three tabs: **Sources**, **Channels**, **Add sources**.
@@ -235,7 +235,7 @@ Layout: question textarea + clarify-first toggle + language selector at the top;
 
 | State | What renders |
 |-------|--------------|
-| Default | Textarea + button + history list. |
+| Default | Textarea + button + history list. Under 640 px the composer docks at the bottom below the history, as on the job page (S-8.12.1). |
 | Clarifying | Inline "Interpretation: ..." plus three suggested clarifying questions; user picks one or types their own context. |
 | Asking | Streaming answer area appears; citations populate as the agent extracts references. |
 | Empty | "No echoes yet. Ask your first question to begin." |

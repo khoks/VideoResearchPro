@@ -162,6 +162,74 @@ describe('citation card', () => {
     expect(details.open).toBe(false);
   });
 
+  function pointerDown(el: Element, pointerType: 'touch' | 'mouse') {
+    const ev = new Event('pointerdown', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'pointerType', { value: pointerType });
+    el.dispatchEvent(ev);
+  }
+
+  function click(el: HTMLElement): boolean {
+    const ev = new MouseEvent('click', { bubbles: true, cancelable: true });
+    el.dispatchEvent(ev);
+    return ev.defaultPrevented;
+  }
+
+  it('on touch, the first tap on a linked chip previews its card and the second follows the link', () => {
+    mount();
+    const chip = host.querySelector<HTMLAnchorElement>('a.reader-citation')!;
+    let prevented = false;
+    act(() => {
+      pointerDown(chip, 'touch');
+      chip.focus(); // a tap focuses the link before the click lands
+      prevented = click(chip);
+    });
+    expect(prevented).toBe(true);
+    expect(card().style.display).toBe('block');
+    act(() => {
+      pointerDown(chip, 'touch');
+      prevented = click(chip);
+    });
+    expect(prevented).toBe(false); // second tap: the browser follows the link
+  });
+
+  it('a mouse click on a linked chip is never intercepted', () => {
+    mount();
+    const chip = host.querySelector<HTMLAnchorElement>('a.reader-citation')!;
+    let prevented = true;
+    act(() => {
+      pointerDown(chip, 'mouse');
+      prevented = click(chip);
+    });
+    expect(prevented).toBe(false);
+  });
+
+  it('a tap outside the card and its chip closes the card', () => {
+    mount();
+    const chip = host.querySelector<HTMLAnchorElement>('a.reader-citation')!;
+    act(() => chip.focus());
+    expect(card().style.display).toBe('block');
+    act(() => pointerDown(card(), 'touch'));
+    expect(card().style.display).toBe('block'); // inside the card: stays
+    act(() => pointerDown(document.body, 'touch'));
+    expect(card().style.display).toBe('none');
+  });
+
+  it('clicking an unresolved chip opens its card, and clicking again closes it', () => {
+    mount();
+    const lost = host.querySelectorAll<HTMLButtonElement>('.reader-citation')[2];
+    act(() => {
+      pointerDown(lost, 'mouse');
+      lost.focus(); // Chromium focuses a button on mousedown, which opens the card
+      click(lost);
+    });
+    expect(card().style.display).toBe('block');
+    act(() => {
+      pointerDown(lost, 'mouse');
+      click(lost);
+    });
+    expect(card().style.display).toBe('none');
+  });
+
   it('shows an R1 still when one is supplied (T-8.8.2.3 hook)', () => {
     mount(true);
     act(() => host.querySelector<HTMLAnchorElement>('a.reader-citation')!.focus());

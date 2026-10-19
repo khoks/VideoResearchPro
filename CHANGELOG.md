@@ -27,6 +27,22 @@ Android home screens with its own name, colours and icon.
   the rebrand's logo work lands.
 - Tests check real icon sizes and opaque backgrounds, the page's links, and
   Chromium's own installability verdict.
+### Code-mixed speech: retrieval runs on an English rendering (2026-10-19, T-1.16.2.5 part B)
+
+PR [#271](https://github.com/khoks/VideoResearchPro/pull/271). Decision
+[D-084](docs/decisions.md#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19).
+
+- **Hindi and Hinglish chunks are now found by English questions.** A chunk
+  of a non-English source is embedded as its English rendering, while the
+  stored text stays the original for quoting. Measured on 132 real chunks:
+  MRR 0.565 for the Devanagari originals, 0.402 for the same text romanised,
+  0.805 rendered in English.
+- New use case `code_mixing_render_english` (registry entry 25, volume tier,
+  reasoning off, fail-soft). It runs once per document inside
+  `chroma_service.insert_chunks`, the one place every ingest path writes
+  chunks, and stores the rendering as metadata `text_en`.
+- New setting `CODE_MIX_ENGLISH_RENDERING_ENABLED` (on; off for the test
+  suite). Chunks embedded earlier are not re-embedded.
 
 ### Mobile reading pass: toolbar, docked composer, device tests (2026-10-19)
 

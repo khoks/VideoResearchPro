@@ -195,8 +195,20 @@ def insert_chunks(
 
     collection = get_global_collection()
 
+    # N-002 / T-1.16.2.5 part B: a non-English chunk is EMBEDDED as its
+    # English rendering (`text_en`) while its stored text stays the original.
+    # Done here, at the one place every ingest path writes chunks, so no path
+    # can skip it. Fail-soft: without a rendering a chunk embeds as written.
+    try:
+        from app.services import code_mixing_service
+
+        code_mixing_service.ensure_english_renderings(actual_chunks)
+    except Exception:
+        logger.exception("English rendering of non-English chunks failed; embedding originals")
+
     ids: list[str] = []
     documents: list[str] = []
+    embed_texts: list[str] = []
     metadatas: list[dict[str, Any]] = []
 
     for chunk in actual_chunks:
@@ -213,6 +225,7 @@ def insert_chunks(
 
         ids.append(f"{storage_key}:{chunk_index}")
         documents.append(chunk["text"])
+        embed_texts.append(meta_in.get("text_en") or chunk["text"])
         metadatas.append(_flatten_metadata(meta_in))
 
     if not ids:
@@ -223,10 +236,17 @@ def insert_chunks(
     logger.info(f"ChromaDB upsert: {len(ids)} chunks in {n_batches} batch(es)")
 
     for i in range(0, len(ids), _BATCH_SIZE):
+        batch = slice(i, i + _BATCH_SIZE)
+        kwargs: dict[str, Any] = {}
+        if embed_texts[batch] != documents[batch]:
+            # Same function the collection would apply to `documents`, so
+            # rendered and unrendered chunks share one vector space.
+            kwargs["embeddings"] = _get_embedding_function()(embed_texts[batch])
         collection.upsert(
-            ids=ids[i:i + _BATCH_SIZE],
-            documents=documents[i:i + _BATCH_SIZE],
-            metadatas=metadatas[i:i + _BATCH_SIZE],
+            ids=ids[batch],
+            documents=documents[batch],
+            metadatas=metadatas[batch],
+            **kwargs,
         )
 
     logger.info(f"ChromaDB upsert complete: {len(ids)} chunks stored")

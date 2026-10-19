@@ -31,3 +31,26 @@ Return ONLY a JSON object, no markdown, no commentary:
 {{"snippets": [{{"i": 0, "hi": ["<exact Hindi run>", "..."], "matrix": "en"}}, ...]}}
 Include every snippet number exactly once.
 """
+
+
+# T-1.16.2.5 part B: the English rendering that a non-English chunk is
+# EMBEDDED as. The chunk's stored text stays the original (that is what gets
+# quoted); this rendering is only what similarity search compares an English
+# question against. Measured: English questions find Hindi chunks at MRR 0.565
+# in Devanagari, 0.402 romanised, 0.805 as an English rendering.
+CODE_MIXING_RENDER_PROMPT = """Translate each numbered transcript chunk into English, for a search index. The speakers mix Hindi/Urdu and English, in Devanagari or in Latin letters ("romanised": "mujhe nahi pata" is Hindi); some chunks are in another Indian language.
+
+Rules:
+- Translate the WHOLE chunk faithfully, in the order it is spoken. Do not summarise, shorten, or skip anything you find hard to translate.
+- English words already in the chunk stay as they are. English words written in Devanagari ("मशीन लर्निंग") are written back in English ("machine learning").
+- Keep names, product names and technical terms recognisable.
+- Keep any span of the form [VISUAL @ mm:ss — ...] exactly as it is.
+- Output English only.
+
+Chunks:
+{chunks}
+
+Return ONLY a JSON object, no markdown, no commentary:
+{{"chunks": [{{"i": 0, "english": "..."}}, ...]}}
+Include every chunk number exactly once.
+"""

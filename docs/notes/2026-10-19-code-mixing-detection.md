@@ -410,7 +410,7 @@ Tests drive each production caller and assert on what reaches the model
 (`tests/test_agents/test_code_mixing_wiring.py`). Profiling adds about 0.85 s
 per 7,400-word Hindi transcript at chunk time and almost nothing for English.
 
-**Part B: retrieval runs on English (measured here, built in PR 5b).**
+**Part B: retrieval runs on English (measured here, built in PR 5b; [D-084](../decisions.md#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19)).**
 "Ranking on the English rendering" is the one stage with no model in the
 loop: retrieval is raw embedding similarity. `scripts/measure_code_mixed_retrieval.py`
 holds content fixed and varies only the script. It takes 132 real chunks from
@@ -433,6 +433,14 @@ depth (`RAG_TOP_K` = 15) relative to Devanagari, and a third of its MRR. An
 English rendering lifts both scripts above either original. With questions
 written by the rendering model itself, the ordering is the same (MRR 0.523 /
 0.372 / 0.766), so the gain is not that model echoing its own wording.
+
+**Built.** A chunk of a non-English source whose own Hindi share exceeds the
+borrowing threshold, or whose grammar is Hindi, is embedded as its English
+rendering (`code_mixing_render_english`, six chunks per call, once per
+document, inside `chroma_service.insert_chunks`). The stored text stays the
+original, and the rendering is kept as metadata `text_en`. Rendering cost about
+1.5 input and 1.0 output tokens per word. Chunks embedded before this keep
+their original vectors; there is no backfill.
 
 ## Reproduce
 

@@ -232,7 +232,7 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 ### `LibraryQAPage` — `/library/qa`
 **Purpose.** Ask questions across the entire library, with no per-job filter.
 
-Layout: question textarea + clarify-first toggle + language selector at the top; past exchanges below ordered ascending by `created_at`, each with citation chips that link to the source video at the cited timestamp and the inline notes control (target `library_qa_exchange`).
+Layout: question textarea + clarify-first toggle + language selector at the top; past exchanges below ordered ascending by `created_at`, each with citation chips that link to the source video at the cited timestamp and the inline notes control (target `library_qa_exchange`). A YouTube chip whose video the reader can see also names its channel as a link to `/library/channels/:id` (S-8.7.4); the same holds for the Q&A panel on a run's page.
 
 | State | What renders |
 |-------|--------------|

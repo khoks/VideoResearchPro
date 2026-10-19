@@ -10,6 +10,15 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Citations link to the channel (2026-10-19)
+
+[S-8.7.4](docs/initiatives.md#s-874--citation-chips-link-to-the-channel-page), PR [#291](https://github.com/khoks/VideoResearchPro/pull/291).
+
+- A YouTube citation in job or library Q&A names its channel as a link to the
+  channel page, when you can see the cited video. Resolved at read time by
+  `GET /library/video-channels` (one batched request per screen), so every
+  past answer gains it.
+
 ### Channel Intelligence tab (2026-10-19)
 
 [S-8.7.3](docs/initiatives.md#s-873--intelligence-tab-ui), PR [#285](https://github.com/khoks/VideoResearchPro/pull/285).

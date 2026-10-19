@@ -626,10 +626,11 @@ Both confirmed errors bundle a screen-only detail into a sentence credited to a 
 
 #### S-1.18.5 🔵 Re-tier the two vision use cases, then re-measure cost
 Filed 2026-10-19 from the S-1.18.3 run: at the registry defaults (`visual_select_moments` gpt-5.5 medium, `visual_describe_frame` gpt-5.5 low) the estimated vision spend was **$0.198 per video** (11 videos, 120 frames at 640×360; selection ≈ 75K input tokens, description ≈ 159K input tokens), double the $0.10 ceiling the protocol fixed in advance. Both cheaper candidates are already on `VISION_CAPABLE_MODELS`.
-- [ ] T-1.18.5.1 `visual_select_moments` is text-only: move to the volume tier (`gpt-5.6-luna`, reasoning off) and check moment quality against the gpt-5.5 selections on the same 11 videos
-- [ ] T-1.18.5.2 `visual_describe_frame`: trial `gpt-5.6-luna` ($0.20/M in) and `gemini-3.1-flash-lite` ($0.25/M in) against the hand-checked gpt-5.5 descriptions; the misread risk at 360p (`dedup` read as `debug`) is the thing to watch
-- [ ] T-1.18.5.3 Re-run the cost estimate; the rule needs under $0.10 per video at the default frame caps
-- [ ] T-1.18.5.4 Only then revisit the S-1.18.2 UI decision
+- [x] T-1.18.5.1 `visual_select_moments` **stays on gpt-5.5, reasoning medium → low** (measured 2026-10-19, `scripts/retier_vision.py`). Agreement with the stored picks within 20 s: gpt-5.5 medium against itself 85% (the noise floor), gpt-5.5 low 76%, gpt-5.5 off 76%, gpt-5.6-luna 59%, gpt-5.4-mini 24%, gemini-3.1-flash-lite 23%. Real cost per video: medium $0.097, low $0.067, off $0.064, luna $0.002. No cheaper model is close; low keeps the model and most of its picks.
+- [x] T-1.18.5.2 `visual_describe_frame` → **gemini-3.1-flash-lite** ([D-073](decisions.md#d-073--frame-description-moves-to-gemini-31-flash-lite-on-image-grounded-grading-selection-stays-on-gpt-55-2026-10-19)). Same 120 frames re-described by each model; 33 frames × 2 graders looked at the image, blind: gpt-5.5 mean 4.52/5, best in 54 of 66, 3 unusable; flash-lite 4.21, 5 unusable; luna 3.97, **22 unusable** (misread dates, axis values, mistook a code cell for output). Real cost $0.133 → $0.008 per video.
+- [x] T-1.18.5.3 Measured total for the visual pass: **$0.075 per video** (select $0.067 + describe $0.008) against $0.230 before, under the $0.10 ceiling; pinned by `tests/test_services/test_vision_tier.py` at the measured token counts. The first pass of these numbers divided by 12 approved videos instead of the 11 that produced calls and understated everything by 8%; the test caught it.
+- [ ] T-1.18.5.4 Revisit the S-1.18.2 UI decision after S-1.18.6's re-run (T-1.18.6.3) passes the attribution criterion with these tiers.
+- [ ] T-1.18.5.5 🔵 Frame resolution: every model misread small text at 640×360 (`worstvideo[height>=360]`); graders had to upscale to read labels. Try `height>=720` on the same 11 videos, re-grade, and weigh download size (D-051 bot-wall traffic) against the accuracy gain.
 
 #### S-1.18.4 🔵 Beyond YouTube
 - [ ] T-1.18.4.1 PDFs: page images are already available without any download
@@ -1573,12 +1574,12 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 **Plan:** [`docs/plans/m3-saved-searches-alerts.md`](plans/m3-saved-searches-alerts.md)
 **Acceptance.** A user pins a question with a weekly schedule; a week later the question re-runs without anyone online; if the cited document set or the answer changed beyond the threshold they receive an email and an in-app notification linking to the diff; re-runs count against the user's monthly library Q&A quota; a paused search never runs.
 
-#### S-8.3.1 🔵 Scheduler tick (shared infrastructure)
-**PR:** TBD
-- [ ] T-8.3.1.1 Celery beat entry `scheduler.tick` every 5 minutes (the worker already runs; beat starts from `scripts/start.ps1`), plus a `SCHEDULER_ENABLED` setting
-- [ ] T-8.3.1.2 `scheduled_runs(id, tenant_id, kind, target_id, next_run_at, interval, last_run_at, last_status, enabled)` table; the tick selects due rows with a short lease so two workers never run the same row
-- [ ] T-8.3.1.3 Per-kind dispatch (`saved_search`, `newsletter`) through `task_routing_service.dispatch_for_user` so tier queues apply
-- [ ] T-8.3.1.4 Tests: due selection, lease, clock skew, disabled rows
+#### S-8.3.1 🟢 Scheduler tick (shared infrastructure)
+**PR:** [#238](https://github.com/khoks/VideoResearchPro/pull/238) — *shipped 2026-10-19.* Beat is a separate process (`celery -A app.tasks.celery_app beat`) started by both launcher scripts, never the embedded `worker -B` form; the launchers are the single-beat guard because Celery's `--pidfile` stale check is `os.kill(pid, 0)`, which on Windows terminates whatever process holds that pid. Cadences are human (`daily` / `weekly` / `monthly` with hour, minute, weekday or day-of-month 1–28, IANA timezone; `every` N seconds for system kinds), stored as `cadence_json`; `next_run_at` is computed by Celery's own `crontab` on the row's local wall clock, so 09:00 local stays 09:00 local across DST. Kinds register from the task module that defines their task (`scheduler_service.register_kind`); nothing registers yet — `saved_search` arrives with S-8.3.2. `GET /api/v1/health/scheduler` reports config, registered kinds and row counts.
+- [x] T-8.3.1.1 Celery beat entry `scheduler.tick` every `SCHEDULER_TICK_SECONDS` (default 300) on the `default` queue with `expires` so a backlog of ticks never replays after a restart; `SCHEDULER_ENABLED` (off = no beat entry and the tick no-ops); beat process in `scripts/start.ps1` and `scripts/restart_services.ps1` — *shipped 2026-10-19*
+- [x] T-8.3.1.2 `scheduled_runs(id, tenant_id, kind, target_id, cadence_json, next_run_at, last_run_at, last_status, last_error, claimed_at, consecutive_failures, enabled)` (migration `c7d8e9f0a1b2`); the tick claims each due row with one `UPDATE … WHERE claimed_at IS NULL OR claimed_at < now − SCHEDULER_LEASE_SECONDS`, so a duplicate tick claims nothing and a crashed holder's lease expires — *shipped 2026-10-19*
+- [x] T-8.3.1.3 Per-kind dispatch through `task_routing_service.dispatch_for_tenant_id` (tier queues apply; `tenant_id` NULL → `default`); an unknown kind is recorded as `no_handler` and advanced by its cadence, a failed dispatch (broker down) is retried at the next tick up to `SCHEDULER_MAX_RETRY_TICKS` times, then waits for its cadence — *shipped 2026-10-19*
+- [x] T-8.3.1.4 Tests: due selection, disabled rows, fresh vs stale lease, duplicate tick, batch limit, clock skew (a tick inside `SCHEDULER_GRACE_SECONDS` runs the row and advances from the *scheduled* time, so nothing runs twice), DST spring-forward and fall-back, per-tier queue, no-handler, retry budget, corrupt cadence; plus the wiring tests (beat entry names the task, task registered, task calls the service) — *shipped 2026-10-19*
 
 #### S-8.3.2 🔵 Saved searches schema, REST and pin UI
 **PR:** TBD

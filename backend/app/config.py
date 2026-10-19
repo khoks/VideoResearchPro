@@ -278,6 +278,29 @@ class Settings(BaseSettings):
     TEMPORAL_SCOPE_WINDOW_TOKENS: int = 1500
 
     # -------------------------------------------------------------------
+    # Scheduler (S-8.3.1 / M3) — the shared Celery-beat tick
+    # -------------------------------------------------------------------
+    # One static beat entry, `scheduler.tick`, every TICK_SECONDS. The tick
+    # claims due `scheduled_runs` rows with a short lease and dispatches each
+    # kind's task on the owning tenant's tier queue. Saved searches, the
+    # newsletter and Echo syncs all ride on this. Off = the beat entry is
+    # not registered and a tick that still arrives no-ops.
+    SCHEDULER_ENABLED: bool = True
+    SCHEDULER_TICK_SECONDS: int = 300
+    # A claim older than this is stale (the holder died between claim and
+    # advance) and may be taken again. Longer than any plausible dispatch.
+    SCHEDULER_LEASE_SECONDS: int = 600
+    # Rows due within this many seconds count as due, so a beat that fires
+    # a little early still runs them; `next_run_at` then advances from the
+    # scheduled time, not from `now`, so nothing runs twice.
+    SCHEDULER_GRACE_SECONDS: int = 30
+    # Max rows one tick claims. Bounds a backlog after downtime.
+    SCHEDULER_BATCH_SIZE: int = 50
+    # A failed dispatch (broker down) is retried at the next tick this many
+    # times before the row waits for its next cadence slot instead.
+    SCHEDULER_MAX_RETRY_TICKS: int = 3
+
+    # -------------------------------------------------------------------
     # Article connector — search engine + RSS (E-1.6 T-1.6.2 + T-1.6.3)
     # -------------------------------------------------------------------
     # Search-engine integration is opt-in via API key. Brave Search is

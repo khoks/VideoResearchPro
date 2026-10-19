@@ -21,6 +21,7 @@ from app.models.personal_context import PersonalContext
 from app.models.qa_exchange import QAExchange
 from app.models.qa_history_exchange import QAHistoryExchange
 from app.models.quota_usage import QuotaUsage
+from app.models.scheduled_run import ScheduledRun
 from app.models.session import Session
 from app.models.shelf import Shelf
 from app.models.shelf_job import ShelfJob
@@ -51,6 +52,7 @@ __all__ = [
     "QAExchange",
     "QAHistoryExchange",
     "QuotaUsage",
+    "ScheduledRun",
     "Session",
     "Shelf",
     "ShelfJob",

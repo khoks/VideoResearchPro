@@ -134,3 +134,16 @@ def test_health_llm_reports_degraded_when_one_feature_fails(
     # Summary inside /health mirrors it.
     summary_response = client.get("/api/v1/health")
     assert summary_response.json()["llm"]["status"] == "degraded"
+
+
+def test_health_scheduler_reports_config_kinds_and_row_counts(client):
+    """S-8.3.1: the ops view of the scheduler. Unauthenticated like the
+    rest of /health; counts only, nothing tenant-identifying."""
+    response = client.get("/api/v1/health/scheduler")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data["enabled"], bool)
+    assert data["tick_seconds"] > 0 and data["lease_seconds"] > 0
+    assert isinstance(data["kinds"], list)
+    assert data["rows"] == {"total": 0, "enabled": 0, "due": 0, "claimed": 0}
+    assert data["last_run_at"] is None

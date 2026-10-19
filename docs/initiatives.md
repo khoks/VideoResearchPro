@@ -884,6 +884,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.2.1.4 `sync_echo_connector` Celery task; scheduler kind `echo_sync` on the S-8.3.1 tick for incremental syncs
 - [ ] T-3.2.1.5 Consent screen component showing `consent_disclosure` and the event types before the OAuth redirect
 - [ ] T-3.2.1.6 Tests with a fake connector: backfill, idempotent incremental, revoke cascade, isolation
+- [ ] T-3.2.1.8 Register `activity_events` and the connector-grant table for export and erasure (`echo_privacy_service.ECHO_TABLES`, `echo_vectors.echo_collection_names()`; [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 2). The full delete must also revoke and remove stored OAuth tokens: the first Echo credential store, which T-3.10.2.1 already names
 
 #### S-3.2.2 🔵 YouTube likes and subscriptions connector
 **PR:** TBD
@@ -921,6 +922,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.3.1.2 `GET/POST/PATCH/DELETE /echo/signals`, `GET /echo/signals/export`; suppression is a tombstone so re-extraction cannot resurrect a deleted signal
 - [ ] T-3.3.1.3 Signals panel on the Echo page grouped by type, with examples and a one-click "that's not me"
 - [ ] T-3.3.1.4 Isolation and tombstone tests
+- [ ] T-3.3.1.5 Register `voice_signals` for export and erasure (`echo_privacy_service.ECHO_TABLES`, `echo_vectors.echo_collection_names()`; [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 2); `echo_intake_service.delete_share` tombstones the signals listed in `derived_signal_ids_json`; signals derive only from the user's own words (`author_is_tenant`), never from context-only shares
 
 #### S-3.3.2 🔵 Signal extraction
 **PR:** TBD. Depends on E-8.5 (notes) for its richest input. That input exists since 2026-10-19 (S-8.5.1 / S-8.5.3): read live notes through `note_service.iter_notes(include_deleted=False)` and treat a withdrawn note as a reason to suppress any signal derived from it, not as a missing row ([D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19)).
@@ -935,6 +937,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.3.3.1 `personal_context_global` Chroma collection (same embedder) holding facts and signals with `tenant_id` metadata; `query_personal_context(tenant_id, text)` with the fail-closed tenant filter the Q&A collection uses
 - [ ] T-3.3.3.2 Upsert on write, delete on tombstone, backfill on worker start (the `backfill_qa_library` pattern)
 - [ ] T-3.3.3.3 Tests: isolation; tombstoned signals absent
+- [ ] T-3.3.3.4 Write vectors with `tenant_id` metadata only into `CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME`, which the full delete already sweeps; add a `test_echo_privacy` case that a fact's vector is gone after `DELETE /echo/brain`
 
 #### S-3.3.4 🔵 Voice-match evaluation harness
 **PR:** TBD. The gate for E-3.4; the [D-055](decisions.md#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29) method applied to voice.
@@ -954,6 +957,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.4.1.2 `POST /echo/draft {message, audience?, register?}` → `{draft, confidence, voice_match_score, citations, deviation_notes}`; 409 with readiness diagnostics when not ready; gated on `echo_speak_as_me`
 - [ ] T-3.4.1.3 Guardrails from `personal-brain.md`: no claims outside ingested sources and facts; names of non-public people flagged before drafting
 - [ ] T-3.4.1.4 Tests with the LLM patched; readiness gate; citation grounding
+- [ ] T-3.4.1.5 Context-only shares may ground a draft but are never quoted verbatim in it ([D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 1); `echo_drafts` is registered for export and erasure; test both
 
 #### S-3.4.2 🔵 Feedback loop and limits
 **PR:** TBD
@@ -982,6 +986,7 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 ### E-3.7 🟡 Constant-stream intake (Domain 5)
 
 **Progress 2026-10-19.** S-3.7.1 shipped with the privacy pair S-3.10.1 / S-3.10.2 ([#286](https://github.com/khoks/VideoResearchPro/pull/286)). Processing (S-3.7.2) is next.
+**Linked decision:** [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) (context-only by default, the brain as a registry, the whole archive, delete order).
 
 **Filed 2026-10-18.** The roadmap's first-to-ship Echo component: the user forwards liked videos, reels, memes, WhatsApp threads, Keep notes, quotes, bookmarks and voice memos all day with no approval step, because the act of sharing is the curation. Everything lands in one `shares_inbox`, is processed into text, embedded, and cross-feeds facts (E-3.1), signals (E-3.3), events (E-3.2) and, when the share is an ingestible source, the library through the normal ingest path.
 **Plan:** [`docs/plans/l3-echo-personal-brain.md`](plans/l3-echo-personal-brain.md) § Domain 5
@@ -1057,6 +1062,8 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 
 ### E-3.10 🟡 Privacy model: export, delete, zero-knowledge
 
+**Linked decision:** [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19).
+**Open question (the user's):** should context-only share text stay in the whole-brain archive (built, D-089 item 3), or move to a separate flagged section? Not omitted either way, or the archive stops being lossless.
 **Progress 2026-10-19.** Export and delete shipped with the first new Echo table ([#286](https://github.com/khoks/VideoResearchPro/pull/286)). **Rule for every later Echo story:** a new Echo table goes into `echo_privacy_service.ECHO_TABLES`, a new Echo Chroma collection into `echo_vectors.echo_collection_names()`, and a new Echo file store under the tenant directory, or the export misses it and the delete leaves it behind. The connector-grant table (E-3.2) is the first credential store this applies to.
 
 **Filed 2026-10-18.** The hard constraint from `personal-brain.md`: self-host data is local; every connector is opt-in, scoped and revocable; the whole brain is exportable and deletable; SaaS offers a zero-knowledge mode.

@@ -1,6 +1,6 @@
 # Testing
 
-> Status: living doc (last refreshed 2026-05-05). Owns: testing strategy, fixture catalogue, how to add a test, how to run the LLM stress harness. Setup commands live in [docs/contributing.md](contributing.md).
+> Status: living doc (last refreshed 2026-10-19). Owns: testing strategy, fixture catalogue, how to add a test, how to run the LLM stress harness. Setup commands live in [docs/contributing.md](contributing.md).
 
 The backend ships with **1013 tests** under `backend/tests/`. The frontend gates on `tsc -b` plus ESLint; no Jest / Vitest suite yet (see [open work](#7-open-work)). This doc explains the conventions so a new contributor can add a test in five minutes.
 
@@ -242,6 +242,18 @@ Coverage is informational — there is no enforced floor. Prefer adding tests wh
 ### 5.4. CI
 
 CI runs the same `pytest tests/ -v` plus `ruff check .` and the frontend build. PRs that fail any of these are blocked.
+
+### 5.5a. From a git worktree
+
+A `.claude/worktrees/<name>` checkout has no `backend/venv` or `backend/.env`, and its `backend/data/videoresearchpro.db` is a stale copy with no `alembic_version`, so the first `TestClient` trips `ensure_schema_at_head` with *tables present but alembic_version is missing*. The tests themselves use the in-memory engine from §3.1; only the app lifespan touches `DATABASE_URL`. Point it at a scratch file and reuse the main checkout's interpreter:
+
+```bash
+cd <worktree>/backend
+DATABASE_URL="sqlite:///<absolute scratch dir>/test.db" \
+  <main checkout>/backend/venv/Scripts/python.exe -m pytest tests/test_routers -q
+```
+
+Every `TestClient` startup also runs the real LLM smoke probes (one short call per unique provider/model, a few seconds and a few cents), so batch reruns rather than iterating one test at a time.
 
 ### 5.5. Pre-merge sanity checks (manual)
 

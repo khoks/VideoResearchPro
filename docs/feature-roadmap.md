@@ -1,6 +1,6 @@
 # Pratidhvani — Feature Roadmap
 
-**Status:** approved (2026-04-24). Living document; status of each item updates as work lands. Last reconciled against the code 2026-10-18.
+**Status:** approved (2026-04-24). Living document; status of each item updates as work lands. Last reconciled against the code 2026-10-19.
 
 This is the canonical roadmap. Each entry has: motivation, sketch, schema/API impact, open questions, and status. The high-level phases live in [vision.md](vision.md).
 
@@ -57,7 +57,7 @@ Multi-week each. Foundational. Each one reshapes the schema or adds a top-level 
 - How are forum threads chunked — by reply, by token-budget, or as a single doc with reply boundaries preserved? Recommend single doc with `segment_metadata.reply_index`.
 - Source-type ordering when ingesting a mixed job: round-robin, sequential, or parallel? Recommend parallel with per-type rate limits.
 
-**Status.** 🟢 **Closed 2026-05-03.** Twelve source types end-to-end (`video` / `reddit_post` / `hn_story` / `mastodon_post` / `bluesky_post` / `podcast_episode` / `pdf` / `article` / `fb_post` / `ig_post` / `li_post` / `tweet`). Polymorphic plumbing claim validated 12× across all axes of variation: discovery surface (search APIs / RSS / paste / no-discovery), storage (in-place / file upload / URL-only), citation (per-reply / per-timestamp / per-page / per-URL). Full chronological PR trace in [`initiatives.md` § I-1](initiatives.md#i-1-multi-source-ingest-original-scope-closed-2026-05-03-reopened-2026-07-22-for-e-111-scale-resilience).
+**Status.** 🟢 **Closed 2026-05-03.** Twelve source types end-to-end (`video` / `reddit_post` / `hn_story` / `mastodon_post` / `bluesky_post` / `podcast_episode` / `pdf` / `article` / `fb_post` / `ig_post` / `li_post` / `tweet`). **Caveat (2026-10-19):** since D-063 made visibility per-tenant, documents of the eleven non-video types are ingested but never granted, so they do not appear in the library or in library Q&A; the fix is [D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19). The upload and paste UI shipped in PR #224 ([D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)). Polymorphic plumbing claim validated 12× across all axes of variation: discovery surface (search APIs / RSS / paste / no-discovery), storage (in-place / file upload / URL-only), citation (per-reply / per-timestamp / per-page / per-URL). Full chronological PR trace in [`initiatives.md` § I-1](initiatives.md#i-1-multi-source-ingest-original-scope-closed-2026-05-03-reopened-2026-07-22-for-e-111-scale-resilience).
 
 - 🟢 **Foundation (PRs #63 / #65 / #66 / #67, shipped 2026-04-22 → 04-25).** Schema additive columns; `BaseConnector` interface; routed call sites; `videos` → `documents` table + ORM rename. See [`initiatives.md`](initiatives.md#i-1-multi-source-ingest-original-scope-closed-2026-05-03-reopened-2026-07-22-for-e-111-scale-resilience) for the full E-1.1 → E-1.4 trace.
 - 🟢 **Reddit + HN candidate connectors shipped standalone (S-1.5.1 PR #70, S-1.5.2 PR #73).** Both emit `Candidate` objects with namespaced `source_id` (`reddit:abc`, `hn:42M`); pseudo-timestamp synthesis at 3 wps codified in [D-013](decisions.md#d-013-pseudo-timestamps-at-3-wps-for-text-based-connectors-2026-04-25).
@@ -116,7 +116,7 @@ Targeted Phase 2 (2026 Q3) for non-foundation source types. Detailed design in [
 - TTS provider: local-first (Coqui) for self-host, paid (ElevenLabs) for SaaS Pro.
 - Reels: vertical 9:16 vs flexible aspect? Recommend vertical-only for v1.
 
-**Status.** 🟡 foundation shipped 2026-05-05 ([I-6](initiatives.md#i-6-author-studio-output-generation-l2), PR #173). Shipped: the `outputs` schema, the Outputter registry, the REST surface, the Pro+ gate, and one outputter, a deterministic Markdown book (no LLM). The `/author` page is a stub. Not built: LLM cohesion, PDF/EPUB, sites, decks, newsletters, reels. Books first, reels last.
+**Status.** 🟡 foundation shipped 2026-05-05 ([I-6](initiatives.md#i-6-author-studio-output-generation-l2), PR #173). Shipped: the `outputs` schema, the Outputter registry, the REST surface, the Pro+ gate, and one outputter, a deterministic Markdown book (no LLM). The `/author` page shipped 2026-10-19 (PR #224, [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)): create a book from finished runs, read, download, delete; the other four kinds show as "coming later". Not built: LLM cohesion, PDF/EPUB, sites, decks, newsletters, reels. Books first, reels last.
 
 ---
 
@@ -151,7 +151,7 @@ Below threshold: bubble dimmed, banner explains what's missing. Crossing thresho
 
 **Open questions.** Many — see [personal-brain.md](personal-brain.md). Privacy model is the largest open design space; fine-tuning leverage and corpus thresholds are the second-largest.
 
-**Status.** 🟡 foundation shipped 2026-05-05 ([I-3](initiatives.md#i-3-echo-personal-brain-l3), PR #172). Shipped: the `personal_context` store, an empty connector registry, the cold-start readiness gate, and the Studio-tier gate. The `/echo` page is a stub. No activity connectors, voice capture or "speak as me" yet. Targeted Phase 6 (2027 Q3+). Remaining components land in order:
+**Status.** 🟡 foundation shipped 2026-05-05 ([I-3](initiatives.md#i-3-echo-personal-brain-l3), PR #172). Shipped: the `personal_context` store, an empty connector registry, the cold-start readiness gate, and the Studio-tier gate. The `/echo` page shipped 2026-10-19 (PR #224, [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)): readiness meter against the three gates, context browser by kind with add / edit / forget, revoke-a-source, and an honest empty connectors card. No activity connectors, voice capture or "speak as me" yet. Targeted Phase 6 (2027 Q3+). Remaining components land in order:
 
 1. Constant-stream intake first (Domain 5) — it's the highest-leverage, lowest-privacy-load entry point and starts feeding the readiness corpus immediately.
 2. Personal context store + manual personality signals (Domains 1 + 3, retrieval mode only).

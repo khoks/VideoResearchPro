@@ -100,18 +100,19 @@ def test_book_text_and_extra_formats(unauthenticated_client, db, monkeypatch):
     db.commit()
     out = unauthenticated_client.post("/api/v1/author/outputs?sync=true", headers=headers,
                                       json={"kind": "book", "title": "My Book", "source_ids": [job.id]}).json()
-    assert out["formats"] == ["md"]
+    # S-6.1.5: a book gets an EPUB by default (PDF only with an engine; off in tests).
+    assert out["formats"] == ["md", "epub"]
 
     r = unauthenticated_client.get(f"/api/v1/author/outputs/{out['id']}/download", headers=headers)
     assert r.headers["content-type"].startswith("text/markdown")
     assert r.text.startswith("# My Book")
     assert 'filename="my-book.md"' in r.headers["content-disposition"]
 
-    # A later outputter (S-6.1.5) adds a PDF beside the Markdown.
+    # A PDF beside the Markdown and the EPUB is listed in FORMATS order.
     row = db.get(Output, out["id"])
     output_artifacts.write_artifact(row, "pdf", b"%PDF-1.7 fake", primary=False)
     listed = unauthenticated_client.get(f"/api/v1/author/outputs/{out['id']}", headers=headers).json()
-    assert listed["formats"] == ["md", "pdf"]
+    assert listed["formats"] == ["md", "pdf", "epub"]
     r = unauthenticated_client.get(f"/api/v1/author/outputs/{out['id']}/download", params={"format": "pdf"}, headers=headers)
     assert r.headers["content-type"] == "application/pdf" and r.content == b"%PDF-1.7 fake"
 

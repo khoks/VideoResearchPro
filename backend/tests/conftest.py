@@ -38,6 +38,22 @@ settings.REPORT_MAP_CONCURRENCY = 1
 # router test errored at startup, and each ``TestClient`` had been spending on
 # six real provider probes.
 settings.DATABASE_URL = "sqlite:///" + (Path(__file__).resolve().parent / ".pytest_schema.db").as_posix()
+# S-6.1.5: a book's PDF needs an optional converter (WeasyPrint or Chromium).
+# Off for the suite, so a book test behaves the same on every machine and
+# does not pay for a browser; the PDF tests turn it back on and skip when
+# this machine has no engine.
+settings.AUTHOR_PDF_ENGINE = "off"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_outputs_dir(tmp_path_factory):
+    # S-6.1.5: every generated book now writes an EPUB under OUTPUTS_DIR.
+    # Without this the suite would fill ./data/outputs of the checkout it
+    # runs in; tests that inspect the files still set their own root.
+    previous = settings.OUTPUTS_DIR
+    settings.OUTPUTS_DIR = str(tmp_path_factory.mktemp("outputs"))
+    yield
+    settings.OUTPUTS_DIR = previous
 
 
 @pytest.fixture(scope="session", autouse=True)

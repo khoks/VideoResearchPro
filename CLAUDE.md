@@ -289,6 +289,8 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `YTDLP_COOKIES_FILE` | No | (unset) | Netscape-format cookies.txt for yt-dlp (browser source wins when both set) |
 | `YTDLP_DOWNLOAD_RATE_LIMIT` | No | `2.0` | Min seconds between yt-dlp download attempts (burst downloads escalate the bot-wall) |
 | `OUTPUTS_DIR` | No | `./data/outputs` | Author Studio artifacts (PDF, EPUB, PPTX, site zips), one directory per output: `<OUTPUTS_DIR>/<user_id>/<output_id>/` (S-6.7.2) |
+| `AUTHOR_PDF_ENGINE` | No | `auto` | Book PDF converter (S-6.1.5): `auto` tries WeasyPrint (needs Pango) then Chromium via Playwright; `weasyprint` / `chromium` pin one; `off` disables PDF. Both are optional (`backend/requirements-author.txt`); EPUB and Markdown need neither. Probed once per process, so restart after installing. Off for the test suite |
+| `AUTHOR_PDF_TIMEOUT_SEC` | No | `180` | Wall-clock budget for Chromium to launch and lay out one book |
 | `EMBEDDING_MODEL_NAME` | No | `paraphrase-multilingual-MiniLM-L12-v2` | SentenceTransformer model |
 | `CHROMA_GLOBAL_COLLECTION_NAME` | No | `videoresearchpro_global` | Name of the single global Chroma collection |
 | `CHROMA_QA_COLLECTION_NAME` | No | `qa_library_global` | Central Q&A collection name |

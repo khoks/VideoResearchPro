@@ -35,6 +35,17 @@ export interface OutputItem {
 export interface KindsResponse {
   available: string[];
   supported: string[];
+  /** S-6.1.5: per available kind, the download formats this server builds. */
+  formats?: Record<string, KindFormats>;
+}
+
+/** S-6.1.5: what a kind can be downloaded as on this server. A book's PDF
+ * needs an optional converter; `unavailable` says why it is missing and what
+ * to install. */
+export interface KindFormats {
+  available: string[];
+  unavailable: Record<string, string>;
+  pdf_engine?: string | null;
 }
 
 export interface CreateOutputPayload {

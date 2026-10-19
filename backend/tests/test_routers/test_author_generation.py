@@ -214,9 +214,11 @@ def test_progress_is_published_per_chapter_and_status_changes_too(db, monkeypatc
     ):
         result = output_service.run_generation(db, user, row)
     assert result.status == "completed"
-    assert [c.args[2] for c in prog.call_args_list] == [5, 50, 90]
+    # S-6.1.5: 92 % is the EPUB build that follows the chapters.
+    assert [c.args[2] for c in prog.call_args_list] == [5, 50, 90, 92]
     assert all(c.args[0] == row.id for c in prog.call_args_list)
-    assert "Chapter 2 of 2" in prog.call_args_list[-1].args[3]
+    assert "Chapter 2 of 2" in prog.call_args_list[-2].args[3]
+    assert prog.call_args_list[-1].args[3] == "Building the EPUB"
     assert [(c.args[1], c.args[2]) for c in stat.call_args_list] == [("pending", "generating"), ("generating", "completed")]
 
 

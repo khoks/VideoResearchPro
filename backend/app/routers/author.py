@@ -3,13 +3,16 @@
 Endpoints under ``/api/v1/author/*``:
 
 - ``GET /author/kinds`` — list registered output kinds (those with a
-  concrete outputter shipped). v1: ``["book"]``.
+  concrete outputter shipped). v1: ``["book"]``. S-6.1.5: ``formats`` says
+  which downloads each kind can be built as on this server, and why any
+  other is unavailable (a book's PDF needs an optional converter).
 - ``POST /author/outputs`` — create a ``pending`` row and dispatch
   ``generate_output`` to the worker on the owner's tier queue (S-6.7.1).
   Body ``{kind, title, source_ids, parameters?}``. Progress arrives on the
   `/ws/jobs` socket under the output's id. ``?sync=true`` generates inline
   and returns the finished row (the test path). A kind with no outputter
-  is 501 before any row is written.
+  is 501 before any row is written, and so is a format the server cannot
+  build (a book's ``pdf`` with no converter installed; S-6.1.5).
 - ``POST /author/outputs/{id}/cancel`` — cancel a pending or generating
   output (S-6.7.1).
 - ``GET /author/outputs`` — list current user's outputs (kind / status
@@ -91,9 +94,18 @@ class CreateOutputPayload(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
 
 
+class KindFormats(BaseModel):
+    available: list[str]
+    # format -> why it cannot be built here (with what to install)
+    unavailable: dict[str, str] = {}
+    pdf_engine: str | None = None
+
+
 class KindsResponse(BaseModel):
     available: list[str]
     supported: list[str]
+    # S-6.1.5: per available kind, the download formats this server builds.
+    formats: dict[str, KindFormats] = {}
 
 
 class DeleteResponse(BaseModel):
@@ -145,9 +157,15 @@ def list_kinds(
     (``available``) vs every kind defined in the OutputKind enum
     (``supported``). Frontend uses this to disable buttons for
     not-yet-implemented kinds."""
+    formats: dict[str, KindFormats] = {}
+    for kind in output_service.list_outputters():
+        options = getattr(output_service.get_outputter(kind), "format_options", None)
+        if options is not None:
+            formats[kind] = KindFormats(**options())
     return KindsResponse(
         available=output_service.list_outputters(),
         supported=sorted(SUPPORTED_KINDS),
+        formats=formats,
     )
 
 
@@ -184,6 +202,17 @@ def create_and_generate(
                 f"Available today: {output_service.list_outputters()}."
             ),
         )
+    # S-6.1.5: the outputter resolves and checks its parameters before the
+    # row exists, so a format this server cannot build leaves nothing behind.
+    parameters = payload.parameters
+    prepare = getattr(output_service.get_outputter(payload.kind), "prepare_parameters", None)
+    if prepare is not None:
+        try:
+            parameters = prepare(dict(parameters))
+        except output_service.OutputUnavailable as e:
+            raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(e))
+        except OutputError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     try:
         row = output_service.create_output(
             db,
@@ -191,7 +220,7 @@ def create_and_generate(
             kind=payload.kind,
             title=payload.title,
             source_ids=payload.source_ids,
-            parameters=payload.parameters,
+            parameters=parameters,
         )
     except UnsupportedKindError as e:
         raise HTTPException(

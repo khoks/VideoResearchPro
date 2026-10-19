@@ -21,8 +21,10 @@ from app.services.llm_routing import (
     _VALID_REASONING,
     MODEL_CONTEXT_WINDOWS,
     USE_CASE_REGISTRY,
+    VISION_CAPABLE_MODELS,
     UseCaseConfig,
     context_window_for,
+    is_vision_use_case,
     resolve_config,
 )
 from app.services.model_pricing import MODEL_PRICING, PRICING_AS_OF, pricing_for
@@ -39,13 +41,16 @@ _GROUPS = {
     "search_": "Topic search",
     "report_": "Report generation",
     "social_": "Social classification",
+    "visual_": "Visual understanding",
+    "temporal_": "Discussed-era extraction",
 }
 
 
 def _group_for(use_case: str) -> str:
-    for prefix, label in _GROUPS.items():
+    # Longest prefix first: "qa_history_" must win over "qa_".
+    for prefix in sorted(_GROUPS, key=len, reverse=True):
         if use_case.startswith(prefix):
-            return label
+            return _GROUPS[prefix]
     return "Other"
 
 
@@ -150,6 +155,10 @@ def get_llm_settings(
                     },
                     "typical_input_tokens": info.typical_input_tokens,
                     "typical_output_tokens": info.typical_output_tokens,
+                    # S-1.14.7: the measurements behind the default, and
+                    # whether the model must accept images.
+                    "guidance": info.guidance.as_dict(),
+                    "vision": is_vision_use_case(use_case),
                 }
             )
 
@@ -158,6 +167,7 @@ def get_llm_settings(
         "providers": _model_options(),
         "reasoning_levels": list(_VALID_REASONING),
         "pricing_as_of": PRICING_AS_OF,
+        "vision_capable_models": sorted(VISION_CAPABLE_MODELS),
     }
 
 

@@ -10,6 +10,27 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### AI models page shows what the measurements found (S-1.14.7, 2026-10-19)
+
+Story S-1.14.7 under [E-1.14](docs/initiatives.md#e-114--model-tier-quality-evaluation-harness), PR [#251](https://github.com/khoks/VideoResearchPro/pull/251), decision [D-076](docs/decisions.md#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19). No default model changed.
+
+- **Registry guidance.** Every LLM use case now records what the quality
+  measurements found. 8 are measured, each citing its decision with the gap to
+  the flagship tier and what fails on a cheaper model. The other 15 are marked
+  unmeasured, with a note on what evidence exists.
+- **Warnings on `/account/ai-models`.** A row warns when the chosen model
+  measured unacceptable for that function (for example luna for frame
+  description, D-073) or weaker (sonnet-5 for report compose, D-062).
+  It also warns when a vision function points at a model not known to
+  accept images. Model options are marked before you pick one. Warnings
+  never block a save.
+- **Cost against the default.** Each row shows the benchmark-job cost of
+  your choice against the default's: compose on sonnet-5 reads $3.03 against
+  $7.58.
+- **`/health/llm`** reports the same guidance and warnings for the
+  server's resolved config, so a bad `LLM_USE_CASE_CONFIG` shows up there.
+- Fixed: Q&A history rows were listed under "Job Q&A".
+
 ### Reading room: citation cards, endnotes and print (2026-10-19)
 
 S-8.8.2. Every citation chip in a report now opens a card naming its source,

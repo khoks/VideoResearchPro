@@ -147,3 +147,30 @@ def test_health_scheduler_reports_config_kinds_and_row_counts(client):
     assert isinstance(data["kinds"], list)
     assert data["rows"] == {"total": 0, "enabled": 0, "due": 0, "claimed": 0}
     assert data["last_run_at"] is None
+
+
+def test_health_llm_carries_guidance_and_measured_warnings(client, reset_llm_status):
+    """S-1.14.7: an operator whose env config points frame description at
+    luna sees D-073's verdict on /health/llm, beside the guidance."""
+    llm_smoke._STATUS.set_results([
+        llm_smoke.UseCaseStatus(
+            use_case="visual_describe_frame", provider="openai",
+            model="gpt-5.6-luna", reasoning="off", ok=True, latency_ms=5,
+            error=None,
+        ),
+        llm_smoke.UseCaseStatus(
+            use_case="report_compose", provider="anthropic",
+            model="claude-opus-5", reasoning="medium", ok=True, latency_ms=5,
+            error=None,
+        ),
+    ])
+
+    data = client.get("/api/v1/health/llm").json()
+    describe = data["use_cases"]["visual_describe_frame"]
+    assert describe["guidance"]["decision_id"] == "D-073"
+    assert [(w["kind"], w["decision_id"]) for w in describe["warnings"]] == [
+        ("unacceptable", "D-073")
+    ]
+    compose = data["use_cases"]["report_compose"]
+    assert compose["guidance"]["status"] == "measured"
+    assert compose["warnings"] == []

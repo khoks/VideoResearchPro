@@ -116,3 +116,16 @@ Verification for runs 2 and 3: the same 3-lens majority per claimed error plus t
 **A deterministic check was tried and is not enough** (S-1.18.7, `backend/scripts/modality_check.py`, scored by `eval_modality_check.py` against the verified labels). At its best thresholds it caught **2 of 5** confirmed errors and raised about eight other flags per report, most of them false positives. Token matching fails for three reasons: four of the eleven videos are spoken in Hindi or Bengali, ASR renders `plt.plot` as "plt dot plot" (or पीएलटी डॉट प्लॉट), and the composer cites every sentence "— Source (mm:ss)", so nearly every sentence reads as speaker-attributed. It stays as a research tool, not a gate.
 
 **Against the rule:** criterion 1 met with gpt-5.5 descriptions (3/3), not with Flash-Lite (1/3); criterion 2 failed in every run (1–2 errors per report); criterion 3 met only with Flash-Lite. No configuration passes, so the UI stays deferred ([D-075](../decisions.md#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19)).
+
+## Per-frame grading of three mid-priced describers (T-1.18.5.6, appended 2026-10-19)
+
+D-075 ordered a per-frame pass to pick a candidate before any report-level run. Same job and 120 frames, re-described by each model, then a four-way blind grading against the gpt-5.5 baseline: 31 frames, two graders per frame who opened the image (62 gradings), labels re-shuffled per frame (each model appears under every label), unblinded afterwards. Raw data: `backend/data/r1_ab/retier/grading4_unblinded.json` (gitignored); costs from the per-model `*_describe.json` totals, divided by the 11 videos that produced calls.
+
+| Describer | Mean accuracy /5 | Unusable | Best of four | Misreads | Hallucinated details | Cost per video |
+|---|---|---|---|---|---|---|
+| gemini-3.5-flash | **4.70** | **0 / 62** | 22 | 21 | 8 | $0.051 |
+| gpt-5.5 (baseline) | 4.54 | 5 / 62 | 37 | 30 | 8 | $0.133 |
+| gpt-5.4-mini | 4.37 | 5 / 62 | 3 | 39 | 2 | $0.018 |
+| claude-haiku-4-5 | 2.39 | **55 / 62** | 0 | 146 | 68 | $0.026 |
+
+claude-haiku-4-5 accepts images and is on `VISION_CAPABLE_MODELS`, yet its descriptions are unusable on this corpus; the registry now lists it as unacceptable for `visual_describe_frame` (S-1.14.7), alongside gpt-5.6-luna. Per D-075 the default changes only on a report-level run; gemini-3.5-flash is the candidate.

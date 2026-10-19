@@ -494,9 +494,20 @@ retrieve_past_exchanges → refine_context → formulate_answer
 
 ## LLM routing
 
-Every LLM call site in the codebase is a **named use case** with a default `(provider, model, reasoning)` triple registered in `app/services/llm_routing.py::USE_CASE_REGISTRY`. Nineteen entries today (full list in [CLAUDE.md](../CLAUDE.md) §LLM-configuration).
+Every LLM call site in the codebase is a **named use case** with a default `(provider, model, reasoning)` triple registered in `app/services/llm_routing.py::USE_CASE_REGISTRY`. Twenty-three entries today (full list in [CLAUDE.md](../CLAUDE.md) §LLM-configuration).
 
-`resolve_config(use_case)` returns the effective config after applying `LLM_USE_CASE_CONFIG` overrides (highest precedence) and `LLM_ROUTE_OVERRIDES` (legacy fallback). `get_llm(use_case)` returns a configured LangChain client (`ChatOpenAI`, `ChatAnthropic`, `ChatGoogleGenerativeAI`, or local OpenAI-compatible).
+`resolve_config(use_case)` returns the effective config after applying, highest first: the caller's per-user override (`user_llm_overrides`, loaded into a ContextVar by `llm_service.byok_context`, E-1.13), `LLM_USE_CASE_CONFIG`, and `LLM_ROUTE_OVERRIDES` (legacy fallback). `get_llm(use_case)` returns a configured LangChain client (`ChatOpenAI`, `ChatAnthropic`, `ChatGoogleGenerativeAI`, or local OpenAI-compatible).
+
+### Measured guidance
+
+Each registry entry also carries `guidance`, which records what the E-1.14 measurements found for that use case. Eight entries are `measured` and cite a decision, the gap to the flagship tier and what fails on a downgrade. The other fifteen are `unmeasured`, with a note on what evidence exists. Each entry can also list per-model verdicts (`unacceptable` / `weaker`), scoped to reasoning levels where needed.
+
+`assess_choice(use_case, cfg)` turns those verdicts, plus the `VISION_CAPABLE_MODELS` check, into warnings. The warnings appear in three places:
+- `/health/llm`, for the config this process resolved;
+- `/settings/llm`, as the data behind the `/account/ai-models` page;
+- the page itself, which re-applies the rule client-side.
+
+Warnings are advisory: no layer refuses a config (see [D-076](decisions.md#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19)).
 
 ### Reasoning levels
 

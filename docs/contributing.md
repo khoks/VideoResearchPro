@@ -104,6 +104,10 @@ cd backend && ./venv/Scripts/ruff check .
 # Frontend type check + production build
 cd frontend && npm run build
 
+# Frontend unit tests (vitest) and device-emulation tests (Playwright; browsers once: npx playwright install chromium webkit)
+cd frontend && npm test
+cd frontend && npm run test:mobile
+
 # Frontend lint
 cd frontend && npm run lint
 ```

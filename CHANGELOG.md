@@ -35,6 +35,33 @@ PR [#276](https://github.com/khoks/VideoResearchPro/pull/276). Closes S-1.16.2 (
   `eval_code_mixed_retrieval_heldout.py`, and the held-out comments as a
   test fixture.
 
+### Report map/reduce intermediates are persisted (2026-10-19, S-1.14.6)
+
+The report pipeline kept its per-batch map extractions and its reduced dataset
+only in memory, so a map regression stayed invisible unless it spoiled the
+finished report, and every stage measurement had to replay a job's inputs.
+They are now stored in `job_report_intermediates` (migration `a3b4c5d6e7f9`):
+one row per map call, with bisected halves and failed batches recorded as rows,
+plus one reduce row, grouped by run. On by default via
+`REPORT_INTERMEDIATES_ENABLED`; `scripts/audit_report_intermediates.py` reads a
+run back. Decision [D-088](docs/decisions.md#d-088--report-intermediates-persisted-per-run-on-by-default-frozen-at-the-stage-that-produced-them-2026-10-19).
+### Installable web app: manifest and the echo mark (2026-10-19)
+
+S-8.12.2. Pratidhvani installs from the browser and from the iOS and
+Android home screens with its own name, colours and icon.
+
+- `manifest.webmanifest` (standalone, paper background, `theme_color`
+  `#7a2c1a`), linked from `index.html` with `theme-color`, an Apple touch
+  icon and the page title from `branding.md` §8. No service worker, by
+  design (JWT-gated fetches and report invalidation; offline reading is not
+  a requirement).
+- The icon renders the echo mark `branding.md` §3 recommends: three
+  concentric arcs fading inward. `logo-mark.svg`, a light / dark
+  `favicon.svg` (Vite's bolt is gone), 192 / 512 / maskable PNGs and a 180 px
+  touch icon, all re-rendered from the SVG by `npm run icons`. Interim until
+  the rebrand's logo work lands.
+- Tests check real icon sizes and opaque backgrounds, the page's links, and
+  Chromium's own installability verdict.
 ### Code-mixed speech: retrieval runs on an English rendering (2026-10-19, T-1.16.2.5 part B)
 
 PR [#271](https://github.com/khoks/VideoResearchPro/pull/271). Decision

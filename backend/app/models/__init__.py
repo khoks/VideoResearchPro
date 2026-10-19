@@ -13,6 +13,7 @@ from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.models.job_template import JobTemplate, JobTemplateVersion
 from app.models.job_search_candidate import JobSearchCandidate
+from app.models.job_report_intermediate import JobReportIntermediate
 from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.mfa_secret import MfaSecret
 from app.models.note import Note
@@ -48,6 +49,7 @@ __all__ = [
     "JobTemplate",
     "JobTemplateVersion",
     "JobSearchCandidate",
+    "JobReportIntermediate",
     "LibraryQAExchange",
     "MfaSecret",
     "Note",

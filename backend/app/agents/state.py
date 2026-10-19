@@ -44,6 +44,10 @@ class ReportAgentState(TypedDict):
     # S-1.12.4 loud accounting: map batch/drop counters surfaced as a
     # processing-note footer in the composed report.
     processing_notes: dict
+    # S-1.14.6: audit records of what map emitted per batch and what reduce
+    # handed to compose, serialised when each stage produced them.
+    map_batch_records: list[dict]
+    reduce_record: dict
 
 
 class KnowledgeAgentState(TypedDict):

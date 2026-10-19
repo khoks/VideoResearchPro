@@ -570,6 +570,63 @@ def _persist_search_candidates(
             pass
 
 
+def _report_intermediates_sink() -> dict | None:
+    """The dict `run_report_agent` fills with map/reduce intermediates, or
+    None when S-1.14.6 capture is switched off (nothing is then captured)."""
+    return {} if settings.REPORT_INTERMEDIATES_ENABLED else None
+
+
+def _persist_report_intermediates(db, job_id: str, intermediates: dict | None) -> int:
+    """Store a report run's map/reduce intermediates (S-1.14.6). Returns rows written.
+
+    The report pipeline kept these only in LangGraph state, so a map
+    regression was invisible unless it spoiled the finished report, and
+    D-055 could measure a stage only by replaying its inputs. One row per
+    map call (bisected halves and failed batches included) plus one for the
+    reduce output, grouped under a fresh ``run_id``. Best-effort, like the
+    candidate pool: a diagnostic write must never fail a job.
+    """
+    if not intermediates or not settings.REPORT_INTERMEDIATES_ENABLED:
+        return 0
+    try:
+        import uuid as _uuid
+
+        from app.models.job_report_intermediate import (
+            STAGE_MAP,
+            STAGE_REDUCE,
+            JobReportIntermediate,
+        )
+
+        run_id = str(_uuid.uuid4())
+        rows = [
+            JobReportIntermediate(job_id=job_id, run_id=run_id, stage=STAGE_MAP, **rec)
+            for rec in intermediates.get("map") or []
+        ]
+        if intermediates.get("reduce"):
+            rows.append(JobReportIntermediate(
+                job_id=job_id, run_id=run_id, stage=STAGE_REDUCE, **intermediates["reduce"]
+            ))
+        if not rows:
+            return 0
+        db.bulk_save_objects(rows)
+        db.commit()
+        logger.info(
+            "[job:%s] Persisted report intermediates run %s: %d map record(s), %s",
+            job_id, run_id[:8], len(intermediates.get("map") or []),
+            "1 reduce record" if intermediates.get("reduce") else "no reduce record",
+        )
+        return len(rows)
+    except Exception:
+        logger.exception(
+            "[job:%s] Persisting report intermediates failed; job continues", job_id
+        )
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return 0
+
+
 def _build_video_metadata(video: Document, language: str | None) -> dict:
     """Build the metadata dict passed to ``chunk_transcript`` for a Document row.
 
@@ -1378,6 +1435,8 @@ def resume_job_after_approval(self, job_id: str) -> None:
         # T-5.6.4: BYOK context — covers report_map_chunks (highest-volume
         # call site in the codebase), report_reduce_summaries,
         # report_compose, and the channel-report variants.
+        # S-1.14.6: capture map/reduce intermediates (None when switched off).
+        report_intermediates = _report_intermediates_sink()
         with llm_service.byok_context(job.tenant_id, db):
             statistics, report_body = run_report_agent(
                 job_type=job.job_type,
@@ -1385,7 +1444,11 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 transcript_chunks=all_chunks,
                 # R4: NULL means the corpus bracket decides.
                 output_length=job.output_length,
+                intermediates_out=report_intermediates,
             )
+        # Persisted before the HTML is built, so a later failure still leaves
+        # the audit trail of what map and reduce produced.
+        _persist_report_intermediates(db, job_id, report_intermediates)
         logger.info(f"[job:{job_id}] Report agent complete, building HTML...")
 
         # Build and save HTML report

@@ -277,6 +277,15 @@ class Settings(BaseSettings):
     # subject; the middle and close catch a source that pivots.
     TEMPORAL_SCOPE_WINDOW_TOKENS: int = 1500
 
+    # S-1.14.6: persist the report pipeline's map/reduce intermediates
+    # (per-batch extraction JSON, the reduced dataset) to
+    # `job_report_intermediates`, so stage quality can be audited after a
+    # run instead of only replayed. On by default: about twice the reduced
+    # dataset's size per run (~3 MB on the 200-video reference job), and the
+    # rows are what makes a map regression or a modality label (S-1.18.8)
+    # checkable on real runs. Off = nothing is captured or written.
+    REPORT_INTERMEDIATES_ENABLED: bool = True
+
     # R5 / S-1.16.2 (invention N-002): how a code-mixed span is QUOTED,
     # decided from its measured Hindi share and matrix (grammar) language.
     # - Hindi grammar and Hindi share >= DOMINANT -> the whole quote in

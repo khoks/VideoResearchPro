@@ -256,7 +256,7 @@ Editorial, never blame-y, never tech-jargon-only:
 
 ## 8. Asset inventory
 
-Files to create as part of the brand rollout (none ship yet — this is the inventory):
+Files to create as part of the brand rollout. **Shipped 2026-10-19 with S-8.12.2** (an interim rendering of the §3 echo mark, re-rendered from `logo-mark.svg` by `npm run icons`): the favicon, the Apple touch icon, the mark-only logo, the manifest (plus 192 / 512 / maskable PNGs under `frontend/public/icons/`) and the page title. The Open Graph image, the full lockup and the marketing set are still to do.
 
 | Asset | Path | Notes |
 |-------|------|-------|

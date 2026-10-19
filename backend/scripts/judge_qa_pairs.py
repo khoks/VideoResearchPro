@@ -25,6 +25,7 @@ Usage (from backend/, main venv):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import random
@@ -130,6 +131,9 @@ def main() -> int:
     ap.add_argument("--judges", default=JUDGES)
     ap.add_argument("--verifiers", default=VERIFIERS)
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--tiebreak", default=None,
+                    help="same-family fallback for the THIRD verifier: votes only on a claim the first two "
+                         "split on and the third has no valid vote for (e.g. after a provider quota runs out)")
     args = ap.parse_args()
 
     _load_keys()
@@ -209,14 +213,64 @@ def main() -> int:
                     key = (v["q"], v["surface"], arm, _norm(claim))
                     claims.setdefault(key, {"claim": claim.strip(), "flagged_by": []})["flagged_by"].append(v["judge"])
 
-    vtasks = [(key, spec) for key in claims for spec in verifier_specs]
+    def existing_checks() -> dict[tuple, dict]:
+        # Every check already on disk, keyed by what it checked rather than by
+        # file name, so a resumed run re-uses them (a valid vote beats an error).
+        # Oldest first: a later run only fills gaps an earlier one left, so a
+        # resumed run never re-rolls a vote that already counted.
+        found: dict[tuple, dict] = {}
+        for f in sorted(out.glob("verify_*.json"), key=lambda f: f.stat().st_mtime):
+            try:
+                rec = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            k = (rec.get("q"), rec.get("surface"), rec.get("arm"), rec.get("claim_key"), rec.get("verifier"))
+            if k not in found or ("error" in found[k] and "error" not in rec):
+                found[k] = rec
+        return found
+
+    done = existing_checks()
+
+    def votes_for(key, checks_by_key) -> list:
+        # One vote per lens. The third lens falls back to --tiebreak only when
+        # its configured model never returned a valid vote for this claim.
+        out_votes = []
+        for i, s in enumerate(verifier_specs):
+            rec = checks_by_key.get(key + (s,), {})
+            if "supported" not in rec and args.tiebreak and i == len(verifier_specs) - 1:
+                rec = checks_by_key.get(key + (args.tiebreak,), {})
+            if "supported" in rec:
+                out_votes.append(rec)
+        return out_votes
+
+    def decided(key) -> bool:
+        # Two agreeing valid votes settle a 2-of-3 majority; the third cannot
+        # change it, so it is not spent.
+        votes = [r["supported"] for r in votes_for(key, done)]
+        return votes.count(True) >= 2 or votes.count(False) >= 2
+
+    vtasks = []
+    for key in claims:
+        if decided(key):
+            continue
+        for i, spec in enumerate(verifier_specs):
+            if "supported" in done.get(key + (spec,), {}):
+                continue
+            if args.tiebreak and i == len(verifier_specs) - 1:
+                # The configured third lens has no valid vote: use the fallback.
+                spec = args.tiebreak
+                if "supported" in done.get(key + (spec,), {}):
+                    continue
+            vtasks.append((key, spec))
+    print(f"{len(vtasks)} verification checks to run ({len(claims) * len(verifier_specs) - len(vtasks)} reused)", flush=True)
 
     def verify(task):
         (q, surface, arm, norm), spec = task
         slug = re.sub(r"[^a-z0-9]+", "_", norm)[:60]
-        path = out / f"verify_q{q:02d}_{surface}_{arm}_{abs(hash(norm)) % 10**8:08d}_{re.sub(r'[^a-z0-9]+', '_', spec.lower())}.json"
-        if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))
+        # A STABLE digest: hash() is randomised per process, which made a resumed
+        # run miss every earlier file and re-verify everything.
+        digest = hashlib.sha1(norm.encode("utf-8")).hexdigest()[:10]
+        path = out / f"verify_q{q:02d}_{surface}_{arm}_{digest}_{re.sub(r'[^a-z0-9]+', '_', spec.lower())}.json"
         arms = pairs[(q, surface)]
         own = arms[arm]["chunks"]
         report_clause, report = ("", "")
@@ -236,20 +290,21 @@ def main() -> int:
         return rec
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool_ex:
-        checks = list(pool_ex.map(verify, vtasks))
-    print(f"verified {len(claims)} unique claims with {len(checks)} checks", flush=True)
-
-    by_claim: dict[tuple, list] = {}
-    for c in checks:
-        by_claim.setdefault((c["q"], c["surface"], c["arm"], c["claim_key"]), []).append(c)
+        list(pool_ex.map(verify, vtasks))
+    final = existing_checks()
+    by_claim: dict[tuple, list] = {key: votes_for(key, final) for key in claims}
+    n_valid = sum(len(v) for v in by_claim.values())
+    n_tiebreak = sum(1 for v in by_claim.values() for r in v if r.get("verifier") == args.tiebreak)
+    print(f"verified {len(claims)} unique claims: {n_valid} valid votes, {n_tiebreak} from the tie-break lens", flush=True)
     claim_rows = []
     for key, info in claims.items():
-        votes = [c["supported"] for c in by_claim.get(key, []) if "supported" in c]
+        votes = [c["supported"] for c in by_claim.get(key, [])]
         unsupported_votes = sum(1 for s in votes if not s)
         status = "confirmed" if unsupported_votes >= 2 else ("refuted" if len(votes) - unsupported_votes >= 2 else "unresolved")
         claim_rows.append({"q": key[0], "surface": key[1], "arm": key[2], "claim": info["claim"],
                            "flagged_by": info["flagged_by"], "votes_unsupported": unsupported_votes,
-                           "votes": len(votes), "status": status})
+                           "votes": len(votes), "status": status,
+                           "lenses": [c.get("verifier") for c in by_claim.get(key, [])]})
 
     # ---- 3. summarise -----------------------------------------------------
     def share(rec, ids, names):
@@ -310,7 +365,9 @@ def main() -> int:
         },
         "V": {"unique_claims_flagged": {a: sum(1 for c in claim_rows if c["arm"] == a) for a in ("on", "off")},
               "confirmed_unsupported": confirmed,
-              "unresolved": sum(1 for c in claim_rows if c["status"] == "unresolved")},
+              "unresolved": sum(1 for c in claim_rows if c["status"] == "unresolved"),
+              "decided_with_tiebreak_lens": sum(1 for c in claim_rows if args.tiebreak and args.tiebreak in c["lenses"]),
+              "tiebreak_lens": args.tiebreak},
         "mean_words": {a: m("words", a) for a in ("on", "off")},
     }
     r = summary["R"]

@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Fixed: real code-mixed quotes dropped when the model appended a transliteration (2026-10-19)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Follow-up to #294, found in the R1 run-7 replay.
+PR [#307](https://github.com/khoks/VideoResearchPro/pull/307). Follow-up to #294, found in the R1 run-7 replay.
 
 - With one source per map call, the model often put the speech, a
   transliteration and a translation into `original` together. The quote

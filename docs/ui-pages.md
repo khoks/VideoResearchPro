@@ -22,6 +22,7 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/library/channels/:channelId` | `ChannelPage` | protected | One channel: header, subscribe / sync, trust-weight slot, its documents |
 | `/qa-history` | `QAHistoryChatPage` | protected | Meta-chat across all past Q&A |
 | `/exports` | `ExportsPage` | protected | Dataset export endpoints + downloads |
+| `/notes` | `NotesPage` | protected | Every note the user wrote, grouped by target, searchable, exportable |
 | `/author` | `AuthorPage` | protected, Pro+ | Author Studio: bind finished runs into a book; other kinds shown as coming later |
 | `/echo` | `EchoPage` | protected, Studio | Echo: personal-context store, readiness meter, sources and connectors |
 | `/account/subscription` | `SubscriptionPage` | protected | Tier, upgrade / downgrade (demo billing) |
@@ -211,8 +212,21 @@ Layout: chat-like — past meta-questions and meta-answers. Each meta-answer cit
 | Asking | Inline "thinking" indicator with skeleton paragraphs. |
 | LLM down for `qa_history_formulate_answer` | Banner + Ask disabled. |
 
+### `NotesPage` — `/notes`
+**Purpose.** "Your notes": everything the user has written on sources, runs, answers and channels (M5 / S-8.5.3). Sidebar entry under **Knowledge**.
+
+Layout: header with **Export Markdown** / **Export JSON-LD**; a controls card (search box, debounced, server-side substring filter; type chips with counts, one at a time or All; a **Show withdrawn** toggle); then one section per target type in a fixed order (Sources, Knowledge reports, Research runs, Q&A answers, Library Q&A answers, Q&A history answers, Channels), notes newest first within each. Each note is a `NoteCard` with an "on <type>: <target>" line linking to the page the target lives on (run, channel page, library Q&A, history anchor; sources link to the shelf because they have no page of their own yet). Edit and delete inline; withdrawn notes render read-only with their withdrawal date.
+
+| State | What renders |
+|-------|--------------|
+| Default | Grouped sections. The page fetches the newest 2000 (the server's page cap) and groups client-side so the chips carry counts. |
+| More than 2000 | A line under the controls: "Showing the newest N of M. Narrow with a search to reach the rest; the export carries everything." |
+| Empty (nothing written) | "Nothing written yet." with where notes come from. Export buttons disabled. |
+| Empty (search) | "Nothing matches “…”." with a Clear search action. |
+| Loading / error | Spinner; inline error with Retry. |
+
 ### `ExportsPage` — `/exports`
-**Purpose.** Download dataset exports for fine-tuning. Four endpoints: Q&A in OpenAI chat format, Q&A in tuple format, Knowledge in OpenAI chat format, Knowledge in tuple format.
+**Purpose.** Download dataset exports for fine-tuning, plus the user's own notes. Four dataset endpoints: Q&A in OpenAI chat format, Q&A in tuple format, Knowledge in OpenAI chat format, Knowledge in tuple format; and two notes exports, Markdown and JSON-LD (S-8.5.3).
 
 Layout: card grid, one card per dataset. Each card shows: dataset name, current row count, last-modified hint, "Download" button (initiates a streaming download), "Copy URL" button.
 
@@ -245,7 +259,7 @@ Sections: **Readiness**, **Connectors** (with **Sources on record**), **What Ech
 | State | What renders |
 |-------|--------------|
 | Below tier, or API 403 | Editorial lock: "Echo opens at Studio." → `/account/subscription?upgrade=studio`. |
-| Readiness | Large percentage (mean of the three gates; 100 only when the backend says `ready`), then one meter per gate: facts recorded vs `threshold_total`, distinct sources vs `threshold_sources`, personality trait recorded / missing. The sources hint states plainly that the gate cannot be met while no connector exists. |
+| Readiness | Large percentage (mean of the three gates; 100 only when the backend says `ready`), then one meter per gate: facts recorded vs `threshold_total`, distinct sources vs `threshold_sources`, personality trait recorded / missing. The sources hint states plainly that the gate cannot be met while no connector exists. Below the meters, "Your voice so far: N notes · W words" from `notes_total` / `notes_words` (S-8.5.3), stated as a feeder, not a gate. |
 | Connectors empty | "No connectors yet." with the planned list. Sources on record lists each `source` with its row count and a **Revoke** button (confirm → `DELETE /echo/sources/{source}`; the toast reports `deleted_count`). |
 | Context browser | Filters: kind, source, "Show expired" (`include_expired`). Every known kind renders as a card, empty or not, each with an **Add** shortcut preselecting that kind; rows show label, value, source pill, confidence, captured date, expiry (an **Expired** pill when past). **Edit** reopens the form with kind and label locked (the backend upserts on `(kind, key)`; renaming means forget + add). **Forget** confirms, then `DELETE /echo/context/{kind}/{key}`. |
 | Add / edit modal | Kind, label (≤128 chars, no `/` because the key travels as a path segment; warns when the label already exists under that kind and would overwrite), the fact, confidence 0–1, optional expiry date (sent as end-of-day UTC). Source is always `manual`. |

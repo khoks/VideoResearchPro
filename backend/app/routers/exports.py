@@ -11,6 +11,11 @@ Four endpoints, two datasets × two formats:
   GET /api/v1/exports/knowledge-dataset/openai.jsonl
   GET /api/v1/exports/knowledge-dataset/tuple.jsonl
 
+Plus the user's own notes (S-8.5.3), which are not fine-tune data but the
+user's words leaving the system in a form they can keep:
+  GET /api/v1/exports/notes.jsonl   W3C Web Annotation JSON-LD, lossless
+  GET /api/v1/exports/notes.md      readable, grouped by target
+
 Auth: header-bearer JWT is preferred. ?token= query fallback is also
 accepted because browser-initiated downloads (``window.location.href = url``,
 ``<a download>``) cannot set an Authorization header — same pattern used for
@@ -18,12 +23,12 @@ the HTML report download in ``routers/qa.py``.
 """
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db, get_user_from_query_or_header
-from app.services import dataset_service
+from app.services import dataset_service, note_export_service
 
 logger = logging.getLogger(__name__)
 
@@ -89,4 +94,41 @@ def export_knowledge_tuple(
         dataset_service.stream_knowledge_tuple(db, current_user.id),
         media_type=_MEDIA_TYPE,
         headers=_attachment("knowledge-dataset-tuple.jsonl"),
+    )
+
+
+@router.get("/notes.jsonl")
+def export_notes_jsonld(
+    include_deleted: bool = Query(
+        True, description="Withdrawn notes too, with their `deleted` timestamp."
+    ),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_user_from_query_or_header),
+) -> StreamingResponse:
+    """Every note as a W3C Web Annotation, one JSON-LD object per line,
+    oldest first. Lossless: `note_export_service.parse_note_jsonld` is the
+    exact inverse."""
+    return StreamingResponse(
+        note_export_service.stream_notes_jsonld(
+            db, current_user.id, include_deleted=include_deleted
+        ),
+        media_type=_MEDIA_TYPE,
+        headers=_attachment("notes.jsonl"),
+    )
+
+
+@router.get("/notes.md")
+def export_notes_markdown(
+    include_deleted: bool = Query(True),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_user_from_query_or_header),
+) -> StreamingResponse:
+    """The same notes as a Markdown document grouped by target type and
+    target, every note dated."""
+    return StreamingResponse(
+        note_export_service.stream_notes_markdown(
+            db, current_user.id, include_deleted=include_deleted
+        ),
+        media_type="text/markdown; charset=utf-8",
+        headers=_attachment("notes.md"),
     )

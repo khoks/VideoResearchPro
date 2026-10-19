@@ -50,6 +50,9 @@ class EchoStatusResponse(BaseModel):
     has_personality_trait: bool
     threshold_total: int
     threshold_sources: int
+    # Domain 3 feeder: live notes and their words (S-8.5.3). Not a gate yet.
+    notes_total: int = 0
+    notes_words: int = 0
 
 
 class PersonalContextItem(BaseModel):
@@ -104,6 +107,8 @@ def echo_status(
         has_personality_trait=r.has_personality_trait,
         threshold_total=r.threshold_total,
         threshold_sources=r.threshold_sources,
+        notes_total=r.notes_total,
+        notes_words=r.notes_words,
     )
 
 

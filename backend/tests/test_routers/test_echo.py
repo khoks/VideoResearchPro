@@ -396,3 +396,29 @@ def test_echo_revoke_source_returns_count(unauthenticated_client, db):
     )
     assert r.status_code == 200
     assert r.json() == {"deleted_count": 2}
+
+
+def test_echo_status_reports_notes_as_the_domain_3_feeder(unauthenticated_client, db):
+    """S-8.5.3 / T-8.5.3.3: the user's own notes are reported on the status
+    (live notes and their words). They do not gate readiness until S-3.5.1
+    sets the per-language voice floor, so `ready` must not move."""
+    from app.models.job import Job
+    from app.services import note_service
+
+    user, headers = _studio_headers(db, "ec-notes@x.com")
+    db.add(Job(id="job-echo", tenant_id=user.id, job_type="topic",
+               topic="Echo", status="completed"))
+    db.commit()
+    before = unauthenticated_client.get("/api/v1/echo/status", headers=headers).json()
+    assert before["notes_total"] == 0 and before["notes_words"] == 0
+
+    note_service.create_note(db, user.id, target_type="job", target_id="job-echo",
+                             body_md="five words in this note")
+    gone = note_service.create_note(db, user.id, target_type="job", target_id="job-echo",
+                                    body_md="withdrawn")
+    note_service.delete_note(db, user.id, gone.id)
+
+    after = unauthenticated_client.get("/api/v1/echo/status", headers=headers).json()
+    assert after["notes_total"] == 1
+    assert after["notes_words"] == 5
+    assert after["ready"] is before["ready"] is False

@@ -28,6 +28,66 @@ Fifth PR of the organisation lane ([S-8.6.1](docs/initiatives.md#s-861--template
 - **Not yet.** The relative publish window needs the search agent's prompt and
   is split out.
 
+
+### Code-mixed speech: proportion thresholds as a rendering policy (2026-10-19, T-1.16.2.3)
+
+PR [#262](https://github.com/khoks/VideoResearchPro/pull/262). Third task of N-002;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- **`code_mixing_service.rendering_mode`** turns a span's measured Hindi share
+  and matrix language into how it is quoted: Devanagari with transliteration
+  and translation when Hindi dominates (≥ 60%) in Hindi grammar, plain
+  English for light borrowing (≤ 20%) in English grammar, Roman script
+  throughout in between.
+- **New settings** `CODE_MIX_DOMINANT_SHARE` (0.6) and
+  `CODE_MIX_BORROWING_MAX_SHARE` (0.2). Defaults come from where detector
+  decisions agree with gold decisions (TEST: 0.970 Latin, 0.823 mixed units).
+- **Open question recorded:** the user's 60% stays the default, but 50% is
+  measurably more robust while English nouns in Devanagari stay invisible
+  to the tagger.
+
+### Code-mixed speech: matrix vs embedded language (2026-10-19, T-1.16.2.2)
+
+PR [#260](https://github.com/khoks/VideoResearchPro/pull/260). Second task of N-002;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- **`code_mixing_service.analyse_span`** reports which language supplies a
+  span's GRAMMAR (matrix) and which only lends words (embedded), alongside
+  the Hindi share. "so the model ko train karna padta hai with the data" is
+  two-thirds English words and Hindi-matrix.
+- The matrix comes from a vote of system morphemes (Myers-Scotton's Matrix
+  Language Frame): auxiliaries, light verbs, postpositions, negation.
+  Measured on 62 held-out mixed units it was right 0.952 of the time, against
+  0.855 for "whichever language has more words" (LLM reference 0.968).
+- English function words as Hindi ASR spells them (इज, टू, द, एंड) now tag
+  English, so "इट इज नॉट बीइंग..." reads as English-matrix. Devanagari tagging
+  precision 0.767 → 0.792, recall unchanged.
+
+### Romanised code-mixing detection, measured (2026-10-19, T-1.16.2.1)
+
+PR [#258](https://github.com/khoks/VideoResearchPro/pull/258). Decision
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19);
+method and numbers in
+[docs/notes/2026-10-19-code-mixing-detection.md](docs/notes/2026-10-19-code-mixing-detection.md).
+First task of N-002 (proportion-driven rendering for code-mixed speech).
+
+- **`code_mixing_service`** tags each word of a text as English, Hindi/Urdu or
+  neutral, in Latin and Devanagari script alike. "taaki baadme koi kasar na
+  reh jaye", which script profiling reads as English, is now Hindi. The
+  production detector is a lexicon + character n-gram + two-state Viterbi
+  tagger, with no model call and ~1 ms per segment.
+- **Measured before choosing**, on 300 hand-labelled units: real YouTube
+  comments and captions from three Hinglish jobs, split DEV/TEST. On held-out
+  romanised text the lexicon tagger beat a `gpt-5.6-luna` pass on precision
+  (0.929 vs 0.803) at equal recall (0.890 vs 0.895). The LLM is better only
+  on English written in Devanagari and stays registered as the reference
+  `code_mixing_detect` (registry entry 24, reasoning off, fail-soft).
+- **Finding:** YouTube captions Hinglish speech in Devanagari, English words
+  included, so romanised Hinglish reaches the library through text sources,
+  not captions. A Hindi lecture was found ingested as a machine-dubbed
+  Bengali track (filed as S-1.11.11).
+- `tests/fixtures/code_mixing/` holds the labelled set and the LLM's cached
+  answers; the suite scores both detectors without calling a provider.
 ### Tags on documents (2026-10-19)
 
 Fourth PR of the organisation lane ([S-8.1.3](docs/initiatives.md#s-813--document-tags-per-tenant), PR [#257](https://github.com/khoks/VideoResearchPro/pull/257)).

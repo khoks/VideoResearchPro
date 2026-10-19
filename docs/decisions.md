@@ -2375,3 +2375,100 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 **Consequences.** New dependencies `markdownify` (backend) and `remark-gfm` (frontend, so the Author reader renders the manuscript's tables). Any future link that opens a report file in a new tab must fetch with the header first. The cache is a second file per report; `delete_report` removes both.
 
 **Linked initiatives / PRs.** [S-6.1.2](initiatives.md#s-612--markdown-source-for-reports), [S-6.1.1](initiatives.md#s-611--source-picker-and-a-working-author-page) (PR [#255](https://github.com/khoks/VideoResearchPro/pull/255)), S-8.8.1, T-8.8.1.5, S-6.1.4.
+
+## D-080 — Code-mixing detection: a lexicon tagger, not an LLM pass (2026-10-19)
+
+**Status:** accepted. Implements T-1.16.2.1 of [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31); extends [D-066](#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31). Method and numbers: [the detection note](notes/2026-10-19-code-mixing-detection.md).
+
+**Context.** `language_service` profiles scripts exactly and cannot see Hindi written in Latin letters, which is the case N-002 targets. The task was to measure at least two ways of finding romanised Hindi before choosing one. Three Hinglish topic jobs on the dev backend gave the first finding: YouTube captions Hindi speech in Devanagari, English words included ("इट इज नॉट बीइंग एक्सप्लीसिटली प्रोग्राम"), and its English captions of Indian podcasts are English-dominant. Romanised Hinglish appears in the comments under those videos, and in the Reddit, chat and social sources the roadmap adds. The 300-unit labelled set therefore combines 180 real comments with 120 caption windows (Latin Indian English, Devanagari Hinglish, English tech talk), labelled per token and split one third DEV, two thirds TEST.
+
+**Measurements (held-out TEST, 168 Latin and 34 Devanagari units).**
+
+| | Latin token P | Latin token R | Latin F1 | Devanagari F1 | Cost |
+|---|---|---|---|---|---|
+| Lexicon + n-gram + Viterbi | 0.929 [0.88, 0.96] | 0.890 | 0.909 | 0.868 | none, ~1 ms per unit |
+| `gpt-5.6-luna`, reasoning off | 0.803 [0.74, 0.85] | 0.895 | 0.847 | 0.965 | ~24K in + 12K out tokens per hour of speech |
+
+Both caught 28–29 of the 30 Hindi-bearing Latin units. The lexicon tagger flagged one word in each of 4 of 138 English units; the LLM flagged none. The LLM also named the matrix language correctly on 60 of 62 mixed units.
+
+**Decision.** The lexicon tagger (`code_mixing_service.tag_tokens`) is the production detector. It is more precise on romanised text at the same recall, with non-overlapping intervals on precision; it is deterministic, so a chunk's profile never changes between runs; and it is cheap enough to run on every chunk of every transcript at chunk time, with no ingest step, no persistence and no backfill. The LLM detector stays registered as `code_mixing_detect`. It is the evaluation harness's reference and the better instrument for English written in Devanagari, but it is not on the ingest path.
+
+**Alternatives considered.**
+
+- *LLM pass at ingest.* Rejected as the primary detector. It is less precise on romanised text, because it returns whole clauses as "Hindi runs" and swallows the English nouns inside them, which is exactly the insertional pattern N-002 measures. It would also add an ingest step and a persisted profile per document, and its output format drifted between batches (see the next point).
+- *Strict span matching of the LLM's output.* Rejected after measurement. On some Devanagari batches the model returned all of a snippet's Hindi words as one span with the English words dropped; matched literally, Devanagari recall fell to 0.48. The mapper now matches spans as in-order subsequences with bounded gaps, which keeps the skipped words English and never reads the labels.
+- *An off-the-shelf language-ID library* (lingua, fastText lid.176, CLD3). Not evaluated: none ship a romanised-Hindi class, and the venv has none installed. They label documents, not tokens, and the task was to measure rather than assume a library solves the problem.
+- *Hybrid: lexicon for Latin text, LLM for Devanagari text.* Deferred. The lexicon tagger's Devanagari blind spot changes the Hindi share (MAE 0.236) but not the N-002 rendering decision on this data: all 50 labelled Devanagari units are Hindi-matrix and Hindi-dominant either way. It becomes worth building if the end-to-end evaluation (T-1.16.2.6) finds English-matrix speech in Devanagari changing a decision.
+
+**Open questions (recorded, not decided).**
+
+1. *Labeller.* The labels are Claude's (Opus 5.5), not a native speaker's. A native spot check of the 42 Hindi-bearing Latin units and 10 Devanagari units would take about half an hour, and should come before the numbers are used to compare future detectors.
+2. *Where romanised Hinglish enters in volume.* Not YouTube captions, on this evidence. Whisper on Hinglish audio could not be tested (yt-dlp is bot-walled). Whether Whisper romanises, writes Devanagari or silently translates Hinglish decides how much of the problem the podcast and Whisper paths carry.
+
+**Consequences.**
+
+- `code_mixing_service` (tokenizer, lexicon tagger, LLM detector, span mapper) and `code_mixing_eval` (gold parsing, scoring). The lexicon files live in `app/services/lexicons/`, and DEV-derived additions sit in marked sections.
+- Registry entry 24, `code_mixing_detect`: volume tier, reasoning off, fail-soft, not a feature gate.
+- `tests/fixtures/code_mixing/` holds the labelled set and the LLM's cached answers. The test suite scores both detectors without calling a provider and fails if the lexicon tagger drops below its measured held-out precision and recall.
+- Found in passing, not fixed: `_fetch_transcript_once` falls back to the first listed caption track, which ingested a machine-dubbed Bengali transcript of a Hindi lecture (`1v3_AQ26jZ0`).
+
+**Addendum (2026-10-19): matrix language, T-1.16.2.2.** The matrix
+language comes from a vote of system morphemes (Matrix Language Frame), not
+from word counts and not from the LLM. On 62 held-out mixed units the vote
+named the grammar's language in 0.952 of cases, word majority in 0.855, and
+the LLM in 0.968. All nine of word majority's misses were Hindi-grammar
+sentences with mostly English words, which is the case N-002 exists for. The
+vote is free and deterministic and reuses the tagger's output, so it ships.
+The 0.016 gap to the LLM (one unit) does not justify a model call per span.
+A 29-word closed list of English function words as Hindi ASR spells them
+(इज, टू, द) is now tagged English, which lets an English-matrix sentence
+written in Devanagari be recognised as one. Details in [the detection
+note](notes/2026-10-19-code-mixing-detection.md#7-matrix-and-embedded-language-t-11622).
+
+**Addendum (2026-10-19): rendering policy, T-1.16.2.3.** The rendering
+policy is `rendering_mode(analysis)`. It gives native script for
+Hindi-grammar spans with Hindi share ≥ `CODE_MIX_DOMINANT_SHARE` (0.6),
+plain English for English-grammar spans with Hindi share ≤
+`CODE_MIX_BORROWING_MAX_SHARE` (0.2), and Roman script throughout for
+everything between. Defaults were chosen on DEV as the centres of the
+plateaus where the detector's decision matches the gold decision; on TEST
+they agree on 0.970 of Latin units and 0.823 of mixed units. D-066's
+three-part rule is unchanged. In Roman mode the original is already
+romanised, so original and transliteration are written once. **Open
+question 3 (the user's call):** what the dominant threshold should rest on.
+Reader preference cannot be measured here. Robustness can: Devanagari
+decisions agree with gold 0.912 of the time at 0.5, 0.824 at 0.6 and 0.647
+at 0.8, because the tagger overstates the Hindi share of Devanagari
+Hinglish. The default stays at the user's 60%; the measurement favours 50%
+until English nouns in Devanagari are visible to the tagger. **Open
+question 4:** whether Roman-mode quotes should also carry the Hindi words in
+Devanagari, as the user's original message proposed ("Hindi/Urdu words in
+their scripts"). N-002's own rule for heavy interleaving is "one script
+throughout", so this is not done. Details in [the detection
+note](notes/2026-10-19-code-mixing-detection.md#8-proportion-thresholds-as-a-rendering-policy-t-11623).
+
+**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1, T-1.16.2.2, T-1.16.2.3), E-1.16, N-002.
+
+## D-081 — Frame describer default: spend against report-level quality (2026-10-19)
+
+**Status:** proposed — the choice is the user's: it is a spend decision on an opt-in feature, and the $0.10-per-video ceiling it overrides was set by Claude in the R1 protocol, not by the user.
+
+**Context.** [D-073](#d-073--frame-description-moves-to-gemini-31-flash-lite-on-image-grounded-grading-selection-stays-on-gpt-55-2026-10-19) moved frame description to gemini-3.1-flash-lite to meet a $0.10-per-video ceiling. [D-075](#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19) found that the report-level benefit disappeared with that describer, and that the describer must be chosen at report level. Four report-level runs and two per-frame gradings now exist ([protocol note](notes/2026-10-18-r1-visual-measurement.md)).
+
+| Describer | Per-frame accuracy (unusable) | Judges prefer annotated report | Substance ON vs OFF | Visual pass $/video (select gpt-5.5 low + describe) |
+|---|---|---|---|---|
+| gpt-5.5 | 4.54 (5/62) | **3/3** | **8.67 vs 7.67** | **$0.200** |
+| gemini-3.5-flash | **4.70 (0/62)** | 2/3 | 7.67 vs 8.00 | $0.118 |
+| gemini-3.1-flash-lite (current) | 4.21 (5/66) | 1/3 | 7.67 vs 7.67 | $0.075 |
+
+Every configuration still has one or two attribution errors per report, so the UI stays deferred whichever is chosen (S-1.18.8 addresses that).
+
+**Options.**
+
+1. **gemini-3.5-flash, ceiling raised to about $0.12 (recommended).** It is the most accurate describer, and the only one with no unusable description, which matters most for a research tool: a misleading frame description is worse than a less complete one. It keeps most of the report-level gain at 60% of gpt-5.5's cost. A 200-video job adds about $24, against about $12 for the report itself.
+2. **gpt-5.5, ceiling raised to about $0.20.** It gives the strongest report-level result, from one run. A 200-video job adds about $40.
+3. **Keep gemini-3.1-flash-lite at $0.075.** It meets the original ceiling but delivered no measurable report-level benefit.
+
+All single-run evidence. The S-1.18.8 protocol re-run should carry both of the first two describers as arms, so the default can be revisited on two runs each.
+
+**Linked initiatives / PRs.** T-1.18.5.6, S-1.18.8. Follows D-073, D-075.

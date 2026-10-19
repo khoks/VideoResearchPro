@@ -1,7 +1,9 @@
 import json
 import logging
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import tiktoken
 from langchain_core.messages import HumanMessage
@@ -33,6 +35,7 @@ from app.agents.prompts.shared import (
     VISUAL_ANNOTATION_CONTRACT,
 )
 from app.agents.state import ReportAgentState
+from app.config import settings
 from app.services import code_mixing_service, language_service, quote_fidelity
 from app.services.visual_service import strip_annotations
 from app.services.llm_service import get_llm_for, response_text
@@ -114,7 +117,14 @@ def _truncate_to_tokens(text: str, max_tokens: int) -> str:
 # on gpt-5.6-luna at $1.20/M output (D-057), closing that gap costs roughly
 # $0.34 on the 200-video benchmark. Still below the control so we are not
 # paying for exhaustive restatement.
-_MAP_EXTRACTION_RATIO = 0.40
+#
+# Raised 0.40 -> 1.0 on 2026-10-19 (S-1.14.19). The ratio was only safe while
+# batches were 120K: there the model self-limits at 14K-21K output tokens.
+# A 15K batch wants ~7K (47%) and was cut at 5,916, and the truncated JSON
+# lost the whole batch. A completion budget is a ceiling, not a charge (only
+# generated tokens are billed), so the cap itself is the right ceiling; the
+# measured output ceiling still clamps it.
+_MAP_EXTRACTION_RATIO = 1.0
 
 # Floor so tiny batches still get a workable completion budget.
 _MIN_COMPLETION_TOKENS = 3_000
@@ -240,6 +250,87 @@ def compute_statistics(state: ReportAgentState) -> dict:
     return {"statistics": statistics}
 
 
+class MapOutputError(RuntimeError):
+    """A map response that cannot be used as-is: cut off at the completion
+    budget, or not JSON. Raised so the bisect-retry path re-runs the batch in
+    halves; before S-1.14.19 it came back as ``{"raw": text}``, counted as a
+    success, and reached the composer as one unattributed half-written fact.
+    """
+
+
+# finish_reason / stop_reason values meaning "ran out of output budget":
+# OpenAI `length`, Anthropic `max_tokens`, Google `MAX_TOKENS`.
+_LENGTH_STOPS = frozenset({"length", "max_tokens", "max_output_tokens"})
+
+
+def _stopped_for_length(response: object) -> bool:
+    meta = getattr(response, "response_metadata", None)
+    if not isinstance(meta, dict):
+        return False
+    reason = meta.get("finish_reason") or meta.get("stop_reason") or ""
+    return str(reason).strip().lower() in _LENGTH_STOPS
+
+
+_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
+
+
+def _parse_map_json(text: str) -> dict:
+    """Strict JSON object, tolerating only a code fence around it."""
+    body = _FENCE.sub("", (text or "").strip())
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError as e:
+        raise MapOutputError(f"map output is not JSON ({len(text or '')} chars): {e}") from e
+    if not isinstance(parsed, dict):
+        raise MapOutputError(f"map output is JSON but not an object ({type(parsed).__name__})")
+    return parsed
+
+
+# S-1.14.19 review fixes.
+# A map batch is capped so its output fits the model's output ceiling: a
+# small batch writes ~47% of its input (measured), so 1.5x the ceiling leaves
+# margin. Without this, a model with the 4,096-token default ceiling truncated
+# every batch, and both bisected halves too, and the content was lost.
+_MAP_INPUT_PER_OUTPUT = 1.5
+_MIN_MAP_BATCH_TOKENS = 2_000
+# A truncated response is bisected until it fits, up to 2**4 pieces. Any
+# other failure keeps the single level of S-1.12.6.
+_MAP_MAX_BISECT_DEPTH = 4
+# Completion budgets are rounded up to this step, so a handful of clients
+# serve every batch size.
+_MAP_BUDGET_STEP = 4_096
+
+
+def _map_call_budget(batch_tokens: int, cap: int) -> int:
+    """Completion budget for ONE map call: its own input size times
+    ``_MAP_EXTRACTION_RATIO``, rounded up to ``_MAP_BUDGET_STEP``, at least
+    ``_MIN_COMPLETION_TOKENS`` and at most ``cap``. Sizing each call to its own
+    batch keeps the tokens a call reserves against a rate limit in proportion
+    to what it can write (a 2K single-source batch no longer reserves 30K)."""
+    want = max(_MIN_COMPLETION_TOKENS, int(batch_tokens * _MAP_EXTRACTION_RATIO))
+    stepped = -(-want // _MAP_BUDGET_STEP) * _MAP_BUDGET_STEP
+    return max(1, min(stepped, cap))
+
+
+def _invoke_map_with_retry(llm, prompt: str, label: str):
+    """``llm.invoke`` with backoff on transient provider errors. Map calls run
+    concurrently, so a 429 is expected rather than exceptional; bisecting on
+    it would halve a batch for no reason and could drop content."""
+    for attempt in range(_COMPOSE_RETRIES):
+        try:
+            return llm.invoke([HumanMessage(content=prompt)])
+        except Exception as e:  # noqa: BLE001 - classified below
+            if attempt == _COMPOSE_RETRIES - 1 or not _is_transient(e):
+                raise
+            wait = _COMPOSE_BACKOFF_SECONDS[min(attempt, len(_COMPOSE_BACKOFF_SECONDS) - 1)]
+            logger.warning(
+                "%s: transient provider error (%s); retrying in %ds (attempt %d/%d)",
+                label, str(e)[:120], wait, attempt + 2, _COMPOSE_RETRIES,
+            )
+            time.sleep(wait)
+    raise RuntimeError("unreachable")
+
+
 def map_chunks(state: ReportAgentState) -> dict:
     """Map: process transcript chunks in batches, extract structured data."""
     if state["job_type"] == "channel":
@@ -249,20 +340,38 @@ def map_chunks(state: ReportAgentState) -> dict:
     if not chunks:
         return {"chunk_summaries": []}
 
-    budget_per_batch = _batch_budget("report_map_chunks")
+    # S-1.14.19: the map cap is its own setting. Item yield per call
+    # saturates, so the window-derived budget (120K) starved late sources.
+    budget_per_batch = min(_batch_budget("report_map_chunks"), int(settings.REPORT_MAP_BATCH_TOKENS))
+    map_model = resolve_config("report_map_chunks").model
+    budget_per_batch = min(
+        budget_per_batch, max(_MIN_MAP_BATCH_TOKENS, int(max_output_for(map_model) * _MAP_INPUT_PER_OUTPUT))
+    )
+    batching = str(settings.REPORT_MAP_BATCHING or "packed").strip().lower()
+    if batching not in ("packed", "source"):
+        logger.warning("map_chunks: unknown REPORT_MAP_BATCHING %r; using 'packed'", batching)
+        batching = "packed"
     # S-1.14.8: the completion budget tracks the batch it must summarize.
     # Previously pinned at 3,000 while batches grew to ~116K (E-1.12), which
     # silently discarded ~94% of the extractable content (D-055).
     map_max_tokens = _completion_budget(
         "report_map_chunks", budget_per_batch, _MAP_EXTRACTION_RATIO
     )
-    llm = get_llm_for("report_map_chunks", temperature=0.0, max_tokens=map_max_tokens)
+    llms: dict[int, object] = {}
+    llms_lock = threading.Lock()
+
+    def _llm_for(batch_tokens: int) -> tuple[int, object]:
+        budget = _map_call_budget(batch_tokens, map_max_tokens)
+        with llms_lock:
+            if budget not in llms:
+                llms[budget] = get_llm_for("report_map_chunks", temperature=0.0, max_tokens=budget)
+            return budget, llms[budget]
+
     logger.info(
-        "map_chunks: %d chunks, batch budget %d tokens, completion budget %d "
+        "map_chunks: %d chunks, %s batching, batch budget %d tokens, completion budget up to %d "
         "(model %s, output ceiling %d)",
-        len(chunks), budget_per_batch, map_max_tokens,
-        resolve_config("report_map_chunks").model,
-        max_output_for(resolve_config("report_map_chunks").model),
+        len(chunks), batching, budget_per_batch, map_max_tokens,
+        map_model, max_output_for(map_model),
     )
 
     # S-1.18.8: sources that carry at least one visual annotation. Every item
@@ -272,15 +381,17 @@ def map_chunks(state: ReportAgentState) -> dict:
     # N-002: every source's own text, so kept `original` wording can be
     # checked against the transcript it claims to come from.
     source_texts = _source_texts_for_verification(chunks)
-    original_counts = {"kept": 0, "dropped": 0}
 
     # Group chunks into batches. `batch_metas` runs parallel to `batches` so
     # the S-1.14.6 audit record can say which videos a batch covered.
     batches = []
     batch_metas: list[list[dict]] = []
+    batch_tokens: list[list[int]] = []
     current_batch = []
     current_metas: list[dict] = []
+    current_item_tokens: list[int] = []
     current_tokens = 0
+    current_source: str | None = None
 
     for chunk in chunks:
         text = chunk.get("text", "")
@@ -309,25 +420,37 @@ def map_chunks(state: ReportAgentState) -> dict:
             f"{' | ' + url if url else ''}]\n{text}"
         )
         tokens = _count_tokens(formatted)
+        source = _source_identity(meta)
+        # S-1.14.19: in `source` mode a new source always starts a new call,
+        # so no batch ever mixes two sources' speech, spans or scripts.
+        new_source = batching == "source" and source != current_source
 
-        if current_tokens + tokens > budget_per_batch and current_batch:
+        if current_batch and (new_source or current_tokens + tokens > budget_per_batch):
             batches.append(current_batch)
             batch_metas.append(current_metas)
+            batch_tokens.append(current_item_tokens)
             current_batch = []
             current_metas = []
+            current_item_tokens = []
             current_tokens = 0
 
         current_batch.append(formatted)
         current_metas.append(meta)
+        current_item_tokens.append(tokens)
         current_tokens += tokens
+        current_source = source
 
     if current_batch:
         batches.append(current_batch)
         batch_metas.append(current_metas)
+        batch_tokens.append(current_item_tokens)
 
-    def _invoke_batch(batch_items: list[str]) -> dict | None:
-        """One map call. Returns the parsed (or raw-wrapped) summary, or
-        None on invocation failure."""
+    def _invoke_batch(batch_items: list[str], item_tokens: list[int],
+                      modality_counts: dict, original_counts: dict) -> dict:
+        """One map call. Returns the parsed summary; raises on invocation
+        failure, on a response cut off at the completion budget, and on a
+        response that is not a JSON object (S-1.14.19), so the caller's
+        bisect-retry handles all three alike."""
         # T-1.16.1.6: per-batch script profile. Empty for plain English, so
         # the common case costs no tokens.
         language_note = language_service.describe_for_prompt(
@@ -343,11 +466,14 @@ def map_chunks(state: ReportAgentState) -> dict:
             modality_rule=MODALITY_FIELD_RULE,
             language_note=language_note,
         )
-        response = llm.invoke([HumanMessage(content=prompt)])
-        try:
-            parsed = json.loads(response_text(response))
-        except json.JSONDecodeError:
-            return {"raw": response_text(response)}
+        budget, call_llm = _llm_for(sum(item_tokens))
+        response = _invoke_map_with_retry(call_llm, prompt, label=f"map ({len(batch_items)} chunks)")
+        if _stopped_for_length(response):
+            raise MapOutputError(
+                f"map output reached the {budget}-token completion budget "
+                f"over {len(batch_items)} chunks"
+            )
+        parsed = _parse_map_json(response_text(response))
         # S-1.18.8: fix the label at the stage that read the speech.
         batch_has_visual = any(VISUAL_MARKER_OPEN in t for t in batch_items)
         _label_modality(parsed, visual_sources, batch_has_visual, modality_counts)
@@ -355,54 +481,91 @@ def map_chunks(state: ReportAgentState) -> dict:
         _verify_originals(parsed, source_texts, original_counts)
         return parsed
 
-    # Process each batch with one level of bisect-retry (S-1.12.6): a
-    # failed batch (context overflow, transient 4xx/5xx) is split in half
-    # and each half retried before any content is declared lost.
+    def _run_batch(i: int) -> dict:
+        """Map batch ``i`` with bisect-retry (S-1.12.6): a failed batch is split
+        in half and each half retried before any content is declared lost. A
+        truncated or non-JSON response (MapOutputError) keeps halving until
+        it fits, up to ``_MAP_MAX_BISECT_DEPTH`` levels; any other failure
+        gets the single level it always had. Counts are local to the batch
+        and merged in batch order afterwards, so concurrent batches never
+        share a counter. Bisected pieces are numbered 0, 1, ... in order."""
+        out = {"pairs": [], "failed": 0, "dropped": 0,
+               "modality": {}, "originals": {"kept": 0, "dropped": 0}}
+        leaf = [0]
+
+        def _sub(depth: int) -> int | None:
+            if depth == 0:
+                return None
+            n = leaf[0]
+            leaf[0] += 1
+            return n
+
+        def _attempt(items: list[str], metas: list[dict], toks: list[int], depth: int) -> None:
+            try:
+                summary = _invoke_batch(items, toks, out["modality"], out["originals"])
+            except Exception as e:  # noqa: BLE001 - every failure is bisected or recorded
+                limit = _MAP_MAX_BISECT_DEPTH if isinstance(e, MapOutputError) else 1
+                if len(items) >= 2 and depth < limit:
+                    logger.warning(
+                        f"Map batch {i + 1}/{len(batches)} failed ({e}); "
+                        f"bisecting {len(items)} chunks and retrying halves"
+                    )
+                    mid = len(items) // 2
+                    _attempt(items[:mid], metas[:mid], toks[:mid], depth + 1)
+                    _attempt(items[mid:], metas[mid:], toks[mid:], depth + 1)
+                    return
+                out["failed"] += 1
+                out["dropped"] += len(items)
+                out["pairs"].append((None, _map_record(i, _sub(depth), None, metas, map_model, error=e)))
+                if depth == 0:
+                    logger.error(f"Map batch {i + 1} unrecoverable (single chunk); content dropped")
+                else:
+                    logger.error(
+                        f"Map batch {i + 1} piece failed after bisect ({e}); "
+                        f"{len(items)} chunks dropped from the report"
+                    )
+                return
+            out["pairs"].append((summary, _map_record(i, _sub(depth), summary, metas, map_model)))
+
+        _attempt(batches[i], batch_metas[i], batch_tokens[i], 0)
+        return out
+
+    # S-1.14.19: batches are independent; run several at once. `map` keeps
+    # results in batch order whatever order the calls finish in.
+    workers = max(1, min(int(settings.REPORT_MAP_CONCURRENCY or 1), len(batches)))
+    if workers == 1:
+        results = [_run_batch(i) for i in range(len(batches))]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = list(pool.map(_run_batch, range(len(batches))))
+
     summaries = []
     records: list[dict] = []
     modality_counts: dict[str, int] = {}
-    map_model = resolve_config("report_map_chunks").model
+    original_counts: dict = {"kept": 0, "dropped": 0}
     failed_batches = 0
     dropped_chunk_groups = 0
-    for i, batch in enumerate(batches):
-        metas = batch_metas[i]
-        try:
-            summary = _invoke_batch(batch)
-            summaries.append(summary)
-            records.append(_map_record(i, None, summary, metas, map_model))
-            continue
-        except Exception as e:
-            logger.warning(
-                f"Map batch {i + 1}/{len(batches)} failed ({e}); "
-                f"bisecting {len(batch)} chunks and retrying halves"
-            )
-            first_error = e
-        if len(batch) < 2:
-            failed_batches += 1
-            dropped_chunk_groups += len(batch)
-            records.append(_map_record(i, None, None, metas, map_model, error=first_error))
-            logger.error(f"Map batch {i + 1} unrecoverable (single chunk); content dropped")
-            continue
-        mid = len(batch) // 2
-        halves = ((batch[:mid], metas[:mid]), (batch[mid:], metas[mid:]))
-        for half_idx, (half, half_metas) in enumerate(halves):
-            try:
-                summary = _invoke_batch(half)
+    for res in results:
+        for summary, record in res["pairs"]:
+            if summary is not None:
                 summaries.append(summary)
-                records.append(_map_record(i, half_idx, summary, half_metas, map_model))
-            except Exception as e2:
-                failed_batches += 1
-                dropped_chunk_groups += len(half)
-                records.append(_map_record(i, half_idx, None, half_metas, map_model, error=e2))
-                logger.error(
-                    f"Map batch {i + 1} half {half_idx + 1} failed after bisect ({e2}); "
-                    f"{len(half)} chunks dropped from the report"
-                )
+            records.append(record)
+        failed_batches += res["failed"]
+        dropped_chunk_groups += res["dropped"]
+        for k, v in res["modality"].items():
+            modality_counts[k] = modality_counts.get(k, 0) + v
+        original_counts["kept"] += res["originals"]["kept"]
+        original_counts["dropped"] += res["originals"]["dropped"]
+        for k, v in (res["originals"].get("reasons") or {}).items():
+            original_counts.setdefault("reasons", {})
+            original_counts["reasons"][k] = original_counts["reasons"].get(k, 0) + v
 
     notes = dict(state.get("processing_notes") or {})
     notes.update(
         {
             "map_batches": len(batches),
+            "map_batching": batching,
+            "map_batch_tokens": budget_per_batch,
             "map_batches_failed": failed_batches,
             "map_chunks_dropped": dropped_chunk_groups,
             "map_chunks_total": len(chunks),

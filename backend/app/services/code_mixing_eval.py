@@ -181,3 +181,54 @@ def matrix_accuracy(units: list[dict], predicted: dict[str, str]) -> dict[str, A
         "accuracy": round(correct / len(rows), 4) if rows else 0.0,
         "confusion": dict(sorted(confusion.items())),
     }
+
+
+def gold_analysis(unit: dict) -> dict[str, Any]:
+    """The labeller's version of `analyse_span`: gold shares and gold matrix."""
+    g = gold_tags(unit)
+    en, hi = g.count("en"), g.count("hi")
+    return {
+        "en_tokens": en,
+        "hi_tokens": hi,
+        "hi_share": round(hi / (en + hi), 4) if en + hi else 0.0,
+        "matrix": unit["matrix"],
+    }
+
+
+def policy_agreement(
+    units: list[dict], dominant: float | None = None, borrowing: float | None = None
+) -> dict[str, Any]:
+    """How often the rendering mode computed from the DETECTOR's analysis
+    equals the mode computed from the GOLD analysis (T-1.16.2.3).
+
+    The policy's thresholds are only as good as the decisions they produce
+    on detector output: a threshold that sits where detector bias pushes
+    spans across it flips modes on noise alone.
+    """
+    from app.services.code_mixing_service import analyse_span, rendering_mode
+
+    agree: Counter[str] = Counter()
+    total: Counter[str] = Counter()
+    gold_modes: Counter[str] = Counter()
+    flips: Counter[str] = Counter()
+    for u in units:
+        gold = gold_analysis(u)
+        if not (gold["en_tokens"] or gold["hi_tokens"]):
+            continue
+        g = rendering_mode(gold, dominant, borrowing)
+        p = rendering_mode(analyse_span(u["text"]), dominant, borrowing)
+        gold_modes[g] += 1
+        groups = ["all", "latin" if u["base"] == "en" else "devanagari"]
+        if gold["en_tokens"] and gold["hi_tokens"]:
+            groups.append("mixed")   # the units where the decision is not trivial
+        for group in groups:
+            total[group] += 1
+            agree[group] += g == p
+        if g != p:
+            flips[f"{g}->{p}"] += 1
+    return {
+        "agreement": {k: round(agree[k] / total[k], 4) for k in total},
+        "units": dict(total),
+        "gold_modes": dict(sorted(gold_modes.items())),
+        "flips": dict(sorted(flips.items())),
+    }

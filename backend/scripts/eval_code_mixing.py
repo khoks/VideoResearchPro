@@ -108,6 +108,9 @@ def main() -> None:
     report["majority_matrix"] = ev.matrix_accuracy(
         units, {u["id"]: _majority(u["text"]) for u in units}
     )
+    # T-1.16.2.3: rendering decisions on detector output vs on gold, at the
+    # configured thresholds (CODE_MIX_DOMINANT_SHARE / _BORROWING_MAX_SHARE).
+    report["policy"] = ev.policy_agreement(units)
 
     if args.llm:
         all_units = ev.load_units()
@@ -144,6 +147,7 @@ def main() -> None:
     print("matrix, word majority (baseline):", report["majority_matrix"])
     if "llm_matrix" in report:
         print("matrix, LLM:", report["llm_matrix"])
+    print("rendering policy, detector vs gold:", report["policy"])
     print("lexicon ms/unit:", report["lexicon_ms_per_unit"])
 
 

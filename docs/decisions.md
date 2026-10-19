@@ -2425,7 +2425,29 @@ A 29-word closed list of English function words as Hindi ASR spells them
 written in Devanagari be recognised as one. Details in [the detection
 note](notes/2026-10-19-code-mixing-detection.md#7-matrix-and-embedded-language-t-11622).
 
-**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1, T-1.16.2.2), E-1.16, N-002.
+**Addendum (2026-10-19): rendering policy, T-1.16.2.3.** The rendering
+policy is `rendering_mode(analysis)`. It gives native script for
+Hindi-grammar spans with Hindi share ≥ `CODE_MIX_DOMINANT_SHARE` (0.6),
+plain English for English-grammar spans with Hindi share ≤
+`CODE_MIX_BORROWING_MAX_SHARE` (0.2), and Roman script throughout for
+everything between. Defaults were chosen on DEV as the centres of the
+plateaus where the detector's decision matches the gold decision; on TEST
+they agree on 0.970 of Latin units and 0.823 of mixed units. D-066's
+three-part rule is unchanged. In Roman mode the original is already
+romanised, so original and transliteration are written once. **Open
+question 3 (the user's call):** what the dominant threshold should rest on.
+Reader preference cannot be measured here. Robustness can: Devanagari
+decisions agree with gold 0.912 of the time at 0.5, 0.824 at 0.6 and 0.647
+at 0.8, because the tagger overstates the Hindi share of Devanagari
+Hinglish. The default stays at the user's 60%; the measurement favours 50%
+until English nouns in Devanagari are visible to the tagger. **Open
+question 4:** whether Roman-mode quotes should also carry the Hindi words in
+Devanagari, as the user's original message proposed ("Hindi/Urdu words in
+their scripts"). N-002's own rule for heavy interleaving is "one script
+throughout", so this is not done. Details in [the detection
+note](notes/2026-10-19-code-mixing-detection.md#8-proportion-thresholds-as-a-rendering-policy-t-11623).
+
+**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1, T-1.16.2.2, T-1.16.2.3), E-1.16, N-002.
 
 ## D-081 — Frame describer default: spend against report-level quality (2026-10-19)
 

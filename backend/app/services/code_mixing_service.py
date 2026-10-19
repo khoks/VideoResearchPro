@@ -441,6 +441,58 @@ def analyse_span(text: str) -> dict[str, Any]:
     return out
 
 
+# --- rendering policy (T-1.16.2.3) ----------------------------------------------
+#
+# N-002's inversion: the measured proportion is not a classification output,
+# it is a RENDERING decision — how a span is quoted when a report or answer
+# keeps its wording. D-066's rules still decide WHETHER to quote (ordinary
+# speech is translated plainly; quotes that matter keep their wording); this
+# decides which script the kept wording is shown in.
+
+PLAIN_ENGLISH = "plain_english"
+ROMAN = "roman"
+NATIVE_SCRIPT = "native_script"
+RENDERING_MODES = (PLAIN_ENGLISH, ROMAN, NATIVE_SCRIPT)
+
+
+def rendering_mode(
+    analysis: dict[str, Any],
+    dominant: float | None = None,
+    borrowing: float | None = None,
+) -> str:
+    """How to quote a span, from `analyse_span`'s measurement.
+
+    - ``native_script``: Hindi supplies the grammar AND at least `dominant`
+      of the words — the whole quote in Devanagari, then a transliteration,
+      then an English translation (D-066's three-part form).
+    - ``plain_english``: English supplies the grammar and Hindi at most
+      `borrowing` of the words — a few borrowed words ("bhai", "yaar"),
+      rendered in English with any gloss inline; no original-language form.
+    - ``roman``: everything between — heavy interleaving, or Hindi grammar
+      carrying many English words. The wording is kept in Roman script
+      throughout so a reader follows one script, with an English
+      translation; the Roman original is its own transliteration.
+
+    The matrix language gates both ends, which is what proportion alone
+    cannot do: a Hindi-grammar sentence is never "light borrowing" however
+    many English nouns it carries, and an English-grammar sentence is never
+    shown in Devanagari.
+    """
+    from app.config import settings
+
+    dominant = settings.CODE_MIX_DOMINANT_SHARE if dominant is None else dominant
+    borrowing = settings.CODE_MIX_BORROWING_MAX_SHARE if borrowing is None else borrowing
+    share = analysis.get("hi_share") or 0.0
+    matrix = analysis.get("matrix")
+    if share <= 0 or matrix == "none":
+        return PLAIN_ENGLISH
+    if matrix != "hi" and share <= borrowing:
+        return PLAIN_ENGLISH
+    if matrix == "hi" and share >= dominant:
+        return NATIVE_SCRIPT
+    return ROMAN
+
+
 # --- LLM detector -------------------------------------------------------------
 
 LLM_BATCH_SIZE = 25

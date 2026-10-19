@@ -251,6 +251,69 @@ the frame that dominates its system morphemes (`en` for the user's example).
 Finer clause-level frames would need a clause segmenter, which the
 unpunctuated ASR text does not support well. That is left open.
 
+## 8. Proportion thresholds as a rendering policy (T-1.16.2.3)
+
+N-002 treats the measured proportion as a decision about **how to quote a
+span**, not as a label. D-066 still decides WHETHER a span is quoted at all:
+ordinary speech is translated plainly, and wording that matters is kept. The
+policy decides which script kept wording is shown in.
+
+`code_mixing_service.rendering_mode(analysis)`:
+
+| Mode | When | Quote form |
+|---|---|---|
+| `native_script` | Hindi grammar and Hindi share ≥ `CODE_MIX_DOMINANT_SHARE` (0.6) | Devanagari throughout, then transliteration, then translation: D-066's full three-part form |
+| `plain_english` | English grammar and Hindi share ≤ `CODE_MIX_BORROWING_MAX_SHARE` (0.2), or no Hindi | English, with borrowed words glossed inline |
+| `roman` | everything between | Roman script throughout, then translation. The Roman original is its own transliteration, so it is not repeated |
+
+The matrix language gates both ends. A Hindi-grammar sentence is never
+"light borrowing", however many English nouns it carries, and an
+English-grammar sentence is never shown in Devanagari.
+
+**How the defaults were chosen.** A threshold is only as good as the decisions
+it produces on DETECTOR output. A threshold placed where detector bias
+pushes spans across it flips decisions on noise alone. So for each pair of
+thresholds, the mode computed from the detector's analysis was compared with
+the mode computed from the labels (`code_mixing_eval.policy_agreement`).
+
+- **Dominant.** DEV agreement plateaus between 0.50 and 0.60, then falls:
+  Devanagari agreement is 0.875 at 0.70 and 0.562 at 0.80. The cause is the
+  tagger's blind spot: English nouns written in Devanagari read as Hindi, so
+  Devanagari Hinglish (gold Hindi share 0.4–0.95) reads as ~1.0. The user's
+  60% sits on the plateau and is the default.
+- **Borrowing.** DEV agreement is flat from 0.10 to 0.25 and lower at 0.30;
+  0.20 is the plateau's centre. The labelled set shows why the region is
+  flat. English-grammar spans up to 0.25 Hindi are single-word borrowings
+  (bhai, yaar, beta, "gyan pelu"), and from 0.29 up they carry a whole Hindi
+  clause ("ek hi dil hai kitni baar jitoge").
+
+**Held-out (TEST) at the defaults:** detector and gold decisions agree on
+0.946 of units, 0.970 of Latin units, **0.823 of mixed units** and 0.824 of
+Devanagari units. Gold modes: 145 plain English, 15 Roman, 42 native script.
+The 11 flips are 6 Roman→native (Devanagari bias), 4 native→Roman and 1
+plain→Roman. Unseen names add to the error: they look Hindi to the n-gram
+model ("harry bhai you are the best" reads as one-third Hindi). The labels do
+not score names, so the token scores do not show this, but the policy does.
+
+**Does the matrix gate change decisions?** At these defaults, rarely: it
+changes 0 of 90 gold decisions and 1 of 57 detector decisions, compared with
+the user's pure-percentage rule. It starts to matter at a looser borrowing
+threshold. At 0.35 it keeps two Hindi-grammar sentences with a third Hindi
+words ("sir please, All programming language ke liye video banaye") from
+being flattened into plain English. The matrix earns its keep mostly
+elsewhere: it tells the analysis path which grammar a sentence is in
+(T-1.16.2.5), and 11% of mixed spans are Hindi grammar with mostly English
+words.
+
+**Open question for the user** (recorded in D-080). What should the dominant
+threshold rest on? There are two pulls. Reader preference: how much Hindi
+should a sentence carry before a reader would rather see Devanagari? That is
+a taste question this data cannot settle. Robustness: on TEST, Devanagari
+decisions agree with gold 0.912 of the time at 0.50, 0.824 at 0.60 and 0.647
+at 0.80, so a lower threshold hides more of the detector's bias. The default
+stays at the user's 60%. The measurement says 50% would be more robust until
+English nouns in Devanagari become visible to the tagger.
+
 ## Reproduce
 
 ```bash

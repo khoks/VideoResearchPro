@@ -416,6 +416,10 @@ From highest to lowest:
 
 Twenty-three named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
 
+### Measured guidance (S-1.14.7)
+
+Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is `measured` (the use case's own output was graded; carries `decision_id`, `decided_on`, `flagship_delta`, `downgrade_risk`, optional `measured_cost`) or `unmeasured` (no decision id; `note` says what evidence exists). `model_verdicts` lists `ModelVerdict(model, verdict="unacceptable"|"weaker", why, decision_id, reasoning=())` — exact model-id match, scoped to reasoning levels when `reasoning` is non-empty. `assess_choice(use_case, cfg)` turns verdicts plus the `VISION_CAPABLE_MODELS` check into warnings; `/health/llm` reports them for the resolved config and `GET /settings/llm` ships the guidance to `/account/ai-models`, whose `assessChoice` mirrors the rule client-side. Advisory only: nothing refuses a config. Adding a use case means writing its guidance; promoting one to `measured` needs a decision entry, and `tests/test_services/test_llm_guidance.py` pins the measured set and checks every cited decision exists in `docs/decisions.md`.
+
 **Job Q&A (`app/agents/qa_agent.py`):**
 - `qa_clarification` — short follow-up clarifier before answering
 - `qa_sub_query_expansion` — rewrite the question into 2 sub-queries for broader RAG recall

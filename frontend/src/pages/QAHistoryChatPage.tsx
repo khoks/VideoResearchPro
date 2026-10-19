@@ -83,7 +83,10 @@ export function QAHistoryChatPage() {
 
   useEffect(() => {
     if (!sortedHistory.length) return;
-    const hash = window.location.hash;
+    // In-app references use `#exchange-<id>`; search results (S-8.2.1) use
+    // `?exchange=<id>`. Honour both.
+    const fromQuery = new URLSearchParams(window.location.search).get('exchange');
+    const hash = fromQuery ? `#exchange-${fromQuery}` : window.location.hash;
     if (hash.startsWith('#exchange-')) {
       const el = document.getElementById(hash.slice(1));
       if (el) {

@@ -27,6 +27,55 @@ PR [#PR_S673](https://github.com/khoks/VideoResearchPro/pull/PR_S673). Plan: [do
 - **`GET /api/v1/author/outputs/{id}/citations`** and `citation_count` on
   every output; the Author list and the reader show the count.
 
+### Echo: the shares inbox, with whole-brain export and delete (S-3.7.1, S-3.10.1, S-3.10.2, 2026-10-19)
+
+The first new Echo table, shipped with its export and its erasure. PR [#286](https://github.com/khoks/VideoResearchPro/pull/286). Plan: [docs/plans/l3-echo-personal-brain.md](docs/plans/l3-echo-personal-brain.md).
+
+- **Shares inbox.** `shares_inbox` (migration `007c708bb890`, which also gives
+  `personal_context` a `tenant_id` backfilled from `user_id`). `/api/v1/echo/shares`
+  takes a link, text or a file (25 MB cap, stored under `ECHO_SHARES_DIR/<tenant>/`
+  by share id), lists, edits and deletes; deleting a share removes its file,
+  vector and derived facts. Studio only.
+- **Context-only by default.** A share is someone else's words unless the user
+  says otherwise: retrievable as context later, never quoted, never in a dataset
+  export. The plan's recommended default for its open question; no per-thread
+  override was built.
+- **Export.** `GET /api/v1/echo/export`: one zip with a manifest, JSONL per table
+  and the files; `read_archive` is its tested inverse.
+- **Delete.** `DELETE /api/v1/echo/brain?confirm=delete-everything` removes every
+  Echo row, file and vector; tests check each store directly for both tenants.
+  `GET /api/v1/echo/brain/footprint` shows the counts.
+- **UI.** "Add to Echo" in the sidebar, an `/echo/inbox` page, and a "Your Echo
+  data" card on the Echo page with export and a typed-confirmation delete.
+### Command palette and keyboard shortcuts (2026-10-19)
+
+S-8.2.2 ([plan](docs/plans/m2-command-palette.md)). Find any run, source,
+channel, question or knowledge report from anywhere, and get around without
+the mouse.
+
+- **Mod-K** (Cmd on macOS, Ctrl elsewhere) or **Ctrl-Alt-K**, or the new
+  **Search…** button: grouped results from `GET /search`, navigation
+  actions, notes exports, theme, recent items. Built on `cmdk` (MIT), loaded
+  on first open.
+- **Shortcuts:** `/` focuses the page's search box, and `g r` / `g l` /
+  `g k` / `g a` jump to research, library, knowledge and author — the chords
+  `ui-design.md` had long described without an implementation. None fire
+  while typing; the palette turns them off (WCAG 2.1.4).
+- **Results land on the item:** a source narrows the library to its row, a
+  question scrolls to and focuses its exchange, a knowledge report opens the
+  reader.
+### Channel Intelligence tab (2026-10-19)
+
+[S-8.7.3](docs/initiatives.md#s-873--intelligence-tab-ui), PR [#285](https://github.com/khoks/VideoResearchPro/pull/285).
+
+- **Intelligence** beside **Documents** on every channel page: publishing
+  cadence, lengths, topics and concepts with their documents, the words the
+  channel keeps using, your questions that cite it, and stance where it exists.
+- **Extract knowledge for N documents** fills the knowledge gap from the page,
+  within your monthly quota, one document at a time, stoppable.
+- **Charts** follow the dataviz method (validated colours per theme, keyboard
+  readouts, a table view on every chart): `ColumnChart`, `BarList`.
+
 ### Author Studio downloads: binary artifacts on disk, one endpoint per output (2026-10-19, S-6.7.2)
 
 PR [#284](https://github.com/khoks/VideoResearchPro/pull/284). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).

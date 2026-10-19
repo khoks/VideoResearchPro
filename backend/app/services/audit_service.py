@@ -46,6 +46,9 @@ class Event(str, Enum):
     MFA_RECOVERY_CODE_USED = "mfa_recovery_code_used"
     # E-5.2.X self-service tier flip with mock payment (D-050)
     TIER_CHANGED = "tier_changed"
+    # S-3.10.1 / S-3.10.2 Echo privacy (counts only in metadata, never content)
+    ECHO_EXPORTED = "echo_exported"
+    ECHO_BRAIN_DELETED = "echo_brain_deleted"
 
 
 def _ip_from_request(request: Request | None) -> str | None:

@@ -884,6 +884,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.2.1.4 `sync_echo_connector` Celery task; scheduler kind `echo_sync` on the S-8.3.1 tick for incremental syncs
 - [ ] T-3.2.1.5 Consent screen component showing `consent_disclosure` and the event types before the OAuth redirect
 - [ ] T-3.2.1.6 Tests with a fake connector: backfill, idempotent incremental, revoke cascade, isolation
+- [ ] T-3.2.1.8 Register `activity_events` and the connector-grant table for export and erasure (`echo_privacy_service.ECHO_TABLES`, `echo_vectors.echo_collection_names()`; [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 2). The full delete must also revoke and remove stored OAuth tokens: the first Echo credential store, which T-3.10.2.1 already names
 
 #### S-3.2.2 🔵 YouTube likes and subscriptions connector
 **PR:** TBD
@@ -921,6 +922,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.3.1.2 `GET/POST/PATCH/DELETE /echo/signals`, `GET /echo/signals/export`; suppression is a tombstone so re-extraction cannot resurrect a deleted signal
 - [ ] T-3.3.1.3 Signals panel on the Echo page grouped by type, with examples and a one-click "that's not me"
 - [ ] T-3.3.1.4 Isolation and tombstone tests
+- [ ] T-3.3.1.5 Register `voice_signals` for export and erasure (`echo_privacy_service.ECHO_TABLES`, `echo_vectors.echo_collection_names()`; [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 2); `echo_intake_service.delete_share` tombstones the signals listed in `derived_signal_ids_json`; signals derive only from the user's own words (`author_is_tenant`), never from context-only shares
 
 #### S-3.3.2 🔵 Signal extraction
 **PR:** TBD. Depends on E-8.5 (notes) for its richest input. That input exists since 2026-10-19 (S-8.5.1 / S-8.5.3): read live notes through `note_service.iter_notes(include_deleted=False)` and treat a withdrawn note as a reason to suppress any signal derived from it, not as a missing row ([D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19)).
@@ -935,6 +937,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.3.3.1 `personal_context_global` Chroma collection (same embedder) holding facts and signals with `tenant_id` metadata; `query_personal_context(tenant_id, text)` with the fail-closed tenant filter the Q&A collection uses
 - [ ] T-3.3.3.2 Upsert on write, delete on tombstone, backfill on worker start (the `backfill_qa_library` pattern)
 - [ ] T-3.3.3.3 Tests: isolation; tombstoned signals absent
+- [ ] T-3.3.3.4 Write vectors with `tenant_id` metadata only into `CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME`, which the full delete already sweeps; add a `test_echo_privacy` case that a fact's vector is gone after `DELETE /echo/brain`
 
 #### S-3.3.4 🔵 Voice-match evaluation harness
 **PR:** TBD. The gate for E-3.4; the [D-055](decisions.md#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29) method applied to voice.
@@ -954,6 +957,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.4.1.2 `POST /echo/draft {message, audience?, register?}` → `{draft, confidence, voice_match_score, citations, deviation_notes}`; 409 with readiness diagnostics when not ready; gated on `echo_speak_as_me`
 - [ ] T-3.4.1.3 Guardrails from `personal-brain.md`: no claims outside ingested sources and facts; names of non-public people flagged before drafting
 - [ ] T-3.4.1.4 Tests with the LLM patched; readiness gate; citation grounding
+- [ ] T-3.4.1.5 Context-only shares may ground a draft but are never quoted verbatim in it ([D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 1); `echo_drafts` is registered for export and erasure; test both
 
 #### S-3.4.2 🔵 Feedback loop and limits
 **PR:** TBD
@@ -979,19 +983,23 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 
 **Shipped 2026-05-05** in PR #172. Two new feature flags: `echo_personal_brain` (gates the entire `/echo/*` surface) + `echo_speak_as_me` (gates the future "speak as me" agent — E-3.4). Both are Studio-tier-only at the `TIER_CAPABILITIES` level. Frontend shows the Echo surface only when `has_feature("echo_personal_brain")` returns true.
 
-### E-3.7 🔵 Constant-stream intake (Domain 5)
+### E-3.7 🟡 Constant-stream intake (Domain 5)
+
+**Progress 2026-10-19.** S-3.7.1 shipped with the privacy pair S-3.10.1 / S-3.10.2 ([#286](https://github.com/khoks/VideoResearchPro/pull/286)). Processing (S-3.7.2) is next.
+**Linked decision:** [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) (context-only by default, the brain as a registry, the whole archive, delete order).
 
 **Filed 2026-10-18.** The roadmap's first-to-ship Echo component: the user forwards liked videos, reels, memes, WhatsApp threads, Keep notes, quotes, bookmarks and voice memos all day with no approval step, because the act of sharing is the curation. Everything lands in one `shares_inbox`, is processed into text, embedded, and cross-feeds facts (E-3.1), signals (E-3.3), events (E-3.2) and, when the share is an ingestible source, the library through the normal ingest path.
 **Plan:** [`docs/plans/l3-echo-personal-brain.md`](plans/l3-echo-personal-brain.md) § Domain 5
 **Acceptance.** A user pastes a YouTube URL, drops a screenshot of a meme, and uploads a WhatsApp export; within a minute each appears in the inbox with extracted text, the video is offered to the library, the meme's text is searchable, the WhatsApp thread shows a "redact the other party" option; readiness moves; deleting a share removes its derived signals.
 
-#### S-3.7.1 🔵 `shares_inbox`, quick-share and the inbox page
-**PR:** TBD. The first Echo PR.
-- [ ] T-3.7.1.1 `shares_inbox(id, tenant_id, user_id, received_at, surface, content_type, raw_payload_json, file_path, extracted_text, user_annotation, processing_state, derived_fact_ids_json, derived_signal_ids_json, linked_document_id, embedding_id)`; same revision adds `tenant_id` to `personal_context` with backfill `= user_id`
-- [ ] T-3.7.1.2 `POST /echo/shares` (URL, text or file; `surface=manual_quick_share`), `GET /echo/shares`, `PATCH /echo/shares/{id}` (annotation, content_type), `DELETE /echo/shares/{id}` (cascades to derived rows); gated on `echo_personal_brain`
-- [ ] T-3.7.1.3 "Add to Echo" quick-share in the sidebar chrome and an `/echo/inbox` page with state, text preview and actions
-- [ ] T-3.7.1.4 Files stored under `ECHO_SHARES_DIR/<tenant>/` with the frame-service traversal guard; size cap
-- [ ] T-3.7.1.5 Isolation and cascade tests
+#### S-3.7.1 🟢 `shares_inbox`, quick-share and the inbox page
+**PR:** [#286](https://github.com/khoks/VideoResearchPro/pull/286) — merged 2026-10-19, together with S-3.10.1 and S-3.10.2 so the first new Echo table arrived with its export and erasure.
+**Calls made in the PR.** (1) **Third-party content is context-only by default**, the plan's recommendation for its open question 2: `author_is_tenant` is false unless the user ticks "These are my own words"; a context-only share may be retrieved as context once S-3.7.2 embeds it, but is never quoted and never enters a dataset or derived export. Marking one's own words is authorship, not an override; the per-thread override the open question asks about was not built. (2) Every share starts `pending`, text included: its words are stored as `extracted_text` at once, but embedding and signals are S-3.7.2's. (3) The stored file name is the share id plus a sanitised extension, never the client's name; downloads are attachments with `nosniff`; a row whose path points outside its tenant directory is never followed. (4) `linked_document_id` instead of the sketch's `linked_source_id` (documents are the library's unit), and `updated_at` added.
+- [x] T-3.7.1.1 `shares_inbox(id, tenant_id, user_id, received_at, surface, content_type, raw_payload_json, file_path, extracted_text, user_annotation, processing_state, derived_fact_ids_json, derived_signal_ids_json, linked_document_id, embedding_id)`; same revision adds `tenant_id` to `personal_context` with backfill `= user_id`
+- [x] T-3.7.1.2 `POST /echo/shares` (URL, text or file; `surface=manual_quick_share`), `GET /echo/shares`, `PATCH /echo/shares/{id}` (annotation, content_type), `DELETE /echo/shares/{id}` (cascades to derived rows); gated on `echo_personal_brain`
+- [x] T-3.7.1.3 "Add to Echo" quick-share in the sidebar chrome and an `/echo/inbox` page with state, text preview and actions
+- [x] T-3.7.1.4 Files stored under `ECHO_SHARES_DIR/<tenant>/` with the frame-service traversal guard; size cap
+- [x] T-3.7.1.5 Isolation and cascade tests (`tests/test_routers/test_echo_shares.py`: gating, every content type, traversal and size cap, a tampered path, two tenants on every verb, the per-share cascade to file, vector and derived facts)
 
 #### S-3.7.2 🔵 Processing pipeline
 **PR:** TBD
@@ -1000,6 +1008,8 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 - [ ] T-3.7.2.3 Share → activity event (`connector=internal`, `event_type=shared_to_pratidhvani`) and → signal-extraction queue (S-3.3.2)
 - [ ] T-3.7.2.4 Fail-soft: a share whose processing fails stays browsable with the failure shown
 - [ ] T-3.7.2.5 Tests per content type with external calls patched
+- [ ] T-3.7.2.6 Embed each share under `echo_vectors.share_vector_id(id)` with `tenant_id` metadata in `CHROMA_SHARES_COLLECTION_NAME`, and set `embedding_id`. The per-share delete and the full delete (S-3.10.2) find vectors only by that id and that metadata
+- [ ] T-3.7.2.7 A context-only share (`author_is_tenant` false) feeds context retrieval but never voice-signal extraction as the user's own words; the user's own words (`author_is_tenant` true) do
 
 #### S-3.7.3 🔵 Drag-drop and browser extension
 **PR:** TBD
@@ -1050,17 +1060,21 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 #### S-3.9.3 ⚪ Routing
 - [ ] T-3.9.3.1 Per-user override of the `echo_draft` use case to the tuned model through the E-1.13 override mechanism; delete weights on revoke
 
-### E-3.10 🔵 Privacy model: export, delete, zero-knowledge
+### E-3.10 🟡 Privacy model: export, delete, zero-knowledge
+
+**Linked decision:** [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19).
+**Open question (the user's):** should context-only share text stay in the whole-brain archive (built, D-089 item 3), or move to a separate flagged section? Not omitted either way, or the archive stops being lossless.
+**Progress 2026-10-19.** Export and delete shipped with the first new Echo table ([#286](https://github.com/khoks/VideoResearchPro/pull/286)). **Rule for every later Echo story:** a new Echo table goes into `echo_privacy_service.ECHO_TABLES`, a new Echo Chroma collection into `echo_vectors.echo_collection_names()`, and a new Echo file store under the tenant directory, or the export misses it and the delete leaves it behind. The connector-grant table (E-3.2) is the first credential store this applies to.
 
 **Filed 2026-10-18.** The hard constraint from `personal-brain.md`: self-host data is local; every connector is opt-in, scoped and revocable; the whole brain is exportable and deletable; SaaS offers a zero-knowledge mode.
 **Acceptance.** A user downloads one archive containing facts, events, signals, shares and drafts; a full delete leaves no row, file, token or Chroma vector attributed to them; every connector's consent text is shown before activation and stored with the grant.
 
-#### S-3.10.1 🔵 Full export
-**PR:** TBD
-- [ ] T-3.10.1.1 `GET /echo/export` streaming a zip of JSONL per table plus files; audit event
-#### S-3.10.2 🔵 Full delete
-**PR:** TBD
-- [ ] T-3.10.2.1 `DELETE /echo/brain` cascading across every Echo table, file directory, credential and Chroma collection; verified by a test that counts zero rows afterwards
+#### S-3.10.1 🟢 Full export
+**PR:** [#286](https://github.com/khoks/VideoResearchPro/pull/286) — merged 2026-10-19.
+- [x] T-3.10.1.1 `GET /echo/export` streaming a zip of JSONL per table plus files; audit event. Built in a temporary file (constant memory) and removed after sending. `manifest.json` carries row counts, every file with size and SHA-256, and any file a row points at that was missing. `echo_privacy_service.read_archive` is the exact inverse, and `test_echo_privacy.py` holds every column of every row and every file's bytes to it. The archive includes context-only share content: it is the user's own copy of what they handed over (Article 20). The audit event carries counts only
+#### S-3.10.2 🟢 Full delete
+**PR:** [#286](https://github.com/khoks/VideoResearchPro/pull/286) — merged 2026-10-19.
+- [x] T-3.10.2.1 `DELETE /echo/brain?confirm=delete-everything` cascading across every Echo table, file directory, credential and Chroma collection; verified by a test that counts zero rows afterwards. The test looks in each store directly (rows, the tenant directory, both Echo collections) for both tenants: the deleting tenant's footprint is zero and the other tenant's is unchanged. Order is vectors, files, then rows in one commit, so a failing store stops the delete before the rows that would let a retry find what is left (tested). The service re-counts every store afterwards and fails rather than report success with data left. No Echo credential exists yet; the library, notes, account and BYOK keys are outside Echo and untouched. `GET /echo/brain/footprint` shows the same counts
 #### S-3.10.3 ⚪ Zero-knowledge mode (SaaS)
 - [ ] T-3.10.3.1 Design only: client-side encryption of share payloads and signals with a user-held key; the plan records that server-side embedding and extraction cannot run on ciphertext, so this mode disables them. Decision deferred to SaaS launch.
 
@@ -1666,14 +1680,14 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [x] T-8.2.1.3 Substring (and therefore prefix) matching from three characters; `bm25()` with the title column weighted 5:1 over the body, recency tie-break, over-fetch ×4 before the cut, per-group cap (`limit` 1–25, default 5) — *shipped 2026-10-19*
 - [x] T-8.2.1.4 Tests on both paths through one parametrised fixture: every group scoped to the asking tenant (same words in both tenants' rows), empty for a tenant with nothing visible, caps, `LIKE` metacharacters literal; FTS-only: title outranks body, substring / case / Devanagari, triggers track update and delete and ignore unindexed columns, knowledge indexed only with a report, short query falls back, recency tie-break, channels visible through documents; probe failure creates nothing and warns; migration round-trip; latency under 300 ms on 5,000 documents + 2,000 exchanges on both paths; router: 401, 422, 400 on unknown type, two-tenant isolation through the endpoint — *shipped 2026-10-19*
 
-#### S-8.2.2 🔵 Palette UI and shortcuts
-**PR:** TBD
-- [ ] T-8.2.2.1 `useShortcuts` hook (the one `ui-design.md` already describes): `Ctrl/Cmd-K` palette with `Ctrl-Alt-K` as the alternate chord (Chrome and Firefox bind `Ctrl-K` to the address bar; a page handler that calls `preventDefault` wins once the page has focus), `Escape` close, `/` focuses page search only when no input is focused and can be disabled in settings (WCAG 2.1.4 character-key shortcuts); ignores typing inside inputs
-- [ ] T-8.2.2.2 Palette on `cmdk` (MIT, about 15 kB gzipped, unstyled, React 19 peer dependency, `shouldFilter={false}` for server results) with ARIA combobox/listbox semantics, inline styles plus at most one scoped `<style>` block for its data-attribute states, grouped results, recent items (localStorage), navigation actions ("New research", "Open library Q&A", "Toggle theme")
-- [ ] T-8.2.2.3 Debounced query, request cancellation, empty and loading states
-- [ ] T-8.2.2.4 Remove the stale `ui-design.md` claim or make it true (`g + r` style chords) in the same PR
-- [ ] T-8.2.2.5 Notes group in the palette: "Your notes" (`/notes`), "Export notes as Markdown" and "Export notes as JSON-LD" (`/exports/notes.md` / `.jsonl`). Moved here from T-8.5.3.2, which shipped before the palette existed
-- [ ] T-8.2.2.6 The library page honours the search hrefs `?document=<document_id>` and `&view=knowledge` (open the document row, or its knowledge report), so palette results land on the item rather than the unfiltered list. Filed 2026-10-19 by S-8.2.1; [D-078](decisions.md#d-078--search-index-one-trigram-fts5-table-per-entity-copies-not-external-content-like-fallback-2026-10-19)
+#### S-8.2.2 🟢 Palette UI and shortcuts
+**PR:** [#282](https://github.com/khoks/VideoResearchPro/pull/282) — shipped 2026-10-19. The plan's two open questions: (1) **no `<style>` block** was needed — the overlay is the app's own (cmdk's Dialog takes only class names) and each row reads its selected state through `useCommandState`, so the inline-only convention holds; (2) **`/` is bound**, as the story specifies, focusing the page's own search box (`data-page-search` on the library, runs and notes pages) or opening the palette, never inside a field, and the palette's "Turn single-key shortcuts off" switches it and the `g` chords off per browser (WCAG 2.1.4) since no settings page exists yet. Two things found on the way: cmdk does not reselect when async results replace the list (nothing active, Enter does nothing), so the selection is controlled; and in that mode it never writes `aria-activedescendant`, so the panel mirrors the active option's id onto the combobox and listbox. The panel and `cmdk` load on first open (19.6 kB gzip), so the main bundle grows by the shortcut hook only.
+- [x] T-8.2.2.1 `useShortcuts` hook (the one `ui-design.md` already describes): `Ctrl/Cmd-K` palette with `Ctrl-Alt-K` as the alternate chord (Chrome and Firefox bind `Ctrl-K` to the address bar; a page handler that calls `preventDefault` wins once the page has focus), `Escape` close, `/` focuses page search only when no input is focused and can be disabled in settings (WCAG 2.1.4 character-key shortcuts); ignores typing inside inputs
+- [x] T-8.2.2.2 Palette on `cmdk` (MIT, about 15 kB gzipped, unstyled, React 19 peer dependency, `shouldFilter={false}` for server results) with ARIA combobox/listbox semantics, inline styles plus at most one scoped `<style>` block for its data-attribute states, grouped results, recent items (localStorage), navigation actions ("New research", "Open library Q&A", "Toggle theme")
+- [x] T-8.2.2.3 Debounced query, request cancellation, empty and loading states — *180 ms debounce (a query still settling counts as searching, so "Nothing matches" never flashes first); React Query cancels the superseded request through its `signal`*
+- [x] T-8.2.2.4 Remove the stale `ui-design.md` claim or make it true (`g + r` style chords) in the same PR — *made true: `g r` / `g l` / `g k` / `g a`*
+- [x] T-8.2.2.5 Notes group in the palette: "Your notes" (`/notes`), "Export notes as Markdown" and "Export notes as JSON-LD" (`/exports/notes.md` / `.jsonl`). Moved here from T-8.5.3.2, which shipped before the palette existed
+- [x] T-8.2.2.6 The library page honours the search hrefs `?document=<document_id>` and `&view=knowledge` (open the document row, or its knowledge report), so palette results land on the item rather than the unfiltered list. Filed 2026-10-19 by S-8.2.1; [D-078](decisions.md#d-078--search-index-one-trigram-fts5-table-per-entity-copies-not-external-content-like-fallback-2026-10-19) — *`?document=` narrows the list to that row through a new `document_id` filter on `GET /library/videos` (inside the visibility scope); knowledge results now open the reader at `/knowledge/<id>` instead of `&view=knowledge`; Q&A results' `?exchange=` scrolls to and focuses the exchange on the job, library Q&A and Q&A history pages*
 
 #### S-8.2.3 ⚪ Semantic group
 - [ ] T-8.2.3.1 `semantic=true` adds a group from `qa_library_global` and the transcript collection (visible set only), merged with the keyword results by reciprocal rank fusion (rank-only, so FTS5 scores and Chroma distances need no calibration); labelled separately in the palette
@@ -1822,10 +1836,12 @@ Linked decision: D-074.
 - **Not built (plan item outside the board's tasks):** topic clusters by k-means over Chroma chunk embeddings. Needs a new Chroma read helper while E-7.1 is editing retrieval, and overlaps the gated S-8.9.3
 - `scikit-learn` is now declared in `requirements.txt` (it was only a transitive dependency of sentence-transformers)
 
-#### S-8.7.3 🔵 Intelligence tab UI
-**PR:** TBD
-- [ ] T-8.7.3.1 Tab with cadence bars, topic list with drill-down, keyword cloud (own SVG layout, no library), coverage call-to-action, "Extract knowledge for all" batch action that respects the knowledge quota
-- [ ] T-8.7.3.2 Concept graph panel reusing the E-8.9 graph component filtered to the channel
+#### S-8.7.3 🟢 Intelligence tab UI
+**PR:** [#285](https://github.com/khoks/VideoResearchPro/pull/285) (merged 2026-10-19)
+- [x] T-8.7.3.1 Documents / Intelligence tabs on the channel page (`?tab=intelligence`). Cadence columns, duration bars, topic and concept lists with drill-down to linked example documents, a text keyword cloud (inline words sized by √weight; no library), the reader's citing questions, a stance / sentiment panel where classification exists, per-panel notes, and a coverage card with **Extract knowledge for N documents**. The batch runs the existing per-document endpoint one at a time from the page (visibility and quota enforced per call), plans no more than the remaining monthly quota from `GET /auth/quota`, stops at the first quota refusal and refreshes the aggregate. **Deviation from the plan:** not a server-side batch with WebSocket progress; that needs a new Celery task (the `celery_app` hot spot), and the solo worker would queue it behind ingest. Cost is shown as quota, not dollars
+- [x] Charts follow the dataviz method: validated `chartColors` per mode, thin marks, surface gaps, a legend only for ≥2 series, hover + keyboard readouts, a table view on every chart. New primitives: `ColumnChart`, `BarList`, `ChartTable`
+- [x] Tests: `utils/batchExtract.ts` unit tests (quota cap, outcome classes, stop on quota, stop on request); aggregate gains `coverage.extractable` and example URLs (router test). The cache fingerprint now carries a payload version so rows written by older code recompute
+- [ ] ~~T-8.7.3.2 Concept graph panel reusing the E-8.9 graph component filtered to the channel~~ — *moved 2026-10-19 to [S-8.9.2](#s-892--graph-ui): the graph component does not exist until that story; it adds the channel-filtered view*
 
 #### S-8.7.4 🔵 Citation chips link to the channel page
 **PR:** TBD
@@ -1884,6 +1900,7 @@ Linked decision: D-074.
 **PR:** TBD
 - [ ] T-8.9.2.1 Lazy-loaded graph route on `sigma` + `graphology` + `@react-sigma/core` with the ForceAtlas2 web-worker layout and Louvain communities (all MIT, about 113 kB gzipped; `react-force-graph-2d`, MIT, 60 kB, is the smaller alternative), inline-styled chrome, zoom / pan, hover labels, click → detail card with links to the document, job or exchange; layout frozen after convergence
 - [ ] T-8.9.2.2 Filters (shelf, channel, type), local-graph mode, legend, reduced-motion respect
+- [ ] T-8.9.2.4 The channel page's concept graph (moved from T-8.7.3.2): the graph filtered to the channel, reachable from the Intelligence tab
 - [ ] T-8.9.2.3 Accessibility, which is real work for a canvas: an equivalent node / edge table view, keyboard focus over nodes with a drawn focus ring, button alternatives to drag and pan (WCAG 2.5.7), a one-paragraph textual summary; the table doubles as the narrow-screen fallback
 
 #### S-8.9.3 ⚪ Topic clusters

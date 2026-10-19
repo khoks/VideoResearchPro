@@ -1,7 +1,7 @@
 """output_citations — the sources every Author Studio output cites (S-6.7.3)
 
 Revision ID: c5ee7a568ef8
-Revises: 72d7e46ef057
+Revises: 007c708bb890
 Create Date: 2026-10-19
 
 One row per citation in output order, written by every outputter through
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "c5ee7a568ef8"
-down_revision = "72d7e46ef057"
+down_revision = "007c708bb890"  # re-parented onto S-3.7.1 (merged first)
 branch_labels = None
 depends_on = None
 

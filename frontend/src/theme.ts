@@ -83,6 +83,24 @@ export function isPaletteColor(value: string): value is PaletteColor {
   return (PALETTE_COLORS as readonly string[]).includes(value);
 }
 
+/**
+ * Chart colours, validated with the dataviz palette checks on 2026-10-19
+ * against `surface` in each mode (lightness band, chroma floor, CVD and
+ * normal-vision separation, 3:1 contrast). One single-series hue and a
+ * warm/cool diverging pair with gray midpoints (stance, sentiment). Each mode
+ * has its own steps; never derived by flipping. Text never wears these: marks
+ * carry the colour, labels use the text tokens.
+ */
+export const chartColors = {
+  series:   { light: '#2a6db5', dark: '#4a8acb' },
+  positive: { light: '#2a6db5', dark: '#4a8acb' },
+  negative: { light: '#c4612b', dark: '#d0753a' },
+  neutral:  { light: '#a39d93', dark: '#7a7368' },
+  muted:    { light: '#d6d0c6', dark: '#4d463d' },
+} as const;
+
+export type ChartColorToken = keyof typeof chartColors;
+
 export const fonts = {
   display:    '"Fraunces", Georgia, serif',
   body:       '"Source Serif Pro", "Fraunces", Georgia, serif',

@@ -47,6 +47,9 @@ MAX_KEYWORD_DOCS = 500
 MAX_CHARS_PER_DOC = 40_000
 MAX_EXCHANGES_SCANNED = 2_000
 RECENT_EXCHANGES = 10
+# Bump when the cached payload's shape changes, so rows written by older code
+# are recomputed rather than served without the new fields.
+PAYLOAD_VERSION = 2
 
 DURATION_BUCKETS: list[tuple[str, float, float | None]] = [
     ("Under 5 min", 0, 5),
@@ -117,7 +120,7 @@ def _transcript_states(db: Session, doc_ids: list[str]) -> dict[str, str]:
 
 def fingerprint(docs: list[Document], transcripts: dict[str, str]) -> str:
     """Hash of everything the document-derived aggregate reads."""
-    h = hashlib.sha256()
+    h = hashlib.sha256(f"payload-v{PAYLOAD_VERSION}|".encode())
     for d in sorted(docs, key=lambda x: x.document_id):
         h.update(
             "|".join(
@@ -177,6 +180,10 @@ def durations(docs: list[Document]) -> dict:
     }
 
 
+def _ref(doc: Document) -> dict:
+    return {"id": doc.document_id, "title": doc.title, "url": doc.url}
+
+
 def _knowledge(doc: Document) -> dict:
     if not doc.extracted_knowledge_json:
         return {}
@@ -215,7 +222,7 @@ def label_counts(docs: list[Document], key: str) -> list[dict]:
         {
             "label": spellings[k].most_common(1)[0][0],
             "documents": len(ds),
-            "examples": [{"id": d.document_id, "title": d.title} for d in ds[:EXAMPLES_PER_LABEL]],
+            "examples": [_ref(d) for d in ds[:EXAMPLES_PER_LABEL]],
         }
         for k, ds in ranked
     ]
@@ -357,6 +364,15 @@ def document_aggregate(db: Session, docs: list[Document], transcripts: dict[str,
             "without_knowledge": total - with_knowledge,
             "ratio": round(with_knowledge / total, 4) if total else 0.0,
             "with_transcript": len(transcripts),
+            "extractable": [
+                _ref(d)
+                for d in sorted(
+                    docs,
+                    key=lambda x: x.published_at or x.created_at or datetime.min,
+                    reverse=True,
+                )
+                if not d.extracted_knowledge_json and d.document_id in transcripts
+            ],
         },
         "cadence": cadence(docs),
         "durations": durations(docs),
@@ -450,7 +466,7 @@ def qa_activity(db: Session, tenant_id: str, docs: list[Document]) -> dict:
         {
             "label": by_video[vid].title,
             "documents": n,
-            "examples": [{"id": by_video[vid].document_id, "title": by_video[vid].title}],
+            "examples": [_ref(by_video[vid])],
         }
         for vid, n in cited_counts.most_common(10)
     ]

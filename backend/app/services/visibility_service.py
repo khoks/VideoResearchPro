@@ -4,6 +4,14 @@ S-5.7.1 / D-063 — shared cache, private catalogue. Every ingest path must call
 ``grant`` so the ingesting tenant can see what they ingested. A path that
 forgets produces a document nobody can see, which is the safe failure
 direction but still a bug — the tests assert every path grants.
+
+D-070 (2026-10-19): grants are keyed on ``documents.document_id``, the one
+identifier every source type has. The first version keyed them on the legacy
+``documents.video_id``, which is NULL for every non-video source, so
+``grant(db, [doc.video_id], ...)`` was a silent no-op for PDFs and pasted
+pages and ``visible_video_ids`` could never list them. There is deliberately
+no ``visible_video_ids`` shim: no reader needs YouTube ids — the listing,
+the channel views and the Chroma retrieval filter all key on ``document_id``.
 """
 from __future__ import annotations
 
@@ -26,34 +34,37 @@ SOURCE_CHANNEL = "channel_sync"
 
 def grant(
     db: Session,
-    video_ids: Iterable[str],
+    document_ids: Iterable[str],
     tenant_id: str | None,
     source: str = SOURCE_JOB,
 ) -> int:
-    """Grant ``tenant_id`` visibility over ``video_ids``. Idempotent.
+    """Grant ``tenant_id`` visibility over ``document_ids``. Idempotent.
+
+    ``document_ids`` are ``documents.document_id`` values — never the legacy
+    YouTube id, which does not exist for most source types.
 
     Returns the number of NEW grants written. Best-effort: a visibility write
     must never fail an ingest that otherwise succeeded — a missing grant hides
     a document, which is recoverable; a failed ingest loses work.
     """
-    ids = [v for v in dict.fromkeys(video_ids) if v]
+    ids = [d for d in dict.fromkeys(document_ids) if d]
     if not ids or not tenant_id:
         return 0
     try:
         existing = {
             row[0]
-            for row in db.query(DocumentVisibility.video_id).filter(
+            for row in db.query(DocumentVisibility.document_id).filter(
                 DocumentVisibility.tenant_id == tenant_id,
-                DocumentVisibility.video_id.in_(ids),
+                DocumentVisibility.document_id.in_(ids),
             )
         }
-        new = [v for v in ids if v not in existing]
+        new = [d for d in ids if d not in existing]
         if not new:
             return 0
         db.bulk_save_objects(
             [
-                DocumentVisibility(video_id=v, tenant_id=tenant_id, source=source)
-                for v in new
+                DocumentVisibility(document_id=d, tenant_id=tenant_id, source=source)
+                for d in new
             ]
         )
         db.commit()
@@ -74,12 +85,14 @@ def grant(
         return 0
 
 
-def visible_video_ids(db: Session, tenant_id: str):
-    """Subquery of the video_ids ``tenant_id`` may see.
+def visible_document_ids(db: Session, tenant_id: str):
+    """Subquery of the ``document_id`` values ``tenant_id`` may see.
 
     Returned as a query (not a materialised list) so callers compose it into
-    an ``IN`` clause without pulling ids into Python.
+    an ``IN`` clause without pulling ids into Python. Callers that need the
+    list (library Q&A hands it to Chroma) iterate it; an EMPTY result means
+    "this tenant has ingested nothing" and must retrieve nothing.
     """
-    return db.query(DocumentVisibility.video_id).filter(
+    return db.query(DocumentVisibility.document_id).filter(
         DocumentVisibility.tenant_id == tenant_id
     )

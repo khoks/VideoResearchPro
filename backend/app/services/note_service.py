@@ -107,13 +107,15 @@ def _job_label(job: Job) -> str:
 
 def _visible_document(db: Session, tenant_id: str, raw_id: str) -> Document | None:
     """The document ``raw_id`` names, by canonical or legacy id, if this tenant
-    may see it (D-063). One query; the visibility subquery is keyed on the
-    legacy ``video_id`` until D-070 moves it."""
+    may see it (D-063). One query; the visibility subquery is keyed on
+    ``document_id`` (D-070), so a note can target a PDF or a pasted page."""
     return (
         db.query(Document)
         .filter(
             or_(Document.document_id == raw_id, Document.video_id == raw_id),
-            Document.video_id.in_(visibility_service.visible_video_ids(db, tenant_id)),
+            Document.document_id.in_(
+                visibility_service.visible_document_ids(db, tenant_id)
+            ),
         )
         .first()
     )

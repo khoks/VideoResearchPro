@@ -38,7 +38,7 @@ def notes_world(db, test_user):
     )
     db.add(doc)
     db.commit()
-    db.add(DocumentVisibility(video_id="minevid0001", tenant_id=test_user.id, source="job"))
+    db.add(DocumentVisibility(document_id="doc-mine-uuid", tenant_id=test_user.id, source="job"))
     db.add_all([
         Job(id="job-mine", tenant_id=test_user.id, job_type="topic",
             topic="Tariff history", status="completed"),

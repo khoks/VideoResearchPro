@@ -26,10 +26,12 @@ def _video_count_for_channel(db: Session, channel_id: str, tenant_id: str) -> in
     """Count only documents THIS tenant can see (D-063/D-065) — a global count
     would leak how much other users have ingested from the channel."""
     return (
-        db.query(func.count(Document.video_id))
+        db.query(func.count(Document.document_id))
         .filter(
             Document.channel_id == channel_id,
-            Document.video_id.in_(visibility_service.visible_video_ids(db, tenant_id)),
+            Document.document_id.in_(
+                visibility_service.visible_document_ids(db, tenant_id)
+            ),
         )
         .scalar()
         or 0
@@ -162,8 +164,8 @@ def list_channel_videos(
         .filter(
             Document.channel_id == channel_id,
             # D-063: only what this tenant ingested.
-            Document.video_id.in_(
-                visibility_service.visible_video_ids(db, current_user.id)
+            Document.document_id.in_(
+                visibility_service.visible_document_ids(db, current_user.id)
             ),
         )
         .order_by(Document.created_at.desc())

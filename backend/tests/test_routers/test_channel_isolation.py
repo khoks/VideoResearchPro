@@ -42,8 +42,8 @@ def two_tenant_channels(db, test_user):
     db.add_all([d_mine, d_theirs])
     db.commit()
     db.add_all([
-        DocumentVisibility(video_id="minevid0001", tenant_id=test_user.id, source="job"),
-        DocumentVisibility(video_id="theirvid001", tenant_id=OTHER, source="job"),
+        DocumentVisibility(document_id="doc-mine", tenant_id=test_user.id, source="job"),
+        DocumentVisibility(document_id="doc-theirs", tenant_id=OTHER, source="job"),
     ])
     db.commit()
     return {"mine": mine, "theirs": theirs}

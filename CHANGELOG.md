@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Code-mixed speech: retrieval runs on an English rendering (2026-10-19, T-1.16.2.5 part B)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Decision
+PR [#271](https://github.com/khoks/VideoResearchPro/pull/271). Decision
 [D-084](docs/decisions.md#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19).
 
 - **Hindi and Hinglish chunks are now found by English questions.** A chunk

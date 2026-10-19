@@ -484,6 +484,8 @@ Merging happens later and elsewhere: `services/visual_service.annotate_segments`
 
 The reader-side half is `prompts/shared.py::VISUAL_ANNOTATION_CONTRACT`, injected into every prompt family that reads transcript text. It states that these spans were never spoken, must not be attributed to the speaker, must be cited as "on screen at mm:ss", and lose to the words where the two conflict. **Any new prompt that reads transcript text must include it**, or the model reads machine-written description as something a human said.
 
+**Modality provenance** (S-1.18.8, [D-075](decisions.md#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19)). Whether a fact was said or shown is decided at the report's map stage, where the model reads one chunk of native-language speech at a time: every extracted item carries `modality` (`said` / `shown` / `both`, or `unknown`), and code forces `said` for any source without a visual annotation. The lossless reduce keeps the label (two extractions of one item with different evidence become `both`), and compose renders it as an `[SAID]` / `[SHOWN]` / `[SAID+SHOWN]` / `[UNLABELLED]` tag the composer attributes from — only when the corpus has a shown item. The labels are in the persisted map records (`job_report_intermediates`), so a report can be checked against item provenance after the run.
+
 Gated by `VISUAL_ENABLED` (install) AND `jobs.visual_analysis` (per job); both must be true. Off by default — it is the only multimodal spend and the only path that downloads video rather than audio.
 
 ### Q&A History Agent (`qa_history_agent.py`)

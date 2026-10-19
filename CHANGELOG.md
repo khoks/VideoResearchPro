@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Three cross-tenant reads closed (2026-10-19, S-5.10.6)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). An audit of every `documents` reader after D-070 found three that
+PR [#248](https://github.com/khoks/VideoResearchPro/pull/248). An audit of every `documents` reader after D-070 found three that
 never checked the tenant. Each now 404s for anyone who did not ingest the
 document or own the job, exactly like a missing id; each has a two-tenant test
 that fails on the old code.

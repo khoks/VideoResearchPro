@@ -1181,7 +1181,7 @@ Linked decision: [D-065](decisions.md#d-065--channel-subscriptions-become-per-te
 - [ ] T-5.10.5.3 `temporal_service.known_eras_for` is keyed on YouTube ids by design (search candidates are not documents yet) — confirm and note it in the function docstring so the next audit does not re-flag it
 
 #### S-5.10.6 🟢 Close three cross-tenant reads S-5.10.1 missed — shipped 2026-10-19
-**PR:** [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Found by auditing every `documents` reader on master after S-5.10.4 merged, at the request of the session driving the backlog.
+**PR:** [#248](https://github.com/khoks/VideoResearchPro/pull/248). Found by auditing every `documents` reader on master after S-5.10.4 merged, at the request of the session driving the backlog.
 **Linked decision:** [D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31) (amended 2026-10-19 (II))
 **Acceptance (met).** Each read below 404s for a tenant who did not ingest the document or own the job, indistinguishably from a missing id, and the owner's access is unchanged. Each fix has a two-tenant test that fails on the unfixed code.
 **Tasks**

@@ -324,7 +324,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `RATE_LIMIT_RESET_PER_MIN` | No | `5` | Per-IP cap on `/auth/password-reset/{request,confirm}`. |
 | `RATE_LIMIT_REGISTER_PER_MIN` | No | `5` | Per-IP cap on `/auth/register`. |
 | **BYOK + MFA encryption (E-5.6 / E-5.4)** | | | |
-| `BYOK_ENCRYPTION_KEY` | **Yes (production)** | (unset) | Fernet key (32 url-safe base64-encoded bytes; generate via `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`). Encrypts BYOK provider keys + MFA secrets. When unset, a process-local key is generated at startup with a loud warning — stored credentials become unrecoverable on restart in that mode. Single shared key per [D-043](docs/decisions.md#d-043). |
+| `BYOK_ENCRYPTION_KEY` | **Yes (production)** | (unset) | Fernet key (32 url-safe base64-encoded bytes; generate via `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`). Encrypts BYOK provider keys + MFA secrets. When unset, a process-local key is generated at startup with a loud warning — stored credentials become unrecoverable on restart in that mode. Single shared key per [D-043](docs/decisions.md#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05). |
 
 \* One provider key is effectively mandatory: whichever provider your resolved use cases point at. Defaults ship pointing at `openai`, so `OPENAI_API_KEY` is required out of the box.
 

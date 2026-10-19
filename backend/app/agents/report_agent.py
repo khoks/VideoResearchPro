@@ -257,9 +257,12 @@ def map_chunks(state: ReportAgentState) -> dict:
         max_output_for(resolve_config("report_map_chunks").model),
     )
 
-    # Group chunks into batches
+    # Group chunks into batches. `batch_metas` runs parallel to `batches` so
+    # the S-1.14.6 audit record can say which videos a batch covered.
     batches = []
+    batch_metas: list[list[dict]] = []
     current_batch = []
+    current_metas: list[dict] = []
     current_tokens = 0
 
     for chunk in chunks:
@@ -292,14 +295,18 @@ def map_chunks(state: ReportAgentState) -> dict:
 
         if current_tokens + tokens > budget_per_batch and current_batch:
             batches.append(current_batch)
+            batch_metas.append(current_metas)
             current_batch = []
+            current_metas = []
             current_tokens = 0
 
         current_batch.append(formatted)
+        current_metas.append(meta)
         current_tokens += tokens
 
     if current_batch:
         batches.append(current_batch)
+        batch_metas.append(current_metas)
 
     def _invoke_batch(batch_items: list[str]) -> dict | None:
         """One map call. Returns the parsed (or raw-wrapped) summary, or
@@ -328,29 +335,40 @@ def map_chunks(state: ReportAgentState) -> dict:
     # failed batch (context overflow, transient 4xx/5xx) is split in half
     # and each half retried before any content is declared lost.
     summaries = []
+    records: list[dict] = []
+    map_model = resolve_config("report_map_chunks").model
     failed_batches = 0
     dropped_chunk_groups = 0
     for i, batch in enumerate(batches):
+        metas = batch_metas[i]
         try:
-            summaries.append(_invoke_batch(batch))
+            summary = _invoke_batch(batch)
+            summaries.append(summary)
+            records.append(_map_record(i, None, summary, metas, map_model))
             continue
         except Exception as e:
             logger.warning(
                 f"Map batch {i + 1}/{len(batches)} failed ({e}); "
                 f"bisecting {len(batch)} chunks and retrying halves"
             )
+            first_error = e
         if len(batch) < 2:
             failed_batches += 1
             dropped_chunk_groups += len(batch)
+            records.append(_map_record(i, None, None, metas, map_model, error=first_error))
             logger.error(f"Map batch {i + 1} unrecoverable (single chunk); content dropped")
             continue
         mid = len(batch) // 2
-        for half_idx, half in enumerate((batch[:mid], batch[mid:])):
+        halves = ((batch[:mid], metas[:mid]), (batch[mid:], metas[mid:]))
+        for half_idx, (half, half_metas) in enumerate(halves):
             try:
-                summaries.append(_invoke_batch(half))
+                summary = _invoke_batch(half)
+                summaries.append(summary)
+                records.append(_map_record(i, half_idx, summary, half_metas, map_model))
             except Exception as e2:
                 failed_batches += 1
                 dropped_chunk_groups += len(half)
+                records.append(_map_record(i, half_idx, None, half_metas, map_model, error=e2))
                 logger.error(
                     f"Map batch {i + 1} half {half_idx + 1} failed after bisect ({e2}); "
                     f"{len(half)} chunks dropped from the report"
@@ -371,10 +389,85 @@ def map_chunks(state: ReportAgentState) -> dict:
             "excluded from the report",
             failed_batches, dropped_chunk_groups, len(chunks),
         )
-    return {"chunk_summaries": summaries, "processing_notes": notes}
+    return {
+        "chunk_summaries": summaries,
+        "processing_notes": notes,
+        "map_batch_records": records,
+    }
 
 
 _REDUCE_KEYS = ("facts", "comments", "conclusions", "references", "speakers")
+
+
+def _count_items(summary: object) -> int:
+    """Items across the five reduce keys of one summary dict."""
+    if not isinstance(summary, dict):
+        return 0
+    return sum(
+        len(summary.get(k) or []) for k in _REDUCE_KEYS
+        if isinstance(summary.get(k), list)
+    )
+
+
+def _map_record(
+    batch_index: int,
+    sub_index: int | None,
+    summary: dict | None,
+    metas: list[dict],
+    model: str,
+    error: Exception | None = None,
+) -> dict:
+    """S-1.14.6 audit record for one map call, serialised NOW.
+
+    Compose later mutates the very item dicts map produced (quote forms,
+    S-1.18.8 tags); serialising here keeps the record faithful to what map
+    emitted.
+    """
+    from app.models.job_report_intermediate import MAP_FAILED, MAP_PARSED, MAP_UNPARSED
+
+    videos = list(dict.fromkeys(
+        str(m.get("video_title") or m.get("video_id") or "") for m in metas
+    ))
+    if error is not None:
+        status = MAP_FAILED
+    elif isinstance(summary, dict) and any(k in summary for k in _REDUCE_KEYS):
+        status = MAP_PARSED
+    else:
+        status = MAP_UNPARSED
+    notes: dict = {"videos": [v for v in videos if v]}
+    if error is not None:
+        notes["error"] = f"{type(error).__name__}: {str(error)[:500]}"
+    return {
+        "batch_index": batch_index,
+        "sub_index": sub_index,
+        "status": status,
+        "chunk_count": len(metas),
+        "item_count": _count_items(summary),
+        "payload_json": (
+            None if summary is None
+            else json.dumps(summary, ensure_ascii=False, default=str)
+        ),
+        "notes_json": json.dumps(notes, ensure_ascii=False),
+        "model": model,
+    }
+
+
+def _reduce_record(dataset: dict, notes: dict, status: str) -> dict:
+    """S-1.14.6 audit record for the reduce output, serialised NOW."""
+    kept = {
+        k: v for k, v in notes.items()
+        if k.startswith("reduce_") or k.startswith("map_")
+    }
+    return {
+        "batch_index": 0,
+        "sub_index": None,
+        "status": status,
+        "chunk_count": None,
+        "item_count": _count_items(dataset),
+        "payload_json": json.dumps(dataset, ensure_ascii=False, default=str),
+        "notes_json": json.dumps(kept, ensure_ascii=False, default=str),
+        "model": None,
+    }
 
 
 def _item_video(item: dict) -> str:
@@ -533,7 +626,11 @@ def reduce_summaries(state: ReportAgentState) -> dict:
             len({_item_video(i) for v in merged.values() for i in v}),
         )
         notes["reduce_items_trimmed"] = 0
-        return {"chunk_summaries": [merged], "processing_notes": notes}
+        return {
+            "chunk_summaries": [merged],
+            "processing_notes": notes,
+            "reduce_record": _reduce_record(merged, notes, "lossless"),
+        }
 
     # Step 2 — over budget: compress per-video EVENLY so no video is lost.
     logger.info(
@@ -551,7 +648,11 @@ def reduce_summaries(state: ReportAgentState) -> dict:
             trim_notes["reduce_videos_represented"],
             trim_notes["reduce_per_video_token_quota"],
         )
-    return {"chunk_summaries": [compressed], "processing_notes": notes}
+    return {
+        "chunk_summaries": [compressed],
+        "processing_notes": notes,
+        "reduce_record": _reduce_record(compressed, notes, "compressed"),
+    }
 
 
 def _corpus_facts(statistics: dict) -> str:
@@ -1120,17 +1221,24 @@ def run_report_agent(
     topic: str,
     transcript_chunks: list[dict],
     output_length: str | None = None,
+    intermediates_out: dict | None = None,
 ) -> tuple[dict, str]:
-    """
-    Run the report agent.
+    """Run the report agent. Returns ``(statistics, html_body)``.
 
-    Returns:
+    For channel jobs the body is the lightweight per-channel narrative; for
+    topic jobs it is the full research report composed from map-reduce
+    summaries.
+
     ``output_length`` (R4) is the user's optional depth override —
     None/'auto' lets the corpus size bracket decide. It scales the derived
     completion budget and changes the composer's brief; it is never a cap.
 
-        lightweight per-channel narrative; for topic jobs it is the full
-        research report composed from map-reduce summaries.
+    ``intermediates_out`` (S-1.14.6), when given, is filled with
+    ``{"map": [record, ...], "reduce": record | None}`` — what each map call
+    emitted and what reduce handed to compose — for the caller to persist
+    (`job_tasks._persist_report_intermediates`). Same shape as the
+    ``candidates_out`` hook on the search agent. Channel jobs have no
+    map/reduce stage and produce none.
     """
     graph = build_report_graph()
     result = graph.invoke({
@@ -1144,5 +1252,10 @@ def run_report_agent(
         "statistics": {},
         "final_html": "",
         "processing_notes": {},
+        "map_batch_records": [],
+        "reduce_record": {},
     })
+    if intermediates_out is not None:
+        intermediates_out["map"] = list(result.get("map_batch_records") or [])
+        intermediates_out["reduce"] = result.get("reduce_record") or None
     return result.get("statistics", {}), result.get("final_html", "")

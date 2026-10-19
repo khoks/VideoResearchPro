@@ -192,6 +192,7 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/app/services/corpus_stats_service.py` | Corpus figures for Q&A (approved / visible document set) that drive the length policy and temporal note |
 | `backend/scripts/regenerate_report.py` | Re-run a completed job's report phase from cached transcripts (before/after measurement) |
 | `backend/scripts/judge_report_sections.py` | Split a report into sections and judge each in full — replaces the 180,000-char judging cap |
+| `backend/scripts/audit_report_intermediates.py` | Read a job's persisted map/reduce intermediates back: batch statuses, item counts, reduce accounting |
 | `backend/app/websocket/manager.py` | Redis pub/sub → WebSocket fan-out |
 | `backend/app/services/youtube_service.py` | YouTube API + transcript fetching with language fallback + rate limiting |
 | `backend/app/services/chroma_service.py` | ChromaDB collection management (singleton client) |
@@ -311,6 +312,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | **Temporal awareness (R3 / E-1.17)** | | | |
 | `TEMPORAL_SCOPE_ENABLED` | No | `True` | Per-document discussed-era extraction on first ingest (`temporal_scope_extract`, one economy-tier call per NEW document). Off = every era reads as unknown, which is also how a missing value is treated |
 | `TEMPORAL_SCOPE_WINDOW_TOKENS` | No | `1500` | Size of each of the three transcript windows (opening / middle / close) sampled for the era call |
+| `REPORT_INTERMEDIATES_ENABLED` | No | `True` | Persist the report pipeline's per-batch map extractions and reduced dataset to `job_report_intermediates` (S-1.14.6), about twice the reduced dataset's size per run. Audit with `backend/scripts/audit_report_intermediates.py` |
 | **Code-mixed speech (R5 / N-002 / D-080)** | | | |
 | `CODE_MIX_DOMINANT_SHARE` | No | `0.6` | A Hindi-grammar span with at least this Hindi share is quoted in Devanagari (with transliteration + translation). The threshold is the user's; a lower one is more robust to the tagger's Devanagari blind spot (open question in D-080) |
 | `CODE_MIX_ENGLISH_RENDERING_ENABLED` | No | `True` | Embed non-English chunks as an English rendering (`code_mixing_render_english`, once per document) while the stored text stays the original. Off = embed as written (retrieval MRR 0.40–0.57 instead of 0.81, D-084). Off for the test suite |

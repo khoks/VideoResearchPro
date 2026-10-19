@@ -1743,7 +1743,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.3.3.4 `notifications(id, tenant_id, kind, title, body, href, read_at, created_at)` + `GET /api/v1/notifications`, bell in the sidebar chrome
 - [ ] T-8.3.3.5 Tests: unchanged answers do not notify; a run that fails leaves the previous result intact
 
-### E-8.4 🟡 Question suggestions (M4)
+### E-8.4 🟢 Question suggestions (M4)
 
 **Scope.** "You might ask…" suggestions on the job page, the library Q&A page and the knowledge page, generated from the user's own past questions (nearest neighbours in `qa_library_global`) plus the current context, deduplicated and cached. Directly answers the user's "learn from past questions" ask and is the first piece of Echo's *anticipation* capability.
 **Plan:** [`docs/plans/m4-question-suggestions.md`](plans/m4-question-suggestions.md)
@@ -1761,11 +1761,15 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 
 Scope-changed 2026-10-19: (1) the prompt lives in `services/suggestion_service.py`, not `agents/prompts/` (that package belongs to E-7.1 and R5). (2) Not a `FEATURE_TO_USE_CASES` gate: like `temporal_scope_extract` it is fail-soft, so a failed probe turns the generator off and the reader's past questions still come back. (3) The acceptance's "within two seconds" holds for cached opens only: a first open measured 3.5 s median for the model call (three calls, 2026-10-19), so the card loads after the page and never blocks it. (4) Plan open questions at the recommended defaults: a one-hour cache window; suggestions on the Q&A pages only, not yet in Echo's anticipation cards.
 
-#### S-8.4.2 🔵 Suggestion cards
-**PR:** TBD
-- [ ] T-8.4.2.1 Card below the composer on `JobDetailPage`, `LibraryQAPage`, `VideoKnowledgePage`; click fills, Shift-click asks immediately
-- [ ] T-8.4.2.2 Click-through recorded as an `audit_log` event so the feature can be measured
-- [ ] T-8.4.2.3 Hidden when `/health` reports the Q&A feature down
+#### S-8.4.2 🟢 Suggestion cards
+**PR:** [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)
+**Shipped:** 2026-10-19 — PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)
+- [x] T-8.4.2.1 Card below the composer on `JobDetailPage`, `LibraryQAPage`, `VideoKnowledgePage`; click fills, Shift-click asks immediately
+- [x] T-8.4.2.2 Click-through recorded as an `audit_log` event so the feature can be measured (the card calls `POST /suggestions/feedback`, built in S-8.4.1)
+- [x] T-8.4.2.3 Hidden when `/health` reports the Q&A feature down
+- [ ] T-8.4.2.4 A per-source Q&A scope (retrieval filtered to one `document_id`), so the knowledge drawer's suggestions are asked about that source rather than across the library
+
+Scope-changed 2026-10-19: the knowledge drawer has no composer and the app has no per-source Q&A, so its card hands the question to library Q&A (filled, or asked on Shift-click) and says "Asked across your library." T-8.4.2.4 would make it exact.
 
 ### E-8.5 🟡 Notes — the user's own voice in the library (M5)
 

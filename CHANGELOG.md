@@ -10,6 +10,20 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Said or shown: modality provenance through the report pipeline (2026-10-19, S-1.18.8 T-1 to T-3)
+
+D-075 found that prompt rules moved visual attribution errors from one
+direction to the other rather than removing them, and that four of the five
+confirmed errors sat in the one Bengali-language video, where the composer
+could not read the speech. Whether a fact was said or shown is now decided at
+the map stage, where the model reads the native speech one chunk at a time:
+every item carries `modality` (said / shown / both), code forces `said` for
+sources without visual annotations, the lossless reduce keeps the label, and
+compose renders it as a `[SAID]` / `[SHOWN]` tag the composer attributes from.
+The visual contract gains the converse rule ("on screen" only for what was
+shown). Corpora without visual evidence get no tags and pay nothing. The
+protocol re-run (T-1.18.8.4) is still to come.
+
 ### Report map/reduce intermediates are persisted (2026-10-19, S-1.14.6)
 
 The report pipeline kept its per-batch map extractions and its reduced dataset

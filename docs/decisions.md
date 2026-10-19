@@ -2277,7 +2277,15 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **Consequences.** The visual feature stays opt-in and off by default, now with measured quality and known failure modes. S-1.18.8 touches the map and compose prompts and the item schema, so it is serialised after the R5 session's prompt work and after S-1.14.6.
 
-**Linked initiatives / PRs.** S-1.18.2 (deferred), S-1.18.5, S-1.18.6 (T-3 done), S-1.18.7 (measured), S-1.18.8 (new), S-1.14.6.
+**Implemented 2026-10-19 (S-1.18.8 T-1 to T-3, PR [#277](https://github.com/khoks/VideoResearchPro/pull/277)).** Choices made inside this decision, open to revision:
+
+- *Code overrides the model where code can know.* An item from a source with no visual annotation is `said`, whatever the model labelled it; the model's value is kept as `modality_model` in the persisted map record (S-1.14.6) so its labelling can still be audited.
+- *Unknown is a label, not a default.* A missing or unusable label becomes `unknown` and renders as `[UNLABELLED]`, which sends the composer back to the contract's own rules. Defaulting to `said` would recreate the error this decision exists to remove.
+- *The same item with different evidence is `both`.* Overlapping chunks can extract one item from the speech and again from a span; the lossless reduce keeps the union rather than whichever came first.
+- *Tags only when they can matter.* Compose renders tags, and the instruction for them, only when the corpus has a shown or both item. A corpus without visual evidence would otherwise get `[SAID]` on every item.
+- T-1.18.8.4 (check the composed report against item provenance, then re-run the S-1.18.3 protocol) is not part of this change.
+
+**Linked initiatives / PRs.** S-1.18.2 (deferred), S-1.18.5, S-1.18.6 (T-3 done), S-1.18.7 (measured), S-1.18.8 (T-1 to T-3 shipped), S-1.14.6.
 
 ## D-076 — Model guidance: "measured" means the use case's own output was graded; verdicts warn, never block (2026-10-19)
 

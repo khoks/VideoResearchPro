@@ -1,0 +1,390 @@
+{
+ "protocol": "docs/notes/2026-10-18-r1-visual-measurement.md",
+ "job_id": "419e691d-6370-4042-a22f-7169490ff736",
+ "topic": "matplotlib and seaborn data visualization tutorials",
+ "manifest": {
+  "video_count": 11,
+  "frames_total": 120,
+  "frames_described": 120,
+  "frames_informative": 119,
+  "chunks_on": 515,
+  "chunks_off": 410,
+  "chunks_with_visual": 119,
+  "on_seconds": 634.7,
+  "off_seconds": 344.1,
+  "on_html_chars": 100879,
+  "off_html_chars": 57969
+ },
+ "videos": [
+  {
+   "video_id": "50SGBO3Psqk",
+   "title": "Matplotlib Tutorial for Beginners: Line Charts, Scatter Plots & BoxPlots | Python Data Visualization",
+   "frames": 12,
+   "frames_described": 12,
+   "frames_informative": 12,
+   "chunks": 24,
+   "chunks_with_visual": 12
+  },
+  {
+   "video_id": "OEWAgzYv2mE",
+   "title": "Seaborn Python Tutorial: How to Analyze Data Like a Data Analyst (Step-by-Step Guide)",
+   "frames": 11,
+   "frames_described": 11,
+   "frames_informative": 11,
+   "chunks": 22,
+   "chunks_with_visual": 11
+  },
+  {
+   "video_id": "0sk72TEs3zc",
+   "title": "Easiest Way to Plot 📈using Matplotlib in Python 🐍",
+   "frames": 5,
+   "frames_described": 5,
+   "frames_informative": 5,
+   "chunks": 38,
+   "chunks_with_visual": 5
+  },
+  {
+   "video_id": "Fnn7rCrN_88",
+   "title": "Seaborn Tutorial For Beginners 2026 | Seaborn Library In Python | Seaborn Explained | Simplilearn",
+   "frames": 12,
+   "frames_described": 12,
+   "frames_informative": 12,
+   "chunks": 23,
+   "chunks_with_visual": 12
+  },
+  {
+   "video_id": "UZDP9IPMqcs",
+   "title": "Comprehensive Guide on MATPLOTLIB, SEABORN & PLOTLY | Python Data Analysis",
+   "frames": 12,
+   "frames_described": 12,
+   "frames_informative": 12,
+   "chunks": 10,
+   "chunks_with_visual": 12
+  },
+  {
+   "video_id": "ooqXQ37XHMM",
+   "title": "Seaborn Is The Easier Matplotlib",
+   "frames": 12,
+   "frames_described": 12,
+   "frames_informative": 12,
+   "chunks": 19,
+   "chunks_with_visual": 12
+  },
+  {
+   "video_id": "6lgc8xPTDS0",
+   "title": "The Only Seaborn Video You'll Ever Need | Full Python Data Visualization Guide",
+   "frames": 11,
+   "frames_described": 11,
+   "frames_informative": 10,
+   "chunks": 112,
+   "chunks_with_visual": 10
+  },
+  {
+   "video_id": "LnGz20B3nTU",
+   "title": "How to Visualize Data in Python Using Seaborn | Seaborn Tutorial.",
+   "frames": 12,
+   "frames_described": 12,
+   "frames_informative": 12,
+   "chunks": 11,
+   "chunks_with_visual": 12
+  },
+  {
+   "video_id": "I1Hsa9TSO5U",
+   "title": "Seaborn Course: Learn Data Visualization in Python",
+   "frames": 9,
+   "frames_described": 9,
+   "frames_informative": 9,
+   "chunks": 8,
+   "chunks_with_visual": 9
+  },
+  {
+   "video_id": "5AuuOZ4vuxI",
+   "title": "01. Seaborn in Python  | Introduction to Seaborn | Data Visualization Tutorial for Beginners",
+   "frames": 12,
+   "frames_described": 12,
+   "frames_informative": 12,
+   "chunks": 120,
+   "chunks_with_visual": 12
+  },
+  {
+   "video_id": "qErBw-R2Ybk",
+   "title": "Python - Matplotlib Tutorial for Beginners",
+   "frames": 12,
+   "frames_described": 12,
+   "frames_informative": 12,
+   "chunks": 23,
+   "chunks_with_visual": 12
+  }
+ ],
+ "judging_summary": {
+  "judges_ok": 3,
+  "judges_total": 3,
+  "preferred_on_substance": {
+   "on": 3,
+   "off": 0,
+   "tie": 0
+  },
+  "attribution_errors_total": {
+   "on": 0,
+   "off": 0
+  },
+  "fabrications_total": {
+   "on": 7,
+   "off": 13
+  },
+  "mean_substance": {
+   "on": 8.33,
+   "off": 7.0
+  },
+  "inputs": {
+   "x": "data/r1_ab/run1/on.html",
+   "y": "data/r1_ab/run1/off.html",
+   "labels": [
+    "on",
+    "off"
+   ],
+   "chars": 428638
+  }
+ },
+ "judges": [
+  {
+   "judge": "anthropic:claude-sonnet-5:medium",
+   "mapping": {
+    "A": "off",
+    "B": "on"
+   },
+   "unblinded": {
+    "substance": {
+     "off": 7,
+     "on": 8
+    },
+    "visual_use": {
+     "off": 5,
+     "on": 8
+    },
+    "attribution_errors": {
+     "off": [],
+     "on": []
+    },
+    "fabrications": {
+     "off": [],
+     "on": []
+    },
+    "preferred_on_substance": "on"
+   },
+   "rationale": "Both reports are dense and well-sourced with timestamped claims, but Report A's Key Facts, Analysis, and Conclusions sections almost entirely omit two full transcripts (DeepLoop Circle/Vivek and Absent Data) despite listing them in its stats table, leaving real coverage gaps. Report B treats all 11 videos substantively, including precise verifiable numbers (penguin species counts, weekday sales totals, tips correlations) explicitly marked as 'also visible on screen,' and even flags a genuine speech/visual discrepancy (grid lines claimed but not shown), demonstrating more careful and correct visual evidence use. Neither report shows clear misattribution of screen content as speech or fabricated claims. B's broader, more granular, and better visually-grounded coverage makes it the stronger source per minute of reading."
+  },
+  {
+   "judge": "google:gemini-3.1-pro-preview:medium",
+   "mapping": {
+    "A": "on",
+    "B": "off"
+   },
+   "unblinded": {
+    "substance": {
+     "on": 9,
+     "off": 8
+    },
+    "visual_use": {
+     "on": 9,
+     "off": 8
+    },
+    "attribution_errors": {
+     "on": [],
+     "off": []
+    },
+    "fabrications": {
+     "on": [],
+     "off": []
+    },
+    "preferred_on_substance": "on"
+   },
+   "rationale": "Both reports provide dense, accurate summaries of the provided transcripts with high detail. Report A stands out slightly for its exceptional use of visual spans, explicitly cross-referencing on-screen data with spoken claims (e.g., noting a discrepancy between the speaker's claim of a grid and its absence on screen, and pulling specific numerical values from visual frames to supplement the analysis). Report A extracts slightly more detailed analytical takeaways."
+  },
+  {
+   "judge": "openai:gpt-5.5:medium",
+   "mapping": {
+    "A": "on",
+    "B": "off"
+   },
+   "unblinded": {
+    "substance": {
+     "on": 8,
+     "off": 6
+    },
+    "visual_use": {
+     "on": 9,
+     "off": 4
+    },
+    "attribution_errors": {
+     "on": [],
+     "off": []
+    },
+    "fabrications": {
+     "on": [
+      "This report synthesises 11 videos (11 transcripts, 55,389 words, 226 minutes of runtime) from 10 distinct channels covering matplotlib and seaborn data visualization instruction in Python.",
+      "Publication dates run from 2018-11-22 to 2026-09-28, with a median of 2025-04-13; by year the corpus breaks down as 3 videos in 2026, 3 in 2025, 2 in 2023, 2 in 2022 and 1 in 2018, with all 11 videos carrying a date.",
+      "The evidence base for these findings comprises 178 key facts, 39 analytical observations, 21 conclusions, 19 historical and external references, and 13 attributed speaker contributions, drawn from the 11 transcripts described above.",
+      "The source item for this consolidated summary is attributed to a Simplilearn presenter but is timestamped within the Data Analytics Lab video; readers should treat the attribution of the summarising voice as uncertain while the four findings themselves are corroborated by the individual segments above.",
+      "Of the thirteen source items, only two carry a personal name for the speaker, and one item is not a speaker at all but an automated on-screen annotation layer.",
+      "The same holds for the second half of the CodeWithMunnaX Seaborn material, where the instructor remains unidentified through the 14:13–27:22 stretch of Seaborn in Python | Introduction to Seaborn | Data Visualization Tutorial for Beginners — CodeWithMunnaX (14:13).",
+      "The video was published on 2018-11-22, so the figures were roughly current at publication; readers should treat them as a snapshot of the 2014–2018 window and not as indicative of later prices."
+     ],
+     "off": [
+      "Where sources disagree, the disagreement tracks publication date and should be read that way.",
+      "The single 2018 video and the 2022–2023 cohort reflect older seaborn idioms — notably sns.distplot() and sns.set_style() — which the 2025 and 2026 videos replace with histplot/displot and set_theme(), reflecting seaborn's deprecations and the v0.11/v0.12 API shift.",
+      "Chart coverage clusters tightly. Line, bar, scatter, histogram and pie charts dominate the matplotlib segments; seaborn segments concentrate on countplot, boxplot, violinplot, heatmap (especially correlation matrices), pairplot, distplot/histplot and the figure-level relplot/catplot family.",
+      "Shorter, exam-oriented treatments — Gate Smashers at 1,973 words over 9 minutes, Onur Baltaci at 1,817 words over 12 minutes — compress the material to definitions and a handful of plot types, while the longer builds from DeepLoop Circle (5,751 words, 29 minutes), Academind (5,464 words, 27 minutes) and Data Analytics Lab (9,661 words across 2 videos, 47 minutes) spend their time on customisation, subplots, real datasets and interpretation of the resulting charts.",
+      "Readers choosing a learning path should match the format to the goal: the short videos answer \"what is seaborn?\", the long ones answer \"how do I make this figure publication-ready?\"",
+      "In the demonstrated two-row, two-column arrangement, Microsoft price is displayed in the lower-right subplot and Apple price in the lower-left subplot after specifying the appropriate row and column indices — Academind (26:26).",
+      "Second, he characterizes newly created subplots as \"raw templates\" because they do not yet contain data (15:17), a framing that treats the figure/axes object as scaffolding rather than output.",
+      "The following are not stated by any single video; they emerge from reading the twelve items together.",
+      "The corpus for this report consists of eight tutorial videos drawn from seven YouTube channels.",
+      "A structural feature of the material deserves to be stated up front: none of the transcripts identifies its presenter by personal name.",
+      "Across all nine source items the speaker field resolves to an unnamed instructor.",
+      "For NeuralNine, Gate Smashers, CodeWithMunnaX and Academind the source material notes explicitly that \"no personal name is provided in the transcript.\"",
+      "At roughly 27 minutes this is the longest single item in the corpus, and the curricular numbering signals an intent to build cumulatively rather than deliver a standalone overview."
+     ]
+    },
+    "preferred_on_substance": "on"
+   },
+   "rationale": "A is much denser in transcript-verifiable specifics: datasets, code calls, parameter names, numeric values, chart interpretations, and timestamps. It also uses visual-only evidence carefully, usually labelling it as visible/on screen. A has some unsupported metadata and source-count claims. B is more concise but loses substance and has serious unsupported chronology/API-shift claims, wrong corpus/source counts in Speaker Contributions, and at least one incorrect visual/layout claim. Per minute of reading, A gives a researcher more verified facts despite padding and some fabricated metadata."
+  }
+ ],
+ "verification_summary": {
+  "on": {
+   "confirmed_fabrications": 0,
+   "metadata_leaks": 4,
+   "refuted": 7
+  },
+  "off": {
+   "confirmed_fabrications": 5,
+   "metadata_leaks": 3,
+   "refuted": 8
+  },
+  "on_attribution_errors_confirmed": 2,
+  "sweep_candidates": 8,
+  "sweeps_ok": 3
+ },
+ "verification_confirmed_on_attribution_errors": [
+  {
+   "sentence": "A regression plot displays two numerical variables, a fitted regression line, and a confidence band to help assess a linear relationship — Onur Baltaci (10:21).",
+   "why": "The 'confidence band' is credited to Onur Baltaci's definition of a regression plot, but it exists only in the machine-written visual span describing the rendered chart. The spoken definition at 10:21",
+   "upheld_votes": 3,
+   "total_votes": 3,
+   "confirmed": true,
+   "reasons": [
+    "The sentence is present in the ON report (line 160) and is cited to the speaker, Onur Baltaci. Most of it is speech: the transcript (lines 4408-4414, Seaborn Course video) has the speaker say a regression plot \"displays ",
+    "The sentence is present verbatim in the ON report (on.html line 160) and cites the speaker by name. Three of its four elements are genuinely spoken by Baltaci: the regression plot \"displays the relationship between two n",
+    "The sentence appears verbatim in on.html line 160 (OFF report has no \"confidence band\" text at all). In the Onur Baltaci video (transcript lines 4155-4429), the speaker's words cover two numerical variables, a best-fit r"
+   ]
+  },
+  {
+   "sentence": "Absent Data describes it as combining a central bivariate plot with marginal histograms, while lmplot adds a regression line and confidence band (9:08).",
+   "why": "The sentence explicitly says 'Absent Data describes', but the presenter never describes a confidence band for lmplot: the speech says only that a regression line was drawn and coloured red. 'confiden'",
+   "upheld_votes": 2,
+   "total_votes": 3,
+   "confirmed": true,
+   "reasons": [
+    "The sentence is in the ON report (line 158, \"Joint plots.\" paragraph) and its 9:08 citation links to LnGz20B3nTU&t=548, the Absent Data video (\"How to Visualize Data in Python Using Seaborn\", transcript lines 3767-4155).",
+    "Narrow uphold. The sentence is present in on.html (Joint plots paragraph) and the 9:08 link resolves to watch?v=LnGz20B3nTU&t=548, the Absent Data video (\"How to Visualize Data in Python Using Seaborn\", transcript lines ",
+    "The sentence is present in the ON report (Joint plots paragraph). Its substance is spoken by the Absent Data presenter, not lifted from the screen: he says the joint plot \"takes that x and y and it gives us the histogram"
+   ]
+  }
+ ],
+ "verification_confirmed_off_fabrications": [
+  {
+   "judge": "openai:gpt-5.5:medium",
+   "arm": "off",
+   "kind": "fabrications",
+   "claim": "Where sources disagree, the disagreement tracks publication date and should be read that way.",
+   "upheld_votes": 2,
+   "total_votes": 3,
+   "confirmed": true,
+   "categories": {
+    "unsupported": 2,
+    "computed_stat": 1
+   },
+   "reasons": [
+    "The sentence is present in off.html (line 11, opening the paragraph on distplot/set_style vs histplot/set_theme). It asserts two things: that the sources disagree with one another, and that the disagreement correlates wi",
+    "The sentence is present in off.html (the cross-source synthesis paragraph after the chart-coverage paragraph). Nothing in the corpus supports the claim that inter-source disagreement correlates with publication date. (1)",
+    "The sentence is present in off.html (paragraph beginning \"Where sources disagree...\"). It is an analytical framing whose organizing axis -- publication date -- comes straight from the supplied statistics file (earliest 2"
+   ]
+  },
+  {
+   "judge": "openai:gpt-5.5:medium",
+   "arm": "off",
+   "kind": "fabrications",
+   "claim": "The single 2018 video and the 2022–2023 cohort reflect older seaborn idioms — notably sns.distplot() and sns.set_style() — which the 2025 and 2026 videos replace with his",
+   "upheld_votes": 3,
+   "total_votes": 3,
+   "confirmed": true,
+   "categories": {
+    "unsupported": 3
+   },
+   "reasons": [
+    "The sentence is present in off.html (line 11, \"Where sources disagree...\" paragraph). Its core claim is a chronological attribution: the 2018 video and the 2022-2023 videos use sns.distplot() and sns.set_style(), which t",
+    "The sentence is present in off.html. Only its year arithmetic is grounded (off.statistics.json videos_by_year: 2018:1, 2022:2, 2023:2, 2025:3, 2026:3). Everything it asserts about WHICH idioms belong to WHICH years has n",
+    "The sentence is present in off.html (line 11). Only its scaffolding comes from the statistics file: off.statistics.json gives videos_by_year {2026:3, 2025:3, 2023:2, 2022:2, 2018:1}, which is where \"the single 2018 video"
+   ]
+  },
+  {
+   "judge": "openai:gpt-5.5:medium",
+   "arm": "off",
+   "kind": "fabrications",
+   "claim": "In the demonstrated two-row, two-column arrangement, Microsoft price is displayed in the lower-right subplot and Apple price in the lower-left subplot after specifying th",
+   "upheld_votes": 3,
+   "total_votes": 3,
+   "confirmed": true,
+   "categories": {
+    "unsupported": 3
+   },
+   "reasons": [
+    "The sentence is present in off.html (line 42, \"Indexing rules...\" paragraph, cited Academind 26:26). The Apple half is supported: speech says \"Apple in 1.0 so in the second row ... and the first column\" and \"we got the A",
+    "The sentence is present in the OFF report (cited to Academind qErBw-R2Ybk at 26:26). The half about Apple is supported, but the half about Microsoft is not: in the demonstrated 2x2 pyplot.subplots arrangement the speaker",
+    "The sentence is present in off.html (line 42, cited Academind t=1586). It is not a restatement of either statistics file: off.statistics.json / on.statistics.json contain only video/transcript/word/minute counts, a chann"
+   ]
+  },
+  {
+   "judge": "openai:gpt-5.5:medium",
+   "arm": "off",
+   "kind": "fabrications",
+   "claim": "The corpus for this report consists of eight tutorial videos drawn from seven YouTube channels.",
+   "upheld_votes": 3,
+   "total_votes": 3,
+   "confirmed": true,
+   "categories": {
+    "unsupported": 2,
+    "computed_stat": 1
+   },
+   "reasons": [
+    "The sentence is present in off.html (line 203). No speech line in the transcript states a count of videos or channels (grep for eight/seven/8/7 near video/channel/tutorial/corpus on non-VISUAL lines returned nothing). Th",
+    "The sentence appears verbatim in the OFF report (off.html line 203, second text node: \"The corpus for this report consists of eight tutorial videos drawn from seven YouTube channels.\"). The only possible source for a cor",
+    "The sentence is present in the OFF report (speaker-contributions section), but its counts are grounded in none of the supplied data. off.statistics.json gives video_count 11, transcript_count 11, dated_video_count 11 and"
+   ]
+  },
+  {
+   "judge": "openai:gpt-5.5:medium",
+   "arm": "off",
+   "kind": "fabrications",
+   "claim": "A structural feature of the material deserves to be stated up front: none of the transcripts identifies its presenter by personal name.",
+   "upheld_votes": 2,
+   "total_votes": 3,
+   "confirmed": true,
+   "categories": {
+    "unsupported": 2,
+    "metadata_leak": 1
+   },
+   "reasons": [
+    "The sentence is present in off.html (line 203). Its substantive claim is a universal negative: no transcript names its presenter. Speech contradicts it. The DeepLoop Circle video (\"The Only Seaborn Video You'll Ever Need",
+    "The sentence is present in the OFF report (off.html line 203, in the corpus-overview paragraph). The claim that \"none of the transcripts identifies its presenter by personal name\" is not supported by any [VISUAL @] span ",
+    "The sentence is present in the OFF report (off.html line 203). It does not restate off.statistics.json, which carries only video/word/minute counts, channel breakdown, dates and per-year buckets and has no speaker field."
+   ]
+  }
+ ],
+ "cost_estimate_usd": {
+  "total": 2.17,
+  "per_video": 0.198,
+  "basis": "token counts from stored transcripts/frames x gpt-5.5 pricing; see note"
+ }
+}

@@ -8,6 +8,7 @@ import { useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthorOutput, useAuthorOutputContent } from '../hooks/useAuthor';
 import { useOutputsProgress } from '../hooks/useOutputProgress';
+import { authorApi } from '../services/authorApi';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { Button, EmptyState, Spinner } from '../components/primitives';
 import { ReaderShell, StatTiles, formatPublished, parseMarkdownDoc } from '../components/reader';
@@ -16,10 +17,12 @@ import { useJobStore } from '../stores/jobStore';
 import { downloadUrl } from '../utils/download';
 import {
   isActiveOutput,
+  downloadLabel,
+  filenameFromDisposition,
   isOrphanedPending,
+  isReadableOutput,
   kindMeta,
   outputDownloadFilename,
-  outputMediaType,
   outputProgressLine,
   outputStatusLabel,
 } from '../utils/authorOutputs';
@@ -39,7 +42,7 @@ export function OutputReaderPage() {
   const c = useColors();
   const pushToast = useJobStore((s) => s.pushToast);
   const output = useAuthorOutput(outputId ?? null);
-  const readable = output.data?.status === 'completed' && output.data.has_content;
+  const readable = !!output.data && isReadableOutput(output.data);
   // S-6.7.1: opened while the worker is still writing it — follow its
   // progress and render as soon as it completes.
   const live = !!output.data && isActiveOutput(output.data.status) && !isOrphanedPending(output.data);
@@ -128,15 +131,19 @@ export function OutputReaderPage() {
     );
   }
 
-  const download = () => {
+  // S-6.7.2: one button per format the server can serve (Markdown today;
+  // PDF and EPUB once S-6.1.5 writes them).
+  const download = async (format?: string) => {
     try {
-      const url = URL.createObjectURL(new Blob([content.data!], { type: outputMediaType(item) }));
-      downloadUrl(url, outputDownloadFilename(item));
+      const { blob, disposition } = await authorApi.download(item.id, format);
+      const url = URL.createObjectURL(blob);
+      downloadUrl(url, filenameFromDisposition(disposition, outputDownloadFilename(item)));
       window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
     } catch {
       pushToast('error', 'Could not prepare the download.');
     }
   };
+  const formats = item.formats?.length ? item.formats : [undefined];
 
   const chapters = parsed.outline.filter((o) => o.level === 2).length;
   const created = formatPublished(item.created_at);
@@ -149,9 +156,11 @@ export function OutputReaderPage() {
       actions={
         <>
           {back}
-          <Button size="sm" variant="secondary" onClick={download}>
-            Download
-          </Button>
+          {formats.map((format) => (
+            <Button key={format ?? 'file'} size="sm" variant="secondary" onClick={() => download(format)}>
+              {downloadLabel(format ?? '', item.formats?.length ?? 1)}
+            </Button>
+          ))}
           <Button size="sm" variant="secondary" onClick={() => window.print()}>
             Print or save as PDF
           </Button>

@@ -31,11 +31,13 @@ import { formatDate } from '../utils/formatters';
 import { downloadUrl } from '../utils/download';
 import {
   describeCreateError,
+  downloadLabel,
+  filenameFromDisposition,
   isActiveOutput,
   isOrphanedPending,
+  isReadableOutput,
   kindMeta,
   outputDownloadFilename,
-  outputMediaType,
   outputProgressLine,
   outputSizeLabel,
   outputStatusLabel,
@@ -111,15 +113,15 @@ export function AuthorPage() {
   const forbidden = isForbidden(kinds.error) || isForbidden(outputs.error);
   const partition = useMemo(() => partitionKinds(kinds.data), [kinds.data]);
 
-  const download = async (output: OutputItem) => {
+  // S-6.7.2: every format comes from `GET …/download`, which names the file.
+  const download = async (output: OutputItem, format?: string) => {
     try {
-      const text = await authorApi.getContent(output.id);
-      const blob = new Blob([text], { type: outputMediaType(output) });
+      const { blob, disposition } = await authorApi.download(output.id, format);
       const url = URL.createObjectURL(blob);
-      downloadUrl(url, outputDownloadFilename(output));
+      downloadUrl(url, filenameFromDisposition(disposition, outputDownloadFilename(output)));
       window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
     } catch {
-      pushToast('error', 'Could not fetch the manuscript for download.');
+      pushToast('error', `Could not fetch ${format ? `the .${format} file` : 'the file'} for download.`);
     }
   };
 
@@ -292,7 +294,7 @@ export function AuthorPage() {
                     key={row.id}
                     output={row}
                     onView={() => navigate(`/author/outputs/${row.id}`)}
-                    onDownload={() => download(row)}
+                    onDownload={(format) => download(row, format)}
                     onDelete={() => setDeleting(row)}
                     onCancel={() => cancel(row)}
                     cancelling={cancelMut.isPending && cancelMut.variables === row.id}
@@ -436,7 +438,7 @@ function OutputRow({
 }: {
   output: OutputItem;
   onView: () => void;
-  onDownload: () => void;
+  onDownload: (format?: string) => void;
   onDelete: () => void;
   onCancel: () => void;
   cancelling: boolean;
@@ -473,16 +475,17 @@ function OutputRow({
               {outputSizeLabel(output)} · {formatDate(output.created_at)}
             </span>
             <span style={{ display: 'inline-flex', gap: space['1'] }}>
-              {output.has_content && (
-                <>
-                  <Button size="sm" variant="tertiary" onClick={onView}>
-                    Read
-                  </Button>
-                  <Button size="sm" variant="tertiary" onClick={onDownload}>
-                    Download
-                  </Button>
-                </>
+              {isReadableOutput(output) && (
+                <Button size="sm" variant="tertiary" onClick={onView}>
+                  Read
+                </Button>
               )}
+              {output.has_content &&
+                (output.formats?.length ? output.formats : [undefined]).map((format) => (
+                  <Button key={format ?? 'file'} size="sm" variant="tertiary" onClick={() => onDownload(format)}>
+                    {downloadLabel(format ?? '', output.formats?.length ?? 1)}
+                  </Button>
+                ))}
               {isActiveOutput(output.status) && !isOrphanedPending(output) && (
                 <Button size="sm" variant="tertiary" onClick={onCancel} loading={cancelling}>
                   Cancel

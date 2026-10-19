@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Code-mixed speech: quotes keep the original wording (2026-10-19, T-1.16.2.5 part A)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). The quotation half of N-002's bidirectional split;
+PR [#268](https://github.com/khoks/VideoResearchPro/pull/268). The quotation half of N-002's bidirectional split;
 [D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
 
 - **Chunks of non-English sources carry their measured profile**

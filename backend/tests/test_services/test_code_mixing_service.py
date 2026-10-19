@@ -145,15 +145,73 @@ def test_lexicon_detector_on_held_out_romanised_text():
     assert s["hindi_share_mae"] <= 0.03
 
 
-def test_lexicon_detector_cannot_see_english_written_in_devanagari():
+def test_lexicon_detector_cannot_see_english_content_words_in_devanagari():
     """The known blind spot, pinned so it is measured rather than forgotten:
-    every Devanagari word is Hindi to the lexicon detector, so "मशीन लर्निंग"
-    counts as Hindi. Recall stays perfect; precision is what it costs."""
+    a Devanagari word is Hindi to the lexicon detector unless it is one of
+    the closed class of English function words (इज, टू, द), so "मशीन
+    लर्निंग" counts as Hindi. Recall stays perfect; precision is what it
+    costs. Measured 0.767 before the function-word list (T-1.16.2.1), 0.792
+    after (T-1.16.2.2)."""
     units = _test_units()
     pred = {u["id"]: [t for _, t in cm.tag_tokens(u["text"])] for u in units}
     s = ev.score(units, pred)["devanagari"]
     assert s["token_hindi"]["recall"] == 1.0
-    assert s["token_hindi"]["precision"] < 0.80
+    assert 0.78 <= s["token_hindi"]["precision"] < 0.82
+
+
+def test_english_function_words_in_devanagari_are_english_and_hindi_homographs_are_not():
+    tags = [tag for _, tag in cm.tag_tokens("इनपुट दिया टू द मशीन")]
+    assert tags == ["hi", "hi", "en", "en", "hi"]
+    # इन ("these"), आई ("came"), दे ("give") are Hindi words first.
+    assert {tag for _, tag in cm.tag_tokens("इन लोगों ने दे दिया वो आई")} == {"hi"}
+
+
+# --- matrix vs embedded language (T-1.16.2.2) ------------------------------------
+def test_matrix_is_grammar_not_word_count():
+    # 8 English words, 4 Hindi — but the auxiliary, the light verb and the
+    # postposition are Hindi, so the sentence is Hindi with English nouns.
+    a = cm.analyse_span("so basically the model ko train karna padta hai with the data")
+    assert a["hi_share"] < 0.5
+    assert a["matrix"] == "hi" and a["embedded"] == "en"
+
+
+def test_the_users_example_is_english_matrix_with_hindi_embedded():
+    a = cm.analyse_span(USER_EXAMPLE)
+    assert (a["matrix"], a["embedded"]) == ("en", "hi")
+
+
+def test_english_matrix_written_in_devanagari_is_recognised():
+    a = cm.analyse_span("इट इज नॉट बीइंग एक्सप्लीसिटली प्रोग्राम")
+    assert a["matrix"] == "en"
+
+
+def test_monolingual_spans_have_no_embedded_language():
+    assert cm.analyse_span("I want to go to the market")["embedded"] is None
+    assert cm.analyse_span("mujhe nahi pata tha")["matrix"] == "hi"
+    assert cm.analyse_span("2008 um ok")["matrix"] == "none"
+
+
+def test_a_bare_noun_phrase_falls_back_to_word_majority():
+    assert cm.analyse_span("machine learning course")["matrix"] == "en"
+    assert cm.analyse_span("bahut badhiya video")["matrix"] == "hi"
+
+
+def test_matrix_on_held_out_mixed_units_beats_word_majority():
+    """N-002's claim, measured: on 62 held-out mixed units the system-morpheme
+    vote names the grammar's language far more often than "whichever
+    language has more words". Measured 2026-10-19: 0.952 vs 0.855 (LLM
+    reference 0.968). Every baseline miss is a Hindi-grammar sentence with
+    mostly English words, read as English."""
+    units = _test_units()
+    vote = ev.matrix_accuracy(units, {u["id"]: cm.matrix_language(cm.tag_tokens(u["text"])) for u in units})
+    def majority(text):
+        p = cm.profile_text(text)
+        return "hi" if p["hi_tokens"] > p["en_tokens"] else "en"
+    base = ev.matrix_accuracy(units, {u["id"]: majority(u["text"]) for u in units})
+    assert vote["units"] == base["units"] == 62
+    assert vote["accuracy"] >= 0.93
+    assert base["accuracy"] <= 0.87
+    assert base["confusion"].get("hi->en", 0) >= 8
 
 
 def _llm_cache() -> dict:

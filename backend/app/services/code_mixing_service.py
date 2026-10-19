@@ -257,11 +257,12 @@ def tag_tokens(text: str) -> list[tuple[Token, str]]:
     """Language per token: the lexicon detector.
 
     Latin words go through the lexicon + n-gram + Viterbi pass. Words in a
-    non-Latin script are tagged from the script alone (Devanagari and
-    Arabic-script words are Hindi/Urdu). That leaves one known blind spot,
-    measured on the labelled set rather than assumed away: English words
-    TRANSCRIBED in Devanagari ("मशीन लर्निंग"), which YouTube's Hindi
-    auto-captions produce constantly.
+    non-Latin script are tagged from the script (Devanagari and Arabic-script
+    words are Hindi/Urdu), except the closed class of English function words
+    as Hindi ASR spells them (`ENGLISH_IN_DEVANAGARI`: इज, टू, द, एंड...).
+    That leaves one known blind spot, measured on the labelled set rather
+    than assumed away: English CONTENT words transcribed in Devanagari
+    ("मशीन लर्निंग"), which YouTube's Hindi auto-captions produce constantly.
     """
     lex = lexicons()
     tokens = tokenize(text)
@@ -276,7 +277,7 @@ def tag_tokens(text: str) -> list[tuple[Token, str]]:
             runs[-1].append(i)
             continue
         if tok.script in ("Devanagari", "Arabic", "Gurmukhi"):
-            tags[i] = "hi"
+            tags[i] = "en" if tok.norm in ENGLISH_IN_DEVANAGARI else "hi"
         runs.append([])
     for run in runs:
         path = _viterbi([emission(tokens[i].norm, lex) for i in run])
@@ -300,6 +301,144 @@ def shares(tags: Iterable[str]) -> dict[str, Any]:
 def profile_text(text: str) -> dict[str, Any]:
     """Lexicon-detector profile of one span: token counts and Hindi share."""
     return shares(tag for _, tag in tag_tokens(text))
+
+
+# --- matrix vs embedded language (T-1.16.2.2) ----------------------------------
+#
+# Proportion says how many words each language contributes; it cannot say
+# which language the sentence is IN. "so model ko train karna padta hai with
+# the data" is 64% English words in Hindi grammar. Myers-Scotton's Matrix
+# Language Frame model gives the test: the matrix language supplies the
+# SYSTEM morphemes — auxiliaries, inflected light verbs, postpositions, case
+# forms, negation, conjunctions — while the embedded language supplies content
+# words. So the matrix is decided by a vote of closed-class words, and content
+# words do not vote at all.
+#
+# Verbal morphemes (auxiliaries, inflected light verbs) carry the clause's
+# tense and agreement and count double. On the DEV split the weight made no
+# difference between 1 and 3; 2 follows the theory.
+#
+# The lists are closed classes, so they live here rather than in a lexicon
+# file. Devanagari entries matter twice over: Hindi function words written in
+# Devanagari vote Hindi, and English function words written in Devanagari
+# ("इट इज नॉट", "टू द") vote English even though the tagger calls every
+# Devanagari word Hindi — the one place the lexicon detector can see English
+# in Devanagari, and the place it matters most, because an English-matrix
+# sentence must not be quoted as Hindi.
+
+HINDI_VERBAL_MORPHEMES = frozenset({
+    "hai", "hain", "hei", "he", "h", "hoon", "hun", "hu", "ho", "tha", "thi", "the", "thee",
+    "raha", "rahi", "rahe", "rha", "rhi", "rhe", "hota", "hoti", "hote", "hoga", "hogi", "honge",
+    "hua", "hui", "hue", "gaya", "gayi", "gaye", "gya", "gyi", "sakta", "sakti", "sakte", "skta",
+    "sake", "chuka", "chuki", "chuke", "jaata", "jata", "jaati", "jati", "jaate", "jate", "jaye",
+    "jaaye", "jayega", "jaega", "paata", "paate", "padta", "padti", "padte", "padega",
+    "kar", "karna", "karne", "karni", "karta", "karti", "karte", "kare", "karo", "karu", "karun",
+    "karenge", "karega", "karegi", "kiya", "kiye", "kia", "krna", "krte", "krta", "kro", "kr",
+    "kra", "karke", "diya", "diye", "dena", "dete", "deta", "lena", "liya", "lete", "leta",
+    "kariye", "kijiye", "dijiye", "dijye",
+    "है", "हैं", "हूं", "हूँ", "हो", "था", "थी", "थे", "रहा", "रही", "रहे", "होता", "होती", "होते",
+    "होगा", "होगी", "होंगे", "हुआ", "हुई", "हुए", "गया", "गई", "गए", "सकता", "सकती", "सकते",
+    "जाता", "जाती", "जाते", "कर", "करना", "करने", "करता", "करती", "करते", "करें", "करो", "किया",
+    "किए", "दिया", "दिए", "लिया", "लेते", "देते", "पड़ता", "चाहिए",
+})
+HINDI_FUNCTION_MORPHEMES = frozenset({
+    "ka", "ki", "ke", "ko", "se", "mein", "me", "mai", "par", "pe", "tak", "ne", "liye", "wala",
+    "wali", "wale", "waala", "waale", "nahi", "nahin", "nai", "nhi", "na", "mat", "bhi", "toh",
+    "to", "hi", "aur", "ya", "lekin", "magar", "jo", "agar", "taaki", "kyunki", "kyuki", "isliye",
+    "mujhe", "humein", "hume", "tumhe", "usko", "isko", "unko", "inko", "aapko", "apko", "mera",
+    "meri", "mere", "hamara", "tumhara", "aapka", "aapki", "aapke", "apka", "apki", "apke", "uska",
+    "uski", "uske", "iska", "iski", "iske", "unka", "unki", "unke", "main", "hum", "tum", "aap",
+    "wo", "woh", "vo", "ye", "yeh", "kya", "kaise", "kaun", "kon", "koi", "kuch", "k", "m",
+    "का", "की", "के", "को", "से", "में", "पर", "पे", "तक", "ने", "लिए", "वाला", "वाली", "वाले",
+    "नहीं", "ना", "न", "भी", "तो", "ही", "और", "या", "लेकिन", "जो", "अगर", "ताकि", "क्योंकि", "कि",
+    "मुझे", "हमें", "तुम्हें", "उसको", "इसको", "उनको", "आपको", "मेरा", "मेरी", "मेरे", "आपका", "आपकी",
+    "आपके", "उसका", "उसकी", "उसके", "इसका", "इसकी", "इसके", "मैं", "हम", "तुम", "आप", "वो", "वह",
+    "ये", "यह", "क्या", "कैसे", "कौन", "कोई", "कुछ",
+})
+ENGLISH_VERBAL_MORPHEMES = frozenset({
+    "is", "are", "was", "were", "be", "been", "being", "am", "do", "does", "did", "have", "has",
+    "had", "will", "would", "can", "could", "should", "shall", "may", "might", "must", "don't",
+    "doesn't", "didn't", "isn't", "aren't", "wasn't", "won't", "can't", "i'm", "it's", "that's",
+    "you're", "we're", "they're", "i've", "i'll", "let's", "r",
+    "इज", "आर", "वाज", "बी", "शुड", "विल", "कैन", "डू", "डोंट", "हैव",
+})
+ENGLISH_FUNCTION_MORPHEMES = frozenset({
+    "the", "a", "an", "this", "that", "these", "those", "of", "to", "in", "on", "at", "for",
+    "with", "by", "from", "about", "into", "i", "you", "he", "she", "it", "we", "they", "me",
+    "him", "her", "us", "them", "my", "your", "his", "its", "our", "their", "who", "which",
+    "what", "and", "but", "or", "so", "because", "if", "when", "than", "not", "no", "there",
+    "u", "ur", "n", "nd",
+    # Not इन (in), आई (I) or दे (they): each is also a common Hindi word
+    # ("these", "came", "give").
+    "द", "दि", "ऑफ", "टू", "ऑन", "फॉर", "विद", "एंड", "बट", "ऑर", "दैट", "दिस", "इट", "यू",
+    "वी", "माय", "योर", "नॉट", "इफ",
+})
+VERBAL_MORPHEME_WEIGHT = 2.0
+
+# English function words as YouTube's Hindi ASR spells them. Tagged English
+# by `tag_tokens` — a closed class, so this is exact where it applies, and it
+# is what lets an English-matrix sentence written in Devanagari ("इट इज नॉट
+# बीइंग एक्सप्लीसिटली प्रोग्राम") be recognised as English at all. English
+# CONTENT words in Devanagari (मशीन, लर्निंग) remain the measured blind spot.
+ENGLISH_IN_DEVANAGARI = frozenset(
+    w for w in ENGLISH_VERBAL_MORPHEMES | ENGLISH_FUNCTION_MORPHEMES
+    if language_service.dominant_script(w) == "Devanagari"
+)
+
+
+def morpheme_votes(tagged: list[tuple[Token, str]]) -> dict[str, float]:
+    """System-morpheme vote per language over already-tagged tokens.
+
+    A word votes only for the language the tagger gave it, so an ambiguous
+    "to" or "the" votes Hindi inside a Hindi clause and English inside an
+    English one.
+    """
+    votes = {"en": 0.0, "hi": 0.0}
+    for tok, tag in tagged:
+        w = tok.norm
+        if tag == "hi":
+            if w in HINDI_VERBAL_MORPHEMES:
+                votes["hi"] += VERBAL_MORPHEME_WEIGHT
+            elif w in HINDI_FUNCTION_MORPHEMES:
+                votes["hi"] += 1
+        elif tag == "en":
+            if w in ENGLISH_VERBAL_MORPHEMES:
+                votes["en"] += VERBAL_MORPHEME_WEIGHT
+            elif w in ENGLISH_FUNCTION_MORPHEMES:
+                votes["en"] += 1
+    return votes
+
+
+def matrix_language(tagged: list[tuple[Token, str]]) -> str:
+    """"en", "hi", or "none" when the span has no language-bearing word.
+
+    A tied vote (including no system morphemes at all, as in a bare noun
+    phrase) falls back to the majority of words.
+    """
+    votes = morpheme_votes(tagged)
+    if votes["en"] != votes["hi"]:
+        return "hi" if votes["hi"] > votes["en"] else "en"
+    s = shares(tag for _, tag in tagged)
+    if not (s["en_tokens"] or s["hi_tokens"]):
+        return "none"
+    return "hi" if s["hi_tokens"] > s["en_tokens"] else "en"
+
+
+def analyse_span(text: str) -> dict[str, Any]:
+    """Proportion AND structure of one span — the measurement N-002 renders from.
+
+    ``{en_tokens, hi_tokens, hi_share, matrix, embedded}``: ``matrix`` is the
+    language supplying the grammar, ``embedded`` the other language when it
+    contributes any words (None for a monolingual span).
+    """
+    tagged = tag_tokens(text)
+    out = shares(tag for _, tag in tagged)
+    m = matrix_language(tagged)
+    other = {"en": "hi", "hi": "en"}.get(m)
+    present = other and out[f"{other}_tokens"] > 0
+    out["matrix"] = m
+    out["embedded"] = other if present else None
+    return out
 
 
 # --- LLM detector -------------------------------------------------------------

@@ -2412,7 +2412,20 @@ Both caught 28–29 of the 30 Hindi-bearing Latin units. The lexicon tagger flag
 - `tests/fixtures/code_mixing/` holds the labelled set and the LLM's cached answers. The test suite scores both detectors without calling a provider and fails if the lexicon tagger drops below its measured held-out precision and recall.
 - Found in passing, not fixed: `_fetch_transcript_once` falls back to the first listed caption track, which ingested a machine-dubbed Bengali transcript of a Hindi lecture (`1v3_AQ26jZ0`).
 
-**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1), E-1.16, N-002.
+**Addendum (2026-10-19): matrix language, T-1.16.2.2.** The matrix
+language comes from a vote of system morphemes (Matrix Language Frame), not
+from word counts and not from the LLM. On 62 held-out mixed units the vote
+named the grammar's language in 0.952 of cases, word majority in 0.855, and
+the LLM in 0.968. All nine of word majority's misses were Hindi-grammar
+sentences with mostly English words, which is the case N-002 exists for. The
+vote is free and deterministic and reuses the tagger's output, so it ships.
+The 0.016 gap to the LLM (one unit) does not justify a model call per span.
+A 29-word closed list of English function words as Hindi ASR spells them
+(इज, टू, द) is now tagged English, which lets an English-matrix sentence
+written in Devanagari be recognised as one. Details in [the detection
+note](notes/2026-10-19-code-mixing-detection.md#7-matrix-and-embedded-language-t-11622).
+
+**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1, T-1.16.2.2), E-1.16, N-002.
 
 ## D-081 — Frame describer default: spend against report-level quality (2026-10-19)
 

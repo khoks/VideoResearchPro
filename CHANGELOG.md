@@ -27,6 +27,16 @@ PR [#293](https://github.com/khoks/VideoResearchPro/pull/293). Plan: [docs/plans
 - **`GET /api/v1/author/outputs/{id}/citations`** and `citation_count` on
   every output; the Author list and the reader show the count.
 
+### Citations link to the channel (2026-10-19)
+
+[S-8.7.4](docs/initiatives.md#s-874--citation-chips-link-to-the-channel-page), PR [#291](https://github.com/khoks/VideoResearchPro/pull/291).
+
+- A YouTube citation in job or library Q&A names its channel as a link to the
+  channel page, when you can see the cited video. Resolved at read time by
+  `GET /library/video-channels` (one batched request per screen), so every
+  past answer gains it.
+
+
 ### Echo: the shares inbox, with whole-brain export and delete (S-3.7.1, S-3.10.1, S-3.10.2, 2026-10-19)
 
 The first new Echo table, shipped with its export and its erasure. PR [#286](https://github.com/khoks/VideoResearchPro/pull/286). Plan: [docs/plans/l3-echo-personal-brain.md](docs/plans/l3-echo-personal-brain.md).

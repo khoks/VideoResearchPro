@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.agents import report_agent
+from app.agents import qa_agent, report_agent
 from app.agents.prompts.knowledge_prompts import (
     EXTRACT_BATCH_PROMPT,
     SYNTHESIZE_REPORT_PROMPT,
@@ -29,10 +29,13 @@ from app.agents.prompts.knowledge_prompts import (
 from app.agents.prompts.qa_prompts import (
     LIBRARY_QA_ANSWER_PROMPT,
     LIBRARY_QA_SYSTEM_PROMPT,
+    LIBRARY_REFINE_CONTEXT_PROMPT,
     QA_ANSWER_PROMPT,
     QA_SYSTEM_PROMPT,
+    REFINE_CONTEXT_PROMPT,
 )
 from app.agents.prompts.report_prompts import (
+    CHANNEL_MAP_PROMPT,
     COMPOSE_SECTION_PROMPT,
     COMPOSE_SUMMARY_PROMPT,
     MAP_CHUNK_PROMPT,
@@ -49,6 +52,7 @@ from app.agents.prompts.shared import (
     TEMPORAL_AWARENESS,
     TEMPORAL_EXTRACTION_NOTE,
     VISUAL_ANNOTATION_CONTRACT,
+    VISUAL_SPAN_EXTRACT_RULE,
 )
 from app.services.visual_service import annotate_segments, strip_annotations
 from app.utils.chunking import chunk_transcript
@@ -100,6 +104,10 @@ _FORMATTED_PROMPTS = [
     (PLAN_SEARCHES_PROMPT, _AGENTS / "search_agent.py", "PLAN_SEARCHES_PROMPT"),
     (RANK_AND_CURATE_PROMPT, _AGENTS / "search_agent.py", "RANK_AND_CURATE_PROMPT"),
     (TEMPORAL_SCOPE_PROMPT, _SERVICES / "temporal_service.py", "TEMPORAL_SCOPE_PROMPT"),
+    # T-1.18.1.12 / .13 (2026-10-19): three more transcript readers.
+    (CHANNEL_MAP_PROMPT, _AGENTS / "report_agent.py", "CHANNEL_MAP_PROMPT"),
+    (REFINE_CONTEXT_PROMPT, _AGENTS / "qa_agent.py", "REFINE_CONTEXT_PROMPT"),
+    (LIBRARY_REFINE_CONTEXT_PROMPT, _AGENTS / "qa_agent.py", "LIBRARY_REFINE_CONTEXT_PROMPT"),
 ]
 
 
@@ -149,11 +157,14 @@ def test_prompts_actually_format(prompt, module, name):
     ("COMPOSE_SECTION_PROMPT", COMPOSE_SECTION_PROMPT),
     ("COMPOSE_SUMMARY_PROMPT", COMPOSE_SUMMARY_PROMPT),
     ("EXTRACT_BATCH_PROMPT", EXTRACT_BATCH_PROMPT),
+    ("CHANNEL_MAP_PROMPT", CHANNEL_MAP_PROMPT),
+    ("REFINE_CONTEXT_PROMPT", REFINE_CONTEXT_PROMPT),
+    ("LIBRARY_REFINE_CONTEXT_PROMPT", LIBRARY_REFINE_CONTEXT_PROMPT),
 ])
 def test_prompts_that_see_transcript_text_declare_the_visual_placeholder(
     prompt_name, prompt
 ):
-    """These four all read text that can contain `[VISUAL @ ...]` spans."""
+    """These all read text that can contain `[VISUAL @ ...]` spans."""
     assert "{visual_annotations}" in prompt, prompt_name
 
 
@@ -221,6 +232,9 @@ def _composed(prompt: str) -> str:
     ("EXTRACT_BATCH_PROMPT", EXTRACT_BATCH_PROMPT),
     ("QA_SYSTEM_PROMPT", QA_SYSTEM_PROMPT),
     ("LIBRARY_QA_SYSTEM_PROMPT", LIBRARY_QA_SYSTEM_PROMPT),
+    ("CHANNEL_MAP_PROMPT", CHANNEL_MAP_PROMPT),
+    ("REFINE_CONTEXT_PROMPT", REFINE_CONTEXT_PROMPT),
+    ("LIBRARY_REFINE_CONTEXT_PROMPT", LIBRARY_REFINE_CONTEXT_PROMPT),
 ])
 def test_every_prompt_that_reads_transcript_text_carries_the_rule_once(
     prompt_name, prompt
@@ -308,3 +322,60 @@ def test_map_prompt_shows_the_model_speech_and_span_with_the_rule_in_force():
     # The rule did not displace the contracts that were already there.
     assert "LANGUAGE OF OUTPUT" in prompt
     assert "Anchor RELATIVE time" in prompt
+
+
+# --- T-1.18.1.12 / .13: the two remaining transcript readers ---------------
+
+_SPAN = "[VISUAL @ 10:21 — seaborn regplot: scatter, fitted line, shaded 95 percent confidence band]"
+
+
+def _annotated_chunk(channel: str = "ChA") -> dict:
+    return {
+        "text": f"This regression plot shows two numerical variables. {_SPAN} Next we change the palette.",
+        "timestamp_display": "10:21",
+        "metadata": {
+            "video_id": "v1", "video_title": "Seaborn regplot walkthrough",
+            "channel_name": channel, "timestamp_start": 621.0,
+        },
+    }
+
+
+def _stub_llm(content: str) -> MagicMock:
+    response = MagicMock()
+    response.content = content
+    llm = MagicMock()
+    llm.invoke.return_value = response
+    return llm
+
+
+def test_channel_map_prompt_receives_the_span_with_the_contract():
+    """A channel job that opts into visual analysis gets annotated chunks
+    (`_with_visuals` never checks job type); its map prompt had no contract."""
+    llm = _stub_llm('{"channel_name": "ChA", "themes": [], "highlights": []}')
+    with patch.object(report_agent, "get_llm_for", return_value=llm):
+        report_agent.compose_channel_report(
+            {"job_type": "channel", "transcript_chunks": [_annotated_chunk()], "statistics": {}}
+        )
+    map_prompt = llm.invoke.call_args_list[0].args[0][0].content
+    assert _SPAN in map_prompt
+    assert map_prompt.count(_ATTRIBUTION_RULE_HEAD) == 1
+
+
+@pytest.mark.parametrize("which", ["job", "library"])
+def test_refine_prompt_tells_the_model_to_keep_spans_marked(which):
+    """The refine step rewrites chunks before the answer prompt applies its
+    contract, so a span it paraphrases into prose reaches the answer as speech."""
+    llm = _stub_llm("extracts")
+    chunk = {**_annotated_chunk(), "distance": 0.1}
+    with patch.object(qa_agent, "get_llm_for", return_value=llm):
+        if which == "job":
+            qa_agent.refine_context({"question": "what does the plot show?", "rag_results": [chunk]})
+            prompt = llm.invoke.call_args.args[0][0].content
+        else:
+            prompt = qa_agent.LIBRARY_REFINE_CONTEXT_PROMPT.format(
+                question="q", raw_context=chunk["text"], visual_annotations=qa_agent.REFINE_VISUAL_RULES,
+            )
+    assert _SPAN in prompt
+    assert VISUAL_SPAN_EXTRACT_RULE in prompt
+    assert prompt.count(_ATTRIBUTION_RULE_HEAD) == 1
+

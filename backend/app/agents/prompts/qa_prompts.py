@@ -6,7 +6,13 @@ from app.agents.prompts.shared import (
     QUOTE_RENDERING_RULES,
     TEMPORAL_AWARENESS,
     VISUAL_ANNOTATION_CONTRACT,
+    VISUAL_SPAN_EXTRACT_RULE,
 )
+
+# The refine prompts read raw transcript chunks, so they take the visual
+# contract and the extract rule through `{visual_annotations}`, as the report
+# map prompt does (T-1.18.1.13). Callers pass this.
+REFINE_VISUAL_RULES = compose_block(VISUAL_ANNOTATION_CONTRACT, VISUAL_SPAN_EXTRACT_RULE)
 
 REFINE_CONTEXT_PROMPT = """You are a context extraction assistant. Your job is to read raw context from video transcripts and a research report, then extract ONLY the passages that are relevant to the user's question.
 
@@ -24,6 +30,8 @@ INSTRUCTIONS:
 5. Format your output as a clean, organized set of relevant extracts with their sources.
 6. If the research report contains relevant findings, key facts, or analysis — include those prominently and label them as "(Research Report)".
 7. Aim for 4000-8000 characters of focused, relevant context.
+
+{visual_annotations}
 
 CRITICAL: You may ONLY use the raw context above. Do not add facts, claims, or sources that are not present in the raw context. If the raw context does not contain information relevant to the question, return only what is there — never invent material to fill gaps.
 
@@ -133,6 +141,8 @@ INSTRUCTIONS:
 6. Note the source language of each extract when it is clear (e.g., "(Hindi)", "(Urdu)", "(English)"). Keep the original wording — translation happens at the answer step, not here.
 7. There is no research report in library-wide mode — work from the transcript chunks only.
 8. Aim for 4000-8000 characters of focused, relevant context.
+
+{visual_annotations}
 
 CRITICAL: You may ONLY use the raw context above. Do not add facts, claims, or sources that are not present in the raw context. If the raw context does not contain information relevant to the question, return only what is there — never invent material to fill gaps.
 

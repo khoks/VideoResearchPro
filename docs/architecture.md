@@ -60,7 +60,7 @@ Production targets the same shape, with SQLite swapped for Postgres and ChromaDB
 
 ### Celery worker (`celery -A app.tasks.celery_app worker --pool=solo`)
 
-- Runs all long-running orchestration: search, transcript fetch, embedding, report generation, knowledge extraction, and Author Studio generation (`author.generate_output`, S-6.7.1).
+- Runs all long-running orchestration: search, transcript fetch, embedding, report generation, knowledge extraction, and Author Studio generation (`author.generate_output`, S-6.7.1). A book's EPUB is built in-process; its PDF is printed by WeasyPrint or headless Chromium, both optional installs probed once per process (`AUTHOR_PDF_ENGINE`, S-6.1.5) and both cut off from the network.
 - Has its own SQLAlchemy session factory (created per task) so request-side and worker-side don't share connections.
 - Publishes progress events to Redis pub/sub (`job_progress:{job_id}`) at every phase boundary. Author outputs publish on the same channel under the output's id; `routers/ws.py` lets a socket subscribe to any job or output its user owns. Output cancellation is cooperative: `output_service.report_progress` raises once the row is `cancelled`, because `revoke(terminate=True)` cannot stop a task on the solo pool.
 - On Windows, **must use `--pool=solo`** because the multiprocessing prefork pool doesn't work cleanly with our embedding model + ChromaDB locks.

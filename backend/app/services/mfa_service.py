@@ -31,7 +31,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pyotp
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError as JWTError  # T-5.4.9: PyJWT replaced python-jose (unfixed CVE)
 from sqlalchemy.orm import Session
 
 from app.config import settings

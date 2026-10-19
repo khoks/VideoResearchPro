@@ -16,7 +16,7 @@ Requirement R3 asked for two dates per source — when it was posted and which
 period it discusses — used in extraction, ranking, Q&A and reporting. Only the
 first existed. Requirement R4's Q&A half had shipped as agent plumbing that no
 router fed, so every job answer was classified as a small corpus. Decision
-[D-071](docs/decisions.md#d-071--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19).
+[D-072](docs/decisions.md#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19).
 
 - **Discussed era.** New `temporal_scope_extract` use case (registry entry 23,
   economy tier, reasoning off) dates the SUBJECT MATTER of each document once

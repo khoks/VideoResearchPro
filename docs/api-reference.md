@@ -176,7 +176,7 @@ Ask a question scoped to this job. Runs the Q&A agent (retrieve → refine → a
   "question": "...",
   "context": "...",          // optional; user-provided clarification
   "answer_language": "English", // optional; default "English"
-  "output_length": "deep"    // optional; "auto" | "brief" | "standard" | "deep" — overrides the job's setting; omitted = job setting, else the corpus bracket decides (D-064 / D-071)
+  "output_length": "deep"    // optional; "auto" | "brief" | "standard" | "deep" — overrides the job's setting; omitted = job setting, else the corpus bracket decides (D-064 / D-072)
 }
 // response
 {
@@ -205,7 +205,7 @@ All `/library` endpoints require auth.
 Pre-answer clarification step for library-scoped questions. Same shape as the per-job clarify endpoint.
 
 ### `POST /api/v1/library/qa`
-Ask a question across everything the tenant can see (D-063). Runs `run_library_qa_agent` with corpus statistics for the visible set, so answer length follows the corpus bracket (D-071).
+Ask a question across everything the tenant can see (D-063). Runs `run_library_qa_agent` with corpus statistics for the visible set, so answer length follows the corpus bracket (D-072).
 
 ```json
 // request

@@ -116,7 +116,7 @@ Targeted Phase 2 (2026 Q3) for non-foundation source types. Detailed design in [
 - TTS provider: local-first (Coqui) for self-host, paid (ElevenLabs) for SaaS Pro.
 - Reels: vertical 9:16 vs flexible aspect? Recommend vertical-only for v1.
 
-**Status.** 🟡 foundation shipped 2026-05-05 ([I-6](initiatives.md#i-6-author-studio-output-generation-l2), PR #173). Shipped: the `outputs` schema, the Outputter registry, the REST surface, the Pro+ gate, and one outputter, a deterministic Markdown book (no LLM). The `/author` page shipped 2026-10-19 (PR #224, [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)): create a book from finished runs, read, download, delete; the other four kinds show as "coming later". Not built: LLM cohesion, PDF/EPUB, sites, decks, newsletters, reels. Books first, reels last.
+**Status.** 🟡 foundation shipped 2026-05-05 ([I-6](initiatives.md#i-6--author-studio-output-generation-l2), PR #173). Shipped: the `outputs` schema, the Outputter registry, the REST surface, the Pro+ gate, and one outputter, a deterministic Markdown book (no LLM). The `/author` page shipped 2026-10-19 (PR #224, [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)): create a book from finished runs, read, download, delete; the other four kinds show as "coming later". Not built: LLM cohesion, PDF/EPUB, sites, decks, newsletters, reels. **Planned 2026-10-18** — research and PR-sized stories in [`plans/l2-author-studio.md`](plans/l2-author-studio.md); sequence in [`plans/build-order.md`](plans/build-order.md). Audit findings: the stub `/author` page of 2026-10-18 posted no `source_ids`, so every book it created failed; PR #224's chapter picker replaced it the next day, and [S-6.1.1](initiatives.md#s-611--source-picker-and-a-working-author-page) keeps only the remainder (server-side guard, job-page shortcut, counts). `output_citations` and the download route in the sketch above were never built (now [E-6.7](initiatives.md#e-67--generation-runtime-async-progress-downloads-citations)). Epics: [E-6.1](initiatives.md#e-61--books-long-form-markdown--pdf--epub) books (Markdown source, LLM cohesion, endnotes, PDF/EPUB), [E-6.2](initiatives.md#e-62--static-personal-wiki-site) site (Jinja2 static bundle, no Node), [E-6.3](initiatives.md#e-63--slides-pptx) deck (`python-pptx`; the harness skills named above are not callable from the worker), [E-6.4](initiatives.md#e-64--newsletter--digest-recurring-scheduled-output) newsletter (on the M3 scheduler), [E-6.5](initiatives.md#e-65--video--reel-tts-narration--stills) reel (TTS over owned stills; clip-stitched B-roll dropped from v1 for Terms-of-Service risk). Books first, reels last.
 
 ---
 
@@ -151,13 +151,13 @@ Below threshold: bubble dimmed, banner explains what's missing. Crossing thresho
 
 **Open questions.** Many — see [personal-brain.md](personal-brain.md). Privacy model is the largest open design space; fine-tuning leverage and corpus thresholds are the second-largest.
 
-**Status.** 🟡 foundation shipped 2026-05-05 ([I-3](initiatives.md#i-3-echo-personal-brain-l3), PR #172). Shipped: the `personal_context` store, an empty connector registry, the cold-start readiness gate, and the Studio-tier gate. The `/echo` page shipped 2026-10-19 (PR #224, [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)): readiness meter against the three gates, context browser by kind with add / edit / forget, revoke-a-source, and an honest empty connectors card. No activity connectors, voice capture or "speak as me" yet. Targeted Phase 6 (2027 Q3+). Remaining components land in order:
+**Status.** 🟡 foundation shipped 2026-05-05 ([I-3](initiatives.md#i-3--echo-personal-brain-l3), PR #172). Shipped: the `personal_context` store, an empty connector registry, the cold-start readiness gate, and the Studio-tier gate. The `/echo` page shipped 2026-10-19 (PR #224, [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)): readiness meter against the three gates, context browser by kind with add / edit / forget, revoke-a-source, and an honest empty connectors card. No activity connectors, voice capture or "speak as me" yet. Targeted Phase 6 (2027 Q3+). **Planned 2026-10-18** — research and PR-sized stories in [`plans/l3-echo-personal-brain.md`](plans/l3-echo-personal-brain.md); sequence in [`plans/build-order.md`](plans/build-order.md). Audit findings that change the sketch above: `personal_context` holds facts only (unique per kind and key) and cannot hold events or shares, so `activity_events`, `shares_inbox` and `voice_signals` each land with their epic; YouTube **watch history is not available through the Data API** (only likes, subscriptions and playlists are) and arrives only as a Takeout export, so that connector is split into an API connector and an importer. Remaining components land in order:
 
-1. Constant-stream intake first (Domain 5) — it's the highest-leverage, lowest-privacy-load entry point and starts feeding the readiness corpus immediately.
-2. Personal context store + manual personality signals (Domains 1 + 3, retrieval mode only).
-3. Activity connectors (Domain 2), one at a time, easiest first (YouTube watch history → Spotify → email → calendar).
-4. "Speak as me" agent + Echo bubble (Domain 4) — once the corpus crosses readiness for any subset of users.
-5. Mode B fine-tuning — opt-in, after Mode A is stable and readiness data shows the corpus warrants it.
+1. Constant-stream intake first (Domain 5, [E-3.7](initiatives.md#e-37--constant-stream-intake-domain-5)) — it's the highest-leverage, lowest-privacy-load entry point and starts feeding the readiness corpus immediately. Includes the export-file importers (WhatsApp, Takeout, Keep).
+2. Personal context store + manual personality signals (Domains 1 + 3, retrieval mode only; [E-3.3](initiatives.md#e-33--voice--personality-capture-domain-3)), fed by M5 notes.
+3. Activity connectors (Domain 2, [E-3.2](initiatives.md#e-32--activity-stream-connectors-domain-2)), one at a time, lowest privacy weight first (GitHub → YouTube likes + calendar → Spotify live tail for self-host only; email, browser history and health deferred). Strava, Goodreads, Letterboxd, Apple Health and Spotify history are **export-file importers** under E-3.7, because their APIs are gone, forbid AI use, or never existed.
+4. "Speak as me" agent + Echo bubble (Domain 4, [E-3.4](initiatives.md#e-34--speak-as-me-agent-domain-4), [E-3.8](initiatives.md#e-38--always-evokable-echo-surface)) — once the corpus crosses the five-domain readiness gate ([S-3.5.1](initiatives.md#s-351--five-domain-readiness)) for any subset of users.
+5. Mode B fine-tuning ([E-3.9](initiatives.md#e-39--mode-b-opt-in-per-user-fine-tuning)) — opt-in, after Mode A is stable and readiness data shows the corpus warrants it. The privacy model (export, delete, zero-knowledge) is its own epic, [E-3.10](initiatives.md#e-310--privacy-model-export-delete-zero-knowledge).
 
 ---
 
@@ -238,7 +238,7 @@ The remaining I-5 epics (**E-5.3 Stripe**, **E-5.7 Data residency**, **E-5.8 Hos
 
 **Open questions.**
 
-- **Does it actually improve output?** Unmeasured. The pipeline is verified to produce accurate descriptions and to deliver them intact, but no experiment yet shows reports or answers are *better* with them on. This is the question that decides whether the feature earns its cost (S-1.18.3).
+- **Does it actually improve output?** Measured 2026-10-19 ([D-071](decisions.md#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19)): on an 11-video charting corpus, three blind judges from three model families all preferred the annotated report on substance (8.33 vs 7.00), and it had zero confirmed fabrications against five in the unannotated one. But an adversarial sweep found two sentences that credited a speaker with a screen-only detail, and the vision spend was $0.20 per video against a $0.10 ceiling. The feature earns its place once the contract gap (S-1.18.6) and the tier (S-1.18.5) are fixed and the run repeats clean.
 - **The `informative` flag is a model judgement biased toward inclusion.** Prompt calibration catches descriptions that describe an *absence* of content; borderline frames still pass. False-positive rate is unmeasured.
 - **Cost at realistic scale.** A 200-video corpus at 12 frames each is 2,400 vision calls. Opt-in and capped for now; whether the default caps are the right ones is an empirical question.
 - **Beyond YouTube.** PDFs already have page images available with no download at all, and articles carry figures. Both are cheaper than video and neither is built.
@@ -250,11 +250,11 @@ The remaining I-5 epics (**E-5.3 Stripe**, **E-5.7 Data residency**, **E-5.8 Hos
 
 ## Medium-scale features (M1-M12)
 
-Days each. Each one is shippable as a single PR or a small series.
+Days each. Each one is shippable as a single PR or a small series. All twelve were planned 2026-10-18 under [I-8](initiatives.md#i-8--research-workbench-features-m1-to-m12) with one epic each; the research behind every plan is under [`docs/plans/`](plans/README.md) and the recommended sequence is [`plans/build-order.md`](plans/build-order.md).
 
 ---
 
-### M1 — Shelves (collections / folders) ⚪
+### M1 — Shelves (collections / folders) 🔵
 
 Group jobs into named projects. A job can belong to multiple shelves. Tag documents. Filter library views by shelf.
 
@@ -264,11 +264,11 @@ Group jobs into named projects. A job can belong to multiple shelves. Tag docume
 
 **UI:** New left-sidebar section "Shelves". Shelf detail page = filtered library view.
 
-**Status.** ⚪ proposed. Targeted post-rebrand.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.1](initiatives.md#e-81--shelves--collections-tags-and-shelf-scoped-views-m1); plan [`plans/m1-shelves.md`](plans/m1-shelves.md). Audit: no table exists; the `shelves` tier gate already does. Tags become a per-tenant side table ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)) and shelf-scoped Q&A is added to the sketch.
 
 ---
 
-### M2 — Cmd-K global search ⚪
+### M2 — Cmd-K global search 🔵
 
 Command palette → search jobs, documents, channels, Q&As, knowledge artifacts in one. Powered by existing ChromaDB collections.
 
@@ -278,11 +278,11 @@ Command palette → search jobs, documents, channels, Q&As, knowledge artifacts 
 
 **UI:** Cmd-K (Ctrl-K on Windows) opens a modal with fuzzy-search input and grouped results.
 
-**Status.** ⚪ proposed.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.2](initiatives.md#e-82--command-palette-and-global-search-m2); plan [`plans/m2-command-palette.md`](plans/m2-command-palette.md). Audit: no `/search` endpoint and no shortcut hook exist (the `useShortcuts` hook `ui-design.md` describes was never written). Keyword search first; semantic results as a labelled second group.
 
 ---
 
-### M3 — Saved searches & alerts ⚪
+### M3 — Saved searches & alerts 🔵
 
 Save a Q&A query → re-run on a schedule → notify when new library content materially changes the answer.
 
@@ -292,11 +292,11 @@ Save a Q&A query → re-run on a schedule → notify when new library content ma
 
 **UI:** "Pin this question" button on Q&A answer cards.
 
-**Status.** ⚪ proposed. Foundation for "research monitoring" / digest features.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.3](initiatives.md#e-83--saved-searches-and-alerts-m3); plan [`plans/m3-saved-searches-alerts.md`](plans/m3-saved-searches-alerts.md). Audit: Celery has no beat scheduler; E-8.3 builds the project's first one and the newsletter (E-6.4) reuses it. Schedules are human presets, not cron. Foundation for "research monitoring" / digest features.
 
 ---
 
-### M4 — Question suggestions ⚪
+### M4 — Question suggestions 🔵
 
 Use the `qa_library_global` collection to suggest follow-up questions when the user opens a job, document, or knowledge artifact. Directly answers the user's "learn from past questions" ask.
 
@@ -306,11 +306,11 @@ Use the `qa_library_global` collection to suggest follow-up questions when the u
 
 **UI:** "You might ask..." card below the Q&A input.
 
-**Status.** ⚪ proposed.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.4](initiatives.md#e-84--question-suggestions-m4); plan [`plans/m4-question-suggestions.md`](plans/m4-question-suggestions.md). Nearest past questions from `qa_library_global` plus a cheap-tier generation call, cached per context; the first piece of Echo's anticipation capability.
 
 ---
 
-### M5 — Notes (user annotations) ⚪
+### M5 — Notes (user annotations) 🔵
 
 Attach a free-text "your take" / annotation to any document, job, Q&A exchange, channel, or knowledge artifact. Searchable, exportable, treated as citable content (weight 1.5x — see L4).
 
@@ -320,11 +320,11 @@ Attach a free-text "your take" / annotation to any document, job, Q&A exchange, 
 
 **UI:** "Add a note" button on every entity. Notes render inline below the entity. Aggregate "Your notes" view in the sidebar.
 
-**Status.** ⚪ proposed. Foundational for L3 (voice capture relies on accumulated notes).
+**Status.** 🔵 accepted 2026-10-18 as [E-8.5](initiatives.md#e-85--notes--the-users-own-voice-in-the-library-m5); plan [`plans/m5-notes.md`](plans/m5-notes.md). The 1.5× weight rides on the [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18) re-rank, so the retrieval story is sequenced after E-7.1. Foundational for L3 (voice capture relies on accumulated notes).
 
 ---
 
-### M6 — Job templates / playbooks ⚪
+### M6 — Job templates / playbooks 🔵
 
 Save a job's parameters as a template; one-click instantiate with fresh date ranges or a different topic.
 
@@ -334,11 +334,11 @@ Save a job's parameters as a template; one-click instantiate with fresh date ran
 
 **UI:** "Save as template" on submit page; "From template" picker.
 
-**Status.** ⚪ proposed. Today's "Duplicate / re-run" already covers most of this; M6 generalizes from "duplicate one job" to "named reusable template".
+**Status.** 🔵 accepted 2026-10-18 as [E-8.6](initiatives.md#e-86--job-templates-m6); plan [`plans/m6-job-templates.md`](plans/m6-job-templates.md). Today's "Duplicate / re-run" already covers most of this; M6 generalizes from "duplicate one job" to "named reusable template" and seeds the starter templates M10 uses.
 
 ---
 
-### M7 — Channel intelligence dashboard ⚪
+### M7 — Channel intelligence dashboard 🔵
 
 Per-channel analytics: word-cloud, recurring topics, evolving stance over time, knowledge-graph of frequent concepts.
 
@@ -348,11 +348,11 @@ Per-channel analytics: word-cloud, recurring topics, evolving stance over time, 
 
 **UI:** New tab on the channel detail page.
 
-**Status.** ⚪ proposed.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.7](initiatives.md#e-87--channel-intelligence-m7); plan [`plans/m7-channel-intelligence.md`](plans/m7-channel-intelligence.md). Audit: there is no channel detail page to put a tab on (E-8.7 creates one), and stance / sentiment exist only for social sources, so "evolving stance over time" has no data for YouTube channels and is scoped accordingly.
 
 ---
 
-### M8 — Reading-room reader for reports ⚪
+### M8 — Reading-room reader for reports 🔵
 
 Replace iframe-modal HTML report with a native MDX-rendered reading view: typography, drop caps, inline references on hover, sticky outline, reading-progress, print-friendly.
 
@@ -362,11 +362,11 @@ Replace iframe-modal HTML report with a native MDX-rendered reading view: typogr
 
 **UI:** New `/reports/:id` route with full-page reading view; modal becomes a quick-peek alternative.
 
-**Status.** ⚪ proposed.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.8](initiatives.md#e-88--reading-room--the-report-as-a-native-reading-view-m8); plan [`plans/m8-reading-room.md`](plans/m8-reading-room.md). Reports have no Markdown source (they are LLM-written HTML), so the reader renders sanitised HTML sections from a new content endpoint rather than MDX. First in the recommended build order: it unlocks M11, M12 and the book reader.
 
 ---
 
-### M9 — Citation graph / knowledge map ⚪
+### M9 — Citation graph / knowledge map 🔵
 
 Visualize how Q&As cite documents, how documents relate to topics, how topics cluster. New library-overview page.
 
@@ -376,11 +376,11 @@ Visualize how Q&As cite documents, how documents relate to topics, how topics cl
 
 **UI:** Force-directed graph (d3 / cytoscape); zoom, pan, click-to-detail.
 
-**Status.** ⚪ proposed.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.9](initiatives.md#e-89--citation-graph-and-knowledge-map-m9); plan [`plans/m9-citation-graph.md`](plans/m9-citation-graph.md). Tenant-scoped nodes from documents, channels, Q&A references and knowledge topics; focused local-graph mode by default so it is not a hairball.
 
 ---
 
-### M10 — Onboarding wizard + empty-state polish ⚪
+### M10 — Onboarding wizard + empty-state polish 🔵
 
 First-run flow: pick 3-5 channels, run a first job, see the result. Today there's no onboarding.
 
@@ -390,7 +390,7 @@ First-run flow: pick 3-5 channels, run a first job, see the result. Today there'
 
 **UI:** Multi-step wizard surfaced on first login; dismissible afterwards.
 
-**Status.** ⚪ proposed. High-leverage for SaaS conversion later.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.10](initiatives.md#e-810--onboarding-wizard-and-empty-states-m10); plan [`plans/m10-onboarding.md`](plans/m10-onboarding.md). Uses M6 starter templates for the first job; `users.onboarded_at` plus a resumable state column. High-leverage for SaaS conversion later.
 
 ---
 
@@ -404,11 +404,11 @@ Signed URL for a single report → share with friends. Paves the way for SaaS sh
 
 **UI:** "Share" button on report viewer.
 
-**Status.** ⚪ proposed.
+**Status.** ⚪ proposed; design complete as [E-8.11](initiatives.md#e-811--public-report-sharing-m11); plan [`plans/m11-public-report-sharing.md`](plans/m11-public-report-sharing.md). Not accepted: whether sharing launches before billing and the takedown workflow (T-5.5.6) exist is the user's call, recorded as the plan's first open question. Opaque hashed tokens, `noindex`, sandboxing CSP and per-IP rate limiting are in the design regardless.
 
 ---
 
-### M12 — Mobile reading mode ⚪
+### M12 — Mobile reading mode 🔵
 
 Today the layout collapses to stacked column at 640px. Improve specifically the *reading* experience (reports, Q&A answers, knowledge artifacts) for mobile — appropriate type sizes, tap targets, sticky controls.
 
@@ -418,7 +418,7 @@ Today the layout collapses to stacked column at 640px. Improve specifically the 
 
 **UI:** Responsive refinements across reading-heavy pages.
 
-**Status.** ⚪ proposed.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.12](initiatives.md#e-812--mobile-reading-mode-m12); plan [`plans/m12-mobile-reading.md`](plans/m12-mobile-reading.md). Builds on the M8 reader; not a general mobile redesign. Device-emulated screenshot tests are part of the acceptance.
 
 ---
 

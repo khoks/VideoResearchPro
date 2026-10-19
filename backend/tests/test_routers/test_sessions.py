@@ -12,7 +12,7 @@ Covers:
 """
 from __future__ import annotations
 
-from jose import jwt
+import jwt  # T-5.4.9: PyJWT
 
 from app.config import settings
 from app.models.audit_log import AuditLog

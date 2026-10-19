@@ -180,3 +180,79 @@ def merge_chunk_texts(texts: Iterable[str]) -> str:
                 break
         words.extend(w[overlap:])
     return " ".join(words)
+
+
+# --- the speaker's words inside an over-full `original` ---------------------------
+#
+# With one source per map call (S-1.14.19), the model often writes N-002's
+# whole quote form into `original`: the speech, then a transliteration line,
+# then an English translation, sometimes with an inline gloss ("সি-বর্ন
+# ( Seaborn)"). The speech is real; the added Latin lines push the alignment
+# under NEAR and the quote is dropped. R1 run 7 lost 68 of 176 originals that
+# way, all from the Bengali source. These readings are retried before an
+# original is given up on — each still has to pass `problem` in full.
+
+_LATIN_GLOSS = re.compile(r"\s*\(\s*[A-Za-z][^()]*\)")
+
+
+def speaker_words(original: str, script: str | None) -> tuple[str, str]:
+    """The lines of ``original`` in the source's own script, and the rest.
+
+    ``("", original)`` when no line is in that script; ``(original, "")``
+    when the source has no native script (romanised or English speech), since
+    a transliteration line cannot then be told apart from the speech.
+    """
+    if not script:
+        return original, ""
+    lines = [ln.strip() for ln in (original or "").splitlines() if ln.strip()]
+    keep = [ln for ln in lines if dominant_native_script(ln) == script]
+    rest = [ln for ln in lines if dominant_native_script(ln) != script]
+    return "\n".join(keep), "\n".join(rest)
+
+
+def strip_unspoken_glosses(text: str, own: VideoText) -> tuple[str, str]:
+    """``text`` without parenthesised Latin glosses the speaker did not say.
+
+    A gloss the caption itself carries ("সি-বর্ন ( Seaborn)") is speech and
+    stays; one the model added ("ইনস্টল (install it)") goes.
+    """
+    removed: list[str] = []
+
+    def drop(m: re.Match) -> str:
+        gloss = normalise(m.group(0))
+        if gloss and gloss in own.speech:
+            return m.group(0)
+        removed.append(m.group(0).strip())
+        return ""
+
+    out = _LATIN_GLOSS.sub(drop, text or "")
+    return re.sub(r"[ \t]{2,}", " ", out).strip(), " ".join(removed)
+
+
+def keepable(original: str, own: VideoText | None) -> tuple[str | None, str, str | None]:
+    """``(reading to keep, text removed from it, None)`` or ``(None, "", reason)``.
+
+    The reading is ``original`` itself when it passes, minus any gloss the
+    speaker did not say. When it fails as ``not_in_speech`` and the source has
+    a native script, the lines in that script are retried (the model wrote
+    speech + transliteration + translation into the field). Every reading must
+    still pass ``problem`` in full, so nothing invented is ever rescued.
+    """
+    reason = problem(original, own)
+    if own is None or not own.script:
+        return (original, "", None) if reason is None else (None, "", reason)
+    if reason is None:
+        candidates = [(original, "")]
+    elif reason == "not_in_speech":
+        words, rest = speaker_words(original, own.script)
+        if not words:
+            return None, "", reason
+        candidates = [(words, rest)]
+    else:
+        return None, "", reason
+    for text, removed in candidates:
+        stripped, glosses = strip_unspoken_glosses(text, own)
+        for reading, gone in ((stripped, "\n".join(x for x in (removed, glosses) if x)), (text, removed)):
+            if reading and problem(reading, own) is None:
+                return reading, gone, None
+    return None, "", reason

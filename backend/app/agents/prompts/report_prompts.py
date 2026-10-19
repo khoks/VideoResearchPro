@@ -24,8 +24,9 @@ For each item, include:
 - For a source whose header carries `speech: ...` (not English), when the
   item is a direct quote or a remark whose exact wording matters: `original`,
   the speaker's words copied EXACTLY from the transcript — same script, same
-  spelling, nothing translated. `content` stays in English either way; that
-  is what the analysis reads. Omit `original` for ordinary speech and for
+  spelling, nothing translated. ONLY the words: no transliteration, no
+  translation, no glosses in brackets — the report adds those itself.
+  `content` stays in English either way; that is what the analysis reads. Omit `original` for ordinary speech and for
   English sources.
 - `modality`: said / shown / both, per the rule below.
 

@@ -494,7 +494,7 @@ retrieve_past_exchanges → refine_context → formulate_answer
 
 ## LLM routing
 
-Every LLM call site in the codebase is a **named use case** with a default `(provider, model, reasoning)` triple registered in `app/services/llm_routing.py::USE_CASE_REGISTRY`. Twenty-three entries today (full list in [CLAUDE.md](../CLAUDE.md) §LLM-configuration).
+Every LLM call site in the codebase is a **named use case** with a default `(provider, model, reasoning)` triple registered in `app/services/llm_routing.py::USE_CASE_REGISTRY`. Twenty-four entries today (full list in [CLAUDE.md](../CLAUDE.md) §LLM-configuration).
 
 `resolve_config(use_case)` returns the effective config after applying, highest first: the caller's per-user override (`user_llm_overrides`, loaded into a ContextVar by `llm_service.byok_context`, E-1.13), `LLM_USE_CASE_CONFIG`, and `LLM_ROUTE_OVERRIDES` (legacy fallback). `get_llm(use_case)` returns a configured LangChain client (`ChatOpenAI`, `ChatAnthropic`, `ChatGoogleGenerativeAI`, or local OpenAI-compatible).
 
@@ -523,7 +523,7 @@ Unsupported levels degrade gracefully with a warning log; never fatal.
 
 `services/llm_smoke.run_startup_probes` runs once from the FastAPI lifespan. It:
 
-1. Resolves the effective `UseCaseConfig` for all 23 use cases.
+1. Resolves the effective `UseCaseConfig` for all 24 use cases.
 2. Dedupes by `(provider, model, vision)` — each unique pair probed once. `temporal_scope_extract` is probed but gates no feature: a failure leaves each document's era unknown and the job completes.
 3. Fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous).
 4. Stores per-use-case results on a process-global `LLMStatus` singleton.

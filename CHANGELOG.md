@@ -10,6 +10,31 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Romanised code-mixing detection, measured (2026-10-19, T-1.16.2.1)
+
+PR [#258](https://github.com/khoks/VideoResearchPro/pull/258). Decision
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19);
+method and numbers in
+[docs/notes/2026-10-19-code-mixing-detection.md](docs/notes/2026-10-19-code-mixing-detection.md).
+First task of N-002 (proportion-driven rendering for code-mixed speech).
+
+- **`code_mixing_service`** tags each word of a text as English, Hindi/Urdu or
+  neutral, in Latin and Devanagari script alike. "taaki baadme koi kasar na
+  reh jaye", which script profiling reads as English, is now Hindi. The
+  production detector is a lexicon + character n-gram + two-state Viterbi
+  tagger, with no model call and ~1 ms per segment.
+- **Measured before choosing**, on 300 hand-labelled units: real YouTube
+  comments and captions from three Hinglish jobs, split DEV/TEST. On held-out
+  romanised text the lexicon tagger beat a `gpt-5.6-luna` pass on precision
+  (0.929 vs 0.803) at equal recall (0.890 vs 0.895). The LLM is better only
+  on English written in Devanagari and stays registered as the reference
+  `code_mixing_detect` (registry entry 24, reasoning off, fail-soft).
+- **Finding:** YouTube captions Hinglish speech in Devanagari, English words
+  included, so romanised Hinglish reaches the library through text sources,
+  not captions. A Hindi lecture was found ingested as a machine-dubbed
+  Bengali track (filed as S-1.11.11).
+- `tests/fixtures/code_mixing/` holds the labelled set and the LLM's cached
+  answers; the suite scores both detectors without calling a provider.
 ### Tags on documents (2026-10-19)
 
 Fourth PR of the organisation lane ([S-8.1.3](docs/initiatives.md#s-813--document-tags-per-tenant), PR [#257](https://github.com/khoks/VideoResearchPro/pull/257)).

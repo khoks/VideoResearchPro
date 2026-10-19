@@ -1,0 +1,1473 @@
+{
+ "model": "openai:gpt-5.6-luna:off",
+ "elapsed_s": 55.3,
+ "predictions": {
+  "u000": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u001": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u002": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u003": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u004": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u005": {
+   "hi": [
+    "maine abhi",
+    "se",
+    "to konse",
+    "kar sakta hu",
+    "mere",
+    "hai"
+   ],
+   "matrix": "hi"
+  },
+  "u006": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u007": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u008": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u009": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u010": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u011": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u012": {
+   "hi": [
+    "me",
+    "dunia ke kis college me",
+    "fees thi ye to poochti madam scripted video kyo banati"
+   ],
+   "matrix": "hi"
+  },
+  "u013": {
+   "hi": [
+    "Ek video dekh k",
+    "kar aya m",
+    "Number aye"
+   ],
+   "matrix": "hi"
+  },
+  "u014": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u015": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u016": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u017": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u018": {
+   "hi": [
+    "aane wale kuchh saal me",
+    "aapka guest ban saku"
+   ],
+   "matrix": "hi"
+  },
+  "u019": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u020": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u021": {
+   "hi": [
+    "Kun kun ye soch ke aaya hai ki ye video choti lag rahi hai"
+   ],
+   "matrix": "hi"
+  },
+  "u022": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u023": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u024": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u025": {
+   "hi": [
+    "lekin",
+    "sirf",
+    "feku he"
+   ],
+   "matrix": "hi"
+  },
+  "u026": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u027": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u028": {
+   "hi": [
+    "aapki video bahut badi badi bante ho",
+    "aagar aap aasee hi",
+    "ki banawo to or achhe se ham sikh sakate he"
+   ],
+   "matrix": "hi"
+  },
+  "u029": {
+   "hi": [
+    "Itni achi explanation kai liyai"
+   ],
+   "matrix": "hi"
+  },
+  "u030": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u031": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u032": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u033": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u034": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u035": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u036": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u037": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u038": {
+   "hi": [
+    "bhai ek hi dil hai kitni baar jitoge",
+    "woh bhi free free free"
+   ],
+   "matrix": "en"
+  },
+  "u039": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u040": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u041": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u042": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u043": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u044": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u045": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u046": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u047": {
+   "hi": [
+    "bhai"
+   ],
+   "matrix": "en"
+  },
+  "u048": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u049": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u050": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u051": {
+   "hi": [],
+   "matrix": "none"
+  },
+  "u052": {
+   "hi": [
+    "Bhai ayse startup ko la jo",
+    "sal se kamyab he"
+   ],
+   "matrix": "hi"
+  },
+  "u053": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u054": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u055": {
+   "hi": [],
+   "matrix": "none"
+  },
+  "u056": {
+   "hi": [],
+   "matrix": "none"
+  },
+  "u057": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u058": {
+   "hi": [
+    "Mja hi aa gya sun karke"
+   ],
+   "matrix": "en"
+  },
+  "u059": {
+   "hi": [],
+   "matrix": "none"
+  },
+  "u060": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u061": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u062": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u063": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u064": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u065": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u066": {
+   "hi": [
+    "Maine"
+   ],
+   "matrix": "hi"
+  },
+  "u067": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u068": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u069": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u070": {
+   "hi": [
+    "bhaiya"
+   ],
+   "matrix": "en"
+  },
+  "u071": {
+   "hi": [
+    "kin logo ko achha lagata hai",
+    "Vo like kare"
+   ],
+   "matrix": "hi"
+  },
+  "u072": {
+   "hi": [
+    "rahul is shahzada"
+   ],
+   "matrix": "en"
+  },
+  "u073": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u074": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u075": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u076": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u077": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u078": {
+   "hi": [],
+   "matrix": "none"
+  },
+  "u079": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u080": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u081": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u082": {
+   "hi": [
+    "pebhi",
+    "ek course lao jldi se jisse hm easy language me is technology ko seekh ske",
+    "Jojo isse agree krta h",
+    "like kro"
+   ],
+   "matrix": "hi"
+  },
+  "u083": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u084": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u085": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u086": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u087": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u088": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u089": {
+   "hi": [
+    "ki",
+    "bhi",
+    "bana dijye",
+    "sir"
+   ],
+   "matrix": "hi"
+  },
+  "u090": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u091": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u092": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u093": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u094": {
+   "hi": [
+    "me",
+    "logo ki",
+    "ke liye ek hall leke unko",
+    "class start",
+    "Karu",
+    "but actually problem yeh hai ki log ki mentality",
+    "Ab woh location logo ki opposites side padh raha hai jese ki woh"
+   ],
+   "matrix": "hi"
+  },
+  "u095": {
+   "hi": [
+    "Kon kon",
+    "mea dekh raha hai"
+   ],
+   "matrix": "hi"
+  },
+  "u096": {
+   "hi": [
+    "ka",
+    "ho jhaant bhar",
+    "per Gyaan pelo raat Bhar"
+   ],
+   "matrix": "hi"
+  },
+  "u097": {
+   "hi": [
+    "yr"
+   ],
+   "matrix": "en"
+  },
+  "u098": {
+   "hi": [
+    "may be main bhi",
+    "kar rha hu"
+   ],
+   "matrix": "hi"
+  },
+  "u099": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u100": {
+   "hi": [],
+   "matrix": "none"
+  },
+  "u101": {
+   "hi": [],
+   "matrix": "none"
+  },
+  "u102": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u103": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u104": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u105": {
+   "hi": [
+    "kya",
+    "pane ke liye",
+    "sirf itne algorithms hi kafi hai ya or bhi karne ki jarurat hai"
+   ],
+   "matrix": "hi"
+  },
+  "u106": {
+   "hi": [
+    "Ka Name Leke Bi English Tha Podcast"
+   ],
+   "matrix": "hi"
+  },
+  "u107": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u108": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u109": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u110": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u111": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u112": {
+   "hi": [
+    "gyan pelu vdo",
+    "gol gol gol",
+    "may b"
+   ],
+   "matrix": "en"
+  },
+  "u113": {
+   "hi": [
+    "maja aa gya sir ji"
+   ],
+   "matrix": "hi"
+  },
+  "u114": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u115": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u116": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u117": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u118": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u119": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u120": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u121": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u122": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u123": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u124": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u125": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u126": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u127": {
+   "hi": [
+    "ke liye"
+   ],
+   "matrix": "hi"
+  },
+  "u128": {
+   "hi": [
+    "Kya",
+    "wale students",
+    "Kar sakte hai agar ha to kaise Kare",
+    "ek video",
+    "par banaeye"
+   ],
+   "matrix": "hi"
+  },
+  "u129": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u130": {
+   "hi": [
+    "Bahat accha laga sir"
+   ],
+   "matrix": "hi"
+  },
+  "u131": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u132": {
+   "hi": [
+    "kasa Bana"
+   ],
+   "matrix": "hi"
+  },
+  "u133": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u134": {
+   "hi": [
+    "ko hindi me translate karke public kariye"
+   ],
+   "matrix": "hi"
+  },
+  "u135": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u136": {
+   "hi": [
+    "Beta"
+   ],
+   "matrix": "en"
+  },
+  "u137": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u138": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u139": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u140": {
+   "hi": [
+    "ne dono hath me",
+    "pahan rakhi hai kya"
+   ],
+   "matrix": "hi"
+  },
+  "u141": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u142": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u143": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u144": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u145": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u146": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u147": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u148": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u149": {
+   "hi": [
+    "ne toh pura clean bold kar diya"
+   ],
+   "matrix": "hi"
+  },
+  "u150": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u151": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u152": {
+   "hi": [
+    "Lage haath",
+    "ke bache hue topics bhi continue karo"
+   ],
+   "matrix": "hi"
+  },
+  "u153": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u154": {
+   "hi": [
+    "ka",
+    "bano"
+   ],
+   "matrix": "hi"
+  },
+  "u155": {
+   "hi": [
+    "main",
+    "ko jayada ka exit Mila tha"
+   ],
+   "matrix": "hi"
+  },
+  "u156": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u157": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u158": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u159": {
+   "hi": [],
+   "matrix": "none"
+  },
+  "u160": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u161": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u162": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u163": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u164": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u165": {
+   "hi": [
+    "Accha music add kiya"
+   ],
+   "matrix": "en"
+  },
+  "u166": {
+   "hi": [],
+   "matrix": "none"
+  },
+  "u167": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u168": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u169": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u170": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u171": {
+   "hi": [
+    "kya hai",
+    "es par video bnaiye"
+   ],
+   "matrix": "hi"
+  },
+  "u172": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u173": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u174": {
+   "hi": [
+    "me bnao bhai kisi channel ne nhi kra"
+   ],
+   "matrix": "hi"
+  },
+  "u175": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u176": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u177": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u178": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u179": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u180": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u181": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u182": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u183": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u184": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u185": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u186": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u187": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u188": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u189": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u190": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u191": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u192": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u193": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u194": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u195": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u196": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u197": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u198": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u199": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u200": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u201": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u202": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u203": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u204": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u205": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u206": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u207": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u208": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u209": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u210": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u211": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u212": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u213": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u214": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u215": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u216": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u217": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u218": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u219": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u220": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u221": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u222": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u223": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u224": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u225": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u226": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u227": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u228": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u229": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u230": {
+   "hi": [
+    "है तो आप लोगों को",
+    "का",
+    "दिखाया जाता है अगर आप लोग नहीं है"
+   ],
+   "matrix": "hi"
+  },
+  "u231": {
+   "hi": [
+    "पे वो सारे प्रोडक्ट दिखते हैं तो इस तरीके से",
+    "मशीन"
+   ],
+   "matrix": "hi"
+  },
+  "u232": {
+   "hi": [
+    "को ट्रेन कर सकते हैं और यह पता कर सकते हैं कि कहां पर चश्मे को बिठाना है ताकि"
+   ],
+   "matrix": "hi"
+  },
+  "u233": {
+   "hi": [
+    "हैं कि भैया अगर कुछ",
+    "पूछा गया तो उसका ये",
+    "होना चाहिए ये"
+   ],
+   "matrix": "hi"
+  },
+  "u234": {
+   "hi": [
+    "मुझे कमेंट में बता सकते हैं ताकि हम आपकी परेशानी को जल्द से जल्द दूर कर सकें अगर"
+   ],
+   "matrix": "hi"
+  },
+  "u235": {
+   "hi": [
+    "क्षेत्र में दिया जाता है इसी प्रकार ऐसे बहुत से क्षेत्र हैं जहां",
+    "का"
+   ],
+   "matrix": "hi"
+  },
+  "u236": {
+   "hi": [
+    "जाओ।",
+    "मैं इसके लिए ना बोलता हूं क्योंकि सब उसमें फिर टाइम पास"
+   ],
+   "matrix": "hi"
+  },
+  "u237": {
+   "hi": [
+    "गए होंगे लेकिन मैं आप लोगों को अच्छी तरह समझाता हूं कि",
+    "क्या होती है"
+   ],
+   "matrix": "hi"
+  },
+  "u238": {
+   "hi": [
+    "भाग है जो कि सिस्टम को यह प्लेट प्रदान करता है कि वह",
+    "सीख सके और"
+   ],
+   "matrix": "hi"
+  },
+  "u239": {
+   "hi": [
+    "अगर मैंने यहां पर एक",
+    "मारा ठीक है मैंने यहां पर",
+    "पर एक",
+    "मारी"
+   ],
+   "matrix": "hi"
+  },
+  "u240": {
+   "hi": [
+    "में जितना ज्यादा डिफरेंस होगा उतना ज्यादा आपका"
+   ],
+   "matrix": "hi"
+  },
+  "u241": {
+   "hi": [
+    "में वही",
+    "कर रहे थे",
+    "वाला",
+    "वाला"
+   ],
+   "matrix": "hi"
+  },
+  "u242": {
+   "hi": [
+    "में आता है और नौकरी में आके हल्का कैश फ्लो आता है तो एक तो वो",
+    "में"
+   ],
+   "matrix": "hi"
+  },
+  "u243": {
+   "hi": [
+    "ज्यादा स्मार्ट हो गई है और इस नंबर आफ फ्लाइंग काइट्स की बात करें तो आप खुद"
+   ],
+   "matrix": "hi"
+  },
+  "u244": {
+   "hi": [
+    "है।",
+    "ही है।",
+    "के ऐज में मेरे पास",
+    "है।"
+   ],
+   "matrix": "hi"
+  },
+  "u245": {
+   "hi": [
+    "जी तो इसके साथ ही कुछ कर लेते हैं।",
+    "और ये",
+    "में नहीं करना। ये",
+    "तो"
+   ],
+   "matrix": "hi"
+  },
+  "u246": {
+   "hi": [
+    "और वो",
+    "हम देखते हैं जो",
+    "किया है।",
+    "मैं एक आदमी का देखता हूं"
+   ],
+   "matrix": "hi"
+  },
+  "u247": {
+   "hi": [
+    "के साथ-साथ",
+    "भी दे रहे हैं",
+    "के साथ-साथ",
+    "भी दे रहे हैं तो"
+   ],
+   "matrix": "hi"
+  },
+  "u248": {
+   "hi": [
+    "लोग हैं ना अगर उनको पूछा गया कि सर मैं आपको",
+    "कर लूं।"
+   ],
+   "matrix": "hi"
+  },
+  "u249": {
+   "hi": [
+    "ग्राहकों को बेहतर करने के लिए किया जा रहा है और इसके लिए लगातार मशीनों को और"
+   ],
+   "matrix": "hi"
+  },
+  "u250": {
+   "hi": [
+    "इस वीडियो में हमारे साथ बनी रहेगी इसमें हम आपको बताने वाले हैं",
+    "क्या"
+   ],
+   "matrix": "hi"
+  },
+  "u251": {
+   "hi": [
+    "काफी बड़ा विषय है दोस्तों जैसे हमने आपको शॉर्ट में समझाने की कोशिश की है आशा है"
+   ],
+   "matrix": "hi"
+  },
+  "u252": {
+   "hi": [
+    "खोलेंगे तो वहां भी आपको उसी से जुड़े विज्ञापन देखने लगते"
+   ],
+   "matrix": "hi"
+  },
+  "u253": {
+   "hi": [
+    "भी आपको किया अगर ये वीडियो आपको पसंद आ गया होगा थोड़ा"
+   ],
+   "matrix": "hi"
+  },
+  "u254": {
+   "hi": [
+    "का उसे हम कह सकते हैं जिसके बारे"
+   ],
+   "matrix": "hi"
+  },
+  "u255": {
+   "hi": [
+    "हम मैं बोलता हूं कि आप मूर्ख हो",
+    "की नौकरी में है",
+    "मैं"
+   ],
+   "matrix": "hi"
+  },
+  "u256": {
+   "hi": [
+    "क्योंकि हम उधर जाके भी कर लेंगे",
+    "कुछ ना कुछ ढूंढ के कर लेंगे"
+   ],
+   "matrix": "hi"
+  },
+  "u257": {
+   "hi": [
+    "गया। वो से आज वो आदमी ने पूरा बनाया है"
+   ],
+   "matrix": "hi"
+  },
+  "u258": {
+   "hi": [
+    "को करना है। भाई आप अपनी बनाओ तो आपको एक"
+   ],
+   "matrix": "hi"
+  },
+  "u259": {
+   "hi": [
+    "है और उस को आपको को करना पड़ता है"
+   ],
+   "matrix": "hi"
+  },
+  "u260": {
+   "hi": [
+    "कर सकते हैं तो उस मछली का इस्तेमाल किया जा सकता है कि किस तरह से पेश के कौन से"
+   ],
+   "matrix": "hi"
+  },
+  "u261": {
+   "hi": [
+    "बिना किसी इंसान की सहायता से अपने आप ही सीख सकें और उसके अनुसार ही"
+   ],
+   "matrix": "hi"
+  },
+  "u262": {
+   "hi": [
+    "तरीके से हम लोग क्या करते हैं भी देते हैं और यहां पे भी देते"
+   ],
+   "matrix": "hi"
+  },
+  "u263": {
+   "hi": [
+    "तो ये ये वो वाला फंडा है दोस्तों जो अभी"
+   ],
+   "matrix": "hi"
+  },
+  "u264": {
+   "hi": [
+    "कहा तुम्हें के साथ सीखता जा रहा हूं कि यार मुझे ऐसा नहीं बोलना चाहिए"
+   ],
+   "matrix": "hi"
+  },
+  "u265": {
+   "hi": [
+    "कर सकते हैं मेरे चैनल पर जाकर में के ऊपर के अंदर सोया"
+   ],
+   "matrix": "hi"
+  },
+  "u266": {
+   "hi": [
+    "है का जो है वो एक तरीके से है तो ये की"
+   ],
+   "matrix": "hi"
+  },
+  "u267": {
+   "hi": [
+    "एक को नहीं है। तू पहले खड़ा कर फिर तू में आ।"
+   ],
+   "matrix": "hi"
+  },
+  "u268": {
+   "hi": [
+    "है वह जो इस का इस्तेमाल करता है वह बड़ी ही आसानी से"
+   ],
+   "matrix": "hi"
+  },
+  "u269": {
+   "hi": [
+    "और उसको हमने दिया को उसको हमने दिया को तो"
+   ],
+   "matrix": "hi"
+  },
+  "u270": {
+   "hi": [
+    "ने कैसे किया ने टू प्रोग्राम किया और"
+   ],
+   "matrix": "hi"
+  },
+  "u271": {
+   "hi": [
+    "मैं आपको बताऊंगा आप यह वाला जो यहां से सीखे यह वाली जो है वह यहां"
+   ],
+   "matrix": "hi"
+  },
+  "u272": {
+   "hi": [
+    "पकड़ पकड़ आ सकता है अगर आपने ऐसा कुछ लिख दिया और एक बना दी जो कि इंसानों को"
+   ],
+   "matrix": "hi"
+  },
+  "u273": {
+   "hi": [
+    "प्रमुख भूमिका निभाई है की इन्हीं अद्भुत खोजों में से एक है"
+   ],
+   "matrix": "hi"
+  },
+  "u274": {
+   "hi": [
+    "करता हूं। बोलता है आपका ये नंबर"
+   ],
+   "matrix": "hi"
+  },
+  "u275": {
+   "hi": [
+    "कर सकें तो बहुत",
+    "के",
+    "पर वह मेनोली अगर उन",
+    "को लगाकर",
+    "और"
+   ],
+   "matrix": "hi"
+  },
+  "u276": {
+   "hi": [
+    "लोग एक प्रोग्राम लिखते हो और फिर आगे का काम जो है वह प्रोग्राम संभालता है फॉर"
+   ],
+   "matrix": "hi"
+  },
+  "u277": {
+   "hi": [
+    "इसी आधार पर बना है यानी किसी एक विशेष कंप्यूटर के",
+    "को इस तरह से"
+   ],
+   "matrix": "hi"
+  },
+  "u278": {
+   "hi": [
+    "आपको मिलेंगे ये जादू है क्या ये क्या है ये कैसे हुआ ये",
+    "की"
+   ],
+   "matrix": "hi"
+  },
+  "u279": {
+   "hi": [
+    "के विपरित इसमें इनपुट के रूप में उदाहरण और जवाब पहले से नहीं दिए जाते"
+   ],
+   "matrix": "hi"
+  },
+  "u280": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u281": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u282": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u283": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u284": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u285": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u286": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u287": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u288": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u289": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u290": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u291": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u292": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u293": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u294": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u295": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u296": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u297": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u298": {
+   "hi": [],
+   "matrix": "en"
+  },
+  "u299": {
+   "hi": [],
+   "matrix": "en"
+  }
+ }
+}

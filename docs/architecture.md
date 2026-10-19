@@ -1,6 +1,6 @@
 # Pratidhvani — System Architecture
 
-**Status:** current as of 2026-04-24. Brand-name forward; the codebase still ships under `videoresearchpro` package paths and Chroma collection names — see [feature-roadmap.md](feature-roadmap.md) §Rebrand-asset-rollout for the rename plan.
+**Status:** current as of 2026-04-24; sections amended through 2026-10-18. Brand-name forward; the codebase still ships under `videoresearchpro` package paths and Chroma collection names — see [feature-roadmap.md](feature-roadmap.md) §Rebrand-asset-rollout for the rename plan.
 
 This document is the single source of truth for **how the running system is wired**. The vision (why it exists) lives in [vision.md](vision.md). The future shape (multi-source ingest, Author Studio, Personal Brain, SaaS) lives in [feature-roadmap.md](feature-roadmap.md), [source-types.md](source-types.md), [personal-brain.md](personal-brain.md), and [saas-roadmap.md](saas-roadmap.md). API endpoints live in [api-reference.md](api-reference.md). Page-level UI lives in [ui-pages.md](ui-pages.md). This file owns: process topology, data model, request lifecycles, agent pipelines, and the cross-cutting concerns that bind them.
 
@@ -249,7 +249,7 @@ Per [saas-roadmap.md](saas-roadmap.md) and [source-types.md](source-types.md):
 
 - Every user-scoped table has — or will have, in the imminent migration — a `tenant_id` column. The single self-host instance has a single tenant.
 - The `documents` table carries `source_type`, `source_id`, `source_url`, `source_metadata_json`, `language`, `word_count`, `user_provenance_json` (from L1 PR 1) plus `document_id` UUID PK (from E-1.10, PR #112). The legacy `video_id` column persists as nullable back-compat. The future `creator_id` foreign key for cross-source-type creators is the next planned column (E-1.9).
-- The `channels` table grows into `creators` with `source_type`, `source_weight` (E-1.9). `source_type`, `creator_external_id`, and `source_weight` are already present from L1 PR 1.
+- The `channels` table grows into `creators` with `source_type`, `source_weight` (E-1.9). `source_type`, `creator_external_id`, and `source_weight` are already present from L1 PR 1. Per-user state, including `source_weight`, moved to `channel_subscriptions` in [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31). **Nothing reads `source_weight` yet** (verified 2026-10-18), so retrieval is unweighted: every approved source counts equally until [L4](feature-roadmap.md#l4--curated-source-ranking-) lands.
 - The classifier output (D-007 / D-014) lands at `documents.source_metadata_json["classification"]` per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28); inserted via the source-type-agnostic `_upsert_candidate_and_link()` helper (PR [#113](https://github.com/khoks/VideoResearchPro/pull/113)).
 
 Today's PRs respect both invariants even though only one tenant and one source type exist.
@@ -553,10 +553,10 @@ Structured logs via stdlib `logging` with a simple JSON formatter. Celery task l
 
 ### Agent-intermediate retention gap (identified 2026-07-29)
 
-Two classes of agent state are **discarded** once a job completes, and their absence blocks retrospective quality auditing:
+Two classes of agent state were **discarded** once a job completed, and their absence blocked retrospective quality auditing. The second was closed on 2026-07-30; the first is still open:
 
 - **Map/reduce intermediates.** `report_map_chunks` output (per-batch extraction JSON) and the reduced summary live only in LangGraph state for the duration of the task. Once `compose_report` runs, only the final HTML survives. There is therefore no way to ask "what did the map phase actually extract, and what did reduce drop?" after the fact — a regression in map quality is invisible unless it is large enough to degrade the finished report.
-- **Rejected search candidates.** `search_rank_and_curate` ranks a candidate pool (417 candidates on job `0d4db8c3`) down to the approved set, but only the winners are persisted via `job_documents`. The rejected remainder is never written, so selection quality cannot be re-scored later and a re-rank against the original pool is impossible.
+- **Rejected search candidates. Closed 2026-07-30 (S-1.14.6, PR [#205](https://github.com/khoks/VideoResearchPro/pull/205)).** `search_rank_and_curate` ranks a candidate pool (417 candidates on job `0d4db8c3`) down to the approved set. Previously only the winners were persisted, via `job_documents`. The whole pool is now written to `job_search_candidates` with a `selected` flag (`tasks/job_tasks.py`), so a ranking decision can be replayed against a different model or prompt. Rejected candidates never enter the global `documents` library.
 
 Consequence, established empirically by the [D-055](decisions.md#d-055-intelligence-delta-evaluation-methodology-production-input-replay-blind-ab-judging-2026-07-29) evaluation: intermediate-stage quality can only be measured by *replaying* the original inputs (rebuildable, because transcripts and chunking are deterministic) rather than by inspecting what the run actually produced. Persisting these artifacts — even sampled or behind a debug flag — is the prerequisite for continuous per-use-case quality monitoring, and is tracked as follow-up work under [E-1.14](initiatives.md#e-114-model-tier-quality-evaluation-harness).
 

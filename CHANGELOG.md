@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Report Markdown source; books built from it (2026-10-19, S-6.1.2 + S-6.1.1 remainder)
 
-PR [#PR_S612](https://github.com/khoks/VideoResearchPro/pull/PR_S612). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+PR [#255](https://github.com/khoks/VideoResearchPro/pull/255). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
 
 - **`report_service.report_markdown(job)`** converts the stored HTML report
   to Markdown with a `markdownify` (MIT) subclass and caches it beside the

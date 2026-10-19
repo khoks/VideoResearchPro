@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 import tiktoken
@@ -78,6 +79,28 @@ def _expand_segments_to_sentences(
             expanded.append((sentence, sent_start, sent_end, extra))
             cursor = sent_end
     return expanded
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    """datetime from a datetime or ISO-8601 string (``Z`` accepted); None otherwise."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        text = str(value).strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(text)
+        except ValueError:
+            try:
+                dt = datetime.fromisoformat(text[:10])
+            except ValueError:
+                return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def chunk_transcript(
@@ -276,6 +299,25 @@ def chunk_transcript(
     else:
         published_at = str(published_at) if published_at else ""
 
+    # T-1.17.1.6: numeric twins of `published_at`. Chroma cannot range-filter
+    # or weight an ISO string; it can on an int. OMITTED (not sentinel-valued)
+    # when the date is unknown, so `{"published_ts": {"$gte": ...}}` excludes
+    # undated chunks instead of matching them against 1970.
+    published_numeric: dict[str, int] = {}
+    published_dt = _parse_datetime(metadata.get("published_at"))
+    if published_dt is not None:
+        published_numeric = {
+            "published_ts": int(published_dt.timestamp()),
+            "published_year": published_dt.year,
+        }
+
+    # R3 / S-1.17.2: the era the source DISCUSSES, already flattened to
+    # scalars by `temporal_service.era_metadata` (empty when unknown — same
+    # omit-not-sentinel rule as the publish fields).
+    era_fields = metadata.get("discussed_era") or {}
+    if not isinstance(era_fields, dict):
+        era_fields = {}
+
     duration_seconds = metadata.get("duration_seconds", 0)
     try:
         duration_seconds = int(duration_seconds or 0)
@@ -362,6 +404,10 @@ def chunk_transcript(
                 # the comma-joined timestamp string.
                 "visual_frame_count": int(chunk.get("visual_frame_count") or 0),
                 "visual_timestamps": str(chunk.get("visual_timestamps") or ""),
+                # R3: numeric publish fields + discussed era. Present only
+                # when known — see the comments where they are derived.
+                **published_numeric,
+                **era_fields,
             },
         })
 

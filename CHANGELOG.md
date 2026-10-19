@@ -10,6 +10,42 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### R3 closed, R4's Q&A half wired, executive-summary defects fixed (2026-10-19)
+
+Requirement R3 asked for two dates per source — when it was posted and which
+period it discusses — used in extraction, ranking, Q&A and reporting. Only the
+first existed. Requirement R4's Q&A half had shipped as agent plumbing that no
+router fed, so every job answer was classified as a small corpus. Decision
+[D-072](docs/decisions.md#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19).
+
+- **Discussed era.** New `temporal_scope_extract` use case (registry entry 23,
+  economy tier, reasoning off) dates the SUBJECT MATTER of each document once
+  at ingest and persists it to `documents.discussed_era_json` (migration
+  `b1a2c3d4e5f8`). Chunks carry `era_start` / `era_end` / `era_confidence` /
+  `is_retrospective` plus numeric `published_ts` / `published_year`, all
+  omitted when unknown. No backfill of pre-existing chunks. Kill switch
+  `TEMPORAL_SCOPE_ENABLED`.
+- **Ranking.** The planner decides once per topic how time should weigh
+  (`temporal_profile`: dominant / secondary / minimal, optional target era);
+  the ranker sees that decision, each dated candidate's era, a `Script:` hint
+  for non-Latin titles and an English preference. All preferences, never
+  filters.
+- **Q&A.** `routers/qa.py` and `routers/library.py` now compute corpus
+  statistics for the approved / visible document set and pass them with the
+  length preference; both answer sites share one policy; request schemas gained
+  `output_length`. Allowed-source lines and raw-context headers carry
+  `published <date> | discusses <era>`; the CORPUS note says to name dates when
+  sources disagree along a time axis. Router tests fail if the wiring is
+  removed.
+- **Knowledge extraction** anchors relative time ("last year") to the publish
+  date and writes time-sensitive claims "as of <date>".
+- **Report.** `TEMPORAL_AWARENESS` distinguishes "true as of" from "true now"
+  and requires supersession to be named. Every compose call receives the same
+  verified corpus-facts block (count, words, publication span, year histogram,
+  era span); the executive summary reads the written sections instead of item
+  counts. `describe_for_prompt` is finally wired (per map batch and corpus-
+  level). `scripts/judge_report_sections.py` judges section by section;
+  `scripts/regenerate_report.py` re-runs a job's report phase for measurement.
 ### Frontend for four shipped-but-unreachable backend capabilities (2026-10-19)
 
 An audit on 2026-10-18 found four backend surfaces with no caller: PDF

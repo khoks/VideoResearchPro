@@ -30,6 +30,8 @@ For each item, include:
 
 {visual_annotations}
 
+{language_note}
+
 Transcript segments:
 {chunks}
 
@@ -132,6 +134,13 @@ SECTION: {section_title}
 Source material for this section ({item_count} items{part_note}):
 {material}
 
+VERIFIED CORPUS FACTS — computed by the pipeline, not estimated:
+{corpus_facts}
+If you refer to the corpus's size, its number of videos or channels, its
+word count, its time span or its vintage, use these figures EXACTLY. Never
+estimate a figure that is given here ("well over 150 videos" when the count
+is 200 is a defect, not a hedge), and never describe the corpus beyond them.
+
 {english_contract}
 
 {quote_rules}
@@ -139,6 +148,8 @@ Source material for this section ({item_count} items{part_note}):
 {temporal}
 
 {visual_annotations}
+
+{language_note}
 
 STRUCTURE — organise by IDEA, never by source:
 - Group the material into <h3> sub-sections named for the THEME, DEBATE or
@@ -180,11 +191,12 @@ FORMAT:
 
 COMPOSE_SUMMARY_PROMPT = """You are writing the Executive Summary for a research report on: {topic}
 
-VERIFIED corpus statistics — these numbers are computed, not estimated:
-{statistics}
+VERIFIED CORPUS FACTS — computed by the pipeline, not estimated:
+{corpus_facts}
 
-The report's body sections (already written) cover:
-{section_digest}
+The report's body sections, already written (plain-text rendering, possibly
+abridged — summarise what they SAY, not how they are organised):
+{section_text}
 
 {english_contract}
 
@@ -192,17 +204,25 @@ The report's body sections (already written) cover:
 
 {visual_annotations}
 
+{language_note}
+
 Write the Executive Summary:
 - Start with <h2>Executive Summary</h2>
 - Any figure you give for corpus size, video count, word count or date range
-  MUST come from the verified statistics above, quoted exactly. Do NOT estimate,
-  round, or infer these numbers, and do not describe the corpus's vintage or
-  scale beyond what those statistics state. Inventing a total is the single
+  MUST come from the verified facts above, quoted exactly. Do NOT estimate,
+  round, or infer these numbers. The corpus's time span and vintage come ONLY
+  from those facts: state the publication span as given, and where a
+  discussed-era line is present say what period the material is about. Do
+  not characterise the corpus as "2024-era" or "recent" from the content —
+  the dates are supplied; quote them. Inventing or mis-dating is the single
   worst failure this section can make.
 - State the most important findings ACROSS the corpus — the through-lines, the
   tensions between sources, and what a reader should take away. Lead with
   substance, not throat-clearing.
 - Be concrete: name the models, tools, organizations and figures that matter.
+- Describe what the report FOUND. Never mention item counts, "parts", batches,
+  extraction, the number of entries in a section, or any other pipeline
+  mechanics — the reader sees a report, not a pipeline.
 - Do NOT claim breadth the body does not support. If the body draws on a subset,
   describe what IS covered rather than asserting totals.
 - 4-8 paragraphs. No <html>/<head>/<body> tags. Semantic HTML only.

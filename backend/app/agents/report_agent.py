@@ -32,6 +32,7 @@ from app.services.llm_routing import (
     resolve_config,
 )
 from app.services import output_length as output_length_policy
+from app.services import temporal_service
 from app.utils.youtube_helpers import format_timestamp
 
 logger = logging.getLogger(__name__)
@@ -144,6 +145,11 @@ def compute_statistics(state: ReportAgentState) -> dict:
     # made in 2024 is not the same claim made in 2026 — but no prompt has ever
     # been told when anything was published.
     published_by_video: dict[str, str] = {}
+    # R3 / S-1.17.2: the era each source DISCUSSES, from chunk metadata.
+    era_by_video: dict[str, dict] = {}
+    # T-1.16.1.6: corpus-level script profile, so a non-English corpus can
+    # announce itself to the composer.
+    texts_for_language: list[dict] = []
 
     for chunk in chunks:
         meta = chunk.get("metadata", {})
@@ -154,6 +160,11 @@ def compute_statistics(state: ReportAgentState) -> dict:
         pub = meta.get("published_at") or ""
         if vid and pub and vid not in published_by_video:
             published_by_video[vid] = str(pub)[:10]
+        if vid and vid not in era_by_video:
+            era = temporal_service.era_from_chunk_metadata(meta)
+            if era is not None:
+                era_by_video[vid] = era
+        texts_for_language.append({"text": chunk.get("text", "")})
 
         total_words += words
 
@@ -204,6 +215,16 @@ def compute_statistics(state: ReportAgentState) -> dict:
         "median_published": dates[len(dates) // 2] if dates else None,
         "videos_by_year": dict(sorted(year_counts.items(), reverse=True)),
         "dated_video_count": len(dates),
+        # R3 / S-1.17.2: what period the corpus is ABOUT, as distinct from
+        # when it was posted. Unknown (zero known) for pre-R3 chunks.
+        **temporal_service.summarize_eras(era_by_video.values()),
+        # T-1.16.1.6: script shares across the corpus. `switch_points` are
+        # dropped — per-chunk indices are meaningless at corpus level.
+        "language_profile": {
+            k: v
+            for k, v in language_service.profile_segments(texts_for_language).items()
+            if k != "switch_points"
+        },
     }
 
     return {"statistics": statistics}
@@ -251,10 +272,13 @@ def map_chunks(state: ReportAgentState) -> dict:
         url = meta.get("video_url") or meta.get("url") or meta.get("permalink") or ""
         # R3: the extractor cannot date a claim it was never told the date of.
         pub = str(meta.get("published_at") or "")[:10]
+        # S-1.17.2: ... nor tell a 2026 source about 2019 from a 2019 source.
+        era = temporal_service.era_for_prompt(temporal_service.era_from_chunk_metadata(meta))
         formatted = (
             f"[{meta.get('video_title', 'Unknown')} | {meta.get('channel_name', 'Unknown')} | "
             f"{format_timestamp(meta.get('timestamp_start', 0))}"
             f"{' | published ' + pub if pub else ''}"
+            f"{' | ' + era if era else ''}"
             f"{' | ' + url if url else ''}]\n{text}"
         )
         tokens = _count_tokens(formatted)
@@ -273,6 +297,11 @@ def map_chunks(state: ReportAgentState) -> dict:
     def _invoke_batch(batch_items: list[str]) -> dict | None:
         """One map call. Returns the parsed (or raw-wrapped) summary, or
         None on invocation failure."""
+        # T-1.16.1.6: per-batch script profile. Empty for plain English, so
+        # the common case costs no tokens.
+        language_note = language_service.describe_for_prompt(
+            language_service.profile_segments([{"text": t} for t in batch_items])
+        )
         prompt = MAP_CHUNK_PROMPT.format(
             topic=state.get("topic", ""),
             chunks="\n\n".join(batch_items),
@@ -280,6 +309,7 @@ def map_chunks(state: ReportAgentState) -> dict:
             code_mixing=CODE_MIXING_NOTE,
             temporal_extraction=TEMPORAL_EXTRACTION_NOTE,
             visual_annotations=VISUAL_ANNOTATION_CONTRACT,
+            language_note=language_note,
         )
         response = llm.invoke([HumanMessage(content=prompt)])
         try:
@@ -517,6 +547,81 @@ def reduce_summaries(state: ReportAgentState) -> dict:
     return {"chunk_summaries": [compressed], "processing_notes": notes}
 
 
+def _corpus_facts(statistics: dict) -> str:
+    """The verified corpus figures as short prose lines for EVERY compose call.
+
+    S-1.14.15: the summary received the statistics as a raw JSON dump (with
+    a 92-entry channel breakdown burying the dates) and the body sections
+    received nothing — so Conclusions wrote "well over 150 distinct videos"
+    while the table said 200, and the summary mis-dated the corpus. Every
+    section now gets the same compact block, and the prompts say to quote
+    it exactly.
+    """
+    stats = statistics or {}
+    lines: list[str] = []
+    videos = int(stats.get("video_count") or 0)
+    channels = len(stats.get("channel_breakdown") or [])
+    lines.append(
+        f"- Videos: {videos:,} (exact count — every section must use this figure)"
+        + (f"; channels: {channels:,}" if channels else "")
+    )
+    words = int(stats.get("total_words") or 0)
+    minutes = int(stats.get("total_minutes") or 0)
+    if words or minutes:
+        lines.append(f"- Transcript words: {words:,}; total minutes: {minutes:,}")
+    if stats.get("earliest_published"):
+        by_year = stats.get("videos_by_year") or {}
+        year_text = ", ".join(f"{y}: {n}" for y, n in by_year.items())
+        dated = int(stats.get("dated_video_count") or 0)
+        lines.append(
+            f"- Published between {stats['earliest_published']} and "
+            f"{stats['latest_published']} (median {stats.get('median_published')})"
+            + (f"; by year: {year_text}" if year_text else "")
+            + (f"; {dated:,} of {videos:,} videos carry a publish date" if videos else "")
+        )
+    else:
+        lines.append("- Publication dates: not available for this corpus")
+    eras = temporal_service.describe_corpus_eras(stats)
+    if eras:
+        lines.append(f"- Discussed era: {eras[0].upper() + eras[1:]}")
+    else:
+        lines.append("- Discussed era: not available (sources not yet dated by content)")
+    return "\n".join(lines)
+
+
+_HTML_TAG = re.compile(r"<[^>]+>")
+_H2 = re.compile(r"<h2[^>]*>(.*?)</h2>", re.I | re.S)
+
+
+def _section_text_digest(parts: list[str], budget_tokens: int) -> str:
+    """Plain-text rendering of the written sections for the summary call.
+
+    S-1.14.15 (T-1.14.15.2): the summary used to receive only section
+    titles with item counts ("Key Facts, part 1 of 2: 1,128 items"), so it
+    had nothing to summarise except pipeline mechanics — and wrote them into
+    the prose. It now reads what the sections SAY. Each part is abridged to
+    its share of the budget so the call stays bounded on large corpora.
+    """
+    if not parts:
+        return "(no sections)"
+    per_part = max(budget_tokens // len(parts), 500)
+    rendered: list[str] = []
+    for html in parts:
+        html = html or ""
+        m = _H2.search(html)
+        title = _HTML_TAG.sub("", m.group(1)).strip() if m else "Section"
+        body = html[:m.start()] + html[m.end():] if m else html
+        text = _HTML_TAG.sub(" ", body)
+        text = re.sub(r"\s+", " ", text).strip()
+        rendered.append(f"=== {title} ===\n{_truncate_to_tokens(text, per_part)}")
+    return "\n\n".join(rendered)
+
+
+# Tokens of written-section text the executive summary may read. Bounded for
+# cost, not capability: 60K tokens is ~45K words, more than most reports.
+_SUMMARY_INPUT_TOKENS = 60_000
+
+
 def compose_report(state: ReportAgentState) -> dict:
     """Compose the final HTML report body using LLM."""
     if state["job_type"] == "channel":
@@ -556,6 +661,14 @@ def compose_report(state: ReportAgentState) -> dict:
     logger.info(
         "compose_report: length policy %s",
         output_length_policy.describe(statistics, length_pref),
+    )
+
+    # S-1.14.15 / T-1.16.1.6: the same verified facts and language note go
+    # to EVERY compose call, so no section can contradict the Statistics
+    # table and a non-English corpus announces itself to the composer.
+    corpus_facts = _corpus_facts(statistics)
+    language_note = language_service.describe_for_prompt(
+        statistics.get("language_profile") or {}
     )
 
     parts: list[str] = []
@@ -598,6 +711,8 @@ def compose_report(state: ReportAgentState) -> dict:
                 part_note=part_note,
                 material=material,
                 heading_note=heading_note,
+                corpus_facts=corpus_facts,
+                language_note=language_note,
             )
             try:
                 html = _invoke_with_retry(
@@ -615,7 +730,9 @@ def compose_report(state: ReportAgentState) -> dict:
     if not parts:
         return {"final_html": "<p>Report generation failed: no sections could be composed.</p>"}
 
-    # Executive summary LAST, so it summarizes what was actually written.
+    # Executive summary LAST, so it summarizes what was actually written —
+    # and it now reads the written text, not a digest of item counts
+    # (S-1.14.15). `digest` stays for the log line below.
     summary_html = ""
     try:
         summary_html = _invoke_with_retry(
@@ -625,14 +742,18 @@ def compose_report(state: ReportAgentState) -> dict:
                 temporal=TEMPORAL_AWARENESS,
                 visual_annotations=VISUAL_ANNOTATION_CONTRACT,
                 topic=topic,
-                statistics=json.dumps(statistics, indent=2),
-                section_digest="\n".join(f"- {d}" for d in digest),
+                corpus_facts=corpus_facts,
+                section_text=_section_text_digest(
+                    parts, min(_batch_budget("report_compose", fraction=0.5), _SUMMARY_INPUT_TOKENS)
+                ),
+                language_note=language_note,
             ),
             max_tokens=min(4_000, ceiling), temperature=0.2,
             label="compose_report[executive summary]",
         )
     except Exception as e:
         logger.error("compose_report: executive summary failed (%s)", e)
+    logger.info("compose_report: sections written — %s", "; ".join(digest))
 
     # Statistics are arithmetic, not judgement — render them deterministically
     # so the section is always exact and complete (the LLM-written version

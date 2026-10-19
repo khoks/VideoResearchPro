@@ -522,19 +522,18 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
   - [x] T-1.14.14.4 Statistics marked computed-not-estimated — **partially effective**; residual defects carried to S-1.14.15
   - [x] T-1.14.14.5 Re-judged; overall **6.94 → 7.22**, coverage gap moderate → minor, synthesis unchanged at 6.33 → tier upgrade justified per the pre-registered rule
 - **S-1.14.16 🟢 `report_compose` → claude-opus-5 — shipped 2026-07-31.** [D-062](decisions.md#d-062--report_compose-upgraded-to-claude-opus-5-2026-07-31). Head-to-head on identical input: synthesis 9 vs 6-7, tension-handling 9 vs 6, specificity 9-10 vs 5.5-6. The length prior was tested and refuted — opus is 2.6x longer AND ~1.4x denser (3.42 vs 2.42 claims/100w), so ~3.5x payload. sonnet dropped ~8 corpus debates, named 18 tools vs 47, contradicted itself on a consensus claim, and invented two host names. Cost $7.65 → $12.20 per benchmark job.
-- **S-1.14.15 🔵 Executive-summary factual defects (T-1.14.14.4 residue).** Deliberately NOT bundled with the tier change so the D-062 measurement stays unconfounded.
-  - [ ] T-1.14.15.1 Summary mis-dates the corpus ("2024-2025-era" when the bulk of uploads are 2026) despite receiving computed statistics
-  - [ ] T-1.14.15.2 Pipeline metadata leaks into prose ("the Key Facts sections (1,128 and 605 items respectively)")
-  - [ ] T-1.14.15.3 Conclusions states "well over 150 distinct videos" while the report's own table says 200 — pass the verified count into every section prompt, not just the summary
-  - [ ] T-1.14.15.4 Judging harness: raise the 180,000-char text cap or judge section-by-section — production now exceeds it and was judged on a truncated document
-  - *2026-10-18: proposed for batching with S-1.17.2, since both edit the report prompts and T-1.14.15.1 is itself a temporal defect.*
+- **S-1.14.15 🟢 Executive-summary factual defects (T-1.14.14.4 residue) — shipped 2026-10-19**, PR [#227](https://github.com/khoks/VideoResearchPro/pull/227), batched with S-1.17.2 (same prompt files). Linked decision: [D-072](decisions.md#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19).
+  - [x] T-1.14.15.1 Summary mis-dates the corpus — the statistics arrived as a raw JSON dump whose 92-entry channel breakdown buried the dates. Every compose call now receives a compact `_corpus_facts` block (count, words, publication span, per-year histogram, discussed-era span) and is told to quote it exactly
+  - [x] T-1.14.15.2 Pipeline metadata leaks into prose — the summary only ever received section titles with item counts ("Key Facts, part 1 of 2: 1,128 items"), so counts were all it could summarise. It now reads a plain-text rendering of the written sections (`_section_text_digest`, 60K-token bound) and is told never to mention counts, parts or batches
+  - [x] T-1.14.15.3 "well over 150 distinct videos" — the same verified facts block goes to every section prompt, not just the summary; pinned by a test that captures every compose prompt
+  - [x] T-1.14.15.4 Judging harness — `backend/scripts/judge_report_sections.py` splits a report on `<h2>` and judges each section in full; no document-level cap remains
 - **S-1.14.11 🟢 Reasoning-model response shape — shipped 2026-07-30.** Anthropic returns `[thinking_block, text_block]` instead of a string once the model actually thinks, so `response.content` yielded a list exactly on the hardest prompts. Latent in production since D-053 moved these sites to claude-sonnet-5. Fixed centrally via `llm_service.response_text()` at all 18 response-reading call sites, with regression tests.
 
 **Open questions**
 - OQ-7: does the harness generalize to a scheduled regression check (re-run on every model-lineup shift), or stay a manual audit? Depends on S-1.14.6 landing.
 - OQ-8: judging currently uses a single model family; is a multi-judge panel needed to control for self-preference bias when the challenger shares that family?
 
-### E-1.15 🟡 Output length policy (R4)
+### E-1.15 🟢 Output length policy (R4) — closed 2026-10-19
 
 **Why it exists.** User requirement: output length should follow the corpus size bracket, with per-bracket defaults and an optional non-obstructive user override at submission time.
 **Linked decision:** [D-064](decisions.md#d-064--output-length-corpus-brackets-with-an-optional-user-override-2026-07-31)
@@ -547,14 +546,17 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 - [x] T-1.15.1.4 "Report depth" selector on the submit form, defaults to Auto, only sent when chosen
 - [x] T-1.15.1.5 10 tests incl. the ANTI-CAP invariant (deep-on-small < brief-on-large), unknown-value fallback, and that the `deep` brief forbids padding
 
-#### S-1.15.2 🟡 Q&A length policy — agent side shipped 2026-07-31 (D-066); never wired into the routers
+#### S-1.15.2 🟢 Q&A length policy — agent side shipped 2026-07-31 (D-066); wired into the routers 2026-10-19 (PR [#227](https://github.com/khoks/VideoResearchPro/pull/227))
 Q&A was corpus-blind: `formulate_answer` had a fixed 4,500-token budget and never received video/word counts. Deferred into the R3+R5 batch because all three rewrite the same Q&A prompt files.
 **Scope-changed 2026-10-18: reopened.** This story was marked shipped with "R4 now complete", but a code audit found the policy unreachable in production. `run_qa_agent` accepts `corpus_statistics` / `output_length`, but its only caller (`routers/qa.py`) passes neither. `corpus_bracket({})` therefore returns `small`, so every job answer gets the small-corpus 1.25× budget and brief, and no publication span, even on the 200-video corpus. No test references `corpus_statistics`. See the [D-066 amendment](decisions.md#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31).
-- [ ] T-1.15.2.1 Pass corpus statistics into the job and library Q&A agents. *The job agent accepts them; no router passes them*
-- [ ] T-1.15.2.2 Apply the same scale-plus-guidance policy to `qa_formulate_answer` / `library_qa_formulate_answer`. *Done in the job agent's `formulate_answer`; `library_qa_formulate_answer` is still a fixed `max_tokens=4500`*
-- [ ] T-1.15.2.3 Per-request length override on the Q&A endpoints (job-level default, request-level override). *Neither exists: `job.output_length` is not passed, and the Q&A schemas have no length field*
-- [ ] T-1.15.2.4 Knowledge synthesis already scales with extraction size (S-1.14.8) — confirm it honours an explicit preference too
-- [ ] T-1.15.2.5 Router-level tests that fail when the statistics or the length preference are not passed, so this cannot regress silently again
+- [x] T-1.15.2.1 Pass corpus statistics into the job and library Q&A agents — `corpus_stats_service` computes them from the approved (job) / visible (library) document set in the routers; both the sync and SSE job endpoints pass them
+- [x] T-1.15.2.2 Same scale-plus-guidance policy on both answer sites via `qa_agent._answer_policy`; the library call's fixed `max_tokens=4500` is gone
+- [x] T-1.15.2.3 Per-request `output_length` on `QARequest` and `LibraryQARequest`; the request override beats `job.output_length`, NULL everywhere lets the bracket decide
+- [x] ~~T-1.15.2.4~~ moved to S-1.15.3 — the knowledge endpoint has no preference input, so "honours a preference" has nothing to test yet
+- [x] T-1.15.2.5 `tests/test_routers/test_qa_length_policy.py` asserts at the production caller: the 200K-words-per-document fixture must classify `xlarge`, the rejected document must not count, the override must win, and the library set must follow visibility grants
+
+#### S-1.15.3 ⚪ Length preference for knowledge synthesis
+Knowledge synthesis already scales its budget with extraction size (S-1.14.8) but has no user preference input. Add an optional `output_length` to `POST /videos/{id}/extract-knowledge`, apply the D-064 multiplier and brief in `synthesize_report`, and test it at the router.
 
 ### E-1.16 🟡 Linguistic agnosticism with English output (R5)
 
@@ -567,9 +569,9 @@ Q&A was corpus-blind: `formulate_answer` had a fixed 4,500-token budget and neve
 - [x] T-1.16.1.3 `language_service.py` — Unicode script profiling, `switch_points`, `needs_translation`. Combining-mark bug fixed (Devanagari was undercounted ~40%, hiding language switches)
 - [x] T-1.16.1.4 Anti-transliteration instruction reversed to the three-part form (D-065)
 - [x] T-1.16.1.5 12 tests, including one asserting the romanised-Hinglish gap PERSISTS by design
-- [ ] T-1.16.1.6 Wire `language_service.describe_for_prompt` into the per-job prompt path so a non-English corpus announces itself to the composer *(verified 2026-10-18: zero callers)*
+- [x] T-1.16.1.6 Wire `language_service.describe_for_prompt` into the per-job prompt path — shipped 2026-10-19 (PR [#227](https://github.com/khoks/VideoResearchPro/pull/227)): per-batch profile into every map call, corpus-level profile (stored as `statistics.language_profile`) into every compose section and the summary. Empty for plain English, so the common case costs no tokens
 - [ ] T-1.16.1.7 Persist the per-document language profile (`documents.language_mix`) so the per-video label stops being the only signal
-- [ ] T-1.16.1.8 English-preference in `search_rank_and_curate` ranking — a preference, never a filter (D-059)
+- [x] T-1.16.1.8 English-preference in `search_rank_and_curate` ranking — shipped 2026-10-19 (PR [#227](https://github.com/khoks/VideoResearchPro/pull/227)). A `LANGUAGE (a preference, never a filter)` block in the ranking prompt plus a `Script:` hint on titles not in Latin script (exact via `language_service.dominant_script`; the model infers the language). A test confirms a Devanagari-titled pick survives untouched
 
 #### S-1.16.2 🔵 Proportion-driven rendering for code-mixed speech — implements [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31)
 The shipped script profiler is exact for script mixing and **blind to romanised code-mixing** — the user's own example ("...taaki baadme koi kasar koi zarra na reh jaye...") is entirely Latin and reads as English today. This story closes that gap.
@@ -630,32 +632,47 @@ Filed 2026-10-19 from the S-1.18.3 run: at the registry defaults (`visual_select
 - [ ] T-1.18.4.1 PDFs: page images are already available without any download
 - [ ] T-1.18.4.2 Articles: figures and charts referenced by the text
 
-### E-1.17 🟡 Temporal / era awareness (R3)
+### E-1.17 🟢 Temporal / era awareness (R3) — closed 2026-10-19
 
 **Why it exists.** A corpus spans time. A claim made in 2024 is not the same claim in 2026; relevance and meaning shift with publication date.
-**Linked decision:** [D-066](decisions.md#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31)
+**Linked decisions:** [D-066](decisions.md#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31), [D-072](decisions.md#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19)
+
+**Closed 2026-10-19 (PR [#227](https://github.com/khoks/VideoResearchPro/pull/227)).** Both halves of R3 now exist: publication date (S-1.17.1, 2026-07-31) and the era a source DISCUSSES (S-1.17.2), in knowledge extraction, search ranking, Q&A and the report. Chunks embedded before 2026-10-19 carry no era and no numeric publish fields; they read as unknown by design (no backfill — D-072).
 
 **SCOPE CORRECTION 2026-07-31.** The requirement has TWO dimensions and only one was built. The user's words: *"the time when the videos were posted, AND which era/timeperiod they are talking about"*, affecting *"knowledge extraction, search ranking, qna, reporting"*. Publication date is done. **The era a video DISCUSSES is not**, and **search ranking received no temporal signal at all**. E-1.17 stays 🟡 until S-1.17.2 lands; describing R3 as "core shipped" was an overstatement.
 
 **Correction 2026-10-18.** The claim above that "search ranking received no temporal signal at all" was itself wrong. Since PR #2 (2026-04-19), the ranking prompt has shown each candidate's publish date with a generic hint: "more recent is usually better unless the topic calls for foundational content". What ranking still lacks is the discussed era and a deliberate per-topic recency decision. Separately, the Q&A piece below (T-1.17.1.4) turned out to be unwired; see S-1.15.2.
 
-#### S-1.17.1 🟢 Publication date reaches the prompts — shipped 2026-07-31
+#### S-1.17.1 🟢 Publication date reaches the prompts — shipped 2026-07-31; last three tasks 2026-10-19
 - [x] T-1.17.1.1 `compute_statistics` derives earliest/latest/median publish date + per-year counts
 - [x] T-1.17.1.2 Map chunk headers carry `published <date>`
 - [x] T-1.17.1.3 `TEMPORAL_AWARENESS` / `TEMPORAL_EXTRACTION_NOTE` fragments; guardrail conflict resolved by SUPPLYING verified dates rather than relaxing D-062's anti-invention rule
-- [ ] T-1.17.1.4 Q&A receives publication span and weights recency for time-sensitive questions. *Unchecked 2026-10-18: the agent formats it, but no router passes corpus statistics (see S-1.15.2)*
-- [ ] T-1.17.1.5 Date into the Q&A allowed-sources list so citations show source vintage inline
-- [ ] T-1.17.1.6 `published_ts` / `published_year` in Chroma metadata to enable recency-weighted retrieval. *Chunks already carry `published_at` as an ISO string (`utils/chunking.py`), which Chroma cannot range-filter or weight; the numeric fields are still needed*
+- [x] T-1.17.1.4 Q&A receives publication span and weights recency for time-sensitive questions — live since 2026-10-19, when the routers started passing corpus statistics (S-1.15.2). The CORPUS note also carries the discussed-era span
+- [x] T-1.17.1.5 Date into the Q&A allowed-sources list — `- "Title" by Channel | published 2025-03-12 | discusses 2019–2021 (retrospective)`, for job and library Q&A; the raw-context headers the refiner reads carry the same, and the system prompts say the suffix is never part of a citation. Pinned against the citation sanitizer
+- [x] T-1.17.1.6 `published_ts` / `published_year` (ints) in chunk metadata, omitted when the date is unknown so a `$gte` filter excludes undated chunks rather than matching 1970. Pre-existing chunks are not backfilled
 - [x] ~~T-1.17.1.7 Optional `temporal_scope_extract`~~ — promoted out of "optional" into S-1.17.2; it is half the requirement, not a nice-to-have
 
-#### S-1.17.2 🔵 The era a source DISCUSSES, and temporal signal in ranking — the missing half of R3
-A 2026 video about a 2019 paper is a 2026 source about a 2019 event. Nothing in the pipeline currently distinguishes those, and the search ranker has never seen a date.
-- [ ] T-1.17.2.1 `temporal_scope_extract` use case — per-document `{era_start, era_end, era_confidence, is_retrospective}` distinct from `published_at`. Economy tier, structured JSON, map-phase volume
-- [ ] T-1.17.2.2 Persist as `documents.discussed_era_json`; surface in chunk metadata so retrieval can filter/weight on it
-- [ ] T-1.17.2.3 Temporal signal in `search_rank_and_curate` — recency preference where the topic is fast-moving, foundational-content preference where it is evergreen. Must be a RANKING input, never a filter (same reasoning as D-059's language decision). *Builds on the generic publish-date hint the ranking prompt has carried since PR #2*
-- [ ] T-1.17.2.4 Knowledge extraction: anchor relative time ("last year", "the new model") against the document's publish date so extracted events carry absolute dates
-- [ ] T-1.17.2.5 Report: distinguish "claim was true as of <date>" from "claim is true now", and surface supersession where a later source contradicts an earlier one
-- [ ] T-1.17.2.6 Q&A: weight recency for time-sensitive questions, and say so in the answer when sources disagree along a time axis
+#### S-1.17.2 🟢 The era a source DISCUSSES, and temporal signal in ranking — shipped 2026-10-19 (PR [#227](https://github.com/khoks/VideoResearchPro/pull/227))
+A 2026 video about a 2019 paper is a 2026 source about a 2019 event. Linked decision: [D-072](decisions.md#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19).
+- [x] T-1.17.2.1 `temporal_scope_extract` use case (registry entry 23; `gpt-5.6-luna`, reasoning OFF, 400-token cap). Prompt in `prompts/temporal_prompts.py`; title + description + publish date + three sampled transcript windows → `{era_start, era_end, era_confidence, is_retrospective, era_label}`, integer years, negative = BCE. `temporal_service.parse_era_payload` tolerates fences, swaps reversed bounds, forces zero confidence on null years
+- [x] T-1.17.2.2 Persisted as `documents.discussed_era_json` (migration `b1a2c3d4e5f8`), extracted by `job_tasks._ensure_era` before every `chunk_transcript` site in both ingest loops (a source-level test counts the sites), once per document and reused. Flattened into chunk metadata as `era_start` / `era_end` / `era_confidence` / `is_retrospective`, omitted when unknown. `TEMPORAL_SCOPE_ENABLED` kill switch
+- [x] T-1.17.2.3 Temporal signal in ranking — the planner now emits a `temporal_profile` (`recency_weight` dominant / secondary / minimal, `target_era`, rationale) decided ONCE per topic; the ranking prompt receives the matching guidance block, each candidate's `Era:` when the library has dated it, and the explicit rule that no candidate is excluded for its date. Default when the planner is silent: secondary (relevance leads, date breaks ties) — the strength of "dominant" is the open design question recorded in D-072
+- [x] T-1.17.2.4 Knowledge extraction anchors relative time to the publish date (`_temporal_note` in both knowledge prompts; "keep relative phrases verbatim" when the date is unknown); synthesis writes time-sensitive claims "as of <date>"
+- [x] T-1.17.2.5 Report: `TEMPORAL_AWARENESS` now distinguishes "true AS OF <date>" from "true now" and requires supersession to be named; map headers carry `discusses <era>`; the corpus-facts block carries the discussed-era span
+- [x] T-1.17.2.6 Q&A: the CORPUS note tells the answer model to weight recency for time-sensitive questions, the discussed era for period questions, and to say so with dates when sources disagree along a time axis; the refiner is told to keep dates with extracts so the answer step can see the axis
+
+#### S-1.17.3 ⚪ Backfill era + numeric publish fields into pre-R3 Chroma chunks
+Deferred by [D-072](decisions.md#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19): chunks embedded before 2026-10-19 carry no `era_*` / `published_ts` metadata and read as unknown. A document gains its era the next time a job re-chunks it, but its OLD chunks in Chroma do not. Worth doing only once something reads the fields at retrieval time (recency-weighted retrieval, era filters). Chroma supports metadata updates without re-embedding, so this is a metadata-only pass, not a re-index.
+- [ ] T-1.17.3.1 Script: for every document with `discussed_era_json` or `published_at`, update the metadata of its existing chunks in `videoresearchpro_global` (no re-embedding)
+- [ ] T-1.17.3.2 Idempotent and resumable; logs how many chunks gained each field
+
+#### S-1.17.4 ⚪ Measure the temporal ranking signal
+The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned preferences, not measured ones. Replay the D-057 reference pool (S-1.14.6 persisted the rejected candidates) with and without the temporal guidance and judge the selections blind, the E-1.14 way. Also decides OQ-9.
+- [ ] T-1.17.4.1 Re-rank the persisted candidate pool of job `0d4db8c3` with `temporal_profile` forced to each of `dominant` / `secondary` / `minimal`; diff the selections
+- [ ] T-1.17.4.2 Blind-judge the three selections for topical fit and vintage balance
+
+**Open questions**
+- OQ-9: how strongly should `dominant` recency outweigh relevance for a fast-moving topic? Today: "strongly prefer the most recent among on-topic candidates; keep an older one only when clearly foundational". Stricter behaves like a filter; looser collapses into `secondary`. Raised in [D-072](decisions.md#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19); for the user to decide, ideally after S-1.17.4.
 
 ## I-2 🟢 Brand & visual identity rollout
 

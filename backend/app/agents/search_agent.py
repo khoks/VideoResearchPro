@@ -40,7 +40,7 @@ from app.agents.prompts.search_prompts import (
     RANK_AND_CURATE_PROMPT,
 )
 from app.agents.state import SearchAgentState
-from app.services import youtube_service
+from app.services import language_service, temporal_service, youtube_service
 from app.services.llm_service import get_llm_for, response_text
 from app.sources import connector_for
 from app.sources.types import Candidate, SourceMetadata
@@ -71,6 +71,109 @@ RANK_BATCH_MAX_CANDIDATES = 400
 # plus this margin (20%), so the final round has slack to correct
 # cross-batch quality imbalance.
 RANK_BATCH_WINNER_MARGIN = 1.2
+
+# --- R3 / T-1.17.2.3: temporal signal in ranking ---------------------------
+#
+# Since PR #2 the ranking prompt showed each candidate's publish date with a
+# generic "more recent is usually better unless foundational" hint and left
+# the model to decide, per candidate, how much that mattered. The planner
+# now makes that call ONCE per topic (`temporal_profile`), and the ranking
+# prompt is told the decision. Each block is a PREFERENCE among on-topic
+# candidates; the prompt also says, in so many words, that no candidate is
+# excluded for its date — the same reasoning D-059 applied to language.
+_VALID_RECENCY = ("dominant", "secondary", "minimal")
+_DEFAULT_RECENCY = "secondary"
+_RECENCY_GUIDANCE: dict[str, str] = {
+    "dominant": (
+        "RECENCY IS DOMINANT for this topic: it moves fast and newer material "
+        "supersedes older. Among on-topic candidates strongly prefer the most "
+        "recently published; keep an older one only when it is clearly "
+        "foundational or uniquely authoritative."
+    ),
+    "secondary": (
+        "RECENCY IS SECONDARY for this topic: relevance and substance lead. "
+        "Use publish date and discussed era to break ties and to keep the "
+        "selection from being all one vintage."
+    ),
+    "minimal": (
+        "RECENCY IS MINIMAL for this topic: it is evergreen or historical. "
+        "Prefer foundational and authoritative treatments regardless of age; "
+        "publish date counts only when two candidates are otherwise equal."
+    ),
+}
+
+# T-1.16.1.8 (R5): an English PREFERENCE in ranking, never a filter. D-059
+# rejected a language filter as contradicting the multilingual design, and a
+# Hindu-topics job legitimately surfaces Hindi sources; this only breaks ties.
+_LANGUAGE_GUIDANCE = (
+    "LANGUAGE (a preference, never a filter): prefer English-language sources "
+    "when candidates are otherwise comparable — the deliverable is written in "
+    "English, and an English source loses nothing in translation. Never exclude "
+    "a candidate for its language: for topics rooted in a non-English culture "
+    "or region, sources in that language are often the most authoritative and "
+    "must be represented. `Script:` marks titles not in Latin script."
+)
+
+
+def _normalise_temporal_profile(raw: object) -> dict:
+    """Coerce the planner's `temporal_profile` into a known shape.
+
+    Anything unparseable degrades to `secondary` with no target era — the
+    behaviour the prompt had before, with the decision now explicit.
+    """
+    data = raw if isinstance(raw, dict) else {}
+    weight = str(data.get("recency_weight") or "").strip().lower()
+    if weight not in _VALID_RECENCY:
+        weight = _DEFAULT_RECENCY
+    era = data.get("target_era")
+    era = str(era).strip() if isinstance(era, (str, int, float)) and str(era).strip() else None
+    if era and era.lower() in ("null", "none", "n/a"):
+        era = None
+    rationale = data.get("rationale")
+    rationale = str(rationale).strip()[:300] if isinstance(rationale, str) else ""
+    return {"recency_weight": weight, "target_era": era, "rationale": rationale}
+
+
+def _temporal_guidance(profile: dict | None) -> str:
+    """The TEMPORAL PROFILE block for the ranking prompt."""
+    prof = _normalise_temporal_profile(profile)
+    lines = ["TEMPORAL PROFILE (decided once for this topic):", _RECENCY_GUIDANCE[prof["recency_weight"]]]
+    if prof["target_era"]:
+        lines.append(
+            f"TARGET ERA: the topic concerns {prof['target_era']}. Prefer candidates "
+            "whose discussed era (shown as `Era:` when the library knows it, "
+            "otherwise inferred from title and description) overlaps that period; "
+            "a video posted recently ABOUT that period is on-era."
+        )
+    if prof["rationale"]:
+        lines.append(f"Planner's rationale: {prof['rationale']}")
+    lines.append(
+        "These are ranking preferences, never filters: a candidate is never "
+        "excluded for its publish date or era alone."
+    )
+    return "\n".join(lines)
+
+
+def _lookup_known_eras(video_ids: list[str]) -> dict[str, dict]:
+    """Discussed eras for candidates the library has already dated.
+
+    Opens its own short session because the search agent otherwise never
+    touches the database. Fail-soft: any error (no DB in a unit test, a
+    schema behind head) means "no known eras", never a failed job.
+    """
+    if not video_ids:
+        return {}
+    try:
+        from app.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            return temporal_service.known_eras_for(db, video_ids)
+        finally:
+            db.close()
+    except Exception:
+        logger.exception("Known-era lookup failed; ranking without discussed eras")
+        return {}
 
 
 def _candidate_to_legacy_dict(c: Candidate) -> dict:
@@ -182,6 +285,7 @@ def plan_searches(state: SearchAgentState) -> dict:
 
     broad_queries: list[str] = []
     channel_keywords: list[str] = []
+    temporal_profile: dict = _normalise_temporal_profile(None)
     try:
         plan = json.loads(response_text(response))
         if isinstance(plan, dict):
@@ -191,6 +295,8 @@ def plan_searches(state: SearchAgentState) -> dict:
             raw_k = plan.get("channel_keywords") or []
             if isinstance(raw_k, list):
                 channel_keywords = [str(k).strip().lower() for k in raw_k if str(k).strip()]
+            # R3 / T-1.17.2.3: the deliberate per-topic recency decision.
+            temporal_profile = _normalise_temporal_profile(plan.get("temporal_profile"))
     except (json.JSONDecodeError, TypeError):
         logger.exception("plan_searches: failed to parse LLM JSON, falling back to topic")
 
@@ -203,13 +309,15 @@ def plan_searches(state: SearchAgentState) -> dict:
         channel_keywords = [w.lower() for w in topic.split() if len(w) > 2]
 
     logger.info(
-        "plan_searches: %d broad_queries, %d channel_keywords",
+        "plan_searches: %d broad_queries, %d channel_keywords, recency=%s target_era=%s",
         len(broad_queries), len(channel_keywords),
+        temporal_profile["recency_weight"], temporal_profile["target_era"],
     )
 
     return {
         "search_queries_used": broad_queries,
         "channel_keywords": channel_keywords,
+        "temporal_profile": temporal_profile,
         "messages": [
             HumanMessage(
                 content=(
@@ -434,13 +542,20 @@ def _format_video_line(v: dict) -> str:
     likes = v.get("like_count")
     likes_str = f"{likes:,}" if isinstance(likes, int) else "unknown"
     source = v.get("source", "search")
+    # R3: the discussed era, when the library has dated this candidate.
+    era = v.get("discussed_era_text") or ""
+    # T-1.16.1.8: a script hint for titles not in Latin letters. Only the
+    # script is exact (language_service); the model infers the language.
+    script = language_service.dominant_script(v.get("title") or "")
+    script_note = f" | Script: {script}" if script and script != "Latin" else ""
     return (
         f"- ID: {v['video_id']} | Source: {source} | "
         f"Title: {v.get('title', 'N/A')} | "
         f"Channel: {v.get('channel_name', 'N/A')} | "
         f"Duration: {format_duration(v.get('duration_seconds', 0))} | "
         f"Views: {views_str} | Likes: {likes_str} | "
-        f"Published: {v.get('published_at', 'unknown')} | "
+        f"Published: {v.get('published_at', 'unknown')}"
+        f"{' | Era: ' + era if era else ''}{script_note} | "
         f"Subscribers: {subs_str}"
     )
 
@@ -451,6 +566,7 @@ def _invoke_rank_prompt(
     search_instructions: str,
     videos: list[dict],
     ask: int,
+    temporal_guidance: str = "",
 ) -> list | None:
     """Run the ranking prompt over ``videos`` asking for ``ask`` ids.
 
@@ -463,6 +579,8 @@ def _invoke_rank_prompt(
         search_instructions=search_instructions,
         num_videos=ask,
         video_list=video_list,
+        temporal_guidance=temporal_guidance or _temporal_guidance(None),
+        language_guidance=_LANGUAGE_GUIDANCE,
     )
     response = llm.invoke([HumanMessage(content=prompt)])
     try:
@@ -483,6 +601,7 @@ def _run_tournament_round(
     pool: list[dict],
     target: int,
     round_no: int,
+    temporal_guidance: str = "",
 ) -> list[dict]:
     """One batched tournament round over an oversized candidate pool (S-1.12.5).
 
@@ -508,7 +627,9 @@ def _run_tournament_round(
         proportional = math.ceil(target * len(batch) / total)
         ask = min(len(batch), math.ceil(proportional * RANK_BATCH_WINNER_MARGIN))
 
-        selected_ids = _invoke_rank_prompt(llm, topic, search_instructions, batch, ask)
+        selected_ids = _invoke_rank_prompt(
+            llm, topic, search_instructions, batch, ask, temporal_guidance
+        )
         if selected_ids is None:
             # Parse failure: this batch still advances its head-of-list share.
             winners.extend(batch[:ask])
@@ -707,12 +828,26 @@ def rank_and_curate(state: SearchAgentState) -> dict:
     topic = state["topic"]
     search_instructions = state.get("search_instructions", "")
 
+    # R3 / T-1.17.2.3: the planner's per-topic time decision, plus the
+    # discussed era of every candidate the library has already dated.
+    temporal_guidance = _temporal_guidance(state.get("temporal_profile"))
+    known_eras = _lookup_known_eras([v.get("video_id") for v in videos if v.get("video_id")])
+    if known_eras:
+        for v in videos:
+            era = known_eras.get(v.get("video_id"))
+            if era is not None:
+                v["discussed_era_text"] = temporal_service.era_for_prompt(era)
+        logger.info(
+            "rank_and_curate: %d of %d candidates carry a discussed era",
+            len(known_eras), len(videos),
+        )
+
     pool = videos
     round_no = 0
     while len(pool) > RANK_BATCH_MAX_CANDIDATES:
         round_no += 1
         winners = _run_tournament_round(
-            llm, topic, search_instructions, pool, target, round_no
+            llm, topic, search_instructions, pool, target, round_no, temporal_guidance
         )
         if len(winners) >= len(pool):
             # Degenerate case (target * margin ≈ pool size): batching can no
@@ -728,7 +863,9 @@ def rank_and_curate(state: SearchAgentState) -> dict:
         pool = winners
 
     # Final (or only) ranking call — asks for exactly `target` ids.
-    selected_ids = _invoke_rank_prompt(llm, topic, search_instructions, pool, target)
+    selected_ids = _invoke_rank_prompt(
+        llm, topic, search_instructions, pool, target, temporal_guidance
+    )
     if selected_ids is not None:
         # Preserve the model's ORDER — it is the merit signal the quota pass
         # ranks against (the old code returned pool order, discarding it).
@@ -820,6 +957,7 @@ def run_search_agent(
         "discovered_videos": [],
         "curated_videos": [],
         "search_queries_used": [],
+        "temporal_profile": {},
     }
 
     def _notify(pct: int, message: str) -> None:

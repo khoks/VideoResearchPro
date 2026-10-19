@@ -94,6 +94,10 @@ FEATURE_TO_USE_CASES: dict[str, list[UseCase]] = {
         "visual_select_moments",
         "visual_describe_frame",
     ],
+    # NOT listed: `temporal_scope_extract` (R3). It is still probed (every
+    # registry entry is), but it gates no feature — a failure leaves each
+    # document's discussed era unknown and the job completes, so greying
+    # out topic jobs for it would be wrong.
 }
 
 

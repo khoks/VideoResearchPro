@@ -120,11 +120,19 @@ def ask_library_question(
         row[0] for row in visibility_service.visible_video_ids(db, current_user.id)
     ]
 
+    # S-1.15.2: the same corpus-aware length policy as job Q&A, over the
+    # VISIBLE set. Until 2026-10-18 this call ran a fixed 4,500 tokens.
+    from app.services import corpus_stats_service
+
+    corpus_statistics = corpus_stats_service.corpus_statistics_for_video_ids(db, visible)
+
     with llm_service.byok_context(current_user.id, db):
         result = run_library_qa_agent(
             question=request.question,
             answer_language=request.answer_language,
             visible_video_ids=visible,
+            corpus_statistics=corpus_statistics,
+            output_length=request.output_length,
         )
 
     # T-5.5.5: track consumption.

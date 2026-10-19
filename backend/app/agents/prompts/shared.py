@@ -50,21 +50,37 @@ CODE_MIXING_NOTE = """CODE-MIXED SPEECH:
 # --- R3: time --------------------------------------------------------------
 
 TEMPORAL_AWARENESS = """TIME AND RELEVANCE:
-- Each source carries a publication date. Treat it as load-bearing: a claim
-  about "the latest model" or "current best practice" is a claim about the
-  world AT THAT DATE, not now.
-- When sources disagree and the disagreement tracks their dates, say so — an
-  older source may have been correct then and superseded since. Do not silently
-  prefer either the newer or the older one; state the trajectory.
-- Attribute time-sensitive claims with their date so the reader can judge
-  currency: "as of <date>, X was ...".
+- Each source carries a publication date and, where known, the period it
+  DISCUSSES (a 2026 video about a 2019 paper is a 2026 source about a 2019
+  event). Treat both as load-bearing: a claim about "the latest model" or
+  "current best practice" is a claim about the world AT THE PUBLICATION DATE,
+  not now.
+- Distinguish "true AS OF <date>" from "true now". Write time-sensitive claims
+  with their date so the reader can judge currency: "as of <date>, X was ...".
+- When sources disagree and the disagreement tracks their dates, say so
+  explicitly, name the dates, and state the trajectory: "as of March 2025
+  the sources describe X; by January 2026 Y had replaced it". An older source
+  may have been correct then and superseded since. Do not silently prefer
+  either the newer or the older one.
+- Point out SUPERSESSION: when a later source updates, contradicts or
+  withdraws an earlier claim, say which claim is superseded and by which
+  source, rather than presenting both as live.
+- Weight recency where the question is time-sensitive (what is current,
+  latest, best today); weight the discussed era where the question is about
+  a period.
 - Do NOT infer a date you were not given, and do not describe the corpus's
   overall vintage beyond the verified figures supplied to you."""
 
 TEMPORAL_EXTRACTION_NOTE = """TIME:
-- Each chunk header carries `published <date>` for its source. Where a claim is
-  time-sensitive (a "new" release, a "current" state of the art, a prediction),
-  keep that date with the claim so later stages can reason about currency.
+- Each chunk header carries `published <date>` for its source and, where the
+  library knows it, `discusses <era>` — the period the source is ABOUT. Where
+  a claim is time-sensitive (a "new" release, a "current" state of the art, a
+  prediction), keep the publication date with the claim so later stages can
+  reason about currency.
+- Anchor RELATIVE time to the publication date: "last year" in a source
+  published 2025-03 means 2024; "the new model" means new AS OF that date.
+  Emit absolute dates where you can derive them this way; where you cannot,
+  keep the relative phrase and add "(as of <publication date>)".
 - Distinguish WHEN A CLAIM WAS MADE from WHEN THE EVENT IT DESCRIBES HAPPENED.
   A 2026 video discussing a 2019 paper is a 2026 source about a 2019 event."""
 

@@ -11,7 +11,7 @@ from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.models.transcript_cache import TranscriptCache
 from app.models.document import Document
-from app.services import chroma_service, progress_service, youtube_service
+from app.services import chroma_service, progress_service, temporal_service, youtube_service
 from app.sources import connector_for
 from app.sources.types import Candidate, SourceMetadata
 from app.tasks.celery_app import celery_app
@@ -625,7 +625,26 @@ def _build_video_metadata(video: Document, language: str | None) -> dict:
         "author": str(source_metadata.get("author") or ""),
         "subreddit": str(source_metadata.get("subreddit") or ""),
         "instance": str(source_metadata.get("instance") or ""),
+        # R3 / S-1.17.2: the era this document DISCUSSES, flattened to the
+        # scalar fields the chunker writes to Chroma. Empty when unknown.
+        "discussed_era": temporal_service.era_metadata(temporal_service.load_era(video)),
     }
+
+
+def _ensure_era(db, video: Document, segments: list[dict], job_id: str) -> None:
+    """Extract + persist the document's discussed era if it has none (R3).
+
+    Runs BEFORE `_build_video_metadata` so the chunks about to be built carry
+    the era. Fail-soft like `_with_visuals`: an era is enrichment on top of a
+    working job, so nothing here may break one.
+    """
+    try:
+        temporal_service.ensure_discussed_era(db, video, segments)
+    except Exception:
+        logger.exception(
+            f"[job:{job_id}] Discussed-era extraction failed for "
+            f"video_id={video.video_id}; continuing with era unknown"
+        )
 
 
 def _load_cached_segments(video_id: str) -> tuple[list[dict], str] | None:
@@ -1111,6 +1130,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 cached = _load_cached_segments(video.video_id)
                 if cached is not None:
                     segments, cached_language = cached
+                    _ensure_era(db, video, segments, job_id)
                     chunks = chunk_transcript(
                         _with_visuals(db, job, video, segments, visual_budget, job_id),
                         chunk_size=settings.CHUNK_SIZE,
@@ -1141,6 +1161,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 cached = _load_cached_segments(video.video_id)
                 if cached is not None:
                     segments, cached_language = cached
+                    _ensure_era(db, video, segments, job_id)
                     chunks = chunk_transcript(
                         _with_visuals(db, job, video, segments, visual_budget, job_id),
                         chunk_size=settings.CHUNK_SIZE,
@@ -1210,6 +1231,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                     if hasattr(video, "transcript_source"):
                         video.transcript_source = extracted.text_source
 
+                    _ensure_era(db, video, transcript, job_id)
                     chunks = chunk_transcript(
                         _with_visuals(db, job, video, transcript, visual_budget, job_id),
                         chunk_size=settings.CHUNK_SIZE,
@@ -1453,6 +1475,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
             cached = _load_cached_segments(video.video_id)
             if cached is not None:
                 segments, cached_language = cached
+                _ensure_era(db, video, segments, job_id)
                 chunks = chunk_transcript(
                     _with_visuals(db, job, video, segments, visual_budget, job_id),
                     chunk_size=settings.CHUNK_SIZE,
@@ -1474,6 +1497,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
             cached = _load_cached_segments(video.video_id)
             if cached is not None:
                 segments, cached_language = cached
+                _ensure_era(db, video, segments, job_id)
                 chunks = chunk_transcript(
                     _with_visuals(db, job, video, segments, visual_budget, job_id),
                     chunk_size=settings.CHUNK_SIZE,
@@ -1524,6 +1548,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
                 if hasattr(video, "transcript_source"):
                     video.transcript_source = extracted.text_source
 
+                _ensure_era(db, video, transcript, job_id)
                 chunks = chunk_transcript(
                     _with_visuals(db, job, video, transcript, visual_budget, job_id),
                     chunk_size=settings.CHUNK_SIZE,

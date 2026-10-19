@@ -23,6 +23,10 @@ class SearchAgentState(TypedDict):
     discovered_videos: list[dict]
     curated_videos: list[dict]
     search_queries_used: list[str]
+    # R3 / T-1.17.2.3: the planner's deliberate per-topic recency decision —
+    # {recency_weight: dominant|secondary|minimal, target_era, rationale}.
+    # A ranking input, never a filter.
+    temporal_profile: dict
 
 
 class ReportAgentState(TypedDict):
@@ -47,6 +51,10 @@ class KnowledgeAgentState(TypedDict):
     video_id: str
     video_title: str
     channel_name: str
+    # R3: `YYYY-MM-DD` publish date ("" when unknown) that relative time is
+    # anchored to, and the prompt-ready discussed-era clause ("" when unknown).
+    published_at: str
+    discussed_era: str
     # Full transcript text reconstructed from transcript_cache.segments_json.
     full_transcript_text: str
     # Token-budgeted slices of `full_transcript_text` fed to the map pass.

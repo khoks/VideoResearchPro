@@ -31,11 +31,16 @@ Channel type preferences (semantic, NOT a YouTube filter): {channel_type_filters
 
 {preferred_channels_section}
 
-Return a JSON object with exactly these two keys:
+Return a JSON object with exactly these three keys:
 
 {{
   "broad_queries": [ "query 1", "query 2", ... ],
-  "channel_keywords": [ "keyword 1", "keyword 2", ... ]
+  "channel_keywords": [ "keyword 1", "keyword 2", ... ],
+  "temporal_profile": {{
+    "recency_weight": "dominant" | "secondary" | "minimal",
+    "target_era": "<period the topic is about, e.g. '2024-2026' or 'Mughal period', or null>",
+    "rationale": "<one sentence>"
+  }}
 }}
 
 Rules for "broad_queries" (exactly 4-6 items):
@@ -64,6 +69,22 @@ appear in video titles or descriptions.
 in (English by default, but if the topic is clearly non-English, include \
 terms in that language too).
 
+Rules for "temporal_profile" — decide DELIBERATELY how time should weigh \
+in ranking for THIS topic (it is a ranking preference downstream, never a \
+filter):
+- "dominant": the topic moves fast (tooling, models, prices, current events, \
+anything where last year's answer is wrong this year). Newer material should \
+strongly outrank older among on-topic candidates.
+- "secondary": relevance and substance lead; publish date breaks ties and \
+keeps the corpus from being all one vintage. The default when unsure.
+- "minimal": the topic is evergreen or historical; foundational and \
+authoritative treatments beat recent ones regardless of age.
+- "target_era": the period the topic is ABOUT when that is specific (a \
+historical period, a named year or range, "the 2008 crisis"); null when the \
+topic is about the present or has no era.
+- If the user's guidance mentions recency, currency, "latest", "history", a \
+period or a year, let it decide.
+
 Return ONLY the JSON object, no commentary.
 """
 
@@ -86,12 +107,21 @@ Each video below is shown with metadata:
 - Duration
 - Views (view count on the video)
 - Likes (like count on the video)
-- Published (ISO 8601 publish date — more recent is usually better unless the topic calls for foundational content)
+- Published (ISO 8601 publish date — when the video was POSTED)
+- Era (only when the library has already dated this video's CONTENT: the \
+period it discusses, e.g. "discusses 2019–2021 (retrospective)". Absent for \
+videos the library has not seen; infer the discussed era from the title and \
+description for those)
+- Script (only when the title is not in Latin script — a language hint)
 - Subscribers (approximate subscriber count of the channel — a proxy for channel authority)
 - Source (how the video was discovered: "search" = broad topic search, "preferred_channel" = from a channel the user specifically wanted)
 
 Videos found:
 {video_list}
+
+{temporal_guidance}
+
+{language_guidance}
 
 Consider:
 - Relevance to the specific topic
@@ -103,7 +133,11 @@ channel with strong engagement is often a better signal than a huge channel \
 with a tangential video
 - Channel authority via subscriber count, but weight relevance higher than raw popularity
 - Video duration — prefer substantive content over shallow clickbait
-- Recency when the topic is fast-moving; favor older foundational videos for evergreen topics
+- Time, as the TEMPORAL PROFILE above directs: publish date says when a video \
+was made, the era says what period it is about, and a fast-moving topic \
+weights the first while a historical topic weights the second. Either way \
+this is a preference among on-topic candidates — never exclude a video for \
+its date alone
 - Diversity of perspectives across different channels
 
 Return a JSON array of video IDs for the top {num_videos} most relevant videos, ordered by relevance.

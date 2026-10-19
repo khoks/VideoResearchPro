@@ -119,6 +119,8 @@ UseCase = Literal[
     # Visual understanding (R1) — app/agents/visual_agent.py
     "visual_select_moments",
     "visual_describe_frame",
+    # Discussed-era extraction (R3 / S-1.17.2) — app/services/temporal_service.py
+    "temporal_scope_extract",
 ]
 
 # Use cases whose prompts carry IMAGES, not just text.
@@ -761,6 +763,35 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "text summary nothing downstream can catch it. Image tokens "
             "dominate the input cost, so the model-tier delta on the text "
             "half is a rounding error."
+        ),
+    ),
+    # --- Discussed-era extraction (R3 / S-1.17.2) ----------------------
+    "temporal_scope_extract": UseCaseInfo(
+        default_route="fast",
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
+        summary=(
+            "Per-document: which period does this source DISCUSS, as "
+            "distinct from when it was published? Returns strict JSON "
+            "{era_start, era_end, era_confidence, is_retrospective, "
+            "era_label} from the title, description, publish date and three "
+            "sampled transcript windows. Persisted on "
+            "documents.discussed_era_json and reused by every later job."
+        ),
+        typical_input_tokens=5_000,
+        p95_input_tokens=6_500,
+        typical_output_tokens=80,
+        min_context_recommended=16_384,
+        rationale=(
+            "Map-phase volume (one call per NEW document, then cached "
+            "forever) and a tiny structured output, so the economy tier "
+            "with reasoning OFF. Off is mandatory, not a preference: "
+            "max_completion_tokens includes reasoning tokens on OpenAI "
+            "models, and the call site caps at 400 — a thinking model "
+            "spends the whole budget thinking and returns nothing (the "
+            "D-052 trap, hit three times). Fail-soft at the call site: a "
+            "failed probe or call leaves the era unknown and the job "
+            "continues, which is why this use case is deliberately NOT in "
+            "llm_smoke.FEATURE_TO_USE_CASES."
         ),
     ),
     # --- Social-media candidate classification (S-1.5.3) ---------------

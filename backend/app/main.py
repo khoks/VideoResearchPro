@@ -30,6 +30,7 @@ from app.routers import (
     search,
     sessions,
     shelves,
+    tags,
     ws,
 )
 from app.services import chroma_service, search_service
@@ -129,6 +130,7 @@ app.include_router(author.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
 app.include_router(shelves.router, prefix="/api/v1")
+app.include_router(tags.router, prefix="/api/v1")
 app.include_router(qa.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
 app.include_router(reports.markdown_router, prefix="/api/v1")

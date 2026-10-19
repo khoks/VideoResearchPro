@@ -35,6 +35,20 @@ First task of N-002 (proportion-driven rendering for code-mixed speech).
   Bengali track (filed as S-1.11.11).
 - `tests/fixtures/code_mixing/` holds the labelled set and the LLM's cached
   answers; the suite scores both detectors without calling a provider.
+### Tags on documents (2026-10-19)
+
+Fourth PR of the organisation lane ([S-8.1.3](docs/initiatives.md#s-813--document-tags-per-tenant), PR [#257](https://github.com/khoks/VideoResearchPro/pull/257)).
+
+- **Per-reader tags.** `tags` + `taggings` (migration `e9f0a1b2c3d4`): stable ids,
+  so rename keeps every tagging and merge is one update; unique per reader,
+  case-insensitively; private to the reader even on shared documents.
+- **In the app.** Tag chips and a "+ Tag" picker on every library row (library,
+  channel page, shelf page); a Tag filter bar on the Library page with "Manage
+  tags" for rename, recolour, merge and delete; chips link to `/library?tag=`.
+- **API.** `/api/v1/tags`, `PUT/DELETE /library/videos/{id}/tags/{tag_id}`,
+  `?tag=` on the library and shelf listings, `tags` on every row.
+- **Fixed.** Popovers in card lists drew under the next card; the shared label
+  picker now portals to the page body.
 
 ### Report Markdown source; books built from it (2026-10-19, S-6.1.2 + S-6.1.1 remainder)
 

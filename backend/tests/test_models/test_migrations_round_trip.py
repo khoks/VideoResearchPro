@@ -33,6 +33,7 @@ LANE_MIGRATIONS = [
     ("c7d8e9f0a1b2", {"scheduled_runs"}),
     ("c2d3e4f5a6b7", {"notes"}),
     ("d8e9f0a1b2c3", {"shelves", "shelf_jobs"}),
+    ("e9f0a1b2c3d4", {"tags", "taggings"}),
     # S-8.2.1: the search index is created only when SQLite has FTS5 with the
     # trigram tokenizer; elsewhere the migration deliberately creates nothing.
     pytest.param(

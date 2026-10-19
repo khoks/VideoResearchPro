@@ -32,6 +32,7 @@ PR [#299](https://github.com/khoks/VideoResearchPro/pull/299). S-8.10.1, plan [m
 PR [#299](https://github.com/khoks/VideoResearchPro/pull/299). `POST /auth/register` returns the user without a token, and the
 frontend stored that missing token, so every new account landed on `/login`.
 Registration now signs in with the same credentials.
+
 ### Books carry numbered endnotes (2026-10-19, S-6.1.4)
 
 PR [#298](https://github.com/khoks/VideoResearchPro/pull/298). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).

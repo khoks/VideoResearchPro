@@ -1843,12 +1843,12 @@ Linked decision: D-074.
 - [x] Tests: `utils/batchExtract.ts` unit tests (quota cap, outcome classes, stop on quota, stop on request); aggregate gains `coverage.extractable` and example URLs (router test). The cache fingerprint now carries a payload version so rows written by older code recompute
 - [ ] ~~T-8.7.3.2 Concept graph panel reusing the E-8.9 graph component filtered to the channel~~ — *moved 2026-10-19 to [S-8.9.2](#s-892--graph-ui): the graph component does not exist until that story; it adds the channel-filtered view*
 
-#### S-8.7.4 🔵 Citation chips link to the channel page
-**PR:** TBD
+#### S-8.7.4 🟢 Citation chips link to the channel page
+**PR:** [#291](https://github.com/khoks/VideoResearchPro/pull/291) (merged 2026-10-19)
 **Filed 2026-10-19:** the part of T-8.7.1.2 that S-8.7.1 could not do. `Reference` has no `channel_id`, and adding it edits `qa_agent._chunk_to_reference`, a shared hot spot.
-- [ ] T-8.7.4.1 Add `channel_id` to video references in `_chunk_to_reference` (Chroma chunk metadata already carries it) and to `Reference` / `LibraryReference`
-- [ ] T-8.7.4.2 `CitationLink` renders the channel name as a link to `/library/channels/:id`
-**Sequencing:** Phase 2, with the other `qa_agent.py` edits ([build order](plans/build-order.md#shared-hot-spots-serialise-anything-that-touches-these)).
+**Scope-changed 2026-10-19:** built without touching `qa_agent.py` or `routers/qa.py` (E-7.1 is working there): the link is resolved at read time instead of stored on references.
+- [x] ~~T-8.7.4.1 Add `channel_id` to video references in `_chunk_to_reference`~~ — *replaced by `GET /api/v1/library/video-channels?video_ids=` (visibility-scoped, absent for unknown or invisible ids, ≤ 200 per call). Every existing answer gains the link; nothing stored changes*
+- [x] T-8.7.4.2 `CitationLink` names the channel of a visible YouTube citation as a link to `/library/channels/:id`; the video id comes from `video_id` or the URL; one batched request per screen (`utils/batchLoader.ts`, unit-tested). Live: three citations resolved in one call, two linked, the unknown one kept its plain label
 
 ### E-8.8 🟡 Reading room — the report as a native reading view (M8)
 

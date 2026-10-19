@@ -556,6 +556,20 @@ default `ensure_ascii=True`, so every Devanagari or Bengali original reached
 the composer as `\uXXXX` escapes. It is now plain text, and the budget
 estimates count the same text the composer reads.
 
+**Follow-up: R1 run 7, over-full originals.** Since D-090 sends one source
+per map call, the model often writes the whole quote form into `original`:
+the speech, then a transliteration line, then an English translation. The
+speech was real, but the added Latin lines pushed its alignment below 0.8.
+Run 7 dropped 68 of 176 originals this way, all from the Bengali source.
+`quote_fidelity.keepable` now keeps the lines in the source's own script and
+drops any parenthesised Latin gloss the speaker did not say (the caption's
+own "( Seaborn)" stays). It records the removed text as `original_stripped`.
+The reading must still pass the full check, so invented wording is never
+rescued. Re-verifying run 7's originals as the model wrote them, 66 of the 68
+are now kept (trimmed to the speech) and 2 stay dropped; the 141 kept before
+are unchanged. The map prompt now also says `original` holds only the
+speaker's words, because the report adds the transliteration and translation.
+
 ## Reproduce
 
 ```bash

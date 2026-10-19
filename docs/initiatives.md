@@ -1669,10 +1669,11 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 **Plan:** [`docs/plans/m7-channel-intelligence.md`](plans/m7-channel-intelligence.md)
 **Acceptance.** Opening a channel the user follows shows cadence, top topics (with the videos behind each), a keyword cloud and the user's questions about it; panels whose inputs are missing say what to do ("Extract knowledge for 12 more videos to populate topics") instead of showing nothing; a channel with 500 documents renders within two seconds from a cached aggregate.
 
-#### S-8.7.1 🔵 Channel detail page
-**PR:** TBD
-- [ ] T-8.7.1.1 `/library/channels/:id` route and page (header, subscribe / weight controls from [S-7.1.1](#s-711--make-source_weight-re-rank-retrieval), documents list via `GET /channels/{id}/videos`)
-- [ ] T-8.7.1.2 Links from `ChannelRow`, `VideoRow`, citation chips
+#### S-8.7.1 🟢 Channel detail page
+**PR:** [#237](https://github.com/khoks/VideoResearchPro/pull/237) (merged 2026-10-19)
+- [x] T-8.7.1.1 `/library/channels/:id` route and page: header, per-tenant subscribe / sync, a read-only **trust-weight slot** showing the caller's `source_weight` (the control itself stays with [S-7.1.1](#s-711--make-source_weight-re-rank-retrieval): a control that saved a number nothing reads yet would mislead), documents through `GET /library/videos?channel_id=` (same visible set as `GET /channels/{id}/videos`; the rows need `job_count` / `job_titles`)
+- [x] T-8.7.1.2 Links from `ChannelRow` and `VideoRow`. Citation chips are **not** linked: `Reference` has no `channel_id`, and adding it edits `qa_agent._chunk_to_reference` (a shared hot spot); one line there plus a `Link` in `CitationLink` when that file is free
+- [x] Found and fixed on the way: the Channels tab keyed Subscribe / Sync on a `channel.id` the API never sent (`/channels/undefined/...`); `ChannelResponse` now carries `id`, `url`, `source_weight`, `created_at`
 
 #### S-8.7.2 🔵 Intelligence aggregate endpoint
 **PR:** TBD

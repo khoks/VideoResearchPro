@@ -2056,7 +2056,7 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 ## D-068 — Curated source ranking v1: per-tenant trust weight re-ranks retrieval; perspective banding deferred (2026-10-18)
 
-**Status:** accepted. Taken by Claude under the user's 2026-10-18 directive to "take a wise decision around L4 and document its rationale"; the user set the goal, not the shape.
+**Status:** accepted; v1 shipped 2026-10-19 in PR [#287](https://github.com/khoks/VideoResearchPro/pull/287) and measured (T-7.1.1.5). The relevance clause of the pre-registered rule failed narrowly, so the formula is reopened as S-7.1.2 — see the amendment at the end of this entry. Taken by Claude under the user's 2026-10-18 directive to "take a wise decision around L4 and document its rationale"; the user set the goal, not the shape.
 
 **Context.** The product thesis is *curated, not balanced*, yet curation stops at approval: every approved source counts equally in retrieval. The audit of 2026-10-18 found that `channel_subscriptions.source_weight` (per-tenant since [D-065](#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)) is read by nothing, despite its docstring calling it "the trust score that re-ranks retrieval". Two shapes were on the table for [L4](feature-roadmap.md#l4--curated-source-ranking-): weighted retrieval, or perspective banding in the answer ("your trusted creators say X; others say Y").
 
@@ -2077,7 +2077,15 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **Consequences.** E-7.1 is sequenced after the R3/R4 batch lands, because both touch `qa_agent.py`. The `channel_subscription.py` docstring becomes true rather than being rewritten. Retrieval pool size triples for weighted queries; the cost is one Chroma call either way.
 
-**Linked initiatives / PRs.** I-7 / E-7.1 / S-7.1.1. Follows D-059, D-063, D-065.
+**Linked initiatives / PRs.** I-7 / E-7.1 / S-7.1.1 (PR [#287](https://github.com/khoks/VideoResearchPro/pull/287)), S-7.1.2. Follows D-059, D-063, D-065.
+
+**Amended 2026-10-19: measured, and it costs relevance at strong weights.** The formula above shipped unchanged in PR [#287](https://github.com/khoks/VideoResearchPro/pull/287) and was measured with the protocol pre-registered in [notes/2026-10-19-e71-trust-weighting-measurement.md](notes/2026-10-19-e71-trust-weighting-measurement.md): 10 questions, job and library Q&A, weights 2.0 on three channels and 0 on three others of the reference job's ten largest, three blind judges, three-lens claim verification.
+
+- **The mechanism works as specified.** Promoted channels went from 23% to 57% of the retrieved context, demoted ones from 10% to 0%, and no weighted chunk failed the raw threshold.
+- **It costs breadth, and judges noticed.** Distinct channels per answer fell from about 20 to 13. Mean relevance stayed level (8.53 vs 8.58), but 61% of non-tie verdicts preferred the unweighted answer against a 60% limit, almost all of it on library Q&A (21 to 7). Job Q&A, which also reads the report, slightly preferred weighting (15 to 13). Confirmed unsupported claims: ON 110, OFF 95.
+- **A weight of 0 excludes in practice.** Point 2's "can still surface when nothing else matches" did not happen once in 20 weighted answers: a 3× pool always holds enough other relevant chunks.
+
+Per the rule written before the run, the mechanism stays (it changes nothing until a user sets a weight), the result is recorded here, and the formula is reopened as **S-7.1.2** rather than tuned to pass: candidates are a per-channel share cap in the spirit of D-059's concentration cap, a softened transform (`distance / weight^α`, α < 1), and a true last-resort rule for low weights. Each is to be compared on the same questions and weights. E-7.2 (banding) stays deferred; this measurement is the evidence it was waiting for, and it says concentration, not ordering, is the problem to solve first.
 
 
 ## D-069 — Shipped-backend surfaces: ingest as a Library tab, Author Studio as one page, readiness as a gate mean (2026-10-19)

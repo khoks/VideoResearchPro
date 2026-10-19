@@ -60,6 +60,46 @@ If 1 or 2 fails, the implementation is wrong and is fixed before merging. If 3 o
 - The judges cannot know which sources the user trusts, so R measures whether weighting costs relevance, not whether it delivers what the user wanted; M1 is the evidence for the latter.
 - Ten questions per surface: direction, not effect size.
 
-## Results
+## Results (appended 2026-10-19; the rule above was not edited)
 
-*(appended after the run)*
+**Run.** 40 answers (10 questions × 2 surfaces × 2 arms), all HTTP 200, about 40 s each, through the production routes on copies of the dev database and Chroma store. Code under test: commit `6b402f3` (before master was merged into the branch; the arms differ only in weights either way). Judging: 60 blind verdicts, all parsed, fresh coin per judge per pair. Verification: 391 unique flagged claims × 3 verifier lenses; Gemini 3.1 Pro hit its rate limit and then its daily quota partway through. A claim whose two other lenses agreed was already decided 2 of 3; the 98 claims they split on were settled by a same-family substitute, Gemini 3.5 Flash at low reasoning, as the third lens (none left unresolved). That substitution is a deviation from the configured verifier list, not from the protocol, which names one verifier per family. Artifacts are in the session scratchpad; the compact figures are in `2026-10-19-e71-trust-weighting-results.json` next to this note.
+
+**M1 — mechanism.** Share of the context the answer was built from:
+
+| | Weights ON | Weights OFF |
+|---|---|---|
+| Promoted channels (weight 2.0), retrieved chunks | 57% | 23% |
+| Demoted channels (weight 0), retrieved chunks | 0% | 10% |
+| Promoted channels, cited references | 90% | 24% |
+| Demoted channels, cited references | 0% | 12% |
+| Distinct channels in the context, mean | 13.1 | 19.6 |
+
+The promoted share rose on 10 of 10 job questions and on every library question.
+
+**M2 — threshold guarantee.** 0 ON chunks over the raw threshold.
+
+**R — relevance and faithfulness** (1–10, mean over judges and pairs; preference counts are judge verdicts):
+
+| | Prefer ON / OFF / tie | Relevance ON / OFF | Faithfulness ON / OFF |
+|---|---|---|---|
+| All 20 pairs | 22 / 34 / 4 | 8.53 / 8.58 | 7.07 / 7.23 |
+| Job Q&A (reads the report too) | 15 / 13 / 2 | 8.63 / 8.27 | 6.83 / 7.00 |
+| Library Q&A | 7 / 21 / 2 | 8.43 / 8.90 | 7.30 / 7.47 |
+
+By judge, the share of non-tie verdicts favouring OFF was 55% (Claude Sonnet 5), 60% (GPT-5.5) and 69% (Gemini 3.1 Pro). The judges' stated reason, wherever they preferred OFF, was breadth: the unweighted answer "synthesises a wider range of sources".
+
+**V — confirmed unsupported claims.** ON 110, OFF 95 (flagged: ON 199, OFF 192; by surface, job ON 65 / OFF 56, library ON 45 / OFF 39). **Caveat:** the excerpts given to judges and verifiers carry the transcript text but not the publication dates the answer prompt receives as source metadata (D-072), so date claims are flagged in both arms. The comparison between arms stays fair; the absolute counts are inflated. As a secondary check outside the rule: confirmed claims that name a date or year, ON 104 / OFF 82; the rest, ON 6 / OFF 13.
+
+**Against the rule.**
+1. Mechanism — **met** (57% vs 23% promoted, 0% vs 10% demoted, 10/10 job questions).
+2. Threshold — **met** (0).
+3. Relevance — **not met.** Mean relevance is level (8.53 vs 8.58, inside the 0.5 margin), but 61% of non-tie verdicts favour OFF against a 60% limit. The loss is concentrated in library Q&A (75% OFF; relevance −0.47); job Q&A slightly favours ON.
+4. Faithfulness — **not met** (ON 110 vs OFF 95 + 2).
+
+**Outcome, per the rule:** weighting is recorded in D-068 as **costing relevance at these strengths**, narrowly overall and clearly on library Q&A. The mechanism ships, because no user's answers change until they set a weight. The formula is not tuned here; it is reopened as S-7.1.2 with this protocol, its questions and its weights fixed, so a revised formula is compared against the same baseline.
+
+**What the numbers say about the formula.**
+- **Strong weights concentrate the context.** Three channels at 2.0 took more than half of every answer's context and the number of distinct channels fell by a third. On a broad corpus, `distance / 2.0` lets a promoted chunk beat nearly every unpromoted one that is less than twice as far, which is most of the relevant pool.
+- **Weight 0 behaves as exclusion, not as "last resort".** No demoted chunk reached any of the 20 weighted answers. With a 3× pool there are always enough other relevant chunks, so the 0.05 floor never lets the source surface. D-068 intended a weight of 0 to sink a source "but still surface when nothing else matches"; on this corpus it never does. The channel page now says so.
+- **The report cushions job Q&A.** Job answers also read the report, which keeps breadth the re-rank removes; library answers have nothing else, and that is where judges preferred OFF.
+- The assignment was deliberately strong (2.0 and 0 on six of the ten largest channels). Milder weights were not tested.

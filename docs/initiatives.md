@@ -1617,18 +1617,19 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.4.2.2 Click-through recorded as an `audit_log` event so the feature can be measured
 - [ ] T-8.4.2.3 Hidden when `/health` reports the Q&A feature down
 
-### E-8.5 🔵 Notes — the user's own voice in the library (M5)
+### E-8.5 🟡 Notes — the user's own voice in the library (M5)
 
 **Scope.** Free-text Markdown notes on any entity (document, job, Q&A exchange, channel, knowledge artifact), private to the author, searchable, exportable, and **citable**: a note is retrieved alongside transcripts and cited as "you wrote this on <date>" with a 1.5× retrieval weight applied through the [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18) re-rank. Foundational for [E-3.3](#e-33--voice--personality-capture-domain-3): notes are the highest-density personality signal.
 **Plan:** [`docs/plans/m5-notes.md`](plans/m5-notes.md)
 **Acceptance.** A user adds a note to a document; the note appears inline under it and in the "Your notes" view; a library question whose answer the note bears on cites the note with its date and ranks it above an equally relevant transcript chunk; another tenant never sees or retrieves it; the user exports all notes as Markdown.
 
-#### S-8.5.1 🔵 Notes schema, REST and inline UI
-**PR:** TBD
-- [ ] T-8.5.1.1 `notes(id, tenant_id, target_type, target_id, selector_json, body_md, motivation, created_at, updated_at, deleted_at)` with index `(tenant_id, target_type, target_id)`; `target_type` closed set validated at the API layer; `selector_json` follows the W3C Web Annotation shape (`TextQuoteSelector` plus `start_seconds`) so a note can cite a transcript span with a `&t=` link exactly like a Q&A citation; `deleted_at` so exports can carry deletions
-- [ ] T-8.5.1.2 `GET/POST/PUT/DELETE /api/v1/notes`, `GET /api/v1/notes?target=document:<id>`; target existence checked through the tenant's visibility / ownership
-- [ ] T-8.5.1.3 "Add a note" control and inline note list on `VideoRow`, `JobDetailPage`, Q&A answer cards, `ChannelRow`, `VideoKnowledgePage`; plain textarea with Markdown preview (react-markdown is already a dependency)
-- [ ] T-8.5.1.4 Isolation tests; a note on a document the tenant cannot see is rejected
+#### S-8.5.1 🟢 Notes schema, REST and inline UI
+**PR:** [#243](https://github.com/khoks/VideoResearchPro/pull/243) — merged 2026-10-19.
+**Shipped as planned, with four calls made in the PR (not in the plan):** (1) a document note is keyed on the canonical `document_id` whichever id the caller sends — the shelf still carries the legacy `video_id`, the job page carries `document_id`, and both must be ONE note stream (the plan's open question 2, taken at its recommended default: a note on a document shows on every surface that shows the document); the response carries `target_video_id` so pre-[D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19) surfaces can match. (2) A target the tenant cannot see and a target that does not exist are the same 404, like the library Q&A delete. (3) `DELETE` is a soft delete only — the row stays with `deleted_at` so S-8.5.3's export can carry deletions and Echo keeps a signal the user wrote and withdrew; a hard purge is not offered. (4) Inline surfaces fetch the tenant's notes once per target type per page (`GET /notes?target_type=…`, capped at the server's 2000-row page) and each row selects its slice, rather than one request per row. No embedding and no `NOTE_RETRIEVAL_WEIGHT` yet (S-8.5.2); open question 1 (1.5 vs 1.0) is untouched.
+- [x] T-8.5.1.1 `notes(id, tenant_id, target_type, target_id, selector_json, body_md, motivation, created_at, updated_at, deleted_at)` with index `(tenant_id, target_type, target_id)`; `target_type` closed set validated at the API layer; `selector_json` follows the W3C Web Annotation shape (`TextQuoteSelector` plus `start_seconds`) so a note can cite a transcript span with a `&t=` link exactly like a Q&A citation; `deleted_at` so exports can carry deletions
+- [x] T-8.5.1.2 `GET/POST/PUT/DELETE /api/v1/notes`, `GET /api/v1/notes?target=document:<id>`; target existence checked through the tenant's visibility / ownership
+- [x] T-8.5.1.3 "Add a note" control and inline note list on `VideoRow`, `JobDetailPage`, Q&A answer cards, `ChannelRow`, `VideoKnowledgePage`; plain textarea with Markdown preview (react-markdown is already a dependency)
+- [x] T-8.5.1.4 Isolation tests; a note on a document the tenant cannot see is rejected (`tests/test_routers/test_notes.py`: every target type mine-vs-theirs, two-tenant isolation on every verb, soft delete, one note stream per document)
 
 #### S-8.5.2 🔵 Notes in retrieval and citations
 **PR:** TBD. **Sequenced after [E-7.1](#e-71--trust-weighted-retrieval-v1)**, which lands the `distance / weight` re-rank this story reuses, and after the R3/R4 batch that is rewriting `qa_agent.py`.

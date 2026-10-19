@@ -502,6 +502,45 @@ Revoke a source: deletes every row attributed to it for the caller. `{ "deleted_
 
 ---
 
+## Notes
+
+All `/notes` endpoints require auth. Backend: `backend/app/routers/notes.py`, service `backend/app/services/note_service.py` (M5 / S-8.5.1). A note is the user's own Markdown on something they can see; it is private to its tenant from the first row. The plan is [`plans/m5-notes.md`](plans/m5-notes.md).
+
+**Target types** (closed set, 422 otherwise): `document`, `job`, `qa_exchange`, `library_qa_exchange`, `qa_history_exchange`, `channel`, `knowledge_artifact`. **Motivations:** `commenting` (default), `highlighting`, `tagging`.
+
+**Target checks.** Every write resolves the target through the tenant's visibility (documents, knowledge artifacts and channels, per D-063 / D-065) or ownership (jobs and the three exchange tables). A target the tenant cannot see and a target that does not exist both answer `404 {"detail": "Target not found"}`. A `knowledge_artifact` target additionally requires that extraction has run on the document.
+
+**Document ids.** `document` and `knowledge_artifact` targets accept either the canonical `document_id` or the legacy YouTube `video_id`; the note is stored under `document_id`, so both forms address one note stream. Responses carry `target_video_id` for surfaces still keyed on the legacy id (goes away with D-070).
+
+### Note shape
+```json
+{
+  "id": "…", "target_type": "document", "target_id": "<document_id>",
+  "body_md": "**Bold** claim.", "motivation": "commenting",
+  "selector": {"type": "TextQuoteSelector", "exact": "…", "prefix": "…", "suffix": "…", "start_seconds": 83.5} | null,
+  "created_at": "2026-10-19T11:24:45.598818Z", "updated_at": "…", "deleted_at": null,
+  "target_label": "My video about tariffs", "target_video_id": "minevid0001"
+}
+```
+`selector` follows the W3C Web Annotation `TextQuoteSelector` plus `start_seconds` so a note can anchor to a transcript moment like a Q&A citation. Timestamps are UTC with an explicit offset. `target_label` is null once the target is gone (a deleted job); the note itself survives its target.
+
+### `GET /api/v1/notes`
+Query params: `target` (`<target_type>:<id>`, scopes to one target; 404 when that target is not visible, 422 when malformed), `target_type`, `q` (substring filter on the body), `include_deleted` (default false), `limit` (default 500, max 2000), `offset`. Newest first. Returns `{ "items": [...], "total": n, "limit": l, "offset": o }`.
+
+### `POST /api/v1/notes`
+Body `{ "target_type", "target_id", "body_md", "motivation"?, "selector"? }`. `body_md` is non-blank and at most 20,000 characters. 201 with the note.
+
+### `GET /api/v1/notes/{note_id}`
+404 for a missing, deleted or foreign note alike.
+
+### `PUT /api/v1/notes/{note_id}`
+Partial update: any of `body_md`, `motivation`, `selector` (`null` clears it). `created_at` never changes; `updated_at` does.
+
+### `DELETE /api/v1/notes/{note_id}`
+Soft delete: sets `deleted_at` and returns `{ "deleted": true, "deleted_at": "…" }`. The row stays (exports carry deletions); it leaves every live read and list, so a second delete is 404.
+
+---
+
 ## Admin
 
 ### `POST /api/v1/admin/restart`

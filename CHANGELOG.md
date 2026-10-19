@@ -46,6 +46,32 @@ S-8.8.1, the first story of the E-8.8 reading room
 - Found on the way: one stored report (`419e691d…`) was cut mid-tag by the
   writer, so the browser folds two headings into an attribute value. The
   reader cannot recover them; the fix belongs in the compose step.
+### Notes: schema, REST and the inline note control (S-8.5.1, 2026-10-19)
+
+The first text in the system written BY the user rather than ingested FOR
+them. Story [S-8.5.1](docs/initiatives.md#s-851--notes-schema-rest-and-inline-ui)
+of [E-8.5](docs/initiatives.md#e-85--notes--the-users-own-voice-in-the-library-m5),
+plan [`docs/plans/m5-notes.md`](docs/plans/m5-notes.md), PR [#243](https://github.com/khoks/VideoResearchPro/pull/243).
+
+- **Schema.** `notes(id, tenant_id, target_type, target_id, selector_json,
+  body_md, motivation, created_at, updated_at, deleted_at)` (migration
+  `c2d3e4f5a6b7`), W3C-shaped: a closed target set, an optional
+  `TextQuoteSelector` plus `start_seconds`, and a soft delete so exports can
+  carry deletions.
+- **API.** `GET/POST /api/v1/notes`, `GET/PUT/DELETE /api/v1/notes/{id}`,
+  `GET /api/v1/notes?target=document:<id>`. Every write checks the target
+  through the tenant's visibility or ownership; a foreign target and a missing
+  one are the same 404. Documents are addressed by either id and stored under
+  the canonical `document_id`, so one document has one note stream.
+- **UI.** "Add a note" and the inline note list on library source rows,
+  channel rows, the job page (the run and each of its videos), every Q&A
+  answer card, and the knowledge drawer. Plain textarea with a Markdown
+  preview; no editor dependency added.
+- **Tests.** `tests/test_routers/test_notes.py`: wiring, closed sets, selector
+  round-trip, every target type for its owner and for a stranger, two-tenant
+  isolation on every verb, soft delete, the note outliving its target.
+- Not yet: embedding, retrieval and citation (S-8.5.2, after E-7.1); the
+  `/notes` page and exports (S-8.5.3).
 ### Scheduler tick — the first scheduled work in the app (2026-10-19, S-8.3.1)
 
 PR [#238](https://github.com/khoks/VideoResearchPro/pull/238). Plan:

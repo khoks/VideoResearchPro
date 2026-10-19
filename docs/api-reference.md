@@ -361,6 +361,7 @@ Named, per-tenant collections of jobs (E-8.1 / M1; plan: [`docs/plans/m1-shelves
   "description": null,
   "color": "green",          // one of: default gray brown orange yellow green blue purple pink red
   "job_count": 3,
+  "job_ids": ["…", "…", "…"], // most recently added first; one cached listing answers "which shelves is this run on"
   "created_at": "…",
   "updated_at": "…"
 }
@@ -377,6 +378,9 @@ Body `{ "name", "description"?, "color"? }`. Returns 201 `ShelfResponse`. Pro+.
 ### `GET /api/v1/shelves/{shelf_id}`
 `ShelfDetailResponse`: the shelf plus `jobs: JobResponse[]`, most recently added first. Any tier.
 
+### `GET /api/v1/shelves/{shelf_id}/documents`
+The union of the documents selected by the shelf's jobs, each once, filtered through the caller's visibility (D-063). Takes the library listing's `search`, `language`, `channel_id`, `transcript_status`, `sort`, `limit`, `offset` and returns the same `LibraryVideoResponse[]` rows (with `job_count` / `job_titles` across all the caller's runs). **An empty shelf returns `[]`, never the whole library.** Any tier.
+
 ### `PUT /api/v1/shelves/{shelf_id}`
 Partial update: fields left out are untouched; `"description": null` clears it; renaming onto another shelf's name is a 409. Returns `ShelfResponse`. Pro+.
 
@@ -392,7 +396,7 @@ Put a job on the shelf. Idempotent: 200 with the (unchanged) `ShelfResponse` whe
 ### `GET /api/v1/jobs/{job_id}/shelves`
 Shelves the job sits on, A→Z. Any tier; the job must be the caller's.
 
-Deleting a job removes it from every shelf (an ORM cascade on `Job`, because SQLite does not enforce `ON DELETE CASCADE` without a pragma this app never sets). Still to come: `GET /shelves/{id}/documents` (S-8.1.2) and `POST /shelves/{id}/qa` (S-8.1.4).
+Deleting a job removes it from every shelf (an ORM cascade on `Job`, because SQLite does not enforce `ON DELETE CASCADE` without a pragma this app never sets). Still to come: `POST /shelves/{id}/qa` (S-8.1.4).
 
 ---
 

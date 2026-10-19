@@ -1527,12 +1527,13 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [x] T-8.1.1.4 Deleting a job removes its `shelf_jobs` rows; deleting a shelf never deletes jobs. The cascade is an ORM relationship on `Job`, not DB-level: SQLite here never enforces `ON DELETE CASCADE` (no `PRAGMA foreign_keys`)
 - [x] T-8.1.1.5 Router + service + isolation tests (every endpoint against a second real tenant: all 404); a parametrised Alembic upgrade → downgrade → upgrade round-trip test (`tests/test_models/test_migrations_round_trip.py`) that later lane migrations add a row to
 
-#### S-8.1.2 🔵 Shelves UI
-**PR:** TBD
-- [ ] T-8.1.2.1 Sidebar "Shelves" group listing the user's shelves (collapsed past 8, "Manage shelves" link)
-- [ ] T-8.1.2.2 "Add to shelf" control on `JobsListPage` cards and `JobDetailPage` header (multi-select, create inline)
-- [ ] T-8.1.2.3 `/shelves/:id` page: shelf header, its jobs, the union of their documents (reuses the library `VideoRow`), empty state
-- [ ] T-8.1.2.4 Frontend type-check and a Playwright smoke for create → add → open
+#### S-8.1.2 🟢 Shelves UI
+**PR:** [#250](https://github.com/khoks/VideoResearchPro/pull/250) (merged 2026-10-19)
+- [x] T-8.1.2.1 Sidebar "Shelves" group listing the user's shelves (first eight, then "Show all N"; "Manage shelves" link to a new `/shelves` page with create / edit / delete)
+- [x] T-8.1.2.2 "Add to shelf" control on `JobsListPage` cards and `JobDetailPage` header (checkbox per shelf, saved on toggle; inline "New shelf…" creates and adds). Shelf chips show where a run sits. `GET /shelves` now carries each shelf's `job_ids` so a page of cards costs one request, not one per card
+- [x] T-8.1.2.3 `/shelves/:id` page: header, its runs (remove for Pro+), the union of their documents through a new `GET /shelves/{id}/documents` (visibility-scoped, deduplicated, library filters; an empty shelf lists nothing). The library listing became a reusable `query_library_documents`, and the filter / pager UI a shared `DocumentsBrowser` used by the channel page too
+- [x] T-8.1.2.4 Type-check clean. **No Playwright runner exists in the frontend**, so the create → add → open smoke ran live instead: worktree backend on 8001 against a scratch SQLite, Vite on 3000, driven in the browser pane (create inline, tick a second run, open the shelf, recolour, chip on the job page, delete with runs intact). A checked-in Playwright suite is still open
+- [x] Label palette: ten named colours in `theme.ts` with light / dark pairs at ≥ 4.5:1, documented in `ui-design.md` §1.1
 
 #### S-8.1.3 🔵 Document tags (per tenant)
 **PR:** TBD

@@ -1,0 +1,334 @@
+"""Blind pairwise judging of Q&A answers, with 3-lens claim verification —
+the Q&A sibling of `judge_pair.py` (E-1.14 / D-055 method), first used for
+T-7.1.1.5 (trust weights on vs off, D-068).
+
+Input: the per-answer JSON files `measure_trust_weighting.py` writes
+(`q{NN}_{surface}_{arm}.json`, each with the answer and the chunks it was
+built from). For every (question, surface) pair:
+
+1. **Judge.** Each judge (one per model family) gets the question, both
+   answers under an independently coin-flipped A/B mapping, and the pooled,
+   shuffled, unlabelled excerpts both answers drew on. Scores relevance and
+   faithfulness 1-10, lists unsupported claims, states a preference.
+2. **Verify.** Every unsupported claim any judge lists is checked by three
+   verifier lenses (one per family) against the excerpts THAT answer was
+   built from (plus the report, for job Q&A, which reads it). Confirmed on a
+   2-of-3 majority. Judges alone are not evidence of absence or presence —
+   the R1 run showed three judges missing what a sweep found.
+3. **Summarise** M1 (promoted/demoted share of retrieved chunks and cited
+   references), M2 (ON chunks over the raw threshold), R and V, per the
+   pre-registered rule in docs/notes/2026-10-19-e71-trust-weighting-measurement.md.
+
+Usage (from backend/, main venv):
+    python scripts/judge_qa_pairs.py --runs <dir> --out <dir> --report <report.html>
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import random
+import re
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+BACKEND = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BACKEND))
+sys.path.insert(0, str(BACKEND / "scripts"))
+
+from dotenv import dotenv_values  # noqa: E402
+
+_MAIN_ENV = Path(os.environ.get("PRATIDHVANI_ENV_FILE", BACKEND / ".env"))
+
+JUDGES = "openai:gpt-5.5:medium,anthropic:claude-sonnet-5:medium,google:gemini-3.1-pro-preview:medium"
+VERIFIERS = "openai:gpt-5.5:low,anthropic:claude-sonnet-5:low,google:gemini-3.1-pro-preview:low"
+
+JUDGE_RUBRIC = """You are one of several independent judges comparing two answers, labelled A and B, to the same research question. Both were written by an assistant that could only use the excerpts below (transcript passages from a library of videos). You do not know how either answer was produced and must not guess. Judge the text against the question and the excerpts; do not reward length.
+
+Score each answer 1-10 on:
+1. relevance — how directly and completely it answers the question that was asked. Material that is accurate but beside the question lowers this score.
+2. faithfulness — whether every substantive claim is supported by the excerpts. Paraphrase is fine; facts, numbers, names or attributions found in no excerpt are not.
+
+Then list, for each answer, unsupported_claims: each sentence (quoted exactly) that makes a claim no excerpt supports. Empty list if none.
+
+Finally state preferred: "A", "B" or "tie" — which answer a researcher asking this question would rather receive, weighing relevance first and faithfulness second.
+
+Return ONLY a JSON object with keys: relevance_A, relevance_B, faithfulness_A, faithfulness_B, unsupported_claims_A (list of strings), unsupported_claims_B (list of strings), preferred, rationale (<= 100 words).
+"""
+
+VERIFY_PROMPT = """You are verifying ONE claim taken from an answer written by a research assistant. The answer was built only from the excerpts below{report_clause}. Decide whether that material supports the claim.
+
+A claim is SUPPORTED if the material states it or it follows directly from it; paraphrase, summarising and reasonable generalisation from several excerpts are fine. It is UNSUPPORTED if it adds facts, numbers, names, tools or attributions (who said what) that the material does not contain, or contradicts it.
+
+CLAIM:
+{claim}
+
+Return ONLY a JSON object: {{"supported": true or false, "evidence": "<excerpt label or a short quote, empty if none>", "reason": "<= 40 words"}}.
+
+===== EXCERPTS =====
+{excerpts}{report}
+"""
+
+
+def _load_keys() -> None:
+    for key, value in (dotenv_values(_MAIN_ENV) or {}).items():
+        if value is not None and (key.endswith("_API_KEY") or key.startswith("LLM_")):
+            os.environ[key] = value
+
+
+def _llm(spec: str, max_tokens: int):
+    from app.services.llm_routing import UseCaseConfig
+    from app.services.llm_service import _build_from_config
+
+    provider, model, reasoning = (spec.split(":") + ["medium"])[:3]
+    return _build_from_config(UseCaseConfig(provider, model, reasoning), temperature=1.0, max_tokens=max_tokens)
+
+
+def _invoke(spec: str, prompt: str, max_tokens: int, retries: int = 2) -> str:
+    from app.services.llm_service import response_text
+
+    last = None
+    for attempt in range(retries + 1):
+        try:
+            return response_text(_llm(spec, max_tokens).invoke(prompt))
+        except Exception as e:  # transient provider errors: retry, then give up on this call only
+            last = e
+            time.sleep(5 * (attempt + 1))
+    raise RuntimeError(f"{spec}: {type(last).__name__}: {last}")
+
+
+def _json(raw: str) -> dict:
+    start, end = raw.find("{"), raw.rfind("}")
+    if start < 0 or end < 0:
+        raise ValueError("no JSON object in output")
+    return json.loads(raw[start:end + 1])
+
+
+def _chunk_key(c: dict) -> tuple:
+    return (c.get("document_id"), c.get("chunk_index"), c.get("timestamp_start"))
+
+
+def _render(chunks: list[dict], labels: dict[tuple, str]) -> str:
+    parts = []
+    for c in chunks:
+        head = f"[{labels[_chunk_key(c)]}] \"{c.get('title', '')}\" by {c.get('channel_name') or 'unknown'}"
+        parts.append(head + "\n" + (c.get("text") or "").strip())
+    return "\n\n".join(parts)
+
+
+def _norm(claim: str) -> str:
+    return re.sub(r"\s+", " ", claim.strip().strip('"“”').lower())
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--runs", required=True)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--report", default=None, help="the job's report (HTML); job-Q&A verifiers see it")
+    ap.add_argument("--judges", default=JUDGES)
+    ap.add_argument("--verifiers", default=VERIFIERS)
+    ap.add_argument("--workers", type=int, default=6)
+    args = ap.parse_args()
+
+    _load_keys()
+    from judge_pair import html_to_text
+
+    runs, out = Path(args.runs), Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    meta = json.loads((runs / "meta.json").read_text(encoding="utf-8"))
+    promoted, demoted = set(meta["promoted"]), set(meta["demoted"])
+    promoted_names, demoted_names = set(meta["promoted"].values()), set(meta["demoted"].values())
+    threshold = float(meta["threshold"])
+    report_text = html_to_text(Path(args.report).read_text(encoding="utf-8", errors="replace")) if args.report else ""
+
+    pairs: dict[tuple, dict] = {}
+    for f in sorted(runs.glob("q*_*_*.json")):
+        rec = json.loads(f.read_text(encoding="utf-8"))
+        pairs.setdefault((rec["q"], rec["surface"]), {})[rec["arm"]] = rec
+    pairs = {k: v for k, v in pairs.items() if "on" in v and "off" in v and v["on"].get("answer") and v["off"].get("answer")}
+    print(f"{len(pairs)} complete pairs", flush=True)
+
+    judge_specs = [s.strip() for s in args.judges.split(",") if s.strip()]
+    verifier_specs = [s.strip() for s in args.verifiers.split(",") if s.strip()]
+    coin = random.Random(int.from_bytes(os.urandom(8), "big"))
+
+    # ---- 1. judge ---------------------------------------------------------
+    tasks = []
+    for (q, surface), arms in sorted(pairs.items()):
+        pooled: dict[tuple, dict] = {}
+        for arm in ("on", "off"):
+            for c in arms[arm]["chunks"]:
+                pooled.setdefault(_chunk_key(c), c)
+        pool = list(pooled.values())
+        random.Random(f"{q}-{surface}").shuffle(pool)
+        labels = {_chunk_key(c): f"E{i + 1}" for i, c in enumerate(pool)}
+        arms["_labels"], arms["_pool_text"] = labels, _render(pool, labels)
+        for spec in judge_specs:
+            flip = coin.random() < 0.5
+            tasks.append((q, surface, spec, ("off", "on") if flip else ("on", "off")))
+
+    def judge(task):
+        q, surface, spec, (a_arm, b_arm) = task
+        path = out / f"judge_q{q:02d}_{surface}_{re.sub(r'[^a-z0-9]+', '_', spec.lower())}.json"
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+        arms = pairs[(q, surface)]
+        prompt = (JUDGE_RUBRIC + "\n\nQUESTION:\n" + arms["on"]["question"]
+                  + "\n\n===== ANSWER A =====\n" + arms[a_arm]["answer"]
+                  + "\n\n===== ANSWER B =====\n" + arms[b_arm]["answer"]
+                  + "\n\n===== EXCERPTS =====\n" + arms["_pool_text"])
+        rec = {"q": q, "surface": surface, "judge": spec, "mapping": {"A": a_arm, "B": b_arm}}
+        t0 = time.time()
+        try:
+            raw = _invoke(spec, prompt, 16_000)
+            p = _json(raw)
+            rec.update(raw=raw, parsed=p, seconds=round(time.time() - t0, 1))
+            rec["unblinded"] = {
+                "relevance": {a_arm: p.get("relevance_A"), b_arm: p.get("relevance_B")},
+                "faithfulness": {a_arm: p.get("faithfulness_A"), b_arm: p.get("faithfulness_B")},
+                "unsupported": {a_arm: p.get("unsupported_claims_A") or [], b_arm: p.get("unsupported_claims_B") or []},
+                "preferred": {"A": a_arm, "B": b_arm}.get(p.get("preferred"), "tie"),
+            }
+        except Exception as e:
+            rec["error"] = f"{type(e).__name__}: {e}"[:500]
+        path.write_text(json.dumps(rec, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"judged q{q:02d} {surface} {spec}: {rec.get('unblinded', {}).get('preferred', rec.get('error', '?'))}", flush=True)
+        return rec
+
+    with ThreadPoolExecutor(max_workers=args.workers) as pool_ex:
+        verdicts = list(pool_ex.map(judge, tasks))
+
+    # ---- 2. verify --------------------------------------------------------
+    claims: dict[tuple, dict] = {}
+    for v in verdicts:
+        for arm, items in (v.get("unblinded", {}).get("unsupported") or {}).items():
+            for claim in items:
+                if isinstance(claim, str) and claim.strip():
+                    key = (v["q"], v["surface"], arm, _norm(claim))
+                    claims.setdefault(key, {"claim": claim.strip(), "flagged_by": []})["flagged_by"].append(v["judge"])
+
+    vtasks = [(key, spec) for key in claims for spec in verifier_specs]
+
+    def verify(task):
+        (q, surface, arm, norm), spec = task
+        slug = re.sub(r"[^a-z0-9]+", "_", norm)[:60]
+        path = out / f"verify_q{q:02d}_{surface}_{arm}_{abs(hash(norm)) % 10**8:08d}_{re.sub(r'[^a-z0-9]+', '_', spec.lower())}.json"
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+        arms = pairs[(q, surface)]
+        own = arms[arm]["chunks"]
+        report_clause, report = ("", "")
+        if surface == "job" and report_text:
+            report_clause = " and the research report that follows them"
+            report = "\n\n===== REPORT =====\n" + report_text
+        prompt = VERIFY_PROMPT.format(claim=claims[(q, surface, arm, norm)]["claim"], report_clause=report_clause,
+                                      excerpts=_render(own, arms["_labels"]), report=report)
+        rec = {"q": q, "surface": surface, "arm": arm, "claim_key": norm, "slug": slug, "verifier": spec}
+        try:
+            parsed = _json(_invoke(spec, prompt, 4_000))
+            rec["supported"] = bool(parsed.get("supported"))
+            rec["evidence"], rec["reason"] = parsed.get("evidence"), parsed.get("reason")
+        except Exception as e:
+            rec["error"] = f"{type(e).__name__}: {e}"[:500]
+        path.write_text(json.dumps(rec, indent=2, ensure_ascii=False), encoding="utf-8")
+        return rec
+
+    with ThreadPoolExecutor(max_workers=args.workers) as pool_ex:
+        checks = list(pool_ex.map(verify, vtasks))
+    print(f"verified {len(claims)} unique claims with {len(checks)} checks", flush=True)
+
+    by_claim: dict[tuple, list] = {}
+    for c in checks:
+        by_claim.setdefault((c["q"], c["surface"], c["arm"], c["claim_key"]), []).append(c)
+    claim_rows = []
+    for key, info in claims.items():
+        votes = [c["supported"] for c in by_claim.get(key, []) if "supported" in c]
+        unsupported_votes = sum(1 for s in votes if not s)
+        status = "confirmed" if unsupported_votes >= 2 else ("refuted" if len(votes) - unsupported_votes >= 2 else "unresolved")
+        claim_rows.append({"q": key[0], "surface": key[1], "arm": key[2], "claim": info["claim"],
+                           "flagged_by": info["flagged_by"], "votes_unsupported": unsupported_votes,
+                           "votes": len(votes), "status": status})
+
+    # ---- 3. summarise -----------------------------------------------------
+    def share(rec, ids, names):
+        chunks = rec["chunks"]
+        refs = rec.get("references") or []
+        cs = sum(1 for c in chunks if c.get("channel_id") in ids) / len(chunks) if chunks else 0.0
+        rs = sum(1 for r in refs if (r.get("channel_name") or "") in names) / len(refs) if refs else 0.0
+        return round(cs, 4), round(rs, 4)
+
+    per_pair = []
+    for (q, surface), arms in sorted(pairs.items()):
+        row = {"q": q, "surface": surface}
+        for arm in ("on", "off"):
+            pc, pr = share(arms[arm], promoted, promoted_names)
+            dc, dr = share(arms[arm], demoted, demoted_names)
+            row[arm] = {"promoted_chunks": pc, "demoted_chunks": dc, "promoted_refs": pr, "demoted_refs": dr,
+                        "n_chunks": len(arms[arm]["chunks"]), "n_refs": len(arms[arm].get("references") or []),
+                        "over_threshold": sum(1 for c in arms[arm]["chunks"] if float(c.get("distance") or 0) > threshold),
+                        "words": len(arms[arm]["answer"].split())}
+        per_pair.append(row)
+
+    ok = [v for v in verdicts if "unblinded" in v]
+
+    def mean(xs):
+        xs = [float(x) for x in xs if isinstance(x, (int, float))]
+        return round(sum(xs) / len(xs), 3) if xs else None
+
+    def m(field, arm, surface=None):
+        return mean(r[arm][field] for r in per_pair if surface in (None, r["surface"]))
+
+    prefs = [v["unblinded"]["preferred"] for v in ok]
+    non_tie = [p for p in prefs if p in ("on", "off")]
+    confirmed = {arm: sum(1 for c in claim_rows if c["arm"] == arm and c["status"] == "confirmed") for arm in ("on", "off")}
+    job_rows = [r for r in per_pair if r["surface"] == "job"]
+    summary = {
+        "pairs": len(per_pair),
+        "judges_ok": len(ok), "judges_total": len(verdicts),
+        "M1": {
+            "mean_promoted_chunk_share": {a: m("promoted_chunks", a) for a in ("on", "off")},
+            "mean_demoted_chunk_share": {a: m("demoted_chunks", a) for a in ("on", "off")},
+            "mean_promoted_ref_share": {a: m("promoted_refs", a) for a in ("on", "off")},
+            "mean_demoted_ref_share": {a: m("demoted_refs", a) for a in ("on", "off")},
+            "job_questions_where_promoted_share_rose": sum(1 for r in job_rows if r["on"]["promoted_chunks"] > r["off"]["promoted_chunks"]),
+            "job_questions": len(job_rows),
+            "by_surface": {s: {"promoted_chunks": {a: m("promoted_chunks", a, s) for a in ("on", "off")},
+                               "demoted_chunks": {a: m("demoted_chunks", a, s) for a in ("on", "off")}}
+                           for s in ("job", "library")},
+        },
+        "M2_on_chunks_over_threshold": sum(r["on"]["over_threshold"] for r in per_pair),
+        "R": {
+            "mean_relevance": {a: mean(v["unblinded"]["relevance"].get(a) for v in ok) for a in ("on", "off")},
+            "mean_faithfulness": {a: mean(v["unblinded"]["faithfulness"].get(a) for v in ok) for a in ("on", "off")},
+            "preferred": {k: prefs.count(k) for k in ("on", "off", "tie")},
+            "off_share_of_non_tie": round(non_tie.count("off") / len(non_tie), 3) if non_tie else None,
+            "by_surface": {s: {"mean_relevance": {a: mean(v["unblinded"]["relevance"].get(a) for v in ok if v["surface"] == s) for a in ("on", "off")},
+                               "preferred": {k: [v["unblinded"]["preferred"] for v in ok if v["surface"] == s].count(k) for k in ("on", "off", "tie")}}
+                           for s in ("job", "library")},
+        },
+        "V": {"unique_claims_flagged": {a: sum(1 for c in claim_rows if c["arm"] == a) for a in ("on", "off")},
+              "confirmed_unsupported": confirmed,
+              "unresolved": sum(1 for c in claim_rows if c["status"] == "unresolved")},
+        "mean_words": {a: m("words", a) for a in ("on", "off")},
+    }
+    r = summary["R"]
+    summary["rule"] = {
+        "1_mechanism": (summary["M1"]["mean_promoted_chunk_share"]["on"] > summary["M1"]["mean_promoted_chunk_share"]["off"]
+                        and summary["M1"]["mean_demoted_chunk_share"]["on"] < summary["M1"]["mean_demoted_chunk_share"]["off"]
+                        and summary["M1"]["job_questions_where_promoted_share_rose"] >= 7),
+        "2_threshold": summary["M2_on_chunks_over_threshold"] == 0,
+        "3_relevance": (r["mean_relevance"]["on"] is not None and r["mean_relevance"]["on"] >= r["mean_relevance"]["off"] - 0.5
+                        and (r["off_share_of_non_tie"] is None or r["off_share_of_non_tie"] <= 0.60)),
+        "4_faithfulness": confirmed["on"] <= confirmed["off"] + 2,
+    }
+    (out / "per_pair.json").write_text(json.dumps(per_pair, indent=2), encoding="utf-8")
+    (out / "claims.json").write_text(json.dumps(claim_rows, indent=2, ensure_ascii=False), encoding="utf-8")
+    (out / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(json.dumps(summary, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

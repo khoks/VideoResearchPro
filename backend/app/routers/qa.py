@@ -153,6 +153,12 @@ def _run_qa_and_persist(
     )
     output_length = request.output_length or job.output_length
 
+    # D-068 / S-7.1.1: THIS tenant's trust weights, resolved now (chunks are
+    # shared, so weights can never live on them). Empty = unweighted.
+    from app.services import subscription_service
+
+    channel_weights = subscription_service.channel_weights(db, current_user.id)
+
     usage: dict = {}
     with llm_service.byok_context(current_user.id, db):
         answer, references = run_qa_agent(
@@ -165,6 +171,7 @@ def _run_qa_and_persist(
             usage_out=usage,
             corpus_statistics=corpus_statistics,
             output_length=output_length,
+            channel_weights=channel_weights,
         )
 
     # T-5.5.5: record the consumed resource AFTER the agent succeeds.

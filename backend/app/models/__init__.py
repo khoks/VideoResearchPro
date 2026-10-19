@@ -11,6 +11,7 @@ from app.models.document import Document
 from app.models.document_visibility import DocumentVisibility
 from app.models.job import Job
 from app.models.job_video import JobVideo
+from app.models.job_template import JobTemplate, JobTemplateVersion
 from app.models.job_search_candidate import JobSearchCandidate
 from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.mfa_secret import MfaSecret
@@ -26,6 +27,8 @@ from app.models.scheduled_run import ScheduledRun
 from app.models.session import Session
 from app.models.shelf import Shelf
 from app.models.shelf_job import ShelfJob
+from app.models.tag import Tag
+from app.models.tagging import Tagging
 from app.models.transcript_cache import TranscriptCache
 from app.models.user import User
 from app.models.user_llm_override import UserLLMOverride
@@ -42,6 +45,8 @@ __all__ = [
     "DocumentVisibility",
     "Job",
     "JobVideo",
+    "JobTemplate",
+    "JobTemplateVersion",
     "JobSearchCandidate",
     "LibraryQAExchange",
     "MfaSecret",
@@ -58,6 +63,8 @@ __all__ = [
     "Session",
     "Shelf",
     "ShelfJob",
+    "Tag",
+    "Tagging",
     "TranscriptCache",
     "User",
     "UserLLMOverride",

@@ -21,8 +21,9 @@ from app.schemas.library_qa import (
     LibraryReference,
 )
 from app.schemas.library_video import LibrarySort, LibraryVideoResponse
+from app.schemas.tag import TagSummary
 from app.services import chroma_service
-from app.services import visibility_service
+from app.services import tag_service, visibility_service
 from app.services.llm_service import get_llm_for
 from app.sources.pdf.connector import (
     SOURCE_ID_PREFIX as PDF_SOURCE_ID_PREFIX,
@@ -268,6 +269,7 @@ def list_library_videos(
     language: str | None = None,
     channel_id: str | None = None,
     transcript_status: str | None = None,
+    tag: str | None = None,
     sort: LibrarySort = "newest",
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -295,6 +297,7 @@ def list_library_videos(
         language=language,
         channel_id=channel_id,
         transcript_status=transcript_status,
+        tag_id=tag,
         sort=sort,
         limit=limit,
         offset=offset,
@@ -309,6 +312,7 @@ def query_library_documents(
     language: str | None = None,
     channel_id: str | None = None,
     transcript_status: str | None = None,
+    tag_id: str | None = None,
     sort: LibrarySort = "newest",
     limit: int = 50,
     offset: int = 0,
@@ -351,6 +355,12 @@ def query_library_documents(
         q = q.filter(Document.channel_id == channel_id)
     if transcript_status:
         q = q.filter(Document.transcript_status == transcript_status)
+    if tag_id:
+        # The tenant is part of the subquery, so another reader's tag id
+        # matches nothing rather than revealing what they tagged.
+        q = q.filter(
+            Document.document_id.in_(tag_service.tagged_document_ids(db, tenant_id, tag_id))
+        )
 
     if sort == "newest":
         q = q.order_by(Document.created_at.desc())
@@ -396,6 +406,8 @@ def query_library_documents(
         .all()
     )
 
+    tags_by_document = tag_service.tags_for_documents(db, tenant_id, document_ids)
+
     # D-070: `id` is the primary key; `video_id` is the legacy YouTube id and
     # is None for every non-video source, as is `duration_seconds`.
     return [
@@ -415,9 +427,51 @@ def query_library_documents(
             transcript_word_count=v.transcript_word_count,
             job_count=counts_by_document.get(v.document_id, 0),
             job_titles=titles_by_document.get(v.document_id, []),
+            tags=tags_by_document.get(v.document_id, []),
         )
         for v in videos
     ]
+
+
+# ---------------------------------------------------------------------------
+# Tags on documents (S-8.1.3)
+# ---------------------------------------------------------------------------
+
+
+def _tag_and_document_or_404(db: Session, tenant_id: str, document_id: str, tag_id: str):
+    tag = tag_service.get_tag(db, tag_id, tenant_id)
+    if tag is None:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    if tag_service.visible_document(db, tenant_id, document_id) is None:
+        # Invisible and nonexistent read the same (D-063 existence-leak posture).
+        raise HTTPException(status_code=404, detail="Document not found")
+    return tag
+
+
+@router.put("/videos/{document_id}/tags/{tag_id}", response_model=list[TagSummary])
+def apply_document_tag(
+    document_id: str,
+    tag_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> list[TagSummary]:
+    """Tag a document the caller can see. Idempotent. Returns the caller's
+    tags now on the document, A→Z."""
+    tag = _tag_and_document_or_404(db, current_user.id, document_id, tag_id)
+    tag_service.apply_tag(db, tag, document_id)
+    return tag_service.tags_for_documents(db, current_user.id, [document_id]).get(document_id, [])
+
+
+@router.delete("/videos/{document_id}/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_document_tag(
+    document_id: str,
+    tag_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> None:
+    tag = _tag_and_document_or_404(db, current_user.id, document_id, tag_id)
+    if not tag_service.remove_tag(db, tag, document_id):
+        raise HTTPException(status_code=404, detail="Document does not carry this tag")
 
 
 # ---------------------------------------------------------------------------

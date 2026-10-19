@@ -15,10 +15,11 @@ Hindi grammar. That decomposes into two very different problems:
 2. **Romanised code-mixing** — Hinglish written in Latin script ("mujhe ye
    samajh nahi aaya"). Script analysis cannot see this, and statistical
    detectors are at their *weakest* here: the text is short, the grammar is
-   Hindi, and the character distribution is Latin. Rather than pretend a
-   library solves it, this is handled at the PROMPT layer: the model reads the
-   text and is instructed to emit English regardless of input language. The
-   model is genuinely better at this than any detector we could bolt on.
+   Hindi, and the character distribution is Latin. This module stays blind
+   to it on purpose (a test pins the gap). The prompt layer instructs every
+   model to emit English regardless of input language, and since S-1.16.2
+   `code_mixing_service` measures it per word with a lexicon tagger chosen
+   against an LLM pass on a hand-labelled set (D-080).
 
 So: exact where exactness is achievable, explicit about where it is not.
 Storing a per-video language label as if it were the truth was the original

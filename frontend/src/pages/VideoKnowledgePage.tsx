@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { useKnowledge, useExtractKnowledge } from '../hooks/useKnowledge';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
@@ -32,6 +33,7 @@ interface Props {
 export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
   const c = useColors();
   const s = useShadows();
+  const navigate = useNavigate();
   const { data: artifact, isLoading: isLoadingCached, isError } = useKnowledge(videoId);
   const extract = useExtractKnowledge(videoId);
   const knowledgeExtractionAvailable = useFeatureAvailable('knowledge_extraction');
@@ -130,6 +132,13 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: space['2'], flexShrink: 0 }}>
+            {displayed && !isBusy && (
+              // S-8.8.3: the drawer is the quick peek; the reading room has
+              // the outline, measure and print.
+              <Button size="sm" variant="primary" onClick={() => navigate(`/knowledge/${videoId}`)}>
+                Open in reader
+              </Button>
+            )}
             {displayed && !isBusy && (
               <Button
                 size="sm"

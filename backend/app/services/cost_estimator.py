@@ -57,6 +57,10 @@ class UseCaseEstimate:
     cost_usd: float | None
     pricing_known: bool
     pricing_note: str = ""
+    # S-1.14.7: the same workload on the registry default, so the settings
+    # page can show what a choice costs relative to the measured default.
+    default_model: str = ""
+    default_cost_usd: float | None = None
 
 
 def _map_budget(model: str) -> int:
@@ -130,6 +134,14 @@ def _workload(use_case: str, model: str) -> tuple[int, int, int]:
     return 0, 0, 0
 
 
+def _cost(model: str, calls: int, in_tok: int, out_tok: int) -> float | None:
+    """Benchmark cost of one use case's workload on ``model``; 0.0 when the
+    benchmark does not exercise it, None when the model has no pricing."""
+    if not calls:
+        return 0.0
+    return estimate_call_cost(model, in_tok, out_tok, in_tok // calls)
+
+
 def estimate(overrides: dict[str, UseCaseConfig] | None = None) -> dict:
     """Estimate benchmark cost per use case under ``overrides`` (missing
     entries use the currently-effective config)."""
@@ -141,11 +153,12 @@ def estimate(overrides: dict[str, UseCaseConfig] | None = None) -> dict:
     for use_case in USE_CASE_REGISTRY:
         cfg = overrides.get(use_case) or resolve_config(use_case)
         calls, in_tok, out_tok = _workload(use_case, cfg.model)
-        per_call_input = in_tok // calls if calls else 0
-        cost = (
-            estimate_call_cost(cfg.model, in_tok, out_tok, per_call_input)
-            if calls
-            else 0.0
+        cost = _cost(cfg.model, calls, in_tok, out_tok)
+        default_model = USE_CASE_REGISTRY[use_case].default_config.model
+        default_cost = (
+            cost
+            if default_model == cfg.model
+            else _cost(default_model, *_workload(use_case, default_model))
         )
         p = pricing_for(cfg.model)
         known = p is not None
@@ -163,6 +176,10 @@ def estimate(overrides: dict[str, UseCaseConfig] | None = None) -> dict:
                 cost_usd=round(cost, 4) if cost is not None else None,
                 pricing_known=known,
                 pricing_note=p.note if p else "no published pricing",
+                default_model=default_model,
+                default_cost_usd=(
+                    round(default_cost, 4) if default_cost is not None else None
+                ),
             )
         )
 

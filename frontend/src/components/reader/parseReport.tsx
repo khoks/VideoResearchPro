@@ -42,6 +42,13 @@ export interface ReportCitation {
   seconds: number | null;
   /** The anchor's visible text, usually an `mm:ss` stamp. */
   label: string;
+  /**
+   * Text of the enclosing blocks, nearest first (at most two: the `<p>` and,
+   * when it sits in one, the `<li>` / cell around it). Pre-S-1.14.9 reports
+   * carry no URL on their anchors, so the reader resolves the source by
+   * finding a known title or channel in this text (S-8.8.2).
+   */
+  contexts: string[];
 }
 
 export interface ParseReportOptions {
@@ -68,6 +75,9 @@ const BLOCK_TAGS = new Set([
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'table', 'blockquote',
   'pre', 'figure', 'hr', 'dl',
 ]);
+const CONTEXT_TAGS = new Set(['p', 'li', 'td', 'th', 'dd', 'blockquote', 'figcaption']);
+const CONTEXT_STOP = new Set(['section', 'article', 'div', 'table', 'ul', 'ol', 'body']);
+const CONTEXT_MAX_CHARS = 800;
 const DROP_CAP_MIN_CHARS = 120;
 const NO_DROP_CAP_PARENTS = new Set(['li', 'td', 'th', 'blockquote', 'figcaption']);
 
@@ -81,7 +91,26 @@ function normalise(text: string): string {
   return text.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
-export function parseCitationHref(href: string, label: string, index: number): ReportCitation | null {
+function contextsOf(node: Element): string[] {
+  const out: string[] = [];
+  let cur = node.parent;
+  while (cur instanceof Element && out.length < 2) {
+    if (CONTEXT_TAGS.has(cur.name)) {
+      out.push(textOf(cur).replace(/\s+/g, ' ').trim().slice(0, CONTEXT_MAX_CHARS));
+    } else if (CONTEXT_STOP.has(cur.name) && out.length > 0) {
+      break;
+    }
+    cur = cur.parent;
+  }
+  return out;
+}
+
+export function parseCitationHref(
+  href: string,
+  label: string,
+  index: number,
+  contexts: string[] = [],
+): ReportCitation | null {
   const t = CITATION_HREF.exec(href);
   if (!t) return null;
   const absolute = ABSOLUTE_URL.test(href) && !GARBAGE_URL.test(href);
@@ -91,6 +120,7 @@ export function parseCitationHref(href: string, label: string, index: number): R
     videoId: absolute ? (YOUTUBE_ID.exec(href)?.[1] ?? null) : null,
     seconds: Number(t[1]),
     label: label.trim() || `${t[1]}s`,
+    contexts,
   };
 }
 
@@ -143,7 +173,12 @@ export function parseReportHtml(cleanHtml: string, opts: ParseReportOptions = {}
         const firstBlock = children.findIndex((n) => n instanceof Element && BLOCK_TAGS.has(n.name));
         const inline = firstBlock === -1 ? children : children.slice(0, firstBlock);
         const rest = firstBlock === -1 ? [] : children.slice(firstBlock);
-        const citation = parseCitationHref(href, inline.map(textOf).join(''), citations.length + 1);
+        const citation = parseCitationHref(
+          href,
+          inline.map(textOf).join(''),
+          citations.length + 1,
+          CITATION_HREF.test(href) ? contextsOf(domNode) : [],
+        );
         if (citation) {
           citations.push(citation);
           return (

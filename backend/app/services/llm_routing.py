@@ -121,6 +121,8 @@ UseCase = Literal[
     "visual_describe_frame",
     # Discussed-era extraction (R3 / S-1.17.2) — app/services/temporal_service.py
     "temporal_scope_extract",
+    # Code-mixed speech (R5 / S-1.16.2) — app/services/code_mixing_service.py
+    "code_mixing_detect",
 ]
 
 # Use cases whose prompts carry IMAGES, not just text.
@@ -140,7 +142,7 @@ VISION_USE_CASES: frozenset[str] = frozenset({"visual_describe_frame"})
 
 # Models known to accept image inputs. Used to WARN on a misconfiguration,
 # never to block one — same fail-soft rule as the rest of this module
-# (D-036): an operator pointing a vision use case at an unlisted model gets
+# (D-067): an operator pointing a vision use case at an unlisted model gets
 # a loud log line, not a dead app, because this list will always lag new
 # model releases.
 VISION_CAPABLE_MODELS: frozenset[str] = frozenset({
@@ -159,6 +161,17 @@ def is_vision_use_case(use_case: str) -> bool:
     return use_case in VISION_USE_CASES
 
 
+def vision_choice_unverified(use_case: str, cfg: "UseCaseConfig") -> bool:
+    """True when a vision use case resolves to a non-local model that is not
+    on ``VISION_CAPABLE_MODELS``. Shared by the startup log line and the
+    settings-page warning (``assess_choice``)."""
+    return (
+        is_vision_use_case(use_case)
+        and cfg.provider != "local"
+        and cfg.model not in VISION_CAPABLE_MODELS
+    )
+
+
 def warn_if_not_vision_capable(use_case: str, cfg: "UseCaseConfig") -> bool:
     """Log when a vision use case resolves to a model we don't know to be
     multimodal. Returns True when the pairing looks safe.
@@ -167,11 +180,7 @@ def warn_if_not_vision_capable(use_case: str, cfg: "UseCaseConfig") -> bool:
     what an operator has loaded into LM Studio, and refusing to run would be
     worse than letting them find out.
     """
-    if not is_vision_use_case(use_case):
-        return True
-    if cfg.provider == "local":
-        return True
-    if cfg.model in VISION_CAPABLE_MODELS:
+    if not vision_choice_unverified(use_case, cfg):
         return True
     logger.warning(
         "Use case %r sends images but resolved to %s:%s, which is not in "
@@ -215,6 +224,138 @@ class UseCaseConfig:
         return f"{self.provider}:{self.model}:{self.reasoning}"
 
 
+# ---------------------------------------------------------------------------
+# Measured guidance (S-1.14.7)
+# ---------------------------------------------------------------------------
+#
+# E-1.14 measured, per use case, how much quality a tier gives up on the real
+# corpus (D-055 → D-062, D-073). Those verdicts lived only in decisions.md,
+# so the per-user override page offered a raw model picker. ``guidance``
+# carries them to the user: what was measured against the flagship tier,
+# what breaks on a downgrade, and which models measured unacceptable.
+#
+# Rules for writing an entry:
+# * ``measured`` only when THIS use case's own output was graded. A use case
+#   that merely sat inside a graded chain, or moved tier alongside one that
+#   was graded, is ``unmeasured`` with a ``note`` saying so.
+# * A ``ModelVerdict`` cites the decision that measured it, which may differ
+#   from the entry's decision (a measured failure can exist for a use case
+#   whose quality delta is unmeasured).
+# * Advisory, never enforced: the settings page warns, it does not refuse
+#   (same fail-soft rule as VISION_CAPABLE_MODELS).
+
+GuidanceStatus = Literal["measured", "unmeasured"]
+VerdictKind = Literal["unacceptable", "weaker"]
+
+# Every level except ``off``. A verdict scoped to these covers "reasoning on"
+# whatever the level is called — ``minimal`` remaps to ``low`` on gpt-5.x.
+_REASONING_ON: tuple[str, ...] = ("minimal", "low", "medium", "high", "auto")
+
+
+@dataclass(frozen=True)
+class ModelVerdict:
+    """A measured verdict on one model for one use case.
+
+    ``unacceptable`` means the measurement found unusable output (empty,
+    unparseable, or substantively wrong at a rate nobody would accept).
+    ``weaker`` means measurably worse than the default on the grading the
+    decision used, but not unusable.
+    """
+
+    model: str
+    verdict: VerdictKind
+    why: str
+    decision_id: str
+    # Reasoning levels the verdict covers; empty = every level.
+    reasoning: tuple[str, ...] = ()
+
+    def applies_to(self, cfg: "UseCaseConfig") -> bool:
+        if cfg.model != self.model:
+            return False
+        return not self.reasoning or cfg.reasoning in self.reasoning
+
+    def as_dict(self) -> dict:
+        return {
+            "model": self.model,
+            "verdict": self.verdict,
+            "why": self.why,
+            "decision_id": self.decision_id,
+            "reasoning": list(self.reasoning),
+        }
+
+
+@dataclass(frozen=True)
+class UseCaseGuidance:
+    """What the measurements say about choosing a model for a use case.
+
+    ``measured`` entries carry ``decision_id`` + ``decided_on`` (ISO date)
+    and the two texts the settings page shows beside the controls:
+    ``flagship_delta`` (the measured gap to the flagship or max-effort tier)
+    and ``downgrade_risk`` (what fails on a cheaper choice). ``unmeasured``
+    entries carry no ``decision_id``; ``note`` says what evidence exists, if
+    any, and ``related_decisions`` points at it.
+    """
+
+    status: GuidanceStatus
+    decision_id: str | None = None
+    decided_on: str | None = None
+    flagship_delta: str = ""
+    downgrade_risk: str = ""
+    measured_cost: str = ""
+    model_verdicts: tuple[ModelVerdict, ...] = ()
+    related_decisions: tuple[str, ...] = ()
+    note: str = ""
+
+    def as_dict(self) -> dict:
+        return {
+            "status": self.status,
+            "decision_id": self.decision_id,
+            "decided_on": self.decided_on,
+            "flagship_delta": self.flagship_delta,
+            "downgrade_risk": self.downgrade_risk,
+            "measured_cost": self.measured_cost,
+            "model_verdicts": [v.as_dict() for v in self.model_verdicts],
+            "related_decisions": list(self.related_decisions),
+            "note": self.note,
+        }
+
+
+def _unmeasured(
+    note: str,
+    *,
+    related: tuple[str, ...] = (),
+    verdicts: tuple[ModelVerdict, ...] = (),
+) -> UseCaseGuidance:
+    return UseCaseGuidance(
+        status="unmeasured",
+        note=note,
+        related_decisions=related,
+        model_verdicts=verdicts,
+    )
+
+
+# Shared verdicts — one measurement, several call sites.
+
+# D-052 amendment: live on qa_refine_context, then applied to every mini site.
+_MINI_REASONING_EMPTY = ModelVerdict(
+    model="gpt-5.4-mini",
+    verdict="unacceptable",
+    reasoning=_REASONING_ON,
+    why=(
+        "With reasoning on, gpt-5.4-mini spent its completion budget thinking "
+        "and returned empty output (live, 2026-07-29). Run it with reasoning off."
+    ),
+    decision_id="D-052",
+)
+
+# Moved with the volume tier (D-057) on map-batch evidence alone.
+_VOLUME_TIER_NOTE = (
+    "Moved from gpt-5.4-nano to gpt-5.6-luna with the rest of the volume tier "
+    "(D-057, same price) on map-extraction evidence; this function's own "
+    "output has not been graded."
+)
+
+
 @dataclass(frozen=True)
 class UseCaseInfo:
     """Registry entry: default config + sizing metadata + rationale.
@@ -222,6 +363,9 @@ class UseCaseInfo:
     The ``default_route`` field is kept for back-compat introspection and
     for the legacy ``LLM_ROUTE_OVERRIDES`` knob. New code reads
     ``default_config`` instead.
+
+    ``guidance`` is the user-facing summary of the measurements behind the
+    default (S-1.14.7); ``rationale`` stays the engineer-facing history.
     """
 
     default_route: Route
@@ -232,6 +376,7 @@ class UseCaseInfo:
     typical_output_tokens: int
     min_context_recommended: int
     rationale: str
+    guidance: UseCaseGuidance
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +540,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "with reasoning off is cheap and fast. Safe to route to local "
             "(any instruct model ≥7B handles this cleanly)."
         ),
+        guidance=_unmeasured(_VOLUME_TIER_NOTE, related=("D-057",)),
     ),
     "qa_sub_query_expansion": UseCaseInfo(
         default_route="fast",
@@ -411,6 +557,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "Short in, short out. gpt-5.4-nano is more than sufficient. "
             "Candidate for local routing if retrieval recall is acceptable."
         ),
+        guidance=_unmeasured(_VOLUME_TIER_NOTE, related=("D-057",)),
     ),
     "qa_refine_context": UseCaseInfo(
         default_route="fast",
@@ -428,6 +575,13 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "Feeds the final answer — compression quality matters. Flagship "
             "model with low reasoning keeps coherence over long input "
             "without burning excessive thinking tokens."
+        ),
+        guidance=_unmeasured(
+            "Graded only as part of the whole Q&A chain in D-055 (5.8 vs 8.5 "
+            "and 7.2 vs 7.7 against a max-effort challenger); how much of that "
+            "gap belongs to this compression step was not isolated.",
+            related=("D-055", "D-052"),
+            verdicts=(_MINI_REASONING_EMPTY,),
         ),
     ),
     "qa_formulate_answer": UseCaseInfo(
@@ -451,6 +605,25 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "instead of explaining mechanism. The gap was synthesis depth, "
             "not budget; measured output stayed under the old 4,500 cap."
         ),
+        guidance=UseCaseGuidance(
+            status="measured",
+            decision_id="D-056",
+            decided_on="2026-07-30",
+            flagship_delta=(
+                "The whole Q&A chain against Claude Fable 5 at max effort on "
+                "the 200-video reference job: 5.8 vs 8.5 on one question, 7.2 "
+                "vs 7.7 on the other. The default won citation hygiene, 8 vs "
+                "6: every citation resolved to a seekable timestamp. Measured "
+                "at low reasoning; not re-judged since the move to medium."
+            ),
+            downgrade_risk=(
+                "At low reasoning, judges scored completeness 4/10 (it "
+                "answered one half of a two-part question) and synthesis "
+                "4/10: sources listed one after another instead of explained, "
+                "'an annotated bibliography'."
+            ),
+            related_decisions=("D-055",),
+        ),
     ),
     "qa_extract_references": UseCaseInfo(
         default_route="primary",
@@ -468,6 +641,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "reasoning models often violate schema during internal "
             "thinking. gpt-5.4-nano + strict schema is more reliable."
         ),
+        guidance=_unmeasured(_VOLUME_TIER_NOTE, related=("D-057",)),
     ),
     # --- Library-wide Q&A ----------------------------------------------
     "library_qa_clarification": UseCaseInfo(
@@ -482,6 +656,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         typical_output_tokens=200,
         min_context_recommended=2048,
         rationale="Same characteristics as qa_clarification.",
+        guidance=_unmeasured(_VOLUME_TIER_NOTE, related=("D-057",)),
     ),
     "library_qa_refine_context": UseCaseInfo(
         default_route="fast",
@@ -495,6 +670,11 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         typical_output_tokens=2_000,
         min_context_recommended=65_536,
         rationale="Same reasoning as qa_refine_context.",
+        guidance=_unmeasured(
+            "The library path was not part of any quality run.",
+            related=("D-052",),
+            verdicts=(_MINI_REASONING_EMPTY,),
+        ),
     ),
     "library_qa_formulate_answer": UseCaseInfo(
         default_route="primary",
@@ -505,6 +685,12 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         typical_output_tokens=3_000,
         min_context_recommended=32_768,
         rationale="End-of-pipeline output; flagship + medium reasoning.",
+        guidance=_unmeasured(
+            "Shares the job answer's length policy and moved to medium "
+            "reasoning with it on the job path's evidence (D-056); the "
+            "library answer itself has not been graded.",
+            related=("D-055", "D-056"),
+        ),
     ),
     # --- Q&A History (Personal Wiki meta-chat) -------------------------
     "qa_history_refine_context": UseCaseInfo(
@@ -525,6 +711,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "reasoning is sufficient. Flip to local if you want to cut "
             "per-turn latency."
         ),
+        guidance=_unmeasured(_VOLUME_TIER_NOTE, related=("D-057",)),
     ),
     "qa_history_formulate_answer": UseCaseInfo(
         default_route="primary",
@@ -540,6 +727,11 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         rationale=(
             "User-facing synthesis; citations must be grounded. Flagship "
             "+ medium reasoning."
+        ),
+        guidance=_unmeasured(
+            "Kept on gpt-5.5 pending a dedicated quality pass (D-053) that "
+            "has not run yet.",
+            related=("D-053",),
         ),
     ),
     # --- Per-video Knowledge extraction --------------------------------
@@ -560,6 +752,11 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "Reasoning OFF + strict schema — reasoning mode often violates "
             "schema during internal thinking."
         ),
+        guidance=_unmeasured(
+            "Graded only inside the knowledge chain in D-055, where judges "
+            "traced the gap to the synthesis step. " + _VOLUME_TIER_NOTE,
+            related=("D-055", "D-057"),
+        ),
     ),
     "knowledge_synthesize_report": UseCaseInfo(
         default_route="primary",
@@ -577,6 +774,23 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "Long user-facing output (Wikipedia-paragraph style). "
             "Flagship + medium reasoning. Consider anthropic:claude-opus-4-5 "
             "for higher prose quality."
+        ),
+        guidance=UseCaseGuidance(
+            status="measured",
+            decision_id="D-055",
+            decided_on="2026-07-29",
+            flagship_delta=(
+                "The knowledge chain against Claude Fable 5 at max effort on "
+                "identical input: 5.8 vs 9.0 on a short video, 7.0 vs 8.4 on "
+                "a long one. Signal density scored 5 vs 9 and 4 vs 9. Measured "
+                "against the report production had stored; not re-judged "
+                "since."
+            ),
+            downgrade_risk=(
+                "This is where model tier mattered regardless of pipeline "
+                "fixes: the weaker report left speakers unnamed and dropped "
+                "the quantitative findings the challenger kept."
+            ),
         ),
     ),
     # --- Topic search --------------------------------------------------
@@ -596,6 +810,23 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "downstream search result). Low reasoning helps produce "
             "diverse, complementary queries."
         ),
+        guidance=UseCaseGuidance(
+            status="measured",
+            decision_id="D-055",
+            decided_on="2026-07-29",
+            flagship_delta=(
+                "Against Claude Fable 5 at max effort on identical input: 5.6 "
+                "vs 7.8. Measured on gpt-5.4-nano; the slot moved to "
+                "gpt-5.6-luna (D-057) and has not been re-judged."
+            ),
+            downgrade_risk=(
+                "Already on the cheapest tier, and the measured gap points "
+                "upward: the plan decides what every later search can find, "
+                "so a weaker plan narrows the whole corpus. One call per job, "
+                "so a stronger model here costs cents."
+            ),
+            related_decisions=("D-057",),
+        ),
     ),
     "search_rank_and_curate": UseCaseInfo(
         default_route="primary",
@@ -612,6 +843,15 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "This is the single biggest reasoning-mode win in the app. "
             "Explicit step-by-step scoring + dedup is exactly what "
             "reasoning was built for."
+        ),
+        guidance=_unmeasured(
+            "No head-to-head yet: D-055 could not replay ranking because the "
+            "rejected candidates were not stored. An audit graded the picks "
+            "6.5/10, and the model did not reliably follow preferred-channel "
+            "instructions, so D-059 now enforces those rules in code after "
+            "ranking. The stored candidate pool (S-1.14.6) makes a re-rank "
+            "comparison possible; it has not been run.",
+            related=("D-055", "D-059"),
         ),
     ),
     # --- Report generation (map-reduce over transcripts) ---------------
@@ -636,6 +876,54 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "Reasoning OFF is mandatory at this volume — thinking tokens "
             "dominate cost otherwise. Good candidate for local routing."
         ),
+        guidance=UseCaseGuidance(
+            status="measured",
+            decision_id="D-057",
+            decided_on="2026-07-30",
+            flagship_delta=(
+                "With the extraction ceiling lifted (D-060), gpt-5.6-luna "
+                "extracted 3,233 items covering 189 of 200 videos: about 55% "
+                "of a max-effort control's 5,861 items (D-061). On two real "
+                "120K-token batches it yielded 1.6-2x gpt-5.4-nano's items "
+                "with exact attribution (25 titles for 25 videos)."
+            ),
+            downgrade_risk=(
+                "The report can only contain what this step extracts; "
+                "anything it misses never reaches a later stage. gpt-5.4-nano "
+                "wrote 52 title variants for 25 videos, which splits "
+                "citations, and returned unparseable JSON on one of two "
+                "batches, which forces a retry at double cost."
+            ),
+            measured_cost=(
+                "Per 120K-token batch luna cost $0.042-0.049 against "
+                "gpt-5.4-nano's $0.042-0.046. Lifting the extraction ceiling "
+                "to 0.40 added about $0.34 per 200-video job (D-060)."
+            ),
+            model_verdicts=(
+                ModelVerdict(
+                    model="gpt-5.4-nano",
+                    verdict="unacceptable",
+                    why=(
+                        "Unparseable JSON on one of two measured batches, and "
+                        "52 title variants for 25 videos on the other."
+                    ),
+                    decision_id="D-057",
+                ),
+                ModelVerdict(
+                    model="gpt-5.6-luna",
+                    verdict="unacceptable",
+                    reasoning=_REASONING_ON,
+                    why=(
+                        "At high reasoning it spent the whole 24,000-token "
+                        "completion budget thinking and emitted nothing on "
+                        "one of two batches; OpenAI counts reasoning tokens "
+                        "against that budget. Keep luna at reasoning off here."
+                    ),
+                    decision_id="D-057",
+                ),
+            ),
+            related_decisions=("D-056", "D-060", "D-061"),
+        ),
     ),
     "report_reduce_summaries": UseCaseInfo(
         default_route="fast",
@@ -659,6 +947,21 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "env config keep resolving; changing it has no effect on topic jobs. "
             "Consolidation benefits from a little planning. Low reasoning "
             "on the economy model is the right trade-off."
+        ),
+        guidance=UseCaseGuidance(
+            status="measured",
+            decision_id="D-056",
+            decided_on="2026-07-30",
+            flagship_delta=(
+                "No longer an LLM call on topic jobs. The deterministic merge "
+                "that replaced it keeps 5,861 of 5,861 items; the LLM merge "
+                "lost 91.2% of items and 46% of videos on the same corpus."
+            ),
+            downgrade_risk=(
+                "None: changing this model has no effect on topic jobs. The "
+                "setting remains only so existing overrides keep resolving."
+            ),
+            related_decisions=("D-055",),
         ),
     ),
     "report_compose": UseCaseInfo(
@@ -688,6 +991,43 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "Long, polished output that the user reads top-to-bottom. "
             "Flagship + medium reasoning."
         ),
+        guidance=UseCaseGuidance(
+            status="measured",
+            decision_id="D-062",
+            decided_on="2026-07-31",
+            flagship_delta=(
+                "On claude-sonnet-5 the whole report scored 7.22 against 8.67 "
+                "for a max-effort control, and synthesis stayed at 6.33 "
+                "through two rounds of prompt fixes. On identical section "
+                "input claude-opus-5 beat sonnet-5 on synthesis (9 vs 6-7), "
+                "tension handling (9 vs 6) and specificity (9-10 vs "
+                "5.5-6); sonnet-5 read better (8 vs 7)."
+            ),
+            downgrade_risk=(
+                "On claude-sonnet-5 the report dropped about 8 debates present "
+                "in the corpus, named 18 tools instead of 47, declared a "
+                "consensus while quoting the rebuttal, and invented two host "
+                "names. opus-5 ran 2.6x longer and was denser per word, so "
+                "the length was not padding."
+            ),
+            measured_cost=(
+                "claude-opus-5 adds $4.55 per 200-video job over "
+                "claude-sonnet-5 ($7.65 to $12.20 for the whole job)."
+            ),
+            model_verdicts=(
+                ModelVerdict(
+                    model="claude-sonnet-5",
+                    verdict="weaker",
+                    why=(
+                        "Synthesis 6-7 vs 9 on identical input; dropped about "
+                        "8 corpus debates and invented two host names. Reads "
+                        "slightly better."
+                    ),
+                    decision_id="D-062",
+                ),
+            ),
+            related_decisions=("D-061",),
+        ),
     ),
     "report_channel": UseCaseInfo(
         default_route="primary",
@@ -698,6 +1038,11 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         typical_output_tokens=4_000,
         min_context_recommended=32_768,
         rationale="Same reasoning as report_compose.",
+        guidance=_unmeasured(
+            "Channel jobs have not been part of any quality run.",
+            related=("D-052",),
+            verdicts=(_MINI_REASONING_EMPTY,),
+        ),
     ),
     "report_compose_channel_section": UseCaseInfo(
         default_route="primary",
@@ -712,6 +1057,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "reasoning keeps quality up without burning tokens at high "
             "volume."
         ),
+        guidance=_unmeasured("Channel jobs have not been part of any quality run."),
     ),
     # --- Visual understanding (R1 / E-1.18) ----------------------------
     "visual_select_moments": UseCaseInfo(
@@ -739,6 +1085,44 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "One call per video, so the cost is amortised over the frames "
             "it authorises — under-spending here to save one call is a "
             "false economy. p95 input is a full long-form transcript."
+        ),
+        guidance=UseCaseGuidance(
+            status="measured",
+            decision_id="D-073",
+            decided_on="2026-10-19",
+            flagship_delta=(
+                "Re-run on the same 11 transcripts and scored by agreement "
+                "with gpt-5.5's picks at medium reasoning (which agrees with "
+                "itself 85% of the time, the noise floor): gpt-5.5 at low "
+                "76%, gpt-5.6-luna 59%, gpt-5.4-mini 24%, "
+                "gemini-3.1-flash-lite 23%."
+            ),
+            downgrade_risk=(
+                "Each moment picked costs a video seek and a vision call; "
+                "each moment missed never reaches the report. Agreement is "
+                "not quality, so cheaper models are unproven rather than "
+                "proven bad, but mini and flash-lite pick mostly different "
+                "moments from the default."
+            ),
+            measured_cost=(
+                "Per video: $0.067 at low against $0.097 at medium; "
+                "gpt-5.6-luna $0.002, gpt-5.4-mini $0.009, "
+                "gemini-3.1-flash-lite $0.003."
+            ),
+            model_verdicts=(
+                ModelVerdict(
+                    model="gpt-5.4-mini",
+                    verdict="weaker",
+                    why="Agreed with the default's picks 24% of the time (noise floor 85%).",
+                    decision_id="D-073",
+                ),
+                ModelVerdict(
+                    model="gemini-3.1-flash-lite",
+                    verdict="weaker",
+                    why="Agreed with the default's picks 23% of the time (noise floor 85%).",
+                    decision_id="D-073",
+                ),
+            ),
         ),
     ),
     "visual_describe_frame": UseCaseInfo(
@@ -772,6 +1156,60 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "dominate the input cost, so the model-tier delta on the text "
             "half is a rounding error."
         ),
+        guidance=UseCaseGuidance(
+            status="measured",
+            decision_id="D-073",
+            decided_on="2026-10-19",
+            flagship_delta=(
+                "Blind per-frame grading, two graders per frame, each opening "
+                "the image. First pass (33 frames): gpt-5.5 4.52/5 (3 of 66 "
+                "gradings unusable), gemini-3.1-flash-lite 4.21 (5), "
+                "gpt-5.6-luna 3.97 (22). Second pass (31 frames): "
+                "gemini-3.5-flash 4.70 (0 of 62), gpt-5.5 4.54 (5), "
+                "gpt-5.4-mini 4.37 (5), claude-haiku-4-5 2.39 (55). At report "
+                "level the small per-frame gap was not small: with gpt-5.5 "
+                "descriptions the annotated report beat the plain one with 3 "
+                "of 3 judges, with flash-lite it tied, 1 of 3 (D-075)."
+            ),
+            downgrade_risk=(
+                "Per-frame grades did not predict the report-level loss, so a "
+                "cheaper describer can look fine frame by frame and still "
+                "erase the benefit of the visual pass. A misread chart axis "
+                "becomes a confident false statement nothing downstream "
+                "catches, and a model that cannot see images does not fail "
+                "loudly: it describes the frame from the transcript."
+            ),
+            measured_cost=(
+                "Per video: $0.008 on gemini-3.1-flash-lite against $0.133 on "
+                "gpt-5.5; gemini-3.5-flash $0.051, claude-haiku-4-5 $0.026, "
+                "gpt-5.4-mini $0.018, gpt-5.6-luna $0.004."
+            ),
+            # Both verdicts are on VISION_CAPABLE_MODELS: accepting an image
+            # is not the same as reading one.
+            model_verdicts=(
+                ModelVerdict(
+                    model="gpt-5.6-luna",
+                    verdict="unacceptable",
+                    why=(
+                        "22 of 66 gradings unusable, with substantive "
+                        "misreads: wrong dates on an axis, a code cell "
+                        "reported as output, wrong variable names."
+                    ),
+                    decision_id="D-073",
+                ),
+                ModelVerdict(
+                    model="claude-haiku-4-5",
+                    verdict="unacceptable",
+                    why=(
+                        "55 of 62 gradings unusable (2.39/5), with 146 "
+                        "misreads and 68 hallucinated details counted across "
+                        "them, although it accepts images."
+                    ),
+                    decision_id="D-075",
+                ),
+            ),
+            related_decisions=("D-071", "D-075"),
+        ),
     ),
     # --- Discussed-era extraction (R3 / S-1.17.2) ----------------------
     "temporal_scope_extract": UseCaseInfo(
@@ -801,6 +1239,72 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "continues, which is why this use case is deliberately NOT in "
             "llm_smoke.FEATURE_TO_USE_CASES."
         ),
+        guidance=_unmeasured(
+            "Era extraction has not been graded. Reasoning must stay off: the "
+            "call caps output at 400 tokens, and OpenAI models count "
+            "reasoning tokens against that cap.",
+            related=("D-072",),
+            verdicts=(
+                ModelVerdict(
+                    model="gpt-5.6-luna",
+                    verdict="unacceptable",
+                    reasoning=_REASONING_ON,
+                    why=(
+                        "With reasoning on, luna can spend the whole 400-token "
+                        "cap thinking and return no era; the same trap "
+                        "emptied a 24,000-token map budget in D-057."
+                    ),
+                    decision_id="D-072",
+                ),
+            ),
+        ),
+    ),
+    # --- Code-mixed speech (R5 / S-1.16.2) ------------------------------
+    "code_mixing_detect": UseCaseInfo(
+        default_route="fast",
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
+        summary=(
+            "Word-level language labelling of transcript snippets from "
+            "speakers who mix Hindi/Urdu and English. Returns, per snippet, "
+            "the Hindi runs VERBATIM and the matrix (grammar) language as "
+            "strict JSON; code_mixing_service.spans_to_tags maps the runs "
+            "back onto tokens. Covers romanised Hindi, which script "
+            "profiling cannot see, and English written in Devanagari."
+        ),
+        typical_input_tokens=1_800,
+        p95_input_tokens=3_000,
+        typical_output_tokens=900,
+        min_context_recommended=16_384,
+        rationale=(
+            "Volume tier with reasoning OFF: a labelling task over 25 short "
+            "snippets per call with a structured output. Off is mandatory, "
+            "not a preference — max_completion_tokens includes reasoning "
+            "tokens on OpenAI models (the D-052 trap). Fail-soft: a failed "
+            "batch leaves those snippets unlabelled and nothing downstream "
+            "breaks, so it is deliberately NOT in "
+            "llm_smoke.FEATURE_TO_USE_CASES."
+        ),
+        guidance=UseCaseGuidance(
+            status="measured",
+            decision_id="D-080",
+            decided_on="2026-10-19",
+            flagship_delta=(
+                "Not run against a flagship model. Graded against 300 "
+                "hand-labelled units: on held-out romanised Hindi, word-level "
+                "precision 0.80 and recall 0.90; on Hindi captions written in "
+                "Devanagari, F1 0.97. A free lexicon tagger was more precise on "
+                "romanised text, so this call is the evaluation reference, not "
+                "part of ingest."
+            ),
+            downgrade_risk=(
+                "Keep reasoning off: the call caps output at 4,000 tokens and "
+                "OpenAI models count reasoning tokens against that cap. Its "
+                "spans drift in format between batches, which the span mapper "
+                "absorbs; a model that paraphrases spans instead of copying "
+                "them would lose recall."
+            ),
+            measured_cost="About 2.6 input and 1.3 output tokens per word of text.",
+        ),
     ),
     # --- Social-media candidate classification (S-1.5.3) ---------------
     "social_classify_stance": UseCaseInfo(
@@ -828,6 +1332,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "route to local for cost-sensitive operators (any "
             "instruction-tuned ≥7B model handles it cleanly)."
         ),
+        guidance=_unmeasured(_VOLUME_TIER_NOTE, related=("D-057",)),
     ),
 }
 
@@ -1012,6 +1517,47 @@ def resolve_route(use_case: UseCase) -> Route:
     return "fast" if cfg.provider == "local" else "primary"
 
 
+def assess_choice(use_case: str, cfg: UseCaseConfig) -> list[dict]:
+    """Measured warnings for running ``use_case`` on ``cfg`` (S-1.14.7).
+
+    Advisory, like ``warn_if_not_vision_capable``: callers show these and
+    nothing refuses the config. Each item is ``{kind, model, why,
+    decision_id}``; ``kind`` is a ``ModelVerdict.verdict`` (``unacceptable``
+    / ``weaker``) or ``not_vision_capable``. Model ids match exactly, like
+    ``VISION_CAPABLE_MODELS`` — a prefix rule would let ``gpt-5.5`` match
+    ``gpt-5.5-pro``. The settings page mirrors this rule client-side so a
+    warning appears before the save round-trips; keep the two in step.
+    """
+    info = USE_CASE_REGISTRY.get(use_case)  # type: ignore[call-overload]
+    if info is None:
+        return []
+    warnings = [
+        {
+            "kind": v.verdict,
+            "model": v.model,
+            "why": v.why,
+            "decision_id": v.decision_id,
+        }
+        for v in info.guidance.model_verdicts
+        if v.applies_to(cfg)
+    ]
+    if vision_choice_unverified(use_case, cfg):
+        warnings.append(
+            {
+                "kind": "not_vision_capable",
+                "model": cfg.model,
+                "why": (
+                    "This function sends images, and this model is not on the "
+                    "list of models known to accept them. A text-only model "
+                    "either rejects the request or describes the frame from "
+                    "the surrounding transcript."
+                ),
+                "decision_id": None,
+            }
+        )
+    return warnings
+
+
 def describe_registry() -> str:
     """Human-readable dump of the registry + effective resolved config."""
     lines: list[str] = ["LLM use-case registry:"]
@@ -1023,6 +1569,12 @@ def describe_registry() -> str:
             if effective == info.default_config
             else f" [overridden: {effective.as_label()}]"
         )
+        g = info.guidance
+        evidence = (
+            f"measured ({g.decision_id}, {g.decided_on})"
+            if g.status == "measured"
+            else "unmeasured"
+        )
         lines.append(
             f"  - {name} → {info.default_config.as_label()}{marker}\n"
             f"      summary: {info.summary}\n"
@@ -1030,6 +1582,9 @@ def describe_registry() -> str:
             f"p95={info.p95_input_tokens:>6}  "
             f"output p50={info.typical_output_tokens:>5}\n"
             f"      min local context: {info.min_context_recommended:>6} tokens\n"
+            f"      guidance: {evidence}\n"
             f"      why: {info.rationale}"
         )
+        for w in assess_choice(name, effective):
+            lines.append(f"      WARNING ({w['kind']}): {w['why']}")
     return "\n".join(lines)

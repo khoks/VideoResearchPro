@@ -98,3 +98,57 @@ def test_settings_require_auth(unauthenticated_client):
         "/api/v1/settings/llm/qa_formulate_answer",
         json={"provider": "openai", "model": "x", "reasoning": "off"},
     ).status_code == 401
+
+
+# ── S-1.14.7: measured guidance ──────────────────────────────────
+
+
+def test_settings_carry_guidance_and_vision_list(client, test_user):
+    d = client.get("/api/v1/settings/llm").json()
+    from app.services.llm_routing import VISION_CAPABLE_MODELS
+
+    assert sorted(d["vision_capable_models"]) == sorted(VISION_CAPABLE_MODELS)
+    for row in d["use_cases"]:
+        g = row["guidance"]
+        assert g["status"] in ("measured", "unmeasured"), row["use_case"]
+        assert (g["decision_id"] is not None) == (g["status"] == "measured"), row["use_case"]
+
+    compose = next(u for u in d["use_cases"] if u["use_case"] == "report_compose")
+    assert compose["guidance"]["decision_id"] == "D-062"
+    assert compose["guidance"]["decided_on"] == "2026-07-31"
+    assert compose["vision"] is False
+
+    describe = next(u for u in d["use_cases"] if u["use_case"] == "visual_describe_frame")
+    assert describe["vision"] is True
+    assert describe["group"] == "Visual understanding"
+    luna = [v for v in describe["guidance"]["model_verdicts"] if v["model"] == "gpt-5.6-luna"]
+    assert luna and luna[0]["verdict"] == "unacceptable" and luna[0]["decision_id"] == "D-073"
+
+
+def test_qa_history_rows_get_their_own_group(client, test_user):
+    """The "qa_" prefix used to swallow "qa_history_" rows into Job Q&A."""
+    d = client.get("/api/v1/settings/llm").json()
+    groups = {u["use_case"]: u["group"] for u in d["use_cases"]}
+    assert groups["qa_history_formulate_answer"] == "Q&A history chat"
+    assert groups["qa_formulate_answer"] == "Job Q&A"
+    assert groups["temporal_scope_extract"] == "Discussed-era extraction"
+
+
+def test_estimate_reports_default_cost_beside_the_choice(client, test_user):
+    base = client.post("/api/v1/settings/llm/estimate", json={"overrides": {}}).json()
+    compose = next(u for u in base["per_use_case"] if u["use_case"] == "report_compose")
+    assert compose["default_model"] == "claude-opus-5"
+    assert compose["default_cost_usd"] == compose["cost_usd"]
+
+    cheaper = client.post(
+        "/api/v1/settings/llm/estimate",
+        json={"overrides": {"report_compose": {
+            "provider": "anthropic", "model": "claude-sonnet-5", "reasoning": "medium",
+        }}},
+    ).json()
+    row = next(u for u in cheaper["per_use_case"] if u["use_case"] == "report_compose")
+    assert row["model"] == "claude-sonnet-5"
+    assert row["default_model"] == "claude-opus-5"
+    # The default figure does not move with the choice; the choice's does.
+    assert row["default_cost_usd"] == compose["cost_usd"]
+    assert row["cost_usd"] < row["default_cost_usd"]

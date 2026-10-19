@@ -12,10 +12,13 @@ import {
   type QAStreamStage,
 } from '../hooks/useQA';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
+import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { CitationLink } from '../components/citation';
 import { NotesPanel } from '../components/notes';
 import { JobShelfChips, ShelfPicker } from '../components/shelves';
+import { SaveTemplateModal } from '../components/templates';
+import { useSaveJobAsTemplate } from '../hooks/useJobTemplates';
 import { ApprovalCard, SOURCE_CONFIGS } from '../components/approval';
 import {
   Badge,
@@ -58,11 +61,15 @@ export function JobDetailPage() {
   const cancelJob = useCancelJob();
   const deleteJob = useDeleteJob();
   const { isReportModalOpen, openReportModal, closeReportModal } = useJobStore();
+  const pushToast = useJobStore((s) => s.pushToast);
+  const saveAsTemplate = useSaveJobAsTemplate();
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   useJobProgress(jobId || null);
   const syncCounts = useSubscriptionSyncCounts(jobId || null);
   const [knowledgeVideo, setKnowledgeVideo] = useState<Video | null>(null);
   const knowledgeExtractionAvailable = useFeatureAvailable('knowledge_extraction');
+  const { has: hasTierFeature } = useTierCapabilities();
 
   if (isLoading) {
     return (
@@ -150,6 +157,14 @@ export function JobDetailPage() {
             >
               Duplicate · Re-run
             </Button>
+            <Button
+              variant="tertiary"
+              size="sm"
+              onClick={() => setSavingTemplate(true)}
+              title="Keep this run's recipe; type only a new topic next time"
+            >
+              Save as template
+            </Button>
             {isActive && (
               <Button variant="secondary" size="sm" onClick={() => cancelJob.mutate(job.id)}>
                 Cancel
@@ -190,6 +205,15 @@ export function JobDetailPage() {
           </p>
         )}
       </Card>
+
+      <SaveTemplateModal
+        open={savingTemplate}
+        onClose={() => setSavingTemplate(false)}
+        onSubmit={async ({ name, description }) => {
+          const t = await saveAsTemplate.mutateAsync({ jobId: job.id, name, description });
+          pushToast('success', `Saved template "${t.name}". Find it under Templates on the submit page.`);
+        }}
+      />
 
       <JobParamsCard job={job} />
 
@@ -283,6 +307,12 @@ export function JobDetailPage() {
           <Button variant="secondary" onClick={openReportModal}>
             Quick peek
           </Button>
+          {/* S-6.1.1: start a book from this run (Author Studio picks it up from the URL). */}
+          {job.status === 'completed' && hasTierFeature('author_studio') && (
+            <Button variant="tertiary" onClick={() => navigate(`/author?new=book&job=${encodeURIComponent(job.id)}`)}>
+              Add to a book
+            </Button>
+          )}
         </div>
       )}
 

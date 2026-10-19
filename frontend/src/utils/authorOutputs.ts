@@ -143,3 +143,40 @@ export function describeCreateError(err: HttpErrorLike | null | undefined, kind:
       return detail ?? err?.message ?? 'Generation failed. Try again.';
   }
 }
+
+/**
+ * S-6.1.1: "Add this run to a book" on the job page links to
+ * `/author?new=book&job=<id>`. Returns the kind to open and the runs to
+ * pre-select, or null when the URL asks for nothing (or for a kind this page
+ * does not know). Only books take runs as sources, so `job` is ignored for
+ * any other kind.
+ */
+export interface CreateIntent {
+  kind: string;
+  jobIds: string[];
+}
+
+export function parseCreateIntent(params: URLSearchParams): CreateIntent | null {
+  const kind = (params.get('new') ?? '').trim().toLowerCase();
+  if (!kind || !(kind in OUTPUT_KIND_META)) return null;
+  const jobIds =
+    kind === 'book'
+      ? [...new Set(params.getAll('job').map((j) => j.trim()).filter(Boolean))]
+      : [];
+  return { kind, jobIds };
+}
+
+/**
+ * The size line on an output row: chapters and words for a book (one
+ * chapter per run), sources and words otherwise. Words appear only once
+ * the backend has counted them (`word_count` is null until there is content).
+ */
+export function outputSizeLabel(output: Pick<OutputItem, 'kind' | 'source_ids' | 'word_count'>): string {
+  const n = output.source_ids.length;
+  const unit = output.kind === 'book' ? (n === 1 ? 'chapter' : 'chapters') : n === 1 ? 'source' : 'sources';
+  const parts = [`${n} ${unit}`];
+  if (typeof output.word_count === 'number') {
+    parts.push(`${output.word_count.toLocaleString('en-US')} ${output.word_count === 1 ? 'word' : 'words'}`);
+  }
+  return parts.join(' · ');
+}

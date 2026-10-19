@@ -318,6 +318,18 @@ def chunk_transcript(
     if not isinstance(era_fields, dict):
         era_fields = {}
 
+    # R5 / S-1.16.2 (N-002): the source's measured language mix and quote
+    # form, computed once here from the whole transcript and carried on every
+    # chunk like the era. EMPTY for English sources, so their chunks are
+    # unchanged; per-chunk share and grammar are added only for the rest.
+    code_mix_doc: dict[str, Any] = {}
+    try:
+        from app.services import code_mixing_service
+
+        code_mix_doc = code_mixing_service.chunk_metadata_for_transcript(transcript_segments)
+    except Exception:
+        logger.exception("Code-mixing profile failed; chunks carry no language mix")
+
     # D-070: the document's primary key, on every chunk of every source
     # type — the field retrieval filters on. Omitted (never "") when the
     # caller did not supply one, so an `$in` filter can never match a
@@ -355,6 +367,13 @@ def chunk_transcript(
             )
         except (TypeError, ValueError):
             segment_depth = 0
+
+        code_mix_chunk: dict[str, Any] = {}
+        if code_mix_doc:
+            try:
+                code_mix_chunk = code_mixing_service.chunk_fields(chunk["text"])
+            except Exception:
+                logger.exception("Code-mixing chunk profile failed for chunk %d", i)
 
         result.append({
             "text": chunk["text"],
@@ -417,6 +436,8 @@ def chunk_transcript(
                 **published_numeric,
                 **era_fields,
                 **document_key,
+                **code_mix_doc,
+                **code_mix_chunk,
             },
         })
 

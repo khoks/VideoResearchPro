@@ -28,6 +28,8 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Scope-changed 2026-10-19:** the PDF upload and paste-URL surfaces shipped (T-1.5.8.3, E-1.8 follow-up, PR [#224](https://github.com/khoks/VideoResearchPro/pull/224)), and building them exposed that the "12 source types end-to-end" closure below is true of ingest but not of retrieval: since [D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31) every non-video document is ingested without a visibility grant and is therefore never listed or retrieved. Tracked under E-5.10 as [S-5.10.4](#s-5104--key-document-visibility-on-document_id) ([D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)), shipped 2026-10-19 in PR [#241](https://github.com/khoks/VideoResearchPro/pull/241) — which also found that no non-video chunk had ever reached Chroma. I-1 stays 🟡 for the E-1.11 scale track, not for this.
 
+**Scope-changed 2026-10-19 (II):** building job templates (S-8.6.1) found that `JobCreate` has no `source_types` field and nothing writes `jobs.source_types_json`, so every topic run created through the API searches YouTube only; S-1.5.11's worker dispatch is intact but unreachable (its HTTP-level end-to-end test was the one variant never written). Ingest by paste, upload and channel sync is unaffected. Filed as [S-1.5.13](#s-1513--accept-source_types-on-job-creation).
+
 **Scope-changed 2026-07-29 (II):** the reopened scale/quality track now also carries [E-1.13](#e-113-per-user-llm-overrides-cost-calculator) (per-user model overrides + cost calculator, 🟢) and [E-1.14](#e-114-model-tier-quality-evaluation-harness) (model-tier quality evaluation, 🟡). Trajectory of the reopening: E-1.11 made ingest survive scale → E-1.12 made the agents survive scale → E-1.13 made model choice configurable and costed → E-1.14 measures whether the chosen models are good enough. Linked decisions: [D-054](decisions.md#d-054--per-user-llm-overrides--cost-calculator-gpt-56-adaptive-reasoning-findings-2026-07-29), [D-055](decisions.md#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29).
 
 **Scope-changed 2026-07-22:** reopened for [E-1.11](#e-111-transcript-pipeline-resilience-at-scale) — the 200-video deep-research test (job `0d4db8c3`, 2026-07-21/22) surfaced transcript-pipeline failures at scale: an IP-block cascade made Whisper the primary path for 80% of videos, and 63/200 videos were lost (25MB Whisper cap + yt-dlp 403s). The original multi-source scope stays closed; E-1.11 is the scale-resilience follow-on. Linked decision: [D-051](decisions.md#d-051--transcript-pipeline-resilience-bundle-circuit-breaker--segmented-whisper--yt-dlp-client-fallback-2026-07-22).
@@ -303,6 +305,15 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - Ship per-segment when (a) we observe materially different reply quality across multiple replies of the same thread getting cited (so jumping to specific reply matters), or (b) a future connector emits content where the per-reply identity is the citable unit (forum threads with multiple long top-level posts, podcast chapter markers, etc.).
 - The chunker rework is also the natural moment to revisit pseudo-timestamp synthesis ([D-013](decisions.md#d-013--pseudo-timestamps-at-3-wps-for-text-based-connectors-2026-04-25)) — they could be replaced with explicit per-segment indices once `extra` is preserved end-to-end.
 
+#### S-1.5.13 ⚪ Accept `source_types` on job creation
+**PR:** TBD
+**Filed 2026-10-19** from the S-8.6.1 finding (see I-1 *Scope-changed 2026-10-19 (II)*; [D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19)). Proposed as its own session; awaiting the user.
+**Acceptance.** `POST /api/v1/jobs` with `source_types=["video","reddit_post"]` persists them, `_resolve_source_types` reads them back, and the run goes through `connector_dispatch` for the non-video types; the submit form offers the choice; Duplicate and templates carry it.
+- [ ] T-1.5.13.1 `JobCreate.source_types` limited to the types `connector_dispatch` supports (default None → video); persist in `job_service.create_job`; return on `JobResponse`
+- [ ] T-1.5.13.2 Add the field to `TemplateParameters` and `parameters_from_job` (the S-8.6.1 pinning test fails until this is done) and to `frontend/src/utils/jobForm.ts`
+- [ ] T-1.5.13.3 Source-type picker on the Topic tab of `SubmitJobPage`
+- [ ] T-1.5.13.4 HTTP-level test at the caller (the variant S-1.5.11 never wrote); a live connector check needs credentials, say what was not verified
+
 ### E-1.6 🟢 Article connector
 
 **Closed 2026-05-03.** Full UX shipped across PRs [#135](https://github.com/khoks/VideoResearchPro/pull/135) (T-1.6.1 primitives), [#141](https://github.com/khoks/VideoResearchPro/pull/141) (T-1.6.6 Playwright fallback), [#144](https://github.com/khoks/VideoResearchPro/pull/144) (S-1.5.8 paste mode wired the article connector and citation rendering for it = T-1.6.4), [#145](https://github.com/khoks/VideoResearchPro/pull/145) (T-1.6.2 search-engine integration via Brave + T-1.6.3 RSS feed ingestion + T-1.6.5 e2e test wiring).
@@ -410,7 +421,7 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 **Unblocked downstream:** T-1.5.1.4 + T-1.5.2.5 (Reddit/HN storage — shipped 2026-05-02 PR [#113](https://github.com/khoks/VideoResearchPro/pull/113)). T-1.5.3.4 (classifier persistence — also PR #113). M-1.5 e2e tests (still pending orchestrator wiring).
 
-### E-1.11 🟢 Transcript-pipeline resilience at scale
+### E-1.11 🟡 Transcript-pipeline resilience at scale
 
 **Shipped:** 2026-07-22 — PR [#189](https://github.com/khoks/VideoResearchPro/pull/189). Recovery fully validated live on job 0d4db8c3 across three waves: 31/63 recovered 2026-07-22 (segmented Whisper + yt-dlp client ladder while the IP block was active), and the final 32 recovered 2026-07-24 after the block lifted (fast caption path, paced by the new limiter). **Final corpus: 200/200 videos — 162 youtube (591,843 words) + 38 whisper (355,396 words) = 947,239 transcript words.** The wait-out-the-block strategy from D-051 proved correct; cookies/proxy knobs (S-1.11.10) remain available for blocks that persist.
 
@@ -452,6 +463,13 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 #### S-1.11.9 🟢 Recovery tooling
 
 **Scope.** `scripts/retry_unavailable_transcripts.py` re-fetches a job's unavailable documents, then chunks + embeds them into the global collection. Validated on job `0d4db8c3`'s 63 lost videos.
+
+#### S-1.11.11 ⚪ Caption-track choice prefers the spoken language over auto-dubs
+
+**Filed 2026-10-19** from the S-1.16.2 corpus build ([D-080](decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)). `_fetch_transcript_once` tries `en` / `en-auto` and then takes the FIRST listed track. Video `1v3_AQ26jZ0` (a Hindi lecture) lists `bn(auto)`, `en-US(auto)`, `hi(auto)`: `en-US` matched nothing, so the library now holds a machine-dubbed Bengali transcript of a Hindi lecture.
+- [ ] T-1.11.11.1 Match regional English codes (`en-US`, `en-GB`) as English, but only when the track is the video's original audio language
+- [ ] T-1.11.11.2 When English is unavailable, prefer the original-audio track over auto-dubbed ones; take the default audio language from the Data API (`snippet.defaultAudioLanguage`) when present
+- [ ] T-1.11.11.3 Re-fetch documents whose stored transcript language differs from their default audio language (one-off script, reporting counts)
 
 ---
 
@@ -505,7 +523,17 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 - S-1.14.4 🟢 Loss attribution for unpersisted stages. **Result: 60 of 60 sampled facts from two batches absent from the shipped report (100% loss).** Root cause is the map/reduce token funnel, not model IQ — see S-1.14.8.
 - S-1.14.5 🟢 Selection-criteria audit standing in for `search_rank_and_curate` (true re-rank impossible — rejected pool not persisted). *Finding: default selection graded 6.5/10 — ~20-24 questionable picks, IBM Technology at 10% of corpus despite not being a preferred channel, 12 of 30 preferred channels absent, zero flagship model-release coverage despite instructions naming GPT-5.x / Claude / Gemini.*
 - S-1.14.6 🟡 Persist agent intermediates + rejected candidate pool (behind a debug/sampling flag) so quality is continuously monitorable instead of replay-only — see [architecture.md § Agent-intermediate retention gap](architecture.md#agent-intermediate-retention-gap-identified-2026-07-29). **Candidate-pool half shipped 2026-07-30**, PR [#205](https://github.com/khoks/VideoResearchPro/pull/205): `job_search_candidates` stores the whole pool with a `selected` flag. **Still open:** map/reduce intermediates (per-batch extraction JSON, reduced summary). *Status reconciled 2026-10-18; it had been left at ⚪.*
-- S-1.14.7 ⚪ Fold verdicts into registry defaults + surface measured per-use-case delta as guidance in the `/account/ai-models` panel (turns the override knob from raw into guided).
+- **S-1.14.7 🟢 Measured verdicts as registry guidance, shown in `/account/ai-models` — shipped 2026-10-19**, PR [#251](https://github.com/khoks/VideoResearchPro/pull/251). The defaults half was already done decision by decision (D-057, D-062, D-073); this story moved the evidence behind them out of `decisions.md` and in front of the person choosing an override. No `default_config` changed. Evidence folded in: [D-052](decisions.md#d-052--measured-context-windows--three-tier-model-stack-e-112-model-re-audit-2026-07-29), [D-055](decisions.md#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29), [D-056](decisions.md#d-056--report-pipeline-budgets-derived-from-work-lossless-reduce-sectioned-compose-2026-07-30), [D-057](decisions.md#d-057--volume-tier-moves-to-gpt-56-luna-selection-is-now-measurable-2026-07-30), [D-060](decisions.md#d-060--extraction-ratio-raised-020---040-2026-07-30), [D-061](decisions.md#d-061--s-11410-re-judge-the-intelligence-gap-after-the-fixes-2026-07-31), [D-062](decisions.md#d-062--report_compose-upgraded-to-claude-opus-5-2026-07-31), [D-072](decisions.md#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19), [D-073](decisions.md#d-073--frame-description-moves-to-gemini-31-flash-lite-on-image-grounded-grading-selection-stays-on-gpt-55-2026-10-19).
+  - [x] T-1.14.7.1 `UseCaseInfo.guidance` (required): `measured` entries carry decision id, date, the gap to the flagship tier, what fails on a downgrade and the measured cost; `unmeasured` entries carry a note on what evidence exists. **8 measured** (`qa_formulate_answer`, `knowledge_synthesize_report`, `search_plan_queries`, `report_map_chunks`, `report_reduce_summaries`, `report_compose`, `visual_select_moments`, `visual_describe_frame`), **15 unmeasured**
+  - [x] T-1.14.7.2 `ModelVerdict` per use case, scoped to reasoning levels: unacceptable — luna for frame description (22/66 unusable), nano for map (unparseable JSON on 1 of 2 batches), luna with reasoning on for map and era extraction, gpt-5.4-mini with reasoning on for the three mini sites; weaker — sonnet-5 for compose, mini and flash-lite for frame selection
+  - [x] T-1.14.7.3 `assess_choice()` (verdicts + `VISION_CAPABLE_MODELS`); `/health/llm` reports guidance and warnings for the resolved config; `GET /settings/llm` ships guidance, a `vision` flag and `vision_capable_models`; the estimate prices each row on the default too
+  - [x] T-1.14.7.4 Page: evidence badge, warning callouts, warning markers on model options before one is picked, benchmark cost against the default, collapsible evidence panel. Verified live on a scratch stack: compose on sonnet-5 shows `$3.03 against $7.58 (−$4.54)`, total $7.65 vs $12.20, matching D-062
+  - [x] T-1.14.7.5 Tests: every use case measured-with-decision or unmeasured; every cited decision exists in `decisions.md`; verdict models are real ids; no default trips a warning; endpoint and `/health/llm` tests
+  - [x] T-1.14.7.6 In passing: `qa_history_*` rows were grouped under "Job Q&A" (prefix order); two tests still iterated probe targets as bare names after #240
+  - **Design choices made here, open to revision** (recorded as [D-076](decisions.md#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19), not decided by the user):
+    1. `measured` means this use case's own output was graded. The refine, extract and library-answer steps sat inside graded chains or moved tier alongside graded ones, and are `unmeasured` with a note rather than borrowing a sibling's verdict.
+    2. "Unacceptable" on n=2 for nano on map batches (D-057 itself acted on n=2). "Weaker" for frame selection rests on agreement with the default's picks, which D-073 says is not quality; the copy says so.
+    3. Warnings advise and never block a save, matching the fail-soft rule for the vision allowlist ([D-067](decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31)). A hard block for `unacceptable` would be one line in the PUT handler — see OQ-16.
 - **S-1.14.8 🟢 Fix the report information funnel — shipped 2026-07-30.** Linked decision: [D-056](decisions.md#d-056--report-pipeline-budgets-derived-from-work-lossless-reduce-sectioned-compose-2026-07-30). Validated on job `0d4db8c3`: reduce now loses **0.00%** (5,861 items in / out, 200 videos + 92 channels retained, vs 91.2% of items and 46% of videos lost before).
   - [x] T-1.14.8.1 `report_map_chunks` completion budget derived from batch size (3,000 → ~24,000); registry `p95_input` corrected 32,000 → 120,000; new measured `MODEL_MAX_OUTPUT_TOKENS` (128K / 64K haiku)
   - [x] T-1.14.8.2 Reduce rewritten deterministic + lossless; even per-video compression past a 1M-token cost guard so no video is dropped wholesale
@@ -531,9 +559,18 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 - S-1.14.17 ⚪ A composed section can end mid-tag. Found 2026-10-19 by S-8.8.1's parser fixtures: the stored report for job `419e691d…` (the R1 measurement run) has a `<a href="https://www.youtube.com/watch?v=5` cut off where one section ends and the next begins, so every HTML parser folds the next section's `<h2>` and `<h3>` into that attribute value and two headings vanish from the outline, the iframe and the reader alike. Likely a completion-budget cut in `report_compose`; the compose step should detect an unbalanced tail (unterminated tag or attribute) and either retry the section or close it cleanly, and disclose it in the processing note like the other drops. Not a reader concern — the reader refuses to link the garbage href and nothing more can be recovered client-side.
 
+- S-1.14.18 ⚪ Refresh the guidance that S-1.14.7 shows as stale or unmeasured. Filed 2026-10-19. Linked decision: [D-076](decisions.md#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19). Several `measured` entries show users numbers taken on a tier the slot no longer runs, and some of the busiest slots are unmeasured. Each task below is a D-055-style replay on the reference job. A changed verdict is a registry edit plus a decision entry.
+  - [ ] T-1.14.18.1 `qa_formulate_answer` at medium reasoning (graded at low in D-055; moved by D-056)
+  - [ ] T-1.14.18.2 `search_plan_queries` on gpt-5.6-luna (graded on gpt-5.4-nano)
+  - [ ] T-1.14.18.3 `knowledge_synthesize_report` on claude-sonnet-5 (graded against whatever produced the stored artifact)
+  - [ ] T-1.14.18.4 Isolate `qa_refine_context` from the D-055 chain (it is now the only unmeasured step between retrieval and a graded answer)
+  - [ ] T-1.14.18.5 `search_rank_and_curate` head-to-head on the persisted candidate pool (S-1.14.6). This makes the slot replayable for the first time
+  - [ ] T-1.14.18.6 Luna on frame selection with captured alternative frames, so agreement can be replaced by graded quality (shares the run with T-1.18.5.5)
+
 **Open questions**
 - OQ-7: does the harness generalize to a scheduled regression check (re-run on every model-lineup shift), or stay a manual audit? Depends on S-1.14.6 landing.
 - OQ-8: judging currently uses a single model family; is a multi-judge panel needed to control for self-preference bias when the challenger shares that family?
+- OQ-16 (from S-1.14.7): should a model measured `unacceptable` for a use case be refused at `PUT /settings/llm`, or stay a warning? Today it is a warning everywhere. Refusing protects users from known-bad output; warning keeps the override knob a knob, and the verdicts carry small samples (n=2 on map batches).
 
 ### E-1.15 🟢 Output length policy (R4) — closed 2026-10-19
 
@@ -575,13 +612,15 @@ Knowledge synthesis already scales its budget with extraction size (S-1.14.8) bu
 - [ ] T-1.16.1.7 Persist the per-document language profile (`documents.language_mix`) so the per-video label stops being the only signal
 - [x] T-1.16.1.8 English-preference in `search_rank_and_curate` ranking — shipped 2026-10-19 (PR [#227](https://github.com/khoks/VideoResearchPro/pull/227)). A `LANGUAGE (a preference, never a filter)` block in the ranking prompt plus a `Script:` hint on titles not in Latin script (exact via `language_service.dominant_script`; the model infers the language). A test confirms a Devanagari-titled pick survives untouched
 
-#### S-1.16.2 🔵 Proportion-driven rendering for code-mixed speech — implements [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31)
+#### S-1.16.2 🟡 Proportion-driven rendering for code-mixed speech — implements [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31)
 The shipped script profiler is exact for script mixing and **blind to romanised code-mixing** — the user's own example ("...taaki baadme koi kasar koi zarra na reh jaye...") is entirely Latin and reads as English today. This story closes that gap.
-- [ ] T-1.16.2.1 Detect romanised non-English spans. Script analysis cannot; candidates are an LLM pass over the transcript (cheap, volume tier) or a lexicon/n-gram approach. **Measure before choosing** — do not assume a library solves it
-- [ ] T-1.16.2.2 Estimate matrix vs embedded language per span (which language supplies grammar, which supplies vocabulary) — the distinguishing part of N-002
-- [ ] T-1.16.2.3 Proportion thresholds as a RENDERING policy: dominant-language (>60%) keeps that script; heavy interleaving → Roman transliteration; light borrowing → plain English
-- [ ] T-1.16.2.4 Transcript-level "primary language of communication" resolution, so a report does not flicker between scripts paragraph to paragraph
+- [x] T-1.16.2.1 Detect romanised non-English spans — shipped 2026-10-19 (PR [#258](https://github.com/khoks/VideoResearchPro/pull/258), [D-080](decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)). Measured a lexicon + n-gram + Viterbi tagger against a `gpt-5.6-luna` pass on 300 hand-labelled units: real comments and captions from three Hinglish jobs, split DEV/TEST. On held-out romanised text the lexicon tagger is more precise at equal recall (token P 0.929 vs 0.803, R 0.890 vs 0.895), free, and runs at chunk time; the LLM is better only on English written in Devanagari (F1 0.965 vs 0.868) and stays registered as the reference `code_mixing_detect`. First finding: YouTube captions Hinglish speech in Devanagari, not romanised; romanised Hinglish arrives through comments and text sources. [Method and results](notes/2026-10-19-code-mixing-detection.md)
+- [x] T-1.16.2.2 Estimate matrix vs embedded language per span — shipped 2026-10-19 (PR [#260](https://github.com/khoks/VideoResearchPro/pull/260), [D-080 addendum](decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)). `analyse_span` returns `{hi_share, matrix, embedded}`; the matrix comes from a Matrix Language Frame vote of system morphemes (auxiliaries, light verbs, postpositions), so content words never decide it. Held-out mixed units: 0.952 vs 0.855 for word majority (LLM reference 0.968). Every baseline miss was Hindi grammar with mostly English words — 11% of all mixed units in the labelled set. A closed list of English function words in Devanagari (इज, टू, द) now tags English, so an English-matrix sentence in Devanagari is recognisable
+- [x] T-1.16.2.3 Proportion thresholds as a RENDERING policy — shipped 2026-10-19 (PR [#262](https://github.com/khoks/VideoResearchPro/pull/262)). `rendering_mode(analysis)` → `native_script` (Hindi grammar, Hindi share ≥ `CODE_MIX_DOMINANT_SHARE` 0.6) / `plain_english` (English grammar, ≤ `CODE_MIX_BORROWING_MAX_SHARE` 0.2) / `roman` between; the matrix gates both ends. Defaults = centres of the DEV plateaus where detector and gold decisions agree; TEST agreement 0.970 Latin, 0.823 mixed. **Open question for the user** (D-080): what the 60% rests on — robustness favours 50% (Devanagari agreement 0.912 vs 0.824) while the tagger cannot see English nouns in Devanagari
+- [x] T-1.16.2.4 Transcript-level "primary language of communication" — shipped 2026-10-19 (PR [#264](https://github.com/khoks/VideoResearchPro/pull/264)). `profile_transcript` → `{primary_language, native_script, hi_share, matrix_hi_share, quote_mode, flicker_unresolved}`; primary = the language framing ≥ half the speech; `resolve_quote_mode` lets a span decide only whether it is English, the source decides the script. Removes 25 script changes across 7 Devanagari Hinglish transcripts and 128 across 11 romanised comment threads. **Found and fixed:** only Devanagari/Arabic/Gurmukhi had counted as non-English — two Bengali and two Kannada transcripts in the library measured 0% non-English
 - [ ] T-1.16.2.5 Bidirectional split: analysis/extraction/ranking run on the English rendering; quotation retains original + transliteration + translation
+  - [x] Part A, quotation — shipped 2026-10-19 (PR [#268](https://github.com/khoks/VideoResearchPro/pull/268)). `code_mix_*` chunk metadata (none for English); `speech: <language> — <quote form>` on every non-English source header in the report map, job and library Q&A; map items carry `original` wording beside English `content`, compose attaches the source's `quote_form`; knowledge extraction gets a measured `SOURCE LANGUAGE` line. The report pipeline previously kept no original wording at all
+  - [ ] Part B, ranking on English — embed an English rendering of non-English chunks. Measured first: MRR 0.565 Devanagari / 0.402 romanised / 0.805 English rendering (55 independent questions, 132 real chunks)
 - [ ] T-1.16.2.6 Evaluate on real code-mixed transcripts before claiming it works — the honest failure mode here is silently passing Hinglish through as English
 
 ### E-1.18 🟡 Visual understanding (R1)
@@ -631,6 +670,7 @@ Both confirmed errors bundle a screen-only detail into a sentence credited to a 
 
 #### S-1.18.8 🔵 Modality provenance through the map/reduce pipeline
 Decided by [D-075](decisions.md#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19): the composer currently infers whether a fact was said or shown from interleaved text, and prompt rules have not stopped it mixing the two. **Sequenced after S-1.14.6** (persisted map items make the labels auditable) and after the R5 session's prompt changes.
+*Evidence added 2026-10-19:* four of the five confirmed attribution errors after the S-1.18.6 rule are in the one Bengali-language video (1 of 11). The composer misjudges modality where it cannot read the speech; the map stage reads each chunk's native speech, so that is where the label must be fixed. This ties S-1.18.8 to R5 (E-1.16).
 - [ ] T-1.18.8.1 Map stage: every extracted item carries `modality: said | shown | both`, decided from whether its evidence sits in speech, in a `[VISUAL @]` span, or both
 - [ ] T-1.18.8.2 Reduce preserves the label losslessly (D-056); compose renders items as `[SAID]` / `[SHOWN]` and attributes from the labels
 - [ ] T-1.18.8.3 Converse rule in the contract: say "on screen" only for `shown` items (a ride-along, not relied on)
@@ -642,7 +682,7 @@ Filed 2026-10-19 from the S-1.18.3 run: at the registry defaults (`visual_select
 - [x] T-1.18.5.2 `visual_describe_frame` → **gemini-3.1-flash-lite** ([D-073](decisions.md#d-073--frame-description-moves-to-gemini-31-flash-lite-on-image-grounded-grading-selection-stays-on-gpt-55-2026-10-19)). Same 120 frames re-described by each model; 33 frames × 2 graders looked at the image, blind: gpt-5.5 mean 4.52/5, best in 54 of 66, 3 unusable; flash-lite 4.21, 5 unusable; luna 3.97, **22 unusable** (misread dates, axis values, mistook a code cell for output). Real cost $0.133 → $0.008 per video.
 - [x] T-1.18.5.3 Measured total for the visual pass: **$0.075 per video** (select $0.067 + describe $0.008) against $0.230 before, under the $0.10 ceiling; pinned by `tests/test_services/test_vision_tier.py` at the measured token counts. The first pass of these numbers divided by 12 approved videos instead of the 11 that produced calls and understated everything by 8%; the test caught it.
 - [ ] T-1.18.5.4 Revisit the S-1.18.2 UI decision after S-1.18.6's re-run (T-1.18.6.3) passes the attribution criterion with these tiers. *2026-10-19: the re-run failed (D-075); now waits on S-1.18.8.*
-- [ ] T-1.18.5.6 🟡 **Describer chosen at report level, not per frame** (D-075). Flash-Lite graded only 0.3 below gpt-5.5 per frame, yet the report-level benefit disappeared (run 2: 1/3 vs run 3: 3/3). Grade three mid-priced describers per frame (gpt-5.4-mini $0.018/video measured, claude-haiku-4-5, gemini-3.5-flash), then confirm the best one with a report-level run before changing the D-073 default.
+- [ ] T-1.18.5.6 🟡 **Describer chosen at report level, not per frame** (D-075). Flash-Lite graded only 0.3 below gpt-5.5 per frame, yet the report-level benefit disappeared (run 2: 1/3 vs run 3: 3/3). Grade three mid-priced describers per frame (gpt-5.4-mini $0.018/video measured, claude-haiku-4-5, gemini-3.5-flash), then confirm the best one with a report-level run before changing the D-073 default. **Measured 2026-10-19:** per frame, gemini-3.5-flash 4.70 (0/62 unusable) > gpt-5.5 4.54 > gpt-5.4-mini 4.37 >> claude-haiku-4-5 2.39 (55/62 unusable). Report level (run 4, Flash descriptions): 2/3 judges, substance level, 2 attribution errors. The report-level ranking follows how often graders picked a description as most useful, not its accuracy. The default awaits the user's spend-vs-quality call in [D-081](decisions.md#d-081--frame-describer-default-spend-against-report-level-quality-2026-10-19).
 - [ ] T-1.18.5.5 🔵 Frame resolution: every model misread small text at 640×360 (`worstvideo[height>=360]`); graders had to upscale to read labels. Try `height>=720` on the same 11 videos, re-grade, and weigh download size (D-051 bot-wall traffic) against the accuracy gain.
 
 #### S-1.18.4 🔵 Beyond YouTube
@@ -1362,19 +1402,19 @@ Backend suite 835 → 855.
 - [ ] T-6.1.4 ⚪ EPUB conversion. *Now S-6.1.5.*
 - [x] T-6.1.5 🟢 Frontend "Author Studio" surface — *shipped 2026-10-19 PR [#224](https://github.com/khoks/VideoResearchPro/pull/224). Scope moved from "a Pro+ button on a job page" to the full `/author` page, because a book spans several runs. Kinds come from `GET /author/kinds`: `available` kinds get a create flow, the rest render as "Coming later · E-6.x" with no button (a 501 is never offered). The create modal names the book, picks chapters from the user's finished topic / channel runs (runs without a report or not yet completed are listed but disabled, so the 501 / empty-chapter paths are unreachable from the UI), and toggles `include_qa` / `include_toc`. Outputs list with kind / status filters, failed rows show `error_message` in full, pending rows explain they were created when their kind had no generator. Reader modal renders the Markdown at reading measure; Download fetches `/content` with the bearer header and saves a blob (`<a href>` cannot carry the token); Delete confirms first. Tier-locked state when `has('author_studio')` is false or the API 403s. Linked decision: [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19). What remains of the original scope: the job-page shortcut and the server-side guard (S-6.1.1) and reading outputs in the shared reader shell (S-8.8.3).*
 
-#### S-6.1.1 🟡 Source picker and a working Author page
+#### S-6.1.1 🟢 Source picker and a working Author page
 **Scope-changed 2026-10-19:** the picker shipped in PR [#224](https://github.com/khoks/VideoResearchPro/pull/224) a day after this story was filed; what remains is below.
 - [x] T-6.1.1.1 `AuthorPage` job picker sending `source_ids`; runs without a report are listed but disabled — *shipped 2026-10-19, PR #224*
-- [ ] T-6.1.1.2 "Add this run to a book" shortcut on `JobDetailPage` into the same create flow (the alternative [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19) names)
-- [ ] T-6.1.1.3 Output row shows chapter count and word count; "View" opens the shared reader shell (S-8.8.3) instead of the page's own modal
-- [ ] T-6.1.1.4 Frontend type-check; a backend test asserting the router rejects an empty `source_ids` for `kind=book` with 400 rather than creating a `failed` row
+- [x] T-6.1.1.2 "Add to a book" on `JobDetailPage` (completed runs with a report, `author_studio` tier) opens `/author?new=book&job=<id>`, which opens the create modal with that run pre-selected — *shipped 2026-10-19, PR [#255](https://github.com/khoks/VideoResearchPro/pull/255)*
+- [x] T-6.1.1.3 Output row shows chapter count and word count (`OutputItem.word_count`, computed from the content); the page's reader renders the manuscript's GFM tables through `remark-gfm` — *shipped 2026-10-19, PR [#255](https://github.com/khoks/VideoResearchPro/pull/255)*. The moved "View opens the shared reader shell" part shipped with S-8.8.3 (PR [#261](https://github.com/khoks/VideoResearchPro/pull/261)): Read and a freshly generated book open `/author/outputs/:id`, and the page's own reader modal is gone.
+- [x] T-6.1.1.4 The router rejects `kind=book` with an empty `source_ids` as 400 before any row is written (test asserts zero rows); frontend type-check and vitest pass — *shipped 2026-10-19, PR [#255](https://github.com/khoks/VideoResearchPro/pull/255)*
 
-#### S-6.1.2 🔵 Markdown source for reports
-**PR:** TBD. Shared enabler for the book, the reading room (E-8.8) and public sharing (E-8.11).
-- [ ] T-6.1.2.1 `report_service.report_markdown(job)` converting the stored HTML body to Markdown with a deterministic converter (library in the plan), preserving `&t=` citation links as Markdown links and the Statistics table; cached at `<report_path>.md`
-- [ ] T-6.1.2.2 `BookMarkdownOutputter` uses it instead of the tag-stripping fallback; `_strip_html_to_markdownish` retired
-- [ ] T-6.1.2.3 `GET /api/v1/jobs/{id}/report.md` (same auth as the HTML route)
-- [ ] T-6.1.2.4 Round-trip tests on three stored real reports (headings, links, tables survive)
+#### S-6.1.2 🟢 Markdown source for reports
+**PR:** [#255](https://github.com/khoks/VideoResearchPro/pull/255) — *shipped 2026-10-19.* Shared enabler for the book, the reading room (E-8.8) and public sharing (E-8.11). Converter: `markdownify` (MIT) through a `ReportMarkdownConverter` subclass; html2text rejected as GPL-3.0. The tenant-scoped job lookup S-5.10.6 added to the outputter is kept. Linked decision: [D-079](decisions.md#d-079--report-markdown-source-on-markdownify-new-report-routes-are-header-bearer-only-2026-10-19).
+- [x] T-6.1.2.1 `report_service.report_markdown(job)` / `html_to_markdown(html)`: drops the document head and stylesheet, ATX headings, hyphen bullets, no `*`/`_` escaping, no autolinks (a citation stays `[text](href)` with its `&t=`), the statistics grid as a one-row table, `[VISUAL @ …]` spans verbatim; cached at `<report_path>.md`, rewritten when older than the HTML; an unwritable cache degrades to converting every time; `delete_report` removes the cache too — *shipped 2026-10-19*
+- [x] T-6.1.2.2 `BookMarkdownOutputter` reads it; the report's H1 (which repeats the chapter title) is dropped and its headings demoted two levels under the chapter's H2; a missing report or file is disclosed in the manuscript; `_strip_html_to_markdownish` retired — *shipped 2026-10-19*
+- [x] T-6.1.2.3 `GET /api/v1/jobs/{id}/report.md` in `routers/reports.py`, `text/markdown`, tenant-scoped 404s. **Auth deviates from the story text:** header-bearer only, no `?token=`, following the posture S-8.8.1 (merged first) set for every new report route to keep tokens out of URLs; a test pins that a query token alone gets 401 — *shipped 2026-10-19*
+- [x] T-6.1.2.4 Round-trip tests on three stored real reports (`backend/tests/fixtures/reports/`: a three-video run with 30 citations, a run with 83, a run with no transcripts) plus one synthetic report built by the production template: every H1–H3 present as ATX, every `&t=` href preserved, one table per HTML table plus the grid, no stylesheet or tag text — *shipped 2026-10-19*
 
 #### S-6.1.3 🔵 LLM cohesion pass
 **PR:** TBD. Absorbs T-6.1.2.
@@ -1390,6 +1430,7 @@ Backend suite 835 → 855.
 - [ ] T-6.1.4.1 Every `&t=` / permalink link in chapter Markdown becomes a numbered endnote; the endnote carries title, channel, timestamp and URL and writes an `output_citations` row
 - [ ] T-6.1.4.2 Q&A sections cite through their stored references rather than re-parsing prose
 - [ ] T-6.1.4.3 Tests: citation count equals endnote count; no dead links (the S-1.14.9 class of defect)
+- [ ] T-6.1.4.4 Table-of-contents links resolve: today the TOC links `#first-topic` while the chapter heading is `## 1. First Topic`, whose generated id differs; fold into the no-dead-links test. Filed 2026-10-19 by S-6.1.2; [D-079](decisions.md#d-079--report-markdown-source-on-markdownify-new-report-routes-are-header-bearer-only-2026-10-19)
 
 #### S-6.1.5 🔵 PDF and EPUB downloads
 **PR:** TBD. Absorbs T-6.1.3 and T-6.1.4.
@@ -1449,6 +1490,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-6.4.2.1 `newsletter_subscriptions(id, tenant_id, cadence, sections_json, last_issue_at, enabled)` + REST + a toggle on the Author page
 - [ ] T-6.4.2.2 Scheduler kind `newsletter` → generate output → `email_service.send_email` → in-app notification; idempotent per `(subscription, period)`
 - [ ] T-6.4.2.3 Tests: one send per period; unsubscribe stops the next run
+- [ ] T-6.4.2.4 Register the `newsletter` scheduler kind from its own task module and add the module to `celery_app.autodiscover_tasks`, as T-8.3.2.5 does for saved searches. Filed 2026-10-19 by S-8.3.1; [D-077](decisions.md#d-077--scheduler-one-static-beat-entry-over-table-rows-beat-is-its-own-process-with-no-pidfile-2026-10-19)
 
 ### E-6.5 ⚪ Video / reel (TTS narration + stills)
 
@@ -1482,6 +1524,8 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-6.7.1.2 Progress published on `job_progress:{output_id}` so `useJobProgress` and the WebSocket manager need no new channel; `AuthorPage` subscribes
 - [ ] T-6.7.1.3 Cancel endpoint mirroring `/jobs/{id}/cancel`
 - [ ] T-6.7.1.4 Tests with `.delay()` mocked at the router boundary (the conftest pattern)
+- [ ] T-6.7.1.5 Refuse a kind with no outputter before writing the row: today `POST /author/outputs` creates a `pending` row and then returns 501 (the UI never offers such kinds, so only API callers hit it). Filed 2026-10-19 by S-6.1.1
+- [ ] T-6.7.1.6 Fix `wsClient.ts`'s dev-mode `InvalidStateError: Still in CONNECTING state` (its `onopen` sends on a socket that a second connect has replaced) before AuthorPage subscribes to progress. Seen in the S-6.1.2 live check, 2026-10-19
 
 #### S-6.7.2 🔵 Binary artifacts and downloads
 **PR:** TBD
@@ -1516,7 +1560,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 **Acceptance.** A user who raises one channel's weight sees that channel's chunks rank higher in their own job and library Q&A, and no other tenant's ranking changes.
 - [ ] T-7.1.1.1 `PUT /api/v1/channels/{id}/weight` writing `channel_subscriptions.source_weight` through `subscription_service`
 - [ ] T-7.1.1.2 Apply the weight when re-ranking job and library retrieval. Weights are per-tenant and chunks are global ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)), so resolve them at query time and never store them in chunk metadata
-- [ ] T-7.1.1.3 Weight control on the channel page
+- [ ] T-7.1.1.3 Weight control on the channel page — *the page and a read-only `TrustWeightSlot` (`data-slot="trust-weight"`) shipped in S-8.7.1, PR [#237](https://github.com/khoks/VideoResearchPro/pull/237); replace the slot with the control ([D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19))*
 - [ ] T-7.1.1.4 Make the `channel_subscription.py` docstring true, or correct it
 - [ ] T-7.1.1.5 Measure: the same questions with and without weighting, judged blind (E-1.14 harness)
 
@@ -1524,7 +1568,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 
 **Scope.** Segment retrieval by trust band and let the answer surface "your trusted creators say X; others say Y", with disagreement detection between bands. Deferred by D-068 until user-set weights exist and E-7.1's measurement is in.
 
-## I-8 🔵 Research workbench features (M1 to M12)
+## I-8 🟡 Research workbench features (M1 to M12)
 
 **Filed 2026-10-18** under the user's directive to turn the larger roadmap items into tracked, researched, buildable plans. One epic per medium-scale roadmap item; every epic links to a research plan under [`docs/plans/`](plans/README.md) that records the chosen approach, the alternatives rejected, schema and API deltas, the modules touched, risks, the test strategy and the first PR. Recommended sequence across I-3 / I-6 / I-8: [`docs/plans/build-order.md`](plans/build-order.md).
 
@@ -1546,10 +1590,11 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - Responsive handling is two CSS media rules in `index.css` (sidebar collapse under 960px, `.form-row` stacking under 640px); no reading-specific mobile work exists.
 - `users` has no `onboarded_at`; there is no first-run flow.
 
-### E-8.1 🔵 Shelves — collections, tags and shelf-scoped views (M1)
+### E-8.1 🟡 Shelves — collections, tags and shelf-scoped views (M1)
 
 **Scope.** Named collections of jobs (many-to-many), per-tenant tags on documents, a shelf detail page that is a filtered library view, and Q&A scoped to a shelf. Tags are a per-tenant side table because `documents` is a shared cache ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)): a tag is private to the user who applied it.
 **Plan:** [`docs/plans/m1-shelves.md`](plans/m1-shelves.md)
+**Linked decision:** [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19) (defaults taken on the plan's open questions)
 **Acceptance.** A user creates a shelf, adds jobs to it from the jobs list and job page, opens the shelf and sees only those jobs and their documents, asks a question scoped to the shelf and gets citations only from documents on it. Another tenant sees none of it.
 
 #### S-8.1.1 🟢 Shelves schema, service and REST
@@ -1568,12 +1613,15 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [x] T-8.1.2.4 Type-check clean. **No Playwright runner exists in the frontend**, so the create → add → open smoke ran live instead: worktree backend on 8001 against a scratch SQLite, Vite on 3000, driven in the browser pane (create inline, tick a second run, open the shelf, recolour, chip on the job page, delete with runs intact). A checked-in Playwright suite is still open
 - [x] Label palette: ten named colours in `theme.ts` with light / dark pairs at ≥ 4.5:1, documented in `ui-design.md` §1.1
 
-#### S-8.1.3 🔵 Document tags (per tenant)
-**PR:** TBD
-- [ ] T-8.1.3.1 `document_tags(id, document_id, tenant_id, tag, created_at)`, unique `(document_id, tenant_id, tag)`, index on `(tenant_id, tag)`
-- [ ] T-8.1.3.2 `GET /library/tags` (counts), `PUT/DELETE /library/videos/{id}/tags/{tag}`; `GET /library/videos?tag=` filter joined through the visibility set
-- [ ] T-8.1.3.3 Tag chips on `VideoRow` with inline add; filter rail entry on the Library page
-- [ ] T-8.1.3.4 Tests: tags never cross tenants; filter respects visibility
+#### S-8.1.3 🟢 Document tags (per tenant)
+**PR:** [#257](https://github.com/khoks/VideoResearchPro/pull/257) (merged 2026-10-19)
+**Scope-changed 2026-10-19:** built to the [M1 plan](plans/m1-shelves.md)'s *tags as rows* design rather than the free-string `document_tags` table this story first listed. Rows give a stable id (rename keeps every tagging), merge as one update, and first-class colour and counts; the plan rejected free strings for exactly those reasons.
+- [x] T-8.1.3.1 `tags(id, tenant_id, name, color, created_at)` unique per tenant on `lower(name)` (functional index) + polymorphic `taggings(id, tag_id, tenant_id, target_type, target_id, created_at)`, unique `(tag_id, target_type, target_id)`, index `(tenant_id, target_type, target_id)`. Migration `e9f0a1b2c3d4`. `target_type` accepts only `document` in v1 (plan open question 2: documents-only until asked; jobs and channels need no schema change)
+- [x] T-8.1.3.2 `GET/POST /api/v1/tags`, `PUT /tags/{id}` (rename / recolour), `DELETE /tags/{id}[?into=]` (delete or merge), `PUT/DELETE /library/videos/{document_id}/tags/{tag_id}`; `?tag=` on the library listing and on shelf documents, joined through the visibility set; rows carry the caller's `tags`
+- [x] T-8.1.3.3 Tag chips on every library row with a "+ Tag" picker (checkbox per tag, inline create); a Tag bar on the Library page (select with counts, active-tag pill, "Manage tags" dialog for rename / recolour / merge / delete). The tag lives in the URL so chips are links. Shared pieces: `LabelPill` primitive, `PaletteField`, `LabelPicker` (now also behind "Add to shelf")
+- [x] T-8.1.3.4 Tests: tags never cross tenants (every endpoint against a second real reader, including their tag on a shared document); the filter and counts respect visibility; merge drops duplicates; migration round trip. Live smoke in the browser pane: create and apply, filter by chip, merge through the dialog, shelf picker regression
+- [x] Found on the way: list popovers were painted under the next card (each `Card` is its own stacking context through `transform`); `LabelPicker` now portals to `<body>` with fixed coordinates and listens for outside clicks and Escape in the capture phase
+- **Decision taken (flagged):** tags are **not tier-gated**. They cost the operator nothing (the M6 plan's reasoning), the `shelves` capability is about grouping runs, and `frontend/src/data/tiers.ts` does not advertise tags. One `require_feature` line per write route if the user wants them Pro
 
 #### S-8.1.4 🔵 Shelf-scoped Q&A
 **PR:** TBD
@@ -1582,18 +1630,18 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.1.4.3 Q&A panel on the shelf page reusing the library Q&A components
 - [ ] T-8.1.4.4 Tests: scope restricts citations; empty scope never widens
 
-### E-8.2 🔵 Command palette and global search (M2)
+### E-8.2 🟡 Command palette and global search (M2)
 
 **Scope.** `Cmd-K` / `Ctrl-K` palette with navigation actions and grouped search across jobs, documents, channels, Q&A exchanges, knowledge artifacts, shelves and notes, backed by one tenant-scoped search endpoint. Keyword search first; semantic results as a second, clearly labelled group.
 **Plan:** [`docs/plans/m2-command-palette.md`](plans/m2-command-palette.md)
 **Acceptance.** From any page, `Ctrl-K` opens the palette; typing three characters returns grouped results within 300 ms on a 5,000-document library; Enter navigates; arrow keys and Escape work; a screen reader announces the result count. No result from another tenant ever appears.
 
-#### S-8.2.1 🔵 Search endpoint
-**PR:** TBD
-- [ ] T-8.2.1.1 `GET /api/v1/search?q=&types=&limit=` returning `{groups: [{type, items: [{id, title, subtitle, href, score}]}]}`; each group is a tenant-scoped query (`jobs.tenant_id`, `document_visibility`, `channel_subscriptions`, `*_qa_exchanges.tenant_id`)
-- [ ] T-8.2.1.2 SQLite FTS5 external-content tables over document titles and descriptions, job topics, channel names, Q&A questions and knowledge Markdown, maintained by triggers (created with `op.execute`, conditionally); FTS5 is compiled into the python.org, macOS and uv builds and was verified in this project's venv (SQLite 3.49.1), but Linux distro Pythons link the system library, so a startup probe falls back to `LIKE` with a logged warning
-- [ ] T-8.2.1.3 Prefix and trigram substring matching; `bm25` ranking with recency tie-break; per-group cap
-- [ ] T-8.2.1.4 Isolation and latency tests (seeded 5,000 documents; assert under budget), on both the FTS5 and the fallback path
+#### S-8.2.1 🟢 Search endpoint
+**PR:** [#245](https://github.com/khoks/VideoResearchPro/pull/245) — *shipped 2026-10-19.* Two deviations from the plan's sketch, both recorded in `services/search_service.py`: (1) **one trigram FTS5 table per entity** instead of a `unicode61` table plus a trigram table — the trigram tokenizer alone covers word-prefix and mid-word substring matching, case folding, diacritics folding (SQLite ≥ 3.45) and Devanagari, so the second table bought nothing at this scale; queries whose tokens are all under three characters take the `LIKE` path even with FTS5 present; (2) **not external-content tables** — FTS5's `content=` mode maps on rowid and every base table has a string primary key, whose rowids are not stable across `VACUUM`, so each FTS row carries the entity id as an `UNINDEXED` column and duplicates the indexed text. `GET /health` gains `search_backend`. Visibility joins are on `document_id` (D-070, merged first), through `visibility_service.visible_document_ids` and `subscription_service.visible_channel_ids` on the ORM paths; a test pins that a PDF with no `video_id` is found by its owner only. No palette yet (S-8.2.2); document and knowledge hrefs use `/library?document=<document_id>` (`&view=knowledge`), a contract the palette PR teaches the library page. Linked decision: [D-078](decisions.md#d-078--search-index-one-trigram-fts5-table-per-entity-copies-not-external-content-like-fallback-2026-10-19).
+- [x] T-8.2.1.1 `GET /api/v1/search?q=&types=&limit=` returning `{q, backend, groups: [{type, items: [{id, title, subtitle, href, score}]}]}`; tenant scoping is applied to the FTS hit list by joining each entity's anchor (`jobs.tenant_id`, `document_visibility`, `channel_subscriptions` ∪ visible documents' channels, `*_qa_exchanges.tenant_id`), never by a tenant column inside the index; a tenant with nothing visible gets empty groups — *shipped 2026-10-19*
+- [x] T-8.2.1.2 FTS5 tables `fts_documents`, `fts_jobs`, `fts_channels`, `fts_qa` (three Q&A tables, `surface` column), `fts_knowledge` with `AFTER INSERT / UPDATE OF <cols> / DELETE` triggers; created conditionally by migration `a9f3c1e7b5d2` **and** re-ensured by the lifespan (`search_service.ensure_index`), so a Python upgrade that gains FTS5 later still gets the tables; the probe tries `trigram remove_diacritics 1` then `trigram`, and falls back to `LIKE` with a logged warning; `schema_init_service` ignores the `fts_` prefix when comparing the live DB to the ORM — *shipped 2026-10-19*
+- [x] T-8.2.1.3 Substring (and therefore prefix) matching from three characters; `bm25()` with the title column weighted 5:1 over the body, recency tie-break, over-fetch ×4 before the cut, per-group cap (`limit` 1–25, default 5) — *shipped 2026-10-19*
+- [x] T-8.2.1.4 Tests on both paths through one parametrised fixture: every group scoped to the asking tenant (same words in both tenants' rows), empty for a tenant with nothing visible, caps, `LIKE` metacharacters literal; FTS-only: title outranks body, substring / case / Devanagari, triggers track update and delete and ignore unindexed columns, knowledge indexed only with a report, short query falls back, recency tie-break, channels visible through documents; probe failure creates nothing and warns; migration round-trip; latency under 300 ms on 5,000 documents + 2,000 exchanges on both paths; router: 401, 422, 400 on unknown type, two-tenant isolation through the endpoint — *shipped 2026-10-19*
 
 #### S-8.2.2 🔵 Palette UI and shortcuts
 **PR:** TBD
@@ -1602,18 +1650,19 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.2.2.3 Debounced query, request cancellation, empty and loading states
 - [ ] T-8.2.2.4 Remove the stale `ui-design.md` claim or make it true (`g + r` style chords) in the same PR
 - [ ] T-8.2.2.5 Notes group in the palette: "Your notes" (`/notes`), "Export notes as Markdown" and "Export notes as JSON-LD" (`/exports/notes.md` / `.jsonl`). Moved here from T-8.5.3.2, which shipped before the palette existed
+- [ ] T-8.2.2.6 The library page honours the search hrefs `?document=<document_id>` and `&view=knowledge` (open the document row, or its knowledge report), so palette results land on the item rather than the unfiltered list. Filed 2026-10-19 by S-8.2.1; [D-078](decisions.md#d-078--search-index-one-trigram-fts5-table-per-entity-copies-not-external-content-like-fallback-2026-10-19)
 
 #### S-8.2.3 ⚪ Semantic group
 - [ ] T-8.2.3.1 `semantic=true` adds a group from `qa_library_global` and the transcript collection (visible set only), merged with the keyword results by reciprocal rank fusion (rank-only, so FTS5 scores and Chroma distances need no calibration); labelled separately in the palette
 
-### E-8.3 🔵 Saved searches and alerts (M3)
+### E-8.3 🟡 Saved searches and alerts (M3)
 
 **Scope.** Pin a library question, re-run it on a schedule, detect whether new library content materially changed the answer, and notify by email and in-app. Carries the project's first scheduler, which [E-6.4](#e-64--newsletter--digest-recurring-scheduled-output) reuses.
 **Plan:** [`docs/plans/m3-saved-searches-alerts.md`](plans/m3-saved-searches-alerts.md)
 **Acceptance.** A user pins a question with a weekly schedule; a week later the question re-runs without anyone online; if the cited document set or the answer changed beyond the threshold they receive an email and an in-app notification linking to the diff; re-runs count against the user's monthly library Q&A quota; a paused search never runs.
 
 #### S-8.3.1 🟢 Scheduler tick (shared infrastructure)
-**PR:** [#238](https://github.com/khoks/VideoResearchPro/pull/238) — *shipped 2026-10-19.* Beat is a separate process (`celery -A app.tasks.celery_app beat`) started by both launcher scripts, never the embedded `worker -B` form; the launchers are the single-beat guard because Celery's `--pidfile` stale check is `os.kill(pid, 0)`, which on Windows terminates whatever process holds that pid. Cadences are human (`daily` / `weekly` / `monthly` with hour, minute, weekday or day-of-month 1–28, IANA timezone; `every` N seconds for system kinds), stored as `cadence_json`; `next_run_at` is computed by Celery's own `crontab` on the row's local wall clock, so 09:00 local stays 09:00 local across DST. Kinds register from the task module that defines their task (`scheduler_service.register_kind`); nothing registers yet — `saved_search` arrives with S-8.3.2. `GET /api/v1/health/scheduler` reports config, registered kinds and row counts.
+**PR:** [#238](https://github.com/khoks/VideoResearchPro/pull/238) — *shipped 2026-10-19.* Beat is a separate process (`celery -A app.tasks.celery_app beat`) started by both launcher scripts, never the embedded `worker -B` form; the launchers are the single-beat guard because Celery's `--pidfile` stale check is `os.kill(pid, 0)`, which on Windows terminates whatever process holds that pid. Cadences are human (`daily` / `weekly` / `monthly` with hour, minute, weekday or day-of-month 1–28, IANA timezone; `every` N seconds for system kinds), stored as `cadence_json`; `next_run_at` is computed by Celery's own `crontab` on the row's local wall clock, so 09:00 local stays 09:00 local across DST. Kinds register from the task module that defines their task (`scheduler_service.register_kind`); nothing registers yet — `saved_search` arrives with S-8.3.2. `GET /api/v1/health/scheduler` reports config, registered kinds and row counts. Linked decision: [D-077](decisions.md#d-077--scheduler-one-static-beat-entry-over-table-rows-beat-is-its-own-process-with-no-pidfile-2026-10-19).
 - [x] T-8.3.1.1 Celery beat entry `scheduler.tick` every `SCHEDULER_TICK_SECONDS` (default 300) on the `default` queue with `expires` so a backlog of ticks never replays after a restart; `SCHEDULER_ENABLED` (off = no beat entry and the tick no-ops); beat process in `scripts/start.ps1` and `scripts/restart_services.ps1` — *shipped 2026-10-19*
 - [x] T-8.3.1.2 `scheduled_runs(id, tenant_id, kind, target_id, cadence_json, next_run_at, last_run_at, last_status, last_error, claimed_at, consecutive_failures, enabled)` (migration `c7d8e9f0a1b2`); the tick claims each due row with one `UPDATE … WHERE claimed_at IS NULL OR claimed_at < now − SCHEDULER_LEASE_SECONDS`, so a duplicate tick claims nothing and a crashed holder's lease expires — *shipped 2026-10-19*
 - [x] T-8.3.1.3 Per-kind dispatch through `task_routing_service.dispatch_for_tenant_id` (tier queues apply; `tenant_id` NULL → `default`); an unknown kind is recorded as `no_handler` and advanced by its cadence, a failed dispatch (broker down) is retried at the next tick up to `SCHEDULER_MAX_RETRY_TICKS` times, then waits for its cadence — *shipped 2026-10-19*
@@ -1625,6 +1674,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.3.2.2 `GET/POST/PATCH/DELETE /api/v1/saved-searches`, `POST /api/v1/saved-searches/{id}/run-now`; gated on `require_feature("saved_searches")`
 - [ ] T-8.3.2.3 "Pin this question" on library Q&A answer cards; `/saved-searches` list page with last result and next run
 - [ ] T-8.3.2.4 Isolation tests; quota enforced before each run ([D-045](decisions.md#d-045--quota-metering-enforce-before-record-after-success-2026-05-05)); a per-tier cap on active saved searches in `TIER_CAPABILITIES` (comparable products cap at 3 to 15)
+- [ ] T-8.3.2.5 Register the `saved_search` kind (`scheduler_service.register_kind`) from `tasks/saved_search_tasks.py` and add that module to `celery_app.autodiscover_tasks`; without the import the worker records `no_handler` and the search never runs. Filed 2026-10-19 by S-8.3.1; [D-077](decisions.md#d-077--scheduler-one-static-beat-entry-over-table-rows-beat-is-its-own-process-with-no-pidfile-2026-10-19)
 
 #### S-8.3.3 🔵 Re-run, change detection and notification
 **PR:** TBD
@@ -1689,31 +1739,49 @@ Linked decision: D-074.
 - [x] T-8.5.3.2 `GET /api/v1/exports/notes.jsonl` (W3C Web Annotation JSON-LD under the `anno.jsonld` context, one per line, oldest first, withdrawn notes included with `deleted`; `note_export_service.parse_note_jsonld` is the exact inverse and the round-trip test holds every column to it) and `GET /api/v1/exports/notes.md` (grouped by target type and target, every column in an HTML comment per note). Both stream like the dataset exports and accept `?token=`. On the Exports page and the notes page. **Not in the command palette**: E-8.2's palette UI (S-8.2.2) does not exist yet; add the group there when it lands (filed as [T-8.2.2.5](#s-822--palette-ui-and-shortcuts))
 - [x] T-8.5.3.3 `GET /echo/status` reports `notes_total` and `notes_words` (live notes) as the Domain 3 feeder; the Echo readiness panel shows them. **Reported, not gated**: the per-language voice floor is S-3.5.1's to set, so `ready` does not move
 
-### E-8.6 🔵 Job templates (M6)
+### E-8.6 🟡 Job templates (M6)
 
 **Scope.** Save a job's parameters as a named template; instantiate with a new topic and run. Generalises the shipped "Duplicate" flow from "copy one job" to "named reusable recipe", and seeds the starter templates the onboarding wizard (E-8.10) offers.
 **Plan:** [`docs/plans/m6-job-templates.md`](plans/m6-job-templates.md)
+**Linked decisions:** [D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19) (schema, starters, visual flag carried), [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19) (not tier-gated)
 **Acceptance.** A user saves a completed topic job as "Weekly AI policy scan", later picks it from the submit page, changes only the topic, and the new job runs with the saved instructions, filters, preferred channels, source types, depth and visual flag; built-in starter templates appear for every user and cannot be edited.
 
-#### S-8.6.1 🔵 Templates schema, REST and submit-page integration
-**PR:** TBD
-- [ ] T-8.6.1.0 First fix the Duplicate flow it builds on: PR [#228](https://github.com/khoks/VideoResearchPro/pull/228) made the job API return `output_length` and `visual_analysis`, but `jobToFormState` in `SubmitJobPage.tsx` still hard-codes `outputLength: 'auto'` and the form has no visual-analysis field at all
-- [ ] T-8.6.1.1 `job_templates(id, tenant_id NULL for built-ins, builtin_key, name, description, job_type, version, parameters_json, is_latest, created_at)` with immutable rows per save (integer `version`, the Grafana model) and `jobs.template_id` + `jobs.template_version` for provenance; `parameters_json` is the `JobCreate` payload minus the variable fields
-- [ ] T-8.6.1.6 Variable fields: `topic`, job name, and a *relative* publish window — `JobCreate` has no date-range field today, so add `published_after_days` rather than absolute dates so templates stay reusable
-- [ ] T-8.6.1.2 `GET/POST/PUT/DELETE /api/v1/job-templates`, `POST /api/v1/jobs/{id}/save-as-template`; built-ins read-only
-- [ ] T-8.6.1.3 "Save as template" on `JobDetailPage`; "From template" picker on `SubmitJobPage` reusing the `cloneFrom` form-state path
-- [ ] T-8.6.1.4 Validation re-runs `JobCreate` model validation at instantiation so a stale template cannot create an invalid job
-- [ ] T-8.6.1.5 Tests incl. isolation and built-in immutability
+#### S-8.6.1 🟢 Templates schema, REST and submit-page integration
+**PR:** [#263](https://github.com/khoks/VideoResearchPro/pull/263) (merged 2026-10-19)
+- [x] T-8.6.1.0 Duplicate fixed: `jobToFormState` (now in `frontend/src/utils/jobForm.ts`, unit-tested with vitest) carries `output_length` and `visual_analysis`. **No visual-analysis opt-in was added to the form**: that toggle is T-1.18.2.1, deferred by D-071 / D-075. A carried flag shows as an info box with "Turn off"
+- [x] T-8.6.1.1 Schema (migration `f0a1b2c3d4e5`): `job_templates(id, tenant_id NULL for built-ins, builtin_key UNIQUE, name, description, job_type, latest_version, created_at, updated_at, deleted_at)` + `job_template_versions(template_id, version, parameters_json, created_at)`, immutable rows per saved change, newest 20 kept; `jobs.template_id` + `jobs.template_version` for provenance. Split from the plan's single table so a template's id survives a rename; soft delete so provenance keeps resolving
+- [x] ~~T-8.6.1.6 Relative publish window~~ — *moved to [S-8.6.3](#s-863--relative-publish-window) on 2026-10-19: it needs the search agent's ranking prompt, which this lane could not edit. Variable fields today: `topic` (and channels when a recipe leaves them open); `{{topic}}` in instructions is filled at submission*
+- [x] T-8.6.1.2 `GET/POST /api/v1/job-templates`, `GET/PUT/DELETE /job-templates/{id}` (PUT with new parameters → next version), `GET /job-templates/{id}/versions`, `POST /api/v1/jobs/{id}/save-as-template`, `POST /jobs?template_id=&template_version=` (provenance); built-ins 403 on write
+- [x] T-8.6.1.3 "Save as template" on `JobDetailPage`; "Start from a template" picker, origin banner with "Save changes as vN+1", and "Save as template" on `SubmitJobPage`; a `/templates` page (use, history, rename, delete)
+- [x] T-8.6.1.4 Parameters are validated through `JobCreate` on every save (422 otherwise; unknown fields refused), the submission is a full `JobCreate` again, and each listing reports `problems` for the caller (a tier cap below the recipe's `num_videos`). A test pins that frozen ∪ variable fields = `JobCreate`'s fields, so a new field forces a decision
+- [x] T-8.6.1.5 Tests incl. isolation (every endpoint against a second reader) and built-in immutability; live check in the browser pane (save a deep visual run as a template, Duplicate keeps depth and the flag, pick the template, save v2 from the form, history, Use)
+- **Finding, not fixed (outside this lane):** `JobCreate` has **no `source_types` field** and nothing writes `jobs.source_types_json`, so every topic run searches video only. The worker's multi-source dispatch (`job_tasks._resolve_source_types` → `connector_dispatch`) is unreachable from the API. The plan listed `source_types` as a frozen template field on the assumption it existed; templates freeze what `JobCreate` really accepts. Starter templates that need it (podcast digest, mixed-source debate) wait for that wiring (S-8.6.2)
 
-#### S-8.6.2 🔵 Starter templates
-**PR:** TBD
-- [ ] T-8.6.2.1 Five seeded templates (topic scan, channel deep-dive, podcast digest, mixed-source debate, subscription follow) inserted by migration, versioned by a `builtin_key`
-- [ ] T-8.6.2.2 Used by the onboarding wizard (E-8.10) as the first-job step
+#### S-8.6.2 🟢 Starter templates
+**PR:** [#265](https://github.com/khoks/VideoResearchPro/pull/265) (merged 2026-10-19)
+- [x] T-8.6.2.1 Five built-ins seeded by migration `f1a2b3c4d5e6`, keyed by `builtin_key`, read-only, listed for every reader under "Starters": **Topic scan** (20 videos), **Deep dive** (60 long-form videos, deep report), **Quick brief** (8 short videos, brief report), **Channel deep-dive** (25 per channel), **Subscription follow**. The upsert is idempotent and versioned (identical → no-op, changed parameters → next version); a later revision copies it into a new migration. **Plan open question 2 (which five) answered by substitution:** podcast digest and mixed-source debate need `source_types`, which `JobCreate` does not accept (S-8.6.1 finding), so Deep dive and Quick brief stand in until that field is wired. No starter turns on visual analysis (its opt-in is deferred, D-071 / D-075)
+- [x] Channel and subscription recipes may leave the channel list empty, meaning "add the channels each run" (as topic recipes leave the topic); validation fills a placeholder for the check, submission still requires channels, and the submit banner says "Add the channels"
+- [x] ~~T-8.6.2.2 Used by the onboarding wizard (E-8.10) as the first-job step~~ — *moved 2026-10-19: it is the wizard's work and already lives in [S-8.10.1](#s-8101--wizard) T-8.10.1.2 ("a first job … from a starter template"); the wizard picks a starter by `builtin_key` from `GET /api/v1/job-templates`*
 
-### E-8.7 🔵 Channel intelligence (M7)
+#### S-8.6.3 ⚪ Relative publish window
+**PR:** TBD
+**Filed 2026-10-19** from T-8.6.1.6. **The user's call** (M6 plan open question 1): is a relative window wanted now? It changes the ranking prompt.
+- [ ] T-8.6.3.1 `JobCreate.published_after_days` (and `jobs.published_after_days`), resolved at run time; a template field (extend `TemplateParameters`)
+- [ ] T-8.6.3.2 Thread it into `search_agent` ranking as a **preference**, never a filter ([D-059](decisions.md#d-059--selection-quotas-preferred-channel-guarantee--concentration-cap-2026-07-30) posture), coordinated with S-1.17.2's `temporal_profile`
+- [ ] T-8.6.3.3 Submit-form control and template round trip; tests at the caller
+**Blocked-on:** the user's answer; serialise with other `backend/app/agents` work.
+
+#### S-8.6.4 ⚫ Source-type starters (podcast digest, mixed-source debate)
+**PR:** TBD
+**Filed 2026-10-19.** The two starters the M6 plan proposed that S-8.6.2 could not ship ([D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19)).
+- [ ] T-8.6.4.1 A new data migration that copies `STARTERS` / `_upsert` from `f1a2b3c4d5e6_starter_templates.py` (never edit that file) and adds `podcast-digest` and `mixed-source-debate`
+**Blocked-on:** [S-1.5.13](#s-1513--accept-source_types-on-job-creation).
+
+### E-8.7 🟡 Channel intelligence (M7)
 
 **Scope.** A per-channel view with analytics computed from what the library already holds: publishing cadence, top topics and concepts aggregated from knowledge artifacts, a keyword cloud from transcripts, the user's own Q&A activity against the channel, and a concept graph. Stance over time is scoped to sources that carry classification (social connectors); YouTube has none today, so that panel is explicitly data-dependent.
 **Plan:** [`docs/plans/m7-channel-intelligence.md`](plans/m7-channel-intelligence.md)
+**Linked decision:** [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19) (read-only trust-weight slot)
 **Acceptance.** Opening a channel the user follows shows cadence, top topics (with the videos behind each), a keyword cloud and the user's questions about it; panels whose inputs are missing say what to do ("Extract knowledge for 12 more videos to populate topics") instead of showing nothing; a channel with 500 documents renders within two seconds from a cached aggregate.
 
 #### S-8.7.1 🟢 Channel detail page
@@ -1734,7 +1802,14 @@ Linked decision: D-074.
 - [ ] T-8.7.3.1 Tab with cadence bars, topic list with drill-down, keyword cloud (own SVG layout, no library), coverage call-to-action, "Extract knowledge for all" batch action that respects the knowledge quota
 - [ ] T-8.7.3.2 Concept graph panel reusing the E-8.9 graph component filtered to the channel
 
-### E-8.8 🔵 Reading room — the report as a native reading view (M8)
+#### S-8.7.4 🔵 Citation chips link to the channel page
+**PR:** TBD
+**Filed 2026-10-19:** the part of T-8.7.1.2 that S-8.7.1 could not do. `Reference` has no `channel_id`, and adding it edits `qa_agent._chunk_to_reference`, a shared hot spot.
+- [ ] T-8.7.4.1 Add `channel_id` to video references in `_chunk_to_reference` (Chroma chunk metadata already carries it) and to `Reference` / `LibraryReference`
+- [ ] T-8.7.4.2 `CitationLink` renders the channel name as a link to `/library/channels/:id`
+**Sequencing:** Phase 2, with the other `qa_agent.py` edits ([build order](plans/build-order.md#shared-hot-spots-serialise-anything-that-touches-these)).
+
+### E-8.8 🟡 Reading room — the report as a native reading view (M8)
 
 **Scope.** Replace the iframe modal with a full-page reader at `/reports/:jobId`: sanitised report HTML rendered in React with the app's typography, drop cap, sticky outline built from the report's own headings, reading progress, citation hover cards, print stylesheet. The modal stays as a quick peek. The same reader shell renders knowledge artifacts and, later, public shares (E-8.11) and books (E-6.1).
 **Plan:** [`docs/plans/m8-reading-room.md`](plans/m8-reading-room.md)
@@ -1748,16 +1823,16 @@ Linked decision: D-074.
 - [x] T-8.8.1.3 `/reports/:jobId` route, `ReaderShell` layout (65 to 75ch measure, drop cap via `::first-letter` with `initial-letter` under `@supports` because Firefox still lacks it, IntersectionObserver outline, reading-progress bar, `text-wrap: pretty` as enhancement), `JobDetailPage` "Read" button; modal kept as quick peek
 - [x] T-8.8.1.4 Tests: parser on three stored real reports; sanitiser rejects script / event handlers; type-check — *the three fixtures are committed under `components/reader/__fixtures__`; one of them (`419e691d…`) was cut mid-tag by the writer so the browser folds two of its headings into an attribute value — the reader cannot recover them, the compose step should refuse to emit a truncated section (filed as a note under E-1.14)*
 
-#### S-8.8.2 🔵 Citation hover cards and footnotes
-**PR:** TBD
-- [ ] T-8.8.2.1 Citation anchors (`&t=` links) upgraded to superscript chips with hover / focus cards (Popover API, positioned with `getBoundingClientRect` since CSS anchor positioning is still partial) showing title, channel, timestamp, quote where available; polymorphic by `source_type`
-- [ ] T-8.8.2.2 Print stylesheet: outline removed, citations rendered as numbered footnotes, page breaks before `h2`
-- [ ] T-8.8.2.3 Hook for R1 frames: when [S-1.18.2](#s-1182--surfacing-frames-to-the-user) ships, the popover shows the still
+#### S-8.8.2 🟢 Citation hover cards and footnotes
+**PR:** [#254](https://github.com/khoks/VideoResearchPro/pull/254) — shipped 2026-10-19. Found and fixed on the way: `GET /jobs/{id}/videos` declared none of the polymorphic fields its builder returned, so `source_type` / `document_id` / `source_metadata` were stripped from every response (the job page's approval cards always fell back to the YouTube shape) and a non-video document on a job failed serialisation; the schema now declares them.
+- [x] T-8.8.2.1 Citation anchors (`&t=` links) upgraded to superscript chips with hover / focus cards (Popover API, positioned with `getBoundingClientRect` since CSS anchor positioning is still partial) showing title, channel, timestamp, quote where available; polymorphic by `source_type` — *one shared card for all chips (a report carries up to 277); sources resolved by YouTube id, by URL, or for pre-S-1.14.9 bare anchors by the title or sole channel written beside them (30 of 30 recovered in the stored smoke-test report, 20 by title and 10 by channel because the writer reworded one Kannada title); per-kind facts in `sourceLabels.ts`. On screen the chip keeps the writer's timestamp text, since it is part of the sentence, and the footnote number appears in print. Report anchors carry no quote; the card has no quote line until a citation shape that carries one reaches it.*
+- [x] T-8.8.2.2 Print stylesheet: outline removed, citations rendered as numbered footnotes, page breaks before `h2` — *plus a "Sources cited" endnote list that opens itself on `beforeprint`, monochrome output in either theme, the health banner and toasts hidden; verified with Chromium print emulation and a 37-page A4 PDF of the R1 report*
+- [x] T-8.8.2.3 Hook for R1 frames: when [S-1.18.2](#s-1182--surfacing-frames-to-the-user) ships, the popover shows the still — *the slot ships (`CitationCardProvider`'s `resolveStill`, tested with a stub); no data until S-1.18.2 serves `visual_frames`*
 
-#### S-8.8.3 🔵 Knowledge artifacts and books in the same shell
-**PR:** TBD
-- [ ] T-8.8.3.1 `/knowledge/:videoId` route rendering the Markdown knowledge report through `ReaderShell` (react-markdown + heading ids)
-- [ ] T-8.8.3.2 Author Studio outputs (`/author/outputs/:id`) read in the same shell
+#### S-8.8.3 🟢 Knowledge artifacts and books in the same shell
+**PR:** [#261](https://github.com/khoks/VideoResearchPro/pull/261) — shipped 2026-10-19.
+- [x] T-8.8.3.1 `/knowledge/:videoId` route rendering the Markdown knowledge report through `ReaderShell` (react-markdown + heading ids) — *react-markdown's own pipeline (remark-parse → remark-gfm → remark-rehype → hast-util-to-jsx-runtime) run once with a tree transform between, instead of `<ReactMarkdown>` plus `rehype-slug`: the shell needs the outline before the body renders, and two passes that must agree on every heading id drift. Same slugger as reports, so no `rehype-slug` dependency. The knowledge response now names its source (title, channel, kind, URL, dates) and `video_id` became nullable (a PDF's artifact failed serialisation). The drawer stays as the quick peek with "Open in reader".*
+- [x] T-8.8.3.2 Author Studio outputs (`/author/outputs/:id`) read in the same shell — *manuscripts carry GFM tables since S-6.1.2 and render through the same `remark-gfm` path; the Author page's reader modal is gone; Read and a fresh `completed` output both navigate here. The book outputter's table-of-contents anchors are written against its own slug of the bare chapter title while the heading reads "1. Title"; the transform repoints them (checked on a real 81 kB manuscript built by `BookMarkdownOutputter` from two stored runs).*
 
 ### E-8.9 🔵 Citation graph and knowledge map (M9)
 

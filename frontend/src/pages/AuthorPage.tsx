@@ -1,9 +1,7 @@
 import { useMemo, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   useAuthorKinds,
-  useAuthorOutputContent,
   useAuthorOutputs,
   useCreateOutput,
   useDeleteOutput,
@@ -33,8 +31,10 @@ import {
   kindMeta,
   outputDownloadFilename,
   outputMediaType,
+  outputSizeLabel,
   outputStatusLabel,
   outputStatusTone,
+  parseCreateIntent,
   partitionKinds,
 } from '../utils/authorOutputs';
 import type { HttpErrorLike } from '../utils/ingestResults';
@@ -62,8 +62,11 @@ export function AuthorPage() {
 
   const [kindFilter, setKindFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [creatingKind, setCreatingKind] = useState<string | null>(null);
-  const [viewing, setViewing] = useState<OutputItem | null>(null);
+  // S-6.1.1: `/author?new=book&job=<id>` (the job page's "Add to a book")
+  // opens the create flow with that run pre-selected.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [intent] = useState(() => parseCreateIntent(searchParams));
+  const [creatingKind, setCreatingKind] = useState<string | null>(() => intent?.kind ?? null);
   const [deleting, setDeleting] = useState<OutputItem | null>(null);
 
   const kinds = useAuthorKinds(allowed);
@@ -93,7 +96,6 @@ export function AuthorPage() {
     deleteMut.mutate(deleting.id, {
       onSuccess: () => {
         pushToast('success', `Deleted “${deleting.title}”.`);
-        if (viewing?.id === deleting.id) setViewing(null);
         setDeleting(null);
       },
       onError: () => pushToast('error', 'Delete failed. The output may already be gone.'),
@@ -257,7 +259,7 @@ export function AuthorPage() {
                   <OutputRow
                     key={row.id}
                     output={row}
-                    onView={() => setViewing(row)}
+                    onView={() => navigate(`/author/outputs/${row.id}`)}
                     onDownload={() => download(row)}
                     onDelete={() => setDeleting(row)}
                   />
@@ -268,19 +270,21 @@ export function AuthorPage() {
         </>
       )}
 
-      {creatingKind && (
+      {creatingKind && allowed && (
         <CreateOutputModal
           kind={creatingKind}
-          onClose={() => setCreatingKind(null)}
+          initialSelected={intent?.kind === creatingKind ? intent.jobIds : undefined}
+          onClose={() => {
+            setCreatingKind(null);
+            if (searchParams.has('new')) setSearchParams({}, { replace: true });
+          }}
           onCreated={(output) => {
             setCreatingKind(null);
-            if (output.status === 'completed') setViewing(output);
+            if (searchParams.has('new')) setSearchParams({}, { replace: true });
+            // S-8.8.3: a finished output opens in the reading room.
+            if (output.status === 'completed') navigate(`/author/outputs/${output.id}`);
           }}
         />
-      )}
-
-      {viewing && (
-        <ViewerModal output={viewing} onClose={() => setViewing(null)} onDownload={() => download(viewing)} />
       )}
 
       <Modal
@@ -398,7 +402,6 @@ function OutputRow({
   onDelete: () => void;
 }) {
   const c = useColors();
-  const sources = output.source_ids.length;
   return (
     <li>
       <Card flush>
@@ -427,7 +430,7 @@ function OutputRow({
               {kindMeta(output.kind).label}
             </span>
             <span style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>
-              {sources} {sources === 1 ? 'source' : 'sources'} · {formatDate(output.created_at)}
+              {outputSizeLabel(output)} · {formatDate(output.created_at)}
             </span>
             <span style={{ display: 'inline-flex', gap: space['1'] }}>
               {output.has_content && (
@@ -477,10 +480,13 @@ function OutputRow({
  */
 function CreateOutputModal({
   kind,
+  initialSelected,
   onClose,
   onCreated,
 }: {
   kind: string;
+  /** Run ids to start with ticked (the job page's "Add to a book"). */
+  initialSelected?: string[];
   onClose: () => void;
   onCreated: (output: OutputItem) => void;
 }) {
@@ -489,7 +495,7 @@ function CreateOutputModal({
   const meta = kindMeta(kind);
   const [title, setTitle] = useState('');
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected ?? []));
   const [includeQa, setIncludeQa] = useState(true);
   const [includeToc, setIncludeToc] = useState(true);
   const jobs = useJobs({ limit: 200 });
@@ -674,49 +680,5 @@ function CheckboxRow({ checked, onChange, label }: { checked: boolean; onChange:
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ accentColor: c.accent }} />
       {label}
     </label>
-  );
-}
-
-function ViewerModal({ output, onClose, onDownload }: { output: OutputItem; onClose: () => void; onDownload: () => void }) {
-  const c = useColors();
-  const content = useAuthorOutputContent(output.id);
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title={output.title}
-      maxWidth={900}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onDownload} disabled={!content.data}>
-            Download {output.kind === 'book' ? '.md' : '.txt'}
-          </Button>
-          <Button onClick={onClose}>Close</Button>
-        </>
-      }
-    >
-      {content.isLoading ? (
-        <div style={{ textAlign: 'center', padding: space['6'] }}>
-          <Spinner size={28} />
-        </div>
-      ) : content.isError ? (
-        <p style={{ margin: 0, fontFamily: fonts.ui, color: c.error }}>
-          The manuscript could not be fetched. It may have no content yet (status: {output.status}).
-        </p>
-      ) : (
-        <div
-          style={{
-            fontFamily: fonts.body,
-            fontSize: fontSize.md,
-            lineHeight: lineHeight.loose,
-            color: c.textPrimary,
-            maxWidth: measure.reading,
-            margin: '0 auto',
-          }}
-        >
-          <ReactMarkdown>{content.data ?? ''}</ReactMarkdown>
-        </div>
-      )}
-    </Modal>
   );
 }

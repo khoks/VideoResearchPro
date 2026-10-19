@@ -116,3 +116,31 @@ Verification for runs 2 and 3: the same 3-lens majority per claimed error plus t
 **A deterministic check was tried and is not enough** (S-1.18.7, `backend/scripts/modality_check.py`, scored by `eval_modality_check.py` against the verified labels). At its best thresholds it caught **2 of 5** confirmed errors and raised about eight other flags per report, most of them false positives. Token matching fails for three reasons: four of the eleven videos are spoken in Hindi or Bengali, ASR renders `plt.plot` as "plt dot plot" (or पीएलटी डॉट प्लॉट), and the composer cites every sentence "— Source (mm:ss)", so nearly every sentence reads as speaker-attributed. It stays as a research tool, not a gate.
 
 **Against the rule:** criterion 1 met with gpt-5.5 descriptions (3/3), not with Flash-Lite (1/3); criterion 2 failed in every run (1–2 errors per report); criterion 3 met only with Flash-Lite. No configuration passes, so the UI stays deferred ([D-075](../decisions.md#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19)).
+
+## Per-frame grading of three mid-priced describers (T-1.18.5.6, appended 2026-10-19)
+
+D-075 ordered a per-frame pass to pick a candidate before any report-level run. Same job and 120 frames, re-described by each model, then a four-way blind grading against the gpt-5.5 baseline: 31 frames, two graders per frame who opened the image (62 gradings), labels re-shuffled per frame (each model appears under every label), unblinded afterwards. Raw data: `backend/data/r1_ab/retier/grading4_unblinded.json` (gitignored); costs from the per-model `*_describe.json` totals, divided by the 11 videos that produced calls.
+
+| Describer | Mean accuracy /5 | Unusable | Best of four | Misreads | Hallucinated details | Cost per video |
+|---|---|---|---|---|---|---|
+| gemini-3.5-flash | **4.70** | **0 / 62** | 22 | 21 | 8 | $0.051 |
+| gpt-5.5 (baseline) | 4.54 | 5 / 62 | 37 | 30 | 8 | $0.133 |
+| gpt-5.4-mini | 4.37 | 5 / 62 | 3 | 39 | 2 | $0.018 |
+| claude-haiku-4-5 | 2.39 | **55 / 62** | 0 | 146 | 68 | $0.026 |
+
+claude-haiku-4-5 accepts images and is on `VISION_CAPABLE_MODELS`, yet its descriptions are unusable on this corpus; the registry now lists it as unacceptable for `visual_describe_frame` (S-1.14.7), alongside gpt-5.6-luna. Per D-075 the default changes only on a report-level run; gemini-3.5-flash is the candidate.
+
+## Run 4 and where the attribution errors live (T-1.18.5.6 / S-1.18.8, appended 2026-10-19)
+
+Gemini 3.5 Flash is the most accurate. The one figure this run checked by hand is the holiday-spike annotation, whose code on screen reads `54060.10`: Flash read it exactly, gpt-5.5 read `54000.10`, and the speech transcript garbled it to "54,60.10". But graders picked gpt-5.5 as the most useful description far more often, for completeness. Haiku is unusable for frames even though it is on the vision allowlist.
+
+**Run 4** (gemini-3.5-flash descriptions, same code and unannotated arm as runs 2–3): 9,612 words; judges prefer ON **2/3**; mean substance 7.67 vs 8.00; 2 confirmed attribution errors; 0 confirmed fabrications in ON (1 in OFF).
+
+**Report-level ranking follows "picked best", not accuracy:** gpt-5.5 (37 best) → 3/3; Gemini 3.5 Flash (22) → 2/3; Flash-Lite (5 of 66) → 1/3. What helps the composer is what a frame description says, not only whether each reading is exact.
+
+**Where the attribution errors live.** Of the five confirmed errors after the S-1.18.6 rule (runs 2–4), **four are in the one Bengali-language video** (CodeWithMunnaX, 1 of 11 videos). In each, the composer misjudged what was said, because the speech is Bengali:
+- it called a ValueError "not spoken" when the presenter read it aloud in Bengali;
+- it credited the presenter with dataset names that appear only on screen;
+- it said the screen displayed a version number the presenter only spoke.
+
+The English-language videos produced one error across the same three runs. The modality boundary is hardest exactly where the composer cannot read the speech, which is an argument for labelling said/shown at the map stage (S-1.18.8). There the model reads one chunk of native-language speech at a time and the label is fixed before composition. It also ties R1 to R5.

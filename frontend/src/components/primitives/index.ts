@@ -13,3 +13,4 @@ export { Badge, StatusPill, type BadgeProps, type BadgeSize, type BadgeTone } fr
 export { Modal, type ModalProps } from './Modal';
 export { Spinner, Skeleton, type SpinnerProps, type SkeletonProps } from './Spinner';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
+export { LabelPill, type LabelPillProps } from './LabelPill';

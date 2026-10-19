@@ -272,6 +272,7 @@ A small, opinionated set of primitives lives at `frontend/src/components/primiti
 | `Input`, `Textarea`, `Select` | `surface` fill, focus ring in `accent`. Errors render `error`-colored border + helper text below. |
 | `FormField` | Wraps a label + control + helper text. Generates IDs for `htmlFor`. |
 | `Badge` | Pill, `surfaceAlt` fill + status text color. Sizes: `sm`, `md`. |
+| `LabelPill` | A user-applied label (shelf, tag) in one of the ten label-palette colours (§1.1): bordered pill, text always present. Optional `to` (router link, clicks never bubble to an enclosing card) and `onRemove` (a small ×). |
 | `StatusPill` | Specialized Badge with semantic statuses for jobs (pending, searching, awaiting_approval, etc.). |
 | `Tabs` | Underlined active tab in `accent`. Keyboard accessible (arrow keys). |
 | `Modal` | Centered, `surface` fill, `shadow.floating`, focus trap, ESC-to-close, scroll lock on body. |
@@ -283,6 +284,8 @@ A small, opinionated set of primitives lives at `frontend/src/components/primiti
 | `Toast` | Slides up from bottom-right, auto-dismisses after 5 s, click to dismiss. Status-colored left border. |
 | `BannerBar` | Pull-quote-style global banner for LLM down / quota warnings. Editorial, not modal. |
 | `CitationChip` | Inline citation in body text. Mono superscript number → hover popover with source + timestamp + quote. |
+
+**Popovers inside cards portal to `<body>`.** `Card` sets a `transform`, which makes every card its own stacking context, so a popover positioned inside one is painted under the next card in a list (found 2026-10-19 on the tag picker). `components/labels/LabelPicker.tsx` is the pattern: `createPortal` to `document.body`, fixed coordinates from the trigger's `getBoundingClientRect()` (re-placed on scroll and resize), and outside-click / Escape listeners in the **capture** phase, because a wrapper that stops propagation (so a click never opens the card behind) also hides bubbling events from `document`. React still bubbles portal events through the component tree, so that wrapper keeps working.
 
 Primitives are self-contained. They don't reach into context for theme — they import tokens directly. Theme switching (light/dark) flows via a single CSS variable layer that mirrors the token set.
 

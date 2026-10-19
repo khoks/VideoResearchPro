@@ -189,6 +189,7 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/app/services/frame_service.py` | yt-dlp video fetch + ffmpeg frame extraction |
 | `backend/app/services/visual_service.py` | Pure merge of frame descriptions into transcript segments |
 | `backend/app/services/temporal_service.py` | R3: discussed-era extraction (`temporal_scope_extract`), persistence, prompt/metadata rendering |
+| `backend/app/services/code_mixing_service.py` | R5 / N-002: word-level language of code-mixed text (romanised Hindi included) — lexicon tagger in production, `code_mixing_detect` LLM as the reference (D-080) |
 | `backend/app/services/corpus_stats_service.py` | Corpus figures for Q&A (approved / visible document set) that drive the length policy and temporal note |
 | `backend/scripts/regenerate_report.py` | Re-run a completed job's report phase from cached transcripts (before/after measurement) |
 | `backend/scripts/judge_report_sections.py` | Split a report into sections and judge each in full — replaces the 180,000-char judging cap |
@@ -228,6 +229,8 @@ GET    /api/v1/library/qa              # Library-wide Q&A history
 POST   /api/v1/library/qa/clarify      # Library-wide clarify step
 DELETE /api/v1/library/qa/{id}         # Delete a library Q&A exchange (optional)
 GET    /api/v1/library/videos          # Browse global video library
+
+GET    /api/v1/search?q=&types=&limit= # Grouped tenant-scoped keyword search (FTS5, LIKE fallback)
 
 GET    /api/v1/channels                # List all channels
 GET    /api/v1/channels/{id}           # Single channel detail
@@ -310,6 +313,9 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | **Temporal awareness (R3 / E-1.17)** | | | |
 | `TEMPORAL_SCOPE_ENABLED` | No | `True` | Per-document discussed-era extraction on first ingest (`temporal_scope_extract`, one economy-tier call per NEW document). Off = every era reads as unknown, which is also how a missing value is treated |
 | `TEMPORAL_SCOPE_WINDOW_TOKENS` | No | `1500` | Size of each of the three transcript windows (opening / middle / close) sampled for the era call |
+| **Code-mixed speech (R5 / N-002 / D-080)** | | | |
+| `CODE_MIX_DOMINANT_SHARE` | No | `0.6` | A Hindi-grammar span with at least this Hindi share is quoted in Devanagari (with transliteration + translation). The threshold is the user's; a lower one is more robust to the tagger's Devanagari blind spot (open question in D-080) |
+| `CODE_MIX_BORROWING_MAX_SHARE` | No | `0.2` | An English-grammar span with at most this Hindi share is rendered as plain English; between the two thresholds, quotes stay in Roman script |
 | **Scheduler (S-8.3.1 / M3)** | | | |
 | `SCHEDULER_ENABLED` | No | `True` | Registers the single beat entry `scheduler.tick`; off = no entry and a tick that still arrives no-ops. Beat is its own process (`celery -A app.tasks.celery_app beat`), started by `scripts/start.ps1`; run exactly one |
 | `SCHEDULER_TICK_SECONDS` | No | `300` | Tick interval; also the tick's `expires`, so a backlog never replays after a restart |
@@ -359,6 +365,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 - **WebSocket cache invalidation**: `useJobProgress` invalidates the `jobVideos` query on `awaiting_approval` status change so the approval list auto-populates
 - **Global document library — shared cache, private catalogue** ([D-063](docs/decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)): Documents are never job-owned, and `documents` remains a single global deduplicated store so transcripts, embeddings and knowledge artifacts are computed once and reused across every job and user. **But no user sees a document they did not ingest.** Visibility is an explicit per-tenant grant in `document_visibility(document_id, tenant_id, source)`, written by *every* ingest path — job selection, PDF upload, pasted URL, channel sync — including on dedup hits, because a cache hit means the bytes exist but this tenant may never have seen them. Ownership is **never** derived from `job_documents`: PDF uploads and pasted URLs create documents with no job, and deriving would make a user's own upload invisible to them. Any new user-facing read of `documents` must filter through `visibility_service.visible_document_ids(db, tenant_id)`, and any new ingest path must call `visibility_service.grant(db, [doc.document_id], tenant_id, source)`. The ORM class is `Document` (`app.models.document`); the table is `documents`. **Key everything on `document_id`** ([D-070](docs/decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)): the legacy `video_id` column is NULL for every non-video source, and keying the grant on it made PDFs and pasted pages invisible to everyone from 2026-07-31 to 2026-10-19 — and keying the Chroma write on it meant their chunks were never embedded at all.
 - **Two dates per source, both load-bearing** (R3, [D-072](docs/decisions.md#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19)): `documents.published_at` is when a source was POSTED; `documents.discussed_era_json` is the period it is ABOUT (`{era_start, era_end, era_confidence, is_retrospective}`, integer years, negative = BCE), extracted once per document by `temporal_scope_extract` the first time a job chunks it (`job_tasks._ensure_era`, fail-soft). Chunks carry both as flat scalars — `published_ts` / `published_year` and `era_start` / `era_end` / `era_confidence` / `is_retrospective` — **omitted when unknown, never sentinel-valued**, so a Chroma range filter excludes undated chunks instead of matching them against 1970. Chunks embedded before this shipped carry neither; they read as unknown and there is no backfill. In search ranking, time is a PREFERENCE decided once per topic by the planner's `temporal_profile`, never a filter (D-059's reasoning for language). Every prompt that reads transcript text carries `TEMPORAL_AWARENESS` or `TEMPORAL_EXTRACTION_NOTE` from `app/agents/prompts/shared.py`.
+- **Code-mixed sources carry their language mix on every chunk** (R5 / N-002, [D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)): `chunk_transcript` profiles the whole transcript once (`code_mixing_service.profile_transcript`) and writes `code_mix_primary` / `_script` / `_share` / `_matrix_share` / `_quote` plus per-chunk `code_mix_chunk_share` / `_chunk_matrix`, **omitted entirely for English sources**. Prompts read it through `code_mixing_service.source_note` (`speech: ... — quote in ...` on source headers). Report map items may carry `original` wording beside English `content`; compose attaches the source's `quote_form`. Any new prompt that shows sources to a model should carry the speech note.
 - **Q&A reads the corpus from the database, not from its retrieval hits** (S-1.15.2): `routers/qa.py` and `routers/library.py` compute `corpus_stats_service` figures for the approved (job) or visible (library) document set and pass them, with the length preference, into the agents. The length policy and the publication-span note are dead code without them — exactly how R4's Q&A half shipped unwired from 2026-07-31 to 2026-10-18 — so `tests/test_routers/test_qa_length_policy.py` asserts at the production caller. Verify a feature at its caller, not at the function that implements it.
 - **Visual annotations are marked in the TEXT, never only in metadata** ([D-067](docs/decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31)): frame descriptions are merged as `[VISUAL @ mm:ss - ...]` spans inside the chunk text. Chunking splits, merges and re-packs segments, and the dominant-segment heuristic promotes exactly one segment's metadata — so metadata alone is not a survivable channel. Any prompt that reads transcript text MUST include `VISUAL_ANNOTATION_CONTRACT` from `app/agents/prompts/shared.py`, or the model will read machine-written descriptions as things the speaker said. Frames live in `visual_frames` and are merged at chunk time; **never** annotate `transcript_cache`, which is globally shared.
 - **Single global Chroma collection**: All chunks live in `videoresearchpro_global`. Per-job scoping is a metadata filter at query time. Deleting a job does NOT delete chunks.
@@ -370,7 +377,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 - The multilingual embedding model (`paraphrase-multilingual-MiniLM-L12-v2`) ensures a Hindi transcript and its English question land in similar vector space.
 - **Output is ALWAYS English** (D-066), whatever the source language. The contract is defined once in `app/agents/prompts/shared.py` and injected into every report, knowledge and Q&A prompt — enforced at the EXTRACTION boundary, because an item emitted in the source script propagates untouched to the final deliverable. Before D-066 no prompt instructed English output at all, so a Hindi corpus produced a Devanagari report.
 - **Quotes keep three forms**: original script + transliteration + English translation, e.g. `अहिंसा परमो धर्मः (ahiṃsā paramo dharmaḥ) — "non-violence is the highest virtue"`. Reserved for material whose exact wording matters; ordinary speech is translated plainly.
-- **Language detection is script-based** (`app/services/language_service.py`), exact for script mixing and explicitly NOT able to see romanised code-mixing (Hinglish in Latin letters) — that case is handled by the prompt contract. A test pins the gap; do not "fix" it by flipping the assertion.
+- **Language detection is script-based** (`app/services/language_service.py`), exact for script mixing and explicitly NOT able to see romanised code-mixing (Hinglish in Latin letters). A test pins the gap; do not "fix" it by flipping the assertion. Romanised code-mixing is detected separately, per word, by `app/services/code_mixing_service.py` ([D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)): a lexicon tagger measured on a 300-unit hand-labelled set in `tests/fixtures/code_mixing/`. Do not tune it against that set's `test` split.
 - The Q&A agent accepts an `answer_language` parameter (default English) and is instructed to translate quoted non-English context into English (preserving proper nouns) while responding in the requested language.
 
 ## LLM configuration
@@ -416,7 +423,11 @@ From highest to lowest:
 
 ### Registered use cases
 
-Twenty-three named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
+Twenty-four named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
+
+### Measured guidance (S-1.14.7)
+
+Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is `measured` (the use case's own output was graded; carries `decision_id`, `decided_on`, `flagship_delta`, `downgrade_risk`, optional `measured_cost`) or `unmeasured` (no decision id; `note` says what evidence exists). `model_verdicts` lists `ModelVerdict(model, verdict="unacceptable"|"weaker", why, decision_id, reasoning=())` — exact model-id match, scoped to reasoning levels when `reasoning` is non-empty. `assess_choice(use_case, cfg)` turns verdicts plus the `VISION_CAPABLE_MODELS` check into warnings; `/health/llm` reports them for the resolved config and `GET /settings/llm` ships the guidance to `/account/ai-models`, whose `assessChoice` mirrors the rule client-side. Advisory only: nothing refuses a config. Adding a use case means writing its guidance; promoting one to `measured` needs a decision entry, and `tests/test_services/test_llm_guidance.py` pins the measured set and checks every cited decision exists in `docs/decisions.md`.
 
 **Job Q&A (`app/agents/qa_agent.py`):**
 - `qa_clarification` — short follow-up clarifier before answering
@@ -449,6 +460,9 @@ Twenty-three named call sites — full rationale, token budgets, and recommended
 **Discussed-era extraction (`app/services/temporal_service.py`, R3):**
 - `temporal_scope_extract` — once per document on first ingest: which period the source DISCUSSES (`{era_start, era_end, era_confidence, is_retrospective}`), distinct from `published_at`. Persisted on `documents.discussed_era_json`, reused by every later job, flattened into chunk metadata. Reasoning OFF is mandatory (strict JSON under a 400-token cap). Fail-soft, so deliberately not a feature gate in `llm_smoke`
 
+**Code-mixed speech (`app/services/code_mixing_service.py`, R5 / N-002):**
+- `code_mixing_detect` — word-level language of 25 snippets per call: each snippet's Hindi runs verbatim plus its matrix (grammar) language. The evaluation reference, not on the ingest path: the lexicon tagger was more precise on romanised text at equal recall (D-080). Reasoning OFF, fail-soft, not a feature gate
+
 **Report generation (`app/agents/report_agent.py`):**
 - `report_map_chunks` — map phase; per-batch fact extraction (highest-volume call in the codebase)
 - `report_reduce_summaries` — reduce phase; consolidate per-batch summaries
@@ -458,7 +472,7 @@ Twenty-three named call sites — full rationale, token budgets, and recommended
 
 ## LLM startup smoke check + fail-soft
 
-`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 23 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
+`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 24 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
 
 **Health endpoints:**
 - `GET /api/v1/health` — overall status plus an `llm` field with `status` (`ok` / `degraded` / `down` / `unknown`) and `unavailable_features` (a list of feature names whose required use cases failed probing).

@@ -29,16 +29,18 @@ export interface ReaderShellProps {
   outline: OutlineEntry[];
   /** The parsed body. */
   children: ReactNode;
+  /** Rendered after the body, outside the outline's scope (endnotes). */
+  after?: ReactNode;
 }
 
-export function ReaderShell({ kicker, title, meta, actions, before, outline, children }: ReaderShellProps) {
+export function ReaderShell({ kicker, title, meta, actions, before, outline, children, after }: ReaderShellProps) {
   const c = useColors();
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const activeId = useActiveHeading(bodyRef, outline);
   const progress = useReadingProgress();
 
   return (
-    <article className="reader-grid">
+    <article className="reader-grid reader-print-root">
       <div style={{ minWidth: 0 }}>
         <header style={{ maxWidth: measure.reading, marginBottom: space['6'] }}>
           {kicker && (
@@ -84,6 +86,7 @@ export function ReaderShell({ kicker, title, meta, actions, before, outline, chi
           )}
           {actions && (
             <div
+              className="reader-no-print"
               style={{
                 display: 'flex',
                 flexWrap: 'wrap',
@@ -99,6 +102,7 @@ export function ReaderShell({ kicker, title, meta, actions, before, outline, chi
         <div ref={bodyRef} className="reader-body">
           {children}
         </div>
+        {after}
       </div>
       <Outline entries={outline} activeId={activeId} progress={progress} />
       <ReadingProgress value={progress} />

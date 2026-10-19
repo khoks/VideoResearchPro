@@ -8,7 +8,12 @@ from app.schemas.job import JobCreate
 
 
 def create_job(
-    db: Session, job_data: JobCreate, tenant_id: str | None = None
+    db: Session,
+    job_data: JobCreate,
+    tenant_id: str | None = None,
+    *,
+    template_id: str | None = None,
+    template_version: int | None = None,
 ) -> Job:
     """Create a new Job row.
 
@@ -29,7 +34,9 @@ def create_job(
     job = Job(
         job_type=job_data.job_type,
         topic=job_data.topic,
-        search_instructions=job_data.search_instructions,
+        # E-8.6: `{{topic}}` in instructions (typically from a template) is
+        # replaced by this run's topic, so one recipe serves every topic.
+        search_instructions=_fill_topic(job_data.search_instructions, job_data.topic),
         num_videos=job_data.num_videos,
         min_duration_minutes=job_data.min_duration_minutes,
         max_duration_minutes=job_data.max_duration_minutes,
@@ -49,12 +56,20 @@ def create_job(
         # extraction time, so a job can record the user's intent even on an
         # install where the feature is currently switched off.
         visual_analysis=bool(getattr(job_data, "visual_analysis", False)),
+        template_id=template_id,
+        template_version=template_version if template_id else None,
         tenant_id=tenant_id,
     )
     db.add(job)
     db.commit()
     db.refresh(job)
     return job
+
+
+def _fill_topic(instructions: str | None, topic: str | None) -> str | None:
+    from app.services.job_template_service import fill_topic
+
+    return fill_topic(instructions, topic)
 
 
 def get_job(
@@ -146,6 +161,8 @@ def job_to_response_dict(job: Job) -> dict:
         # as visual_analysis=False / output_length=None (found 2026-10-19).
         "output_length": job.output_length,
         "visual_analysis": bool(job.visual_analysis),
+        "template_id": job.template_id,
+        "template_version": job.template_version,
         "search_queries_used": json.loads(job.search_queries_used) if job.search_queries_used else None,
         "channel_list_resolved": (
             json.loads(job.channel_list_resolved) if job.channel_list_resolved else None

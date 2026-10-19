@@ -79,10 +79,22 @@ def _head_revision(cfg) -> str:
     return head
 
 
+# Tables that legitimately exist in the DB without an ORM model: the S-8.2.1
+# search index (FTS5 virtual tables and their SQLite shadow tables, all
+# prefixed `fts_`). They are created conditionally by migration a9f3c1e7b5d2
+# and by `search_service.ensure_index`, never by `Base.metadata`.
+_NON_ORM_TABLE_PREFIXES = ("fts_",)
+
+
 def _live_table_names(engine) -> set[str]:
-    """Names of every table currently in the DB (excluding alembic_version)."""
+    """Names of every table currently in the DB (excluding alembic_version
+    and the search index's non-ORM tables)."""
     insp = inspect(engine)
-    return {t for t in insp.get_table_names() if t != "alembic_version"}
+    return {
+        t
+        for t in insp.get_table_names()
+        if t != "alembic_version" and not t.startswith(_NON_ORM_TABLE_PREFIXES)
+    }
 
 
 def _orm_table_names(orm_metadata: MetaData) -> set[str]:

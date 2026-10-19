@@ -9,10 +9,20 @@
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useReportBody } from '../hooks/useReport';
+import { useJobVideos } from '../hooks/useJobs';
 import { Button, EmptyState, Spinner } from '../components/primitives';
-import { ReaderCitation, ReaderShell, parseReportHtml, sanitizeReportHtml } from '../components/reader';
+import {
+  CitationCardProvider,
+  Endnotes,
+  ReaderCitation,
+  ReaderShell,
+  StatTiles,
+  parseReportHtml,
+  resolveCitations,
+  sanitizeReportHtml,
+} from '../components/reader';
 import { useColors } from '../hooks/useTheme';
-import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
+import { fonts, fontSize, space } from '../theme';
 import type { ReportStatistics } from '../types/report';
 
 const KICKER: Record<string, string> = {
@@ -26,6 +36,9 @@ export function ReportReaderPage() {
   const navigate = useNavigate();
   const c = useColors();
   const { data: body, isLoading, error } = useReportBody(jobId ?? null);
+  // The run's documents turn a citation's href (or, for old reports, the
+  // title written beside it) into a source for the hover card (S-8.8.2).
+  const { data: videos } = useJobVideos(jobId ?? null);
 
   const parsed = useMemo(() => {
     if (!body) return null;
@@ -34,6 +47,11 @@ export function ReportReaderPage() {
       renderCitation: (citation) => <ReaderCitation key={citation.index} citation={citation} />,
     });
   }, [body]);
+
+  const citationIndex = useMemo(
+    () => (parsed ? resolveCitations(parsed.citations, videos ?? []) : null),
+    [parsed, videos],
+  );
 
   useEffect(() => {
     if (!body) return;
@@ -76,16 +94,38 @@ export function ReportReaderPage() {
   const meta = formatMeta(body.generated_at, body.statistics);
 
   return (
-    <ReaderShell
-      kicker={KICKER[body.job_type] ?? 'Report'}
-      title={body.title}
-      meta={meta}
-      actions={backToRun}
-      outline={parsed.outline}
-      before={body.statistics ? <StatisticsTiles statistics={body.statistics} /> : null}
-    >
-      {parsed.content}
-    </ReaderShell>
+    <CitationCardProvider index={citationIndex}>
+      <ReaderShell
+        kicker={KICKER[body.job_type] ?? 'Report'}
+        title={body.title}
+        meta={meta}
+        actions={
+          <>
+            {backToRun}
+            <Button size="sm" variant="secondary" onClick={() => window.print()}>
+              Print or save as PDF
+            </Button>
+          </>
+        }
+        outline={parsed.outline}
+        before={
+          body.statistics ? (
+            <StatTiles
+              label="Corpus statistics"
+              tiles={[
+                { label: 'Sources', value: body.statistics.video_count },
+                { label: 'Transcripts', value: body.statistics.transcript_count },
+                { label: 'Words', value: body.statistics.total_words },
+                { label: 'Minutes', value: body.statistics.total_minutes },
+              ]}
+            />
+          ) : null
+        }
+        after={citationIndex ? <Endnotes endnotes={citationIndex.endnotes} /> : null}
+      >
+        {parsed.content}
+      </ReaderShell>
+    </CitationCardProvider>
   );
 }
 
@@ -96,64 +136,4 @@ function formatMeta(generatedAt: string | null, stats: ReportStatistics | null):
   if (stats?.total_words != null) parts.push(`${stats.total_words.toLocaleString()} transcript words`);
   if (stats?.total_minutes != null) parts.push(`${stats.total_minutes.toLocaleString()} minutes of audio`);
   return parts.length ? parts.join(' · ') : null;
-}
-
-function StatisticsTiles({ statistics }: { statistics: ReportStatistics }) {
-  const c = useColors();
-  const tiles: Array<{ label: string; value: number | null }> = [
-    { label: 'Sources', value: statistics.video_count },
-    { label: 'Transcripts', value: statistics.transcript_count },
-    { label: 'Words', value: statistics.total_words },
-    { label: 'Minutes', value: statistics.total_minutes },
-  ].filter((t) => t.value != null);
-  if (tiles.length === 0) return null;
-  return (
-    <dl
-      aria-label="Corpus statistics"
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: space['3'],
-        margin: `0 0 ${space['6']}`,
-        maxWidth: measure.reading,
-      }}
-    >
-      {tiles.map((t) => (
-        <div
-          key={t.label}
-          style={{
-            flex: '1 1 120px',
-            padding: `${space['2']} ${space['3']}`,
-            background: c.surfaceAlt,
-            borderRadius: radius.md,
-            fontFamily: fonts.ui,
-          }}
-        >
-          <dt
-            style={{
-              fontSize: fontSize.xs,
-              fontWeight: fontWeight.medium,
-              color: c.textMuted,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-            }}
-          >
-            {t.label}
-          </dt>
-          <dd
-            style={{
-              margin: 0,
-              fontFamily: fonts.display,
-              fontSize: fontSize.lg,
-              fontWeight: fontWeight.semibold,
-              lineHeight: lineHeight.tight,
-              color: c.textPrimary,
-            }}
-          >
-            {t.value!.toLocaleString()}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
 }

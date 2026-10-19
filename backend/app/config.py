@@ -277,6 +277,20 @@ class Settings(BaseSettings):
     # subject; the middle and close catch a source that pivots.
     TEMPORAL_SCOPE_WINDOW_TOKENS: int = 1500
 
+    # R5 / S-1.16.2 (invention N-002): how a code-mixed span is QUOTED,
+    # decided from its measured Hindi share and matrix (grammar) language.
+    # - Hindi grammar and Hindi share >= DOMINANT -> the whole quote in
+    #   Devanagari, with transliteration and translation (D-066's full form);
+    # - English grammar and Hindi share <= BORROWING_MAX -> plain English
+    #   (a few borrowed words, translated inline);
+    # - anything between -> Roman script throughout, with translation.
+    # Defaults chosen on the DEV split of the labelled set as the centres of
+    # the plateaus where the detector's decision agrees with the gold one;
+    # see docs/notes/2026-10-19-code-mixing-detection.md section 8. What
+    # DOMINANT should rest on is an open question recorded in D-080.
+    CODE_MIX_DOMINANT_SHARE: float = 0.6
+    CODE_MIX_BORROWING_MAX_SHARE: float = 0.2
+
     # -------------------------------------------------------------------
     # Scheduler (S-8.3.1 / M3) — the shared Celery-beat tick
     # -------------------------------------------------------------------

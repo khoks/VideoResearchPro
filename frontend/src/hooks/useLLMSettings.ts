@@ -31,6 +31,33 @@ export interface LLMConfig {
   reasoning: string;
 }
 
+/** A measured verdict on one model for one use case (S-1.14.7). */
+export interface LLMModelVerdict {
+  model: string;
+  verdict: 'unacceptable' | 'weaker';
+  why: string;
+  decision_id: string;
+  /** Reasoning levels the verdict covers; empty = every level. */
+  reasoning: string[];
+}
+
+/**
+ * What the E-1.14 measurements say about a use case. `measured` rows carry a
+ * decision id + date; `unmeasured` rows carry a note saying what evidence
+ * exists, if any.
+ */
+export interface LLMGuidance {
+  status: 'measured' | 'unmeasured';
+  decision_id: string | null;
+  decided_on: string | null;
+  flagship_delta: string;
+  downgrade_risk: string;
+  measured_cost: string;
+  model_verdicts: LLMModelVerdict[];
+  related_decisions: string[];
+  note: string;
+}
+
 export interface LLMUseCase {
   use_case: string;
   summary: string;
@@ -40,6 +67,9 @@ export interface LLMUseCase {
   effective: LLMConfig;
   typical_input_tokens: number;
   typical_output_tokens: number;
+  guidance: LLMGuidance;
+  /** The call sends images; the model must accept them. */
+  vision: boolean;
 }
 
 export interface LLMModelInfo {
@@ -51,6 +81,51 @@ export interface LLMSettingsResponse {
   use_cases: LLMUseCase[];
   providers: Record<string, { models: LLMModelInfo[] }>;
   reasoning_levels: string[];
+  vision_capable_models: string[];
+}
+
+// ── Choice assessment ─────────────────────────────────────────────
+
+export type ChoiceWarningKind = 'unacceptable' | 'weaker' | 'not_vision_capable';
+
+export interface ChoiceWarning {
+  kind: ChoiceWarningKind;
+  model: string;
+  why: string;
+  decision_id: string | null;
+}
+
+/**
+ * Measured warnings for running `uc` on `config`. Mirrors
+ * `llm_routing.assess_choice` on the server so the warning shows the moment a
+ * select changes, before the save round-trips — keep the two in step. Model
+ * ids match exactly (no prefix rule, or `gpt-5.5` would catch `gpt-5.5-pro`),
+ * and `local` is exempt from the vision check because nobody can know what an
+ * operator has loaded.
+ */
+export function assessChoice(
+  uc: LLMUseCase,
+  config: LLMConfig,
+  visionModels: ReadonlySet<string>,
+): ChoiceWarning[] {
+  const warnings: ChoiceWarning[] = uc.guidance.model_verdicts
+    .filter(
+      (v) =>
+        v.model === config.model &&
+        (v.reasoning.length === 0 || v.reasoning.includes(config.reasoning)),
+    )
+    .map((v) => ({ kind: v.verdict, model: v.model, why: v.why, decision_id: v.decision_id }));
+  if (uc.vision && config.provider !== 'local' && !visionModels.has(config.model)) {
+    warnings.push({
+      kind: 'not_vision_capable',
+      model: config.model,
+      why:
+        'This function sends images, and this model is not on the list of models known to accept them. ' +
+        'A text-only model either rejects the request or describes the frame from the surrounding transcript.',
+      decision_id: null,
+    });
+  }
+  return warnings;
 }
 
 export interface EstimateBenchmark {
@@ -69,6 +144,9 @@ export interface EstimateRow {
   output_tokens: number;
   cost_usd: number;
   pricing_known: boolean;
+  /** Same workload on the registry default (S-1.14.7). */
+  default_model: string;
+  default_cost_usd: number | null;
 }
 
 export interface EstimateResponse {

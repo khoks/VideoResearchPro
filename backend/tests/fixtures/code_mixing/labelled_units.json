@@ -1,0 +1,3002 @@
+[
+ {
+  "id": "u000",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "dev",
+  "text": "it's very basic but it's ok",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u001",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "dev",
+  "text": "What is SPAM ? About SPAM?",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u002",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "dev",
+  "text": "Please make a video on bams",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u003",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "dev",
+  "text": "Plz make a course on machine learning",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u004",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "dev",
+  "text": "I know few people in gujrat ahmedabad where they have started a company and after taking money from investor they travelled to Europe using that money",
+  "base": "en",
+  "annotation": "I know few people in <gujrat ahmedabad> where they have started a company and after taking money from investor they travelled to <Europe> using that money",
+  "matrix": "en"
+ },
+ {
+  "id": "u005",
+  "source": "comment",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "dev",
+  "text": "Hii sir maine abhi class 12th clear Kari hai humanities stream se to konse bussiness kar sakta hu please mere 3 4 Idea's hai 1 print on demand pod 2 dropshipping 3 mining transport 4 emport export 5 manufacturing If",
+  "base": "en",
+  "annotation": "Hii sir {maine abhi} class 12th clear {Kari hai} humanities stream {se to konse} bussiness {kar sakta hu} please {mere} 3 4 Idea's {hai} 1 print on demand pod 2 dropshipping 3 mining transport 4 emport export 5 manufacturing If",
+  "matrix": "hi"
+ },
+ {
+  "id": "u006",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "dev",
+  "text": "She found when she moved to US. Environment changes every aspects",
+  "base": "en",
+  "annotation": "She found when she moved to <US>. Environment changes every aspects",
+  "matrix": "en"
+ },
+ {
+  "id": "u007",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "dev",
+  "text": "Plz full series for ML & AI & DL",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u008",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "dev",
+  "text": "kindly stand aside from board",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u009",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "dev",
+  "text": "Hey, I want start \"Electricity company\" can you guide or talk with electricity Industry person who know about future of electricity.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u010",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "dev",
+  "text": "Such a genius girl of India",
+  "base": "en",
+  "annotation": "Such a genius girl of <India>",
+  "matrix": "en"
+ },
+ {
+  "id": "u011",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "dev",
+  "text": "I do really agree with your point",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u012",
+  "source": "comment",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "dev",
+  "text": "2008 me dunia ke kis college me 50-60 lakh fees thi ye to poochti madam scripted video kyo banati",
+  "base": "en",
+  "annotation": "2008 {me dunia ke kis} college {me} 50-60 <lakh> fees {thi ye to poochti} madam scripted video {kyo banati}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u013",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "dev",
+  "text": "Ek video dekh k exam kar aya m Number aye 70",
+  "base": "en",
+  "annotation": "{Ek} video {dekh k} exam {kar aya m} Number {aye} 70",
+  "matrix": "hi"
+ },
+ {
+  "id": "u014",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "dev",
+  "text": "Tell me revenue don't tell me shitty value of any company",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u015",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "dev",
+  "text": "Sugar cosmetics are they making profit",
+  "base": "en",
+  "annotation": "<Sugar cosmetics> are they making profit",
+  "matrix": "en"
+ },
+ {
+  "id": "u016",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "dev",
+  "text": "I have a doubt, if this course is still upto the mark, means whether it will truly help to get ahead in this stage here in 2026 and after? guys kindly share your view about this and if it comes",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u017",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "dev",
+  "text": "BeLikeNative helps me break down complex topics like machine learning into clear, readable content. I use BeLikeNative to fix grammar, polish my explanations, and save time on every draft.",
+  "base": "en",
+  "annotation": "<BeLikeNative> helps me break down complex topics like machine learning into clear, readable content. I use <BeLikeNative> to fix grammar, polish my explanations, and save time on every draft.",
+  "matrix": "en"
+ },
+ {
+  "id": "u018",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "dev",
+  "text": "I hope aane wale kuchh saal me aapka guest ban saku",
+  "base": "en",
+  "annotation": "I hope {aane wale kuchh saal me aapka} guest {ban saku}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u019",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "dev",
+  "text": "Sir, your setup is very cool,.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u020",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "dev",
+  "text": "Can we improve performance using machine learning",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u021",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "dev",
+  "text": "Kun kun ye soch ke aaya hai ki ye video choti lag rahi hai",
+  "base": "en",
+  "annotation": "{Kun kun ye soch ke aaya hai ki ye} video {choti lag rahi hai}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u022",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "dev",
+  "text": "Legends are watching at 1: 30 hours before board examination.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u023",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "dev",
+  "text": "Have u read 'our Final Invention, AI and end of Human Era'. James Baratte have explained so well how human invention is moving towards AGI n ahead ASI n how dangerous it can be in future if machines really take",
+  "base": "en",
+  "annotation": "Have u read 'our Final Invention, AI and end of Human Era'. <James Baratte> have explained so well how human invention is moving towards AGI n ahead ASI n how dangerous it can be in future if machines really take",
+  "matrix": "en"
+ },
+ {
+  "id": "u024",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "dev",
+  "text": "Sir, you have shared the knowledge in great way which is easy to understand. Is it possible to get a notes on this",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u025",
+  "source": "comment",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "dev",
+  "text": "Sab ok lekin modi sirf feku he",
+  "base": "en",
+  "annotation": "{Sab} ok {lekin} <modi> {sirf feku he}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u026",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "dev",
+  "text": "I heard this voice before",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u027",
+  "source": "comment",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "dev",
+  "text": "Sir you have given wrong information about Warren Buffet. When he was 30 , he was already millionaire.",
+  "base": "en",
+  "annotation": "Sir you have given wrong information about <Warren Buffet>. When he was 30 , he was already millionaire.",
+  "matrix": "en"
+ },
+ {
+  "id": "u028",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "dev",
+  "text": "Sir aapki video bahut badi badi bante ho .aagar aap aasee hi 10 -10minits ki banawo to or achhe se ham sikh sakate he",
+  "base": "en",
+  "annotation": "Sir {aapki} video {bahut badi badi bante ho} .{aagar aap aasee hi} 10 -10minits {ki banawo to or achhe se ham sikh sakate he}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u029",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "dev",
+  "text": "Itni achi explanation kai liyai thank you so much sir",
+  "base": "en",
+  "annotation": "{Itni achi} explanation {kai liyai} thank you so much sir",
+  "matrix": "hi"
+ },
+ {
+  "id": "u030",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "dev",
+  "text": "Sir.. please upload 4 5 & 6 unit",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u031",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "dev",
+  "text": "I feel investors should be focusing on under-the-radar stocks, and considering the current rollercoaster nature of the stock market, Because 35% of my $270k portfolio comprises of plummeting stocks which were once revered and i don't know where to go",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u032",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "dev",
+  "text": "Wow, Great Domain knowledge....Thanks for ALL in ONE video :-) Logistic Regression and SVM both has decision boundary. Only thing Logistic Reg.n don't have support Vector. Why do we need support vectors. In short What is the difference?",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u033",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "dev",
+  "text": "After seeing thumbnail I was hoping that you are going to start an fresh updated series on AI and Machine Learning",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u034",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "dev",
+  "text": "is this playlist is still relevalnt after 4 years??",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u035",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "dev",
+  "text": "hi. please explain LSTM. How it is related to RNN.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u036",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "dev",
+  "text": "Lecture 3 04/06/26 Target to done whole playing till 04/07/26",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u037",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "dev",
+  "text": "Good work man keep going",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u038",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "dev",
+  "text": "Harry bhai ek hi dil hai kitni baar jitoge. Literally felt to give you a tight hug. You are providing quality educational content for us woh bhi free free free (in rancho's voice ) Love tou you 3000",
+  "base": "en",
+  "annotation": "<Harry> {bhai ek hi dil hai kitni baar jitoge}. Literally felt to give you a tight hug. You are providing quality educational content for us {woh bhi} free free free (in <rancho's> voice ) Love tou you 3000",
+  "matrix": "en"
+ },
+ {
+  "id": "u039",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "dev",
+  "text": "I want to build crop prediction model which algo should I use???",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u040",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "dev",
+  "text": "Her dad has an IT company. There is nothing like she can do it, no one else can. Try and anyone do similar stuff.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u041",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "dev",
+  "text": "Really good, first time I can totally differentiate between Ai Ml and dl",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u042",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "dev",
+  "text": "hey looking to get connected with you... Its knowledgable to watch you epidsode. We learn a lot",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u043",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "dev",
+  "text": "Learned alot from this podcast.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u044",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "dev",
+  "text": "Amazing lecture, loved your energy.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u045",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "dev",
+  "text": "Can you please come up with videos explaining NARX model",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u046",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "dev",
+  "text": "Wow you explain it very well.. Can We used this kind of examples to explain during interview?",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u047",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "dev",
+  "text": "harry bhai you are the best",
+  "base": "en",
+  "annotation": "<harry> {bhai} you are the best",
+  "matrix": "en"
+ },
+ {
+  "id": "u048",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "dev",
+  "text": "I think this is one of the best ML playlist",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u049",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "dev",
+  "text": "Excellent teaching. It can’t be taught in a better way.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u050",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "dev",
+  "text": "I also learnt coding at the age of 10 but I didn't have much coding competitions in like 5 to 9 grade",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u051",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "dev",
+  "text": "Lc 2 7th oct 2026",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "none"
+ },
+ {
+  "id": "u052",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "dev",
+  "text": "Bhai ayse startup ko la jo 20 sal se kamyab he",
+  "base": "en",
+  "annotation": "{Bhai ayse} startup {ko la jo} 20 {sal se kamyab he}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u053",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "dev",
+  "text": "AI doesn’t take breaks—it’s the ultimate workaholic",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u054",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "dev",
+  "text": "Well explained brother I've been learning some programming languages for last 3 months.. and literary i'm a big fan of yours.... Keep it up brother",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u055",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "dev",
+  "text": "Day 1 ; Video 3 ; 11-12-2025",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "none"
+ },
+ {
+  "id": "u056",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "dev",
+  "text": "J h o n n y S i n s",
+  "base": "en",
+  "annotation": "<J h o n n y S i n s>",
+  "matrix": "none"
+ },
+ {
+  "id": "u057",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "dev",
+  "text": "How we can choose particular algorithm ? which conditions we have to see",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u058",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "dev",
+  "text": "I love that man. It's amazing podcast episode. Mja hi aa gya sun karke...He knows consumer so well.",
+  "base": "en",
+  "annotation": "I love that man. It's amazing podcast episode. {Mja hi aa gya sun karke}...He knows consumer so well.",
+  "matrix": "en"
+ },
+ {
+  "id": "u059",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "dev",
+  "text": "10 8 26 booom boom mondayyy pm",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "none"
+ },
+ {
+  "id": "u060",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "sir can u please make videos on deep learning",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u061",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "test",
+  "text": "Thanks for making this tutorials. I will be dropping comment [such as \"seen\"] as bookmarker to keep a track of my learning.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u062",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "test",
+  "text": "- It is purple... Not sure if you are color blind or it is just a simple mistake.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u063",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "test",
+  "text": "People who talk about their struggle turn me offf.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u064",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "test",
+  "text": "Please start deep learning course series",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u065",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "When it comes to investing, we want our money to grow with the highest rates of return, and the lowest risk possible. While there are no shortcuts to getting rich, but there are smart ways to go about it...",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u066",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "Maine BCA aur MBA IT field se kiya hai kya main software engineer bn sakta hun",
+  "base": "en",
+  "annotation": "{Maine} BCA {aur} MBA IT field {se kiya hai kya main} software engineer {bn sakta hun}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u067",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "What is Machine Learning And Ai – Lecture 01 Beginner’s Guide English",
+  "base": "en",
+  "annotation": "What is Machine Learning And Ai – Lecture 01 Beginner’s Guide <English>",
+  "matrix": "en"
+ },
+ {
+  "id": "u068",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "Sir please provide notes of ML",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u069",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "test",
+  "text": "if its available in english means very useful to us sir",
+  "base": "en",
+  "annotation": "if its available in <english> means very useful to us sir",
+  "matrix": "en"
+ },
+ {
+  "id": "u070",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "The way Harry bhaiya explains shows that it's a Harry - Only thing",
+  "base": "en",
+  "annotation": "The way <Harry> {bhaiya} explains shows that it's a <Harry> - Only thing",
+  "matrix": "en"
+ },
+ {
+  "id": "u071",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "Machine kin logo ko achha lagata hai Vo like kare",
+  "base": "en",
+  "annotation": "Machine {kin logo ko achha lagata hai Vo} like {kare}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u072",
+  "source": "comment",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "pro RSS channel? rahul is shahzada ???",
+  "base": "en",
+  "annotation": "pro <RSS> channel? <rahul> is {shahzada} ???",
+  "matrix": "en"
+ },
+ {
+  "id": "u073",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "test",
+  "text": "Good knowledge very good efforts",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u074",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "test",
+  "text": "Can you plz higher your voice.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u075",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "test",
+  "text": "Wasting your efforts. It must be in English.",
+  "base": "en",
+  "annotation": "Wasting your efforts. It must be in <English>.",
+  "matrix": "en"
+ },
+ {
+  "id": "u076",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "test",
+  "text": "I’ve got this on loop while I study. It’s so smooth!",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u077",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "test",
+  "text": "Now I regret changing my stream in Class 12 from PCM to Commerce",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u078",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "test",
+  "text": "[3/100] 05/05/2026 All the best",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u079",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "test",
+  "text": "Best playlist of machine learning but the major drawback is contents of the topics is'nt provided",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u080",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "test",
+  "text": "Please share one guide path for data engineering",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u081",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "test",
+  "text": "Great info... BRO Let's start ML complete course also tell complete road map Your teaching method is superb",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u082",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "test",
+  "text": "Love you 3001 Harish Bhai . Absolutely agreed with your points . Harry bhai machine learning pebhi ek course lao jldi se jisse hm easy language me is technology ko seekh ske . Jojo isse agree krta h like kro",
+  "base": "en",
+  "annotation": "Love you 3001 <Harish> {Bhai} . Absolutely agreed with your points . <Harry> {bhai} machine learning {pebhi ek} course {lao jldi se jisse hm} easy language {me is} technology {ko seekh ske} . {Jojo isse} agree {krta h} like {kro}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u083",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "Hi harry sir Please make a video on Augmented, virtual and Mixed Reality...",
+  "base": "en",
+  "annotation": "Hi <harry> sir Please make a video on Augmented, virtual and Mixed Reality...",
+  "matrix": "en"
+ },
+ {
+  "id": "u084",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "test",
+  "text": "Thankyou sir ,nobody taught me this good difference in between these topics.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u085",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "test",
+  "text": "I LOVE THE HONESTY !",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u086",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "test",
+  "text": "I have watched almost 10 minutes, but this guy is not telling inside stuff. He didn't have to tell inside of his business, but he could give examples to relate with something else. Please screen people before bringing them in.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u087",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "test",
+  "text": "sir, can you please send us the ppt?",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u088",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "test",
+  "text": "all in one ...thanks for this valuable info",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u089",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "test",
+  "text": "Python ki sirige bhi bana dijye sir",
+  "base": "en",
+  "annotation": "<Python> {ki} sirige {bhi bana dijye} sir",
+  "matrix": "hi"
+ },
+ {
+  "id": "u090",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "test",
+  "text": "Raising capital celebration is not only in Indian I worked in Africa for startups based out of Dubai and Singapore ran by Indian executives, even they have same the mindset, spending funding money on lavish lifestyle",
+  "base": "en",
+  "annotation": "Raising capital celebration is not only in Indian I worked in <Africa> for startups based out of <Dubai> and <Singapore> ran by Indian executives, even they have same the mindset, spending funding money on lavish lifestyle",
+  "matrix": "en"
+ },
+ {
+  "id": "u091",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "test",
+  "text": "amazing interview. This girl is so mature apart from being a brilliant tech mind, her personal views, resourcefulness, grit, commitment and understanding of the world around her at such a young age is extremely admirable!",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u092",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "Opening was awesome , nice vdo",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u093",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "test",
+  "text": "Lec 1 and 2 done - 29 June 2026",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u094",
+  "source": "comment",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "Sir me logo ki weight loss ke liye ek hall leke unko fitness class start Karu but actually problem yeh hai ki log ki mentality ... Ab woh location logo ki opposites side padh raha hai jese ki woh market",
+  "base": "en",
+  "annotation": "Sir {me logo ki} weight loss {ke liye ek} hall {leke unko} fitness class start {Karu} but actually problem {yeh hai ki log ki} mentality ... {Ab woh} location {logo ki} opposites side {padh raha hai jese ki woh} market",
+  "matrix": "hi"
+ },
+ {
+  "id": "u095",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "Kon kon 2027 mea dekh raha hai",
+  "base": "en",
+  "annotation": "{Kon kon} 2027 {mea dekh raha hai}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u096",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "test",
+  "text": "Product ka quality ho jhaant bhar...podcast per Gyaan pelo raat Bhar ...Noise is worse than Boat",
+  "base": "en",
+  "annotation": "Product {ka} quality {ho jhaant bhar}...podcast {per Gyaan pelo raat Bhar} ...<Noise> is worse than <Boat>",
+  "matrix": "hi"
+ },
+ {
+  "id": "u097",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "test",
+  "text": "Best entrepreneur yr , make long podcast with him and his brother together",
+  "base": "en",
+  "annotation": "Best entrepreneur {yr} , make long podcast with him and his brother together",
+  "matrix": "en"
+ },
+ {
+  "id": "u098",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "test",
+  "text": "may be main bhi increase kar rha hu",
+  "base": "en",
+  "annotation": "may be {main bhi} increase {kar rha hu}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u099",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "test",
+  "text": "Hi Raj, I really like your videos as I can relate to the questions and honest answers. One thing that I think is missed in this video is in the beginning of the video I was expecting a complete story",
+  "base": "en",
+  "annotation": "Hi <Raj>, I really like your videos as I can relate to the questions and honest answers. One thing that I think is missed in this video is in the beginning of the video I was expecting a complete story",
+  "matrix": "en"
+ },
+ {
+  "id": "u100",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "test",
+  "text": "Started on 10 Feb 2026",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u101",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "test",
+  "text": "Started on 11 June 2025",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u102",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "I was also going to make the thumbnail of my video on this same template",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u103",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "test",
+  "text": "Sir you made my hardwork very meaningful in just first 3 lecture of your this playlist I can go with this technology",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u104",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "test",
+  "text": "I've worked on a similar semantic search product -integrated 20+ enterprise data sources. Salesforce's agentforce can be a killer",
+  "base": "en",
+  "annotation": "I've worked on a similar semantic search product -integrated 20+ enterprise data sources. <Salesforce's agentforce> can be a killer",
+  "matrix": "en"
+ },
+ {
+  "id": "u105",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "test",
+  "text": "Sir kya Job pane ke liye sirf itne algorithms hi kafi hai ya or bhi karne ki jarurat hai?",
+  "base": "en",
+  "annotation": "Sir {kya} Job {pane ke liye sirf itne} algorithms {hi kafi hai ya or bhi karne ki jarurat hai}?",
+  "matrix": "hi"
+ },
+ {
+  "id": "u106",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "test",
+  "text": "Bhai India Ka Name Leke Bi English Tha Podcast",
+  "base": "en",
+  "annotation": "{Bhai} <India> {Ka} Name {Leke Bi} <English> {Tha} Podcast",
+  "matrix": "hi"
+ },
+ {
+  "id": "u107",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "test",
+  "text": "We need more biz podcasts",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u108",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "test",
+  "text": "Thank you so much, Sir. These three lectures summarized and explained so clearly what I had been studying in college for the past five months, which I had barely understood until now.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u109",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "test",
+  "text": "you are doing great raj !!!! just bring more wonderful guest on podcast !!!! love from pune bro...",
+  "base": "en",
+  "annotation": "you are doing great <raj> !!!! just bring more wonderful guest on podcast !!!! love from <pune> bro...",
+  "matrix": "en"
+ },
+ {
+  "id": "u110",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "test",
+  "text": "Awesome episode Plz bring someone who is expert in textile business",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u111",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "test",
+  "text": "At the age of 14 & 15 going after VC's and building products in a incubator is pretty great, I wish all the success to this young girl Pranjali!!!",
+  "base": "en",
+  "annotation": "At the age of 14 & 15 going after VC's and building products in a incubator is pretty great, I wish all the success to this young girl <Pranjali>!!!",
+  "matrix": "en"
+ },
+ {
+  "id": "u112",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "test",
+  "text": "this is gyan pelu vdo.. nothing is relevant and to the point. he is gol gol gol all the time. he never answer to the point, he is bad speaker . boaring not worthy to watch. may b good lawyer",
+  "base": "en",
+  "annotation": "this is {gyan pelu} vdo.. nothing is relevant and to the point. he is {gol gol gol} all the time. he never answer to the point, he is bad speaker . boaring not worthy to watch. may b good lawyer",
+  "matrix": "en"
+ },
+ {
+  "id": "u113",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "test",
+  "text": "maja aa gya sir ji",
+  "base": "en",
+  "annotation": "{maja aa gya} sir {ji}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u114",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "test",
+  "text": "Sir give us full course for machine learning for data science",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u115",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "Sir plz make videos on 2nd 3rd unit of machine learning",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u116",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "test",
+  "text": "wow Nitish you excel at this skill of explaining things. I've completed the first 2 videos and I've decided to complete this playlist. Will keep liking the videos and commenting for reach. Will share the playlist with peers as well.",
+  "base": "en",
+  "annotation": "wow <Nitish> you excel at this skill of explaining things. I've completed the first 2 videos and I've decided to complete this playlist. Will keep liking the videos and commenting for reach. Will share the playlist with peers as well.",
+  "matrix": "en"
+ },
+ {
+  "id": "u117",
+  "source": "comment",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "Can u pls mature n talk business. Don't bring bjp n modi in between. Ur divergening. Not talking on subject. Im a ceo myself",
+  "base": "en",
+  "annotation": "Can u pls mature n talk business. Don't bring <bjp> n <modi> in between. Ur divergening. Not talking on subject. Im a ceo myself",
+  "matrix": "en"
+ },
+ {
+  "id": "u118",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "test",
+  "text": "Sir please make a playlist on this topic AIML please sir",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u119",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "test",
+  "text": "Stop calling ultra privileged people as \"Indian\" for no reason, just to gain sympathy",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u120",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "test",
+  "text": "Can u please make video on data engineering",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u121",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "test",
+  "text": "Artifical intelligence is a main field which making machines thinks and act smart like humans. Machine learning find pattern in our data and learn data In Machine learning there is Deep learning which is use layers of neurons to learn",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u122",
+  "source": "comment",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "Lots of respect nd blessings sir.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u123",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "test",
+  "text": "Good video. Just wanted a this type of video to go through the brief and then start with the details.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u124",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "Thanks for these good videos.. Could you please share or make some videos on Matrix Factorization?",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u125",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "test",
+  "text": "We don't need AI We need Original Intelligence. If anyone using Aritificial Intelligence they dont have intelligence",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u126",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "test",
+  "text": "Please start series for machine learning and AI. Because you are the legend. Course name - Bringing to job reday for machine learning for 180 Days challenge . Please please sir all community request you you please launch machine learning",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u127",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "sir please, All programming language ke liye video banaye ........",
+  "base": "en",
+  "annotation": "sir please, All programming language {ke liye} video {banaye} ........",
+  "matrix": "hi"
+ },
+ {
+  "id": "u128",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "Sir Kya machine learning BCA wale students Kar sakte hai agar ha to kaise Kare. please sir ek video ISS par banaeye please please please please.....................",
+  "base": "en",
+  "annotation": "Sir {Kya} machine learning BCA {wale} students {Kar sakte hai agar ha to kaise Kare}. please sir {ek} video {ISS par banaeye} please please please please.....................",
+  "matrix": "hi"
+ },
+ {
+  "id": "u129",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "test",
+  "text": "You have to pay well virat kohli works for you easy & simple",
+  "base": "en",
+  "annotation": "You have to pay well <virat kohli> works for you easy & simple",
+  "matrix": "en"
+ },
+ {
+  "id": "u130",
+  "source": "comment",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "Bahat accha laga sir, today's generation shd follow it",
+  "base": "en",
+  "annotation": "{Bahat accha laga} sir, today's generation shd follow it",
+  "matrix": "en"
+ },
+ {
+  "id": "u131",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "test",
+  "text": "I am a public sector teacher from Punjab Pakistan want to learn skills which are most demanding in future",
+  "base": "en",
+  "annotation": "I am a public sector teacher from <Punjab Pakistan> want to learn skills which are most demanding in future",
+  "matrix": "en"
+ },
+ {
+  "id": "u132",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "Software architecture kasa Bana Please make video on this topic please please please please please please please please please please please",
+  "base": "en",
+  "annotation": "Software architecture {kasa Bana} Please make video on this topic please please please please please please please please please please please",
+  "matrix": "en"
+ },
+ {
+  "id": "u133",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "test",
+  "text": "9 july :-today istarted my 100 days of campus x ml",
+  "base": "en",
+  "annotation": "9 july :-today istarted my 100 days of <campus x> ml",
+  "matrix": "en"
+ },
+ {
+  "id": "u134",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "test",
+  "text": "Sir is video ko hindi me translate karke public kariye",
+  "base": "en",
+  "annotation": "Sir {is} video {ko} <hindi> {me} translate {karke} public {kariye}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u135",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "thank you so much sir for precious video lecture.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u136",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "test",
+  "text": "Beta, this is a very good interview. Congratulations to both of you for a job well done! Pranjali, you remind me of how I was as a young girl myself.. entrepreneurial, fire in the belly, a little ahead of the",
+  "base": "en",
+  "annotation": "{Beta}, this is a very good interview. Congratulations to both of you for a job well done! <Pranjali>, you remind me of how I was as a young girl myself.. entrepreneurial, fire in the belly, a little ahead of the",
+  "matrix": "en"
+ },
+ {
+  "id": "u137",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "test",
+  "text": "Like everyone in comments say,Parenting and the environment matters way more than we think.Even in india growing up in metro cities expose to a lot of things.",
+  "base": "en",
+  "annotation": "Like everyone in comments say,Parenting and the environment matters way more than we think.Even in <india> growing up in metro cities expose to a lot of things.",
+  "matrix": "en"
+ },
+ {
+  "id": "u138",
+  "source": "comment",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "Sometimes we think life is delaying us, but it’s actually preparing us.. Thank you for sharing your journey so honestly.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u139",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "test",
+  "text": "Impressive ! .. .. . lol im regretting as i had left all my interest's for this jee grind ( that i couldn't even crack lol .. let's see how it goes mate ! , good luck for your future",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u140",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "test",
+  "text": "Raj ne dono hath me watch pahan rakhi hai kya",
+  "base": "en",
+  "annotation": "<Raj> {ne dono hath me} watch {pahan rakhi hai kya}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u141",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "test",
+  "text": "She is incredibly intelligent. I'm impressed by her speaking skills and confidence.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u142",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "test",
+  "text": "Any proper source to Start coding that has worked out for you guys kindly reply to my comment, As i have a lot of ideas that i would to want to implement. Yet unable to bring it out just because",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u143",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "test",
+  "text": "Hi sir, in your this entire playlist you covered each ML algorithm?",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u144",
+  "source": "comment",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "1 million = is not 10 crore. 1 million= 10 lakh. Please correct it. 100 million= 10 crore.",
+  "base": "en",
+  "annotation": "1 million = is not 10 <crore>. 1 million= 10 <lakh>. Please correct it. 100 million= 10 <crore>.",
+  "matrix": "en"
+ },
+ {
+  "id": "u145",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "Thank you for this wonderful lecture sir",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u146",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "test",
+  "text": "Bhaiya plz make a video on how hfts(high frequency trading) company used machine learning",
+  "base": "en",
+  "annotation": "{Bhaiya} plz make a video on how hfts(high frequency trading) company used machine learning",
+  "matrix": "en"
+ },
+ {
+  "id": "u147",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "test",
+  "text": "I like your content but i don't understand Hindi, I'm so hyped to get the auto voice translation from Google. Hope they working hard on it, to get it as soon as possible because your channel is a gold mine.",
+  "base": "en",
+  "annotation": "I like your content but i don't understand <Hindi>, I'm so hyped to get the auto voice translation from <Google>. Hope they working hard on it, to get it as soon as possible because your channel is a gold mine.",
+  "matrix": "en"
+ },
+ {
+  "id": "u148",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "test",
+  "text": "best playlist i ever find",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u149",
+  "source": "comment",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "Bahi, last statement ne toh pura clean bold kar diya",
+  "base": "en",
+  "annotation": "{Bahi}, last statement {ne toh pura} clean bold {kar diya}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u150",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "All video is very impressive and very easy Understanding....I requesting you can you make the video on particular syllabus like that .azure ,Amazon , machine learning python Extra.",
+  "base": "en",
+  "annotation": "All video is very impressive and very easy Understanding....I requesting you can you make the video on particular syllabus like that .<azure> ,<Amazon> , machine learning <python> Extra.",
+  "matrix": "en"
+ },
+ {
+  "id": "u151",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "I want deep learning notes for BE vlsi engg branch",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u152",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "Harry is on Fire (ﾉ◕ヮ◕)ﾉ*. Back to back videos. Lage haath DSA ke bache hue topics bhi continue karo.......",
+  "base": "en",
+  "annotation": "<Harry> is on Fire <(ﾉ◕ヮ◕)ﾉ*>. Back to back videos. {Lage haath} DSA {ke bache hue} topics {bhi} continue {karo}.......",
+  "matrix": "hi"
+ },
+ {
+  "id": "u153",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "Yeaah brother let's start coding this! Cheers",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u154",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "Sir pls Ics ka video bano",
+  "base": "en",
+  "annotation": "Sir pls Ics {ka} video {bano}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u155",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "test",
+  "text": "FMCG main kaishking ko jayada ka exit Mila tha around 1800 cr",
+  "base": "en",
+  "annotation": "FMCG {main kaishking ko jayada ka} exit {Mila tha} around 1800 <cr>",
+  "matrix": "hi"
+ },
+ {
+  "id": "u156",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "test",
+  "text": "I am working on my own start ups and I am glad I took better decisions regarding my company and very shocked to find out how wrong decision they take and don't think much of it.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u157",
+  "source": "comment",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "I was thinking exactly like u. First get into job and then understand the area and demand of Business then start a business..but now after 20years, I fear to start anything, loss will make 4 dependents on street. Competition is",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u158",
+  "source": "comment",
+  "video_id": "1v3_AQ26jZ0",
+  "split": "test",
+  "text": "There is enough English in this in the intro that I didn't realize at first but the reason I couldn't make out a lot of his words was because it was in Hindi. Looks like lovely content",
+  "base": "en",
+  "annotation": "There is enough <English> in this in the intro that I didn't realize at first but the reason I couldn't make out a lot of his words was because it was in <Hindi>. Looks like lovely content",
+  "matrix": "en"
+ },
+ {
+  "id": "u159",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "test",
+  "text": "L3 done on 28 aug",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u160",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "test",
+  "text": "sir I have a question that in supervised machine if the o/p is 0,1 then it will come under regression or Classification?",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u161",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "that movement of neck Funniest part",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u162",
+  "source": "comment",
+  "video_id": "81ymPYEtFOw",
+  "split": "test",
+  "text": "covered first 2 videos of this playlist on 1st jan 2026, its 2nd jan 2026 watching this , if anyone is learning or following this playlist in 2026 hit a like , we got this",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u163",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "Excellent videos, explained in very simple language. Keep it up . Best wishes.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u164",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "How to become a MBBS Doctor after 12th make a new video. Please...",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u165",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "test",
+  "text": "Great job hitesh ! Simple and clear explanation . Accha music add kiya btw",
+  "base": "en",
+  "annotation": "Great job <hitesh> ! Simple and clear explanation . {Accha} music add {kiya} btw",
+  "matrix": "en"
+ },
+ {
+  "id": "u166",
+  "source": "comment",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "3 videos in 24 hrs",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u167",
+  "source": "comment",
+  "video_id": "IcVYyF3EEbk",
+  "split": "test",
+  "text": "Noise have excellent design and all. But can we trust fitness sensor’s quality, accuracy and analytics?",
+  "base": "en",
+  "annotation": "<Noise> have excellent design and all. But can we trust fitness sensor’s quality, accuracy and analytics?",
+  "matrix": "en"
+ },
+ {
+  "id": "u168",
+  "source": "comment",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "guys ! truth is if you go for job...you'll be trapped in a survival mode with time you realise now you've family responsibility... fear will engulf you to take any bold step. instead after your college when you don't have",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u169",
+  "source": "comment",
+  "video_id": "J-HV7gNVdd0",
+  "split": "test",
+  "text": "Nice channel bro...I didnt know...you have a youtube channel... sorry for the late visit...and btw...doing great job...",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u170",
+  "source": "comment",
+  "video_id": "9tigHWH-UD8",
+  "split": "test",
+  "text": "She will settle down in the US.Tadaaaa",
+  "base": "en",
+  "annotation": "She will settle down in the <US>.Tadaaaa",
+  "matrix": "en"
+ },
+ {
+  "id": "u171",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "Sir C. H. S kya hai es par video bnaiye",
+  "base": "en",
+  "annotation": "Sir <C. H. S> {kya hai es par} video {bnaiye}",
+  "matrix": "hi"
+ },
+ {
+  "id": "u172",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "can you please suggest some good book of machine learning",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u173",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "test",
+  "text": "do these kind of episodes i love this type of knowledge",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u174",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "test",
+  "text": "Logistics and shipping me bnao bhai kisi channel ne nhi kra it gives a lot of knowledge",
+  "base": "en",
+  "annotation": "Logistics and shipping {me bnao bhai kisi} channel {ne nhi kra} it gives a lot of knowledge",
+  "matrix": "hi"
+ },
+ {
+  "id": "u175",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "test",
+  "text": "Could you please bring the guests who are top employees like in sales , finance etc",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u176",
+  "source": "comment",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "make a video on Artificial intelligence",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u177",
+  "source": "comment",
+  "video_id": "HVkSGvZi-WY",
+  "split": "test",
+  "text": "Thank you so much sir..",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u178",
+  "source": "comment",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "your way of teaching style is very well that helps me easy to understand",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u179",
+  "source": "comment",
+  "video_id": "C6YtPJxNULA",
+  "split": "test",
+  "text": "ML series will be much appreciated",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u180",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "dev",
+  "text": "gain industry experience and become the top 1% in whichever role you're in so",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u181",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "dev",
+  "text": "and not to discourage you or anything but you've not even started they already",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u182",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "dev",
+  "text": "timing businesses are built and destroyed on timing identify what kind of a Founder you want to be what would",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u183",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "dev",
+  "text": "startup degree I think I'm very putting it very badly but but that's the gist of",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u184",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "dev",
+  "text": "with dark stores what is the tax do yeah so you can think about you know it's a",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u185",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "dev",
+  "text": "us deliver faster short numbers meaningfully better quality was meaningfully better speed was in and or",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u186",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "dev",
+  "text": "September 2020 yeah and October November December so typically with Marketplace businesses",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u187",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "dev",
+  "text": "be working with are the most important and you know if we took that money then",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u188",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "dev",
+  "text": "interview it's like three guys in the room three Partners in the room I'm",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u189",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "dev",
+  "text": "companies which Founders in there and then there are weekly dinners every week",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u190",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "dev",
+  "text": "testing myself I can do much better now India is the biggest gaming Market in",
+  "base": "en",
+  "annotation": "testing myself I can do much better now <India> is the biggest gaming Market in",
+  "matrix": "en"
+ },
+ {
+  "id": "u191",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "dev",
+  "text": "open can people apply I know the fellowship is open but the fund is there",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u192",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "dev",
+  "text": "pain points of students starts an edtech platform reaches a valuation of $22",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u193",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "dev",
+  "text": "psychology uh and it's a given that they're testing your Clarity when it",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u194",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "dev",
+  "text": "work with uh you don't need to have any Revenue you can be pre-revenue you but",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u195",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "dev",
+  "text": "same mistakes as I [Music] made so I thought I should give you a",
+  "base": "en",
+  "annotation": "same mistakes as I <[Music]> made so I thought I should give you a",
+  "matrix": "en"
+ },
+ {
+  "id": "u196",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "test",
+  "text": "just doesn't seem realistic to me that you'll be able to crack into these",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u197",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "test",
+  "text": "and then yeah CDC it was December 21 it was led by y combinators growth fund and",
+  "base": "en",
+  "annotation": "and then yeah <CDC> it was December 21 it was led by <y combinators> growth fund and",
+  "matrix": "en"
+ },
+ {
+  "id": "u198",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "test",
+  "text": "relationships raising money selling it could be anything related to the startup",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u199",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "test",
+  "text": "switching you don't have time to think which is where the truth comes out and",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u200",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "test",
+  "text": "developer than me so we split our roles I said I will sell remember I also came",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u201",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "test",
+  "text": "it Imperium Universalist I've even designed the logo okay but why start up all of a",
+  "base": "en",
+  "annotation": "it <Imperium Universalist> I've even designed the logo okay but why start up all of a",
+  "matrix": "en"
+ },
+ {
+  "id": "u202",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "test",
+  "text": "sounds too heavy rules of the game Arian understand that there is a",
+  "base": "en",
+  "annotation": "sounds too heavy rules of the game <Arian> understand that there is a",
+  "matrix": "en"
+ },
+ {
+  "id": "u203",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "test",
+  "text": "yeah around that time Jan Feb so we launched within 45 days we got it like",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u204",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "test",
+  "text": "year off figure out you know figure out what we can do",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u205",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "test",
+  "text": "execution is everything the Winkle was Brothers also had the idea for Facebook",
+  "base": "en",
+  "annotation": "execution is everything the <Winkle was Brothers> also had the idea for <Facebook>",
+  "matrix": "en"
+ },
+ {
+  "id": "u206",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "test",
+  "text": "mistakes they've had the people issues they have in the company like they open",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u207",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "test",
+  "text": "implement into Yas and grow Yas with much better decision making anyways we were talking about",
+  "base": "en",
+  "annotation": "implement into <Yas> and grow <Yas> with much better decision making anyways we were talking about",
+  "matrix": "en"
+ },
+ {
+  "id": "u208",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "test",
+  "text": "the thesis we actually showed them the customer data they were like okay this",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u209",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "test",
+  "text": "like to refer itself as an incubator they call themselves an accelerator so",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u210",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "test",
+  "text": "within 45 days of that we closed a 50 million dollar series B and then the",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u211",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "test",
+  "text": "demo day where they help you fundraise we thought that's the core value but it",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u212",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "test",
+  "text": "business guy who runs the revenue you will have to be one and choose a",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u213",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "test",
+  "text": "batch for a period of 3 4 months now I think it's 250 companies in each batch",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u214",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "test",
+  "text": "interview yeah usually I I think uh it needs a bit of practice in terms of",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u215",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "test",
+  "text": "from a family business background my dad was in the Army and his parents are",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u216",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "test",
+  "text": "they have not yet built an online store that is when udoo our sponsor for today",
+  "base": "en",
+  "annotation": "they have not yet built an online store that is when <udoo> our sponsor for today",
+  "matrix": "en"
+ },
+ {
+  "id": "u217",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "test",
+  "text": "out of 10 of them like I don't know if I basically yeah",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u218",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "test",
+  "text": "of launching 30 to 40 days we got to about 300 orders a day",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u219",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "test",
+  "text": "about y combinator tell me about Paul Graham tell me about everything that",
+  "base": "en",
+  "annotation": "about <y combinator> tell me about <Paul Graham> tell me about everything that",
+  "matrix": "en"
+ },
+ {
+  "id": "u220",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "test",
+  "text": "feel like much you've got a lot more to do a long way to go so I know you have a",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u221",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "test",
+  "text": "up completely they're also vicey Founders xvc Founders who made it right",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u222",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "test",
+  "text": "to start trolling him after PM's IPO so it is ruthless it is unforgiving and it",
+  "base": "en",
+  "annotation": "to start trolling him after <PM's> IPO so it is ruthless it is unforgiving and it",
+  "matrix": "en"
+ },
+ {
+  "id": "u223",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "test",
+  "text": "Commerce in the country offline and online so rent is a percentage of sales",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u224",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "test",
+  "text": "they said delivery income is a big portion of the revenue yeah yeah so if",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u225",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "test",
+  "text": "granted the more time you spend in an industry the more you learn about its",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u226",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "test",
+  "text": "down the back door and do it uh but they also do it virtually okay so 125k then",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u227",
+  "source": "caption_latin_indian",
+  "video_id": "24S3sZfCxLQ",
+  "split": "test",
+  "text": "income uh this is 100 margin business because I was talking to me show and",
+  "base": "en",
+  "annotation": "income uh this is 100 margin business because I was talking to <me show> and",
+  "matrix": "en"
+ },
+ {
+  "id": "u228",
+  "source": "caption_latin_indian",
+  "video_id": "P24WbUcIwSk",
+  "split": "test",
+  "text": "becomes your problem there's never really any turning off no work life",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u229",
+  "source": "caption_latin_indian",
+  "video_id": "KYo_oVmW91w",
+  "split": "test",
+  "text": "like a down round to the VC so usually VC's don't VCS would love to come in",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u230",
+  "source": "caption_devanagari",
+  "video_id": "lsf060bLH_Y",
+  "split": "dev",
+  "text": "पैकेट कॉर्नर है तो आप लोगों को पेट फूड का ऐड दिखाया जाता है अगर आप लोग नहीं है",
+  "base": "hi",
+  "annotation": "|पैकेट कॉर्नर| है तो आप लोगों को |पेट फूड| का |ऐड| दिखाया जाता है अगर आप लोग नहीं है",
+  "matrix": "hi"
+ },
+ {
+  "id": "u231",
+  "source": "caption_devanagari",
+  "video_id": "Y4qO9unerGs",
+  "split": "dev",
+  "text": "पे अगली बार आपको होम स्क्रीन पे वो सारे प्रोडक्ट दिखते हैं तो इस तरीके से मशीन",
+  "base": "hi",
+  "annotation": "पे अगली बार आपको |होम स्क्रीन| पे वो सारे |प्रोडक्ट| दिखते हैं तो इस तरीके से |मशीन|",
+  "matrix": "hi"
+ },
+ {
+  "id": "u232",
+  "source": "caption_devanagari",
+  "video_id": "lsf060bLH_Y",
+  "split": "dev",
+  "text": "को ट्रेन कर सकते हैं और यह पता कर सकते हैं कि कहां पर चश्मे को बिठाना है ताकि",
+  "base": "hi",
+  "annotation": "को |ट्रेन| कर सकते हैं और यह पता कर सकते हैं कि कहां पर चश्मे को बिठाना है ताकि",
+  "matrix": "hi"
+ },
+ {
+  "id": "u233",
+  "source": "caption_devanagari",
+  "video_id": "Y4qO9unerGs",
+  "split": "dev",
+  "text": "हैं कि भैया अगर कुछ क्वेश्चन पूछा गया तो उसका ये रिस्पेक्टिव आउटपुट होना चाहिए ये",
+  "base": "hi",
+  "annotation": "हैं कि भैया अगर कुछ |क्वेश्चन| पूछा गया तो उसका ये |रिस्पेक्टिव आउटपुट| होना चाहिए ये",
+  "matrix": "hi"
+ },
+ {
+  "id": "u234",
+  "source": "caption_devanagari",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "dev",
+  "text": "मुझे कमेंट में बता सकते हैं ताकि हम आपकी परेशानी को जल्द से जल्द दूर कर सकें अगर",
+  "base": "hi",
+  "annotation": "मुझे |कमेंट| में बता सकते हैं ताकि हम आपकी परेशानी को जल्द से जल्द दूर कर सकें अगर",
+  "matrix": "hi"
+ },
+ {
+  "id": "u235",
+  "source": "caption_devanagari",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "dev",
+  "text": "क्षेत्र में दिया जाता है इसी प्रकार ऐसे बहुत से क्षेत्र हैं जहां मशीन लर्निंग का",
+  "base": "hi",
+  "annotation": "क्षेत्र में दिया जाता है इसी प्रकार ऐसे बहुत से क्षेत्र हैं जहां |मशीन लर्निंग| का",
+  "matrix": "hi"
+ },
+ {
+  "id": "u236",
+  "source": "caption_devanagari",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "dev",
+  "text": "जाओ। कंटेंट क्रिएशन मैं इसके लिए ना बोलता हूं क्योंकि सब उसमें फिर टाइम पास",
+  "base": "hi",
+  "annotation": "जाओ। |कंटेंट क्रिएशन| मैं इसके लिए ना बोलता हूं क्योंकि सब उसमें फिर |टाइम पास|",
+  "matrix": "hi"
+ },
+ {
+  "id": "u237",
+  "source": "caption_devanagari",
+  "video_id": "lsf060bLH_Y",
+  "split": "dev",
+  "text": "गए होंगे लेकिन मैं आप लोगों को अच्छी तरह समझाता हूं कि मशीन लर्निंग क्या होती है",
+  "base": "hi",
+  "annotation": "गए होंगे लेकिन मैं आप लोगों को अच्छी तरह समझाता हूं कि |मशीन लर्निंग| क्या होती है",
+  "matrix": "hi"
+ },
+ {
+  "id": "u238",
+  "source": "caption_devanagari",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "dev",
+  "text": "भाग है जो कि सिस्टम को यह प्लेट प्रदान करता है कि वह ऑटोमेटिकली सीख सके और",
+  "base": "hi",
+  "annotation": "भाग है जो कि |सिस्टम| को यह |प्लेट| प्रदान करता है कि वह |ऑटोमेटिकली| सीख सके और",
+  "matrix": "hi"
+ },
+ {
+  "id": "u239",
+  "source": "caption_devanagari",
+  "video_id": "lsf060bLH_Y",
+  "split": "dev",
+  "text": "एग्जांपल अगर मैंने यहां पर एक घूंसा मारा ठीक है मैंने यहां पर चेयर पर एक लात मारी",
+  "base": "hi",
+  "annotation": "|एग्जांपल| अगर मैंने यहां पर एक घूंसा मारा ठीक है मैंने यहां पर |चेयर| पर एक लात मारी",
+  "matrix": "hi"
+ },
+ {
+  "id": "u240",
+  "source": "caption_devanagari",
+  "video_id": "Y4qO9unerGs",
+  "split": "dev",
+  "text": "और एक्चुअल आउटपुट में जितना ज्यादा डिफरेंस होगा उतना ज्यादा आपका एरर",
+  "base": "hi",
+  "annotation": "और |एक्चुअल आउटपुट| में जितना ज्यादा |डिफरेंस| होगा उतना ज्यादा आपका |एरर|",
+  "matrix": "hi"
+ },
+ {
+  "id": "u241",
+  "source": "caption_devanagari",
+  "video_id": "Y4qO9unerGs",
+  "split": "dev",
+  "text": "लाइफ में वही प्रोग्राम कर रहे थे फॉर एग्जांपल सिंपल वाला प्रोग्राम एडिशन वाला",
+  "base": "hi",
+  "annotation": "|लाइफ| में वही |प्रोग्राम| कर रहे थे |फॉर एग्जांपल सिंपल| वाला |प्रोग्राम एडिशन| वाला",
+  "matrix": "hi"
+ },
+ {
+  "id": "u242",
+  "source": "caption_devanagari",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "dev",
+  "text": "में आता है और नौकरी में आके हल्का कैश फ्लो आता है तो एक तो वो कंफर्ट ज़ोन में",
+  "base": "hi",
+  "annotation": "में आता है और नौकरी में आके हल्का |कैश फ्लो| आता है तो एक तो वो |कंफर्ट ज़ोन| में",
+  "matrix": "hi"
+ },
+ {
+  "id": "u243",
+  "source": "caption_devanagari",
+  "video_id": "lsf060bLH_Y",
+  "split": "dev",
+  "text": "ज्यादा स्मार्ट हो गई है और इस नंबर आफ फ्लाइंग काइट्स की बात करें तो आप खुद",
+  "base": "hi",
+  "annotation": "ज्यादा |स्मार्ट| हो गई है और इस |नंबर आफ फ्लाइंग काइट्स| की बात करें तो आप खुद",
+  "matrix": "hi"
+ },
+ {
+  "id": "u244",
+  "source": "caption_devanagari",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "dev",
+  "text": "है। 10 करोड़ ही है। बट 90 के ऐज में मेरे पास 10 लाख करोड़ है।",
+  "base": "hi",
+  "annotation": "है। 10 <करोड़> ही है। |बट| 90 के |ऐज| में मेरे पास 10 <लाख करोड़> है।",
+  "matrix": "hi"
+ },
+ {
+  "id": "u245",
+  "source": "caption_devanagari",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "dev",
+  "text": "जी तो इसके साथ ही कुछ कर लेते हैं। करेक्ट। और ये बिज़नेस में नहीं करना। ये बिज़नेस तो",
+  "base": "hi",
+  "annotation": "जी तो इसके साथ ही कुछ कर लेते हैं। |करेक्ट|। और ये |बिज़नेस| में नहीं करना। ये |बिज़नेस| तो",
+  "matrix": "hi"
+ },
+ {
+  "id": "u246",
+  "source": "caption_devanagari",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "और वो आईडिया हम देखते हैं जो पैकेज किया है। फॉर एग्जांपल मैं एक आदमी का देखता हूं",
+  "base": "hi",
+  "annotation": "और वो |आईडिया| हम देखते हैं जो |पैकेज| किया है। |फॉर एग्जांपल| मैं एक आदमी का देखता हूं",
+  "matrix": "hi"
+ },
+ {
+  "id": "u247",
+  "source": "caption_devanagari",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "के साथ-साथ आंसर भी दे रहे हैं इनपुट के साथ-साथ आउटपुट भी भी दे रहे हैं तो",
+  "base": "hi",
+  "annotation": "के साथ-साथ |आंसर| भी दे रहे हैं |इनपुट| के साथ-साथ |आउटपुट| भी भी दे रहे हैं तो",
+  "matrix": "hi"
+ },
+ {
+  "id": "u248",
+  "source": "caption_devanagari",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "पावरफुल लोग हैं ना अगर उनको पूछा गया कि सर मैं आपको किडनैप कर लूं।",
+  "base": "hi",
+  "annotation": "|पावरफुल| लोग हैं ना अगर उनको पूछा गया कि |सर| मैं आपको |किडनैप| कर लूं।",
+  "matrix": "hi"
+ },
+ {
+  "id": "u249",
+  "source": "caption_devanagari",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "ग्राहकों को बेहतर करने के लिए किया जा रहा है और इसके लिए लगातार मशीनों को और",
+  "base": "hi",
+  "annotation": "ग्राहकों को बेहतर करने के लिए किया जा रहा है और इसके लिए लगातार |मशीनों| को और",
+  "matrix": "hi"
+ },
+ {
+  "id": "u250",
+  "source": "caption_devanagari",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "इस वीडियो में हमारे साथ बनी रहेगी इसमें हम आपको बताने वाले हैं मशीन लर्निंग क्या",
+  "base": "hi",
+  "annotation": "इस |वीडियो| में हमारे साथ बनी रहेगी इसमें हम आपको बताने वाले हैं |मशीन लर्निंग| क्या",
+  "matrix": "hi"
+ },
+ {
+  "id": "u251",
+  "source": "caption_devanagari",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "काफी बड़ा विषय है दोस्तों जैसे हमने आपको शॉर्ट में समझाने की कोशिश की है आशा है",
+  "base": "hi",
+  "annotation": "काफी बड़ा विषय है दोस्तों जैसे हमने आपको |शॉर्ट| में समझाने की कोशिश की है आशा है",
+  "matrix": "hi"
+ },
+ {
+  "id": "u252",
+  "source": "caption_devanagari",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "विभागीय खोलेंगे तो वहां भी आपको उसी प्रोडक्ट से जुड़े विज्ञापन देखने लगते",
+  "base": "hi",
+  "annotation": "विभागीय खोलेंगे तो वहां भी आपको उसी |प्रोडक्ट| से जुड़े विज्ञापन देखने लगते",
+  "matrix": "hi"
+ },
+ {
+  "id": "u253",
+  "source": "caption_devanagari",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "डिफरेंस बिटवीन ट्रेडिशनल प्रोग्रामिंग एंड मशीन लर्निंग भी आपको एक्सप्लेन किया अगर ये वीडियो आपको पसंद आ गया होगा थोड़ा",
+  "base": "hi",
+  "annotation": "|डिफरेंस बिटवीन ट्रेडिशनल प्रोग्रामिंग एंड मशीन लर्निंग| भी आपको |एक्सप्लेन| किया अगर ये |वीडियो| आपको पसंद आ गया होगा थोड़ा",
+  "matrix": "hi"
+ },
+ {
+  "id": "u254",
+  "source": "caption_devanagari",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "डोमेन है आर्टिफिशियल इंटेलिजेंस का उसे हम कह सकते हैं मशीन लर्निंग जिसके बारे",
+  "base": "hi",
+  "annotation": "|डोमेन| है |आर्टिफिशियल इंटेलिजेंस| का उसे हम कह सकते हैं |मशीन लर्निंग| जिसके बारे",
+  "matrix": "hi"
+ },
+ {
+  "id": "u255",
+  "source": "caption_devanagari",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "हम मैं बोलता हूं कि आप मूर्ख हो। सबसे हाईएस्ट ग्रोथ सेल्स की नौकरी में है। मैं",
+  "base": "hi",
+  "annotation": "हम मैं बोलता हूं कि आप मूर्ख हो। सबसे |हाईएस्ट ग्रोथ सेल्स| की नौकरी में है। मैं",
+  "matrix": "hi"
+ },
+ {
+  "id": "u256",
+  "source": "caption_devanagari",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "क्योंकि हम उधर जाके भी सेल्स कर लेंगे। करेक्ट। कुछ ना कुछ ढूंढ के सेल्स कर लेंगे।",
+  "base": "hi",
+  "annotation": "क्योंकि हम उधर जाके भी |सेल्स| कर लेंगे। |करेक्ट|। कुछ ना कुछ ढूंढ के |सेल्स| कर लेंगे।",
+  "matrix": "hi"
+ },
+ {
+  "id": "u257",
+  "source": "caption_devanagari",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "गया। वो फंड से आज वो आदमी ने पूरा बिल्डिंग बनाया है। 80% ऑफ ह कंपनी इज ओनड",
+  "base": "hi",
+  "annotation": "गया। वो |फंड| से आज वो आदमी ने पूरा |बिल्डिंग| बनाया है। 80% |ऑफ ह कंपनी इज ओनड|",
+  "matrix": "hi"
+ },
+ {
+  "id": "u258",
+  "source": "caption_devanagari",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "गर्लफ्रेंड को इंप्रेस करना है। भाई आप अपनी स्पिरिचुअल एनर्जी बनाओ तो आपको एक",
+  "base": "hi",
+  "annotation": "|गर्लफ्रेंड| को |इंप्रेस| करना है। भाई आप अपनी |स्पिरिचुअल एनर्जी| बनाओ तो आपको एक",
+  "matrix": "hi"
+ },
+ {
+  "id": "u259",
+  "source": "caption_devanagari",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "है और उस डाटा को आपको प्रोग्राम को फिट करना पड़ता है एंड योर प्रोग्राम शुड बी",
+  "base": "hi",
+  "annotation": "है और उस |डाटा| को आपको |प्रोग्राम| को |फिट| करना पड़ता है |एंड योर प्रोग्राम शुड बी|",
+  "matrix": "hi"
+ },
+ {
+  "id": "u260",
+  "source": "caption_devanagari",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "कर सकते हैं तो उस मछली का इस्तेमाल किया जा सकता है कि किस तरह से पेश के कौन से",
+  "base": "hi",
+  "annotation": "=",
+  "matrix": "hi"
+ },
+ {
+  "id": "u261",
+  "source": "caption_devanagari",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "कंप्यूटर बिना किसी इंसान की सहायता से अपने आप ही सीख सकें और उसके अनुसार ही",
+  "base": "hi",
+  "annotation": "|कंप्यूटर| बिना किसी इंसान की सहायता से अपने आप ही सीख सकें और उसके अनुसार ही",
+  "matrix": "hi"
+ },
+ {
+  "id": "u262",
+  "source": "caption_devanagari",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "तरीके से हम लोग क्या करते हैं इनपुट डाटा भी देते हैं और यहां पे आउटपुट भी देते",
+  "base": "hi",
+  "annotation": "तरीके से हम लोग क्या करते हैं |इनपुट डाटा| भी देते हैं और यहां पे |आउटपुट| भी देते",
+  "matrix": "hi"
+ },
+ {
+  "id": "u263",
+  "source": "caption_devanagari",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "ट्रेडिशनल प्रोग्रामिंग एंड मशीन लर्निंग तो ये ये वो वाला फंडा है दोस्तों जो अभी",
+  "base": "hi",
+  "annotation": "|ट्रेडिशनल प्रोग्रामिंग एंड मशीन लर्निंग| तो ये ये वो वाला |फंडा| है दोस्तों जो अभी",
+  "matrix": "hi"
+ },
+ {
+  "id": "u264",
+  "source": "caption_devanagari",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "कहा तुम्हें एनवायरनमेंट के साथ सीखता जा रहा हूं कि यार मुझे ऐसा नहीं बोलना चाहिए",
+  "base": "hi",
+  "annotation": "कहा तुम्हें |एनवायरनमेंट| के साथ सीखता जा रहा हूं कि यार मुझे ऐसा नहीं बोलना चाहिए",
+  "matrix": "hi"
+ },
+ {
+  "id": "u265",
+  "source": "caption_devanagari",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "थैंक्स कर सकते हैं मेरे चैनल पर जाकर में लिंग के ऊपर डिस्क्रप्शन के अंदर सोया",
+  "base": "hi",
+  "annotation": "|थैंक्स| कर सकते हैं मेरे |चैनल| पर जाकर में |लिंग| के ऊपर |डिस्क्रप्शन| के अंदर सोया",
+  "matrix": "hi"
+ },
+ {
+  "id": "u266",
+  "source": "caption_devanagari",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "है मशीन लर्निंग का जो सबसेट है वो एक तरीके से डीप लर्निंग है तो ये हायरा की",
+  "base": "hi",
+  "annotation": "है |मशीन लर्निंग| का जो |सबसेट| है वो एक तरीके से |डीप लर्निंग| है तो ये |हायरा| की",
+  "matrix": "hi"
+ },
+ {
+  "id": "u267",
+  "source": "caption_devanagari",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "एक बूटी को नहीं है। तू एक्स अमाउंट पहले खड़ा कर फिर तू बिज़नेस में आ।",
+  "base": "hi",
+  "annotation": "एक बूटी को नहीं है। तू |एक्स अमाउंट| पहले खड़ा कर फिर तू |बिज़नेस| में आ।",
+  "matrix": "hi"
+ },
+ {
+  "id": "u268",
+  "source": "caption_devanagari",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "है वह सिस्टम जो इस एल्गोरिथम मेथड का इस्तेमाल करता है वह बड़ी ही आसानी से",
+  "base": "hi",
+  "annotation": "है वह |सिस्टम| जो इस |एल्गोरिथम मेथड| का इस्तेमाल करता है वह बड़ी ही आसानी से",
+  "matrix": "hi"
+ },
+ {
+  "id": "u269",
+  "source": "caption_devanagari",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "एडिशन और उसको हमने इनपुट दिया टू द मशीन उसको हमने इनपुट दिया टू द मशीन तो मशीन",
+  "base": "hi",
+  "annotation": "|एडिशन| और उसको हमने |इनपुट| दिया |टू द मशीन| उसको हमने |इनपुट| दिया |टू द मशीन| तो |मशीन|",
+  "matrix": "hi"
+ },
+ {
+  "id": "u270",
+  "source": "caption_devanagari",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "ने कैसे रिस्पॉन्ड किया मशीन ने अकॉर्डिंग टू दैट प्रोग्राम रिस्पॉन्ड किया और",
+  "base": "hi",
+  "annotation": "ने कैसे |रिस्पॉन्ड| किया |मशीन| ने |अकॉर्डिंग टू दैट प्रोग्राम रिस्पॉन्ड| किया और",
+  "matrix": "hi"
+ },
+ {
+  "id": "u271",
+  "source": "caption_devanagari",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "मैं आपको बताऊंगा आप यह वाला जो ऐल्गॉरिदम यहां से सीखे यह वाली जो टॉपिक है वह यहां",
+  "base": "hi",
+  "annotation": "मैं आपको बताऊंगा आप यह वाला जो |ऐल्गॉरिदम| यहां से सीखे यह वाली जो |टॉपिक| है वह यहां",
+  "matrix": "hi"
+ },
+ {
+  "id": "u272",
+  "source": "caption_devanagari",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "पकड़ पकड़ आ सकता है अगर आपने ऐसा कुछ प्रोग्राम लिख दिया और एक मशीन बना दी जो कि इंसानों को",
+  "base": "hi",
+  "annotation": "पकड़ पकड़ आ सकता है अगर आपने ऐसा कुछ |प्रोग्राम| लिख दिया और एक |मशीन| बना दी जो कि इंसानों को",
+  "matrix": "hi"
+ },
+ {
+  "id": "u273",
+  "source": "caption_devanagari",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "प्रमुख भूमिका निभाई है कंप्यूटर मनुष्य की इन्हीं अद्भुत खोजों में से एक है",
+  "base": "hi",
+  "annotation": "प्रमुख भूमिका निभाई है |कंप्यूटर| मनुष्य की इन्हीं अद्भुत खोजों में से एक है",
+  "matrix": "hi"
+ },
+ {
+  "id": "u274",
+  "source": "caption_devanagari",
+  "video_id": "O0jiCtwO-Ig",
+  "split": "test",
+  "text": "कॉल करता हूं। एआई बोलता है हेलो मिस्टर गाला हाउ आर यू? आपका ये कंप्लेंट नंबर",
+  "base": "hi",
+  "annotation": "|कॉल| करता हूं। |एआई| बोलता है |हेलो मिस्टर| <गाला> |हाउ आर यू|? आपका ये |कंप्लेंट नंबर|",
+  "matrix": "hi"
+ },
+ {
+  "id": "u275",
+  "source": "caption_devanagari",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "कर सकें तो बहुत क्विज्जस के एग्जांपल्स पर वह मेनोली अगर उन फ्रिटर्स को लगाकर ट्रेन करें और",
+  "base": "hi",
+  "annotation": "कर सकें तो बहुत |क्विज्जस| के |एग्जांपल्स| पर वह |मेनोली| अगर उन |फ्रिटर्स| को लगाकर |ट्रेन| करें और",
+  "matrix": "hi"
+ },
+ {
+  "id": "u276",
+  "source": "caption_devanagari",
+  "video_id": "lsf060bLH_Y",
+  "split": "test",
+  "text": "लोग एक प्रोग्राम लिखते हो और फिर आगे का काम जो है वह प्रोग्राम संभालता है फॉर",
+  "base": "hi",
+  "annotation": "लोग एक |प्रोग्राम| लिखते हो और फिर आगे का काम जो है वह |प्रोग्राम| संभालता है |फॉर|",
+  "matrix": "hi"
+ },
+ {
+  "id": "u277",
+  "source": "caption_devanagari",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "कांसेप्ट इसी आधार पर बना है यानी किसी एक विशेष कंप्यूटर के मशीन को इस तरह से",
+  "base": "hi",
+  "annotation": "|कांसेप्ट| इसी आधार पर बना है यानी किसी एक विशेष |कंप्यूटर| के |मशीन| को इस तरह से",
+  "matrix": "hi"
+ },
+ {
+  "id": "u278",
+  "source": "caption_devanagari",
+  "video_id": "Y4qO9unerGs",
+  "split": "test",
+  "text": "रिलेटेड आपको मिलेंगे ये जादू है क्या ये क्या है ये कैसे हुआ ये मशीन लर्निंग की",
+  "base": "hi",
+  "annotation": "|रिलेटेड| आपको मिलेंगे ये जादू है क्या ये क्या है ये कैसे हुआ ये |मशीन लर्निंग| की",
+  "matrix": "hi"
+ },
+ {
+  "id": "u279",
+  "source": "caption_devanagari",
+  "video_id": "cE-Ej1ycXtk",
+  "split": "test",
+  "text": "लर्निंग अनसुपरवाइज्ड मशीन लर्निंग एल्गोरिथम्स के विपरित इसमें इनपुट के रूप में उदाहरण और जवाब पहले से नहीं दिए जाते",
+  "base": "hi",
+  "annotation": "|लर्निंग अनसुपरवाइज्ड मशीन लर्निंग एल्गोरिथम्स| के विपरित इसमें |इनपुट| के रूप में उदाहरण और जवाब पहले से नहीं दिए जाते",
+  "matrix": "hi"
+ },
+ {
+  "id": "u280",
+  "source": "caption_english",
+  "video_id": "ZaPbP9DwBOE",
+  "split": "dev",
+  "text": "Before jumping into it, we learn what chat completions are. This is OpenAI's conversational API, where we send messages and receive messages just like a chat.",
+  "base": "en",
+  "annotation": "Before jumping into it, we learn what chat completions are. This is <OpenAI's> conversational API, where we send messages and receive messages just like a chat.",
+  "matrix": "en"
+ },
+ {
+  "id": "u281",
+  "source": "caption_english",
+  "video_id": "PLyCki2K0Lg",
+  "split": "dev",
+  "text": "bit bit of a next step away from pure text space interactions with the model.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u282",
+  "source": "caption_english",
+  "video_id": "nGhsgdQplHw",
+  "split": "dev",
+  "text": "just stop and say uh this has been out for 1 week, and we have hundreds of",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u283",
+  "source": "caption_english",
+  "video_id": "vRYBG_R8JAI",
+  "split": "dev",
+  "text": "And so it still has that logic in here, which is kind of a problem. But we'll see if it actually",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u284",
+  "source": "caption_english",
+  "video_id": "4_G72EOwSrg",
+  "split": "dev",
+  "text": "more, you can learn it. Also look at the research paper, which is really interesting that how this",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u285",
+  "source": "caption_english",
+  "video_id": "JSuS-zXMVwE",
+  "split": "dev",
+  "text": "down what's happening in your CI pipeline when something goes wrong, which is critical",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u286",
+  "source": "caption_english",
+  "video_id": "LorEJPrALcg",
+  "split": "test",
+  "text": "and give me your shared experience of how it's working for you.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u287",
+  "source": "caption_english",
+  "video_id": "uOrJUksvIhs",
+  "split": "test",
+  "text": "So in this other paper called Reasoning with Exploration and Entropy Perspective,",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u288",
+  "source": "caption_english",
+  "video_id": "TGNScswE0kU",
+  "split": "test",
+  "text": "And basically, the agent gets overwhelmed, like any of us would get overwhelmed with",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u289",
+  "source": "caption_english",
+  "video_id": "Ncv5TYdY7Tg",
+  "split": "test",
+  "text": "And so what I like to do to confirm the hook is actually live is to",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u290",
+  "source": "caption_english",
+  "video_id": "XojxD7hfaD4",
+  "split": "test",
+  "text": "prompts, MCP servers? How do you integrate them with existing APIs, CLIs,",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u291",
+  "source": "caption_english",
+  "video_id": "KZapt0fQA8k",
+  "split": "test",
+  "text": "there when it goes into, when it chooses the tools. A lot of things that you shouldn't worry about,",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u292",
+  "source": "caption_english",
+  "video_id": "0bpYCxv2qhw",
+  "split": "test",
+  "text": "intermediate steps so let's call it speculative tool calling or something like this which is you just call a bunch of tools ahead of time because you",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u293",
+  "source": "caption_english",
+  "video_id": "EV7WhVT270Q",
+  "split": "test",
+  "text": "where you can, and sometimes like small architecture things, such as attention variance.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u294",
+  "source": "caption_english",
+  "video_id": "yi7doi-QGJI",
+  "split": "test",
+  "text": "where, actually, as an example, we can look at a medical form, extract the patient info,",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u295",
+  "source": "caption_english",
+  "video_id": "4xPQkatjsbg",
+  "split": "test",
+  "text": "you to go and grab any issue that hasn't been worked on, leave a comment that",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u296",
+  "source": "caption_english",
+  "video_id": "BBPQYtR7oUk",
+  "split": "test",
+  "text": "We wanted to expect JSON formats, input and output. So that's a difference.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u297",
+  "source": "caption_english",
+  "video_id": "I1Hsa9TSO5U",
+  "split": "test",
+  "text": "strong positive or negative correlations heat maps are particularly useful when dealing with large data sets and",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u298",
+  "source": "caption_english",
+  "video_id": "esY99nYXxR4",
+  "split": "test",
+  "text": "It's working really well. I think I was surprised the most by the fact that summarization didn't work.",
+  "base": "en",
+  "annotation": "=",
+  "matrix": "en"
+ },
+ {
+  "id": "u299",
+  "source": "caption_english",
+  "video_id": "4fBlY8AaPSY",
+  "split": "test",
+  "text": "Now Qiro is a new AI IDE that actually, as of today, is now in GA, meaning it's generally",
+  "base": "en",
+  "annotation": "Now <Qiro> is a new AI IDE that actually, as of today, is now in GA, meaning it's generally",
+  "matrix": "en"
+ }
+]

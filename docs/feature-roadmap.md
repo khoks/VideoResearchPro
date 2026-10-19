@@ -57,7 +57,7 @@ Multi-week each. Foundational. Each one reshapes the schema or adds a top-level 
 - How are forum threads chunked — by reply, by token-budget, or as a single doc with reply boundaries preserved? Recommend single doc with `segment_metadata.reply_index`.
 - Source-type ordering when ingesting a mixed job: round-robin, sequential, or parallel? Recommend parallel with per-type rate limits.
 
-**Status.** 🟢 **Closed 2026-05-03.** Twelve source types end-to-end (`video` / `reddit_post` / `hn_story` / `mastodon_post` / `bluesky_post` / `podcast_episode` / `pdf` / `article` / `fb_post` / `ig_post` / `li_post` / `tweet`). **Caveat (2026-10-19), resolved the same day:** since D-063 made visibility per-tenant, documents of the eleven non-video types were ingested but never granted — and, one layer down, their chunks were never written to Chroma at all — so they did not appear in the library or in library Q&A. Fixed by [D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19) (S-5.10.4, PR [#241](https://github.com/khoks/VideoResearchPro/pull/241)): visibility, the Chroma write and the retrieval filter are keyed on `document_id`, with a two-tenant test over a PDF and a pasted page. The upload and paste UI shipped in PR #224 ([D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)). Polymorphic plumbing claim validated 12× across all axes of variation: discovery surface (search APIs / RSS / paste / no-discovery), storage (in-place / file upload / URL-only), citation (per-reply / per-timestamp / per-page / per-URL). Full chronological PR trace in [`initiatives.md` § I-1](initiatives.md#i-1--multi-source-ingest--original-scope-closed-2026-05-03-reopened-2026-07-22-for-e-111-scale-resilience).
+**Status.** 🟢 **Closed 2026-05-03.** Twelve source types end-to-end (`video` / `reddit_post` / `hn_story` / `mastodon_post` / `bluesky_post` / `podcast_episode` / `pdf` / `article` / `fb_post` / `ig_post` / `li_post` / `tweet`). **Caveat (2026-10-19), resolved the same day:** since D-063 made visibility per-tenant, documents of the eleven non-video types were ingested but never granted — and, one layer down, their chunks were never written to Chroma at all — so they did not appear in the library or in library Q&A. Fixed by [D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19) (S-5.10.4, PR [#241](https://github.com/khoks/VideoResearchPro/pull/241)): visibility, the Chroma write and the retrieval filter are keyed on `document_id`, with a two-tenant test over a PDF and a pasted page. The upload and paste UI shipped in PR #224 ([D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)). **Second caveat (2026-10-19), open:** topic *discovery* across non-video sources is unreachable from the API — `JobCreate` has no `source_types`, so every topic run searches YouTube only (see [architecture.md](architecture.md#multi-source-dispatch-post-s-1511-2026-05-02)); ingest by paste, upload and channel sync is unaffected. Polymorphic plumbing claim validated 12× across all axes of variation: discovery surface (search APIs / RSS / paste / no-discovery), storage (in-place / file upload / URL-only), citation (per-reply / per-timestamp / per-page / per-URL). Full chronological PR trace in [`initiatives.md` § I-1](initiatives.md#i-1--multi-source-ingest--original-scope-closed-2026-05-03-reopened-2026-07-22-for-e-111-scale-resilience).
 
 - 🟢 **Foundation (PRs #63 / #65 / #66 / #67, shipped 2026-04-22 → 04-25).** Schema additive columns; `BaseConnector` interface; routed call sites; `videos` → `documents` table + ORM rename. See [`initiatives.md`](initiatives.md#i-1--multi-source-ingest--original-scope-closed-2026-05-03-reopened-2026-07-22-for-e-111-scale-resilience) for the full E-1.1 → E-1.4 trace.
 - 🟢 **Reddit + HN candidate connectors shipped standalone (S-1.5.1 PR #70, S-1.5.2 PR #73).** Both emit `Candidate` objects with namespaced `source_id` (`reddit:abc`, `hn:42M`); pseudo-timestamp synthesis at 3 wps codified in [D-013](decisions.md#d-013--pseudo-timestamps-at-3-wps-for-text-based-connectors-2026-04-25).
@@ -238,7 +238,7 @@ The remaining I-5 epics (**E-5.3 Stripe**, **E-5.7 Data residency**, **E-5.8 Hos
 
 **Open questions.**
 
-- **Does it actually improve output?** Measured 2026-10-19 ([D-071](decisions.md#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19)): on an 11-video charting corpus, three blind judges from three model families all preferred the annotated report on substance (8.33 vs 7.00), and it had zero confirmed fabrications against five in the unannotated one. But an adversarial sweep found two sentences that credited a speaker with a screen-only detail, and the vision spend was $0.20 per video against a $0.10 ceiling. The feature earns its place once the contract gap (S-1.18.6) and the tier (S-1.18.5) are fixed and the run repeats clean.
+- **Does it actually improve output?** Measured 2026-10-19 ([D-071](decisions.md#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19)): on an 11-video charting corpus, three blind judges from three model families all preferred the annotated report on substance (8.33 vs 7.00), and it had zero confirmed fabrications against five in the unannotated one. But an adversarial sweep found two sentences that credited a speaker with a screen-only detail, and the vision spend was $0.20 per video against a $0.10 ceiling. Two re-runs after the contract fix ([D-075](decisions.md#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19)) showed the gain holds with gpt-5.5 descriptions (3/3 at matched length) but not with Flash-Lite (1/3), and that the prompt rule moved attribution errors rather than removing them. The next step is said/shown provenance on every extracted fact (S-1.18.8); the UI waits for a clean run.
 - **The `informative` flag is a model judgement biased toward inclusion.** Prompt calibration catches descriptions that describe an *absence* of content; borderline frames still pass. False-positive rate is unmeasured.
 - **Cost at realistic scale.** A 200-video corpus at 12 frames each is 2,400 vision calls. Opt-in and capped for now; whether the default caps are the right ones is an empirical question.
 - **Beyond YouTube.** PDFs already have page images available with no download at all, and articles carry figures. Both are cheaper than video and neither is built.
@@ -254,17 +254,17 @@ Days each. Each one is shippable as a single PR or a small series. All twelve we
 
 ---
 
-### M1 — Shelves (collections / folders) 🔵
+### M1 — Shelves (collections / folders) 🟡
 
 Group jobs into named projects. A job can belong to multiple shelves. Tag documents. Filter library views by shelf.
 
-**Schema:** `shelves(id, name, description, color, owner_id, tenant_id, created_at)`, `shelf_jobs(shelf_id, job_id)`, `document_tags(document_id, tag)`.
+**Schema (as built):** `shelves(id, tenant_id, name, description, color, created_at, updated_at)`, `shelf_jobs(shelf_id, job_id, added_at)`, `tags(id, tenant_id, name, color, created_at)` + `taggings(id, tag_id, tenant_id, target_type, target_id, created_at)`.
 
 **API:** `GET/POST/PUT/DELETE /api/v1/shelves/*`, `POST /api/v1/jobs/{id}/shelves`.
 
 **UI:** New left-sidebar section "Shelves". Shelf detail page = filtered library view.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.1](initiatives.md#e-81--shelves--collections-tags-and-shelf-scoped-views-m1); plan [`plans/m1-shelves.md`](plans/m1-shelves.md). Audit: no table exists; the `shelves` tier gate already does. Tags become a per-tenant side table ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)) and shelf-scoped Q&A is added to the sketch.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.1](initiatives.md#e-81--shelves--collections-tags-and-shelf-scoped-views-m1); plan [`plans/m1-shelves.md`](plans/m1-shelves.md). Audit: no table exists; the `shelves` tier gate already does. Tags become a per-tenant side table ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)) and shelf-scoped Q&A is added to the sketch. **🟡 2026-10-19:** shelves (schema, REST, pages, Add-to-shelf, sidebar group) and per-tenant tags shipped (PRs #242, #250, #257); shelf-scoped Q&A ([S-8.1.4](initiatives.md#s-814--shelf-scoped-qa)) is Phase 2. Defaults on the plan's open questions: [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19).
 
 ---
 
@@ -324,21 +324,21 @@ Attach a free-text "your take" / annotation to any document, job, Q&A exchange, 
 
 ---
 
-### M6 — Job templates / playbooks 🔵
+### M6 — Job templates / playbooks 🟡
 
 Save a job's parameters as a template; one-click instantiate with fresh date ranges or a different topic.
 
-**Schema:** `job_templates(id, owner_id, name, parameters_json, created_at)`.
+**Schema (as built):** `job_templates(id, tenant_id NULL for built-ins, builtin_key, name, description, job_type, latest_version, created_at, updated_at, deleted_at)` + `job_template_versions(template_id, version, parameters_json, created_at)`; `jobs.template_id` + `jobs.template_version`.
 
 **API:** `GET/POST/DELETE /api/v1/job-templates/*`.
 
 **UI:** "Save as template" on submit page; "From template" picker.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.6](initiatives.md#e-86--job-templates-m6); plan [`plans/m6-job-templates.md`](plans/m6-job-templates.md). Today's "Duplicate / re-run" already covers most of this; M6 generalizes from "duplicate one job" to "named reusable template" and seeds the starter templates M10 uses.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.6](initiatives.md#e-86--job-templates-m6); plan [`plans/m6-job-templates.md`](plans/m6-job-templates.md). Today's "Duplicate / re-run" already covers most of this; M6 generalizes from "duplicate one job" to "named reusable template" and seeds the starter templates M10 uses. **🟡 2026-10-19:** templates (versions, provenance, Save as template, picker, `/templates`) and five starters shipped (PRs #263, #265), with Duplicate fixed to keep depth and the visual flag. Not yet: the relative publish window (needs the search prompt), the podcast-digest and mixed-source starters (need `source_types` on job creation), and the wizard's starter step. See [D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19).
 
 ---
 
-### M7 — Channel intelligence dashboard 🔵
+### M7 — Channel intelligence dashboard 🟡
 
 Per-channel analytics: word-cloud, recurring topics, evolving stance over time, knowledge-graph of frequent concepts.
 
@@ -348,7 +348,7 @@ Per-channel analytics: word-cloud, recurring topics, evolving stance over time, 
 
 **UI:** New tab on the channel detail page.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.7](initiatives.md#e-87--channel-intelligence-m7); plan [`plans/m7-channel-intelligence.md`](plans/m7-channel-intelligence.md). Audit: there is no channel detail page to put a tab on (E-8.7 creates one), and stance / sentiment exist only for social sources, so "evolving stance over time" has no data for YouTube channels and is scoped accordingly.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.7](initiatives.md#e-87--channel-intelligence-m7); plan [`plans/m7-channel-intelligence.md`](plans/m7-channel-intelligence.md). Audit: there is no channel detail page to put a tab on (E-8.7 creates one), and stance / sentiment exist only for social sources, so "evolving stance over time" has no data for YouTube channels and is scoped accordingly. **🟡 2026-10-19:** the channel detail page shipped (`/library/channels/:id`, PR #237) with a read-only trust-weight slot for E-7.1; the intelligence endpoint and tab (S-8.7.2, S-8.7.3) are Phase 4.
 
 ---
 

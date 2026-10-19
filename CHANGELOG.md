@@ -10,6 +10,263 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Code-mixed speech: quotes keep the original wording (2026-10-19, T-1.16.2.5 part A)
+
+PR [#268](https://github.com/khoks/VideoResearchPro/pull/268). The quotation half of N-002's bidirectional split;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- **Chunks of non-English sources carry their measured profile**
+  (`code_mix_primary`, `_script`, `_share`, `_quote`, plus per-chunk share
+  and grammar). English chunks are unchanged.
+- **Every non-English source header** in the report map, job Q&A and library
+  Q&A now reads `speech: Hindi (romanised) mixed with English (46% Hindi) —
+  quote in Roman script + English translation`, so the model knows
+  romanised Hindi is Hindi and how to show a quote from that source.
+- **Reports can quote originals again.** Map items may carry the speaker's
+  `original` wording beside the English `content`; compose attaches the
+  source's quote form, and the new `CODE_MIXED_QUOTE_FORMS` rules apply one
+  form per source. Until now the map stage translated everything and kept no
+  original wording for D-066's three-part quote rule to use.
+- Knowledge extraction is told the video's measured language and quote form.
+- Measured for part B (next PR): English questions retrieve Hindi chunks at
+  MRR 0.565 in Devanagari, 0.402 romanised and 0.805 as an English rendering.
+
+### Starter templates (2026-10-19)
+
+Sixth and last PR of the organisation lane ([S-8.6.2](docs/initiatives.md#s-862--starter-templates), PR [#265](https://github.com/khoks/VideoResearchPro/pull/265)).
+
+- **Five read-only starters for every reader**, seeded by migration
+  `f1a2b3c4d5e6` and keyed by `builtin_key`: Topic scan, Deep dive, Quick
+  brief, Channel deep-dive, Subscription follow. Re-running the seed changes
+  nothing; a revised starter becomes its next version.
+- **Channel recipes can leave the channels open**, to be added each run, as a
+  topic recipe leaves the topic.
+- Podcast digest and mixed-source debate, proposed by the plan, wait for
+  `source_types` on job creation.
+
+
+### Reading room: knowledge reports and books in the same shell (2026-10-19)
+
+S-8.8.3. Knowledge artifacts and Author Studio books now read in the same
+reading room as reports: outline, measure, drop cap, progress and print.
+
+- **`/knowledge/:videoId`** (YouTube id or `document_id`). The knowledge
+  drawer on the job page stays as the quick peek and gains "Open in reader".
+- **`/author/outputs/:outputId`** replaces the Author page's viewer modal;
+  Read and a freshly generated book both open it. The book outputter's
+  table-of-contents links, written against a different slug than the
+  headings, are repointed so every one lands.
+- **One Markdown pipeline** (`parseMarkdownDoc`): react-markdown's own steps
+  plus remark-gfm, run once so the outline exists before the body renders.
+  Raw HTML is dropped; unsafe URLs are blanked.
+- **Fix:** `GET /videos/{id}/knowledge` names its source (title, channel,
+  kind, URL, dates) and no longer fails for documents without a YouTube id.
+### Code-mixed speech: one primary language per transcript (2026-10-19, T-1.16.2.4)
+
+PR [#264](https://github.com/khoks/VideoResearchPro/pull/264). Fourth task of N-002;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- **`code_mixing_service.profile_transcript`** finds a source's primary
+  language of communication: the grammar that frames most of its speech,
+  measured over sentence-sized windows. It decides the quote script once
+  per source. `resolve_quote_mode` lets a span choose only whether it is
+  English, so a report no longer switches scripts from quote to quote:
+  25 changes across seven Devanagari Hinglish transcripts and 128 across
+  eleven romanised comment threads are now zero.
+- **Fixed:** words in Bengali, Kannada, Tamil and other non-Latin scripts
+  counted as neutral, so four transcripts in the library (two Bengali, two
+  Kannada) measured 0% non-English. Every non-Latin script now counts, and
+  the profile reports which one (`native_script`).
+### Job templates; Duplicate keeps depth and the visual flag (2026-10-19)
+
+Fifth PR of the organisation lane ([S-8.6.1](docs/initiatives.md#s-861--templates-schema-rest-and-submit-page-integration), PR [#263](https://github.com/khoks/VideoResearchPro/pull/263)).
+
+- **Templates.** Save a run (or the submit form) as a named recipe; start a run
+  from it and type only the topic. Parameters are versioned (`PUT` with new
+  parameters makes the next version; the newest 20 are kept), runs record the
+  version they used, and a deleted template keeps that provenance.
+  `{{topic}}` in instructions is filled with the run's topic.
+- **Where.** "Save as template" on a run and on the submit form, "Start from a
+  template" and a "Save changes as vN" banner on the submit form, a
+  `/templates` page with history.
+- **Fixed.** Duplicate reset report depth to Auto and dropped the visual flag.
+  The form's logic moved to `utils/jobForm.ts` with unit tests; the visual flag
+  is carried, not offered (the opt-in stays deferred per D-071 / D-075).
+- **Not yet.** The relative publish window needs the search agent's prompt and
+  is split out.
+
+
+### Code-mixed speech: proportion thresholds as a rendering policy (2026-10-19, T-1.16.2.3)
+
+PR [#262](https://github.com/khoks/VideoResearchPro/pull/262). Third task of N-002;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- **`code_mixing_service.rendering_mode`** turns a span's measured Hindi share
+  and matrix language into how it is quoted: Devanagari with transliteration
+  and translation when Hindi dominates (≥ 60%) in Hindi grammar, plain
+  English for light borrowing (≤ 20%) in English grammar, Roman script
+  throughout in between.
+- **New settings** `CODE_MIX_DOMINANT_SHARE` (0.6) and
+  `CODE_MIX_BORROWING_MAX_SHARE` (0.2). Defaults come from where detector
+  decisions agree with gold decisions (TEST: 0.970 Latin, 0.823 mixed units).
+- **Open question recorded:** the user's 60% stays the default, but 50% is
+  measurably more robust while English nouns in Devanagari stay invisible
+  to the tagger.
+
+### Code-mixed speech: matrix vs embedded language (2026-10-19, T-1.16.2.2)
+
+PR [#260](https://github.com/khoks/VideoResearchPro/pull/260). Second task of N-002;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- **`code_mixing_service.analyse_span`** reports which language supplies a
+  span's GRAMMAR (matrix) and which only lends words (embedded), alongside
+  the Hindi share. "so the model ko train karna padta hai with the data" is
+  two-thirds English words and Hindi-matrix.
+- The matrix comes from a vote of system morphemes (Myers-Scotton's Matrix
+  Language Frame): auxiliaries, light verbs, postpositions, negation.
+  Measured on 62 held-out mixed units it was right 0.952 of the time, against
+  0.855 for "whichever language has more words" (LLM reference 0.968).
+- English function words as Hindi ASR spells them (इज, टू, द, एंड) now tag
+  English, so "इट इज नॉट बीइंग..." reads as English-matrix. Devanagari tagging
+  precision 0.767 → 0.792, recall unchanged.
+
+### Romanised code-mixing detection, measured (2026-10-19, T-1.16.2.1)
+
+PR [#258](https://github.com/khoks/VideoResearchPro/pull/258). Decision
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19);
+method and numbers in
+[docs/notes/2026-10-19-code-mixing-detection.md](docs/notes/2026-10-19-code-mixing-detection.md).
+First task of N-002 (proportion-driven rendering for code-mixed speech).
+
+- **`code_mixing_service`** tags each word of a text as English, Hindi/Urdu or
+  neutral, in Latin and Devanagari script alike. "taaki baadme koi kasar na
+  reh jaye", which script profiling reads as English, is now Hindi. The
+  production detector is a lexicon + character n-gram + two-state Viterbi
+  tagger, with no model call and ~1 ms per segment.
+- **Measured before choosing**, on 300 hand-labelled units: real YouTube
+  comments and captions from three Hinglish jobs, split DEV/TEST. On held-out
+  romanised text the lexicon tagger beat a `gpt-5.6-luna` pass on precision
+  (0.929 vs 0.803) at equal recall (0.890 vs 0.895). The LLM is better only
+  on English written in Devanagari and stays registered as the reference
+  `code_mixing_detect` (registry entry 24, reasoning off, fail-soft).
+- **Finding:** YouTube captions Hinglish speech in Devanagari, English words
+  included, so romanised Hinglish reaches the library through text sources,
+  not captions. A Hindi lecture was found ingested as a machine-dubbed
+  Bengali track (filed as S-1.11.11).
+- `tests/fixtures/code_mixing/` holds the labelled set and the LLM's cached
+  answers; the suite scores both detectors without calling a provider.
+### Tags on documents (2026-10-19)
+
+Fourth PR of the organisation lane ([S-8.1.3](docs/initiatives.md#s-813--document-tags-per-tenant), PR [#257](https://github.com/khoks/VideoResearchPro/pull/257)).
+
+- **Per-reader tags.** `tags` + `taggings` (migration `e9f0a1b2c3d4`): stable ids,
+  so rename keeps every tagging and merge is one update; unique per reader,
+  case-insensitively; private to the reader even on shared documents.
+- **In the app.** Tag chips and a "+ Tag" picker on every library row (library,
+  channel page, shelf page); a Tag filter bar on the Library page with "Manage
+  tags" for rename, recolour, merge and delete; chips link to `/library?tag=`.
+- **API.** `/api/v1/tags`, `PUT/DELETE /library/videos/{id}/tags/{tag_id}`,
+  `?tag=` on the library and shelf listings, `tags` on every row.
+- **Fixed.** Popovers in card lists drew under the next card; the shared label
+  picker now portals to the page body.
+
+### Report Markdown source; books built from it (2026-10-19, S-6.1.2 + S-6.1.1 remainder)
+
+PR [#255](https://github.com/khoks/VideoResearchPro/pull/255). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **`report_service.report_markdown(job)`** converts the stored HTML report
+  to Markdown with a `markdownify` (MIT) subclass and caches it beside the
+  HTML at `<report_path>.md`: ATX headings, citation links kept as
+  `[text](href)` with their `&t=` timestamps, tables kept, the statistics
+  grid as a one-row table, stylesheet and document head dropped,
+  `[VISUAL @ …]` spans verbatim. Round-trip tests run on three real stored
+  reports. New dependency `markdownify>=1.2.3` (brings `beautifulsoup4`).
+- **Books read it.** `BookMarkdownOutputter` drops the regex tag-stripper;
+  each chapter is the report's Markdown with its headings demoted under the
+  chapter heading; S-5.10.6's tenant-scoped job lookup is kept.
+- **`GET /api/v1/jobs/{id}/report.md`** in `routers/reports.py`,
+  header-bearer auth only (no `?token=`, the reader PR's posture).
+- **Author Studio (S-6.1.1 remainder):** an empty book is a 400 with no row
+  written; outputs carry `word_count` and the list shows chapters and
+  words; "Add to a book" on a finished run's page opens the create flow with
+  that run pre-selected (`/author?new=book&job=<id>`). The Author reader
+  renders the manuscript's tables through `remark-gfm` (MIT); without it
+  they showed as a run of pipes.
+
+### AI models page shows what the measurements found (S-1.14.7, 2026-10-19)
+
+Story S-1.14.7 under [E-1.14](docs/initiatives.md#e-114--model-tier-quality-evaluation-harness), PR [#251](https://github.com/khoks/VideoResearchPro/pull/251), decision [D-076](docs/decisions.md#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19). No default model changed.
+
+- **Registry guidance.** Every LLM use case now records what the quality
+  measurements found. 8 are measured, each citing its decision with the gap to
+  the flagship tier and what fails on a cheaper model. The other 15 are marked
+  unmeasured, with a note on what evidence exists.
+- **Warnings on `/account/ai-models`.** A row warns when the chosen model
+  measured unacceptable for that function (for example luna for frame
+  description, D-073) or weaker (sonnet-5 for report compose, D-062).
+  It also warns when a vision function points at a model not known to
+  accept images. Model options are marked before you pick one. Warnings
+  never block a save.
+- **Cost against the default.** Each row shows the benchmark-job cost of
+  your choice against the default's: compose on sonnet-5 reads $3.03 against
+  $7.58.
+- **`/health/llm`** reports the same guidance and warnings for the
+  server's resolved config, so a bad `LLM_USE_CASE_CONFIG` shows up there.
+- Fixed: Q&A history rows were listed under "Job Q&A".
+
+### Reading room: citation cards, endnotes and print (2026-10-19)
+
+S-8.8.2. Every citation chip in a report now opens a card naming its source,
+and the reader prints as a clean document with numbered footnotes.
+
+- **Sources for every chip.** The reader resolves each citation against the
+  run's documents: by YouTube id, by URL, or — for reports written before
+  S-1.14.9, whose anchors carry only `&t=` — by the title or the sole channel
+  named beside the timestamp. All 30 dead anchors in the stored smoke-test
+  report are now real links.
+- **One shared card** (Popover API, placed from the chip's rect) on hover and
+  keyboard focus, polymorphic by `source_type`, with `aria-describedby`,
+  Escape to close, and a still slot for R1 frames once S-1.18.2 serves them.
+- **Print:** chrome hidden, monochrome, `h2` page breaks, chips as `[n]`
+  footnotes, a "Sources cited" endnote list with URLs, 2 cm margins.
+- **Fix:** `GET /jobs/{id}/videos` now declares `source_type`, `document_id`,
+  `source_metadata` and friends. They had always been built and always been
+  stripped by the response schema, and a non-video document on a job failed
+  serialisation outright.
+### Global search endpoint on SQLite FTS5 (2026-10-19, S-8.2.1)
+
+PR [#245](https://github.com/khoks/VideoResearchPro/pull/245). Plan:
+[docs/plans/m2-command-palette.md](docs/plans/m2-command-palette.md). The
+endpoint the command palette (S-8.2.2) will call; no UI in this PR.
+
+- **`GET /api/v1/search?q=&types=&limit=`** returns `{q, backend, groups}`
+  with one group each for jobs, documents, channels, Q&A exchanges (all
+  three surfaces) and knowledge reports. Every group is scoped to the
+  caller by joining the entity's tenant anchor onto the FTS hit list —
+  `jobs.tenant_id`, `document_visibility` on `document_id` (D-070), subscriptions ∪ visible
+  documents' channels, `*_qa_exchanges.tenant_id` — so a tenant with
+  nothing visible gets empty groups, never everything (D-063).
+- **FTS5 trigram tables** `fts_documents`, `fts_jobs`, `fts_channels`,
+  `fts_qa`, `fts_knowledge`, kept current by `AFTER INSERT / UPDATE OF /
+  DELETE` triggers; created conditionally by migration `a9f3c1e7b5d2` and
+  re-ensured at every boot (`search_service.ensure_index`). Substring
+  matching from three characters, case- and diacritics-insensitive,
+  Devanagari by codepoint trigrams; `bm25()` with the title weighted 5:1
+  over the body and a recency tie-break. Two deliberate deviations from the
+  plan's sketch: one trigram table per entity instead of `unicode61` plus
+  trigram (the trigram tokenizer covers both cases), and no
+  external-content mode (it maps on rowid, and string-keyed tables' rowids
+  are not stable across `VACUUM`).
+- **`LIKE` fallback** when the linked SQLite lacks FTS5 or its trigram
+  tokenizer (some Linux distro Pythons): the probe logs a warning, nothing
+  is created, searches scan with `LIKE` ordered by recency, and `GET
+  /health` reports `search_backend: "like"`. Queries whose tokens are all
+  under three characters take the same path even with FTS5 present.
+- `schema_init_service` ignores the `fts_` prefix when comparing the live
+  schema to the ORM, so the recovery path and the parity check keep working
+  with the index present.
+
+
 ### Shelves in the app (2026-10-19)
 
 Third PR of the organisation lane ([S-8.1.2](docs/initiatives.md#s-812--shelves-ui), PR [#250](https://github.com/khoks/VideoResearchPro/pull/250)).

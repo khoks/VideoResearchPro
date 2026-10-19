@@ -757,5 +757,116 @@
   "refuted_flagged": "2/12",
   "other_flags": 23,
   "decision": "D-075: research tool, not a gate"
+ },
+ "run4": {
+  "descriptions": "gemini-3.5-flash (retier)",
+  "judging_summary": {
+   "judges_ok": 3,
+   "judges_total": 3,
+   "preferred_on_substance": {
+    "on": 2,
+    "off": 1,
+    "tie": 0
+   },
+   "attribution_errors_total": {
+    "on": 3,
+    "off": 0
+   },
+   "fabrications_total": {
+    "on": 12,
+    "off": 11
+   },
+   "mean_substance": {
+    "on": 7.67,
+    "off": 8.0
+   },
+   "inputs": {
+    "x": "data/r1_ab/run4/on.html",
+    "y": "data/r1_ab/run2/off.html",
+    "labels": [
+     "on",
+     "off"
+    ],
+    "chars": 430906
+   }
+  },
+  "verification_summary": {
+   "on": {
+    "confirmed_fabrications": 0,
+    "metadata_leaks": 1,
+    "refuted": 15
+   },
+   "off": {
+    "confirmed_fabrications": 1,
+    "metadata_leaks": 1,
+    "refuted": 10
+   },
+   "on_attribution_errors_confirmed": 2,
+   "sweep_candidates": 5,
+   "sweeps_ok": 3
+  },
+  "confirmed_on_attribution_errors": [
+   {
+    "sentence": "This was not spoken; it is an on-screen notebook artefact.",
+    "why": "This is speech presented as screen-only content, the reverse direction of an attribution error. The sentence follows the description of the CodeWithMunnaX ValueError ('RGBA sequence should have length",
+    "upheld_votes": 2,
+    "total_votes": 3,
+    "confirmed": true,
+    "reasons": [
+     "The sentence is in the ON report. It follows a description of the Seaborn tutorial's Colab traceback at 25:10 (matplotlib/colors.py, \"ValueError: RGBA sequence should have length 3 or 4\"). That content comes straight fro",
+     "The sentence is in the ON report. It comes right after the report describes the 25:10 Colab traceback (matplotlib/colors.py, \"ValueError: RGBA sequence should have length 3 or 4\"). The [VISUAL @ 25:10] span does support ",
+     "The sentence is in the ON report (on.html line 304). It follows a description of the Colab traceback at 25:10 in the Seaborn tutorial (CodeWithMunnaX, 5AuuOZ4vuxI). The [VISUAL @ 25:10] span does show this: a matplotlib/"
+    ]
+   },
+   {
+    "sentence": "The nearest thing to research provenance is the appearance of research-derived sample data in Seaborn's bundle — fmri, brain_networks, iris, planets, seaice — named by CodeWithMunnaX (09:47) but not t",
+    "why": "Screen content presented as something the speaker named. Lower confidence, because 'named by' could refer to the video rather than the speaker. The dataset names fmri, iris, planets and seaice appear ",
+    "upheld_votes": 3,
+    "total_votes": 3,
+    "confirmed": true,
+    "reasons": [
+     "The sentence is in the ON report (line 313) and cites 5AuuOZ4vuxI&t=587, which is \"01. Seaborn in Python\" by CodeWithMunnaX. The dataset names fmri, iris, planets and seaice appear only in a [VISUAL @ 10:17] span describ",
+     "The sentence is in the ON report (line 313) and links to 5AuuOZ4vuxI&t=587 (09:47). That video is the CodeWithMunnaX \"01. Seaborn in Python\" tutorial, which starts at transcript line 4430. Around that point the speech is",
+     "The sentence is in the ON report (on.html line 313), linked to 5AuuOZ4vuxI&t=587 (09:47). In that video the speaker never says any of the dataset names. The Bengali speech around that point only says that Seaborn ships w"
+    ]
+   }
+  ]
+ },
+ "describer_grading_4way": {
+  "aggregate": {
+   "baseline_gpt-5.5": {
+    "n": 62,
+    "acc": 281.5,
+    "best": 37,
+    "unusable": 5,
+    "misreads": 30,
+    "halluc": 8
+   },
+   "gpt-5.4-mini": {
+    "n": 62,
+    "acc": 271.0,
+    "best": 3,
+    "unusable": 5,
+    "misreads": 39,
+    "halluc": 2
+   },
+   "claude-haiku-4-5": {
+    "n": 62,
+    "acc": 148.0,
+    "best": 0,
+    "unusable": 55,
+    "misreads": 146,
+    "halluc": 68
+   },
+   "gemini-3.5-flash": {
+    "n": 62,
+    "acc": 291.5,
+    "best": 22,
+    "unusable": 0,
+    "misreads": 21,
+    "halluc": 8
+   }
+  },
+  "gradings_per_model": 62
  }
 }

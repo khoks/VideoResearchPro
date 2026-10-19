@@ -18,7 +18,7 @@ from app.agents.prompts.qa_prompts import (
 )
 from app.agents.state import QAAgentState
 from app.config import settings
-from app.services import chroma_service
+from app.services import chroma_service, code_mixing_service
 from app.services.llm_service import get_llm_for, response_text
 from app.services.llm_routing import max_output_for, resolve_config
 from app.services import output_length as output_length_policy
@@ -116,6 +116,18 @@ def _vintage_parts(meta: dict) -> list[str]:
     return parts
 
 
+def _speech_part(meta: dict, passage: bool) -> str:
+    """`speech: ...` for a non-English source (N-002 / T-1.16.2.5); "" otherwise.
+
+    `passage=True` adds the chunk's own grammar where it differs from the
+    source's ("this passage in Hindi grammar"); source-level lines omit it.
+    """
+    m = meta or {}
+    if not passage:
+        m = {k: v for k, v in m.items() if not k.startswith("code_mix_chunk")}
+    return code_mixing_service.source_note(m)
+
+
 def _chunk_header(index: int, chunk: dict) -> str:
     """`[Chunk N | Video: "T" by C at 12:34 | published 2025-03-12 | discusses 2019–2021]`."""
     meta = chunk.get("metadata", {}) or {}
@@ -125,6 +137,9 @@ def _chunk_header(index: int, chunk: dict) -> str:
     )
     for part in _vintage_parts(meta):
         head += f" | {part}"
+    speech = _speech_part(meta, passage=True)
+    if speech:
+        head += f" | {speech}"
     return head + "]"
 
 
@@ -385,7 +400,9 @@ def _build_allowed_sources(rag_results: list[dict], include_report: bool) -> str
             continue
         seen.add(key)
         lines.append(
-            f'- "{title}" by {channel}' + "".join(f" | {p}" for p in _vintage_parts(meta))
+            f'- "{title}" by {channel}'
+            + "".join(f" | {p}" for p in _vintage_parts(meta))
+            + (f" | {sp}" if (sp := _speech_part(meta, passage=False)) else "")
         )
     if include_report:
         lines.append("- Research Report (the synthesized report for this job)")
@@ -1192,6 +1209,7 @@ def _build_library_allowed_sources(rag_results: list[dict]) -> str:
         lines.append(
             f'- {vid} | "{title}" by {channel}'
             + "".join(f" | {p}" for p in _vintage_parts(meta))
+            + (f" | {sp}" if (sp := _speech_part(meta, passage=False)) else "")
         )
     return "\n".join(lines) if lines else "(no sources available)"
 

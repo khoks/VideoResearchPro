@@ -1389,7 +1389,7 @@ Backend suite 835 → 855.
 - [x] T-6.1.1.4 The router rejects `kind=book` with an empty `source_ids` as 400 before any row is written (test asserts zero rows); frontend type-check and vitest pass — *shipped 2026-10-19, PR [#255](https://github.com/khoks/VideoResearchPro/pull/255)*
 
 #### S-6.1.2 🟢 Markdown source for reports
-**PR:** [#255](https://github.com/khoks/VideoResearchPro/pull/255) — *shipped 2026-10-19.* Shared enabler for the book, the reading room (E-8.8) and public sharing (E-8.11). Converter: `markdownify` (MIT) through a `ReportMarkdownConverter` subclass; html2text rejected as GPL-3.0. The tenant-scoped job lookup S-5.10.6 added to the outputter is kept.
+**PR:** [#255](https://github.com/khoks/VideoResearchPro/pull/255) — *shipped 2026-10-19.* Shared enabler for the book, the reading room (E-8.8) and public sharing (E-8.11). Converter: `markdownify` (MIT) through a `ReportMarkdownConverter` subclass; html2text rejected as GPL-3.0. The tenant-scoped job lookup S-5.10.6 added to the outputter is kept. Linked decision: [D-079](decisions.md#d-079--report-markdown-source-on-markdownify-new-report-routes-are-header-bearer-only-2026-10-19).
 - [x] T-6.1.2.1 `report_service.report_markdown(job)` / `html_to_markdown(html)`: drops the document head and stylesheet, ATX headings, hyphen bullets, no `*`/`_` escaping, no autolinks (a citation stays `[text](href)` with its `&t=`), the statistics grid as a one-row table, `[VISUAL @ …]` spans verbatim; cached at `<report_path>.md`, rewritten when older than the HTML; an unwritable cache degrades to converting every time; `delete_report` removes the cache too — *shipped 2026-10-19*
 - [x] T-6.1.2.2 `BookMarkdownOutputter` reads it; the report's H1 (which repeats the chapter title) is dropped and its headings demoted two levels under the chapter's H2; a missing report or file is disclosed in the manuscript; `_strip_html_to_markdownish` retired — *shipped 2026-10-19*
 - [x] T-6.1.2.3 `GET /api/v1/jobs/{id}/report.md` in `routers/reports.py`, `text/markdown`, tenant-scoped 404s. **Auth deviates from the story text:** header-bearer only, no `?token=`, following the posture S-8.8.1 (merged first) set for every new report route to keep tokens out of URLs; a test pins that a query token alone gets 401 — *shipped 2026-10-19*
@@ -1409,6 +1409,7 @@ Backend suite 835 → 855.
 - [ ] T-6.1.4.1 Every `&t=` / permalink link in chapter Markdown becomes a numbered endnote; the endnote carries title, channel, timestamp and URL and writes an `output_citations` row
 - [ ] T-6.1.4.2 Q&A sections cite through their stored references rather than re-parsing prose
 - [ ] T-6.1.4.3 Tests: citation count equals endnote count; no dead links (the S-1.14.9 class of defect)
+- [ ] T-6.1.4.4 Table-of-contents links resolve: today the TOC links `#first-topic` while the chapter heading is `## 1. First Topic`, whose generated id differs; fold into the no-dead-links test. Filed 2026-10-19 by S-6.1.2; [D-079](decisions.md#d-079--report-markdown-source-on-markdownify-new-report-routes-are-header-bearer-only-2026-10-19)
 
 #### S-6.1.5 🔵 PDF and EPUB downloads
 **PR:** TBD. Absorbs T-6.1.3 and T-6.1.4.
@@ -1468,6 +1469,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-6.4.2.1 `newsletter_subscriptions(id, tenant_id, cadence, sections_json, last_issue_at, enabled)` + REST + a toggle on the Author page
 - [ ] T-6.4.2.2 Scheduler kind `newsletter` → generate output → `email_service.send_email` → in-app notification; idempotent per `(subscription, period)`
 - [ ] T-6.4.2.3 Tests: one send per period; unsubscribe stops the next run
+- [ ] T-6.4.2.4 Register the `newsletter` scheduler kind from its own task module and add the module to `celery_app.autodiscover_tasks`, as T-8.3.2.5 does for saved searches. Filed 2026-10-19 by S-8.3.1; [D-077](decisions.md#d-077--scheduler-one-static-beat-entry-over-table-rows-beat-is-its-own-process-with-no-pidfile-2026-10-19)
 
 ### E-6.5 ⚪ Video / reel (TTS narration + stills)
 
@@ -1501,6 +1503,8 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-6.7.1.2 Progress published on `job_progress:{output_id}` so `useJobProgress` and the WebSocket manager need no new channel; `AuthorPage` subscribes
 - [ ] T-6.7.1.3 Cancel endpoint mirroring `/jobs/{id}/cancel`
 - [ ] T-6.7.1.4 Tests with `.delay()` mocked at the router boundary (the conftest pattern)
+- [ ] T-6.7.1.5 Refuse a kind with no outputter before writing the row: today `POST /author/outputs` creates a `pending` row and then returns 501 (the UI never offers such kinds, so only API callers hit it). Filed 2026-10-19 by S-6.1.1
+- [ ] T-6.7.1.6 Fix `wsClient.ts`'s dev-mode `InvalidStateError: Still in CONNECTING state` (its `onopen` sends on a socket that a second connect has replaced) before AuthorPage subscribes to progress. Seen in the S-6.1.2 live check, 2026-10-19
 
 #### S-6.7.2 🔵 Binary artifacts and downloads
 **PR:** TBD
@@ -1543,7 +1547,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 
 **Scope.** Segment retrieval by trust band and let the answer surface "your trusted creators say X; others say Y", with disagreement detection between bands. Deferred by D-068 until user-set weights exist and E-7.1's measurement is in.
 
-## I-8 🔵 Research workbench features (M1 to M12)
+## I-8 🟡 Research workbench features (M1 to M12)
 
 **Filed 2026-10-18** under the user's directive to turn the larger roadmap items into tracked, researched, buildable plans. One epic per medium-scale roadmap item; every epic links to a research plan under [`docs/plans/`](plans/README.md) that records the chosen approach, the alternatives rejected, schema and API deltas, the modules touched, risks, the test strategy and the first PR. Recommended sequence across I-3 / I-6 / I-8: [`docs/plans/build-order.md`](plans/build-order.md).
 
@@ -1565,7 +1569,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - Responsive handling is two CSS media rules in `index.css` (sidebar collapse under 960px, `.form-row` stacking under 640px); no reading-specific mobile work exists.
 - `users` has no `onboarded_at`; there is no first-run flow.
 
-### E-8.1 🔵 Shelves — collections, tags and shelf-scoped views (M1)
+### E-8.1 🟡 Shelves — collections, tags and shelf-scoped views (M1)
 
 **Scope.** Named collections of jobs (many-to-many), per-tenant tags on documents, a shelf detail page that is a filtered library view, and Q&A scoped to a shelf. Tags are a per-tenant side table because `documents` is a shared cache ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)): a tag is private to the user who applied it.
 **Plan:** [`docs/plans/m1-shelves.md`](plans/m1-shelves.md)
@@ -1601,14 +1605,14 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.1.4.3 Q&A panel on the shelf page reusing the library Q&A components
 - [ ] T-8.1.4.4 Tests: scope restricts citations; empty scope never widens
 
-### E-8.2 🔵 Command palette and global search (M2)
+### E-8.2 🟡 Command palette and global search (M2)
 
 **Scope.** `Cmd-K` / `Ctrl-K` palette with navigation actions and grouped search across jobs, documents, channels, Q&A exchanges, knowledge artifacts, shelves and notes, backed by one tenant-scoped search endpoint. Keyword search first; semantic results as a second, clearly labelled group.
 **Plan:** [`docs/plans/m2-command-palette.md`](plans/m2-command-palette.md)
 **Acceptance.** From any page, `Ctrl-K` opens the palette; typing three characters returns grouped results within 300 ms on a 5,000-document library; Enter navigates; arrow keys and Escape work; a screen reader announces the result count. No result from another tenant ever appears.
 
 #### S-8.2.1 🟢 Search endpoint
-**PR:** [#245](https://github.com/khoks/VideoResearchPro/pull/245) — *shipped 2026-10-19.* Two deviations from the plan's sketch, both recorded in `services/search_service.py`: (1) **one trigram FTS5 table per entity** instead of a `unicode61` table plus a trigram table — the trigram tokenizer alone covers word-prefix and mid-word substring matching, case folding, diacritics folding (SQLite ≥ 3.45) and Devanagari, so the second table bought nothing at this scale; queries whose tokens are all under three characters take the `LIKE` path even with FTS5 present; (2) **not external-content tables** — FTS5's `content=` mode maps on rowid and every base table has a string primary key, whose rowids are not stable across `VACUUM`, so each FTS row carries the entity id as an `UNINDEXED` column and duplicates the indexed text. `GET /health` gains `search_backend`. Visibility joins are on `document_id` (D-070, merged first), through `visibility_service.visible_document_ids` and `subscription_service.visible_channel_ids` on the ORM paths; a test pins that a PDF with no `video_id` is found by its owner only. No palette yet (S-8.2.2); document and knowledge hrefs use `/library?document=<document_id>` (`&view=knowledge`), a contract the palette PR teaches the library page.
+**PR:** [#245](https://github.com/khoks/VideoResearchPro/pull/245) — *shipped 2026-10-19.* Two deviations from the plan's sketch, both recorded in `services/search_service.py`: (1) **one trigram FTS5 table per entity** instead of a `unicode61` table plus a trigram table — the trigram tokenizer alone covers word-prefix and mid-word substring matching, case folding, diacritics folding (SQLite ≥ 3.45) and Devanagari, so the second table bought nothing at this scale; queries whose tokens are all under three characters take the `LIKE` path even with FTS5 present; (2) **not external-content tables** — FTS5's `content=` mode maps on rowid and every base table has a string primary key, whose rowids are not stable across `VACUUM`, so each FTS row carries the entity id as an `UNINDEXED` column and duplicates the indexed text. `GET /health` gains `search_backend`. Visibility joins are on `document_id` (D-070, merged first), through `visibility_service.visible_document_ids` and `subscription_service.visible_channel_ids` on the ORM paths; a test pins that a PDF with no `video_id` is found by its owner only. No palette yet (S-8.2.2); document and knowledge hrefs use `/library?document=<document_id>` (`&view=knowledge`), a contract the palette PR teaches the library page. Linked decision: [D-078](decisions.md#d-078--search-index-one-trigram-fts5-table-per-entity-copies-not-external-content-like-fallback-2026-10-19).
 - [x] T-8.2.1.1 `GET /api/v1/search?q=&types=&limit=` returning `{q, backend, groups: [{type, items: [{id, title, subtitle, href, score}]}]}`; tenant scoping is applied to the FTS hit list by joining each entity's anchor (`jobs.tenant_id`, `document_visibility`, `channel_subscriptions` ∪ visible documents' channels, `*_qa_exchanges.tenant_id`), never by a tenant column inside the index; a tenant with nothing visible gets empty groups — *shipped 2026-10-19*
 - [x] T-8.2.1.2 FTS5 tables `fts_documents`, `fts_jobs`, `fts_channels`, `fts_qa` (three Q&A tables, `surface` column), `fts_knowledge` with `AFTER INSERT / UPDATE OF <cols> / DELETE` triggers; created conditionally by migration `a9f3c1e7b5d2` **and** re-ensured by the lifespan (`search_service.ensure_index`), so a Python upgrade that gains FTS5 later still gets the tables; the probe tries `trigram remove_diacritics 1` then `trigram`, and falls back to `LIKE` with a logged warning; `schema_init_service` ignores the `fts_` prefix when comparing the live DB to the ORM — *shipped 2026-10-19*
 - [x] T-8.2.1.3 Substring (and therefore prefix) matching from three characters; `bm25()` with the title column weighted 5:1 over the body, recency tie-break, over-fetch ×4 before the cut, per-group cap (`limit` 1–25, default 5) — *shipped 2026-10-19*
@@ -1621,18 +1625,19 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.2.2.3 Debounced query, request cancellation, empty and loading states
 - [ ] T-8.2.2.4 Remove the stale `ui-design.md` claim or make it true (`g + r` style chords) in the same PR
 - [ ] T-8.2.2.5 Notes group in the palette: "Your notes" (`/notes`), "Export notes as Markdown" and "Export notes as JSON-LD" (`/exports/notes.md` / `.jsonl`). Moved here from T-8.5.3.2, which shipped before the palette existed
+- [ ] T-8.2.2.6 The library page honours the search hrefs `?document=<document_id>` and `&view=knowledge` (open the document row, or its knowledge report), so palette results land on the item rather than the unfiltered list. Filed 2026-10-19 by S-8.2.1; [D-078](decisions.md#d-078--search-index-one-trigram-fts5-table-per-entity-copies-not-external-content-like-fallback-2026-10-19)
 
 #### S-8.2.3 ⚪ Semantic group
 - [ ] T-8.2.3.1 `semantic=true` adds a group from `qa_library_global` and the transcript collection (visible set only), merged with the keyword results by reciprocal rank fusion (rank-only, so FTS5 scores and Chroma distances need no calibration); labelled separately in the palette
 
-### E-8.3 🔵 Saved searches and alerts (M3)
+### E-8.3 🟡 Saved searches and alerts (M3)
 
 **Scope.** Pin a library question, re-run it on a schedule, detect whether new library content materially changed the answer, and notify by email and in-app. Carries the project's first scheduler, which [E-6.4](#e-64--newsletter--digest-recurring-scheduled-output) reuses.
 **Plan:** [`docs/plans/m3-saved-searches-alerts.md`](plans/m3-saved-searches-alerts.md)
 **Acceptance.** A user pins a question with a weekly schedule; a week later the question re-runs without anyone online; if the cited document set or the answer changed beyond the threshold they receive an email and an in-app notification linking to the diff; re-runs count against the user's monthly library Q&A quota; a paused search never runs.
 
 #### S-8.3.1 🟢 Scheduler tick (shared infrastructure)
-**PR:** [#238](https://github.com/khoks/VideoResearchPro/pull/238) — *shipped 2026-10-19.* Beat is a separate process (`celery -A app.tasks.celery_app beat`) started by both launcher scripts, never the embedded `worker -B` form; the launchers are the single-beat guard because Celery's `--pidfile` stale check is `os.kill(pid, 0)`, which on Windows terminates whatever process holds that pid. Cadences are human (`daily` / `weekly` / `monthly` with hour, minute, weekday or day-of-month 1–28, IANA timezone; `every` N seconds for system kinds), stored as `cadence_json`; `next_run_at` is computed by Celery's own `crontab` on the row's local wall clock, so 09:00 local stays 09:00 local across DST. Kinds register from the task module that defines their task (`scheduler_service.register_kind`); nothing registers yet — `saved_search` arrives with S-8.3.2. `GET /api/v1/health/scheduler` reports config, registered kinds and row counts.
+**PR:** [#238](https://github.com/khoks/VideoResearchPro/pull/238) — *shipped 2026-10-19.* Beat is a separate process (`celery -A app.tasks.celery_app beat`) started by both launcher scripts, never the embedded `worker -B` form; the launchers are the single-beat guard because Celery's `--pidfile` stale check is `os.kill(pid, 0)`, which on Windows terminates whatever process holds that pid. Cadences are human (`daily` / `weekly` / `monthly` with hour, minute, weekday or day-of-month 1–28, IANA timezone; `every` N seconds for system kinds), stored as `cadence_json`; `next_run_at` is computed by Celery's own `crontab` on the row's local wall clock, so 09:00 local stays 09:00 local across DST. Kinds register from the task module that defines their task (`scheduler_service.register_kind`); nothing registers yet — `saved_search` arrives with S-8.3.2. `GET /api/v1/health/scheduler` reports config, registered kinds and row counts. Linked decision: [D-077](decisions.md#d-077--scheduler-one-static-beat-entry-over-table-rows-beat-is-its-own-process-with-no-pidfile-2026-10-19).
 - [x] T-8.3.1.1 Celery beat entry `scheduler.tick` every `SCHEDULER_TICK_SECONDS` (default 300) on the `default` queue with `expires` so a backlog of ticks never replays after a restart; `SCHEDULER_ENABLED` (off = no beat entry and the tick no-ops); beat process in `scripts/start.ps1` and `scripts/restart_services.ps1` — *shipped 2026-10-19*
 - [x] T-8.3.1.2 `scheduled_runs(id, tenant_id, kind, target_id, cadence_json, next_run_at, last_run_at, last_status, last_error, claimed_at, consecutive_failures, enabled)` (migration `c7d8e9f0a1b2`); the tick claims each due row with one `UPDATE … WHERE claimed_at IS NULL OR claimed_at < now − SCHEDULER_LEASE_SECONDS`, so a duplicate tick claims nothing and a crashed holder's lease expires — *shipped 2026-10-19*
 - [x] T-8.3.1.3 Per-kind dispatch through `task_routing_service.dispatch_for_tenant_id` (tier queues apply; `tenant_id` NULL → `default`); an unknown kind is recorded as `no_handler` and advanced by its cadence, a failed dispatch (broker down) is retried at the next tick up to `SCHEDULER_MAX_RETRY_TICKS` times, then waits for its cadence — *shipped 2026-10-19*
@@ -1644,6 +1649,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.3.2.2 `GET/POST/PATCH/DELETE /api/v1/saved-searches`, `POST /api/v1/saved-searches/{id}/run-now`; gated on `require_feature("saved_searches")`
 - [ ] T-8.3.2.3 "Pin this question" on library Q&A answer cards; `/saved-searches` list page with last result and next run
 - [ ] T-8.3.2.4 Isolation tests; quota enforced before each run ([D-045](decisions.md#d-045--quota-metering-enforce-before-record-after-success-2026-05-05)); a per-tier cap on active saved searches in `TIER_CAPABILITIES` (comparable products cap at 3 to 15)
+- [ ] T-8.3.2.5 Register the `saved_search` kind (`scheduler_service.register_kind`) from `tasks/saved_search_tasks.py` and add that module to `celery_app.autodiscover_tasks`; without the import the worker records `no_handler` and the search never runs. Filed 2026-10-19 by S-8.3.1; [D-077](decisions.md#d-077--scheduler-one-static-beat-entry-over-table-rows-beat-is-its-own-process-with-no-pidfile-2026-10-19)
 
 #### S-8.3.3 🔵 Re-run, change detection and notification
 **PR:** TBD
@@ -1729,7 +1735,7 @@ Linked decision: D-074.
 - [ ] T-8.6.2.1 Five seeded templates (topic scan, channel deep-dive, podcast digest, mixed-source debate, subscription follow) inserted by migration, versioned by a `builtin_key`
 - [ ] T-8.6.2.2 Used by the onboarding wizard (E-8.10) as the first-job step
 
-### E-8.7 🔵 Channel intelligence (M7)
+### E-8.7 🟡 Channel intelligence (M7)
 
 **Scope.** A per-channel view with analytics computed from what the library already holds: publishing cadence, top topics and concepts aggregated from knowledge artifacts, a keyword cloud from transcripts, the user's own Q&A activity against the channel, and a concept graph. Stance over time is scoped to sources that carry classification (social connectors); YouTube has none today, so that panel is explicitly data-dependent.
 **Plan:** [`docs/plans/m7-channel-intelligence.md`](plans/m7-channel-intelligence.md)
@@ -1753,7 +1759,7 @@ Linked decision: D-074.
 - [ ] T-8.7.3.1 Tab with cadence bars, topic list with drill-down, keyword cloud (own SVG layout, no library), coverage call-to-action, "Extract knowledge for all" batch action that respects the knowledge quota
 - [ ] T-8.7.3.2 Concept graph panel reusing the E-8.9 graph component filtered to the channel
 
-### E-8.8 🔵 Reading room — the report as a native reading view (M8)
+### E-8.8 🟡 Reading room — the report as a native reading view (M8)
 
 **Scope.** Replace the iframe modal with a full-page reader at `/reports/:jobId`: sanitised report HTML rendered in React with the app's typography, drop cap, sticky outline built from the report's own headings, reading progress, citation hover cards, print stylesheet. The modal stays as a quick peek. The same reader shell renders knowledge artifacts and, later, public shares (E-8.11) and books (E-6.1).
 **Plan:** [`docs/plans/m8-reading-room.md`](plans/m8-reading-room.md)
@@ -1776,7 +1782,7 @@ Linked decision: D-074.
 #### S-8.8.3 🔵 Knowledge artifacts and books in the same shell
 **PR:** TBD
 - [ ] T-8.8.3.1 `/knowledge/:videoId` route rendering the Markdown knowledge report through `ReaderShell` (react-markdown + heading ids)
-- [ ] T-8.8.3.2 Author Studio outputs (`/author/outputs/:id`) read in the same shell
+- [ ] T-8.8.3.2 Author Studio outputs (`/author/outputs/:id`) read in the same shell. Manuscripts carry GFM tables since S-6.1.2, so the shell's Markdown path needs `remark-gfm` (already a dependency; the Author modal uses it). Unblocks the moved part of T-6.1.1.3 ("View opens the shared reader shell").
 
 ### E-8.9 🔵 Citation graph and knowledge map (M9)
 

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.dependencies import get_db
 from app.schemas.quota import QuotaStatus
-from app.services import quota_service, scheduler_service
+from app.services import quota_service, scheduler_service, search_service
 from app.services.llm_smoke import _STATUS
 
 router = APIRouter()
@@ -43,6 +43,9 @@ def health_check():
         "app": "Pratidhvani",
         "llm": _STATUS.summary(),
         "capabilities": _capabilities(),
+        # S-8.2.1: "fts5" when SQLite has FTS5 (ranked substring search),
+        # "like" on the fallback path, so the UI can label it.
+        "search_backend": search_service.current_backend(),
     }
 
 

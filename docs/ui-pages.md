@@ -20,6 +20,8 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/library` | `LibraryPage` | protected | Browse the global video library |
 | `/library/qa` | `LibraryQAPage` | protected | Ask across the entire library |
 | `/library/channels/:channelId` | `ChannelPage` | protected | One channel: header, subscribe / sync, trust-weight slot, its documents |
+| `/shelves` | `ShelvesPage` | protected (writes Pro+) | The reader's shelves: create, edit, delete |
+| `/shelves/:shelfId` | `ShelfPage` | protected (writes Pro+) | One shelf: its runs and the union of their sources |
 | `/qa-history` | `QAHistoryChatPage` | protected | Meta-chat across all past Q&A |
 | `/exports` | `ExportsPage` | protected | Dataset export endpoints + downloads |
 | `/notes` | `NotesPage` | protected | Every note the user wrote, grouped by target, searchable, exportable |
@@ -81,6 +83,8 @@ The protected routes share `<AppLayout>` (top-tabs nav today, sidebar after the 
 
 Columns: title, type icon, status pill, video count, created_at, last activity. Row hover reveals "Open" / "Cancel" / "Delete".
 
+**Shelves** (S-8.1.2): each card carries an **Add to shelf** button ("On N shelves" once shelved) that opens a popover of checkboxes, one per shelf, saved on toggle, with an inline "New shelf…" field that creates and adds in one step; the shelves a run is on show as colour chips under the title, each linking to its shelf. Membership comes from the one cached `GET /shelves` (each shelf carries `job_ids`), so a page of cards costs one request. Readers without the `shelves` capability see the chips but no picker unless the run is already shelved.
+
 | State | What renders |
 |-------|--------------|
 | Default | Sortable table; default sort by `last activity` desc. |
@@ -96,7 +100,7 @@ Sections (rendered conditionally on `job.status` and `job.job_type`):
 
 | Section | When shown | Notes |
 |---------|------------|-------|
-| **Header** | always | Title, type, status pill, created_at, "Cancel" / "Delete" overflow menu. |
+| **Header** | always | Title, type, status pill, created_at, "Cancel" / "Delete" overflow menu. Shelf chips under the meta line and the **Add to shelf** picker beside the status pill (S-8.1.2). |
 | **Progress** | status ∈ {searching, extracting, building_rag, generating_report} | Phase, progress bar (`completed / total`), message line, last-event timestamp. Driven by `useJobProgress`. |
 | **Search results / Approval** | status == `awaiting_approval` (topic only) | Table of candidate videos with checkboxes, "Approve selected" button. Auto-populates when WS reports the status change. |
 | **Your notes on this run** | always, once the job loads | Section-variant notes panel (M5 / S-8.5.1): the user's own Markdown on the run, newest first, with add / edit / delete. |
@@ -185,6 +189,28 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 | Empty (no documents) | "Nothing from this channel on your shelf yet." |
 | Empty (filters) | "Nothing matches these filters." with "Clear filters". |
 | Syncing | Sync button reads "Syncing…" with a spinner until the job completes, fails or is cancelled. |
+
+### `ShelvesPage` — `/shelves`
+**Purpose.** Every shelf the reader owns (S-8.1.2, [M1](plans/m1-shelves.md)): name with its colour dot, description, run count, last update. Pro and Studio readers get **New shelf**, **Edit** (name, description, one of ten palette colours) and **Delete** (a confirmation that says the runs stay). A reader whose plan no longer includes shelves keeps the list read-only with an upgrade line; a Free reader with none sees "Shelves come with Pro."
+
+| State | What renders |
+|-------|--------------|
+| Loading | Two row skeletons. |
+| Empty (Pro+) | "No shelves yet." with **New shelf**. |
+| Empty (Free) | "Shelves come with Pro." with **See plans**. |
+| Error | Editorial error card with Retry. |
+| Name collision | The form shows the server's 409 text inline ("You already have a shelf named …"). |
+
+### `ShelfPage` — `/shelves/:shelfId`
+**Purpose.** One shelf as a filtered view of the library. Header: eyebrow with the colour dot, name, description, "N runs · updated …" (plus "read-only on your plan" when the tier lacks shelves), Edit / Delete for Pro+. **Runs**: one row per run (title link, status pill, type, sources · created), **Remove** for Pro+. **Sources**: the union of the runs' documents, each once, through `GET /shelves/{id}/documents` (visibility-scoped, D-063), with the library's search / transcript / sort filters and paging (`DocumentsBrowser`, shared with the channel page). The shelf-scoped question box arrives with S-8.1.4.
+
+| State | What renders |
+|-------|--------------|
+| Loading | Header skeleton. |
+| 404 (foreign or deleted) | "This shelf isn't here." with **All shelves**. |
+| No runs | "No runs on this shelf yet." with **Go to active runs**. |
+| No sources | "No sources on this shelf yet." |
+| Deleted from here | Navigates to `/shelves`. |
 
 ### `LibraryQAPage` — `/library/qa`
 **Purpose.** Ask questions across the entire library, with no per-job filter.
@@ -289,6 +315,8 @@ Tabs: **Structured** (topics / concepts / events / facts) and **Report** (Markdo
 - Post-redesign (per [branding.md](branding.md) §sidebar-mockup): slim left sidebar grouped by purpose (Library / Research / Knowledge / Author/future / Settings).
 - Persistent global elements: top-right user avatar + sign-out, top-right LLM-status dot (green/yellow/red), `ToastContainer`.
 
+The sidebar's **Shelves** group (after Library) lists the reader's shelves with a colour dot, the first eight then "Show all N", plus **Manage shelves** (or **Start a shelf** when there are none); it is hidden for a reader who has no shelves and no `shelves` capability. Shelf entries navigate by path because the `AppTab` union is fixed.
+
 ### Auth context
 - `AuthContext` holds `{ token, user, isAuthenticated, login, logout }`. Token persists in `localStorage` under `pratidhvani_token` (was `vrp_token`; rename pending). Axios interceptor attaches it on every request and bounces 401 → `/login`.
 
@@ -328,8 +356,8 @@ These pages are defined ahead of time so today's components have a place to land
 
 | Path (proposed) | Status | Owner doc |
 |-----------------|--------|-----------|
-| `/shelves` | M1 | [feature-roadmap.md](feature-roadmap.md) |
-| `/shelves/:slug` | M1 | [feature-roadmap.md](feature-roadmap.md) |
+| `/shelves` | **built** (2026-10-19), see [`ShelvesPage`](#shelvespage--shelves) | [plans/m1-shelves.md](plans/m1-shelves.md) |
+| `/shelves/:slug` | **built** (2026-10-19) as `/shelves/:shelfId` (ids, not slugs: names are renameable), see [`ShelfPage`](#shelfpage--shelvesshelfid) | [plans/m1-shelves.md](plans/m1-shelves.md) |
 | `/notes` | M5 | [feature-roadmap.md](feature-roadmap.md) |
 | `/author` | **built** (2026-10-19) as a single page, see [`AuthorPage`](#authorpage--author-pro) | [feature-roadmap.md](feature-roadmap.md) |
 | `/author/books` / `/author/sites` / `/author/decks` | L2; per-kind sub-routes only if the single page outgrows its kind filter | [feature-roadmap.md](feature-roadmap.md) |

@@ -117,7 +117,14 @@ def _job_chapter(
     """Return ``(chapter_title, chapter_body_markdown)`` for one job."""
     from app.models.job import Job
 
-    job = db.query(Job).filter(Job.id == job_id).first()
+    # Tenant is part of the lookup (T-5.10.1.4): another user's job id
+    # renders exactly like a missing one. Before 2026-10-19 the filter was
+    # the id alone, so a book could compile someone else's report.
+    job = (
+        db.query(Job)
+        .filter(Job.id == job_id, Job.tenant_id == user.id)
+        .first()
+    )
     if job is None:
         return f"Unknown job {job_id}", "_(Job not found in your library.)_"
 

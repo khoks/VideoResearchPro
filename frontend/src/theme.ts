@@ -53,6 +53,36 @@ export const colors = {
   focus:        { light: '#7a2c1a', dark: '#d8b15a' },
 } as const;
 
+/**
+ * Label palette — the ten named colours shelves and tags use (Notion's set,
+ * M1 plan). The API stores the NAME, never a hex, so labels stay theme-aware.
+ * Every bg/fg pair holds at least 4.5:1 text contrast in both modes (checked
+ * 2026-10-19), and a label always carries its text: colour is a hint, never
+ * the only signal.
+ */
+export const PALETTE_COLORS = [
+  'default', 'gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red',
+] as const;
+
+export type PaletteColor = (typeof PALETTE_COLORS)[number];
+
+export const palette: Record<PaletteColor, Record<Mode, { bg: string; fg: string }>> = {
+  default: { light: { bg: '#f0e9dd', fg: '#5c5448' }, dark: { bg: '#161310', fg: '#a89f93' } },
+  gray:    { light: { bg: '#e8e4de', fg: '#4a453e' }, dark: { bg: '#2b2823', fg: '#b5ada2' } },
+  brown:   { light: { bg: '#eadfd2', fg: '#5a3e26' }, dark: { bg: '#332419', fg: '#d2b398' } },
+  orange:  { light: { bg: '#f6e2cf', fg: '#7a4312' }, dark: { bg: '#3d2612', fg: '#e0a86b' } },
+  yellow:  { light: { bg: '#f7ecd4', fg: '#6b4e0f' }, dark: { bg: '#3a2f18', fg: '#d8b15a' } },
+  green:   { light: { bg: '#e4ece6', fg: '#2d4a3e' }, dark: { bg: '#1f2b25', fg: '#7fae98' } },
+  blue:    { light: { bg: '#e5ecf2', fg: '#2f4a62' }, dark: { bg: '#1f2a35', fg: '#8fabc6' } },
+  purple:  { light: { bg: '#ece4f0', fg: '#4e3561' }, dark: { bg: '#2b2232', fg: '#b9a0cc' } },
+  pink:    { light: { bg: '#f5e3e8', fg: '#73334a' }, dark: { bg: '#36202a', fg: '#d697ad' } },
+  red:     { light: { bg: '#f6e9e3', fg: '#7a2c1a' }, dark: { bg: '#3a1f17', fg: '#d8826b' } },
+};
+
+export function isPaletteColor(value: string): value is PaletteColor {
+  return (PALETTE_COLORS as readonly string[]).includes(value);
+}
+
 export const fonts = {
   display:    '"Fraunces", Georgia, serif',
   body:       '"Source Serif Pro", "Fraunces", Georgia, serif',

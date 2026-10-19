@@ -54,6 +54,7 @@ Production targets the same shape, with SQLite swapped for Postgres and ChromaDB
   - Creates `data/` directories (DB, ChromaDB, reports).
   - Creates SQLAlchemy tables (idempotent; Alembic migrations are the source of truth, but `Base.metadata.create_all` is the dev fallback).
   - Runs `services/llm_smoke.run_startup_probes` — see "LLM smoke + fail-soft" below.
+  - Ensures the search index (S-8.2.1): `services/search_service.ensure_index_for_url` probes SQLite for FTS5 with the trigram tokenizer, creates any missing `fts_*` virtual tables and their `AFTER INSERT / UPDATE / DELETE` triggers, rebuilds the ones just created from their base tables, and records the backend (`fts5` or `like`) that `GET /health` reports as `search_backend`. Migration `a9f3c1e7b5d2` does the same conditionally, so a fresh install is indexed before the first request; the lifespan re-probe is what picks up a Python upgrade that gains FTS5 later. Never blocks startup. The worker needs nothing: the triggers live in the database, so ingest writes from any process are indexed.
 - On shutdown: flushes any pending Chroma writes, closes the embedding model, releases Redis connections.
 - Does **not** run Celery tasks itself. It only `.delay()`-dispatches them.
 
@@ -87,7 +88,7 @@ Three logical databases on the same instance:
 
 ### SQLite
 
-`data/videoresearchpro.db` (env `DATABASE_URL`). All structured state: users, jobs, documents (formerly `videos`; renamed in L1 PR 4), channels, transcript cache, Q&A exchanges, knowledge artifact metadata. Alembic migrations under `backend/alembic/`.
+`data/videoresearchpro.db` (env `DATABASE_URL`). All structured state: users, jobs, documents (formerly `videos`; renamed in L1 PR 4), channels, transcript cache, Q&A exchanges, knowledge artifact metadata, scheduled runs. Alembic migrations under `backend/alembic/`. Beside the ORM tables sit the S-8.2.1 search index's FTS5 virtual tables (`fts_documents`, `fts_jobs`, `fts_channels`, `fts_qa`, `fts_knowledge`, plus SQLite's `fts_*_data` / `_idx` / `_content` / `_docsize` / `_config` shadow tables): one trigram-tokenised table per entity, each row carrying the entity id as an `UNINDEXED` column and a copy of the indexed text, kept current by triggers. They have no ORM model and `schema_init_service` ignores the `fts_` prefix when comparing the live schema to the ORM. External-content mode was rejected because it maps on rowid and every base table has a string primary key, whose rowids are not stable across `VACUUM`.
 
 ### ChromaDB
 

@@ -17,6 +17,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.transcript_cache import TranscriptCache
 from app.models.document import Document
 from app.schemas.knowledge import KnowledgeExtractResponse
+from app.services import visibility_service
 
 logger = logging.getLogger(__name__)
 
@@ -111,13 +112,15 @@ def extract_knowledge(
     """Run the knowledge agent on this video and persist the artifact.
 
     Returns 409 if the video already has an extraction unless `?force=true`.
-    Returns 404 if the video doesn't exist. Returns 422 if no transcript is
+    Returns 404 if the video doesn't exist OR this tenant cannot see it
+    (D-063 — indistinguishable on purpose). Returns 422 if no transcript is
     cached for the video (nothing to extract from).
     """
-    # E-1.10: Document PK is now `document_id` (UUID); the API path
-    # parameter is the YouTube `video_id` for back-compat, so resolve
-    # via the back-compat column rather than `db.get(Document, ...)`.
-    video = db.query(Document).filter(Document.video_id == video_id).first()
+    # The path parameter may be the YouTube `video_id` (back-compat) or the
+    # `document_id`. Before 2026-10-19 this looked the row up with no tenant
+    # check, so any signed-in user could spend an extraction on — and then
+    # read — a document only another tenant had ingested.
+    video = visibility_service.visible_document(db, current_user.id, video_id)
     if video is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -130,7 +133,7 @@ def extract_knowledge(
             detail="Knowledge already extracted. Pass ?force=true to re-run.",
         )
 
-    transcript_text = _reconstruct_transcript_text(db, video_id)
+    transcript_text = _reconstruct_transcript_text(db, video.video_id or video_id)
     if not transcript_text.strip():
         # 422 = unprocessable content: the video exists but has no transcript
         # to extract from yet (user must wait for transcript fetch to complete).
@@ -193,12 +196,15 @@ def extract_knowledge(
 def get_knowledge(
     video_id: str,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ) -> KnowledgeExtractResponse:
-    """Return the persisted knowledge artifact for this video (404 if unset)."""
-    # E-1.10: Document PK is now `document_id` (UUID); the API path
-    # parameter is the YouTube `video_id` for back-compat, so resolve
-    # via the back-compat column rather than `db.get(Document, ...)`.
-    video = db.query(Document).filter(Document.video_id == video_id).first()
+    """Return the persisted knowledge artifact for this video (404 if unset).
+
+    The artifact lives on the shared `documents` row and is computed once for
+    everyone (D-063), but only a tenant who ingested the document may read
+    it. Before 2026-10-19 there was no tenant check here at all.
+    """
+    video = visibility_service.visible_document(db, current_user.id, video_id)
     if video is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

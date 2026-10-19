@@ -539,5 +539,223 @@
    "visual_describe_frame": "google:gemini-3.1-flash-lite:off",
    "cost_per_video_usd": 0.075
   }
+ },
+ "run2": {
+  "judging_summary": {
+   "judges_ok": 3,
+   "judges_total": 3,
+   "preferred_on_substance": {
+    "on": 1,
+    "off": 2,
+    "tie": 0
+   },
+   "attribution_errors_total": {
+    "on": 3,
+    "off": 0
+   },
+   "fabrications_total": {
+    "on": 22,
+    "off": 9
+   },
+   "mean_substance": {
+    "on": 7.67,
+    "off": 7.67
+   },
+   "inputs": {
+    "x": "data/r1_ab/run2/on.html",
+    "y": "data/r1_ab/run2/off.html",
+    "labels": [
+     "on",
+     "off"
+    ],
+    "chars": 415178
+   }
+  },
+  "verification_summary": {
+   "on": {
+    "confirmed_fabrications": 0,
+    "metadata_leaks": 1,
+    "refuted": 25
+   },
+   "off": {
+    "confirmed_fabrications": 0,
+    "metadata_leaks": 2,
+    "refuted": 9
+   },
+   "on_attribution_errors_confirmed": 1,
+   "sweep_candidates": 1,
+   "sweeps_ok": 3
+  },
+  "confirmed_on_attribution_errors": [
+   {
+    "sentence": "CodeWithMunnaX lists dowjones, exercise, flights, fmri, iris, mpg, penguins, planets, taxis, tips and titanic among the available datasets (09:56) and reiterates that built-in datasets can be loaded a",
+    "why": "Borderline, moderate confidence. The verbs 'lists ... and reiterates' present the eleven-dataset enumeration as something the instructor said, and 'reiterates' frames the speaker as repeating an earli",
+    "upheld_votes": 3,
+    "total_votes": 3,
+    "confirmed": true,
+    "reasons": [
+     "The sentence is in on.html, in the \"Seaborn's built-in datasets\" paragraph. It cites video 5AuuOZ4vuxI at t=596 (09:56) and t=1595 (26:35). That video's speech is in Bengali. It only says that Seaborn has predefined data",
+     "The sentence is in on.html, cited to the CodeWithMunnaX Seaborn video (5AuuOZ4vuxI) at &t=596 (09:56). The speech around that point is in Bengali. The speaker says only that sns.get_dataset_names with parentheses brings ",
+     "The sentence is in the ON report, in the \"Seaborn's built-in datasets\" paragraph, with links to 5AuuOZ4vuxI at t=596 (09:56) and t=1595 (26:35). The eleven dataset names exist in the corpus only in a machine-written scre"
+    ]
+   }
+  ],
+  "confirmed_fabrications": [],
+  "descriptions": "gemini-3.1-flash-lite (retier)"
+ },
+ "run3": {
+  "judging_summary": {
+   "judges_ok": 3,
+   "judges_total": 3,
+   "preferred_on_substance": {
+    "on": 3,
+    "off": 0,
+    "tie": 0
+   },
+   "attribution_errors_total": {
+    "on": 0,
+    "off": 0
+   },
+   "fabrications_total": {
+    "on": 16,
+    "off": 16
+   },
+   "mean_substance": {
+    "on": 8.67,
+    "off": 7.67
+   },
+   "inputs": {
+    "x": "data/r1_ab/run3/on.html",
+    "y": "data/r1_ab/run2/off.html",
+    "labels": [
+     "on",
+     "off"
+    ],
+    "chars": 459005
+   }
+  },
+  "verification_summary": {
+   "on": {
+    "confirmed_fabrications": 2,
+    "metadata_leaks": 0,
+    "refuted": 15
+   },
+   "off": {
+    "confirmed_fabrications": 2,
+    "metadata_leaks": 3,
+    "refuted": 14
+   },
+   "on_attribution_errors_confirmed": 2,
+   "sweep_candidates": 5,
+   "sweeps_ok": 3
+  },
+  "confirmed_on_attribution_errors": [
+   {
+    "sentence": "On version pinning, the Bengali introduction pairs a spoken version-check instruction with on-screen output: the video displays Seaborn version 0.13.2 at 03:10 — 01. Seaborn in Python — CodeWithMunnaX",
+    "why": "Speech is presented as something shown on screen. In the CodeWithMunnaX video (transcript lines 4430-6230), the only evidence for 0.13.2 is the presenter SAYING it in Bengali. That video has no [VISUA",
+    "upheld_votes": 3,
+    "total_votes": 3,
+    "confirmed": true,
+    "reasons": [
+     "I upheld the claim. The sentence is in the ON report at line 349. In the CodeWithMunnaX video \"01. Seaborn in Python\", the version 0.13.2 shows up only in speech. The presenter says it aloud in Bengali (০.১৩.২) twice whi",
+     "The sentence is in the ON report (on.html line 349). In the CodeWithMunnaX video \"01. Seaborn in Python\" (transcript lines 4430–6229), the version 0.13.2 comes only from speech. The presenter says it twice in Bengali num",
+     "The sentence is in the ON report (on.html line 349). In the CodeWithMunnaX video (\"01. Seaborn in Python\", transcript line 4430 on), 0.13.2 is found only in Bengali speech. The presenter says, roughly, \"your output will "
+    ]
+   },
+   {
+    "sentence": "In the Data Analytics Lab Matplotlib tutorial, the formatted chart on screen at 10:45 shows two prominent sales spikes above $50,000 against mostly lower values, with date ticks such as Jan 17 and Feb",
+    "why": "The 23:08 clause presents speech as frame content. The paragraph labels all of these as 'machine descriptions of single frames'. The 23:08 frame description does list the file explorer, but it names o",
+    "upheld_votes": 2,
+    "total_votes": 3,
+    "confirmed": true,
+    "reasons": [
+     "The sentence is in the ON report, word for word. Three of its four clauses describe screen content, and each one matches its [VISUAL @] span. At 10:45 the span shows two spikes above 50,000 and ticks for Jan 17 and Feb 1",
+     "The sentence is in the ON report, on line 372, in a paragraph that opens \"Several frame captures document outputs and figures that the spoken track references only loosely.\" The 10:45, 14:08 and 21:44 clauses are correct",
+     "The sentence is in the ON report (line 372 of on.html). Three of its four screen claims match the visual spans: 10:45 (two spikes above 50,000, Jan 17 and Feb 14 ticks), 14:08 (legend listing Store 1 to Store 5) and 21:4"
+    ]
+   }
+  ],
+  "confirmed_fabrications": [
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "arm": "on",
+    "kind": "fabrications",
+    "claim": "The material is multilingual: alongside English instruction from Academind, Simplilearn, NeuralNine, Absent Data, Gate Smashers, Pivotalstats, Data Analytics Lab, Onur Baltaci and DeepLoop Circle, the",
+    "upheld_votes": 2,
+    "total_votes": 3,
+    "confirmed": true,
+    "categories": {
+     "unsupported": 2,
+     "computed_stat": 1
+    },
+    "reasons": [
+     "The sentence is in the ON report (on.html line 3). Some of it is supported. The corpus is multilingual: on.statistics.json gives language_profile scripts {Latin 0.4861, Devanagari 0.285, Bengali 0.2289} with code_mixed t",
+     "The sentence is in the ON report. Part of it is supported. The statistics list CodeWithMunnaX (1 video, 28 min) and give a Bengali script share of 0.2289. The video \"01. Seaborn in Python\" is spoken in Bengali, and its [",
+     "The sentence does appear in the ON report. Its main claim is supported by the supplied data. on.statistics.json lists all ten channels named in the sentence, including CodeWithMunnaX. Its language_profile reports Bengali"
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "arm": "on",
+    "kind": "fabrications",
+    "claim": "Academind is the only channel in this material that points viewers at official documentation.",
+    "upheld_votes": 2,
+    "total_votes": 3,
+    "confirmed": true,
+    "categories": {
+     "not_in_report": 1,
+     "unsupported": 2
+    },
+    "reasons": [
+     "The sentence is not in the ON report (run3/on.html). Neither the raw HTML nor a tag-stripped copy contains \"only channel\", \"points viewers\" or any wording that says Academind is the only channel pointing to documentation",
+     "The sentence is in the ON report: \"Academind is the only channel in this material that points viewers at official documentation.\" The Academind part is supported by speech. The Academind video is the last one in the tran",
+     "The sentence is in the ON report, under \"Documentation and library versions\". It does not restate the statistics file, which gives only per-channel video, word and minute counts, dates and per-year counts, and says nothi"
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "arm": "off",
+    "kind": "fabrications",
+    "claim": "Seaborn material points viewers to the Seaborn documentation or website for additional datasets, methods, palettes, parameters, and advanced examples — The Only Seaborn Video You'll Ever Need | Full P",
+    "upheld_votes": 2,
+    "total_votes": 3,
+    "confirmed": true,
+    "categories": {
+     "unsupported": 2,
+     "speech": 1
+    },
+    "reasons": [
+     "The sentence is in the OFF report (run2/off.html). Its claim is that the DeepLoop Circle / Vivek video points viewers to the Seaborn documentation or website, at 4:33 and again at 27:45. The speech of that video (transcr",
+     "The sentence does appear in the OFF report (run2/off.html, line 285). It is not a fabrication as defined here, but it cites the wrong video.\n\nThe cited video is DeepLoop Circle / Vivek, \"The Only Seaborn Video You'll Eve",
+     "The sentence is in the OFF report (run2/off.html), cited to DeepLoop Circle 6lgc8xPTDS0 at t=273 (4:33) and 27:45. The only part of it found in off.statistics.json is the channel name \"DeepLoop Circle\". The statistics ho"
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "arm": "off",
+    "kind": "fabrications",
+    "claim": "Pearson correlation is the single concept with a literature lineage, and it is invoked by name only.",
+    "upheld_votes": 3,
+    "total_votes": 3,
+    "confirmed": true,
+    "categories": {
+     "unsupported": 2,
+     "general_knowledge": 1
+    },
+    "reasons": [
+     "The sentence is in the OFF report (off.html line 300, under \"No scholarly apparatus\"). Only one part of it holds up. The speech does name Pearson without citing any source, so \"invoked by name only\" is supported. The mai",
+     "The sentence is in the OFF report (line 300, \"No scholarly apparatus\" bullet). The corpus does support one narrow part: the Simplilearn speaker names the Pearson correlation coefficient and cites no source, so \"invoked b",
+     "I found the sentence word for word in the OFF report (run2/off.html line 300, under \"What the reference pattern implies\"). It does not restate anything from the statistics file: no counts, dates, per-year figures or chan"
+    ]
+   }
+  ],
+  "descriptions": "gpt-5.5 low (retier baseline)"
+ },
+ "modality_check_eval": {
+  "best_setting": "trailing_weak=3 trailing_strong=2",
+  "recall": "2/5",
+  "refuted_flagged": "2/12",
+  "other_flags": 23,
+  "decision": "D-075: research tool, not a gate"
  }
 }

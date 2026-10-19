@@ -10,6 +10,23 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Author Studio citations: every source an output cites, resolved like the reader (2026-10-19, S-6.7.3)
+
+PR [#293](https://github.com/khoks/VideoResearchPro/pull/293). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **`output_citations`** (migration `c5ee7a568ef8`): one row per citation in
+  output order, written by every outputter through
+  `output_citation_service.record_citations`. The book records each chapter's
+  links.
+- **Resolved, not just copied.** A port of the reading room's resolver ties
+  each link to a library document by YouTube id, URL, or a known title or
+  channel near it, using only the run's documents the user can see, and
+  rebuilds `watch?v=…&t=…` URLs for bare `&t=` anchors. On the stored
+  smoke-test report all 30 anchors resolve. An anchor nothing matches is kept
+  without a URL rather than given an invented one.
+- **`GET /api/v1/author/outputs/{id}/citations`** and `citation_count` on
+  every output; the Author list and the reader show the count.
+
 ### Citations link to the channel (2026-10-19)
 
 [S-8.7.4](docs/initiatives.md#s-874--citation-chips-link-to-the-channel-page), PR [#291](https://github.com/khoks/VideoResearchPro/pull/291).

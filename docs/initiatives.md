@@ -1549,7 +1549,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 
 **Shipped 2026-05-05** in PR #173. New `outputs` table (Alembic `b5c6d7e8f9a0`) with status state machine (`pending` → `generating` → `completed` | `failed`); `Outputter` Protocol + `register_outputter` / `get_outputter` / `list_outputters` registry; `run_generation` driver that handles status transitions + error capture; `OutputKind` enum (`book` / `site` / `deck` / `newsletter` / `reel`). REST surface under `/api/v1/author/*` — `GET /kinds`, `POST /outputs` (creates + generates synchronously for v1; 501 when no outputter for the kind), `GET /outputs` (kind/status filters), `GET /outputs/{id}`, `GET /outputs/{id}/content` (PlainTextResponse with media-type), `DELETE /outputs/{id}`. All gated on `require_feature("author_studio")` (Pro+).
 
-### E-6.7 🟡 Generation runtime (async, progress, downloads, citations)
+### E-6.7 🟢 Generation runtime (async, progress, downloads, citations)
 
 **Filed 2026-10-18.** Cross-cutting pieces every kind needs that the foundation deliberately left out ([D-044](decisions.md#d-044--foundation-first-then-concrete-implementations-deferred-for-i-3--i-6-2026-05-05)).
 **Scope.** Move generation into the Celery worker with WebSocket progress, add binary artifact storage and a download endpoint, and add the `output_citations` table the roadmap sketched so every kind cites the same way.
@@ -1571,11 +1571,11 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [x] T-6.7.2.3 Deleting an output removes its directory (and an emptied user directory); a cancelled or failed run discards its partial files; `scripts/sweep_output_artifacts.py` lists directories with no row or under the wrong owner, `--apply` deletes them — *shipped 2026-10-19*
 - [x] T-6.7.2.4 Tests: binary and text downloads with media types and names, extra format beside the text, missing format 404 and malformed format 422, cross-user 404, query token 401, tampered `content_path` never served, unsafe ids rejected, delete and cancel/failure leave no files, orphan sweep dry run then apply, Devanagari file names. Frontend: one download button per format, Read only for text outputs, vitest for the helpers — *shipped 2026-10-19*
 
-#### S-6.7.3 🔵 `output_citations`
-**PR:** TBD
-- [ ] T-6.7.3.1 `output_citations(id, output_id, document_id NULL, source_type, source_id, url, label, position, created_at)`; written by every outputter through one helper
-- [ ] T-6.7.3.2 `GET /api/v1/author/outputs/{id}/citations`; counts on the outputs list
-- [ ] T-6.7.3.3 Tests on the v1 book: every Markdown link becomes a row
+#### S-6.7.3 🟢 `output_citations`
+**PR:** [#293](https://github.com/khoks/VideoResearchPro/pull/293) — *shipped 2026-10-19.* The resolver is a port of the reading room's (`frontend/src/components/reader/citations.ts`, S-8.8.2), so a link resolves to the same source in the reader and in a book. Without it most rows would be dead: both stored real reports carry only bare `&t=` anchors (written before S-1.14.9). Schema adds `seconds` and `resolved_by` to the plan's columns, so endnotes can print the timestamp and say honestly when a citation found no source.
+- [x] T-6.7.3.1 `output_citations(id, output_id, position, label, url, seconds, document_id NULL, source_type, source_id, resolved_by, created_at)` (migration `c5ee7a568ef8`); written through `output_citation_service.record_citations` (replace-all, no commit of its own, so a failed or cancelled run leaves no rows); `extract_markdown_citations` resolves a link by YouTube id, then URL, then a known title or sole channel in the text around it, against the chapter run's documents **visible to the tenant**; an unmatched bare anchor gets no URL rather than an invented one; deleted with the output — *shipped 2026-10-19*
+- [x] T-6.7.3.2 `GET /api/v1/author/outputs/{id}/citations` (ordered, with the document's title and channel; 404 for another user's output); `OutputItem.citation_count` on create, get and the list (one grouped query); the Author row and the reader's stat tiles show it — *shipped 2026-10-19*
+- [x] T-6.7.3.3 Tests: the reader's resolver cases ported (YouTube id, URL ignoring `t` and `www`, title, title within the list item, longest title, hashtag stem, sole channel, shared channel not enough, unresolved, unmatched absolute, anchors/images/relative skipped, garbage href); the stored smoke-test report against its three real sources gives **30 rows for 30 anchors, all resolved**, with rebuilt `watch?v=…&t=…` URLs; the same run without visibility grants resolves nothing; a failed run writes no rows; REST counts, ordering and isolation — *shipped 2026-10-19*
 
 ---
 

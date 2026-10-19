@@ -174,6 +174,7 @@ export function OutputReaderPage() {
             { label: 'Sources', value: item.source_ids.length },
             { label: 'Sections', value: chapters },
             { label: 'Words', value: wordCount(content.data) },
+            { label: 'Citations', value: item.citation_count ?? 0 },
           ]}
         />
       }

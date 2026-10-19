@@ -28,11 +28,13 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.models.document import Document
 from app.models.job import Job
+from app.models.job_video import JobVideo
 from app.models.output import Output
 from app.models.qa_exchange import QAExchange
 from app.models.user import User
-from app.services import report_service
+from app.services import output_citation_service, report_service, visibility_service
 from app.services.output_service import OutputError, report_progress
 
 logger = logging.getLogger(__name__)
@@ -109,6 +111,22 @@ def _job_qa_markdown(db: Session, job_id: str, user_id: str) -> str:
     return "\n".join(out).rstrip()
 
 
+def _chapter_documents(db: Session, user: User, job_id: str) -> list[Document]:
+    """The run's documents the user can see: what a chapter's citations may
+    resolve to (S-6.7.3). Never a document outside the tenant's visibility."""
+    return (
+        db.query(Document)
+        .join(JobVideo, JobVideo.document_id == Document.document_id)
+        .join(Job, Job.id == JobVideo.job_id)
+        .filter(
+            JobVideo.job_id == job_id,
+            Job.tenant_id == user.id,
+            Document.document_id.in_(visibility_service.visible_document_ids(db, user.id)),
+        )
+        .all()
+    )
+
+
 def _job_chapter(db: Session, user: User, job_id: str, *, include_qa: bool) -> tuple[str, str]:
     """Return ``(chapter_title, chapter_body_markdown)`` for one job."""
     # Tenant is part of the lookup (T-5.10.1.4): another user's job id
@@ -147,10 +165,15 @@ class BookMarkdownOutputter:
 
         # Collect chapters first so the TOC can reference them.
         chapters: list[tuple[str, str, str]] = []
+        citations: list[output_citation_service.CitationSpec] = []
         total = len(source_ids)
         for i, jid in enumerate(source_ids, start=1):
             title, body = _job_chapter(db, user, jid, include_qa=include_qa)
             chapters.append((title, _slugify(title), body))
+            # S-6.7.3: chapters are written in order, so citations are too.
+            citations.extend(
+                output_citation_service.extract_markdown_citations(body, _chapter_documents(db, user, jid))
+            )
             # S-6.7.1: one progress step per chapter (10..90 %); also the
             # point where a user's cancel takes effect.
             report_progress(db, output, 10 + int(80 * i / total), f"Chapter {i} of {total}: {title}")
@@ -176,3 +199,4 @@ class BookMarkdownOutputter:
             manuscript.append("")
 
         output.content_text = "\n".join(manuscript).strip() + "\n"
+        output_citation_service.record_citations(db, output, citations)

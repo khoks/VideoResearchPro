@@ -145,6 +145,7 @@ export function summariseParameters(p: TemplateParameters): string {
   const parts: string[] = [];
   if (p.job_type === 'topic') parts.push(`${p.num_videos} videos`);
   if (p.channel_list?.length) parts.push(`${p.channel_list.length} channel${p.channel_list.length === 1 ? '' : 's'}`);
+  else if (p.job_type !== 'topic') parts.push('you add the channels');
   if (p.job_type === 'channel' && p.videos_per_channel) parts.push(`${p.videos_per_channel} per channel`);
   if (p.output_length && p.output_length !== 'auto') parts.push(`${p.output_length} report`);
   if (p.preferred_channels?.length) parts.push(`${p.preferred_channels.length} preferred channel${p.preferred_channels.length === 1 ? '' : 's'}`);

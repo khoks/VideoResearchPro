@@ -77,10 +77,21 @@ def test_name_collision_case_insensitive_and_reusable_after_delete(client):
 
 
 def test_invalid_parameters_are_rejected_like_a_submission(client):
-    # A channel recipe with no channels would fail at submission; refuse it now.
-    r = client.post("/api/v1/job-templates", json={"name": "Broken", "parameters": {"job_type": "channel"}})
+    # A recipe that would fail at submission is refused now.
+    bad = {**TOPIC_PARAMS, "min_duration_minutes": 60, "max_duration_minutes": 10}
+    r = client.post("/api/v1/job-templates", json={"name": "Broken", "parameters": bad})
     assert r.status_code == 422
-    assert "channel_list" in r.json()["detail"]
+    assert "min_duration_minutes" in r.json()["detail"]
+
+
+def test_channel_recipe_may_leave_channels_to_each_run(client):
+    """S-8.6.2: a channel template with no channels means "add them each
+    time", as a topic template leaves the topic open."""
+    r = client.post("/api/v1/job-templates", json={"name": "Any channels", "parameters": {"job_type": "channel", "videos_per_channel": 5}})
+    assert r.status_code == 201, r.text
+    t = r.json()
+    job = client.post(f"/api/v1/jobs?template_id={t['id']}", json={"job_type": "channel", "channel_list": ["@veritasium"], "videos_per_channel": 5})
+    assert job.status_code == 201 and job.json()["template_id"] == t["id"]
     # Unknown fields are refused rather than silently dropped.
     r = client.post("/api/v1/job-templates", json={"name": "X", "parameters": {**TOPIC_PARAMS, "topic": "frozen?"}})
     assert r.status_code == 422
@@ -194,3 +205,53 @@ def test_templates_never_cross_tenants(client, db, other):
 
 def test_template_endpoints_require_auth(unauthenticated_client):
     assert unauthenticated_client.get("/api/v1/job-templates").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# S-8.6.2 — the starters, seeded the way the migration seeds them
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def starters(db):
+    from tests.test_migrations.test_starter_templates_migration import load_migration
+
+    module = load_migration()
+    module._upsert(db.connection(), module.STARTERS[0])
+    for s in module.STARTERS[1:]:
+        module._upsert(db.connection(), s)
+    db.commit()
+    return module.STARTERS
+
+
+def test_starters_appear_for_every_reader_and_are_read_only(client, db, other, starters):
+    from app.models.user import User
+
+    listed = client.get("/api/v1/job-templates").json()
+    assert {t["builtin_key"] for t in listed} == {s["builtin_key"] for s in starters}
+    assert all(t["builtin"] and t["problems"] == [] for t in listed)
+
+    # The other reader sees the same five.
+    mine = {t["id"] for t in listed}
+    theirs = {
+        t.id for t in job_template_service.list_templates(db, other.id)
+    }
+    assert mine == theirs
+
+    scan = next(t for t in listed if t["builtin_key"] == "topic-scan")
+    assert client.put(f"/api/v1/job-templates/{scan['id']}", json={"name": "Mine"}).status_code == 403
+    assert client.delete(f"/api/v1/job-templates/{scan['id']}").status_code == 403
+
+    run = client.post(
+        f"/api/v1/jobs?template_id={scan['id']}",
+        json={**scan["parameters"], "topic": "battery recycling"},
+    )
+    assert run.status_code == 201, run.text
+    assert run.json()["template_version"] == 1
+    assert "battery recycling" in run.json()["search_instructions"]
+
+    follow = next(t for t in listed if t["builtin_key"] == "subscription-follow")
+    run = client.post(
+        f"/api/v1/jobs?template_id={follow['id']}",
+        json={"job_type": "subscription", "channel_list": ["@veritasium"]},
+    )
+    assert run.status_code == 201 and run.json()["template_id"] == follow["id"]

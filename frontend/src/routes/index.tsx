@@ -8,6 +8,7 @@ import { JobsListPage } from '../pages/JobsListPage';
 import { JobDetailPage } from '../pages/JobDetailPage';
 import { LibraryPage } from '../pages/LibraryPage';
 import { LibraryQAPage } from '../pages/LibraryQAPage';
+import { ChannelPage } from '../pages/ChannelPage';
 import { QAHistoryChatPage } from '../pages/QAHistoryChatPage';
 import { ExportsPage } from '../pages/ExportsPage';
 import { LoginPage } from '../pages/LoginPage';
@@ -67,6 +68,7 @@ export const router = createBrowserRouter([
           { path: 'jobs/:jobId', element: <JobDetailPage /> },
           { path: 'library', element: <LibraryPage /> },
           { path: 'library/qa', element: <LibraryQAPage /> },
+          { path: 'library/channels/:channelId', element: <ChannelPage /> },
           { path: 'qa-history', element: <QAHistoryChatPage /> },
           { path: 'exports', element: <ExportsPage /> },
           { path: 'author', element: <AuthorPage /> },

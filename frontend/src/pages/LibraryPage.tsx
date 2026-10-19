@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useJob } from '../hooks/useJobs';
 import { useLibraryVideos } from '../hooks/useLibrary';
 import {
@@ -60,7 +61,13 @@ const SORT_OPTIONS: { value: LibrarySort; label: string }[] = [
 
 export function LibraryPage() {
   const c = useColors();
-  const [tab, setTab] = useState<TabKey>('videos');
+  const navigate = useNavigate();
+  // `?tab=channels` lets the channel page's breadcrumb land on the right tab.
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<TabKey>(() => {
+    const requested = searchParams.get('tab');
+    return requested === 'channels' || requested === 'ingest' ? requested : 'videos';
+  });
 
   const [search, setSearch] = useState('');
   const [language, setLanguage] = useState('');
@@ -88,24 +95,27 @@ export function LibraryPage() {
 
   const resetPage = () => setPage(0);
 
-  const handleChannelDrilldown = (channelId: string) => {
-    setChannelFilter(channelId);
-    setTab('videos');
-    resetPage();
+  // Opening a channel goes to its page (S-8.7.1); the in-place channel
+  // filter on the Sources tab remains available from the filter rail.
+  const handleOpenChannel = (channelId: string) => {
+    navigate(`/library/channels/${channelId}`);
   };
 
   const handleToggleSubscribe = (channel: Channel) => {
     if (channel.subscribed) {
-      unsubscribeMut.mutate(channel.id);
+      unsubscribeMut.mutate(channel.channel_id);
     } else {
-      subscribeMut.mutate(channel.id);
+      subscribeMut.mutate(channel.channel_id);
     }
   };
 
   const handleSync = (channelId: string) => {
     syncMut.mutate(channelId, {
       onSuccess: (resp) => {
-        setSyncingChannels((prev) => ({ ...prev, [channelId]: resp.job_id }));
+        // `job_id` is null when the broker was unreachable; nothing to watch.
+        const jobId = resp.job_id;
+        if (!jobId) return;
+        setSyncingChannels((prev) => ({ ...prev, [channelId]: jobId }));
       },
     });
   };
@@ -225,17 +235,13 @@ export function LibraryPage() {
           videos={videosQuery.data ?? []}
           isLoading={videosQuery.isLoading}
           isError={videosQuery.isError}
-          onPickChannel={(channelId) => {
-            setChannelFilter(channelId);
-            resetPage();
-          }}
         />
       ) : (
         <ChannelsTab
           channels={channelsQuery.data ?? []}
           isLoading={channelsQuery.isLoading}
           isError={channelsQuery.isError}
-          onOpenVideos={handleChannelDrilldown}
+          onOpen={handleOpenChannel}
           onToggleSubscribe={handleToggleSubscribe}
           onSync={handleSync}
           subscribeBusyId={
@@ -366,7 +372,6 @@ interface VideosTabProps {
   videos: LibraryVideoResponse[];
   isLoading: boolean;
   isError: boolean;
-  onPickChannel: (channelId: string) => void;
 }
 
 function VideosTab({
@@ -387,7 +392,6 @@ function VideosTab({
   videos,
   isLoading,
   isError,
-  onPickChannel,
 }: VideosTabProps) {
   const c = useColors();
   const hasNextPage = videos.length === PAGE_SIZE;
@@ -445,7 +449,7 @@ function VideosTab({
             >
               <option value="">All channels</option>
               {channels.map((ch) => (
-                <option key={ch.id} value={ch.channel_id}>
+                <option key={ch.channel_id} value={ch.channel_id}>
                   {ch.name}
                 </option>
               ))}
@@ -514,11 +518,7 @@ function VideosTab({
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
           {videos.map((video) => (
-            <VideoRow
-              key={video.id}
-              video={video}
-              onChannelClick={(channelId) => onPickChannel(channelId)}
-            />
+            <VideoRow key={video.id} video={video} />
           ))}
         </div>
       )}
@@ -573,7 +573,7 @@ interface ChannelsTabProps {
   channels: Channel[];
   isLoading: boolean;
   isError: boolean;
-  onOpenVideos: (channelId: string) => void;
+  onOpen: (channelId: string) => void;
   onToggleSubscribe: (channel: Channel) => void;
   onSync: (channelId: string) => void;
   subscribeBusyId: string | undefined;
@@ -585,7 +585,7 @@ function ChannelsTab({
   channels,
   isLoading,
   isError,
-  onOpenVideos,
+  onOpen,
   onToggleSubscribe,
   onSync,
   subscribeBusyId,
@@ -621,13 +621,13 @@ function ChannelsTab({
     <div style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
       {channels.map((channel) => (
         <ChannelRowWithSyncWatcher
-          key={channel.id}
+          key={channel.channel_id}
           channel={channel}
-          onOpenVideos={onOpenVideos}
+          onOpen={onOpen}
           onToggleSubscribe={onToggleSubscribe}
           onSync={onSync}
-          subscribeBusy={subscribeBusyId === channel.id}
-          syncJobId={syncingChannels[channel.id]}
+          subscribeBusy={subscribeBusyId === channel.channel_id}
+          syncJobId={syncingChannels[channel.channel_id]}
           onSyncFinished={onSyncFinished}
         />
       ))}
@@ -637,7 +637,7 @@ function ChannelsTab({
 
 function ChannelRowWithSyncWatcher({
   channel,
-  onOpenVideos,
+  onOpen,
   onToggleSubscribe,
   onSync,
   subscribeBusy,
@@ -645,7 +645,7 @@ function ChannelRowWithSyncWatcher({
   onSyncFinished,
 }: {
   channel: Channel;
-  onOpenVideos: (channelId: string) => void;
+  onOpen: (channelId: string) => void;
   onToggleSubscribe: (channel: Channel) => void;
   onSync: (channelId: string) => void;
   subscribeBusy: boolean;
@@ -657,14 +657,14 @@ function ChannelRowWithSyncWatcher({
 
   useEffect(() => {
     if (jobStatus === 'completed' || jobStatus === 'failed' || jobStatus === 'cancelled') {
-      onSyncFinished(channel.id);
+      onSyncFinished(channel.channel_id);
     }
-  }, [jobStatus, channel.id, onSyncFinished]);
+  }, [jobStatus, channel.channel_id, onSyncFinished]);
 
   return (
     <ChannelRow
       channel={channel}
-      onOpenVideos={onOpenVideos}
+      onOpen={onOpen}
       onToggleSubscribe={onToggleSubscribe}
       onSync={onSync}
       subscribeBusy={subscribeBusy}

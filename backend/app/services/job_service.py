@@ -142,6 +142,10 @@ def job_to_response_dict(job: Job) -> dict:
         "preferred_channels": json.loads(job.preferred_channels) if job.preferred_channels else None,
         "channel_list": json.loads(job.channel_list) if job.channel_list else None,
         "videos_per_channel": job.videos_per_channel,
+        # Both were stored but never serialised, so the API reported every job
+        # as visual_analysis=False / output_length=None (found 2026-10-19).
+        "output_length": job.output_length,
+        "visual_analysis": bool(job.visual_analysis),
         "search_queries_used": json.loads(job.search_queries_used) if job.search_queries_used else None,
         "channel_list_resolved": (
             json.loads(job.channel_list_resolved) if job.channel_list_resolved else None

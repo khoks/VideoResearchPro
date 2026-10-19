@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,6 +17,26 @@ from app.services import auth_service, rate_limit_service
 # rate-limit tests opt back in by toggling settings.RATE_LIMIT_ENABLED via
 # monkeypatch and resetting the in-memory bucket between tests.
 settings.RATE_LIMIT_ENABLED = False
+
+# Tests must never touch the developer's database, the network or a wallet.
+# The app lifespan runs schema init against ``settings.DATABASE_URL``, a Chroma
+# backfill, and the real LLM smoke probes. Point schema init at a scratch file
+# (read at lifespan time, so mutating settings here is enough; the engine
+# ``app.database`` built at import is unused by tests because ``get_db`` is
+# overridden below) and stub the other two for the whole session. Found
+# 2026-10-19: the dev DB had been migrated by an unmerged branch and every
+# router test errored at startup, and each ``TestClient`` had been spending on
+# six real provider probes.
+settings.DATABASE_URL = "sqlite:///" + (Path(__file__).resolve().parent / ".pytest_schema.db").as_posix()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_app_lifespan():
+    with (
+        patch("app.main.run_startup_probes", new=AsyncMock(return_value=None)),
+        patch("app.main.chroma_service.backfill_qa_library", return_value=None),
+    ):
+        yield
 
 SQLALCHEMY_DATABASE_URL = "sqlite://"
 

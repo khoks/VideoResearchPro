@@ -26,6 +26,11 @@ from app.services import code_mixing_service as cm  # noqa: E402
 LLM_CACHE = ev.FIXTURE.parent / "llm_predictions.json"
 
 
+def _majority(text: str) -> str:
+    p = cm.profile_text(text)
+    return "hi" if p["hi_tokens"] > p["en_tokens"] else "en"
+
+
 def lexicon_predictions(units: list[dict]) -> dict[str, list[str]]:
     return {u["id"]: [t for _, t in cm.tag_tokens(u["text"])] for u in units}
 
@@ -95,6 +100,14 @@ def main() -> None:
     lex = lexicon_predictions(units)
     report["lexicon_ms_per_unit"] = round((time.perf_counter() - t0) * 1000 / len(units), 3)
     report["lexicon"] = ev.score(units, lex)
+    # T-1.16.2.2: matrix language by system-morpheme vote, against the
+    # proportion-only baseline (whichever language has more words).
+    report["lexicon_matrix"] = ev.matrix_accuracy(
+        units, {u["id"]: cm.matrix_language(cm.tag_tokens(u["text"])) for u in units}
+    )
+    report["majority_matrix"] = ev.matrix_accuracy(
+        units, {u["id"]: _majority(u["text"]) for u in units}
+    )
 
     if args.llm:
         all_units = ev.load_units()
@@ -127,8 +140,10 @@ def main() -> None:
                   f"(fn={uh['fn']}, fp={uh['fp']})  share MAE={s['hindi_share_mae']:.3f}")
         if report[name]["missing_units"]:
             print("  missing:", report[name]["missing_units"])
+    print("matrix, system-morpheme vote:", report["lexicon_matrix"])
+    print("matrix, word majority (baseline):", report["majority_matrix"])
     if "llm_matrix" in report:
-        print("  llm matrix:", report["llm_matrix"])
+        print("matrix, LLM:", report["llm_matrix"])
     print("lexicon ms/unit:", report["lexicon_ms_per_unit"])
 
 

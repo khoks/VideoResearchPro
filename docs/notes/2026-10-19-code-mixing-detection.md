@@ -195,6 +195,62 @@ alternatives:
   0.79–0.98, LLM 0.83–0.99). The token-level results are the firmer ones.
 - Single labeller, not a native speaker (section 2).
 
+## 7. Matrix and embedded language (T-1.16.2.2)
+
+N-002's distinguishing claim is that proportion is not enough: the language
+supplying the GRAMMAR (matrix) must be told apart from the one supplying
+VOCABULARY (embedded). The labelled set tests that claim directly. Among the
+90 mixed units, **10 (11%) have mostly English words in Hindi grammar**
+("Logistics and shipping me bnao bhai kisi channel ne nhi kra", "एडिशन और
+उसको हमने इनपुट दिया टू द मशीन"). A rule that reads the language off the
+word count calls every one of them English. No unit went the other way.
+
+**Method.** The Matrix Language Frame model says the matrix language supplies
+the system morphemes: auxiliaries, inflected light verbs, postpositions,
+case-marked pronouns, negation and conjunctions. `matrix_language` therefore
+takes a vote of closed-class words only, each counted for the language the
+tagger gave it, so an ambiguous "to" votes Hindi inside a Hindi clause.
+Verbal morphemes count double, because they carry tense and agreement. A tie,
+or a bare noun phrase with no system morphemes, falls back to word majority.
+Content words never vote.
+
+The closed lists include English function words as Hindi ASR spells them
+(इज, टू, द, एंड, दैट: 29 forms), and the tagger now tags those as English.
+This is the one place the lexicon detector can see English inside
+Devanagari, and it matters most where it works: "इट इज नॉट बीइंग एक्सप्लीसिटली
+प्रोग्राम" now reads as English-matrix. Three candidates were left out
+because each is also a common Hindi word: इन ("these"), आई ("came"), दे
+("give").
+
+**Results (mixed units only; 28 DEV, 62 TEST).**
+
+| | DEV | TEST |
+|---|---|---|
+| Word majority (proportion only) | 0.929 | 0.855 |
+| System-morpheme vote | 0.964 | **0.952** |
+| LLM (`code_mixing_detect`, reference) | 1.000 | 0.968 |
+
+On TEST every baseline miss (9 of 9) is a Hindi-grammar sentence with mostly
+English words, read as English. The vote recovers 7 of them. It gets three
+units wrong. "Product ka quality ho jhaant bhar... Noise is worse than Boat"
+is two clauses with opposite frames. "Great job hitesh! ... Accha music add
+kiya btw" has its English frame in verbless fragments, so it has no English
+system morphemes. "Logistics and shipping me bnao..." is a tie broken by
+word count. The verbal weight made no difference between 1 and 3 on DEV.
+
+**Side effect on detection.** Tagging the Devanagari function words as English
+raises Devanagari token precision from 0.767 to 0.792 on TEST, with recall
+still 1.000. The Latin scores do not change. English content words written in
+Devanagari remain the measured blind spot.
+
+**What "per span" means here.** `analyse_span(text)` returns `{en_tokens,
+hi_tokens, hi_share, matrix, embedded}` for whatever span it is given: a
+caption window, a comment, a sentence or a chunk. A span that switches frame
+mid-way, as the user's example does around its embedded Hindi clauses, gets
+the frame that dominates its system morphemes (`en` for the user's example).
+Finer clause-level frames would need a clause segmenter, which the
+unpunctuated ASR text does not support well. That is left open.
+
 ## Reproduce
 
 ```bash

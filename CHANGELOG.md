@@ -10,6 +10,23 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Code-mixed speech: matrix vs embedded language (2026-10-19, T-1.16.2.2)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Second task of N-002;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- **`code_mixing_service.analyse_span`** reports which language supplies a
+  span's GRAMMAR (matrix) and which only lends words (embedded), alongside
+  the Hindi share. "so the model ko train karna padta hai with the data" is
+  two-thirds English words and Hindi-matrix.
+- The matrix comes from a vote of system morphemes (Myers-Scotton's Matrix
+  Language Frame): auxiliaries, light verbs, postpositions, negation.
+  Measured on 62 held-out mixed units it was right 0.952 of the time, against
+  0.855 for "whichever language has more words" (LLM reference 0.968).
+- English function words as Hindi ASR spells them (इज, टू, द, एंड) now tag
+  English, so "इट इज नॉट बीइंग..." reads as English-matrix. Devanagari tagging
+  precision 0.767 → 0.792, recall unchanged.
+
 ### Romanised code-mixing detection, measured (2026-10-19, T-1.16.2.1)
 
 PR [#258](https://github.com/khoks/VideoResearchPro/pull/258). Decision

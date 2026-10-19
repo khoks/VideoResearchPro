@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { echoApi, type ListContextParams, type RecordContextPayload } from '../services/echoApi';
+import {
+  echoApi,
+  type CreateSharePayload,
+  type ListContextParams,
+  type ListSharesParams,
+  type RecordContextPayload,
+  type UpdateSharePayload,
+  type UploadShareFields,
+} from '../services/echoApi';
 
 const STATUS_KEY = ['echo', 'status'] as const;
 const CONTEXT_KEY = ['echo', 'context'] as const;
@@ -65,5 +73,80 @@ export function useRevokeSource() {
   return useMutation({
     mutationFn: (source: string) => echoApi.revokeSource(source),
     onSuccess: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Shares inbox and privacy
+// ---------------------------------------------------------------------------
+
+const SHARES_KEY = ['echo', 'shares'] as const;
+const FOOTPRINT_KEY = ['echo', 'footprint'] as const;
+
+export function useShares(params: ListSharesParams, enabled = true) {
+  return useQuery({
+    queryKey: [...SHARES_KEY, params.state ?? null, params.q ?? '', params.limit ?? null, params.offset ?? 0],
+    queryFn: () => echoApi.listShares(params),
+    staleTime: 10_000,
+    enabled,
+  });
+}
+
+export function useEchoFootprint(enabled = true) {
+  return useQuery({
+    queryKey: FOOTPRINT_KEY,
+    queryFn: () => echoApi.footprint(),
+    staleTime: 10_000,
+    enabled,
+  });
+}
+
+function useInvalidateShares() {
+  const qc = useQueryClient();
+  return () => {
+    qc.invalidateQueries({ queryKey: SHARES_KEY });
+    qc.invalidateQueries({ queryKey: FOOTPRINT_KEY });
+    qc.invalidateQueries({ queryKey: STATUS_KEY });
+  };
+}
+
+export function useCreateShare() {
+  const invalidate = useInvalidateShares();
+  return useMutation({
+    mutationFn: (payload: CreateSharePayload) => echoApi.createShare(payload),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUploadShare() {
+  const invalidate = useInvalidateShares();
+  return useMutation({
+    mutationFn: ({ file, fields }: { file: File; fields?: UploadShareFields }) => echoApi.uploadShare(file, fields),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateShare() {
+  const invalidate = useInvalidateShares();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: UpdateSharePayload }) => echoApi.updateShare(id, payload),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteShare() {
+  const invalidate = useInvalidateShares();
+  return useMutation({
+    mutationFn: (id: string) => echoApi.deleteShare(id),
+    onSuccess: invalidate,
+  });
+}
+
+/** Deletes every Echo row, file and vector. Invalidates everything Echo. */
+export function useDeleteBrain() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => echoApi.deleteBrain(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['echo'] }),
   });
 }

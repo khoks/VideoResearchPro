@@ -971,19 +971,22 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 
 **Shipped 2026-05-05** in PR #172. Two new feature flags: `echo_personal_brain` (gates the entire `/echo/*` surface) + `echo_speak_as_me` (gates the future "speak as me" agent — E-3.4). Both are Studio-tier-only at the `TIER_CAPABILITIES` level. Frontend shows the Echo surface only when `has_feature("echo_personal_brain")` returns true.
 
-### E-3.7 🔵 Constant-stream intake (Domain 5)
+### E-3.7 🟡 Constant-stream intake (Domain 5)
+
+**Progress 2026-10-19.** S-3.7.1 shipped with the privacy pair S-3.10.1 / S-3.10.2 ([#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__)). Processing (S-3.7.2) is next.
 
 **Filed 2026-10-18.** The roadmap's first-to-ship Echo component: the user forwards liked videos, reels, memes, WhatsApp threads, Keep notes, quotes, bookmarks and voice memos all day with no approval step, because the act of sharing is the curation. Everything lands in one `shares_inbox`, is processed into text, embedded, and cross-feeds facts (E-3.1), signals (E-3.3), events (E-3.2) and, when the share is an ingestible source, the library through the normal ingest path.
 **Plan:** [`docs/plans/l3-echo-personal-brain.md`](plans/l3-echo-personal-brain.md) § Domain 5
 **Acceptance.** A user pastes a YouTube URL, drops a screenshot of a meme, and uploads a WhatsApp export; within a minute each appears in the inbox with extracted text, the video is offered to the library, the meme's text is searchable, the WhatsApp thread shows a "redact the other party" option; readiness moves; deleting a share removes its derived signals.
 
-#### S-3.7.1 🔵 `shares_inbox`, quick-share and the inbox page
-**PR:** TBD. The first Echo PR.
-- [ ] T-3.7.1.1 `shares_inbox(id, tenant_id, user_id, received_at, surface, content_type, raw_payload_json, file_path, extracted_text, user_annotation, processing_state, derived_fact_ids_json, derived_signal_ids_json, linked_document_id, embedding_id)`; same revision adds `tenant_id` to `personal_context` with backfill `= user_id`
-- [ ] T-3.7.1.2 `POST /echo/shares` (URL, text or file; `surface=manual_quick_share`), `GET /echo/shares`, `PATCH /echo/shares/{id}` (annotation, content_type), `DELETE /echo/shares/{id}` (cascades to derived rows); gated on `echo_personal_brain`
-- [ ] T-3.7.1.3 "Add to Echo" quick-share in the sidebar chrome and an `/echo/inbox` page with state, text preview and actions
-- [ ] T-3.7.1.4 Files stored under `ECHO_SHARES_DIR/<tenant>/` with the frame-service traversal guard; size cap
-- [ ] T-3.7.1.5 Isolation and cascade tests
+#### S-3.7.1 🟢 `shares_inbox`, quick-share and the inbox page
+**PR:** [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__) — merged 2026-10-19, together with S-3.10.1 and S-3.10.2 so the first new Echo table arrived with its export and erasure.
+**Calls made in the PR.** (1) **Third-party content is context-only by default**, the plan's recommendation for its open question 2: `author_is_tenant` is false unless the user ticks "These are my own words"; a context-only share may be retrieved as context once S-3.7.2 embeds it, but is never quoted and never enters a dataset or derived export. Marking one's own words is authorship, not an override; the per-thread override the open question asks about was not built. (2) Every share starts `pending`, text included: its words are stored as `extracted_text` at once, but embedding and signals are S-3.7.2's. (3) The stored file name is the share id plus a sanitised extension, never the client's name; downloads are attachments with `nosniff`; a row whose path points outside its tenant directory is never followed. (4) `linked_document_id` instead of the sketch's `linked_source_id` (documents are the library's unit), and `updated_at` added.
+- [x] T-3.7.1.1 `shares_inbox(id, tenant_id, user_id, received_at, surface, content_type, raw_payload_json, file_path, extracted_text, user_annotation, processing_state, derived_fact_ids_json, derived_signal_ids_json, linked_document_id, embedding_id)`; same revision adds `tenant_id` to `personal_context` with backfill `= user_id`
+- [x] T-3.7.1.2 `POST /echo/shares` (URL, text or file; `surface=manual_quick_share`), `GET /echo/shares`, `PATCH /echo/shares/{id}` (annotation, content_type), `DELETE /echo/shares/{id}` (cascades to derived rows); gated on `echo_personal_brain`
+- [x] T-3.7.1.3 "Add to Echo" quick-share in the sidebar chrome and an `/echo/inbox` page with state, text preview and actions
+- [x] T-3.7.1.4 Files stored under `ECHO_SHARES_DIR/<tenant>/` with the frame-service traversal guard; size cap
+- [x] T-3.7.1.5 Isolation and cascade tests (`tests/test_routers/test_echo_shares.py`: gating, every content type, traversal and size cap, a tampered path, two tenants on every verb, the per-share cascade to file, vector and derived facts)
 
 #### S-3.7.2 🔵 Processing pipeline
 **PR:** TBD
@@ -992,6 +995,8 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 - [ ] T-3.7.2.3 Share → activity event (`connector=internal`, `event_type=shared_to_pratidhvani`) and → signal-extraction queue (S-3.3.2)
 - [ ] T-3.7.2.4 Fail-soft: a share whose processing fails stays browsable with the failure shown
 - [ ] T-3.7.2.5 Tests per content type with external calls patched
+- [ ] T-3.7.2.6 Embed each share under `echo_vectors.share_vector_id(id)` with `tenant_id` metadata in `CHROMA_SHARES_COLLECTION_NAME`, and set `embedding_id`. The per-share delete and the full delete (S-3.10.2) find vectors only by that id and that metadata
+- [ ] T-3.7.2.7 A context-only share (`author_is_tenant` false) feeds context retrieval but never voice-signal extraction as the user's own words; the user's own words (`author_is_tenant` true) do
 
 #### S-3.7.3 🔵 Drag-drop and browser extension
 **PR:** TBD
@@ -1042,17 +1047,19 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 #### S-3.9.3 ⚪ Routing
 - [ ] T-3.9.3.1 Per-user override of the `echo_draft` use case to the tuned model through the E-1.13 override mechanism; delete weights on revoke
 
-### E-3.10 🔵 Privacy model: export, delete, zero-knowledge
+### E-3.10 🟡 Privacy model: export, delete, zero-knowledge
+
+**Progress 2026-10-19.** Export and delete shipped with the first new Echo table ([#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__)). **Rule for every later Echo story:** a new Echo table goes into `echo_privacy_service.ECHO_TABLES`, a new Echo Chroma collection into `echo_vectors.echo_collection_names()`, and a new Echo file store under the tenant directory, or the export misses it and the delete leaves it behind. The connector-grant table (E-3.2) is the first credential store this applies to.
 
 **Filed 2026-10-18.** The hard constraint from `personal-brain.md`: self-host data is local; every connector is opt-in, scoped and revocable; the whole brain is exportable and deletable; SaaS offers a zero-knowledge mode.
 **Acceptance.** A user downloads one archive containing facts, events, signals, shares and drafts; a full delete leaves no row, file, token or Chroma vector attributed to them; every connector's consent text is shown before activation and stored with the grant.
 
-#### S-3.10.1 🔵 Full export
-**PR:** TBD
-- [ ] T-3.10.1.1 `GET /echo/export` streaming a zip of JSONL per table plus files; audit event
-#### S-3.10.2 🔵 Full delete
-**PR:** TBD
-- [ ] T-3.10.2.1 `DELETE /echo/brain` cascading across every Echo table, file directory, credential and Chroma collection; verified by a test that counts zero rows afterwards
+#### S-3.10.1 🟢 Full export
+**PR:** [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__) — merged 2026-10-19.
+- [x] T-3.10.1.1 `GET /echo/export` streaming a zip of JSONL per table plus files; audit event. Built in a temporary file (constant memory) and removed after sending. `manifest.json` carries row counts, every file with size and SHA-256, and any file a row points at that was missing. `echo_privacy_service.read_archive` is the exact inverse, and `test_echo_privacy.py` holds every column of every row and every file's bytes to it. The archive includes context-only share content: it is the user's own copy of what they handed over (Article 20). The audit event carries counts only
+#### S-3.10.2 🟢 Full delete
+**PR:** [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__) — merged 2026-10-19.
+- [x] T-3.10.2.1 `DELETE /echo/brain?confirm=delete-everything` cascading across every Echo table, file directory, credential and Chroma collection; verified by a test that counts zero rows afterwards. The test looks in each store directly (rows, the tenant directory, both Echo collections) for both tenants: the deleting tenant's footprint is zero and the other tenant's is unchanged. Order is vectors, files, then rows in one commit, so a failing store stops the delete before the rows that would let a retry find what is left (tested). The service re-counts every store afterwards and fails rather than report success with data left. No Echo credential exists yet; the library, notes, account and BYOK keys are outside Echo and untouched. `GET /echo/brain/footprint` shows the same counts
 #### S-3.10.3 ⚪ Zero-knowledge mode (SaaS)
 - [ ] T-3.10.3.1 Design only: client-side encryption of share payloads and signals with a user-held key; the plan records that server-side embedding and extraction cannot run on ciphertext, so this mode disables them. Decision deferred to SaaS launch.
 

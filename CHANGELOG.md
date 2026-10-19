@@ -10,6 +10,16 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Library graph endpoint (2026-10-19)
+
+[S-8.9.1](docs/initiatives.md#s-891--graph-endpoint), PR [#297](https://github.com/khoks/VideoResearchPro/pull/297).
+
+- **`GET /api/v1/library/graph`**: your visible documents, their channels and
+  topics, and your answers that cite them, as nodes and edges, with stable
+  ids, a cap that keeps the most connected, a local view around any node,
+  shelf / job / channel filters and a one-paragraph summary. Nothing of
+  another reader's appears; an empty library is an empty graph.
+
 ### Citations link to the channel (2026-10-19)
 
 [S-8.7.4](docs/initiatives.md#s-874--citation-chips-link-to-the-channel-page), PR [#291](https://github.com/khoks/VideoResearchPro/pull/291).

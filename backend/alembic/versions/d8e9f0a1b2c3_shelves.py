@@ -1,7 +1,7 @@
 """shelves + shelf_jobs — named per-tenant collections of jobs (S-8.1.1 / E-8.1)
 
 Revision ID: d8e9f0a1b2c3
-Revises: c7d8e9f0a1b2
+Revises: c2d3e4f5a6b7
 Create Date: 2026-10-19
 
 Two additive tables, no data migration. `shelves` is unique on
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "d8e9f0a1b2c3"
-down_revision = "c7d8e9f0a1b2"
+down_revision = "c2d3e4f5a6b7"
 branch_labels = None
 depends_on = None
 

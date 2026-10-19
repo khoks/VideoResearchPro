@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import type { Channel } from '../../services/channelsApi';
 import { formatDate } from '../../utils/formatters';
 import { Button, Card, Spinner } from '../primitives';
+import { NotesPanel } from '../notes';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, space } from '../../theme';
 
@@ -101,6 +102,7 @@ export function ChannelRow({
               {channel.last_synced_at ? formatDate(channel.last_synced_at) : 'never'}
             </span>
           </div>
+          <NotesPanel targetType="channel" targetId={channel.channel_id} />
         </div>
 
         <div

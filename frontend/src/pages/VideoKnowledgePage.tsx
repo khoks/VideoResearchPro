@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { useKnowledge, useExtractKnowledge } from '../hooks/useKnowledge';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { Badge, Button, Spinner, type BadgeTone } from '../components/primitives';
+import { NotesPanel } from '../components/notes';
 import { useColors, useShadows } from '../hooks/useTheme';
 import {
   fonts,
@@ -215,6 +216,16 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
           )}
 
           {displayed && <KnowledgeBody artifact={displayed} />}
+          {displayed && (
+            <div style={{ marginTop: space['5'] }}>
+              <NotesPanel
+                targetType="knowledge_artifact"
+                targetId={videoId}
+                variant="section"
+                title="Your notes on this report"
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

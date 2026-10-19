@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { NotesPanel } from '../components/notes';
 import {
   useAskQAHistoryChat,
   useQAHistoryChatHistory,
@@ -406,6 +407,7 @@ function QAHistoryExchangeCard({ qa }: { qa: QAHistoryExchange }) {
           </div>
         </div>
       )}
+      <NotesPanel targetType="qa_history_exchange" targetId={qa.id} />
     </div>
   );
 }

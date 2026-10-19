@@ -2578,7 +2578,83 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.5), E-1.16, N-002.
 
-## D-085 — Report intermediates: persisted per run, on by default, frozen at the stage that produced them (2026-10-19)
+## D-085 — Reading room: reports stay HTML, sanitised and parsed in the browser; one shared citation card fed by the run's documents (2026-10-19)
+
+**Status:** accepted. Both open questions in the [M8 plan](plans/m8-reading-room.md) were taken at its recommended defaults: retire `?token=` later (T-8.8.1.5 stays open), and keep the iframe modal as a quick peek.
+
+**Context.** Reports are LLM-written HTML documents, one file per job, read until now in an `<iframe>` whose `src` carried the JWT as `?token=`. The reader (E-8.8) had to render them inside the app's own DOM with the app's typography, an outline and citation cards. Four of the six stored reports predate S-1.14.9, so their timestamp anchors are a bare `href="&t=123"` with no video URL. A report can carry 277 citations.
+
+**Decision.**
+1. **Reports stay HTML; the browser sanitises, then parses.** `GET /jobs/{id}/report/body` (new `routers/reports.py`, so the serialised `routers/qa.py` stays untouched) returns `{title, html, statistics, generated_at}` under header-bearer auth only. `report_service.extract_report_body` splits the template's parts back out. The client runs **DOMPurify** first (dual MPL-2.0 / Apache-2.0; **Apache-2.0 elected**), forbidding `style`, `script`, embeds, forms, SVG and MathML and dropping `style=` attributes. It then runs `html-react-parser`, whose one `replace` hook assigns heading ids, collects the outline, turns `&t=` anchors into citation chips, wraps tables in a scroll region and marks the drop cap. The parser is never fed unsanitised input.
+2. **One citation card for all chips**, using the Popover API (top layer) and positioned from the chip's `getBoundingClientRect`, with a fixed-position fallback. The context value changes only with the citation index, so hovering never re-renders the chips, and `aria-describedby` is set on the active chip imperatively.
+3. **Sources come from the run's own document list.** A citation resolves by the YouTube id in its href, then the href against document URLs. For bare anchors it tries the longest known title (or its hashtag-free stem) in the enclosing paragraph or list item, then a channel that has exactly one document in the run. An absolute href never resolves to a different document by title. Identical targets share one footnote number, so the endnote list dedupes (277 chips → 181 notes).
+4. **Print** is a stylesheet plus an endnote list that opens itself on `beforeprint`. Chips print as the writer's text plus `[n]`.
+
+**Alternatives considered.**
+- *Convert reports to Markdown and render with react-markdown.* Rejected in the plan as lossy, and it would still need raw-HTML sanitising.
+- *Keep the iframe and style it.* It cannot share typography, the outline or citation components, and it keeps the token in the URL.
+- *`sanitize-html` or a rehype sanitise chain.* Heavier (`sanitize-html` is about 50 kB) or less audited than DOMPurify.
+- *Server-side sanitising.* It would be a second policy to keep in step; the client must sanitise anyway, because the parser is not a sanitiser.
+- *One card per chip.* At 277 chips that means 277 popovers and a re-render of every chip on each hover.
+- *Replace the chip text with a superscript number on screen.* The timestamp is part of the writer's sentence ("— Simplilearn (16:56)"). Numbers appear in print and in the endnotes instead.
+
+**Consequences.**
+- The legacy HTML route keeps its query-token fallback until T-8.8.1.5. D-079 made every *new* report route header-only on the same reasoning.
+- All 30 dead anchors in the stored smoke-test report became real links: 20 matched by title, and 10 by sole channel where the writer had reworded a Kannada title.
+- `GET /jobs/{id}/videos` had to start declaring `source_type`, `document_id` and `source_metadata`. They had always been built and always stripped by the schema, which also made the job page's approval cards fall back to the YouTube shape.
+- A report truncated mid-tag by the compose step cannot be repaired client-side; that is filed as S-1.14.17. The R1 still slot (`resolveStill`) waits for S-1.18.2.
+- Vite 8's dependency optimiser broke `html-dom-parser`'s CommonJS client in dev only. An alias to its ESM client entry fixes it, in both the Vite and the vitest configs.
+
+**Linked initiatives / PRs.** [S-8.8.1](initiatives.md#s-881--report-content-endpoint-and-sanitised-renderer) (PR [#244](https://github.com/khoks/VideoResearchPro/pull/244)), [S-8.8.2](initiatives.md#s-882--citation-hover-cards-and-footnotes) (PR [#254](https://github.com/khoks/VideoResearchPro/pull/254)), T-8.8.1.5, S-1.14.17, D-079.
+
+## D-086 — Markdown readers: react-markdown's own pipeline run once with a tree transform; the outline is the two shallowest structural heading levels (2026-10-19)
+
+**Status:** accepted. It deviates from the M8 plan's sketch (`<ReactMarkdown>` with `rehype-slug`) for the reason below.
+
+**Context.** S-8.8.3 puts knowledge reports and Author Studio books, both Markdown, into the same `ReaderShell` as HTML reports. The shell renders the outline beside the body, so it needs the outline before the body renders. Books built since S-6.1.2 nest each report's sections as `####` under a `## n. Chapter` heading. Lane C's HTML-to-Markdown keeps a report's `<h3>`-inside-`<li>` as `- ### …`. The book outputter writes its table of contents against its own slug of the bare chapter title (`#chapter-title`) while the heading reads "1. Chapter title", so every link in that table was dead.
+
+**Decision.**
+1. **One pass in a `useMemo`:** remark-parse → remark-gfm → remark-rehype → one tree transform → hast-util-to-jsx-runtime. These are react-markdown's own steps. Headings get ids from the **same slugger as reports**, so `rehype-slug` is not a dependency.
+2. **The outline is the two shallowest heading levels outside list items, table cells and quotes.** For knowledge reports that is `h2` / `h3`; for books it is chapters and their sections. Nested headings keep ids but neither pick a level nor enter the outline.
+3. **In-page links whose target was slugged differently are repointed** to the heading whose id equals, or ends with, the slug of the fragment.
+4. **Safety without DOMPurify on this path:** remark-rehype runs without `allowDangerousHtml`, so raw HTML is dropped, and link and image URLs pass react-markdown's `defaultUrlTransform`.
+5. The Author page's viewer modal is removed. Read, and a freshly generated book, navigate to `/author/outputs/:id`, which completes T-6.1.1.3's moved half. The knowledge drawer stays as a quick peek with "Open in reader".
+
+**Alternatives considered.**
+- *`<ReactMarkdown>` plus `rehype-slug`, with the outline from a second parse.* Two pipelines that must agree on every id drift. Collecting the outline during render is impure, and its order relative to the sibling outline component is fragile.
+- *Markdown → HTML → the report pipeline.* It needs a converter dependency and would route trusted-by-construction Markdown through the HTML sanitiser for no gain.
+- *`h2` / `h3` only.* A book's outline would list chapters and nothing inside them.
+- *Fix the book outputter's slugs.* Worth doing, but the reader should not depend on every producer agreeing with its slugger.
+
+**Consequences.** The knowledge response now names its source (`document_id`, `source_type`, `title`, `channel_name`, `url`, `published_at`), and its `video_id` became nullable: a PDF's artifact had failed serialisation. `remark-gfm` became a direct dependency (D-079 had already added it). The bundle is one chunk, about 262 kB gzipped after the reading lane (+32 kB over three PRs). Lazy-loading the reader routes is the obvious follow-up.
+
+**Linked initiatives / PRs.** [S-8.8.3](initiatives.md#s-883--knowledge-artifacts-and-books-in-the-same-shell) (PR [#261](https://github.com/khoks/VideoResearchPro/pull/261)), T-6.1.1.3, S-6.1.2, D-079.
+
+## D-087 — Mobile reading and install: a reading toolbar below 1200 px, a docked composer lifted by VisualViewport, hermetic device tests, a manifest without a service worker (2026-10-19)
+
+**Status:** accepted, emulation only. The [M12 plan](plans/m12-mobile-reading.md)'s open question 1 (is a real-device pass part of acceptance?) is the user's call; no real-device pass was done. Its open question 2 (which icon) had no recommended default; the icon renders the mark `branding.md` §3 already recommends.
+
+**Context.** S-8.12.1 and S-8.12.2 make the reading pages work on phones and make the app installable. Three facts shaped them: the outline column already needs 1200 px (S-8.8.1); neither iOS Safari nor Chrome on Android (by default) shrinks the layout viewport for the on-screen keyboard; and the repository is public.
+
+**Decision.**
+1. **A bottom reading toolbar replaces the outline column and the progress pill wherever the column is hidden** (below 1200 px, not only below 960 px). It holds Contents (the outline as a bottom sheet), text size in five steps (Zustand, kept per browser), theme, and the percentage. Controls are 44 px, and `scroll-padding-bottom` keeps focus clear of the bar (SC 2.4.11).
+2. **The Q&A composer moves under the thread on phones and sticks to the bottom while its card is on screen.** The thread is already oldest first. The composer is lifted by `innerHeight − visualViewport.height − offsetTop`, rAF-throttled and ignored when pinch-zoomed. It is a set of wrappers (`components/qa/Composer.tsx`), so each page changed by nine lines.
+3. **Touch:** a chip's first tap previews its card and the second follows the link. Chip state is read at `pointerdown`, which also fixed an unresolved chip opening and closing its card in one click.
+4. **Device tests are hermetic.** Playwright runs iPhone 13 (WebKit), Pixel 7 and a 320 px phone (Chromium) in light and dark, against 18 checked-in baselines. Every `/api/v1` call is served from captured fixtures, and an unmatched call fails the test. The WebSocket and dev proxy are cut off. The **Q&A thread fixture is synthetic**: the test account has none, and the user's own exchanges do not belong in a public repository.
+5. **A web-app manifest with no service worker**, as the plan decided (JWT-gated fetches and report invalidation; offline reading is not a requirement). Chromium's installability check passes without one. `theme_color` `#7a2c1a` and the page title come from `branding.md` §8. The icon is an interim rendering of the §3 echo mark, re-rendered from `logo-mark.svg` by `npm run icons`.
+
+**Alternatives considered.**
+- *Drop the outline below 960 px only.* That leaves 960–1199 px with no navigation, since the column is already gone there.
+- *Sticky composer at the top.* It is keyboard-proof without VisualViewport, but `ui-design` §2.4 and the plan ask for a bottom, chat-like dock.
+- *`interactive-widget=resizes-content`.* Chromium only; iOS ignores it.
+- *Device tests against a live backend.* They would depend on a running stack and real data, which could leak into a public repository's baselines.
+- *A designed new logo.* Out of scope; the rebrand's logo work stays open.
+
+**Consequences.** `npm run test:mobile` needs `npx playwright install chromium webkit` once, and a page that starts calling a new endpoint on load fails it until a fixture is added. `ui-design` §2.4 carries an "as built" note. The VisualViewport lift is unverified on a real keyboard. The manifest unblocks T-3.7.6.1 (`share_target`).
+
+**Linked initiatives / PRs.** [S-8.12.1](initiatives.md#s-8121--reading-pages-responsive-pass) (PR [#269](https://github.com/khoks/VideoResearchPro/pull/269)), [S-8.12.2](initiatives.md#s-8122--web-app-manifest) (PR [#272](https://github.com/khoks/VideoResearchPro/pull/272)), T-3.7.6.1.
+
+## D-088 — Report intermediates: persisted per run, on by default, frozen at the stage that produced them (2026-10-19)
 
 **Status:** accepted (taken without the user; open to revision).
 

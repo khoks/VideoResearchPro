@@ -19,7 +19,7 @@ They are now stored in `job_report_intermediates` (migration `a3b4c5d6e7f9`):
 one row per map call, with bisected halves and failed batches recorded as rows,
 plus one reduce row, grouped by run. On by default via
 `REPORT_INTERMEDIATES_ENABLED`; `scripts/audit_report_intermediates.py` reads a
-run back. Decision [D-085](docs/decisions.md#d-085--report-intermediates-persisted-per-run-on-by-default-frozen-at-the-stage-that-produced-them-2026-10-19).
+run back. Decision [D-088](docs/decisions.md#d-088--report-intermediates-persisted-per-run-on-by-default-frozen-at-the-stage-that-produced-them-2026-10-19).
 ### Installable web app: manifest and the echo mark (2026-10-19)
 
 S-8.12.2. Pratidhvani installs from the browser and from the iOS and

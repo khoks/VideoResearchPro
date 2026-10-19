@@ -12,7 +12,8 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 |------|-----------|------|---------|
 | `/login` | `LoginPage` | public | Email + password login |
 | `/register` | `RegisterPage` | public | Create a new account |
-| `/` | (redirect → `/submit`) | protected | Default landing |
+| `/` | `OnboardingGate` | protected | Default landing: `/welcome` while the server says the account should onboard, otherwise `/submit` |
+| `/welcome` | `WelcomePage` | protected | First-run wizard: channels, a small first run, its report (S-8.10.1) |
 | `/submit` | `SubmitJobPage` | protected | Start a new research run |
 | `/jobs` | `JobsListPage` | protected | All jobs the user owns |
 | `/jobs/:jobId` | `JobDetailPage` | protected | Single job: status, approval, report, Q&A |
@@ -35,7 +36,7 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/account/ai-models` | `AIModelsPage` | protected | Per-use-case LLM overrides and BYOK keys |
 | `*` | (redirect → `/`) | — | 404 → home |
 
-Protected routes are wrapped in `<ProtectedRoute>` which redirects unauthenticated visitors to `/login`. Public-only routes (`/login`, `/register`) are wrapped in `<PublicOnlyRoute>` which redirects authenticated users to `/submit`.
+Protected routes are wrapped in `<ProtectedRoute>` which redirects unauthenticated visitors to `/login`. Public-only routes (`/login`, `/register`) are wrapped in `<PublicOnlyRoute>` which redirects authenticated users to `/`, where the gate decides between the wizard and `/submit`.
 
 `VideoKnowledgePage.tsx` exports `VideoKnowledgeDrawer` — used as an inline drawer inside `JobDetailPage` to show a video's knowledge artifact, not as its own route.
 
@@ -46,7 +47,7 @@ The protected routes share `<AppLayout>` (top-tabs nav today, sidebar after the 
 ## Page-by-page
 
 ### `LoginPage` — `/login`
-**Purpose.** Email + password login. Calls `POST /api/v1/auth/login`, stores the JWT in the auth context, redirects to `from.pathname` (or `/submit`).
+**Purpose.** Email + password login. Calls `POST /api/v1/auth/login`, stores the JWT in the auth context, redirects to `from.pathname` (or `/`, which the onboarding gate resolves).
 
 | State | What renders |
 |-------|--------------|
@@ -56,13 +57,28 @@ The protected routes share `<AppLayout>` (top-tabs nav today, sidebar after the 
 | Network error | Toast via the global `ToastContainer`. |
 
 ### `RegisterPage` — `/register`
-**Purpose.** Account creation. Calls `POST /api/v1/auth/register`, immediately follows with a login call to capture the JWT.
+**Purpose.** Account creation. Calls `POST /api/v1/auth/register`, immediately follows with a login call to capture the JWT (the register response carries the user, not a token; until 2026-10-19 the context stored the missing token and every new account landed signed out on `/login`). Then goes to `/`, so a new account opens the wizard.
 
 | State | What renders |
 |-------|--------------|
 | Default | Email + password + confirm-password, "Create account" button. |
 | Validation error | Inline below the offending field. |
 | Email exists | "An account with this email already exists. Sign in instead?" with link. |
+
+### `WelcomePage` — `/welcome`
+**Purpose.** The first-run wizard (S-8.10.1, plan [m10-onboarding](plans/m10-onboarding.md)): a task flow with real actions, not an overlay tour. Its state lives on the user row (`GET` / `PATCH /auth/me/onboarding`), so it resumes at the same step on any device. `/` sends an account here while `should_onboard` is true: no runs yet, or the wizard already started, and neither finished nor skipped. Accounts that had runs before the wizard shipped are not sent. **Skip for now** is always in the header (it records the dismissal and goes to `/submit`); after a skip or a finish it reads **Close** and the page stays reachable from the palette's **Getting started** action. A `Stepper` (ordered list, `aria-current="step"`) lets the reader go back to a finished step without losing what they entered.
+
+| Step | What renders | Action |
+|------|--------------|--------|
+| 1. Choose channels | Channel link or @handle field (validated like the submit page's channel list), the chosen channels as removable chips, one to five | **Continue** saves the channels and the step, then shows step 2 |
+| 2. Start a small run | The saved channels as radios (first chosen), what the run does, a "How long it takes" note (a few minutes; transcripts are throttled; captionless videos go through Whisper; the run pauses once for approval) | **Start the run** creates a channel run of five videos from the **Channel deep-dive** starter (`template_id` provenance), stores its id, shows step 3. A first run already under way offers **See its progress** instead; a failed one says so and offers another go |
+| 3. Read the report | Live progress (`role="progressbar"`, polite status text, link to the run's page); at `awaiting_approval` the found titles with **Approve these N videos**; at `completed` **Read the report**; a failed or cancelled run shows its error with **Try again** | **Read the report** finishes the wizard (`onboarded_at`) and opens `/reports/:jobId`; a run that ended without a report offers **Open the run** |
+
+| State | What renders |
+|-------|--------------|
+| Loading | Skeleton rows under the header (Skip already usable) |
+| Error | `EmptyState` "Couldn't load your progress." with **Retry**; Skip still works |
+| Finished earlier | A note with the date it was finished; the steps still work |
 
 ### `SubmitJobPage` — `/submit`
 **Purpose.** Start a research run. Three tabs: **Topic**, **Channels**, **Subscribe**.
@@ -364,7 +380,7 @@ Tabs: **Structured** (topics / concepts / events / facts) and **Report** (Markdo
 ## Cross-cutting page concerns
 
 ### Command palette (every protected page)
-`components/palette/` (S-8.2.2), mounted once in `AppLayout`. **Mod-K** or **Ctrl-Alt-K** anywhere, or the sidebar's **Search…** button (a search icon in the mobile bar). An input with combobox / listbox semantics (focus stays in the input; arrows move `aria-activedescendant`; Enter opens; Escape closes and returns focus). With no query: **Recent** (the last six items opened from it, per browser) and **Go to and do** (every page in the nav, export notes as Markdown or JSON-LD, switch theme, turn single-key shortcuts off / on). Typing filters the actions on the client and, after 180 ms, asks `GET /search` (superseded requests are cancelled), showing **Runs**, **Sources**, **Channels**, **Questions** and **Knowledge reports** groups; empty groups are hidden. States: "Searching…" while the debounce or request is pending, "Nothing in your library matches “…”", and "Search is unavailable" (actions still work); the result count is announced politely. The panel and `cmdk` load on first open (a 19.6 kB-gzip chunk).
+`components/palette/` (S-8.2.2), mounted once in `AppLayout`. **Mod-K** or **Ctrl-Alt-K** anywhere, or the sidebar's **Search…** button (a search icon in the mobile bar). An input with combobox / listbox semantics (focus stays in the input; arrows move `aria-activedescendant`; Enter opens; Escape closes and returns focus). With no query: **Recent** (the last six items opened from it, per browser) and **Go to and do** (every page in the nav, **Getting started** for the first-run wizard, export notes as Markdown or JSON-LD, switch theme, turn single-key shortcuts off / on). Typing filters the actions on the client and, after 180 ms, asks `GET /search` (superseded requests are cancelled), showing **Runs**, **Sources**, **Channels**, **Questions** and **Knowledge reports** groups; empty groups are hidden. States: "Searching…" while the debounce or request is pending, "Nothing in your library matches “…”", and "Search is unavailable" (actions still work); the result count is announced politely. The panel and `cmdk` load on first open (a 19.6 kB-gzip chunk).
 
 Where results land: a run → `/jobs/<id>`; a question → its page with `?exchange=<id>`, which scrolls to the exchange card, focuses it and outlines it briefly (job page, library Q&A, Q&A history; the history page also keeps its `#exchange-<id>` links); a source → `/library?document=<id>`, the library narrowed to that row with "Show all sources"; a knowledge report → `/knowledge/<id>`; a channel → its page.
 
@@ -373,6 +389,8 @@ Where results land: a run → `/jobs/<id>`; a question → its page with `?excha
 - Post-redesign (per [branding.md](branding.md) §sidebar-mockup): slim left sidebar grouped by purpose (Library / Research / Knowledge / Author/future / Settings).
 - Persistent global elements: top-right user avatar + sign-out, top-right LLM-status dot (green/yellow/red), `ToastContainer`.
 - **Add to Echo** (S-3.7.1, tiers with `echo_personal_brain` only): a dashed button above the user chrome in the sidebar and the mobile drawer. It opens `QuickShare`'s dialog: one box (a single http(s) link becomes a link share; anything else is text), **Attach a file instead** (up to 25 MB), an optional "why", and **These are my own words** (off by default; the hint explains context-only). Shares go straight into the inbox.
+
+While the wizard is unfinished and not skipped, a **Start here** group at the top of the sidebar holds **Getting started** (`/welcome`); it disappears on finish or skip (the palette action remains).
 
 The sidebar's **Shelves** group (after Library) lists the reader's shelves with a colour dot, the first eight then "Show all N", plus **Manage shelves** (or **Start a shelf** when there are none); it is hidden for a reader who has no shelves and no `shelves` capability. Shelf entries navigate by path because the `AppTab` union is fixed.
 

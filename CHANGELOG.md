@@ -10,6 +10,29 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: first-run onboarding wizard (2026-10-19)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). S-8.10.1, plan [m10-onboarding](docs/plans/m10-onboarding.md).
+
+- A new account now lands on **`/welcome`**: choose one to five channels, start a
+  five-video channel run from the Channel deep-dive starter, approve what it
+  found, and open the report in the reader. **Skip for now** is always there.
+- Progress is kept on the server (`users.onboarded_at`,
+  `users.onboarding_state_json`; `GET` / `PATCH /api/v1/auth/me/onboarding`), so
+  the wizard resumes at the same step on another device. `/` decides between the
+  wizard and the submit page; accounts that already had runs are left alone.
+- Activation events in `audit_log`: `onboarding_started`, `onboarding_completed`,
+  `onboarding_skipped`, `first_job_created` (from job creation) and
+  `first_report_opened` (from the reader's body route).
+- A **Getting started** link in the sidebar until the wizard is finished or
+  skipped, and a palette action that reopens it any time.
+
+### Fixed: new accounts were signed out right after registering (2026-10-19)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). `POST /auth/register` returns the user without a token, and the
+frontend stored that missing token, so every new account landed on `/login`.
+Registration now signs in with the same credentials.
+
 ### Fixed: invented "original" quotes in code-mixed reports (2026-10-19)
 
 PR [#294](https://github.com/khoks/VideoResearchPro/pull/294). Regression from #268, found in the R1 run-5 replay;

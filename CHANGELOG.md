@@ -25,7 +25,7 @@ endpoint the command palette (S-8.2.2) will call; no UI in this PR.
   nothing visible gets empty groups, never everything (D-063).
 - **FTS5 trigram tables** `fts_documents`, `fts_jobs`, `fts_channels`,
   `fts_qa`, `fts_knowledge`, kept current by `AFTER INSERT / UPDATE OF /
-  DELETE` triggers; created conditionally by migration `d8e9f0a1b2c3` and
+  DELETE` triggers; created conditionally by migration `a9f3c1e7b5d2` and
   re-ensured at every boot (`search_service.ensure_index`). Substring
   matching from three characters, case- and diacritics-insensitive,
   Devanagari by codepoint trigrams; `bm25()` with the title weighted 5:1

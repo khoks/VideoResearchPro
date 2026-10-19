@@ -38,13 +38,14 @@ export default defineConfig({
   },
   projects: [
     // Phone projects: the reading pages and the manifest (S-8.12.x).
-    { name: 'iphone-13', testIgnore: /palette\.spec\.ts/, use: { ...devices['iPhone 13'] } },
-    { name: 'pixel-7', testIgnore: /palette\.spec\.ts/, use: { ...devices['Pixel 7'] } },
-    // Desktop: the keyboard-driven command palette (S-8.2.2).
-    { name: 'desktop-chromium', testMatch: /palette\.spec\.ts/, use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },
+    { name: 'iphone-13', testIgnore: /(palette|graph)\.spec\.ts/, use: { ...devices['iPhone 13'] } },
+    { name: 'pixel-7', testIgnore: /(palette|graph)\.spec\.ts/, use: { ...devices['Pixel 7'] } },
+    // Desktop: the keyboard-driven command palette (S-8.2.2) and the library
+    // map's keyboard model (S-8.9.2), which sets its own narrow viewport.
+    { name: 'desktop-chromium', testMatch: /(palette|graph)\.spec\.ts/, use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },
     {
       name: 'narrow-320',
-      testIgnore: /palette\.spec\.ts/,
+      testIgnore: /(palette|graph)\.spec\.ts/,
       use: {
         browserName: 'chromium',
         viewport: { width: 320, height: 640 },

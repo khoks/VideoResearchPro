@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { AppLayout } from '../layouts/AppLayout';
 import { MarketingLayout } from '../pages/marketing/MarketingLayout';
@@ -26,6 +27,10 @@ import { EchoPage } from '../pages/EchoPage';
 import { EchoInboxPage } from '../pages/EchoInboxPage';
 import { AuthorPage } from '../pages/AuthorPage';
 import { useAuth } from '../contexts/AuthContext';
+import { Spinner } from '../components/primitives';
+
+// The library map pulls in sigma, graphology and a layout worker: its own chunk (S-8.9.2).
+const GraphPage = lazy(() => import('../pages/GraphPage'));
 
 function ProtectedRoute() {
   const { isAuthenticated } = useAuth();
@@ -79,6 +84,14 @@ export const router = createBrowserRouter([
           { path: 'author/outputs/:outputId', element: <OutputReaderPage /> },
           { path: 'library', element: <LibraryPage /> },
           { path: 'library/qa', element: <LibraryQAPage /> },
+          {
+            path: 'library/graph',
+            element: (
+              <Suspense fallback={<Spinner label="Loading the library map" />}>
+                <GraphPage />
+              </Suspense>
+            ),
+          },
           { path: 'library/channels/:channelId', element: <ChannelPage /> },
           { path: 'shelves', element: <ShelvesPage /> },
           { path: 'shelves/:shelfId', element: <ShelfPage /> },

@@ -2546,7 +2546,39 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Linked initiatives / PRs.** E-8.1 / E-8.6 / E-8.7, the PRs above. Follows D-063, D-065, D-068.
 
-## D-084 — Report intermediates: persisted per run, on by default, frozen at the stage that produced them (2026-10-19)
+## D-084 — Code-mixed retrieval: embed an English rendering, keep the original as the stored text (2026-10-19)
+
+**Status:** accepted. Completes T-1.16.2.5 of [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31) with [D-080](#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)'s quotation half. Measurement: [the detection note](notes/2026-10-19-code-mixing-detection.md#10-the-bidirectional-split-t-11625).
+
+**Context.** N-002 asks for analysis on an English rendering and quotation from the original. Every analysis stage is an LLM call that now knows each source's language (D-080 addendum) and translates as it reads. Retrieval is the one stage with no model in the loop: an English question is compared with chunk embeddings from `paraphrase-multilingual-MiniLM-L12-v2`. A content-controlled test used 132 real chunks from three Hindi-ASR lectures, with the same text in Devanagari, in romanised Hinglish, and in English, and 55 English questions written by a different model from the Devanagari alone.
+
+| Pool written in | recall@5 | recall@15 (production depth) | MRR |
+|---|---|---|---|
+| Devanagari (as ingested today) | 0.727 | 0.818 | 0.565 |
+| Romanised Hindi | 0.582 | 0.745 | 0.402 |
+| English rendering | 0.891 | 0.927 | 0.805 |
+
+**Decision.** A chunk of a non-English source is embedded as its English rendering when its own Hindi share exceeds the borrowing threshold or its grammar is Hindi. Its stored text, which is what Q&A shows and quotes, stays the original. The rendering is stored as chunk metadata `text_en`. It is produced once per document by a new volume-tier use case, `code_mixing_render_english` (`gpt-5.6-luna`, reasoning off, six chunks per call), inside `chroma_service.insert_chunks`, the one place every ingest path writes chunks. Embeddings for the batch come from the collection's own embedding function, so rendered and unrendered chunks share one vector space. The step is fail-soft (a failed batch embeds as written) and switchable (`CODE_MIX_ENGLISH_RENDERING_ENABLED`). It is off for the test suite, so no test reaches a provider.
+
+**Alternatives considered.**
+
+- *Keep embedding the original.* Rejected on the measurement. Romanised text, the case N-002 targets, loses about a third of its MRR against the same words in Devanagari.
+- *Store the English rendering as the chunk text.* Rejected. Quotation needs the original (D-066's three-part form), and Q&A shows stored text to the answer model.
+- *Two vectors per chunk (original and English).* Deferred. It doubles index size and needs result de-duplication, and the English vector alone already beats both originals.
+- *A stronger multilingual embedder* (e.g. a larger E5 or BGE-M3 model). Not evaluated. It means re-embedding the whole library and a much heavier CPU model, and whether it reads romanised Hindi well is itself unmeasured. It would be worth measuring against this same pool before the library grows. Recorded as an open question.
+- *Translate the question into Hindi instead.* Rejected. It does not help romanised text, and it puts translation on the latency path of every question rather than once per document.
+
+**Cost.** The rendering used about 1.5 input and 1.0 output tokens per word of transcript, plus ~300 prompt tokens per call. That is roughly 11K input and 7K output tokens for an hour of Hindi speech, once per document, and nothing for English sources.
+
+**Consequences.**
+
+- Chunks embedded before this ship have no rendering and keep their original vectors. There is no backfill; re-ingesting a document re-embeds it.
+- Questions retrieve Hindi and Hinglish sources by meaning, while quotes still come from the original wording.
+- Registry entry 25, `code_mixing_render_english`, has measured guidance citing this decision.
+
+**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.5), E-1.16, N-002.
+
+## D-085 — Report intermediates: persisted per run, on by default, frozen at the stage that produced them (2026-10-19)
 
 **Status:** accepted (taken without the user; open to revision).
 

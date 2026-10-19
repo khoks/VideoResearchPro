@@ -19,7 +19,40 @@ They are now stored in `job_report_intermediates` (migration `a3b4c5d6e7f9`):
 one row per map call, with bisected halves and failed batches recorded as rows,
 plus one reduce row, grouped by run. On by default via
 `REPORT_INTERMEDIATES_ENABLED`; `scripts/audit_report_intermediates.py` reads a
-run back. Decision [D-084](docs/decisions.md#d-084--report-intermediates-persisted-per-run-on-by-default-frozen-at-the-stage-that-produced-them-2026-10-19).
+run back. Decision [D-085](docs/decisions.md#d-085--report-intermediates-persisted-per-run-on-by-default-frozen-at-the-stage-that-produced-them-2026-10-19).
+### Installable web app: manifest and the echo mark (2026-10-19)
+
+S-8.12.2. Pratidhvani installs from the browser and from the iOS and
+Android home screens with its own name, colours and icon.
+
+- `manifest.webmanifest` (standalone, paper background, `theme_color`
+  `#7a2c1a`), linked from `index.html` with `theme-color`, an Apple touch
+  icon and the page title from `branding.md` §8. No service worker, by
+  design (JWT-gated fetches and report invalidation; offline reading is not
+  a requirement).
+- The icon renders the echo mark `branding.md` §3 recommends: three
+  concentric arcs fading inward. `logo-mark.svg`, a light / dark
+  `favicon.svg` (Vite's bolt is gone), 192 / 512 / maskable PNGs and a 180 px
+  touch icon, all re-rendered from the SVG by `npm run icons`. Interim until
+  the rebrand's logo work lands.
+- Tests check real icon sizes and opaque backgrounds, the page's links, and
+  Chromium's own installability verdict.
+### Code-mixed speech: retrieval runs on an English rendering (2026-10-19, T-1.16.2.5 part B)
+
+PR [#271](https://github.com/khoks/VideoResearchPro/pull/271). Decision
+[D-084](docs/decisions.md#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19).
+
+- **Hindi and Hinglish chunks are now found by English questions.** A chunk
+  of a non-English source is embedded as its English rendering, while the
+  stored text stays the original for quoting. Measured on 132 real chunks:
+  MRR 0.565 for the Devanagari originals, 0.402 for the same text romanised,
+  0.805 rendered in English.
+- New use case `code_mixing_render_english` (registry entry 25, volume tier,
+  reasoning off, fail-soft). It runs once per document inside
+  `chroma_service.insert_chunks`, the one place every ingest path writes
+  chunks, and stores the rendering as metadata `text_en`.
+- New setting `CODE_MIX_ENGLISH_RENDERING_ENABLED` (on; off for the test
+  suite). Chunks embedded earlier are not re-embedded.
 
 ### Mobile reading pass: toolbar, docked composer, device tests (2026-10-19)
 

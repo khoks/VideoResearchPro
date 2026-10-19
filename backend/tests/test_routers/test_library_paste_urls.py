@@ -10,8 +10,6 @@ the per-document metadata path is exercised.
 """
 from unittest.mock import patch
 
-import pytest
-
 from app.sources.types import ExtractedText
 
 
@@ -114,26 +112,28 @@ def test_paste_urls_rejects_empty_and_oversized_batches(client):
     assert client.post("/api/v1/library/paste-urls", json={"urls": too_many}).status_code == 400
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "D-063 gap (found 2026-10-19): document_visibility.video_id is keyed on "
-        "the legacy documents.video_id, which is NULL for every non-video source, "
-        "so visibility_service.grant() drops the id and no grant is written for a "
-        "pasted page or an uploaded PDF. The listing and library Q&A filter on the "
-        "same column, so these documents are invisible to everyone. Fix by keying "
-        "visibility on document_id end to end; this test then passes and must be "
-        "un-marked, not loosened."
-    ),
-)
 def test_pasted_document_is_visible_in_library_listing(client):
-    """D-063: the paste path must grant visibility, and the listing must
-    render a document that has no channel, duration or thumbnail."""
-    resp, _ = _post(client, ["https://example.com/visible"])
+    """D-063 / D-070: the paste path must grant visibility, and the listing
+    must render a document that has no channel, duration or thumbnail.
+
+    Was a strict xfail from 2026-10-19 until S-5.10.4 landed: the grant was
+    keyed on the legacy ``documents.video_id``, NULL for a pasted page, so
+    ``grant()`` dropped the id and the listing's filter never matched."""
+    resp, insert = _post(client, ["https://example.com/visible"])
     assert resp.status_code == 201, resp.text
     doc_id = resp.json()["results"][0]["document_id"]
 
+    # The chunk that reached Chroma carries the key retrieval filters on.
+    chunks = insert.call_args.args[0]
+    assert chunks and all(c["metadata"]["document_id"] == doc_id for c in chunks)
+
     listing = client.get("/api/v1/library/videos")
     assert listing.status_code == 200, listing.text
-    ids = {row["id"] for row in listing.json()}
-    assert doc_id in ids
+    rows = {row["id"]: row for row in listing.json()}
+    assert doc_id in rows
+    row = rows[doc_id]
+    assert row["source_type"] == "article"
+    assert row["video_id"] is None
+    assert row["duration_seconds"] is None
+    assert row["channel_id"] is None and row["channel_name"] == ""
+    assert row["title"] == "An essay"

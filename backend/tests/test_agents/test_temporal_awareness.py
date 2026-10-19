@@ -108,7 +108,7 @@ def test_library_qa_applies_the_policy_and_dates_sources():
     with patch.object(qa_agent.chroma_service, "query_collection", return_value=rag), \
          patch.object(qa_agent, "get_llm_for", side_effect=llms) as get_llm:
         qa_agent.run_library_qa_agent(
-            question="What is DNS?", visible_video_ids=["vDNS"],
+            question="What is DNS?", visible_document_ids=["vDNS"],
             corpus_statistics=XLARGE, output_length="brief",
         )
     answer_call = get_llm.call_args_list[2]

@@ -32,9 +32,16 @@ settings.DATABASE_URL = "sqlite:///" + (Path(__file__).resolve().parent / ".pyte
 
 @pytest.fixture(scope="session", autouse=True)
 def _isolate_app_lifespan():
+    # Replace only ``app.main``'s binding of the chroma module, wrapping the
+    # real one, so the lifespan's backfill is a no-op while tests that call
+    # ``chroma_service.backfill_qa_library`` directly still get the real thing.
+    from app.services import chroma_service as _real_chroma
+
+    _chroma_for_lifespan = MagicMock(wraps=_real_chroma)
+    _chroma_for_lifespan.backfill_qa_library = MagicMock(return_value=None)
     with (
         patch("app.main.run_startup_probes", new=AsyncMock(return_value=None)),
-        patch("app.main.chroma_service.backfill_qa_library", return_value=None),
+        patch("app.main.chroma_service", new=_chroma_for_lifespan),
     ):
         yield
 

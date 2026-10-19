@@ -15,7 +15,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 The first text in the system written BY the user rather than ingested FOR
 them. Story [S-8.5.1](docs/initiatives.md#s-851--notes-schema-rest-and-inline-ui)
 of [E-8.5](docs/initiatives.md#e-85--notes--the-users-own-voice-in-the-library-m5),
-plan [`docs/plans/m5-notes.md`](docs/plans/m5-notes.md), PR [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__).
+plan [`docs/plans/m5-notes.md`](docs/plans/m5-notes.md), PR [#243](https://github.com/khoks/VideoResearchPro/pull/243).
 
 - **Schema.** `notes(id, tenant_id, target_type, target_id, selector_json,
   body_md, motivation, created_at, updated_at, deleted_at)` (migration

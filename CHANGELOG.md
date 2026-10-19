@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Author Studio generates in the worker, with live progress and cancel (2026-10-19, S-6.7.1)
 
-PR [#PR_S671](https://github.com/khoks/VideoResearchPro/pull/PR_S671). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+PR [#281](https://github.com/khoks/VideoResearchPro/pull/281). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
 
 - **`POST /api/v1/author/outputs` returns `pending` at once** and queues the
   new `author.generate_output` Celery task on the owner's tier queue;

@@ -57,22 +57,33 @@ Overall app status plus a summary of LLM probe results.
 ```
 
 ### `GET /api/v1/health/llm`
-Per-use-case LLM probe detail. Returns the result of the startup smoke check (deduped by `(provider, model)`).
+Per-use-case LLM probe detail: the result of the startup smoke check (probes deduped by `(provider, model, vision)`; each use case reports its own reasoning level). `use_cases` is keyed by use-case name and is empty until the first probe completes.
+
+Since S-1.14.7 each entry also carries the registry's measured `guidance` (shape under [`GET /api/v1/settings/llm`](#get-apiv1settingsllm)) and `warnings`: measured verdicts that apply to the config **this process** resolved, env overrides included. An operator whose `LLM_USE_CASE_CONFIG` points frame description at `gpt-5.6-luna` sees D-073's verdict here. Warnings are advisory; nothing refuses the config.
 
 ```json
 {
-  "use_cases": [
-    {
-      "name": "qa_formulate_answer",
+  "summary": { "status": "ok", "unavailable_features": [], "last_checked_at": 1792430870.05 },
+  "use_cases": {
+    "visual_describe_frame": {
       "provider": "openai",
-      "model": "gpt-5",
-      "reasoning": "medium",
+      "model": "gpt-5.6-luna",
+      "reasoning": "off",
       "ok": true,
       "latency_ms": 412,
-      "error": null
+      "error": null,
+      "guidance": { "status": "measured", "decision_id": "D-073", "...": "..." },
+      "warnings": [
+        {
+          "kind": "unacceptable",          // unacceptable | weaker | not_vision_capable
+          "model": "gpt-5.6-luna",
+          "why": "22 of 66 gradings unusable, ...",
+          "decision_id": "D-073"           // null for not_vision_capable
+        }
+      ]
     }
-    // ... 19 entries total
-  ]
+    // ... one entry per registry use case (23)
+  }
 }
 ```
 
@@ -100,6 +111,99 @@ YouTube API quota status (today's usage, soft cap, hard cap, time-to-reset).
   "soft_cap": 8000,
   "hard_cap": 10000,
   "resets_at": "..."
+}
+```
+
+---
+
+## AI model settings
+
+Per-user overrides of the per-use-case LLM registry (E-1.13, [D-054](decisions.md#d-054--per-user-llm-overrides--cost-calculator-gpt-56-adaptive-reasoning-findings-2026-07-29)) plus the measured guidance behind each default (S-1.14.7). All endpoints require auth; an override applies only to the caller and takes precedence over `LLM_USE_CASE_CONFIG` and the registry default. UI: `/account/ai-models`.
+
+### `GET /api/v1/settings/llm`
+Every registry use case with its default, the caller's override (or `null`), the effective config, and the measured guidance; plus the selectable models per provider and the list of models known to accept images.
+
+```json
+{
+  "use_cases": [
+    {
+      "use_case": "report_compose",
+      "summary": "Compose the final HTML report ...",
+      "group": "Report generation",
+      "default":   { "provider": "anthropic", "model": "claude-opus-5", "reasoning": "medium" },
+      "override":  null,
+      "effective": { "provider": "anthropic", "model": "claude-opus-5", "reasoning": "medium" },
+      "typical_input_tokens": 10000,
+      "typical_output_tokens": 16000,
+      "vision": false,                       // true when the call sends images
+      "guidance": {
+        "status": "measured",                // measured | unmeasured
+        "decision_id": "D-062",              // null when unmeasured
+        "decided_on": "2026-07-31",          // null when unmeasured
+        "flagship_delta": "On claude-sonnet-5 the whole report scored 7.22 against 8.67 ...",
+        "downgrade_risk": "On claude-sonnet-5 the report dropped about 8 debates ...",
+        "measured_cost": "claude-opus-5 adds $4.55 per 200-video job ...",
+        "model_verdicts": [
+          {
+            "model": "claude-sonnet-5",
+            "verdict": "weaker",             // unacceptable | weaker
+            "why": "Synthesis 6-7 vs 9 on identical input; ...",
+            "decision_id": "D-062",
+            "reasoning": []                  // levels covered; [] = every level
+          }
+        ],
+        "related_decisions": ["D-061"],
+        "note": ""                           // for unmeasured: what evidence exists
+      }
+    }
+    // ... one per registry use case (23)
+  ],
+  "providers": { "openai": { "models": [ { "id": "gpt-5.5", "context_window": 922000, "input_per_m": 5.0, "output_per_m": 30.0, "pricing_note": "..." } ] } },
+  "reasoning_levels": ["off", "minimal", "low", "medium", "high", "auto"],
+  "pricing_as_of": "2026-07-30",
+  "vision_capable_models": ["claude-opus-5", "gemini-3.1-flash-lite", "gpt-5.5", "..."]
+}
+```
+
+`measured` means the use case's own output was graded; a use case that only sat inside a graded chain, or changed tier alongside one that was, is `unmeasured` with a `note` saying so. An `unmeasured` entry can still carry `model_verdicts` (for example `gpt-5.4-mini` with reasoning on returned empty output on the refine calls, D-052). A verdict matches a choice when the model id is equal (no prefix matching) and the reasoning level is in `reasoning`, or `reasoning` is empty. The settings page applies the same rule client-side, and additionally warns when a `vision` use case points at a non-`local` model missing from `vision_capable_models`. Warnings never block a save.
+
+### `PUT /api/v1/settings/llm/{use_case}`
+Set the caller's override. `404` for an unknown use case, `422` for an unknown provider or reasoning level. Measured verdicts are not enforced here.
+
+```json
+// request
+{ "provider": "anthropic", "model": "claude-sonnet-5", "reasoning": "medium" }
+// response
+{ "saved": true }
+```
+
+### `DELETE /api/v1/settings/llm/{use_case}`
+Clear the caller's override; the use case returns to its registry default. Response: `{ "cleared": true }` (`false` when there was nothing to clear).
+
+### `POST /api/v1/settings/llm/estimate`
+Cost of the 200-video benchmark job (job `0d4db8c3`) under the caller's effective configs, with optional hypothetical `overrides` that are previewed and not saved. Each row also prices the same workload on the registry default, so a client can show the delta. Use cases the benchmark does not exercise (visual, era extraction, channel reports, social classification, the retired reduce call) return `calls: 0` and cost `0`.
+
+```json
+// request
+{ "overrides": { "report_compose": { "provider": "anthropic", "model": "claude-sonnet-5", "reasoning": "medium" } } }
+// response
+{
+  "benchmark": { "label": "A job like your 200-video AI research run", "videos": 200, "...": "..." },
+  "per_use_case": [
+    {
+      "use_case": "report_compose",
+      "model": "claude-sonnet-5",
+      "calls": 5,
+      "input_tokens": 435000,
+      "output_tokens": 216000,
+      "cost_usd": 3.03,
+      "pricing_known": true,
+      "pricing_note": "...",
+      "default_model": "claude-opus-5",
+      "default_cost_usd": 7.575              // null when the default has no pricing
+    }
+  ],
+  "totals": { "cost_usd": 7.65, "unknown_pricing_models": [] }
 }
 ```
 
@@ -161,7 +265,7 @@ Cancel a running job. Revokes the active Celery task. Returns updated `JobRespon
 Delete a job. Drops `job_videos` rows (videos and chunks survive in the global library), deletes the report file if present, and clears the per-job Q&A exchanges. Returns 204.
 
 ### `GET /api/v1/jobs/{job_id}/videos`
-List the videos selected for this job. Returns `list[VideoResponse]`. Each row includes the per-job `approved` flag.
+List the documents selected for this job. Returns `list[VideoResponse]`. Each row includes the per-job `approved` flag and the polymorphic fields `document_id`, `source_type` (default `"video"`), `source_id`, `source_url`, `source_metadata` (parsed JSON object) and `classification`. `video_id`, `url`, `duration_seconds` and `channel_name` are nullable: they are NULL for non-video documents. Until S-8.8.2 (2026-10-19) the schema did not declare the polymorphic fields, so they were stripped from every response and a non-video document on a job failed serialisation.
 
 ---
 
@@ -188,6 +292,9 @@ The native reader's payload (S-8.8.1). Splits the stored report back into its pa
 ```
 
 `html` is **not** sanitised server-side — it is the LLM-written markup with the template's header, statistics grid and stylesheet removed; the client runs it through DOMPurify before parsing. `statistics` is `null` when the grid is absent or unreadable; a report in an unrecognised shape comes back as the whole `<body>`. Auth: bearer header **only** — no `?token=` fallback, so no token ever appears in a URL. 404 when the job is not the caller's, has no report, or the file is missing.
+
+### `GET /api/v1/jobs/{job_id}/report.md`
+The report's Markdown source (S-6.1.2): the stored HTML converted deterministically (`report_service.report_markdown`), cached beside it at `<report_path>.md`. `text/markdown; charset=utf-8` with `Content-Disposition: inline; filename="report-<job_id>.md"`. Citation links keep their `&t=` timestamps; the statistics grid and per-channel breakdown are Markdown tables. 404 `Job not found` (missing or another tenant's), `Report not generated yet`, `Report file not found`. **Header-bearer auth only** — a `?token=` does not authenticate it (the S-8.8.1 posture for new report routes); browsers download it through a fetch and a blob. Backend: `routers/reports.py`.
 
 ### `POST /api/v1/jobs/{job_id}/qa/clarify`
 Pre-answer clarification step. Asks the LLM to produce an interpretation and three follow-up clarifying questions. Used by the frontend before running the full Q&A.
@@ -554,10 +661,10 @@ All `/author` endpoints require `require_feature("author_studio")` (Pro and abov
 `{ "available": ["book"], "supported": ["book", "deck", "newsletter", "reel", "site"] }`. `available` lists kinds with a registered outputter; `supported` is every kind the schema accepts. Create a kind that is supported but not available and you get 501.
 
 ### `POST /api/v1/author/outputs`
-Create and generate in one synchronous call. Body `{ "kind": "book", "title": "…", "source_ids": ["<job_id>", …], "parameters": { "include_qa": true, "include_toc": true } }`. For `book`, `source_ids` are job IDs, one chapter per run (its report, and its Q&A if `include_qa`); a run without a report yields a placeholder chapter. Returns the `OutputItem` in `completed` or `failed` state (`error_message` populated on failure). 400 unknown kind or empty title; 501 kind without an outputter, which leaves a `pending` row behind.
+Create and generate in one synchronous call. Body `{ "kind": "book", "title": "…", "source_ids": ["<job_id>", …], "parameters": { "include_qa": true, "include_toc": true } }`. For `book`, `source_ids` are job IDs **of the caller's own runs** (another tenant's id reads like a missing one), one chapter per run: its report's Markdown source (S-6.1.2) with headings demoted under the chapter heading, and its Q&A if `include_qa`; a run without a report, or whose file is missing, yields a disclosed placeholder chapter. An empty `source_ids` for `book` is 400 and writes no row. Returns the `OutputItem` in `completed` or `failed` state (`error_message` populated on failure). 400 unknown kind or empty title; 501 kind without an outputter, which leaves a `pending` row behind.
 
 ```json
-{ "id": "...", "kind": "book", "title": "...", "status": "completed", "source_ids": ["..."], "parameters": {}, "error_message": null, "created_at": "...", "updated_at": "...", "has_content": true }
+{ "id": "...", "kind": "book", "title": "...", "status": "completed", "source_ids": ["..."], "parameters": {}, "error_message": null, "created_at": "...", "updated_at": "...", "has_content": true, "word_count": 4210 }
 ```
 
 ### `GET /api/v1/author/outputs`

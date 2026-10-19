@@ -13,7 +13,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 ### Romanised code-mixing detection, measured (2026-10-19, T-1.16.2.1)
 
 PR [#258](https://github.com/khoks/VideoResearchPro/pull/258). Decision
-[D-076](docs/decisions.md#d-076--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19);
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19);
 method and numbers in
 [docs/notes/2026-10-19-code-mixing-detection.md](docs/notes/2026-10-19-code-mixing-detection.md).
 First task of N-002 (proportion-driven rendering for code-mixed speech).
@@ -35,9 +35,70 @@ First task of N-002 (proportion-driven rendering for code-mixed speech).
   Bengali track (filed as S-1.11.11).
 - `tests/fixtures/code_mixing/` holds the labelled set and the LLM's cached
   answers; the suite scores both detectors without calling a provider.
-- Fixed in passing: `test_probed_but_not_a_feature_gate` had been failing on
-  master since #240 changed the probe-target shape.
 
+### Report Markdown source; books built from it (2026-10-19, S-6.1.2 + S-6.1.1 remainder)
+
+PR [#255](https://github.com/khoks/VideoResearchPro/pull/255). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **`report_service.report_markdown(job)`** converts the stored HTML report
+  to Markdown with a `markdownify` (MIT) subclass and caches it beside the
+  HTML at `<report_path>.md`: ATX headings, citation links kept as
+  `[text](href)` with their `&t=` timestamps, tables kept, the statistics
+  grid as a one-row table, stylesheet and document head dropped,
+  `[VISUAL @ …]` spans verbatim. Round-trip tests run on three real stored
+  reports. New dependency `markdownify>=1.2.3` (brings `beautifulsoup4`).
+- **Books read it.** `BookMarkdownOutputter` drops the regex tag-stripper;
+  each chapter is the report's Markdown with its headings demoted under the
+  chapter heading; S-5.10.6's tenant-scoped job lookup is kept.
+- **`GET /api/v1/jobs/{id}/report.md`** in `routers/reports.py`,
+  header-bearer auth only (no `?token=`, the reader PR's posture).
+- **Author Studio (S-6.1.1 remainder):** an empty book is a 400 with no row
+  written; outputs carry `word_count` and the list shows chapters and
+  words; "Add to a book" on a finished run's page opens the create flow with
+  that run pre-selected (`/author?new=book&job=<id>`). The Author reader
+  renders the manuscript's tables through `remark-gfm` (MIT); without it
+  they showed as a run of pipes.
+
+### AI models page shows what the measurements found (S-1.14.7, 2026-10-19)
+
+Story S-1.14.7 under [E-1.14](docs/initiatives.md#e-114--model-tier-quality-evaluation-harness), PR [#251](https://github.com/khoks/VideoResearchPro/pull/251), decision [D-076](docs/decisions.md#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19). No default model changed.
+
+- **Registry guidance.** Every LLM use case now records what the quality
+  measurements found. 8 are measured, each citing its decision with the gap to
+  the flagship tier and what fails on a cheaper model. The other 15 are marked
+  unmeasured, with a note on what evidence exists.
+- **Warnings on `/account/ai-models`.** A row warns when the chosen model
+  measured unacceptable for that function (for example luna for frame
+  description, D-073) or weaker (sonnet-5 for report compose, D-062).
+  It also warns when a vision function points at a model not known to
+  accept images. Model options are marked before you pick one. Warnings
+  never block a save.
+- **Cost against the default.** Each row shows the benchmark-job cost of
+  your choice against the default's: compose on sonnet-5 reads $3.03 against
+  $7.58.
+- **`/health/llm`** reports the same guidance and warnings for the
+  server's resolved config, so a bad `LLM_USE_CASE_CONFIG` shows up there.
+- Fixed: Q&A history rows were listed under "Job Q&A".
+
+### Reading room: citation cards, endnotes and print (2026-10-19)
+
+S-8.8.2. Every citation chip in a report now opens a card naming its source,
+and the reader prints as a clean document with numbered footnotes.
+
+- **Sources for every chip.** The reader resolves each citation against the
+  run's documents: by YouTube id, by URL, or — for reports written before
+  S-1.14.9, whose anchors carry only `&t=` — by the title or the sole channel
+  named beside the timestamp. All 30 dead anchors in the stored smoke-test
+  report are now real links.
+- **One shared card** (Popover API, placed from the chip's rect) on hover and
+  keyboard focus, polymorphic by `source_type`, with `aria-describedby`,
+  Escape to close, and a still slot for R1 frames once S-1.18.2 serves them.
+- **Print:** chrome hidden, monochrome, `h2` page breaks, chips as `[n]`
+  footnotes, a "Sources cited" endnote list with URLs, 2 cm margins.
+- **Fix:** `GET /jobs/{id}/videos` now declares `source_type`, `document_id`,
+  `source_metadata` and friends. They had always been built and always been
+  stripped by the response schema, and a non-video document on a job failed
+  serialisation outright.
 ### Global search endpoint on SQLite FTS5 (2026-10-19, S-8.2.1)
 
 PR [#245](https://github.com/khoks/VideoResearchPro/pull/245). Plan:

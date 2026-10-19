@@ -48,6 +48,7 @@ describe('parseCitationHref', () => {
       videoId: 'dQw4w9WgXcQ',
       seconds: 841,
       label: '14:01',
+      contexts: [],
     });
   });
 
@@ -132,6 +133,18 @@ describe('parseReportHtml', () => {
     expect(citations.map((c) => c.label)).toEqual(['0:10', '0:20']);
     expect(outline).toEqual([{ id: 'swallowed', text: 'Swallowed', level: 2 }]);
     expect(markup).toContain('<cite>0:20</cite><h2 id="swallowed" tabindex="-1">Swallowed</h2><p>Body text.</p>');
+  });
+
+  it('records the enclosing paragraph and list item as citation context', () => {
+    const { citations } = render(
+      '<ul><li><p>Fact: something.</p><p class="source">Source: Chan — The Title, <a href="&t=7">0:07</a></p></li></ul>' +
+        '<section><p>Loose <a href="&t=9">0:09</a></p></section>',
+    );
+    expect(citations[0].contexts).toEqual([
+      'Source: Chan — The Title, 0:07',
+      'Fact: something.Source: Chan — The Title, 0:07',
+    ]);
+    expect(citations[1].contexts).toEqual(['Loose 0:09']);
   });
 
   it('wraps tables in a scroll region', () => {

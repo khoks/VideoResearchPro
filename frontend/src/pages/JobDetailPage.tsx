@@ -12,6 +12,7 @@ import {
   type QAStreamStage,
 } from '../hooks/useQA';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
+import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { CitationLink } from '../components/citation';
 import { NotesPanel } from '../components/notes';
@@ -63,6 +64,7 @@ export function JobDetailPage() {
   const syncCounts = useSubscriptionSyncCounts(jobId || null);
   const [knowledgeVideo, setKnowledgeVideo] = useState<Video | null>(null);
   const knowledgeExtractionAvailable = useFeatureAvailable('knowledge_extraction');
+  const { has: hasTierFeature } = useTierCapabilities();
 
   if (isLoading) {
     return (
@@ -283,6 +285,12 @@ export function JobDetailPage() {
           <Button variant="secondary" onClick={openReportModal}>
             Quick peek
           </Button>
+          {/* S-6.1.1: start a book from this run (Author Studio picks it up from the URL). */}
+          {job.status === 'completed' && hasTierFeature('author_studio') && (
+            <Button variant="tertiary" onClick={() => navigate(`/author?new=book&job=${encodeURIComponent(job.id)}`)}>
+              Add to a book
+            </Button>
+          )}
         </div>
       )}
 

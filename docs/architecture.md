@@ -54,7 +54,7 @@ Production targets the same shape, with SQLite swapped for Postgres and ChromaDB
   - Creates `data/` directories (DB, ChromaDB, reports).
   - Creates SQLAlchemy tables (idempotent; Alembic migrations are the source of truth, but `Base.metadata.create_all` is the dev fallback).
   - Runs `services/llm_smoke.run_startup_probes` — see "LLM smoke + fail-soft" below.
-  - Ensures the search index (S-8.2.1): `services/search_service.ensure_index_for_url` probes SQLite for FTS5 with the trigram tokenizer, creates any missing `fts_*` virtual tables and their `AFTER INSERT / UPDATE / DELETE` triggers, rebuilds the ones just created from their base tables, and records the backend (`fts5` or `like`) that `GET /health` reports as `search_backend`. Migration `a9f3c1e7b5d2` does the same conditionally, so a fresh install is indexed before the first request; the lifespan re-probe is what picks up a Python upgrade that gains FTS5 later. Never blocks startup. The worker needs nothing: the triggers live in the database, so ingest writes from any process are indexed.
+  - Ensures the search index (S-8.2.1, [D-078](decisions.md#d-078--search-index-one-trigram-fts5-table-per-entity-copies-not-external-content-like-fallback-2026-10-19)): `services/search_service.ensure_index_for_url` probes SQLite for FTS5 with the trigram tokenizer, creates any missing `fts_*` virtual tables and their `AFTER INSERT / UPDATE / DELETE` triggers, rebuilds the ones just created from their base tables, and records the backend (`fts5` or `like`) that `GET /health` reports as `search_backend`. Migration `a9f3c1e7b5d2` does the same conditionally, so a fresh install is indexed before the first request; the lifespan re-probe is what picks up a Python upgrade that gains FTS5 later. Never blocks startup. The worker needs nothing: the triggers live in the database, so ingest writes from any process are indexed.
 - On shutdown: flushes any pending Chroma writes, closes the embedding model, releases Redis connections.
 - Does **not** run Celery tasks itself. It only `.delay()`-dispatches them.
 
@@ -69,7 +69,7 @@ Production targets the same shape, with SQLite swapped for Postgres and ChromaDB
 
 ### Celery beat (`celery -A app.tasks.celery_app beat -s data/celerybeat-schedule`)
 
-Added 2026-10-19 (S-8.3.1, the scheduler the saved searches, newsletter and Echo syncs run on; plan in [plans/m3-saved-searches-alerts.md](plans/m3-saved-searches-alerts.md)).
+Added 2026-10-19 (S-8.3.1, the scheduler the saved searches, newsletter and Echo syncs run on; plan in [plans/m3-saved-searches-alerts.md](plans/m3-saved-searches-alerts.md)). Decision [D-077](decisions.md#d-077--scheduler-one-static-beat-entry-over-table-rows-beat-is-its-own-process-with-no-pidfile-2026-10-19).
 
 - **One static entry.** Beat fires exactly one task, `scheduler.tick` (`app/tasks/scheduler_tasks.py`), every `SCHEDULER_TICK_SECONDS` (default 300) on the `default` queue with `expires` set to the same interval, so ticks that sat unconsumed while the worker was down are dropped rather than replayed. Nothing else is ever a beat entry: everything that runs on a schedule is a **row** in `scheduled_runs`, which keeps the schedule inside the SQLite backup and needs no Redis-backed beat store (RedBeat and friends were rejected in the plan).
 - **The tick** (`app/services/scheduler_service.run_tick`) selects enabled rows with `next_run_at` within `SCHEDULER_GRACE_SECONDS` of now, claims each with a single `UPDATE … WHERE claimed_at IS NULL OR claimed_at < now − SCHEDULER_LEASE_SECONDS` (so a second tick, or a second beat, claims nothing), dispatches the row's kind through `task_routing_service.dispatch_for_tenant_id` (tier queues apply), computes the next slot from `max(now, next_run_at)` and releases the claim. A failed dispatch is retried at the next tick up to `SCHEDULER_MAX_RETRY_TICKS` times, then waits for its cadence; an unknown kind is recorded as `no_handler` and advanced.
@@ -494,9 +494,20 @@ retrieve_past_exchanges → refine_context → formulate_answer
 
 ## LLM routing
 
-Every LLM call site in the codebase is a **named use case** with a default `(provider, model, reasoning)` triple registered in `app/services/llm_routing.py::USE_CASE_REGISTRY`. Nineteen entries today (full list in [CLAUDE.md](../CLAUDE.md) §LLM-configuration).
+Every LLM call site in the codebase is a **named use case** with a default `(provider, model, reasoning)` triple registered in `app/services/llm_routing.py::USE_CASE_REGISTRY`. Twenty-four entries today (full list in [CLAUDE.md](../CLAUDE.md) §LLM-configuration).
 
-`resolve_config(use_case)` returns the effective config after applying `LLM_USE_CASE_CONFIG` overrides (highest precedence) and `LLM_ROUTE_OVERRIDES` (legacy fallback). `get_llm(use_case)` returns a configured LangChain client (`ChatOpenAI`, `ChatAnthropic`, `ChatGoogleGenerativeAI`, or local OpenAI-compatible).
+`resolve_config(use_case)` returns the effective config after applying, highest first: the caller's per-user override (`user_llm_overrides`, loaded into a ContextVar by `llm_service.byok_context`, E-1.13), `LLM_USE_CASE_CONFIG`, and `LLM_ROUTE_OVERRIDES` (legacy fallback). `get_llm(use_case)` returns a configured LangChain client (`ChatOpenAI`, `ChatAnthropic`, `ChatGoogleGenerativeAI`, or local OpenAI-compatible).
+
+### Measured guidance
+
+Each registry entry also carries `guidance`, which records what the E-1.14 measurements found for that use case. Eight entries are `measured` and cite a decision, the gap to the flagship tier and what fails on a downgrade. The other fifteen are `unmeasured`, with a note on what evidence exists. Each entry can also list per-model verdicts (`unacceptable` / `weaker`), scoped to reasoning levels where needed.
+
+`assess_choice(use_case, cfg)` turns those verdicts, plus the `VISION_CAPABLE_MODELS` check, into warnings. The warnings appear in three places:
+- `/health/llm`, for the config this process resolved;
+- `/settings/llm`, as the data behind the `/account/ai-models` page;
+- the page itself, which re-applies the rule client-side.
+
+Warnings are advisory: no layer refuses a config (see [D-076](decisions.md#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19)).
 
 ### Reasoning levels
 
@@ -512,7 +523,7 @@ Unsupported levels degrade gracefully with a warning log; never fatal.
 
 `services/llm_smoke.run_startup_probes` runs once from the FastAPI lifespan. It:
 
-1. Resolves the effective `UseCaseConfig` for all 23 use cases.
+1. Resolves the effective `UseCaseConfig` for all 24 use cases.
 2. Dedupes by `(provider, model, vision)` — each unique pair probed once. `temporal_scope_extract` is probed but gates no feature: a failure leaves each document's era unknown and the job completes.
 3. Fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous).
 4. Stores per-use-case results on a process-global `LLMStatus` singleton.

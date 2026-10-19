@@ -1,7 +1,7 @@
 ---
 status: measurement note
 captured: 2026-10-19
-relates_to: S-1.16.2 (E-1.16, R5), invention N-002, D-066, D-076
+relates_to: S-1.16.2 (E-1.16, R5), invention N-002, D-066, D-080
 ---
 
 # Code-mixing detection: method and results (S-1.16.2)
@@ -92,7 +92,7 @@ but the labels still carry one model's judgement, and the hardest calls
 clause) are judgement. A native-speaker spot check of the 42 Hindi-bearing
 Latin units and 10 Devanagari units would cost about half an hour and is the
 first thing to do if these numbers are ever load-bearing. Recorded as an open
-question in [D-076](../decisions.md#d-076--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19).
+question in [D-080](../decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19).
 
 ## 3. The two detectors
 
@@ -182,7 +182,7 @@ detector stays registered as `code_mixing_detect`. It is the reference the
 evaluation harness compares against and the better instrument for English
 written in Devanagari, but it is not on the ingest path. Full reasoning and
 alternatives:
-[D-076](../decisions.md#d-076--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19).
+[D-080](../decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19).
 
 **Known limits, measured rather than assumed away:**
 

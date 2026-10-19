@@ -188,7 +188,7 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/app/services/frame_service.py` | yt-dlp video fetch + ffmpeg frame extraction |
 | `backend/app/services/visual_service.py` | Pure merge of frame descriptions into transcript segments |
 | `backend/app/services/temporal_service.py` | R3: discussed-era extraction (`temporal_scope_extract`), persistence, prompt/metadata rendering |
-| `backend/app/services/code_mixing_service.py` | R5 / N-002: word-level language of code-mixed text (romanised Hindi included) — lexicon tagger in production, `code_mixing_detect` LLM as the reference (D-076) |
+| `backend/app/services/code_mixing_service.py` | R5 / N-002: word-level language of code-mixed text (romanised Hindi included) — lexicon tagger in production, `code_mixing_detect` LLM as the reference (D-080) |
 | `backend/app/services/corpus_stats_service.py` | Corpus figures for Q&A (approved / visible document set) that drive the length policy and temporal note |
 | `backend/scripts/regenerate_report.py` | Re-run a completed job's report phase from cached transcripts (before/after measurement) |
 | `backend/scripts/judge_report_sections.py` | Split a report into sections and judge each in full — replaces the 180,000-char judging cap |
@@ -371,7 +371,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 - The multilingual embedding model (`paraphrase-multilingual-MiniLM-L12-v2`) ensures a Hindi transcript and its English question land in similar vector space.
 - **Output is ALWAYS English** (D-066), whatever the source language. The contract is defined once in `app/agents/prompts/shared.py` and injected into every report, knowledge and Q&A prompt — enforced at the EXTRACTION boundary, because an item emitted in the source script propagates untouched to the final deliverable. Before D-066 no prompt instructed English output at all, so a Hindi corpus produced a Devanagari report.
 - **Quotes keep three forms**: original script + transliteration + English translation, e.g. `अहिंसा परमो धर्मः (ahiṃsā paramo dharmaḥ) — "non-violence is the highest virtue"`. Reserved for material whose exact wording matters; ordinary speech is translated plainly.
-- **Language detection is script-based** (`app/services/language_service.py`), exact for script mixing and explicitly NOT able to see romanised code-mixing (Hinglish in Latin letters). A test pins the gap; do not "fix" it by flipping the assertion. Romanised code-mixing is detected separately, per word, by `app/services/code_mixing_service.py` ([D-076](docs/decisions.md#d-076--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)): a lexicon tagger measured on a 300-unit hand-labelled set in `tests/fixtures/code_mixing/`. Do not tune it against that set's `test` split.
+- **Language detection is script-based** (`app/services/language_service.py`), exact for script mixing and explicitly NOT able to see romanised code-mixing (Hinglish in Latin letters). A test pins the gap; do not "fix" it by flipping the assertion. Romanised code-mixing is detected separately, per word, by `app/services/code_mixing_service.py` ([D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)): a lexicon tagger measured on a 300-unit hand-labelled set in `tests/fixtures/code_mixing/`. Do not tune it against that set's `test` split.
 - The Q&A agent accepts an `answer_language` parameter (default English) and is instructed to translate quoted non-English context into English (preserving proper nouns) while responding in the requested language.
 
 ## LLM configuration
@@ -419,6 +419,10 @@ From highest to lowest:
 
 Twenty-four named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
 
+### Measured guidance (S-1.14.7)
+
+Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is `measured` (the use case's own output was graded; carries `decision_id`, `decided_on`, `flagship_delta`, `downgrade_risk`, optional `measured_cost`) or `unmeasured` (no decision id; `note` says what evidence exists). `model_verdicts` lists `ModelVerdict(model, verdict="unacceptable"|"weaker", why, decision_id, reasoning=())` — exact model-id match, scoped to reasoning levels when `reasoning` is non-empty. `assess_choice(use_case, cfg)` turns verdicts plus the `VISION_CAPABLE_MODELS` check into warnings; `/health/llm` reports them for the resolved config and `GET /settings/llm` ships the guidance to `/account/ai-models`, whose `assessChoice` mirrors the rule client-side. Advisory only: nothing refuses a config. Adding a use case means writing its guidance; promoting one to `measured` needs a decision entry, and `tests/test_services/test_llm_guidance.py` pins the measured set and checks every cited decision exists in `docs/decisions.md`.
+
 **Job Q&A (`app/agents/qa_agent.py`):**
 - `qa_clarification` — short follow-up clarifier before answering
 - `qa_sub_query_expansion` — rewrite the question into 2 sub-queries for broader RAG recall
@@ -451,7 +455,7 @@ Twenty-four named call sites — full rationale, token budgets, and recommended 
 - `temporal_scope_extract` — once per document on first ingest: which period the source DISCUSSES (`{era_start, era_end, era_confidence, is_retrospective}`), distinct from `published_at`. Persisted on `documents.discussed_era_json`, reused by every later job, flattened into chunk metadata. Reasoning OFF is mandatory (strict JSON under a 400-token cap). Fail-soft, so deliberately not a feature gate in `llm_smoke`
 
 **Code-mixed speech (`app/services/code_mixing_service.py`, R5 / N-002):**
-- `code_mixing_detect` — word-level language of 25 snippets per call: each snippet's Hindi runs verbatim plus its matrix (grammar) language. The evaluation reference, not on the ingest path: the lexicon tagger was more precise on romanised text at equal recall (D-076). Reasoning OFF, fail-soft, not a feature gate
+- `code_mixing_detect` — word-level language of 25 snippets per call: each snippet's Hindi runs verbatim plus its matrix (grammar) language. The evaluation reference, not on the ingest path: the lexicon tagger was more precise on romanised text at equal recall (D-080). Reasoning OFF, fail-soft, not a feature gate
 
 **Report generation (`app/agents/report_agent.py`):**
 - `report_map_chunks` — map phase; per-batch fact extraction (highest-volume call in the codebase)

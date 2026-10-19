@@ -19,7 +19,7 @@ Hindi grammar. That decomposes into two very different problems:
    to it on purpose (a test pins the gap). The prompt layer instructs every
    model to emit English regardless of input language, and since S-1.16.2
    `code_mixing_service` measures it per word with a lexicon tagger chosen
-   against an LLM pass on a hand-labelled set (D-076).
+   against an LLM pass on a hand-labelled set (D-080).
 
 So: exact where exactness is achievable, explicit about where it is not.
 Storing a per-video language label as if it were the truth was the original

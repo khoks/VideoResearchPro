@@ -72,13 +72,13 @@ def test_probe_targets_mark_the_vision_use_case():
     targets = _collect_probe_targets()
     vision_keys = [k for k in targets if k[2] is True]
     assert vision_keys, "no vision probe target collected"
-    # Probe targets list (use_case, reasoning) pairs since PR #240.
+    # Targets hold (use_case, reasoning) pairs since #240.
     covered = {uc for k in vision_keys for uc, _reasoning in targets[k][1]}
     assert "visual_describe_frame" in covered
     # And it must not have been folded in with the text use cases.
     for key, (_cfg, use_cases) in targets.items():
         if key[2] is False:
-            assert "visual_describe_frame" not in {uc for uc, _reasoning in use_cases}
+            assert "visual_describe_frame" not in {uc for uc, _ in use_cases}
 
 
 def test_vision_probe_actually_sends_an_image():

@@ -2279,7 +2279,104 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **Linked initiatives / PRs.** S-1.18.2 (deferred), S-1.18.5, S-1.18.6 (T-3 done), S-1.18.7 (measured), S-1.18.8 (new), S-1.14.6.
 
-## D-076 — Code-mixing detection: a lexicon tagger, not an LLM pass (2026-10-19)
+## D-076 — Model guidance: "measured" means the use case's own output was graded; verdicts warn, never block (2026-10-19)
+
+**Status:** accepted. Item 3 is open to the user as OQ-16 in [E-1.14](initiatives.md#e-114--model-tier-quality-evaluation-harness).
+
+**Context.** E-1.14 measured tier quality per use case (D-055 to D-062, D-073), but the verdicts lived only in this log. The `/account/ai-models` override page therefore offered a raw model picker, and nothing warned an operator whose `LLM_USE_CASE_CONFIG` pointed frame description at a model graded unusable. S-1.14.7 moved the evidence into `USE_CASE_REGISTRY`, which forced three choices the decisions themselves never made.
+
+**Decision.**
+1. **A use case is `measured` only when its own output was graded.** That gives 8 measured entries. The other 15 are `unmeasured`, each with a note on what evidence exists. Three kinds of evidence do not count:
+   - sitting inside a graded chain (refine, knowledge extraction);
+   - sharing a prompt contract with a graded site (the library answer);
+   - moving tier alongside a graded site (the eight volume-tier sites that followed `report_map_chunks` to luna in D-057).
+2. **Verdicts are per model and scoped to reasoning levels, in two strengths.**
+   - `unacceptable`: the measurement produced unusable output. Examples: luna on frames (22 of 66 gradings), claude-haiku-4-5 on frames (55 of 62, although it accepts images), nano on map batches (unparseable JSON on 1 of 2), luna or gpt-5.4-mini with reasoning on (empty output).
+   - `weaker`: measurably below the default on the decision's own grading, but usable. Examples: sonnet-5 on compose; mini and flash-lite on frame selection, judged by agreement with the default's picks, which D-073 itself says is not a quality measure.
+
+   Model ids match exactly, as on `VISION_CAPABLE_MODELS`, so `gpt-5.5` cannot catch `gpt-5.5-pro`.
+3. **Warnings advise; nothing refuses a config.** This applies at the PUT, at resolve time and at startup. It is the same fail-soft rule [D-067](#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31) set for the vision allowlist.
+
+**Alternatives considered.**
+- *Mark a use case measured when its chain was graded.* Rejected: it would put a sibling's numbers behind a choice nobody measured. That would be a guidance version of the defect D-055 found, where the registry described a call by numbers that no longer applied to it.
+- *A single severity.* Rejected: sonnet-5 on compose reads better (8 vs 7) and is a defensible trade, while luna on frames produced 22 unusable gradings out of 66. One warning colour for both would teach users to ignore it.
+- *Refuse `unacceptable` choices at `PUT /settings/llm`.* Not taken for now. The verdicts rest on small samples (n=2 on map batches), the vision list always lags new releases, and the override page exists so that users can choose differently. The block would be one line in the PUT handler; recorded as OQ-16.
+- *Keep guidance in a separate table keyed by use case.* Rejected: a required field on `UseCaseInfo` means a new call site cannot ship without stating its evidence, and the registry test enforces that.
+
+**Consequences.**
+- Promoting a use case to `measured` now requires a decision entry. `tests/test_services/test_llm_guidance.py` pins the measured set and fails on any cited decision id missing from this log.
+- `assess_choice()` on the server and `assessChoice` on the page must change together.
+- A re-measurement that changes a verdict is a registry edit plus a decision, not just a decision.
+
+**Linked initiatives / PRs.** [S-1.14.7](initiatives.md#e-114--model-tier-quality-evaluation-harness), PR [#251](https://github.com/khoks/VideoResearchPro/pull/251). Follows D-052, D-055, D-056, D-057, D-062, D-072, D-073.
+
+## D-077 — Scheduler: one static beat entry over table rows; beat is its own process with no pidfile (2026-10-19)
+
+**Status:** accepted.
+
+**Context.** Nothing in the app ran on a schedule. Saved searches (E-8.3), the newsletter (E-6.4) and Echo connector syncs (S-3.2.1) all need "run X for tenant T at cadence C", and the [M3 plan](plans/m3-saved-searches-alerts.md) chose a shape: one static Celery beat entry plus rows in SQLite. Building S-8.3.1 on Windows forced two choices the plan did not name: how to guarantee a single beat process, and how cadences compute across time zones.
+
+**Decision.**
+1. **Beat fires one task, `scheduler.tick`; the schedule is rows in `scheduled_runs`.** The tick claims each due row with one conditional `UPDATE … WHERE claimed_at IS NULL OR claimed_at < now − lease`, dispatches it on the owning tenant's tier queue, and advances from `max(now, next_run_at)`, so a duplicate or early tick never runs a row twice.
+2. **Beat is a separate process started by `scripts/start.ps1` and `scripts/restart_services.ps1`, which kill any earlier beat first. No `--pidfile`.** Celery's stale-pidfile probe is `os.kill(pid, 0)`, which on Windows terminates whatever process now owns that pid.
+3. **Cadences are human, never cron**, and `next_run_at` is computed by Celery's own `crontab` on the row's local wall clock, then converted to UTC, so 09:00 local stays 09:00 local across DST.
+4. **Kinds register from the task module that defines their task.** A worker that lacks the module records `no_handler` and advances the row rather than retrying it every tick.
+
+**Alternatives considered.**
+- *Embedded `worker -B`.* Rejected. Celery calls it unsuitable for production, and it is unverified with `--pool=solo` on Windows.
+- *`--pidfile` as the singleton guard.* Rejected for the Windows reason above.
+- *RedBeat or another dynamic beat store.* Rejected by the plan: rows keep the schedule inside the SQLite backup; RedBeat stays the upgrade path for highly available beat.
+- *Cron strings or `croniter`.* Rejected: users never see cron, and `crontab` already covers daily, weekly and monthly.
+- *Retry a failed dispatch only at the next cadence slot.* Rejected: a broker blip would delay a weekly run by a week. Failed dispatches retry at the next tick up to `SCHEDULER_MAX_RETRY_TICKS` times.
+
+**Consequences.** Exactly one beat per install is now an operator rule, enforced only by the launchers; a hand-started second beat doubles the tick load, though the lease still prevents double dispatch. `day_of_month` is capped at 28, so there is no "last day of month" cadence. S-8.3.2 registers `saved_search` and S-6.4.2 registers `newsletter` from their own task modules, and each must add its module to `celery_app.autodiscover_tasks`.
+
+**Linked initiatives / PRs.** [S-8.3.1](initiatives.md#s-831--scheduler-tick-shared-infrastructure) (PR [#238](https://github.com/khoks/VideoResearchPro/pull/238)), S-8.3.2, S-6.4.2, S-3.2.1.
+
+## D-078 — Search index: one trigram FTS5 table per entity, copies not external content, LIKE fallback (2026-10-19)
+
+**Status:** accepted. Deviates from the [M2 plan](plans/m2-command-palette.md)'s sketch in two places, both recorded here.
+
+**Context.** S-8.2.1 adds `GET /api/v1/search` over jobs, documents, channels, Q&A exchanges and knowledge reports. The plan sketched FTS5 external-content tables with a `unicode61` table plus a `trigram` table per entity, and a `LIKE` fallback where FTS5 is missing. It also required that a tenant with nothing visible gets nothing, never everything (D-063).
+
+**Decision.**
+1. **One `trigram`-tokenised FTS5 table per entity** (`fts_documents`, `fts_jobs`, `fts_channels`, `fts_qa`, `fts_knowledge`), tokenizer `trigram remove_diacritics 1` where SQLite ≥ 3.45 supports it, else plain `trigram`.
+2. **Each FTS row carries the entity id as an `UNINDEXED` column and a copy of the indexed text**, kept current by `AFTER INSERT / UPDATE OF <indexed columns> / DELETE` triggers. Not external-content tables.
+3. **Tenant scoping joins each entity's anchor onto the FTS hit list**, never a tenant column inside the index: `jobs.tenant_id`, `document_visibility` on `document_id` (D-070), subscriptions ∪ visible documents' channels (D-065), and `*_qa_exchanges.tenant_id`.
+4. **The tables are created conditionally** by migration `a9f3c1e7b5d2` and re-ensured at every boot, so a Python upgrade that gains FTS5 later still gets them. Without FTS5, and for queries whose tokens are all shorter than three characters, search scans with `LIKE`. `GET /health` reports `search_backend`.
+5. **Document hrefs key on `document_id`** (`/library?document=<id>`), because most non-video documents have no `video_id`.
+
+**Alternatives considered.**
+- *`unicode61` plus `trigram` per entity (the plan).* Rejected. The trigram tokenizer alone covers word prefixes, mid-word substrings, case and diacritics folding, and Devanagari, so the second table doubled the triggers for no gain at this scale.
+- *External-content tables (the plan).* Rejected. `content=` mode maps on rowid, and every base table here has a string primary key whose rowid is not stable across `VACUUM`. The copied text is small except the knowledge Markdown.
+- *A tenant column inside the FTS table.* Rejected. It would duplicate the visibility model and drift from it; joining the canonical anchors keeps one source of truth.
+- *`LIKE` only.* Rejected: no ranking, and full scans of description and knowledge text.
+
+**Consequences.** `schema_init_service` ignores the `fts_` prefix when comparing the live schema to the ORM; any future non-ORM table needs the same treatment. The index costs disk roughly equal to the indexed text. Linux distro Pythons without FTS5 get working but unranked search. A query of only one- and two-character words never uses the index. The palette (S-8.2.2) owns teaching the library page to read `?document=`.
+
+**Linked initiatives / PRs.** [S-8.2.1](initiatives.md#s-821--search-endpoint) (PR [#245](https://github.com/khoks/VideoResearchPro/pull/245)), S-8.2.2, S-8.2.3, [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).
+
+## D-079 — Report Markdown source on markdownify; new report routes are header-bearer only (2026-10-19)
+
+**Status:** accepted. Item 2 deviates from the S-6.1.2 story text; the user may revisit it.
+
+**Context.** S-6.1.2 gives every report a Markdown source that the book, the site index, the newsletter's plain-text part and `GET /jobs/{id}/report.md` read. The [L2 plan](plans/l2-author-studio.md) chose `markdownify`. The story asked for the `.md` route to use "the HTML route's auth", which accepts a `?token=` query parameter because iframes cannot send headers. S-8.8.1, merged first, had already made the reader's body route header-only to keep tokens out of URLs and logs.
+
+**Decision.**
+1. **`report_service.report_markdown(job)` converts the stored HTML with a `markdownify` subclass** and caches the result at `<report_path>.md`. It drops the document head and stylesheet, uses ATX headings, never autolinks (a citation stays `[text](href)` with its `&t=`), and turns the statistics grid into a table. Book chapters use it with the report's H1 dropped and its headings demoted under the chapter heading.
+2. **Every new report route is header-bearer only.** `GET /jobs/{id}/report.md` does not accept `?token=`; browsers fetch it with the header and save a blob, as Author downloads already do. The legacy HTML route keeps its query-token fallback until T-8.8.1.5 retires it.
+
+**Alternatives considered.**
+- *`html2text`.* Rejected: GPL-3.0.
+- *trafilatura's Markdown mode.* Rejected: a boilerplate stripper that drops report content.
+- *Reuse S-8.8.1's `extract_report_body` for the Markdown.* Not adopted. The reader needs the template's parts; the Markdown needs the whole document, and only the statistics grid is template-specific in the converter.
+- *`?token=` on the `.md` route, as the story said.* Rejected: it would reopen the URL and log leak S-8.8.1 closed, for a file that is always fetched by script.
+
+**Consequences.** New dependencies `markdownify` (backend) and `remark-gfm` (frontend, so the Author reader renders the manuscript's tables). Any future link that opens a report file in a new tab must fetch with the header first. The cache is a second file per report; `delete_report` removes both.
+
+**Linked initiatives / PRs.** [S-6.1.2](initiatives.md#s-612--markdown-source-for-reports), [S-6.1.1](initiatives.md#s-611--source-picker-and-a-working-author-page) (PR [#255](https://github.com/khoks/VideoResearchPro/pull/255)), S-8.8.1, T-8.8.1.5, S-6.1.4.
+
+## D-080 — Code-mixing detection: a lexicon tagger, not an LLM pass (2026-10-19)
 
 **Status:** accepted. Implements T-1.16.2.1 of [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31); extends [D-066](#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31). Method and numbers: [the detection note](notes/2026-10-19-code-mixing-detection.md).
 

@@ -7,6 +7,7 @@ iframe) stays in ``routers/qa.py`` until T-8.8.1.5 retires it.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db
@@ -46,4 +47,50 @@ def get_report_body(
         html=parts["html"],
         statistics=parts["statistics"],
         generated_at=parts["generated_at"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# S-6.1.2: the report's Markdown source.
+#
+# `GET /jobs/{id}/report.md` cannot share `router` above: that router's
+# prefix ends in `/report`, and this path is a sibling of it, not a child.
+# Same posture as the body route — header-bearer auth only, never a
+# `?token=` (the story asked for "the HTML route's auth"; the reader PR,
+# merged first, set header-only for every new report route). Browsers
+# download it through a fetch and a blob, as Author Studio already does.
+# ---------------------------------------------------------------------------
+
+markdown_router = APIRouter(
+    prefix="/jobs/{job_id}",
+    tags=["reports"],
+    dependencies=[Depends(get_current_user)],
+)
+
+
+@markdown_router.get(
+    "/report.md",
+    response_class=PlainTextResponse,
+    responses={200: {"content": {"text/markdown": {}}}},
+)
+def get_report_markdown(
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    job = job_service.get_job(db, job_id, tenant_id=current_user.id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.report_path:
+        raise HTTPException(status_code=404, detail="Report not generated yet")
+
+    markdown = report_service.report_markdown(job)
+    if markdown is None:
+        raise HTTPException(status_code=404, detail="Report file not found")
+
+    filename = f"report-{job.id}.md"
+    return PlainTextResponse(
+        markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )

@@ -75,6 +75,21 @@ Per-use-case LLM probe detail. Returns the result of the startup smoke check (de
 }
 ```
 
+### `GET /api/v1/health/scheduler`
+Scheduler status (S-8.3.1). Configuration, the kinds **this process** can dispatch (the worker's list is the one that matters; nothing registers until S-8.3.2 adds `saved_search`), and `scheduled_runs` row counts. `last_run_at` is the newest dispatch across all rows, the cheapest liveness signal for beat once anything is scheduled. Unauthenticated like the rest of `/health`; counts only.
+
+```json
+{
+  "enabled": true,
+  "tick_seconds": 300,
+  "lease_seconds": 600,
+  "grace_seconds": 30,
+  "kinds": [],
+  "rows": { "total": 0, "enabled": 0, "due": 0, "claimed": 0 },
+  "last_run_at": null
+}
+```
+
 ### `GET /api/v1/health/quota`
 YouTube API quota status (today's usage, soft cap, hard cap, time-to-reset).
 

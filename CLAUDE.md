@@ -75,13 +75,14 @@ cd frontend && npm run build
 
 ### One-shot launcher (recommended for dev)
 ```powershell
-# Starts Redis (if needed), backend, Celery, frontend; waits for health;
-# opens browser; blocks until Ctrl+C, then tears everything down.
+# Starts Redis (if needed), backend, Celery worker, ONE Celery beat (the
+# scheduler tick), frontend; waits for health; opens browser; blocks until
+# Ctrl+C, then tears everything down.
 ./scripts/start.ps1                # foreground; Ctrl+C stops everything
 ./scripts/start.ps1 -NoBrowser     # skip auto-open
 ./scripts/start.ps1 -NoFrontend    # backend + Celery only
 ```
-Logs land in `.uvicorn.*.log` / `.celery.*.log` / `.frontend.*.log` at the repo root (gitignored). For an in-place restart (kill + relaunch detached) use `./scripts/restart_services.ps1`.
+Logs land in `.uvicorn.*.log` / `.celery.*.log` / `.celerybeat.*.log` / `.frontend.*.log` at the repo root (gitignored). For an in-place restart (kill + relaunch detached) use `./scripts/restart_services.ps1`. Both scripts are the single-beat guard: they kill any earlier beat before starting one (never run two).
 
 ### Infrastructure
 ```bash
@@ -92,6 +93,10 @@ redis-cli ping    # Should return PONG
 
 # Start Celery worker (use --pool=solo on Windows)
 cd backend && ./venv/Scripts/celery -A app.tasks.celery_app worker --loglevel=info --pool=solo
+
+# Start the scheduler beat (S-8.3.1) — exactly ONE per install; no --pidfile
+# (Celery's stale-pid probe terminates an unrelated process on Windows)
+cd backend && ./venv/Scripts/celery -A app.tasks.celery_app beat --loglevel=info -s data/celerybeat-schedule
 ```
 
 ### Setup (first time)
@@ -302,6 +307,13 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | **Temporal awareness (R3 / E-1.17)** | | | |
 | `TEMPORAL_SCOPE_ENABLED` | No | `True` | Per-document discussed-era extraction on first ingest (`temporal_scope_extract`, one economy-tier call per NEW document). Off = every era reads as unknown, which is also how a missing value is treated |
 | `TEMPORAL_SCOPE_WINDOW_TOKENS` | No | `1500` | Size of each of the three transcript windows (opening / middle / close) sampled for the era call |
+| **Scheduler (S-8.3.1 / M3)** | | | |
+| `SCHEDULER_ENABLED` | No | `True` | Registers the single beat entry `scheduler.tick`; off = no entry and a tick that still arrives no-ops. Beat is its own process (`celery -A app.tasks.celery_app beat`), started by `scripts/start.ps1`; run exactly one |
+| `SCHEDULER_TICK_SECONDS` | No | `300` | Tick interval; also the tick's `expires`, so a backlog never replays after a restart |
+| `SCHEDULER_LEASE_SECONDS` | No | `600` | A row claim older than this is stale and may be re-taken (the holder crashed between claim and advance) |
+| `SCHEDULER_GRACE_SECONDS` | No | `30` | Rows due within this window count as due, so an early beat still runs them; `next_run_at` advances from the scheduled time, never twice |
+| `SCHEDULER_BATCH_SIZE` | No | `50` | Max rows one tick claims (bounds the catch-up after downtime) |
+| `SCHEDULER_MAX_RETRY_TICKS` | No | `3` | A failed dispatch is retried at the next tick this many times, then waits for its cadence |
 | **Auth hardening (E-5.4)** | | | |
 | `LOCKOUT_FAILURE_THRESHOLD` | No | `5` | Failed-login count before account locks. Set `0` to disable lockout (not recommended). |
 | `LOCKOUT_DURATION_MIN` | No | `15` | How long an account stays locked (minutes). |

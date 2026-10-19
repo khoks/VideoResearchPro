@@ -10,6 +10,20 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Channel intelligence aggregate (2026-10-19)
+
+[S-8.7.2](docs/initiatives.md#s-872--intelligence-aggregate-endpoint), PR [#280](https://github.com/khoks/VideoResearchPro/pull/280).
+
+- **`GET /api/v1/channels/{id}/intelligence`**: publishing cadence, durations,
+  topics and concepts from knowledge reports, a keyword cloud from transcripts,
+  the reader's own questions that cite the channel, and a stance series where
+  social classification exists, each with a note when it is empty or partial.
+- **Per reader.** Everything is over the documents of the channel that reader
+  can see; an empty view is an empty aggregate.
+- **Cached** per channel and reader (migration `b4c5d6e7f8a0`) until a new
+  document, knowledge report or transcript changes the inputs.
+
+
 ### Code-mixed speech: held-out evaluation, and two fixes it forced (2026-10-19, T-1.16.2.6)
 
 PR [#276](https://github.com/khoks/VideoResearchPro/pull/276). Closes S-1.16.2 (invention N-002 now

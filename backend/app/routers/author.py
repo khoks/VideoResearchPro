@@ -33,13 +33,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 # Import outputters to register them. Side-effect import.
 from app.services import outputters  # noqa: F401
 from app.dependencies import get_db
 from app.models.user import User
-from app.services import output_artifacts, output_service, task_routing_service
+from app.services import output_artifacts, output_citation_service, output_service, task_routing_service
 from app.services.output_service import (
     OutputError,
     OutputKind,
@@ -75,6 +75,8 @@ class OutputItem(BaseModel):
     celery_task_id: str | None = None
     # S-6.7.2: the formats `GET …/download?format=` can serve, text first.
     formats: list[str] = []
+    # S-6.7.3: rows in `output_citations` (GET …/citations lists them).
+    citation_count: int = 0
     # S-6.1.1: whitespace-separated words in the generated text; None
     # until there is content. The page shows it beside the chapter count.
     word_count: int | None = None
@@ -103,7 +105,12 @@ class DeleteResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _to_item(row) -> OutputItem:
+def _citation_count(row) -> int:
+    db = object_session(row)
+    return output_citation_service.counts_for(db, [row.id]).get(row.id, 0) if db is not None else 0
+
+
+def _to_item(row, citation_count: int | None = None) -> OutputItem:
     import json
     return OutputItem(
         id=row.id,
@@ -117,6 +124,7 @@ def _to_item(row) -> OutputItem:
         updated_at=row.updated_at,
         has_content=bool(row.content_text or row.content_path),
         formats=output_artifacts.available_formats(row),
+        citation_count=citation_count if citation_count is not None else _citation_count(row),
         word_count=len(row.content_text.split()) if row.content_text else None,
         progress_pct=row.progress_pct or 0,
         progress_message=row.progress_message,
@@ -246,7 +254,8 @@ def list_outputs_endpoint(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
         )
-    return [_to_item(r) for r in rows]
+    counts = output_citation_service.counts_for(db, [r.id for r in rows])
+    return [_to_item(r, counts.get(r.id, 0)) for r in rows]
 
 
 @router.get("/outputs/{output_id}", response_model=OutputItem)
@@ -325,6 +334,48 @@ def download_output(
     if not path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact file is missing")
     return FileResponse(path, media_type=media_type, headers=headers)
+
+
+class CitationItem(BaseModel):
+    position: int
+    label: str
+    url: str | None
+    seconds: int | None
+    document_id: str | None
+    source_type: str | None
+    source_id: str | None
+    resolved_by: str | None
+    title: str | None = None
+    channel_name: str | None = None
+
+
+@router.get("/outputs/{output_id}/citations", response_model=list[CitationItem])
+def list_output_citations(
+    output_id: str,
+    current_user: User = Depends(require_feature("author_studio")),
+    db: Session = Depends(get_db),
+) -> list[CitationItem]:
+    """Every source the output cites, in order (S-6.7.3). `resolved_by` is
+    null for a citation no library document matched; such a bare anchor has
+    no `url`. 404 for another user's output."""
+    row = output_service.get_output(db, current_user.id, output_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Output not found")
+    return [
+        CitationItem(
+            position=c.position,
+            label=c.label,
+            url=c.url,
+            seconds=c.seconds,
+            document_id=c.document_id,
+            source_type=c.source_type,
+            source_id=c.source_id,
+            resolved_by=c.resolved_by,
+            title=doc.title if doc is not None else None,
+            channel_name=(doc.channel_name or None) if doc is not None else None,
+        )
+        for c, doc in output_citation_service.list_citations(db, row)
+    ]
 
 
 @router.delete("/outputs/{output_id}", response_model=DeleteResponse)

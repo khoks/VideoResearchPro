@@ -203,6 +203,10 @@ def delete_output(db: Session, user_id: str, output_id: str) -> bool:
     row = get_output(db, user_id, output_id)
     if row is None:
         return False
+    # S-6.7.3: its citations (SQLite here does not enforce the FK cascade).
+    from app.services import output_citation_service
+
+    output_citation_service.delete_citations(db, row.id)
     # S-6.7.2: the row's artifact directory goes with it. Best effort: a file
     # that cannot be removed is left for scripts/sweep_output_artifacts.py.
     try:

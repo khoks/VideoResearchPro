@@ -33,7 +33,8 @@ from app.agents.prompts.shared import (
     VISUAL_ANNOTATION_CONTRACT,
 )
 from app.agents.state import ReportAgentState
-from app.services import code_mixing_service, language_service
+from app.services import code_mixing_service, language_service, quote_fidelity
+from app.services.visual_service import strip_annotations
 from app.services.llm_service import get_llm_for, response_text
 from app.services.llm_routing import (
     context_window_for,
@@ -268,6 +269,10 @@ def map_chunks(state: ReportAgentState) -> dict:
     # from any OTHER source is speech by construction, so its label is fixed
     # here rather than trusted to the model.
     visual_sources = _visual_source_keys(ch.get("metadata") or {} for ch in chunks)
+    # N-002: every source's own text, so kept `original` wording can be
+    # checked against the transcript it claims to come from.
+    source_texts = _source_texts_for_verification(chunks)
+    original_counts = {"kept": 0, "dropped": 0}
 
     # Group chunks into batches. `batch_metas` runs parallel to `batches` so
     # the S-1.14.6 audit record can say which videos a batch covered.
@@ -346,6 +351,8 @@ def map_chunks(state: ReportAgentState) -> dict:
         # S-1.18.8: fix the label at the stage that read the speech.
         batch_has_visual = any(VISUAL_MARKER_OPEN in t for t in batch_items)
         _label_modality(parsed, visual_sources, batch_has_visual, modality_counts)
+        # N-002: "copied EXACTLY" enforced in code, before the audit record.
+        _verify_originals(parsed, source_texts, original_counts)
         return parsed
 
     # Process each batch with one level of bisect-retry (S-1.12.6): a
@@ -400,8 +407,17 @@ def map_chunks(state: ReportAgentState) -> dict:
             "map_chunks_dropped": dropped_chunk_groups,
             "map_chunks_total": len(chunks),
             "map_modality": dict(sorted(modality_counts.items())),
+            "map_originals_kept": original_counts["kept"],
+            "map_originals_dropped": original_counts["dropped"],
+            "map_originals_dropped_by_reason": dict(sorted(original_counts.get("reasons", {}).items())),
         }
     )
+    if original_counts["dropped"]:
+        logger.warning(
+            "map_chunks: dropped %d of %d `original` quotes not found word for "
+            "word in their own source's transcript",
+            original_counts["dropped"], original_counts["kept"] + original_counts["dropped"],
+        )
     if failed_batches:
         logger.error(
             "map_chunks: %d batch(es) failed permanently; ~%d of %d chunks "
@@ -416,6 +432,85 @@ def map_chunks(state: ReportAgentState) -> dict:
 
 
 _REDUCE_KEYS = ("facts", "comments", "conclusions", "references", "speakers")
+
+
+# --- N-002: kept wording must be the source's own words ------------------------
+
+def _source_identity(meta: dict) -> str:
+    return str(
+        meta.get("document_id") or meta.get("video_id")
+        or _source_key(meta.get("video_url") or meta.get("url") or meta.get("permalink"))
+        or meta.get("video_title") or ""
+    )
+
+
+def _source_texts_for_verification(chunks: list[dict]) -> dict:
+    """``{"videos": {source: VideoText}, "by_url": {...}, "by_title": {...}}``.
+
+    Each source's chunks are put back in order, merged without their overlap
+    (so a quote spanning a chunk boundary still matches) and stripped of
+    `[VISUAL @]` spans: an `original` is something SAID.
+    """
+    by_source: dict[str, list[tuple[float, int, str]]] = {}
+    titles: dict[str, str] = {}
+    by_url: dict[str, str] = {}
+    by_title: dict[str, str] = {}
+    for ch in chunks:
+        meta = ch.get("metadata") or {}
+        sid = _source_identity(meta)
+        if not sid:
+            continue
+        order = (float(meta.get("timestamp_start") or 0), int(meta.get("chunk_index") or 0))
+        by_source.setdefault(sid, []).append((*order, strip_annotations(ch.get("text") or "")))
+        titles.setdefault(sid, str(meta.get("video_title") or ""))
+        for key in (meta.get("video_url"), meta.get("url"), meta.get("permalink")):
+            if _source_key(key):
+                by_url.setdefault(_source_key(key), sid)
+        if meta.get("video_title"):
+            by_title.setdefault(str(meta["video_title"]), sid)
+    videos = {
+        sid: quote_fidelity.VideoText.from_raw(
+            titles[sid], quote_fidelity.merge_chunk_texts(t for _, _, t in sorted(parts))
+        )
+        for sid, parts in by_source.items()
+    }
+    return {"videos": videos, "by_url": by_url, "by_title": by_title}
+
+
+def _verify_originals(parsed: object, sources: dict, counts: dict) -> None:
+    """Drop any `original` that does not trace back to its own source's speech.
+
+    The rule is `quote_fidelity.problem` — the same definition the R1 run-6
+    gate (`scripts/audit_quote_fidelity.py`) audits with, so the pipeline keeps
+    exactly what the gate passes: verbatim or near (caption spelling) against
+    the item's OWN source, no word mixing two scripts, no script other than
+    the source's. The source is resolved through the item's `video_url`, then
+    its title; an item that resolves to none cannot be checked and loses its
+    `original` too. A dropped value is kept as `original_rejected` (with
+    `original_rejected_reason`) so the persisted map record shows what was
+    removed; the composer never sees it. The English `content` always
+    survives.
+    """
+    if not isinstance(parsed, dict):
+        return
+    for key in _REDUCE_KEYS:
+        for item in parsed.get(key) or []:
+            if not isinstance(item, dict) or not item.get("original"):
+                continue
+            original = str(item["original"])
+            sid = sources["by_url"].get(_source_key(item.get("video_url"))) or sources["by_title"].get(
+                str(item.get("video_title") or "")
+            )
+            reason = quote_fidelity.problem(original, sources["videos"].get(sid) if sid else None)
+            if reason is None:
+                counts["kept"] += 1
+                continue
+            item.pop("original", None)
+            item["original_rejected"] = original
+            item["original_rejected_reason"] = reason
+            counts["dropped"] += 1
+            counts.setdefault("reasons", {})
+            counts["reasons"][reason] = counts["reasons"].get(reason, 0) + 1
 
 
 # --- S-1.18.8: modality provenance -----------------------------------------
@@ -533,12 +628,18 @@ def _uses_modality_tags(consolidated: dict) -> bool:
     )
 
 
+_PIPELINE_ONLY_KEYS = (
+    "modality", "modality_model", "original_rejected", "original_rejected_reason",
+)
+
+
 def _render_items_for_compose(items: list, tagged: bool) -> list:
     """Copies of ``items`` as the composer should read them.
 
     With tags: content is prefixed with the evidence tag. Either way the
-    pipeline-only ``modality`` / ``modality_model`` keys are dropped — the
-    tag carries the label, and the persisted records keep the raw fields.
+    pipeline-only ``modality`` / ``modality_model`` / ``original_rejected``
+    keys are dropped — the tag carries the label, a rejected original must
+    never reach the composer, and the persisted records keep the raw fields.
     Never mutates the consolidated items.
     """
     rendered: list = []
@@ -546,7 +647,7 @@ def _render_items_for_compose(items: list, tagged: bool) -> list:
         if not isinstance(item, dict):
             rendered.append(item)
             continue
-        copy = {k: v for k, v in item.items() if k not in ("modality", "modality_model")}
+        copy = {k: v for k, v in item.items() if k not in _PIPELINE_ONLY_KEYS}
         if tagged:
             tag = _MODALITY_TAG.get(item.get("modality"), _MODALITY_TAG[MODALITY_UNKNOWN])
             copy["content"] = f"{tag} {copy.get('content', '')}"
@@ -736,7 +837,7 @@ def _compress_evenly(merged: dict, budget: int, topic: str) -> tuple[dict, dict]
                 if key in closed or not pools[key]:
                     continue
                 item = pools[key][0]
-                cost = _count_tokens(json.dumps(item, default=str))
+                cost = _count_tokens(json.dumps(item, ensure_ascii=False, default=str))
                 if spent + cost > per_video_budget:
                     # Stop this category for this video, but LEAVE the
                     # remaining items in the pool so they are counted as
@@ -778,7 +879,7 @@ def reduce_summaries(state: ReportAgentState) -> dict:
     # Compose splits each section across as many calls as its material needs,
     # so the only bound here is the cost guard — not a per-call window.
     target_budget = _MAX_COMPOSE_INPUT_TOKENS
-    total_tokens = _count_tokens(json.dumps(merged, default=str))
+    total_tokens = _count_tokens(json.dumps(merged, ensure_ascii=False, default=str))
     notes["reduce_tokens_lossless"] = total_tokens
     notes["reduce_budget"] = target_budget
 
@@ -1023,8 +1124,13 @@ def compose_report(state: ReportAgentState) -> dict:
         # with the corpus instead of being clipped by one completion cap.
         groups = _split_items_to_budget(items, section_input_budget)
         for idx, group in enumerate(groups, 1):
+            # ensure_ascii=False: with the default, every Devanagari or Bengali
+            # `original` (and any non-English title) reached the composer as
+            # \uXXXX escapes — several tokens a character, and wording the
+            # model had to decode before it could quote it.
             material = json.dumps(
-                _render_items_for_compose(group, tagged), indent=2, default=str
+                _render_items_for_compose(group, tagged), ensure_ascii=False,
+                indent=2, default=str,
             )
             material_tokens = _count_tokens(material)
             # Prose expands on structured input; allow generous headroom,
@@ -1133,6 +1239,13 @@ def compose_report(state: ReportAgentState) -> dict:
             f"{notes.get('reduce_videos_represented', '?')} videos so every source "
             "remains represented"
         )
+    if notes.get("map_originals_dropped"):
+        dropped = notes["map_originals_dropped"]
+        disclosures.append(
+            f"{dropped} quoted passage(s) the analysis attributed to a speaker were "
+            "not found word for word in that speaker's transcript and were left out "
+            "(the points they supported were kept, in English)"
+        )
     if sections_failed:
         disclosures.append(f"{sections_failed} report section(s) failed to compose")
     if disclosures:
@@ -1216,7 +1329,7 @@ def _split_items_to_budget(items: list, budget: int) -> list[list]:
     current: list = []
     current_tokens = 0
     for item in items:
-        cost = _count_tokens(json.dumps(item, default=str))
+        cost = _count_tokens(json.dumps(item, ensure_ascii=False, default=str))
         if cost > budget:
             content = str(item.get("content", "")) if isinstance(item, dict) else str(item)
             logger.warning(
@@ -1227,7 +1340,7 @@ def _split_items_to_budget(items: list, budget: int) -> list[list]:
             # Leave room for the item's own metadata keys.
             item = {**(item if isinstance(item, dict) else {}),
                     "content": _truncate_to_tokens(content, max(200, int(budget * 0.8)))}
-            cost = _count_tokens(json.dumps(item, default=str))
+            cost = _count_tokens(json.dumps(item, ensure_ascii=False, default=str))
         if current and current_tokens + cost > budget:
             groups.append(current)
             current, current_tokens = [], 0

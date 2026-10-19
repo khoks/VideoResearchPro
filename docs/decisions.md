@@ -2568,5 +2568,5 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Consequences.** `scripts/audit_report_intermediates.py` reads a run back: map calls by status, items by category (and by modality once S-1.18.8 lands), dropped chunks, and the reduce accounting identity (items in − exact duplicates − trimmed = items out). There is no retention policy; rows go when the job is deleted (FK cascade). Channel jobs have no map/reduce stage and write nothing.
 
-**Linked initiatives / PRs.** S-1.14.6, E-1.14, S-1.18.8. Follows D-055, D-056, D-075.
+**Linked initiatives / PRs.** S-1.14.6, E-1.14, S-1.18.8, PR [#273](https://github.com/khoks/VideoResearchPro/pull/273). Follows D-055, D-056, D-075.
 

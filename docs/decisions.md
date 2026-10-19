@@ -2123,3 +2123,28 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 **Consequences.** One migration touching a table with live grants; the retrieval filter changes shape, so it must land after, not alongside, the in-flight `qa_agent.py` work. Once merged, the D-063 "0 documents left ungranted" guarantee is re-established for every source type and the roadmap's L1 end-to-end claim becomes true again.
 
 **Linked initiatives / PRs.** S-5.10.1 (reopened by this gap), E-1.8, S-1.5.8 / PR #224 (diagnosis). Follows D-017, D-063.
+
+## D-071 — R1 verdict: annotations win on substance, fail on attribution and cost; UI deferred (2026-10-19)
+
+**Status:** accepted. Outcome of the pre-registered protocol in [docs/notes/2026-10-18-r1-visual-measurement.md](notes/2026-10-18-r1-visual-measurement.md), run under the user's instruction to test R1 before building its UI.
+
+**Context.** D-067 shipped the visual pipeline with the value question open. The protocol fixed three criteria before any result existed: 2 of 3 blind judges prefer the annotated report on substance; zero attribution errors in it; vision spend under $0.10 per video.
+
+**What was measured.** One visual-on job (11 videos, 120 frames), then a deterministic replay of its own chunks into two reports that differ only by the `[VISUAL @]` spans. Three judges from three model families, blind with independent coin flips; then 87 verifier agents: three lenses per claimed error, three independent sweeps of the annotated report, three refuters per sweep candidate.
+
+**Decision.**
+
+1. **Annotations stay in the pipeline and stay opt-in; the UI (S-1.18.2) is not built yet.** Criterion 1 was met decisively (3 of 3; 8.33 vs 7.00; zero confirmed fabrications against five in the unannotated arm). Criteria 2 and 3 failed: two attribution errors, and $0.198 per video.
+2. **The contract gains a rule before the next run:** a sentence attributed to a speaker may contain only what was spoken; screen-only details go in a separate clause marked as shown (S-1.18.6). Both confirmed errors had exactly that shape, and none of the "(values also visible on screen)" sentences was an error, so the fix is narrow.
+3. **Both vision use cases move to a cheaper tier and the cost is re-measured** (S-1.18.5); `gpt-5.6-luna` and `gemini-3.1-flash-lite` are already on the vision allowlist at roughly 1/25 of gpt-5.5's input price.
+4. **A sweep with independent refuters is part of the method from now on.** All three judges returned zero attribution errors; the sweep found two. Judges alone are not evidence of absence.
+
+**Alternatives considered.**
+
+- *Build the UI anyway, since quality won.* Rejected: the rule was written down first precisely so a favourable headline could not override the other two criteria.
+- *Relax the zero-error criterion to "no more than the unannotated arm".* Rejected: the unannotated arm cannot commit this error class at all, and the contract fix is cheap.
+- *Count the judges' "fabrications" as reported.* Rejected after verification: none of the seven in the annotated arm survived; four were pipeline metadata leaking into prose (S-1.14.15), three restated supplied statistics.
+
+**Consequences.** S-1.18.2 stays deferred behind S-1.18.5 and S-1.18.6. The judge scripts (`replay_visual_ab.py`, `judge_pair.py`) and the verification workflow are reusable for T-7.1.1.5 and S-1.16.2. Known limits stand: one topic, report only; Q&A cannot be compared until T-1.18.1.10 lands.
+
+**Linked initiatives / PRs.** S-1.18.3 (closed), S-1.18.5, S-1.18.6, S-1.18.2 (deferred). Follows D-055, D-067.

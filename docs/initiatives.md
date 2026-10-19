@@ -597,6 +597,8 @@ The shipped script profiler is exact for script mixing and **blind to romanised 
 - [x] T-1.18.1.7 `VISUAL_ANNOTATION_CONTRACT` into report map/section/summary, Q&A system prompt, knowledge extraction
 - [x] T-1.18.1.8 Per-job frame budget with unused-allowance return and once-only exhaustion warning
 - [x] T-1.18.1.9 Tests: 101 across annotation survival, budget accounting, vision routing, real-ffmpeg extraction, prompt-placeholder binding
+- [ ] T-1.18.1.10 🔵 **Annotations never reach Chroma for a video that was already embedded** (found 2026-10-18 while designing the R1 measurement). `job_tasks.py` re-chunks a reused video through `_with_visuals` so the *report* sees the spans, but the RAG phase skips "already-embedded chunks", so Q&A retrieval over a previously ingested video never sees a `[VISUAL @ …]` span. Visual analysis therefore only helps Q&A on videos new to the library. Fix options: re-embed a document's chunks when frames exist and its stored chunks carry no visual markers, or store annotated chunks under distinct ids. Decide after S-1.18.3 says whether annotations help at all.
+- [ ] T-1.18.1.11 🔵 **Knowledge extraction never sees annotations either.** `routers/knowledge.py` builds its transcript straight from `transcript_cache.segments_json`, so the `VISUAL_ANNOTATION_CONTRACT` injected into `knowledge_agent.py` describes spans the model will never receive. Same decision point as T-1.18.1.10.
 
 #### S-1.18.2 🔵 Surfacing frames to the user
 The backend produces frames and descriptions; nothing shows them yet. *Verified 2026-10-18: no frontend reference to `visual_analysis` and no frame-serving route.*
@@ -605,12 +607,24 @@ The backend produces frames and descriptions; nothing shows them yet. *Verified 
 - [ ] T-1.18.2.3 Show the frame inline where a report or answer cites "on screen at mm:ss"
 - [ ] T-1.18.2.4 On-demand per-document extraction endpoint, mirroring `/videos/{id}/extract-knowledge`
 
-#### S-1.18.3 🔵 Measure whether visual annotations improve output
-Nothing yet establishes that annotations make reports or answers *better* — only that they arrive intact.
-*Sequencing question raised 2026-10-18 (undecided): run this before S-1.18.2, so the UI work happens only if annotations measurably help.*
-- [ ] T-1.18.3.1 Same corpus, visual on vs off, blind-judged (the E-1.14 harness)
-- [ ] T-1.18.3.2 Measure the `informative` false-positive rate against human labels; retune the calibration or the tier if it is high
-- [ ] T-1.18.3.3 Cost per job at realistic frame counts, against the quality delta
+#### S-1.18.3 🟢 Measure whether visual annotations improve output — measured 2026-10-19
+Protocol and results: [docs/notes/2026-10-18-r1-visual-measurement.md](notes/2026-10-18-r1-visual-measurement.md). Decision: [D-071](decisions.md#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19). Sequenced before S-1.18.2 on 2026-10-18, by the user's instruction to test before building.
+- [x] T-1.18.3.1 Same corpus, visual on vs off, blind-judged. Deterministic replay of job `419e691d` (11 videos, 120 frames) via `backend/scripts/replay_visual_ab.py`; three judge families via `backend/scripts/judge_pair.py`; 87-agent adversarial verification. **ON preferred on substance 3 of 3 (8.33 vs 7.00); 2 attribution errors in ON found by the sweep that every judge missed; ON 0 confirmed fabrications vs OFF 5.**
+- [x] T-1.18.3.2 `informative` rate: 119/120 flagged; hand check of 7 frames found 6 exact, 1 minor misread at 360p, 1 borderline. No outright wrong description in the sample.
+- [x] T-1.18.3.3 Cost: **$0.198 per video** at the gpt-5.5 defaults, double the pre-registered $0.10 ceiling → S-1.18.5.
+
+#### S-1.18.6 🔵 Fix the speaker-attribution gap in the visual contract, then re-run
+Both confirmed errors bundle a screen-only detail into a sentence credited to a named speaker. `VISUAL_ANNOTATION_CONTRACT` forbids reading spans as speech but says nothing about mixing the two inside one attributed clause. **Sequenced after PR #227**, which is rewriting `prompts/shared.py`.
+- [ ] T-1.18.6.1 Contract rule: a sentence attributed to a speaker ("X says", "— Name (mm:ss)") may contain only what was spoken; screen-only details go in a separate clause marked as shown
+- [ ] T-1.18.6.2 Pin it with a prompt-level test on a synthetic transcript where the span and the speech disagree
+- [ ] T-1.18.6.3 Re-run the S-1.18.3 protocol unchanged; the rule needs zero confirmed attribution errors after the sweep
+
+#### S-1.18.5 🔵 Re-tier the two vision use cases, then re-measure cost
+Filed 2026-10-19 from the S-1.18.3 run: at the registry defaults (`visual_select_moments` gpt-5.5 medium, `visual_describe_frame` gpt-5.5 low) the estimated vision spend was **$0.198 per video** (11 videos, 120 frames at 640×360; selection ≈ 75K input tokens, description ≈ 159K input tokens), double the $0.10 ceiling the protocol fixed in advance. Both cheaper candidates are already on `VISION_CAPABLE_MODELS`.
+- [ ] T-1.18.5.1 `visual_select_moments` is text-only: move to the volume tier (`gpt-5.6-luna`, reasoning off) and check moment quality against the gpt-5.5 selections on the same 11 videos
+- [ ] T-1.18.5.2 `visual_describe_frame`: trial `gpt-5.6-luna` ($0.20/M in) and `gemini-3.1-flash-lite` ($0.25/M in) against the hand-checked gpt-5.5 descriptions; the misread risk at 360p (`dedup` read as `debug`) is the thing to watch
+- [ ] T-1.18.5.3 Re-run the cost estimate; the rule needs under $0.10 per video at the default frame caps
+- [ ] T-1.18.5.4 Only then revisit the S-1.18.2 UI decision
 
 #### S-1.18.4 🔵 Beyond YouTube
 - [ ] T-1.18.4.1 PDFs: page images are already available without any download
@@ -1010,6 +1024,8 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 - [x] T-4.8.3 Manual click-through (post-merge) — pending.
 - [x] T-4.8.4 🟢 **Heading-rename casualties resolved 2026-05-06** in this branch's follow-up. All 13 residual cross-doc anchors hand-mapped to their renamed-target heading slugs (e.g. `i-5--saas-readiness-long-horizon` → `i-5-saas-readiness-long-horizon-code-shippable-work-fully-closed-2026-05-05`; `oq-4` rerouted to its parent heading `open-questions-parking-lot` since OQ-* lives in bullet form, not headings). `fix_anchor_links.py --report` now reports zero residual broken links across the doc set.
 - [ ] T-4.8.5 🔵 **`fix_anchor_links.py` collapses hyphen runs; GitHub does not.** Found 2026-10-18 while reconciling this file. The script rewrote `#d-063--per-user-...` to `#d-063-per-user-...`, but GitHub's rendered HTML (contents API, `html` media type) gives `id="user-content-d-063--per-user-..."`, and `e-510--per-user-isolation-r2` for an emoji heading: every dropped em dash or emoji leaves two hyphens. So the 132 rewrites in PR #179 need re-checking against rendered anchors, and the script's oracle should be GitHub's output rather than its own slug function. It also has no dry-run flag; `--report` is ignored and files are rewritten. The 2026-10-18 reconciliation reverted its rewrites and kept the `--` forms.
+  - [x] Script rewritten to match github-slugger, `--check` mode, 8 slugs pinned against rendered ids — PR [#229](https://github.com/khoks/VideoResearchPro/pull/229), 2026-10-19. `--check` on master: 183 repairable links, 6 needing hand fixes.
+  - [ ] Run the repair across the docs and hand-fix the 6 (`#d-051`, `#d-043`, `#e-51-tenantid-audit-retrofit`, the D-009 anchor in CHANGELOG, the `n-NNN` template link). Waits for the in-flight R3/R4 and roadmap-planning doc branches to merge, so the rewrite does not conflict with them.
 
 ### E-4.10 🟢 Replace `Base.metadata.create_all` lifespan with Alembic-managed schema
 

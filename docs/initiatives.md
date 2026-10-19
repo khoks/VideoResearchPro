@@ -28,6 +28,8 @@ This file is the project's **work-state board**. Every piece of work — shipped
 
 **Scope-changed 2026-10-19:** the PDF upload and paste-URL surfaces shipped (T-1.5.8.3, E-1.8 follow-up, PR [#224](https://github.com/khoks/VideoResearchPro/pull/224)), and building them exposed that the "12 source types end-to-end" closure below is true of ingest but not of retrieval: since [D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31) every non-video document is ingested without a visibility grant and is therefore never listed or retrieved. Tracked under E-5.10 as [S-5.10.4](#s-5104--key-document-visibility-on-document_id) ([D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)), shipped 2026-10-19 in PR [#241](https://github.com/khoks/VideoResearchPro/pull/241) — which also found that no non-video chunk had ever reached Chroma. I-1 stays 🟡 for the E-1.11 scale track, not for this.
 
+**Scope-changed 2026-10-19 (II):** building job templates (S-8.6.1) found that `JobCreate` has no `source_types` field and nothing writes `jobs.source_types_json`, so every topic run created through the API searches YouTube only; S-1.5.11's worker dispatch is intact but unreachable (its HTTP-level end-to-end test was the one variant never written). Ingest by paste, upload and channel sync is unaffected. Filed as [S-1.5.13](#s-1513--accept-source_types-on-job-creation).
+
 **Scope-changed 2026-07-29 (II):** the reopened scale/quality track now also carries [E-1.13](#e-113-per-user-llm-overrides-cost-calculator) (per-user model overrides + cost calculator, 🟢) and [E-1.14](#e-114-model-tier-quality-evaluation-harness) (model-tier quality evaluation, 🟡). Trajectory of the reopening: E-1.11 made ingest survive scale → E-1.12 made the agents survive scale → E-1.13 made model choice configurable and costed → E-1.14 measures whether the chosen models are good enough. Linked decisions: [D-054](decisions.md#d-054--per-user-llm-overrides--cost-calculator-gpt-56-adaptive-reasoning-findings-2026-07-29), [D-055](decisions.md#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29).
 
 **Scope-changed 2026-07-22:** reopened for [E-1.11](#e-111-transcript-pipeline-resilience-at-scale) — the 200-video deep-research test (job `0d4db8c3`, 2026-07-21/22) surfaced transcript-pipeline failures at scale: an IP-block cascade made Whisper the primary path for 80% of videos, and 63/200 videos were lost (25MB Whisper cap + yt-dlp 403s). The original multi-source scope stays closed; E-1.11 is the scale-resilience follow-on. Linked decision: [D-051](decisions.md#d-051--transcript-pipeline-resilience-bundle-circuit-breaker--segmented-whisper--yt-dlp-client-fallback-2026-07-22).
@@ -302,6 +304,15 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Re-evaluation hooks (T-1.5.12.2, deferred).**
 - Ship per-segment when (a) we observe materially different reply quality across multiple replies of the same thread getting cited (so jumping to specific reply matters), or (b) a future connector emits content where the per-reply identity is the citable unit (forum threads with multiple long top-level posts, podcast chapter markers, etc.).
 - The chunker rework is also the natural moment to revisit pseudo-timestamp synthesis ([D-013](decisions.md#d-013--pseudo-timestamps-at-3-wps-for-text-based-connectors-2026-04-25)) — they could be replaced with explicit per-segment indices once `extra` is preserved end-to-end.
+
+#### S-1.5.13 ⚪ Accept `source_types` on job creation
+**PR:** TBD
+**Filed 2026-10-19** from the S-8.6.1 finding (see I-1 *Scope-changed 2026-10-19 (II)*; [D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19)). Proposed as its own session; awaiting the user.
+**Acceptance.** `POST /api/v1/jobs` with `source_types=["video","reddit_post"]` persists them, `_resolve_source_types` reads them back, and the run goes through `connector_dispatch` for the non-video types; the submit form offers the choice; Duplicate and templates carry it.
+- [ ] T-1.5.13.1 `JobCreate.source_types` limited to the types `connector_dispatch` supports (default None → video); persist in `job_service.create_job`; return on `JobResponse`
+- [ ] T-1.5.13.2 Add the field to `TemplateParameters` and `parameters_from_job` (the S-8.6.1 pinning test fails until this is done) and to `frontend/src/utils/jobForm.ts`
+- [ ] T-1.5.13.3 Source-type picker on the Topic tab of `SubmitJobPage`
+- [ ] T-1.5.13.4 HTTP-level test at the caller (the variant S-1.5.11 never wrote); a live connector check needs credentials, say what was not verified
 
 ### E-1.6 🟢 Article connector
 
@@ -1547,7 +1558,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 **Acceptance.** A user who raises one channel's weight sees that channel's chunks rank higher in their own job and library Q&A, and no other tenant's ranking changes.
 - [ ] T-7.1.1.1 `PUT /api/v1/channels/{id}/weight` writing `channel_subscriptions.source_weight` through `subscription_service`
 - [ ] T-7.1.1.2 Apply the weight when re-ranking job and library retrieval. Weights are per-tenant and chunks are global ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)), so resolve them at query time and never store them in chunk metadata
-- [ ] T-7.1.1.3 Weight control on the channel page
+- [ ] T-7.1.1.3 Weight control on the channel page — *the page and a read-only `TrustWeightSlot` (`data-slot="trust-weight"`) shipped in S-8.7.1, PR [#237](https://github.com/khoks/VideoResearchPro/pull/237); replace the slot with the control ([D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19))*
 - [ ] T-7.1.1.4 Make the `channel_subscription.py` docstring true, or correct it
 - [ ] T-7.1.1.5 Measure: the same questions with and without weighting, judged blind (E-1.14 harness)
 
@@ -1581,6 +1592,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 
 **Scope.** Named collections of jobs (many-to-many), per-tenant tags on documents, a shelf detail page that is a filtered library view, and Q&A scoped to a shelf. Tags are a per-tenant side table because `documents` is a shared cache ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)): a tag is private to the user who applied it.
 **Plan:** [`docs/plans/m1-shelves.md`](plans/m1-shelves.md)
+**Linked decision:** [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19) (defaults taken on the plan's open questions)
 **Acceptance.** A user creates a shelf, adds jobs to it from the jobs list and job page, opens the shelf and sees only those jobs and their documents, asks a question scoped to the shelf and gets citations only from documents on it. Another tenant sees none of it.
 
 #### S-8.1.1 🟢 Shelves schema, service and REST
@@ -1729,13 +1741,14 @@ Linked decision: D-074.
 
 **Scope.** Save a job's parameters as a named template; instantiate with a new topic and run. Generalises the shipped "Duplicate" flow from "copy one job" to "named reusable recipe", and seeds the starter templates the onboarding wizard (E-8.10) offers.
 **Plan:** [`docs/plans/m6-job-templates.md`](plans/m6-job-templates.md)
+**Linked decisions:** [D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19) (schema, starters, visual flag carried), [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19) (not tier-gated)
 **Acceptance.** A user saves a completed topic job as "Weekly AI policy scan", later picks it from the submit page, changes only the topic, and the new job runs with the saved instructions, filters, preferred channels, source types, depth and visual flag; built-in starter templates appear for every user and cannot be edited.
 
 #### S-8.6.1 🟢 Templates schema, REST and submit-page integration
 **PR:** [#263](https://github.com/khoks/VideoResearchPro/pull/263) (merged 2026-10-19)
 - [x] T-8.6.1.0 Duplicate fixed: `jobToFormState` (now in `frontend/src/utils/jobForm.ts`, unit-tested with vitest) carries `output_length` and `visual_analysis`. **No visual-analysis opt-in was added to the form**: that toggle is T-1.18.2.1, deferred by D-071 / D-075. A carried flag shows as an info box with "Turn off"
 - [x] T-8.6.1.1 Schema (migration `f0a1b2c3d4e5`): `job_templates(id, tenant_id NULL for built-ins, builtin_key UNIQUE, name, description, job_type, latest_version, created_at, updated_at, deleted_at)` + `job_template_versions(template_id, version, parameters_json, created_at)`, immutable rows per saved change, newest 20 kept; `jobs.template_id` + `jobs.template_version` for provenance. Split from the plan's single table so a template's id survives a rename; soft delete so provenance keeps resolving
-- [ ] T-8.6.1.6 **Split out, not built.** The relative publish window (`published_after_days`) must reach the search agent's ranking prompt as a preference, and `backend/app/agents` was off-limits to this lane (the plan allows the split; its open question 1 is whether the window is wanted now). Variable fields today: `topic` only (`JobCreate` has no job name). `{topic}` in instructions is filled at submission
+- [x] ~~T-8.6.1.6 Relative publish window~~ — *moved to [S-8.6.3](#s-863--relative-publish-window) on 2026-10-19: it needs the search agent's ranking prompt, which this lane could not edit. Variable fields today: `topic` (and channels when a recipe leaves them open); `{{topic}}` in instructions is filled at submission*
 - [x] T-8.6.1.2 `GET/POST /api/v1/job-templates`, `GET/PUT/DELETE /job-templates/{id}` (PUT with new parameters → next version), `GET /job-templates/{id}/versions`, `POST /api/v1/jobs/{id}/save-as-template`, `POST /jobs?template_id=&template_version=` (provenance); built-ins 403 on write
 - [x] T-8.6.1.3 "Save as template" on `JobDetailPage`; "Start from a template" picker, origin banner with "Save changes as vN+1", and "Save as template" on `SubmitJobPage`; a `/templates` page (use, history, rename, delete)
 - [x] T-8.6.1.4 Parameters are validated through `JobCreate` on every save (422 otherwise; unknown fields refused), the submission is a full `JobCreate` again, and each listing reports `problems` for the caller (a tier cap below the recipe's `num_videos`). A test pins that frozen ∪ variable fields = `JobCreate`'s fields, so a new field forces a decision
@@ -1746,12 +1759,27 @@ Linked decision: D-074.
 **PR:** [#265](https://github.com/khoks/VideoResearchPro/pull/265) (merged 2026-10-19)
 - [x] T-8.6.2.1 Five built-ins seeded by migration `f1a2b3c4d5e6`, keyed by `builtin_key`, read-only, listed for every reader under "Starters": **Topic scan** (20 videos), **Deep dive** (60 long-form videos, deep report), **Quick brief** (8 short videos, brief report), **Channel deep-dive** (25 per channel), **Subscription follow**. The upsert is idempotent and versioned (identical → no-op, changed parameters → next version); a later revision copies it into a new migration. **Plan open question 2 (which five) answered by substitution:** podcast digest and mixed-source debate need `source_types`, which `JobCreate` does not accept (S-8.6.1 finding), so Deep dive and Quick brief stand in until that field is wired. No starter turns on visual analysis (its opt-in is deferred, D-071 / D-075)
 - [x] Channel and subscription recipes may leave the channel list empty, meaning "add the channels each run" (as topic recipes leave the topic); validation fills a placeholder for the check, submission still requires channels, and the submit banner says "Add the channels"
-- [ ] T-8.6.2.2 Used by the onboarding wizard (E-8.10) as the first-job step. Waits for S-8.10.1; the wizard can pick a starter by `builtin_key` from `GET /api/v1/job-templates`
+- [x] ~~T-8.6.2.2 Used by the onboarding wizard (E-8.10) as the first-job step~~ — *moved 2026-10-19: it is the wizard's work and already lives in [S-8.10.1](#s-8101--wizard) T-8.10.1.2 ("a first job … from a starter template"); the wizard picks a starter by `builtin_key` from `GET /api/v1/job-templates`*
+
+#### S-8.6.3 ⚪ Relative publish window
+**PR:** TBD
+**Filed 2026-10-19** from T-8.6.1.6. **The user's call** (M6 plan open question 1): is a relative window wanted now? It changes the ranking prompt.
+- [ ] T-8.6.3.1 `JobCreate.published_after_days` (and `jobs.published_after_days`), resolved at run time; a template field (extend `TemplateParameters`)
+- [ ] T-8.6.3.2 Thread it into `search_agent` ranking as a **preference**, never a filter ([D-059](decisions.md#d-059--selection-quotas-preferred-channel-guarantee--concentration-cap-2026-07-30) posture), coordinated with S-1.17.2's `temporal_profile`
+- [ ] T-8.6.3.3 Submit-form control and template round trip; tests at the caller
+**Blocked-on:** the user's answer; serialise with other `backend/app/agents` work.
+
+#### S-8.6.4 ⚫ Source-type starters (podcast digest, mixed-source debate)
+**PR:** TBD
+**Filed 2026-10-19.** The two starters the M6 plan proposed that S-8.6.2 could not ship ([D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19)).
+- [ ] T-8.6.4.1 A new data migration that copies `STARTERS` / `_upsert` from `f1a2b3c4d5e6_starter_templates.py` (never edit that file) and adds `podcast-digest` and `mixed-source-debate`
+**Blocked-on:** [S-1.5.13](#s-1513--accept-source_types-on-job-creation).
 
 ### E-8.7 🟡 Channel intelligence (M7)
 
 **Scope.** A per-channel view with analytics computed from what the library already holds: publishing cadence, top topics and concepts aggregated from knowledge artifacts, a keyword cloud from transcripts, the user's own Q&A activity against the channel, and a concept graph. Stance over time is scoped to sources that carry classification (social connectors); YouTube has none today, so that panel is explicitly data-dependent.
 **Plan:** [`docs/plans/m7-channel-intelligence.md`](plans/m7-channel-intelligence.md)
+**Linked decision:** [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19) (read-only trust-weight slot)
 **Acceptance.** Opening a channel the user follows shows cadence, top topics (with the videos behind each), a keyword cloud and the user's questions about it; panels whose inputs are missing say what to do ("Extract knowledge for 12 more videos to populate topics") instead of showing nothing; a channel with 500 documents renders within two seconds from a cached aggregate.
 
 #### S-8.7.1 🟢 Channel detail page
@@ -1771,6 +1799,13 @@ Linked decision: D-074.
 **PR:** TBD
 - [ ] T-8.7.3.1 Tab with cadence bars, topic list with drill-down, keyword cloud (own SVG layout, no library), coverage call-to-action, "Extract knowledge for all" batch action that respects the knowledge quota
 - [ ] T-8.7.3.2 Concept graph panel reusing the E-8.9 graph component filtered to the channel
+
+#### S-8.7.4 🔵 Citation chips link to the channel page
+**PR:** TBD
+**Filed 2026-10-19:** the part of T-8.7.1.2 that S-8.7.1 could not do. `Reference` has no `channel_id`, and adding it edits `qa_agent._chunk_to_reference`, a shared hot spot.
+- [ ] T-8.7.4.1 Add `channel_id` to video references in `_chunk_to_reference` (Chroma chunk metadata already carries it) and to `Reference` / `LibraryReference`
+- [ ] T-8.7.4.2 `CitationLink` renders the channel name as a link to `/library/channels/:id`
+**Sequencing:** Phase 2, with the other `qa_agent.py` edits ([build order](plans/build-order.md#shared-hot-spots-serialise-anything-that-touches-these)).
 
 ### E-8.8 🟡 Reading room — the report as a native reading view (M8)
 

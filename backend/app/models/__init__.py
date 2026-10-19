@@ -14,6 +14,7 @@ from app.models.job_video import JobVideo
 from app.models.job_search_candidate import JobSearchCandidate
 from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.mfa_secret import MfaSecret
+from app.models.note import Note
 from app.models.oauth import OAuthIdentity, OAuthState
 from app.models.output import Output
 from app.models.password_reset_token import PasswordResetToken
@@ -42,6 +43,7 @@ __all__ = [
     "JobSearchCandidate",
     "LibraryQAExchange",
     "MfaSecret",
+    "Note",
     "OAuthIdentity",
     "OAuthState",
     "Output",

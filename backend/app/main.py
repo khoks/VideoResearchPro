@@ -22,6 +22,7 @@ from app.routers import (
     library,
     llm_settings,
     mfa,
+    notes,
     oauth,
     qa,
     qa_history,
@@ -122,6 +123,7 @@ app.include_router(library.router, prefix="/api/v1")
 app.include_router(qa_history.router, prefix="/api/v1")
 app.include_router(knowledge.router, prefix="/api/v1")
 app.include_router(search.router, prefix="/api/v1")
+app.include_router(notes.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(exports.router, prefix="/api/v1")
 app.include_router(llm_settings.router, prefix="/api/v1")

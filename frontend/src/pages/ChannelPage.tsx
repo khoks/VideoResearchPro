@@ -319,7 +319,9 @@ const WEIGHT_STEP = 0.1;
  * server re-ranks this reader's job and library Q&A as `distance / weight`
  * after the relevance threshold (D-068): a higher weight lets the channel's
  * relevant passages outrank others, a lower one lets them sink, and no
- * weight ever brings in an off-topic passage or removes the channel.
+ * weight ever brings in an off-topic passage. Measured (T-7.1.1.5): strong
+ * weights narrow answers toward the promoted channels, and near 0 a channel
+ * effectively drops out on a broad corpus, so the copy says both.
  * The slider holds a draft; Save sends it, Reset returns to neutral.
  */
 function TrustWeightControl({ channelId, weight }: { channelId: string; weight: number }) {
@@ -391,9 +393,10 @@ function TrustWeightControl({ channelId, weight }: { channelId: string; weight: 
             flex: '1 1 320px',
           }}
         >
-          Raising it lets this channel's relevant passages outrank others in your answers;
-          lowering it lets them sink. It never pulls in an off-topic passage and never hides
-          the channel. Only your answers change.
+          Raising it lets this channel's relevant passages outrank others in your answers, which
+          also narrows them toward this channel. Lowering it lets them sink; near 0 they appear
+          only when little else matches. It never pulls in an off-topic passage, and only your
+          answers change.
           {setWeight.isError && (
             <span role="alert" style={{ color: c.error, marginLeft: space['2'] }}>
               Could not save the weight. Try again.

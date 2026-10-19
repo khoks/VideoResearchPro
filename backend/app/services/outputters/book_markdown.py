@@ -19,6 +19,10 @@ Parameters (``output.parameters_json``):
   the router writes the resolved list back (``["md", "epub", "pdf"]``) so the
   row records what was built. An explicit ``pdf`` with no engine is refused
   before the row exists (501, with what to install).
+- ``cohesion`` (``none`` | ``light`` | ``full``, S-6.1.3, default ``none``) —
+  model-written framing around the unchanged chapters (`book_cohesion`):
+  reading order, parts and bridges (``light``), plus introduction, conclusion
+  and glossary (``full``). Usage and cost land in ``output.usage_json``.
 
 The generated Markdown lands in ``output.content_text``; the EPUB and PDF are
 artifacts under ``OUTPUTS_DIR`` (`output_artifacts`), and ``content_path``
@@ -42,7 +46,7 @@ from app.models.qa_exchange import QAExchange
 from app.models.user import User
 from app.services import output_artifacts, output_citation_service, report_service, visibility_service
 from app.services.output_service import OutputError, report_progress
-from app.services.outputters import book_epub, book_html, book_pdf
+from app.services.outputters import book_cohesion, book_epub, book_html, book_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +219,7 @@ class BookMarkdownOutputter:
         formats = requested_formats(params)
         if "pdf" in formats:
             book_pdf.require_engine()
-        return {**params, "formats": ["md", *formats]}
+        return {**params, "formats": ["md", *formats], "cohesion": book_cohesion.level_from(params)}
 
     def format_options(self) -> dict[str, Any]:
         """What ``GET /author/kinds`` reports for books: the formats this
@@ -241,6 +245,12 @@ class BookMarkdownOutputter:
             pdf = book_pdf.render_pdf(book_html.html_document(book))
             output_artifacts.write_artifact(output, "pdf", pdf)
 
+    def estimate(self, db: Session, user: User, title: str, source_ids: list[str], params: dict[str, Any]) -> dict:
+        """S-6.1.3 / T-6.1.3.5: what generating this book will cost, before
+        it runs. Only the cohesion pass calls a model."""
+        level = book_cohesion.level_from(params)
+        return book_cohesion.estimate(_digests(db, user, source_ids), title, level)
+
     def generate(self, db: Session, user: User, output: Output) -> None:
         try:
             source_ids: list[str] = json.loads(output.source_ids_json or "[]")
@@ -253,56 +263,194 @@ class BookMarkdownOutputter:
 
         include_qa = bool(params.get("include_qa", True))
         include_toc = bool(params.get("include_toc", True))
+        level = book_cohesion.level_from(params)
         # Before any chapter work: a PDF the worker cannot print fails now,
         # with what to install, not after the whole manuscript is built.
         formats = requested_formats(params)
         if "pdf" in formats:
             book_pdf.require_engine()
 
-        # Collect chapters first so the TOC can reference them.
-        chapters: list[tuple[str, str, str]] = []
+        # S-6.1.3: the cohesion pass reads digests of the chapters and may
+        # reorder them; it never sees or rewrites the chapter bodies.
+        cohesion = book_cohesion.plan(
+            _digests(db, user, source_ids) if level != "none" else [],
+            output.title,
+            level,
+            progress=lambda pct, message: report_progress(db, output, pct, message),
+        )
+        if level == "none":
+            cohesion.order = list(range(1, len(source_ids) + 1))
+        ordered_ids = [source_ids[n - 1] for n in cohesion.order]
+
+        chapters: list[tuple[int, str, str]] = []  # (original number, title, body)
         citations: list[output_citation_service.CitationSpec] = []
-        total = len(source_ids)
-        for i, jid in enumerate(source_ids, start=1):
-            # S-6.7.3 / S-6.1.4: chapters are written in order and number
-            # their footnotes from where the previous one stopped, so endnote
-            # n is output_citations position n.
+        total = len(ordered_ids)
+        for i, (number, jid) in enumerate(zip(cohesion.order, ordered_ids), start=1):
+            # S-6.7.3 / S-6.1.4: chapters are written in reading order and
+            # number their footnotes from where the previous one stopped, so
+            # endnote n is output_citations position n.
             title, body, cited = _job_chapter(db, user, jid, include_qa=include_qa, start=len(citations) + 1)
-            # T-6.1.4.4: the TOC links to the id the chapter heading
-            # ("## 3. Title") actually gets, not to a slug of the bare title.
-            chapters.append((title, output_citation_service.heading_slug(f"{i}. {title}"), body))
+            chapters.append((number, title, body))
             citations.extend(cited)
             # S-6.7.1: one progress step per chapter (10..90 %); also the
             # point where a user's cancel takes effect.
             report_progress(db, output, 10 + int(80 * i / total), f"Chapter {i} of {total}: {title}")
 
-        manuscript: list[str] = [
-            f"# {output.title}",
-            "",
-            f"_Authored by Pratidhvani Author Studio — {datetime.now(timezone.utc):%Y-%m-%d}_",
-            "",
-            f"_Compiled from {len(chapters)} source{'' if len(chapters) == 1 else 's'} in your library._",
-            "",
-        ]
-
-        if include_toc and chapters:
-            manuscript += [f"## {book_html.TOC_HEADING}", ""]
-            for i, (ch_title, ch_slug, _body) in enumerate(chapters, start=1):
-                manuscript.append(f"{i}. [{ch_title}](#{ch_slug})")
-            manuscript.append("")
-
-        for i, (ch_title, _ch_slug, ch_body) in enumerate(chapters, start=1):
-            manuscript += [f"## {i}. {ch_title}", ""]
-            manuscript.append(ch_body or "_(No content available for this source.)_")
-            manuscript.append("")
-
-        if citations:
-            # GFM footnote definitions: the reader, GitHub and the EPUB/PDF
-            # converters gather them into one numbered list under this heading.
-            manuscript += [f"## {book_html.ENDNOTES_HEADING}", ""]
-            manuscript += output_citation_service.endnote_definitions(citations)
-            manuscript.append("")
-
-        output.content_text = "\n".join(manuscript).strip() + "\n"
+        output.content_text = _assemble(output.title, chapters, citations, cohesion, include_toc=include_toc)
+        output.usage_json = json.dumps(cohesion.usage()) if cohesion.calls else None
         output_citation_service.record_citations(db, output, citations)
         self._write_files(db, output, formats)
+
+
+# ---------------------------------------------------------------------------
+# Manuscript assembly
+# ---------------------------------------------------------------------------
+
+_ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
+_LINK_IN_HEADING = re.compile(r"!?\[([^\]\n]*)\]\([^)\s]*\)")
+
+
+def _digests(db: Session, user: User, source_ids: list[str]) -> list[book_cohesion.ChapterDigest]:
+    """One digest per requested run, in the user's order. Same tenant scoping
+    as the chapters themselves: another user's run reads as unknown."""
+    out: list[book_cohesion.ChapterDigest] = []
+    for n, jid in enumerate(source_ids, start=1):
+        job = db.query(Job).filter(Job.id == jid, Job.tenant_id == user.id).first()
+        if job is None:
+            out.append(book_cohesion.digest(n, f"Unknown job {jid}", ""))
+        else:
+            out.append(book_cohesion.digest(n, (job.topic or "Untitled").strip(), _job_report_markdown(job)))
+    return out
+
+
+def _heading_text(line: str) -> str | None:
+    m = _ATX_HEADING.match(line)
+    if m is None:
+        return None
+    text = re.sub(r"\s+#+\s*$", "", m.group(3))
+    return _LINK_IN_HEADING.sub(r"\1", text).strip()
+
+
+def _heading_ids(lines: list[str], slug) -> dict[int, str]:
+    """The id each heading line gets in the reader (and in the EPUB/PDF):
+    the reader's slug with `-2`, `-3` for repeats, in document order, fenced
+    code skipped. Keyed by line index."""
+    ids: dict[int, str] = {}
+    in_fence = False
+    for idx, line in enumerate(lines):
+        if _FENCE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        text = _heading_text(line)
+        if text is not None:
+            ids[idx] = slug(text)
+    return ids
+
+
+def _assemble(
+    title: str,
+    chapters: list[tuple[int, str, str]],
+    citations: list[output_citation_service.CitationSpec],
+    cohesion: "book_cohesion.Cohesion",
+    *,
+    include_toc: bool,
+) -> str:
+    """The manuscript. Chapter bodies go in untouched; everything a model
+    wrote is framing around them and is disclosed in the front matter."""
+    head: list[str] = [
+        f"# {title}",
+        "",
+        f"_Authored by Pratidhvani Author Studio — {datetime.now(timezone.utc):%Y-%m-%d}_",
+        "",
+        f"_Compiled from {len(chapters)} source{'' if len(chapters) == 1 else 's'} in your library._",
+        "",
+    ]
+    if cohesion.applied != "none":
+        written = (
+            "the introduction, chapter bridges, conclusion and glossary"
+            if cohesion.applied == "full"
+            else "the introduction, the chapter order and the chapter bridges"
+        )
+        head += [
+            f"_About this edition: {written} were written by a model "
+            f"({', '.join(cohesion.model_labels)}) from the chapters. Each chapter is its run's "
+            "report, unchanged, with its own citations._",
+            "",
+        ]
+    for note in cohesion.notes:
+        head += [f"_Processing note: {note}_", ""]
+
+    body: list[str] = []
+    targets: list[tuple[str, int, str]] = []  # (kind, body line index, label)
+
+    def heading(kind: str, text: str, label: str | None = None) -> None:
+        targets.append((kind, len(body), label or text))
+        body.extend([f"## {text}", ""])
+
+    if cohesion.introduction:
+        heading("extra", "Introduction")
+        body.extend([cohesion.introduction, ""])
+
+    part_of: dict[int, tuple[int, str]] = {}
+    for p, (part_title, numbers) in enumerate(cohesion.parts):
+        part_of[numbers[0]] = (p, part_title)
+
+    for i, (number, ch_title, ch_body) in enumerate(chapters, start=1):
+        if number in part_of:
+            p, part_title = part_of[number]
+            roman = _ROMAN[p] if p < len(_ROMAN) else str(p + 1)
+            heading("part", f"Part {roman}: {part_title}")
+        heading("chapter", f"{i}. {ch_title}", ch_title)
+        bridge = cohesion.bridges.get(number)
+        if bridge:
+            body.extend([f"> {bridge}", ""])
+        body.append(ch_body or "_(No content available for this source.)_")
+        body.append("")
+
+    if cohesion.conclusion:
+        heading("extra", "Conclusion")
+        body.extend([cohesion.conclusion, ""])
+    if cohesion.glossary:
+        heading("extra", "Glossary")
+        body.extend([f"- **{term}** — {definition}" for term, definition in cohesion.glossary])
+        body.append("")
+    if citations:
+        # GFM footnote definitions: the reader, GitHub and the EPUB/PDF
+        # converters gather them into one numbered list under this heading.
+        body.extend([f"## {book_html.ENDNOTES_HEADING}", ""])
+        body.extend(output_citation_service.endnote_definitions(citations))
+        body.append("")
+
+    # Ids in document order, exactly as the reader assigns them (T-6.1.4.4):
+    # the title, then the contents heading, then everything in the body. A
+    # report's own "Conclusion" earlier in the book takes the plain id, so the
+    # book's own sections cannot be linked by a guessed slug.
+    slug = book_html.slugger()
+    _heading_ids(head, slug)
+    toc: list[str] = []
+    if include_toc and chapters:
+        slug(book_html.TOC_HEADING)
+        ids = _heading_ids(body, slug)
+        toc = [f"## {book_html.TOC_HEADING}", ""]
+        chapter_no = 0
+        # Chapters are one numbered list (its numbers continue across parts);
+        # the book's own sections are bullets; a part is a bold line.
+        previous = ""
+        for kind, idx, label in targets:
+            anchor = ids.get(idx, "")
+            if kind != previous and toc[-1] != "":
+                toc.append("")
+            if kind == "chapter":
+                chapter_no += 1
+                toc.append(f"{chapter_no}. [{label}](#{anchor})")
+            elif kind == "part":
+                toc.extend([f"**[{label}](#{anchor})**", ""])
+            else:
+                toc.append(f"- [{label}](#{anchor})")
+            previous = kind
+        if toc[-1] != "":
+            toc.append("")
+
+    return "\n".join(head + toc + body).strip() + "\n"

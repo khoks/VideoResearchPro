@@ -43,6 +43,7 @@ _GROUPS = {
     "social_": "Social classification",
     "visual_": "Visual understanding",
     "temporal_": "Discussed-era extraction",
+    "author_": "Author Studio",
 }
 
 

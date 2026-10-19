@@ -60,9 +60,9 @@ Production targets the same shape, with SQLite swapped for Postgres and ChromaDB
 
 ### Celery worker (`celery -A app.tasks.celery_app worker --pool=solo`)
 
-- Runs all long-running orchestration: search, transcript fetch, embedding, report generation, knowledge extraction.
+- Runs all long-running orchestration: search, transcript fetch, embedding, report generation, knowledge extraction, and Author Studio generation (`author.generate_output`, S-6.7.1).
 - Has its own SQLAlchemy session factory (created per task) so request-side and worker-side don't share connections.
-- Publishes progress events to Redis pub/sub (`job_progress:{job_id}`) at every phase boundary.
+- Publishes progress events to Redis pub/sub (`job_progress:{job_id}`) at every phase boundary. Author outputs publish on the same channel under the output's id; `routers/ws.py` lets a socket subscribe to any job or output its user owns. Output cancellation is cooperative: `output_service.report_progress` raises once the row is `cancelled`, because `revoke(terminate=True)` cannot stop a task on the solo pool.
 - On Windows, **must use `--pool=solo`** because the multiprocessing prefork pool doesn't work cleanly with our embedding model + ChromaDB locks.
 - Does **not** run the LLM smoke check. Task-time LLM failures surface on the Jobs page via the worker's progress publisher.
 - A backfill runs once per worker startup that idempotently upserts every existing row from `qa_exchanges`, `library_qa_exchanges`, and `qa_history_exchanges` into the `qa_library_global` Chroma collection.
@@ -88,7 +88,7 @@ Three logical databases on the same instance:
 
 ### SQLite
 
-`data/videoresearchpro.db` (env `DATABASE_URL`). All structured state: users, jobs, documents (formerly `videos`; renamed in L1 PR 4), channels, transcript cache, Q&A exchanges, knowledge artifact metadata, scheduled runs. Alembic migrations under `backend/alembic/`. Beside the ORM tables sit the S-8.2.1 search index's FTS5 virtual tables (`fts_documents`, `fts_jobs`, `fts_channels`, `fts_qa`, `fts_knowledge`, plus SQLite's `fts_*_data` / `_idx` / `_content` / `_docsize` / `_config` shadow tables): one trigram-tokenised table per entity, each row carrying the entity id as an `UNINDEXED` column and a copy of the indexed text, kept current by triggers. They have no ORM model and `schema_init_service` ignores the `fts_` prefix when comparing the live schema to the ORM. External-content mode was rejected because it maps on rowid and every base table has a string primary key, whose rowids are not stable across `VACUUM`.
+`data/videoresearchpro.db` (env `DATABASE_URL`). Author Studio's binary artifacts sit beside it under `data/outputs/<user_id>/<output_id>/artifact.<format>` (env `OUTPUTS_DIR`, S-6.7.2); `outputs.content_path` is stored relative to that root, deleting an output removes its directory, and `scripts/sweep_output_artifacts.py` finds directories left without a row. All structured state: users, jobs, documents (formerly `videos`; renamed in L1 PR 4), channels, transcript cache, Q&A exchanges, knowledge artifact metadata, scheduled runs. Alembic migrations under `backend/alembic/`. Beside the ORM tables sit the S-8.2.1 search index's FTS5 virtual tables (`fts_documents`, `fts_jobs`, `fts_channels`, `fts_qa`, `fts_knowledge`, plus SQLite's `fts_*_data` / `_idx` / `_content` / `_docsize` / `_config` shadow tables): one trigram-tokenised table per entity, each row carrying the entity id as an `UNINDEXED` column and a copy of the indexed text, kept current by triggers. They have no ORM model and `schema_init_service` ignores the `fts_` prefix when comparing the live schema to the ORM. External-content mode was rejected because it maps on rowid and every base table has a string primary key, whose rowids are not stable across `VACUUM`.
 
 ### ChromaDB
 

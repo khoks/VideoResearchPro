@@ -9,8 +9,19 @@ Three layers:
    ``content_text`` or ``content_path``) or ``failed`` (writing
    ``error_message``).
 3. **Status state machine** — `pending` → `generating` → `completed`
-   | `failed`. The service exposes transition helpers so concrete
-   outputters don't manage status directly.
+   | `failed`, and `cancelled` from either live state. The service exposes
+   transition helpers so concrete outputters don't manage status directly.
+
+S-6.7.1 moved generation into the Celery worker (`tasks/output_tasks.py`):
+`POST /author/outputs` writes a `pending` row and dispatches
+`generate_output` on the owner's tier queue. Every status change and every
+``report_progress`` call is published on `job_progress:{output_id}`, the
+channel job progress already uses, so the WebSocket manager and the
+frontend's `wsClient` needed no new channel. Cancellation is cooperative:
+`cancel_output` marks the row and revokes the task, and the next
+``report_progress`` an outputter makes raises ``OutputCancelled`` (a solo-pool
+Windows worker cannot be interrupted mid-task, so revoke alone is not
+enough).
 
 v1 ships with one concrete outputter — `BookMarkdownOutputter` —
 which performs deterministic structural concatenation of selected
@@ -52,6 +63,12 @@ class OutputStatus(str, Enum):
     GENERATING = "generating"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+TERMINAL_STATUSES: frozenset[str] = frozenset(
+    {OutputStatus.COMPLETED.value, OutputStatus.FAILED.value, OutputStatus.CANCELLED.value}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +86,10 @@ class UnsupportedKindError(OutputError):
 
 class NoOutputterError(OutputError):
     pass
+
+
+class OutputCancelled(OutputError):
+    """Raised by ``report_progress`` when the row was cancelled meanwhile."""
 
 
 # ---------------------------------------------------------------------------
@@ -182,6 +203,14 @@ def delete_output(db: Session, user_id: str, output_id: str) -> bool:
     row = get_output(db, user_id, output_id)
     if row is None:
         return False
+    # S-6.7.2: the row's artifact directory goes with it. Best effort: a file
+    # that cannot be removed is left for scripts/sweep_output_artifacts.py.
+    try:
+        from app.services import output_artifacts
+
+        output_artifacts.delete_artifacts(row)
+    except Exception:  # noqa: BLE001
+        logger.warning("output_service: could not remove artifacts for %s", output_id)
     db.delete(row)
     db.commit()
     return True
@@ -192,22 +221,101 @@ def delete_output(db: Session, user_id: str, output_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _publish_status(output_id: str, old: str, new: str, message: str) -> None:
+    """Best-effort: progress is a convenience, never a reason to fail."""
+    try:
+        from app.services import progress_service
+
+        progress_service.publish_status_change(output_id, old, new, message)
+    except Exception:  # noqa: BLE001
+        logger.warning("output_service: could not publish status for %s", output_id)
+
+
+def _publish_progress(output: Output) -> None:
+    try:
+        from app.services import progress_service
+
+        progress_service.publish_progress(
+            output.id, output.status, output.progress_pct, output.progress_message or ""
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("output_service: could not publish progress for %s", output.id)
+
+
 def transition_to(
     db: Session,
     output: Output,
     new_status: OutputStatus | str,
     *,
     error_message: str | None = None,
+    progress_message: str | None = None,
 ) -> None:
-    """Update ``output.status`` and optionally ``error_message``. The
-    state machine isn't strictly enforced (any → any transition allowed)
-    so callers can re-try generation; outputter-driven retry is a
-    future concern."""
+    """Update ``output.status`` (and optionally ``error_message`` /
+    ``progress_message``), commit, and publish the change on
+    `job_progress:{output_id}`. The state machine isn't strictly enforced
+    (any → any) so callers can re-try generation."""
+    old = output.status
     output.status = new_status.value if isinstance(new_status, OutputStatus) else new_status
     if error_message is not None:
         output.error_message = error_message
+    if progress_message is not None:
+        output.progress_message = progress_message[:500]
     output.updated_at = datetime.now(timezone.utc)
     db.commit()
+    _publish_status(output.id, old, output.status, output.progress_message or output.status)
+
+
+def _discard_artifacts(output: Output) -> None:
+    """A run that did not complete leaves no files behind (S-6.7.2)."""
+    try:
+        from app.services import output_artifacts
+
+        output_artifacts.delete_artifacts(output)
+    except Exception:  # noqa: BLE001
+        logger.warning("output_service: could not discard artifacts for %s", output.id)
+
+
+def current_status(db: Session, output: Output) -> str:
+    """The row's status as committed — another process (the API's cancel)
+    may have changed it since this session loaded ``output``."""
+    status = db.query(Output.status).filter(Output.id == output.id).scalar()
+    return status or output.status
+
+
+def report_progress(db: Session, output: Output, pct: int, message: str) -> None:
+    """Record and publish generation progress. Outputters call this between
+    units of work (a chapter, a slide); it is also the cancellation point:
+    if the row was cancelled meanwhile it raises ``OutputCancelled``."""
+    if current_status(db, output) == OutputStatus.CANCELLED.value:
+        raise OutputCancelled("Cancelled by user")
+    output.progress_pct = max(0, min(100, int(pct)))
+    output.progress_message = (message or "")[:500]
+    output.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    _publish_progress(output)
+
+
+def cancel_output(db: Session, user_id: str, output_id: str) -> Output | None:
+    """Mark the caller's output cancelled and revoke its task. Returns None
+    when the output is not theirs (or does not exist); raises ``OutputError``
+    when it already finished."""
+    row = get_output(db, user_id, output_id)
+    if row is None:
+        return None
+    if row.status in TERMINAL_STATUSES:
+        raise OutputError(f"Output cannot be cancelled (status: {row.status})")
+    if row.celery_task_id:
+        try:
+            from app.tasks.celery_app import celery_app
+
+            # Best effort: a solo-pool worker cannot terminate a running task,
+            # which is why report_progress also checks the status.
+            celery_app.control.revoke(row.celery_task_id, terminate=True)
+        except Exception:  # noqa: BLE001
+            logger.warning("output_service: revoke failed for output %s", output_id)
+    transition_to(db, row, OutputStatus.CANCELLED, progress_message="Cancelled by user")
+    db.refresh(row)
+    return row
 
 
 # ---------------------------------------------------------------------------
@@ -223,8 +331,10 @@ def run_generation(db: Session, user: User, output: Output) -> Output:
     in ``error_message`` and transitioning to FAILED. Returns the
     refreshed Output row.
 
-    Synchronous for v1. A future PR can wrap this in a Celery task
-    when generation gets expensive (LLM-driven book composition).
+    Runs inside the `generate_output` Celery task (S-6.7.1), or inline for
+    `POST /author/outputs?sync=true`. A row cancelled before it starts is
+    left alone; a cancel during generation ends it as `cancelled` with no
+    content.
     """
     outputter = get_outputter(output.kind)
     if outputter is None:
@@ -233,9 +343,29 @@ def run_generation(db: Session, user: User, output: Output) -> Output:
             f"Registered: {list_outputters()}"
         )
 
-    transition_to(db, output, OutputStatus.GENERATING)
+    if current_status(db, output) == OutputStatus.CANCELLED.value:
+        db.refresh(output)
+        return output
+    output.progress_pct = 5
+    transition_to(db, output, OutputStatus.GENERATING, progress_message="Generating")
+    # The status-change event carries no percentage; send one so a live
+    # row shows 5 % rather than 0 % until the first unit of work reports.
+    _publish_progress(output)
     try:
         outputter.generate(db, user, output)
+    except OutputCancelled:
+        logger.info("output_service: output_id=%s cancelled during generation", output.id)
+        db.rollback()
+        db.refresh(output)
+        output.content_text = None
+        output.content_path = None
+        _discard_artifacts(output)
+        if output.status != OutputStatus.CANCELLED.value:
+            transition_to(db, output, OutputStatus.CANCELLED, progress_message="Cancelled by user")
+        else:
+            db.commit()
+        db.refresh(output)
+        return output
     except OutputError as e:
         logger.warning(
             "output_service: generation failed for output_id=%s kind=%s: %s",
@@ -243,7 +373,10 @@ def run_generation(db: Session, user: User, output: Output) -> Output:
             output.kind,
             e,
         )
-        transition_to(db, output, OutputStatus.FAILED, error_message=str(e))
+        db.rollback()
+        db.refresh(output)
+        _discard_artifacts(output)
+        transition_to(db, output, OutputStatus.FAILED, error_message=str(e), progress_message="Failed")
         db.refresh(output)
         return output
     except Exception as e:  # noqa: BLE001
@@ -252,16 +385,29 @@ def run_generation(db: Session, user: User, output: Output) -> Output:
             output.id,
             output.kind,
         )
+        db.rollback()
+        db.refresh(output)
+        _discard_artifacts(output)
         transition_to(
             db,
             output,
             OutputStatus.FAILED,
             error_message=f"Unexpected error: {e!r}",
+            progress_message="Failed",
         )
         db.refresh(output)
         return output
 
+    # A cancel that landed after the outputter's last progress report must
+    # still win: the user was told it stopped.
+    if current_status(db, output) == OutputStatus.CANCELLED.value:
+        db.rollback()
+        db.refresh(output)
+        _discard_artifacts(output)
+        return output
+
     # Outputter populated content_text or content_path; mark completed.
-    transition_to(db, output, OutputStatus.COMPLETED)
+    output.progress_pct = 100
+    transition_to(db, output, OutputStatus.COMPLETED, progress_message="Done")
     db.refresh(output)
     return output

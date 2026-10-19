@@ -5,6 +5,7 @@
 
 import type { BadgeTone } from '../components/primitives';
 import type { KindsResponse, OutputItem } from '../services/authorApi';
+import type { WSProgressMessage } from '../types/ws';
 import { detailFromErrorBody, type HttpErrorLike } from './ingestResults';
 
 export interface KindMeta {
@@ -85,6 +86,8 @@ export function outputStatusTone(status: string): BadgeTone {
       return 'error';
     case 'generating':
       return 'info';
+    case 'cancelled':
+      return 'warn';
     case 'pending':
     default:
       return 'neutral';
@@ -101,6 +104,8 @@ export function outputStatusLabel(status: string): string {
       return 'Generating';
     case 'pending':
       return 'Pending';
+    case 'cancelled':
+      return 'Cancelled';
     default:
       return status.replace(/_/g, ' ');
   }
@@ -179,4 +184,76 @@ export function outputSizeLabel(output: Pick<OutputItem, 'kind' | 'source_ids' |
     parts.push(`${output.word_count.toLocaleString('en-US')} ${output.word_count === 1 ? 'word' : 'words'}`);
   }
   return parts.join(' · ');
+}
+
+/** S-6.7.1: an output the worker still owns (live progress, cancellable). */
+export function isActiveOutput(status: string): boolean {
+  return status === 'pending' || status === 'generating';
+}
+
+/** A `pending` row with no task id was created before generation moved to the
+ * worker, when a kind without a generator left its row behind. It never runs. */
+export function isOrphanedPending(output: Pick<OutputItem, 'status' | 'celery_task_id'>): boolean {
+  return output.status === 'pending' && !output.celery_task_id;
+}
+
+/** The progress line under an active row: "40% · Chapter 2 of 5: Tariffs". */
+export function outputProgressLine(output: Pick<OutputItem, 'progress_pct' | 'progress_message'>): string {
+  const pct = Math.max(0, Math.min(100, Math.round(output.progress_pct ?? 0)));
+  const message = (output.progress_message ?? '').trim();
+  return message ? `${pct}% · ${message}` : `${pct}%`;
+}
+
+/** Fold one socket message into an output row. Returns the same object when
+ * the message is for another id, so React Query keeps referential equality. */
+export function applyOutputProgress<T extends Pick<OutputItem, 'id' | 'status' | 'progress_pct' | 'progress_message' | 'error_message'>>(
+  output: T,
+  msg: WSProgressMessage,
+): T {
+  if (msg.job_id !== output.id) return output;
+  return {
+    ...output,
+    status: msg.new_status ?? msg.status ?? output.status,
+    progress_pct: msg.progress_pct ?? output.progress_pct,
+    progress_message: msg.message ?? output.progress_message,
+    error_message: msg.error ?? output.error_message,
+  };
+}
+
+/** Statuses after which the row's content and lists must be refetched. */
+export function isTerminalMessage(msg: WSProgressMessage): boolean {
+  const s = msg.new_status ?? msg.status;
+  return msg.type === 'job_error' || s === 'completed' || s === 'failed' || s === 'cancelled';
+}
+
+/** S-6.7.2: the file name a download's Content-Disposition carries. The
+ * RFC 5987 `filename*` (UTF-8, so Devanagari titles survive) wins over the
+ * ASCII `filename`; `fallback` covers a missing header. */
+export function filenameFromDisposition(header: string | null | undefined, fallback: string): string {
+  if (!header) return fallback;
+  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch {
+      // fall through to the ASCII name
+    }
+  }
+  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
+  return plain ? plain[1].trim() : fallback;
+}
+
+const READABLE_FORMATS = new Set(['md', 'txt', 'html']);
+
+/** Whether the reader can open it: it needs text, which a deck's PPTX or a
+ * site's zip is not. Falls back to `has_content` for rows from older APIs. */
+export function isReadableOutput(output: Pick<OutputItem, 'status' | 'has_content' | 'formats'>): boolean {
+  if (output.status !== 'completed' || !output.has_content) return false;
+  return output.formats ? output.formats.some((f) => READABLE_FORMATS.has(f)) : true;
+}
+
+/** Button text for one download format: "Download" alone when there is only
+ * one, else "Download .pdf". */
+export function downloadLabel(format: string, count: number): string {
+  return count > 1 ? `Download .${format}` : 'Download';
 }

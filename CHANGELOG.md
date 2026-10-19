@@ -22,6 +22,49 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 - **Charts** follow the dataviz method (validated colours per theme, keyboard
   readouts, a table view on every chart): `ColumnChart`, `BarList`.
 
+### Author Studio downloads: binary artifacts on disk, one endpoint per output (2026-10-19, S-6.7.2)
+
+PR [#284](https://github.com/khoks/VideoResearchPro/pull/284). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **Artifacts on disk** under `OUTPUTS_DIR` (default `./data/outputs`), one
+  directory per output: `<user_id>/<output_id>/artifact.<format>`, written
+  atomically; `outputs.content_path` is relative to the root so the worker and
+  the API agree. Formats come from a whitelist with their media types.
+- **`GET /api/v1/author/outputs/{id}/download?format=`** serves the text
+  (`md` for books) or any artifact present, named from the title with a UTF-8
+  `filename*` (Devanagari titles survive). Header-bearer only, per D-079.
+  `OutputItem.formats` lists what is available; the Author page and reader
+  show one download button per format and open only text outputs.
+- **No stray files:** deleting an output removes its directory, a cancelled
+  or failed run discards partial files, and
+  `scripts/sweep_output_artifacts.py` lists (or with `--apply` deletes)
+  directories left without a row.
+- **Safety:** ids must match `[A-Za-z0-9_-]`, every resolved path must stay
+  inside the root, and downloads never trust the stored `content_path`.
+
+### Author Studio generates in the worker, with live progress and cancel (2026-10-19, S-6.7.1)
+
+PR [#281](https://github.com/khoks/VideoResearchPro/pull/281). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **`POST /api/v1/author/outputs` returns `pending` at once** and queues the
+  new `author.generate_output` Celery task on the owner's tier queue;
+  `?sync=true` keeps inline generation for tests and scripts. `outputs` gains
+  `celery_task_id`, `progress_pct` and `progress_message` (migration
+  `72d7e46ef057`). A kind with no outputter is now 501 before any row is
+  written.
+- **Progress on the existing socket.** Status changes and per-chapter
+  progress publish on `job_progress:{output_id}`; the socket's ownership
+  check accepts outputs. The Author page shows a progress bar, opens the
+  book it just queued when it finishes, and the reader follows a book still
+  being written.
+- **`POST /api/v1/author/outputs/{id}/cancel`** and a `cancelled` status.
+  Cancellation is cooperative, since the solo-pool worker cannot be
+  interrupted: the next progress report stops the run, and a late cancel
+  still wins over `completed`.
+- **Fixed:** `wsClient.ts` threw `InvalidStateError: Still in CONNECTING
+  state` in dev (and as an uncaught error on the job page) when a second
+  subscribe arrived while the socket was connecting.
+
 ### Channel intelligence aggregate (2026-10-19)
 
 [S-8.7.2](docs/initiatives.md#s-872--intelligence-aggregate-endpoint), PR [#280](https://github.com/khoks/VideoResearchPro/pull/280).

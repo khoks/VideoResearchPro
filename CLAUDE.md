@@ -228,6 +228,8 @@ POST   /api/v1/library/qa/clarify      # Library-wide clarify step
 DELETE /api/v1/library/qa/{id}         # Delete a library Q&A exchange (optional)
 GET    /api/v1/library/videos          # Browse global video library
 
+GET    /api/v1/search?q=&types=&limit= # Grouped tenant-scoped keyword search (FTS5, LIKE fallback)
+
 GET    /api/v1/channels                # List all channels
 GET    /api/v1/channels/{id}           # Single channel detail
 POST   /api/v1/channels/{id}/subscribe

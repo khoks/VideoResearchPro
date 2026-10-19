@@ -322,13 +322,24 @@ def test_real_alembic_fresh_install_reaches_head(tmp_path):
     result2 = ensure_schema_at_head(url, Base.metadata)
     assert result2 == "already_at_head"
 
-    # Schema matches ORM bidirectionally.
+    # Schema matches ORM bidirectionally — through the service's own view of
+    # the live tables, which ignores the S-8.2.1 search index (`fts_*`: FTS5
+    # virtual tables and their shadow tables, created by migration
+    # a9f3c1e7b5d2 without ORM models).
+    from app.services import schema_init_service, search_service
+
     eng = create_engine(url)
     insp = inspect(eng)
-    db_tables = set(insp.get_table_names()) - {"alembic_version"}
+    raw_tables = set(insp.get_table_names()) - {"alembic_version"}
+    db_tables = schema_init_service._live_table_names(eng)
     orm_tables = set(Base.metadata.tables.keys())
+    with eng.connect() as conn:
+        has_fts5 = search_service.probe_fts5(conn) is not None
     eng.dispose()
     assert db_tables == orm_tables
+    # The search index is the only DB-only table set, present iff SQLite has FTS5.
+    assert any(t.startswith("fts_") for t in raw_tables) == has_fts5
+    assert raw_tables - db_tables == {t for t in raw_tables if t.startswith("fts_")}
 
 
 def test_recovery_adds_missing_columns_for_additive_drift(temp_db, monkeypatch):

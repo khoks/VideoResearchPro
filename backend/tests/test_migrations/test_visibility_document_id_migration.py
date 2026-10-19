@@ -130,14 +130,17 @@ def test_upgrade_rekeys_grants_and_downgrade_restores_them(migrated):
 
 
 def test_migration_is_the_head_the_orm_expects(migrated):
-    """Fresh install reaches this revision and the live table matches the
-    ORM column set — the schema-init drift check would refuse to boot
-    otherwise."""
+    """Fresh install reaches this revision, and at head the live table
+    matches the ORM column set — the schema-init drift check would refuse to
+    boot otherwise. Later revisions (the S-8.2.1 search index sits on top of
+    this one) must not disturb the table, so the column check runs at head
+    rather than pinning this revision AS the head."""
     from app.database import Base
     import app.models  # noqa: F401
 
     cfg, eng = migrated
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, THIS)
     assert _exec(eng, "SELECT version_num FROM alembic_version") == [(THIS,)]
+    command.upgrade(cfg, "head")
     orm = {c.name for c in Base.metadata.tables["document_visibility"].columns}
     assert _columns(eng, "document_visibility") == orm

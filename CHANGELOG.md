@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### AI models page shows what the measurements found (S-1.14.7, 2026-10-19)
 
-Story S-1.14.7 under [E-1.14](docs/initiatives.md#e-114--model-tier-quality-evaluation-harness), PR [#251](https://github.com/khoks/VideoResearchPro/pull/251), decision [D-075](docs/decisions.md#d-075--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19). No default model changed.
+Story S-1.14.7 under [E-1.14](docs/initiatives.md#e-114--model-tier-quality-evaluation-harness), PR [#251](https://github.com/khoks/VideoResearchPro/pull/251), decision [D-076](docs/decisions.md#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19). No default model changed.
 
 - **Registry guidance.** Every LLM use case now records what the quality
   measurements found. 8 are measured, each citing its decision with the gap to
@@ -30,6 +30,71 @@ Story S-1.14.7 under [E-1.14](docs/initiatives.md#e-114--model-tier-quality-eval
 - **`/health/llm`** reports the same guidance and warnings for the
   server's resolved config, so a bad `LLM_USE_CASE_CONFIG` shows up there.
 - Fixed: Q&A history rows were listed under "Job Q&A".
+
+### Global search endpoint on SQLite FTS5 (2026-10-19, S-8.2.1)
+
+PR [#245](https://github.com/khoks/VideoResearchPro/pull/245). Plan:
+[docs/plans/m2-command-palette.md](docs/plans/m2-command-palette.md). The
+endpoint the command palette (S-8.2.2) will call; no UI in this PR.
+
+- **`GET /api/v1/search?q=&types=&limit=`** returns `{q, backend, groups}`
+  with one group each for jobs, documents, channels, Q&A exchanges (all
+  three surfaces) and knowledge reports. Every group is scoped to the
+  caller by joining the entity's tenant anchor onto the FTS hit list —
+  `jobs.tenant_id`, `document_visibility` on `document_id` (D-070), subscriptions ∪ visible
+  documents' channels, `*_qa_exchanges.tenant_id` — so a tenant with
+  nothing visible gets empty groups, never everything (D-063).
+- **FTS5 trigram tables** `fts_documents`, `fts_jobs`, `fts_channels`,
+  `fts_qa`, `fts_knowledge`, kept current by `AFTER INSERT / UPDATE OF /
+  DELETE` triggers; created conditionally by migration `a9f3c1e7b5d2` and
+  re-ensured at every boot (`search_service.ensure_index`). Substring
+  matching from three characters, case- and diacritics-insensitive,
+  Devanagari by codepoint trigrams; `bm25()` with the title weighted 5:1
+  over the body and a recency tie-break. Two deliberate deviations from the
+  plan's sketch: one trigram table per entity instead of `unicode61` plus
+  trigram (the trigram tokenizer covers both cases), and no
+  external-content mode (it maps on rowid, and string-keyed tables' rowids
+  are not stable across `VACUUM`).
+- **`LIKE` fallback** when the linked SQLite lacks FTS5 or its trigram
+  tokenizer (some Linux distro Pythons): the probe logs a warning, nothing
+  is created, searches scan with `LIKE` ordered by recency, and `GET
+  /health` reports `search_backend: "like"`. Queries whose tokens are all
+  under three characters take the same path even with FTS5 present.
+- `schema_init_service` ignores the `fts_` prefix when comparing the live
+  schema to the ORM, so the recovery path and the parity check keep working
+  with the index present.
+
+
+### Shelves in the app (2026-10-19)
+
+Third PR of the organisation lane ([S-8.1.2](docs/initiatives.md#s-812--shelves-ui), PR [#250](https://github.com/khoks/VideoResearchPro/pull/250)).
+
+- **Pages.** `/shelves` lists, creates, edits and deletes shelves; `/shelves/:id`
+  shows a shelf's runs and the union of their sources, each once, with the
+  library's filters.
+- **Everywhere a run appears.** "Add to shelf" on run cards and the run page
+  (checkboxes, inline create), colour chips linking to each shelf, and a
+  Shelves group in the sidebar.
+- **API.** `GET /shelves/{id}/documents` (visibility-scoped; an empty shelf
+  lists nothing) and `job_ids` on every shelf so one cached listing answers
+  membership for a whole page.
+- **Label palette.** Ten named colours in `theme.ts`, every pair at ≥ 4.5:1 in
+  both modes; shelves store the name, never a hex.
+
+### Three cross-tenant reads closed (2026-10-19, S-5.10.6)
+
+PR [#248](https://github.com/khoks/VideoResearchPro/pull/248). An audit of every `documents` reader after D-070 found three that
+never checked the tenant. Each now 404s for anyone who did not ingest the
+document or own the job, exactly like a missing id; each has a two-tenant test
+that fails on the old code.
+
+- **Knowledge endpoints.** `GET /videos/{id}/knowledge` and
+  `POST /videos/{id}/extract-knowledge` resolve through
+  `visibility_service.visible_document`, which also accepts the `document_id`.
+- **PDF serve route.** `GET /library/pdf/{digest}.pdf` serves only the
+  caller's own PDFs; holding the digest is no longer enough.
+- **Book outputter.** A book can only compile the author's own jobs.
+
 
 ### Notes: the "Your notes" page, exports and the Echo feeder (S-8.5.3, 2026-10-19)
 
@@ -85,6 +150,7 @@ S-8.8.1, the first story of the E-8.8 reading room
 - Found on the way: one stored report (`419e691d…`) was cut mid-tag by the
   writer, so the browser folds two headings into an attribute value. The
   reader cannot recover them; the fix belongs in the compose step.
+
 ### Document visibility keyed on `document_id`; non-video documents visible and retrievable (2026-10-19)
 
 Since D-063 (2026-07-31) every PDF, pasted page, Reddit and HN document was

@@ -1893,6 +1893,8 @@ Concrete failures that decided it: sonnet named **18 distinct tools/models vs op
 
 **Amended 2026-10-19: the explicit model never covered non-video sources.** The first frontend caller of `upload-pdf` and `paste-urls` (PR [#224](https://github.com/khoks/VideoResearchPro/pull/224)) found that `document_visibility.video_id` is a foreign key to `documents.video_id`, the legacy YouTube-id column, which is NULL for every `source_type` other than `video`. `visibility_service.grant()` drops falsy ids, so the grants this entry says are "wired at every ingest path, including the dedup hit on PDF and paste" are silently never written for a PDF or a pasted page, and every reader filters on the same column. The migration's "0 documents left ungranted" was true only because no non-video document existed on that instance. In effect the model protected against leaks but delivered the data-loss outcome this entry set out to avoid, for exactly the ingest paths it named. A strict `xfail` pins it; the fix is [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).
 
+**Amended 2026-10-19 (II): three reads the five leak classes did not list.** Auditing every `documents` reader after D-070 merged found reads that never checked the tenant at all: both knowledge endpoints (read the shared artifact, or spend an extraction, on any document by id), the PDF serve route (the digest was the only gate), and the book outputter (any job id compiled into a book). Fixed in PR [#248](https://github.com/khoks/VideoResearchPro/pull/248) (S-5.10.6) with a shared `visibility_service.visible_document(db, tenant_id, id)` for single-document lookups. The lesson is the one D-070 already drew: an invariant written as "every read goes through the visibility service" holds only as far as someone has listed the reads, so new routes that take a document or job id in the path are where to look first.
+
 
 ## D-064 — Output length: corpus brackets with an optional user override (2026-07-31)
 
@@ -2248,7 +2250,36 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **Linked initiatives / PRs.** [S-8.5.1](initiatives.md#s-851--notes-schema-rest-and-inline-ui) (PR [#243](https://github.com/khoks/VideoResearchPro/pull/243)), [S-8.5.3](initiatives.md#s-853--your-notes-view-search-and-export) (PR [#246](https://github.com/khoks/VideoResearchPro/pull/246)), S-8.5.2, S-3.5.1, [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).
 
-## D-075 — Model guidance: "measured" means the use case's own output was graded; verdicts warn, never block (2026-10-19)
+## D-075 — R1 after three runs: the modality boundary needs provenance, not prompt rules (2026-10-19)
+
+**Status:** accepted. Follows [D-071](#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19) and [D-073](#d-073--frame-description-moves-to-gemini-31-flash-lite-on-image-grounded-grading-selection-stays-on-gpt-55-2026-10-19); the measurements are in [the protocol note](notes/2026-10-18-r1-visual-measurement.md#re-runs-after-the-contract-fix-t-11863-appended-2026-10-19).
+
+**Context.** S-1.18.6 added an attribution-boundary rule to `VISUAL_ANNOTATION_CONTRACT`, and D-073 moved frame description to gemini-3.1-flash-lite to meet the cost ceiling. Two re-runs on the same job then tested each change on its own: run 2 with Flash-Lite descriptions, run 3 with gpt-5.5 descriptions, both under the new rule, both judged blind by three model families and adversarially verified.
+
+**Findings.**
+
+1. The substance gain is real, but only with a strong describer: run 3 won 3/3 at matched length; run 2 tied (1/3). A cheap describer that grades only 0.3 points lower per frame erased the benefit at report level.
+2. The rule changed the direction of attribution errors, not their number. Every run had one or two confirmed errors per ~10,000-word report. Before the rule, screen details were credited to speakers; after it, spoken details were credited to the screen.
+3. A deterministic post-check cannot enforce the boundary on this corpus. It recalled 2 of 5 confirmed errors, flooded reports with false positives, and is structurally blind to Hindi and Bengali speech.
+
+**Decision.**
+
+- **The UI (S-1.18.2) stays deferred.** No configuration has yet met all three pre-registered criteria.
+- **Fix the cause, not the wording.** At the map stage, each extracted fact is labelled with its modality, `said`, `shown` or `both`, taken from the chunk it came from. The label travels through the lossless reduce (D-056) and is rendered for the composer. The composer then attributes from labels instead of inferring modality from interleaved text, and a check can compare the report against item provenance rather than raw transcripts. Filed as S-1.18.8, sequenced after S-1.14.6, which persists map items so their labels can be audited.
+- **The describer is chosen at report level, not per frame.** Per-frame grading did not predict the report-level loss, so the next tier change needs a report-level run. Three mid-priced describers (gpt-5.4-mini, claude-haiku-4-5, gemini-3.5-flash) are graded per frame first to pick a candidate (S-1.18.5).
+- **Multilingual verification rule.** A claim is not called fabricated until the non-Latin speech has been checked, native digits included. Judges and checkers that read only Latin script inflate fabrication counts on this corpus.
+
+**Alternatives considered.**
+
+- *Tighten the prompt again with the converse rule ("say 'on screen' only where a span exists").* Rejected as the primary fix: the last prompt rule moved the error rather than removing it, and a third rule may move it again. It is cheap, so it can ride along with S-1.18.8, but it is not relied on.
+- *Ship the deterministic check as a warning in the processing note.* Rejected: about eight false flags per report would teach readers to ignore the note.
+- *An LLM audit pass after compose.* Viable (the sweep found what the judges missed). It is deferred, not rejected: provenance makes errors less likely at the source, and an audit would then have less to catch. It is reconsidered after the S-1.18.8 measurement.
+
+**Consequences.** The visual feature stays opt-in and off by default, now with measured quality and known failure modes. S-1.18.8 touches the map and compose prompts and the item schema, so it is serialised after the R5 session's prompt work and after S-1.14.6.
+
+**Linked initiatives / PRs.** S-1.18.2 (deferred), S-1.18.5, S-1.18.6 (T-3 done), S-1.18.7 (measured), S-1.18.8 (new), S-1.14.6.
+
+## D-076 — Model guidance: "measured" means the use case's own output was graded; verdicts warn, never block (2026-10-19)
 
 **Status:** accepted. Item 3 is open to the user as OQ-16 in [E-1.14](initiatives.md#e-114--model-tier-quality-evaluation-harness).
 

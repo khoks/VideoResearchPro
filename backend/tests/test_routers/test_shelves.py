@@ -119,6 +119,10 @@ def test_add_job_is_idempotent_and_detail_lists_jobs(client, pro_user):
     assert client.post(f"/api/v1/shelves/{shelf_id}/jobs/{job_a}").json()["job_count"] == 1
     assert client.post(f"/api/v1/shelves/{shelf_id}/jobs/{job_b}").json()["job_count"] == 2
 
+    # The listing carries memberships so a page of job cards needs one call.
+    listed = {s["id"]: s for s in client.get("/api/v1/shelves").json()}
+    assert set(listed[shelf_id]["job_ids"]) == {job_a, job_b}
+
     detail = client.get(f"/api/v1/shelves/{shelf_id}").json()
     assert detail["job_count"] == 2
     assert {j["id"] for j in detail["jobs"]} == {job_a, job_b}

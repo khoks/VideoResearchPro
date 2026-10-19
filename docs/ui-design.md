@@ -44,6 +44,8 @@ export const colors = {
 };
 ```
 
+**Label palette** (`palette` in `theme.ts`, resolved with `usePaletteColor(name)`). Ten named colours for user-applied labels (shelves now, tags next): `default gray brown orange yellow green blue purple pink red`, Notion's set. The API stores the *name*, never a hex. Each name has a `bg` / `fg` pair per mode, every pair at least 4.5:1 (checked 2026-10-19). A label always shows its text in a bordered pill; colour is a hint, never the only signal.
+
 Component-level rules:
 - **Cards** sit on `bg` and use `surface` for their fill, with a 1 px `border` outline. No drop shadows.
 - **Pills / badges** use `surfaceAlt` fill + `border` outline, status-colored text.

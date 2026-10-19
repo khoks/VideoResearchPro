@@ -1171,6 +1171,15 @@ Linked decision: [D-065](decisions.md#d-065--channel-subscriptions-become-per-te
 - [x] T-5.10.4.8 *(found)* `query_collection` turned an empty scope into an unrestricted search; `document_ids=[]` returns nothing, pinned at the service
 - [x] T-5.10.4.9 *(found)* Job Q&A filtered on `JobVideo.video_id`; now passes the approved `document_id` set so a topic job's Reddit / HN / PDF documents are retrievable (`run_qa_agent(document_ids=...)`)
 
+#### S-5.10.5 ⚪ Remaining readers keyed on the legacy `video_id`
+**PR:** TBD. Filed 2026-10-19 while shipping S-5.10.4 (PR [#241](https://github.com/khoks/VideoResearchPro/pull/241)); listed there as follow-ups rather than widened into that PR.
+**Linked decision:** [D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)
+**Scope.** Two readers still key on `documents.video_id`, which is NULL for every non-video source, so they silently omit PDFs, pasted pages, Reddit and HN documents; and the D-070 chunk backfill only runs where the API lifespan runs.
+**Tasks**
+- [ ] T-5.10.5.1 `services/dataset_service.py` derives knowledge-export ownership from `JobVideo.video_id` (pre-D-063 shape): non-video documents never export, and nor does any PDF or pasted page, which has no job. Filter through `visibility_service.visible_document_ids` instead; add a test with a PDF that carries a knowledge report
+- [ ] T-5.10.5.2 Run `chroma_service.backfill_chunk_document_ids` on Celery worker startup as well as in the API lifespan: a worker-only start after the upgrade leaves pre-2026-10-19 chunks unretrievable until the API boots once
+- [ ] T-5.10.5.3 `temporal_service.known_eras_for` is keyed on YouTube ids by design (search candidates are not documents yet) — confirm and note it in the function docstring so the next audit does not re-flag it
+
 ### E-5.1 🟢 `tenant_id` audit + retrofit
 
 **Scope.** Add `tenant_id` / `workspace_id` columns to every user-scoped table; convert today's implicit JWT scoping to an explicit column for future per-tenant rate limiting + multi-workspace.

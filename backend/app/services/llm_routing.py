@@ -1128,12 +1128,12 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "visual_describe_frame": UseCaseInfo(
         default_route="primary",
-        # S-1.18.5 (2026-10-19, D-073): image-grounded blind grading on 33
-        # frames x 2 graders — gpt-5.5 4.52/5 (3 of 66 unusable), this model
-        # 4.21 (5 unusable), gpt-5.6-luna 3.97 (22 unusable). Flash-lite costs
-        # $0.008 per video against $0.122 for gpt-5.5 and keeps the whole
-        # visual pass under the $0.10 ceiling the R1 protocol fixed.
-        default_config=UseCaseConfig("google", "gemini-3.1-flash-lite", "off"),
+        # D-081 (2026-10-19, the user's choice): gpt-5.5 gave the strongest
+        # report-level result (3/3 judges, substance 8.67 vs 7.67) where
+        # flash-lite tied and gemini-3.5-flash won 2/3. The visual pass now
+        # costs about $0.20 per video, a ceiling the user approved over the
+        # $0.10 the R1 protocol first set (D-073 is superseded on this point).
+        default_config=UseCaseConfig("openai", "gpt-5.5", "low"),
         summary=(
             "MULTIMODAL. Describe one captured frame IN TRANSCRIPT "
             "CONTEXT: what is on screen, and specifically what it adds "
@@ -1159,9 +1159,11 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         ),
         guidance=UseCaseGuidance(
             status="measured",
-            decision_id="D-073",
+            decision_id="D-081",
             decided_on="2026-10-19",
             flagship_delta=(
+                "Default is gpt-5.5 by the user's choice in D-081: it gave the "
+                "strongest report-level result (3/3 judges). "
                 "Blind per-frame grading, two graders per frame, each opening "
                 "the image. First pass (33 frames): gpt-5.5 4.52/5 (3 of 66 "
                 "gradings unusable), gemini-3.1-flash-lite 4.21 (5), "

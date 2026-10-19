@@ -70,7 +70,7 @@ def test_measured_set_matches_the_decision_log() -> None:
         "report_reduce_summaries": "D-056",
         "report_compose": "D-062",
         "visual_select_moments": "D-073",
-        "visual_describe_frame": "D-073",
+        "visual_describe_frame": "D-081",  # the user chose gpt-5.5 over the D-073 tier
         # Graded against 300 hand-labelled units (S-1.16.2), not a flagship.
         "code_mixing_detect": "D-080",
         # Graded by retrieval with its renderings embedded (S-1.16.2).

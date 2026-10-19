@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Playwright (tests/__screenshots__ baselines ARE committed)
+/test-results
+/playwright-report
+/blob-report

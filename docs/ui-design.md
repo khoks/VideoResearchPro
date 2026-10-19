@@ -258,6 +258,15 @@ Reports are the longest single piece of content. They get the most editorial tre
 - Reports: drop the outline, keep drop cap and citations.
 - Q&A textarea: docked at bottom; chat-like.
 
+**As built (S-8.12.1, 2026-10-19).**
+- Tokens in `theme.ts`: `fluidType` (reader body 16 → 18 px across 320 → 1200 px; headings in proportion), `readerScale` (five text-size steps), `target` (24 px minimum, 44 px primary). Mirrored as CSS custom properties because the reader body is sanitised HTML.
+- The outline column needs the desktop breakpoint (1200 px) to leave the prose its measure. Below it, a **bottom reading toolbar** replaces both the outline and the progress pill. It holds **Contents** (the outline as a bottom sheet), **A− / A+** (text size, kept per browser), the **theme** toggle and the reading percentage. Every control is 44 px, the bar clears the home indicator with `env(safe-area-inset-bottom)`, and `scroll-padding-bottom` keeps focus from hiding behind it (SC 2.4.11).
+- Citation chips stay inline (SC 2.5.8's inline exception). On touch, the first tap previews the card and a second tap opens the source; the card's link is a 44 px target on coarse pointers.
+- The Q&A composer on the job page and the library page moves under the thread and sticks to the bottom while the card is on screen. It is lifted above the on-screen keyboard by the VisualViewport API (`components/qa/Composer.tsx`).
+- Fields are 16 px under 640 px so iOS does not zoom on focus. The viewport meta adds `viewport-fit=cover` and never `maximum-scale`.
+- Page padding is `space.4` on tablets and `space.3` on phones, with the safe areas added. The hamburger and the drawer's items are 44 px.
+- No swipe gestures: iOS Safari's edge swipe owns history.
+
 ---
 
 ## 3. Component primitives

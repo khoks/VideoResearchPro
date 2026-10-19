@@ -27,6 +27,27 @@ PR [#271](https://github.com/khoks/VideoResearchPro/pull/271). Decision
 - New setting `CODE_MIX_ENGLISH_RENDERING_ENABLED` (on; off for the test
   suite). Chunks embedded earlier are not re-embedded.
 
+### Mobile reading pass: toolbar, docked composer, device tests (2026-10-19)
+
+S-8.12.1 ([plan](docs/plans/m12-mobile-reading.md)). Reports, knowledge
+reports, books and both Q&A threads read properly on a phone.
+
+- **Reading toolbar** below 1200 px: Contents (the outline as a bottom
+  sheet), text size in five steps, theme, percentage; 44 px controls above
+  the home indicator. Fluid reading type (16 → 18 px) from new `theme.ts`
+  tokens.
+- **Docked Q&A composer** on the job and library pages under 640 px: under
+  the thread, stuck to the bottom, lifted above the keyboard with the
+  VisualViewport API.
+- **Touch:** a chip's first tap previews its card, the second opens the
+  source; 44 px primary controls; 16 px fields so iOS does not zoom;
+  `viewport-fit=cover` with safe-area padding; phone page padding per
+  ui-design.
+- **Device tests:** `npm run test:mobile` runs Playwright against an iPhone,
+  a Pixel and a 320 px phone in both themes with fixture-served APIs and 18
+  checked-in baselines.
+- **Fix:** clicking an unresolved citation chip opened its card and closed
+  it in the same click, because the click's focus opened it first.
 ### Code-mixed speech: quotes keep the original wording (2026-10-19, T-1.16.2.5 part A)
 
 PR [#268](https://github.com/khoks/VideoResearchPro/pull/268). The quotation half of N-002's bidirectional split;

@@ -10,7 +10,7 @@
  * Hover and focus open the shared card through `CitationCardProvider`;
  * without a provider (tests, other surfaces) the chip renders plainly.
  */
-import type { CSSProperties, FocusEvent, MouseEvent } from 'react';
+import { useRef, type CSSProperties, type FocusEvent, type MouseEvent, type PointerEvent } from 'react';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, radius, space } from '../../theme';
 import { useCitationUi } from './CitationContext';
@@ -19,6 +19,15 @@ import type { ReportCitation } from './parseReport';
 export function ReaderCitation({ citation }: { citation: ReportCitation }) {
   const c = useColors();
   const ui = useCitationUi();
+  // Touch has no hover, so the first tap on a linked chip previews its card
+  // and a second tap (or the card's own link) opens the source (S-8.12.1).
+  // Recorded at pointerdown because the tap's focus event opens the card
+  // before the click arrives.
+  const touchPreview = useRef(false);
+  // Whether the card was already open when the pointer went down; null for a
+  // keyboard activation. A click focuses the chip first (which opens the
+  // card), so "open at click time" cannot tell a first click from a second.
+  const openAtPointerDown = useRef<boolean | null>(null);
   const resolved = ui?.index?.byIndex.get(citation.index) ?? null;
   const href = resolved?.resolvedHref ?? citation.href;
   const source = resolved?.source ?? null;
@@ -40,6 +49,11 @@ export function ReaderCitation({ citation }: { citation: ReportCitation }) {
   const describe = source ? `${source.title}${source.channel_name ? `, ${source.channel_name}` : ''}` : null;
   const handlers = ui
     ? {
+        onPointerDown: (e: PointerEvent<HTMLElement>) => {
+          const open = ui.isOpen(citation.index);
+          openAtPointerDown.current = open;
+          touchPreview.current = e.pointerType === 'touch' && !open;
+        },
         onMouseEnter: (e: MouseEvent<HTMLElement>) => ui.show(citation.index, e.currentTarget),
         onMouseLeave: () => ui.hide(),
         onFocus: (e: FocusEvent<HTMLElement>) => ui.show(citation.index, e.currentTarget, true),
@@ -62,6 +76,16 @@ export function ReaderCitation({ citation }: { citation: ReportCitation }) {
         aria-label={`${citation.label}${describe ? `, ${describe}` : ''}, opens in a new tab`}
         style={{ ...base, color: c.accent, background: c.accentSubtle }}
         {...handlers}
+        onClick={
+          ui
+            ? (e) => {
+                if (!touchPreview.current) return;
+                touchPreview.current = false;
+                e.preventDefault();
+                ui.show(citation.index, e.currentTarget, true);
+              }
+            : undefined
+        }
       >
         {citation.label}
         {fn}
@@ -74,7 +98,17 @@ export function ReaderCitation({ citation }: { citation: ReportCitation }) {
       type="button"
       className="reader-citation reader-citation--unresolved"
       aria-label={`${citation.label}, ${describe ?? 'source not recorded in this report'}`}
-      onClick={ui ? (e) => ui.toggle(citation.index, e.currentTarget) : undefined}
+      onClick={
+        ui
+          ? (e) => {
+              const wasOpen = openAtPointerDown.current;
+              openAtPointerDown.current = null;
+              if (wasOpen === null) ui.toggle(citation.index, e.currentTarget);
+              else if (wasOpen) ui.hide(true);
+              else ui.show(citation.index, e.currentTarget, true);
+            }
+          : undefined
+      }
       style={{ ...base, color: c.textMuted, background: c.surfaceAlt, cursor: ui ? 'pointer' : 'default' }}
       {...handlers}
     >

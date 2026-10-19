@@ -1,0 +1,53 @@
+[
+  {
+    "id": "synthetic-qa-1",
+    "question": "What does the run say about stopping blood-pressure tablets?",
+    "answer": "**Synthetic fixture answer.** The Pratidhvani video says the decision depends on why and when the tablets were started and on the dose, and that stopping should not be done on one's own [1]. It names alcohol as one of the factors that affect blood pressure [1].",
+    "references": [
+      {
+        "source_type": "video",
+        "video_url": "https://www.youtube.com/watch?v=HlzQFTOQ5c4",
+        "video_title": "Health Care: ಬಿಪಿ ಮಾತ್ರೆ ನಿಲ್ಲಿಸಿದರೆ ಏನಾಗಬಹುದು?#bloodpressure #BP #DRRaju #alcoholic",
+        "channel_name": "Pratidhvani",
+        "timestamp_seconds": 22,
+        "timestamp_display": "0:22",
+        "youtube_link": "https://www.youtube.com/watch?v=HlzQFTOQ5c4&t=22"
+      }
+    ],
+    "created_at": "2026-05-16T05:10:00"
+  },
+  {
+    "id": "synthetic-qa-2",
+    "question": "Is smoking the only cause of lung cancer the sources mention?",
+    "answer": "**Synthetic fixture answer.** No. The Medicover Hospitals Nellore video calls smoking the leading cause but notes that non-smokers also develop lung cancer, and names occupational exposure such as silica as a contributor [1].",
+    "references": [
+      {
+        "source_type": "video",
+        "video_url": "https://www.youtube.com/watch?v=VbMKPDQK5Tw",
+        "video_title": "Smoking: The Leading Cause of Lung Cancer | Medicover Nellore",
+        "channel_name": "Medicover Hospitals Nellore",
+        "timestamp_seconds": 95,
+        "timestamp_display": "1:35",
+        "youtube_link": "https://www.youtube.com/watch?v=VbMKPDQK5Tw&t=95"
+      }
+    ],
+    "created_at": "2026-05-16T05:12:00"
+  },
+  {
+    "id": "synthetic-qa-3",
+    "question": "Why is smoking riskier for people with diabetes?",
+    "answer": "**Synthetic fixture answer.** The NewsFirst Kannada segment links smoking with diabetes to a higher chance of heart attack, stroke, peripheral arterial disease and nerve problems [1].",
+    "references": [
+      {
+        "source_type": "video",
+        "video_url": "https://www.youtube.com/watch?v=zMyy0y03tB0",
+        "video_title": "ಸಕ್ಕರೆ ಕಾಯಿಲೆ ಇರೋರು ಸ್ಮೋಕ್​ ಮಾಡಿದ್ರೆ ಏನಾಗುತ್ತೆ? | #DrBhanuprakashHM #Sugar #diabities #heartattack",
+        "channel_name": "NewsFirst Kannada",
+        "timestamp_seconds": 12,
+        "timestamp_display": "0:12",
+        "youtube_link": "https://www.youtube.com/watch?v=zMyy0y03tB0&t=12"
+      }
+    ],
+    "created_at": "2026-05-16T05:14:00"
+  }
+]

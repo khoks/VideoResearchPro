@@ -16,6 +16,7 @@ import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { CitationLink } from '../components/citation';
 import { DockedComposer, QADock, QAThread } from '../components/qa/Composer';
+import { useExchangeFocus } from '../hooks/useExchangeFocus';
 import { NotesPanel } from '../components/notes';
 import { JobShelfChips, ShelfPicker } from '../components/shelves';
 import { SaveTemplateModal } from '../components/templates';
@@ -967,6 +968,9 @@ function QASection({ jobId }: { jobId: string }) {
     resetToAsk();
   };
 
+  // `?exchange=<id>` from the palette lands on that card (S-8.2.2).
+  useExchangeFocus(!!history?.length);
+
   return (
     <Card>
       <QADock>
@@ -1203,6 +1207,7 @@ function QAExchangeCard({ qa }: { qa: QAExchange }) {
 
   return (
     <div
+      id={`exchange-${qa.id}`}
       style={{
         padding: space['4'],
         background: c.surfaceAlt,

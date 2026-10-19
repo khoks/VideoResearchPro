@@ -10,6 +10,7 @@ export function useLibraryVideos(params?: ListVideosParams) {
       params?.channel_id ?? null,
       params?.transcript_status ?? null,
       params?.tag ?? null,
+      params?.document_id ?? null,
       params?.sort ?? null,
       params?.limit ?? null,
       params?.offset ?? null,

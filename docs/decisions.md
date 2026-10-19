@@ -2712,3 +2712,45 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Linked initiatives / PRs.** S-1.14.6, E-1.14, S-1.18.8, PR [#273](https://github.com/khoks/VideoResearchPro/pull/273). Follows D-055, D-056, D-075.
 
+
+## D-089 — Echo's privacy contract: context-only by default, the brain is a registry, the archive is the user's whole copy, delete in a fixed order (2026-10-19)
+
+**Status:** accepted. Item 1 takes the [L3 plan](plans/l3-echo-personal-brain.md#open-questions-the-users-call)'s open question 2 at its recommended default. Item 3 is an interpretation **awaiting the user's confirmation**.
+
+**Context.** The first new Echo table (`shares_inbox`, S-3.7.1) shipped in the same PR as the whole-brain export (S-3.10.1) and delete (S-3.10.2), as the build order requires. Four questions had to be answered for that to be true:
+- what Echo may do with words the user forwards but did not write;
+- which stores count as "the brain";
+- whether the archive may carry those third-party words;
+- how a delete across SQL, the filesystem and Chroma stays honest when one store fails.
+
+**Decision.**
+1. **Third-party content is context-only by default.** `shares_inbox.author_is_tenant` is false unless the user says the words are theirs (the quick-share's "These are my own words" box or the inbox toggle). A context-only share:
+   - may be retrieved as context once it is embedded;
+   - is never quoted verbatim in anything Echo writes;
+   - never feeds voice signals as the user's own words;
+   - never enters a dataset or derived export.
+
+   Marking one's own words is authorship, not an override. No per-thread override exists.
+2. **The brain is a registry, not a convention.** It consists of:
+   - every table in `echo_privacy_service.ECHO_TABLES` (each must carry `tenant_id`);
+   - every collection in `echo_vectors.echo_collection_names()`;
+   - the tenant's directory under `ECHO_SHARES_DIR`.
+
+   An unregistered store is neither exported nor deleted. The research library, notes, the account and BYOK keys are outside the brain.
+3. **The whole-brain archive carries everything, context-only content included.** The archive is a zip with a manifest, JSONL per table and the files, and its reader is the exact inverse. It is the user's own copy of what they handed over, which is what Article 20 portability covers. A complete archive is also what lets the user check a delete against what was there. "Never exported" in item 1 applies to dataset and derived exports.
+4. **Delete runs in a fixed order, then verifies.** It removes vectors, then files, then rows in one commit, and then re-counts every store. If a store fails, the delete stops before the rows that would let a retry find what is left. If anything remains, the call fails rather than reporting success. Both export and delete are audited with counts only.
+
+**Alternatives considered.**
+- *Treat every share as the user's voice.* Rejected. A WhatsApp thread or a quote is someone else's personal data, and attributing it to the user would poison voice capture.
+- *A per-thread override now.* Not built; it is the user's open question.
+- *Exclude context-only content from the archive.* Rejected for now. The archive would no longer be lossless, and delete could not be verified against it. If the user prefers, a flagged section is the fallback, not omission.
+- *Delete rows first.* Rejected. A failure in Chroma or the filesystem would then leave vectors or files with no row pointing at them, so nothing could find them again.
+- *Hard-code the table list in the export and delete.* Rejected. A new Echo story would silently escape both; a registry with a `tenant_id` test makes the omission visible.
+
+**Consequences.**
+- S-3.7.2 must embed under `share:<id>` with `tenant_id` metadata (T-3.7.2.6) and keep context-only shares out of voice signals (T-3.7.2.7).
+- Every later Echo story (signals, events, drafts, connector grants) registers its stores.
+- The export is the canonical way to see what Echo holds, so it must stay lossless as tables are added.
+- Zero-knowledge mode (S-3.10.3) is untouched.
+
+**Linked initiatives / PRs.** [S-3.7.1](initiatives.md#s-371--shares_inbox-quick-share-and-the-inbox-page), [S-3.10.1](initiatives.md#s-3101--full-export), [S-3.10.2](initiatives.md#s-3102--full-delete) (PR [#286](https://github.com/khoks/VideoResearchPro/pull/286)), S-3.7.2, E-3.3, E-3.2, [D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) (the same feeder-not-gate choice for shares).

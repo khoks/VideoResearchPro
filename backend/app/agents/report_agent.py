@@ -1448,6 +1448,10 @@ def compose_channel_report(state: ReportAgentState) -> dict:
             channel_name=channel_name,
             video_count=len(video_ids),
             chunks="\n\n".join(excerpt_parts),
+            # T-1.18.1.12: a channel job that opts into visual analysis gets
+            # annotated chunks too; without the contract the model reads the
+            # descriptions as speech.
+            visual_annotations=VISUAL_ANNOTATION_CONTRACT,
         )
         try:
             response = llm.invoke([HumanMessage(content=prompt)])

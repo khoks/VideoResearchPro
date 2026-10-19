@@ -97,6 +97,8 @@ Video count in this batch: {video_count}
 Transcript excerpts for this channel:
 {chunks}
 
+{visual_annotations}
+
 Identify the dominant themes, recurring topics, and notable points covered in this channel's content.
 Keep the summary concise (4-8 bullet points) and grounded in the transcript excerpts.
 

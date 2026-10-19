@@ -166,7 +166,7 @@ def test_item_shape_and_hrefs(db, backend):
             assert set(item) == {"id", "title", "subtitle", "href", "score"}, kind
     assert by_kind["jobs"][0]["href"] == f"/jobs/job-{A}"
     assert by_kind["documents"][0]["href"] == f"/library?document=doc-{A}"
-    assert by_kind["knowledge"][0]["href"].endswith("&view=knowledge")
+    assert by_kind["knowledge"][0]["href"] == f"/knowledge/doc-{A}"
     assert by_kind["channels"][0]["href"].startswith("/library/channels/UC")
     qa_hrefs = {i["href"] for i in by_kind["qa"]}
     assert f"/jobs/job-{A}?exchange=qa-job-{A}" in qa_hrefs

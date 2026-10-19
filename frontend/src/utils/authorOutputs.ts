@@ -176,12 +176,18 @@ export function parseCreateIntent(params: URLSearchParams): CreateIntent | null 
  * chapter per run), sources and words otherwise. Words appear only once
  * the backend has counted them (`word_count` is null until there is content).
  */
-export function outputSizeLabel(output: Pick<OutputItem, 'kind' | 'source_ids' | 'word_count'>): string {
+export function outputSizeLabel(
+  output: Pick<OutputItem, 'kind' | 'source_ids' | 'word_count' | 'citation_count'>,
+): string {
   const n = output.source_ids.length;
   const unit = output.kind === 'book' ? (n === 1 ? 'chapter' : 'chapters') : n === 1 ? 'source' : 'sources';
   const parts = [`${n} ${unit}`];
   if (typeof output.word_count === 'number') {
     parts.push(`${output.word_count.toLocaleString('en-US')} ${output.word_count === 1 ? 'word' : 'words'}`);
+  }
+  // S-6.7.3: shown once there are any, so a book from un-cited runs stays quiet.
+  if (output.citation_count) {
+    parts.push(`${output.citation_count.toLocaleString('en-US')} ${output.citation_count === 1 ? 'citation' : 'citations'}`);
   }
   return parts.join(' · ');
 }

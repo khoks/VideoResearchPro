@@ -39,6 +39,8 @@ export interface ListVideosParams {
   transcript_status?: string;
   /** A tag id: only documents carrying it (S-8.1.3). */
   tag?: string;
+  /** One document (S-8.2.2): where a palette result for a source lands. */
+  document_id?: string;
   sort?: LibrarySort;
   limit?: number;
   offset?: number;

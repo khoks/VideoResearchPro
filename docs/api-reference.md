@@ -373,6 +373,9 @@ Library Q&A history. Query params: `limit` (default 100), `offset` (default 0). 
 ### `DELETE /api/v1/library/qa/{exchange_id}`
 Delete a single library Q&A exchange. Returns 204. (The matching `qa_library_global` Chroma entry is left as orphan; cleanup is a maintenance task, not a request-time concern.)
 
+### `GET /api/v1/library/video-channels`
+`?video_ids=a,b,c` → `{ "<video_id>": { "channel_id": "UC…", "channel_name": "…" } }` (S-8.7.4). Maps cited YouTube videos to their channel so a citation chip can link to the channel page. Only videos the caller can see answer; unknown or invisible ids are simply absent (never an error, never a hint that another reader holds them). At most 200 distinct ids per call. Resolved at read time, so every existing answer gains the link without changing stored references. The frontend batches every chip on screen into one call.
+
 ### `GET /api/v1/library/videos`
 Browse the global, deduplicated video library. Returns `list[LibraryVideoResponse]`. Each row aggregates `job_count` and `job_titles[]` across `job_videos → jobs` so the UI can show "appears in N research runs" without follow-up requests.
 
@@ -382,6 +385,7 @@ Query params:
 - `channel_id` — restrict to one channel.
 - `transcript_status` — one of `fetched`, `pending`, `unavailable`.
 - `tag` — a tag id; only documents carrying it (S-8.1.3). Another reader's tag id matches nothing.
+- `document_id` — one document (S-8.2.2; where a search result for a source lands). Inside the visibility scope, so another tenant's id returns `[]`.
 - `sort` — `newest` (default), `oldest`, `longest`, `shortest`.
 - `limit` (default 50, max 500), `offset` (default 0).
 
@@ -459,12 +463,12 @@ Query params: `q` (1–200 chars; whitespace-separated tokens of three or more c
     ]},
     { "type": "channels", "items": [{ "id": "<channel_id>", "title": "…", "subtitle": "42 subscribers", "href": "/library/channels/<channel_id>", "score": 1.1 }] },
     { "type": "qa", "items": [{ "id": "<exchange_id>", "title": "What are rate cuts?", "subtitle": "Library Q&A · 2026-10-01", "href": "/library/qa?exchange=<exchange_id>", "score": 2.0 }] },
-    { "type": "knowledge", "items": [{ "id": "<document_id>", "title": "…", "subtitle": "Knowledge report · Channel", "href": "/library?document=<document_id>&view=knowledge", "score": 0.8 }] }
+    { "type": "knowledge", "items": [{ "id": "<document_id>", "title": "…", "subtitle": "Knowledge report · Channel", "href": "/knowledge/<document_id>", "score": 0.8 }] }
   ]
 }
 ```
 
-Groups come back in that fixed order, only the requested ones, each possibly empty. Every group is scoped to the caller — jobs by `tenant_id`, documents and knowledge by `document_visibility` keyed on `document_id` (D-070), channels by subscription or a visible document, Q&A by `tenant_id` on each of the three exchange tables — so a tenant who has ingested nothing gets empty groups, never everything (D-063). `score` is higher-is-better (`-bm25`, title weighted over body, recency tie-break); on the `like` backend every score is `0.0` and items are ordered by recency. `backend` is the engine used for *this* query: `like` also when FTS5 is present but every token is shorter than three characters. Q&A hrefs carry `?exchange=<id>` on the originating page (`/jobs/<job_id>`, `/library/qa`, `/qa-history`); document and knowledge hrefs carry `?document=<document_id>` (and `&view=knowledge`) on `/library` — the canonical id, because most non-video documents have no `video_id`, which the palette PR teaches the library page to honour.
+Groups come back in that fixed order, only the requested ones, each possibly empty. Every group is scoped to the caller — jobs by `tenant_id`, documents and knowledge by `document_visibility` keyed on `document_id` (D-070), channels by subscription or a visible document, Q&A by `tenant_id` on each of the three exchange tables — so a tenant who has ingested nothing gets empty groups, never everything (D-063). `score` is higher-is-better (`-bm25`, title weighted over body, recency tie-break); on the `like` backend every score is `0.0` and items are ordered by recency. `backend` is the engine used for *this* query: `like` also when FTS5 is present but every token is shorter than three characters. Q&A hrefs carry `?exchange=<id>` on the originating page (`/jobs/<job_id>`, `/library/qa`, `/qa-history`), which scrolls to and focuses that exchange. Document hrefs carry `?document=<document_id>` on `/library` (the canonical id, because most non-video documents have no `video_id`), which narrows the list to that row through `GET /library/videos?document_id=`. Knowledge hrefs open the reader at `/knowledge/<document_id>` (S-8.8.3) since S-8.2.2.
 
 ---
 
@@ -779,7 +783,7 @@ All `/author` endpoints require `require_feature("author_studio")` (Pro and abov
 Create the row and queue its generation in the worker (S-6.7.1). Body `{ "kind": "book", "title": "…", "source_ids": ["<job_id>", …], "parameters": { "include_qa": true, "include_toc": true } }`. For `book`, `source_ids` are job IDs **of the caller's own runs** (another tenant's id reads like a missing one), one chapter per run: its report's Markdown source (S-6.1.2) with headings demoted under the chapter heading, and its Q&A if `include_qa`; a run without a report, or whose file is missing, yields a disclosed placeholder chapter. An empty `source_ids` for `book` is 400 and writes no row. Returns the `OutputItem` at once in `pending` state with `celery_task_id` set; the worker (`author.generate_output`, on the owner's tier queue) publishes status changes and per-chapter progress on the `/ws/jobs` socket under the **output's id** (subscribe to it like a job id; the server checks the caller owns it). `?sync=true` generates inside the request and returns the finished row (`completed` or `failed`), the path tests and scripts use. If the broker is unreachable the row is returned `failed` with `Could not queue generation: …`. 400 unknown kind or empty title; 501 kind without an outputter, before any row is written.
 
 ```json
-{ "id": "...", "kind": "book", "title": "...", "status": "pending", "source_ids": ["..."], "parameters": {}, "error_message": null, "created_at": "...", "updated_at": "...", "has_content": false, "word_count": null, "progress_pct": 0, "progress_message": "Queued", "celery_task_id": "...", "formats": [] }
+{ "id": "...", "kind": "book", "title": "...", "status": "pending", "source_ids": ["..."], "parameters": {}, "error_message": null, "created_at": "...", "updated_at": "...", "has_content": false, "word_count": null, "progress_pct": 0, "progress_message": "Queued", "celery_task_id": "...", "formats": [], "citation_count": 0 }
 ```
 
 ### `GET /api/v1/author/outputs`
@@ -794,6 +798,9 @@ One output; 404 for another user's (existence-leak posture).
 ### `GET /api/v1/author/outputs/{output_id}/download`
 The output as a file (S-6.7.2). `format` (optional, `[a-z0-9]{1,8}`) picks one of the row's `formats`; without it the first is served, which is the text (`md` for a book) when there is one. Text comes from `content_text`; binary artifacts (`pdf`, `epub`, `pptx`, `zip`, …) from `<OUTPUTS_DIR>/<user_id>/<output_id>/artifact.<format>`, always derived from the row's own ids. Media type by format; `Content-Disposition: attachment; filename="<ascii>"; filename*=UTF-8''<title-slug>.<format>`. 404 for another user's output, an output with no content, or a format it does not have (the detail lists what is available); 422 for a malformed `format`. **Header-bearer only** (D-079): a `?token=` does not authenticate it.
 
+### `GET /api/v1/author/outputs/{output_id}/citations`
+Every source the output cites, in output order (S-6.7.3): `[{ "position": 1, "label": "0:00", "url": "https://www.youtube.com/watch?v=…&t=0", "seconds": 0, "document_id": "…", "source_type": "video", "source_id": "…", "resolved_by": "title", "title": "…", "channel_name": "…" }]`. `resolved_by` is `video_id`, `url`, `title` or `channel`, or null when no library document visible to the caller matched; an unmatched bare `&t=` anchor then has no `url`. 404 for another user's output. `OutputItem.citation_count` carries the count on every output response.
+
 ### `GET /api/v1/author/outputs/{output_id}/content`
 The generated text as `text/markdown` for books, `text/plain` otherwise. 404 when the row has no content yet. Header-auth only, so a browser download goes through a fetch and a blob, not an `<a href>`.
 
@@ -807,7 +814,7 @@ The generated text as `text/markdown` for books, `text/plain` otherwise. 404 whe
 All `/echo` endpoints require `require_feature("echo_personal_brain")` (Studio only). Backend: `backend/app/routers/echo.py` (I-3, PR #172). Page: [`EchoPage`](ui-pages.md#echopage--echo-studio).
 
 ### `GET /api/v1/echo/status`
-Cold-start readiness: `{ "ready": false, "total_rows": 1, "distinct_sources": 1, "has_personality_trait": true, "threshold_total": 100, "threshold_sources": 3, "notes_total": 4, "notes_words": 120 }`. `ready` is the AND of the three gates. `notes_total` / `notes_words` (S-8.5.3) count the caller's live notes as the Domain 3 feeder; they are reported, not gated, until S-3.5.1 sets the voice floor.
+Cold-start readiness: `{ "ready": false, "total_rows": 1, "distinct_sources": 1, "has_personality_trait": true, "threshold_total": 100, "threshold_sources": 3, "notes_total": 4, "notes_words": 120 }`. `ready` is the AND of the three gates. `notes_total` / `notes_words` (S-8.5.3) count the caller's live notes as the Domain 3 feeder; they are reported, not gated, until S-3.5.1 sets the voice floor. `shares_total` (S-3.7.1) counts the shares inbox as the Domain 5 feeder, reported the same way.
 
 ### `GET /api/v1/echo/context`
 The caller's personal-context rows. Query params: `kind`, `source`, `include_expired` (default false). Rows: `{ id, kind, key, value, source, confidence, captured_at, expires_at }`. `kind` is closed to ten values (`location`, `interest`, `hobby`, `work`, `talent`, `skill`, `personality_trait`, `life_event`, `daily_routine`, `place`); anything else is 400.
@@ -823,6 +830,27 @@ Revoke a source: deletes every row attributed to it for the caller. `{ "deleted_
 
 ### `GET /api/v1/echo/connectors`
 `{ "connectors": [], "supported_kinds": [...] }`. The connector registry is empty until E-3.2 ships a concrete connector.
+
+### Shares inbox (S-3.7.1)
+Everything the user forwards to Echo, no approval step. Every share is `pending` until S-3.7.2's processing exists. **Context-only by default:** `author_is_tenant` is false unless the user says the words are theirs; such a share is never quoted and never enters a dataset or derived export.
+
+Share shape: `{ id, received_at, updated_at, surface, content_type, kind: "url"|"text"|"file", url, text, file: {filename, mime, size} | null, user_annotation, author_is_tenant, processing_state, linked_document_id }`. Timestamps are UTC with an offset. A foreign id is the same 404 as a missing one.
+
+- `POST /api/v1/echo/shares` — body `{ url | text, annotation?, content_type?, author_is_tenant? = false, surface? = "manual_quick_share" }`, exactly one of `url` (http/https only) or `text` (non-blank, at most `ECHO_SHARE_TEXT_MAX_CHARS`, 413 above). `content_type` is inferred when omitted (`youtube_video`, `youtube_short`, `instagram_reel`, `tweet`, `link`, `text_snippet`, ...) and must match `^[a-z][a-z0-9_]{0,63}$`. 201.
+- `POST /api/v1/echo/shares/upload` — multipart `file` plus optional `annotation`, `content_type`, `author_is_tenant`, `surface`. Empty is 422; over `ECHO_SHARE_MAX_BYTES` (25 MB) is 413 and writes nothing. Stored as `ECHO_SHARES_DIR/<tenant>/<share id><ext>`; the client's filename is kept for display only. 201.
+- `GET /api/v1/echo/shares` — `?state=pending|processed|skipped|failed&q=&limit=(1-500, 100)&offset=`; newest first; `q` matches text, annotation and payload (URL, filename). `{ items, total, limit, offset }`.
+- `GET /api/v1/echo/shares/{id}`; `PATCH /api/v1/echo/shares/{id}` with any of `annotation` (`null` clears), `content_type`, `author_is_tenant`.
+- `DELETE /api/v1/echo/shares/{id}` — removes the share's vector, file, derived facts and row. `{ deleted, vectors, files, derived_facts }`.
+- `GET /api/v1/echo/shares/{id}/file` — the stored bytes, always `Content-Disposition: attachment` with `X-Content-Type-Options: nosniff`. A row whose path points outside its tenant directory is never followed (404).
+
+### `GET /api/v1/echo/export`
+The whole brain as one zip (S-3.10.1): `manifest.json` (format `pratidhvani-echo-archive`, version 1, export time, tenant, row counts per table, every file with size and SHA-256, any missing file), `personal_context.jsonl` and `shares_inbox.jsonl` (every column; datetimes ISO-8601 with offset), and `files/<stored path>`. Lossless: `services/echo_privacy_service.py::read_archive` is the exact inverse. Built in a temporary file and removed after sending. Audited (`echo_exported`, counts only). Notes and the library are not part of Echo; notes export at `/exports/notes.*`.
+
+### `GET /api/v1/echo/brain/footprint`
+What Echo holds for the caller in every store: `{ "rows": {"personal_context": n, "shares_inbox": n}, "files": n, "vectors": {"shares_global": n, "personal_context_global": n} }`.
+
+### `DELETE /api/v1/echo/brain?confirm=delete-everything`
+Deletes every Echo row, file and vector of the caller (S-3.10.2). Without the exact confirmation: 422 (missing) or 400 (wrong). Order: vectors, files, then rows in one commit; a failing store returns 500 naming it and leaves the rows that let a retry finish. Returns `{ deleted, removed: <footprint>, footprint_after: <footprint> }`; `footprint_after` is all zeros or the call fails. Audited (`echo_brain_deleted`, counts only). Irreversible; the library, notes, account and BYOK keys are untouched.
 
 ---
 

@@ -74,6 +74,9 @@ export interface Readiness {
    * Reported, not a gate, until S-3.5.1 sets the voice floor. Null when the
    * backend predates the field. */
   voice: { notes: number; words: number } | null;
+  /** Domain 5 feeder: items in the shares inbox. Reported, not a gate.
+   * Null when the backend predates the field. */
+  shares: number | null;
 }
 
 function clamp01(n: number): number {
@@ -132,7 +135,8 @@ export function computeReadiness(status: EchoStatus, connectorsAvailable: number
     typeof status.notes_total === 'number'
       ? { notes: status.notes_total, words: status.notes_words ?? 0 }
       : null;
-  return { ready: status.ready, percent, parts, voice };
+  const shares = typeof status.shares_total === 'number' ? status.shares_total : null;
+  return { ready: status.ready, percent, parts, voice, shares };
 }
 
 // ---------------------------------------------------------------------------

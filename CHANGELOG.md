@@ -28,6 +28,70 @@ PR [#294](https://github.com/khoks/VideoResearchPro/pull/294). Regression from #
 - Compose material no longer reaches the composer as `\uXXXX` escapes for
   Devanagari and Bengali text.
 
+### Author Studio citations: every source an output cites, resolved like the reader (2026-10-19, S-6.7.3)
+
+PR [#293](https://github.com/khoks/VideoResearchPro/pull/293). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **`output_citations`** (migration `c5ee7a568ef8`): one row per citation in
+  output order, written by every outputter through
+  `output_citation_service.record_citations`. The book records each chapter's
+  links.
+- **Resolved, not just copied.** A port of the reading room's resolver ties
+  each link to a library document by YouTube id, URL, or a known title or
+  channel near it, using only the run's documents the user can see, and
+  rebuilds `watch?v=…&t=…` URLs for bare `&t=` anchors. On the stored
+  smoke-test report all 30 anchors resolve. An anchor nothing matches is kept
+  without a URL rather than given an invented one.
+- **`GET /api/v1/author/outputs/{id}/citations`** and `citation_count` on
+  every output; the Author list and the reader show the count.
+
+### Citations link to the channel (2026-10-19)
+
+[S-8.7.4](docs/initiatives.md#s-874--citation-chips-link-to-the-channel-page), PR [#291](https://github.com/khoks/VideoResearchPro/pull/291).
+
+- A YouTube citation in job or library Q&A names its channel as a link to the
+  channel page, when you can see the cited video. Resolved at read time by
+  `GET /library/video-channels` (one batched request per screen), so every
+  past answer gains it.
+
+
+### Echo: the shares inbox, with whole-brain export and delete (S-3.7.1, S-3.10.1, S-3.10.2, 2026-10-19)
+
+The first new Echo table, shipped with its export and its erasure. PR [#286](https://github.com/khoks/VideoResearchPro/pull/286). Plan: [docs/plans/l3-echo-personal-brain.md](docs/plans/l3-echo-personal-brain.md).
+
+- **Shares inbox.** `shares_inbox` (migration `007c708bb890`, which also gives
+  `personal_context` a `tenant_id` backfilled from `user_id`). `/api/v1/echo/shares`
+  takes a link, text or a file (25 MB cap, stored under `ECHO_SHARES_DIR/<tenant>/`
+  by share id), lists, edits and deletes; deleting a share removes its file,
+  vector and derived facts. Studio only.
+- **Context-only by default.** A share is someone else's words unless the user
+  says otherwise: retrievable as context later, never quoted, never in a dataset
+  export. The plan's recommended default for its open question; no per-thread
+  override was built.
+- **Export.** `GET /api/v1/echo/export`: one zip with a manifest, JSONL per table
+  and the files; `read_archive` is its tested inverse.
+- **Delete.** `DELETE /api/v1/echo/brain?confirm=delete-everything` removes every
+  Echo row, file and vector; tests check each store directly for both tenants.
+  `GET /api/v1/echo/brain/footprint` shows the counts.
+- **UI.** "Add to Echo" in the sidebar, an `/echo/inbox` page, and a "Your Echo
+  data" card on the Echo page with export and a typed-confirmation delete.
+### Command palette and keyboard shortcuts (2026-10-19)
+
+S-8.2.2 ([plan](docs/plans/m2-command-palette.md)). Find any run, source,
+channel, question or knowledge report from anywhere, and get around without
+the mouse.
+
+- **Mod-K** (Cmd on macOS, Ctrl elsewhere) or **Ctrl-Alt-K**, or the new
+  **Search…** button: grouped results from `GET /search`, navigation
+  actions, notes exports, theme, recent items. Built on `cmdk` (MIT), loaded
+  on first open.
+- **Shortcuts:** `/` focuses the page's search box, and `g r` / `g l` /
+  `g k` / `g a` jump to research, library, knowledge and author — the chords
+  `ui-design.md` had long described without an implementation. None fire
+  while typing; the palette turns them off (WCAG 2.1.4).
+- **Results land on the item:** a source narrows the library to its row, a
+  question scrolls to and focuses its exchange, a knowledge report opens the
+  reader.
 ### Channel Intelligence tab (2026-10-19)
 
 [S-8.7.3](docs/initiatives.md#s-873--intelligence-tab-ui), PR [#285](https://github.com/khoks/VideoResearchPro/pull/285).

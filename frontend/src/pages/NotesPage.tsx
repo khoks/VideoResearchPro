@@ -163,6 +163,7 @@ export function NotesPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search your notes…"
+              data-page-search
             aria-label="Search your notes"
           />
           <div style={{ display: 'flex', gap: space['2'], flexWrap: 'wrap', alignItems: 'center' }}>

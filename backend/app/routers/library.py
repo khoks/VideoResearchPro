@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.dependencies import get_current_user, get_db
+from pydantic import BaseModel
+
 from app.models.channel import Channel
 from app.models.job import Job
 from app.models.job_video import JobVideo
@@ -254,6 +256,47 @@ def delete_library_qa_exchange(
     db.commit()
 
 
+MAX_VIDEO_CHANNEL_LOOKUP = 200
+
+
+class VideoChannel(BaseModel):
+    channel_id: str
+    channel_name: str
+
+
+@router.get("/video-channels", response_model=dict[str, VideoChannel])
+def resolve_video_channels(
+    video_ids: str = Query(..., description="Comma-separated YouTube video ids"),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> dict[str, VideoChannel]:
+    """Map cited YouTube video ids to their channel (S-8.7.4), so a citation
+    chip can link to the channel page. Only documents the caller can see
+    answer (D-063 / D-070); unknown or invisible ids are simply absent, so the
+    response never confirms that another reader holds a document. At most
+    ``MAX_VIDEO_CHANNEL_LOOKUP`` distinct ids per call.
+
+    Resolved at read time rather than stored on Q&A references, so every
+    existing answer gains the link without touching the Q&A agent."""
+    ids = [v.strip() for v in dict.fromkeys(video_ids.split(",")) if v.strip()]
+    ids = ids[:MAX_VIDEO_CHANNEL_LOOKUP]
+    if not ids:
+        return {}
+    rows = (
+        db.query(Document.video_id, Document.channel_id, Channel.name)
+        .join(Channel, Channel.channel_id == Document.channel_id)
+        .filter(
+            Document.video_id.in_(ids),
+            Document.document_id.in_(visibility_service.visible_document_ids(db, current_user.id)),
+        )
+        .all()
+    )
+    return {
+        vid: VideoChannel(channel_id=channel_id, channel_name=name or "")
+        for vid, channel_id, name in rows
+    }
+
+
 @router.get(
     "/videos",
     response_model=list[LibraryVideoResponse],
@@ -264,6 +307,7 @@ def list_library_videos(
     channel_id: str | None = None,
     transcript_status: str | None = None,
     tag: str | None = None,
+    document_id: str | None = None,
     sort: LibrarySort = "newest",
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -292,6 +336,7 @@ def list_library_videos(
         channel_id=channel_id,
         transcript_status=transcript_status,
         tag_id=tag,
+        document_id=document_id,
         sort=sort,
         limit=limit,
         offset=offset,
@@ -311,6 +356,7 @@ def query_library_documents(
     limit: int = 50,
     offset: int = 0,
     job_ids: list[str] | None = None,
+    document_id: str | None = None,
 ) -> list[LibraryVideoResponse]:
     """The library listing as a plain function, so other surfaces (the shelf
     page, S-8.1.2) can reuse the filters, the visibility scope and the
@@ -349,6 +395,11 @@ def query_library_documents(
         q = q.filter(Document.channel_id == channel_id)
     if transcript_status:
         q = q.filter(Document.transcript_status == transcript_status)
+    if document_id:
+        # S-8.2.2: a palette result lands on its one row
+        # (`/library?document=<id>`). Inside the visibility scope above, so
+        # another tenant's id matches nothing.
+        q = q.filter(Document.document_id == document_id)
     if tag_id:
         # The tenant is part of the subquery, so another reader's tag id
         # matches nothing rather than revealing what they tagged.

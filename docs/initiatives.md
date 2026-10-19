@@ -1,6 +1,6 @@
 # Pratidhvani — Initiatives, Epics, Stories & Tasks
 
-**Status:** living doc (last refreshed 2026-04-25). Owner: [`/work-tracker`](../.claude/skills/work-tracker/SKILL.md) skill.
+**Status:** living doc (last refreshed 2026-10-18). Owner: [`/work-tracker`](../.claude/skills/work-tracker/SKILL.md) skill.
 
 This file is the project's **work-state board**. Every piece of work — shipped, in-progress, accepted, proposed, deferred, blocked — lives here. The hierarchy mirrors a Jira-style Initiative → Epic → Story → Task tree. The high-level *why* of each Initiative is in [`feature-roadmap.md`](feature-roadmap.md) / [`vision.md`](vision.md); this file is the *what / where it is right now*.
 
@@ -23,6 +23,8 @@ This file is the project's **work-state board**. Every piece of work — shipped
 ---
 
 ## I-1 🟡 Multi-source ingest — original scope closed 2026-05-03; reopened 2026-07-22 for E-1.11 (scale resilience)
+
+**Filing fix 2026-10-18:** E-1.15 to E-1.18 (the R1/R3/R4/R5 epics filed 2026-07-31) had landed under the I-2 heading. They now sit at the end of I-1. IDs unchanged, same as the 2026-07-29 fix for E-1.13.
 
 **Scope-changed 2026-07-29 (II):** the reopened scale/quality track now also carries [E-1.13](#e-113-per-user-llm-overrides-cost-calculator) (per-user model overrides + cost calculator, 🟢) and [E-1.14](#e-114-model-tier-quality-evaluation-harness) (model-tier quality evaluation, 🟡). Trajectory of the reopening: E-1.11 made ingest survive scale → E-1.12 made the agents survive scale → E-1.13 made model choice configurable and costed → E-1.14 measures whether the chosen models are good enough. Linked decisions: [D-054](decisions.md#d-054-per-user-llm-overrides-cost-calculator-gpt-56-adaptive-reasoning-findings-2026-07-29), [D-055](decisions.md#d-055-intelligence-delta-evaluation-methodology-production-input-replay-blind-ab-judging-2026-07-29).
 
@@ -137,8 +139,8 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - [x] T-1.5.1.3 Flatten OP + top-50 comments (sorted by score) into single text body with reply markers
 - [x] T-1.5.1.4 Store new `source_type='reddit_post'` rows — *shipped 2026-05-02 PR [#113](https://github.com/khoks/VideoResearchPro/pull/113). `_upsert_candidate_and_link(db, job_id, candidate, classification=..., extracted_text=...)` resolves existing rows by canonical `(source_type, source_id)`, mirrors `source_id` into `video_id` only for video rows (NULL otherwise), creates JobVideo (job_documents) link with UUID document_id. 9 dedicated unit tests including cross-job sharing.*
 - [x] T-1.5.1.5 Comment-tree depth configurable (default top 50 by score)
-- [ ] T-1.5.1.6 Connector unit tests + end-to-end pipeline test *(unit tests landed in PR #70; e2e test pending orchestrator wiring)*
-- [ ] T-1.5.1.7 Approval-UI card variant for Reddit (handle, score, comment count, snippet, sentiment hint)
+- [x] T-1.5.1.6 Connector unit tests + end-to-end pipeline test *(unit tests landed in PR #70; Reddit-only e2e shipped in PR [#116](https://github.com/khoks/VideoResearchPro/pull/116), see T-1.5.11.5. Checkbox reconciled 2026-10-18)*
+- [x] T-1.5.1.7 Approval-UI card variant for Reddit (handle, score, comment count, snippet, sentiment hint) *(shipped as the `SOURCE_CONFIGS['reddit_post']` entry of the polymorphic `<ApprovalCard>` in PRs [#118](https://github.com/khoks/VideoResearchPro/pull/118) / [#122](https://github.com/khoks/VideoResearchPro/pull/122). Checkbox reconciled 2026-10-18)*
 
 #### S-1.5.2 🟢 Hacker News search connector
 
@@ -171,9 +173,9 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Tasks**
 - [x] T-1.5.4.1 Build `<ApprovalCard>` polymorphic primitive + sub-components — *shipped 2026-05-02 PR [#118](https://github.com/khoks/VideoResearchPro/pull/118). Components: `<CardHeader>` / `<CardActions>` / `<CardBody>` / `<CardMetaRow>` (uses formatter dispatch) / `<CardBadgeRow>` (consumes existing `<ClassificationBadgeRow>`). FORMATTERS hybrid registry: durationSeconds / relativeTime / signedNumber / numberWithCommas / truncate. customSlot escape hatch wired with signature per D-016/D-018. TypeScript build green (337 modules)*
   - **Types subset shipped 2026-04-28** — PR [#95](https://github.com/khoks/VideoResearchPro/pull/95). `frontend/src/components/approval/types.ts` exports the full D-018 shape (`SourceMetadata` discriminated union, `MetadataFor<K>`, `FormatterName`, `MetaChip<T>`, `FilterChip<T>`, `ApprovalCardConfig<T>`, mapped-type `SourceConfigRegistry`, `ApprovalCardProps<T>`, classification mirror, `ApprovalDocument` fixed-slot type). React component build + formatters.ts impl + YouTube migration + Reddit/HN config entries are remaining sub-work.
-- [ ] T-1.5.4.2 Stance / sentiment / **framing** badge sub-component (consumed by `<CardBadgeRow>`); tooltip-on-hover with full classification breakdown.
-- [ ] T-1.5.4.3 Filter chips ("show only against", "show only positive", "show only experiential framing", "show only score ≥ N", **"Show low-relevance candidates" toggle** per [D-021](decisions.md#d-021-topic-relevance-threshold-050-2026-04-26)) — filter `source_metadata.<field>` regardless of `source_type`. Default approval list applies `topic_relevance >= 0.50`; the toggle drops the cutoff to 0.0 to surface hidden candidates. Filter state lives client-side; chips do not re-fetch / re-classify.
-- [ ] T-1.5.4.4 Migrate existing YouTube approval card to `<ApprovalCard>` as the first config-entry consumer; verify visual + interaction parity vs. today's bespoke component before any social-post type is wired.
+- [x] T-1.5.4.2 *(shipped PR [#108](https://github.com/khoks/VideoResearchPro/pull/108), badge row; checkbox reconciled 2026-10-18 per M-1.5 C5)* Stance / sentiment / **framing** badge sub-component (consumed by `<CardBadgeRow>`); tooltip-on-hover with full classification breakdown.
+- [x] T-1.5.4.3 *(shipped PR [#122](https://github.com/khoks/VideoResearchPro/pull/122); checkbox reconciled 2026-10-18 per M-1.5 C5)* Filter chips ("show only against", "show only positive", "show only experiential framing", "show only score ≥ N", **"Show low-relevance candidates" toggle** per [D-021](decisions.md#d-021-topic-relevance-threshold-050-2026-04-26)) — filter `source_metadata.<field>` regardless of `source_type`. Default approval list applies `topic_relevance >= 0.50`; the toggle drops the cutoff to 0.0 to surface hidden candidates. Filter state lives client-side; chips do not re-fetch / re-classify.
+- [x] T-1.5.4.4 *(shipped PR [#122](https://github.com/khoks/VideoResearchPro/pull/122); checkbox reconciled 2026-10-18 per M-1.5 C5)* Migrate existing YouTube approval card to `<ApprovalCard>` as the first config-entry consumer; verify visual + interaction parity vs. today's bespoke component before any social-post type is wired.
 - [x] T-1.5.4.5 Reddit + HN config entries — *shipped 2026-05-02 PR [#118](https://github.com/khoks/VideoResearchPro/pull/118). `SOURCE_CONFIGS` mapped-type registry with three entries (video / reddit_post / hn_story); each carries platform glyph + chip layout + formatter selections. Mapped type forces compile-time exhaustiveness — adding Mastodon / Bluesky / podcast = one entry each.*
 
 #### S-1.5.5 🟢 Citation rendering for social posts
@@ -235,7 +237,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 **Tasks**
 - [x] T-1.5.8.1 URL → `source_type` resolver — *shipped PR #144. `app/services/paste_url_resolver.py::resolve_source_type(url)` host-based router. facebook.com / fb.com → fb_post; instagram.com → ig_post; linkedin.com → li_post; twitter.com / x.com → tweet; else → article.*
 - [x] T-1.5.8.2 Reuse `app/services/article_extraction/` (E-1.6 T-1.6.1 primitives) — *✅ T-1.6.1 shipped 2026-05-03 PR [#135](https://github.com/khoks/VideoResearchPro/pull/135). All five paste connectors delegate to extract_text in their fetch_text method.*
-- [ ] T-1.5.8.3 ⚪ Frontend "Paste URLs" surface in job submission — *backend `POST /api/v1/library/paste-urls` endpoint shipped PR #144; frontend UI surface (a Library page entry-point with paste textarea + per-URL status reporting) is a separate frontend PR. Not on the I-1 critical path.*
+- [ ] T-1.5.8.3 ⚪ Frontend "Paste URLs" surface in job submission — *backend `POST /api/v1/library/paste-urls` endpoint shipped PR #144; frontend UI surface (a Library page entry-point with paste textarea + per-URL status reporting) is a separate frontend PR. Not on the I-1 critical path. Verified 2026-10-18: still no frontend caller of `/library/paste-urls`.*
 - [ ] T-1.5.8.4 ⚪ Per-platform `source_metadata` extraction (author handle, date) — *current default uses trafilatura's metadata pass which works for blogs/articles but is mediocre for FB/IG/LI/X-specific fields. A future PR adding per-platform extractors (parse FB post author from meta tags, X handle from URL, etc.) sharpens the metadata. Not blocking I-1.*
 - [x] T-1.5.8.5 FB / IG paste support — *unblocked + shipped via the combination of T-1.6.6 (Playwright fallback) + S-1.5.8 paste connectors. Operators with `ARTICLE_PLAYWRIGHT_ENABLED=True` get working SPA extraction; FB / IG URLs route to fb_post / ig_post connectors which delegate through the Playwright path.*
 
@@ -347,7 +349,7 @@ This file is the project's **work-state board**. Every piece of work — shipped
 - 19 unit tests using real PyMuPDF (in-memory PDFs built via `fitz`'s writer; no fixture binaries).
 
 **E-1.8 follow-ups.**
-- Frontend file-upload UI on a Library page (backend endpoint ready; UI is a separate PR).
+- Frontend file-upload UI on a Library page (backend endpoint ready; UI is a separate PR). Verified 2026-10-18: still no frontend caller of `/library/upload-pdf`.
 - OCR for image-only PDFs (Tesseract or cloud-OCR fallback gated like Playwright).
 - Per-page Q&A reranking (chunk-level page filter on retrieval).
 
@@ -499,9 +501,9 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 - S-1.14.3 🟢 Blind pairing + rubric judging with retrieval-grounded verification. **Result: max-effort won all 6 comparisons** — report severe, knowledge ×2 / Q&A-context / query-plan moderate, Q&A-patterns minor. Scores in [D-055 Results](decisions.md#d-055-intelligence-delta-evaluation-methodology-production-input-replay-blind-ab-judging-2026-07-29).
 - S-1.14.4 🟢 Loss attribution for unpersisted stages. **Result: 60 of 60 sampled facts from two batches absent from the shipped report (100% loss).** Root cause is the map/reduce token funnel, not model IQ — see S-1.14.8.
 - S-1.14.5 🟢 Selection-criteria audit standing in for `search_rank_and_curate` (true re-rank impossible — rejected pool not persisted). *Finding: default selection graded 6.5/10 — ~20-24 questionable picks, IBM Technology at 10% of corpus despite not being a preferred channel, 12 of 30 preferred channels absent, zero flagship model-release coverage despite instructions naming GPT-5.x / Claude / Gemini.*
-- S-1.14.6 ⚪ Persist agent intermediates + rejected candidate pool (behind a debug/sampling flag) so quality is continuously monitorable instead of replay-only — see [architecture.md § Agent-intermediate retention gap](architecture.md#agent-intermediate-retention-gap-identified-2026-07-29).
+- S-1.14.6 🟡 Persist agent intermediates + rejected candidate pool (behind a debug/sampling flag) so quality is continuously monitorable instead of replay-only — see [architecture.md § Agent-intermediate retention gap](architecture.md#agent-intermediate-retention-gap-identified-2026-07-29). **Candidate-pool half shipped 2026-07-30**, PR [#205](https://github.com/khoks/VideoResearchPro/pull/205): `job_search_candidates` stores the whole pool with a `selected` flag. **Still open:** map/reduce intermediates (per-batch extraction JSON, reduced summary). *Status reconciled 2026-10-18; it had been left at ⚪.*
 - S-1.14.7 ⚪ Fold verdicts into registry defaults + surface measured per-use-case delta as guidance in the `/account/ai-models` panel (turns the override knob from raw into guided).
-- **S-1.14.8 🟢 Fix the report information funnel — shipped 2026-07-30.** Linked decision: [D-056](decisions.md#d-056--report-pipeline-budgets-derived-from-work-lossless-reduce-sectioned-compose-2026-07-30). Validated on job `0d4db8c3`: reduce now loses **0.00%** (5,861 items in / out, 200 videos + 92 channels retained, vs 91.2% of items and 46% of videos lost before).
+- **S-1.14.8 🟢 Fix the report information funnel — shipped 2026-07-30.** Linked decision: [D-056](decisions.md#d-056-report-pipeline-budgets-derived-from-work-lossless-reduce-sectioned-compose-2026-07-30). Validated on job `0d4db8c3`: reduce now loses **0.00%** (5,861 items in / out, 200 videos + 92 channels retained, vs 91.2% of items and 46% of videos lost before).
   - [x] T-1.14.8.1 `report_map_chunks` completion budget derived from batch size (3,000 → ~24,000); registry `p95_input` corrected 32,000 → 120,000; new measured `MODEL_MAX_OUTPUT_TOKENS` (128K / 64K haiku)
   - [x] T-1.14.8.2 Reduce rewritten deterministic + lossless; even per-video compression past a 1M-token cost guard so no video is dropped wholesale
   - [x] T-1.14.8.3 Compose sectioned — one call per section, split further as material requires, so report length scales with corpus; Statistics rendered in code
@@ -509,7 +511,7 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
   - [x] T-1.14.8.5 Re-validated end to end (see D-056 Validation); isolating residual *model* delta needs a fresh full-corpus judging run — tracked as S-1.14.10
 
 - **S-1.14.9 🟢 Two corpus traps — shipped 2026-07-30.** (a) Every extracted item carried an empty `video_url` because the map chunk header never supplied one, so **every timestamp citation in every report was a dead link** (`href="&t=123"`); the header now carries the URL and composed HTML unwraps any non-URL anchor. Validated: 104/104 links working, 6/6 videos correct, 0 fabricated. (b) `_item_video()` keys on `video_url` rather than title, so the two pairs of distinct videos whose titles differ only in letter case no longer merge.
-- **S-1.14.10 🟢 E-1.14 harness re-run after the fixes — closed 2026-07-31.** Linked decision: [D-061](decisions.md#d-061--s-11410-re-judge-the-intelligence-gap-after-the-fixes-2026-07-31). Three independent blind judges on the regenerated production report vs the max-effort control, same corpus: **gap SEVERE → MODERATE**, mean **3.5 → 6.94** against the control's 8.72. Zero fabrications in either report. Production now exceeds the control on words (30,864 vs 26,631) and citations (1,489 vs 946); trails on video coverage (185 vs 200) and quantitative density.
+- **S-1.14.10 🟢 E-1.14 harness re-run after the fixes — closed 2026-07-31.** Linked decision: [D-061](decisions.md#d-061-s-11410-re-judge-the-intelligence-gap-after-the-fixes-2026-07-31). Three independent blind judges on the regenerated production report vs the max-effort control, same corpus: **gap SEVERE → MODERATE**, mean **3.5 → 6.94** against the control's 8.72. Zero fabrications in either report. Production now exceeds the control on words (30,864 vs 26,631) and citations (1,489 vs 946); trails on video coverage (185 vs 200) and quantitative density.
 - **S-1.14.14 🟢 Residual compose defects closed — shipped 2026-07-31** — PR [#209](https://github.com/khoks/VideoResearchPro/pull/209). Linked decision: [D-062](decisions.md#d-062--report_compose-upgraded-to-claude-opus-5-2026-07-31).
   - [x] T-1.14.14.1 Source in the VISIBLE citation text. Measured: citations with a source named nearby **30% → 63%**; attribution score **6 → 9**, now ahead of the control's 7
   - [x] T-1.14.14.2 Theme-first structure. Measured: sub-sections named after a channel **16% → 7%**; corpus titles mentioned **3 → 139** of 200. Did NOT move the insight score
@@ -522,22 +524,12 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
   - [ ] T-1.14.15.2 Pipeline metadata leaks into prose ("the Key Facts sections (1,128 and 605 items respectively)")
   - [ ] T-1.14.15.3 Conclusions states "well over 150 distinct videos" while the report's own table says 200 — pass the verified count into every section prompt, not just the summary
   - [ ] T-1.14.15.4 Judging harness: raise the 180,000-char text cap or judge section-by-section — production now exceeds it and was judged on a truncated document
+  - *2026-10-18: proposed for batching with S-1.17.2, since both edit the report prompts and T-1.14.15.1 is itself a temporal defect.*
 - **S-1.14.11 🟢 Reasoning-model response shape — shipped 2026-07-30.** Anthropic returns `[thinking_block, text_block]` instead of a string once the model actually thinks, so `response.content` yielded a list exactly on the hardest prompts. Latent in production since D-053 moved these sites to claude-sonnet-5. Fixed centrally via `llm_service.response_text()` at all 18 response-reading call sites, with regression tests.
 
 **Open questions**
 - OQ-7: does the harness generalize to a scheduled regression check (re-run on every model-lineup shift), or stay a manual audit? Depends on S-1.14.6 landing.
 - OQ-8: judging currently uses a single model family; is a multi-judge panel needed to control for self-preference bias when the challenger shares that family?
-
-
-## I-2 🟡 Brand & visual identity rollout
-
-**Closed 2026-05-03.** All 6 epics now 🟢: E-2.1 tokens layer, E-2.2 primitives library, E-2.3 page migration, E-2.4 sidebar nav (all shipped earlier — verified 2026-04-26), E-2.5 marketing landing page (PR [#136](https://github.com/khoks/VideoResearchPro/pull/136), 2026-05-03), E-2.6 code identifier rename (this session — runbook in `docs/migration-code-identifiers.md` covers the operator-coordinated data-bearing renames).
-
-**Status reconciliation 2026-04-26 (historical).** A backlog audit on 2026-04-26 revealed I-2 was substantially shipped — 4 of 6 epics were already 🟢. The earlier characterization in feature-roadmap.md ("documented but zero code shifted") was inaccurate; the warm-editorial migration largely landed in earlier sessions and was not reflected here. After E-2.5 + E-2.6 closed on 2026-05-03, I-2 is fully closed.
-
-**Why it exists.** Switch the running app from generic-AI-SaaS aesthetics (purple-blue gradient, default sans) to warm-editorial Pratidhvani identity (paper background, oxblood / forest-teal / vintage gold, Fraunces / Source Serif). Visual identity should match the personal-library / research-journal vision.
-**North-star doc:** [branding.md](branding.md) · [ui-design.md](ui-design.md)
-**Decision links:** [D-001](decisions.md#d-001--rebrand-to-pratidhvani-प्रतिध्वनि-2026-04-24), [D-002](decisions.md#d-002-warm-editorial-visual-identity-2026-04-24)
 
 ### E-1.15 🟡 Output length policy (R4)
 
@@ -552,12 +544,14 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 - [x] T-1.15.1.4 "Report depth" selector on the submit form, defaults to Auto, only sent when chosen
 - [x] T-1.15.1.5 10 tests incl. the ANTI-CAP invariant (deep-on-small < brief-on-large), unknown-value fallback, and that the `deep` brief forbids padding
 
-#### S-1.15.2 🟢 Q&A length policy — shipped 2026-07-31 (D-066). R4 now complete across report and Q&A.
-Q&A is corpus-blind: `formulate_answer` has a fixed 4,500-token budget and never receives video/word counts. Deferred into the R3+R5 batch because all three rewrite the same Q&A prompt files.
-- [ ] T-1.15.2.1 Pass corpus statistics into the job and library Q&A agents
-- [ ] T-1.15.2.2 Apply the same scale-plus-guidance policy to `qa_formulate_answer` / `library_qa_formulate_answer`
-- [ ] T-1.15.2.3 Per-request length override on the Q&A endpoints (job-level default, request-level override)
+#### S-1.15.2 🟡 Q&A length policy — agent side shipped 2026-07-31 (D-066); never wired into the routers
+Q&A was corpus-blind: `formulate_answer` had a fixed 4,500-token budget and never received video/word counts. Deferred into the R3+R5 batch because all three rewrite the same Q&A prompt files.
+**Scope-changed 2026-10-18: reopened.** This story was marked shipped with "R4 now complete", but a code audit found the policy unreachable in production. `run_qa_agent` accepts `corpus_statistics` / `output_length`, but its only caller (`routers/qa.py`) passes neither. `corpus_bracket({})` therefore returns `small`, so every job answer gets the small-corpus 1.25× budget and brief, and no publication span, even on the 200-video corpus. No test references `corpus_statistics`. See the [D-066 amendment](decisions.md#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31).
+- [ ] T-1.15.2.1 Pass corpus statistics into the job and library Q&A agents. *The job agent accepts them; no router passes them*
+- [ ] T-1.15.2.2 Apply the same scale-plus-guidance policy to `qa_formulate_answer` / `library_qa_formulate_answer`. *Done in the job agent's `formulate_answer`; `library_qa_formulate_answer` is still a fixed `max_tokens=4500`*
+- [ ] T-1.15.2.3 Per-request length override on the Q&A endpoints (job-level default, request-level override). *Neither exists: `job.output_length` is not passed, and the Q&A schemas have no length field*
 - [ ] T-1.15.2.4 Knowledge synthesis already scales with extraction size (S-1.14.8) — confirm it honours an explicit preference too
+- [ ] T-1.15.2.5 Router-level tests that fail when the statistics or the length preference are not passed, so this cannot regress silently again
 
 ### E-1.16 🟡 Linguistic agnosticism with English output (R5)
 
@@ -570,7 +564,7 @@ Q&A is corpus-blind: `formulate_answer` has a fixed 4,500-token budget and never
 - [x] T-1.16.1.3 `language_service.py` — Unicode script profiling, `switch_points`, `needs_translation`. Combining-mark bug fixed (Devanagari was undercounted ~40%, hiding language switches)
 - [x] T-1.16.1.4 Anti-transliteration instruction reversed to the three-part form (D-065)
 - [x] T-1.16.1.5 12 tests, including one asserting the romanised-Hinglish gap PERSISTS by design
-- [ ] T-1.16.1.6 Wire `language_service.describe_for_prompt` into the per-job prompt path so a non-English corpus announces itself to the composer
+- [ ] T-1.16.1.6 Wire `language_service.describe_for_prompt` into the per-job prompt path so a non-English corpus announces itself to the composer *(verified 2026-10-18: zero callers)*
 - [ ] T-1.16.1.7 Persist the per-document language profile (`documents.language_mix`) so the per-video label stops being the only signal
 - [ ] T-1.16.1.8 English-preference in `search_rank_and_curate` ranking — a preference, never a filter (D-059)
 
@@ -587,7 +581,7 @@ The shipped script profiler is exact for script mixing and **blind to romanised 
 
 **Scope.** Work out where something visually important happens in a video, capture stills there, describe them in transcript context, and merge the descriptions back as clearly-marked annotations that downstream prompts read as visual aid and never as speech.
 **Linked decision:** [D-067](decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31)
-**Roadmap:** [L6 — Visual understanding](feature-roadmap.md#l6--visual-understanding-)
+**Roadmap:** [L6 — Visual understanding](feature-roadmap.md#l6-visual-understanding)
 **Architecture:** [Visual Agent](architecture.md#visual-agent-visual_agentpy) · **Requirement:** FR-19
 
 #### S-1.18.1 🟢 Backend pipeline — select, capture, describe, merge — shipped 2026-07-31
@@ -602,7 +596,7 @@ The shipped script profiler is exact for script mixing and **blind to romanised 
 - [x] T-1.18.1.9 Tests: 101 across annotation survival, budget accounting, vision routing, real-ffmpeg extraction, prompt-placeholder binding
 
 #### S-1.18.2 🔵 Surfacing frames to the user
-The backend produces frames and descriptions; nothing shows them yet.
+The backend produces frames and descriptions; nothing shows them yet. *Verified 2026-10-18: no frontend reference to `visual_analysis` and no frame-serving route.*
 - [ ] T-1.18.2.1 Job-creation UI: the opt-in toggle, disabled when `/health` reports the `visual_analysis` feature down
 - [ ] T-1.18.2.2 Serve frame images (auth + `document_visibility` check — a frame is as private as its document)
 - [ ] T-1.18.2.3 Show the frame inline where a report or answer cites "on screen at mm:ss"
@@ -610,6 +604,7 @@ The backend produces frames and descriptions; nothing shows them yet.
 
 #### S-1.18.3 🔵 Measure whether visual annotations improve output
 Nothing yet establishes that annotations make reports or answers *better* — only that they arrive intact.
+*Sequencing question raised 2026-10-18 (undecided): run this before S-1.18.2, so the UI work happens only if annotations measurably help.*
 - [ ] T-1.18.3.1 Same corpus, visual on vs off, blind-judged (the E-1.14 harness)
 - [ ] T-1.18.3.2 Measure the `informative` false-positive rate against human labels; retune the calibration or the tier if it is high
 - [ ] T-1.18.3.3 Cost per job at realistic frame counts, against the quality delta
@@ -625,23 +620,35 @@ Nothing yet establishes that annotations make reports or answers *better* — on
 
 **SCOPE CORRECTION 2026-07-31.** The requirement has TWO dimensions and only one was built. The user's words: *"the time when the videos were posted, AND which era/timeperiod they are talking about"*, affecting *"knowledge extraction, search ranking, qna, reporting"*. Publication date is done. **The era a video DISCUSSES is not**, and **search ranking received no temporal signal at all**. E-1.17 stays 🟡 until S-1.17.2 lands; describing R3 as "core shipped" was an overstatement.
 
+**Correction 2026-10-18.** The claim above that "search ranking received no temporal signal at all" was itself wrong. Since PR #2 (2026-04-19), the ranking prompt has shown each candidate's publish date with a generic hint: "more recent is usually better unless the topic calls for foundational content". What ranking still lacks is the discussed era and a deliberate per-topic recency decision. Separately, the Q&A piece below (T-1.17.1.4) turned out to be unwired; see S-1.15.2.
+
 #### S-1.17.1 🟢 Publication date reaches the prompts — shipped 2026-07-31
 - [x] T-1.17.1.1 `compute_statistics` derives earliest/latest/median publish date + per-year counts
 - [x] T-1.17.1.2 Map chunk headers carry `published <date>`
 - [x] T-1.17.1.3 `TEMPORAL_AWARENESS` / `TEMPORAL_EXTRACTION_NOTE` fragments; guardrail conflict resolved by SUPPLYING verified dates rather than relaxing D-062's anti-invention rule
-- [x] T-1.17.1.4 Q&A receives publication span and weights recency for time-sensitive questions
+- [ ] T-1.17.1.4 Q&A receives publication span and weights recency for time-sensitive questions. *Unchecked 2026-10-18: the agent formats it, but no router passes corpus statistics (see S-1.15.2)*
 - [ ] T-1.17.1.5 Date into the Q&A allowed-sources list so citations show source vintage inline
-- [ ] T-1.17.1.6 `published_ts` / `published_year` in Chroma metadata to enable recency-weighted retrieval
+- [ ] T-1.17.1.6 `published_ts` / `published_year` in Chroma metadata to enable recency-weighted retrieval. *Chunks already carry `published_at` as an ISO string (`utils/chunking.py`), which Chroma cannot range-filter or weight; the numeric fields are still needed*
 - [x] ~~T-1.17.1.7 Optional `temporal_scope_extract`~~ — promoted out of "optional" into S-1.17.2; it is half the requirement, not a nice-to-have
 
 #### S-1.17.2 🔵 The era a source DISCUSSES, and temporal signal in ranking — the missing half of R3
 A 2026 video about a 2019 paper is a 2026 source about a 2019 event. Nothing in the pipeline currently distinguishes those, and the search ranker has never seen a date.
 - [ ] T-1.17.2.1 `temporal_scope_extract` use case — per-document `{era_start, era_end, era_confidence, is_retrospective}` distinct from `published_at`. Economy tier, structured JSON, map-phase volume
 - [ ] T-1.17.2.2 Persist as `documents.discussed_era_json`; surface in chunk metadata so retrieval can filter/weight on it
-- [ ] T-1.17.2.3 Temporal signal in `search_rank_and_curate` — recency preference where the topic is fast-moving, foundational-content preference where it is evergreen. Must be a RANKING input, never a filter (same reasoning as D-059's language decision)
+- [ ] T-1.17.2.3 Temporal signal in `search_rank_and_curate` — recency preference where the topic is fast-moving, foundational-content preference where it is evergreen. Must be a RANKING input, never a filter (same reasoning as D-059's language decision). *Builds on the generic publish-date hint the ranking prompt has carried since PR #2*
 - [ ] T-1.17.2.4 Knowledge extraction: anchor relative time ("last year", "the new model") against the document's publish date so extracted events carry absolute dates
 - [ ] T-1.17.2.5 Report: distinguish "claim was true as of <date>" from "claim is true now", and surface supersession where a later source contradicts an earlier one
 - [ ] T-1.17.2.6 Q&A: weight recency for time-sensitive questions, and say so in the answer when sources disagree along a time axis
+
+## I-2 🟢 Brand & visual identity rollout
+
+**Closed 2026-05-03.** All 6 epics now 🟢: E-2.1 tokens layer, E-2.2 primitives library, E-2.3 page migration, E-2.4 sidebar nav (all shipped earlier — verified 2026-04-26), E-2.5 marketing landing page (PR [#136](https://github.com/khoks/VideoResearchPro/pull/136), 2026-05-03), E-2.6 code identifier rename (this session — runbook in `docs/migration-code-identifiers.md` covers the operator-coordinated data-bearing renames).
+
+**Status reconciliation 2026-04-26 (historical).** A backlog audit on 2026-04-26 revealed I-2 was substantially shipped — 4 of 6 epics were already 🟢. The earlier characterization in feature-roadmap.md ("documented but zero code shifted") was inaccurate; the warm-editorial migration largely landed in earlier sessions and was not reflected here. After E-2.5 + E-2.6 closed on 2026-05-03, I-2 is fully closed.
+
+**Why it exists.** Switch the running app from generic-AI-SaaS aesthetics (purple-blue gradient, default sans) to warm-editorial Pratidhvani identity (paper background, oxblood / forest-teal / vintage gold, Fraunces / Source Serif). Visual identity should match the personal-library / research-journal vision.
+**North-star doc:** [branding.md](branding.md) · [ui-design.md](ui-design.md)
+**Decision links:** [D-001](decisions.md#d-001--rebrand-to-pratidhvani-प्रतिध्वनि-2026-04-24), [D-002](decisions.md#d-002-warm-editorial-visual-identity-2026-04-24)
 
 ### E-2.1 🟢 Tokens layer (`frontend/src/theme.ts`)
 
@@ -665,19 +672,20 @@ A 2026 video about a 2019 paper is a 2026 source about a 2019 event. Nothing in 
 
 **Shipped** (verified live on master 2026-04-26). `AppLayout.tsx` now renders an editorial sidebar (240px desktop, drawer on mobile<960px) with the Devanagari + Latin brand lockup at the top and user chrome (email / theme toggle / logout) at the bottom. NavContent groups Submit / Jobs / Library / Library Q&A / Q&A History / Exports.
 
-### E-2.5 🟡 Marketing landing page (warm-editorial)
+### E-2.5 🟢 Marketing landing page (warm-editorial)
 
 **Scope.** Static landing page under `marketing/` describing the curated-personal-wiki pitch, screenshots, install instructions, SaaS waitlist. Folder does not yet exist (verified 2026-04-26 — no `marketing/` directory in repo).
+**Shipped:** 2026-05-03 — PR [#136](https://github.com/khoks/VideoResearchPro/pull/136). *Status reconciled 2026-10-18. The I-2 closure note already recorded this, but this heading and its tasks were never flipped. `marketing/src/pages/index.astro` has the hero, the Wikipedia contrast, how-it-works, install, waitlist and footer sections.*
 
 **Tasks** (initial)
 - [x] T-2.5.1 Astro project scaffold under `marketing/` *(shipped 2026-04-28 — PR [#98](https://github.com/khoks/VideoResearchPro/pull/98); Astro ^5.0.0 chosen per [D-022](decisions.md#d-022-astro-for-the-marketing-landing-page-2026-04-28). `package.json` / `astro.config.mjs` / `tsconfig.json` (extends `astro/tsconfigs/strict`) / `.gitignore` / `README.md` + `BaseLayout.astro` mirroring `frontend/src/theme.ts` tokens + `index.astro` placeholder hero with brand lockup)*
-- [ ] T-2.5.2 Hero with the personal-wiki pitch + tagline ("Your sources, echoed back" or similar from branding.md).
-- [ ] T-2.5.3 "How it differs from Wikipedia" section (curation thesis).
-- [ ] T-2.5.4 Source-types matrix (videos / podcasts / articles / etc.) reflecting current support.
-- [ ] T-2.5.5 "How it works" walkthrough (search → approve → embed → ask).
-- [ ] T-2.5.6 Install instructions (open-source self-host).
-- [ ] T-2.5.7 SaaS waitlist hook (future-only — disabled call-to-action today).
-- [ ] T-2.5.8 Footer: GitHub, docs, license.
+- [x] T-2.5.2 Hero with the personal-wiki pitch + tagline ("Your sources, echoed back" or similar from branding.md).
+- [x] T-2.5.3 "How it differs from Wikipedia" section (curation thesis).
+- [x] T-2.5.4 Source-types matrix (videos / podcasts / articles / etc.) reflecting current support.
+- [x] T-2.5.5 "How it works" walkthrough (search → approve → embed → ask).
+- [x] T-2.5.6 Install instructions (open-source self-host).
+- [x] T-2.5.7 SaaS waitlist hook (future-only — disabled call-to-action today).
+- [x] T-2.5.8 Footer: GitHub, docs, license.
 
 ### E-2.6 🟢 Code identifier rename pass
 
@@ -814,6 +822,7 @@ Sibling-PR fallback is still acceptable when timing or branch-state makes a shar
 - [x] T-4.8.2 Run + diff review — *shipped 2026-05-06*.
 - [x] T-4.8.3 Manual click-through (post-merge) — pending.
 - [x] T-4.8.4 🟢 **Heading-rename casualties resolved 2026-05-06** in this branch's follow-up. All 13 residual cross-doc anchors hand-mapped to their renamed-target heading slugs (e.g. `i-5--saas-readiness-long-horizon` → `i-5-saas-readiness-long-horizon-code-shippable-work-fully-closed-2026-05-05`; `oq-4` rerouted to its parent heading `open-questions-parking-lot` since OQ-* lives in bullet form, not headings). `fix_anchor_links.py --report` now reports zero residual broken links across the doc set.
+- [ ] T-4.8.5 🔵 **`fix_anchor_links.py` collapses hyphen runs; GitHub does not.** Found 2026-10-18 while reconciling this file. The script rewrote `#d-063--per-user-...` to `#d-063-per-user-...`, but GitHub's rendered HTML (contents API, `html` media type) gives `id="user-content-d-063--per-user-..."`, and `e-510--per-user-isolation-r2` for an emoji heading: every dropped em dash or emoji leaves two hyphens. So the 132 rewrites in PR #179 need re-checking against rendered anchors, and the script's oracle should be GitHub's output rather than its own slug function. It also has no dry-run flag; `--report` is ignored and files are rewritten. The 2026-10-18 reconciliation reverted its rewrites and kept the `--` forms.
 
 ### E-4.10 🟢 Replace `Base.metadata.create_all` lifespan with Alembic-managed schema
 
@@ -855,7 +864,9 @@ Verified post-fix boot: `/api/v1/health` reports `llm.status: ok`, `unavailable_
 ---
 
 
-## I-5 🟢 SaaS readiness (long-horizon) — code-shippable work fully closed 2026-05-05
+## I-5 🟡 SaaS readiness (long-horizon) — code-shippable work fully closed 2026-05-05
+
+**Scope-changed 2026-10-18:** status 🟢 → 🟡 to follow the parent-is-loosest-child rule. [E-5.10](#e-510--per-user-isolation-r2) (R2 per-user isolation, filed 2026-07-31) reopened code-shippable work here: S-5.10.3 and T-5.10.2.5 are still open. The heading's "fully closed 2026-05-05" refers to the original scope.
 
 **Why it exists.** Today's PRs must remain forward-compatible with a future public SaaS — multi-tenant, billed, abuse-resistant, hardened auth.
 **North-star doc:** [saas-roadmap.md](saas-roadmap.md)
@@ -911,13 +922,13 @@ Linked decision: [D-065](decisions.md#d-065--channel-subscriptions-become-per-te
 - [x] T-5.10.2.2 `source_weight` moved per-tenant — it was a documented *user-set* trust score stored globally, so one user re-weighted everyone's retrieval ranking
 - [x] T-5.10.2.3 `subscription_service` as the single accessor; channel list, detail, subscribe/unsubscribe/sync and video listing all scoped
 - [x] T-5.10.2.4 8 isolation tests: subscribe/weight/sync-timestamp do not cross tenants; video counts show only visible documents
-- [ ] T-5.10.2.5 `api_quota_log` unscoped (low sensitivity — leaks usage volume only)
-- [ ] T-5.10.2.6 Q&A-history Chroma collection — verify tenant filtering matches the transcript collection
+- [ ] T-5.10.2.5 `api_quota_log` unscoped (low sensitivity — leaks usage volume only). *Verified 2026-10-18: its columns are id / timestamp / operation / units, with no user or tenant*
+- [x] T-5.10.2.6 Q&A-history Chroma collection — verify tenant filtering matches the transcript collection. *Verified 2026-10-18: `query_qa_collection` restricts to `tenant_id` metadata (T-5.6.6), the counterpart of the transcript collection's visible-set filter*
 - [ ] T-5.10.2.7 Re-run the D-055 harness: library Q&A now answers from a per-user corpus
 
 #### S-5.10.3 🔵 Drop the legacy global columns on `channels`
 `subscribed`, `source_weight`, `last_synced_at` are retained on `channels` so a partial rollout stays recoverable. Remove once nothing reads them.
-- [ ] T-5.10.3.1 Audit remaining readers of the legacy columns (subscription sync task, any scripts)
+- [ ] T-5.10.3.1 Audit remaining readers of the legacy columns (subscription sync task, any scripts). *2026-10-18 findings: still written in `tasks/job_tasks.py` (`channel.subscribed = True` in the subscription path, `channel.last_synced_at` in the sync path). Routers read through `subscription_service`. `source_weight` has no reader anywhere (see I-7)*
 - [ ] T-5.10.3.2 Migration to drop them, with a downgrade that restores from `channel_subscriptions`
 
 ### E-5.1 🟢 `tenant_id` audit + retrofit
@@ -954,7 +965,7 @@ Linked decision: [D-065](decisions.md#d-065--channel-subscriptions-become-per-te
 - [x] T-5.2.4 Partial-permanent. *`require_feature("byok_llm_keys")` already gates the BYOK credentials router (PR #158). Remaining wires happen as L2 (Author Studio, I-6) and L3 (Echo personal-brain, I-3) endpoints land — every new tier-gated endpoint adds a `Depends(require_tier(...))` or `Depends(require_feature(...))` at definition time, so this task closes incrementally rather than as one PR.*
 - [x] T-5.2.5 Quota runtime metering — *shipped 2026-05-05 (combined with T-5.5.5). New `quota_usage` table + `app/services/quota_metering_service.py` with `record_usage`, `get_usage`, `get_all_usage`, `check_quota`, `enforce_quota_or_raise`. Resource keys: `qa_exchanges` (monthly), `library_qa_exchanges` (monthly), `qa_history_chats` (monthly), `knowledge_extractions` (monthly), `documents` (lifetime), `llm_tokens_in/out` (daily), `youtube_units` (daily). New `qa_exchanges_per_month` + `knowledge_extractions_per_month` keys added to `TIER_CAPABILITIES` (Free 50 / Pro 1000 / Studio unlimited; Free 10 / Pro 200 / Studio 2000 respectively). Wired enforcement at the four hot endpoints: `/jobs/{id}/qa`, `/library/qa`, `/qa-history/chat`, `/videos/{id}/extract-knowledge`. New `GET /auth/quota` endpoint returns the user's full usage snapshot. 20 new tests; backend suite 929 → 949. **Linked decision:** [D-045](decisions.md#d-045-quota-metering-enforce-before-record-after-success-2026-05-05) — enforce-before / record-after-success sequencing.*
 - [x] T-5.2.6 🟢 **Tier-visibility UI + self-service tier flip shipped 2026-05-15.** Public marketing pages (`/landing`, `/pricing`) accessible to anyone; in-app `/account/subscription` page with current-tier highlight + mock-payment modal for upgrades + downgrade-confirmation modal listing features lost. New backend endpoint `PUT /api/v1/auth/me/tier` flips `users.tier` immediately (mock-payment-mode) and writes a `tier_changed` audit_log event. New stub frontend pages for Echo (`/echo` — Studio-only, exercises shipped CRUD on `personal_context`) and Author Studio (`/author` — Pro+, exercises shipped Book v1 outputter). Sidebar nav reveals Author / Echo links based on `useTierCapabilities()` mirror of `TIER_CAPABILITIES`; "Subscription" link in Account group shows current tier as a pill badge. 9 new backend tests + frontend type-check clean. **Linked decision:** [D-050](decisions.md#d-050-self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15) — mock payment + endpoint stability across the future Stripe migration.
-- [ ] T-5.2.7 🟢 LLM token accounting — *shipping 2026-07-22 in the pipeline-resilience branch. `qa_exchanges.prompt_tokens` / `completion_tokens` now populated; per-user `llm_tokens_in` / `llm_tokens_out` metering recorded on the Q&A path (feeds the existing daily quota keys from T-5.2.5). Per-JOB LLM spend ⚪ deferred — needs a `jobs` schema column.*
+- [x] T-5.2.7 🟢 LLM token accounting — *shipped 2026-07-22, PR [#189](https://github.com/khoks/VideoResearchPro/pull/189) (checkbox reconciled 2026-10-18). `qa_exchanges.prompt_tokens` / `completion_tokens` now populated; per-user `llm_tokens_in` / `llm_tokens_out` metering recorded on the Q&A path (feeds the existing daily quota keys from T-5.2.5). Per-JOB LLM spend ⚪ deferred — needs a `jobs` schema column.*
 
 ### E-5.3 ⚪ Stripe integration
 
@@ -1046,7 +1057,7 @@ Backend suite 835 → 855.
 
 **Scope.** Landing page, signup, billing portal, support, status page.
 
-**Design-complete 2026-05-04.** Full design in [`docs/saas-roadmap.md` §7](saas-roadmap.md#7-hosted-ux). The marketing landing page already ships ([E-2.5](#e-25--marketing-landing-page-sections)) — the only piece of "hosted UX" with code today. The signup flow / billing portal / status page / docs site are all SaaS-launch-time work, gated on E-5.3 (billing) and SaaS infrastructure (E-5.8). **No code change today.**
+**Design-complete 2026-05-04.** Full design in [`docs/saas-roadmap.md` §7](saas-roadmap.md#7-hosted-ux). The marketing landing page already ships ([E-2.5](#e-25--marketing-landing-page-warm-editorial)) — the only piece of "hosted UX" with code today. The signup flow / billing portal / status page / docs site are all SaaS-launch-time work, gated on E-5.3 (billing) and SaaS infrastructure (E-5.8). **No code change today.**
 
 ---
 
@@ -1086,6 +1097,30 @@ Outputter scaffolded by I-6 foundation; concrete `SiteAstroOutputter` is a futur
 ### E-6.6 🟢 Foundation (schema + outputter Protocol + lifecycle + tier gate)
 
 **Shipped 2026-05-05** in PR #173. New `outputs` table (Alembic `b5c6d7e8f9a0`) with status state machine (`pending` → `generating` → `completed` | `failed`); `Outputter` Protocol + `register_outputter` / `get_outputter` / `list_outputters` registry; `run_generation` driver that handles status transitions + error capture; `OutputKind` enum (`book` / `site` / `deck` / `newsletter` / `reel`). REST surface under `/api/v1/author/*` — `GET /kinds`, `POST /outputs` (creates + generates synchronously for v1; 501 when no outputter for the kind), `GET /outputs` (kind/status filters), `GET /outputs/{id}`, `GET /outputs/{id}/content` (PlainTextResponse with media-type), `DELETE /outputs/{id}`. All gated on `require_feature("author_studio")` (Pro+).
+
+---
+
+## I-7 ⚪ Curated source ranking (L4)
+
+**Filed 2026-10-18** from a "what's remaining" code audit.
+**Why it exists.** The product is meant to be *curated, not balanced*: the user's trust in a source should shape retrieval ordering, answer composition and disagreement surfacing. Today curation stops at approval, and every approved source counts equally after that.
+**North-star doc:** [feature-roadmap.md L4](feature-roadmap.md#l4--curated-source-ranking-) · [vision.md](vision.md)
+**Decision links:** [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31) (amended 2026-10-18)
+
+**Current state.** Only a seed exists: `channel_subscriptions.source_weight` (per-tenant, default 1.0, moved there by D-065). Nothing reads it, no endpoint sets it, and no UI exposes it. `channel_subscription.py` nonetheless documents it as "the trust score that re-ranks retrieval".
+
+### E-7.1 ⚪ Trust-weighted retrieval (v1)
+
+**Open question (raised 2026-10-18, undecided).** Option one is weighted retrieval alone: similarity × trust weight before re-ranking, a contained retrieval change. Option two puts weight bands in the answer ("your trusted creators say X; others say Y"), which reshapes the Q&A agent. The story below assumes option one, with option two as a follow-up.
+
+#### S-7.1.1 ⚪ Make `source_weight` re-rank retrieval
+**PR:** TBD
+**Acceptance.** A user who raises one channel's weight sees that channel's chunks rank higher in their own job and library Q&A, and no other tenant's ranking changes.
+- [ ] T-7.1.1.1 `PUT /api/v1/channels/{id}/weight` writing `channel_subscriptions.source_weight` through `subscription_service`
+- [ ] T-7.1.1.2 Apply the weight when re-ranking job and library retrieval. Weights are per-tenant and chunks are global ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)), so resolve them at query time and never store them in chunk metadata
+- [ ] T-7.1.1.3 Weight control on the channel page
+- [ ] T-7.1.1.4 Make the `channel_subscription.py` docstring true, or correct it
+- [ ] T-7.1.1.5 Measure: the same questions with and without weighting, judged blind (E-1.14 harness)
 
 ---
 

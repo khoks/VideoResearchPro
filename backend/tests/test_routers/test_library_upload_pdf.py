@@ -124,3 +124,28 @@ def test_upload_rejects_non_pdf_and_empty_files(client, upload_dir):
         "/api/v1/library/upload-pdf", files={"file": ("empty.pdf", b"", "application/pdf")}
     )
     assert empty.status_code == 400
+
+
+def test_pdf_bytes_are_served_only_to_a_tenant_who_ingested_them(client, db, upload_dir):
+    """D-063: before 2026-10-19 the serve route checked only that the PDF
+    existed, so any signed-in user holding the digest got another tenant's
+    file. A foreign PDF now 404s exactly like a missing one."""
+    from app.services import auth_service
+
+    resp, _ = _upload(client)
+    digest = resp.json()["source_id"][len("pdf:"):]
+
+    own = client.get(f"/api/v1/library/pdf/{digest}.pdf")
+    assert own.status_code == 200, own.text
+    assert own.headers["content-type"] == "application/pdf"
+
+    other = auth_service.create_user(db, email="other@example.com", password="testpass123")
+    token, _ = auth_service.create_access_token(other.id)
+    foreign = client.get(
+        f"/api/v1/library/pdf/{digest}.pdf", headers={"Authorization": f"Bearer {token}"}
+    )
+    missing = client.get(
+        f"/api/v1/library/pdf/{'0' * len(digest)}.pdf", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert foreign.status_code == 404
+    assert foreign.json() == missing.json()

@@ -44,6 +44,20 @@ endpoint the command palette (S-8.2.2) will call; no UI in this PR.
   with the index present.
 
 
+### Three cross-tenant reads closed (2026-10-19, S-5.10.6)
+
+PR [#248](https://github.com/khoks/VideoResearchPro/pull/248). An audit of every `documents` reader after D-070 found three that
+never checked the tenant. Each now 404s for anyone who did not ingest the
+document or own the job, exactly like a missing id; each has a two-tenant test
+that fails on the old code.
+
+- **Knowledge endpoints.** `GET /videos/{id}/knowledge` and
+  `POST /videos/{id}/extract-knowledge` resolve through
+  `visibility_service.visible_document`, which also accepts the `document_id`.
+- **PDF serve route.** `GET /library/pdf/{digest}.pdf` serves only the
+  caller's own PDFs; holding the digest is no longer enough.
+- **Book outputter.** A book can only compile the author's own jobs.
+
 
 ### Notes: the "Your notes" page, exports and the Echo feeder (S-8.5.3, 2026-10-19)
 
@@ -99,6 +113,7 @@ S-8.8.1, the first story of the E-8.8 reading room
 - Found on the way: one stored report (`419e691d…`) was cut mid-tag by the
   writer, so the browser folds two headings into an attribute value. The
   reader cannot recover them; the fix belongs in the compose step.
+
 ### Document visibility keyed on `document_id`; non-video documents visible and retrievable (2026-10-19)
 
 Since D-063 (2026-07-31) every PDF, pasted page, Reddit and HN document was

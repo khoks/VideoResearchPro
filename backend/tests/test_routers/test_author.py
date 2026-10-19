@@ -426,3 +426,31 @@ def test_list_outputs_returns_only_current_user(unauthenticated_client, db, monk
     r = unauthenticated_client.get("/api/v1/author/outputs", headers=headers_a)
     titles = {x["title"] for x in r.json()}
     assert titles == {"A book"}
+
+
+
+def test_book_cannot_compile_another_tenants_job(db, monkeypatch):
+    """Tenant is part of the job lookup (T-5.10.1.4). Before 2026-10-19 a
+    book listed another user's job id and got that user's topic and report."""
+    owner = auth_service.create_user(db, email="owner@x.com", password="pw" * 6)
+    thief = auth_service.create_user(db, email="thief@x.com", password="pw" * 6)
+    job = _make_job(db, owner.id, "Owner's Private Research")
+    job.report_path = "/fake/report.html"
+    db.commit()
+
+    from app.services import report_service
+    monkeypatch.setattr(
+        report_service, "get_report_html",
+        lambda path: "<h1>Private</h1><p>Owner-only findings.</p>",
+    )
+
+    import app.services.outputters  # noqa: F401  ensure registered
+    row = create_output(
+        db, user_id=thief.id, kind="book", title="Stolen",
+        source_ids=[job.id], parameters={"include_qa": False},
+    )
+    row = run_generation(db, thief, row)
+    md = row.content_text or ""
+    assert "Owner-only findings." not in md
+    assert "Owner's Private Research" not in md
+    assert "Job not found in your library" in md

@@ -2278,3 +2278,34 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 **Consequences.** The visual feature stays opt-in and off by default, now with measured quality and known failure modes. S-1.18.8 touches the map and compose prompts and the item schema, so it is serialised after the R5 session's prompt work and after S-1.14.6.
 
 **Linked initiatives / PRs.** S-1.18.2 (deferred), S-1.18.5, S-1.18.6 (T-3 done), S-1.18.7 (measured), S-1.18.8 (new), S-1.14.6.
+
+## D-076 — Model guidance: "measured" means the use case's own output was graded; verdicts warn, never block (2026-10-19)
+
+**Status:** accepted. Item 3 is open to the user as OQ-16 in [E-1.14](initiatives.md#e-114--model-tier-quality-evaluation-harness).
+
+**Context.** E-1.14 measured tier quality per use case (D-055 to D-062, D-073), but the verdicts lived only in this log. The `/account/ai-models` override page therefore offered a raw model picker, and nothing warned an operator whose `LLM_USE_CASE_CONFIG` pointed frame description at a model graded unusable. S-1.14.7 moved the evidence into `USE_CASE_REGISTRY`, which forced three choices the decisions themselves never made.
+
+**Decision.**
+1. **A use case is `measured` only when its own output was graded.** That gives 8 measured entries. The other 15 are `unmeasured`, each with a note on what evidence exists. Three kinds of evidence do not count:
+   - sitting inside a graded chain (refine, knowledge extraction);
+   - sharing a prompt contract with a graded site (the library answer);
+   - moving tier alongside a graded site (the eight volume-tier sites that followed `report_map_chunks` to luna in D-057).
+2. **Verdicts are per model and scoped to reasoning levels, in two strengths.**
+   - `unacceptable`: the measurement produced unusable output. Examples: luna on frames (22 of 66 gradings), claude-haiku-4-5 on frames (55 of 62, although it accepts images), nano on map batches (unparseable JSON on 1 of 2), luna or gpt-5.4-mini with reasoning on (empty output).
+   - `weaker`: measurably below the default on the decision's own grading, but usable. Examples: sonnet-5 on compose; mini and flash-lite on frame selection, judged by agreement with the default's picks, which D-073 itself says is not a quality measure.
+
+   Model ids match exactly, as on `VISION_CAPABLE_MODELS`, so `gpt-5.5` cannot catch `gpt-5.5-pro`.
+3. **Warnings advise; nothing refuses a config.** This applies at the PUT, at resolve time and at startup. It is the same fail-soft rule [D-067](#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31) set for the vision allowlist.
+
+**Alternatives considered.**
+- *Mark a use case measured when its chain was graded.* Rejected: it would put a sibling's numbers behind a choice nobody measured. That would be a guidance version of the defect D-055 found, where the registry described a call by numbers that no longer applied to it.
+- *A single severity.* Rejected: sonnet-5 on compose reads better (8 vs 7) and is a defensible trade, while luna on frames produced 22 unusable gradings out of 66. One warning colour for both would teach users to ignore it.
+- *Refuse `unacceptable` choices at `PUT /settings/llm`.* Not taken for now. The verdicts rest on small samples (n=2 on map batches), the vision list always lags new releases, and the override page exists so that users can choose differently. The block would be one line in the PUT handler; recorded as OQ-16.
+- *Keep guidance in a separate table keyed by use case.* Rejected: a required field on `UseCaseInfo` means a new call site cannot ship without stating its evidence, and the registry test enforces that.
+
+**Consequences.**
+- Promoting a use case to `measured` now requires a decision entry. `tests/test_services/test_llm_guidance.py` pins the measured set and fails on any cited decision id missing from this log.
+- `assess_choice()` on the server and `assessChoice` on the page must change together.
+- A re-measurement that changes a verdict is a registry edit plus a decision, not just a decision.
+
+**Linked initiatives / PRs.** [S-1.14.7](initiatives.md#e-114--model-tier-quality-evaluation-harness), PR [#251](https://github.com/khoks/VideoResearchPro/pull/251). Follows D-052, D-055, D-056, D-057, D-062, D-072, D-073.

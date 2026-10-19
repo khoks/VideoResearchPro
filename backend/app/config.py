@@ -290,6 +290,12 @@ class Settings(BaseSettings):
     # DOMINANT should rest on is an open question recorded in D-080.
     CODE_MIX_DOMINANT_SHARE: float = 0.6
     CODE_MIX_BORROWING_MAX_SHARE: float = 0.2
+    # T-1.16.2.5 part B: embed non-English chunks as an English rendering
+    # (`code_mixing_render_english`, one volume-tier call per ~6 chunks, once
+    # per document) while the stored text stays the original. Off = chunks
+    # embed as written, which retrieval measured at MRR 0.565 (Devanagari) /
+    # 0.402 (romanised) against 0.805 rendered.
+    CODE_MIX_ENGLISH_RENDERING_ENABLED: bool = True
 
     # -------------------------------------------------------------------
     # Scheduler (S-8.3.1 / M3) — the shared Celery-beat tick

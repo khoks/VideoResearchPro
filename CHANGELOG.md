@@ -10,6 +10,23 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Code-mixed speech: retrieval runs on an English rendering (2026-10-19, T-1.16.2.5 part B)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Decision
+[D-084](docs/decisions.md#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19).
+
+- **Hindi and Hinglish chunks are now found by English questions.** A chunk
+  of a non-English source is embedded as its English rendering, while the
+  stored text stays the original for quoting. Measured on 132 real chunks:
+  MRR 0.565 for the Devanagari originals, 0.402 for the same text romanised,
+  0.805 rendered in English.
+- New use case `code_mixing_render_english` (registry entry 25, volume tier,
+  reasoning off, fail-soft). It runs once per document inside
+  `chroma_service.insert_chunks`, the one place every ingest path writes
+  chunks, and stores the rendering as metadata `text_en`.
+- New setting `CODE_MIX_ENGLISH_RENDERING_ENABLED` (on; off for the test
+  suite). Chunks embedded earlier are not re-embedded.
+
 ### Code-mixed speech: quotes keep the original wording (2026-10-19, T-1.16.2.5 part A)
 
 PR [#268](https://github.com/khoks/VideoResearchPro/pull/268). The quotation half of N-002's bidirectional split;

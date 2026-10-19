@@ -73,6 +73,8 @@ def test_measured_set_matches_the_decision_log() -> None:
         "visual_describe_frame": "D-073",
         # Graded against 300 hand-labelled units (S-1.16.2), not a flagship.
         "code_mixing_detect": "D-080",
+        # Graded by retrieval with its renderings embedded (S-1.16.2).
+        "code_mixing_render_english": "D-084",
     }
 
 

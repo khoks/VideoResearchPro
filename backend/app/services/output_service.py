@@ -203,6 +203,14 @@ def delete_output(db: Session, user_id: str, output_id: str) -> bool:
     row = get_output(db, user_id, output_id)
     if row is None:
         return False
+    # S-6.7.2: the row's artifact directory goes with it. Best effort: a file
+    # that cannot be removed is left for scripts/sweep_output_artifacts.py.
+    try:
+        from app.services import output_artifacts
+
+        output_artifacts.delete_artifacts(row)
+    except Exception:  # noqa: BLE001
+        logger.warning("output_service: could not remove artifacts for %s", output_id)
     db.delete(row)
     db.commit()
     return True
@@ -255,6 +263,16 @@ def transition_to(
     output.updated_at = datetime.now(timezone.utc)
     db.commit()
     _publish_status(output.id, old, output.status, output.progress_message or output.status)
+
+
+def _discard_artifacts(output: Output) -> None:
+    """A run that did not complete leaves no files behind (S-6.7.2)."""
+    try:
+        from app.services import output_artifacts
+
+        output_artifacts.delete_artifacts(output)
+    except Exception:  # noqa: BLE001
+        logger.warning("output_service: could not discard artifacts for %s", output.id)
 
 
 def current_status(db: Session, output: Output) -> str:
@@ -341,6 +359,7 @@ def run_generation(db: Session, user: User, output: Output) -> Output:
         db.refresh(output)
         output.content_text = None
         output.content_path = None
+        _discard_artifacts(output)
         if output.status != OutputStatus.CANCELLED.value:
             transition_to(db, output, OutputStatus.CANCELLED, progress_message="Cancelled by user")
         else:
@@ -354,6 +373,9 @@ def run_generation(db: Session, user: User, output: Output) -> Output:
             output.kind,
             e,
         )
+        db.rollback()
+        db.refresh(output)
+        _discard_artifacts(output)
         transition_to(db, output, OutputStatus.FAILED, error_message=str(e), progress_message="Failed")
         db.refresh(output)
         return output
@@ -363,6 +385,9 @@ def run_generation(db: Session, user: User, output: Output) -> Output:
             output.id,
             output.kind,
         )
+        db.rollback()
+        db.refresh(output)
+        _discard_artifacts(output)
         transition_to(
             db,
             output,
@@ -378,6 +403,7 @@ def run_generation(db: Session, user: User, output: Output) -> Output:
     if current_status(db, output) == OutputStatus.CANCELLED.value:
         db.rollback()
         db.refresh(output)
+        _discard_artifacts(output)
         return output
 
     # Outputter populated content_text or content_path; mark completed.

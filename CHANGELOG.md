@@ -30,6 +30,25 @@ The first new Echo table, shipped with its export and its erasure. PR [#286](htt
   `GET /api/v1/echo/brain/footprint` shows the counts.
 - **UI.** "Add to Echo" in the sidebar, an `/echo/inbox` page, and a "Your Echo
   data" card on the Echo page with export and a typed-confirmation delete.
+### Author Studio downloads: binary artifacts on disk, one endpoint per output (2026-10-19, S-6.7.2)
+
+PR [#284](https://github.com/khoks/VideoResearchPro/pull/284). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **Artifacts on disk** under `OUTPUTS_DIR` (default `./data/outputs`), one
+  directory per output: `<user_id>/<output_id>/artifact.<format>`, written
+  atomically; `outputs.content_path` is relative to the root so the worker and
+  the API agree. Formats come from a whitelist with their media types.
+- **`GET /api/v1/author/outputs/{id}/download?format=`** serves the text
+  (`md` for books) or any artifact present, named from the title with a UTF-8
+  `filename*` (Devanagari titles survive). Header-bearer only, per D-079.
+  `OutputItem.formats` lists what is available; the Author page and reader
+  show one download button per format and open only text outputs.
+- **No stray files:** deleting an output removes its directory, a cancelled
+  or failed run discards partial files, and
+  `scripts/sweep_output_artifacts.py` lists (or with `--apply` deletes)
+  directories left without a row.
+- **Safety:** ids must match `[A-Za-z0-9_-]`, every resolved path must stay
+  inside the root, and downloads never trust the stored `content_path`.
 
 ### Author Studio generates in the worker, with live progress and cancel (2026-10-19, S-6.7.1)
 

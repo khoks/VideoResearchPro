@@ -514,6 +514,10 @@ class Settings(BaseSettings):
 
     # Reports
     REPORTS_DIR: str = "./data/reports"
+    # S-6.7.2: Author Studio binary artifacts (PDF, EPUB, PPTX, site zips),
+    # one directory per output: <OUTPUTS_DIR>/<user_id>/<output_id>/.
+    # `outputs.content_path` is stored relative to this root.
+    OUTPUTS_DIR: str = "./data/outputs"
     MAX_REPORT_WORDS: int = 20000
 
     # Knowledge extraction (Unit 4)

@@ -225,3 +225,35 @@ export function isTerminalMessage(msg: WSProgressMessage): boolean {
   const s = msg.new_status ?? msg.status;
   return msg.type === 'job_error' || s === 'completed' || s === 'failed' || s === 'cancelled';
 }
+
+/** S-6.7.2: the file name a download's Content-Disposition carries. The
+ * RFC 5987 `filename*` (UTF-8, so Devanagari titles survive) wins over the
+ * ASCII `filename`; `fallback` covers a missing header. */
+export function filenameFromDisposition(header: string | null | undefined, fallback: string): string {
+  if (!header) return fallback;
+  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch {
+      // fall through to the ASCII name
+    }
+  }
+  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
+  return plain ? plain[1].trim() : fallback;
+}
+
+const READABLE_FORMATS = new Set(['md', 'txt', 'html']);
+
+/** Whether the reader can open it: it needs text, which a deck's PPTX or a
+ * site's zip is not. Falls back to `has_content` for rows from older APIs. */
+export function isReadableOutput(output: Pick<OutputItem, 'status' | 'has_content' | 'formats'>): boolean {
+  if (output.status !== 'completed' || !output.has_content) return false;
+  return output.formats ? output.formats.some((f) => READABLE_FORMATS.has(f)) : true;
+}
+
+/** Button text for one download format: "Download" alone when there is only
+ * one, else "Download .pdf". */
+export function downloadLabel(format: string, count: number): string {
+  return count > 1 ? `Download .${format}` : 'Download';
+}

@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Global search endpoint on SQLite FTS5 (2026-10-19, S-8.2.1)
 
-PR [#PR_S821](https://github.com/khoks/VideoResearchPro/pull/PR_S821). Plan:
+PR [#245](https://github.com/khoks/VideoResearchPro/pull/245). Plan:
 [docs/plans/m2-command-palette.md](docs/plans/m2-command-palette.md). The
 endpoint the command palette (S-8.2.2) will call; no UI in this PR.
 

@@ -19,6 +19,7 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/reports/:jobId` | `ReportReaderPage` | protected | Reading room: the run's report rendered natively with outline, drop cap, citations and progress |
 | `/library` | `LibraryPage` | protected | Browse the global video library |
 | `/library/qa` | `LibraryQAPage` | protected | Ask across the entire library |
+| `/library/channels/:channelId` | `ChannelPage` | protected | One channel: header, subscribe / sync, trust-weight slot, its documents |
 | `/qa-history` | `QAHistoryChatPage` | protected | Meta-chat across all past Q&A |
 | `/exports` | `ExportsPage` | protected | Dataset export endpoints + downloads |
 | `/author` | `AuthorPage` | protected, Pro+ | Author Studio: bind finished runs into a book; other kinds shown as coming later |
@@ -148,6 +149,8 @@ Not yet (later stories): hover/focus citation cards and the print stylesheet (S-
 | Empty (filters return nothing) | "Nothing matches these filters." with a "Clear" on the channel chip. |
 | Loading | Spinner on first page; subsequent pages keep the list. |
 
+**Channels tab.** One `ChannelRow` per channel this tenant can see ([D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)): name (a real link), subscribers, volumes on your shelf, last synced, Subscribe / Sync now. The row and the name open the channel's page (`/library/channels/:channelId`, below). `/library?tab=channels` (or `?tab=ingest`) opens the page on that tab; the channel page's breadcrumb uses it.
+
 **Add sources tab** (shipped 2026-10-19). Why a tab and not the Submit page or a modal: both endpoints are library-scoped and start no job, the per-file / per-URL result tables need room and should outlive a dialog, and the page already uses tabs for its sections.
 
 | Section | What it does |
@@ -156,6 +159,26 @@ Not yet (later stories): hover/focus citation cards and the print stylesheet (S-
 | **Paste URLs** | Textarea, one URL per line. Client trims, drops blanks, de-duplicates and caps at the server's 100, and shows a live count of detected types (Facebook / Instagram / LinkedIn / X hosts → post types, everything else → article). Submit calls `POST /library/paste-urls`; the result table shows URL, server-detected type (a `?` marks rows where the server sent none and the type is the local guess), word count, and **Added** / **Already in library** / **Could not extract** / **Invalid URL** with a one-line explanation. A whole-batch 400 renders as an inline error above the table. |
 
 Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; the components only render.
+
+### `ChannelPage` — `/library/channels/:channelId`
+**Purpose.** One channel as this reader sees it (S-8.7.1, the first PR of [M7](plans/m7-channel-intelligence.md)). Reads `GET /channels/{id}` for the header and `GET /library/videos?channel_id=` for the documents, so the rows are the same `VideoRow` as the library and carry "referenced in N runs". Reached from `ChannelRow` (title and row click), from the channel name on any `VideoRow`, and by URL.
+
+| Section | Notes |
+|---------|-------|
+| **Breadcrumb** | "← Channels" → `/library?tab=channels`. |
+| **Header** | Eyebrow "Channel", name, subscribers · volumes on your shelf · last synced. Actions: Subscribe / Subscribed (per tenant, [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)), Sync now (the dispatched sync job is watched until it ends, then counts and the list refresh), "YouTube →" when the channel has a public URL. |
+| **Trust weight** | Sunken card (`data-slot="trust-weight"`) showing the caller's `source_weight` as a badge (`1.0 · neutral`, otherwise promoted / demoted). Read-only: the write path and the retrieval re-rank are S-7.1.1 ([D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18)); the control lands in this slot. |
+| **Documents** | Heading with the visible count, filter card (search titles, transcript status, sort), the rows (`channelLink={false}` so they do not link back to the page), pager at 50 per page. |
+| **Intelligence** | Not yet: E-8.7's aggregate endpoint and tab attach here (S-8.7.2 / S-8.7.3). |
+
+| State | What renders |
+|-------|--------------|
+| Loading | Header skeleton (eyebrow, title, meta), then three card skeletons for the rows. |
+| 404 | "This channel isn't on your shelf." with a "Back to channels" button. Foreign channels are a 404, not a 403 (the existence-leak posture every router uses). |
+| Fetch error | Editorial error card with Retry (header or documents, independently). |
+| Empty (no documents) | "Nothing from this channel on your shelf yet." |
+| Empty (filters) | "Nothing matches these filters." with "Clear filters". |
+| Syncing | Sync button reads "Syncing…" with a spinner until the job completes, fails or is cancelled. |
 
 ### `LibraryQAPage` — `/library/qa`
 **Purpose.** Ask questions across the entire library, with no per-job filter.

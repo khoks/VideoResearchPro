@@ -36,16 +36,34 @@ def _video_count_for_channel(db: Session, channel_id: str, tenant_id: str) -> in
     )
 
 
+def _channel_url(channel: Channel) -> str | None:
+    """Public page for the creator. Only YouTube channels have a derivable
+    URL today; other creator types (E-1.9 phase 2) return None until their
+    metadata carries one."""
+    if channel.source_type == "video" and channel.channel_id:
+        return f"https://www.youtube.com/channel/{channel.channel_id}"
+    return None
+
+
 def _channel_to_response(db: Session, channel: Channel, tenant_id: str) -> dict:
-    """Shared channel facts + THIS tenant's subscription state (D-065)."""
+    """Shared channel facts + THIS tenant's subscription state (D-065).
+
+    `source_weight` is the caller's own per-tenant trust weight. It is exposed
+    read-only so the channel page (S-8.7.1) can show it; the write path and
+    the retrieval re-rank are S-7.1.1 / D-068.
+    """
     sub = subscription_service.get_or_create(db, channel.channel_id, tenant_id)
     return {
+        "id": channel.channel_id,
         "channel_id": channel.channel_id,
         "name": channel.name,
+        "url": _channel_url(channel),
         "subscribed": sub.subscribed,
+        "source_weight": sub.source_weight,
         "subscriber_count": channel.subscriber_count,
         "uploads_playlist_id": channel.uploads_playlist_id,
         "last_synced_at": sub.last_synced_at,
+        "created_at": channel.created_at,
         "video_count": _video_count_for_channel(db, channel.channel_id, tenant_id),
     }
 

@@ -75,6 +75,21 @@ Per-use-case LLM probe detail. Returns the result of the startup smoke check (de
 }
 ```
 
+### `GET /api/v1/health/scheduler`
+Scheduler status (S-8.3.1). Configuration, the kinds **this process** can dispatch (the worker's list is the one that matters; nothing registers until S-8.3.2 adds `saved_search`), and `scheduled_runs` row counts. `last_run_at` is the newest dispatch across all rows, the cheapest liveness signal for beat once anything is scheduled. Unauthenticated like the rest of `/health`; counts only.
+
+```json
+{
+  "enabled": true,
+  "tick_seconds": 300,
+  "lease_seconds": 600,
+  "grace_seconds": 30,
+  "kinds": [],
+  "rows": { "total": 0, "enabled": 0, "due": 0, "claimed": 0 },
+  "last_run_at": null
+}
+```
+
 ### `GET /api/v1/health/quota`
 YouTube API quota status (today's usage, soft cap, hard cap, time-to-reset).
 
@@ -312,25 +327,43 @@ Serves the uploaded bytes (`application/pdf`) for the document whose `source_id`
 
 ## Channels
 
-All `/channels` endpoints require auth.
+All `/channels` endpoints require auth. The channel *record* is shared; subscription state (`subscribed`, `source_weight`, `last_synced_at`) is the caller's own ([D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)), and every count or listing covers only documents the caller can see ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)).
+
+`ChannelResponse`:
+
+```json
+{
+  "id": "UCaaa...",                 // mirrors channel_id; rows and mutations key on it
+  "channel_id": "UCaaa...",
+  "name": "Alpha Channel",
+  "url": "https://www.youtube.com/channel/UCaaa...",   // null for creator types with no derivable page
+  "subscribed": true,
+  "source_weight": 1.0,             // the caller's trust weight; read-only until S-7.1.1 ships PUT /channels/{id}/weight (D-068)
+  "subscriber_count": 12345,
+  "uploads_playlist_id": "UUaaa...",
+  "last_synced_at": "2026-10-19T08:00:00",
+  "created_at": "2026-07-31T10:00:00",
+  "video_count": 12                 // documents from this channel visible to the caller
+}
+```
 
 ### `GET /api/v1/channels`
-List all known channels (subscribed and unsubscribed). Returns `list[ChannelResponse]`.
+Channels the caller can see: any they hold subscription state for, or that produced a document visible to them. Returns `list[ChannelResponse]` ordered by name.
 
 ### `GET /api/v1/channels/{channel_id}`
-Fetch a single channel. Returns `ChannelResponse` or 404.
+Fetch a single channel with the caller's state. Returns `ChannelResponse` or 404. Backs the channel page (`/library/channels/:channelId`).
 
 ### `POST /api/v1/channels/{channel_id}/subscribe`
-Mark a channel as subscribed. Optionally dispatches a sync job. Returns `SubscribeResponse` (channel + sync_job_id if dispatched).
+Flip the caller's subscription on and dispatch a sync job. Returns `SubscribeResponse` (`channel_id`, `job_id`; `job_id` is null when dispatch failed — the state still flipped).
 
 ### `POST /api/v1/channels/{channel_id}/unsubscribe`
-Mark a channel as unsubscribed. Returns updated `ChannelResponse`. Does not delete videos already in the library.
+Flip the caller's subscription off; other tenants are unaffected. Returns the updated `ChannelResponse`. Does not remove documents already in the library.
 
 ### `POST /api/v1/channels/{channel_id}/sync`
-Trigger a fresh subscription sync for the channel. Returns `SubscribeResponse` (channel + sync_job_id).
+Dispatch a fresh subscription sync for the channel. Returns `SubscribeResponse`.
 
 ### `GET /api/v1/channels/{channel_id}/videos`
-List videos for a channel from the global library. Returns `list[VideoResponse]`.
+The caller's visible documents from the channel, newest first (`limit`, `offset`). Returns `list[VideoResponse]`. The channel page lists documents through `GET /library/videos?channel_id=` instead, because those rows carry `job_count` / `job_titles`; both routes scope to the same visible set.
 
 ---
 

@@ -50,6 +50,12 @@ describe('outputSizeLabel', () => {
   it('says sources for other kinds', () => {
     expect(outputSizeLabel({ kind: 'deck', source_ids: ['a', 'b'], word_count: 0 })).toBe('2 sources · 0 words');
   });
+
+  it('adds citations once there are any (S-6.7.3)', () => {
+    expect(outputSizeLabel({ kind: 'book', source_ids: ['a'], word_count: 1631, citation_count: 30 })).toBe('1 chapter · 1,631 words · 30 citations');
+    expect(outputSizeLabel({ kind: 'book', source_ids: ['a'], word_count: 10, citation_count: 1 })).toBe('1 chapter · 10 words · 1 citation');
+    expect(outputSizeLabel({ kind: 'book', source_ids: ['a'], word_count: 10, citation_count: 0 })).toBe('1 chapter · 10 words');
+  });
 });
 
 describe('S-6.7.1 progress helpers', () => {

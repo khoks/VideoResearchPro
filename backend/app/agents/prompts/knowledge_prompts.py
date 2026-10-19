@@ -12,6 +12,7 @@ EXTRACT_BATCH_PROMPT = """You are extracting structured knowledge from one batch
 
 Video: "{video_title}"
 Channel: {channel_name}
+{temporal_note}
 
 Transcript batch:
 {batch_text}
@@ -41,6 +42,12 @@ Rules:
 - Do not invent information. Every item must be grounded in this batch.
 - If the speaker clearly speculates or hedges ("I think", "probably"), prefix
   the item with "Speculation: ".
+- TIME: anchor relative time expressions ("last year", "recently", "the new
+  model", "next quarter") to the publication date given above and emit
+  ABSOLUTE dates wherever you can derive them ("in 2024", "the model released
+  in March 2025"). Where you cannot, keep the relative phrase and append
+  "(as of <publication date>)". An event is dated by when it HAPPENED, a claim
+  by when it was MADE — keep the two apart.
 - Skip filler, greetings, call-to-action phrases, and sponsor reads.
 
 {visual_annotations}
@@ -62,6 +69,7 @@ SYNTHESIZE_REPORT_PROMPT = """You are writing a Wikipedia-style knowledge report
 
 Video: "{video_title}"
 Channel: {channel_name}
+{temporal_note}
 
 Merged structured extraction (deduplicated union across transcript batches):
 {merged_extraction_json}
@@ -95,6 +103,11 @@ STYLE REQUIREMENTS (non-negotiable):
   Do not drop any of the three for a quote that matters.
 - Prefer well-formed paragraphs over bullet lists for prose sections. Bullet
   lists are fine for enumerations (events, key concepts).
+- DATE YOUR CLAIMS. Time-sensitive statements ("the current leader", "the
+  latest release", prices, versions, records) are written as true AS OF the
+  publication date — "as of <date>, ..." — never as timeless fact. Where the
+  video is retrospective, say which period it concerns, and keep the period
+  an event belongs to distinct from the date the video was made.
 
 STRUCTURE:
 Use Markdown headings. Suggested sections (include only those that apply):

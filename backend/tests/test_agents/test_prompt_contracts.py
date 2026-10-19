@@ -19,13 +19,26 @@ from string import Formatter
 
 import pytest
 
-from app.agents.prompts.knowledge_prompts import EXTRACT_BATCH_PROMPT
-from app.agents.prompts.qa_prompts import QA_SYSTEM_PROMPT
+from app.agents.prompts.knowledge_prompts import (
+    EXTRACT_BATCH_PROMPT,
+    SYNTHESIZE_REPORT_PROMPT,
+)
+from app.agents.prompts.qa_prompts import (
+    LIBRARY_QA_ANSWER_PROMPT,
+    LIBRARY_QA_SYSTEM_PROMPT,
+    QA_ANSWER_PROMPT,
+    QA_SYSTEM_PROMPT,
+)
 from app.agents.prompts.report_prompts import (
     COMPOSE_SECTION_PROMPT,
     COMPOSE_SUMMARY_PROMPT,
     MAP_CHUNK_PROMPT,
 )
+from app.agents.prompts.search_prompts import (
+    PLAN_SEARCHES_PROMPT,
+    RANK_AND_CURATE_PROMPT,
+)
+from app.agents.prompts.temporal_prompts import TEMPORAL_SCOPE_PROMPT
 from app.agents.prompts.shared import (
     CODE_MIXING_NOTE,
     ENGLISH_OUTPUT_CONTRACT,
@@ -66,6 +79,7 @@ def _call_site_kwargs(module_path: Path, prompt_name: str) -> list[set[str]]:
 
 
 _AGENTS = Path(__file__).resolve().parents[2] / "app" / "agents"
+_SERVICES = Path(__file__).resolve().parents[2] / "app" / "services"
 
 # (prompt object, module that formats it, its name in that module)
 _FORMATTED_PROMPTS = [
@@ -73,6 +87,14 @@ _FORMATTED_PROMPTS = [
     (COMPOSE_SECTION_PROMPT, _AGENTS / "report_agent.py", "COMPOSE_SECTION_PROMPT"),
     (COMPOSE_SUMMARY_PROMPT, _AGENTS / "report_agent.py", "COMPOSE_SUMMARY_PROMPT"),
     (EXTRACT_BATCH_PROMPT, _AGENTS / "knowledge_agent.py", "EXTRACT_BATCH_PROMPT"),
+    (SYNTHESIZE_REPORT_PROMPT, _AGENTS / "knowledge_agent.py", "SYNTHESIZE_REPORT_PROMPT"),
+    # R3 / S-1.15.2 batch (2026-10-18): the prompts that batch touched.
+    (QA_ANSWER_PROMPT, _AGENTS / "qa_agent.py", "QA_ANSWER_PROMPT"),
+    (LIBRARY_QA_ANSWER_PROMPT, _AGENTS / "qa_agent.py", "LIBRARY_QA_ANSWER_PROMPT"),
+    (LIBRARY_QA_SYSTEM_PROMPT, _AGENTS / "qa_agent.py", "LIBRARY_QA_SYSTEM_PROMPT"),
+    (PLAN_SEARCHES_PROMPT, _AGENTS / "search_agent.py", "PLAN_SEARCHES_PROMPT"),
+    (RANK_AND_CURATE_PROMPT, _AGENTS / "search_agent.py", "RANK_AND_CURATE_PROMPT"),
+    (TEMPORAL_SCOPE_PROMPT, _SERVICES / "temporal_service.py", "TEMPORAL_SCOPE_PROMPT"),
 ]
 
 
@@ -135,3 +157,18 @@ def test_qa_system_prompt_carries_the_visual_contract_inline():
     so the contract has to be baked in rather than passed."""
     assert "NOT spoken words" in QA_SYSTEM_PROMPT
     assert "on screen at" in QA_SYSTEM_PROMPT
+
+
+def test_library_qa_system_prompt_carries_time_and_visual_contracts():
+    """Composed at import time like QA_SYSTEM_PROMPT; it reads transcript-
+    derived context, so it needs both contracts baked in (R3 / R1)."""
+    assert "SUPERSESSION" in LIBRARY_QA_SYSTEM_PROMPT
+    assert "NOT spoken words" in LIBRARY_QA_SYSTEM_PROMPT
+    assert "SUPERSESSION" in QA_SYSTEM_PROMPT
+
+
+def test_temporal_fragments_state_the_r3_contract():
+    assert "true AS OF" in TEMPORAL_AWARENESS
+    assert "SUPERSESSION" in TEMPORAL_AWARENESS
+    assert "Anchor RELATIVE time" in TEMPORAL_EXTRACTION_NOTE
+    assert "discusses <era>" in TEMPORAL_EXTRACTION_NOTE

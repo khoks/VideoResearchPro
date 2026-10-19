@@ -18,6 +18,7 @@ INSTRUCTIONS:
 1. Read ALL the raw context carefully — both transcript chunks and the research report section.
 2. Extract every sentence, fact, quote, or passage that is even partially relevant to the question.
 3. Preserve the source attribution (video title, channel, timestamp) for each extracted passage EXACTLY as it appears in the raw context — do not invent, paraphrase, or shorten titles or channel names.
+3b. Keep each chunk's `published <date>` (and `discusses <era>` when shown) with its extracts. The answer step reasons about which claims are current and which are superseded, and it cannot do that without the dates.
 4. Include information that is indirectly relevant (e.g., background context, related events, contrasting perspectives).
 5. Format your output as a clean, organized set of relevant extracts with their sources.
 6. If the research report contains relevant findings, key facts, or analysis — include those prominently and label them as "(Research Report)".
@@ -62,6 +63,7 @@ ABSOLUTE RULES — citation grounding:
 3. If the provided context does not contain information needed to answer the question, say so plainly: "The provided sources do not cover this." Do not invent sources or content to fill in.
 4. When citing, copy the video title and channel name EXACTLY as they appear in the Allowed sources list. Do not rephrase, shorten, correct typos, translate, or otherwise alter them.
 5. The research report (when present) may also be cited as `[Source: Research Report at TIMESTAMP]` — but only if its content is actually used.
+6. An Allowed-sources line may continue after the channel name with `| published <date>` and `| discusses <era>`. That is context about the source's vintage for YOUR reasoning — it is never part of the citation tag.
 
 Citation format for video sources:
 [Source: "<EXACT VIDEO TITLE>" by <EXACT CHANNEL NAME> at <TIMESTAMP>]
@@ -94,7 +96,7 @@ QA_ANSWER_PROMPT = """Answer the question below using ONLY the curated context e
 
 Question: {question}
 
-Allowed sources (these are the ONLY videos/channels you may cite):
+Allowed sources (these are the ONLY videos/channels you may cite; the text after "|" is each source's publication date and, where known, the period it discusses — context for you, never part of the citation):
 {allowed_sources}
 
 Relevant context (extracted from those sources):
@@ -123,6 +125,7 @@ INSTRUCTIONS:
 1. Read ALL the raw context carefully.
 2. Extract every sentence, fact, quote, or passage that is even partially relevant to the question.
 3. Preserve the source attribution (video title, channel, timestamp) for each extracted passage EXACTLY as it appears in the raw context — do not invent, paraphrase, or shorten titles or channel names.
+3b. Keep each chunk's `published <date>` (and `discusses <era>` when shown) with its extracts — the answer step needs them to tell current claims from superseded ones.
 4. Include information that is indirectly relevant (e.g., background context, related events, contrasting perspectives).
 5. Format your output as a clean, organized set of relevant extracts with their sources.
 6. Note the source language of each extract when it is clear (e.g., "(Hindi)", "(Urdu)", "(English)"). Keep the original wording — translation happens at the answer step, not here.
@@ -141,6 +144,7 @@ ABSOLUTE RULES — citation grounding:
 2. You may ONLY make factual claims that are supported by the "Relevant context" provided. Do not draw on general knowledge to fill gaps.
 3. If the provided context does not contain information needed to answer the question, say so plainly: "The provided sources do not cover this." Do not invent sources or content to fill in.
 4. When citing, copy the video title and channel name EXACTLY as they appear in the Allowed sources list. Do not rephrase, shorten, correct typos, translate, or otherwise alter them.
+5. An Allowed-sources line may continue after the channel name with `| published <date>` and `| discusses <era>`. That is context about the source's vintage for YOUR reasoning — it is never part of the citation tag.
 
 Citation format for video sources:
 [Source: "<EXACT VIDEO TITLE>" by <EXACT CHANNEL NAME> at <TIMESTAMP>]
@@ -156,6 +160,15 @@ Other guidelines:
 - Mention the speaker's name when known from the context.
 - Structure the answer clearly (paragraphs or short sections); end with a brief "References" list of the cited sources."""
 
+# R3 / R1: the library answer reads transcript-derived context, so it needs
+# the same time and visual contracts as the job-scoped prompt. Neither
+# fragment contains braces, so the `{answer_language}` format below is safe.
+LIBRARY_QA_SYSTEM_PROMPT = compose_block(
+    LIBRARY_QA_SYSTEM_PROMPT,
+    TEMPORAL_AWARENESS,
+    VISUAL_ANNOTATION_CONTRACT,
+)
+
 
 LIBRARY_QA_ANSWER_PROMPT = """Answer the question below using ONLY the curated context extracts and the allowed source list. Any source not on the allowed list — including external papers, organizations, websites, or other YouTube channels — must NOT appear in your answer.
 
@@ -163,11 +176,14 @@ Question: {question}
 
 Answer language (ISO code): {answer_language}
 
-Allowed sources (these are the ONLY videos/channels you may cite; format is `<video_id> | "TITLE" by CHANNEL`):
+Allowed sources (these are the ONLY videos/channels you may cite; format is `<video_id> | "TITLE" by CHANNEL | published <date> | discusses <era>` — the date and era are context for you, never part of the citation):
 {allowed_sources}
 
 Relevant context (extracted from those sources, possibly in mixed languages):
 {refined_context}
 
 Write a thorough, well-structured answer in {answer_language} with citations to the allowed sources. For each factual claim, attach a `[Source: "TITLE" by CHANNEL at TIMESTAMP]` reference using the EXACT title and channel from the allowed-sources list (do not translate title/channel). When quoting non-{answer_language} context, translate the quote into {answer_language} but keep proper nouns in the original script. If the context does not contain enough information to answer some part of the question, say so for that part rather than inventing a source.
+
+{corpus_note}
+{length_guidance}
 """

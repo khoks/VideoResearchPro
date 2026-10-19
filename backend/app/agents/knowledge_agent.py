@@ -27,6 +27,7 @@ from app.agents.prompts.knowledge_prompts import (
 )
 from app.agents.state import KnowledgeAgentState
 from app.config import settings
+from app.services import temporal_service
 from app.services.llm_service import get_llm_for, response_text
 from app.services.llm_routing import max_output_for, resolve_config
 
@@ -73,6 +74,26 @@ def _truncate_to_tokens(text: str, max_tokens: int) -> str:
         logger.exception("Token truncation failed; falling back to char slice")
         # Rough: 4 chars per token.
         return text[: max_tokens * 4]
+
+
+def _temporal_note(published_at: str, discussed_era: str) -> str:
+    """The dating context both knowledge prompts carry (R3 / T-1.17.2.4).
+
+    The extraction rule in the prompt says to anchor relative time to the
+    publication date; this line is the date it anchors to. When the date is
+    unknown the rule has nothing to anchor to, so the note says to keep
+    relative phrases verbatim rather than guess.
+    """
+    if published_at:
+        line = f"Published: {published_at} — anchor relative time expressions to this date."
+    else:
+        line = (
+            "Published: unknown — keep relative time expressions verbatim; do not "
+            "convert them to absolute dates."
+        )
+    if discussed_era:
+        line += f"\nThis source {discussed_era} (dated by its content, distinct from the publish date)."
+    return line
 
 
 def split_transcript(state: KnowledgeAgentState) -> dict:
@@ -185,12 +206,16 @@ def extract_per_batch(state: KnowledgeAgentState) -> dict:
     )
     video_title = state.get("video_title", "") or "Unknown"
     channel_name = state.get("channel_name", "") or "Unknown"
+    temporal_note = _temporal_note(
+        state.get("published_at") or "", state.get("discussed_era") or ""
+    )
 
     extractions: list[dict] = []
     for i, batch_text in enumerate(batches):
         prompt = EXTRACT_BATCH_PROMPT.format(
             video_title=video_title,
             channel_name=channel_name,
+            temporal_note=temporal_note,
             batch_text=batch_text,
             visual_annotations=VISUAL_ANNOTATION_CONTRACT,
         )
@@ -298,6 +323,9 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
     prompt = SYNTHESIZE_REPORT_PROMPT.format(
         video_title=state.get("video_title", "") or "Unknown",
         channel_name=state.get("channel_name", "") or "Unknown",
+        temporal_note=_temporal_note(
+            state.get("published_at") or "", state.get("discussed_era") or ""
+        ),
         merged_extraction_json=merged_json,
         full_transcript_text=transcript_excerpt,
     )
@@ -387,12 +415,19 @@ def run_knowledge_extract_agent(video: Any, full_transcript_text: str) -> dict:
                 "total_tokens": total_tokens,
             }
 
+    # R3: the publish date the extractor anchors relative time to, and the
+    # era the source discusses when the library has dated it.
+    published_at = temporal_service.published_display(getattr(video, "published_at", None))
+    discussed_era = temporal_service.era_for_prompt(temporal_service.load_era(video))
+
     graph = build_knowledge_graph()
     result = graph.invoke({
         "messages": [],
         "video_id": video_id,
         "video_title": video_title,
         "channel_name": channel_name,
+        "published_at": published_at,
+        "discussed_era": discussed_era,
         "full_transcript_text": text,
         "transcript_batches": [],
         "per_batch_extractions": [],

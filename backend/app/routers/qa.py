@@ -10,7 +10,13 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_current_user, get_db, get_user_from_query_or_header
 from app.models.qa_exchange import QAExchange
 from app.schemas.qa import ClarifyRequest, ClarifyResponse, QARequest, QAResponse, Reference
-from app.services import chroma_service, job_service, quota_metering_service, report_service
+from app.services import (
+    chroma_service,
+    corpus_stats_service,
+    job_service,
+    quota_metering_service,
+    report_service,
+)
 from app.services.llm_service import get_llm_for
 
 logger = logging.getLogger(__name__)
@@ -142,6 +148,17 @@ def _run_qa_and_persist(
     from app.agents.qa_agent import run_qa_agent
     from app.services import llm_service
 
+    # S-1.15.2 / T-1.17.1.4: the length policy and the temporal note need the
+    # corpus figures, and the agent cannot derive them from a handful of
+    # retrieval hits. Until 2026-10-18 nothing passed them, so every answer —
+    # including on the 200-video corpus — was classified `small` and never
+    # saw the publication span (D-066 amendment). A request-level override
+    # beats the job's setting; both NULL means the corpus bracket decides.
+    corpus_statistics = corpus_stats_service.corpus_statistics_for_video_ids(
+        db, approved_video_ids
+    )
+    output_length = request.output_length or job.output_length
+
     usage: dict = {}
     with llm_service.byok_context(current_user.id, db):
         answer, references = run_qa_agent(
@@ -152,6 +169,8 @@ def _run_qa_and_persist(
             video_ids=approved_video_ids,
             progress_callback=progress_callback,
             usage_out=usage,
+            corpus_statistics=corpus_statistics,
+            output_length=output_length,
         )
 
     # T-5.5.5: record the consumed resource AFTER the agent succeeds.

@@ -2047,3 +2047,34 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **Linked initiatives / PRs.** E-1.18 (R1). Follows D-031 (dominant-segment heuristic), D-051 (bot-wall), D-063 (shared cache, private catalogue).
 
+## D-068 — Two dates per source; era at ingest; time as a ranking preference; Q&A statistics from the database (2026-10-19)
+
+**Status:** accepted
+
+**Context.** R3 asks the app to know both *when a source was posted* and *which period it talks about*, and to use both in knowledge extraction, search ranking, Q&A and reporting. D-066 shipped the first date. An audit on 2026-10-18 found the second never started, the Q&A half of R4 built as agent plumbing no router fed (so every answer on the 200-video corpus was classified `small`), and three executive-summary defects (S-1.14.15) that were themselves temporal. All of it edits the same hardened prompt files, so it shipped as one batch.
+
+**Decision.**
+
+1. **A second date column, extracted once at ingest.** `documents.discussed_era_json` holds `{era_start, era_end, era_confidence, is_retrospective, era_label}` — integer years, negative for BCE — written by the new `temporal_scope_extract` use case the first time a job chunks the document (`job_tasks._ensure_era`), then reused forever, like transcripts and embeddings (D-063). Economy tier, reasoning OFF, 400-token cap, ~5K tokens in. Fail-soft: a failed call leaves the era unknown and the job continues; failures are not persisted, so a transient outage is retried by the next job rather than frozen.
+2. **Unknown is a first-class value and is never a sentinel.** Chunks carry `published_ts` / `published_year` and the four era scalars only when known. A Chroma range filter therefore excludes undated chunks instead of matching them against 1970. Chunks embedded before 2026-10-19 carry none of these; they read as unknown, and there is **no backfill**.
+3. **Time in ranking is a preference decided once per topic.** The planner's JSON gained `temporal_profile` — `recency_weight` of `dominant` / `secondary` / `minimal`, an optional `target_era`, a rationale — and the ranking prompt receives the matching guidance, each candidate's discussed era when the library has dated it, and the explicit rule that no candidate is excluded for its date. This builds on the generic publish-date hint the prompt has carried since PR #2 rather than duplicating it. Default when the planner is silent: `secondary`. Same reasoning as D-059 rejected a language filter.
+4. **Q&A reads its corpus from the database.** `corpus_stats_service` computes the figures for the approved (job) or visible (library) set in the routers and passes them, with the length preference, into the agents. Both answer sites share `qa_agent._answer_policy`; the library's fixed 4,500 is gone; both request schemas gained an optional `output_length`. Tests assert at the production caller.
+5. **Every compose call gets the same verified corpus facts, and the summary reads the written sections.** `_corpus_facts` replaces the raw statistics JSON (whose 92-entry channel breakdown buried the dates) and goes to every section, so no section can contradict the Statistics table. The summary receives a plain-text rendering of the sections (60K-token bound) instead of titles with item counts, and is told never to mention pipeline mechanics.
+6. **Judging is section by section.** `scripts/judge_report_sections.py` splits on `<h2>` and judges each in full; the 180,000-character document cap is gone.
+
+**Alternatives considered.**
+
+- *Extract the era during knowledge extraction instead of ingest.* Cheaper in aggregate (knowledge extraction is on demand) but the era would reach neither chunk metadata nor the report's map headers, which is where ranking and extraction need it. Ingest is the one place every document passes through.
+- *Backfill the existing Chroma collection.* Would re-embed the whole library for a metadata field only ranking and filtering read. Unknown is the honest value for a chunk nobody has dated; a document gains its era the next time a job re-chunks it.
+- *Date candidates at ranking time with a per-candidate LLM call.* Hundreds of calls per search for a signal that is unavailable for most candidates anyway (no transcript yet). The library lookup covers candidates the app has seen; the ranker infers the rest from title and description, which it reads regardless.
+- *A separate recency-scoring function applied after the model's ranking.* A numeric re-rank would be a filter in disguise and would override the model's relevance judgement with a formula nobody has measured. The decision stays with the model, made explicit rather than implicit.
+- *Keep feeding the summary a digest of item counts.* It had nothing else to summarise, which is why counts leaked into prose. The cost of reading the sections (~60K tokens on the largest reports) buys a summary that can say what the report found.
+
+**Consequences.**
+
+- One more LLM call per NEW document at ingest (~$0.001 on `gpt-5.6-luna`); a 200-video job of unseen documents adds roughly $0.20. Re-running a job over a processed corpus costs nothing extra.
+- The registry has 23 use cases. `temporal_scope_extract` is probed at startup but gates no feature.
+- The CORPUS note Q&A answers now carry — publication span, discussed-era span, and the instruction to name dates when sources disagree — is only as good as the statistics the router computes. A new Q&A surface must compute and pass them, or it inherits the 2026-07-31 defect.
+- **Open design question, deliberately left to the user:** how strongly should recency outweigh relevance for a fast-moving topic? `dominant` currently means "strongly prefer the most recent among on-topic candidates; keep an older one only when clearly foundational". A stricter reading (an explicit cutoff, or a numeric re-rank) would start to behave like a filter; a looser one collapses into `secondary`. The planner's choice is logged per job so the decision can be inspected before it is tuned.
+
+**Linked initiatives / PRs.** E-1.17 (R3, closed), E-1.15 (R4, closed), S-1.15.2, S-1.14.15, T-1.16.1.6, T-1.16.1.8. Follows D-059, D-064, D-066. PR #TBD.

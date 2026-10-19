@@ -94,6 +94,15 @@ class Document(Base):
     knowledge_report_md: Mapped[str | None] = mapped_column(Text, nullable=True)
     knowledge_extracted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # R3 / S-1.17.2: the era this source DISCUSSES, distinct from
+    # `published_at` (when it was posted). JSON: {era_start, era_end,
+    # era_confidence, is_retrospective, extracted_at, model}. Years are
+    # integers (negative for BCE); NULL means not yet extracted and is read
+    # as UNKNOWN everywhere, never as "discusses the present". Written by
+    # `temporal_service.ensure_discussed_era` the first time a job chunks the
+    # document, so the cost is paid once per document, not once per job.
+    discussed_era_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )

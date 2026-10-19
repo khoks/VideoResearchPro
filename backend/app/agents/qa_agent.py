@@ -22,6 +22,7 @@ from app.services import chroma_service
 from app.services.llm_service import get_llm_for, response_text
 from app.services.llm_routing import max_output_for, resolve_config
 from app.services import output_length as output_length_policy
+from app.services import temporal_service
 from app.utils.youtube_helpers import build_youtube_url, extract_video_id, format_timestamp
 
 logger = logging.getLogger(__name__)
@@ -97,6 +98,84 @@ def _generate_sub_queries(question: str, tally: _TokenTally | None = None) -> li
     return sub_queries[:2]
 
 
+def _vintage_parts(meta: dict) -> list[str]:
+    """`published <date>` and `discusses <era>` fragments for a chunk's source.
+
+    R3 / T-1.17.1.5: the date rides along wherever the source is named — in
+    the raw-context headers the refiner reads and in the allowed-sources
+    list the answer model cites from — so a time-sensitive answer can tell a
+    2024 claim from a 2026 one. Empty for chunks that carry neither.
+    """
+    parts: list[str] = []
+    pub = temporal_service.published_display((meta or {}).get("published_at"))
+    if pub:
+        parts.append(f"published {pub}")
+    era = temporal_service.era_for_prompt(temporal_service.era_from_chunk_metadata(meta))
+    if era:
+        parts.append(era)
+    return parts
+
+
+def _chunk_header(index: int, chunk: dict) -> str:
+    """`[Chunk N | Video: "T" by C at 12:34 | published 2025-03-12 | discusses 2019–2021]`."""
+    meta = chunk.get("metadata", {}) or {}
+    head = (
+        f"[Chunk {index} | Video: \"{meta.get('video_title', 'Unknown')}\" "
+        f"by {meta.get('channel_name', 'Unknown')} at {chunk.get('timestamp_display', '0:00')}"
+    )
+    for part in _vintage_parts(meta):
+        head += f" | {part}"
+    return head + "]"
+
+
+def _answer_policy(
+    statistics: dict | None,
+    length_pref: str | None,
+    use_case: str,
+    base_tokens: int = 4_500,
+) -> tuple[int, str, str]:
+    """(max_tokens, corpus_note, length_guidance) for an answer call.
+
+    S-1.15.2 (the Q&A half of R4): Q&A was corpus-blind — a fixed 4,500-token
+    budget and no idea whether it was answering from 3 videos or 200. Same
+    policy as the report (D-064): scale a derived budget and change the
+    brief, never impose a cap. The statistics come from the router
+    (`corpus_stats_service`), because a handful of retrieval hits says
+    nothing about the corpus they came from. Until 2026-10-18 no router
+    passed them, so every answer was classified `small` (D-066 amendment).
+
+    R3 / T-1.17.1.4: the corpus note carries the publication span and, when
+    known, the span of discussed eras, and tells the model what to do with
+    them.
+    """
+    statistics = statistics or {}
+    scale = output_length_policy.resolve_scale(statistics, length_pref)
+    guidance = output_length_policy.guidance(statistics, length_pref)
+    max_tokens = min(int(base_tokens * scale), max_output_for(resolve_config(use_case).model))
+
+    corpus_note = ""
+    if statistics.get("video_count"):
+        span = ""
+        if statistics.get("earliest_published"):
+            span = (
+                f" published between {statistics['earliest_published']} and "
+                f"{statistics['latest_published']}"
+            )
+        eras = temporal_service.describe_corpus_eras(statistics)
+        corpus_note = (
+            f"CORPUS: this answer draws on {statistics['video_count']} source(s){span}"
+            + (f"; {eras}" if eras else "")
+            + ". Weight recency where the question is time-sensitive and the "
+            "discussed era where it is about a period; when sources disagree "
+            "along a time axis, say so and name the dates."
+        )
+    logger.info(
+        "%s: length policy %s", use_case,
+        output_length_policy.describe(statistics, length_pref),
+    )
+    return max_tokens, corpus_note, guidance
+
+
 def retrieve_context(state: QAAgentState, tally: _TokenTally | None = None) -> dict:
     """Retrieve relevant chunks from ChromaDB using multi-query expansion, plus extract report text."""
     job_id = state.get("job_id", "")
@@ -168,12 +247,7 @@ def refine_context(state: QAAgentState, tally: _TokenTally | None = None) -> dic
     # Format raw RAG chunks with source attribution
     raw_parts = []
     for i, r in enumerate(rag_results):
-        meta = r.get("metadata", {})
-        raw_parts.append(
-            f"[Chunk {i+1} | Video: \"{meta.get('video_title', 'Unknown')}\" "
-            f"by {meta.get('channel_name', 'Unknown')} at {r.get('timestamp_display', '0:00')}]\n"
-            f"{r.get('text', '')}"
-        )
+        raw_parts.append(f"{_chunk_header(i + 1, r)}\n{r.get('text', '')}")
     raw_rag = "\n\n".join(raw_parts) if raw_parts else ""
 
     raw_report = ""
@@ -211,7 +285,9 @@ def _build_allowed_sources(rag_results: list[dict], include_report: bool) -> str
         if key in seen:
             continue
         seen.add(key)
-        lines.append(f'- "{title}" by {channel}')
+        lines.append(
+            f'- "{title}" by {channel}' + "".join(f" | {p}" for p in _vintage_parts(meta))
+        )
     if include_report:
         lines.append("- Research Report (the synthesized report for this job)")
     return "\n".join(lines) if lines else "(no sources available)"
@@ -223,27 +299,11 @@ def formulate_answer(state: QAAgentState, tally: _TokenTally | None = None) -> d
     include_report = bool(state.get("report_context"))
     allowed_sources = _build_allowed_sources(rag_results, include_report)
 
-    # S-1.15.2 (the deferred half of R4): Q&A was corpus-blind — a fixed 4,500
-    # token budget and no idea whether it was answering from 3 videos or 200.
-    # Same policy as the report: scale a derived budget and change the brief,
-    # never impose a cap (D-064).
-    statistics = state.get("corpus_statistics") or {}
-    length_pref = state.get("output_length")
-    scale = output_length_policy.resolve_scale(statistics, length_pref)
-    length_guidance = output_length_policy.guidance(statistics, length_pref)
-    max_tokens = min(int(4_500 * scale), max_output_for(resolve_config("qa_formulate_answer").model))
-
-    corpus_note = ""
-    if statistics.get("video_count"):
-        corpus_note = (
-            f"CORPUS: this answer draws on {statistics['video_count']} source(s)"
-            + (
-                f" published between {statistics['earliest_published']} and "
-                f"{statistics['latest_published']}"
-                if statistics.get("earliest_published") else ""
-            )
-            + ". Weight recency where the question is time-sensitive."
-        )
+    # S-1.15.2 / R3: corpus-aware budget, brief and temporal note. See
+    # `_answer_policy` for why the statistics must come from the router.
+    max_tokens, corpus_note, length_guidance = _answer_policy(
+        state.get("corpus_statistics"), state.get("output_length"), "qa_formulate_answer"
+    )
 
     llm = get_llm_for("qa_formulate_answer", temperature=0.0, max_tokens=max_tokens)
 
@@ -1004,7 +1064,10 @@ def _build_library_allowed_sources(rag_results: list[dict]) -> str:
         if key in seen:
             continue
         seen.add(key)
-        lines.append(f'- {vid} | "{title}" by {channel}')
+        lines.append(
+            f'- {vid} | "{title}" by {channel}'
+            + "".join(f" | {p}" for p in _vintage_parts(meta))
+        )
     return "\n".join(lines) if lines else "(no sources available)"
 
 
@@ -1012,6 +1075,8 @@ def run_library_qa_agent(
     question: str,
     answer_language: str = "en",
     visible_video_ids: list[str] | None = None,
+    corpus_statistics: dict | None = None,
+    output_length: str | None = None,
 ) -> dict:
     """Run library-wide Q&A against the global video library.
 
@@ -1019,6 +1084,11 @@ def run_library_qa_agent(
     tenant may see (S-5.7.1). Passing an EMPTY list means "this tenant has
     ingested nothing" and correctly retrieves nothing; passing None is
     unrestricted and must not be used for user-facing calls.
+
+    ``corpus_statistics`` (S-1.15.2) are the figures for the VISIBLE set —
+    the router computes them via `corpus_stats_service`; ``output_length``
+    is the request's optional depth override. Both drive the same D-064
+    policy as job Q&A; absent, the answer is classified `small`.
 
     Flow: sub-query expansion -> chroma retrieve over the visible set -> dedupe
     -> LLM context refinement -> LLM answer with language + citation rules
@@ -1044,12 +1114,7 @@ def run_library_qa_agent(
     # 4. Refine context.
     raw_parts = []
     for i, r in enumerate(rag_results):
-        meta = r.get("metadata", {})
-        raw_parts.append(
-            f"[Chunk {i+1} | Video: \"{meta.get('video_title', 'Unknown')}\" "
-            f"by {meta.get('channel_name', 'Unknown')} at {r.get('timestamp_display', '0:00')}]\n"
-            f"{r.get('text', '')}"
-        )
+        raw_parts.append(f"{_chunk_header(i + 1, r)}\n{r.get('text', '')}")
     raw_context = "\n\n".join(raw_parts)
 
     llm = get_llm_for("library_qa_refine_context", temperature=0.0, max_tokens=3000)
@@ -1065,15 +1130,24 @@ def run_library_qa_agent(
         len(refined_context), len(raw_context),
     )
 
-    # 5. Formulate answer with language + allowed-sources constraints.
+    # 5. Formulate answer with language + allowed-sources constraints and the
+    # corpus-aware length policy (S-1.15.2 — this call ran a fixed 4,500
+    # tokens with no policy until 2026-10-18).
     allowed_sources = _build_library_allowed_sources(rag_results)
-    answer_llm = get_llm_for("library_qa_formulate_answer", temperature=0.0, max_tokens=4500)
+    max_tokens, corpus_note, length_guidance = _answer_policy(
+        corpus_statistics, output_length, "library_qa_formulate_answer"
+    )
+    answer_llm = get_llm_for(
+        "library_qa_formulate_answer", temperature=0.0, max_tokens=max_tokens
+    )
     system_prompt = LIBRARY_QA_SYSTEM_PROMPT.format(answer_language=answer_language)
     user_prompt = LIBRARY_QA_ANSWER_PROMPT.format(
         question=question,
         answer_language=answer_language,
         allowed_sources=allowed_sources,
         refined_context=refined_context,
+        corpus_note=corpus_note,
+        length_guidance=length_guidance,
     )
     answer_response = answer_llm.invoke([
         SystemMessage(content=system_prompt),

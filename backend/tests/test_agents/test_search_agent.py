@@ -11,6 +11,13 @@ import pytest
 from app.agents import search_agent
 
 
+@pytest.fixture(autouse=True)
+def _no_known_era_lookup():
+    """R3: ranking looks up discussed eras in the database; unit tests have none."""
+    with patch.object(search_agent, "_lookup_known_eras", return_value={}):
+        yield
+
+
 def _fake_llm_returning(payload: str) -> MagicMock:
     """Build a ChatOpenAI-like mock whose .invoke returns an AIMessage-shaped object."""
     response = MagicMock()

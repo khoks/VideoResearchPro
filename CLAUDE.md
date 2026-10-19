@@ -147,7 +147,7 @@ Single multiplexed WebSocket at `/ws/jobs`. Clients send `subscribe`/`unsubscrib
 ### LangGraph Agents
 - **Search Agent**: generate_search_queries → execute_searches → rank_and_curate (topic jobs only)
 - **Report Agent**: compute_statistics → map_chunks → reduce_summaries → compose_report (map-reduce for large transcript sets; channel jobs skip to stats-only)
-- **Q&A Agent**: retrieve_context → refine_context → formulate_answer → extract_references (LLM-based context refinement compacts ~45K raw RAG+report into ~3K focused extracts before answering; topic jobs use RAG + report, channel jobs use RAG only, subscription jobs have no report and are only queried via library-wide Q&A; accepts an `answer_language` parameter; citations include `&t=` timestamp links)
+- **Q&A Agent**: retrieve_context → refine_context → formulate_answer → extract_references (LLM-based context refinement compacts ~45K raw RAG+report into ~3K focused extracts before answering; topic jobs use RAG + report, channel jobs use RAG only, subscription jobs have no report and are only queried via library-wide Q&A; accepts an `answer_language` parameter; citations include `&t=` timestamp links). The routers pass `corpus_statistics` (from `corpus_stats_service`) and the length preference, so the answer budget and brief follow corpus size (R4) and the prompt sees the publication span, each source's date and discussed era (R3)
 
 ### Q&A Library RAG
 One central ChromaDB collection (`qa_library_global`) indexes every Q&A exchange from all three surfaces (job-scoped, library-scoped, history-chat) as single documents — question and answer concatenated, not chunked. New Q&As are upserted post-commit on a best-effort basis (Chroma failures never break the Q&A response). A backfill runs on worker startup that idempotently upserts every existing row from `qa_exchanges`, `library_qa_exchanges`, and `qa_history_exchanges`. This is the retrieval backbone for the Q&A History Chat page.
@@ -180,6 +180,10 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/app/agents/visual_agent.py` | R1 visual pipeline: select moments -> capture -> describe -> persist |
 | `backend/app/services/frame_service.py` | yt-dlp video fetch + ffmpeg frame extraction |
 | `backend/app/services/visual_service.py` | Pure merge of frame descriptions into transcript segments |
+| `backend/app/services/temporal_service.py` | R3: discussed-era extraction (`temporal_scope_extract`), persistence, prompt/metadata rendering |
+| `backend/app/services/corpus_stats_service.py` | Corpus figures for Q&A (approved / visible document set) that drive the length policy and temporal note |
+| `backend/scripts/regenerate_report.py` | Re-run a completed job's report phase from cached transcripts (before/after measurement) |
+| `backend/scripts/judge_report_sections.py` | Split a report into sections and judge each in full — replaces the 180,000-char judging cap |
 | `backend/app/websocket/manager.py` | Redis pub/sub → WebSocket fan-out |
 | `backend/app/services/youtube_service.py` | YouTube API + transcript fetching with language fallback + rate limiting |
 | `backend/app/services/chroma_service.py` | ChromaDB collection management (singleton client) |
@@ -294,6 +298,9 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `VISUAL_FRAME_JPEG_QUALITY` | No | `5` | ffmpeg `-q:v` for extracted stills (2 = near-lossless, 31 = worst) |
 | `VISUAL_MAX_VIDEO_DOWNLOAD_MB` | No | `400` | Skip the document rather than pull more than this for a handful of JPEGs |
 | `VISUAL_CAPTURE_TIMEOUT_SEC` | No | `900` | Per-document wall-clock budget for download + extraction |
+| **Temporal awareness (R3 / E-1.17)** | | | |
+| `TEMPORAL_SCOPE_ENABLED` | No | `True` | Per-document discussed-era extraction on first ingest (`temporal_scope_extract`, one economy-tier call per NEW document). Off = every era reads as unknown, which is also how a missing value is treated |
+| `TEMPORAL_SCOPE_WINDOW_TOKENS` | No | `1500` | Size of each of the three transcript windows (opening / middle / close) sampled for the era call |
 | **Auth hardening (E-5.4)** | | | |
 | `LOCKOUT_FAILURE_THRESHOLD` | No | `5` | Failed-login count before account locks. Set `0` to disable lockout (not recommended). |
 | `LOCKOUT_DURATION_MIN` | No | `15` | How long an account stays locked (minutes). |
@@ -335,6 +342,8 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 - **HTML report rendering**: Uses `jinja2.Environment` with custom `number_format` filter (not `Template.globals`)
 - **WebSocket cache invalidation**: `useJobProgress` invalidates the `jobVideos` query on `awaiting_approval` status change so the approval list auto-populates
 - **Global document library — shared cache, private catalogue** ([D-063](docs/decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)): Documents are never job-owned, and `documents` remains a single global deduplicated store so transcripts, embeddings and knowledge artifacts are computed once and reused across every job and user. **But no user sees a document they did not ingest.** Visibility is an explicit per-tenant grant in `document_visibility(video_id, tenant_id, source)`, written by *every* ingest path — job selection, PDF upload, pasted URL, channel sync — including on dedup hits, because a cache hit means the bytes exist but this tenant may never have seen them. Ownership is **never** derived from `job_documents`: PDF uploads and pasted URLs create documents with no job, and deriving would make a user's own upload invisible to them. Any new user-facing read of `documents` must filter through `visibility_service.visible_video_ids(db, tenant_id)`, and any new ingest path must call `visibility_service.grant(...)`. The ORM class is `Document` (`app.models.document`); the table is `documents`. Legacy column name `video_id` is preserved on the PK and FK until a future PR promotes it to a UUID.
+- **Two dates per source, both load-bearing** (R3, [D-068](docs/decisions.md#d-068--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19)): `documents.published_at` is when a source was POSTED; `documents.discussed_era_json` is the period it is ABOUT (`{era_start, era_end, era_confidence, is_retrospective}`, integer years, negative = BCE), extracted once per document by `temporal_scope_extract` the first time a job chunks it (`job_tasks._ensure_era`, fail-soft). Chunks carry both as flat scalars — `published_ts` / `published_year` and `era_start` / `era_end` / `era_confidence` / `is_retrospective` — **omitted when unknown, never sentinel-valued**, so a Chroma range filter excludes undated chunks instead of matching them against 1970. Chunks embedded before this shipped carry neither; they read as unknown and there is no backfill. In search ranking, time is a PREFERENCE decided once per topic by the planner's `temporal_profile`, never a filter (D-059's reasoning for language). Every prompt that reads transcript text carries `TEMPORAL_AWARENESS` or `TEMPORAL_EXTRACTION_NOTE` from `app/agents/prompts/shared.py`.
+- **Q&A reads the corpus from the database, not from its retrieval hits** (S-1.15.2): `routers/qa.py` and `routers/library.py` compute `corpus_stats_service` figures for the approved (job) or visible (library) document set and pass them, with the length preference, into the agents. The length policy and the publication-span note are dead code without them — exactly how R4's Q&A half shipped unwired from 2026-07-31 to 2026-10-18 — so `tests/test_routers/test_qa_length_policy.py` asserts at the production caller. Verify a feature at its caller, not at the function that implements it.
 - **Visual annotations are marked in the TEXT, never only in metadata** ([D-067](docs/decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31)): frame descriptions are merged as `[VISUAL @ mm:ss - ...]` spans inside the chunk text. Chunking splits, merges and re-packs segments, and the dominant-segment heuristic promotes exactly one segment's metadata — so metadata alone is not a survivable channel. Any prompt that reads transcript text MUST include `VISUAL_ANNOTATION_CONTRACT` from `app/agents/prompts/shared.py`, or the model will read machine-written descriptions as things the speaker said. Frames live in `visual_frames` and are merged at chunk time; **never** annotate `transcript_cache`, which is globally shared.
 - **Single global Chroma collection**: All chunks live in `videoresearchpro_global`. Per-job scoping is a metadata filter at query time. Deleting a job does NOT delete chunks.
 - **Per-use-case LLM config**: Call sites resolve their (provider, model, reasoning) triple via `app/services/llm_routing.py::resolve_config(use_case)`. Override per use case with `LLM_USE_CASE_CONFIG` (see "LLM configuration" below). The legacy `get_llm(..., purpose='fast')` / `LLM_ROUTE_OVERRIDES` knobs are still honored as deprecated fallbacks.
@@ -391,7 +400,7 @@ From highest to lowest:
 
 ### Registered use cases
 
-Twenty-two named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
+Twenty-three named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
 
 **Job Q&A (`app/agents/qa_agent.py`):**
 - `qa_clarification` — short follow-up clarifier before answering
@@ -421,6 +430,9 @@ Twenty-two named call sites — full rationale, token budgets, and recommended m
 - `visual_select_moments` — read a timestamped transcript, decide where the picture carries information the words do not
 - `visual_describe_frame` — **MULTIMODAL.** Describe one captured still in transcript context. Listed in `VISION_USE_CASES`; its model is **not freely swappable** (a text-only model does not fail helpfully — it describes the image from surrounding text)
 
+**Discussed-era extraction (`app/services/temporal_service.py`, R3):**
+- `temporal_scope_extract` — once per document on first ingest: which period the source DISCUSSES (`{era_start, era_end, era_confidence, is_retrospective}`), distinct from `published_at`. Persisted on `documents.discussed_era_json`, reused by every later job, flattened into chunk metadata. Reasoning OFF is mandatory (strict JSON under a 400-token cap). Fail-soft, so deliberately not a feature gate in `llm_smoke`
+
 **Report generation (`app/agents/report_agent.py`):**
 - `report_map_chunks` — map phase; per-batch fact extraction (highest-volume call in the codebase)
 - `report_reduce_summaries` — reduce phase; consolidate per-batch summaries
@@ -430,7 +442,7 @@ Twenty-two named call sites — full rationale, token budgets, and recommended m
 
 ## LLM startup smoke check + fail-soft
 
-`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 22 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
+`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 23 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
 
 **Health endpoints:**
 - `GET /api/v1/health` — overall status plus an `llm` field with `status` (`ok` / `degraded` / `down` / `unknown`) and `unavailable_features` (a list of feature names whose required use cases failed probing).

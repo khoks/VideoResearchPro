@@ -264,6 +264,18 @@ class Settings(BaseSettings):
     # slow document must not stall a 200-video job.
     VISUAL_CAPTURE_TIMEOUT_SEC: int = 900
 
+    # R3 / S-1.17.2: per-document "which era does this source discuss"
+    # extraction (`temporal_scope_extract`). One economy-tier call per
+    # document on its first ingest, persisted to `documents.discussed_era_json`
+    # and reused by every later job. Off = every era reads as unknown, which
+    # is exactly how a missing value is treated anyway, so flipping this
+    # never changes the shape of anything downstream.
+    TEMPORAL_SCOPE_ENABLED: bool = True
+    # Transcript text sampled for the era call: three windows (opening,
+    # middle, close) of this many tokens each. The opening usually names the
+    # subject; the middle and close catch a source that pivots.
+    TEMPORAL_SCOPE_WINDOW_TOKENS: int = 1500
+
     # -------------------------------------------------------------------
     # Article connector — search engine + RSS (E-1.6 T-1.6.2 + T-1.6.3)
     # -------------------------------------------------------------------

@@ -272,6 +272,7 @@ A small, opinionated set of primitives lives at `frontend/src/components/primiti
 | `Input`, `Textarea`, `Select` | `surface` fill, focus ring in `accent`. Errors render `error`-colored border + helper text below. |
 | `FormField` | Wraps a label + control + helper text. Generates IDs for `htmlFor`. |
 | `Badge` | Pill, `surfaceAlt` fill + status text color. Sizes: `sm`, `md`. |
+| `LabelPill` | A user-applied label (shelf, tag) in one of the ten label-palette colours (§1.1): bordered pill, text always present. Optional `to` (router link, clicks never bubble to an enclosing card) and `onRemove` (a small ×). |
 | `StatusPill` | Specialized Badge with semantic statuses for jobs (pending, searching, awaiting_approval, etc.). |
 | `Tabs` | Underlined active tab in `accent`. Keyboard accessible (arrow keys). |
 | `Modal` | Centered, `surface` fill, `shadow.floating`, focus trap, ESC-to-close, scroll lock on body. |

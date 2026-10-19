@@ -1557,12 +1557,15 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [x] T-8.1.2.4 Type-check clean. **No Playwright runner exists in the frontend**, so the create → add → open smoke ran live instead: worktree backend on 8001 against a scratch SQLite, Vite on 3000, driven in the browser pane (create inline, tick a second run, open the shelf, recolour, chip on the job page, delete with runs intact). A checked-in Playwright suite is still open
 - [x] Label palette: ten named colours in `theme.ts` with light / dark pairs at ≥ 4.5:1, documented in `ui-design.md` §1.1
 
-#### S-8.1.3 🔵 Document tags (per tenant)
-**PR:** TBD
-- [ ] T-8.1.3.1 `document_tags(id, document_id, tenant_id, tag, created_at)`, unique `(document_id, tenant_id, tag)`, index on `(tenant_id, tag)`
-- [ ] T-8.1.3.2 `GET /library/tags` (counts), `PUT/DELETE /library/videos/{id}/tags/{tag}`; `GET /library/videos?tag=` filter joined through the visibility set
-- [ ] T-8.1.3.3 Tag chips on `VideoRow` with inline add; filter rail entry on the Library page
-- [ ] T-8.1.3.4 Tests: tags never cross tenants; filter respects visibility
+#### S-8.1.3 🟢 Document tags (per tenant)
+**PR:** [#257](https://github.com/khoks/VideoResearchPro/pull/257) (merged 2026-10-19)
+**Scope-changed 2026-10-19:** built to the [M1 plan](plans/m1-shelves.md)'s *tags as rows* design rather than the free-string `document_tags` table this story first listed. Rows give a stable id (rename keeps every tagging), merge as one update, and first-class colour and counts; the plan rejected free strings for exactly those reasons.
+- [x] T-8.1.3.1 `tags(id, tenant_id, name, color, created_at)` unique per tenant on `lower(name)` (functional index) + polymorphic `taggings(id, tag_id, tenant_id, target_type, target_id, created_at)`, unique `(tag_id, target_type, target_id)`, index `(tenant_id, target_type, target_id)`. Migration `e9f0a1b2c3d4`. `target_type` accepts only `document` in v1 (plan open question 2: documents-only until asked; jobs and channels need no schema change)
+- [x] T-8.1.3.2 `GET/POST /api/v1/tags`, `PUT /tags/{id}` (rename / recolour), `DELETE /tags/{id}[?into=]` (delete or merge), `PUT/DELETE /library/videos/{document_id}/tags/{tag_id}`; `?tag=` on the library listing and on shelf documents, joined through the visibility set; rows carry the caller's `tags`
+- [x] T-8.1.3.3 Tag chips on every library row with a "+ Tag" picker (checkbox per tag, inline create); a Tag bar on the Library page (select with counts, active-tag pill, "Manage tags" dialog for rename / recolour / merge / delete). The tag lives in the URL so chips are links. Shared pieces: `LabelPill` primitive, `PaletteField`, `LabelPicker` (now also behind "Add to shelf")
+- [x] T-8.1.3.4 Tests: tags never cross tenants (every endpoint against a second real reader, including their tag on a shared document); the filter and counts respect visibility; merge drops duplicates; migration round trip. Live smoke in the browser pane: create and apply, filter by chip, merge through the dialog, shelf picker regression
+- [x] Found on the way: list popovers were painted under the next card (each `Card` is its own stacking context through `transform`); `LabelPicker` now portals to `<body>` with fixed coordinates and listens for outside clicks and Escape in the capture phase
+- **Decision taken (flagged):** tags are **not tier-gated**. They cost the operator nothing (the M6 plan's reasoning), the `shelves` capability is about grouping runs, and `frontend/src/data/tiers.ts` does not advertise tags. One `require_feature` line per write route if the user wants them Pro
 
 #### S-8.1.4 🔵 Shelf-scoped Q&A
 **PR:** TBD

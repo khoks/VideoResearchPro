@@ -2139,7 +2139,7 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **Not kept.** No `visible_video_ids()` shim: no caller needs YouTube ids. `corpus_stats_service.corpus_statistics_for_video_ids` became `corpus_statistics_for_document_ids`, `approved_video_ids_for_job` became `approved_document_ids_for_job`.
 
-**Downgrade.** `alembic downgrade -1` restores `video_id` from `documents` and deletes grants over non-video documents, which the old schema cannot hold — exactly the pre-D-070 state, logged with a count. Revision `d8e9f0a1b2c3`, on top of S-8.3.1's `c7d8e9f0a1b2` (merged the same day; the first draft of this migration had taken that id). The round trip is pinned by `tests/test_migrations/test_visibility_document_id_migration.py`.
+**Downgrade.** `alembic downgrade -1` restores `video_id` from `documents` and deletes grants over non-video documents, which the old schema cannot hold — exactly the pre-D-070 state, logged with a count. Revision `d8e9f0a1b2c3`, on top of S-8.5.1's `c2d3e4f5a6b7`, which follows S-8.3.1's `c7d8e9f0a1b2` (both merged the same day; the first draft of this migration had taken the latter id). The round trip is pinned by `tests/test_migrations/test_visibility_document_id_migration.py`.
 
 **Linked initiatives / PRs.** S-5.10.4 (this fix, PR [#241](https://github.com/khoks/VideoResearchPro/pull/241)), S-5.10.1 (reopened by this gap, closed again), E-1.8, S-1.5.8 / PR #224 (diagnosis). Follows D-017, D-063, D-072.
 

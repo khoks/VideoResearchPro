@@ -5,6 +5,7 @@ import { formatDate, formatDuration } from '../../utils/formatters';
 import { sourceTypeLabel } from '../../utils/ingestResults';
 import { useJobStore } from '../../stores/jobStore';
 import { Badge, Card, type BadgeTone } from '../primitives';
+import { NotesPanel } from '../notes';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, radius, space } from '../../theme';
 
@@ -249,6 +250,11 @@ export function VideoRow({ video, channelLink = true }: Props) {
               </a>
             )}
           </div>
+          <NotesPanel
+            targetType="document"
+            targetId={video.video_id || video.id}
+            matchIds={[video.id, video.video_id]}
+          />
         </div>
       </div>
     </Card>

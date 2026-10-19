@@ -7,6 +7,7 @@ import {
 } from '../hooks/useLibraryQA';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { CitationLink } from '../components/citation';
+import { NotesPanel } from '../components/notes';
 import {
   Badge,
   Button,
@@ -509,6 +510,7 @@ function LibraryQAExchangeCard({ qa }: { qa: LibraryQAExchange }) {
           </div>
         </div>
       )}
+      <NotesPanel targetType="library_qa_exchange" targetId={qa.id} />
     </div>
   );
 }

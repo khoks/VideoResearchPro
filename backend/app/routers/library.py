@@ -117,20 +117,20 @@ def ask_library_question(
     # An empty list is meaningful — "you have ingested nothing" — and correctly
     # returns no context rather than falling back to a library-wide search.
     visible = [
-        row[0] for row in visibility_service.visible_video_ids(db, current_user.id)
+        row[0] for row in visibility_service.visible_document_ids(db, current_user.id)
     ]
 
     # S-1.15.2: the same corpus-aware length policy as job Q&A, over the
     # VISIBLE set. Until 2026-10-18 this call ran a fixed 4,500 tokens.
     from app.services import corpus_stats_service
 
-    corpus_statistics = corpus_stats_service.corpus_statistics_for_video_ids(db, visible)
+    corpus_statistics = corpus_stats_service.corpus_statistics_for_document_ids(db, visible)
 
     with llm_service.byok_context(current_user.id, db):
         result = run_library_qa_agent(
             question=request.question,
             answer_language=request.answer_language,
-            visible_video_ids=visible,
+            visible_document_ids=visible,
             corpus_statistics=corpus_statistics,
             output_length=request.output_length,
         )
@@ -324,8 +324,8 @@ def query_library_documents(
         db.query(Document)
         .outerjoin(Channel, Document.channel_id == Channel.channel_id)
         .filter(
-            Document.video_id.in_(
-                visibility_service.visible_video_ids(db, tenant_id)
+            Document.document_id.in_(
+                visibility_service.visible_document_ids(db, tenant_id)
             )
         )
     )
@@ -360,40 +360,43 @@ def query_library_documents(
     if not videos:
         return []
 
-    video_ids = [v.video_id for v in videos]
+    document_ids = [v.document_id for v in videos]
 
-    # One round-trip to fetch (video_id -> distinct job topics) for the page.
+    # One round-trip to fetch (document_id -> distinct job topics) for the page.
     rows = (
-        db.query(JobVideo.video_id, Job.topic)
+        db.query(JobVideo.document_id, Job.topic)
         .join(Job, Job.id == JobVideo.job_id)
         .filter(
-            JobVideo.video_id.in_(video_ids),
+            JobVideo.document_id.in_(document_ids),
             # Never surface another tenant's research topic against a shared
             # document — the topic string is the more sensitive half of this.
             Job.tenant_id == tenant_id,
         )
         .all()
     )
-    titles_by_video: dict[str, list[str]] = {}
-    for vid, topic in rows:
+    titles_by_document: dict[str, list[str]] = {}
+    for did, topic in rows:
         if not topic:
             continue
-        bucket = titles_by_video.setdefault(vid, [])
+        bucket = titles_by_document.setdefault(did, [])
         if topic not in bucket:
             bucket.append(topic)
 
-    counts_by_video: dict[str, int] = dict(
-        db.query(JobVideo.video_id, func.count(func.distinct(JobVideo.job_id)))
+    counts_by_document: dict[str, int] = dict(
+        db.query(JobVideo.document_id, func.count(func.distinct(JobVideo.job_id)))
         .join(Job, Job.id == JobVideo.job_id)
-        .filter(JobVideo.video_id.in_(video_ids), Job.tenant_id == tenant_id)
-        .group_by(JobVideo.video_id)
+        .filter(JobVideo.document_id.in_(document_ids), Job.tenant_id == tenant_id)
+        .group_by(JobVideo.document_id)
         .all()
     )
 
+    # D-070: `id` is the primary key; `video_id` is the legacy YouTube id and
+    # is None for every non-video source, as is `duration_seconds`.
     return [
         LibraryVideoResponse(
-            id=v.video_id,
+            id=v.document_id,
             video_id=v.video_id,
+            source_type=v.source_type or "video",
             title=v.title,
             channel_id=v.channel_id,
             channel_name=v.channel_name,
@@ -404,8 +407,8 @@ def query_library_documents(
             transcript_status=v.transcript_status,
             transcript_language=v.transcript_language,
             transcript_word_count=v.transcript_word_count,
-            job_count=counts_by_video.get(v.video_id, 0),
-            job_titles=titles_by_video.get(v.video_id, []),
+            job_count=counts_by_document.get(v.document_id, 0),
+            job_titles=titles_by_document.get(v.document_id, []),
         )
         for v in videos
     ]
@@ -480,7 +483,7 @@ async def upload_pdf(
         # Dedup hit: the bytes are already cached, but this tenant may never
         # have seen them. Grant, then return (S-5.7.1).
         visibility_service.grant(
-            db, [existing.video_id], current_user.id, visibility_service.SOURCE_PDF
+            db, [existing.document_id], current_user.id, visibility_service.SOURCE_PDF
         )
         return {
             "document_id": existing.document_id,
@@ -531,7 +534,7 @@ async def upload_pdf(
     db.commit()
     db.refresh(doc)
     visibility_service.grant(
-        db, [doc.video_id], current_user.id, visibility_service.SOURCE_PDF
+        db, [doc.document_id], current_user.id, visibility_service.SOURCE_PDF
     )
 
     # Run extraction immediately (PDFs don't have an async fetch
@@ -671,7 +674,7 @@ def _ingest_single_paste_url(url: str, db: Session, current_user) -> dict:
     )
     if existing is not None:
         visibility_service.grant(
-            db, [existing.video_id], current_user.id, visibility_service.SOURCE_PASTE
+            db, [existing.document_id], current_user.id, visibility_service.SOURCE_PASTE
         )
         return {
             "url": url,
@@ -731,7 +734,7 @@ def _ingest_single_paste_url(url: str, db: Session, current_user) -> dict:
     db.commit()
     db.refresh(doc)
     visibility_service.grant(
-        db, [doc.video_id], current_user.id, visibility_service.SOURCE_PASTE
+        db, [doc.document_id], current_user.id, visibility_service.SOURCE_PASTE
     )
 
     # Chunk + embed via the polymorphic chunker. _build_video_metadata

@@ -31,6 +31,7 @@ def _completed_job(db, tenant_id: str, length: str | None = None) -> Job:
 
 def _doc(vid: str, words: int, year: int) -> Document:
     return Document(
+        document_id=vid,
         video_id=vid, title=f"Video {vid}", url=f"https://www.youtube.com/watch?v={vid}",
         transcript_word_count=words, published_at=datetime(year, 3, 1),
         discussed_era_json=json.dumps(

@@ -186,21 +186,21 @@ def retrieve_context(state: QAAgentState, tally: _TokenTally | None = None) -> d
     all_queries = [question] + sub_queries
     logger.info(f"[job:{job_id}] Q&A retrieval using {len(all_queries)} queries")
 
-    # Retrieve per query and dedupe by chunk id (video_id + timestamp + chunk_index).
+    # Retrieve per query and dedupe by chunk id (document + chunk_index + timestamp).
     merged: dict[str, dict] = {}
-    video_ids = state.get("video_ids") or []
-    if not video_ids:
-        # A topic/channel job with zero approved videos has nothing to
+    document_ids = state.get("document_ids") or []
+    if not document_ids:
+        # A topic/channel job with zero approved documents has nothing to
         # retrieve from; never fall back to a global search here (S-1.12.1).
-        logger.warning(f"[job:{job_id}] Q&A retrieval called with no approved video_ids")
+        logger.warning(f"[job:{job_id}] Q&A retrieval called with no approved document_ids")
     for q in all_queries:
         results = chroma_service.query_collection(
-            q, n_results=settings.RAG_TOP_K, video_ids=video_ids or None
-        ) if video_ids else []
+            q, n_results=settings.RAG_TOP_K, document_ids=document_ids
+        ) if document_ids else []
         for r in results:
             meta = r.get("metadata", {})
             key = (
-                f"{meta.get('video_id', '')}"
+                f"{_chunk_document_key(meta)}"
                 f"_{meta.get('chunk_index', '')}"
                 f"_{meta.get('timestamp_start', '')}"
             )
@@ -323,6 +323,20 @@ def formulate_answer(state: QAAgentState, tally: _TokenTally | None = None) -> d
         tally.add(response)
 
     return {"answer": response_text(response)}
+
+
+def _chunk_document_key(meta: dict) -> str:
+    """The per-document part of a chunk's dedupe key.
+
+    D-070: ``document_id`` is the one field every chunk carries once the
+    startup backfill has run. ``video_id`` covers chunks the backfill has
+    not reached yet; ``source_id`` covers test fixtures. Before this, the
+    key was ``video_id`` alone, which is empty for every non-video chunk —
+    so two PDFs' chunk 0 collapsed into one entry.
+    """
+    return str(
+        meta.get("document_id") or meta.get("video_id") or meta.get("source_id") or ""
+    )
 
 
 def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
@@ -924,7 +938,7 @@ def run_qa_agent(
     job_type: str,
     question: str,
     report_html: str | None = None,
-    video_ids: list[str] | None = None,
+    document_ids: list[str] | None = None,
     progress_callback: Callable[[str], None] | None = None,
     usage_out: dict | None = None,
     corpus_statistics: dict | None = None,
@@ -932,6 +946,10 @@ def run_qa_agent(
 ) -> tuple[str, list[dict]]:
     """
     Run the Q&A agent pipeline node-by-node (same order as the compiled graph).
+
+    ``document_ids`` is the job's approved ``documents.document_id`` set
+    (D-070); retrieval is restricted to chunks whose ``document_id`` metadata
+    is in it, and an empty set retrieves nothing.
 
     ``progress_callback`` is invoked with a stage name before each node:
     "retrieving", "refining", "formulating", "extracting_references".
@@ -958,7 +976,7 @@ def run_qa_agent(
         "job_type": job_type,
         "question": question,
         "report_html": report_html or "",
-        "video_ids": video_ids or [],
+        "document_ids": document_ids or [],
         "sub_queries": [],
         "rag_results": [],
         "report_context": None,
@@ -993,18 +1011,15 @@ def run_qa_agent(
 # ---------------------------------------------------------------------------
 
 
-def _query_library(query_text: str, video_ids: list[str] | None = None) -> list[dict]:
-    """Query the library ChromaDB collection, restricted to ``video_ids``.
+def _query_library(query_text: str, document_ids: list[str] | None = None) -> list[dict]:
+    """Query the library ChromaDB collection, restricted to ``document_ids``.
 
-    S-5.7.1: this previously always passed ``video_ids=None``, i.e. searched
-    EVERY tenant's transcripts. The caller now supplies the set the asking
-    tenant may see. ``None`` means unrestricted and is reserved for internal
-    / single-tenant use — user-facing callers must pass an explicit list.
-
-    Unit 2 introduces a new ``query_collection`` signature that accepts
-    ``video_ids=None`` for library-wide search. Call that first; fall back to
-    the legacy per-job signature (with a sentinel global-collection id) if the
-    new signature isn't available yet so Unit 6 is robust to merge ordering.
+    S-5.7.1: this previously always passed no scope, i.e. searched EVERY
+    tenant's transcripts. The caller now supplies the set the asking tenant
+    may see, as ``documents.document_id`` values (D-070). ``None`` means
+    unrestricted and is reserved for internal / single-tenant use —
+    user-facing callers must pass an explicit list, and an EMPTY list
+    retrieves nothing (``query_collection`` enforces that).
     """
     # Pass the query positionally: Unit 2 kept the first param name as
     # `query_or_job_id` for backward compat with the old per-job signature,
@@ -1013,7 +1028,7 @@ def _query_library(query_text: str, video_ids: list[str] | None = None) -> list[
         return chroma_service.query_collection(
             query_text,
             n_results=settings.RAG_TOP_K,
-            video_ids=video_ids,
+            document_ids=document_ids,
             distance_threshold=settings.RAG_DISTANCE_THRESHOLD,
         )
     except TypeError:
@@ -1025,11 +1040,11 @@ def _query_library(query_text: str, video_ids: list[str] | None = None) -> list[
 
 
 def _dedupe_chunks(chunks: list[dict]) -> list[dict]:
-    """Dedupe RAG chunks by (video_id, chunk_index); keep closest distance."""
+    """Dedupe RAG chunks by (document, chunk_index); keep closest distance."""
     merged: dict[str, dict] = {}
     for r in chunks:
         meta = r.get("metadata", {})
-        key = f"{meta.get('video_id', '')}_{meta.get('chunk_index', '')}"
+        key = f"{_chunk_document_key(meta)}_{meta.get('chunk_index', '')}"
         existing = merged.get(key)
         if existing is None or r.get("distance", 1.0) < existing.get("distance", 1.0):
             merged[key] = r
@@ -1051,15 +1066,16 @@ def _build_library_allowed_sources(rag_results: list[dict]) -> str:
 
     Includes the video_id prefix so the LLM can disambiguate same-titled
     videos across different channels in the global library. Dedupes by
-    (video_id, title, channel).
+    (id, title, channel). Non-video sources (D-070) have no video_id and
+    no channel: the line carries their ``source_id`` and their author.
     """
     seen: set[tuple[str, str, str]] = set()
     lines: list[str] = []
     for r in rag_results:
         meta = r.get("metadata", {})
-        vid = (meta.get("video_id") or "").strip()
+        vid = (meta.get("video_id") or meta.get("source_id") or "").strip()
         title = (meta.get("video_title") or "Unknown").strip()
-        channel = (meta.get("channel_name") or "Unknown").strip()
+        channel = (meta.get("channel_name") or meta.get("author") or "Unknown").strip()
         key = (vid, title.lower(), channel.lower())
         if key in seen:
             continue
@@ -1074,16 +1090,17 @@ def _build_library_allowed_sources(rag_results: list[dict]) -> str:
 def run_library_qa_agent(
     question: str,
     answer_language: str = "en",
-    visible_video_ids: list[str] | None = None,
+    visible_document_ids: list[str] | None = None,
     corpus_statistics: dict | None = None,
     output_length: str | None = None,
 ) -> dict:
     """Run library-wide Q&A against the global video library.
 
-    ``visible_video_ids`` restricts retrieval to the documents the asking
-    tenant may see (S-5.7.1). Passing an EMPTY list means "this tenant has
-    ingested nothing" and correctly retrieves nothing; passing None is
-    unrestricted and must not be used for user-facing calls.
+    ``visible_document_ids`` restricts retrieval to the documents the asking
+    tenant may see (S-5.7.1), as ``documents.document_id`` values (D-070).
+    Passing an EMPTY list means "this tenant has ingested nothing" and
+    correctly retrieves nothing; passing None is unrestricted and must not
+    be used for user-facing calls.
 
     ``corpus_statistics`` (S-1.15.2) are the figures for the VISIBLE set —
     the router computes them via `corpus_stats_service`; ``output_length``
@@ -1105,7 +1122,7 @@ def run_library_qa_agent(
     # 2. Library-wide ChromaDB retrieval.
     raw: list[dict] = []
     for q in all_queries:
-        raw.extend(_query_library(q, visible_video_ids))
+        raw.extend(_query_library(q, visible_document_ids))
 
     # 3. Dedupe + enrich.
     rag_results = _dedupe_chunks(raw)

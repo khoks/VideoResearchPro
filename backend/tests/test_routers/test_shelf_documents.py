@@ -38,11 +38,16 @@ def _job(db, tenant_id, topic, video_ids):
 
 
 def test_union_is_deduplicated_scoped_by_shelf_and_visibility(client, db, pro_user):
-    for vid, title in [("shelfvid001", "Alpha"), ("shelfvid002", "Beta"),
-                       ("shelfvid003", "Gamma"), ("shelfvid004", "Delta")]:
-        _doc(db, vid, title)
+    docs = {
+        vid: _doc(db, vid, title)
+        for vid, title in [("shelfvid001", "Alpha"), ("shelfvid002", "Beta"),
+                           ("shelfvid003", "Gamma"), ("shelfvid004", "Delta")]
+    }
     # Gamma is selected by a shelf job but never granted to the caller.
-    visibility_service.grant(db, ["shelfvid001", "shelfvid002", "shelfvid004"], pro_user.id)
+    # D-070: grants are keyed on document_id.
+    visibility_service.grant(
+        db, [docs[v].document_id for v in ("shelfvid001", "shelfvid002", "shelfvid004")], pro_user.id
+    )
 
     a = _job(db, pro_user.id, "Run A", ["shelfvid001", "shelfvid002"])
     b = _job(db, pro_user.id, "Run B", ["shelfvid002", "shelfvid003"])
@@ -67,8 +72,8 @@ def test_union_is_deduplicated_scoped_by_shelf_and_visibility(client, db, pro_us
 
 
 def test_empty_shelf_lists_nothing_not_the_whole_library(client, db, pro_user):
-    _doc(db, "shelfvid010", "Visible but unshelved")
-    visibility_service.grant(db, ["shelfvid010"], pro_user.id)
+    d = _doc(db, "shelfvid010", "Visible but unshelved")
+    visibility_service.grant(db, [d.document_id], pro_user.id)
     _job(db, pro_user.id, "Unshelved run", ["shelfvid010"])
     shelf = shelf_service.create_shelf(db, pro_user.id, "Empty")
 
@@ -87,8 +92,8 @@ def test_foreign_shelf_is_404_and_free_tier_can_read(client, db, test_user):
 
 
 def test_library_listing_unchanged_by_the_refactor(client, db, pro_user):
-    _doc(db, "shelfvid020", "Still listed")
-    visibility_service.grant(db, ["shelfvid020"], pro_user.id)
+    d = _doc(db, "shelfvid020", "Still listed")
+    visibility_service.grant(db, [d.document_id], pro_user.id)
     _job(db, pro_user.id, "Some run", ["shelfvid020"])
     r = client.get("/api/v1/library/videos")
     assert r.status_code == 200

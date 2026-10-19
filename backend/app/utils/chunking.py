@@ -318,6 +318,14 @@ def chunk_transcript(
     if not isinstance(era_fields, dict):
         era_fields = {}
 
+    # D-070: the document's primary key, on every chunk of every source
+    # type — the field retrieval filters on. Omitted (never "") when the
+    # caller did not supply one, so an `$in` filter can never match a
+    # sentinel; the startup backfill stamps it onto older chunks.
+    document_key: dict[str, str] = {}
+    if metadata.get("document_id"):
+        document_key = {"document_id": str(metadata["document_id"])}
+
     duration_seconds = metadata.get("duration_seconds", 0)
     try:
         duration_seconds = int(duration_seconds or 0)
@@ -357,7 +365,7 @@ def chunk_transcript(
                 # video sources `video_id` doubles as the dedup key
                 # but the polymorphic fields below are the citation
                 # source.
-                "video_id": metadata.get("video_id", ""),
+                "video_id": str(metadata.get("video_id") or ""),
                 "video_title": metadata.get("title", ""),
                 "channel_name": metadata.get("channel_name", ""),
                 "channel_id": metadata.get("channel_id", ""),
@@ -408,6 +416,7 @@ def chunk_transcript(
                 # when known — see the comments where they are derived.
                 **published_numeric,
                 **era_fields,
+                **document_key,
             },
         })
 

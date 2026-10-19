@@ -503,3 +503,22 @@ def test_first_chunk_picks_op_segment_when_op_dominates():
     assert md["segment_author"] == "@op"
     assert md["comment_id"] == ""
     assert md["comment_url"] == ""
+
+
+def test_document_id_is_carried_on_every_chunk_when_supplied():
+    """D-070: the field retrieval filters on. Present on every chunk when the
+    caller supplies it; OMITTED (not "") when it does not, so an `$in`
+    filter can never match a sentinel."""
+    segs = _make_segments(6, words_per_seg=40)
+    with_id = chunk_transcript(
+        segs, chunk_size=60, chunk_overlap=0,
+        video_metadata={"document_id": "doc-uuid", "video_id": None, "source_type": "pdf"},
+    )
+    assert len(with_id) > 1
+    assert all(c["metadata"]["document_id"] == "doc-uuid" for c in with_id)
+    # A non-video document has no YouTube id: empty string, never "None".
+    assert all(c["metadata"]["video_id"] == "" for c in with_id)
+
+    without = chunk_transcript(segs, chunk_size=60, chunk_overlap=0, video_metadata={"video_id": "yt1"})
+    assert all("document_id" not in c["metadata"] for c in without)
+    assert all(c["metadata"]["video_id"] == "yt1" for c in without)

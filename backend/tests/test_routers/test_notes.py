@@ -81,9 +81,9 @@ def world(db, test_user, other_headers):
     db.add_all([mine_doc, mine_doc_no_knowledge, theirs_doc])
     db.commit()
     db.add_all([
-        DocumentVisibility(video_id="minevid0001", tenant_id=test_user.id, source="job"),
-        DocumentVisibility(video_id="minevid0002", tenant_id=test_user.id, source="job"),
-        DocumentVisibility(video_id="theirvid001", tenant_id=other.id, source="job"),
+        DocumentVisibility(document_id="doc-mine-uuid", tenant_id=test_user.id, source="job"),
+        DocumentVisibility(document_id="doc-mine-nok", tenant_id=test_user.id, source="job"),
+        DocumentVisibility(document_id="doc-theirs-uuid", tenant_id=other.id, source="job"),
     ])
     subscription_service.set_subscribed(db, sub_only_ch.channel_id, test_user.id, True)
 

@@ -184,7 +184,7 @@ def test_compose_clean_run_has_no_note():
 # ---------------------------------------------------------------------------
 
 
-def test_retrieve_context_passes_video_ids_filter():
+def test_retrieve_context_passes_document_ids_filter():
     from app.agents import qa_agent
 
     with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]) as qc, \
@@ -193,12 +193,12 @@ def test_retrieve_context_passes_video_ids_filter():
             "job_id": "job-1",
             "job_type": "topic",
             "question": "what?",
-            "video_ids": ["vidA", "vidB"],
+            "document_ids": ["vidA", "vidB"],
         }
         qa_agent.retrieve_context(state)
     assert qc.call_count == 1
     _, kwargs = qc.call_args
-    assert kwargs["video_ids"] == ["vidA", "vidB"]
+    assert kwargs["document_ids"] == ["vidA", "vidB"]
 
 
 def test_retrieve_context_no_ids_never_searches_globally():
@@ -210,7 +210,7 @@ def test_retrieve_context_no_ids_never_searches_globally():
             "job_id": "job-1",
             "job_type": "topic",
             "question": "what?",
-            "video_ids": [],
+            "document_ids": [],
         }
         out = qa_agent.retrieve_context(state)
     qc.assert_not_called()

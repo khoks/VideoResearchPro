@@ -51,6 +51,7 @@ def _make_chunks(video_id: str = "vid1", count: int = 3) -> list[dict]:
         chunks.append({
             "text": f"Chunk {i} about quantum computing, networking, and DNS systems.",
             "metadata": {
+                "document_id": f"doc-{video_id}",
                 "video_id": video_id,
                 "video_title": f"Video {video_id}",
                 "channel_name": "Channel A",
@@ -82,7 +83,7 @@ def test_insert_chunks_is_idempotent():
 
     results = chroma_service.query_collection(
         "quantum",
-        video_ids=["vIdem"],
+        document_ids=["doc-vIdem"],
         n_results=50,
     )
     # De-duplicated on (video_id, chunk_index): 4 unique, not 8.
@@ -92,15 +93,15 @@ def test_insert_chunks_is_idempotent():
 
 
 def test_query_filters_by_video_ids():
-    """`query_collection(q, video_ids=[...])` returns only chunks whose
-    metadata.video_id is in the allow-list."""
+    """`query_collection(q, document_ids=[...])` returns only chunks whose
+    metadata.document_id is in the allow-list."""
     chroma_service.insert_chunks(_make_chunks("vA", count=3))
     chroma_service.insert_chunks(_make_chunks("vB", count=3))
     chroma_service.insert_chunks(_make_chunks("vC", count=3))
 
     results = chroma_service.query_collection(
         "quantum computing",
-        video_ids=["vA"],
+        document_ids=["doc-vA"],
         n_results=20,
     )
     assert results
@@ -108,13 +109,13 @@ def test_query_filters_by_video_ids():
 
 
 def test_query_video_ids_none_returns_global_results():
-    """`video_ids=None` searches the full global collection."""
+    """`document_ids=None` searches the full global collection."""
     chroma_service.insert_chunks(_make_chunks("vA", count=2))
     chroma_service.insert_chunks(_make_chunks("vB", count=2))
 
     results = chroma_service.query_collection(
         "quantum computing",
-        video_ids=None,
+        document_ids=None,
         n_results=20,
     )
     video_ids = {r["metadata"]["video_id"] for r in results}
@@ -129,10 +130,10 @@ def test_delete_video_chunks_removes_only_that_video():
 
     # vA gone; vB intact.
     a_results = chroma_service.query_collection(
-        "quantum", video_ids=["vA"], n_results=20
+        "quantum", document_ids=["doc-vA"], n_results=20
     )
     b_results = chroma_service.query_collection(
-        "quantum", video_ids=["vB"], n_results=20
+        "quantum", document_ids=["doc-vB"], n_results=20
     )
     assert a_results == []
     assert len(b_results) == 3

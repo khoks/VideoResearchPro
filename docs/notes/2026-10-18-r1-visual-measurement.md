@@ -73,3 +73,25 @@ Side measurements, reported but not part of the rule: `informative` false-positi
 **Outcome:** the UI is not built. Per the rule's own branch, the contract is fixed first (speaker-attributed sentences may contain only speech; screen-only details go in a separate clause marked as shown), the two vision use cases move to a cheaper tier, and the measurement is re-run. Tracked as S-1.18.5 and S-1.18.6.
 
 **Also observed.** Both arms leak pipeline metadata and mis-state the corpus inside sections (S-1.14.15); ON had zero confirmed fabrications against OFF's five, which suggests annotations crowd out general-knowledge padding, but one run cannot establish that. Three blind judges missed both attribution errors, so a sweep with independent refuters is now part of the method, not an optional extra.
+
+## Re-tier (S-1.18.5, appended 2026-10-19)
+
+Same job, same 120 frames and 11 transcripts, re-run per model with real token usage (`backend/scripts/retier_vision.py`).
+
+Per-video figures divide by the 11 videos that produced calls (the twelfth approved video had no transcript); a first pass divided by 12 and understated every number by 8%, which the pinned cost test caught.
+
+| Use case / model | Real cost per video | Quality signal |
+|---|---|---|
+| select · gpt-5.5 medium (baseline) | $0.097 | agrees with its own stored picks 85% (noise floor) |
+| select · gpt-5.5 low | $0.067 | 76% agreement with the medium picks |
+| select · gpt-5.5 off | $0.064 | 76% |
+| select · gpt-5.6-luna off | $0.002 | 59% |
+| select · gpt-5.4-mini off | $0.009 | 24% |
+| select · gemini-3.1-flash-lite off | $0.003 | 23% |
+| describe · gpt-5.5 low (baseline) | $0.133 | mean accuracy 4.52/5, best 54/66, 3 unusable |
+| describe · gemini-3.1-flash-lite off | $0.008 | 4.21, best 5/66, 5 unusable |
+| describe · gpt-5.6-luna off | $0.004 | 3.97, best 6/66, **22 unusable** |
+
+Description quality: 33 frames stratified across the 11 videos, three descriptions per frame under shuffled blind labels, two independent graders per frame who opened the image (66 gradings), unblinded afterwards. Luna's failures were substantive (wrong dates on an axis, a code cell reported as output, wrong variable names); flash-lite's were mostly casing and label misreads at 360p, which gpt-5.5 also made less often.
+
+**Decision (D-073):** describe on gemini-3.1-flash-lite, select stays on gpt-5.5 at low reasoning: **$0.075 per video** against $0.230 before, under the ceiling. The resolution finding (every model struggled with 640×360 text) is filed as T-1.18.5.5. The protocol re-run with these tiers follows S-1.18.6.

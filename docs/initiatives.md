@@ -1749,8 +1749,8 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 **Acceptance.** Opening a completed job shows three to five suggested questions within two seconds; clicking one fills the composer; suggestions never repeat a question already asked on that job; a user with no history still gets context-derived suggestions; a second open within the cache window makes no LLM call.
 
 #### S-8.4.1 🟢 Suggestion endpoint
-**PR:** [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)
-**Shipped:** 2026-10-19 — PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)
+**PR:** [#306](https://github.com/khoks/VideoResearchPro/pull/306)
+**Shipped:** 2026-10-19 — PR [#306](https://github.com/khoks/VideoResearchPro/pull/306)
 - [x] T-8.4.1.1 `GET /api/v1/suggestions?context=job:<id>|document:<id>|library` → `{suggestions: [{question, rationale, source, origin}], cached, generated}`; tenant-scoped retrieval of past questions, context summary from report sections or knowledge topics (all three contexts, so S-8.4.2 is frontend-only)
 - [x] T-8.4.1.2 `qa_suggest_questions` use case in `USE_CASE_REGISTRY` (volume tier `gpt-5.6-luna`, structured JSON, reasoning OFF under a 900-token cap; guidance `unmeasured` with a smoke run recorded); dedupe against asked questions and each other, then MMR so the five differ
 - [x] T-8.4.1.3 Cache per `(tenant, context)` in `suggestion_cache` for `SUGGESTIONS_CACHE_TTL_MIN` (60); a fingerprint of the context's inputs invalidates it when a new exchange, report or knowledge state lands

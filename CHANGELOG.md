@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Added: question suggestions endpoint (2026-10-19)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). S-8.4.1, plan [m4-question-suggestions](docs/plans/m4-question-suggestions.md).
+PR [#306](https://github.com/khoks/VideoResearchPro/pull/306). S-8.4.1, plan [m4-question-suggestions](docs/plans/m4-question-suggestions.md).
 
 - `GET /api/v1/suggestions?context=job:<id>|document:<id>|library` returns up to
   five next questions: generated from the context (report headings, knowledge

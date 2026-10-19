@@ -15,6 +15,7 @@ import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { CitationLink } from '../components/citation';
 import { NotesPanel } from '../components/notes';
+import { JobShelfChips, ShelfPicker } from '../components/shelves';
 import { ApprovalCard, SOURCE_CONFIGS } from '../components/approval';
 import {
   Badge,
@@ -136,9 +137,11 @@ export function JobDetailPage() {
             >
               Created {formatDate(job.created_at)} · {jobTypeLabel(job.job_type)} job
             </p>
+            <JobShelfChips jobId={job.id} style={{ marginTop: space['2'] }} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: space['2'], flexWrap: 'wrap' }}>
             <StatusPill status={job.status} />
+            <ShelfPicker jobId={job.id} />
             <Button
               variant="tertiary"
               size="sm"

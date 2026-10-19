@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
@@ -8,41 +8,17 @@ import {
   useSyncChannel,
   useUnsubscribeChannel,
 } from '../hooks/useChannels';
-import { useLibraryVideos } from '../hooks/useLibrary';
 import { useJob } from '../hooks/useJobs';
-import { VideoRow } from '../components/library/VideoRow';
-import {
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  Input,
-  Select,
-  Skeleton,
-  Spinner,
-} from '../components/primitives';
+import { DocumentsBrowser } from '../components/library/DocumentsBrowser';
+import { Badge, Button, Card, EmptyState, Skeleton, Spinner } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
 import { formatDate } from '../utils/formatters';
 import type { Channel } from '../services/channelsApi';
-import type { LibrarySort } from '../services/libraryApi';
+import { libraryApi } from '../services/libraryApi';
 
-const PAGE_SIZE = 50;
 const CHANNELS_TAB_HREF = '/library?tab=channels';
 
-const TRANSCRIPT_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'All transcripts' },
-  { value: 'fetched', label: 'Fetched' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'unavailable', label: 'Unavailable' },
-];
-
-const SORT_OPTIONS: { value: LibrarySort; label: string }[] = [
-  { value: 'newest', label: 'Newest' },
-  { value: 'oldest', label: 'Oldest' },
-  { value: 'longest', label: 'Longest' },
-  { value: 'shortest', label: 'Shortest' },
-];
 
 /**
  * One channel, as this reader sees it (S-8.7.1 / M7).
@@ -160,7 +136,14 @@ export function ChannelPage() {
             onSync={() => handleSync(channel)}
           />
           <TrustWeightSlot weight={channel.source_weight} />
-          <DocumentsSection channelId={channel.channel_id} total={channel.video_count} />
+          <DocumentsBrowser
+            queryKey={['libraryVideos', 'channel', channel.channel_id]}
+            fetch={(params) => libraryApi.listVideos({ ...params, channel_id: channel.channel_id })}
+            total={channel.video_count}
+            channelLink={false}
+            emptyTitle="Nothing from this channel on your shelf yet."
+            emptyDescription="Subscribe and sync to shelve its uploads, or pick its videos in a research run; either way they appear here."
+          />
         </>
       )}
     </div>
@@ -377,222 +360,5 @@ function TrustWeightSlot({ weight }: { weight: number }) {
         </span>
       </div>
     </Card>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────
-// Documents
-
-function DocumentsSection({ channelId, total }: { channelId: string; total: number }) {
-  const c = useColors();
-  const [search, setSearch] = useState('');
-  const [transcriptStatus, setTranscriptStatus] = useState('');
-  const [sort, setSort] = useState<LibrarySort>('newest');
-  const [page, setPage] = useState(0);
-
-  const videosQuery = useLibraryVideos({
-    channel_id: channelId,
-    search: search.trim() || undefined,
-    transcript_status: transcriptStatus || undefined,
-    sort,
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
-  });
-
-  const videos = videosQuery.data ?? [];
-  const hasNextPage = videos.length === PAGE_SIZE;
-  const filtersActive = !!search.trim() || !!transcriptStatus;
-
-  const clearFilters = () => {
-    setSearch('');
-    setTranscriptStatus('');
-    setPage(0);
-  };
-
-  let body: ReactNode;
-  if (videosQuery.isLoading && page === 0) {
-    body = (
-      <div aria-busy style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
-        <Skeleton variant="card" height={104} />
-        <Skeleton variant="card" height={104} />
-        <Skeleton variant="card" height={104} />
-      </div>
-    );
-  } else if (videosQuery.isError) {
-    body = (
-      <EmptyState
-        size="sm"
-        title="Couldn't load this channel's documents."
-        description="Something blocked the library fetch."
-        action={
-          <Button size="sm" variant="secondary" onClick={() => void videosQuery.refetch()}>
-            Retry
-          </Button>
-        }
-      />
-    );
-  } else if (videos.length === 0 && filtersActive) {
-    body = (
-      <EmptyState
-        size="sm"
-        title="Nothing matches these filters."
-        description="Loosen the search or the transcript filter to see more of this channel."
-        action={
-          <Button size="sm" variant="tertiary" onClick={clearFilters}>
-            Clear filters
-          </Button>
-        }
-      />
-    );
-  } else if (videos.length === 0) {
-    body = (
-      <EmptyState
-        size="sm"
-        title="Nothing from this channel on your shelf yet."
-        description="Subscribe and sync to shelve its uploads, or pick its videos in a research run; either way they appear here."
-      />
-    );
-  } else {
-    body = (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
-        {videos.map((video) => (
-          <VideoRow key={video.id} video={video} channelLink={false} />
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <section aria-labelledby="channel-documents-heading">
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          gap: space['3'],
-          marginBottom: space['3'],
-        }}
-      >
-        <h2
-          id="channel-documents-heading"
-          style={{
-            fontFamily: fonts.display,
-            fontSize: fontSize.lg,
-            fontWeight: fontWeight.semibold,
-            color: c.textPrimary,
-            margin: 0,
-          }}
-        >
-          Documents
-        </h2>
-        <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textMuted }}>
-          {total} on your shelf
-        </span>
-      </div>
-
-      <Card style={{ marginBottom: space['4'] }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: space['3'], alignItems: 'center' }}>
-          <div style={{ flex: '1 1 240px' }}>
-            <Input
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(0);
-              }}
-              placeholder="Search titles…"
-              aria-label="Search this channel's documents"
-            />
-          </div>
-          <div style={{ flex: '0 0 170px' }}>
-            <Select
-              value={transcriptStatus}
-              onChange={(e) => {
-                setTranscriptStatus(e.target.value);
-                setPage(0);
-              }}
-              aria-label="Filter by transcript status"
-            >
-              {TRANSCRIPT_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div style={{ flex: '0 0 140px' }}>
-            <Select
-              value={sort}
-              onChange={(e) => {
-                setSort(e.target.value as LibrarySort);
-                setPage(0);
-              }}
-              aria-label="Sort order"
-            >
-              {SORT_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-        </div>
-      </Card>
-
-      {body}
-
-      {(page > 0 || hasNextPage) && (
-        <Pager page={page} hasNextPage={hasNextPage} onPageChange={setPage} />
-      )}
-    </section>
-  );
-}
-
-function Pager({
-  page,
-  hasNextPage,
-  onPageChange,
-}: {
-  page: number;
-  hasNextPage: boolean;
-  onPageChange: (next: number) => void;
-}) {
-  const c = useColors();
-  const pill: CSSProperties = {
-    fontFamily: fonts.ui,
-    fontSize: fontSize.sm,
-    color: c.textSecondary,
-    padding: `${space['1']} ${space['3']}`,
-    border: `1px solid ${c.border}`,
-    borderRadius: radius.pill,
-  };
-  return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        gap: space['4'],
-        marginTop: space['6'],
-      }}
-    >
-      <Button
-        size="sm"
-        variant="tertiary"
-        disabled={page === 0}
-        onClick={() => onPageChange(Math.max(0, page - 1))}
-        leadingIcon={<span aria-hidden>←</span>}
-      >
-        Previous
-      </Button>
-      <span style={pill}>Page {page + 1}</span>
-      <Button
-        size="sm"
-        variant="tertiary"
-        disabled={!hasNextPage}
-        onClick={() => onPageChange(page + 1)}
-        trailingIcon={<span aria-hidden>→</span>}
-      >
-        Next
-      </Button>
-    </div>
   );
 }

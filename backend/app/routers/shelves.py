@@ -12,17 +12,19 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
+from app.schemas.library_video import LibrarySort, LibraryVideoResponse
 from app.schemas.shelf import (
     ShelfCreate,
     ShelfDetailResponse,
     ShelfResponse,
     ShelfUpdate,
 )
+from app.routers.library import query_library_documents
 from app.services import job_service, shelf_service
 from app.services.shelf_service import ForeignJob, ShelfNameTaken
 from app.services.tier_service import require_feature
@@ -53,7 +55,7 @@ def _job_or_404(db: Session, job_id: str, tenant_id: str):
 
 
 def _summary(db: Session, shelf) -> dict:
-    return shelf_service.shelf_to_dict(shelf, shelf_service.job_count(db, shelf.id))
+    return shelf_service.shelves_to_dicts(db, [shelf])[0]
 
 
 @router.get("", response_model=list[ShelfResponse])
@@ -61,9 +63,7 @@ def list_shelves(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    shelves = shelf_service.list_shelves(db, current_user.id)
-    counts = shelf_service.job_counts(db, [s.id for s in shelves])
-    return [shelf_service.shelf_to_dict(s, counts.get(s.id, 0)) for s in shelves]
+    return shelf_service.shelves_to_dicts(db, shelf_service.list_shelves(db, current_user.id))
 
 
 @router.post("", response_model=ShelfResponse, status_code=status.HTTP_201_CREATED)
@@ -92,9 +92,42 @@ def get_shelf(
 ):
     shelf = _shelf_or_404(db, shelf_id, current_user.id)
     jobs = shelf_service.shelf_jobs(db, shelf)
-    payload = shelf_service.shelf_to_dict(shelf, len(jobs))
+    payload = shelf_service.shelf_to_dict(shelf, [j.id for j in jobs])
     payload["jobs"] = [job_service.job_to_response_dict(j) for j in jobs]
     return payload
+
+
+@router.get("/{shelf_id}/documents", response_model=list[LibraryVideoResponse])
+def list_shelf_documents(
+    shelf_id: str,
+    search: str | None = None,
+    language: str | None = None,
+    channel_id: str | None = None,
+    transcript_status: str | None = None,
+    sort: LibrarySort = "newest",
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The union of the documents selected by the shelf's jobs, deduplicated,
+    filtered through the caller's visibility (D-063), with the library
+    listing's filters and row shape. An empty shelf lists nothing. Read for
+    every tier."""
+    shelf = _shelf_or_404(db, shelf_id, current_user.id)
+    job_ids = shelf_service.job_ids_for_shelf(db, shelf.id)
+    return query_library_documents(
+        db,
+        current_user.id,
+        search=search,
+        language=language,
+        channel_id=channel_id,
+        transcript_status=transcript_status,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+        job_ids=job_ids,
+    )
 
 
 @router.put("/{shelf_id}", response_model=ShelfResponse)

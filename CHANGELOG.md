@@ -10,6 +10,23 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Code-mixed speech: proportion thresholds as a rendering policy (2026-10-19, T-1.16.2.3)
+
+PR [#262](https://github.com/khoks/VideoResearchPro/pull/262). Third task of N-002;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- **`code_mixing_service.rendering_mode`** turns a span's measured Hindi share
+  and matrix language into how it is quoted: Devanagari with transliteration
+  and translation when Hindi dominates (≥ 60%) in Hindi grammar, plain
+  English for light borrowing (≤ 20%) in English grammar, Roman script
+  throughout in between.
+- **New settings** `CODE_MIX_DOMINANT_SHARE` (0.6) and
+  `CODE_MIX_BORROWING_MAX_SHARE` (0.2). Defaults come from where detector
+  decisions agree with gold decisions (TEST: 0.970 Latin, 0.823 mixed units).
+- **Open question recorded:** the user's 60% stays the default, but 50% is
+  measurably more robust while English nouns in Devanagari stay invisible
+  to the tagger.
+
 ### Code-mixed speech: matrix vs embedded language (2026-10-19, T-1.16.2.2)
 
 PR [#260](https://github.com/khoks/VideoResearchPro/pull/260). Second task of N-002;

@@ -10,6 +10,17 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Report map/reduce intermediates are persisted (2026-10-19, S-1.14.6)
+
+The report pipeline kept its per-batch map extractions and its reduced dataset
+only in memory, so a map regression stayed invisible unless it spoiled the
+finished report, and every stage measurement had to replay a job's inputs.
+They are now stored in `job_report_intermediates` (migration `a3b4c5d6e7f9`):
+one row per map call, with bisected halves and failed batches recorded as rows,
+plus one reduce row, grouped by run. On by default via
+`REPORT_INTERMEDIATES_ENABLED`; `scripts/audit_report_intermediates.py` reads a
+run back. Decision [D-084](docs/decisions.md#d-084--report-intermediates-persisted-per-run-on-by-default-frozen-at-the-stage-that-produced-them-2026-10-19).
+
 ### Mobile reading pass: toolbar, docked composer, device tests (2026-10-19)
 
 S-8.12.1 ([plan](docs/plans/m12-mobile-reading.md)). Reports, knowledge

@@ -2545,3 +2545,28 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 **Consequences.** S-8.1.4 shelf-scoped Q&A resolves its set through `query_library_documents(..., job_ids=)` and inherits the empty-set rule (an empty shelf retrieves nothing). E-7.1 replaces the read-only weight slot with its control. If shelves move to read-and-write for all, or tags and templates become paid, it is one `require_feature` change per route plus the frontend mirror.
 
 **Linked initiatives / PRs.** E-8.1 / E-8.6 / E-8.7, the PRs above. Follows D-063, D-065, D-068.
+
+## D-084 — Report intermediates: persisted per run, on by default, frozen at the stage that produced them (2026-10-19)
+
+**Status:** accepted (taken without the user; open to revision).
+
+**Context.** S-1.14.6's second half: the report pipeline kept its per-batch map extractions and the reduced dataset only in LangGraph state, so a map regression stayed invisible unless it spoiled the finished report, and every stage measurement since D-055 had to replay a job's inputs. S-1.18.8 (modality labels, [D-075](#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19)) also needs the map items of real runs to check the composed report against item provenance.
+
+**Decision.**
+
+1. A `job_report_intermediates` table: one row per map call — bisected halves and failed batches included, with the error and the videos the batch covered — plus one row for the reduce output with its processing notes. Rows carry a `run_id`, so a regeneration sits next to the job's original run instead of replacing it.
+2. **On by default** (`REPORT_INTERMEDIATES_ENABLED=True`). The cost is about twice the reduced dataset per run, ~3 MB on the 200-video reference job and kilobytes on small jobs.
+3. Payloads are **serialised when the stage produces them**, not at persist time, because compose mutates the same item dicts afterwards (quote forms today, S-1.18.8's evidence tags next).
+4. Capture follows the search agent's `candidates_out` pattern (`run_report_agent(..., intermediates_out=)`); the job task persists best-effort, before the HTML is built, so a later failure still leaves the record.
+
+**Alternatives considered.**
+
+- *Off by default, a debug flag.* The story's original wording. Rejected: the point is continuous monitoring, and a flag nobody turns on leaves the next regression as invisible as the last. The setting remains for operators who want it off.
+- *Sampling (persist one job in N).* Would save storage that is not scarce, at the cost of the run that regressed being the one not sampled.
+- *Store the map batches only and recompute the reduced dataset.* Reduce is deterministic, but the even-compression path (`_compress_evenly`) and compose's own normalisation make "what compose received" worth recording rather than re-deriving.
+- *Replace the job's rows on each run.* Loses the before/after comparison a model or prompt change needs.
+
+**Consequences.** `scripts/audit_report_intermediates.py` reads a run back: map calls by status, items by category (and by modality once S-1.18.8 lands), dropped chunks, and the reduce accounting identity (items in − exact duplicates − trimmed = items out). There is no retention policy; rows go when the job is deleted (FK cascade). Channel jobs have no map/reduce stage and write nothing.
+
+**Linked initiatives / PRs.** S-1.14.6, E-1.14, S-1.18.8. Follows D-055, D-056, D-075.
+

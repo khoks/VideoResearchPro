@@ -29,6 +29,11 @@ def main() -> int:
     ap.add_argument("--save", action="store_true", help="also replace the job's stored report")
     ap.add_argument("--limit", type=int, default=0, help="only the first N approved documents (smoke runs)")
     ap.add_argument("--no-era", action="store_true", help="skip discussed-era extraction for undated documents")
+    ap.add_argument(
+        "--persist-intermediates", action="store_true",
+        help="store this run's map/reduce intermediates under the job (S-1.14.6), "
+             "as a new run next to the job's original one",
+    )
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -40,7 +45,12 @@ def main() -> int:
     from app.models.job import Job
     from app.models.job_video import JobVideo
     from app.services import llm_service
-    from app.tasks.job_tasks import _build_video_metadata, _ensure_era, _load_cached_segments
+    from app.tasks.job_tasks import (
+        _build_video_metadata,
+        _ensure_era,
+        _load_cached_segments,
+        _persist_report_intermediates,
+    )
     from app.utils.chunking import chunk_transcript
     from app.utils.html_builder import build_report_html, save_report
 
@@ -87,14 +97,19 @@ def main() -> int:
         from app.agents.report_agent import run_report_agent
 
         started = time.monotonic()
+        intermediates: dict | None = {} if args.persist_intermediates else None
         with llm_service.byok_context(job.tenant_id, db):
             statistics, body = run_report_agent(
                 job_type=job.job_type,
                 topic=job.topic or "Channel Collection",
                 transcript_chunks=chunks,
                 output_length=job.output_length,
+                intermediates_out=intermediates,
             )
         log.info("report agent finished in %.0f min", (time.monotonic() - started) / 60)
+        if intermediates is not None:
+            n = _persist_report_intermediates(db, job.id, intermediates)
+            log.info("persisted %d intermediate row(s)", n)
 
         title = f"Research Report: {job.topic}" if job.job_type == "topic" else "Channel Collection Report"
         html = build_report_html(title=title, job_type=job.job_type, statistics=statistics, report_body=body)

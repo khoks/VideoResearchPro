@@ -121,6 +121,8 @@ UseCase = Literal[
     "visual_describe_frame",
     # Discussed-era extraction (R3 / S-1.17.2) — app/services/temporal_service.py
     "temporal_scope_extract",
+    # Code-mixed speech (R5 / S-1.16.2) — app/services/code_mixing_service.py
+    "code_mixing_detect",
 ]
 
 # Use cases whose prompts carry IMAGES, not just text.
@@ -799,6 +801,32 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "D-052 trap, hit three times). Fail-soft at the call site: a "
             "failed probe or call leaves the era unknown and the job "
             "continues, which is why this use case is deliberately NOT in "
+            "llm_smoke.FEATURE_TO_USE_CASES."
+        ),
+    ),
+    # --- Code-mixed speech (R5 / S-1.16.2) ------------------------------
+    "code_mixing_detect": UseCaseInfo(
+        default_route="fast",
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
+        summary=(
+            "Word-level language labelling of transcript snippets from "
+            "speakers who mix Hindi/Urdu and English. Returns, per snippet, "
+            "the Hindi runs VERBATIM and the matrix (grammar) language as "
+            "strict JSON; code_mixing_service.spans_to_tags maps the runs "
+            "back onto tokens. Covers romanised Hindi, which script "
+            "profiling cannot see, and English written in Devanagari."
+        ),
+        typical_input_tokens=1_800,
+        p95_input_tokens=3_000,
+        typical_output_tokens=900,
+        min_context_recommended=16_384,
+        rationale=(
+            "Volume tier with reasoning OFF: a labelling task over 25 short "
+            "snippets per call with a structured output. Off is mandatory, "
+            "not a preference — max_completion_tokens includes reasoning "
+            "tokens on OpenAI models (the D-052 trap). Fail-soft: a failed "
+            "batch leaves those snippets unlabelled and nothing downstream "
+            "breaks, so it is deliberately NOT in "
             "llm_smoke.FEATURE_TO_USE_CASES."
         ),
     ),

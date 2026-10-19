@@ -156,6 +156,40 @@ def test_get_knowledge_returns_persisted_artifact(client, seeded_video_with_tran
     data = response.json()
     assert data["topics"] == ["databases"]
     assert data["knowledge_report_md"].startswith("# Databases")
+    # S-8.8.3: the reader names the source from this response alone.
+    assert data["title"] == "Intro to PostgreSQL"
+    assert data["document_id"] == seeded_video_with_transcript.document_id
+    assert data["source_type"] == "video"
+    assert data["url"] == "https://www.youtube.com/watch?v=vid123abcXYZ"
+    assert data["published_at"]
+
+
+def test_get_knowledge_for_a_non_video_document(client, db, test_user):
+    """A PDF's artifact (no legacy video_id) serialises; before S-8.8.3 the
+    schema declared ``video_id: str`` and this 500'd."""
+    now = datetime.now(timezone.utc)
+    pdf = Document(
+        video_id=None,
+        source_type="pdf",
+        source_id="sha256-knowledge",
+        title="A paper",
+        url="",
+        transcript_status="completed",
+        knowledge_report_md="# A paper\n\n## Findings\n\nText.",
+        extracted_knowledge_json=json.dumps({"topics": ["t"], "concepts": [], "events": [], "facts": []}),
+        knowledge_extracted_at=now,
+        created_at=now,
+    )
+    db.add(pdf)
+    db.commit()
+    visibility_service.grant(db, [pdf.document_id], test_user.id)
+    response = client.get(f"/api/v1/videos/{pdf.document_id}/knowledge")
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["video_id"] is None
+    assert data["source_type"] == "pdf"
+    assert data["title"] == "A paper"
+    assert data["url"] is None
 
 
 def test_get_knowledge_404_if_not_extracted(client, seeded_video_with_transcript):

@@ -1393,7 +1393,7 @@ Backend suite 835 → 855.
 **Scope-changed 2026-10-19:** the picker shipped in PR [#224](https://github.com/khoks/VideoResearchPro/pull/224) a day after this story was filed; what remains is below.
 - [x] T-6.1.1.1 `AuthorPage` job picker sending `source_ids`; runs without a report are listed but disabled — *shipped 2026-10-19, PR #224*
 - [x] T-6.1.1.2 "Add to a book" on `JobDetailPage` (completed runs with a report, `author_studio` tier) opens `/author?new=book&job=<id>`, which opens the create modal with that run pre-selected — *shipped 2026-10-19, PR [#255](https://github.com/khoks/VideoResearchPro/pull/255)*
-- [x] T-6.1.1.3 Output row shows chapter count and word count (`OutputItem.word_count`, computed from the content); the page's reader renders the manuscript's GFM tables through `remark-gfm` — *shipped 2026-10-19, PR [#255](https://github.com/khoks/VideoResearchPro/pull/255)*. **Moved:** "View opens the shared reader shell" waits for S-8.8.3, which does not exist yet; the page's own reader modal stays until then.
+- [x] T-6.1.1.3 Output row shows chapter count and word count (`OutputItem.word_count`, computed from the content); the page's reader renders the manuscript's GFM tables through `remark-gfm` — *shipped 2026-10-19, PR [#255](https://github.com/khoks/VideoResearchPro/pull/255)*. The moved "View opens the shared reader shell" part shipped with S-8.8.3 (PR [#261](https://github.com/khoks/VideoResearchPro/pull/261)): Read and a freshly generated book open `/author/outputs/:id`, and the page's own reader modal is gone.
 - [x] T-6.1.1.4 The router rejects `kind=book` with an empty `source_ids` as 400 before any row is written (test asserts zero rows); frontend type-check and vitest pass — *shipped 2026-10-19, PR [#255](https://github.com/khoks/VideoResearchPro/pull/255)*
 
 #### S-6.1.2 🟢 Markdown source for reports
@@ -1791,10 +1791,10 @@ Linked decision: D-074.
 - [x] T-8.8.2.2 Print stylesheet: outline removed, citations rendered as numbered footnotes, page breaks before `h2` — *plus a "Sources cited" endnote list that opens itself on `beforeprint`, monochrome output in either theme, the health banner and toasts hidden; verified with Chromium print emulation and a 37-page A4 PDF of the R1 report*
 - [x] T-8.8.2.3 Hook for R1 frames: when [S-1.18.2](#s-1182--surfacing-frames-to-the-user) ships, the popover shows the still — *the slot ships (`CitationCardProvider`'s `resolveStill`, tested with a stub); no data until S-1.18.2 serves `visual_frames`*
 
-#### S-8.8.3 🔵 Knowledge artifacts and books in the same shell
-**PR:** TBD
-- [ ] T-8.8.3.1 `/knowledge/:videoId` route rendering the Markdown knowledge report through `ReaderShell` (react-markdown + heading ids)
-- [ ] T-8.8.3.2 Author Studio outputs (`/author/outputs/:id`) read in the same shell. Manuscripts carry GFM tables since S-6.1.2, so the shell's Markdown path needs `remark-gfm` (already a dependency; the Author modal uses it). Unblocks the moved part of T-6.1.1.3 ("View opens the shared reader shell").
+#### S-8.8.3 🟢 Knowledge artifacts and books in the same shell
+**PR:** [#261](https://github.com/khoks/VideoResearchPro/pull/261) — shipped 2026-10-19.
+- [x] T-8.8.3.1 `/knowledge/:videoId` route rendering the Markdown knowledge report through `ReaderShell` (react-markdown + heading ids) — *react-markdown's own pipeline (remark-parse → remark-gfm → remark-rehype → hast-util-to-jsx-runtime) run once with a tree transform between, instead of `<ReactMarkdown>` plus `rehype-slug`: the shell needs the outline before the body renders, and two passes that must agree on every heading id drift. Same slugger as reports, so no `rehype-slug` dependency. The knowledge response now names its source (title, channel, kind, URL, dates) and `video_id` became nullable (a PDF's artifact failed serialisation). The drawer stays as the quick peek with "Open in reader".*
+- [x] T-8.8.3.2 Author Studio outputs (`/author/outputs/:id`) read in the same shell — *manuscripts carry GFM tables since S-6.1.2 and render through the same `remark-gfm` path; the Author page's reader modal is gone; Read and a fresh `completed` output both navigate here. The book outputter's table-of-contents anchors are written against its own slug of the bare chapter title while the heading reads "1. Title"; the transform repoints them (checked on a real 81 kB manuscript built by `BookMarkdownOutputter` from two stored runs).*
 
 ### E-8.9 🔵 Citation graph and knowledge map (M9)
 

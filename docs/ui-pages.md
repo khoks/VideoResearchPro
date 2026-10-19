@@ -2,7 +2,7 @@
 
 **Status:** canonical (2026-04-24). This is the **single source of truth** for the frontend page inventory: every route, the page that renders it, what the user does there, and the empty / loading / error states. Visual system (colors, type, components) lives in [ui-design.md](ui-design.md). API endpoints these pages call live in [api-reference.md](api-reference.md).
 
-The frontend is a single-page app under `frontend/src/`. Routing is `react-router-dom` v6 via `createBrowserRouter`. The route table lives at [`frontend/src/routes/index.tsx`](../frontend/src/routes/index.tsx).
+The frontend is a single-page app under `frontend/src/`. Routing is `react-router-dom` v7 via `createBrowserRouter`. The route table lives at [`frontend/src/routes/index.tsx`](../frontend/src/routes/index.tsx).
 
 ---
 
@@ -20,6 +20,10 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/library/qa` | `LibraryQAPage` | protected | Ask across the entire library |
 | `/qa-history` | `QAHistoryChatPage` | protected | Meta-chat across all past Q&A |
 | `/exports` | `ExportsPage` | protected | Dataset export endpoints + downloads |
+| `/author` | `AuthorPage` | protected, Pro+ | Author Studio: bind finished runs into a book; other kinds shown as coming later |
+| `/echo` | `EchoPage` | protected, Studio | Echo: personal-context store, readiness meter, sources and connectors |
+| `/account/subscription` | `SubscriptionPage` | protected | Tier, upgrade / downgrade (demo billing) |
+| `/account/ai-models` | `AIModelsPage` | protected | Per-use-case LLM overrides and BYOK keys |
 | `*` | (redirect → `/`) | — | 404 → home |
 
 Protected routes are wrapped in `<ProtectedRoute>` which redirects unauthenticated visitors to `/login`. Public-only routes (`/login`, `/register`) are wrapped in `<PublicOnlyRoute>` which redirects authenticated users to `/submit`.
@@ -107,15 +111,26 @@ Sections (rendered conditionally on `job.status` and `job.job_type`):
 | Job cancelled | Status pill in muted color; the prior progress is shown frozen. |
 
 ### `LibraryPage` — `/library`
-**Purpose.** Browse the global, deduplicated video library. Filters: search text, language, channel, transcript status. Sort: newest / oldest / longest / shortest.
+**Purpose.** Browse the caller's view of the global, deduplicated library and add sources that do not come through a research run. Three tabs: **Sources**, **Channels**, **Add sources**.
+
+**Sources tab.** Filters: search text, language, channel, transcript status. Sort: newest / oldest / longest / shortest. Rows for PDFs and pasted pages carry a source-type pill instead of a channel, and no duration.
 
 | State | What renders |
 |-------|--------------|
-| Default | Card grid (or table at narrow widths). Each card: thumbnail, title, channel, duration, language pill, transcript-status pill, "x jobs reference this" footer. |
-| Filtering | Filter chips at the top; results count updates in place. |
-| Empty (no videos at all) | "Your library is empty. Submit a research run, channel job, or subscribe to a channel to start ingesting." → `/submit`. |
-| Empty (filters return nothing) | "No volumes match these filters." with a "Clear filters" button. |
-| Loading | Skeleton cards. |
+| Default | Row list. Each row: thumbnail (or source-type placeholder), title, channel or source type, duration where it applies, language pill, transcript-status pill, "referenced in N runs" footer, open link. |
+| Filtering | Filter controls at the top; results update in place. |
+| Empty (no sources at all) | "Nothing matches these filters." (the shelf copy also points at the Add sources tab). |
+| Empty (filters return nothing) | "Nothing matches these filters." with a "Clear" on the channel chip. |
+| Loading | Spinner on first page; subsequent pages keep the list. |
+
+**Add sources tab** (shipped 2026-10-19). Why a tab and not the Submit page or a modal: both endpoints are library-scoped and start no job, the per-file / per-URL result tables need room and should outlive a dialog, and the page already uses tabs for its sections.
+
+| Section | What it does |
+|---------|--------------|
+| **Upload PDFs** | Drop zone + "Choose PDFs" (multi-select, `.pdf` enforced client-side). Files upload one at a time to `POST /library/upload-pdf` with a per-file progress bar; at 100 % the row reads "Extracting" until the server returns. Result per file: **Added** (pages · words), **Already in library** (`deduped=true`), or **Failed** with the server's 400 / 413 / 422 detail. "See them on the shelf" clears filters and jumps to Sources; the list refreshes when the queue drains. |
+| **Paste URLs** | Textarea, one URL per line. Client trims, drops blanks, de-duplicates and caps at the server's 100, and shows a live count of detected types (Facebook / Instagram / LinkedIn / X hosts → post types, everything else → article). Submit calls `POST /library/paste-urls`; the result table shows URL, server-detected type (a `?` marks rows where the server sent none and the type is the local guess), word count, and **Added** / **Already in library** / **Could not extract** / **Invalid URL** with a one-line explanation. A whole-batch 400 renders as an inline error above the table. |
+
+Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; the components only render.
 
 ### `LibraryQAPage` — `/library/qa`
 **Purpose.** Ask questions across the entire library, with no per-job filter.
@@ -153,6 +168,38 @@ Layout: card grid, one card per dataset. Each card shows: dataset name, current 
 | Default | Four cards. |
 | Empty (zero rows for that dataset) | Card shows "0 records — no exchanges yet" and disables the Download button. |
 | Downloading | Subtle progress indicator in the card. |
+
+### `AuthorPage` — `/author` (Pro+)
+**Purpose.** Author Studio. Turn finished research runs into long-form output. Backend: `backend/app/routers/author.py`. Only `book` has a generator today; the page never offers a kind that would 501.
+
+Sections: **What you can make** (one card per kind from `GET /author/kinds`: `available` kinds get a "New …" button, the rest read "Coming later · E-6.x"), **Your outputs** (kind / status filters, one row per output), a **create modal**, a **reader modal**, and a **delete confirmation**.
+
+| State | What renders |
+|-------|--------------|
+| Below tier, or API 403 | Editorial lock: "Author Studio opens at Pro." with a "See plans" button → `/account/subscription?upgrade=pro`. |
+| Kinds loading | Three skeleton cards. |
+| Create (book) | Modal: title; chapter picker over the user's topic / channel runs (filterable; runs not completed or without a report are listed but disabled with the reason); "Include each run's Q&A" and "Table of contents" toggles. Generate runs synchronously; a `completed` result opens the reader, a `failed` one toasts `error_message`. |
+| Outputs empty | "Nothing authored yet." with a "New book" button; with filters active, "Nothing matches these filters." |
+| Output row | Status pill (Ready / Failed / Generating / Pending), title, kind, source count, created date; **Read** and **Download** when `has_content`; **Delete** always. Failed rows show `error_message` in full; pending rows explain they were created when their kind had no generator. |
+| Reader | Modal at reading measure rendering the Markdown from `GET /author/outputs/{id}/content`; footer Download (fetches with the bearer header, saves a blob as `<slug>.md`) and Close. |
+| Delete | Confirmation modal; the runs the book was built from are untouched. |
+
+### `EchoPage` — `/echo` (Studio)
+**Purpose.** Echo's personal-context store. Backend: `backend/app/routers/echo.py`. Honest about scope: the store and readiness gates are real; connectors (E-3.2) and the "speak as me" agent (E-3.4) are not, and the page says so wherever it would otherwise imply them.
+
+Sections: **Readiness**, **Connectors** (with **Sources on record**), **What Echo knows** (grouped by the 10 kinds), a **Not here yet** footer, and three modals (add / edit, forget, revoke).
+
+| State | What renders |
+|-------|--------------|
+| Below tier, or API 403 | Editorial lock: "Echo opens at Studio." → `/account/subscription?upgrade=studio`. |
+| Readiness | Large percentage (mean of the three gates; 100 only when the backend says `ready`), then one meter per gate: facts recorded vs `threshold_total`, distinct sources vs `threshold_sources`, personality trait recorded / missing. The sources hint states plainly that the gate cannot be met while no connector exists. |
+| Connectors empty | "No connectors yet." with the planned list. Sources on record lists each `source` with its row count and a **Revoke** button (confirm → `DELETE /echo/sources/{source}`; the toast reports `deleted_count`). |
+| Context browser | Filters: kind, source, "Show expired" (`include_expired`). Every known kind renders as a card, empty or not, each with an **Add** shortcut preselecting that kind; rows show label, value, source pill, confidence, captured date, expiry (an **Expired** pill when past). **Edit** reopens the form with kind and label locked (the backend upserts on `(kind, key)`; renaming means forget + add). **Forget** confirms, then `DELETE /echo/context/{kind}/{key}`. |
+| Add / edit modal | Kind, label (≤128 chars, no `/` because the key travels as a path segment; warns when the label already exists under that kind and would overwrite), the fact, confidence 0–1, optional expiry date (sent as end-of-day UTC). Source is always `manual`. |
+| Loading | Skeleton rows / paragraphs per card. |
+| Error | Inline retry line per card; the browser uses an editorial error state with Retry. |
+
+Pure logic (gates, grouping, expiry, label validation) lives in `frontend/src/utils/echoReadiness.ts`.
 
 ### `VideoKnowledgeDrawer` (inside `JobDetailPage`)
 **Purpose.** View or generate the per-video knowledge artifact.
@@ -214,10 +261,10 @@ These pages are defined ahead of time so today's components have a place to land
 | `/shelves` | M1 | [feature-roadmap.md](feature-roadmap.md) |
 | `/shelves/:slug` | M1 | [feature-roadmap.md](feature-roadmap.md) |
 | `/notes` | M5 | [feature-roadmap.md](feature-roadmap.md) |
-| `/author` | L2 | [feature-roadmap.md](feature-roadmap.md) |
-| `/author/books` / `/author/sites` / `/author/decks` | L2 | [feature-roadmap.md](feature-roadmap.md) |
-| `/brain` | L3 | [personal-brain.md](personal-brain.md) |
-| `/brain/context` / `/brain/activity` / `/brain/voice` | L3 | [personal-brain.md](personal-brain.md) |
+| `/author` | **built** (2026-10-19) as a single page, see [`AuthorPage`](#authorpage--author-pro) | [feature-roadmap.md](feature-roadmap.md) |
+| `/author/books` / `/author/sites` / `/author/decks` | L2; per-kind sub-routes only if the single page outgrows its kind filter | [feature-roadmap.md](feature-roadmap.md) |
+| `/brain` | **built** (2026-10-19) as `/echo`, see [`EchoPage`](#echopage--echo-studio) | [personal-brain.md](personal-brain.md) |
+| `/brain/context` / `/brain/activity` / `/brain/voice` | L3; context lives on `/echo` today, activity and voice await E-3.2 / E-3.3 | [personal-brain.md](personal-brain.md) |
 | `/settings` | M (foundational) | [ui-design.md](ui-design.md) |
 | `/billing` | L5 (SaaS) | [saas-roadmap.md](saas-roadmap.md) |
 

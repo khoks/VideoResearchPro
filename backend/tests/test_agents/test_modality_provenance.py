@@ -138,12 +138,17 @@ def test_map_item_without_source_falls_back_to_the_batch():
     assert without["facts"][0]["modality"] == "said"
 
 
-def test_unparsed_map_output_is_left_alone():
+def test_unparsed_map_output_never_reaches_labelling_or_reduce():
+    # S-1.14.19: non-JSON is a failed batch (retried in halves, then
+    # dropped and disclosed), not a {"raw": ...} summary to label.
     llm = MagicMock()
     llm.invoke.return_value = MagicMock(content="not json")
+    chunks = _chunks(True)
     with patch.object(report_agent, "get_llm_for", return_value=llm):
-        out = report_agent.map_chunks({"job_type": "topic", "topic": "t", "transcript_chunks": _chunks(True)})
-    assert out["chunk_summaries"] == [{"raw": "not json"}]
+        out = report_agent.map_chunks({"job_type": "topic", "topic": "t", "transcript_chunks": chunks})
+    assert out["chunk_summaries"] == []
+    assert out["processing_notes"]["map_chunks_dropped"] == len(chunks)
+    assert out["processing_notes"]["map_modality"] == {}
 
 
 # ---------- reduce ------------------------------------------------------------

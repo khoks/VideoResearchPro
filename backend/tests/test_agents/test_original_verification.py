@@ -15,9 +15,21 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.agents import report_agent
+from app.config import settings
 from app.services import quote_fidelity as qf
 from app.utils.chunking import chunk_transcript
+
+
+@pytest.fixture(autouse=True)
+def _packed_batching(monkeypatch):
+    # These stubs answer each map call with one payload naming SEVERAL
+    # sources (the run-5 shape). The production default since D-090 maps one
+    # source per call, which would hand that payload to every source's call.
+    monkeypatch.setattr(settings, "REPORT_MAP_BATCHING", "packed")
+    monkeypatch.setattr(settings, "REPORT_MAP_BATCH_TOKENS", 120_000)
 
 HINDI = [
     {"text": "बॉक्स प्लॉट और वायलिन प्लॉट ये दोनों प्लॉट हमारे लिए सिमिलर टाइप हैं", "start": 0.0, "duration": 6.0},

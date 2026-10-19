@@ -1,6 +1,6 @@
 # Pratidhvani — Feature Roadmap
 
-**Status:** approved (2026-04-24). Living document; status of each item updates as work lands.
+**Status:** approved (2026-04-24). Living document; status of each item updates as work lands. Last reconciled against the code 2026-10-18.
 
 This is the canonical roadmap. Each entry has: motivation, sketch, schema/API impact, open questions, and status. The high-level phases live in [vision.md](vision.md).
 
@@ -85,7 +85,7 @@ Targeted Phase 2 (2026 Q3) for non-foundation source types. Detailed design in [
 
 ---
 
-### L2 — Author Studio (output generation) ⚪
+### L2 — Author Studio (output generation) 🟡
 
 **Motivation.** The accumulated library is rich enough to produce **derivative artifacts** — books, websites, decks, newsletters, reels — not just answers. The user explicitly asked for this. Output generation closes the loop: ingest → understand → produce.
 
@@ -116,11 +116,11 @@ Targeted Phase 2 (2026 Q3) for non-foundation source types. Detailed design in [
 - TTS provider: local-first (Coqui) for self-host, paid (ElevenLabs) for SaaS Pro.
 - Reels: vertical 9:16 vs flexible aspect? Recommend vertical-only for v1.
 
-**Status.** ⚪ proposed. Targeted Phase 3 (2026 Q4). Books first, reels last.
+**Status.** 🟡 foundation shipped 2026-05-05 ([I-6](initiatives.md#i-6-author-studio-output-generation-l2), PR #173). Shipped: the `outputs` schema, the Outputter registry, the REST surface, the Pro+ gate, and one outputter, a deterministic Markdown book (no LLM). The `/author` page is a stub. Not built: LLM cohesion, PDF/EPUB, sites, decks, newsletters, reels. Books first, reels last.
 
 ---
 
-### L3 — Echo (the personal brain) ⚪
+### L3 — Echo (the personal brain) 🟡
 
 **Motivation.** The widest ring of the vision (see [vision.md](vision.md) Ring 3). Pratidhvani learns enough about the user — through opt-in life connectors *and* constant-stream sharing of liked videos / reels / memes / WhatsApp threads / Keep notes / quotes — that it can suggest questions before they ask, anticipate their needs, capture their personality, and eventually speak on their behalf.
 
@@ -151,7 +151,7 @@ Below threshold: bubble dimmed, banner explains what's missing. Crossing thresho
 
 **Open questions.** Many — see [personal-brain.md](personal-brain.md). Privacy model is the largest open design space; fine-tuning leverage and corpus thresholds are the second-largest.
 
-**Status.** ⚪ proposed. Targeted Phase 6 (2027 Q3+). Components land in order:
+**Status.** 🟡 foundation shipped 2026-05-05 ([I-3](initiatives.md#i-3-echo-personal-brain-l3), PR #172). Shipped: the `personal_context` store, an empty connector registry, the cold-start readiness gate, and the Studio-tier gate. The `/echo` page is a stub. No activity connectors, voice capture or "speak as me" yet. Targeted Phase 6 (2027 Q3+). Remaining components land in order:
 
 1. Constant-stream intake first (Domain 5) — it's the highest-leverage, lowest-privacy-load entry point and starts feeding the readiness corpus immediately.
 2. Personal context store + manual personality signals (Domains 1 + 3, retrieval mode only).
@@ -175,7 +175,7 @@ Below threshold: bubble dimmed, banner explains what's missing. Crossing thresho
 
 **Schema impact.**
 
-- `channels.trust_weight` (float, default 1.0)
+- Per-channel trust weight: already exists as `channel_subscriptions.source_weight` (float, default 1.0, per-tenant since [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)). **Nothing reads it yet** (verified 2026-10-18). This was originally sketched as `channels.trust_weight`.
 - `documents.author_trust_weight` (float, nullable; falls back to channel weight)
 - `notes` table (see M5)
 
@@ -189,8 +189,9 @@ Below threshold: bubble dimmed, banner explains what's missing. Crossing thresho
 - Should the user weight individual creators within a channel (e.g. one host vs another)? Recommend channel-only for v1.
 - Disagreement surfacing — opt-in per query, or always-on for queries that retrieve from disparate-weighted sources? Recommend opt-in.
 - How does weighting interact with subscriptions (auto-pulled content)? Recommend channel weight applies; user can override per-document.
+- **Shape of v1 (raised 2026-10-18, undecided).** Option one is weighted retrieval alone: multiply similarity by trust weight before re-ranking, which is a contained retrieval change. Option two puts weight bands in the answer ("your trusted creators say X; others say Y"), which reshapes the Q&A agent.
 
-**Status.** ⚪ proposed. Targeted Phase 4 (2027 Q1).
+**Status.** ⚪ proposed. Targeted Phase 4 (2027 Q1). Only the weight column exists, so retrieval is unweighted today. Tracked as [I-7](initiatives.md#i-7--curated-source-ranking-l4).
 
 ---
 
@@ -241,6 +242,7 @@ The remaining I-5 epics (**E-5.3 Stripe**, **E-5.7 Data residency**, **E-5.8 Hos
 - **The `informative` flag is a model judgement biased toward inclusion.** Prompt calibration catches descriptions that describe an *absence* of content; borderline frames still pass. False-positive rate is unmeasured.
 - **Cost at realistic scale.** A 200-video corpus at 12 frames each is 2,400 vision calls. Opt-in and capped for now; whether the default caps are the right ones is an empirical question.
 - **Beyond YouTube.** PDFs already have page images available with no download at all, and articles carry figures. Both are cheaper than video and neither is built.
+- **Sequencing (raised 2026-10-18, undecided).** Should we measure (S-1.18.3) before surfacing (S-1.18.2)? A small job run with visual analysis on and again with it off, judged blind with the E-1.14 harness, settles whether the feature earns its cost. If it doesn't, building the UI first wastes that work.
 
 **Status.** 🟡 in-progress. Backend pipeline shipped 2026-07-31 (E-1.18 / [D-067](decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31)); nothing surfaces frames in the UI, and the value question above is open.
 
@@ -430,13 +432,13 @@ Tracked separately because it's identity-system work, not a feature.
 | `docs/vision.md` | 🟢 shipped |
 | `docs/feature-roadmap.md` (this file) | 🟢 shipped |
 | Documentation refresh (architecture, ui-design, requirements, etc.) | 🟡 in-progress |
-| Frontend design tokens (`frontend/src/theme.ts`) | 🔵 accepted |
-| Primitives library (`frontend/src/components/primitives/*`) | 🔵 accepted |
-| Sidebar layout migration (top-tabs → sidebar) | 🔵 accepted |
-| Per-page warm-editorial restyle | 🔵 accepted |
-| Logo SVG + favicon | 🔵 accepted |
-| Landing page (`marketing/`) | ⚪ proposed |
-| Brand-name swap across all user-facing copy | 🔵 accepted (post-tokens) |
+| Frontend design tokens (`frontend/src/theme.ts`) | 🟢 shipped (E-2.1) |
+| Primitives library (`frontend/src/components/primitives/*`) | 🟢 shipped (E-2.2; Tooltip / Tabs / IconButton still open) |
+| Sidebar layout migration (top-tabs → sidebar) | 🟢 shipped (E-2.4) |
+| Per-page warm-editorial restyle | 🟢 shipped (E-2.3) |
+| Logo SVG + favicon | 🔵 accepted. `frontend/public/favicon.svg` is still Vite's default purple bolt from the initial commit (verified 2026-10-18) |
+| Landing page (`marketing/`) | 🟢 shipped (E-2.5, PR #136) |
+| Brand-name swap across all user-facing copy | 🟢 shipped (E-2.6, PR #97) |
 
 ---
 

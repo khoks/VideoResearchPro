@@ -1947,6 +1947,8 @@ Splitting the table showed the more interesting problem was **not** `subscribed`
 
 **Legacy columns are deliberately NOT dropped** in this revision. Unmigrated code paths still read `channels.subscribed`, and dropping them here would make a partial rollout unrecoverable. Removal is a follow-up once nothing reads them (S-5.10.3).
 
+**Amended 2026-10-18: `source_weight` drives nothing.** The premise above came from the model docstring and was never checked against callers. Nothing reads `source_weight`. No retrieval or ranking code uses it, no endpoint sets it, and no UI exposes it (verified by searching `backend/app` and `frontend/src`). The "one user silently re-ranked everyone" harm was therefore hypothetical, not live. The decision still stands, since a per-user preference belongs in per-user state. But trust-weighted retrieval ([L4](feature-roadmap.md#l4--curated-source-ranking-)) does not exist: the column is a seed, not a mechanism. The docstring in `channel_subscription.py` still says it "re-ranks retrieval".
+
 ### Part 2 — reverse the anti-transliteration instruction
 
 **Context.** `knowledge_prompts.py` instructed the model *"Do not transliterate them"* and *"keep the original-script names intact rather than transliterating or translating them"* — in both the extract and synthesis phases. That was a deliberate earlier choice to preserve authenticity, and it directly contradicts requirement R5, which asks for quotes to be transliterated **and** translated **and** kept in the original script. Reversing a deliberate instruction warrants a record rather than a silent edit; the user confirmed the three-part form.
@@ -1965,7 +1967,7 @@ Splitting the table showed the more interesting problem was **not** `subscribed`
 
 ## D-066 — Language contract, temporal awareness, and corpus-aware Q&A length (2026-07-31)
 
-**Status:** accepted. Covers R5 (linguistics), R3 (time) and the deferred Q&A half of R4, batched because all three rewrite the same prompt files and those prompts are hardened against measured defects — churning them once beats three times.
+**Status:** accepted; amended 2026-10-18 (Part 3 was never wired; see the amendment at the end). Covers R5 (linguistics), R3 (time) and the deferred Q&A half of R4, batched because all three rewrite the same prompt files and those prompts are hardened against measured defects — churning them once beats three times.
 
 ### Part 1 — R5: English output, with authenticity preserved
 
@@ -2006,7 +2008,13 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **A caught failure worth recording.** Mid-implementation, a prompt-binding edit silently failed to apply, so `MAP_CHUNK_PROMPT.format()` raised `KeyError` for every batch. The S-1.12.6 bisect-retry caught it, logged a warning, and continued — producing an empty extraction with a polite processing note. The accounting behaved exactly as designed, and the run would have looked green. Unit tests caught it. The lesson for future work here: a swallowed exception plus a fallback path can hide total failure, so map/reduce stages need a test that asserts a *non-empty* result, not merely that the pipeline completed.
 
-**Linked initiatives / PRs.** E-1.16 (R5), E-1.17 (R3), S-1.15.2 (closed). Follows D-059, D-062, D-064, D-065.
+**Amended 2026-10-18: corrections from a code audit.**
+
+- **Part 3 never went live.** `run_qa_agent` gained `corpus_statistics` and `output_length` parameters, but its only production caller (`routers/qa.py`) passes neither. With empty statistics, `output_length.corpus_bracket()` returns `small`. Every job answer, including on the 200-video corpus, therefore gets the small-corpus 1.25× budget and the brief "the corpus is small, so treat each source thoroughly", and never sees the publication span. Library Q&A still runs a fixed 4,500-token budget. No test referenced `corpus_statistics`, which is how the gap went unnoticed. R4 is **not** complete across Q&A, and S-1.15.2 is reopened.
+- **Part 2's context overstated the gap.** `published_at` did reach one prompt. Since PR #2 (2026-04-19), the search ranking prompt has shown each candidate's publish date with the hint "more recent is usually better unless the topic calls for foundational content". What ranking still lacks for R3 is the era a source *discusses* and a deliberate per-topic recency decision. Chunk metadata stores `published_at` only as an ISO string, which Chroma cannot range-filter or weight.
+- The lesson matches the swallowed `KeyError` above: check a feature at its production caller, not only at the function that implements it.
+
+**Linked initiatives / PRs.** E-1.16 (R5), E-1.17 (R3), S-1.15.2 (reopened 2026-10-18). Follows D-059, D-062, D-064, D-065.
 
 ### D-067 — Visual understanding: separate frames table, marker-in-text annotation, opt-in per job (2026-07-31)
 

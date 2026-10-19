@@ -155,7 +155,10 @@ def test_map_chunks_invokes_llm_and_parses_json():
     assert result["chunk_summaries"][0] == {"themes": ["t1"], "insights": ["i1"]}
 
 
-def test_map_chunks_wraps_non_json_response():
+def test_map_chunks_drops_a_non_json_response_and_says_so():
+    # S-1.14.19: this used to come back as {"raw": ...}, count as a success,
+    # and reach the composer as one unattributed fact. Now it is a failed
+    # batch: dropped from the summaries and counted, so the report discloses it.
     chunks = [_chunk("v1", "ChA", 0.0, 60.0)]
     with patch.object(report_agent, "get_llm_for") as mock_get_llm:
         mock_get_llm.return_value = _fake_llm_returning("free-form text not json")
@@ -163,7 +166,9 @@ def test_map_chunks_wraps_non_json_response():
             {"job_type": "topic", "transcript_chunks": chunks, "topic": "x"}
         )
 
-    assert result["chunk_summaries"] == [{"raw": "free-form text not json"}]
+    assert result["chunk_summaries"] == []
+    notes = result["processing_notes"]
+    assert (notes["map_batches_failed"], notes["map_chunks_dropped"]) == (1, 1)
 
 
 def test_map_chunks_continues_when_llm_batch_raises():

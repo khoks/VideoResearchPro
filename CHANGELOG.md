@@ -10,6 +10,46 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: first-run onboarding wizard (2026-10-19)
+
+PR [#299](https://github.com/khoks/VideoResearchPro/pull/299). S-8.10.1, plan [m10-onboarding](docs/plans/m10-onboarding.md).
+
+- A new account now lands on **`/welcome`**: choose one to five channels, start a
+  five-video channel run from the Channel deep-dive starter, approve what it
+  found, and open the report in the reader. **Skip for now** is always there.
+- Progress is kept on the server (`users.onboarded_at`,
+  `users.onboarding_state_json`; `GET` / `PATCH /api/v1/auth/me/onboarding`), so
+  the wizard resumes at the same step on another device. `/` decides between the
+  wizard and the submit page; accounts that already had runs are left alone.
+- Activation events in `audit_log`: `onboarding_started`, `onboarding_completed`,
+  `onboarding_skipped`, `first_job_created` (from job creation) and
+  `first_report_opened` (from the reader's body route).
+- A **Getting started** link in the sidebar until the wizard is finished or
+  skipped, and a palette action that reopens it any time.
+
+### Fixed: new accounts were signed out right after registering (2026-10-19)
+
+PR [#299](https://github.com/khoks/VideoResearchPro/pull/299). `POST /auth/register` returns the user without a token, and the
+frontend stored that missing token, so every new account landed on `/login`.
+Registration now signs in with the same credentials.
+
+### Books carry numbered endnotes (2026-10-19, S-6.1.4)
+
+PR [#298](https://github.com/khoks/VideoResearchPro/pull/298). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **Endnotes.** Every citation in a book is now its working timestamp link
+  plus a GFM footnote, `[1:15](https://…&t=75)[^7]`, numbered across chapters
+  in reading order, with `## Endnotes` listing `*Title* — Channel, 1:15. <url>`.
+  Footnote `n` is `output_citations` position `n`. Bare `&t=` anchors from
+  older reports get their resolved URL; one nothing matches keeps its label,
+  loses the dead link, and its endnote says the source was not identified.
+- **Q&A cites from stored references**, not from links in the answer prose.
+- **Table of contents** links to the ids the chapter headings actually get
+  (`#1-first-topic`, Devanagari included), in the reader, on GitHub and in
+  the coming EPUB/PDF.
+- **Fixed:** in a tight list a later item's bare anchor could borrow an
+  earlier item's title; the citation context is now the list item.
+
 ### Library graph endpoint (2026-10-19)
 
 [S-8.9.1](docs/initiatives.md#s-891--graph-endpoint), PR [#297](https://github.com/khoks/VideoResearchPro/pull/297).

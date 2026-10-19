@@ -23,6 +23,10 @@ settings.RATE_LIMIT_ENABLED = False
 # inserts Hindi chunks can reach a provider; the feature's own tests opt back
 # in with a stubbed model.
 settings.CODE_MIX_ENGLISH_RENDERING_ENABLED = False
+# S-1.14.19: map batches run concurrently in production. Stub LLMs that hand
+# out responses in call order need one batch at a time; the concurrent path
+# has its own tests that set this back up.
+settings.REPORT_MAP_CONCURRENCY = 1
 
 # Tests must never touch the developer's database, the network or a wallet.
 # The app lifespan runs schema init against ``settings.DATABASE_URL``, a Chroma

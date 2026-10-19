@@ -114,6 +114,7 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
       nav('shelves', 'Shelves', '/shelves', 'collections organise'),
       nav('templates', 'Templates', '/templates', 'job templates starter'),
       nav('notes', 'Your notes', '/notes', 'notes annotations'),
+      nav('welcome', 'Getting started', '/welcome', 'onboarding welcome wizard first run tour help'),
       {
         id: 'notes-md',
         label: 'Export notes as Markdown',

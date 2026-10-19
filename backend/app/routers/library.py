@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.dependencies import get_current_user, get_db
+from pydantic import BaseModel
+
 from app.models.channel import Channel
 from app.models.job import Job
 from app.models.job_video import JobVideo
@@ -252,6 +254,47 @@ def delete_library_qa_exchange(
         )
     db.delete(exchange)
     db.commit()
+
+
+MAX_VIDEO_CHANNEL_LOOKUP = 200
+
+
+class VideoChannel(BaseModel):
+    channel_id: str
+    channel_name: str
+
+
+@router.get("/video-channels", response_model=dict[str, VideoChannel])
+def resolve_video_channels(
+    video_ids: str = Query(..., description="Comma-separated YouTube video ids"),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> dict[str, VideoChannel]:
+    """Map cited YouTube video ids to their channel (S-8.7.4), so a citation
+    chip can link to the channel page. Only documents the caller can see
+    answer (D-063 / D-070); unknown or invisible ids are simply absent, so the
+    response never confirms that another reader holds a document. At most
+    ``MAX_VIDEO_CHANNEL_LOOKUP`` distinct ids per call.
+
+    Resolved at read time rather than stored on Q&A references, so every
+    existing answer gains the link without touching the Q&A agent."""
+    ids = [v.strip() for v in dict.fromkeys(video_ids.split(",")) if v.strip()]
+    ids = ids[:MAX_VIDEO_CHANNEL_LOOKUP]
+    if not ids:
+        return {}
+    rows = (
+        db.query(Document.video_id, Document.channel_id, Channel.name)
+        .join(Channel, Channel.channel_id == Document.channel_id)
+        .filter(
+            Document.video_id.in_(ids),
+            Document.document_id.in_(visibility_service.visible_document_ids(db, current_user.id)),
+        )
+        .all()
+    )
+    return {
+        vid: VideoChannel(channel_id=channel_id, channel_name=name or "")
+        for vid, channel_id, name in rows
+    }
 
 
 @router.get(

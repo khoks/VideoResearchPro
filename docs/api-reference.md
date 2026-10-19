@@ -373,6 +373,29 @@ Library Q&A history. Query params: `limit` (default 100), `offset` (default 0). 
 ### `DELETE /api/v1/library/qa/{exchange_id}`
 Delete a single library Q&A exchange. Returns 204. (The matching `qa_library_global` Chroma entry is left as orphan; cleanup is a maintenance task, not a request-time concern.)
 
+### `GET /api/v1/library/graph`
+The reader's library as a graph (S-8.9.1, [M9 plan](plans/m9-citation-graph.md)). Built from **the documents the caller can see** (D-063 / D-070): nothing of another reader's (a document, an answer, a channel, a topic) can appear, and an empty visible set is an empty graph.
+
+Query: `focus` (a node id: its neighbourhood to `depth` hops, 1–3; an unknown id falls back to the global view) · `shelf_id` / `job_id` / `channel_id` (narrow the documents; a shelf or job that is not the caller's is a **404**; an empty shelf is an empty graph) · `types` (comma list of `channel`, `topic`, `exchange` besides documents) · `limit` (default 300, max 2,000).
+
+```json
+{
+  "nodes": [{ "id": "document:…", "type": "document", "label": "…", "degree": 4,
+              "meta": { "document_id": "…", "url": "…", "source_type": "video", "channel_id": "UC…", "published_at": "…" } },
+            { "id": "channel:UC…", "type": "channel", "label": "…", "degree": 12, "meta": { "channel_id": "UC…" } },
+            { "id": "topic:monetary policy", "type": "topic", "label": "Monetary policy", "degree": 9, "meta": { "documents": 8 } },
+            { "id": "exchange:library:…", "type": "exchange", "label": "the question", "degree": 3, "meta": { "kind": "library", "exchange_id": "…", "job_id": null } }],
+  "edges": [{ "source": "document:…", "target": "channel:UC…", "type": "published_by", "weight": 1 }],   // published_by | about | cites | co_occurs
+  "truncated": true,
+  "total": { "documents": 312, "channels": 6, "topics": 48, "exchanges": 20 },
+  "shown": { "documents": 230, "channels": 6, "topics": 44, "exchanges": 20 },
+  "summary": "Showing 230 documents, 44 topics, 6 channels and 20 of your answers. 300 of 386 nodes are shown, the most connected first. They form 3 connected groups; the largest holds 290 nodes, mostly about …",
+  "focus": null
+}
+```
+
+Ids are stable across requests. Topics come from knowledge reports and need at least two of the caller's documents; `co_occurs` links topics sharing at least two documents (the five strongest per topic). Answers are the caller's own job and library exchanges that cite at least one visible document. Under the cap, nodes are chosen by degree, then recency (the focus always first). `summary` is the textual alternative to the canvas. Computed per request: about 0.07 s at 2,000 documents and 500 answers.
+
 ### `GET /api/v1/library/video-channels`
 `?video_ids=a,b,c` → `{ "<video_id>": { "channel_id": "UC…", "channel_name": "…" } }` (S-8.7.4). Maps cited YouTube videos to their channel so a citation chip can link to the channel page. Only videos the caller can see answer; unknown or invisible ids are simply absent (never an error, never a hint that another reader holds them). At most 200 distinct ids per call. Resolved at read time, so every existing answer gains the link without changing stored references. The frontend batches every chip on screen into one call.
 

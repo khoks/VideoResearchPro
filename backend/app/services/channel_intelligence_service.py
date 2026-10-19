@@ -194,6 +194,13 @@ def _knowledge(doc: Document) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def display_label(spellings) -> str:
+    """The spelling to show for a label seen in several casings: the most
+    frequent, ties broken toward more capitals ("Monetary policy" over
+    "monetary policy"), then alphabetically, so it never depends on row order."""
+    return max(spellings.items(), key=lambda kv: (kv[1], sum(ch.isupper() for ch in kv[0]), [-ord(ch) for ch in kv[0]]))[0]
+
+
 def _clean_label(raw) -> str:
     if isinstance(raw, dict):
         raw = raw.get("name") or raw.get("label") or raw.get("text") or ""
@@ -220,7 +227,7 @@ def label_counts(docs: list[Document], key: str) -> list[dict]:
     ranked = sorted(by_key.items(), key=lambda kv: (-len(kv[1]), kv[0]))[:TOP_LABELS]
     return [
         {
-            "label": spellings[k].most_common(1)[0][0],
+            "label": display_label(spellings[k]),
             "documents": len(ds),
             "examples": [_ref(d) for d in ds[:EXAMPLES_PER_LABEL]],
         }

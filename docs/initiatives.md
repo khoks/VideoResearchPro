@@ -1892,11 +1892,12 @@ Linked decision: D-074.
 **Plan:** [`docs/plans/m9-citation-graph.md`](plans/m9-citation-graph.md)
 **Acceptance.** `/library/graph` renders the user's library in under three seconds at 2,000 nodes; clicking a document shows its neighbours and a detail card; filtering by shelf narrows the graph; nothing from another tenant appears; the graph degrades to a list on narrow screens.
 
-#### S-8.9.1 🔵 Graph endpoint
-**PR:** TBD
-- [ ] T-8.9.1.1 `GET /api/v1/library/graph?focus=&depth=&shelf_id=&channel_id=&limit=` → `{nodes, edges, truncated}`; nodes from visible documents, subscribed channels, the tenant's exchanges (references → documents), topics from knowledge artifacts (shared-topic edges above a frequency floor)
-- [ ] T-8.9.1.2 Degree and recency used to pick nodes under the cap; stable ids for caching
-- [ ] T-8.9.1.3 Tests: isolation, cap, focus mode
+#### S-8.9.1 🟢 Graph endpoint
+**PR:** [#297](https://github.com/khoks/VideoResearchPro/pull/297) (merged 2026-10-19)
+- [x] T-8.9.1.1 `GET /api/v1/library/graph?focus=&depth=&shelf_id=&job_id=&channel_id=&types=&limit=` → `{nodes, edges, truncated, total, shown, summary, focus}`. Nodes: visible documents, their channels (channels with no visible document would be isolated, so they are left out), the tenant's job and library exchanges that cite a visible document (references matched by video id or URL), and topics from knowledge artifacts on at least two visible documents. Edges `published_by`, `about`, `cites`, and derived `co_occurs` (topics sharing at least two documents, five strongest per topic). A foreign shelf or job is a 404
+- [x] T-8.9.1.2 Degree then recency pick nodes under the cap (focus first); ids are stable (`document:`, `channel:`, `topic:<lowercased>`, `exchange:<kind>:`); a one-paragraph `summary` (counts, "N of M shown", connected groups and the largest group's main topics) as the textual alternative. Computed per request: about 0.07 s at 2,000 documents and 500 answers, so no edge table
+- [x] T-8.9.1.3 Tests: two-reader isolation (nothing of theirs in the payload, their topic absent, my answer citing only their document has no node), an empty visible set is an empty graph, cap and truncation with degree order, focus at depth 1 and 2, channel / job / shelf filters (foreign → 404, empty shelf → empty), types filter, job exchanges
+- Found on the way: a topic label's display spelling depended on row order when casings tied; both this and the channel aggregate now break ties toward the capitalised spelling
 
 #### S-8.9.2 🔵 Graph UI
 **PR:** TBD

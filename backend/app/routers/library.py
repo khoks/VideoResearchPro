@@ -23,9 +23,10 @@ from app.schemas.library_qa import (
     LibraryReference,
 )
 from app.schemas.library_video import LibrarySort, LibraryVideoResponse
+from app.schemas.graph import GraphResponse
 from app.schemas.tag import TagSummary
 from app.services import chroma_service
-from app.services import tag_service, visibility_service
+from app.services import graph_service, tag_service, visibility_service
 from app.services.llm_service import get_llm_for
 from app.sources.pdf.connector import (
     SOURCE_ID_PREFIX as PDF_SOURCE_ID_PREFIX,
@@ -254,6 +255,40 @@ def delete_library_qa_exchange(
         )
     db.delete(exchange)
     db.commit()
+
+
+@router.get("/graph", response_model=GraphResponse)
+def library_graph(
+    focus: str | None = None,
+    depth: int = Query(default=1, ge=1, le=graph_service.MAX_DEPTH),
+    shelf_id: str | None = None,
+    channel_id: str | None = None,
+    job_id: str | None = None,
+    types: str | None = None,
+    limit: int = Query(default=graph_service.DEFAULT_LIMIT, ge=1, le=graph_service.MAX_LIMIT),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> GraphResponse:
+    """The reader's library as a graph (S-8.9.1): visible documents, their
+    channels and knowledge topics, and the reader's own answers that cite
+    them. ``focus`` (a node id) returns its neighbourhood to ``depth`` hops;
+    ``shelf_id`` / ``job_id`` / ``channel_id`` narrow the documents (a
+    foreign shelf or job is a 404); ``types`` picks node types besides
+    documents. An empty visible set is an empty graph (D-063)."""
+    try:
+        return graph_service.build_graph(
+            db,
+            current_user.id,
+            focus=focus,
+            depth=depth,
+            shelf_id=shelf_id,
+            channel_id=channel_id,
+            job_id=job_id,
+            types=[t.strip() for t in types.split(",")] if types else None,
+            limit=limit,
+        )
+    except graph_service.GraphScopeNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"{str(exc).capitalize()} not found")
 
 
 MAX_VIDEO_CHANNEL_LOOKUP = 200

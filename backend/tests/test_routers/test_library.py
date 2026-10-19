@@ -187,7 +187,7 @@ def _seed_library(db, tenant_id: str) -> dict:
     from app.services import visibility_service
 
     visibility_service.grant(
-        db, [v.video_id for v in (v1, v2, v3, v4)], tenant_id,
+        db, [v.document_id for v in (v1, v2, v3, v4)], tenant_id,
         visibility_service.SOURCE_JOB,
     )
 
@@ -213,7 +213,9 @@ def test_get_library_videos_returns_all_with_aggregation(client, db, test_user):
 
     by_id = {it["video_id"]: it for it in items}
     v1 = by_id["vid001alpha"]
-    assert v1["id"] == v1["video_id"]
+    # D-070: `id` is the primary key, not the legacy YouTube id.
+    assert v1["id"] != v1["video_id"] and len(v1["id"]) == 36
+    assert v1["source_type"] == "video"
     assert v1["title"] == "Alpha Intro to DNS"
     assert v1["channel_name"] == "Alpha Channel"
     assert v1["channel_id"] == seed["channels"]["alpha"].channel_id

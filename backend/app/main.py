@@ -83,6 +83,14 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Q&A library backfill failed; continuing startup")
 
+    # D-070: stamp `document_id` onto transcript chunks that predate the
+    # retrieval filter change. Metadata-only (no re-embedding), idempotent,
+    # and a Chroma failure here must not stop the app either.
+    try:
+        chroma_service.backfill_chunk_document_ids()
+    except Exception:
+        logger.exception("Chunk document_id backfill failed; continuing startup")
+
     try:
         await run_startup_probes()
     except Exception:

@@ -1,7 +1,7 @@
 """Search index — FTS5 trigram tables and triggers, when SQLite has FTS5 (S-8.2.1 / M2)
 
 Revision ID: a9f3c1e7b5d2
-Revises: d8e9f0a1b2c3
+Revises: 3653e565c1fc
 Create Date: 2026-10-19
 
 Five virtual tables (`fts_documents`, `fts_jobs`, `fts_channels`, `fts_qa`,
@@ -22,9 +22,10 @@ import logging
 from alembic import op
 
 revision = "a9f3c1e7b5d2"
-# Re-parented under the shelves migration (S-8.1.1, merged first; it took the id
-# this file originally had, d8e9f0a1b2c3) so the history stays single-headed.
-down_revision = "d8e9f0a1b2c3"
+# Re-parented under the D-070 visibility migration (S-5.10.4, merged first; it in
+# turn sits on shelves d8e9f0a1b2c3, which took this file's original id) so the
+# history stays single-headed.
+down_revision = "3653e565c1fc"
 branch_labels = None
 depends_on = None
 

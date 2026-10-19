@@ -33,7 +33,7 @@ def _seed(db, tenant_id: str, tag: str) -> None:
     )
     db.add(doc)
     db.commit()
-    db.add(DocumentVisibility(video_id=doc.video_id, tenant_id=tenant_id, source="job"))
+    db.add(DocumentVisibility(document_id=doc.document_id, tenant_id=tenant_id, source="job"))
     db.add(Job(id=f"job-{tag}", tenant_id=tenant_id, job_type="topic", status="completed",
                topic=f"Rate cuts research {tag}"))
     db.add(LibraryQAExchange(id=f"qa-{tag}", tenant_id=tenant_id, question=f"Rate cuts? {tag}", answer="a"))

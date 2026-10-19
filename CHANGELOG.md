@@ -20,7 +20,7 @@ endpoint the command palette (S-8.2.2) will call; no UI in this PR.
   with one group each for jobs, documents, channels, Q&A exchanges (all
   three surfaces) and knowledge reports. Every group is scoped to the
   caller by joining the entity's tenant anchor onto the FTS hit list —
-  `jobs.tenant_id`, `document_visibility`, subscriptions ∪ visible
+  `jobs.tenant_id`, `document_visibility` on `document_id` (D-070), subscriptions ∪ visible
   documents' channels, `*_qa_exchanges.tenant_id` — so a tenant with
   nothing visible gets empty groups, never everything (D-063).
 - **FTS5 trigram tables** `fts_documents`, `fts_jobs`, `fts_channels`,
@@ -42,6 +42,40 @@ endpoint the command palette (S-8.2.2) will call; no UI in this PR.
 - `schema_init_service` ignores the `fts_` prefix when comparing the live
   schema to the ORM, so the recovery path and the parity check keep working
   with the index present.
+
+### Document visibility keyed on `document_id`; non-video documents visible and retrievable (2026-10-19)
+
+Since D-063 (2026-07-31) every PDF, pasted page, Reddit and HN document was
+ingested but visible to nobody: the per-tenant grant referenced the legacy
+`documents.video_id`, which is NULL for non-video sources. Shipping the fix
+found two more layers of the same defect. Decision
+[D-070](docs/decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19),
+story S-5.10.4, PR [#241](https://github.com/khoks/VideoResearchPro/pull/241).
+
+- **Grants keyed on the primary key.** Migration `3653e565c1fc` adds
+  `document_visibility.document_id`, backfills from `documents`, moves the
+  unique constraint and retires `video_id` (round trip pinned). `grant()`
+  takes document ids; `visible_video_ids()` is `visible_document_ids()` with
+  no shim; the listing, channel views, subscription lookup and corpus
+  statistics filter on `document_id`.
+- **Non-video chunks are written at all.** `insert_chunks` had skipped every
+  chunk without a `video_id`, so no PDF or pasted page had ever been
+  embedded. Chunk ids stay `{video_id}:{index}` for videos and are
+  `{document_id}:{index}` for everything else.
+- **Retrieval filters on `document_id`** for library Q&A and job Q&A alike
+  (a topic job's Reddit / HN / PDF documents are now in scope). Legacy chunks
+  are stamped by a metadata-only backfill at API startup — no re-embedding,
+  one filter path rather than a transition window.
+- **An empty scope retrieves nothing.** `query_collection(document_ids=[])`
+  used to fall through to an unrestricted search, so a user with nothing
+  ingested was answered from every other tenant's transcripts.
+- **Library listing shape.** `id` is the document id; `video_id` and
+  `duration_seconds` are nullable; `source_type` is sent. The frontend type
+  widened to match.
+- **Tests.** The strict xfail from PR #224 is un-marked; new upload-PDF router
+  tests; a two-tenant test proving user B cannot see user A's pasted page or
+  PDF in the listing, in search, or in the Q&A scope; real-Chroma tests for
+  the write, the scope and the backfill. 1,454 pass.
 
 ### Shelves: schema, service and REST (2026-10-19)
 

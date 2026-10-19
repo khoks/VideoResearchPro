@@ -32,9 +32,13 @@ just created (first boot, or a Python upgrade that gained FTS5).
 
 **Tenant scoping is applied to the FTS hit list by joining the entity's
 tenant anchor**, never by a tenant column inside the FTS table:
-``jobs.tenant_id``, ``document_visibility`` (D-063: a tenant with no grants
-gets nothing, never everything), ``channel_subscriptions`` ∪ visible
-documents' channels (D-065), and ``*_qa_exchanges.tenant_id``.
+``jobs.tenant_id``, ``document_visibility`` keyed on ``document_id``
+(D-063 / D-070: a tenant with no grants gets nothing, never everything),
+``channel_subscriptions`` ∪ visible documents' channels (D-065), and
+``*_qa_exchanges.tenant_id``. The ORM paths go through the canonical
+helpers (``visibility_service.visible_document_ids``,
+``subscription_service.visible_channel_ids``); the raw FTS joins below
+mirror them and a test pins that the two agree.
 
 **Ranking.** ``bm25()`` with the title column weighted over the body,
 recency as the tie-break, a per-group cap. The ``LIKE`` path has no score
@@ -52,13 +56,12 @@ from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
 
 from app.models.channel import Channel
-from app.models.channel_subscription import ChannelSubscription
 from app.models.document import Document
-from app.models.document_visibility import DocumentVisibility
 from app.models.job import Job
 from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.qa_exchange import QAExchange
 from app.models.qa_history_exchange import QAHistoryExchange
+from app.services import subscription_service, visibility_service
 
 logger = logging.getLogger(__name__)
 
@@ -409,18 +412,18 @@ def _bm25(spec: _FtsSpec) -> str:
 _TENANT_SQL = {
     "documents": (
         "JOIN documents d ON d.document_id = f.id "
-        "JOIN document_visibility v ON v.video_id = d.video_id AND v.tenant_id = :t"
+        "JOIN document_visibility v ON v.document_id = d.document_id AND v.tenant_id = :t"
     ),
     "knowledge": (
         "JOIN documents d ON d.document_id = f.id "
-        "JOIN document_visibility v ON v.video_id = d.video_id AND v.tenant_id = :t"
+        "JOIN document_visibility v ON v.document_id = d.document_id AND v.tenant_id = :t"
     ),
     "jobs": "JOIN jobs d ON d.id = f.id AND d.tenant_id = :t",
     "channels": (
         "JOIN channels d ON d.channel_id = f.id AND d.channel_id IN ("
         "SELECT channel_id FROM channel_subscriptions WHERE tenant_id = :t "
         "UNION SELECT dd.channel_id FROM documents dd "
-        "JOIN document_visibility vv ON vv.video_id = dd.video_id "
+        "JOIN document_visibility vv ON vv.document_id = dd.document_id "
         "WHERE vv.tenant_id = :t AND dd.channel_id IS NOT NULL)"
     ),
 }
@@ -470,22 +473,15 @@ def _fts_hits(db: Session, kind: str, match: str, tenant_id: str, limit: int) ->
 
 
 def _visible_documents(db: Session, tenant_id: str):
-    return db.query(Document).join(
-        DocumentVisibility,
-        (DocumentVisibility.video_id == Document.video_id) & (DocumentVisibility.tenant_id == tenant_id),
+    return db.query(Document).filter(
+        Document.document_id.in_(visibility_service.visible_document_ids(db, tenant_id))
     )
 
 
 def _visible_channels(db: Session, tenant_id: str):
-    from sqlalchemy import union
-
-    subscribed = db.query(ChannelSubscription.channel_id).filter(ChannelSubscription.tenant_id == tenant_id)
-    from_docs = (
-        db.query(Document.channel_id)
-        .join(DocumentVisibility, DocumentVisibility.video_id == Document.video_id)
-        .filter(DocumentVisibility.tenant_id == tenant_id, Document.channel_id.isnot(None))
+    return db.query(Channel).filter(
+        Channel.channel_id.in_(subscription_service.visible_channel_ids(db, tenant_id))
     )
-    return db.query(Channel).filter(Channel.channel_id.in_(union(subscribed, from_docs)))
 
 
 def _like(q: str) -> str:
@@ -502,7 +498,7 @@ def _document_item(doc: Document, score: float) -> SearchItem:
         id=doc.document_id,
         title=doc.title or "(untitled)",
         subtitle=" · ".join(b for b in bits if b),
-        href=f"/library?video={doc.video_id or doc.document_id}",
+        href=f"/library?document={doc.document_id}",
         score=score,
     )
 
@@ -512,7 +508,7 @@ def _knowledge_item(doc: Document, score: float) -> SearchItem:
         id=doc.document_id,
         title=doc.title or "(untitled)",
         subtitle=" · ".join(b for b in ["Knowledge report", doc.channel_name or ""] if b),
-        href=f"/library?video={doc.video_id or doc.document_id}&view=knowledge",
+        href=f"/library?document={doc.document_id}&view=knowledge",
         score=score,
     )
 

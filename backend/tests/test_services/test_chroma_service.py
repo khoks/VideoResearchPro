@@ -36,6 +36,7 @@ def _make_chunks(video_id: str = "vid1", count: int = 5) -> list[dict]:
         chunks.append({
             "text": f"This is chunk {i} about quantum computing and physics research findings.",
             "metadata": {
+                "document_id": f"doc-{video_id}",
                 "video_id": video_id,
                 "video_title": "Test Video",
                 "channel_name": "TestChannel",
@@ -118,7 +119,7 @@ def test_insert_empty_chunks(job_id):
 # --- New global-collection API tests ---------------------------------------
 
 def test_global_insert_and_query_library_wide():
-    """insert_chunks(chunks) + query_collection(video_ids=None) returns
+    """insert_chunks(chunks) + query_collection(document_ids=None) returns
     results from the global collection."""
     chroma_service.insert_chunks(_make_chunks("vid_alpha", count=3))
     chroma_service.insert_chunks(_make_chunks("vid_beta", count=3))
@@ -134,15 +135,15 @@ def test_global_insert_and_query_library_wide():
 
 
 def test_query_scoped_by_video_ids():
-    """query_collection(video_ids=['abc']) only returns chunks where
-    metadata.video_id matches."""
+    """query_collection(document_ids=[...]) only returns chunks whose
+    metadata.document_id matches."""
     chroma_service.insert_chunks(_make_chunks("vid_alpha", count=3))
     chroma_service.insert_chunks(_make_chunks("vid_beta", count=3))
 
     results = chroma_service.query_collection(
         "quantum computing physics research",
         n_results=10,
-        video_ids=["vid_alpha"],
+        document_ids=["doc-vid_alpha"],
         distance_threshold=float("inf"),
     )
     assert len(results) > 0
@@ -158,7 +159,7 @@ def test_query_scoped_by_multiple_video_ids():
     results = chroma_service.query_collection(
         "quantum computing physics research",
         n_results=20,
-        video_ids=["vid_a", "vid_c"],
+        document_ids=["doc-vid_a", "doc-vid_c"],
         distance_threshold=float("inf"),
     )
     video_ids_seen = {r["metadata"]["video_id"] for r in results}
@@ -211,7 +212,7 @@ def test_query_with_kwargs():
     results = chroma_service.query_collection(
         "quantum computing physics research",
         n_results=5,
-        video_ids=["vid_kw"],
+        document_ids=["doc-vid_kw"],
         distance_threshold=float("inf"),
     )
     assert len(results) > 0

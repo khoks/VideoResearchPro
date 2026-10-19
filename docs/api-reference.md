@@ -323,16 +323,16 @@ Query params: `q` (1–200 chars; whitespace-separated tokens of three or more c
       { "id": "<job_id>", "title": "Rate cuts research", "subtitle": "topic · completed · 2026-10-19", "href": "/jobs/<job_id>", "score": 3.5 }
     ]},
     { "type": "documents", "items": [
-      { "id": "<document_id>", "title": "Interest rate cuts explained", "subtitle": "Channel · 2026-09-01", "href": "/library?video=<video_id>", "score": 2.9 }
+      { "id": "<document_id>", "title": "Interest rate cuts explained", "subtitle": "Channel · 2026-09-01", "href": "/library?document=<document_id>", "score": 2.9 }
     ]},
     { "type": "channels", "items": [{ "id": "<channel_id>", "title": "…", "subtitle": "42 subscribers", "href": "/library/channels/<channel_id>", "score": 1.1 }] },
     { "type": "qa", "items": [{ "id": "<exchange_id>", "title": "What are rate cuts?", "subtitle": "Library Q&A · 2026-10-01", "href": "/library/qa?exchange=<exchange_id>", "score": 2.0 }] },
-    { "type": "knowledge", "items": [{ "id": "<document_id>", "title": "…", "subtitle": "Knowledge report · Channel", "href": "/library?video=<video_id>&view=knowledge", "score": 0.8 }] }
+    { "type": "knowledge", "items": [{ "id": "<document_id>", "title": "…", "subtitle": "Knowledge report · Channel", "href": "/library?document=<document_id>&view=knowledge", "score": 0.8 }] }
   ]
 }
 ```
 
-Groups come back in that fixed order, only the requested ones, each possibly empty. Every group is scoped to the caller — jobs by `tenant_id`, documents and knowledge by `document_visibility`, channels by subscription or a visible document, Q&A by `tenant_id` on each of the three exchange tables — so a tenant who has ingested nothing gets empty groups, never everything (D-063). `score` is higher-is-better (`-bm25`, title weighted over body, recency tie-break); on the `like` backend every score is `0.0` and items are ordered by recency. `backend` is the engine used for *this* query: `like` also when FTS5 is present but every token is shorter than three characters. Q&A hrefs carry `?exchange=<id>` on the originating page (`/jobs/<job_id>`, `/library/qa`, `/qa-history`); document and knowledge hrefs carry `?video=<id>` (and `&view=knowledge`) on `/library`, which the palette PR teaches the library page to honour.
+Groups come back in that fixed order, only the requested ones, each possibly empty. Every group is scoped to the caller — jobs by `tenant_id`, documents and knowledge by `document_visibility` keyed on `document_id` (D-070), channels by subscription or a visible document, Q&A by `tenant_id` on each of the three exchange tables — so a tenant who has ingested nothing gets empty groups, never everything (D-063). `score` is higher-is-better (`-bm25`, title weighted over body, recency tie-break); on the `like` backend every score is `0.0` and items are ordered by recency. `backend` is the engine used for *this* query: `like` also when FTS5 is present but every token is shorter than three characters. Q&A hrefs carry `?exchange=<id>` on the originating page (`/jobs/<job_id>`, `/library/qa`, `/qa-history`); document and knowledge hrefs carry `?document=<document_id>` (and `&view=knowledge`) on `/library` — the canonical id, because most non-video documents have no `video_id`, which the palette PR teaches the library page to honour.
 
 ---
 

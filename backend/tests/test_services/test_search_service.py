@@ -8,7 +8,7 @@ short-query fallback) has its own tests on the `fts` fixture.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -78,7 +78,7 @@ def _doc(db, tenant: str, *, suffix: str, title: str, description: str = "", cha
     )
     db.add(doc)
     db.commit()
-    db.add(DocumentVisibility(video_id=doc.video_id, tenant_id=tenant, source="job"))
+    db.add(DocumentVisibility(document_id=doc.document_id, tenant_id=tenant, source="job"))
     db.commit()
     return doc
 
@@ -132,6 +132,31 @@ def test_tenant_with_nothing_visible_gets_nothing_never_everything(db, backend):
     assert all(g["items"] == [] for g in res["groups"]), res
 
 
+def test_non_video_document_without_video_id_is_found_by_its_owner_only(db, backend):
+    """D-070: a PDF or pasted page has no legacy `video_id`. Visibility is
+    keyed on `document_id`, so the owner finds it and nobody else does. A
+    join on `video_id` (the pre-D-070 key) would hide it from its owner."""
+    pdf = Document(
+        document_id="doc-pdf-1", video_id=None, source_type="pdf", source_id="pdf:abc123",
+        title="Annual report on monetary easing", url="/api/v1/library/pdf/abc123.pdf",
+        knowledge_report_md="# PDF knowledge\n\nMonetary easing timeline.",
+    )
+    db.add(pdf)
+    db.commit()
+    db.add(DocumentVisibility(document_id=pdf.document_id, tenant_id=A, source="pdf_upload"))
+    db.commit()
+
+    mine = svc.search(db, A, "monetary easing", types=["documents", "knowledge"], limit=5)
+    assert _ids(mine, "documents") == ["doc-pdf-1"]
+    assert _ids(mine, "knowledge") == ["doc-pdf-1"]
+    doc_item = [g for g in mine["groups"] if g["type"] == "documents"][0]["items"][0]
+    assert doc_item["href"] == "/library?document=doc-pdf-1"
+    assert doc_item["subtitle"].startswith("pdf")
+
+    theirs = svc.search(db, B, "monetary easing", types=["documents", "knowledge"], limit=5)
+    assert all(g["items"] == [] for g in theirs["groups"])
+
+
 def test_item_shape_and_hrefs(db, backend):
     _seed_two_tenants(db)
     res = svc.search(db, A, "rate cuts", limit=10)
@@ -140,7 +165,7 @@ def test_item_shape_and_hrefs(db, backend):
         for item in items:
             assert set(item) == {"id", "title", "subtitle", "href", "score"}, kind
     assert by_kind["jobs"][0]["href"] == f"/jobs/job-{A}"
-    assert by_kind["documents"][0]["href"] == f"/library?video=vid{A}"
+    assert by_kind["documents"][0]["href"] == f"/library?document=doc-{A}"
     assert by_kind["knowledge"][0]["href"].endswith("&view=knowledge")
     assert by_kind["channels"][0]["href"].startswith("/library/channels/UC")
     qa_hrefs = {i["href"] for i in by_kind["qa"]}
@@ -329,7 +354,7 @@ def _seed_large(db, n_docs: int = 5000, n_qa: int = 2000) -> None:
             "transcript_status": "pending", "embedded_in_chroma": False,
             "created_at": NOW - timedelta(minutes=i), "updated_at": NOW,
         })
-        grants.append({"id": f"grant-{i}", "video_id": vid, "tenant_id": A, "source": "job", "created_at": NOW})
+        grants.append({"id": f"grant-{i}", "document_id": f"bulk-doc-{i}", "tenant_id": A, "source": "job", "created_at": NOW})
     for i in range(n_qa):
         qas.append({
             "id": f"bulk-qa-{i}", "tenant_id": A, "question": f"Question {i} about rate cuts and inflation",

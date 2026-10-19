@@ -44,6 +44,22 @@ endpoint the command palette (S-8.2.2) will call; no UI in this PR.
   with the index present.
 
 
+### Shelves in the app (2026-10-19)
+
+Third PR of the organisation lane ([S-8.1.2](docs/initiatives.md#s-812--shelves-ui), PR [#250](https://github.com/khoks/VideoResearchPro/pull/250)).
+
+- **Pages.** `/shelves` lists, creates, edits and deletes shelves; `/shelves/:id`
+  shows a shelf's runs and the union of their sources, each once, with the
+  library's filters.
+- **Everywhere a run appears.** "Add to shelf" on run cards and the run page
+  (checkboxes, inline create), colour chips linking to each shelf, and a
+  Shelves group in the sidebar.
+- **API.** `GET /shelves/{id}/documents` (visibility-scoped; an empty shelf
+  lists nothing) and `job_ids` on every shelf so one cached listing answers
+  membership for a whole page.
+- **Label palette.** Ten named colours in `theme.ts`, every pair at ≥ 4.5:1 in
+  both modes; shelves store the name, never a hex.
+
 ### Three cross-tenant reads closed (2026-10-19, S-5.10.6)
 
 PR [#248](https://github.com/khoks/VideoResearchPro/pull/248). An audit of every `documents` reader after D-070 found three that

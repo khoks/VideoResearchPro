@@ -65,6 +65,19 @@ def test_add_remove_and_counts(db):
     assert shelf_service.job_count(db, shelf.id) == 1
 
 
+def test_memberships_in_one_query_including_empty_shelves(db):
+    full = shelf_service.create_shelf(db, ME, "Full")
+    empty = shelf_service.create_shelf(db, ME, "Empty")
+    j1, j2 = _job(db, ME, "one"), _job(db, ME, "two")
+    shelf_service.add_job(db, full, j1)
+    shelf_service.add_job(db, full, j2)
+    members = shelf_service.memberships(db, [full.id, empty.id])
+    assert set(members[full.id]) == {j1.id, j2.id}
+    assert members[empty.id] == []
+    as_dicts = shelf_service.shelves_to_dicts(db, [full, empty])
+    assert [d["job_count"] for d in as_dicts] == [2, 0]
+
+
 def test_add_job_refuses_another_tenants_job(db):
     shelf = shelf_service.create_shelf(db, ME, "Mine")
     theirs = _job(db, THEM)

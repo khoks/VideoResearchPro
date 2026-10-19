@@ -214,9 +214,9 @@ def get_job_shelves(
     job = job_service.get_job(db, job_id, tenant_id=current_user.id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    shelves = shelf_service.shelves_for_job(db, job.id, current_user.id)
-    counts = shelf_service.job_counts(db, [s.id for s in shelves])
-    return [shelf_service.shelf_to_dict(s, counts.get(s.id, 0)) for s in shelves]
+    return shelf_service.shelves_to_dicts(
+        db, shelf_service.shelves_for_job(db, job.id, current_user.id)
+    )
 
 
 @router.get("/{job_id}/videos", response_model=list[VideoResponse])

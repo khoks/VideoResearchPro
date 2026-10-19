@@ -282,15 +282,59 @@ def list_library_videos(
     every other user — leaking not just what others had ingested but what they
     were researching.
     """
+    return query_library_documents(
+        db,
+        current_user.id,
+        search=search,
+        language=language,
+        channel_id=channel_id,
+        transcript_status=transcript_status,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def query_library_documents(
+    db: Session,
+    tenant_id: str,
+    *,
+    search: str | None = None,
+    language: str | None = None,
+    channel_id: str | None = None,
+    transcript_status: str | None = None,
+    sort: LibrarySort = "newest",
+    limit: int = 50,
+    offset: int = 0,
+    job_ids: list[str] | None = None,
+) -> list[LibraryVideoResponse]:
+    """The library listing as a plain function, so other surfaces (the shelf
+    page, S-8.1.2) can reuse the filters, the visibility scope and the
+    per-row job aggregation without a second copy of the query.
+
+    ``job_ids`` restricts the result to documents selected by those jobs
+    (joined on ``job_documents.document_id``). An EMPTY list returns nothing
+    rather than everything — the D-063 posture: a narrower scope never
+    widens to the whole library by accident.
+    """
+    if job_ids is not None and not job_ids:
+        return []
+
     q = (
         db.query(Document)
         .outerjoin(Channel, Document.channel_id == Channel.channel_id)
         .filter(
             Document.document_id.in_(
-                visibility_service.visible_document_ids(db, current_user.id)
+                visibility_service.visible_document_ids(db, tenant_id)
             )
         )
     )
+    if job_ids is not None:
+        q = q.filter(
+            Document.document_id.in_(
+                db.query(JobVideo.document_id).filter(JobVideo.job_id.in_(job_ids))
+            )
+        )
 
     if search:
         like = f"%{search}%"
@@ -326,7 +370,7 @@ def list_library_videos(
             JobVideo.document_id.in_(document_ids),
             # Never surface another tenant's research topic against a shared
             # document — the topic string is the more sensitive half of this.
-            Job.tenant_id == current_user.id,
+            Job.tenant_id == tenant_id,
         )
         .all()
     )
@@ -341,7 +385,7 @@ def list_library_videos(
     counts_by_document: dict[str, int] = dict(
         db.query(JobVideo.document_id, func.count(func.distinct(JobVideo.job_id)))
         .join(Job, Job.id == JobVideo.job_id)
-        .filter(JobVideo.document_id.in_(document_ids), Job.tenant_id == current_user.id)
+        .filter(JobVideo.document_id.in_(document_ids), Job.tenant_id == tenant_id)
         .group_by(JobVideo.document_id)
         .all()
     )

@@ -87,7 +87,43 @@ The bias is toward **over-capture**: a false positive (filing something that tur
 
 ### N-002 — Proportion-driven rendering policy for code-mixed speech (2026-07-31)
 
-**Status:** captured
+**Status:** implemented and measured (2026-10-19). Built as S-1.16.2 in seven PRs ([#258](https://github.com/khoks/VideoResearchPro/pull/258), [#260](https://github.com/khoks/VideoResearchPro/pull/260), [#262](https://github.com/khoks/VideoResearchPro/pull/262), [#264](https://github.com/khoks/VideoResearchPro/pull/264), [#268](https://github.com/khoks/VideoResearchPro/pull/268), [#271](https://github.com/khoks/VideoResearchPro/pull/271), [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)); decisions [D-080](decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) and [D-084](decisions.md#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19); method and every number in [the detection note](notes/2026-10-19-code-mixing-detection.md).
+
+**What the measurements say about each part of the mechanism.**
+
+- *Measure the balance, not the label.* A lexicon, n-gram and Viterbi tagger
+  finds romanised Hindi at token precision 0.93 and recall 0.89 on held-out
+  labelled text (0.99 and 0.85 on 80 unseen comments), free and in about
+  1 ms per segment. A small LLM was less precise (0.80).
+- *Matrix vs embedded is real and distinct from proportion.* 11% of mixed
+  spans have mostly English words in Hindi grammar, and a word-count rule
+  calls every one of them English. A system-morpheme vote (Matrix Language
+  Frame) names the grammar's language correctly 0.95 of the time, against
+  0.86 for word majority.
+- *Proportion as a rendering policy.* It works, and its thresholds are best
+  chosen by decision stability on detector output: decisions agree with gold
+  for 0.97 of Latin units. At the default thresholds the matrix gate rarely
+  changes a decision (0 of 90 gold decisions). The matrix earns its keep in
+  telling the analysis path which grammar to read in.
+- *Transcript-level resolution.* Quote-by-quote decisions would switch script
+  25 times across seven Hindi lectures and 128 times across eleven comment
+  threads. Resolved per source, they switch zero times.
+- *Bidirectional split.* Analysis stays English (no Hinglish passed through
+  in six end-to-end runs). Quotation keeps the original: 25 Devanagari
+  originals kept on a held-out lecture against 0 before, and every quote
+  the composer chose was in the three-part form. Retrieval on an English
+  rendering lifts MRR from 0.40 (romanised) and 0.57 (Devanagari) to 0.81.
+
+**What did not hold, or is still open.** The predicted failure (Hinglish
+silently passed through as English) did not occur at extraction even before
+this work. It occurred at the fetch layer, where 2 of 13 Hindi videos
+arrived as machine-dubbed tracks that no text-level mechanism can detect
+(S-1.11.11). Other open items: the labels are one model's, not a native
+speaker's; English nouns written in Devanagari remain invisible to the
+tagger; what the 60% threshold should rest on is the user's call; and **a
+proper prior-art search has still not been done**.
+
+**Originally captured:** 2026-07-31
 
 **Source.** User, session 2026-07-31, while reviewing R5. Introduced unprompted and explicitly flagged: *"R5 seems to be a candidate for novel invention if we carefully detect and handle the balance of words from different scripts and grammar used and syntax used in different portions of the speech."* Verbatim message preserved at [docs/notes/2026-07-31-novel-code-mixing-rendering.md](notes/2026-07-31-novel-code-mixing-rendering.md).
 

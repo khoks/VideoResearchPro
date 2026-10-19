@@ -656,10 +656,24 @@ def resolve_quote_mode(span_mode: str, transcript_profile: dict[str, Any]) -> st
 # get NO fields: the common case stays byte-identical, and an absent field
 # means "English, or chunked before this shipped".
 
+# Below this share of non-English words a source counts as plain English and
+# its chunks carry no code-mixing fields. Measured 2026-10-19 (T-1.16.2.6):
+# English talks and Indian-English podcasts read 0.0–0.6% (detector false
+# positives, mostly unseen names); YouTube comment threads under Hinglish
+# videos read 3.3–30%. The first cut — "English-primary and plain-English
+# quote mode means English" — dropped those threads entirely: 13–17% of their
+# words were Hindi, yet no chunk told the model so.
+DOCUMENT_PRESENCE_SHARE = 0.03
+
+
 def chunk_metadata_for_transcript(segments_or_text: Any) -> dict[str, Any]:
     """Document-level fields for chunk metadata; empty for English sources."""
     p = profile_transcript(segments_or_text)
-    if p["primary_language"] in ("en", "none") and p["quote_mode"] == PLAIN_ENGLISH:
+    if (
+        p["primary_language"] in ("en", "none")
+        and p["quote_mode"] == PLAIN_ENGLISH
+        and p["hi_share"] < DOCUMENT_PRESENCE_SHARE
+    ):
         return {}
     return {
         "code_mix_primary": p["primary_language"],

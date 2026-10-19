@@ -25,4 +25,10 @@ export const exportsApi = {
 
   getKnowledgeTupleUrl: (token: string | null): string =>
     withToken(`${BASE}/knowledge-dataset/tuple.jsonl`, token),
+
+  /** The user's notes as W3C Web Annotation JSON-LD, one per line (lossless). */
+  getNotesJsonldUrl: (token: string | null): string => withToken(`${BASE}/notes.jsonl`, token),
+
+  /** The user's notes as a Markdown document grouped by target. */
+  getNotesMarkdownUrl: (token: string | null): string => withToken(`${BASE}/notes.md`, token),
 };

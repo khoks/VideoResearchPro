@@ -17,6 +17,7 @@ export type AppTab =
   | 'library-qa'
   | 'qa-history'
   | 'exports'
+  | 'notes'
   | 'author'
   | 'echo'
   | 'subscription'

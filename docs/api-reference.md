@@ -429,6 +429,20 @@ Knowledge artifacts in tuple shape.
 
 System prompts are baked into `services/dataset_service.py` as module constants — see [finetune_design.md](finetune_design.md) for prompt content.
 
+### `GET /api/v1/exports/notes.jsonl`
+The caller's notes as W3C Web Annotations, one JSON-LD object per line under the `http://www.w3.org/ns/anno.jsonld` context, oldest first (S-8.5.3). Withdrawn notes are included with their `deleted` timestamp; `?include_deleted=false` leaves them out. Lossless: `services/note_export_service.py::parse_note_jsonld` is the exact inverse. `?token=` accepted like the other exports.
+
+```json
+{"@context":"http://www.w3.org/ns/anno.jsonld","id":"urn:uuid:…","type":"Annotation","motivation":"highlighting",
+ "created":"2026-10-01T09:01:00+00:00","modified":"…","generator":{"type":"Software","name":"Pratidhvani"},
+ "body":{"type":"TextualBody","value":"…markdown…","format":"text/markdown"},
+ "target":{"id":"urn:pratidhvani:document:<document_id>","type":"document","label":"…","selector":{"type":"TextQuoteSelector","exact":"…","start_seconds":83.5}},
+ "deleted":null,"pratidhvani":{"version":1,"target_type":"document","target_id":"…","target_video_id":"…"}}
+```
+
+### `GET /api/v1/exports/notes.md`
+The same notes as a Markdown document (`text/markdown`): `## <target type>` → `### <target label>` with the raw `type:id` key → `#### <date>` per note, body verbatim, every column in an HTML comment, withdrawn notes marked in the heading. Same `include_deleted` and `?token=` handling.
+
 ---
 
 ## Author Studio
@@ -464,7 +478,7 @@ The generated text as `text/markdown` for books, `text/plain` otherwise. 404 whe
 All `/echo` endpoints require `require_feature("echo_personal_brain")` (Studio only). Backend: `backend/app/routers/echo.py` (I-3, PR #172). Page: [`EchoPage`](ui-pages.md#echopage--echo-studio).
 
 ### `GET /api/v1/echo/status`
-Cold-start readiness: `{ "ready": false, "total_rows": 1, "distinct_sources": 1, "has_personality_trait": true, "threshold_total": 100, "threshold_sources": 3 }`. `ready` is the AND of the three gates.
+Cold-start readiness: `{ "ready": false, "total_rows": 1, "distinct_sources": 1, "has_personality_trait": true, "threshold_total": 100, "threshold_sources": 3, "notes_total": 4, "notes_words": 120 }`. `ready` is the AND of the three gates. `notes_total` / `notes_words` (S-8.5.3) count the caller's live notes as the Domain 3 feeder; they are reported, not gated, until S-3.5.1 sets the voice floor.
 
 ### `GET /api/v1/echo/context`
 The caller's personal-context rows. Query params: `kind`, `source`, `include_expired` (default false). Rows: `{ id, kind, key, value, source, confidence, captured_at, expires_at }`. `kind` is closed to ten values (`location`, `interest`, `hobby`, `work`, `talent`, `skill`, `personality_trait`, `life_event`, `daily_routine`, `place`); anything else is 400.
@@ -500,10 +514,11 @@ All `/notes` endpoints require auth. Backend: `backend/app/routers/notes.py`, se
   "body_md": "**Bold** claim.", "motivation": "commenting",
   "selector": {"type": "TextQuoteSelector", "exact": "…", "prefix": "…", "suffix": "…", "start_seconds": 83.5} | null,
   "created_at": "2026-10-19T11:24:45.598818Z", "updated_at": "…", "deleted_at": null,
-  "target_label": "My video about tariffs", "target_video_id": "minevid0001"
+  "target_label": "My video about tariffs", "target_video_id": "minevid0001",
+  "target_parent_id": null
 }
 ```
-`selector` follows the W3C Web Annotation `TextQuoteSelector` plus `start_seconds` so a note can anchor to a transcript moment like a Q&A citation. Timestamps are UTC with an explicit offset. `target_label` is null once the target is gone (a deleted job); the note itself survives its target.
+`selector` follows the W3C Web Annotation `TextQuoteSelector` plus `start_seconds` so a note can anchor to a transcript moment like a Q&A citation. Timestamps are UTC with an explicit offset. `target_label` is null once the target is gone (a deleted job); the note itself survives its target. `target_parent_id` is set for `qa_exchange` targets only (the job that holds the exchange).
 
 ### `GET /api/v1/notes`
 Query params: `target` (`<target_type>:<id>`, scopes to one target; 404 when that target is not visible, 422 when malformed), `target_type`, `q` (substring filter on the body), `include_deleted` (default false), `limit` (default 500, max 2000), `offset`. Newest first. Returns `{ "items": [...], "total": n, "limit": l, "offset": o }`.

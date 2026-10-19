@@ -1617,6 +1617,8 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 
 ### E-8.5 🟡 Notes — the user's own voice in the library (M5)
 
+**Progress 2026-10-19.** S-8.5.1 and S-8.5.3 shipped (Phase 1, lane D). S-8.5.2 remains and is sequenced after E-7.1.
+
 **Scope.** Free-text Markdown notes on any entity (document, job, Q&A exchange, channel, knowledge artifact), private to the author, searchable, exportable, and **citable**: a note is retrieved alongside transcripts and cited as "you wrote this on <date>" with a 1.5× retrieval weight applied through the [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18) re-rank. Foundational for [E-3.3](#e-33--voice--personality-capture-domain-3): notes are the highest-density personality signal.
 **Plan:** [`docs/plans/m5-notes.md`](plans/m5-notes.md)
 **Acceptance.** A user adds a note to a document; the note appears inline under it and in the "Your notes" view; a library question whose answer the note bears on cites the note with its date and ranks it above an equally relevant transcript chunk; another tenant never sees or retrieves it; the user exports all notes as Markdown.
@@ -1638,11 +1640,11 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.5.2.4 Re-embed on edit, delete chunks on delete; backfill script for existing notes
 - [ ] T-8.5.2.5 Tests: note cited; weight ordering; absent for other tenants; empty visible set still returns the tenant's notes only when they match
 
-#### S-8.5.3 🔵 "Your notes" view, search and export
-**PR:** TBD
-- [ ] T-8.5.3.1 `/notes` page: all notes newest first, grouped by target type, filter by target, full-text filter
-- [ ] T-8.5.3.2 `GET /api/v1/exports/notes.md` and `.jsonl` (streaming, like the dataset exports); included in the command palette groups (E-8.2)
-- [ ] T-8.5.3.3 Notes counted toward Echo readiness as the Domain 3 feeder ([S-3.5.1](#s-351--five-domain-readiness))
+#### S-8.5.3 🟢 "Your notes" view, search and export
+**PR:** [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__) — merged 2026-10-19. Lane D of Phase 1 is complete; S-8.5.2 (retrieval and citations) waits for E-7.1 in Phase 2.
+- [x] T-8.5.3.1 `/notes` page: all notes newest first, grouped by target type, filter by target, full-text filter. Fetches the newest 2000 (the server's page cap) and groups client-side so the type chips carry counts; says so when more exist. A "Show withdrawn" toggle lists soft-deleted notes read-only. Each note links to the page its target lives on (run, channel page, library Q&A, history anchor); sources have no page of their own yet, so those link to the shelf
+- [x] T-8.5.3.2 `GET /api/v1/exports/notes.jsonl` (W3C Web Annotation JSON-LD under the `anno.jsonld` context, one per line, oldest first, withdrawn notes included with `deleted`; `note_export_service.parse_note_jsonld` is the exact inverse and the round-trip test holds every column to it) and `GET /api/v1/exports/notes.md` (grouped by target type and target, every column in an HTML comment per note). Both stream like the dataset exports and accept `?token=`. On the Exports page and the notes page. **Not in the command palette**: E-8.2's palette UI (S-8.2.2) does not exist yet; add the group there when it lands
+- [x] T-8.5.3.3 `GET /echo/status` reports `notes_total` and `notes_words` (live notes) as the Domain 3 feeder; the Echo readiness panel shows them. **Reported, not gated**: the per-language voice floor is S-3.5.1's to set, so `ready` does not move
 
 ### E-8.6 🔵 Job templates (M6)
 

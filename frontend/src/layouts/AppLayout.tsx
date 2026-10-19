@@ -39,6 +39,7 @@ export function AppLayout() {
       'library-qa': '/library/qa',
       'qa-history': '/qa-history',
       exports: '/exports',
+      notes: '/notes',
       author: '/author',
       echo: '/echo',
       subscription: '/account/subscription',
@@ -59,6 +60,7 @@ export function AppLayout() {
   const isJobsActive = location.pathname.startsWith('/jobs');
   const isQAHistoryActive = location.pathname.startsWith('/qa-history');
   const isExportsActive = location.pathname.startsWith('/exports');
+  const isNotesActive = location.pathname.startsWith('/notes');
   const isAuthorActive = location.pathname.startsWith('/author');
   const isEchoActive = location.pathname.startsWith('/echo');
   const isSubscriptionActive = location.pathname.startsWith('/account/subscription');
@@ -80,6 +82,7 @@ export function AppLayout() {
         'library-qa': isLibraryQAActive,
         'qa-history': isQAHistoryActive,
         exports: isExportsActive,
+        notes: isNotesActive,
         author: isAuthorActive,
         echo: isEchoActive,
         subscription: isSubscriptionActive,
@@ -205,6 +208,7 @@ function NavContent({ onChange, active, showAuthor, showEcho, currentTier }: Nav
       </NavGroup>
       <NavGroup label="Knowledge">
         <NavItem active={active['qa-history']} onClick={() => onChange('qa-history')}>Echoes (Q&amp;A history)</NavItem>
+        <NavItem active={active.notes}        onClick={() => onChange('notes')}>Your notes</NavItem>
         <NavItem active={active.exports}      onClick={() => onChange('exports')}>Exports</NavItem>
       </NavGroup>
       {(showAuthor || showEcho) && (

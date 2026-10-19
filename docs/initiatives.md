@@ -1762,8 +1762,8 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 Scope-changed 2026-10-19: (1) the prompt lives in `services/suggestion_service.py`, not `agents/prompts/` (that package belongs to E-7.1 and R5). (2) Not a `FEATURE_TO_USE_CASES` gate: like `temporal_scope_extract` it is fail-soft, so a failed probe turns the generator off and the reader's past questions still come back. (3) The acceptance's "within two seconds" holds for cached opens only: a first open measured 3.5 s median for the model call (three calls, 2026-10-19), so the card loads after the page and never blocks it. (4) Plan open questions at the recommended defaults: a one-hour cache window; suggestions on the Q&A pages only, not yet in Echo's anticipation cards.
 
 #### S-8.4.2 🟢 Suggestion cards
-**PR:** [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)
-**Shipped:** 2026-10-19 — PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)
+**PR:** [#308](https://github.com/khoks/VideoResearchPro/pull/308)
+**Shipped:** 2026-10-19 — PR [#308](https://github.com/khoks/VideoResearchPro/pull/308)
 - [x] T-8.4.2.1 Card below the composer on `JobDetailPage`, `LibraryQAPage`, `VideoKnowledgePage`; click fills, Shift-click asks immediately
 - [x] T-8.4.2.2 Click-through recorded as an `audit_log` event so the feature can be measured (the card calls `POST /suggestions/feedback`, built in S-8.4.1)
 - [x] T-8.4.2.3 Hidden when `/health` reports the Q&A feature down

@@ -4,6 +4,7 @@ import { useJobStore, type AppTab } from '../stores/jobStore';
 import { useAuth } from '../contexts/AuthContext';
 import { useSystemStatus } from '../hooks/useSystemStatus';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
+import { QuickShare } from '../components/echo/QuickShare';
 import { useShelves } from '../hooks/useShelves';
 import { ShelfDot } from '../components/shelves/ShelfDot';
 import { SystemStatusBanner } from '../components/common/SystemStatusBanner';
@@ -108,12 +109,20 @@ export function AppLayout() {
   );
 
   const chrome = (
-    <UserChrome
-      email={user?.email}
-      theme={theme}
-      onToggleTheme={toggleTheme}
-      onLogout={handleLogout}
-    />
+    <>
+      {/* S-3.7.1: "Add to Echo" quick-share, for tiers with Echo. */}
+      {has('echo_personal_brain') && (
+        <div style={{ marginBottom: space['3'] }}>
+          <QuickShare />
+        </div>
+      )}
+      <UserChrome
+        email={user?.email}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onLogout={handleLogout}
+      />
+    </>
   );
 
   return (

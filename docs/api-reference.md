@@ -808,7 +808,7 @@ The generated text as `text/markdown` for books, `text/plain` otherwise. 404 whe
 All `/echo` endpoints require `require_feature("echo_personal_brain")` (Studio only). Backend: `backend/app/routers/echo.py` (I-3, PR #172). Page: [`EchoPage`](ui-pages.md#echopage--echo-studio).
 
 ### `GET /api/v1/echo/status`
-Cold-start readiness: `{ "ready": false, "total_rows": 1, "distinct_sources": 1, "has_personality_trait": true, "threshold_total": 100, "threshold_sources": 3, "notes_total": 4, "notes_words": 120 }`. `ready` is the AND of the three gates. `notes_total` / `notes_words` (S-8.5.3) count the caller's live notes as the Domain 3 feeder; they are reported, not gated, until S-3.5.1 sets the voice floor.
+Cold-start readiness: `{ "ready": false, "total_rows": 1, "distinct_sources": 1, "has_personality_trait": true, "threshold_total": 100, "threshold_sources": 3, "notes_total": 4, "notes_words": 120 }`. `ready` is the AND of the three gates. `notes_total` / `notes_words` (S-8.5.3) count the caller's live notes as the Domain 3 feeder; they are reported, not gated, until S-3.5.1 sets the voice floor. `shares_total` (S-3.7.1) counts the shares inbox as the Domain 5 feeder, reported the same way.
 
 ### `GET /api/v1/echo/context`
 The caller's personal-context rows. Query params: `kind`, `source`, `include_expired` (default false). Rows: `{ id, kind, key, value, source, confidence, captured_at, expires_at }`. `kind` is closed to ten values (`location`, `interest`, `hobby`, `work`, `talent`, `skill`, `personality_trait`, `life_event`, `daily_routine`, `place`); anything else is 400.
@@ -824,6 +824,27 @@ Revoke a source: deletes every row attributed to it for the caller. `{ "deleted_
 
 ### `GET /api/v1/echo/connectors`
 `{ "connectors": [], "supported_kinds": [...] }`. The connector registry is empty until E-3.2 ships a concrete connector.
+
+### Shares inbox (S-3.7.1)
+Everything the user forwards to Echo, no approval step. Every share is `pending` until S-3.7.2's processing exists. **Context-only by default:** `author_is_tenant` is false unless the user says the words are theirs; such a share is never quoted and never enters a dataset or derived export.
+
+Share shape: `{ id, received_at, updated_at, surface, content_type, kind: "url"|"text"|"file", url, text, file: {filename, mime, size} | null, user_annotation, author_is_tenant, processing_state, linked_document_id }`. Timestamps are UTC with an offset. A foreign id is the same 404 as a missing one.
+
+- `POST /api/v1/echo/shares` — body `{ url | text, annotation?, content_type?, author_is_tenant? = false, surface? = "manual_quick_share" }`, exactly one of `url` (http/https only) or `text` (non-blank, at most `ECHO_SHARE_TEXT_MAX_CHARS`, 413 above). `content_type` is inferred when omitted (`youtube_video`, `youtube_short`, `instagram_reel`, `tweet`, `link`, `text_snippet`, ...) and must match `^[a-z][a-z0-9_]{0,63}$`. 201.
+- `POST /api/v1/echo/shares/upload` — multipart `file` plus optional `annotation`, `content_type`, `author_is_tenant`, `surface`. Empty is 422; over `ECHO_SHARE_MAX_BYTES` (25 MB) is 413 and writes nothing. Stored as `ECHO_SHARES_DIR/<tenant>/<share id><ext>`; the client's filename is kept for display only. 201.
+- `GET /api/v1/echo/shares` — `?state=pending|processed|skipped|failed&q=&limit=(1-500, 100)&offset=`; newest first; `q` matches text, annotation and payload (URL, filename). `{ items, total, limit, offset }`.
+- `GET /api/v1/echo/shares/{id}`; `PATCH /api/v1/echo/shares/{id}` with any of `annotation` (`null` clears), `content_type`, `author_is_tenant`.
+- `DELETE /api/v1/echo/shares/{id}` — removes the share's vector, file, derived facts and row. `{ deleted, vectors, files, derived_facts }`.
+- `GET /api/v1/echo/shares/{id}/file` — the stored bytes, always `Content-Disposition: attachment` with `X-Content-Type-Options: nosniff`. A row whose path points outside its tenant directory is never followed (404).
+
+### `GET /api/v1/echo/export`
+The whole brain as one zip (S-3.10.1): `manifest.json` (format `pratidhvani-echo-archive`, version 1, export time, tenant, row counts per table, every file with size and SHA-256, any missing file), `personal_context.jsonl` and `shares_inbox.jsonl` (every column; datetimes ISO-8601 with offset), and `files/<stored path>`. Lossless: `services/echo_privacy_service.py::read_archive` is the exact inverse. Built in a temporary file and removed after sending. Audited (`echo_exported`, counts only). Notes and the library are not part of Echo; notes export at `/exports/notes.*`.
+
+### `GET /api/v1/echo/brain/footprint`
+What Echo holds for the caller in every store: `{ "rows": {"personal_context": n, "shares_inbox": n}, "files": n, "vectors": {"shares_global": n, "personal_context_global": n} }`.
+
+### `DELETE /api/v1/echo/brain?confirm=delete-everything`
+Deletes every Echo row, file and vector of the caller (S-3.10.2). Without the exact confirmation: 422 (missing) or 400 (wrong). Order: vectors, files, then rows in one commit; a failing store returns 500 naming it and leaves the rows that let a retry finish. Returns `{ deleted, removed: <footprint>, footprint_after: <footprint> }`; `footprint_after` is all zeros or the call fails. Audited (`echo_brain_deleted`, counts only). Irreversible; the library, notes, account and BYOK keys are untouched.
 
 ---
 

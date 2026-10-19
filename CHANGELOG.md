@@ -10,6 +10,26 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Echo: the shares inbox, with whole-brain export and delete (S-3.7.1, S-3.10.1, S-3.10.2, 2026-10-19)
+
+The first new Echo table, shipped with its export and its erasure. PR [#286](https://github.com/khoks/VideoResearchPro/pull/286). Plan: [docs/plans/l3-echo-personal-brain.md](docs/plans/l3-echo-personal-brain.md).
+
+- **Shares inbox.** `shares_inbox` (migration `007c708bb890`, which also gives
+  `personal_context` a `tenant_id` backfilled from `user_id`). `/api/v1/echo/shares`
+  takes a link, text or a file (25 MB cap, stored under `ECHO_SHARES_DIR/<tenant>/`
+  by share id), lists, edits and deletes; deleting a share removes its file,
+  vector and derived facts. Studio only.
+- **Context-only by default.** A share is someone else's words unless the user
+  says otherwise: retrievable as context later, never quoted, never in a dataset
+  export. The plan's recommended default for its open question; no per-thread
+  override was built.
+- **Export.** `GET /api/v1/echo/export`: one zip with a manifest, JSONL per table
+  and the files; `read_archive` is its tested inverse.
+- **Delete.** `DELETE /api/v1/echo/brain?confirm=delete-everything` removes every
+  Echo row, file and vector; tests check each store directly for both tenants.
+  `GET /api/v1/echo/brain/footprint` shows the counts.
+- **UI.** "Add to Echo" in the sidebar, an `/echo/inbox` page, and a "Your Echo
+  data" card on the Echo page with export and a typed-confirmation delete.
 ### Command palette and keyboard shortcuts (2026-10-19)
 
 S-8.2.2 ([plan](docs/plans/m2-command-palette.md)). Find any run, source,

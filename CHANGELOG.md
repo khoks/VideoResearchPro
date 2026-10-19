@@ -10,6 +10,43 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Reading room: reports render natively, no token in the URL (2026-10-19)
+
+S-8.8.1, the first story of the E-8.8 reading room
+([plan](docs/plans/m8-reading-room.md)). Reports used to be read inside an
+`<iframe>` whose `src` carried the JWT as `?token=`; they now open at
+`/reports/:jobId` as a native reading view.
+
+- **`GET /api/v1/jobs/{id}/report/body`** returns `{title, html, statistics,
+  generated_at}` under header auth only. `report_service.extract_report_body`
+  splits a stored report back into those parts by reading the template's own
+  markers (and falls back to the whole `<body>` for an unrecognised file).
+  Lives in a new `routers/reports.py` so the Q&A router stays untouched. The
+  legacy HTML route and its query-token fallback stay for the quick-peek modal
+  (T-8.8.1.5 retires them later).
+- **Sanitise then parse.** `DOMPurify` (dual MPL-2.0 / Apache-2.0; the
+  project elects Apache-2.0) with `style`, `script`, embeds, forms, SVG and
+  MathML forbidden and `style=` attributes dropped, then `html-react-parser`
+  with one `replace` hook: heading ids and the outline, `&t=` anchors to
+  citation chips (bare pre-S-1.14.9 anchors become non-link chips, never dead
+  links; an href the browser repaired out of a truncated tag is never linked),
+  tables in a scroll region, the drop-cap paragraph.
+- **`ReaderShell`** (`components/reader/`): 75ch serif measure, drop cap via
+  `::first-letter` with `initial-letter` under `@supports`, sticky outline
+  with `aria-current` driven by one IntersectionObserver, rAF-throttled
+  reading-progress pill, `text-wrap: pretty` / `balance`. Knowledge artifacts
+  and books will reuse it (S-8.8.3).
+- **Job page:** "Read report" is the primary action; the iframe modal survives
+  as "Quick peek" and still owns "Open in new tab".
+- **Tests:** a vitest + jsdom runner lands in the frontend (`npm test`) with a
+  hostile-markup sanitiser test and a parser test over three stored real
+  reports (one with bare anchors, one with full URLs, one channel report);
+  backend tests cover the extractor against the real template and the route's
+  header-only auth.
+- Found on the way: one stored report (`419e691d…`) was cut mid-tag by the
+  writer, so the browser folds two headings into an attribute value. The
+  reader cannot recover them; the fix belongs in the compose step.
+
 ### R3 closed, R4's Q&A half wired, executive-summary defects fixed (2026-10-19)
 
 Requirement R3 asked for two dates per source — when it was posted and which

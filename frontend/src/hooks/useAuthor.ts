@@ -48,8 +48,8 @@ export function useCreateOutput() {
   return useMutation({
     mutationFn: (payload: CreateOutputPayload) => authorApi.createOutput(payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: OUTPUTS_KEY }),
-    // A 501 (no outputter yet) still leaves a pending row behind on the
-    // server, so refresh the list on error too.
+    // S-6.7.1: a 501 no longer writes a row, but a queue failure records a
+    // `failed` row, so refresh on error too.
     onError: () => qc.invalidateQueries({ queryKey: OUTPUTS_KEY }),
   });
 }
@@ -61,6 +61,18 @@ export function useDeleteOutput() {
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: OUTPUTS_KEY });
       qc.removeQueries({ queryKey: ['author', 'content', id] });
+    },
+  });
+}
+
+/** S-6.7.1: stop a pending or generating output (mirrors cancelling a job). */
+export function useCancelOutput() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => authorApi.cancelOutput(id),
+    onSettled: (_data, _err, id) => {
+      qc.invalidateQueries({ queryKey: OUTPUTS_KEY });
+      qc.invalidateQueries({ queryKey: ['author', 'output', id] });
     },
   });
 }

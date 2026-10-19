@@ -27,6 +27,28 @@ the mouse.
 - **Results land on the item:** a source narrows the library to its row, a
   question scrolls to and focuses its exchange, a knowledge report opens the
   reader.
+### Author Studio generates in the worker, with live progress and cancel (2026-10-19, S-6.7.1)
+
+PR [#281](https://github.com/khoks/VideoResearchPro/pull/281). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **`POST /api/v1/author/outputs` returns `pending` at once** and queues the
+  new `author.generate_output` Celery task on the owner's tier queue;
+  `?sync=true` keeps inline generation for tests and scripts. `outputs` gains
+  `celery_task_id`, `progress_pct` and `progress_message` (migration
+  `72d7e46ef057`). A kind with no outputter is now 501 before any row is
+  written.
+- **Progress on the existing socket.** Status changes and per-chapter
+  progress publish on `job_progress:{output_id}`; the socket's ownership
+  check accepts outputs. The Author page shows a progress bar, opens the
+  book it just queued when it finishes, and the reader follows a book still
+  being written.
+- **`POST /api/v1/author/outputs/{id}/cancel`** and a `cancelled` status.
+  Cancellation is cooperative, since the solo-pool worker cannot be
+  interrupted: the next progress report stops the run, and a late cancel
+  still wins over `completed`.
+- **Fixed:** `wsClient.ts` threw `InvalidStateError: Still in CONNECTING
+  state` in dev (and as an uncaught error on the job page) when a second
+  subscribe arrived while the socket was connecting.
 
 ### Channel intelligence aggregate (2026-10-19)
 

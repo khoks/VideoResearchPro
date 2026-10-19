@@ -11,7 +11,12 @@ router = APIRouter()
 
 
 def _owns_job(tenant_id: str, job_id: str, session_factory=None) -> bool:
-    """Whether ``tenant_id`` owns ``job_id``.
+    """Whether ``tenant_id`` owns the progress stream ``job_id``.
+
+    A stream id is a job id or, since S-6.7.1, an Author Studio output id:
+    `generate_output` publishes on `job_progress:{output_id}`, the channel
+    jobs already use, so the socket needs no second channel. Either way the
+    caller must own the row.
 
     Opens its own short-lived session: this runs inside the socket loop, not a
     request, so there is no `Depends(get_db)` to lean on. ``session_factory``
@@ -33,9 +38,18 @@ def _owns_job(tenant_id: str, job_id: str, session_factory=None) -> bool:
         # Opening the session is inside the guard on purpose: a connection
         # failure must DENY, not raise out of the socket loop.
         db = session_factory()
-        return (
+        if (
             db.query(Job.id)
             .filter(Job.id == job_id, Job.tenant_id == tenant_id)
+            .first()
+            is not None
+        ):
+            return True
+        from app.models.output import Output
+
+        return (
+            db.query(Output.id)
+            .filter(Output.id == job_id, Output.user_id == tenant_id)
             .first()
             is not None
         )

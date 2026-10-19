@@ -297,6 +297,9 @@ def test_create_output_no_outputter_returns_501(unauthenticated_client, db):
         headers=headers,
     )
     assert r.status_code == 501
+    # T-6.7.1.5: refused before any row is written.
+    from app.models.output import Output
+    assert db.query(Output).count() == 0
 
 
 def test_create_book_returns_completed_output(
@@ -313,7 +316,7 @@ def test_create_book_returns_completed_output(
     )
 
     r = unauthenticated_client.post(
-        "/api/v1/author/outputs",
+        "/api/v1/author/outputs?sync=true",
         json={
             "kind": "book", "title": "My Book",
             "source_ids": [job.id], "parameters": {"include_qa": False},
@@ -337,7 +340,7 @@ def test_get_output_content_returns_markdown(
     monkeypatch.setattr(report_service, "get_report_html", lambda p: "<p>Body.</p>")
 
     r = unauthenticated_client.post(
-        "/api/v1/author/outputs",
+        "/api/v1/author/outputs?sync=true",
         json={"kind": "book", "title": "T", "source_ids": [job.id]},
         headers=headers,
     )
@@ -541,7 +544,7 @@ def test_output_items_carry_word_count(unauthenticated_client, db, monkeypatch):
     monkeypatch.setattr(report_service, "get_report_html", lambda p: "<h1>T</h1><p>one two three</p>")
 
     r = unauthenticated_client.post(
-        "/api/v1/author/outputs", headers=headers,
+        "/api/v1/author/outputs?sync=true", headers=headers,
         json={"kind": "book", "title": "WC", "source_ids": [job.id], "parameters": {"include_qa": False, "include_toc": False}},
     )
     assert r.status_code == 200, r.text

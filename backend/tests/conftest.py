@@ -114,6 +114,8 @@ def client(db, auth_headers):
         patch("app.routers.jobs.execute_channel_job") as mock_channel,
         patch("app.routers.jobs.execute_subscription_job") as mock_subscription,
         patch("app.routers.jobs.resume_job_after_approval") as mock_resume,
+        # S-6.7.1: Author Studio generation is a Celery task too.
+        patch("app.routers.author.generate_output") as mock_generate_output,
     ):
         mock_topic.delay.return_value = MagicMock(id="mock-topic-task-id")
         mock_topic.apply_async.return_value = MagicMock(id="mock-topic-task-id")
@@ -125,6 +127,7 @@ def client(db, auth_headers):
         )
         mock_resume.delay.return_value = MagicMock(id="mock-resume-task-id")
         mock_resume.apply_async.return_value = MagicMock(id="mock-resume-task-id")
+        mock_generate_output.apply_async.return_value = MagicMock(id="mock-generate-output-task-id")
         with TestClient(app, headers=auth_headers) as c:
             yield c
 
@@ -147,6 +150,8 @@ def unauthenticated_client(db):
         patch("app.routers.jobs.execute_channel_job") as mock_channel,
         patch("app.routers.jobs.execute_subscription_job") as mock_subscription,
         patch("app.routers.jobs.resume_job_after_approval") as mock_resume,
+        # S-6.7.1: Author Studio generation is a Celery task too.
+        patch("app.routers.author.generate_output") as mock_generate_output,
     ):
         mock_topic.delay.return_value = MagicMock(id="mock-topic-task-id")
         mock_topic.apply_async.return_value = MagicMock(id="mock-topic-task-id")
@@ -158,6 +163,7 @@ def unauthenticated_client(db):
         )
         mock_resume.delay.return_value = MagicMock(id="mock-resume-task-id")
         mock_resume.apply_async.return_value = MagicMock(id="mock-resume-task-id")
+        mock_generate_output.apply_async.return_value = MagicMock(id="mock-generate-output-task-id")
         with TestClient(app) as c:
             yield c
 

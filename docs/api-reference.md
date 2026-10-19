@@ -776,14 +776,17 @@ All `/author` endpoints require `require_feature("author_studio")` (Pro and abov
 `{ "available": ["book"], "supported": ["book", "deck", "newsletter", "reel", "site"] }`. `available` lists kinds with a registered outputter; `supported` is every kind the schema accepts. Create a kind that is supported but not available and you get 501.
 
 ### `POST /api/v1/author/outputs`
-Create and generate in one synchronous call. Body `{ "kind": "book", "title": "…", "source_ids": ["<job_id>", …], "parameters": { "include_qa": true, "include_toc": true } }`. For `book`, `source_ids` are job IDs **of the caller's own runs** (another tenant's id reads like a missing one), one chapter per run: its report's Markdown source (S-6.1.2) with headings demoted under the chapter heading, and its Q&A if `include_qa`; a run without a report, or whose file is missing, yields a disclosed placeholder chapter. An empty `source_ids` for `book` is 400 and writes no row. Returns the `OutputItem` in `completed` or `failed` state (`error_message` populated on failure). 400 unknown kind or empty title; 501 kind without an outputter, which leaves a `pending` row behind.
+Create the row and queue its generation in the worker (S-6.7.1). Body `{ "kind": "book", "title": "…", "source_ids": ["<job_id>", …], "parameters": { "include_qa": true, "include_toc": true } }`. For `book`, `source_ids` are job IDs **of the caller's own runs** (another tenant's id reads like a missing one), one chapter per run: its report's Markdown source (S-6.1.2) with headings demoted under the chapter heading, and its Q&A if `include_qa`; a run without a report, or whose file is missing, yields a disclosed placeholder chapter. An empty `source_ids` for `book` is 400 and writes no row. Returns the `OutputItem` at once in `pending` state with `celery_task_id` set; the worker (`author.generate_output`, on the owner's tier queue) publishes status changes and per-chapter progress on the `/ws/jobs` socket under the **output's id** (subscribe to it like a job id; the server checks the caller owns it). `?sync=true` generates inside the request and returns the finished row (`completed` or `failed`), the path tests and scripts use. If the broker is unreachable the row is returned `failed` with `Could not queue generation: …`. 400 unknown kind or empty title; 501 kind without an outputter, before any row is written.
 
 ```json
-{ "id": "...", "kind": "book", "title": "...", "status": "completed", "source_ids": ["..."], "parameters": {}, "error_message": null, "created_at": "...", "updated_at": "...", "has_content": true, "word_count": 4210 }
+{ "id": "...", "kind": "book", "title": "...", "status": "pending", "source_ids": ["..."], "parameters": {}, "error_message": null, "created_at": "...", "updated_at": "...", "has_content": false, "word_count": null, "progress_pct": 0, "progress_message": "Queued", "celery_task_id": "..." }
 ```
 
 ### `GET /api/v1/author/outputs`
-List the caller's outputs. Query params: `kind`, `status` (`pending` / `generating` / `completed` / `failed`).
+List the caller's outputs. Query params: `kind`, `status` (`pending` / `generating` / `completed` / `failed` / `cancelled`). A `pending` row with no `celery_task_id` predates S-6.7.1 and will never run.
+
+### `POST /api/v1/author/outputs/{output_id}/cancel`
+Cancel a `pending` or `generating` output (S-6.7.1), mirroring `/jobs/{id}/cancel`: revokes the task and marks the row `cancelled`, publishing the change on the socket. Generation also stops at the outputter's next progress report, because a solo-pool worker cannot be interrupted mid-task, and a cancel that lands after the last report still wins over `completed`. Returns the `OutputItem`. 404 for another user's output; 400 once it is `completed`, `failed` or `cancelled`.
 
 ### `GET /api/v1/author/outputs/{output_id}`
 One output; 404 for another user's (existence-leak posture).

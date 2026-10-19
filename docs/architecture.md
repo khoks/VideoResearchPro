@@ -251,7 +251,8 @@ ApiQuotaLog (append-only ledger of YouTube + LLM calls)
 Per [saas-roadmap.md](saas-roadmap.md) and [source-types.md](source-types.md):
 
 - Every user-scoped table has — or will have, in the imminent migration — a `tenant_id` column. The single self-host instance has a single tenant.
-- The `documents` table carries `source_type`, `source_id`, `source_url`, `source_metadata_json`, `language`, `word_count`, `user_provenance_json` (from L1 PR 1) plus `document_id` UUID PK (from E-1.10, PR #112). The legacy `video_id` column persists as nullable back-compat. The future `creator_id` foreign key for cross-source-type creators is the next planned column (E-1.9).
+- The `documents` table carries `source_type`, `source_id`, `source_url`, `source_metadata_json`, `language`, `word_count`, `user_provenance_json` (from L1 PR 1) plus `document_id` UUID PK (from E-1.10, PR #112). The legacy `video_id` column persists as nullable back-compat and is NULL for every non-video source — never key anything on it. The future `creator_id` foreign key for cross-source-type creators is the next planned column (E-1.9).
+- **Document visibility.** `document_visibility(document_id, tenant_id, source)` is the per-tenant grant over the shared cache ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)), re-keyed on the primary key by [D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19) after the original `video_id` key silently dropped every PDF and pasted page. Every ingest path calls `visibility_service.grant(db, document_ids, tenant_id, source)`, including on dedup hits; every user-facing read of `documents` filters through `visibility_service.visible_document_ids(db, tenant_id)`; library Q&A hands the same set to Chroma.
 - The `channels` table grows into `creators` with `source_type`, `source_weight` (E-1.9). `source_type`, `creator_external_id`, and `source_weight` are already present from L1 PR 1. Per-user state, including `source_weight`, moved to `channel_subscriptions` in [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31). **Nothing reads `source_weight` yet** (verified 2026-10-18), so retrieval is unweighted: every approved source counts equally until [L4](feature-roadmap.md#l4--curated-source-ranking-) lands.
 - The classifier output (D-007 / D-014) lands at `documents.source_metadata_json["classification"]` per [D-023](decisions.md#d-023--social_classify_stance-invoked-inline-inside-each-connector-2026-04-28); inserted via the source-type-agnostic `_upsert_candidate_and_link()` helper (PR [#113](https://github.com/khoks/VideoResearchPro/pull/113)).
 
@@ -363,15 +364,15 @@ Since 2026-10-19 each chunk also carries its source's two dates as flat scalars 
 
 `chroma_service.py` is a singleton client (`PersistentClient(path=...)`). Collection access is via `get_or_create_collection`. Two collections in active use:
 
-- **`videoresearchpro_global`** — chunked transcripts. Metadata per chunk: `{video_id, job_id, chunk_index, start_time, end_time, channel_id, ingested_at}`.
+- **`videoresearchpro_global`** — chunked transcripts. Metadata per chunk: `{document_id, video_id, source_type, source_id, chunk_index, timestamp_start, timestamp_end, channel_id, language, published_ts, era_*, ...}`. `document_id` ([D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)) is the field every scoped query filters on; `video_id` is empty for non-video sources. Chunk ids are `{video_id}:{index}` for YouTube documents and `{document_id}:{index}` for every other source — a storage key for in-place upsert, never read by retrieval. Chunks embedded before 2026-10-19 carry no `document_id`; `chroma_service.backfill_chunk_document_ids` stamps it at API startup (metadata-only, no re-embedding, idempotent).
 - **`qa_library_global`** — Q&A exchanges, single document each. Metadata: `{exchange_id, surface (job/library/history), job_id (nullable), question_preview, asked_at}`.
 
 Chunk inserts are batched. Failures retry once and then surface as a `building_rag` failure on the job.
 
 ### Retrieval
 
-- **Per-job Q&A** filters by `video_id ∈ approved_set`. Top-K = 15 by default (env `RAG_TOP_K`).
-- **Library-wide Q&A** filters by `video_id ∈ the tenant's visible set` (D-063). Top-K = 15 by default.
+- **Per-job Q&A** filters by `document_id ∈ the job's approved set` (`JobVideo.document_id`, so a job's Reddit / HN / PDF documents are in scope). Top-K = 15 by default (env `RAG_TOP_K`).
+- **Library-wide Q&A** filters by `document_id ∈ the tenant's visible set` (D-063, keyed per D-070). Top-K = 15 by default. **An empty set retrieves nothing:** `query_collection(document_ids=[])` returns `[]`; only `None` is unrestricted, and no user-facing caller passes it.
 - **Corpus statistics come from SQLite, not from the hits.** Retrieval returns a handful of chunks, which say nothing about the corpus they came from, so `services/corpus_stats_service.py` computes `{video_count, total_words, earliest/latest/median published, videos_by_year, era span}` for the approved (job) or visible (library) document set in the router and passes them, with the length preference, into the Q&A agent. The output-length policy and the temporal note are dead code without them — which is exactly how R4's Q&A half shipped unwired from 2026-07-31 to 2026-10-18 (D-066 amendment, D-072).
 - **Q&A history meta-chat** queries `qa_library_global` with no filter. Returns top-15 past exchanges.
 - **Video knowledge extraction** doesn't use RAG — it works directly on the cached transcript (chunk-by-chunk via the knowledge agent's map-reduce).

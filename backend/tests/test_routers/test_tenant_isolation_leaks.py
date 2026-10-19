@@ -134,13 +134,13 @@ def test_library_qa_retrieval_is_restricted_to_visible_documents(monkeypatch):
 
     captured = {}
 
-    def _fake_query(query_text, n_results=None, video_ids=None, distance_threshold=None):
-        captured["video_ids"] = video_ids
+    def _fake_query(query_text, n_results=None, document_ids=None, distance_threshold=None):
+        captured["document_ids"] = document_ids
         return []
 
     monkeypatch.setattr(qa_agent.chroma_service, "query_collection", _fake_query)
     qa_agent._query_library("anything", ["mine1", "mine2"])
-    assert captured["video_ids"] == ["mine1", "mine2"]
+    assert captured["document_ids"] == ["mine1", "mine2"]
 
 
 def test_empty_visible_set_retrieves_nothing_rather_than_everything(monkeypatch):
@@ -149,10 +149,10 @@ def test_empty_visible_set_retrieves_nothing_rather_than_everything(monkeypatch)
 
     captured = {}
 
-    def _fake_query(query_text, n_results=None, video_ids=None, distance_threshold=None):
-        captured["video_ids"] = video_ids
+    def _fake_query(query_text, n_results=None, document_ids=None, distance_threshold=None):
+        captured["document_ids"] = document_ids
         return []
 
     monkeypatch.setattr(qa_agent.chroma_service, "query_collection", _fake_query)
     qa_agent._query_library("anything", [])
-    assert captured["video_ids"] == [], "empty must stay empty, never become None"
+    assert captured["document_ids"] == [], "empty must stay empty, never become None"

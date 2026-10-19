@@ -155,7 +155,8 @@ def test_channel_videos_lists_only_channel_videos(client, db, test_user):
     from app.services import visibility_service
 
     visibility_service.grant(
-        db, ["vid1", "vid2", "other"], test_user.id, visibility_service.SOURCE_JOB
+        db, [v1.document_id, v2.document_id, v_other.document_id], test_user.id,
+        visibility_service.SOURCE_JOB,
     )
 
     response = client.get("/api/v1/channels/UCvids2/videos")

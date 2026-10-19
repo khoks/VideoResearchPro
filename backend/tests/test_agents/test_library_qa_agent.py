@@ -42,8 +42,9 @@ def _rag_chunk(video_id: str, title: str, channel: str, ts: float = 0.0) -> dict
 
 
 def test_library_qa_runs_end_to_end_with_citations():
-    """run_library_qa_agent should call query_collection with video_ids=None
-    and return an answer plus structured references."""
+    """run_library_qa_agent called without a scope passes document_ids=None
+    (unrestricted; internal use only) and returns an answer plus structured
+    references."""
     rag = [
         _rag_chunk("vDNS", "How DNS Works", "NetTeach", ts=30.0),
         _rag_chunk("vNet", "Intro to Networking", "NetTeach", ts=60.0),
@@ -68,14 +69,14 @@ def test_library_qa_runs_end_to_end_with_citations():
     answer = result["answer"]
     references = result["references"]
 
-    # Assert query_collection was called with video_ids=None (global search).
+    # Assert query_collection was called with document_ids=None (global search).
     assert mock_q.call_count >= 1
     first_call = mock_q.call_args_list[0]
-    assert "video_ids" in first_call.kwargs, (
-        "run_library_qa_agent must pass video_ids as a keyword arg to "
+    assert "document_ids" in first_call.kwargs, (
+        "run_library_qa_agent must pass document_ids as a keyword arg to "
         f"query_collection; got args={first_call.args} kwargs={first_call.kwargs}"
     )
-    assert first_call.kwargs["video_ids"] is None
+    assert first_call.kwargs["document_ids"] is None
 
     # Answer preserved; reference extracted for the cited video.
     assert "DNS" in answer

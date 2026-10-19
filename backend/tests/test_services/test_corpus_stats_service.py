@@ -12,7 +12,10 @@ from app.services import output_length, visibility_service
 
 
 def _doc(vid: str, words: int, year: int | None, era: dict | None = None) -> Document:
+    # document_id == video_id so the short ids below address the row under
+    # both keys; grants and statistics are keyed on document_id (D-070).
     return Document(
+        document_id=vid,
         video_id=vid,
         title=f"Video {vid}",
         url=f"https://www.youtube.com/watch?v={vid}",
@@ -23,7 +26,7 @@ def _doc(vid: str, words: int, year: int | None, era: dict | None = None) -> Doc
 
 
 def test_empty_set_is_zero_statistics_and_small_bracket(db):
-    stats = css.corpus_statistics_for_video_ids(db, [])
+    stats = css.corpus_statistics_for_document_ids(db, [])
     assert stats["video_count"] == 0 and stats["total_words"] == 0
     assert stats["earliest_published"] is None
     assert output_length.corpus_bracket(stats) == "small"
@@ -38,7 +41,7 @@ def test_statistics_over_an_explicit_set(db):
     ])
     db.commit()
 
-    stats = css.corpus_statistics_for_video_ids(db, ["a", "b", "c", "a", "nope"])
+    stats = css.corpus_statistics_for_document_ids(db, ["a", "b", "c", "a", "nope"])
     assert stats["video_count"] == 3
     assert stats["total_words"] == 400
     assert stats["earliest_published"] == "2024-06-01"
@@ -52,10 +55,10 @@ def test_statistics_over_an_explicit_set(db):
 
 
 def test_word_count_falls_back_for_non_video_sources(db):
-    doc = Document(video_id="p", title="pdf", url="u", source_type="pdf", source_id="p", word_count=777)
+    doc = Document(document_id="p", title="pdf", url="u", source_type="pdf", source_id="p", word_count=777)
     db.add(doc)
     db.commit()
-    assert css.corpus_statistics_for_video_ids(db, ["p"])["total_words"] == 777
+    assert css.corpus_statistics_for_document_ids(db, ["p"])["total_words"] == 777
 
 
 def test_job_statistics_use_only_approved_documents(db):

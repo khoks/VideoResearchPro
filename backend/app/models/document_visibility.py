@@ -19,6 +19,11 @@ backfill auditable and future ingest paths obvious when they are missed.
 One row per (document, tenant): two users ingesting the same video share the
 cached transcript and embeddings but each hold their own visibility grant, and
 neither can see that the other has one.
+
+D-070 (2026-10-19): the grant references ``documents.document_id``, the real
+primary key. Until then it referenced the legacy ``documents.video_id``, which
+is NULL for every non-video source, so PDFs and pasted pages were ingested
+but granted to nobody. Migration ``c7d8e9f0a1b2`` re-keyed the table.
 """
 from __future__ import annotations
 
@@ -37,10 +42,15 @@ class DocumentVisibility(Base):
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    # The shared-cache row this grant refers to. Legacy PK column name.
-    video_id: Mapped[str] = mapped_column(
-        String(64),
-        ForeignKey("documents.video_id", ondelete="CASCADE"),
+    # The shared-cache row this grant refers to — the canonical PK, never
+    # the legacy YouTube id (D-070).
+    document_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "documents.document_id",
+            ondelete="CASCADE",
+            name="fk_document_visibility_document_id",
+        ),
         nullable=False,
         index=True,
     )
@@ -54,9 +64,11 @@ class DocumentVisibility(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("video_id", "tenant_id", name="uq_document_visibility"),
-        Index("ix_document_visibility_tenant_video", "tenant_id", "video_id"),
+        UniqueConstraint("document_id", "tenant_id", name="uq_document_visibility"),
+        Index("ix_document_visibility_tenant_document", "tenant_id", "document_id"),
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
-        return f"<DocumentVisibility {self.video_id} -> {self.tenant_id[:8]} ({self.source})>"
+        return (
+            f"<DocumentVisibility {self.document_id} -> {self.tenant_id[:8]} ({self.source})>"
+        )

@@ -501,10 +501,12 @@ def _grant_job_document_visibility(db, job) -> None:
     if not tenant_id:
         return
     try:
+        # D-070: grants are keyed on document_id — the legacy video_id is
+        # NULL for a job's Reddit / HN / PDF documents.
         ids = [
             row[0]
-            for row in db.query(JobVideo.video_id).filter(
-                JobVideo.job_id == job.id, JobVideo.video_id.isnot(None)
+            for row in db.query(JobVideo.document_id).filter(
+                JobVideo.job_id == job.id, JobVideo.document_id.isnot(None)
             )
         ]
         visibility_service.grant(db, ids, tenant_id, visibility_service.SOURCE_JOB)
@@ -604,6 +606,10 @@ def _build_video_metadata(video: Document, language: str | None) -> dict:
     source_url = getattr(video, "source_url", None) or video.url or ""
 
     return {
+        # D-070: the primary key, carried on every chunk of every source type.
+        # Retrieval filters on it; `video_id` below is NULL for non-video
+        # documents and must not be the only key a chunk has.
+        "document_id": getattr(video, "document_id", None) or "",
         # Legacy YouTube-shaped fields (still primary for source_type='video').
         "video_id": video.video_id,
         "title": video.title,

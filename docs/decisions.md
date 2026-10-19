@@ -2102,15 +2102,15 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 ## D-070 — Document visibility keyed on `document_id`, not the legacy `video_id` (2026-10-19)
 
-**Status:** proposed. Diagnosed in PR [#224](https://github.com/khoks/VideoResearchPro/pull/224); the fix is a separate backend PR sequenced after the R3/R5 retrieval work that is editing `qa_agent.py` and the library Q&A route.
+**Status:** accepted. Diagnosed in PR [#224](https://github.com/khoks/VideoResearchPro/pull/224); shipped 2026-10-19 in PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM), sequenced after the R3/R4 batch ([#227](https://github.com/khoks/VideoResearchPro/pull/227)) that was editing `qa_agent.py` and the library Q&A route.
 
 **Context.** See the 2026-10-19 amendment to [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31). `document_visibility(video_id, tenant_id, source)` references `documents.video_id`, which the E-1.10 cutover ([D-017](#d-017--e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26)) made a nullable back-compat column that is NULL for every non-video source. `grant()` drops falsy ids, the listing (`library.py`), library Q&A (`library.py` → `qa_agent._query_library`) and `channels.py` all filter on that column, and `LibraryVideoResponse` still declares `id`, `video_id` and `duration_seconds` non-nullable. Uploaded PDFs, pasted pages, Reddit, HN and podcast documents are therefore invisible and unretrievable for every tenant, and have been since D-063 landed. The "twelve source types end-to-end" claim in the roadmap is true of ingest and false of retrieval for the eight non-video types.
 
-**Decision (proposed).** Key visibility on `documents.document_id` end to end:
+**Decision.** Key visibility on `documents.document_id` end to end:
 
 1. Migration: add `document_visibility.document_id` (FK `documents.document_id`, cascade), backfill by joining `documents` on `video_id`, move the unique constraint to `(document_id, tenant_id)`, retire the `video_id` column (SQLite batch mode).
 2. `grant()` takes document ids; its five call sites (`library.py` ×4, `job_tasks.py` ×1) pass `document_id`. `visible_video_ids()` becomes `visible_document_ids()`.
-3. Readers filter `Document.document_id`. Retrieval filters Chroma on a `document_id` metadata field; `_build_video_metadata` must write it for every source type, and the transition for legacy video chunks that carry only `video_id` is the one open design question (backfill Chroma metadata, or accept `video_id` as a fallback key for `source_type='video'` during a transition).
+3. Readers filter `Document.document_id`. Retrieval filters Chroma on a `document_id` metadata field; `_build_video_metadata` writes it for every source type, and legacy chunks that carry only `video_id` are stamped by a metadata-only backfill at API startup (`chroma_service.backfill_chunk_document_ids`) — the transition choice is recorded below.
 4. `LibraryVideoResponse.id = document_id`, `duration_seconds` nullable, `source_type` added. The frontend already tolerates this ([D-069](#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)).
 5. The strict `xfail` in `tests/test_routers/test_library_paste_urls.py` is un-marked, an equivalent upload-PDF router test is added, and a two-tenant isolation test proves user B cannot see user A's pasted page.
 
@@ -2122,7 +2122,24 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **Consequences.** One migration touching a table with live grants; the retrieval filter changes shape, so it must land after, not alongside, the in-flight `qa_agent.py` work. Once merged, the D-063 "0 documents left ungranted" guarantee is re-established for every source type and the roadmap's L1 end-to-end claim becomes true again.
 
-**Linked initiatives / PRs.** S-5.10.1 (reopened by this gap), E-1.8, S-1.5.8 / PR #224 (diagnosis). Follows D-017, D-063.
+**Transition for legacy chunks (T-5.10.4.4): metadata backfill, single filter.** Chunks embedded before 2026-10-19 carry `video_id` and no `document_id`. *Rejected:* filtering on either field during a transition window. It is two retrieval paths for one invariant — the shape of the original gap — it makes every caller carry two id sets, and it never ends, because nothing tells the operator when the window may close. *Chosen:* `chroma_service.backfill_chunk_document_ids` runs on every API startup next to the Q&A library backfill. It pages the global collection's metadata, resolves each un-stamped chunk through `documents` (by `video_id`, then by `(source_type, source_id)`) and updates the metadata in place. Chroma keeps the stored embedding on a metadata-only update, so nothing is re-embedded; D-072's "no backfill" reasoning was about re-embedding the library for a ranking signal and does not apply. Idempotent, and a chunk whose document is gone stays un-stamped and unretrievable, which is the right state for it. The cost is one metadata scan per startup; a completion marker is the escape hatch if that ever matters, and was not added because a marker can lie after a Chroma restore.
+
+**Chroma storage keys.** Chunk ids stay `{video_id}:{index}` for YouTube documents — a video's id never changes, and moving them to the UUID would orphan every existing chunk — and are `{document_id}:{index}` for every other source. The id is a storage key for in-place upsert; retrieval reads only the `document_id` metadata field, which is one path, not two.
+
+**Found while shipping, fixed in the same PR.**
+
+1. `chroma_service.insert_chunks` keyed every chunk on `video_id` and *skipped* chunks without one. No PDF, pasted page, Reddit or HN document had ever been embedded: the loss was one layer deeper than this entry described — not "granted to nobody" but "never written". Both routers' Chroma writes were mocked in their tests; `tests/test_services/test_chroma_document_scope.py` now writes through a real in-memory collection.
+2. `query_collection` built its filter with `if video_ids`, so an **empty** visible set — a new user who has ingested nothing — fell through to an unrestricted search of every tenant's transcripts. T-5.10.1.7's test asserted that the agent passed `[]`, not what the service did with it. `document_ids=[]` now returns no results, pinned at the service.
+3. Job Q&A had the same shape: `routers/qa.py` read `JobVideo.video_id`, so a topic job's Reddit / HN / PDF documents were never retrieved. It now passes the job's approved `document_id` set (`run_qa_agent(document_ids=...)`, state key `document_ids`), and `corpus_stats_service` counts those documents too.
+4. `LibraryVideoResponse` declared `id`, `video_id` and `duration_seconds` non-nullable; a PDF row would have failed validation the moment it became visible.
+5. `qa_agent._dedupe_chunks` keyed on `video_id` + `chunk_index`, which collapses chunk N of every non-video document into one entry. Keyed on `document_id` now.
+6. `_flatten_metadata` wrote `None` as the string `"None"`; the key is omitted instead (D-072's rule for unknowns).
+
+**Not kept.** No `visible_video_ids()` shim: no caller needs YouTube ids. `corpus_stats_service.corpus_statistics_for_video_ids` became `corpus_statistics_for_document_ids`, `approved_video_ids_for_job` became `approved_document_ids_for_job`.
+
+**Downgrade.** `alembic downgrade -1` restores `video_id` from `documents` and deletes grants over non-video documents, which the old schema cannot hold — exactly the pre-D-070 state, logged with a count. The round trip is pinned by `tests/test_migrations/test_visibility_document_id_migration.py`.
+
+**Linked initiatives / PRs.** S-5.10.4 (this fix, PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)), S-5.10.1 (reopened by this gap, closed again), E-1.8, S-1.5.8 / PR #224 (diagnosis). Follows D-017, D-063, D-072.
 
 ## D-071 — R1 verdict: annotations win on substance, fail on attribution and cost; UI deferred (2026-10-19)
 

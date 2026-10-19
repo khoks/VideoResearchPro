@@ -14,17 +14,21 @@ Documents are globally deduplicated: a given source's chunks are
 indexed exactly once and re-used across any job that references the
 source. The former per-job collection model has been retired.
 
-Query scoping is performed via ChromaDB metadata filtering on ``video_id``:
+Query scoping is performed via ChromaDB metadata filtering on
+``document_id`` (D-070 — the primary key every source type has; the legacy
+``video_id`` is NULL for PDFs, pasted pages and every other non-video source):
 
-* Job-scoped query  -> ``query_collection(..., video_ids=[...])`` passes the
-  list as a ``{"video_id": {"$in": [...]}}`` ``where`` clause.
-* Library-wide query -> ``query_collection(..., video_ids=None)`` omits the
-  ``where`` clause and searches the whole collection.
+* Scoped query  -> ``query_collection(..., document_ids=[...])`` passes the
+  list as a ``{"document_id": {"$in": [...]}}`` ``where`` clause. An EMPTY
+  list retrieves nothing (D-063: "this tenant / job has no documents").
+* Unrestricted  -> ``query_collection(..., document_ids=None)`` omits the
+  ``where`` clause; reserved for internal use, never for a user-facing call.
 
-Chunk IDs are derived as ``"{video_id}:{chunk_index}"`` and inserts use
-``collection.upsert`` so repeated extraction of the same video is idempotent
-— re-running an extraction overwrites existing chunks in place rather than
-creating duplicates.
+Chunk IDs are ``"{storage_key}:{chunk_index}"`` — see ``_chunk_storage_key``
+— and inserts use ``collection.upsert`` so repeated extraction of the same
+document is idempotent: re-running overwrites existing chunks in place rather
+than creating duplicates. Chunks written before D-070 carry no
+``document_id``; ``backfill_chunk_document_ids`` stamps it at startup.
 
 Q&A library collection
 ----------------------
@@ -112,14 +116,41 @@ def get_global_collection() -> chromadb.Collection:
 
 
 def _flatten_metadata(metadata: dict) -> dict[str, Any]:
-    """ChromaDB metadata must be flat primitives (str/int/float/bool)."""
+    """ChromaDB metadata must be flat primitives (str/int/float/bool).
+
+    ``None`` is OMITTED rather than written as the string ``"None"`` — a
+    missing value must read as missing, never as a sentinel a filter could
+    match (the same rule D-072 set for dates).
+    """
     flat: dict[str, Any] = {}
     for k, v in metadata.items():
+        if v is None:
+            continue
         if isinstance(v, (str, int, float, bool)):
             flat[k] = v
         else:
             flat[k] = str(v)
     return flat
+
+
+def _chunk_storage_key(meta: dict) -> str:
+    """The id prefix a chunk is stored under.
+
+    ``video_id`` for YouTube documents, ``document_id`` for everything else.
+    The prefix only has to be stable per document so a re-ingest upserts in
+    place. Video chunks have used the YouTube id since the global collection
+    was introduced, a document's video_id never changes, and switching them
+    to the UUID would orphan every existing chunk — so they keep it. Non-video
+    documents have no video_id — before D-070 that made ``insert_chunks``
+    SKIP their chunks, so no PDF or pasted page was ever embedded — and start
+    on ``document_id``. Retrieval never reads the id: it filters on the
+    ``document_id`` metadata field, which every chunk carries.
+    """
+    video_id = meta.get("video_id")
+    if video_id:
+        return str(video_id)
+    document_id = meta.get("document_id")
+    return str(document_id) if document_id else ""
 
 
 def insert_chunks(
@@ -132,10 +163,12 @@ def insert_chunks(
 
         insert_chunks(chunks)
 
-    Each chunk is ``{"text": str, "metadata": {"video_id": str,
-    "chunk_index": int, ...}}``. Chunk IDs are ``f"{video_id}:{chunk_index}"``,
-    written via ``collection.upsert``, so repeated calls for the same video
-    overwrite in place instead of duplicating.
+    Each chunk is ``{"text": str, "metadata": {"document_id": str,
+    "video_id": str, "chunk_index": int, ...}}``. Chunk IDs are
+    ``f"{storage_key}:{chunk_index}"`` (``_chunk_storage_key``), written via
+    ``collection.upsert``, so repeated calls for the same document overwrite
+    in place instead of duplicating. A chunk with neither ``video_id`` nor
+    ``document_id`` cannot be keyed and is skipped with a warning.
 
     Deprecated legacy form ``insert_chunks(job_id, chunks)`` is still
     accepted — ``job_id`` is ignored and a ``DeprecationWarning`` is emitted.
@@ -168,16 +201,17 @@ def insert_chunks(
 
     for chunk in actual_chunks:
         meta_in = chunk.get("metadata", {}) or {}
-        video_id = meta_in.get("video_id")
+        storage_key = _chunk_storage_key(meta_in)
         chunk_index = meta_in.get("chunk_index")
-        if not video_id or chunk_index is None:
+        if not storage_key or chunk_index is None:
             logger.warning(
-                "Skipping chunk missing video_id or chunk_index: "
-                f"video_id={video_id!r} chunk_index={chunk_index!r}"
+                "Skipping chunk missing document_id/video_id or chunk_index: "
+                f"document_id={meta_in.get('document_id')!r} "
+                f"video_id={meta_in.get('video_id')!r} chunk_index={chunk_index!r}"
             )
             continue
 
-        ids.append(f"{video_id}:{chunk_index}")
+        ids.append(f"{storage_key}:{chunk_index}")
         documents.append(chunk["text"])
         metadatas.append(_flatten_metadata(meta_in))
 
@@ -203,23 +237,27 @@ def query_collection(
     query_or_job_id: str,
     query_text_or_n_results: str | int | None = None,
     n_results: int | None = None,
-    video_ids: list[str] | None = None,
+    document_ids: list[str] | None = None,
     distance_threshold: float | None = None,
 ) -> list[dict]:
-    """Query the global collection, optionally scoped by ``video_ids``.
+    """Query the global collection, optionally scoped by ``document_ids``.
 
     Preferred::
 
         query_collection(
             query_text,
             n_results=settings.RAG_TOP_K,
-            video_ids=None,
+            document_ids=[...],
             distance_threshold=None,
         )
 
-    When ``video_ids`` is None/empty the whole library is searched;
-    otherwise the query is filtered with
-    ``where={"video_id": {"$in": video_ids}}``.
+    ``document_ids`` are ``documents.document_id`` values (D-070). ``None``
+    searches the whole library (internal use only); a non-empty list is
+    applied as ``where={"document_id": {"$in": document_ids}}``; an EMPTY
+    list returns no results — it means "nothing is in scope", and until
+    2026-10-19 it fell through to an unrestricted search because the filter
+    was built with a truthiness test, so a tenant with no documents was
+    answered from every other tenant's transcripts.
 
     Deprecated legacy form ``query_collection(job_id, query_text, n_results=...)``
     is still accepted — ``job_id`` is ignored, a ``DeprecationWarning`` is
@@ -251,11 +289,14 @@ def query_collection(
     if distance_threshold is None:
         distance_threshold = settings.RAG_DISTANCE_THRESHOLD
 
+    if document_ids is not None and len(document_ids) == 0:
+        logger.info("ChromaDB query: empty document scope; returning no results")
+        return []
     where: dict | None = (
-        {"video_id": {"$in": list(video_ids)}} if video_ids else None
+        {"document_id": {"$in": list(document_ids)}} if document_ids else None
     )
     preview = query_text[:80] + ("..." if len(query_text) > 80 else "")
-    scope = f"video_ids={len(video_ids)}" if video_ids else "global"
+    scope = f"document_ids={len(document_ids)}" if document_ids else "global"
     logger.info(
         f"ChromaDB query: scope={scope}, n_results={n_results}, "
         f"distance_threshold={distance_threshold}, query='{preview}'"
@@ -614,6 +655,116 @@ def backfill_qa_library() -> int:
 
     logger.info(f"backfill_qa_library: upserted {count} Q&A exchange(s)")
     return count
+
+
+def backfill_chunk_document_ids(session_factory=None, page_size: int = 2000) -> int:
+    """Stamp ``document_id`` onto transcript chunks that predate D-070.
+
+    Retrieval filters on the ``document_id`` metadata field. Chunks written
+    before 2026-10-19 carry only ``video_id`` and would be unretrievable
+    after the filter change, so this runs on every API startup, next to
+    ``backfill_qa_library``: page through the global collection, resolve each
+    un-stamped chunk through the ``documents`` table — by ``video_id``, then
+    by ``(source_type, source_id)`` — and ``update`` its metadata in place.
+    Chroma keeps the stored embedding on a metadata-only update, so nothing
+    is re-embedded; the cost is one metadata scan of the collection, which is
+    why D-072's "no backfill" reasoning (re-embedding the library for a
+    ranking signal) does not apply. Idempotent: stamped chunks are skipped,
+    so a second run updates nothing. A chunk whose document is gone is left
+    alone — it is unretrievable, which is the correct state for it.
+
+    The scan collects only ``(chunk_id, document_id)`` pairs, then re-reads
+    each batch's metadata just before updating it, so memory stays bounded
+    and pagination is never disturbed by the writes.
+
+    Returns the number of chunks updated.
+    """
+    from app.models.document import Document
+
+    if session_factory is None:
+        from app.database import SessionLocal
+
+        session_factory = SessionLocal
+
+    try:
+        collection = get_global_collection()
+    except Exception:
+        logger.exception("backfill_chunk_document_ids: failed to open global collection")
+        return 0
+
+    try:
+        db = session_factory()
+    except Exception:
+        logger.exception("backfill_chunk_document_ids: failed to open DB session")
+        return 0
+    try:
+        rows = db.query(
+            Document.document_id, Document.video_id, Document.source_type, Document.source_id
+        ).all()
+    except Exception:
+        logger.exception("backfill_chunk_document_ids: failed to read documents")
+        return 0
+    finally:
+        try:
+            db.close()
+        except Exception:
+            logger.exception("backfill_chunk_document_ids: failed to close DB session")
+
+    by_video = {vid: did for did, vid, _st, _sid in rows if vid}
+    by_source = {(st or "video", sid): did for did, _vid, st, sid in rows if sid}
+
+    pending: list[tuple[str, str]] = []
+    scanned = 0
+    offset = 0
+    while True:
+        try:
+            page = collection.get(limit=page_size, offset=offset, include=["metadatas"])
+        except Exception:
+            logger.exception("backfill_chunk_document_ids: scan failed at offset %d", offset)
+            break
+        ids = page.get("ids") or []
+        if not ids:
+            break
+        metas = page.get("metadatas") or [{}] * len(ids)
+        for cid, meta in zip(ids, metas):
+            meta = meta or {}
+            if meta.get("document_id"):
+                continue
+            did = by_source.get(
+                (str(meta.get("source_type") or "video"), str(meta.get("source_id") or ""))
+            ) or by_video.get(str(meta.get("video_id") or ""))
+            if did:
+                pending.append((cid, did))
+        scanned += len(ids)
+        offset += len(ids)
+        if len(ids) < page_size:
+            break
+
+    updated = 0
+    for i in range(0, len(pending), page_size):
+        batch = pending[i:i + page_size]
+        batch_ids = [cid for cid, _ in batch]
+        try:
+            current = collection.get(ids=batch_ids, include=["metadatas"])
+            metas_by_id = dict(zip(current.get("ids") or [], current.get("metadatas") or []))
+            collection.update(
+                ids=batch_ids,
+                metadatas=[
+                    {**(metas_by_id.get(cid) or {}), "document_id": did} for cid, did in batch
+                ],
+            )
+            updated += len(batch)
+        except Exception:
+            logger.exception(
+                "backfill_chunk_document_ids: update failed for batch starting at %d", i
+            )
+            break
+
+    logger.info(
+        "backfill_chunk_document_ids: scanned %d chunk(s), stamped document_id on %d",
+        scanned, updated,
+    )
+    return updated
 
 
 # --- Startup migration ----------------------------------------------------

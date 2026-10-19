@@ -636,6 +636,7 @@ The shipped script profiler is exact for script mixing and **blind to romanised 
 - [ ] T-1.16.2.7 Native-speaker spot check of the labelled set (42 Hindi-bearing Latin units + 10 Devanagari units, ~30 min) before its numbers compare future detectors (D-080 open question 1)
 - [ ] T-1.16.2.8 English CONTENT words in Devanagari (मशीन लर्निंग) — the tagger's measured blind spot; a hybrid (LLM on Devanagari) or a transliteration lexicon. Would also make a 50% dominant threshold unnecessary (D-080 open question 3)
 - [ ] T-1.16.2.9 Measure a stronger multilingual embedder (E5/BGE-M3) on the D-084 pool before the library grows; it would replace or complement the English rendering
+- [ ] T-1.16.2.11 Reconcile the native-script quote form with the quote-fidelity audit for ROMANISED Hindi-dominant sources. N-002 says such a source is quoted in Devanagari with its romanised original as the transliteration, but the R1 report-level audit (`audit_quote_fidelity.py --check`) looks every Devanagari run up in the corpus and would fail a re-scripted quote as `absent`. Either the audit learns that a Devanagari quote may stand for a romanised original (transliterate before matching), or the quote form keeps Roman for romanised sources. Raised 2026-10-19 with the fix in #294; not hit by job 419e691d, which has no romanised sources
 
 ### E-1.18 🟡 Visual understanding (R1)
 

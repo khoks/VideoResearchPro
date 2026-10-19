@@ -2102,7 +2102,7 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 ## D-070 — Document visibility keyed on `document_id`, not the legacy `video_id` (2026-10-19)
 
-**Status:** accepted. Diagnosed in PR [#224](https://github.com/khoks/VideoResearchPro/pull/224); shipped 2026-10-19 in PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM), sequenced after the R3/R4 batch ([#227](https://github.com/khoks/VideoResearchPro/pull/227)) that was editing `qa_agent.py` and the library Q&A route.
+**Status:** accepted. Diagnosed in PR [#224](https://github.com/khoks/VideoResearchPro/pull/224); shipped 2026-10-19 in PR [#241](https://github.com/khoks/VideoResearchPro/pull/241), sequenced after the R3/R4 batch ([#227](https://github.com/khoks/VideoResearchPro/pull/227)) that was editing `qa_agent.py` and the library Q&A route.
 
 **Context.** See the 2026-10-19 amendment to [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31). `document_visibility(video_id, tenant_id, source)` references `documents.video_id`, which the E-1.10 cutover ([D-017](#d-017--e-110-hard-cutover-single-migration-uuid-pk-promotion-2026-04-26)) made a nullable back-compat column that is NULL for every non-video source. `grant()` drops falsy ids, the listing (`library.py`), library Q&A (`library.py` → `qa_agent._query_library`) and `channels.py` all filter on that column, and `LibraryVideoResponse` still declares `id`, `video_id` and `duration_seconds` non-nullable. Uploaded PDFs, pasted pages, Reddit, HN and podcast documents are therefore invisible and unretrievable for every tenant, and have been since D-063 landed. The "twelve source types end-to-end" claim in the roadmap is true of ingest and false of retrieval for the eight non-video types.
 
@@ -2139,7 +2139,7 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **Downgrade.** `alembic downgrade -1` restores `video_id` from `documents` and deletes grants over non-video documents, which the old schema cannot hold — exactly the pre-D-070 state, logged with a count. The round trip is pinned by `tests/test_migrations/test_visibility_document_id_migration.py`.
 
-**Linked initiatives / PRs.** S-5.10.4 (this fix, PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)), S-5.10.1 (reopened by this gap, closed again), E-1.8, S-1.5.8 / PR #224 (diagnosis). Follows D-017, D-063, D-072.
+**Linked initiatives / PRs.** S-5.10.4 (this fix, PR [#241](https://github.com/khoks/VideoResearchPro/pull/241)), S-5.10.1 (reopened by this gap, closed again), E-1.8, S-1.5.8 / PR #224 (diagnosis). Follows D-017, D-063, D-072.
 
 ## D-071 — R1 verdict: annotations win on substance, fail on attribution and cost; UI deferred (2026-10-19)
 

@@ -17,7 +17,7 @@ ingested but visible to nobody: the per-tenant grant referenced the legacy
 `documents.video_id`, which is NULL for non-video sources. Shipping the fix
 found two more layers of the same defect. Decision
 [D-070](docs/decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19),
-story S-5.10.4, PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM).
+story S-5.10.4, PR [#241](https://github.com/khoks/VideoResearchPro/pull/241).
 
 - **Grants keyed on the primary key.** Migration `c7d8e9f0a1b2` adds
   `document_visibility.document_id`, backfills from `documents`, moves the

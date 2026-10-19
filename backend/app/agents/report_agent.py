@@ -556,6 +556,7 @@ def map_chunks(state: ReportAgentState) -> dict:
             modality_counts[k] = modality_counts.get(k, 0) + v
         original_counts["kept"] += res["originals"]["kept"]
         original_counts["dropped"] += res["originals"]["dropped"]
+        original_counts["trimmed"] = original_counts.get("trimmed", 0) + res["originals"].get("trimmed", 0)
         for k, v in (res["originals"].get("reasons") or {}).items():
             original_counts.setdefault("reasons", {})
             original_counts["reasons"][k] = original_counts["reasons"].get(k, 0) + v
@@ -572,6 +573,9 @@ def map_chunks(state: ReportAgentState) -> dict:
             "map_modality": dict(sorted(modality_counts.items())),
             "map_originals_kept": original_counts["kept"],
             "map_originals_dropped": original_counts["dropped"],
+            # Kept after the speaker's words were separated from a
+            # transliteration / translation the model appended (counted in kept).
+            "map_originals_trimmed": original_counts.get("trimmed", 0),
             "map_originals_dropped_by_reason": dict(sorted(original_counts.get("reasons", {}).items())),
         }
     )
@@ -653,6 +657,11 @@ def _verify_originals(parsed: object, sources: dict, counts: dict) -> None:
     `original_rejected_reason`) so the persisted map record shows what was
     removed; the composer never sees it. The English `content` always
     survives.
+
+    `quote_fidelity.keepable` also separates the speaker's words from what a
+    model appended (a transliteration line, a translation, a bracketed gloss
+    the speaker never said) and keeps the speech, with the rest recorded as
+    `original_stripped`; that reading must pass the same check in full.
     """
     if not isinstance(parsed, dict):
         return
@@ -664,8 +673,15 @@ def _verify_originals(parsed: object, sources: dict, counts: dict) -> None:
             sid = sources["by_url"].get(_source_key(item.get("video_url"))) or sources["by_title"].get(
                 str(item.get("video_title") or "")
             )
-            reason = quote_fidelity.problem(original, sources["videos"].get(sid) if sid else None)
-            if reason is None:
+            own = sources["videos"].get(sid) if sid else None
+            reading, removed, reason = quote_fidelity.keepable(original, own)
+            if reading is not None:
+                if reading != original:
+                    # Speech kept; the transliteration / translation / gloss
+                    # the model appended is recorded for the audit.
+                    item["original"] = reading
+                    item["original_stripped"] = removed
+                    counts["trimmed"] = counts.get("trimmed", 0) + 1
                 counts["kept"] += 1
                 continue
             item.pop("original", None)
@@ -793,6 +809,7 @@ def _uses_modality_tags(consolidated: dict) -> bool:
 
 _PIPELINE_ONLY_KEYS = (
     "modality", "modality_model", "original_rejected", "original_rejected_reason",
+    "original_stripped",
 )
 
 

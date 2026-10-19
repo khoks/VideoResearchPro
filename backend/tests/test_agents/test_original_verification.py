@@ -191,3 +191,91 @@ def test_compose_never_sees_a_rejected_original_and_discloses_the_drop():
     assert any(HINDI[1]["text"] in p for p in prompts)
     assert not any(chr(92) + "u0907" in p for p in prompts)   # a JSON-escaped "इ"
     assert "1 quoted passage(s)" in html and "not found word for word" in html
+
+
+# --- R1 run 7: speech + transliteration + translation in one `original` ----------------
+# Real caption lines of the Bengali source (CodeWithMunnaX, job 419e691d) —
+# including the caption's own "( Seaborn)".
+MUNNA = [
+    {"text": t, "start": float(i), "duration": 1.0}
+    for i, t in enumerate([
+        "আজ আমি সি-বর্ন (", "Seaborn) ব্যাখ্যা", "করতে যাচ্ছি।", "সি-বর্ন কী?",
+        "সবার আগে এই", "বিষয়টি বোঝো।", "এরপর আমরা", "এটিকে ইনস্টল", "করব। তারপর এর",
+        "মাধ্যমে আমরা", "গ্রাফ তৈরি করব", "। ঠিক আছে?",
+    ])
+]
+MUNNA_URL = "https://www.youtube.com/watch?v=5AuuOZ4vuxI"
+# Verbatim from run 7's map output (original_rejected, reason not_in_speech).
+RUN7_ORIGINAL = (
+    "আজ আমি সি-বর্ন ( Seaborn) ব্যাখ্যা করতে যাচ্ছি। সি-বর্ন কী?\n"
+    "Āj āmi si-born (Seaborn) byākhyā korte yācchi. Si-born kī?\n"
+    "Today I am going to explain Seaborn. What is Seaborn?"
+)
+
+
+def _munna_map(items):
+    chunks = chunk_transcript(MUNNA, video_metadata={
+        "video_id": "5AuuOZ4vuxI", "document_id": "doc-munna", "title": "Seaborn in Python",
+        "channel_name": "CodeWithMunnaX", "url": MUNNA_URL,
+    })
+    response = MagicMock()
+    response.content = json.dumps({"facts": items, "comments": [], "conclusions": [],
+                                   "references": [], "speakers": []}, ensure_ascii=False)
+    llm = MagicMock()
+    llm.invoke.return_value = response
+    with patch.object(report_agent, "get_llm_for", return_value=llm):
+        return report_agent.map_chunks({"job_type": "topic", "transcript_chunks": chunks, "topic": "t"})
+
+
+def test_the_speech_line_of_an_overfull_original_is_kept():
+    source = qf.VideoText.from_raw("m", " ".join(s["text"] for s in MUNNA))
+    assert qf.problem(RUN7_ORIGINAL, source) == "not_in_speech"        # what run 7 did
+    out = _munna_map([_item(RUN7_ORIGINAL, url=MUNNA_URL, title="Seaborn in Python")])
+    (fact,) = out["chunk_summaries"][0]["facts"]
+    assert fact["original"] == "আজ আমি সি-বর্ন ( Seaborn) ব্যাখ্যা করতে যাচ্ছি। সি-বর্ন কী?"
+    assert fact["original_stripped"].startswith("Āj āmi si-born")
+    assert "Today I am going to explain Seaborn" in fact["original_stripped"]
+    notes = out["processing_notes"]
+    assert (notes["map_originals_kept"], notes["map_originals_dropped"], notes["map_originals_trimmed"]) == (1, 0, 1)
+
+
+def test_a_gloss_the_speaker_never_said_is_stripped_too():
+    original = "এরপর আমরা এটিকে ইনস্টল (install it) করব। তারপর এর মাধ্যমে আমরা গ্রাফ তৈরি করব\nEbar āmrā..."
+    out = _munna_map([_item(original, url=MUNNA_URL, title="Seaborn in Python")])
+    (fact,) = out["chunk_summaries"][0]["facts"]
+    assert fact["original"] == "এরপর আমরা এটিকে ইনস্টল করব। তারপর এর মাধ্যমে আমরা গ্রাফ তৈরি করব"
+    assert "(install it)" in fact["original_stripped"]
+
+
+def test_stripping_never_rescues_invented_speech():
+    invented = "সি-বর্ন দিয়ে আমরা মেশিন লার্নিং মডেল ট্রেন করব এবং ডিপ্লয় করব\nSi-born diye āmrā..."
+    out = _munna_map([_item(invented, url=MUNNA_URL, title="Seaborn in Python")])
+    (fact,) = out["chunk_summaries"][0]["facts"]
+    assert "original" not in fact and fact["original_rejected_reason"] == "not_in_speech"
+    assert out["processing_notes"]["map_originals_trimmed"] == 0
+
+
+def test_compose_never_sees_the_stripped_remainder():
+    out = _munna_map([_item(RUN7_ORIGINAL, url=MUNNA_URL, title="Seaborn in Python")])
+    rendered = report_agent._render_items_for_compose(out["chunk_summaries"][0]["facts"], tagged=False)
+    assert "original_stripped" not in rendered[0] and rendered[0]["original"].startswith("আজ আমি")
+
+
+def test_romanised_sources_are_not_split_by_line():
+    # No native script: a transliteration line cannot be told from speech.
+    roman = qf.VideoText.from_raw("r", "mujhe nahi pata ki ye kaise kaam karta hai")
+    assert roman.script is None
+    two_lines = "mujhe nahi pata ki ye kaise kaam karta hai" + chr(10) + "I do not know how this works"
+    assert qf.keepable(two_lines, roman) == (None, "", "not_in_speech")
+    assert qf.keepable("mujhe nahi pata ki ye kaise", roman) == ("mujhe nahi pata ki ye kaise", "", None)
+
+
+def test_a_kept_original_loses_only_glosses_the_speaker_did_not_say():
+    source = qf.VideoText.from_raw("m", " ".join(s["text"] for s in MUNNA))
+    # The caption's own "( Seaborn)" stays...
+    assert qf.keepable("আজ আমি সি-বর্ন ( Seaborn) ব্যাখ্যা করতে যাচ্ছি।", source)[0] == (
+        "আজ আমি সি-বর্ন ( Seaborn) ব্যাখ্যা করতে যাচ্ছি।"
+    )
+    # ...a gloss the model added goes, even when the quote already passed.
+    reading, removed, reason = qf.keepable("এরপর আমরা এটিকে ইনস্টল (install it) করব।", source)
+    assert (reading, removed, reason) == ("এরপর আমরা এটিকে ইনস্টল করব।", "(install it)", None)

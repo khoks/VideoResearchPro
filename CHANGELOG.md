@@ -10,6 +10,20 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Fixed: real code-mixed quotes dropped when the model appended a transliteration (2026-10-19)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Follow-up to #294, found in the R1 run-7 replay.
+
+- With one source per map call, the model often put the speech, a
+  transliteration and a translation into `original` together. The quote
+  check then rejected 68 of 176 genuine Bengali quotes. It now keeps the
+  lines in the source's own script and removes bracketed Latin glosses the
+  speaker did not say (keeping ones the caption has), and records what it
+  removed as `original_stripped`. The kept reading must still pass the full
+  check. On run 7: 66 of the 68 recovered, and no previously kept quote lost.
+- The map prompt says `original` is the speaker's words only; the report adds
+  the transliteration and translation.
+
 ### Books download as EPUB and PDF (2026-10-19, S-6.1.5)
 
 PR [#303](https://github.com/khoks/VideoResearchPro/pull/303). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).

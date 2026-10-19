@@ -190,7 +190,8 @@ export function GraphCanvas({ model, selected, onSelect, onRefocus, ariaLabel, s
     let worker: FA2Layout | null = null;
     let timer: number | undefined;
     if (prefersReducedMotion() || graph.order < 3) {
-      const iterations = graph.order < 300 ? 300 : graph.order < 1000 ? 150 : 80;
+      // Measured in Node: 300 nodes take ~0.1 s at 300 iterations; 2,000 take ~0.3 s at 50.
+      const iterations = graph.order < 400 ? 300 : graph.order < 1000 ? 120 : 50;
       if (graph.order > 1) forceAtlas2.assign(graph, { iterations, settings });
       sigma.refresh();
       setLayout('settled');

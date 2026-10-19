@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Code-mixed speech: proportion thresholds as a rendering policy (2026-10-19, T-1.16.2.3)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Third task of N-002;
+PR [#262](https://github.com/khoks/VideoResearchPro/pull/262). Third task of N-002;
 [D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
 
 - **`code_mixing_service.rendering_mode`** turns a span's measured Hindi share

@@ -27,6 +27,7 @@ native digits to ASCII, nukta and zero-width marks dropped, punctuation
 from __future__ import annotations
 
 import re
+import threading
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
@@ -89,7 +90,12 @@ class VideoText:
     speech: str          # normalised
     visual: str          # normalised
     script: str | None   # dominant non-Latin script of the raw speech
-    _matcher: SequenceMatcher | None = field(default=None, repr=False)
+    _matcher: SequenceMatcher | None = field(default=None, repr=False, compare=False)
+    # S-1.14.19: report map batches run concurrently and share one VideoText
+    # per source, so the cached matcher's set_seq1 + find_longest_match pair
+    # must not interleave across threads (it raised IndexError or anchored
+    # one thread's fragment with another's sequence).
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     @classmethod
     def from_raw(cls, title: str, speech: str, visual: str = "") -> "VideoText":
@@ -97,11 +103,12 @@ class VideoText:
 
     def _anchor(self, piece: str) -> int:
         """Where in the speech the fragment ``piece`` most plausibly starts."""
-        if self._matcher is None:
-            self._matcher = SequenceMatcher(None, autojunk=False)
-            self._matcher.set_seq2(self.speech)
-        self._matcher.set_seq1(piece)
-        m = self._matcher.find_longest_match(0, len(piece), 0, len(self.speech))
+        with self._lock:
+            if self._matcher is None:
+                self._matcher = SequenceMatcher(None, autojunk=False)
+                self._matcher.set_seq2(self.speech)
+            self._matcher.set_seq1(piece)
+            m = self._matcher.find_longest_match(0, len(piece), 0, len(self.speech))
         return m.b - m.a
 
     def coverage(self, fragment: str) -> float:

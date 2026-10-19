@@ -181,3 +181,21 @@ Run 6 replays the same job on the code that carries the R5 fix for `original` qu
 4. **Fabrication:** ON has no more confirmed fabrications than OFF.
 
 All four pass → R1's quality claim holds, and S-1.18.2 (the R1 UI) is unblocked. Rule 1 fails → the defect goes back to R5 and run 6 is repeated. Rule 2 or 4 fails → the claim is reported as unproven. Rule 3 alone fails → D-081 stands on attribution, and the UI ships as opt-in with no quality claim.
+
+## Run 6: result against the pre-registered rules (2026-10-19)
+
+Same job, regenerated on master after the R5 fix (#294) and the refine/channel contract fix (#292). Descriptions: gpt-5.5 (D-081). ON 75,104 chars, OFF 83,542.
+
+| Rule | Result | Evidence |
+|---|---|---|
+| 1. Quote fidelity | **pass** | `audit_quote_fidelity.py --check` exits 0. Report level: ON 21 native-script quotes (17 verbatim, 4 near), OFF 26, none failing. The map stage still invents wrong-script `original`s (ON dropped 10 of 57: 8 script mismatch, 1 mixed script, 1 not in speech); the R5 check now drops them before compose |
+| 2. Attribution | **fail** | Two confirmed ON errors (3 of 3 votes each). The judges' 3 claims were all refuted; the sweep raised 5 candidates and confirmed 2 |
+| 3. Substance | **fail** | GPT-5.5 and Sonnet 5 both prefer OFF (7 vs 8 each). Gemini 3.1 Pro, run once its quota reset at about 15:50 PT, scored a **tie** (10 vs 10) and claimed no errors. Final: 0 ON / 2 OFF / 1 tie, mean 8.0 vs 8.67 |
+| 4. Fabrication | **pass** | ON 0 confirmed (1 metadata leak); OFF 4 |
+
+**Both failures trace to the map stage, not to the annotations.**
+- *Substance:* both judges gave the same decisive reason. ON never engages Absent Data or Onur Baltaci. The persisted intermediates show the map stage gave those two videos **zero items** in a 400-chunk batch. The same thing happened to the plain arm in run 5. The map model (gpt-5.6-luna) writes about 100 to 140 items per call whatever the batch size. See [2026-10-19-map-coverage.md](2026-10-19-map-coverage.md).
+- *Attribution error 1:* CodeWithMunnaX says "0.13.2" in Bengali at 2:57. The report adds "the output was also visible on screen". The only span showing 0.13.2 is in **Simplilearn's** video at 2:54. The map model read both in the same batch and labelled the CodeWithMunnaX item `both`. This is cross-source contamination, which a label-only fix cannot catch.
+- *Attribution error 2:* the map item itself reads "the presenter describes the 538-like style as producing ... a light grid". The grid exists only in the 22:33 span. The `both` label is right, but the item's content already mixes speech and screen.
+
+**Verdict:** run 6 fails rules 2 and 3 as pre-registered, so R1's quality claim stays unproven. The failures point to a fix that is not R1-specific: map batches that never mix sources, plus a code-side check that a `shown` or `both` label has a span **from the item's own source** near its moment. That work is measured in the map-coverage note. A run 7 will be pre-registered there once the fix lands, under the same four rules.

@@ -2413,3 +2413,27 @@ Both caught 28–29 of the 30 Hindi-bearing Latin units. The lexicon tagger flag
 - Found in passing, not fixed: `_fetch_transcript_once` falls back to the first listed caption track, which ingested a machine-dubbed Bengali transcript of a Hindi lecture (`1v3_AQ26jZ0`).
 
 **Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1), E-1.16, N-002.
+
+## D-081 — Frame describer default: spend against report-level quality (2026-10-19)
+
+**Status:** proposed — the choice is the user's: it is a spend decision on an opt-in feature, and the $0.10-per-video ceiling it overrides was set by Claude in the R1 protocol, not by the user.
+
+**Context.** [D-073](#d-073--frame-description-moves-to-gemini-31-flash-lite-on-image-grounded-grading-selection-stays-on-gpt-55-2026-10-19) moved frame description to gemini-3.1-flash-lite to meet a $0.10-per-video ceiling. [D-075](#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19) found that the report-level benefit disappeared with that describer, and that the describer must be chosen at report level. Four report-level runs and two per-frame gradings now exist ([protocol note](notes/2026-10-18-r1-visual-measurement.md)).
+
+| Describer | Per-frame accuracy (unusable) | Judges prefer annotated report | Substance ON vs OFF | Visual pass $/video (select gpt-5.5 low + describe) |
+|---|---|---|---|---|
+| gpt-5.5 | 4.54 (5/62) | **3/3** | **8.67 vs 7.67** | **$0.200** |
+| gemini-3.5-flash | **4.70 (0/62)** | 2/3 | 7.67 vs 8.00 | $0.118 |
+| gemini-3.1-flash-lite (current) | 4.21 (5/66) | 1/3 | 7.67 vs 7.67 | $0.075 |
+
+Every configuration still has one or two attribution errors per report, so the UI stays deferred whichever is chosen (S-1.18.8 addresses that).
+
+**Options.**
+
+1. **gemini-3.5-flash, ceiling raised to about $0.12 (recommended).** It is the most accurate describer, and the only one with no unusable description, which matters most for a research tool: a misleading frame description is worse than a less complete one. It keeps most of the report-level gain at 60% of gpt-5.5's cost. A 200-video job adds about $24, against about $12 for the report itself.
+2. **gpt-5.5, ceiling raised to about $0.20.** It gives the strongest report-level result, from one run. A 200-video job adds about $40.
+3. **Keep gemini-3.1-flash-lite at $0.075.** It meets the original ceiling but delivered no measurable report-level benefit.
+
+All single-run evidence. The S-1.18.8 protocol re-run should carry both of the first two describers as arms, so the default can be revisited on two runs each.
+
+**Linked initiatives / PRs.** T-1.18.5.6, S-1.18.8. Follows D-073, D-075.

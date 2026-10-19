@@ -1,6 +1,7 @@
 from typing import Literal
 
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 
 
 class Settings(BaseSettings):
@@ -444,6 +445,26 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "dev-insecure-secret-change-me-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRY_HOURS: int = 24
+
+    @field_validator("JWT_SECRET", mode="before")
+    @classmethod
+    def _jwt_secret_not_blank(cls, v: object) -> object:
+        """A blank ``JWT_SECRET=`` in .env is unset, not a key.
+
+        python-jose signed with an empty HMAC key without complaint; PyJWT
+        (T-5.4.9) refuses, which is how this install was found to have been
+        issuing tokens with no secret. Fall back to the dev default, loudly;
+        production must set a real value.
+        """
+        if v is None or (isinstance(v, str) and not v.strip()):
+            import logging
+
+            logging.getLogger("app.config").warning(
+                "JWT_SECRET is blank; using the insecure development default. "
+                "Set JWT_SECRET in backend/.env (any long random string)."
+            )
+            return "dev-insecure-secret-change-me-in-production"
+        return v
     # E-5.4: Account lockout. Failed-login threshold; on the (Nth) failure
     # the account locks for ``LOCKOUT_DURATION_MIN`` minutes. Set to 0 to
     # disable lockout (not recommended in production).

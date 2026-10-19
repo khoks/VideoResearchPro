@@ -24,6 +24,8 @@ from app.models.qa_history_exchange import QAHistoryExchange
 from app.models.quota_usage import QuotaUsage
 from app.models.scheduled_run import ScheduledRun
 from app.models.session import Session
+from app.models.shelf import Shelf
+from app.models.shelf_job import ShelfJob
 from app.models.transcript_cache import TranscriptCache
 from app.models.user import User
 from app.models.user_llm_override import UserLLMOverride
@@ -54,6 +56,8 @@ __all__ = [
     "QuotaUsage",
     "ScheduledRun",
     "Session",
+    "Shelf",
+    "ShelfJob",
     "TranscriptCache",
     "User",
     "UserLLMOverride",

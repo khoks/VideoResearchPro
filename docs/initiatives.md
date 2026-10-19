@@ -1516,13 +1516,13 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 **Plan:** [`docs/plans/m1-shelves.md`](plans/m1-shelves.md)
 **Acceptance.** A user creates a shelf, adds jobs to it from the jobs list and job page, opens the shelf and sees only those jobs and their documents, asks a question scoped to the shelf and gets citations only from documents on it. Another tenant sees none of it.
 
-#### S-8.1.1 🔵 Shelves schema, service and REST
-**PR:** TBD
-- [ ] T-8.1.1.1 `shelves(id, tenant_id, name, description, color, created_at, updated_at)` + `shelf_jobs(shelf_id, job_id, added_at)` with an Alembic revision; unique `(tenant_id, name)`
-- [ ] T-8.1.1.2 `shelf_service` as the single accessor (tenant is part of every lookup; foreign ids 404)
-- [ ] T-8.1.1.3 `GET/POST/PUT/DELETE /api/v1/shelves`, `POST/DELETE /api/v1/shelves/{id}/jobs/{job_id}`, `GET /api/v1/jobs/{id}/shelves`; gated on `require_feature("shelves")`
-- [ ] T-8.1.1.4 Deleting a job removes its `shelf_jobs` rows; deleting a shelf never deletes jobs
-- [ ] T-8.1.1.5 Router + isolation tests (cross-tenant add / list / delete all 404)
+#### S-8.1.1 🟢 Shelves schema, service and REST
+**PR:** [#242](https://github.com/khoks/VideoResearchPro/pull/242) (merged 2026-10-19)
+- [x] T-8.1.1.1 `shelves(id, tenant_id, name, description, color, created_at, updated_at)` + `shelf_jobs(shelf_id, job_id, added_at)`, Alembic revision `d8e9f0a1b2c3`; unique `(tenant_id, name)` plus a case-insensitive check in the service; `color` is one of the ten palette names, validated server-side
+- [x] T-8.1.1.2 `shelf_service` as the single accessor (tenant is part of every lookup; foreign ids 404)
+- [x] T-8.1.1.3 `GET/POST/PUT/DELETE /api/v1/shelves`, `POST/DELETE /api/v1/shelves/{id}/jobs/{job_id}`, `GET /api/v1/jobs/{id}/shelves`. Writes gated on `require_feature("shelves")`; **reads open to every tier** so a shelf outlives a downgrade read-only (plan open question 1, recommended default taken)
+- [x] T-8.1.1.4 Deleting a job removes its `shelf_jobs` rows; deleting a shelf never deletes jobs. The cascade is an ORM relationship on `Job`, not DB-level: SQLite here never enforces `ON DELETE CASCADE` (no `PRAGMA foreign_keys`)
+- [x] T-8.1.1.5 Router + service + isolation tests (every endpoint against a second real tenant: all 404); a parametrised Alembic upgrade → downgrade → upgrade round-trip test (`tests/test_models/test_migrations_round_trip.py`) that later lane migrations add a row to
 
 #### S-8.1.2 🔵 Shelves UI
 **PR:** TBD

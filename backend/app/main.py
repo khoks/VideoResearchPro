@@ -27,6 +27,7 @@ from app.routers import (
     qa,
     qa_history,
     sessions,
+    shelves,
     ws,
 )
 from app.services import chroma_service
@@ -107,6 +108,7 @@ app.include_router(echo.router, prefix="/api/v1")
 app.include_router(author.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
+app.include_router(shelves.router, prefix="/api/v1")
 app.include_router(qa.router, prefix="/api/v1")
 app.include_router(library.router, prefix="/api/v1")
 app.include_router(qa_history.router, prefix="/api/v1")

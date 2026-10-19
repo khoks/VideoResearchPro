@@ -1,17 +1,20 @@
 import { useMemo } from 'react';
 import { useColors } from '../hooks/useTheme';
 import {
+  assessChoice,
   useLLMSettings,
   useLLMEstimate,
   useSetLLMOverride,
   useResetLLMOverride,
+  type ChoiceWarning,
   type EstimateRow,
   type LLMConfig,
+  type LLMGuidance,
   type LLMModelInfo,
   type LLMUseCase,
 } from '../hooks/useLLMSettings';
 import { Badge, Button, Card, EmptyState, Select, Skeleton, Spinner } from '../components/primitives';
-import { fonts, fontSize, fontWeight, lineHeight, space } from '../theme';
+import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../theme';
 
 /**
  * AI models — per-user LLM routing overrides.
@@ -21,6 +24,12 @@ import { fonts, fontSize, fontWeight, lineHeight, space } from '../theme';
  * them for their own account only. Saves are immediate (optimistic PUT per
  * select change); a sticky cost panel re-estimates the benchmark job after
  * each save (debounced in the hook).
+ *
+ * S-1.14.7: each row also carries the measurements behind its default
+ * (registry `guidance`), warns when the chosen model measured unacceptable or
+ * weaker, or cannot take images on a vision function, and shows what the
+ * choice costs on the benchmark job against the default. Warnings advise;
+ * nothing blocks a choice.
  */
 export function AIModelsPage() {
   const c = useColors();
@@ -32,6 +41,14 @@ export function AIModelsPage() {
   const useCases = settings.data?.use_cases ?? [];
   const providers = settings.data?.providers ?? {};
   const reasoningLevels = settings.data?.reasoning_levels ?? [];
+  const visionList = settings.data?.vision_capable_models;
+  const visionModels = useMemo(() => new Set(visionList ?? []), [visionList]);
+
+  const costByUseCase = useMemo(() => {
+    const map = new Map<string, EstimateRow>();
+    for (const row of estimate.data?.per_use_case ?? []) map.set(row.use_case, row);
+    return map;
+  }, [estimate.data]);
 
   // Group use cases by their `group` field, preserving first-appearance order.
   const groups = useMemo(() => {
@@ -69,7 +86,9 @@ export function AIModelsPage() {
         }}
       >
         Defaults are tuned per function; overrides apply only to you and take effect
-        immediately. Reset any row to return to the tuned default.
+        immediately. Reset any row to return to the tuned default. Each function shows
+        what our quality measurements found, and warns when a model measured badly for
+        it. Warnings are advice; every choice still saves.
       </p>
     </header>
   );
@@ -137,6 +156,8 @@ export function AIModelsPage() {
               items={items}
               providers={providers}
               reasoningLevels={reasoningLevels}
+              visionModels={visionModels}
+              costByUseCase={costByUseCase}
               onSave={(useCase, config) => setOverride.mutate({ useCase, config })}
               onReset={(useCase) => resetOverride.mutate({ useCase })}
               resettingUseCase={resetOverride.isPending ? resetOverride.variables?.useCase : undefined}
@@ -175,6 +196,8 @@ interface GroupSectionProps {
   items: LLMUseCase[];
   providers: Record<string, { models: LLMModelInfo[] }>;
   reasoningLevels: string[];
+  visionModels: ReadonlySet<string>;
+  costByUseCase: Map<string, EstimateRow>;
   onSave: (useCase: string, config: LLMConfig) => void;
   onReset: (useCase: string) => void;
   resettingUseCase?: string;
@@ -185,6 +208,8 @@ function GroupSection({
   items,
   providers,
   reasoningLevels,
+  visionModels,
+  costByUseCase,
   onSave,
   onReset,
   resettingUseCase,
@@ -211,6 +236,8 @@ function GroupSection({
           uc={uc}
           providers={providers}
           reasoningLevels={reasoningLevels}
+          visionModels={visionModels}
+          cost={costByUseCase.get(uc.use_case)}
           onSave={(config) => onSave(uc.use_case, config)}
           onReset={() => onReset(uc.use_case)}
           resetting={resettingUseCase === uc.use_case}
@@ -228,17 +255,38 @@ interface UseCaseRowProps {
   uc: LLMUseCase;
   providers: Record<string, { models: LLMModelInfo[] }>;
   reasoningLevels: string[];
+  visionModels: ReadonlySet<string>;
+  cost: EstimateRow | undefined;
   onSave: (config: LLMConfig) => void;
   onReset: () => void;
   resetting: boolean;
   isLast: boolean;
 }
 
-function UseCaseRow({ uc, providers, reasoningLevels, onSave, onReset, resetting, isLast }: UseCaseRowProps) {
+function UseCaseRow({
+  uc,
+  providers,
+  reasoningLevels,
+  visionModels,
+  cost,
+  onSave,
+  onReset,
+  resetting,
+  isLast,
+}: UseCaseRowProps) {
   const c = useColors();
   const effective = uc.effective;
   const providerNames = Object.keys(providers);
   const models = providers[effective.provider]?.models ?? [];
+  const warnings = assessChoice(uc, effective, visionModels);
+
+  /** Option suffix so a measured-bad model is visible before it is picked. */
+  const modelMarker = (model: string): string => {
+    const marks = assessChoice(uc, { ...effective, model }, visionModels).map(
+      (w) => WARNING_COPY[w.kind].option,
+    );
+    return marks.length ? ` — ${[...new Set(marks)].join(', ')}` : '';
+  };
 
   const handleProviderChange = (provider: string) => {
     const nextModels = providers[provider]?.models ?? [];
@@ -267,8 +315,17 @@ function UseCaseRow({ uc, providers, reasoningLevels, onSave, onReset, resetting
         gap: space['2'],
       }}
     >
-      {/* Line 1 — name + overridden badge + reset */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: space['3'], minWidth: 0 }}>
+      {/* Line 1 — name + badges + reset; wraps on narrow screens */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          columnGap: space['3'],
+          rowGap: space['1'],
+          minWidth: 0,
+        }}
+      >
         <span
           style={{
             fontFamily: fonts.ui,
@@ -283,6 +340,12 @@ function UseCaseRow({ uc, providers, reasoningLevels, onSave, onReset, resetting
         {uc.override !== null && (
           <Badge tone="accent" size="sm">
             Overridden
+          </Badge>
+        )}
+        <EvidenceBadge guidance={uc.guidance} />
+        {uc.vision && (
+          <Badge tone="info" size="sm">
+            Needs image input
           </Badge>
         )}
         <span style={{ flex: 1 }} />
@@ -340,7 +403,7 @@ function UseCaseRow({ uc, providers, reasoningLevels, onSave, onReset, resetting
           )}
           {models.map((m) => (
             <option key={m.id} value={m.id}>
-              {m.id} (window: {formatCompact(m.context_window)})
+              {m.id} (window: {formatCompact(m.context_window)}){modelMarker(m.id)}
             </option>
           ))}
         </LabeledSelect>
@@ -360,7 +423,225 @@ function UseCaseRow({ uc, providers, reasoningLevels, onSave, onReset, resetting
           ))}
         </LabeledSelect>
       </div>
+
+      {/* Line 4 — measured warnings for the current choice */}
+      {warnings.map((w) => (
+        <WarningCallout key={`${w.kind}:${w.model}`} warning={w} />
+      ))}
+
+      {/* Line 5 — what the choice costs on the benchmark, against the default */}
+      <CostDelta cost={cost} overridden={uc.override !== null} />
+
+      {/* Line 6 — the measurements behind the default */}
+      <GuidanceDetails guidance={uc.guidance} />
     </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// Guidance (S-1.14.7)
+
+const WARNING_COPY: Record<
+  ChoiceWarning['kind'],
+  { title: string; option: string; tone: 'error' | 'warn' }
+> = {
+  unacceptable: {
+    title: 'Measured unacceptable for this function',
+    option: 'measured unacceptable here',
+    tone: 'error',
+  },
+  weaker: {
+    title: 'Measured weaker than the default here',
+    option: 'measured weaker here',
+    tone: 'warn',
+  },
+  not_vision_capable: {
+    title: 'Not a known image-capable model',
+    option: 'no known image input',
+    tone: 'error',
+  },
+};
+
+const REASONING_ON = ['minimal', 'low', 'medium', 'high', 'auto'];
+
+/** `[]` → "" (every level); every non-off level → " with reasoning on". */
+function reasoningScope(levels: string[]): string {
+  if (levels.length === 0) return '';
+  if (REASONING_ON.every((l) => levels.includes(l))) return ' with reasoning on';
+  return ` at reasoning ${levels.join('/')}`;
+}
+
+function EvidenceBadge({ guidance }: { guidance: LLMGuidance }) {
+  if (guidance.status === 'measured') {
+    return (
+      <span title={`Decision log entry ${guidance.decision_id}, ${guidance.decided_on}`}>
+        <Badge tone="success" size="sm">
+          Measured · {guidance.decision_id}
+        </Badge>
+      </span>
+    );
+  }
+  return (
+    <span title="No quality run has graded this function's own output yet">
+      <Badge tone="neutral" size="sm">
+        Unmeasured
+      </Badge>
+    </span>
+  );
+}
+
+function WarningCallout({ warning }: { warning: ChoiceWarning }) {
+  const c = useColors();
+  const copy = WARNING_COPY[warning.kind];
+  const accent = copy.tone === 'error' ? c.error : c.warn;
+  const background = copy.tone === 'error' ? c.errorSubtle : c.warnSubtle;
+  return (
+    <div
+      role="note"
+      style={{
+        borderLeft: `3px solid ${accent}`,
+        background,
+        borderRadius: radius.sm,
+        padding: `${space['2']} ${space['3']}`,
+        fontFamily: fonts.ui,
+        fontSize: fontSize.sm,
+        lineHeight: lineHeight.snug,
+        color: c.textPrimary,
+      }}
+    >
+      <span style={{ fontWeight: fontWeight.semibold, color: accent }}>
+        {copy.title}
+        {warning.decision_id ? ` (${warning.decision_id})` : ''}.
+      </span>{' '}
+      {warning.why}
+    </div>
+  );
+}
+
+function CostDelta({ cost, overridden }: { cost: EstimateRow | undefined; overridden: boolean }) {
+  const c = useColors();
+  if (!cost) return null;
+  const style: React.CSSProperties = {
+    margin: 0,
+    fontFamily: fonts.ui,
+    fontSize: fontSize.xs,
+    color: c.textMuted,
+    lineHeight: lineHeight.snug,
+  };
+  if (cost.calls === 0) {
+    // Only worth saying when the user has changed something it cannot price.
+    return overridden ? (
+      <p style={style}>
+        The benchmark job does not exercise this function, so the cost preview cannot price
+        this choice.
+      </p>
+    ) : null;
+  }
+  if (!cost.pricing_known) {
+    return <p style={style}>Benchmark job: pricing unknown for {cost.model}.</p>;
+  }
+  const sameAsDefault = cost.model === cost.default_model;
+  const delta = cost.default_cost_usd === null ? null : cost.cost_usd - cost.default_cost_usd;
+  return (
+    <p style={style}>
+      Benchmark job:{' '}
+      <strong style={{ color: c.textSecondary }}>{formatUsd(cost.cost_usd)}</strong>
+      {!sameAsDefault && (
+        <>
+          {' '}
+          against {formatUsd(cost.default_cost_usd ?? NaN)} on the default {cost.default_model}
+          {delta !== null && (
+            <>
+              {' ('}
+              <span
+                style={{
+                  color: delta > 0 ? c.warn : c.success,
+                  fontWeight: fontWeight.semibold,
+                }}
+              >
+                {formatSignedUsd(delta)}
+              </span>
+              {')'}
+            </>
+          )}
+        </>
+      )}
+    </p>
+  );
+}
+
+function GuidanceDetails({ guidance }: { guidance: LLMGuidance }) {
+  const c = useColors();
+  const measured = guidance.status === 'measured';
+  const label = measured
+    ? `What the measurement found (${guidance.decision_id}, ${guidance.decided_on})`
+    : 'Not measured yet';
+  const sections: Array<[string, string]> = measured
+    ? [
+        ['Against the flagship', guidance.flagship_delta],
+        ['If you choose cheaper', guidance.downgrade_risk],
+        ['Measured cost', guidance.measured_cost],
+      ]
+    : [['Evidence so far', guidance.note]];
+  const filled = sections.filter(([, text]) => text.trim().length > 0);
+  const verdicts = guidance.model_verdicts;
+  const related = guidance.related_decisions;
+
+  return (
+    <details style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textSecondary }}>
+      <summary
+        style={{
+          cursor: 'pointer',
+          fontSize: fontSize.xs,
+          fontWeight: fontWeight.medium,
+          color: measured ? c.textSecondary : c.textMuted,
+          letterSpacing: '0.02em',
+        }}
+      >
+        {label}
+      </summary>
+      <div
+        style={{
+          marginTop: space['2'],
+          paddingLeft: space['3'],
+          borderLeft: `1px solid ${c.border}`,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: space['2'],
+          lineHeight: lineHeight.normal,
+        }}
+      >
+        {filled.map(([heading, text]) => (
+          <p key={heading} style={{ margin: 0 }}>
+            <span style={{ fontWeight: fontWeight.semibold, color: c.textPrimary }}>
+              {heading}.
+            </span>{' '}
+            {text}
+          </p>
+        ))}
+        {verdicts.length > 0 && (
+          <div>
+            <span style={{ fontWeight: fontWeight.semibold, color: c.textPrimary }}>
+              Model verdicts.
+            </span>
+            <ul style={{ margin: `${space['1']} 0 0`, paddingLeft: space['5'] }}>
+              {verdicts.map((v) => (
+                <li key={`${v.model}:${v.reasoning.join('|')}`} style={{ marginBottom: space['1'] }}>
+                  <code style={{ fontFamily: fonts.mono, fontSize: fontSize.xs }}>{v.model}</code>
+                  {reasoningScope(v.reasoning)}: {v.verdict} ({v.decision_id}).{' '}
+                  {v.why}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {related.length > 0 && (
+          <p style={{ margin: 0, fontSize: fontSize.xs, color: c.textMuted }}>
+            Decision log: {related.join(', ')}.
+          </p>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -668,4 +949,12 @@ function formatUsd(v: number): string {
   if (!Number.isFinite(v)) return '—';
   if (v > 0 && v < 0.01) return '<$0.01';
   return `$${v.toFixed(2)}`;
+}
+
+/** 4.55 → "+$4.55", -0.004 → "−<$0.01", 0 → "±$0.00". */
+function formatSignedUsd(v: number): string {
+  if (!Number.isFinite(v)) return '—';
+  if (v === 0) return '±$0.00';
+  const sign = v > 0 ? '+' : '−';
+  return `${sign}${formatUsd(Math.abs(v))}`;
 }

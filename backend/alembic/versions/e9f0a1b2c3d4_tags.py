@@ -1,7 +1,7 @@
 """tags + taggings — per-tenant labels on documents (S-8.1.3 / E-8.1)
 
 Revision ID: e9f0a1b2c3d4
-Revises: 3653e565c1fc
+Revises: a9f3c1e7b5d2
 Create Date: 2026-10-19
 
 Two additive tables, no data migration. `tags` is unique per tenant on
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "e9f0a1b2c3d4"
-down_revision = "3653e565c1fc"
+down_revision = "a9f3c1e7b5d2"
 branch_labels = None
 depends_on = None
 

@@ -25,6 +25,103 @@ Fourth PR of the organisation lane ([S-8.1.3](docs/initiatives.md#s-813--documen
 - **Fixed.** Popovers in card lists drew under the next card; the shared label
   picker now portals to the page body.
 
+### Report Markdown source; books built from it (2026-10-19, S-6.1.2 + S-6.1.1 remainder)
+
+PR [#255](https://github.com/khoks/VideoResearchPro/pull/255). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **`report_service.report_markdown(job)`** converts the stored HTML report
+  to Markdown with a `markdownify` (MIT) subclass and caches it beside the
+  HTML at `<report_path>.md`: ATX headings, citation links kept as
+  `[text](href)` with their `&t=` timestamps, tables kept, the statistics
+  grid as a one-row table, stylesheet and document head dropped,
+  `[VISUAL @ …]` spans verbatim. Round-trip tests run on three real stored
+  reports. New dependency `markdownify>=1.2.3` (brings `beautifulsoup4`).
+- **Books read it.** `BookMarkdownOutputter` drops the regex tag-stripper;
+  each chapter is the report's Markdown with its headings demoted under the
+  chapter heading; S-5.10.6's tenant-scoped job lookup is kept.
+- **`GET /api/v1/jobs/{id}/report.md`** in `routers/reports.py`,
+  header-bearer auth only (no `?token=`, the reader PR's posture).
+- **Author Studio (S-6.1.1 remainder):** an empty book is a 400 with no row
+  written; outputs carry `word_count` and the list shows chapters and
+  words; "Add to a book" on a finished run's page opens the create flow with
+  that run pre-selected (`/author?new=book&job=<id>`). The Author reader
+  renders the manuscript's tables through `remark-gfm` (MIT); without it
+  they showed as a run of pipes.
+
+### AI models page shows what the measurements found (S-1.14.7, 2026-10-19)
+
+Story S-1.14.7 under [E-1.14](docs/initiatives.md#e-114--model-tier-quality-evaluation-harness), PR [#251](https://github.com/khoks/VideoResearchPro/pull/251), decision [D-076](docs/decisions.md#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19). No default model changed.
+
+- **Registry guidance.** Every LLM use case now records what the quality
+  measurements found. 8 are measured, each citing its decision with the gap to
+  the flagship tier and what fails on a cheaper model. The other 15 are marked
+  unmeasured, with a note on what evidence exists.
+- **Warnings on `/account/ai-models`.** A row warns when the chosen model
+  measured unacceptable for that function (for example luna for frame
+  description, D-073) or weaker (sonnet-5 for report compose, D-062).
+  It also warns when a vision function points at a model not known to
+  accept images. Model options are marked before you pick one. Warnings
+  never block a save.
+- **Cost against the default.** Each row shows the benchmark-job cost of
+  your choice against the default's: compose on sonnet-5 reads $3.03 against
+  $7.58.
+- **`/health/llm`** reports the same guidance and warnings for the
+  server's resolved config, so a bad `LLM_USE_CASE_CONFIG` shows up there.
+- Fixed: Q&A history rows were listed under "Job Q&A".
+
+### Reading room: citation cards, endnotes and print (2026-10-19)
+
+S-8.8.2. Every citation chip in a report now opens a card naming its source,
+and the reader prints as a clean document with numbered footnotes.
+
+- **Sources for every chip.** The reader resolves each citation against the
+  run's documents: by YouTube id, by URL, or — for reports written before
+  S-1.14.9, whose anchors carry only `&t=` — by the title or the sole channel
+  named beside the timestamp. All 30 dead anchors in the stored smoke-test
+  report are now real links.
+- **One shared card** (Popover API, placed from the chip's rect) on hover and
+  keyboard focus, polymorphic by `source_type`, with `aria-describedby`,
+  Escape to close, and a still slot for R1 frames once S-1.18.2 serves them.
+- **Print:** chrome hidden, monochrome, `h2` page breaks, chips as `[n]`
+  footnotes, a "Sources cited" endnote list with URLs, 2 cm margins.
+- **Fix:** `GET /jobs/{id}/videos` now declares `source_type`, `document_id`,
+  `source_metadata` and friends. They had always been built and always been
+  stripped by the response schema, and a non-video document on a job failed
+  serialisation outright.
+### Global search endpoint on SQLite FTS5 (2026-10-19, S-8.2.1)
+
+PR [#245](https://github.com/khoks/VideoResearchPro/pull/245). Plan:
+[docs/plans/m2-command-palette.md](docs/plans/m2-command-palette.md). The
+endpoint the command palette (S-8.2.2) will call; no UI in this PR.
+
+- **`GET /api/v1/search?q=&types=&limit=`** returns `{q, backend, groups}`
+  with one group each for jobs, documents, channels, Q&A exchanges (all
+  three surfaces) and knowledge reports. Every group is scoped to the
+  caller by joining the entity's tenant anchor onto the FTS hit list —
+  `jobs.tenant_id`, `document_visibility` on `document_id` (D-070), subscriptions ∪ visible
+  documents' channels, `*_qa_exchanges.tenant_id` — so a tenant with
+  nothing visible gets empty groups, never everything (D-063).
+- **FTS5 trigram tables** `fts_documents`, `fts_jobs`, `fts_channels`,
+  `fts_qa`, `fts_knowledge`, kept current by `AFTER INSERT / UPDATE OF /
+  DELETE` triggers; created conditionally by migration `a9f3c1e7b5d2` and
+  re-ensured at every boot (`search_service.ensure_index`). Substring
+  matching from three characters, case- and diacritics-insensitive,
+  Devanagari by codepoint trigrams; `bm25()` with the title weighted 5:1
+  over the body and a recency tie-break. Two deliberate deviations from the
+  plan's sketch: one trigram table per entity instead of `unicode61` plus
+  trigram (the trigram tokenizer covers both cases), and no
+  external-content mode (it maps on rowid, and string-keyed tables' rowids
+  are not stable across `VACUUM`).
+- **`LIKE` fallback** when the linked SQLite lacks FTS5 or its trigram
+  tokenizer (some Linux distro Pythons): the probe logs a warning, nothing
+  is created, searches scan with `LIKE` ordered by recency, and `GET
+  /health` reports `search_backend: "like"`. Queries whose tokens are all
+  under three characters take the same path even with FTS5 present.
+- `schema_init_service` ignores the `fts_` prefix when comparing the live
+  schema to the ORM, so the recovery path and the parity check keep working
+  with the index present.
+
+
 ### Shelves in the app (2026-10-19)
 
 Third PR of the organisation lane ([S-8.1.2](docs/initiatives.md#s-812--shelves-ui), PR [#250](https://github.com/khoks/VideoResearchPro/pull/250)).

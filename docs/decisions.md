@@ -2249,3 +2249,63 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 **Consequences.** S-8.5.2 must exclude withdrawn notes from the `notes_global` collection, and a document note must reach every job that contains the document, not only the one it was written from. Inline panels fetch one list per target type per page, capped at 2,000 rows, so a heavy user sees only the newest 2,000 of a type inline while the `/notes` page and the export see everything. A purge endpoint is owed before SaaS (see [saas-roadmap.md](saas-roadmap.md)).
 
 **Linked initiatives / PRs.** [S-8.5.1](initiatives.md#s-851--notes-schema-rest-and-inline-ui) (PR [#243](https://github.com/khoks/VideoResearchPro/pull/243)), [S-8.5.3](initiatives.md#s-853--your-notes-view-search-and-export) (PR [#246](https://github.com/khoks/VideoResearchPro/pull/246)), S-8.5.2, S-3.5.1, [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).
+
+## D-075 — R1 after three runs: the modality boundary needs provenance, not prompt rules (2026-10-19)
+
+**Status:** accepted. Follows [D-071](#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19) and [D-073](#d-073--frame-description-moves-to-gemini-31-flash-lite-on-image-grounded-grading-selection-stays-on-gpt-55-2026-10-19); the measurements are in [the protocol note](notes/2026-10-18-r1-visual-measurement.md#re-runs-after-the-contract-fix-t-11863-appended-2026-10-19).
+
+**Context.** S-1.18.6 added an attribution-boundary rule to `VISUAL_ANNOTATION_CONTRACT`, and D-073 moved frame description to gemini-3.1-flash-lite to meet the cost ceiling. Two re-runs on the same job then tested each change on its own: run 2 with Flash-Lite descriptions, run 3 with gpt-5.5 descriptions, both under the new rule, both judged blind by three model families and adversarially verified.
+
+**Findings.**
+
+1. The substance gain is real, but only with a strong describer: run 3 won 3/3 at matched length; run 2 tied (1/3). A cheap describer that grades only 0.3 points lower per frame erased the benefit at report level.
+2. The rule changed the direction of attribution errors, not their number. Every run had one or two confirmed errors per ~10,000-word report. Before the rule, screen details were credited to speakers; after it, spoken details were credited to the screen.
+3. A deterministic post-check cannot enforce the boundary on this corpus. It recalled 2 of 5 confirmed errors, flooded reports with false positives, and is structurally blind to Hindi and Bengali speech.
+
+**Decision.**
+
+- **The UI (S-1.18.2) stays deferred.** No configuration has yet met all three pre-registered criteria.
+- **Fix the cause, not the wording.** At the map stage, each extracted fact is labelled with its modality, `said`, `shown` or `both`, taken from the chunk it came from. The label travels through the lossless reduce (D-056) and is rendered for the composer. The composer then attributes from labels instead of inferring modality from interleaved text, and a check can compare the report against item provenance rather than raw transcripts. Filed as S-1.18.8, sequenced after S-1.14.6, which persists map items so their labels can be audited.
+- **The describer is chosen at report level, not per frame.** Per-frame grading did not predict the report-level loss, so the next tier change needs a report-level run. Three mid-priced describers (gpt-5.4-mini, claude-haiku-4-5, gemini-3.5-flash) are graded per frame first to pick a candidate (S-1.18.5).
+- **Multilingual verification rule.** A claim is not called fabricated until the non-Latin speech has been checked, native digits included. Judges and checkers that read only Latin script inflate fabrication counts on this corpus.
+
+**Alternatives considered.**
+
+- *Tighten the prompt again with the converse rule ("say 'on screen' only where a span exists").* Rejected as the primary fix: the last prompt rule moved the error rather than removing it, and a third rule may move it again. It is cheap, so it can ride along with S-1.18.8, but it is not relied on.
+- *Ship the deterministic check as a warning in the processing note.* Rejected: about eight false flags per report would teach readers to ignore the note.
+- *An LLM audit pass after compose.* Viable (the sweep found what the judges missed). It is deferred, not rejected: provenance makes errors less likely at the source, and an audit would then have less to catch. It is reconsidered after the S-1.18.8 measurement.
+
+**Consequences.** The visual feature stays opt-in and off by default, now with measured quality and known failure modes. S-1.18.8 touches the map and compose prompts and the item schema, so it is serialised after the R5 session's prompt work and after S-1.14.6.
+
+**Linked initiatives / PRs.** S-1.18.2 (deferred), S-1.18.5, S-1.18.6 (T-3 done), S-1.18.7 (measured), S-1.18.8 (new), S-1.14.6.
+
+## D-076 — Model guidance: "measured" means the use case's own output was graded; verdicts warn, never block (2026-10-19)
+
+**Status:** accepted. Item 3 is open to the user as OQ-16 in [E-1.14](initiatives.md#e-114--model-tier-quality-evaluation-harness).
+
+**Context.** E-1.14 measured tier quality per use case (D-055 to D-062, D-073), but the verdicts lived only in this log. The `/account/ai-models` override page therefore offered a raw model picker, and nothing warned an operator whose `LLM_USE_CASE_CONFIG` pointed frame description at a model graded unusable. S-1.14.7 moved the evidence into `USE_CASE_REGISTRY`, which forced three choices the decisions themselves never made.
+
+**Decision.**
+1. **A use case is `measured` only when its own output was graded.** That gives 8 measured entries. The other 15 are `unmeasured`, each with a note on what evidence exists. Three kinds of evidence do not count:
+   - sitting inside a graded chain (refine, knowledge extraction);
+   - sharing a prompt contract with a graded site (the library answer);
+   - moving tier alongside a graded site (the eight volume-tier sites that followed `report_map_chunks` to luna in D-057).
+2. **Verdicts are per model and scoped to reasoning levels, in two strengths.**
+   - `unacceptable`: the measurement produced unusable output. Examples: luna on frames (22 of 66 gradings), claude-haiku-4-5 on frames (55 of 62, although it accepts images), nano on map batches (unparseable JSON on 1 of 2), luna or gpt-5.4-mini with reasoning on (empty output).
+   - `weaker`: measurably below the default on the decision's own grading, but usable. Examples: sonnet-5 on compose; mini and flash-lite on frame selection, judged by agreement with the default's picks, which D-073 itself says is not a quality measure.
+
+   Model ids match exactly, as on `VISION_CAPABLE_MODELS`, so `gpt-5.5` cannot catch `gpt-5.5-pro`.
+3. **Warnings advise; nothing refuses a config.** This applies at the PUT, at resolve time and at startup. It is the same fail-soft rule [D-067](#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31) set for the vision allowlist.
+
+**Alternatives considered.**
+- *Mark a use case measured when its chain was graded.* Rejected: it would put a sibling's numbers behind a choice nobody measured. That would be a guidance version of the defect D-055 found, where the registry described a call by numbers that no longer applied to it.
+- *A single severity.* Rejected: sonnet-5 on compose reads better (8 vs 7) and is a defensible trade, while luna on frames produced 22 unusable gradings out of 66. One warning colour for both would teach users to ignore it.
+- *Refuse `unacceptable` choices at `PUT /settings/llm`.* Not taken for now. The verdicts rest on small samples (n=2 on map batches), the vision list always lags new releases, and the override page exists so that users can choose differently. The block would be one line in the PUT handler; recorded as OQ-16.
+- *Keep guidance in a separate table keyed by use case.* Rejected: a required field on `UseCaseInfo` means a new call site cannot ship without stating its evidence, and the registry test enforces that.
+
+**Consequences.**
+- Promoting a use case to `measured` now requires a decision entry. `tests/test_services/test_llm_guidance.py` pins the measured set and fails on any cited decision id missing from this log.
+- `assess_choice()` on the server and `assessChoice` on the page must change together.
+- A re-measurement that changes a verdict is a registry edit plus a decision, not just a decision.
+
+**Linked initiatives / PRs.** [S-1.14.7](initiatives.md#e-114--model-tier-quality-evaluation-harness), PR [#251](https://github.com/khoks/VideoResearchPro/pull/251). Follows D-052, D-055, D-056, D-057, D-062, D-072, D-073.

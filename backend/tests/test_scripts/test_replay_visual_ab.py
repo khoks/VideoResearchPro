@@ -6,6 +6,7 @@ arms come from the same videos, and the manifest counts are honest.
 """
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -83,6 +84,24 @@ def test_uninformative_frames_do_not_annotate(db, test_user, monkeypatch):
     assert manifest["frames_total"] == 2 and manifest["frames_informative"] == 0
     assert manifest["chunks_with_visual"] == 0
     assert [c["text"] for c in on] == [c["text"] for c in off]
+
+
+def test_substituted_descriptions_replace_stored_text_and_drop_missing_frames(db, test_user, monkeypatch, tmp_path):
+    job = _seed(db, test_user, video_id="substvid001")
+    monkeypatch.setattr(replay, "_load_cached_segments", lambda vid: (SEGMENTS, "en"))
+    stored = [_frame(12.0, "STORED ONE"), _frame(90.0, "STORED TWO")]
+    stored[0].frame_id, stored[1].frame_id = "f1", "f2"
+    monkeypatch.setattr(replay, "_existing_frames", lambda _db, vid: stored)
+    retier = tmp_path / "retier.json"
+    retier.write_text(json.dumps({"describe": [{"frame_id": "f1", "description": "NEW ONE", "informative": True}, {"frame_id": "f2", "description": None, "error": "boom"}]}), encoding="utf-8")
+
+    descriptions = replay.load_descriptions(retier)
+    assert descriptions == {"f1": {"description": "NEW ONE", "informative": True}}
+    manifest, on, _off, blocks = replay.build_arms(db, job.id, descriptions)
+    text = " ".join(c["text"] for c in on)
+    assert "NEW ONE" in text and "STORED ONE" not in text
+    assert "STORED TWO" not in text, "a frame with no substitute must not fall back to the stored description"
+    assert manifest["frames_total"] == 1 and manifest["frames_informative"] == 1
 
 
 def test_missing_transcript_is_skipped_not_fatal(db, test_user, monkeypatch):

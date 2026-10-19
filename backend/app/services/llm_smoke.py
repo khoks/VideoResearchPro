@@ -35,6 +35,7 @@ from app.services.llm_routing import (
     USE_CASE_REGISTRY,
     UseCase,
     UseCaseConfig,
+    assess_choice,
     is_vision_use_case,
     resolve_config,
     warn_if_not_vision_capable,
@@ -207,6 +208,17 @@ class LLMStatus:
                         "ok": r.ok,
                         "latency_ms": r.latency_ms,
                         "error": r.error,
+                        # S-1.14.7: the measurements behind the default,
+                        # and any measured warning for the config this
+                        # process resolved (env overrides included).
+                        "guidance": (
+                            USE_CASE_REGISTRY[uc].guidance.as_dict()
+                            if uc in USE_CASE_REGISTRY
+                            else None
+                        ),
+                        "warnings": assess_choice(
+                            uc, UseCaseConfig(r.provider, r.model, r.reasoning)
+                        ),
                     }
                     for uc, r in sorted(self._results.items())
                 },

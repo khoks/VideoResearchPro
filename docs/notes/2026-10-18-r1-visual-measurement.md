@@ -95,3 +95,37 @@ Per-video figures divide by the 11 videos that produced calls (the twelfth appro
 Description quality: 33 frames stratified across the 11 videos, three descriptions per frame under shuffled blind labels, two independent graders per frame who opened the image (66 gradings), unblinded afterwards. Luna's failures were substantive (wrong dates on an axis, a code cell reported as output, wrong variable names); flash-lite's were mostly casing and label misreads at 360p, which gpt-5.5 also made less often.
 
 **Decision (D-073):** describe on gemini-3.1-flash-lite, select stays on gpt-5.5 at low reasoning: **$0.075 per video** against $0.230 before, under the ceiling. The resolution finding (every model struggled with 640×360 text) is filed as T-1.18.5.5. The protocol re-run with these tiers follows S-1.18.6.
+
+## Re-runs after the contract fix (T-1.18.6.3, appended 2026-10-19)
+
+Both re-runs use the code after PR #227 (R3/R4) and PR #234 (the attribution-boundary rule), the same job and transcripts, and the same unannotated arm (run 2's OFF report, 9,744 words). Only the frame descriptions differ.
+
+| Run | Descriptions | ON words | Judges prefer ON | Mean substance ON / OFF | Confirmed attribution errors in ON | Confirmed fabrications ON / OFF |
+|---|---|---|---|---|---|---|
+| 1 (before #227/#234) | stored gpt-5.5 | 10,648 vs 6,490 | 3/3 | 8.33 / 7.00 | 2 (screen detail credited to a speaker) | 0 / 5 |
+| 2 | gemini-3.1-flash-lite | 9,003 | **1/3** | 7.67 / 7.67 | 1 (screen detail credited to a speaker) | 0 / 0 |
+| 3 | gpt-5.5 (re-described) | 10,782 | **3/3** | 8.67 / 7.67 | 2 (**speech presented as screen**) | 2 / 2 |
+
+Verification for runs 2 and 3: the same 3-lens majority per claimed error plus three independent sweeps (108 and 117 agents). Run 2's verification hit a usage limit partway and was resumed from cache.
+
+**What the three runs show.**
+- **The substance gain replicates with a strong describer and disappears with a weak one.** Run 1's win was length-confounded (the annotated report was 64% longer); run 3's is not (10% longer), and all three judges still prefer it. Per-frame grading put Flash-Lite at 4.21 against gpt-5.5's 4.52, and that gap was enough to erase the report-level benefit. One run per arm, so this is direction, not effect size.
+- **The prompt rule moved the error, it did not remove it.** Before S-1.18.6 the composer credited speakers with screen-only details. After it, the composer claimed the screen showed things that were only spoken: "the video displays Seaborn version 0.13.2 at 03:10", where the presenter *says* 0.13.2 in Bengali and no frame was captured near 3:10.
+- **English-only checking is unreliable on this corpus.** A judge flagged that same sentence as fabricated because the evidence is Bengali speech with Bengali digits (০.১৩.২). The verification agents found it once they read the non-Latin speech.
+
+**A deterministic check was tried and is not enough** (S-1.18.7, `backend/scripts/modality_check.py`, scored by `eval_modality_check.py` against the verified labels). At its best thresholds it caught **2 of 5** confirmed errors and raised about eight other flags per report, most of them false positives. Token matching fails for three reasons: four of the eleven videos are spoken in Hindi or Bengali, ASR renders `plt.plot` as "plt dot plot" (or पीएलटी डॉट प्लॉट), and the composer cites every sentence "— Source (mm:ss)", so nearly every sentence reads as speaker-attributed. It stays as a research tool, not a gate.
+
+**Against the rule:** criterion 1 met with gpt-5.5 descriptions (3/3), not with Flash-Lite (1/3); criterion 2 failed in every run (1–2 errors per report); criterion 3 met only with Flash-Lite. No configuration passes, so the UI stays deferred ([D-075](../decisions.md#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19)).
+
+## Per-frame grading of three mid-priced describers (T-1.18.5.6, appended 2026-10-19)
+
+D-075 ordered a per-frame pass to pick a candidate before any report-level run. Same job and 120 frames, re-described by each model, then a four-way blind grading against the gpt-5.5 baseline: 31 frames, two graders per frame who opened the image (62 gradings), labels re-shuffled per frame (each model appears under every label), unblinded afterwards. Raw data: `backend/data/r1_ab/retier/grading4_unblinded.json` (gitignored); costs from the per-model `*_describe.json` totals, divided by the 11 videos that produced calls.
+
+| Describer | Mean accuracy /5 | Unusable | Best of four | Misreads | Hallucinated details | Cost per video |
+|---|---|---|---|---|---|---|
+| gemini-3.5-flash | **4.70** | **0 / 62** | 22 | 21 | 8 | $0.051 |
+| gpt-5.5 (baseline) | 4.54 | 5 / 62 | 37 | 30 | 8 | $0.133 |
+| gpt-5.4-mini | 4.37 | 5 / 62 | 3 | 39 | 2 | $0.018 |
+| claude-haiku-4-5 | 2.39 | **55 / 62** | 0 | 146 | 68 | $0.026 |
+
+claude-haiku-4-5 accepts images and is on `VISION_CAPABLE_MODELS`, yet its descriptions are unusable on this corpus; the registry now lists it as unacceptable for `visual_describe_frame` (S-1.14.7), alongside gpt-5.6-luna. Per D-075 the default changes only on a report-level run; gemini-3.5-flash is the candidate.

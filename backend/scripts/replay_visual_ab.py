@@ -52,8 +52,39 @@ def _log(msg: str) -> None:
     print(time.strftime("%H:%M:%S"), msg, flush=True)
 
 
-def build_arms(db, job_id: str) -> tuple[dict, list[dict], list[dict], list[str]]:
-    """Return (manifest, chunks_on, chunks_off, annotated_transcript_blocks)."""
+class _FrameProxy:
+    """A stored frame with its description swapped for another model's.
+
+    `annotate_segments` only reads timestamp_seconds / description /
+    informative / status, so a proxy lets the ON arm be rebuilt from a
+    re-tier run (retier_vision.py output) without touching the database.
+    """
+
+    def __init__(self, frame, description: str | None, informative) -> None:
+        self.timestamp_seconds = frame.timestamp_seconds
+        self.status = frame.status
+        self.description = description
+        self.informative = informative
+
+
+def load_descriptions(path: str | Path) -> dict[str, dict]:
+    """frame_id -> {description, informative} from a retier_vision.py JSON."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    out = {}
+    for rec in data.get("describe", []):
+        if rec.get("description"):
+            out[rec["frame_id"]] = {"description": rec["description"], "informative": rec.get("informative")}
+    return out
+
+
+def build_arms(db, job_id: str, descriptions: dict[str, dict] | None = None) -> tuple[dict, list[dict], list[dict], list[str]]:
+    """Return (manifest, chunks_on, chunks_off, annotated_transcript_blocks).
+
+    ``descriptions`` substitutes each frame's description (and informative
+    flag) by frame_id; frames absent from the map are dropped from the ON
+    arm, so a re-tier run with a failed describe call never silently falls
+    back to the stored text.
+    """
     links = (
         db.query(JobVideo)
         .filter(JobVideo.job_id == job_id, JobVideo.approved.is_(True))
@@ -79,6 +110,11 @@ def build_arms(db, job_id: str) -> tuple[dict, list[dict], list[dict], list[str]
             continue
         segments, language = cached
         frames = _existing_frames(db, doc.video_id)
+        if descriptions is not None:
+            frames = [
+                _FrameProxy(f, descriptions[f.frame_id]["description"], descriptions[f.frame_id]["informative"])
+                for f in frames if f.frame_id in descriptions
+            ]
         done = [f for f in frames if f.status == "described" or (f.description and f.status not in ("failed", "skipped"))]
         informative = [f for f in done if f.informative]
         frames_total += len(frames)
@@ -129,7 +165,9 @@ def main() -> int:
     ap.add_argument("--out", required=True, help="output directory")
     ap.add_argument("--arms", default="on,off", help="comma list of arms to generate (on,off)")
     ap.add_argument("--topic", default=None, help="override the job's topic string")
+    ap.add_argument("--descriptions", default=None, help="retier_vision.py JSON whose descriptions replace the stored ones in the ON arm")
     args = ap.parse_args()
+    descriptions = load_descriptions(args.descriptions) if args.descriptions else None
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -141,8 +179,9 @@ def main() -> int:
         if job is None:
             sys.exit(f"job {args.job_id} not found")
         topic = args.topic or job.topic or "untitled"
-        manifest, chunks_on, chunks_off, blocks = build_arms(db, args.job_id)
+        manifest, chunks_on, chunks_off, blocks = build_arms(db, args.job_id, descriptions)
         manifest["topic"] = topic
+        manifest["descriptions_from"] = args.descriptions
         manifest["job_type"] = job.job_type
         manifest["output_length"] = getattr(job, "output_length", None)
     finally:

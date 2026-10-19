@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { useNavigate } from 'react-router-dom';
+import remarkGfm from 'remark-gfm';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   useAuthorKinds,
   useAuthorOutputContent,
@@ -33,8 +34,10 @@ import {
   kindMeta,
   outputDownloadFilename,
   outputMediaType,
+  outputSizeLabel,
   outputStatusLabel,
   outputStatusTone,
+  parseCreateIntent,
   partitionKinds,
 } from '../utils/authorOutputs';
 import type { HttpErrorLike } from '../utils/ingestResults';
@@ -62,7 +65,11 @@ export function AuthorPage() {
 
   const [kindFilter, setKindFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [creatingKind, setCreatingKind] = useState<string | null>(null);
+  // S-6.1.1: `/author?new=book&job=<id>` (the job page's "Add to a book")
+  // opens the create flow with that run pre-selected.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [intent] = useState(() => parseCreateIntent(searchParams));
+  const [creatingKind, setCreatingKind] = useState<string | null>(() => intent?.kind ?? null);
   const [viewing, setViewing] = useState<OutputItem | null>(null);
   const [deleting, setDeleting] = useState<OutputItem | null>(null);
 
@@ -268,12 +275,17 @@ export function AuthorPage() {
         </>
       )}
 
-      {creatingKind && (
+      {creatingKind && allowed && (
         <CreateOutputModal
           kind={creatingKind}
-          onClose={() => setCreatingKind(null)}
+          initialSelected={intent?.kind === creatingKind ? intent.jobIds : undefined}
+          onClose={() => {
+            setCreatingKind(null);
+            if (searchParams.has('new')) setSearchParams({}, { replace: true });
+          }}
           onCreated={(output) => {
             setCreatingKind(null);
+            if (searchParams.has('new')) setSearchParams({}, { replace: true });
             if (output.status === 'completed') setViewing(output);
           }}
         />
@@ -398,7 +410,6 @@ function OutputRow({
   onDelete: () => void;
 }) {
   const c = useColors();
-  const sources = output.source_ids.length;
   return (
     <li>
       <Card flush>
@@ -427,7 +438,7 @@ function OutputRow({
               {kindMeta(output.kind).label}
             </span>
             <span style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>
-              {sources} {sources === 1 ? 'source' : 'sources'} · {formatDate(output.created_at)}
+              {outputSizeLabel(output)} · {formatDate(output.created_at)}
             </span>
             <span style={{ display: 'inline-flex', gap: space['1'] }}>
               {output.has_content && (
@@ -477,10 +488,13 @@ function OutputRow({
  */
 function CreateOutputModal({
   kind,
+  initialSelected,
   onClose,
   onCreated,
 }: {
   kind: string;
+  /** Run ids to start with ticked (the job page's "Add to a book"). */
+  initialSelected?: string[];
   onClose: () => void;
   onCreated: (output: OutputItem) => void;
 }) {
@@ -489,7 +503,7 @@ function CreateOutputModal({
   const meta = kindMeta(kind);
   const [title, setTitle] = useState('');
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected ?? []));
   const [includeQa, setIncludeQa] = useState(true);
   const [includeToc, setIncludeToc] = useState(true);
   const jobs = useJobs({ limit: 200 });
@@ -714,7 +728,31 @@ function ViewerModal({ output, onClose, onDownload }: { output: OutputItem; onCl
             margin: '0 auto',
           }}
         >
-          <ReactMarkdown>{content.data ?? ''}</ReactMarkdown>
+          {/* S-6.1.2: manuscripts carry GFM tables (each report's statistics
+              and per-channel breakdown), which plain react-markdown renders
+              as a run of pipes. */}
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              table: ({ children }) => (
+                <div style={{ overflowX: 'auto', margin: `${space['3']} 0` }}>
+                  <table style={{ borderCollapse: 'collapse', fontFamily: fonts.ui, fontSize: fontSize.sm, width: '100%' }}>
+                    {children}
+                  </table>
+                </div>
+              ),
+              th: ({ children }) => (
+                <th style={{ textAlign: 'left', padding: `${space['1']} ${space['2']}`, borderBottom: `1px solid ${c.border}`, color: c.textSecondary, fontWeight: fontWeight.semibold }}>
+                  {children}
+                </th>
+              ),
+              td: ({ children }) => (
+                <td style={{ padding: `${space['1']} ${space['2']}`, borderBottom: `1px solid ${c.border}` }}>{children}</td>
+              ),
+            }}
+          >
+            {content.data ?? ''}
+          </ReactMarkdown>
         </div>
       )}
     </Modal>

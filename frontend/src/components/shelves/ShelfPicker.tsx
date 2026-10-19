@@ -33,7 +33,7 @@ export function ShelfPicker({ jobId, size = 'sm' }: Props) {
   const canWrite = has('shelves');
 
   const shelvesQuery = useShelves();
-  const onShelvesQuery = useJobShelves(jobId);
+  const { shelves: onShelves } = useJobShelves(jobId);
   const add = useAddJobToShelf();
   const remove = useRemoveJobFromShelf();
   const create = useCreateShelf();
@@ -60,7 +60,7 @@ export function ShelfPicker({ jobId, size = 'sm' }: Props) {
   }, [open]);
 
   const shelves = shelvesQuery.data ?? [];
-  const onIds = new Set((onShelvesQuery.data ?? []).map((sh) => sh.id));
+  const onIds = new Set(onShelves.map((sh) => sh.id));
   const count = onIds.size;
 
   if (!canWrite && count === 0) return null;

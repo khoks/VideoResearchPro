@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   shelvesApi,
+  type Shelf,
   type ShelfCreate,
   type ShelfDocumentsParams,
   type ShelfUpdate,
@@ -9,16 +11,30 @@ import {
 export const shelvesKeys = {
   all: ['shelves'] as const,
   detail: (id: string | null) => ['shelf', id] as const,
-  forJob: (jobId: string | null) => ['jobShelves', jobId] as const,
   documents: (id: string | null) => ['shelfDocuments', id] as const,
 };
 
+/**
+ * The caller's shelves with their `job_ids`. The sidebar, every "Add to
+ * shelf" picker and every chip row read this one cached list, so a page of
+ * twenty job cards costs one request, not twenty.
+ */
 export function useShelves() {
   return useQuery({
     queryKey: shelvesKeys.all,
     queryFn: () => shelvesApi.list(),
     staleTime: 30_000,
   });
+}
+
+/** Shelves a run sits on, derived from the cached listing. */
+export function useJobShelves(jobId: string): { shelves: Shelf[]; isLoading: boolean } {
+  const { data, isLoading } = useShelves();
+  const shelves = useMemo(
+    () => (data ?? []).filter((s) => s.job_ids.includes(jobId)),
+    [data, jobId],
+  );
+  return { shelves, isLoading };
 }
 
 export function useShelf(id: string | null) {
@@ -31,39 +47,16 @@ export function useShelf(id: string | null) {
   });
 }
 
-export function useJobShelves(jobId: string | null) {
-  return useQuery({
-    queryKey: shelvesKeys.forJob(jobId),
-    queryFn: () => shelvesApi.forJob(jobId!),
-    enabled: !!jobId,
-    staleTime: 30_000,
-  });
-}
-
-export function useShelfDocuments(id: string | null, params?: ShelfDocumentsParams) {
-  return useQuery({
-    queryKey: [
-      ...shelvesKeys.documents(id),
-      params?.search ?? null,
-      params?.language ?? null,
-      params?.transcript_status ?? null,
-      params?.sort ?? null,
-      params?.limit ?? null,
-      params?.offset ?? null,
-    ],
-    queryFn: () => shelvesApi.documents(id!, params),
-    enabled: !!id,
-    staleTime: 30_000,
-  });
+export function useShelfDocumentsFetcher(id: string) {
+  return (params: ShelfDocumentsParams) => shelvesApi.documents(id, params);
 }
 
 type QC = ReturnType<typeof useQueryClient>;
 
-function touchShelf(qc: QC, shelfId: string, jobId?: string) {
+function touchShelf(qc: QC, shelfId: string) {
   void qc.invalidateQueries({ queryKey: shelvesKeys.all });
   void qc.invalidateQueries({ queryKey: shelvesKeys.detail(shelfId) });
   void qc.invalidateQueries({ queryKey: shelvesKeys.documents(shelfId) });
-  if (jobId) void qc.invalidateQueries({ queryKey: shelvesKeys.forJob(jobId) });
 }
 
 export function useCreateShelf() {
@@ -78,11 +71,7 @@ export function useUpdateShelf() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, body }: { id: string; body: ShelfUpdate }) => shelvesApi.update(id, body),
-    onSuccess: (_updated, { id }) => {
-      touchShelf(qc, id);
-      // Chips on job pages show the name and colour; refresh them too.
-      void qc.invalidateQueries({ queryKey: ['jobShelves'] });
-    },
+    onSuccess: (_updated, { id }) => touchShelf(qc, id),
   });
 }
 
@@ -94,7 +83,6 @@ export function useDeleteShelf() {
       qc.removeQueries({ queryKey: shelvesKeys.detail(id) });
       qc.removeQueries({ queryKey: shelvesKeys.documents(id) });
       void qc.invalidateQueries({ queryKey: shelvesKeys.all });
-      void qc.invalidateQueries({ queryKey: ['jobShelves'] });
     },
   });
 }
@@ -104,7 +92,7 @@ export function useAddJobToShelf() {
   return useMutation({
     mutationFn: ({ shelfId, jobId }: { shelfId: string; jobId: string }) =>
       shelvesApi.addJob(shelfId, jobId),
-    onSuccess: (_shelf, { shelfId, jobId }) => touchShelf(qc, shelfId, jobId),
+    onSuccess: (_shelf, { shelfId }) => touchShelf(qc, shelfId),
   });
 }
 
@@ -113,6 +101,6 @@ export function useRemoveJobFromShelf() {
   return useMutation({
     mutationFn: ({ shelfId, jobId }: { shelfId: string; jobId: string }) =>
       shelvesApi.removeJob(shelfId, jobId),
-    onSuccess: (_void, { shelfId, jobId }) => touchShelf(qc, shelfId, jobId),
+    onSuccess: (_void, { shelfId }) => touchShelf(qc, shelfId),
   });
 }

@@ -14,6 +14,8 @@ export interface Shelf {
   description: string | null;
   color: ShelfColor;
   job_count: number;
+  /** The shelf's job ids, most recently added first. */
+  job_ids: string[];
   created_at: string;
   updated_at: string;
 }
@@ -50,7 +52,6 @@ export const shelvesApi = {
     api.post<Shelf>(`/shelves/${id}/jobs/${jobId}`).then(r => r.data),
   removeJob: (id: string, jobId: string) =>
     api.delete(`/shelves/${id}/jobs/${jobId}`).then(() => undefined),
-  forJob: (jobId: string) => api.get<Shelf[]>(`/jobs/${jobId}/shelves`).then(r => r.data),
   documents: (id: string, params?: ShelfDocumentsParams) =>
     api.get<LibraryVideoResponse[]>(`/shelves/${id}/documents`, { params }).then(r => r.data),
 };

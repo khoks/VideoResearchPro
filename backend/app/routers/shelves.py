@@ -55,7 +55,7 @@ def _job_or_404(db: Session, job_id: str, tenant_id: str):
 
 
 def _summary(db: Session, shelf) -> dict:
-    return shelf_service.shelf_to_dict(shelf, shelf_service.job_count(db, shelf.id))
+    return shelf_service.shelves_to_dicts(db, [shelf])[0]
 
 
 @router.get("", response_model=list[ShelfResponse])
@@ -63,9 +63,7 @@ def list_shelves(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    shelves = shelf_service.list_shelves(db, current_user.id)
-    counts = shelf_service.job_counts(db, [s.id for s in shelves])
-    return [shelf_service.shelf_to_dict(s, counts.get(s.id, 0)) for s in shelves]
+    return shelf_service.shelves_to_dicts(db, shelf_service.list_shelves(db, current_user.id))
 
 
 @router.post("", response_model=ShelfResponse, status_code=status.HTTP_201_CREATED)
@@ -94,7 +92,7 @@ def get_shelf(
 ):
     shelf = _shelf_or_404(db, shelf_id, current_user.id)
     jobs = shelf_service.shelf_jobs(db, shelf)
-    payload = shelf_service.shelf_to_dict(shelf, len(jobs))
+    payload = shelf_service.shelf_to_dict(shelf, [j.id for j in jobs])
     payload["jobs"] = [job_service.job_to_response_dict(j) for j in jobs]
     return payload
 

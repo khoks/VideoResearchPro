@@ -9,7 +9,7 @@
 
 import { useMemo } from 'react';
 import { useJobStore } from '../stores/jobStore';
-import { colors, type Mode, type ColorToken, shadow } from '../theme';
+import { colors, isPaletteColor, palette, type Mode, type ColorToken, shadow } from '../theme';
 
 export type ResolvedColors = { [K in ColorToken]: string };
 
@@ -32,4 +32,11 @@ export function useShadows() {
     hover: shadow.hover,
     floating: mode === 'dark' ? shadow.floatingDark : shadow.floating,
   };
+}
+
+/** Resolve a label-palette colour NAME (shelves, tags) for the current mode.
+ * Unknown names fall back to `default` rather than rendering unstyled. */
+export function usePaletteColor(name: string): { bg: string; fg: string } {
+  const mode = useThemeMode();
+  return palette[isPaletteColor(name) ? name : 'default'][mode];
 }

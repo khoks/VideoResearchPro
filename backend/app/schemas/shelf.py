@@ -63,6 +63,9 @@ class ShelfResponse(BaseModel):
     description: str | None = None
     color: str = "default"
     job_count: int = 0
+    # The shelf's job ids, most recently added first. Lets one cached
+    # listing answer "which shelves is this run on" for a whole page.
+    job_ids: list[str] = []
     created_at: datetime
     updated_at: datetime
 

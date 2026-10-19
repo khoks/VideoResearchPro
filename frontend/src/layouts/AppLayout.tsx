@@ -4,6 +4,8 @@ import { useJobStore, type AppTab } from '../stores/jobStore';
 import { useAuth } from '../contexts/AuthContext';
 import { useSystemStatus } from '../hooks/useSystemStatus';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
+import { useShelves } from '../hooks/useShelves';
+import { ShelfDot } from '../components/shelves/ShelfDot';
 import { SystemStatusBanner } from '../components/common/SystemStatusBanner';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, motion } from '../theme';
@@ -48,6 +50,12 @@ export function AppLayout() {
     setMobileNavOpen(false);
   };
 
+  // Shelves are dynamic entries, so they navigate by path, not by AppTab.
+  const handleNavigatePath = (path: string) => {
+    navigate(path);
+    setMobileNavOpen(false);
+  };
+
   const handleLogout = () => {
     logout();
     navigate('/login', { replace: true });
@@ -88,6 +96,9 @@ export function AppLayout() {
       showAuthor={has('author_studio')}
       showEcho={has('echo_personal_brain')}
       currentTier={tier}
+      pathname={location.pathname}
+      onNavigatePath={handleNavigatePath}
+      canWriteShelves={has('shelves')}
     />
   );
 
@@ -190,9 +201,21 @@ interface NavContentProps {
   showAuthor: boolean;
   showEcho: boolean;
   currentTier: 'free' | 'pro' | 'studio';
+  pathname: string;
+  onNavigatePath: (path: string) => void;
+  canWriteShelves: boolean;
 }
 
-function NavContent({ onChange, active, showAuthor, showEcho, currentTier }: NavContentProps) {
+function NavContent({
+  onChange,
+  active,
+  showAuthor,
+  showEcho,
+  currentTier,
+  pathname,
+  onNavigatePath,
+  canWriteShelves,
+}: NavContentProps) {
   return (
     <nav aria-label="Primary" style={{ display: 'flex', flexDirection: 'column', gap: space['5'] }}>
       <NavGroup label="Research">
@@ -203,6 +226,7 @@ function NavContent({ onChange, active, showAuthor, showEcho, currentTier }: Nav
         <NavItem active={active.library}     onClick={() => onChange('library')}>All sources</NavItem>
         <NavItem active={active['library-qa']} onClick={() => onChange('library-qa')}>Ask the library</NavItem>
       </NavGroup>
+      <ShelvesNavGroup pathname={pathname} onNavigate={onNavigatePath} canWrite={canWriteShelves} />
       <NavGroup label="Knowledge">
         <NavItem active={active['qa-history']} onClick={() => onChange('qa-history')}>Echoes (Q&amp;A history)</NavItem>
         <NavItem active={active.exports}      onClick={() => onChange('exports')}>Exports</NavItem>
@@ -230,6 +254,54 @@ function NavContent({ onChange, active, showAuthor, showEcho, currentTier }: Nav
         </NavItem>
       </NavGroup>
     </nav>
+  );
+}
+
+const SHELVES_NAV_LIMIT = 8;
+
+/**
+ * The reader's shelves (E-8.1), first eight then "Show all N", plus a link
+ * to manage them. Hidden for a reader who has none and cannot create one.
+ */
+function ShelvesNavGroup({
+  pathname,
+  onNavigate,
+  canWrite,
+}: {
+  pathname: string;
+  onNavigate: (path: string) => void;
+  canWrite: boolean;
+}) {
+  const { data } = useShelves();
+  const [expanded, setExpanded] = useState(false);
+  const shelves = data ?? [];
+  if (!canWrite && shelves.length === 0) return null;
+  const visible = expanded ? shelves : shelves.slice(0, SHELVES_NAV_LIMIT);
+  return (
+    <NavGroup label="Shelves">
+      {visible.map((shelf) => (
+        <NavItem
+          key={shelf.id}
+          active={pathname === `/shelves/${shelf.id}`}
+          onClick={() => onNavigate(`/shelves/${shelf.id}`)}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: space['2'], minWidth: 0 }}>
+            <ShelfDot color={shelf.color} size={8} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {shelf.name}
+            </span>
+          </span>
+        </NavItem>
+      ))}
+      {shelves.length > SHELVES_NAV_LIMIT && (
+        <NavItem active={false} onClick={() => setExpanded((e) => !e)}>
+          {expanded ? 'Show fewer' : `Show all ${shelves.length}`}
+        </NavItem>
+      )}
+      <NavItem active={pathname === '/shelves'} onClick={() => onNavigate('/shelves')}>
+        {shelves.length > 0 ? 'Manage shelves' : 'Start a shelf'}
+      </NavItem>
+    </NavGroup>
   );
 }
 

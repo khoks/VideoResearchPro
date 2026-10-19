@@ -79,6 +79,35 @@ def job_count(db: Session, shelf_id: str) -> int:
     return job_counts(db, [shelf_id]).get(shelf_id, 0)
 
 
+def memberships(db: Session, shelf_ids: Iterable[str]) -> dict[str, list[str]]:
+    """``{shelf_id: [job_id, ...]}`` for the given shelves in one query, most
+    recently added first. Shelves with no jobs map to an empty list.
+
+    The shelves listing carries these so a page of job cards can tell which
+    shelves each run is on from one cached response, instead of one request
+    per card (S-8.1.2).
+    """
+    ids = list(shelf_ids)
+    out: dict[str, list[str]] = {sid: [] for sid in ids}
+    if not ids:
+        return out
+    rows = (
+        db.query(ShelfJob.shelf_id, ShelfJob.job_id)
+        .filter(ShelfJob.shelf_id.in_(ids))
+        .order_by(ShelfJob.added_at.desc())
+        .all()
+    )
+    for shelf_id, job_id in rows:
+        out[shelf_id].append(job_id)
+    return out
+
+
+def shelves_to_dicts(db: Session, shelves: list[Shelf]) -> list[dict]:
+    """Serialise several shelves with their memberships in one query."""
+    members = memberships(db, [s.id for s in shelves])
+    return [shelf_to_dict(s, members.get(s.id, [])) for s in shelves]
+
+
 def shelf_jobs(db: Session, shelf: Shelf) -> list[Job]:
     """The shelf's jobs, most recently added first. Only the shelf owner's
     jobs can be on it (``add_job`` guarantees that), so no extra filter."""
@@ -210,13 +239,14 @@ def remove_job(db: Session, shelf: Shelf, job_id: str) -> bool:
 # Serialisation
 # ---------------------------------------------------------------------------
 
-def shelf_to_dict(shelf: Shelf, count: int) -> dict:
+def shelf_to_dict(shelf: Shelf, job_ids: list[str]) -> dict:
     return {
         "id": shelf.id,
         "name": shelf.name,
         "description": shelf.description,
         "color": shelf.color,
-        "job_count": count,
+        "job_count": len(job_ids),
+        "job_ids": job_ids,
         "created_at": shelf.created_at,
         "updated_at": shelf.updated_at,
     }

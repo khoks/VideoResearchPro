@@ -85,11 +85,11 @@ export function ShelfChip({ shelf, linked = true, onRemove, removeBusy, style }:
 
 /** The chips for every shelf a job sits on; renders nothing when there are none. */
 export function JobShelfChips({ jobId, style }: { jobId: string; style?: CSSProperties }) {
-  const { data } = useJobShelves(jobId);
-  if (!data || data.length === 0) return null;
+  const { shelves } = useJobShelves(jobId);
+  if (shelves.length === 0) return null;
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: space['1'], ...style }}>
-      {data.map((shelf) => (
+      {shelves.map((shelf) => (
         <ShelfChip key={shelf.id} shelf={shelf} />
       ))}
     </div>

@@ -130,6 +130,11 @@ def ask_library_question(
 
     corpus_statistics = corpus_stats_service.corpus_statistics_for_document_ids(db, visible)
 
+    # D-068 / S-7.1.1: THIS tenant's trust weights, resolved at request time.
+    from app.services import subscription_service
+
+    channel_weights = subscription_service.channel_weights(db, current_user.id)
+
     with llm_service.byok_context(current_user.id, db):
         result = run_library_qa_agent(
             question=request.question,
@@ -137,6 +142,7 @@ def ask_library_question(
             visible_document_ids=visible,
             corpus_statistics=corpus_statistics,
             output_length=request.output_length,
+            channel_weights=channel_weights,
         )
 
     # T-5.5.5: track consumption.

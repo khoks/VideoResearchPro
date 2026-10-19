@@ -80,6 +80,9 @@ class QAAgentState(TypedDict):
     # S-1.12.1: the job's approved document ids scoping its retrieval —
     # `documents.document_id` values since D-070, never the legacy video_id.
     document_ids: list[str]
+    # D-068: the asking tenant's non-neutral trust weights, {channel_id:
+    # weight}, resolved by the router at request time. Empty = unweighted.
+    channel_weights: dict[str, float]
     sub_queries: list[str]
     rag_results: list[dict]
     report_context: str | None

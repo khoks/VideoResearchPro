@@ -52,6 +52,15 @@ export function useUnsubscribeChannel() {
   });
 }
 
+/** S-7.1.1: the server echoes the updated channel, so caches are patched in place. */
+export function useSetChannelWeight() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, weight }: { id: string; weight: number }) => channelsApi.setWeight(id, weight),
+    onSuccess: (updated) => patchChannelInList(queryClient, updated),
+  });
+}
+
 export function useSyncChannel() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Code-mixed speech: matrix vs embedded language (2026-10-19, T-1.16.2.2)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Second task of N-002;
+PR [#260](https://github.com/khoks/VideoResearchPro/pull/260). Second task of N-002;
 [D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
 
 - **`code_mixing_service.analyse_span`** reports which language supplies a

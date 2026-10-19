@@ -153,6 +153,8 @@ export function GraphCanvas({ model, selected, onSelect, onRefocus, ariaLabel, s
       settings: {
         // sigma 4 measures sizes in graph units by default; the model's sizes are pixels.
         itemSizesReference: 'screen',
+        // A container measured at zero width (a collapsed panel) must not throw.
+        allowInvalidContainer: true,
         renderEdgeLabels: false,
         labelDensity: 0.6,
         labelRenderedSizeThreshold: 9,

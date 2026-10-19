@@ -132,7 +132,7 @@ export function GraphExplorer({
   const lostFocus = !!state.focus && !!data && data.focus === null;
 
   let body;
-  if (query.isLoading || !model || !data) {
+  if (query.isLoading || !model || !data || (state.view === null && width === 0)) {
     body = query.isError ? (
       <EmptyState
         size="sm"
@@ -149,6 +149,8 @@ export function GraphExplorer({
         }
       />
     ) : (
+      // Also while the width is unknown: the view (map or table) depends on it,
+      // and mounting the map only to swap it for the table wastes a WebGL context.
       <Skeleton variant="card" width="100%" height={compact ? 320 : 480} />
     );
   } else if (data.nodes.length === 0) {

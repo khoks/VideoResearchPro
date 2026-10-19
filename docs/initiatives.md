@@ -1109,9 +1109,9 @@ Outputter scaffolded by I-6 foundation; concrete `SiteAstroOutputter` is a futur
 
 **Current state.** Only a seed exists: `channel_subscriptions.source_weight` (per-tenant, default 1.0, moved there by D-065). Nothing reads it, no endpoint sets it, and no UI exposes it. `channel_subscription.py` nonetheless documents it as "the trust score that re-ranks retrieval".
 
-### E-7.1 ⚪ Trust-weighted retrieval (v1)
+### E-7.1 🔵 Trust-weighted retrieval (v1)
 
-**Open question (raised 2026-10-18, undecided).** Option one is weighted retrieval alone: similarity × trust weight before re-ranking, a contained retrieval change. Option two puts weight bands in the answer ("your trusted creators say X; others say Y"), which reshapes the Q&A agent. The story below assumes option one, with option two as a follow-up.
+**Decided 2026-10-18 by [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18):** weighted retrieval first, as a pure re-rank (`distance / weight` after the raw relevance threshold, over a 3× pool), weights resolved per tenant at query time and never stored on chunks or used as a filter. Perspective banding is E-7.2. **Sequenced after the R3/R4 batch**, which is rewriting `qa_agent.py`.
 
 #### S-7.1.1 ⚪ Make `source_weight` re-rank retrieval
 **PR:** TBD
@@ -1121,6 +1121,10 @@ Outputter scaffolded by I-6 foundation; concrete `SiteAstroOutputter` is a futur
 - [ ] T-7.1.1.3 Weight control on the channel page
 - [ ] T-7.1.1.4 Make the `channel_subscription.py` docstring true, or correct it
 - [ ] T-7.1.1.5 Measure: the same questions with and without weighting, judged blind (E-1.14 harness)
+
+### E-7.2 ⚪ Perspective banding in answers
+
+**Scope.** Segment retrieval by trust band and let the answer surface "your trusted creators say X; others say Y", with disagreement detection between bands. Deferred by D-068 until user-set weights exist and E-7.1's measurement is in.
 
 ---
 

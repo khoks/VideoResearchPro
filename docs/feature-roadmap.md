@@ -189,7 +189,7 @@ Below threshold: bubble dimmed, banner explains what's missing. Crossing thresho
 - Should the user weight individual creators within a channel (e.g. one host vs another)? Recommend channel-only for v1.
 - Disagreement surfacing — opt-in per query, or always-on for queries that retrieve from disparate-weighted sources? Recommend opt-in.
 - How does weighting interact with subscriptions (auto-pulled content)? Recommend channel weight applies; user can override per-document.
-- **Shape of v1 (raised 2026-10-18, undecided).** Option one is weighted retrieval alone: multiply similarity by trust weight before re-ranking, which is a contained retrieval change. Option two puts weight bands in the answer ("your trusted creators say X; others say Y"), which reshapes the Q&A agent.
+- **Shape of v1: resolved 2026-10-18 by [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18).** Weighted retrieval first (re-rank by `distance / weight` after the raw relevance threshold, weights resolved per tenant at query time); perspective banding deferred to E-7.2 until weights exist and the re-rank is measured.
 
 **Status.** ⚪ proposed. Targeted Phase 4 (2027 Q1). Only the weight column exists, so retrieval is unweighted today. Tracked as [I-7](initiatives.md#i-7--curated-source-ranking-l4).
 

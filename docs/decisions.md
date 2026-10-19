@@ -2047,3 +2047,28 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **Linked initiatives / PRs.** E-1.18 (R1). Follows D-031 (dominant-segment heuristic), D-051 (bot-wall), D-063 (shared cache, private catalogue).
 
+
+## D-068 — Curated source ranking v1: per-tenant trust weight re-ranks retrieval; perspective banding deferred (2026-10-18)
+
+**Status:** accepted. Taken by Claude under the user's 2026-10-18 directive to "take a wise decision around L4 and document its rationale"; the user set the goal, not the shape.
+
+**Context.** The product thesis is *curated, not balanced*, yet curation stops at approval: every approved source counts equally in retrieval. The audit of 2026-10-18 found that `channel_subscriptions.source_weight` (per-tenant since [D-065](#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)) is read by nothing, despite its docstring calling it "the trust score that re-ranks retrieval". Two shapes were on the table for [L4](feature-roadmap.md#l4--curated-source-ranking-): weighted retrieval, or perspective banding in the answer ("your trusted creators say X; others say Y").
+
+**Decision.** Ship weighted retrieval first, as a pure re-rank, and defer banding.
+
+1. **Weights are a ranking input resolved at query time, never stored on chunks and never a filter.** Chunks are shared across tenants ([D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)), so a per-tenant number cannot live in Chroma metadata. The weight is looked up per `channel_id` from the asking tenant's subscriptions and applied after retrieval.
+2. **Formula, pre-registered so the measurement cannot be tuned afterwards:** retrieve `3 × top_k` candidates, drop those failing `RAG_DISTANCE_THRESHOLD` on the *raw* distance, then sort by `distance / weight` and keep `top_k`. Weight range 0.0–2.0, default 1.0; a weight of 0 is clamped to 0.05 so the source sinks to the bottom but can still surface when nothing else matches. Weighting after the threshold means a trusted source cannot pull an off-topic chunk into the answer; it only reorders what is relevant.
+3. **Weights become settable:** `PUT /api/v1/channels/{id}/weight` through `subscription_service`, plus a control on the channel page. Sources without a channel (Reddit, HN, PDFs) stay at 1.0 until creators generalise (E-1.9 Phase 2).
+4. **Scope:** job-scoped and library Q&A. The report has no retrieval step (it maps every approved chunk), so weights do not apply there yet.
+5. **Measured before being called done:** the same question set with weights on and off, judged blind with the E-1.14 method.
+
+**Alternatives considered.**
+
+- *Perspective banding first.* Rejected for now: there are no user-set weights yet to band on, so it would be built on defaults; it reshapes `qa_agent.py`, which the R3/R4 batch is rewriting; and its value is unmeasurable until weights exist. Filed as E-7.2.
+- *Weight as a filter* (drop low-trust sources). Rejected: [D-059](#d-059--selection-quotas-preferred-channel-guarantee--concentration-cap-2026-07-30) and [D-066](#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31) established "preference, never filter"; exclusion already happens at approval.
+- *Boost before the relevance threshold.* Rejected: it would let a trusted but off-topic chunk displace a relevant one.
+- *Per-document `author_trust_weight`.* Deferred: channel-level first, per the roadmap's own recommendation.
+
+**Consequences.** E-7.1 is sequenced after the R3/R4 batch lands, because both touch `qa_agent.py`. The `channel_subscription.py` docstring becomes true rather than being rewritten. Retrieval pool size triples for weighted queries; the cost is one Chroma call either way.
+
+**Linked initiatives / PRs.** I-7 / E-7.1 / S-7.1.1. Follows D-059, D-063, D-065.

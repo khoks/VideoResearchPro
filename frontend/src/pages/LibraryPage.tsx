@@ -9,6 +9,8 @@ import {
 } from '../hooks/useChannels';
 import { VideoRow } from '../components/library/VideoRow';
 import { ChannelRow } from '../components/library/ChannelRow';
+import { PdfUploadZone } from '../components/library/PdfUploadZone';
+import { PasteUrlsForm } from '../components/library/PasteUrlsForm';
 import {
   Button,
   Card,
@@ -30,7 +32,7 @@ import {
 import type { LibrarySort, LibraryVideoResponse } from '../services/libraryApi';
 import type { Channel } from '../services/channelsApi';
 
-type TabKey = 'videos' | 'channels';
+type TabKey = 'videos' | 'channels' | 'ingest';
 
 const PAGE_SIZE = 50;
 
@@ -127,6 +129,17 @@ export function LibraryPage() {
     ? channelNameById.get(channelFilter) ?? channelFilter
     : null;
 
+  // After an ingest, show the newest volumes with no filter in the way.
+  const handleViewShelf = useCallback(() => {
+    setSearch('');
+    setLanguage('');
+    setTranscriptStatus('');
+    setChannelFilter('');
+    setSort('newest');
+    setPage(0);
+    setTab('videos');
+  }, []);
+
   return (
     <div style={{ maxWidth: measure.grid, margin: '0 auto' }}>
       <header style={{ marginBottom: space['5'] }}>
@@ -171,9 +184,14 @@ export function LibraryPage() {
         <TabButton active={tab === 'channels'} onClick={() => setTab('channels')}>
           Channels
         </TabButton>
+        <TabButton active={tab === 'ingest'} onClick={() => setTab('ingest')}>
+          Add sources
+        </TabButton>
       </div>
 
-      {tab === 'videos' ? (
+      {tab === 'ingest' ? (
+        <IngestTab onViewShelf={handleViewShelf} />
+      ) : tab === 'videos' ? (
         <VideosTab
           search={search}
           onSearchChange={(v) => {
@@ -267,6 +285,66 @@ function TabButton({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * "Add sources" — the two ingest paths that do not go through a research
+ * run: PDF upload (E-1.8) and pasted URLs (S-1.5.8). Both endpoints are
+ * library-scoped on the backend, so they live here rather than on the
+ * Submit page. Each shelved document is granted to this tenant (D-063)
+ * and immediately joins library-wide Q&A.
+ */
+function IngestTab({ onViewShelf }: { onViewShelf: () => void }) {
+  const c = useColors();
+  const sectionTitle: React.CSSProperties = {
+    margin: 0,
+    fontFamily: fonts.display,
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.semibold,
+    color: c.textPrimary,
+  };
+  const sectionLede: React.CSSProperties = {
+    margin: `${space['1']} 0 ${space['4']}`,
+    fontFamily: fonts.body,
+    fontSize: fontSize.sm,
+    color: c.textSecondary,
+    lineHeight: lineHeight.normal,
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: space['5'] }}>
+      <p
+        style={{
+          margin: 0,
+          fontFamily: fonts.body,
+          fontSize: fontSize.base,
+          color: c.textSecondary,
+          lineHeight: lineHeight.normal,
+          maxWidth: measure.reading,
+        }}
+      >
+        Not everything worth keeping arrives through a research run. Shelve your own PDFs and
+        any page you can link to; they join the library at once and answer alongside everything
+        else when you ask across it.
+      </p>
+
+      <Card>
+        <h2 style={sectionTitle}>Upload PDFs</h2>
+        <p style={sectionLede}>
+          Papers, reports, book chapters. Citations later deep-link to the page they came from.
+        </p>
+        <PdfUploadZone onViewShelf={onViewShelf} />
+      </Card>
+
+      <Card>
+        <h2 style={sectionTitle}>Paste URLs</h2>
+        <p style={sectionLede}>
+          Essays, blog posts, newsletters, and posts from Facebook, Instagram, LinkedIn or X.
+        </p>
+        <PasteUrlsForm onViewShelf={onViewShelf} />
+      </Card>
+    </div>
   );
 }
 

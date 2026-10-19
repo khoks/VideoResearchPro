@@ -1,241 +1,341 @@
-import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import api from '../services/api';
-import { useColors } from '../hooks/useTheme';
+import { useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import { useNavigate } from 'react-router-dom';
+import {
+  useAuthorKinds,
+  useAuthorOutputContent,
+  useAuthorOutputs,
+  useCreateOutput,
+  useDeleteOutput,
+} from '../hooks/useAuthor';
+import { useJobs } from '../hooks/useJobs';
+import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { useJobStore } from '../stores/jobStore';
-import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../theme';
+import { authorApi, type OutputItem } from '../services/authorApi';
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  FormField,
+  Input,
+  Modal,
+  Select,
+  Skeleton,
+  Spinner,
+} from '../components/primitives';
+import { useColors } from '../hooks/useTheme';
+import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
+import { formatDate } from '../utils/formatters';
+import { downloadUrl } from '../utils/download';
+import {
+  describeCreateError,
+  kindMeta,
+  outputDownloadFilename,
+  outputMediaType,
+  outputStatusLabel,
+  outputStatusTone,
+  partitionKinds,
+} from '../utils/authorOutputs';
+import type { HttpErrorLike } from '../utils/ingestResults';
+import type { Job } from '../types/job';
 
-interface OutputRow {
-  id: string;
-  kind: string;
-  status: 'pending' | 'generating' | 'completed' | 'failed';
-  title: string | null;
-  error_message: string | null;
-  created_at: string;
+const OUTPUT_STATUSES = ['pending', 'generating', 'completed', 'failed'] as const;
+
+function isForbidden(err: unknown): boolean {
+  return (err as HttpErrorLike | null)?.response?.status === 403;
 }
 
-const SHIPPED_KINDS = ['book'];
-const COMING_SOON_KINDS = ['site', 'deck', 'newsletter', 'reel'];
-
 /**
- * Author Studio — Pro-tier and up.
+ * Author Studio — Pro tier and up.
  *
- * Backend foundation shipped per I-6 (PR #173): outputs table + Outputter
- * Protocol + Book v1 outputter. Site / Deck / Newsletter / Reel return
- * 501 today; the page lists them under "Coming soon".
+ * Backend: `backend/app/routers/author.py` (I-6 foundation, PR #173).
+ * Only `book` has an outputter today; every other kind the schema knows
+ * is shown honestly as "coming later" and never offered a create button.
  */
 export function AuthorPage() {
   const c = useColors();
-  const qc = useQueryClient();
+  const navigate = useNavigate();
   const pushToast = useJobStore((s) => s.pushToast);
-  const [title, setTitle] = useState('');
+  const { has, tier, isLoading: tierLoading } = useTierCapabilities();
+  const allowed = has('author_studio');
 
-  const list = useQuery<OutputRow[]>({
-    queryKey: ['author', 'outputs'],
-    queryFn: async () => (await api.get('/author/outputs')).data,
-  });
+  const [kindFilter, setKindFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [creatingKind, setCreatingKind] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<OutputItem | null>(null);
+  const [deleting, setDeleting] = useState<OutputItem | null>(null);
 
-  const createBook = useMutation({
-    mutationFn: async () => {
-      const { data } = await api.post('/author/outputs', {
-        kind: 'book',
-        title: title.trim() || 'Untitled book',
-      });
-      return data;
-    },
-    onSuccess: () => {
-      setTitle('');
-      qc.invalidateQueries({ queryKey: ['author', 'outputs'] });
-      pushToast('success', 'Book generation started.');
-    },
-  });
+  const kinds = useAuthorKinds(allowed);
+  const outputs = useAuthorOutputs(
+    { kind: kindFilter || undefined, status: statusFilter || undefined },
+    allowed,
+  );
+  const deleteMut = useDeleteOutput();
+
+  const forbidden = isForbidden(kinds.error) || isForbidden(outputs.error);
+  const partition = useMemo(() => partitionKinds(kinds.data), [kinds.data]);
+
+  const download = async (output: OutputItem) => {
+    try {
+      const text = await authorApi.getContent(output.id);
+      const blob = new Blob([text], { type: outputMediaType(output) });
+      const url = URL.createObjectURL(blob);
+      downloadUrl(url, outputDownloadFilename(output));
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    } catch {
+      pushToast('error', 'Could not fetch the manuscript for download.');
+    }
+  };
+
+  const confirmDelete = () => {
+    if (!deleting) return;
+    deleteMut.mutate(deleting.id, {
+      onSuccess: () => {
+        pushToast('success', `Deleted “${deleting.title}”.`);
+        if (viewing?.id === deleting.id) setViewing(null);
+        setDeleting(null);
+      },
+      onError: () => pushToast('error', 'Delete failed. The output may already be gone.'),
+    });
+  };
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-      <header style={{ marginBottom: space['6'] }}>
+    <div style={{ maxWidth: measure.grid, margin: '0 auto' }}>
+      <header style={{ marginBottom: space['5'] }}>
         <h1
           style={{
-            margin: 0,
             fontFamily: fonts.display,
             fontSize: fontSize['2xl'],
             fontWeight: fontWeight.semibold,
             color: c.textPrimary,
+            margin: 0,
+            lineHeight: lineHeight.tight,
           }}
         >
           Author Studio
         </h1>
         <p
           style={{
-            margin: `${space['2']} 0 0`,
             fontFamily: fonts.body,
-            fontSize: fontSize.md,
-            color: c.textSecondary,
-            lineHeight: lineHeight.normal,
+            fontStyle: 'italic',
+            fontSize: fontSize.sm,
+            color: c.textMuted,
+            margin: `${space['2']} 0 0`,
           }}
         >
-          Generate long-form output from the sources you've curated. Books today; sites, decks, newsletters,
-          and reels coming. Every paragraph traces back to the source via citation.
+          What the shelves can become once you stop asking and start writing.
         </p>
       </header>
 
-      {/* Output-kind grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-          gap: space['4'],
-          marginBottom: space['6'],
-        }}
-      >
-        {SHIPPED_KINDS.map((kind) => (
-          <KindCard key={kind} kind={kind} available />
-        ))}
-        {COMING_SOON_KINDS.map((kind) => (
-          <KindCard key={kind} kind={kind} available={false} />
-        ))}
-      </div>
+      {!tierLoading && (!allowed || forbidden) ? (
+        <EmptyState
+          title="Author Studio opens at Pro."
+          description={`Bind finished research runs into a book, with sites, decks, newsletters and reels to follow. Your plan is ${tier}.`}
+          action={
+            <Button onClick={() => navigate('/account/subscription?upgrade=pro')}>
+              See plans
+            </Button>
+          }
+        />
+      ) : (
+        <>
+          <section style={{ marginBottom: space['6'] }}>
+            <SectionHeading>What you can make</SectionHeading>
+            {kinds.isLoading ? (
+              <div style={kindGrid}>
+                <Skeleton variant="card" />
+                <Skeleton variant="card" />
+                <Skeleton variant="card" />
+              </div>
+            ) : kinds.isError ? (
+              <EmptyState
+                size="sm"
+                title="Couldn't load output kinds."
+                description="The studio needs the backend to say what it can generate."
+                action={
+                  <Button variant="secondary" size="sm" onClick={() => kinds.refetch()}>
+                    Retry
+                  </Button>
+                }
+              />
+            ) : (
+              <div style={kindGrid}>
+                {partition.available.map((kind) => (
+                  <KindCard key={kind} kind={kind} available onCreate={() => setCreatingKind(kind)} />
+                ))}
+                {partition.comingLater.map((kind) => (
+                  <KindCard key={kind} kind={kind} available={false} />
+                ))}
+              </div>
+            )}
+          </section>
 
-      {/* Quick-start: generate a book */}
-      <div
-        style={{
-          background: c.surface,
-          border: `1px solid ${c.border}`,
-          borderRadius: radius.lg,
-          padding: space['5'],
-          marginBottom: space['6'],
-        }}
-      >
-        <h2 style={{ margin: 0, fontFamily: fonts.display, fontSize: fontSize.lg, color: c.textPrimary }}>
-          Generate a book
-        </h2>
-        <p style={{ margin: `${space['2']} 0 ${space['4']}`, fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal }}>
-          Pulls from the documents in your library and produces a Markdown manuscript. v1 is straightforward
-          concatenation + framing; LLM-driven cohesion polish lands in E-6.1.2.
-        </p>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            createBook.mutate();
-          }}
-          style={{ display: 'flex', gap: space['3'], alignItems: 'flex-end' }}
-        >
-          <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: space['1'] }}>
-            <span style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textSecondary, fontWeight: fontWeight.medium }}>
-              Book title
-            </span>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. 'Two years of the AI policy debate'"
+          <section>
+            <div
               style={{
-                fontFamily: fonts.ui,
-                fontSize: fontSize.sm,
-                padding: `${space['2']} ${space['3']}`,
-                background: c.bg,
-                color: c.textPrimary,
-                border: `1px solid ${c.border}`,
-                borderRadius: radius.sm,
-              }}
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={createBook.isPending}
-            style={{
-              padding: `${space['2']} ${space['5']}`,
-              background: c.accent,
-              color: c.bg,
-              border: 'none',
-              borderRadius: radius.md,
-              fontFamily: fonts.ui,
-              fontSize: fontSize.sm,
-              fontWeight: fontWeight.semibold,
-              cursor: createBook.isPending ? 'wait' : 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {createBook.isPending ? 'Starting…' : 'Generate'}
-          </button>
-        </form>
-      </div>
-
-      {/* Outputs list */}
-      <h2 style={{ margin: `0 0 ${space['3']}`, fontFamily: fonts.display, fontSize: fontSize.lg, color: c.textPrimary }}>
-        Your outputs ({list.data?.length ?? 0})
-      </h2>
-      {list.isLoading && <p style={{ color: c.textMuted }}>Loading…</p>}
-      {!list.isLoading && (!list.data || list.data.length === 0) && (
-        <p style={{ fontFamily: fonts.body, fontStyle: 'italic', color: c.textMuted }}>
-          No outputs yet. Generate your first book above.
-        </p>
-      )}
-      {list.data && list.data.length > 0 && (
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: space['2'] }}>
-          {list.data.map((row) => (
-            <li
-              key={row.id}
-              style={{
-                background: c.surface,
-                border: `1px solid ${c.border}`,
-                borderRadius: radius.md,
-                padding: `${space['3']} ${space['4']}`,
                 display: 'flex',
+                alignItems: 'center',
                 gap: space['3'],
-                alignItems: 'baseline',
+                flexWrap: 'wrap',
+                marginBottom: space['3'],
               }}
             >
-              <StatusBadge status={row.status} />
-              <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: c.textPrimary, flex: 1 }}>
-                {row.title ?? 'Untitled'}
-              </span>
-              <span style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                {row.kind}
-              </span>
-              {row.status === 'completed' && (
-                <a
-                  href={`${api.defaults.baseURL}/author/outputs/${row.id}/content`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    fontFamily: fonts.ui,
-                    fontSize: fontSize.sm,
-                    fontWeight: fontWeight.semibold,
-                    color: c.accent,
-                    textDecoration: 'none',
-                  }}
+              <SectionHeading style={{ marginBottom: 0, flex: 1 }}>
+                Your outputs
+                {outputs.data && (
+                  <span style={{ color: c.textMuted, fontWeight: fontWeight.regular }}>
+                    {' '}
+                    ({outputs.data.length})
+                  </span>
+                )}
+              </SectionHeading>
+              <div style={{ width: 170 }}>
+                <Select
+                  value={kindFilter}
+                  onChange={(e) => setKindFilter(e.target.value)}
+                  aria-label="Filter by kind"
                 >
-                  View →
-                </a>
-              )}
-              {row.status === 'failed' && row.error_message && (
-                <span
-                  title={row.error_message}
-                  style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.error, fontStyle: 'italic' }}
+                  <option value="">All kinds</option>
+                  {(kinds.data?.supported ?? ['book']).map((k) => (
+                    <option key={k} value={k}>
+                      {kindMeta(k).label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div style={{ width: 170 }}>
+                <Select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  aria-label="Filter by status"
                 >
-                  {row.error_message.slice(0, 60)}
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
+                  <option value="">All statuses</option>
+                  {OUTPUT_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {outputStatusLabel(s)}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+
+            {outputs.isLoading ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
+                <Skeleton variant="row" />
+                <Skeleton variant="row" />
+                <Skeleton variant="row" />
+              </div>
+            ) : outputs.isError ? (
+              <EmptyState
+                size="sm"
+                title="Couldn't load your outputs."
+                description="Something blocked the fetch. Try again."
+                action={
+                  <Button variant="secondary" size="sm" onClick={() => outputs.refetch()}>
+                    Retry
+                  </Button>
+                }
+              />
+            ) : !outputs.data || outputs.data.length === 0 ? (
+              <EmptyState
+                title={kindFilter || statusFilter ? 'Nothing matches these filters.' : 'Nothing authored yet.'}
+                description={
+                  kindFilter || statusFilter
+                    ? 'Loosen the filters to see the rest of your outputs.'
+                    : 'Pick a few finished research runs and bind them into a book.'
+                }
+                action={
+                  !kindFilter && !statusFilter && partition.available.includes('book') ? (
+                    <Button onClick={() => setCreatingKind('book')}>New book</Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: space['2'] }}>
+                {outputs.data.map((row) => (
+                  <OutputRow
+                    key={row.id}
+                    output={row}
+                    onView={() => setViewing(row)}
+                    onDownload={() => download(row)}
+                    onDelete={() => setDeleting(row)}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
       )}
+
+      {creatingKind && (
+        <CreateOutputModal
+          kind={creatingKind}
+          onClose={() => setCreatingKind(null)}
+          onCreated={(output) => {
+            setCreatingKind(null);
+            if (output.status === 'completed') setViewing(output);
+          }}
+        />
+      )}
+
+      {viewing && (
+        <ViewerModal output={viewing} onClose={() => setViewing(null)} onDownload={() => download(viewing)} />
+      )}
+
+      <Modal
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        title="Delete this output?"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleting(null)}>
+              Keep it
+            </Button>
+            <Button variant="danger" loading={deleteMut.isPending} onClick={confirmDelete}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p style={{ margin: 0, fontFamily: fonts.body, lineHeight: lineHeight.normal }}>
+          “{deleting?.title}” will be removed. The research runs it was built from stay on your
+          shelves.
+        </p>
+      </Modal>
     </div>
   );
 }
 
-function KindCard({ kind, available }: { kind: string; available: boolean }) {
+const kindGrid: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: space['3'],
+};
+
+function SectionHeading({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   const c = useColors();
   return (
-    <div
+    <h2
       style={{
-        background: available ? c.surface : c.surfaceAlt,
-        border: `1px solid ${c.border}`,
-        borderRadius: radius.lg,
-        padding: space['4'],
-        opacity: available ? 1 : 0.6,
+        margin: `0 0 ${space['3']}`,
+        fontFamily: fonts.display,
+        fontSize: fontSize.lg,
+        fontWeight: fontWeight.semibold,
+        color: c.textPrimary,
+        ...style,
       }}
     >
+      {children}
+    </h2>
+  );
+}
+
+function KindCard({ kind, available, onCreate }: { kind: string; available: boolean; onCreate?: () => void }) {
+  const c = useColors();
+  const meta = kindMeta(kind);
+  return (
+    <Card sunken={!available} style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
       <div
         style={{
           fontFamily: fonts.ui,
@@ -244,42 +344,379 @@ function KindCard({ kind, available }: { kind: string; available: boolean }) {
           letterSpacing: '0.08em',
           textTransform: 'uppercase',
           color: available ? c.forest : c.textMuted,
-          marginBottom: space['2'],
         }}
       >
-        {available ? 'Available now' : 'Coming soon'}
+        {available ? 'Available now' : `Coming later · ${meta.epic}`}
       </div>
-      <h3 style={{ margin: 0, fontFamily: fonts.display, fontSize: fontSize.lg, fontWeight: fontWeight.semibold, color: c.textPrimary, textTransform: 'capitalize' }}>
-        {kind}
+      <h3
+        style={{
+          margin: 0,
+          fontFamily: fonts.display,
+          fontSize: fontSize.lg,
+          fontWeight: fontWeight.semibold,
+          color: available ? c.textPrimary : c.textSecondary,
+        }}
+      >
+        {meta.label}
       </h3>
-    </div>
+      <p
+        style={{
+          margin: 0,
+          flex: 1,
+          fontFamily: fonts.body,
+          fontSize: fontSize.sm,
+          color: c.textSecondary,
+          lineHeight: lineHeight.normal,
+        }}
+      >
+        {meta.description}
+      </p>
+      {available ? (
+        <div>
+          <Button size="sm" onClick={onCreate}>
+            New {meta.label.toLowerCase()}
+          </Button>
+        </div>
+      ) : (
+        <div style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted, fontStyle: 'italic' }}>
+          The schema accepts it; nothing generates it yet.
+        </div>
+      )}
+    </Card>
   );
 }
 
-function StatusBadge({ status }: { status: OutputRow['status'] }) {
+function OutputRow({
+  output,
+  onView,
+  onDownload,
+  onDelete,
+}: {
+  output: OutputItem;
+  onView: () => void;
+  onDownload: () => void;
+  onDelete: () => void;
+}) {
   const c = useColors();
-  const palette = {
-    pending: { bg: c.surfaceAlt, fg: c.textSecondary },
-    generating: { bg: c.infoSubtle, fg: c.info },
-    completed: { bg: c.successSubtle, fg: c.success },
-    failed: { bg: c.errorSubtle, fg: c.error },
-  }[status];
+  const sources = output.source_ids.length;
   return (
-    <span
+    <li>
+      <Card flush>
+        <div style={{ padding: `${space['3']} ${space['4']}`, display: 'flex', flexDirection: 'column', gap: space['2'] }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: space['3'], flexWrap: 'wrap' }}>
+            <Badge tone={outputStatusTone(output.status)} size="sm">
+              {outputStatusLabel(output.status)}
+            </Badge>
+            <span
+              style={{
+                flex: 1,
+                minWidth: 160,
+                fontFamily: fonts.display,
+                fontSize: fontSize.md,
+                fontWeight: fontWeight.semibold,
+                color: c.textPrimary,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={output.title}
+            >
+              {output.title}
+            </span>
+            <span style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              {kindMeta(output.kind).label}
+            </span>
+            <span style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>
+              {sources} {sources === 1 ? 'source' : 'sources'} · {formatDate(output.created_at)}
+            </span>
+            <span style={{ display: 'inline-flex', gap: space['1'] }}>
+              {output.has_content && (
+                <>
+                  <Button size="sm" variant="tertiary" onClick={onView}>
+                    Read
+                  </Button>
+                  <Button size="sm" variant="tertiary" onClick={onDownload}>
+                    Download
+                  </Button>
+                </>
+              )}
+              <Button size="sm" variant="tertiary" onClick={onDelete} style={{ color: c.error }}>
+                Delete
+              </Button>
+            </span>
+          </div>
+          {output.status === 'failed' && output.error_message && (
+            <div
+              style={{
+                fontFamily: fonts.ui,
+                fontSize: fontSize.xs,
+                color: c.error,
+                lineHeight: lineHeight.snug,
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {output.error_message}
+            </div>
+          )}
+          {output.status === 'pending' && !output.has_content && (
+            <div style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted, fontStyle: 'italic' }}>
+              Created but never generated. This happens when the kind had no generator at the
+              time; delete it or wait for that generator to ship.
+            </div>
+          )}
+        </div>
+      </Card>
+    </li>
+  );
+}
+
+/**
+ * Create + generate in one step. For `book`, source IDs are job IDs (one
+ * chapter per run), so the picker lists the user's non-subscription runs
+ * and only lets finished runs with a report be chosen.
+ */
+function CreateOutputModal({
+  kind,
+  onClose,
+  onCreated,
+}: {
+  kind: string;
+  onClose: () => void;
+  onCreated: (output: OutputItem) => void;
+}) {
+  const c = useColors();
+  const pushToast = useJobStore((s) => s.pushToast);
+  const meta = kindMeta(kind);
+  const [title, setTitle] = useState('');
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [includeQa, setIncludeQa] = useState(true);
+  const [includeToc, setIncludeToc] = useState(true);
+  const jobs = useJobs({ limit: 200 });
+  const create = useCreateOutput();
+
+  const candidates = useMemo(() => {
+    const all = (jobs.data ?? []).filter((j) => j.job_type !== 'subscription');
+    const q = search.trim().toLowerCase();
+    return q ? all.filter((j) => jobLabel(j).toLowerCase().includes(q)) : all;
+  }, [jobs.data, search]);
+
+  const toggle = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const canSubmit = title.trim().length > 0 && selected.size > 0 && !create.isPending;
+
+  const submit = () => {
+    if (!canSubmit) return;
+    create.mutate(
+      {
+        kind,
+        title: title.trim(),
+        source_ids: [...selected],
+        parameters: { include_qa: includeQa, include_toc: includeToc },
+      },
+      {
+        onSuccess: (output) => {
+          if (output.status === 'completed') {
+            pushToast('success', `${meta.label} ready: “${output.title}”.`);
+          } else if (output.status === 'failed') {
+            pushToast('error', output.error_message ?? `${meta.label} generation failed.`);
+          } else {
+            pushToast('info', `${meta.label} created with status ${output.status}.`);
+          }
+          onCreated(output);
+        },
+        onError: (err) => pushToast('error', describeCreateError(err as HttpErrorLike, kind)),
+      },
+    );
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`New ${meta.label.toLowerCase()}`}
+      maxWidth={680}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={!canSubmit} loading={create.isPending}>
+            {create.isPending ? 'Generating…' : 'Generate'}
+          </Button>
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}>
+        <p style={{ margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal }}>
+          {meta.description} Generation runs at once and takes a few seconds; the manuscript is
+          deterministic (no model involved yet), so what you pick is what you get.
+        </p>
+
+        <FormField label="Title" required>
+          {(id) => (
+            <Input
+              id={id}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Two years of the AI policy debate"
+              maxLength={256}
+              autoFocus
+            />
+          )}
+        </FormField>
+
+        <FormField
+          label="Chapters"
+          required
+          helperText={`${selected.size} selected. One chapter per run: its report, and its Q&A if you keep that on.`}
+        >
+          {(id) => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
+              <Input
+                id={id}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Filter runs by topic…"
+              />
+              <div
+                style={{
+                  maxHeight: 260,
+                  overflowY: 'auto',
+                  border: `1px solid ${c.border}`,
+                  borderRadius: radius.md,
+                  background: c.surface,
+                }}
+              >
+                {jobs.isLoading ? (
+                  <div style={{ padding: space['4'], textAlign: 'center' }}>
+                    <Spinner />
+                  </div>
+                ) : candidates.length === 0 ? (
+                  <div style={{ padding: space['4'], fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textMuted, fontStyle: 'italic' }}>
+                    {jobs.data && jobs.data.length > 0
+                      ? 'No runs match that filter.'
+                      : 'No research runs yet. Finish one and come back; subscription syncs have no report to bind.'}
+                  </div>
+                ) : (
+                  candidates.map((job) => <JobPickRow key={job.id} job={job} checked={selected.has(job.id)} onToggle={() => toggle(job.id)} />)
+                )}
+              </div>
+            </div>
+          )}
+        </FormField>
+
+        <div style={{ display: 'flex', gap: space['5'], flexWrap: 'wrap' }}>
+          <CheckboxRow checked={includeQa} onChange={setIncludeQa} label="Include each run's Q&A" />
+          <CheckboxRow checked={includeToc} onChange={setIncludeToc} label="Table of contents" />
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function jobLabel(job: Job): string {
+  if (job.topic && job.topic.trim()) return job.topic;
+  if (job.channel_list && job.channel_list.length > 0) return `Channel run · ${job.channel_list.join(', ')}`;
+  return `Run from ${formatDate(job.created_at)}`;
+}
+
+function JobPickRow({ job, checked, onToggle }: { job: Job; checked: boolean; onToggle: () => void }) {
+  const c = useColors();
+  const eligible = job.status === 'completed' && job.has_report;
+  const reason = !eligible
+    ? job.status !== 'completed'
+      ? `Not finished (${job.status.replace(/_/g, ' ')})`
+      : 'No report to bind'
+    : null;
+  return (
+    <label
       style={{
-        fontFamily: fonts.ui,
-        fontSize: fontSize.xs,
-        fontWeight: fontWeight.semibold,
-        letterSpacing: '0.06em',
-        textTransform: 'uppercase',
-        background: palette.bg,
-        color: palette.fg,
-        padding: `2px ${space['2']}`,
-        borderRadius: radius.sm,
-        whiteSpace: 'nowrap',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: space['3'],
+        padding: `${space['2']} ${space['3']}`,
+        borderBottom: `1px solid ${c.border}`,
+        cursor: eligible ? 'pointer' : 'not-allowed',
+        opacity: eligible ? 1 : 0.55,
       }}
     >
-      {status}
-    </span>
+      <input type="checkbox" checked={checked} disabled={!eligible} onChange={onToggle} style={{ marginTop: 3, accentColor: c.accent }} />
+      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, fontWeight: fontWeight.medium, color: c.textPrimary }}>
+          {jobLabel(job)}
+        </span>
+        <span style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>
+          {job.job_type} · {job.video_count} {job.video_count === 1 ? 'source' : 'sources'} · {formatDate(job.created_at)}
+          {reason && (
+            <>
+              {' · '}
+              <span style={{ color: c.warn }}>{reason}</span>
+            </>
+          )}
+        </span>
+      </span>
+    </label>
+  );
+}
+
+function CheckboxRow({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  const c = useColors();
+  return (
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: space['2'], fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textPrimary, cursor: 'pointer' }}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ accentColor: c.accent }} />
+      {label}
+    </label>
+  );
+}
+
+function ViewerModal({ output, onClose, onDownload }: { output: OutputItem; onClose: () => void; onDownload: () => void }) {
+  const c = useColors();
+  const content = useAuthorOutputContent(output.id);
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={output.title}
+      maxWidth={900}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onDownload} disabled={!content.data}>
+            Download {output.kind === 'book' ? '.md' : '.txt'}
+          </Button>
+          <Button onClick={onClose}>Close</Button>
+        </>
+      }
+    >
+      {content.isLoading ? (
+        <div style={{ textAlign: 'center', padding: space['6'] }}>
+          <Spinner size={28} />
+        </div>
+      ) : content.isError ? (
+        <p style={{ margin: 0, fontFamily: fonts.ui, color: c.error }}>
+          The manuscript could not be fetched. It may have no content yet (status: {output.status}).
+        </p>
+      ) : (
+        <div
+          style={{
+            fontFamily: fonts.body,
+            fontSize: fontSize.md,
+            lineHeight: lineHeight.loose,
+            color: c.textPrimary,
+            maxWidth: measure.reading,
+            margin: '0 auto',
+          }}
+        >
+          <ReactMarkdown>{content.data ?? ''}</ReactMarkdown>
+        </div>
+      )}
+    </Modal>
   );
 }

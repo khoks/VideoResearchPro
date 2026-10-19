@@ -1,5 +1,8 @@
-import type { LibraryVideoResponse } from '../../services/libraryApi';
+import { useState } from 'react';
+import { inferSourceType, libraryApi, type LibraryVideoResponse } from '../../services/libraryApi';
 import { formatDate, formatDuration } from '../../utils/formatters';
+import { sourceTypeLabel } from '../../utils/ingestResults';
+import { useJobStore } from '../../stores/jobStore';
 import { Badge, Card, type BadgeTone } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, radius, space } from '../../theme';
@@ -22,13 +25,48 @@ function transcriptBadgeTone(status: string): BadgeTone {
   }
 }
 
+/**
+ * One shelf row. Built for YouTube videos; tolerant of PDFs and pasted
+ * pages, which have no channel, duration or thumbnail (see D-063 and the
+ * Add sources tab).
+ */
 export function VideoRow({ video, onChannelClick }: Props) {
   const c = useColors();
+  const pushToast = useJobStore((s) => s.pushToast);
+  const [opening, setOpening] = useState(false);
   const tone = transcriptBadgeTone(video.transcript_status);
+  const sourceType = inferSourceType(video);
+  const isVideo = sourceType === 'video';
+  const hasChannel = !!video.channel_id && !!video.channel_name;
   const jobTitlesTooltip =
     video.job_titles && video.job_titles.length > 0
       ? video.job_titles.join('\n')
       : 'Not used in any run yet';
+
+  const linkStyle: React.CSSProperties = {
+    marginLeft: 'auto',
+    fontFamily: fonts.ui,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+    color: c.accent,
+    textDecoration: 'none',
+    letterSpacing: '0.02em',
+    background: 'transparent',
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
+  };
+
+  const openPdf = async () => {
+    setOpening(true);
+    try {
+      await libraryApi.openPdf(video.url);
+    } catch {
+      pushToast('error', 'Could not fetch the PDF. It may have been removed from the upload directory.');
+    } finally {
+      setOpening(false);
+    }
+  };
 
   return (
     <Card flush>
@@ -67,11 +105,14 @@ export function VideoRow({ video, onChannelClick }: Props) {
               alignItems: 'center',
               justifyContent: 'center',
               color: c.textMuted,
-              fontFamily: fonts.ui,
-              fontSize: fontSize.xs,
+              fontFamily: isVideo ? fonts.ui : fonts.display,
+              fontSize: isVideo ? fontSize.xs : fontSize.sm,
+              fontWeight: isVideo ? fontWeight.regular : fontWeight.semibold,
+              textAlign: 'center',
+              padding: space['2'],
             }}
           >
-            No thumbnail
+            {isVideo ? 'No thumbnail' : sourceTypeLabel(sourceType)}
           </div>
         )}
 
@@ -110,37 +151,53 @@ export function VideoRow({ video, onChannelClick }: Props) {
               alignItems: 'center',
             }}
           >
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onChannelClick?.(video.channel_id, video.channel_name);
-              }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                padding: 0,
-                color: c.accent,
-                cursor: onChannelClick ? 'pointer' : 'default',
-                fontFamily: fonts.ui,
-                fontSize: fontSize.sm,
-                fontWeight: fontWeight.medium,
-                textDecoration: onChannelClick ? 'underline' : 'none',
-                textUnderlineOffset: '3px',
-              }}
-            >
-              {video.channel_name}
-            </button>
-            <span aria-hidden style={{ color: c.textMuted }}>
-              ·
-            </span>
-            <span>{formatDuration(video.duration_seconds)}</span>
+            {hasChannel ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onChannelClick?.(video.channel_id!, video.channel_name);
+                }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  color: c.accent,
+                  cursor: onChannelClick ? 'pointer' : 'default',
+                  fontFamily: fonts.ui,
+                  fontSize: fontSize.sm,
+                  fontWeight: fontWeight.medium,
+                  textDecoration: onChannelClick ? 'underline' : 'none',
+                  textUnderlineOffset: '3px',
+                }}
+              >
+                {video.channel_name}
+              </button>
+            ) : (
+              <span style={{ fontWeight: fontWeight.medium }}>{sourceTypeLabel(sourceType)}</span>
+            )}
+            {video.duration_seconds !== null && video.duration_seconds !== undefined && (
+              <>
+                <span aria-hidden style={{ color: c.textMuted }}>
+                  ·
+                </span>
+                <span>{formatDuration(video.duration_seconds)}</span>
+              </>
+            )}
             {video.published_at && (
               <>
                 <span aria-hidden style={{ color: c.textMuted }}>
                   ·
                 </span>
                 <span>{formatDate(video.published_at)}</span>
+              </>
+            )}
+            {!isVideo && video.transcript_word_count !== null && (
+              <>
+                <span aria-hidden style={{ color: c.textMuted }}>
+                  ·
+                </span>
+                <span>{video.transcript_word_count.toLocaleString()} words</span>
               </>
             )}
           </div>
@@ -174,23 +231,21 @@ export function VideoRow({ video, onChannelClick }: Props) {
               Referenced in {video.job_count}{' '}
               {video.job_count === 1 ? 'run' : 'runs'}
             </span>
-            <a
-              href={video.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                marginLeft: 'auto',
-                fontFamily: fonts.ui,
-                fontSize: fontSize.sm,
-                fontWeight: fontWeight.semibold,
-                color: c.accent,
-                textDecoration: 'none',
-                letterSpacing: '0.02em',
-              }}
-            >
-              YouTube →
-            </a>
+            {sourceType === 'pdf' ? (
+              <button type="button" onClick={openPdf} disabled={opening} style={{ ...linkStyle, opacity: opening ? 0.6 : 1 }}>
+                {opening ? 'Opening…' : 'Open PDF →'}
+              </button>
+            ) : (
+              <a
+                href={video.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                style={linkStyle}
+              >
+                {isVideo ? 'YouTube →' : 'Open →'}
+              </a>
+            )}
           </div>
         </div>
       </div>

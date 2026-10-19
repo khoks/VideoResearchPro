@@ -915,8 +915,17 @@ def _quote_forms_by_source(chunk_metas: list[dict]) -> dict[str, str]:
     return forms
 
 
+_PLAIN_ENGLISH_FORM = "plain English (translate the borrowed words inline; no original form)"
+
+
 def _attach_quote_forms(consolidated: dict, forms: dict[str, str]) -> int:
-    """Set `quote_form` on every item that kept `original` wording."""
+    """Set `quote_form` on every item that kept `original` wording.
+
+    The SOURCE decides the script; the span still decides whether it is
+    English at all (T-1.16.2.4's resolution). Without the second half the
+    held-out evaluation quoted an English sentence the speaker said in
+    Devanagari-captioned Hinglish in full three-part form.
+    """
     if not forms:
         return 0
     n = 0
@@ -927,9 +936,15 @@ def _attach_quote_forms(consolidated: dict, forms: dict[str, str]) -> int:
             form = forms.get(_source_key(item.get("video_url"))) or forms.get(
                 f"title:{item.get('video_title', '')}"
             )
-            if form:
-                item["quote_form"] = form
-                n += 1
+            if not form:
+                continue
+            span_mode = code_mixing_service.rendering_mode(
+                code_mixing_service.analyse_span(str(item["original"]))
+            )
+            item["quote_form"] = (
+                _PLAIN_ENGLISH_FORM if span_mode == code_mixing_service.PLAIN_ENGLISH else form
+            )
+            n += 1
     return n
 
 

@@ -442,6 +442,78 @@ original, and the rendering is kept as metadata `text_en`. Rendering cost about
 1.5 input and 1.0 output tokens per word. Chunks embedded before this keep
 their original vectors; there is no backfill.
 
+## 11. End-to-end evaluation on held-out sources (T-1.16.2.6)
+
+Nothing in this section was used to tune anything. The five videos of the
+third job (personal finance) were approved at the start and left unread until
+every parameter was frozen. Their comments were fetched afterwards.
+
+**The honest failure mode, measured directly.** The question is whether
+Hinglish gets passed through as English. It was checked at four points:
+
+| Where | What was measured | Result |
+|---|---|---|
+| Detection | 80 unseen comments, labelled per token after freezing (`tests/fixtures/code_mixing/heldout_units.json`) | 17 of 18 Hindi-bearing comments caught. The miss is one borrowed word ("rupye") in an English comment, which renders as plain English anyway. Token P 0.986, R 0.849. One English comment flagged (a misspelling, "mauch") |
+| Extraction (report map, `gpt-5.6-luna`) | Items still carrying non-English text, with and without N-002's metadata, on a held-out Hindi lecture and two held-out comment threads (`scripts/eval_code_mixing_e2e.py`) | **0 true pass-through in all six runs, before and after.** The automatic count flagged 2–3 items per thread; all were English sentences containing names or crypto tickers |
+| Retrieval | 50 English questions (different model) over 168 held-out chunks, through the production renderer (`scripts/eval_code_mixed_retrieval_heldout.py`) | 165 of 168 chunks rendered; the 3 failures fell back to their originals as designed. MRR 0.554 → 0.762, recall@5 0.62 → 0.90, recall@15 0.92 → 0.92 |
+| Fetch | Caption track actually ingested | **2 of the 13 Hindi-speech videos in this study arrived as machine-dubbed tracks**: one Bengali, one English (`v6CuYULP3tM` lists `en-US(auto)` and `hi(auto)`) |
+
+So the failure the brief predicted did not happen where it was expected.
+D-066's existing note was already enough for the extraction model to
+translate romanised Hindi. It happened in two places no prompt can reach:
+
+- **The fetch layer.** An auto-dubbed English track is fluent English text,
+  so no text-level detector can tell that the speaker said something else,
+  and every "quote" from it is words the speaker never said. This study's
+  rate is 2 in 13. S-1.11.11 (prefer the original-audio track) is filed with
+  this evidence and is worth doing before the next Hindi-heavy corpus.
+- **Retrieval.** Romanised Hindi is retrieved worst of all (MRR 0.40),
+  which D-084's English rendering addresses.
+
+**Quotation, end to end.** On the held-out Hindi lecture the map stage kept
+**25 items with original wording, against 0 without N-002's metadata**. All
+25 were in Devanagari and 23 were verbatim from the transcript; the other 2
+had small punctuation or spacing differences. The production composer
+(`claude-opus-5`) then wrote the Key Facts section from those items. All 8
+Devanagari quotes it chose were in the full three-part form, Devanagari then
+transliteration then translation, and all used the same form for the source.
+Before N-002 there was no original wording for it to quote. On the two
+comment threads the effect is not established. One thread went from 0 to 2
+kept originals (Roman script, verbatim). The other went from 5 (3 Roman, 2
+Devanagari, one of them Marathi) to 2 (Roman). That is one run each, in
+opposite directions.
+
+**Two fixes the evaluation forced.**
+
+1. *English-primary sources with real Hindi carried no profile.* The first
+   cut treated "English-primary, plain-English quote mode" as English, so
+   comment threads with 13–17% Hindi words got no metadata at all. A 3%
+   presence floor now separates them: English talks read 0.0–0.6% (0 of the
+   library's 214 English transcripts cross it), comment threads 3.3–30%.
+2. *An English sentence inside a Hindi source was quoted in three-part
+   form* ("आर यू स्ट्रेस्ड अबाउट मनी?" with a transliteration and a
+   "translation" identical to it). Compose now applies the T-1.16.2.4
+   resolution per item: the source chooses the script, and the span still
+   decides whether it is English.
+
+**Also seen, not fixed.**
+
+- Unseen names look Hindi to the character model. That inflates the Hindi
+  share of short spans and produced every false "non-English item" above.
+- Marathi in Devanagari is tagged as Hindi. The rendering decision is the
+  same (Devanagari, three-part), but the source note calls it "Hindi".
+  Telling Devanagari languages apart is out of scope here.
+- Matrix accuracy on the 17 held-out mixed comments was 0.82, against 0.95
+  on TEST. That is a small sample, and short comments often carry one
+  clause of each.
+
+**Verdict.** Detection, structure, policy and resolution behave on held-out
+data as they did on the labelled set. The bidirectional split delivers
+measurable gains: kept original wording, correct three-part quotes, and
+retrieval MRR +0.21 to +0.40. The failure the story was written against did
+not occur at extraction even before this work. It occurs at fetch, which this
+story cannot fix and S-1.11.11 can.
+
 ## Reproduce
 
 ```bash
@@ -449,4 +521,6 @@ cd backend
 ./venv/Scripts/python scripts/eval_code_mixing.py --split test
 ./venv/Scripts/python scripts/eval_code_mixing.py --llm --split all   # live; rewrites the cache
 ./venv/Scripts/python -m pytest tests/test_services/test_code_mixing_service.py -q
+./venv/Scripts/python scripts/eval_code_mixing_e2e.py --env-file <.env> --db <db> --video QSlta0EnGJo --comments <comments.json>:GSA8jvzIjjQ --out e2e.json --compose
+./venv/Scripts/python scripts/eval_code_mixed_retrieval_heldout.py --env-file <.env> --db <db> --videos QSlta0EnGJo GSA8jvzIjjQ --cache heldout_retrieval.json
 ```

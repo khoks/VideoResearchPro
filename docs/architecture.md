@@ -1,6 +1,6 @@
 # Pratidhvani — System Architecture
 
-**Status:** current as of 2026-04-24; sections amended through 2026-10-19. Brand-name forward; the codebase still ships under `videoresearchpro` package paths and Chroma collection names — see [feature-roadmap.md](feature-roadmap.md) §Rebrand-asset-rollout for the rename plan.
+**Status:** current as of 2026-04-24; sections amended through 2026-10-19 (latest: code-mixed speech, D-080 / D-084). Brand-name forward; the codebase still ships under `videoresearchpro` package paths and Chroma collection names — see [feature-roadmap.md](feature-roadmap.md) §Rebrand-asset-rollout for the rename plan.
 
 This document is the single source of truth for **how the running system is wired**. The vision (why it exists) lives in [vision.md](vision.md). The future shape (multi-source ingest, Author Studio, Personal Brain, SaaS) lives in [feature-roadmap.md](feature-roadmap.md), [source-types.md](source-types.md), [personal-brain.md](personal-brain.md), and [saas-roadmap.md](saas-roadmap.md). API endpoints live in [api-reference.md](api-reference.md). Page-level UI lives in [ui-pages.md](ui-pages.md). This file owns: process topology, data model, request lifecycles, agent pipelines, and the cross-cutting concerns that bind them.
 
@@ -379,9 +379,29 @@ The frontend's `useJobProgress` hook drives React Query cache invalidation off W
 
 Since 2026-10-19 each chunk also carries its source's two dates as flat scalars — `published_at` (ISO string, legacy) plus numeric `published_ts` / `published_year`, and `era_start` / `era_end` / `era_confidence` / `is_retrospective` from the document's discussed era. **Unknown values are omitted, never written as sentinels**, so a Chroma range filter such as `{"published_ts": {"$gte": ...}}` excludes undated chunks instead of matching them against 1970. Chunks embedded before that date carry none of these and read as unknown; there is no backfill (D-072).
 
+Also since 2026-10-19, a non-English source's chunks carry its measured language mix
+(R5 / [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31),
+[D-080](decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)). `chunk_transcript`
+profiles the whole transcript once (`code_mixing_service.profile_transcript`, a free per-word tagger) and writes
+`code_mix_primary` / `_script` / `_share` / `_matrix_share` / `_quote` on every chunk, plus per-chunk
+`code_mix_chunk_share` / `_chunk_matrix`. Sources under 3% non-English words get none of these fields, so English
+chunks are unchanged. Prompts read the fields through `code_mixing_service.source_note` as a `speech: … — quote in …`
+fragment on each source header.
+
 ### Embedding
 
 `embedding_service.py` wraps a single `SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")` instance. Loaded once per process (FastAPI and Celery each load their own). CPU-only by default; the model is small enough for that to be fine on commodity hardware.
+
+**Non-English chunks are embedded as an English rendering**
+([D-084](decisions.md#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19)).
+`chroma_service.insert_chunks`, the one write path every ingest uses, first calls
+`code_mixing_service.ensure_english_renderings`. A chunk whose own Hindi share exceeds the borrowing threshold, or
+whose grammar is Hindi, gets an English rendering (`code_mixing_render_english`, six chunks per call, once per
+document) stored as metadata `text_en`. The vector is computed from that rendering with the collection's own
+embedding function; the stored document text stays the original, which is what Q&A shows and quotes. Measured on
+132 real chunks with independent English questions: MRR 0.565 for Devanagari originals, 0.402 for the same text
+romanised, 0.805 for the rendering. Fail-soft (a failed batch embeds as written), switchable with
+`CODE_MIX_ENGLISH_RENDERING_ENABLED`, off for the test suite. There is no backfill.
 
 ### ChromaDB
 
@@ -621,7 +641,9 @@ Four streaming JSONL endpoints (`routers/exports.py`):
 ## Multilingual posture
 
 - **Whisper** is invoked with `task="transcribe"` (not `translate`) so mixed-language audio (e.g. Hindi-English code-mixed) is preserved faithfully.
-- The **embedding model** is multilingual (`paraphrase-multilingual-MiniLM-L12-v2`), so a Hindi transcript and an English question land in similar vector space.
+- The **embedding model** is multilingual (`paraphrase-multilingual-MiniLM-L12-v2`), so a Hindi transcript and an English question land in similar vector space — passably for Devanagari, badly for romanised Hindi. Non-English chunks are therefore embedded as an English rendering (see [Embedding](#embedding), D-084).
+- **Code-mixed speech** ([N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31), S-1.16.2). `language_service` profiles scripts exactly and is blind to Hindi in Latin letters by design. `code_mixing_service` answers the other question, which language each word is in, and runs on Latin and Devanagari alike. It works in four steps: a lexicon + character n-gram + Viterbi tagger; a matrix-language vote over system morphemes, which tells "Hindi grammar with English nouns" from "English with a Hindi clause"; a proportion-to-quote-form policy (`CODE_MIX_DOMINANT_SHARE` 0.6, `CODE_MIX_BORROWING_MAX_SHARE` 0.2); and one primary language per source, so a report never switches script for one speaker. The analysis path reads English (every prompt carries the English contract and the source's `speech:` note). Quotation keeps the original: report map items may carry `original` beside English `content`, and compose attaches the source's `quote_form`. Method and measurements: [the detection note](notes/2026-10-19-code-mixing-detection.md).
+- **Caption-track choice is the known weak point.** `_fetch_transcript_once` falls back to the first listed track, so an auto-dubbed track can be ingested instead of the original audio. In the S-1.16.2 study, 2 of 13 Hindi-speech videos arrived this way. An English dub cannot be detected downstream. Tracked as S-1.11.11.
 - The **Q&A agent** accepts an `answer_language` parameter and is instructed to translate quoted non-English context into the target language while preserving proper nouns in their original script.
 - **Visual annotations are always written in English**, whatever the spoken language, because they are our text rather than the speaker's. `visual_service.strip_annotations` exists so that speech-only surfaces — dataset exports, word counts, and the language profiler — measure the source and not our own commentary.
 

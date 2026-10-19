@@ -28,8 +28,8 @@ describe('parseMarkdownDoc', () => {
   });
 
   it('gives headings stable, deduped, focusable ids', () => {
-    const { markup, outline } = render('## Facts\n\n## Facts\n\n#### Deep');
-    expect(outline.map((o) => o.id)).toEqual(['facts', 'facts-2']);
+    const { markup, outline } = render('## Facts\n\n## Facts\n\n### Sub\n\n#### Deep');
+    expect(outline.map((o) => o.id)).toEqual(['facts', 'facts-2', 'sub']);
     expect(markup).toContain('<h2 id="facts" tabindex="-1">Facts</h2>');
     expect(markup).toContain('<h2 id="facts-2" tabindex="-1">Facts</h2>');
     expect(markup).toContain('<h4 id="deep">Deep</h4>'); // targetable, not in the outline
@@ -61,6 +61,21 @@ describe('parseMarkdownDoc', () => {
     expect(markup).toContain(`<p class="reader-dropcap">${long}</p>`);
   });
 
+  it('builds the outline from the two shallowest heading levels present', () => {
+    const { outline } = render('## 1. Chapter\n\n#### Section A\n\n##### Detail\n\n#### Section B');
+    expect(outline).toEqual([
+      { id: '1-chapter', text: '1. Chapter', level: 2 },
+      { id: 'section-a', text: 'Section A', level: 3 },
+      { id: 'section-b', text: 'Section B', level: 3 },
+    ]);
+  });
+
+  it('keeps headings inside list items out of the outline', () => {
+    const { outline, markup } = render('## Chapter\n\n- ### In a list\n\n#### Section');
+    expect(outline.map((o) => o.text)).toEqual(['Chapter', 'Section']);
+    expect(markup).toContain('<h3 id="in-a-list">In a list</h3>');
+  });
+
   it('repoints in-page links whose target was slugged differently', () => {
     const { markup } = render('1. [My Chapter](#my-chapter)\n2. [Exact](#exact)\n\n## 1. My Chapter\n\n## Exact');
     expect(markup).toContain('href="#1-my-chapter"');
@@ -86,6 +101,11 @@ describe('parseMarkdownDoc on stored content', () => {
     const tocTargets = [...markup.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
     expect(tocTargets.length).toBeGreaterThanOrEqual(2);
     for (const t of tocTargets) expect(ids.has(t)).toBe(true);
-    expect(outline.filter((o) => o.text.match(/^\d+\. /))).toHaveLength(2); // one h2 per chapter
+    const chapters = outline.filter((o) => o.level === 2 && /^\d+\. /.test(o.text));
+    expect(chapters).toHaveLength(2); // one entry per chapter
+    // Each report's sections, nested as h4 in the manuscript, sit under it.
+    expect(outline.filter((o) => o.level === 3).map((o) => o.text)).toContain('Executive Summary');
+    // S-6.1.2 manuscripts carry GFM tables (statistics, per-channel breakdown).
+    expect((markup.match(/reader-table-scroll/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 });

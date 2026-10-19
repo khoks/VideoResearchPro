@@ -44,6 +44,7 @@ export interface ParseMarkdownOptions {
 
 const DROP_CAP_MIN_CHARS = 120;
 const ABSOLUTE_URL = /^https?:\/\//i;
+const NESTING = new Set(['li', 'td', 'th', 'blockquote', 'dd']);
 
 const processor = unified().use(remarkParse).use(remarkGfm).use(remarkRehype);
 
@@ -82,8 +83,28 @@ function transform(root: Root, opts: ParseMarkdownOptions): { outline: OutlineEn
     root.children = root.children.filter((n) => n !== first);
   }
 
-  // 2. Headings, links, images, tables.
-  const visit = (parent: Root | Element) => {
+  // 2. Which heading depths feed the outline: the two shallowest present
+  //    below the title. Usually h2 / h3, but a book nests each report's
+  //    sections as h4 / h5 under its "## n. Chapter" heading, and an
+  //    h2 / h3-only outline would then list chapters and nothing inside them.
+  //    Headings inside list items, cells or quotes are content, not
+  //    structure (a report that put <h3> in an <li> converts to
+  //    "- ### Speaker"): they get ids but neither choose a depth nor join
+  //    the outline.
+  const depths = new Set<number>();
+  const collect = (node: Root | Element, nested: boolean) => {
+    for (const child of node.children as ElementContent[]) {
+      if (!isElement(child)) continue;
+      const m = /^h([1-6])$/.exec(child.tagName);
+      if (m && !nested) depths.add(m[1] === '1' ? 2 : Number(m[1]));
+      collect(child, nested || NESTING.has(child.tagName));
+    }
+  };
+  collect(root, false);
+  const [outerDepth, innerDepth] = [...depths].sort((a, b) => a - b);
+
+  // 3. Headings, links, images, tables.
+  const visit = (parent: Root | Element, nested = false) => {
     parent.children = (parent.children as ElementContent[]).flatMap((node): ElementContent[] => {
       if (!isElement(node)) return [node];
       const name = node.tagName;
@@ -96,16 +117,17 @@ function transform(root: Root, opts: ParseMarkdownOptions): { outline: OutlineEn
         const id = slug(text);
         ids.add(id);
         node.properties.id = id;
-        if (node.tagName === 'h2' || node.tagName === 'h3') {
+        const depth = Number(node.tagName[1]);
+        if (!nested && (depth === outerDepth || depth === innerDepth)) {
           node.properties.tabIndex = -1;
-          outline.push({ id, text, level: node.tagName === 'h3' ? 3 : 2 });
+          outline.push({ id, text, level: depth === outerDepth ? 2 : 3 });
         }
       }
 
       if (name === 'a') {
         const href = defaultUrlTransform(String(node.properties.href ?? ''));
         if (!href) {
-          visit(node);
+          visit(node, nested);
           return node.children; // unsafe or empty link: keep the text
         }
         node.properties.href = href;
@@ -123,7 +145,7 @@ function transform(root: Root, opts: ParseMarkdownOptions): { outline: OutlineEn
         node.properties.loading = 'lazy';
       }
 
-      visit(node);
+      visit(node, nested || NESTING.has(name));
 
       if (name === 'table') {
         return [
@@ -140,7 +162,7 @@ function transform(root: Root, opts: ParseMarkdownOptions): { outline: OutlineEn
   };
   visit(root);
 
-  // 3. In-page links whose target was slugged differently. The book
+  // 4. In-page links whose target was slugged differently. The book
   //    outputter writes its table of contents against its own slug of the
   //    bare chapter title, while the heading reads "1. Title", so a link to
   //    `#title` belongs to the heading `1-title`.
@@ -158,7 +180,7 @@ function transform(root: Root, opts: ParseMarkdownOptions): { outline: OutlineEn
     if (match) a.properties.href = `#${match}`;
   }
 
-  // 4. Drop cap on the first substantial top-level paragraph.
+  // 5. Drop cap on the first substantial top-level paragraph.
   const lead = root.children.find(
     (n): n is Element => isElement(n) && n.tagName === 'p' && norm(textOf(n)).length >= DROP_CAP_MIN_CHARS,
   );

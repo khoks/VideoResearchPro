@@ -16,11 +16,18 @@ def get_report_html(report_path: str) -> str | None:
 
 
 def delete_report(report_path: str) -> bool:
-    """Delete a report file from disk."""
+    """Delete a report file from disk, and its cached Markdown source (S-6.1.2)."""
+    deleted = False
     if report_path and os.path.exists(report_path):
         os.remove(report_path)
-        return True
-    return False
+        deleted = True
+    md_path = markdown_path_for(report_path) if report_path else ""
+    if md_path and os.path.exists(md_path):
+        try:
+            os.remove(md_path)
+        except OSError:
+            logger.warning("report_service: could not remove cached Markdown %s", md_path)
+    return deleted
 
 
 # ---------------------------------------------------------------------------
@@ -186,3 +193,137 @@ def extract_report_body(document: str) -> dict:
         "statistics": statistics,
         "generated_at": generated_at,
     }
+
+
+# ---------------------------------------------------------------------------
+# S-6.1.2: the report's Markdown source.
+#
+# Until 2026-10-19 a report existed only as the HTML file above; the book
+# outputter stripped tags with a regex, losing heading levels, tables and
+# every `&t=` citation link. `report_markdown(job)` converts the stored HTML
+# with a small `markdownify` subclass and caches the result beside it at
+# `<report_path>.md`. The book (E-6.1), the site's text index (E-6.2), the
+# newsletter's plain-text part (E-6.4) and `GET /jobs/{id}/report.md` read it.
+#
+# markdownify (MIT) consumes the HTML we already store, keeps hrefs verbatim
+# (so `&t=SECONDS` deep links survive), converts tables and exposes per-tag
+# hooks. html2text is GPL-3.0; trafilatura's Markdown mode is a boilerplate
+# stripper and drops report content (docs/plans/l2-author-studio.md).
+#
+# Beyond markdownify's defaults the converter drops <head>/<style>/<script>
+# (its `strip` option keeps a stripped tag's TEXT, so the stylesheet would
+# lead the file), uses ATX headings and hyphen bullets, escapes no `*`/`_`
+# (the text is prose), never autolinks (a citation whose text equals its
+# href must stay `[text](href)`), and turns the statistics grid into a
+# one-row table. `[VISUAL @ mm:ss - …]` spans (D-067) are plain text and pass
+# through verbatim. This is independent of `extract_report_body` above on
+# purpose: the reader needs the template's parts, the Markdown needs the
+# whole document, and only the grid is template-specific here.
+# ---------------------------------------------------------------------------
+
+from bs4 import BeautifulSoup  # noqa: E402  (markdownify's own dependency)
+from markdownify import MarkdownConverter  # noqa: E402
+
+MARKDOWN_SUFFIX = ".md"
+
+
+def markdown_path_for(report_path: str) -> str:
+    """Where the Markdown source of ``report_path`` is cached."""
+    return report_path + MARKDOWN_SUFFIX
+
+class ReportMarkdownConverter(MarkdownConverter):
+    """markdownify tuned for the report template (``utils/html_builder``)."""
+
+    _DEFAULTS = {
+        "heading_style": "atx",
+        "bullets": "-",
+        "autolinks": False,
+        "escape_asterisks": False,
+        "escape_underscores": False,
+        "escape_misc": False,
+    }
+
+    def __init__(self, **options):
+        super().__init__(**{**self._DEFAULTS, **options})
+
+    def convert_div(self, el, text, parent_tags):
+        classes = el.get("class") or []
+        if "stat-grid" in classes:
+            cards = []
+            for card in el.select(".stat-card"):
+                label = card.select_one(".label")
+                value = card.select_one(".value")
+                if label is not None and value is not None:
+                    cards.append((label.get_text(strip=True), value.get_text(strip=True)))
+            if cards:
+                head = "| " + " | ".join(_cell(label) for label, _ in cards) + " |"
+                sep = "|" + " --- |" * len(cards)
+                row = "| " + " | ".join(_cell(value) for _, value in cards) + " |"
+                return "\n\n" + "\n".join([head, sep, row]) + "\n\n"
+        return super().convert_div(el, text, parent_tags)
+
+
+def _cell(text: str) -> str:
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
+_DROP_TAGS = ("head", "title", "meta", "link", "style", "script")
+
+
+def html_to_markdown(html: str) -> str:
+    """Convert a stored report (or any HTML fragment) to Markdown.
+
+    Deterministic: the same HTML always yields the same text. The report
+    chrome (stylesheet, document head) is removed before conversion; the
+    content root is ``div.report`` when present, else ``<body>``, else the
+    whole fragment.
+    """
+    soup = BeautifulSoup(html or "", "html.parser")
+    for tag in soup.find_all(list(_DROP_TAGS)):
+        tag.decompose()
+    root = soup.select_one("div.report") or soup.body or soup
+    md = ReportMarkdownConverter().convert_soup(root)
+    md = re.sub(r"[ \t]+\n", "\n", md)
+    md = re.sub(r"\n{3,}", "\n\n", md).strip()
+    return md + "\n" if md else ""
+
+
+def _cache_is_fresh(md_path: str, html_path: str) -> bool:
+    try:
+        return os.path.getmtime(md_path) >= os.path.getmtime(html_path)
+    except OSError:
+        return False
+
+
+def report_markdown(job, *, force: bool = False) -> str | None:
+    """The Markdown source of ``job``'s report, cached at ``<report_path>.md``.
+
+    Returns ``None`` when the job has no report or its HTML file is missing
+    (the same two 404 cases the HTML route distinguishes). The cache is
+    rewritten when absent, older than the HTML, or ``force`` is set. A cache
+    write that fails is logged and the Markdown is still returned, so a
+    read-only reports directory degrades to "convert every time", never to
+    an error.
+    """
+    report_path = getattr(job, "report_path", None)
+    if not report_path:
+        return None
+    html = get_report_html(report_path)
+    if html is None:
+        return None
+
+    md_path = markdown_path_for(report_path)
+    if not force and _cache_is_fresh(md_path, report_path):
+        try:
+            with open(md_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            logger.warning("report_service: cached Markdown %s unreadable; regenerating", md_path)
+
+    md = html_to_markdown(html)
+    try:
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write(md)
+    except OSError as e:
+        logger.warning("report_service: could not cache Markdown at %s (%s)", md_path, e)
+    return md

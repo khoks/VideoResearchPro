@@ -31,6 +31,9 @@ sentence-transformers>=4.1.0
 
 # Templating
 jinja2>=3.1.6
+# S-6.1.2: report HTML -> Markdown source (MIT; pulls in beautifulsoup4,
+# also MIT). html2text was rejected as GPL-3.0; see docs/plans/l2-author-studio.md.
+markdownify>=1.2.3
 
 # Config
 pydantic-settings>=2.9.0

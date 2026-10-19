@@ -151,7 +151,7 @@ Not yet (later stories): knowledge artifacts and Author outputs in the same shel
 ### `LibraryPage` — `/library`
 **Purpose.** Browse the caller's view of the global, deduplicated library and add sources that do not come through a research run. Three tabs: **Sources**, **Channels**, **Add sources**.
 
-**Sources tab.** Filters: search text, language, channel, transcript status. Sort: newest / oldest / longest / shortest. Rows for PDFs and pasted pages carry a source-type pill instead of a channel, and no duration. Every row ends with the inline notes control ("N notes · + Add a note"); the channel rows on the **Channels** tab carry the same control, and typing in it never opens the channel.
+**Sources tab.** Filters: search text, language, channel, transcript status. Sort: newest / oldest / longest / shortest. Rows for PDFs and pasted pages carry a source-type pill instead of a channel, and no duration. Above the filters, a **Tag** bar (S-8.1.3): a tag select with counts, the active tag as a pill with **Clear**, and **Manage tags** (a dialog to rename, recolour, merge into another tag, or delete, with the source count). The tag lives in the URL (`/library?tag=<id>`), so every tag chip in the app is a plain link; the bar hides until the reader has a tag. Each row shows the reader's tag chips and a **+ Tag** control (checkbox per tag, saved on toggle; inline create applies the new tag). The same rows on a channel page and a shelf page carry the same control. Every row ends with the inline notes control ("N notes · + Add a note"); the channel rows on the **Channels** tab carry the same control, and typing in it never opens the channel.
 
 | State | What renders |
 |-------|--------------|
@@ -307,7 +307,7 @@ Rendering goes through `parseMarkdownDoc` (`components/reader/parseMarkdown.tsx`
 | Error | `EmptyState` with the message + Back. |
 
 ### `OutputReaderPage` — `/author/outputs/:outputId` (Pro+)
-**Purpose.** An Author Studio output in the reading room (S-8.8.3). Metadata from `GET /author/outputs/{id}`, Markdown from `/content`, rendered through `parseMarkdownDoc` like a knowledge report. The book's `# Title` is the page title; the outline lists the table of contents and one entry per chapter; the outputter's table-of-contents links are written against its own slug of the bare chapter title (`#chapter-title`) while the heading reads "1. Chapter title", and the transform repoints them so every link lands. Tiles: sources, sections, words. Toolbar: back to Author Studio, Download (the loaded Markdown as a blob, same filename as the Author page), Print or save as PDF.
+**Purpose.** An Author Studio output in the reading room (S-8.8.3). Metadata from `GET /author/outputs/{id}`, Markdown from `/content`, rendered through `parseMarkdownDoc` like a knowledge report. The book's `# Title` is the page title; the outline is built from the two shallowest structural heading levels, so it lists each chapter (`##`) with its report's sections (`####` since S-6.1.2) beneath, while headings inside list items stay out of it; the outputter's table-of-contents links are written against its own slug of the bare chapter title (`#chapter-title`) while the heading reads "1. Chapter title", and the transform repoints them so every link lands. Tiles: sources, sections, words. Toolbar: back to Author Studio, Download (the loaded Markdown as a blob, same filename as the Author page), Print or save as PDF.
 
 | State | What renders |
 |-------|--------------|

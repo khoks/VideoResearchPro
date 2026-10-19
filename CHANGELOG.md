@@ -26,6 +26,64 @@ reading room as reports: outline, measure, drop cap, progress and print.
   Raw HTML is dropped; unsafe URLs are blanked.
 - **Fix:** `GET /videos/{id}/knowledge` names its source (title, channel,
   kind, URL, dates) and no longer fails for documents without a YouTube id.
+### Tags on documents (2026-10-19)
+
+Fourth PR of the organisation lane ([S-8.1.3](docs/initiatives.md#s-813--document-tags-per-tenant), PR [#257](https://github.com/khoks/VideoResearchPro/pull/257)).
+
+- **Per-reader tags.** `tags` + `taggings` (migration `e9f0a1b2c3d4`): stable ids,
+  so rename keeps every tagging and merge is one update; unique per reader,
+  case-insensitively; private to the reader even on shared documents.
+- **In the app.** Tag chips and a "+ Tag" picker on every library row (library,
+  channel page, shelf page); a Tag filter bar on the Library page with "Manage
+  tags" for rename, recolour, merge and delete; chips link to `/library?tag=`.
+- **API.** `/api/v1/tags`, `PUT/DELETE /library/videos/{id}/tags/{tag_id}`,
+  `?tag=` on the library and shelf listings, `tags` on every row.
+- **Fixed.** Popovers in card lists drew under the next card; the shared label
+  picker now portals to the page body.
+
+### Report Markdown source; books built from it (2026-10-19, S-6.1.2 + S-6.1.1 remainder)
+
+PR [#255](https://github.com/khoks/VideoResearchPro/pull/255). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **`report_service.report_markdown(job)`** converts the stored HTML report
+  to Markdown with a `markdownify` (MIT) subclass and caches it beside the
+  HTML at `<report_path>.md`: ATX headings, citation links kept as
+  `[text](href)` with their `&t=` timestamps, tables kept, the statistics
+  grid as a one-row table, stylesheet and document head dropped,
+  `[VISUAL @ …]` spans verbatim. Round-trip tests run on three real stored
+  reports. New dependency `markdownify>=1.2.3` (brings `beautifulsoup4`).
+- **Books read it.** `BookMarkdownOutputter` drops the regex tag-stripper;
+  each chapter is the report's Markdown with its headings demoted under the
+  chapter heading; S-5.10.6's tenant-scoped job lookup is kept.
+- **`GET /api/v1/jobs/{id}/report.md`** in `routers/reports.py`,
+  header-bearer auth only (no `?token=`, the reader PR's posture).
+- **Author Studio (S-6.1.1 remainder):** an empty book is a 400 with no row
+  written; outputs carry `word_count` and the list shows chapters and
+  words; "Add to a book" on a finished run's page opens the create flow with
+  that run pre-selected (`/author?new=book&job=<id>`). The Author reader
+  renders the manuscript's tables through `remark-gfm` (MIT); without it
+  they showed as a run of pipes.
+
+### AI models page shows what the measurements found (S-1.14.7, 2026-10-19)
+
+Story S-1.14.7 under [E-1.14](docs/initiatives.md#e-114--model-tier-quality-evaluation-harness), PR [#251](https://github.com/khoks/VideoResearchPro/pull/251), decision [D-076](docs/decisions.md#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19). No default model changed.
+
+- **Registry guidance.** Every LLM use case now records what the quality
+  measurements found. 8 are measured, each citing its decision with the gap to
+  the flagship tier and what fails on a cheaper model. The other 15 are marked
+  unmeasured, with a note on what evidence exists.
+- **Warnings on `/account/ai-models`.** A row warns when the chosen model
+  measured unacceptable for that function (for example luna for frame
+  description, D-073) or weaker (sonnet-5 for report compose, D-062).
+  It also warns when a vision function points at a model not known to
+  accept images. Model options are marked before you pick one. Warnings
+  never block a save.
+- **Cost against the default.** Each row shows the benchmark-job cost of
+  your choice against the default's: compose on sonnet-5 reads $3.03 against
+  $7.58.
+- **`/health/llm`** reports the same guidance and warnings for the
+  server's resolved config, so a bad `LLM_USE_CASE_CONFIG` shows up there.
+- Fixed: Q&A history rows were listed under "Job Q&A".
 
 ### Reading room: citation cards, endnotes and print (2026-10-19)
 

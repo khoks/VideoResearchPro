@@ -19,7 +19,12 @@ def test_registry_count_matches_claude_md():
 
 
 def test_probed_but_not_a_feature_gate():
-    probed = {uc for _cfg, use_cases in llm_smoke._collect_probe_targets().values() for uc in use_cases}
+    # Targets hold (use_case, reasoning) pairs since #240.
+    probed = {
+        uc
+        for _cfg, use_cases in llm_smoke._collect_probe_targets().values()
+        for uc, _reasoning in use_cases
+    }
     assert "temporal_scope_extract" in probed
     gated = {uc for ucs in llm_smoke.FEATURE_TO_USE_CASES.values() for uc in ucs}
     assert "temporal_scope_extract" not in gated

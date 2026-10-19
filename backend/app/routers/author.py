@@ -60,6 +60,9 @@ class OutputItem(BaseModel):
     created_at: datetime
     updated_at: datetime
     has_content: bool
+    # S-6.1.1: whitespace-separated words in the generated text; None
+    # until there is content. The page shows it beside the chapter count.
+    word_count: int | None = None
 
     model_config = {"from_attributes": False}
 
@@ -98,6 +101,7 @@ def _to_item(row) -> OutputItem:
         created_at=row.created_at,
         updated_at=row.updated_at,
         has_content=bool(row.content_text or row.content_path),
+        word_count=len(row.content_text.split()) if row.content_text else None,
     )
 
 
@@ -129,6 +133,14 @@ def create_and_generate(
     """Create the row + run generation synchronously. v1's outputters
     are deterministic and fast (no LLM); a future PR can wrap this in
     a Celery task when generation gets expensive."""
+    # S-6.1.1: a book is one chapter per run, so zero runs is a request
+    # error, not a generation failure. Refusing here means no `failed`
+    # row is left behind for the user to clean up.
+    if payload.kind == OutputKind.BOOK.value and not payload.source_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A book needs at least one run: source_ids is empty.",
+        )
     try:
         row = output_service.create_output(
             db,

@@ -12,6 +12,7 @@ import { VideoRow } from '../components/library/VideoRow';
 import { ChannelRow } from '../components/library/ChannelRow';
 import { PdfUploadZone } from '../components/library/PdfUploadZone';
 import { PasteUrlsForm } from '../components/library/PasteUrlsForm';
+import { TagFilterBar } from '../components/tags';
 import {
   Button,
   Card,
@@ -63,7 +64,10 @@ export function LibraryPage() {
   const c = useColors();
   const navigate = useNavigate();
   // `?tab=channels` lets the channel page's breadcrumb land on the right tab.
-  const [searchParams] = useSearchParams();
+  // `?tag=<id>` is the tag filter (S-8.1.3), kept in the URL so a tag chip
+  // anywhere in the app is a plain link.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tagFilter = searchParams.get('tag') ?? '';
   const [tab, setTab] = useState<TabKey>(() => {
     const requested = searchParams.get('tab');
     return requested === 'channels' || requested === 'ingest' ? requested : 'videos';
@@ -75,6 +79,26 @@ export function LibraryPage() {
   const [channelFilter, setChannelFilter] = useState('');
   const [sort, setSort] = useState<LibrarySort>('newest');
   const [page, setPage] = useState(0);
+
+  // A tag chip clicked elsewhere lands here with a new `?tag=`: start at page 1.
+  useEffect(() => {
+    setPage(0);
+  }, [tagFilter]);
+
+  const setTagFilter = useCallback(
+    (tagId: string) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (tagId) next.set('tag', tagId);
+          else next.delete('tag');
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
 
   const [syncingChannels, setSyncingChannels] = useState<Record<string, string>>({});
 
@@ -88,6 +112,7 @@ export function LibraryPage() {
     language: language || undefined,
     channel_id: channelFilter || undefined,
     transcript_status: transcriptStatus || undefined,
+    tag: tagFilter || undefined,
     sort,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
@@ -145,10 +170,11 @@ export function LibraryPage() {
     setLanguage('');
     setTranscriptStatus('');
     setChannelFilter('');
+    setTagFilter('');
     setSort('newest');
     setPage(0);
     setTab('videos');
-  }, []);
+  }, [setTagFilter]);
 
   return (
     <div style={{ maxWidth: measure.grid, margin: '0 auto' }}>
@@ -202,6 +228,8 @@ export function LibraryPage() {
       {tab === 'ingest' ? (
         <IngestTab onViewShelf={handleViewShelf} />
       ) : tab === 'videos' ? (
+        <>
+        <TagFilterBar value={tagFilter} onChange={setTagFilter} />
         <VideosTab
           search={search}
           onSearchChange={(v) => {
@@ -236,6 +264,7 @@ export function LibraryPage() {
           isLoading={videosQuery.isLoading}
           isError={videosQuery.isError}
         />
+        </>
       ) : (
         <ChannelsTab
           channels={channelsQuery.data ?? []}

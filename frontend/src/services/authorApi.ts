@@ -16,6 +16,8 @@ export interface OutputItem {
   created_at: string;
   updated_at: string;
   has_content: boolean;
+  /** Words in the generated text; null until there is content (S-6.1.1). */
+  word_count?: number | null;
 }
 
 /** `available` = kinds with a concrete outputter; `supported` = every kind

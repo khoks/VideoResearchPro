@@ -1,4 +1,4 @@
-"""Round-trip of ``d8e9f0a1b2c3`` (D-070) against the real migration chain
+"""Round-trip of ``3653e565c1fc`` (D-070) against the real migration chain
 on a scratch SQLite file: upgrade re-keys live grants on ``document_id`` and
 drops orphans; downgrade restores ``video_id`` and drops the grants the old
 schema cannot represent; a second upgrade is clean.
@@ -12,8 +12,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
-PREVIOUS = "c2d3e4f5a6b7"  # notes (S-8.5.1), the head this revision was rebased onto
-THIS = "d8e9f0a1b2c3"
+PREVIOUS = "d8e9f0a1b2c3"  # shelves (S-8.1.1), the head this revision was rebased onto
+THIS = "3653e565c1fc"
 
 _BACKEND = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 

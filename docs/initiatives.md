@@ -1161,7 +1161,7 @@ Linked decision: [D-065](decisions.md#d-065--channel-subscriptions-become-per-te
 **Linked decision:** [D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19) (accepted; records the transition choice and six defects found while shipping)
 **Acceptance (met).** An uploaded PDF and a pasted page appear in `GET /library/videos`, are found by its `search=`, and are in the set library Q&A retrieves from — for the tenant who ingested them and for nobody else (`tests/test_routers/test_library_visibility_isolation.py`, two tenants). The strict xfail in `tests/test_routers/test_library_paste_urls.py` is un-marked and passes. Non-video chunks are proven to reach a real in-memory Chroma collection and to be scoped by `document_id` (`tests/test_services/test_chroma_document_scope.py`). 1,454 backend tests pass; `npm run build` passes.
 **Tasks**
-- [x] T-5.10.4.1 Migration `d8e9f0a1b2c3` (on top of S-8.5.1's `c2d3e4f5a6b7`; the first draft had taken `c7d8e9f0a1b2`, which S-8.3.1 also took the same day): `document_visibility.document_id` (FK `documents.document_id`, cascade), backfill by joining `documents` on `video_id`, orphans dropped with a logged count, unique moved to `(document_id, tenant_id)`, `video_id` retired via SQLite batch rebuild. Downgrade restores `video_id` and drops the grants the old schema cannot hold. Round trip pinned by `tests/test_migrations/test_visibility_document_id_migration.py`
+- [x] T-5.10.4.1 Migration `3653e565c1fc` (on top of S-8.1.1's `d8e9f0a1b2c3`; two earlier drafts had taken `c7d8e9f0a1b2` and `d8e9f0a1b2c3`, which S-8.3.1 and S-8.1.1 also took the same day — ids are random now): `document_visibility.document_id` (FK `documents.document_id`, cascade), backfill by joining `documents` on `video_id`, orphans dropped with a logged count, unique moved to `(document_id, tenant_id)`, `video_id` retired via SQLite batch rebuild. Downgrade restores `video_id` and drops the grants the old schema cannot hold. Round trip pinned by `tests/test_migrations/test_visibility_document_id_migration.py`
 - [x] T-5.10.4.2 `grant()` takes document ids; the five call sites pass `document_id` (the job path reads `JobVideo.document_id`, which also covers channel sync); `visible_video_ids()` → `visible_document_ids()` with no shim — no reader needs YouTube ids
 - [x] T-5.10.4.3 Listing, both `channels.py` readers, `subscription_service.visible_channel_ids` and `corpus_stats_service` filter on `document_id`; `query_collection(document_ids=...)` filters Chroma on the `document_id` metadata field, which `_build_video_metadata` and the chunker now write for every source type
 - [x] T-5.10.4.4 Transition decided and recorded in D-070: metadata-only backfill at API startup (`backfill_chunk_document_ids`, idempotent, no re-embedding), a single retrieval path rather than a dual filter. Chroma ids stay `{video_id}:{index}` for videos and are `{document_id}:{index}` for everything else
@@ -1519,13 +1519,13 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 **Plan:** [`docs/plans/m1-shelves.md`](plans/m1-shelves.md)
 **Acceptance.** A user creates a shelf, adds jobs to it from the jobs list and job page, opens the shelf and sees only those jobs and their documents, asks a question scoped to the shelf and gets citations only from documents on it. Another tenant sees none of it.
 
-#### S-8.1.1 🔵 Shelves schema, service and REST
-**PR:** TBD
-- [ ] T-8.1.1.1 `shelves(id, tenant_id, name, description, color, created_at, updated_at)` + `shelf_jobs(shelf_id, job_id, added_at)` with an Alembic revision; unique `(tenant_id, name)`
-- [ ] T-8.1.1.2 `shelf_service` as the single accessor (tenant is part of every lookup; foreign ids 404)
-- [ ] T-8.1.1.3 `GET/POST/PUT/DELETE /api/v1/shelves`, `POST/DELETE /api/v1/shelves/{id}/jobs/{job_id}`, `GET /api/v1/jobs/{id}/shelves`; gated on `require_feature("shelves")`
-- [ ] T-8.1.1.4 Deleting a job removes its `shelf_jobs` rows; deleting a shelf never deletes jobs
-- [ ] T-8.1.1.5 Router + isolation tests (cross-tenant add / list / delete all 404)
+#### S-8.1.1 🟢 Shelves schema, service and REST
+**PR:** [#242](https://github.com/khoks/VideoResearchPro/pull/242) (merged 2026-10-19)
+- [x] T-8.1.1.1 `shelves(id, tenant_id, name, description, color, created_at, updated_at)` + `shelf_jobs(shelf_id, job_id, added_at)`, Alembic revision `d8e9f0a1b2c3`; unique `(tenant_id, name)` plus a case-insensitive check in the service; `color` is one of the ten palette names, validated server-side
+- [x] T-8.1.1.2 `shelf_service` as the single accessor (tenant is part of every lookup; foreign ids 404)
+- [x] T-8.1.1.3 `GET/POST/PUT/DELETE /api/v1/shelves`, `POST/DELETE /api/v1/shelves/{id}/jobs/{job_id}`, `GET /api/v1/jobs/{id}/shelves`. Writes gated on `require_feature("shelves")`; **reads open to every tier** so a shelf outlives a downgrade read-only (plan open question 1, recommended default taken)
+- [x] T-8.1.1.4 Deleting a job removes its `shelf_jobs` rows; deleting a shelf never deletes jobs. The cascade is an ORM relationship on `Job`, not DB-level: SQLite here never enforces `ON DELETE CASCADE` (no `PRAGMA foreign_keys`)
+- [x] T-8.1.1.5 Router + service + isolation tests (every endpoint against a second real tenant: all 404); a parametrised Alembic upgrade → downgrade → upgrade round-trip test (`tests/test_models/test_migrations_round_trip.py`) that later lane migrations add a row to
 
 #### S-8.1.2 🔵 Shelves UI
 **PR:** TBD

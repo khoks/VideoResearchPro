@@ -26,6 +26,8 @@ from app.models.scheduled_run import ScheduledRun
 from app.models.session import Session
 from app.models.shelf import Shelf
 from app.models.shelf_job import ShelfJob
+from app.models.tag import Tag
+from app.models.tagging import Tagging
 from app.models.transcript_cache import TranscriptCache
 from app.models.user import User
 from app.models.user_llm_override import UserLLMOverride
@@ -58,6 +60,8 @@ __all__ = [
     "Session",
     "Shelf",
     "ShelfJob",
+    "Tag",
+    "Tagging",
     "TranscriptCache",
     "User",
     "UserLLMOverride",

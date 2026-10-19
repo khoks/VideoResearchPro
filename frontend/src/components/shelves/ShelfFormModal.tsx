@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { SHELF_COLORS, type ShelfColor } from '../../services/shelvesApi';
+import type { ShelfColor } from '../../services/shelvesApi';
+import { PaletteField } from '../labels/PaletteField';
 import { Button, FormField, Input, Modal, Textarea } from '../primitives';
-import { useColors, usePaletteColor } from '../../hooks/useTheme';
-import { fonts, fontSize, fontWeight, radius, space } from '../../theme';
+import { space } from '../../theme';
 import { apiErrorMessage } from '../../utils/apiError';
 
 export interface ShelfFormValues {
@@ -108,75 +108,10 @@ export function ShelfFormModal({ open, onClose, title, submitLabel, initial, onS
             />
           )}
         </FormField>
-        <ColourField value={color} onChange={setColor} />
+        <PaletteField value={color} onChange={setColor} />
         {/* Lets Enter in the name field submit without a visible second button. */}
         <button type="submit" hidden aria-hidden tabIndex={-1} />
       </form>
     </Modal>
-  );
-}
-
-function ColourField({ value, onChange }: { value: ShelfColor; onChange: (c: ShelfColor) => void }) {
-  const c = useColors();
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: space['1'] }}>
-      <span
-        style={{
-          fontFamily: fonts.ui,
-          fontSize: fontSize.sm,
-          fontWeight: fontWeight.medium,
-          color: c.textSecondary,
-        }}
-      >
-        Colour
-      </span>
-      <div
-        role="radiogroup"
-        aria-label="Shelf colour"
-        style={{ display: 'flex', flexWrap: 'wrap', gap: space['2'] }}
-      >
-        {SHELF_COLORS.map((col) => (
-          <ColourSwatch key={col} color={col} selected={col === value} onSelect={() => onChange(col)} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ColourSwatch({
-  color,
-  selected,
-  onSelect,
-}: {
-  color: ShelfColor;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const c = useColors();
-  const p = usePaletteColor(color);
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      onClick={onSelect}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: space['1'],
-        padding: `2px ${space['2']}`,
-        borderRadius: radius.pill,
-        background: p.bg,
-        color: p.fg,
-        border: `${selected ? 2 : 1}px solid ${selected ? c.focus : p.fg}`,
-        fontFamily: fonts.ui,
-        fontSize: fontSize.xs,
-        fontWeight: selected ? fontWeight.semibold : fontWeight.medium,
-        cursor: 'pointer',
-        textTransform: 'capitalize',
-      }}
-    >
-      {color}
-    </button>
   );
 }

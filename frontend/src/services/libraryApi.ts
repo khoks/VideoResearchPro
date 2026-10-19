@@ -1,5 +1,6 @@
 import type { AxiosProgressEvent } from 'axios';
 import api from './api';
+import type { TagSummary } from './tagsApi';
 
 export type TranscriptStatus = 'fetched' | 'pending' | 'unavailable';
 
@@ -27,6 +28,8 @@ export interface LibraryVideoResponse {
   transcript_word_count: number | null;
   job_count: number;
   job_titles: string[];
+  /** The caller's own tags on this document, A→Z (S-8.1.3). */
+  tags?: TagSummary[];
 }
 
 export interface ListVideosParams {
@@ -34,6 +37,8 @@ export interface ListVideosParams {
   language?: string;
   channel_id?: string;
   transcript_status?: string;
+  /** A tag id: only documents carrying it (S-8.1.3). */
+  tag?: string;
   sort?: LibrarySort;
   limit?: number;
   offset?: number;

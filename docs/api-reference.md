@@ -379,6 +379,7 @@ Query params:
 - `language` — exact transcript language code (e.g. `en`, `hi`).
 - `channel_id` — restrict to one channel.
 - `transcript_status` — one of `fetched`, `pending`, `unavailable`.
+- `tag` — a tag id; only documents carrying it (S-8.1.3). Another reader's tag id matches nothing.
 - `sort` — `newest` (default), `oldest`, `longest`, `shortest`.
 - `limit` (default 50, max 500), `offset` (default 0).
 
@@ -398,10 +399,13 @@ Query params:
     "transcript_language": "en",
     "transcript_word_count": 900,
     "job_count": 2,
-    "job_titles": ["DNS basics", "Networking 101"]
+    "job_titles": ["DNS basics", "Networking 101"],
+    "tags": [{ "id": "…", "name": "must read", "color": "red" }]
   }
 ]
 ```
+
+`tags` is the caller's own tags on the document, A→Z (S-8.1.3).
 
 `channel_id`, `channel_name`, `thumbnail_url` and `duration_seconds` are empty or null for PDFs and pasted pages. Until [D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19) lands, those documents do not appear in this listing at all (see the D-063 amendment).
 
@@ -535,7 +539,7 @@ Body `{ "name", "description"?, "color"? }`. Returns 201 `ShelfResponse`. Pro+.
 `ShelfDetailResponse`: the shelf plus `jobs: JobResponse[]`, most recently added first. Any tier.
 
 ### `GET /api/v1/shelves/{shelf_id}/documents`
-The union of the documents selected by the shelf's jobs, each once, filtered through the caller's visibility (D-063). Takes the library listing's `search`, `language`, `channel_id`, `transcript_status`, `sort`, `limit`, `offset` and returns the same `LibraryVideoResponse[]` rows (with `job_count` / `job_titles` across all the caller's runs). **An empty shelf returns `[]`, never the whole library.** Any tier.
+The union of the documents selected by the shelf's jobs, each once, filtered through the caller's visibility (D-063). Takes the library listing's `search`, `language`, `channel_id`, `transcript_status`, `tag`, `sort`, `limit`, `offset` and returns the same `LibraryVideoResponse[]` rows (with `job_count` / `job_titles` across all the caller's runs). **An empty shelf returns `[]`, never the whole library.** Any tier.
 
 ### `PUT /api/v1/shelves/{shelf_id}`
 Partial update: fields left out are untouched; `"description": null` clears it; renaming onto another shelf's name is a 409. Returns `ShelfResponse`. Pro+.
@@ -553,6 +557,38 @@ Put a job on the shelf. Idempotent: 200 with the (unchanged) `ShelfResponse` whe
 Shelves the job sits on, A→Z. Any tier; the job must be the caller's.
 
 Deleting a job removes it from every shelf (an ORM cascade on `Job`, because SQLite does not enforce `ON DELETE CASCADE` without a pragma this app never sets). Still to come: `POST /shelves/{id}/qa` (S-8.1.4).
+
+---
+
+## Tags
+
+Per-tenant labels on documents (S-8.1.3, [M1 plan](plans/m1-shelves.md)). Tags are rows with stable ids, so a rename keeps every tagging and a merge is one update. They are private to the reader who made them: another reader's tags on the same shared document never appear (D-063). **Not tier-gated.** A foreign tag id is a 404 everywhere.
+
+`TagResponse`:
+
+```json
+{ "id": "…", "name": "must read", "color": "red", "document_count": 4, "created_at": "…" }
+```
+
+`document_count` counts only documents the caller can still see. Names are unique per tenant case-insensitively (a functional index on `lower(name)`); a collision is a **409**. `color` is a label-palette name (the same ten as shelves); anything else is a 422.
+
+### `GET /api/v1/tags`
+The caller's tags, A→Z, with counts.
+
+### `POST /api/v1/tags`
+Body `{ "name", "color"? }`. 201 `TagResponse`.
+
+### `PUT /api/v1/tags/{tag_id}`
+Rename and / or recolour; the id is kept. 409 on a name collision.
+
+### `DELETE /api/v1/tags/{tag_id}`
+204. Removes the tag from every document; documents are untouched. **With `?into=<tag_id>` it merges instead**: every document carrying this tag gets the target (duplicates are dropped, not doubled), then this tag goes. Merging into itself is a 400.
+
+### `PUT /api/v1/library/videos/{document_id}/tags/{tag_id}`
+Tag a document the caller can see (`document_id` is the D-070 primary key, the row's `id`). Idempotent. Returns `TagSummary[]`, the caller's tags now on the document. A document the caller cannot see is a 404, even with their own tag.
+
+### `DELETE /api/v1/library/videos/{document_id}/tags/{tag_id}`
+204; 404 when the document does not carry the tag.
 
 ---
 

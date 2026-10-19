@@ -62,6 +62,12 @@ class Job(Base):
         Boolean, default=False, nullable=False, server_default="0"
     )
 
+    # E-8.6 provenance: which template version this run started from, if
+    # any. No foreign key: templates are soft-deleted and this must keep
+    # resolving ("re-run with the template as it was").
+    template_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    template_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Search metadata
     search_queries_used: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
 

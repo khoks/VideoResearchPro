@@ -17,6 +17,7 @@ from app.routers import (
     echo,
     exports,
     health,
+    job_templates,
     jobs,
     knowledge,
     library,
@@ -128,6 +129,7 @@ app.include_router(oauth.router, prefix="/api/v1")
 app.include_router(echo.router, prefix="/api/v1")
 app.include_router(author.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
+app.include_router(job_templates.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
 app.include_router(shelves.router, prefix="/api/v1")
 app.include_router(tags.router, prefix="/api/v1")

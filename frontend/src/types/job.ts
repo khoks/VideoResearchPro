@@ -27,6 +27,13 @@ export interface Job {
   preferred_channels: string[] | null;
   channel_list: string[] | null;
   videos_per_channel: number | null;
+  /** R4: null means auto. */
+  output_length: OutputLength | null;
+  /** R1 opt-in, carried through Duplicate and templates. */
+  visual_analysis: boolean;
+  /** E-8.6: the template version this run started from, if any. */
+  template_id: string | null;
+  template_version: number | null;
   progress_pct: number;
   progress_message: string | null;
   error_message: string | null;
@@ -50,6 +57,14 @@ export interface JobCreate {
   videos_per_channel?: number;
   /** R4: optional report depth. Omitted/'auto' lets corpus size decide. */
   output_length?: OutputLength;
+  /** R1 opt-in; only ever carried from a run or template (S-1.18.2 deferred). */
+  visual_analysis?: boolean;
+}
+
+/** E-8.6: which template version a submission started from. */
+export interface JobProvenance {
+  templateId: string;
+  templateVersion?: number;
 }
 
 export interface VideoApproval {

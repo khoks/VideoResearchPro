@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { jobsApi } from '../services/jobsApi';
-import type { JobCreate, VideoApproval } from '../types/job';
+import type { JobCreate, JobProvenance, VideoApproval } from '../types/job';
 
 export function useJobs(params?: { status?: string; limit?: number; offset?: number }) {
   return useQuery({
@@ -30,7 +30,8 @@ export function useJobVideos(jobId: string | null) {
 export function useCreateJob() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: JobCreate) => jobsApi.create(data),
+    mutationFn: ({ data, provenance }: { data: JobCreate; provenance?: JobProvenance }) =>
+      jobsApi.create(data, provenance),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
   });
 }

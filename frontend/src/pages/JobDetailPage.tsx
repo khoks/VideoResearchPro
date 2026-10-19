@@ -17,6 +17,8 @@ import { ProgressBar } from '../components/common/ProgressBar';
 import { CitationLink } from '../components/citation';
 import { NotesPanel } from '../components/notes';
 import { JobShelfChips, ShelfPicker } from '../components/shelves';
+import { SaveTemplateModal } from '../components/templates';
+import { useSaveJobAsTemplate } from '../hooks/useJobTemplates';
 import { ApprovalCard, SOURCE_CONFIGS } from '../components/approval';
 import {
   Badge,
@@ -59,6 +61,9 @@ export function JobDetailPage() {
   const cancelJob = useCancelJob();
   const deleteJob = useDeleteJob();
   const { isReportModalOpen, openReportModal, closeReportModal } = useJobStore();
+  const pushToast = useJobStore((s) => s.pushToast);
+  const saveAsTemplate = useSaveJobAsTemplate();
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   useJobProgress(jobId || null);
   const syncCounts = useSubscriptionSyncCounts(jobId || null);
@@ -152,6 +157,14 @@ export function JobDetailPage() {
             >
               Duplicate · Re-run
             </Button>
+            <Button
+              variant="tertiary"
+              size="sm"
+              onClick={() => setSavingTemplate(true)}
+              title="Keep this run's recipe; type only a new topic next time"
+            >
+              Save as template
+            </Button>
             {isActive && (
               <Button variant="secondary" size="sm" onClick={() => cancelJob.mutate(job.id)}>
                 Cancel
@@ -192,6 +205,15 @@ export function JobDetailPage() {
           </p>
         )}
       </Card>
+
+      <SaveTemplateModal
+        open={savingTemplate}
+        onClose={() => setSavingTemplate(false)}
+        onSubmit={async ({ name, description }) => {
+          const t = await saveAsTemplate.mutateAsync({ jobId: job.id, name, description });
+          pushToast('success', `Saved template "${t.name}". Find it under Templates on the submit page.`);
+        }}
+      />
 
       <JobParamsCard job={job} />
 

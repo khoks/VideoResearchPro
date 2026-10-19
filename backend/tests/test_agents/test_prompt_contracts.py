@@ -14,11 +14,14 @@ can tell is empty.
 from __future__ import annotations
 
 import ast
+from dataclasses import dataclass
 from pathlib import Path
 from string import Formatter
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.agents import report_agent
 from app.agents.prompts.knowledge_prompts import (
     EXTRACT_BATCH_PROMPT,
     SYNTHESIZE_REPORT_PROMPT,
@@ -47,6 +50,8 @@ from app.agents.prompts.shared import (
     TEMPORAL_EXTRACTION_NOTE,
     VISUAL_ANNOTATION_CONTRACT,
 )
+from app.services.visual_service import annotate_segments, strip_annotations
+from app.utils.chunking import chunk_transcript
 
 
 def _placeholders(template: str) -> set[str]:
@@ -172,3 +177,134 @@ def test_temporal_fragments_state_the_r3_contract():
     assert "SUPERSESSION" in TEMPORAL_AWARENESS
     assert "Anchor RELATIVE time" in TEMPORAL_EXTRACTION_NOTE
     assert "discusses <era>" in TEMPORAL_EXTRACTION_NOTE
+
+
+# ---------------------------------------------------------------------------
+# S-1.18.6: the speaker-attribution boundary (D-071)
+# ---------------------------------------------------------------------------
+#
+# The R1 measurement (docs/notes/2026-10-18-r1-visual-measurement.md) found
+# two sentences that credited a named speaker with a detail that existed only
+# in a `[VISUAL @ mm:ss — ...]` span. The contract forbade reading spans AS
+# speech but said nothing about mixing the two inside one attributed clause.
+# The rule is stated once, in shared.py, and reaches every prompt that reads
+# transcript text through the same fragment — these tests pin both halves.
+
+_ATTRIBUTION_RULE_HEAD = "ATTRIBUTION BOUNDARY"
+_ATTRIBUTION_RULE_CORE = "ONLY what that speaker said"
+
+
+def test_attribution_boundary_rule_is_stated_once_in_the_contract():
+    assert VISUAL_ANNOTATION_CONTRACT.count(_ATTRIBUTION_RULE_HEAD) == 1
+    # Speech-only inside an attributed sentence ...
+    assert _ATTRIBUTION_RULE_CORE in VISUAL_ANNOTATION_CONTRACT
+    # ... the screen-only detail in its own clause, marked as shown ...
+    assert "separate clause marked as shown on screen" in VISUAL_ANNOTATION_CONTRACT
+    # ... and the pattern the sweep judged correct every time stays allowed.
+    assert '"also visible on screen" stays correct' in VISUAL_ANNOTATION_CONTRACT
+
+
+def _composed(prompt: str) -> str:
+    """Fill a prompt the way its call site does: the visual contract in its
+    placeholder, a dummy for everything else. Import-time prompts (the two
+    Q&A system prompts) carry the contract baked in."""
+    kwargs = {k: "X" for k in _placeholders(prompt)}
+    if "visual_annotations" in kwargs:
+        kwargs["visual_annotations"] = VISUAL_ANNOTATION_CONTRACT
+    return prompt.format(**kwargs) if kwargs else prompt
+
+
+@pytest.mark.parametrize("prompt_name,prompt", [
+    ("MAP_CHUNK_PROMPT", MAP_CHUNK_PROMPT),
+    ("COMPOSE_SECTION_PROMPT", COMPOSE_SECTION_PROMPT),
+    ("COMPOSE_SUMMARY_PROMPT", COMPOSE_SUMMARY_PROMPT),
+    ("EXTRACT_BATCH_PROMPT", EXTRACT_BATCH_PROMPT),
+    ("QA_SYSTEM_PROMPT", QA_SYSTEM_PROMPT),
+    ("LIBRARY_QA_SYSTEM_PROMPT", LIBRARY_QA_SYSTEM_PROMPT),
+])
+def test_every_prompt_that_reads_transcript_text_carries_the_rule_once(
+    prompt_name, prompt
+):
+    """Exactly once: zero means a prompt lost the contract; two means a
+    prompt file re-stated it by hand, which is how rules drift."""
+    composed = _composed(prompt)
+    assert composed.count(_ATTRIBUTION_RULE_HEAD) == 1, prompt_name
+    assert _ATTRIBUTION_RULE_CORE in composed, prompt_name
+
+
+@dataclass
+class _Frame:
+    timestamp_seconds: float
+    description: str
+    informative: bool = True
+    status: str = "described"
+
+
+def test_map_prompt_shows_the_model_speech_and_span_with_the_rule_in_force():
+    """The D-071 shape, end to end up to the model boundary.
+
+    Speech and span disagree: the speaker names two variables and a fitted
+    line; only the frame shows a confidence band. The transcript goes through
+    the production merge (`annotate_segments`) and chunker, then the report
+    map stage with a stubbed LLM. The prompt that reaches the model must
+    carry the speech, the span intact, and the rule — and the screen-only
+    detail must exist NOWHERE in that prompt outside the span, so the test
+    is the real case and not a speech/span agreement in disguise.
+    """
+    speech = (
+        "This regression plot shows two numerical variables with a fitted "
+        "regression line through them."
+    )
+    # Worded differently from the rule's own example, which also mentions a
+    # confidence band — otherwise the "nowhere outside the span" check below
+    # would trip on the contract text itself.
+    screen_only = "shaded 95 percent confidence band"
+    description = f"seaborn regplot: scatter, fitted line, {screen_only}"
+    segments = [
+        {"text": speech, "start": 621.0, "duration": 6.0},
+        {"text": "Next we change the colour palette.", "start": 627.0, "duration": 4.0},
+    ]
+    annotated = annotate_segments(segments, [_Frame(621.0, description)])
+    chunks = chunk_transcript(
+        annotated,
+        chunk_size=256,
+        chunk_overlap=32,
+        video_metadata={
+            "video_id": "v1",
+            "title": "Seaborn regplot walkthrough",
+            "channel_name": "ChA",
+            "channel_id": "UC_ChA",
+            "url": "https://www.youtube.com/watch?v=v1",
+        },
+    )
+    assert chunks, "chunker produced nothing"
+
+    response = MagicMock()
+    response.content = (
+        '{"facts": [], "comments": [], "conclusions": [], '
+        '"references": [], "speakers": []}'
+    )
+    llm = MagicMock()
+    llm.invoke.return_value = response
+    with patch.object(report_agent, "get_llm_for", return_value=llm):
+        report_agent.map_chunks(
+            {"job_type": "topic", "transcript_chunks": chunks, "topic": "seaborn tutorials"}
+        )
+
+    assert llm.invoke.call_count == 1, "a two-segment transcript is one map batch"
+    prompt = llm.invoke.call_args.args[0][0].content
+
+    # The speech reached the model.
+    assert speech in prompt
+    # The span reached the model intact: marker, timestamp, description.
+    assert f"[VISUAL @ 10:21 — {description}]" in prompt
+    # The screen-only detail exists only inside a span: strip the spans and
+    # it is gone from everything the model sees.
+    assert screen_only in prompt
+    assert screen_only not in strip_annotations(prompt)
+    # And the rule is in force in the same prompt.
+    assert prompt.count(_ATTRIBUTION_RULE_HEAD) == 1
+    assert _ATTRIBUTION_RULE_CORE in prompt
+    # The rule did not displace the contracts that were already there.
+    assert "LANGUAGE OF OUTPUT" in prompt
+    assert "Anchor RELATIVE time" in prompt

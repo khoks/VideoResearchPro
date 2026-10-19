@@ -2020,7 +2020,7 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 ### D-067 — Visual understanding: separate frames table, marker-in-text annotation, opt-in per job (2026-07-31)
 
-**Status:** accepted
+**Status:** accepted; amended 2026-10-19 (contract coverage overstated; see the amendment at the end)
 
 **Context.** R1 asks the app to work out where something visually important happens in a video, capture screenshots there, describe them *in transcript context*, and attach the descriptions back to the transcript **clearly annotated** so downstream prompts read them as visual aid, never as spoken words. Three sub-decisions had real alternatives.
 
@@ -2040,7 +2040,7 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 - Two chunking changes were required and are load-bearing. `extra["atomic"]` exempts annotations from sentence-splitting, which would otherwise leave the opening marker on one fragment and the closing bracket on another, with the middle sentences reading as speech. Visual presence is aggregated across all segments in a chunk rather than promoted by the dominance vote, and annotations are excluded from that vote so they cannot steal a social chunk's reply attribution.
 - `visual_describe_frame` is the app's **first multimodal use case**, and the first registry entry whose model is not freely swappable. `VISION_USE_CASES` marks it; `warn_if_not_vision_capable` advises without blocking (same fail-soft rule as the rest of `llm_routing`); the smoke check's dedupe key gained a `vision` dimension, because a text-only probe against a text-only model *succeeds* — a misconfigured vision use case would otherwise report healthy at startup and fail on the first real frame.
-- Every prompt family that reads transcript text now carries `VISUAL_ANNOTATION_CONTRACT`, which states that these spans were never spoken, must not be attributed to the speaker, must be cited as "on screen at mm:ss", and lose to the words where the two conflict.
+- Every prompt family that reads transcript text now carries `VISUAL_ANNOTATION_CONTRACT`, which states that these spans were never spoken, must not be attributed to the speaker, must be cited as "on screen at mm:ss", and lose to the words where the two conflict. Since 2026-10-19 (S-1.18.6, PR [#234](https://github.com/khoks/VideoResearchPro/pull/234)) it also draws the attribution boundary the [D-071](#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19) sweep found missing: a sentence credited to a speaker may contain only what that speaker said; a detail that exists only in an annotation goes in a separate clause marked as shown on screen; a spoken figure noted as "also visible on screen" remains correct use. The rule lives in the one shared fragment, so no prompt file re-states it.
 - The `informative` flag is a model judgement biased toward inclusion. Explicit calibration in the prompt catches descriptions that describe an *absence* of content, but borderline frames still pass. This is deliberate: the structural guarantees (marked, never read as speech) are enforced in code; content quality is not, and is measured separately in S-1.18.3.
 
 **Measured, not assumed.** A 200-second video downloaded at 1.9 MB with the `worstvideo[height>=360]` selector, and the describer read a model name off a code slide, a Pydantic class definition with its pass/fail literal field, and a session UUID from a UI — none of which appear in the transcript.
@@ -2048,6 +2048,8 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 **A bug this caught.** The first version of the vision probe's embedded PNG was written from memory: plausible-looking, malformed, and rejected by OpenAI with `image_parse_error`. Every vision probe would have reported the model unreachable — a startup banner blaming the provider for our own broken bytes. The constant is now generated, verified with an independent decoder, and pinned by a test that walks the chunk CRCs.
 
 **Linked initiatives / PRs.** E-1.18 (R1). Follows D-031 (dominant-segment heuristic), D-051 (bot-wall), D-063 (shared cache, private catalogue).
+
+**Amended 2026-10-19: "every prompt family that reads transcript text" overstates the coverage.** Implementing S-1.18.6 (PR [#234](https://github.com/khoks/VideoResearchPro/pull/234)) found two families that read transcript text without `VISUAL_ANNOTATION_CONTRACT`. First, `_with_visuals` in `job_tasks.py` gates frame capture on `VISUAL_ENABLED`, `jobs.visual_analysis` and `source_type == "video"`, never on job type, so a channel job that opts in gets annotated chunks, and `CHANNEL_MAP_PROMPT` formats those chunks with no `{visual_annotations}` placeholder; T-1.18.1.7 never listed the channel-report family. Second, the two Q&A refine prompts (`REFINE_CONTEXT_PROMPT`, `LIBRARY_REFINE_CONTEXT_PROMPT`) rewrite raw chunks into extracts before the answer prompt sees them, so the answer-stage contract applies to prose from which the marker may already have been paraphrased away. The second gap is masked today by T-1.18.1.10 (spans rarely reach Chroma for an already-embedded video) and becomes live the moment that lands. The consequence above is accurate for the topic-report, Q&A-answer and knowledge families. Tracked as T-1.18.1.12 and T-1.18.1.13 under S-1.18.1.
 
 
 ## D-068 — Curated source ranking v1: per-tenant trust weight re-ranks retrieval; perspective banding deferred (2026-10-18)
@@ -2135,7 +2137,7 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 **Decision.**
 
 1. **Annotations stay in the pipeline and stay opt-in; the UI (S-1.18.2) is not built yet.** Criterion 1 was met decisively (3 of 3; 8.33 vs 7.00; zero confirmed fabrications against five in the unannotated arm). Criteria 2 and 3 failed: two attribution errors, and $0.198 per video.
-2. **The contract gains a rule before the next run:** a sentence attributed to a speaker may contain only what was spoken; screen-only details go in a separate clause marked as shown (S-1.18.6). Both confirmed errors had exactly that shape, and none of the "(values also visible on screen)" sentences was an error, so the fix is narrow.
+2. **The contract gains a rule before the next run:** a sentence attributed to a speaker may contain only what was spoken; screen-only details go in a separate clause marked as shown (S-1.18.6; landed 2026-10-19, PR [#234](https://github.com/khoks/VideoResearchPro/pull/234)). Both confirmed errors had exactly that shape, and none of the "(values also visible on screen)" sentences was an error, so the fix is narrow.
 3. **Both vision use cases move to a cheaper tier and the cost is re-measured** (S-1.18.5); `gpt-5.6-luna` and `gemini-3.1-flash-lite` are already on the vision allowlist at roughly 1/25 of gpt-5.5's input price.
 4. **A sweep with independent refuters is part of the method from now on.** All three judges returned zero attribution errors; the sweep found two. Judges alone are not evidence of absence.
 

@@ -849,7 +849,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.3.1.4 Isolation and tombstone tests
 
 #### S-3.3.2 🔵 Signal extraction
-**PR:** TBD. Depends on E-8.5 (notes) for its richest input.
+**PR:** TBD. Depends on E-8.5 (notes) for its richest input. That input exists since 2026-10-19 (S-8.5.1 / S-8.5.3): read live notes through `note_service.iter_notes(include_deleted=False)` and treat a withdrawn note as a reason to suppress any signal derived from it, not as a missing row ([D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19)).
 - [ ] T-3.3.2.1 `echo_extract_signals` use case (economy tier, structured JSON): given a batch of the user's own text with provenance, emit candidate signals with examples; merged by `(signal_type, value)` with weight accumulation
 - [ ] T-3.3.2.2 Cheap stylometric baseline computed without an LLM (function-word profile, sentence-length distribution, punctuation habits, character n-grams; language-agnostic) plus one open author-embedding per note on the existing CPU embedding worker (Apache-2.0 or MIT model, named in the plan; English-trained, so the embedding is English-only until validated), stored as `cadence` signals and a per-language style centroid
 - [ ] T-3.3.2.3 Inputs: notes, Q&A questions, shares with `user_annotation`, connector `text_content` where the user is the author; incoming content is never a voice input
@@ -899,6 +899,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.5.1.1 `is_ready` v2 scoring facts, events (count and span), signals (count and types), shares (count and content types) and notes against the `personal-brain.md` minima, plus a per-language voice floor (the plan suggests about 30 notes or 2,000 words per language, to be tuned) and centroid stability; per-domain progress in `EchoReadiness`. No comparable product publishes a numeric threshold; the literature's anchors are about five exemplars for prompt-time voice and 32 to 100 examples for fine-tuning
 - [ ] T-3.5.1.2 `GET /echo/status` returns per-domain progress; the meter shows what is missing in words
 - [ ] T-3.5.1.3 Thresholds in settings; tests per domain and for the all-domains gate
+Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` reports `notes_total` and `notes_words` (live notes) since S-8.5.3 (PR [#246](https://github.com/khoks/VideoResearchPro/pull/246)), counted by `note_service.voice_stats`. This story turns them into a per-language gate; until then they are reported only ([D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) item 4).
 
 ### E-3.6 🟢 Tier gating (Studio-only initially)
 
@@ -1569,6 +1570,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.2.2.2 Palette on `cmdk` (MIT, about 15 kB gzipped, unstyled, React 19 peer dependency, `shouldFilter={false}` for server results) with ARIA combobox/listbox semantics, inline styles plus at most one scoped `<style>` block for its data-attribute states, grouped results, recent items (localStorage), navigation actions ("New research", "Open library Q&A", "Toggle theme")
 - [ ] T-8.2.2.3 Debounced query, request cancellation, empty and loading states
 - [ ] T-8.2.2.4 Remove the stale `ui-design.md` claim or make it true (`g + r` style chords) in the same PR
+- [ ] T-8.2.2.5 Notes group in the palette: "Your notes" (`/notes`), "Export notes as Markdown" and "Export notes as JSON-LD" (`/exports/notes.md` / `.jsonl`). Moved here from T-8.5.3.2, which shipped before the palette existed
 
 #### S-8.2.3 ⚪ Semantic group
 - [ ] T-8.2.3.1 `semantic=true` adds a group from `qa_library_global` and the transcript collection (visible set only), merged with the keyword results by reciprocal rank fusion (rank-only, so FTS5 scores and Chroma distances need no calibration); labelled separately in the palette
@@ -1623,6 +1625,7 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 ### E-8.5 🟡 Notes — the user's own voice in the library (M5)
 
 **Progress 2026-10-19.** S-8.5.1 and S-8.5.3 shipped (Phase 1, lane D). S-8.5.2 remains and is sequenced after E-7.1.
+**Linked decision:** [D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) (one note stream per document, soft delete only, lossless JSON-LD export, Echo feeder reported not gated).
 
 **Scope.** Free-text Markdown notes on any entity (document, job, Q&A exchange, channel, knowledge artifact), private to the author, searchable, exportable, and **citable**: a note is retrieved alongside transcripts and cited as "you wrote this on <date>" with a 1.5× retrieval weight applied through the [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18) re-rank. Foundational for [E-3.3](#e-33--voice--personality-capture-domain-3): notes are the highest-density personality signal.
 **Plan:** [`docs/plans/m5-notes.md`](plans/m5-notes.md)
@@ -1644,11 +1647,15 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.5.2.3 `_chunk_to_reference` emits a `note` reference `{note_id, target, created_at, quote}`; `<CitationLink>` renders "you wrote this on YYYY-MM-DD" and links to the note's target
 - [ ] T-8.5.2.4 Re-embed on edit, delete chunks on delete; backfill script for existing notes
 - [ ] T-8.5.2.5 Tests: note cited; weight ordering; absent for other tenants; empty visible set still returns the tenant's notes only when they match
+- [ ] T-8.5.2.7 Withdrawn notes (`deleted_at` set) never enter `notes_global`, and soft-deleting a note removes its vector ([D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) item 2); test both
+- [ ] T-8.5.2.8 A `document` note is retrievable from job-scoped Q&A on EVERY job that contains the document, not only the one it was written from (D-074 item 1): match note `target_id` against the job's approved `document_id` set
+- [ ] T-8.5.2.9 The citation reuses the shipped `NoteCard` phrasing ("You wrote this on <date>") so the inline list, the notes page and the answer read the same
+Linked decision: D-074.
 
 #### S-8.5.3 🟢 "Your notes" view, search and export
 **PR:** [#246](https://github.com/khoks/VideoResearchPro/pull/246) — merged 2026-10-19. Lane D of Phase 1 is complete; S-8.5.2 (retrieval and citations) waits for E-7.1 in Phase 2.
 - [x] T-8.5.3.1 `/notes` page: all notes newest first, grouped by target type, filter by target, full-text filter. Fetches the newest 2000 (the server's page cap) and groups client-side so the type chips carry counts; says so when more exist. A "Show withdrawn" toggle lists soft-deleted notes read-only. Each note links to the page its target lives on (run, channel page, library Q&A, history anchor); sources have no page of their own yet, so those link to the shelf
-- [x] T-8.5.3.2 `GET /api/v1/exports/notes.jsonl` (W3C Web Annotation JSON-LD under the `anno.jsonld` context, one per line, oldest first, withdrawn notes included with `deleted`; `note_export_service.parse_note_jsonld` is the exact inverse and the round-trip test holds every column to it) and `GET /api/v1/exports/notes.md` (grouped by target type and target, every column in an HTML comment per note). Both stream like the dataset exports and accept `?token=`. On the Exports page and the notes page. **Not in the command palette**: E-8.2's palette UI (S-8.2.2) does not exist yet; add the group there when it lands
+- [x] T-8.5.3.2 `GET /api/v1/exports/notes.jsonl` (W3C Web Annotation JSON-LD under the `anno.jsonld` context, one per line, oldest first, withdrawn notes included with `deleted`; `note_export_service.parse_note_jsonld` is the exact inverse and the round-trip test holds every column to it) and `GET /api/v1/exports/notes.md` (grouped by target type and target, every column in an HTML comment per note). Both stream like the dataset exports and accept `?token=`. On the Exports page and the notes page. **Not in the command palette**: E-8.2's palette UI (S-8.2.2) does not exist yet; add the group there when it lands (filed as [T-8.2.2.5](#s-822--palette-ui-and-shortcuts))
 - [x] T-8.5.3.3 `GET /echo/status` reports `notes_total` and `notes_words` (live notes) as the Domain 3 feeder; the Echo readiness panel shows them. **Reported, not gated**: the per-language voice floor is S-3.5.1's to set, so `ready` does not move
 
 ### E-8.6 🔵 Job templates (M6)

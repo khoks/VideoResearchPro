@@ -2020,7 +2020,7 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 ### D-067 — Visual understanding: separate frames table, marker-in-text annotation, opt-in per job (2026-07-31)
 
-**Status:** accepted
+**Status:** accepted; amended 2026-10-19 (contract coverage overstated; see the amendment at the end)
 
 **Context.** R1 asks the app to work out where something visually important happens in a video, capture screenshots there, describe them *in transcript context*, and attach the descriptions back to the transcript **clearly annotated** so downstream prompts read them as visual aid, never as spoken words. Three sub-decisions had real alternatives.
 
@@ -2048,6 +2048,8 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 **A bug this caught.** The first version of the vision probe's embedded PNG was written from memory: plausible-looking, malformed, and rejected by OpenAI with `image_parse_error`. Every vision probe would have reported the model unreachable — a startup banner blaming the provider for our own broken bytes. The constant is now generated, verified with an independent decoder, and pinned by a test that walks the chunk CRCs.
 
 **Linked initiatives / PRs.** E-1.18 (R1). Follows D-031 (dominant-segment heuristic), D-051 (bot-wall), D-063 (shared cache, private catalogue).
+
+**Amended 2026-10-19: "every prompt family that reads transcript text" overstates the coverage.** Implementing S-1.18.6 (PR [#234](https://github.com/khoks/VideoResearchPro/pull/234)) found two families that read transcript text without `VISUAL_ANNOTATION_CONTRACT`. First, `_with_visuals` in `job_tasks.py` gates frame capture on `VISUAL_ENABLED`, `jobs.visual_analysis` and `source_type == "video"`, never on job type, so a channel job that opts in gets annotated chunks, and `CHANNEL_MAP_PROMPT` formats those chunks with no `{visual_annotations}` placeholder; T-1.18.1.7 never listed the channel-report family. Second, the two Q&A refine prompts (`REFINE_CONTEXT_PROMPT`, `LIBRARY_REFINE_CONTEXT_PROMPT`) rewrite raw chunks into extracts before the answer prompt sees them, so the answer-stage contract applies to prose from which the marker may already have been paraphrased away. The second gap is masked today by T-1.18.1.10 (spans rarely reach Chroma for an already-embedded video) and becomes live the moment that lands. The consequence above is accurate for the topic-report, Q&A-answer and knowledge families. Tracked as T-1.18.1.12 and T-1.18.1.13 under S-1.18.1.
 
 
 ## D-068 — Curated source ranking v1: per-tenant trust weight re-ranks retrieval; perspective banding deferred (2026-10-18)

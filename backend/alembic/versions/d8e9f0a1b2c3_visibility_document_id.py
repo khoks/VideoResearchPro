@@ -1,7 +1,7 @@
 """document_visibility keyed on document_id, not the legacy video_id
 
-Revision ID: c7d8e9f0a1b2
-Revises: b1a2c3d4e5f8
+Revision ID: d8e9f0a1b2c3
+Revises: c7d8e9f0a1b2
 Create Date: 2026-10-19
 
 S-5.10.4 / D-070. ``document_visibility.video_id`` referenced
@@ -27,8 +27,8 @@ import logging
 import sqlalchemy as sa
 from alembic import op
 
-revision = "c7d8e9f0a1b2"
-down_revision = "b1a2c3d4e5f8"
+revision = "d8e9f0a1b2c3"
+down_revision = "c7d8e9f0a1b2"
 branch_labels = None
 depends_on = None
 

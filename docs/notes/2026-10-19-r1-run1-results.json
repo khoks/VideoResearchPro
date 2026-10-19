@@ -386,5 +386,158 @@
   "total": 2.17,
   "per_video": 0.198,
   "basis": "token counts from stored transcripts/frames x gpt-5.5 pricing; see note"
+ },
+ "retier": {
+  "runs": {
+   "baseline_describe": {
+    "model": "openai:gpt-5.5:low",
+    "videos": 12,
+    "frames_described": 120,
+    "describe_errors": 0,
+    "input_tokens": 161762,
+    "output_tokens": 21807,
+    "price_per_m": {
+     "input": 5.0,
+     "output": 30.0
+    },
+    "cost_usd": 1.463,
+    "cost_per_video_usd": 0.1219,
+    "informative_rate": 0.9916666666666667,
+    "selection_overlap": null
+   },
+   "baseline_select": {
+    "model": "openai:gpt-5.5:medium",
+    "videos": 12,
+    "frames_described": 0,
+    "describe_errors": 0,
+    "input_tokens": 95253,
+    "output_tokens": 19575,
+    "price_per_m": {
+     "input": 5.0,
+     "output": 30.0
+    },
+    "cost_usd": 1.0635,
+    "cost_per_video_usd": 0.0886,
+    "informative_rate": 0.0,
+    "selection_overlap": 0.85
+   },
+   "luna": {
+    "model": "openai:gpt-5.6-luna:off",
+    "videos": 12,
+    "frames_described": 120,
+    "describe_errors": 0,
+    "input_tokens": 257015,
+    "output_tokens": 20480,
+    "price_per_m": {
+     "input": 0.2,
+     "output": 1.2
+    },
+    "cost_usd": 0.076,
+    "cost_per_video_usd": 0.0063,
+    "informative_rate": 0.9833333333333333,
+    "selection_overlap": 0.5916666666666667
+   },
+   "gemini_flash_lite": {
+    "model": "google:gemini-3.1-flash-lite:off",
+    "videos": 12,
+    "frames_described": 120,
+    "describe_errors": 0,
+    "input_tokens": 370001,
+    "output_tokens": 20561,
+    "price_per_m": {
+     "input": 0.25,
+     "output": 1.5
+    },
+    "cost_usd": 0.1233,
+    "cost_per_video_usd": 0.0103,
+    "informative_rate": 0.9916666666666667,
+    "selection_overlap": 0.23333333333333334
+   },
+   "mini_select": {
+    "model": "openai:gpt-5.4-mini:off",
+    "videos": 12,
+    "frames_described": 0,
+    "describe_errors": 0,
+    "input_tokens": 95253,
+    "output_tokens": 5384,
+    "price_per_m": {
+     "input": 0.75,
+     "output": 4.5
+    },
+    "cost_usd": 0.0957,
+    "cost_per_video_usd": 0.008,
+    "informative_rate": 0.0,
+    "selection_overlap": 0.24166666666666667
+   },
+   "select_gpt55_low": {
+    "model": "openai:gpt-5.5:low",
+    "videos": 12,
+    "frames_described": 0,
+    "describe_errors": 0,
+    "input_tokens": 95253,
+    "output_tokens": 8714,
+    "price_per_m": {
+     "input": 5.0,
+     "output": 30.0
+    },
+    "cost_usd": 0.7377,
+    "cost_per_video_usd": 0.0671,
+    "informative_rate": null,
+    "selection_overlap": 0.7583333333333333
+   },
+   "select_gpt55_off": {
+    "model": "openai:gpt-5.5:off",
+    "videos": 12,
+    "frames_described": 0,
+    "describe_errors": 0,
+    "input_tokens": 95253,
+    "output_tokens": 7557,
+    "price_per_m": {
+     "input": 5.0,
+     "output": 30.0
+    },
+    "cost_usd": 0.703,
+    "cost_per_video_usd": 0.0639,
+    "informative_rate": null,
+    "selection_overlap": 0.7583333333333333
+   }
+  },
+  "grading_unblinded": {
+   "baseline_gpt-5.5": {
+    "n": 66,
+    "acc": 298.5,
+    "best": 54,
+    "unusable": 3,
+    "misreads": 40,
+    "frames_with_misread": 14,
+    "mean_accuracy": 4.52
+   },
+   "luna": {
+    "n": 66,
+    "acc": 262.0,
+    "best": 6,
+    "unusable": 22,
+    "misreads": 67,
+    "frames_with_misread": 23,
+    "mean_accuracy": 3.97
+   },
+   "gemini-3.1-flash-lite": {
+    "n": 66,
+    "acc": 278.0,
+    "best": 5,
+    "unusable": 5,
+    "misreads": 45,
+    "frames_with_misread": 17,
+    "mean_accuracy": 4.21
+   }
+  },
+  "grading_ties": 1,
+  "decision": "D-073",
+  "per_video_basis": "11 videos that produced calls; the 12th approved video had no transcript",
+  "final_tiers": {
+   "visual_select_moments": "openai:gpt-5.5:low",
+   "visual_describe_frame": "google:gemini-3.1-flash-lite:off",
+   "cost_per_video_usd": 0.075
+  }
  }
 }

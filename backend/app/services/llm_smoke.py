@@ -238,14 +238,14 @@ def _dedupe_key(cfg: UseCaseConfig, vision: bool) -> _ProbeKey:
     return (cfg.provider, cfg.model, vision)
 
 
-def _collect_probe_targets() -> dict[_ProbeKey, tuple[UseCaseConfig, list[str]]]:
+def _collect_probe_targets() -> dict[_ProbeKey, tuple[UseCaseConfig, list[tuple[str, str]]]]:
     """Group registry entries by their resolved ``(provider, model, vision)``.
 
     Returns ``{key: (representative_config, [use_cases_using_it])}``. Probe
     the representative once; fan the result out to every use case in the
     list.
     """
-    targets: dict[_ProbeKey, tuple[UseCaseConfig, list[str]]] = {}
+    targets: dict[_ProbeKey, tuple[UseCaseConfig, list[tuple[str, str]]]] = {}
     for use_case in USE_CASE_REGISTRY:
         try:
             cfg = resolve_config(use_case)
@@ -261,26 +261,38 @@ def _collect_probe_targets() -> dict[_ProbeKey, tuple[UseCaseConfig, list[str]]]
         key = _dedupe_key(cfg, vision)
         if key not in targets:
             targets[key] = (cfg, [])
-        targets[key][1].append(use_case)
+        # Keep each use case's own reasoning level: the probe is shared, but
+        # /health/llm must not report the representative's level for every
+        # sibling (found 2026-10-19 when visual_select_moments showed
+        # "medium" after moving to "low").
+        targets[key][1].append((use_case, cfg.reasoning))
     return targets
 
 
 def _fan_out(
-    cfg: UseCaseConfig, use_cases: list[str], result: ProbeResult
+    cfg: UseCaseConfig, use_cases: list, result: ProbeResult
 ) -> list[UseCaseStatus]:
-    """Copy one probe result into per-use-case status entries."""
-    return [
-        UseCaseStatus(
-            use_case=uc,
-            provider=cfg.provider,
-            model=cfg.model,
-            reasoning=cfg.reasoning,
-            ok=result.ok,
-            latency_ms=result.latency_ms,
-            error=result.error,
+    """Copy one probe result into per-use-case status entries.
+
+    ``use_cases`` holds ``(use_case, reasoning)`` pairs; a bare use-case
+    string is accepted for callers that have no per-use-case level and
+    takes the representative's.
+    """
+    statuses = []
+    for entry in use_cases:
+        uc, reasoning = (entry, cfg.reasoning) if isinstance(entry, str) else entry
+        statuses.append(
+            UseCaseStatus(
+                use_case=uc,
+                provider=cfg.provider,
+                model=cfg.model,
+                reasoning=reasoning,
+                ok=result.ok,
+                latency_ms=result.latency_ms,
+                error=result.error,
+            )
         )
-        for uc in use_cases
-    ]
+    return statuses
 
 
 async def run_startup_probes(
@@ -352,14 +364,14 @@ async def run_startup_probes(
                 "LLM probe OK: %s (%dms) — used by %s",
                 cfg.as_label(),
                 result.latency_ms,
-                ", ".join(use_cases),
+                ", ".join(uc if isinstance(uc, str) else uc[0] for uc in use_cases),
             )
         else:
             logger.warning(
                 "LLM probe FAILED: %s — %s — used by %s",
                 cfg.as_label(),
                 result.error,
-                ", ".join(use_cases),
+                ", ".join(uc if isinstance(uc, str) else uc[0] for uc in use_cases),
             )
 
     _STATUS.set_results(statuses)

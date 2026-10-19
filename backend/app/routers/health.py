@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.dependencies import get_db
 from app.schemas.quota import QuotaStatus
-from app.services import quota_service
+from app.services import quota_service, scheduler_service
 from app.services.llm_smoke import _STATUS
 
 router = APIRouter()
@@ -48,6 +50,17 @@ def health_check():
 def health_llm():
     """Detailed per-use-case LLM probe status."""
     return _STATUS.as_dict()
+
+
+@router.get("/health/scheduler")
+def scheduler_status(db: Session = Depends(get_db)) -> dict:
+    """S-8.3.1: scheduler configuration, the kinds THIS process can
+    dispatch, and `scheduled_runs` row counts (total / enabled / due /
+    claimed). `last_run_at` is the newest dispatch across all rows — the
+    cheapest "is beat alive" signal once anything is scheduled. Note the
+    API process's kind list can differ from the worker's; the worker is
+    the one that dispatches."""
+    return scheduler_service.status(db)
 
 
 @router.get("/health/quota", response_model=QuotaStatus)

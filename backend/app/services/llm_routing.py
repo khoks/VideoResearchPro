@@ -716,7 +716,10 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     # --- Visual understanding (R1 / E-1.18) ----------------------------
     "visual_select_moments": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
+        # S-1.18.5 (2026-10-19, D-073): medium → low. Same model, same picks
+        # 76% of the time (medium agrees with itself 85%), $0.067 instead of
+        # $0.097 per video; cheaper models agreed 59% (luna) and 24% (mini).
+        default_config=UseCaseConfig("openai", "gpt-5.5", "low"),
         summary=(
             "Read a timestamped transcript and decide WHERE something "
             "visually important happens — a demo, a slide, a chart, a "
@@ -740,7 +743,12 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "visual_describe_frame": UseCaseInfo(
         default_route="primary",
-        default_config=UseCaseConfig("openai", "gpt-5.5", "low"),
+        # S-1.18.5 (2026-10-19, D-073): image-grounded blind grading on 33
+        # frames x 2 graders — gpt-5.5 4.52/5 (3 of 66 unusable), this model
+        # 4.21 (5 unusable), gpt-5.6-luna 3.97 (22 unusable). Flash-lite costs
+        # $0.008 per video against $0.122 for gpt-5.5 and keeps the whole
+        # visual pass under the $0.10 ceiling the R1 protocol fixed.
+        default_config=UseCaseConfig("google", "gemini-3.1-flash-lite", "off"),
         summary=(
             "MULTIMODAL. Describe one captured frame IN TRANSCRIPT "
             "CONTEXT: what is on screen, and specifically what it adds "

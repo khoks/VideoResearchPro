@@ -10,7 +10,10 @@ One-command dev loop:
   1. Verify Redis Windows service is running (start it if stopped).
   2. Start uvicorn on 127.0.0.1:8000 (detached, logs to .uvicorn.out.log
      + .uvicorn.err.log at repo root).
-  3. Start Celery worker (--pool=solo per Windows convention).
+  3. Start Celery worker (--pool=solo per Windows convention), then
+     exactly ONE Celery beat (the scheduler tick, S-8.3.1). Any beat
+     left over from an earlier run is killed first: two beats double
+     the tick load.
   4. Poll /api/v1/health until the backend is responsive.
   5. Start `npm run dev` (Vite) on 5173.
   6. Poll port 5173 until the dev server accepts connections.
@@ -71,6 +74,11 @@ $backendOut  = Join-Path $repoRoot '.uvicorn.out.log'
 $backendErr  = Join-Path $repoRoot '.uvicorn.err.log'
 $celeryOut   = Join-Path $repoRoot '.celery.out.log'
 $celeryErr   = Join-Path $repoRoot '.celery.err.log'
+$beatOut     = Join-Path $repoRoot '.celerybeat.out.log'
+$beatErr     = Join-Path $repoRoot '.celerybeat.err.log'
+# Beat persists its last-run bookkeeping here (shelve; gitignored under
+# backend/data/). Deleting it is harmless: the first tick catches up.
+$beatSchedule = Join-Path $backendDir 'data\celerybeat-schedule'
 $frontendOut = Join-Path $repoRoot '.frontend.out.log'
 $frontendErr = Join-Path $repoRoot '.frontend.err.log'
 
@@ -215,6 +223,30 @@ try {
         -PassThru
     $script:children.Add($celery)
 
+    # ---- 3b. Celery beat (the scheduler tick, S-8.3.1) ----
+    # Beat only fires `scheduler.tick` every SCHEDULER_TICK_SECONDS; the
+    # schedule itself is rows in `scheduled_runs`. Celery requires a single
+    # beat per cluster, and we deliberately do NOT use --pidfile for that:
+    # Celery's stale-pidfile check calls os.kill(pid, 0), which on Windows
+    # TERMINATES whatever process now owns that pid. The launcher is the
+    # singleton guard instead: kill any beat from an earlier run first.
+    $staleBeat = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and $_.CommandLine -like '*app.tasks.celery_app*beat*' }
+    foreach ($p in $staleBeat) {
+        Write-Step "  killing stale Celery beat (PID $($p.ProcessId))" 'Yellow'
+        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+    New-Item -ItemType Directory -Force -Path (Split-Path $beatSchedule -Parent) | Out-Null
+    Write-Step "Starting Celery beat (scheduler tick)..."
+    $beat = Start-Process -FilePath $venvCelery `
+        -ArgumentList @('-A', 'app.tasks.celery_app', 'beat', '--loglevel=info', '-s', $beatSchedule) `
+        -WorkingDirectory $backendDir `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $beatOut `
+        -RedirectStandardError $beatErr `
+        -PassThru
+    $script:children.Add($beat)
+
     # ---- 4. Wait for backend health ----
     Write-Step "Waiting for backend /api/v1/health (up to $HealthTimeoutSec s)..."
     if (-not (Wait-Http200 -url 'http://127.0.0.1:8000/api/v1/health' -timeoutSec $HealthTimeoutSec)) {
@@ -266,6 +298,7 @@ try {
     Write-Host "  Pratidhvani is running:" -ForegroundColor Green
     Write-Host "    backend  http://127.0.0.1:8000  (logs: .uvicorn.*.log)" -ForegroundColor Gray
     Write-Host "    celery   --pool=solo            (logs: .celery.*.log)"  -ForegroundColor Gray
+    Write-Host "    beat     scheduler.tick         (logs: .celerybeat.*.log)" -ForegroundColor Gray
     if (-not $NoFrontend) {
         Write-Host "    frontend http://localhost:5173  (logs: .frontend.*.log)" -ForegroundColor Gray
     }
@@ -284,6 +317,7 @@ try {
                 $label = switch ($p.Id) {
                     $backend.Id  { 'backend'  }
                     $celery.Id   { 'celery'   }
+                    $beat.Id     { 'beat'     }
                     default      { if (-not $NoFrontend -and $p.Id -eq $frontend.Id) { 'frontend' } else { 'service' } }
                 }
                 Write-Step "$label exited unexpectedly (exit $($p.ExitCode)). See the matching .err.log for details." 'Red'
@@ -306,10 +340,11 @@ finally {
         $label = switch ($p.Id) {
             { $backend  -and $_ -eq $backend.Id  } { 'backend'  }
             { $celery   -and $_ -eq $celery.Id   } { 'celery'   }
+            { $beat     -and $_ -eq $beat.Id     } { 'beat'     }
             { $frontend -and $_ -eq $frontend.Id } { 'frontend' }
             default                                { 'service'  }
         }
         Stop-Tree -proc $p -label $label
     }
-    Write-Step "Done. Logs preserved at .uvicorn.*, .celery.*, .frontend.* in $repoRoot." 'Green'
+    Write-Step "Done. Logs preserved at .uvicorn.*, .celery.*, .celerybeat.*, .frontend.* in $repoRoot." 'Green'
 }

@@ -23,7 +23,7 @@ neither can see that the other has one.
 D-070 (2026-10-19): the grant references ``documents.document_id``, the real
 primary key. Until then it referenced the legacy ``documents.video_id``, which
 is NULL for every non-video source, so PDFs and pasted pages were ingested
-but granted to nobody. Migration ``c7d8e9f0a1b2`` re-keyed the table.
+but granted to nobody. Migration ``d8e9f0a1b2c3`` re-keyed the table.
 """
 from __future__ import annotations
 

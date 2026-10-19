@@ -271,7 +271,7 @@ def query_collection(
     if isinstance(query_text_or_n_results, str):
         warnings.warn(
             "query_collection(job_id, query_text, ...) is deprecated; "
-            "call query_collection(query_text, video_ids=[...]) instead.",
+            "call query_collection(query_text, document_ids=[...]) instead.",
             DeprecationWarning,
             stacklevel=2,
         )

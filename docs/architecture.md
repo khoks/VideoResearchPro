@@ -38,7 +38,7 @@ This document is the single source of truth for **how the running system is wire
                                               └──────────────────┘
 ```
 
-Three processes run side-by-side in development: the FastAPI app (`uvicorn`), the Celery worker (`celery -A app.tasks.celery_app worker --pool=solo`), and Redis (Windows service via winget). SQLite and ChromaDB are file-backed under `data/`. The frontend is a separate Vite dev server that proxies API calls to the backend.
+Four processes run side-by-side in development: the FastAPI app (`uvicorn`), the Celery worker (`celery -A app.tasks.celery_app worker --pool=solo`), exactly one Celery beat (`celery -A app.tasks.celery_app beat`, the scheduler tick added by S-8.3.1), and Redis (Windows service via winget). SQLite and ChromaDB are file-backed under `data/`. The frontend is a separate Vite dev server that proxies API calls to the backend.
 
 Production targets the same shape, with SQLite swapped for Postgres and ChromaDB hosted (or pgvector); see [saas-roadmap.md](saas-roadmap.md).
 
@@ -65,6 +65,17 @@ Production targets the same shape, with SQLite swapped for Postgres and ChromaDB
 - On Windows, **must use `--pool=solo`** because the multiprocessing prefork pool doesn't work cleanly with our embedding model + ChromaDB locks.
 - Does **not** run the LLM smoke check. Task-time LLM failures surface on the Jobs page via the worker's progress publisher.
 - A backfill runs once per worker startup that idempotently upserts every existing row from `qa_exchanges`, `library_qa_exchanges`, and `qa_history_exchanges` into the `qa_library_global` Chroma collection.
+
+### Celery beat (`celery -A app.tasks.celery_app beat -s data/celerybeat-schedule`)
+
+Added 2026-10-19 (S-8.3.1, the scheduler the saved searches, newsletter and Echo syncs run on; plan in [plans/m3-saved-searches-alerts.md](plans/m3-saved-searches-alerts.md)).
+
+- **One static entry.** Beat fires exactly one task, `scheduler.tick` (`app/tasks/scheduler_tasks.py`), every `SCHEDULER_TICK_SECONDS` (default 300) on the `default` queue with `expires` set to the same interval, so ticks that sat unconsumed while the worker was down are dropped rather than replayed. Nothing else is ever a beat entry: everything that runs on a schedule is a **row** in `scheduled_runs`, which keeps the schedule inside the SQLite backup and needs no Redis-backed beat store (RedBeat and friends were rejected in the plan).
+- **The tick** (`app/services/scheduler_service.run_tick`) selects enabled rows with `next_run_at` within `SCHEDULER_GRACE_SECONDS` of now, claims each with a single `UPDATE … WHERE claimed_at IS NULL OR claimed_at < now − SCHEDULER_LEASE_SECONDS` (so a second tick, or a second beat, claims nothing), dispatches the row's kind through `task_routing_service.dispatch_for_tenant_id` (tier queues apply), computes the next slot from `max(now, next_run_at)` and releases the claim. A failed dispatch is retried at the next tick up to `SCHEDULER_MAX_RETRY_TICKS` times, then waits for its cadence; an unknown kind is recorded as `no_handler` and advanced.
+- **Cadences are human, never cron**: `daily` / `weekly` / `monthly` with hour, minute, weekday or day-of-month (1–28) and an IANA zone, or `every` N seconds. `next_run_at` is computed by Celery's own `crontab.remaining_delta` on the row's local wall clock and converted back to UTC, so a 09:00 local run stays 09:00 local across DST. Every datetime in the table is naive UTC (SQLite drops tzinfo).
+- **Kinds register themselves** from the task module that defines their Celery task (`scheduler_service.register_kind("saved_search", run_saved_search)`); `celery_app.autodiscover_tasks` must import that module. The API process and the worker may know different kinds; only the worker dispatches.
+- **Exactly one beat.** Celery's embedded `worker -B` is unverified with `--pool=solo` and discouraged for production, so beat is its own process started by `scripts/start.ps1` and `scripts/restart_services.ps1`, which kill any earlier beat before starting one. `--pidfile` is deliberately not used: Celery's stale-pidfile probe is `os.kill(pid, 0)`, which on Windows terminates whatever process now owns that pid.
+- `GET /api/v1/health/scheduler` reports the configuration, the kinds this process can dispatch and row counts (total / enabled / due / claimed) plus the newest `last_run_at`. `SCHEDULER_ENABLED=false` registers no beat entry, and a tick that still arrives no-ops.
 
 ### Redis
 

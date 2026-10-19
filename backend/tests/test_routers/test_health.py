@@ -167,7 +167,7 @@ def test_health_llm_carries_guidance_and_measured_warnings(client, reset_llm_sta
 
     data = client.get("/api/v1/health/llm").json()
     describe = data["use_cases"]["visual_describe_frame"]
-    assert describe["guidance"]["decision_id"] == "D-073"
+    assert describe["guidance"]["decision_id"] == "D-081"  # default chosen by the user; luna verdict stays D-073
     assert [(w["kind"], w["decision_id"]) for w in describe["warnings"]] == [
         ("unacceptable", "D-073")
     ]

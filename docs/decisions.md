@@ -2463,7 +2463,7 @@ note](notes/2026-10-19-code-mixing-detection.md#9-transcript-level-primary-langu
 
 ## D-081 — Frame describer default: spend against report-level quality (2026-10-19)
 
-**Status:** proposed — the choice is the user's: it is a spend decision on an opt-in feature, and the $0.10-per-video ceiling it overrides was set by Claude in the R1 protocol, not by the user.
+**Status:** accepted 2026-10-19 — **the user chose option 2, gpt-5.5**, "for the strongest report-level result", accepting about $0.20 per video for the visual pass. Supersedes D-073's describer choice; D-073's selection tier (gpt-5.5 at low reasoning) stands. Claude had recommended option 1; the recommendation is kept below for the record.
 
 **Context.** [D-073](#d-073--frame-description-moves-to-gemini-31-flash-lite-on-image-grounded-grading-selection-stays-on-gpt-55-2026-10-19) moved frame description to gemini-3.1-flash-lite to meet a $0.10-per-video ceiling. [D-075](#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19) found that the report-level benefit disappeared with that describer, and that the describer must be chosen at report level. Four report-level runs and two per-frame gradings now exist ([protocol note](notes/2026-10-18-r1-visual-measurement.md)).
 

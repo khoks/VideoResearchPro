@@ -14,9 +14,15 @@ Parameters (``output.parameters_json``):
 - ``include_qa`` (bool, default True) — append the job's Q&A history as a
   "Questions & Answers" subsection per chapter.
 - ``include_toc`` (bool, default True) — a top-of-document table of contents.
+- ``formats`` (list, S-6.1.5) — files to build beside the Markdown: ``epub``
+  and/or ``pdf``. Absent means EPUB, plus PDF when a PDF engine is installed;
+  the router writes the resolved list back (``["md", "epub", "pdf"]``) so the
+  row records what was built. An explicit ``pdf`` with no engine is refused
+  before the row exists (501, with what to install).
 
-The generated Markdown lands in ``output.content_text``. ``content_path``
-stays None until PDF / EPUB (S-6.1.5).
+The generated Markdown lands in ``output.content_text``; the EPUB and PDF are
+artifacts under ``OUTPUTS_DIR`` (`output_artifacts`), and ``content_path``
+points at the PDF when there is one, else the EPUB.
 """
 from __future__ import annotations
 
@@ -34,8 +40,9 @@ from app.models.job_video import JobVideo
 from app.models.output import Output
 from app.models.qa_exchange import QAExchange
 from app.models.user import User
-from app.services import output_citation_service, report_service, visibility_service
+from app.services import output_artifacts, output_citation_service, report_service, visibility_service
 from app.services.output_service import OutputError, report_progress
+from app.services.outputters import book_epub, book_html, book_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -172,10 +179,67 @@ def _job_chapter(
     return title, "\n\n".join(p for p in parts if p), specs
 
 
+# S-6.1.5: files a book can be built as beside its Markdown, in build order.
+FILE_FORMATS = ("epub", "pdf")
+
+
+def requested_formats(params: dict[str, Any]) -> list[str]:
+    """The files to build beside the Markdown. ``formats`` absent: EPUB, plus
+    PDF when this process has an engine. Present: exactly those (``md`` is
+    always produced and may be listed)."""
+    raw = params.get("formats")
+    if raw is None:
+        return ["epub"] + (["pdf"] if book_pdf.pdf_engine() else [])
+    if not isinstance(raw, list) or not all(isinstance(f, str) for f in raw):
+        raise OutputError('parameters.formats must be a list of format names, e.g. ["epub", "pdf"].')
+    wanted: set[str] = set()
+    for name in raw:
+        fmt = name.strip().lower()
+        if fmt == "md":
+            continue
+        if fmt not in FILE_FORMATS:
+            raise OutputError(f"A book can be downloaded as md, epub or pdf; {name!r} is not one of them.")
+        wanted.add(fmt)
+    return [f for f in FILE_FORMATS if f in wanted]
+
+
 class BookMarkdownOutputter:
     """Deterministic-concatenation book outputter; one chapter per job."""
 
     kind = "book"
+
+    def prepare_parameters(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Checked at POST time, before the row exists (S-6.1.5): resolve
+        ``formats`` so the row records what will be built. A PDF with no
+        engine raises ``OutputUnavailable`` (the router's 501)."""
+        formats = requested_formats(params)
+        if "pdf" in formats:
+            book_pdf.require_engine()
+        return {**params, "formats": ["md", *formats]}
+
+    def format_options(self) -> dict[str, Any]:
+        """What ``GET /author/kinds`` reports for books: the formats this
+        server can build, and why any other one cannot."""
+        engine = book_pdf.pdf_engine()
+        available = ["md", *FILE_FORMATS] if engine else ["md", "epub"]
+        unavailable = {} if engine else {"pdf": book_pdf.unavailable_message()}
+        return {"available": available, "unavailable": unavailable, "pdf_engine": engine}
+
+    def _write_files(self, db: Session, output: Output, formats: list[str]) -> None:
+        """Build the EPUB and/or PDF from the finished manuscript (S-6.1.5).
+        A failure fails the whole output: the user asked for the file, and a
+        book that silently lacks it would look complete."""
+        if not formats:
+            return
+        book = book_html.render_book_html(output.content_text or "", title=output.title)
+        if "epub" in formats:
+            report_progress(db, output, 92, "Building the EPUB")
+            epub = book_epub.build_epub(book, identifier=book_epub.book_identifier(output.id))
+            output_artifacts.write_artifact(output, "epub", epub)
+        if "pdf" in formats:
+            report_progress(db, output, 95, "Printing the PDF")
+            pdf = book_pdf.render_pdf(book_html.html_document(book))
+            output_artifacts.write_artifact(output, "pdf", pdf)
 
     def generate(self, db: Session, user: User, output: Output) -> None:
         try:
@@ -189,6 +253,11 @@ class BookMarkdownOutputter:
 
         include_qa = bool(params.get("include_qa", True))
         include_toc = bool(params.get("include_toc", True))
+        # Before any chapter work: a PDF the worker cannot print fails now,
+        # with what to install, not after the whole manuscript is built.
+        formats = requested_formats(params)
+        if "pdf" in formats:
+            book_pdf.require_engine()
 
         # Collect chapters first so the TOC can reference them.
         chapters: list[tuple[str, str, str]] = []
@@ -217,7 +286,7 @@ class BookMarkdownOutputter:
         ]
 
         if include_toc and chapters:
-            manuscript += ["## Table of Contents", ""]
+            manuscript += [f"## {book_html.TOC_HEADING}", ""]
             for i, (ch_title, ch_slug, _body) in enumerate(chapters, start=1):
                 manuscript.append(f"{i}. [{ch_title}](#{ch_slug})")
             manuscript.append("")
@@ -230,9 +299,10 @@ class BookMarkdownOutputter:
         if citations:
             # GFM footnote definitions: the reader, GitHub and the EPUB/PDF
             # converters gather them into one numbered list under this heading.
-            manuscript += ["## Endnotes", ""]
+            manuscript += [f"## {book_html.ENDNOTES_HEADING}", ""]
             manuscript += output_citation_service.endnote_definitions(citations)
             manuscript.append("")
 
         output.content_text = "\n".join(manuscript).strip() + "\n"
         output_citation_service.record_citations(db, output, citations)
+        self._write_files(db, output, formats)

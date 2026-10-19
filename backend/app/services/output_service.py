@@ -92,6 +92,12 @@ class OutputCancelled(OutputError):
     """Raised by ``report_progress`` when the row was cancelled meanwhile."""
 
 
+class OutputUnavailable(OutputError):
+    """A requested format needs a converter this server does not have
+    (S-6.1.5: a book's PDF). The router answers 501 with the message, which
+    says what to install; in the worker it fails the row like any error."""
+
+
 # ---------------------------------------------------------------------------
 # Outputter Protocol + registry
 # ---------------------------------------------------------------------------

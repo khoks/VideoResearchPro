@@ -1,0 +1,54 @@
+/* Book typography for the EPUB and PDF downloads (S-6.1.5).
+ * Mirrors the reading room (frontend/src/theme.ts): Source Serif body,
+ * Fraunces display, a Devanagari face for quoted original script, and a
+ * reading measure. Only locally installed fonts are used; the families
+ * after the web fonts are what e-readers and the PDF engine actually find
+ * (Georgia / Noto Serif for Latin, Noto Serif Devanagari / Nirmala UI /
+ * Mangal for Devanagari). */
+html { font-size: 100%; }
+body {
+  font-family: "Source Serif Pro", "Source Serif 4", Georgia, "Noto Serif",
+    "Tiro Devanagari Hindi", "Noto Serif Devanagari", "Nirmala UI", Mangal, serif;
+  line-height: 1.55;
+  color: #1f1d1a;
+  margin: 0;
+}
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Fraunces", Georgia, "Noto Serif", "Noto Serif Devanagari", "Nirmala UI", serif;
+  line-height: 1.2;
+  font-weight: 600;
+  margin: 1.4em 0 0.5em;
+}
+h1 { font-size: 2em; margin-top: 0; }
+h2 { font-size: 1.5em; }
+h3 { font-size: 1.25em; }
+h4 { font-size: 1.1em; }
+h5, h6 { font-size: 1em; }
+p { margin: 0 0 0.8em; }
+ul, ol { margin: 0 0 0.8em; padding-left: 1.4em; }
+li { margin: 0.2em 0; }
+li > p { margin: 0.2em 0; }
+blockquote {
+  margin: 0.8em 0;
+  padding: 0 0 0 1em;
+  border-left: 3px solid #c9bfae;
+  color: #4a443c;
+}
+a { color: #7a3b12; text-decoration: none; }
+code, pre {
+  font-family: "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace;
+  font-size: 0.88em;
+}
+pre { white-space: pre-wrap; background: #f5f1ea; padding: 0.6em; }
+table { border-collapse: collapse; width: 100%; margin: 0.8em 0; font-size: 0.85em; }
+th, td { border: 1px solid #d8cfc0; padding: 0.3em 0.45em; text-align: left; vertical-align: top; }
+th { background: #f5f1ea; }
+hr { border: 0; border-top: 1px solid #d8cfc0; margin: 1.2em 0; }
+sup.footnote-ref { font-size: 0.7em; line-height: 0; }
+sup.footnote-ref a { padding: 0 0.1em; }
+section.footnotes { font-size: 0.85em; }
+section.footnotes ol { padding-left: 2em; }
+a.footnote-backref { margin-left: 0.25em; }
+.image-alt { font-style: italic; color: #6b6358; }
+nav#toc ol, nav#toc ol ol { list-style: none; padding-left: 0; }
+nav#toc ol ol { padding-left: 1.2em; }

@@ -352,7 +352,7 @@ Per-channel analytics: word-cloud, recurring topics, evolving stance over time, 
 
 ---
 
-### M8 — Reading-room reader for reports 🔵
+### M8 — Reading-room reader for reports 🟢
 
 Replace iframe-modal HTML report with a native MDX-rendered reading view: typography, drop caps, inline references on hover, sticky outline, reading-progress, print-friendly.
 
@@ -362,7 +362,7 @@ Replace iframe-modal HTML report with a native MDX-rendered reading view: typogr
 
 **UI:** New `/reports/:id` route with full-page reading view; modal becomes a quick-peek alternative.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.8](initiatives.md#e-88--reading-room--the-report-as-a-native-reading-view-m8); plan [`plans/m8-reading-room.md`](plans/m8-reading-room.md). Reports have no Markdown source (they are LLM-written HTML), so the reader renders sanitised HTML sections from a new content endpoint rather than MDX. First in the recommended build order: it unlocks M11, M12 and the book reader.
+**Status.** 🟢 shipped 2026-10-19 as [E-8.8](initiatives.md#e-88--reading-room--the-report-as-a-native-reading-view-m8) (PRs [#244](https://github.com/khoks/VideoResearchPro/pull/244), [#254](https://github.com/khoks/VideoResearchPro/pull/254), [#261](https://github.com/khoks/VideoResearchPro/pull/261)); plan [`plans/m8-reading-room.md`](plans/m8-reading-room.md). Reports render at `/reports/:jobId` from sanitised HTML with an outline, drop cap, progress, citation cards and a print stylesheet; knowledge reports (`/knowledge/:videoId`) and books (`/author/outputs/:id`) share the shell (see [D-085](decisions.md#d-085--reading-room-reports-stay-html-sanitised-and-parsed-in-the-browser-one-shared-citation-card-fed-by-the-runs-documents-2026-10-19), [D-086](decisions.md#d-086--markdown-readers-react-markdowns-own-pipeline-run-once-with-a-tree-transform-the-outline-is-the-two-shallowest-structural-heading-levels-2026-10-19)). Remaining: T-8.8.1.5 retires the `?token=` fallback on the legacy HTML route. Originally accepted 2026-10-18.
 
 ---
 
@@ -408,7 +408,7 @@ Signed URL for a single report → share with friends. Paves the way for SaaS sh
 
 ---
 
-### M12 — Mobile reading mode 🔵
+### M12 — Mobile reading mode 🟢
 
 Today the layout collapses to stacked column at 640px. Improve specifically the *reading* experience (reports, Q&A answers, knowledge artifacts) for mobile — appropriate type sizes, tap targets, sticky controls.
 
@@ -418,7 +418,7 @@ Today the layout collapses to stacked column at 640px. Improve specifically the 
 
 **UI:** Responsive refinements across reading-heavy pages.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.12](initiatives.md#e-812--mobile-reading-mode-m12); plan [`plans/m12-mobile-reading.md`](plans/m12-mobile-reading.md). Builds on the M8 reader; not a general mobile redesign. Device-emulated screenshot tests are part of the acceptance.
+**Status.** 🟢 shipped 2026-10-19 as [E-8.12](initiatives.md#e-812--mobile-reading-mode-m12) (PRs [#269](https://github.com/khoks/VideoResearchPro/pull/269), [#272](https://github.com/khoks/VideoResearchPro/pull/272)); plan [`plans/m12-mobile-reading.md`](plans/m12-mobile-reading.md). A bottom reading toolbar below 1200 px, the Q&A composer docked above the keyboard, 44 px controls, safe areas, 16 px fields, device-emulated screenshot tests (iPhone / Pixel / 320 px, light and dark), and an installable web-app manifest (see [D-087](decisions.md#d-087--mobile-reading-and-install-a-reading-toolbar-below-1200-px-a-docked-composer-lifted-by-visualviewport-hermetic-device-tests-a-manifest-without-a-service-worker-2026-10-19)). Not done: a pass on a real phone, which the plan leaves to the user. Originally accepted 2026-10-18.
 
 ---
 

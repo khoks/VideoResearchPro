@@ -68,10 +68,29 @@ export function LibraryPage() {
   // anywhere in the app is a plain link.
   const [searchParams, setSearchParams] = useSearchParams();
   const tagFilter = searchParams.get('tag') ?? '';
+  // `?document=<id>` is where a palette / search result for a source lands
+  // (S-8.2.2): the list narrows to that one row until "Show all sources".
+  const documentFilter = searchParams.get('document') ?? '';
   const [tab, setTab] = useState<TabKey>(() => {
     const requested = searchParams.get('tab');
+    if (searchParams.get('document')) return 'videos';
     return requested === 'channels' || requested === 'ingest' ? requested : 'videos';
   });
+
+  useEffect(() => {
+    if (documentFilter) setTab('videos');
+  }, [documentFilter]);
+
+  const clearDocumentFilter = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('document');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
 
   const [search, setSearch] = useState('');
   const [language, setLanguage] = useState('');
@@ -113,6 +132,7 @@ export function LibraryPage() {
     channel_id: channelFilter || undefined,
     transcript_status: transcriptStatus || undefined,
     tag: tagFilter || undefined,
+    document_id: documentFilter || undefined,
     sort,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
@@ -229,6 +249,7 @@ export function LibraryPage() {
         <IngestTab onViewShelf={handleViewShelf} />
       ) : tab === 'videos' ? (
         <>
+        {documentFilter && <OneSourceBanner onShowAll={clearDocumentFilter} />}
         <TagFilterBar value={tagFilter} onChange={setTagFilter} />
         <VideosTab
           search={search}
@@ -442,6 +463,7 @@ function VideosTab({
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Search title or channel…"
               aria-label="Search sources"
+              data-page-search
             />
           </div>
           <div style={{ flex: '0 0 170px' }}>
@@ -702,3 +724,32 @@ function ChannelRowWithSyncWatcher({
   );
 }
 
+/** Shown while `?document=` narrows the list to the one source a search
+ *  result pointed at (S-8.2.2). */
+function OneSourceBanner({ onShowAll }: { onShowAll: () => void }) {
+  const c = useColors();
+  return (
+    <div
+      role="status"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: space['2'],
+        margin: `0 0 ${space['3']}`,
+        padding: `${space['2']} ${space['3']}`,
+        background: c.accentSubtle,
+        borderRadius: radius.md,
+        fontFamily: fonts.ui,
+        fontSize: fontSize.sm,
+        color: c.textPrimary,
+      }}
+    >
+      <span>Showing the one source you opened from search.</span>
+      <Button size="sm" variant="secondary" onClick={onShowAll}>
+        Show all sources
+      </Button>
+    </div>
+  );
+}

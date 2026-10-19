@@ -656,10 +656,24 @@ def resolve_quote_mode(span_mode: str, transcript_profile: dict[str, Any]) -> st
 # get NO fields: the common case stays byte-identical, and an absent field
 # means "English, or chunked before this shipped".
 
+# Below this share of non-English words a source counts as plain English and
+# its chunks carry no code-mixing fields. Measured 2026-10-19 (T-1.16.2.6):
+# English talks and Indian-English podcasts read 0.0–0.6% (detector false
+# positives, mostly unseen names); YouTube comment threads under Hinglish
+# videos read 3.3–30%. The first cut — "English-primary and plain-English
+# quote mode means English" — dropped those threads entirely: 13–17% of their
+# words were Hindi, yet no chunk told the model so.
+DOCUMENT_PRESENCE_SHARE = 0.03
+
+
 def chunk_metadata_for_transcript(segments_or_text: Any) -> dict[str, Any]:
     """Document-level fields for chunk metadata; empty for English sources."""
     p = profile_transcript(segments_or_text)
-    if p["primary_language"] in ("en", "none") and p["quote_mode"] == PLAIN_ENGLISH:
+    if (
+        p["primary_language"] in ("en", "none")
+        and p["quote_mode"] == PLAIN_ENGLISH
+        and p["hi_share"] < DOCUMENT_PRESENCE_SHARE
+    ):
         return {}
     return {
         "code_mix_primary": p["primary_language"],
@@ -922,3 +936,118 @@ def llm_detect(texts: list[str], llm: Any | None = None) -> list[dict | None]:
             continue
         results[b:b + len(batch)] = parsed
     return results
+
+
+# --- English rendering for retrieval (T-1.16.2.5 part B) --------------------------
+#
+# The analysis stages are LLM calls that are told the source's language and
+# translate as they read. Retrieval is not: it compares an English question
+# with the chunk's embedding, and the multilingual embedder handles romanised
+# Hindi badly (MRR 0.402, against 0.565 for the same chunks in Devanagari and
+# 0.805 rendered in English). So a non-English chunk is EMBEDDED as its
+# English rendering, while its stored text — what gets quoted — stays the
+# original. Rendered once, at insert time, and stored as `text_en`.
+
+RENDER_BATCH_SIZE = 6
+RENDER_MAX_COMPLETION_TOKENS = 8000
+
+
+def needs_english_rendering(meta: dict[str, Any] | None) -> bool:
+    """Whether a chunk should be embedded as an English rendering.
+
+    Only chunks of a non-English source (they carry `code_mix_*` fields) that
+    are themselves more than light borrowing — or Hindi in grammar. An
+    English passage inside a Hindi talk embeds fine as it is.
+    """
+    meta = meta or {}
+    if not meta.get("code_mix_primary") or meta.get("text_en"):
+        return False
+    from app.config import settings
+
+    share = meta.get("code_mix_chunk_share")
+    if share is None:
+        share = meta.get("code_mix_share") or 0.0
+    return share > settings.CODE_MIX_BORROWING_MAX_SHARE or meta.get("code_mix_chunk_matrix") == "hi"
+
+
+def parse_render_payload(raw: str, n: int) -> list[str | None] | None:
+    """`{"chunks": [{"i", "english"}]}` -> one rendering per chunk, None where missing."""
+    content = (raw or "").strip()
+    if content.startswith("```"):
+        lines = content.splitlines()
+        end = -1 if lines and lines[-1].startswith("```") else len(lines)
+        content = "\n".join(lines[1:end]).strip()
+    a, b = content.find("{"), content.rfind("}")
+    if a < 0 or b < a:
+        return None
+    try:
+        data = json.loads(content[a:b + 1])
+    except json.JSONDecodeError:
+        return None
+    items = data.get("chunks") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return None
+    out: list[str | None] = [None] * n
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            i = int(item.get("i"))
+        except (TypeError, ValueError):
+            continue
+        text = str(item.get("english") or "").strip()
+        if 0 <= i < n and text:
+            out[i] = text
+    return out
+
+
+def render_english(texts: list[str], llm: Any | None = None) -> list[str | None]:
+    """English renderings, one per text; None where a batch failed. Never raises."""
+    from langchain_core.messages import HumanMessage
+
+    from app.agents.prompts.code_mixing_prompts import CODE_MIXING_RENDER_PROMPT
+    from app.services.llm_service import get_llm_for, response_text
+
+    out: list[str | None] = [None] * len(texts)
+    client = llm
+    for b in range(0, len(texts), RENDER_BATCH_SIZE):
+        batch = texts[b:b + RENDER_BATCH_SIZE]
+        numbered = "\n\n".join(f"[{i}] {t}" for i, t in enumerate(batch))
+        try:
+            client = client or get_llm_for(
+                "code_mixing_render_english", temperature=0.0,
+                max_tokens=RENDER_MAX_COMPLETION_TOKENS,
+            )
+            response = client.invoke(
+                [HumanMessage(content=CODE_MIXING_RENDER_PROMPT.format(chunks=numbered))]
+            )
+            parsed = parse_render_payload(response_text(response), len(batch))
+        except Exception:
+            logger.exception("code_mixing_render_english failed for batch at %d", b)
+            continue
+        if parsed is None:
+            logger.warning("code_mixing_render_english returned unparseable JSON at %d", b)
+            continue
+        out[b:b + len(batch)] = parsed
+    return out
+
+
+def ensure_english_renderings(chunks: list[dict], llm: Any | None = None) -> int:
+    """Set `metadata["text_en"]` on every chunk that needs one. Returns how
+    many were rendered. Fail-soft: a chunk whose rendering fails keeps
+    embedding as written, which is what every chunk did before."""
+    from app.config import settings
+
+    if not settings.CODE_MIX_ENGLISH_RENDERING_ENABLED:
+        return 0
+    todo = [c for c in chunks if needs_english_rendering(c.get("metadata"))]
+    if not todo:
+        return 0
+    rendered = render_english([c.get("text") or "" for c in todo], llm=llm)
+    done = 0
+    for chunk, english in zip(todo, rendered):
+        if english:
+            chunk.setdefault("metadata", {})["text_en"] = english
+            done += 1
+    logger.info("English renderings: %d of %d non-English chunks", done, len(todo))
+    return done

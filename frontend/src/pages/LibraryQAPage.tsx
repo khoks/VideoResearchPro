@@ -7,6 +7,8 @@ import {
 } from '../hooks/useLibraryQA';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { CitationLink } from '../components/citation';
+import { DockedComposer, QADock, QAThread } from '../components/qa/Composer';
+import { useExchangeFocus } from '../hooks/useExchangeFocus';
 import { NotesPanel } from '../components/notes';
 import {
   Badge,
@@ -96,6 +98,9 @@ export function LibraryQAPage() {
     resetToAsk();
   };
 
+  // `?exchange=<id>` from the palette lands on that card (S-8.2.2).
+  useExchangeFocus(!!history?.length);
+
   return (
     <div style={{ maxWidth: measure.grid, margin: '0 auto' }}>
       <header style={{ marginBottom: space['5'] }}>
@@ -126,6 +131,7 @@ export function LibraryQAPage() {
       </header>
 
       <Card>
+        <QADock>
         <div
           style={{
             display: 'flex',
@@ -191,6 +197,7 @@ export function LibraryQAPage() {
                 {FEATURE_UNAVAILABLE_MSG}.
               </div>
             )}
+            <DockedComposer>
             <form
               onSubmit={handleAsk}
               style={{
@@ -223,6 +230,7 @@ export function LibraryQAPage() {
                 Ask
               </Button>
             </form>
+            </DockedComposer>
             {clarifyQuestion.isPending && <InfoStripe text="Listening for the echo of your question…" />}
           </>
         )}
@@ -370,7 +378,7 @@ export function LibraryQAPage() {
         )}
 
         {history && history.length > 0 && (
-          <div
+          <QAThread
             style={{
               display: 'flex',
               flexDirection: 'column',
@@ -381,8 +389,9 @@ export function LibraryQAPage() {
             {history.map((qa) => (
               <LibraryQAExchangeCard key={qa.id} qa={qa} />
             ))}
-          </div>
+          </QAThread>
         )}
+        </QADock>
       </Card>
     </div>
   );
@@ -433,6 +442,7 @@ function LibraryQAExchangeCard({ qa }: { qa: LibraryQAExchange }) {
 
   return (
     <div
+      id={`exchange-${qa.id}`}
       style={{
         padding: space['4'],
         background: c.surfaceAlt,

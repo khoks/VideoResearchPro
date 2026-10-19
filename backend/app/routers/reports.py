@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db
 from app.schemas.report import ReportBodyResponse
-from app.services import job_service, report_service
+from app.services import job_service, onboarding_service, report_service
 
 router = APIRouter(
     prefix="/jobs/{job_id}/report",
@@ -40,6 +40,9 @@ def get_report_body(
         raise HTTPException(status_code=404, detail="Report file not found")
 
     parts = report_service.extract_report_body(document)
+    # S-8.10.1: the reader fetching a body is "first report opened", M10's
+    # activation milestone; recorded once per account.
+    onboarding_service.note_report_opened(db, current_user, job)
     return ReportBodyResponse(
         job_id=job.id,
         job_type=job.job_type,

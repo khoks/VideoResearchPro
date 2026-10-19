@@ -83,6 +83,24 @@ export function isPaletteColor(value: string): value is PaletteColor {
   return (PALETTE_COLORS as readonly string[]).includes(value);
 }
 
+/**
+ * Chart colours, validated with the dataviz palette checks on 2026-10-19
+ * against `surface` in each mode (lightness band, chroma floor, CVD and
+ * normal-vision separation, 3:1 contrast). One single-series hue and a
+ * warm/cool diverging pair with gray midpoints (stance, sentiment). Each mode
+ * has its own steps; never derived by flipping. Text never wears these: marks
+ * carry the colour, labels use the text tokens.
+ */
+export const chartColors = {
+  series:   { light: '#2a6db5', dark: '#4a8acb' },
+  positive: { light: '#2a6db5', dark: '#4a8acb' },
+  negative: { light: '#c4612b', dark: '#d0753a' },
+  neutral:  { light: '#a39d93', dark: '#7a7368' },
+  muted:    { light: '#d6d0c6', dark: '#4d463d' },
+} as const;
+
+export type ChartColorToken = keyof typeof chartColors;
+
 export const fonts = {
   display:    '"Fraunces", Georgia, serif',
   body:       '"Source Serif Pro", "Fraunces", Georgia, serif',
@@ -172,6 +190,33 @@ export const measure = {
   reading: '75ch',
   grid:    '1200px',
   form:    '560px',
+} as const;
+
+/**
+ * Fluid type for reading surfaces (S-8.12.1, ui-design §2.4): 16 px body on a
+ * 320 px phone rising to 18 px at 1200 px, headings in proportion. Unitless
+ * line-heights stay in `lineHeight` (WCAG 1.4.12). Mirrored as CSS custom
+ * properties (`--reader-size`, `--reader-h1/2/3`) in index.css because the
+ * reader body is sanitised HTML that inline styles cannot reach.
+ */
+export const fluidType = {
+  readerBody: 'clamp(1rem, 0.95rem + 0.25vw, 1.125rem)',
+  readerH1:   'clamp(1.625rem, 1.35rem + 1.2vw, 2rem)',
+  readerH2:   'clamp(1.25rem, 1.15rem + 0.5vw, 1.5rem)',
+  readerH3:   'clamp(1.0625rem, 1rem + 0.3vw, 1.25rem)',
+} as const;
+
+/** Reader font-size steps offered on small screens (multipliers of `readerBody`). */
+export const readerScale = [0.875, 1, 1.125, 1.25, 1.375] as const;
+
+/**
+ * Touch targets in CSS px: WCAG 2.2 SC 2.5.8 (AA) asks 24 everywhere; primary
+ * controls get 44 (Apple HIG; Android asks 48 dp). Inline citation chips are
+ * exempt as inline targets; the buttons in their cards are not.
+ */
+export const target = {
+  min:     24,
+  primary: 44,
 } as const;
 
 /** Resolve a color token for the given mode. Prefer `useColors()` in components. */

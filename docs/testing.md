@@ -2,7 +2,7 @@
 
 > Status: living doc (last refreshed 2026-10-19). Owns: testing strategy, fixture catalogue, how to add a test, how to run the LLM stress harness. Setup commands live in [docs/contributing.md](contributing.md).
 
-The backend ships with **1013 tests** under `backend/tests/`. The frontend gates on `tsc -b` plus ESLint; no Jest / Vitest suite yet (see [open work](#7-open-work)). This doc explains the conventions so a new contributor can add a test in five minutes.
+The backend ships with **1013 tests** under `backend/tests/`. The frontend gates on `tsc -b` plus ESLint, and since 2026-10-19 has two suites of its own: **vitest + jsdom** unit tests under `frontend/src/**/*.test.{ts,tsx}` (`npm test`; the reader's sanitiser, parsers, citation resolution, card, toolbar and composer) and **Playwright device tests** under `frontend/tests/` (`npm run test:mobile`; see [§5.6](#56-frontend-suites)). This doc explains the conventions so a new contributor can add a test in five minutes.
 
 ---
 
@@ -243,6 +243,18 @@ Coverage is informational — there is no enforced floor. Prefer adding tests wh
 
 CI runs the same `pytest tests/ -v` plus `ruff check .` and the frontend build. PRs that fail any of these are blocked.
 
+### 5.6. Frontend suites
+
+```bash
+cd frontend
+npm test                     # vitest + jsdom, src/**/*.test.{ts,tsx}
+npx playwright install chromium webkit   # once per machine
+npm run test:mobile          # device emulation: iPhone 13, Pixel 7, 320 px; light and dark
+npm run test:mobile:update   # re-record the screenshot baselines after an intended change
+```
+
+The device tests are hermetic: every `/api/v1` call is answered from `frontend/tests/fixtures/api` (its README says where each file came from), the WebSocket and the dev proxy are cut off, and an unmatched API call fails the test. Baselines live in `frontend/tests/__screenshots__/<project>/` and tolerate a 2 % pixel difference. Never capture a real user's data into those fixtures: the repository is public ([D-087](decisions.md#d-087--mobile-reading-and-install-a-reading-toolbar-below-1200-px-a-docked-composer-lifted-by-visualviewport-hermetic-device-tests-a-manifest-without-a-service-worker-2026-10-19)).
+
 ### 5.5a. From a git worktree
 
 A `.claude/worktrees/<name>` checkout has no `backend/venv` or `backend/.env`, and its `backend/data/videoresearchpro.db` is a stale copy with no `alembic_version`, so the first `TestClient` trips `ensure_schema_at_head` with *tables present but alembic_version is missing*. The tests themselves use the in-memory engine from §3.1; only the app lifespan touches `DATABASE_URL`. Point it at a scratch file and reuse the main checkout's interpreter:
@@ -438,7 +450,7 @@ For prompt-quality regression, the right tool is a small fixture suite under `te
 
 These gaps are tracked but not blocking day-to-day development:
 
-- **Frontend test harness.** No Vitest / RTL setup yet. When the warm-editorial redesign stabilizes the page surfaces, introduce Vitest + Testing Library + a small Playwright suite for the Q&A flow and the approval flow. See [docs/feature-roadmap.md](feature-roadmap.md).
+- **Frontend test harness.** Vitest and Playwright exist since 2026-10-19 ([§5.6](#56-frontend-suites)) but cover the reading room and the mobile pass only. Still open: page-level tests for the Q&A ask flow and the approval flow, and running the frontend suites in CI.
 - **Property-based tests.** Chunking (`app/utils/chunking.py`) and timestamp-mapping logic would benefit from Hypothesis. Currently example-based.
 - **End-to-end with real Redis + Celery.** The `--pool=solo` Windows constraint complicates this; revisit once SaaS infra moves to Linux containers.
 - **Real-LLM smoke runs in CI.** Today the `run_startup_probes` logic is unit-tested with mocks. A nightly job that probes the real configured providers (with a tiny budget) would catch credential rotation and SDK breakage early. Tracked in [docs/saas-roadmap.md](saas-roadmap.md).

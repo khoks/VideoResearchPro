@@ -2277,7 +2277,15 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **Consequences.** The visual feature stays opt-in and off by default, now with measured quality and known failure modes. S-1.18.8 touches the map and compose prompts and the item schema, so it is serialised after the R5 session's prompt work and after S-1.14.6.
 
-**Linked initiatives / PRs.** S-1.18.2 (deferred), S-1.18.5, S-1.18.6 (T-3 done), S-1.18.7 (measured), S-1.18.8 (new), S-1.14.6.
+**Implemented 2026-10-19 (S-1.18.8 T-1 to T-3, PR [#277](https://github.com/khoks/VideoResearchPro/pull/277)).** Choices made inside this decision, open to revision:
+
+- *Code overrides the model where code can know.* An item from a source with no visual annotation is `said`, whatever the model labelled it; the model's value is kept as `modality_model` in the persisted map record (S-1.14.6) so its labelling can still be audited.
+- *Unknown is a label, not a default.* A missing or unusable label becomes `unknown` and renders as `[UNLABELLED]`, which sends the composer back to the contract's own rules. Defaulting to `said` would recreate the error this decision exists to remove.
+- *The same item with different evidence is `both`.* Overlapping chunks can extract one item from the speech and again from a span; the lossless reduce keeps the union rather than whichever came first.
+- *Tags only when they can matter.* Compose renders tags, and the instruction for them, only when the corpus has a shown or both item. A corpus without visual evidence would otherwise get `[SAID]` on every item.
+- T-1.18.8.4 (check the composed report against item provenance, then re-run the S-1.18.3 protocol) is not part of this change.
+
+**Linked initiatives / PRs.** S-1.18.2 (deferred), S-1.18.5, S-1.18.6 (T-3 done), S-1.18.7 (measured), S-1.18.8 (T-1 to T-3 shipped), S-1.14.6.
 
 ## D-076 — Model guidance: "measured" means the use case's own output was graded; verdicts warn, never block (2026-10-19)
 
@@ -2473,11 +2481,37 @@ for Devanagari chunks, 0.402 romanised, 0.805 English. It is decided
 separately. Details in [the detection
 note](notes/2026-10-19-code-mixing-detection.md#10-the-bidirectional-split-t-11625).
 
-**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1 to T-1.16.2.5), E-1.16, N-002.
+**Addendum (2026-10-19): held-out evaluation, T-1.16.2.6.** The evaluation
+ran on sources nothing was tuned on and forced two changes. (1) An
+English-primary source whose Hindi share is at least 3%
+(`DOCUMENT_PRESENCE_SHARE`) now carries the profile. English talks read
+0.0–0.6% and none of the library's 214 crosses the line. Comment threads
+under Hinglish videos read 3.3–30%, and with 13–17% Hindi they had been given
+no metadata at all. (2) Compose resolves quote form per item: the source
+chooses the script, and the span still decides whether it is English. On
+held-out data there was no Hinglish passed through at extraction in six runs,
+either with N-002 or without it; the failure occurred at fetch instead
+(S-1.11.11). Details in [the detection
+note](notes/2026-10-19-code-mixing-detection.md#11-end-to-end-evaluation-on-held-out-sources-t-11626).
+
+**Addendum (2026-10-19): kept wording is verified in code.** The R1
+run-5 replay showed the prompt-only "copy EXACTLY" failing: Hindi speakers
+were quoted in Bengali script in strings found in no transcript. Every map
+`original` is now checked against its OWN source's speech by
+`app/services/quote_fidelity.py`, the same rule the run-6 gate audits with.
+It requires no mixed-script words, the source's own script, and verbatim or
+≥ 80% aligned fragments. A failing original is dropped, the English point is
+kept, and the drop is disclosed. The tolerance is deliberate: an
+exact-substring check dropped near-verbatim quotes where the model had only
+regularised caption spelling. On run 5 the check drops exactly what the
+audit fails (4 of 37 and 12 of 51). Details in [section 12 of the detection
+note](notes/2026-10-19-code-mixing-detection.md#12-regression-invented-original-wording-and-the-fix-2026-10-19).
+
+**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1 to T-1.16.2.6, T-1.16.2.10), E-1.16, N-002, T-1.18.8.4.
 
 ## D-081 — Frame describer default: spend against report-level quality (2026-10-19)
 
-**Status:** proposed — the choice is the user's: it is a spend decision on an opt-in feature, and the $0.10-per-video ceiling it overrides was set by Claude in the R1 protocol, not by the user.
+**Status:** accepted 2026-10-19 — **the user chose option 2, gpt-5.5**, "for the strongest report-level result", accepting about $0.20 per video for the visual pass. Supersedes D-073's describer choice; D-073's selection tier (gpt-5.5 at low reasoning) stands. Claude had recommended option 1; the recommendation is kept below for the record.
 
 **Context.** [D-073](#d-073--frame-description-moves-to-gemini-31-flash-lite-on-image-grounded-grading-selection-stays-on-gpt-55-2026-10-19) moved frame description to gemini-3.1-flash-lite to meet a $0.10-per-video ceiling. [D-075](#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19) found that the report-level benefit disappeared with that describer, and that the describer must be chosen at report level. Four report-level runs and two per-frame gradings now exist ([protocol note](notes/2026-10-18-r1-visual-measurement.md)).
 
@@ -2545,3 +2579,178 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 **Consequences.** S-8.1.4 shelf-scoped Q&A resolves its set through `query_library_documents(..., job_ids=)` and inherits the empty-set rule (an empty shelf retrieves nothing). E-7.1 replaces the read-only weight slot with its control. If shelves move to read-and-write for all, or tags and templates become paid, it is one `require_feature` change per route plus the frontend mirror.
 
 **Linked initiatives / PRs.** E-8.1 / E-8.6 / E-8.7, the PRs above. Follows D-063, D-065, D-068.
+
+## D-084 — Code-mixed retrieval: embed an English rendering, keep the original as the stored text (2026-10-19)
+
+**Status:** accepted. Completes T-1.16.2.5 of [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31) with [D-080](#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)'s quotation half. Measurement: [the detection note](notes/2026-10-19-code-mixing-detection.md#10-the-bidirectional-split-t-11625).
+
+**Context.** N-002 asks for analysis on an English rendering and quotation from the original. Every analysis stage is an LLM call that now knows each source's language (D-080 addendum) and translates as it reads. Retrieval is the one stage with no model in the loop: an English question is compared with chunk embeddings from `paraphrase-multilingual-MiniLM-L12-v2`. A content-controlled test used 132 real chunks from three Hindi-ASR lectures, with the same text in Devanagari, in romanised Hinglish, and in English, and 55 English questions written by a different model from the Devanagari alone.
+
+| Pool written in | recall@5 | recall@15 (production depth) | MRR |
+|---|---|---|---|
+| Devanagari (as ingested today) | 0.727 | 0.818 | 0.565 |
+| Romanised Hindi | 0.582 | 0.745 | 0.402 |
+| English rendering | 0.891 | 0.927 | 0.805 |
+
+**Decision.** A chunk of a non-English source is embedded as its English rendering when its own Hindi share exceeds the borrowing threshold or its grammar is Hindi. Its stored text, which is what Q&A shows and quotes, stays the original. The rendering is stored as chunk metadata `text_en`. It is produced once per document by a new volume-tier use case, `code_mixing_render_english` (`gpt-5.6-luna`, reasoning off, six chunks per call), inside `chroma_service.insert_chunks`, the one place every ingest path writes chunks. Embeddings for the batch come from the collection's own embedding function, so rendered and unrendered chunks share one vector space. The step is fail-soft (a failed batch embeds as written) and switchable (`CODE_MIX_ENGLISH_RENDERING_ENABLED`). It is off for the test suite, so no test reaches a provider.
+
+**Alternatives considered.**
+
+- *Keep embedding the original.* Rejected on the measurement. Romanised text, the case N-002 targets, loses about a third of its MRR against the same words in Devanagari.
+- *Store the English rendering as the chunk text.* Rejected. Quotation needs the original (D-066's three-part form), and Q&A shows stored text to the answer model.
+- *Two vectors per chunk (original and English).* Deferred. It doubles index size and needs result de-duplication, and the English vector alone already beats both originals.
+- *A stronger multilingual embedder* (e.g. a larger E5 or BGE-M3 model). Not evaluated. It means re-embedding the whole library and a much heavier CPU model, and whether it reads romanised Hindi well is itself unmeasured. It would be worth measuring against this same pool before the library grows. Recorded as an open question.
+- *Translate the question into Hindi instead.* Rejected. It does not help romanised text, and it puts translation on the latency path of every question rather than once per document.
+
+**Cost.** The rendering used about 1.5 input and 1.0 output tokens per word of transcript, plus ~300 prompt tokens per call. That is roughly 11K input and 7K output tokens for an hour of Hindi speech, once per document, and nothing for English sources.
+
+**Consequences.**
+
+- Chunks embedded before this ship have no rendering and keep their original vectors. There is no backfill; re-ingesting a document re-embeds it.
+- Questions retrieve Hindi and Hinglish sources by meaning, while quotes still come from the original wording.
+- Registry entry 25, `code_mixing_render_english`, has measured guidance citing this decision.
+
+**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.5), E-1.16, N-002.
+
+## D-085 — Reading room: reports stay HTML, sanitised and parsed in the browser; one shared citation card fed by the run's documents (2026-10-19)
+
+**Status:** accepted. Both open questions in the [M8 plan](plans/m8-reading-room.md) were taken at its recommended defaults: retire `?token=` later (T-8.8.1.5 stays open), and keep the iframe modal as a quick peek.
+
+**Context.** Reports are LLM-written HTML documents, one file per job, read until now in an `<iframe>` whose `src` carried the JWT as `?token=`. The reader (E-8.8) had to render them inside the app's own DOM with the app's typography, an outline and citation cards. Four of the six stored reports predate S-1.14.9, so their timestamp anchors are a bare `href="&t=123"` with no video URL. A report can carry 277 citations.
+
+**Decision.**
+1. **Reports stay HTML; the browser sanitises, then parses.** `GET /jobs/{id}/report/body` (new `routers/reports.py`, so the serialised `routers/qa.py` stays untouched) returns `{title, html, statistics, generated_at}` under header-bearer auth only. `report_service.extract_report_body` splits the template's parts back out. The client runs **DOMPurify** first (dual MPL-2.0 / Apache-2.0; **Apache-2.0 elected**), forbidding `style`, `script`, embeds, forms, SVG and MathML and dropping `style=` attributes. It then runs `html-react-parser`, whose one `replace` hook assigns heading ids, collects the outline, turns `&t=` anchors into citation chips, wraps tables in a scroll region and marks the drop cap. The parser is never fed unsanitised input.
+2. **One citation card for all chips**, using the Popover API (top layer) and positioned from the chip's `getBoundingClientRect`, with a fixed-position fallback. The context value changes only with the citation index, so hovering never re-renders the chips, and `aria-describedby` is set on the active chip imperatively.
+3. **Sources come from the run's own document list.** A citation resolves by the YouTube id in its href, then the href against document URLs. For bare anchors it tries the longest known title (or its hashtag-free stem) in the enclosing paragraph or list item, then a channel that has exactly one document in the run. An absolute href never resolves to a different document by title. Identical targets share one footnote number, so the endnote list dedupes (277 chips → 181 notes).
+4. **Print** is a stylesheet plus an endnote list that opens itself on `beforeprint`. Chips print as the writer's text plus `[n]`.
+
+**Alternatives considered.**
+- *Convert reports to Markdown and render with react-markdown.* Rejected in the plan as lossy, and it would still need raw-HTML sanitising.
+- *Keep the iframe and style it.* It cannot share typography, the outline or citation components, and it keeps the token in the URL.
+- *`sanitize-html` or a rehype sanitise chain.* Heavier (`sanitize-html` is about 50 kB) or less audited than DOMPurify.
+- *Server-side sanitising.* It would be a second policy to keep in step; the client must sanitise anyway, because the parser is not a sanitiser.
+- *One card per chip.* At 277 chips that means 277 popovers and a re-render of every chip on each hover.
+- *Replace the chip text with a superscript number on screen.* The timestamp is part of the writer's sentence ("— Simplilearn (16:56)"). Numbers appear in print and in the endnotes instead.
+
+**Consequences.**
+- The legacy HTML route keeps its query-token fallback until T-8.8.1.5. D-079 made every *new* report route header-only on the same reasoning.
+- All 30 dead anchors in the stored smoke-test report became real links: 20 matched by title, and 10 by sole channel where the writer had reworded a Kannada title.
+- `GET /jobs/{id}/videos` had to start declaring `source_type`, `document_id` and `source_metadata`. They had always been built and always stripped by the schema, which also made the job page's approval cards fall back to the YouTube shape.
+- A report truncated mid-tag by the compose step cannot be repaired client-side; that is filed as S-1.14.17. The R1 still slot (`resolveStill`) waits for S-1.18.2.
+- Vite 8's dependency optimiser broke `html-dom-parser`'s CommonJS client in dev only. An alias to its ESM client entry fixes it, in both the Vite and the vitest configs.
+
+**Linked initiatives / PRs.** [S-8.8.1](initiatives.md#s-881--report-content-endpoint-and-sanitised-renderer) (PR [#244](https://github.com/khoks/VideoResearchPro/pull/244)), [S-8.8.2](initiatives.md#s-882--citation-hover-cards-and-footnotes) (PR [#254](https://github.com/khoks/VideoResearchPro/pull/254)), T-8.8.1.5, S-1.14.17, D-079.
+
+## D-086 — Markdown readers: react-markdown's own pipeline run once with a tree transform; the outline is the two shallowest structural heading levels (2026-10-19)
+
+**Status:** accepted. It deviates from the M8 plan's sketch (`<ReactMarkdown>` with `rehype-slug`) for the reason below.
+
+**Context.** S-8.8.3 puts knowledge reports and Author Studio books, both Markdown, into the same `ReaderShell` as HTML reports. The shell renders the outline beside the body, so it needs the outline before the body renders. Books built since S-6.1.2 nest each report's sections as `####` under a `## n. Chapter` heading. Lane C's HTML-to-Markdown keeps a report's `<h3>`-inside-`<li>` as `- ### …`. The book outputter writes its table of contents against its own slug of the bare chapter title (`#chapter-title`) while the heading reads "1. Chapter title", so every link in that table was dead.
+
+**Decision.**
+1. **One pass in a `useMemo`:** remark-parse → remark-gfm → remark-rehype → one tree transform → hast-util-to-jsx-runtime. These are react-markdown's own steps. Headings get ids from the **same slugger as reports**, so `rehype-slug` is not a dependency.
+2. **The outline is the two shallowest heading levels outside list items, table cells and quotes.** For knowledge reports that is `h2` / `h3`; for books it is chapters and their sections. Nested headings keep ids but neither pick a level nor enter the outline.
+3. **In-page links whose target was slugged differently are repointed** to the heading whose id equals, or ends with, the slug of the fragment.
+4. **Safety without DOMPurify on this path:** remark-rehype runs without `allowDangerousHtml`, so raw HTML is dropped, and link and image URLs pass react-markdown's `defaultUrlTransform`.
+5. The Author page's viewer modal is removed. Read, and a freshly generated book, navigate to `/author/outputs/:id`, which completes T-6.1.1.3's moved half. The knowledge drawer stays as a quick peek with "Open in reader".
+
+**Alternatives considered.**
+- *`<ReactMarkdown>` plus `rehype-slug`, with the outline from a second parse.* Two pipelines that must agree on every id drift. Collecting the outline during render is impure, and its order relative to the sibling outline component is fragile.
+- *Markdown → HTML → the report pipeline.* It needs a converter dependency and would route trusted-by-construction Markdown through the HTML sanitiser for no gain.
+- *`h2` / `h3` only.* A book's outline would list chapters and nothing inside them.
+- *Fix the book outputter's slugs.* Worth doing, but the reader should not depend on every producer agreeing with its slugger.
+
+**Consequences.** The knowledge response now names its source (`document_id`, `source_type`, `title`, `channel_name`, `url`, `published_at`), and its `video_id` became nullable: a PDF's artifact had failed serialisation. `remark-gfm` became a direct dependency (D-079 had already added it). The bundle is one chunk, about 262 kB gzipped after the reading lane (+32 kB over three PRs). Lazy-loading the reader routes is the obvious follow-up.
+
+**Linked initiatives / PRs.** [S-8.8.3](initiatives.md#s-883--knowledge-artifacts-and-books-in-the-same-shell) (PR [#261](https://github.com/khoks/VideoResearchPro/pull/261)), T-6.1.1.3, S-6.1.2, D-079.
+
+## D-087 — Mobile reading and install: a reading toolbar below 1200 px, a docked composer lifted by VisualViewport, hermetic device tests, a manifest without a service worker (2026-10-19)
+
+**Status:** accepted, emulation only. The [M12 plan](plans/m12-mobile-reading.md)'s open question 1 (is a real-device pass part of acceptance?) is the user's call; no real-device pass was done. Its open question 2 (which icon) had no recommended default; the icon renders the mark `branding.md` §3 already recommends.
+
+**Context.** S-8.12.1 and S-8.12.2 make the reading pages work on phones and make the app installable. Three facts shaped them: the outline column already needs 1200 px (S-8.8.1); neither iOS Safari nor Chrome on Android (by default) shrinks the layout viewport for the on-screen keyboard; and the repository is public.
+
+**Decision.**
+1. **A bottom reading toolbar replaces the outline column and the progress pill wherever the column is hidden** (below 1200 px, not only below 960 px). It holds Contents (the outline as a bottom sheet), text size in five steps (Zustand, kept per browser), theme, and the percentage. Controls are 44 px, and `scroll-padding-bottom` keeps focus clear of the bar (SC 2.4.11).
+2. **The Q&A composer moves under the thread on phones and sticks to the bottom while its card is on screen.** The thread is already oldest first. The composer is lifted by `innerHeight − visualViewport.height − offsetTop`, rAF-throttled and ignored when pinch-zoomed. It is a set of wrappers (`components/qa/Composer.tsx`), so each page changed by nine lines.
+3. **Touch:** a chip's first tap previews its card and the second follows the link. Chip state is read at `pointerdown`, which also fixed an unresolved chip opening and closing its card in one click.
+4. **Device tests are hermetic.** Playwright runs iPhone 13 (WebKit), Pixel 7 and a 320 px phone (Chromium) in light and dark, against 18 checked-in baselines. Every `/api/v1` call is served from captured fixtures, and an unmatched call fails the test. The WebSocket and dev proxy are cut off. The **Q&A thread fixture is synthetic**: the test account has none, and the user's own exchanges do not belong in a public repository.
+5. **A web-app manifest with no service worker**, as the plan decided (JWT-gated fetches and report invalidation; offline reading is not a requirement). Chromium's installability check passes without one. `theme_color` `#7a2c1a` and the page title come from `branding.md` §8. The icon is an interim rendering of the §3 echo mark, re-rendered from `logo-mark.svg` by `npm run icons`.
+
+**Alternatives considered.**
+- *Drop the outline below 960 px only.* That leaves 960–1199 px with no navigation, since the column is already gone there.
+- *Sticky composer at the top.* It is keyboard-proof without VisualViewport, but `ui-design` §2.4 and the plan ask for a bottom, chat-like dock.
+- *`interactive-widget=resizes-content`.* Chromium only; iOS ignores it.
+- *Device tests against a live backend.* They would depend on a running stack and real data, which could leak into a public repository's baselines.
+- *A designed new logo.* Out of scope; the rebrand's logo work stays open.
+
+**Consequences.** `npm run test:mobile` needs `npx playwright install chromium webkit` once, and a page that starts calling a new endpoint on load fails it until a fixture is added. `ui-design` §2.4 carries an "as built" note. The VisualViewport lift is unverified on a real keyboard. The manifest unblocks T-3.7.6.1 (`share_target`).
+
+**Linked initiatives / PRs.** [S-8.12.1](initiatives.md#s-8121--reading-pages-responsive-pass) (PR [#269](https://github.com/khoks/VideoResearchPro/pull/269)), [S-8.12.2](initiatives.md#s-8122--web-app-manifest) (PR [#272](https://github.com/khoks/VideoResearchPro/pull/272)), T-3.7.6.1.
+
+## D-088 — Report intermediates: persisted per run, on by default, frozen at the stage that produced them (2026-10-19)
+
+**Status:** accepted (taken without the user; open to revision).
+
+**Context.** S-1.14.6's second half: the report pipeline kept its per-batch map extractions and the reduced dataset only in LangGraph state, so a map regression stayed invisible unless it spoiled the finished report, and every stage measurement since D-055 had to replay a job's inputs. S-1.18.8 (modality labels, [D-075](#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19)) also needs the map items of real runs to check the composed report against item provenance.
+
+**Decision.**
+
+1. A `job_report_intermediates` table: one row per map call — bisected halves and failed batches included, with the error and the videos the batch covered — plus one row for the reduce output with its processing notes. Rows carry a `run_id`, so a regeneration sits next to the job's original run instead of replacing it.
+2. **On by default** (`REPORT_INTERMEDIATES_ENABLED=True`). The cost is about twice the reduced dataset per run, ~3 MB on the 200-video reference job and kilobytes on small jobs.
+3. Payloads are **serialised when the stage produces them**, not at persist time, because compose mutates the same item dicts afterwards (quote forms today, S-1.18.8's evidence tags next).
+4. Capture follows the search agent's `candidates_out` pattern (`run_report_agent(..., intermediates_out=)`); the job task persists best-effort, before the HTML is built, so a later failure still leaves the record.
+
+**Alternatives considered.**
+
+- *Off by default, a debug flag.* The story's original wording. Rejected: the point is continuous monitoring, and a flag nobody turns on leaves the next regression as invisible as the last. The setting remains for operators who want it off.
+- *Sampling (persist one job in N).* Would save storage that is not scarce, at the cost of the run that regressed being the one not sampled.
+- *Store the map batches only and recompute the reduced dataset.* Reduce is deterministic, but the even-compression path (`_compress_evenly`) and compose's own normalisation make "what compose received" worth recording rather than re-deriving.
+- *Replace the job's rows on each run.* Loses the before/after comparison a model or prompt change needs.
+
+**Consequences.** `scripts/audit_report_intermediates.py` reads a run back: map calls by status, items by category (and by modality once S-1.18.8 lands), dropped chunks, and the reduce accounting identity (items in − exact duplicates − trimmed = items out). There is no retention policy; rows go when the job is deleted (FK cascade). Channel jobs have no map/reduce stage and write nothing.
+
+**Linked initiatives / PRs.** S-1.14.6, E-1.14, S-1.18.8, PR [#273](https://github.com/khoks/VideoResearchPro/pull/273). Follows D-055, D-056, D-075.
+
+
+## D-089 — Echo's privacy contract: context-only by default, the brain is a registry, the archive is the user's whole copy, delete in a fixed order (2026-10-19)
+
+**Status:** accepted. Item 1 takes the [L3 plan](plans/l3-echo-personal-brain.md#open-questions-the-users-call)'s open question 2 at its recommended default. Item 3 is an interpretation **awaiting the user's confirmation**.
+
+**Context.** The first new Echo table (`shares_inbox`, S-3.7.1) shipped in the same PR as the whole-brain export (S-3.10.1) and delete (S-3.10.2), as the build order requires. Four questions had to be answered for that to be true:
+- what Echo may do with words the user forwards but did not write;
+- which stores count as "the brain";
+- whether the archive may carry those third-party words;
+- how a delete across SQL, the filesystem and Chroma stays honest when one store fails.
+
+**Decision.**
+1. **Third-party content is context-only by default.** `shares_inbox.author_is_tenant` is false unless the user says the words are theirs (the quick-share's "These are my own words" box or the inbox toggle). A context-only share:
+   - may be retrieved as context once it is embedded;
+   - is never quoted verbatim in anything Echo writes;
+   - never feeds voice signals as the user's own words;
+   - never enters a dataset or derived export.
+
+   Marking one's own words is authorship, not an override. No per-thread override exists.
+2. **The brain is a registry, not a convention.** It consists of:
+   - every table in `echo_privacy_service.ECHO_TABLES` (each must carry `tenant_id`);
+   - every collection in `echo_vectors.echo_collection_names()`;
+   - the tenant's directory under `ECHO_SHARES_DIR`.
+
+   An unregistered store is neither exported nor deleted. The research library, notes, the account and BYOK keys are outside the brain.
+3. **The whole-brain archive carries everything, context-only content included.** The archive is a zip with a manifest, JSONL per table and the files, and its reader is the exact inverse. It is the user's own copy of what they handed over, which is what Article 20 portability covers. A complete archive is also what lets the user check a delete against what was there. "Never exported" in item 1 applies to dataset and derived exports.
+4. **Delete runs in a fixed order, then verifies.** It removes vectors, then files, then rows in one commit, and then re-counts every store. If a store fails, the delete stops before the rows that would let a retry find what is left. If anything remains, the call fails rather than reporting success. Both export and delete are audited with counts only.
+
+**Alternatives considered.**
+- *Treat every share as the user's voice.* Rejected. A WhatsApp thread or a quote is someone else's personal data, and attributing it to the user would poison voice capture.
+- *A per-thread override now.* Not built; it is the user's open question.
+- *Exclude context-only content from the archive.* Rejected for now. The archive would no longer be lossless, and delete could not be verified against it. If the user prefers, a flagged section is the fallback, not omission.
+- *Delete rows first.* Rejected. A failure in Chroma or the filesystem would then leave vectors or files with no row pointing at them, so nothing could find them again.
+- *Hard-code the table list in the export and delete.* Rejected. A new Echo story would silently escape both; a registry with a `tenant_id` test makes the omission visible.
+
+**Consequences.**
+- S-3.7.2 must embed under `share:<id>` with `tenant_id` metadata (T-3.7.2.6) and keep context-only shares out of voice signals (T-3.7.2.7).
+- Every later Echo story (signals, events, drafts, connector grants) registers its stores.
+- The export is the canonical way to see what Echo holds, so it must stay lossless as tables are added.
+- Zero-knowledge mode (S-3.10.3) is untouched.
+
+**Linked initiatives / PRs.** [S-3.7.1](initiatives.md#s-371--shares_inbox-quick-share-and-the-inbox-page), [S-3.10.1](initiatives.md#s-3101--full-export), [S-3.10.2](initiatives.md#s-3102--full-delete) (PR [#286](https://github.com/khoks/VideoResearchPro/pull/286)), S-3.7.2, E-3.3, E-3.2, [D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) (the same feeder-not-gate choice for shares).

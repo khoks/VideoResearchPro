@@ -15,6 +15,8 @@ import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { CitationLink } from '../components/citation';
+import { DockedComposer, QADock, QAThread } from '../components/qa/Composer';
+import { useExchangeFocus } from '../hooks/useExchangeFocus';
 import { NotesPanel } from '../components/notes';
 import { JobShelfChips, ShelfPicker } from '../components/shelves';
 import { SaveTemplateModal } from '../components/templates';
@@ -966,8 +968,12 @@ function QASection({ jobId }: { jobId: string }) {
     resetToAsk();
   };
 
+  // `?exchange=<id>` from the palette lands on that card (S-8.2.2).
+  useExchangeFocus(!!history?.length);
+
   return (
     <Card>
+      <QADock>
       <SectionHeader title="Ask questions" description="Citation-grounded answers drawn from this job's transcripts and report." />
 
       {step === 'ask' && (
@@ -984,6 +990,7 @@ function QASection({ jobId }: { jobId: string }) {
               {FEATURE_UNAVAILABLE_MSG}.
             </p>
           )}
+          <DockedComposer>
           <form onSubmit={handleAsk} style={{ display: 'flex', gap: space['2'], marginBottom: space['3'] }}>
             <div style={{ flex: 1 }}>
               <Input
@@ -1003,6 +1010,7 @@ function QASection({ jobId }: { jobId: string }) {
               Ask
             </Button>
           </form>
+          </DockedComposer>
           {clarifyQuestion.isPending && <InfoStripe text="Generating clarifying questions…" />}
         </>
       )}
@@ -1136,7 +1144,7 @@ function QASection({ jobId }: { jobId: string }) {
       )}
 
       {history && history.length > 0 && (
-        <div
+        <QAThread
           style={{
             display: 'flex',
             flexDirection: 'column',
@@ -1147,8 +1155,9 @@ function QASection({ jobId }: { jobId: string }) {
           {history.map((qa) => (
             <QAExchangeCard key={qa.id} qa={qa} />
           ))}
-        </div>
+        </QAThread>
       )}
+      </QADock>
     </Card>
   );
 }
@@ -1198,6 +1207,7 @@ function QAExchangeCard({ qa }: { qa: QAExchange }) {
 
   return (
     <div
+      id={`exchange-${qa.id}`}
       style={{
         padding: space['4'],
         background: c.surfaceAlt,

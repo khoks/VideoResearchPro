@@ -123,6 +123,7 @@ UseCase = Literal[
     "temporal_scope_extract",
     # Code-mixed speech (R5 / S-1.16.2) — app/services/code_mixing_service.py
     "code_mixing_detect",
+    "code_mixing_render_english",
 ]
 
 # Use cases whose prompts carry IMAGES, not just text.
@@ -1127,12 +1128,12 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
     ),
     "visual_describe_frame": UseCaseInfo(
         default_route="primary",
-        # S-1.18.5 (2026-10-19, D-073): image-grounded blind grading on 33
-        # frames x 2 graders — gpt-5.5 4.52/5 (3 of 66 unusable), this model
-        # 4.21 (5 unusable), gpt-5.6-luna 3.97 (22 unusable). Flash-lite costs
-        # $0.008 per video against $0.122 for gpt-5.5 and keeps the whole
-        # visual pass under the $0.10 ceiling the R1 protocol fixed.
-        default_config=UseCaseConfig("google", "gemini-3.1-flash-lite", "off"),
+        # D-081 (2026-10-19, the user's choice): gpt-5.5 gave the strongest
+        # report-level result (3/3 judges, substance 8.67 vs 7.67) where
+        # flash-lite tied and gemini-3.5-flash won 2/3. The visual pass now
+        # costs about $0.20 per video, a ceiling the user approved over the
+        # $0.10 the R1 protocol first set (D-073 is superseded on this point).
+        default_config=UseCaseConfig("openai", "gpt-5.5", "low"),
         summary=(
             "MULTIMODAL. Describe one captured frame IN TRANSCRIPT "
             "CONTEXT: what is on screen, and specifically what it adds "
@@ -1158,9 +1159,11 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         ),
         guidance=UseCaseGuidance(
             status="measured",
-            decision_id="D-073",
+            decision_id="D-081",
             decided_on="2026-10-19",
             flagship_delta=(
+                "Default is gpt-5.5 by the user's choice in D-081: it gave the "
+                "strongest report-level result (3/3 judges). "
                 "Blind per-frame grading, two graders per frame, each opening "
                 "the image. First pass (33 frames): gpt-5.5 4.52/5 (3 of 66 "
                 "gradings unusable), gemini-3.1-flash-lite 4.21 (5), "
@@ -1304,6 +1307,51 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
                 "them would lose recall."
             ),
             measured_cost="About 2.6 input and 1.3 output tokens per word of text.",
+        ),
+    ),
+    "code_mixing_render_english": UseCaseInfo(
+        default_route="fast",
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
+        summary=(
+            "English rendering of a non-English transcript chunk, used ONLY "
+            "as the text the chunk is embedded as (the stored text stays the "
+            "original, which is what gets quoted). Six chunks per call, once "
+            "per document at insert time (chroma_service.insert_chunks); "
+            "stored as chunk metadata `text_en`."
+        ),
+        typical_input_tokens=3_500,
+        p95_input_tokens=6_000,
+        typical_output_tokens=1_800,
+        min_context_recommended=16_384,
+        rationale=(
+            "Volume tier with reasoning OFF: a faithful translation with a "
+            "structured output, run over every non-English chunk once. Off is "
+            "mandatory — max_completion_tokens includes reasoning tokens on "
+            "OpenAI models (the D-052 trap). Fail-soft: a failed batch embeds "
+            "its chunks as written, which is how every chunk embedded before, "
+            "so it is deliberately NOT in llm_smoke.FEATURE_TO_USE_CASES."
+        ),
+        guidance=UseCaseGuidance(
+            status="measured",
+            decision_id="D-084",
+            decided_on="2026-10-19",
+            flagship_delta=(
+                "Not run against a flagship model. Graded by what it is for: "
+                "with this model's renderings embedded, 55 English questions "
+                "found their Hindi chunk at MRR 0.81 (recall@15 0.93), against "
+                "0.57 for the Devanagari originals and 0.40 for the same text "
+                "romanised."
+            ),
+            downgrade_risk=(
+                "A rendering that summarises instead of translating loses "
+                "recall for every passage it shortens. Keep reasoning off: the "
+                "call caps output at 8,000 tokens and OpenAI models count "
+                "reasoning tokens against that cap."
+            ),
+            measured_cost=(
+                "About 1.5 input and 1.0 output tokens per word of transcript, "
+                "plus ~300 prompt tokens per six-chunk call; once per document."
+            ),
         ),
     ),
     # --- Social-media candidate classification (S-1.5.3) ---------------

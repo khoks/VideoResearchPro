@@ -27,6 +27,9 @@ For each item, include:
   spelling, nothing translated. `content` stays in English either way; that
   is what the analysis reads. Omit `original` for ordinary speech and for
   English sources.
+- `modality`: said / shown / both, per the rule below.
+
+{modality_rule}
 
 {english_contract}
 
@@ -48,7 +51,7 @@ OUTPUT FORMAT (STRICT):
 - The JSON must be parseable by a standard JSON parser (double-quoted keys/strings, no trailing commas).
 
 The JSON object must have keys: facts, comments, conclusions, references, speakers.
-Each value is an array of objects with fields: content, video_title, channel_name, timestamp_display, timestamp_seconds, video_url, speaker, and optionally original.
+Each value is an array of objects with fields: content, video_title, channel_name, timestamp_display, timestamp_seconds, video_url, speaker, modality, and optionally original.
 """
 
 REDUCE_PROMPT = """You are consolidating extracted information from multiple batches of YouTube transcripts
@@ -93,6 +96,8 @@ Video count in this batch: {video_count}
 
 Transcript excerpts for this channel:
 {chunks}
+
+{visual_annotations}
 
 Identify the dominant themes, recurring topics, and notable points covered in this channel's content.
 Keep the summary concise (4-8 bullet points) and grounded in the transcript excerpts.
@@ -154,6 +159,8 @@ is 200 is a defect, not a hedge), and never describe the corpus beyond them.
 {temporal}
 
 {visual_annotations}
+
+{modality_labels}
 
 {language_note}
 

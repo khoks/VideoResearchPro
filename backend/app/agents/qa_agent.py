@@ -13,6 +13,7 @@ from app.agents.prompts.qa_prompts import (
     QA_ANSWER_PROMPT,
     QA_SYSTEM_PROMPT,
     REFINE_CONTEXT_PROMPT,
+    REFINE_VISUAL_RULES,
     SUB_QUERY_EXPANSION_PROMPT,
     USED_SOURCES_PROMPT,
 )
@@ -371,6 +372,7 @@ def refine_context(state: QAAgentState, tally: _TokenTally | None = None) -> dic
     prompt = REFINE_CONTEXT_PROMPT.format(
         question=question,
         raw_context=raw_rag + raw_report,
+        visual_annotations=REFINE_VISUAL_RULES,
     )
 
     response = llm.invoke([HumanMessage(content=prompt)])
@@ -1266,6 +1268,7 @@ def run_library_qa_agent(
     refine_prompt = LIBRARY_REFINE_CONTEXT_PROMPT.format(
         question=question,
         raw_context=raw_context,
+        visual_annotations=REFINE_VISUAL_RULES,
     )
     refined_response = llm.invoke([HumanMessage(content=refine_prompt)])
     refined_context = response_text(refined_response).strip() or "No context available."

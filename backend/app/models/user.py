@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Integer, String
+from sqlalchemy import DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -32,4 +32,14 @@ class User(Base):
     )
     locked_until: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, default=None
+    )
+    # S-8.10.1: the first-run wizard. `onboarded_at` is set when it is
+    # finished; the JSON holds `{step, choices, dismissed, started_at,
+    # completed_at, dismissed_at}` and is NULL until first touched. Read
+    # and written only through `services/onboarding_service.py`.
+    onboarded_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, default=None
+    )
+    onboarding_state_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None
     )

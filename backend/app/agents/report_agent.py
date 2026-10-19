@@ -16,6 +16,13 @@ from app.agents.prompts.report_prompts import (
     REPORT_SECTIONS,
 )
 from app.agents.prompts.shared import (
+    MODALITY_BOTH,
+    MODALITY_FIELD_RULE,
+    MODALITY_SAID,
+    MODALITY_SHOWN,
+    MODALITY_TAGS_NOTE,
+    MODALITY_UNKNOWN,
+    VISUAL_MARKER_OPEN,
     CODE_MIXED_QUOTE_FORMS,
     CODE_MIXING_NOTE,
     ENGLISH_OUTPUT_CONTRACT,
@@ -26,7 +33,8 @@ from app.agents.prompts.shared import (
     VISUAL_ANNOTATION_CONTRACT,
 )
 from app.agents.state import ReportAgentState
-from app.services import code_mixing_service, language_service
+from app.services import code_mixing_service, language_service, quote_fidelity
+from app.services.visual_service import strip_annotations
 from app.services.llm_service import get_llm_for, response_text
 from app.services.llm_routing import (
     context_window_for,
@@ -257,9 +265,21 @@ def map_chunks(state: ReportAgentState) -> dict:
         max_output_for(resolve_config("report_map_chunks").model),
     )
 
-    # Group chunks into batches
+    # S-1.18.8: sources that carry at least one visual annotation. Every item
+    # from any OTHER source is speech by construction, so its label is fixed
+    # here rather than trusted to the model.
+    visual_sources = _visual_source_keys(ch.get("metadata") or {} for ch in chunks)
+    # N-002: every source's own text, so kept `original` wording can be
+    # checked against the transcript it claims to come from.
+    source_texts = _source_texts_for_verification(chunks)
+    original_counts = {"kept": 0, "dropped": 0}
+
+    # Group chunks into batches. `batch_metas` runs parallel to `batches` so
+    # the S-1.14.6 audit record can say which videos a batch covered.
     batches = []
+    batch_metas: list[list[dict]] = []
     current_batch = []
+    current_metas: list[dict] = []
     current_tokens = 0
 
     for chunk in chunks:
@@ -292,14 +312,18 @@ def map_chunks(state: ReportAgentState) -> dict:
 
         if current_tokens + tokens > budget_per_batch and current_batch:
             batches.append(current_batch)
+            batch_metas.append(current_metas)
             current_batch = []
+            current_metas = []
             current_tokens = 0
 
         current_batch.append(formatted)
+        current_metas.append(meta)
         current_tokens += tokens
 
     if current_batch:
         batches.append(current_batch)
+        batch_metas.append(current_metas)
 
     def _invoke_batch(batch_items: list[str]) -> dict | None:
         """One map call. Returns the parsed (or raw-wrapped) summary, or
@@ -316,41 +340,60 @@ def map_chunks(state: ReportAgentState) -> dict:
             code_mixing=CODE_MIXING_NOTE,
             temporal_extraction=TEMPORAL_EXTRACTION_NOTE,
             visual_annotations=VISUAL_ANNOTATION_CONTRACT,
+            modality_rule=MODALITY_FIELD_RULE,
             language_note=language_note,
         )
         response = llm.invoke([HumanMessage(content=prompt)])
         try:
-            return json.loads(response_text(response))
+            parsed = json.loads(response_text(response))
         except json.JSONDecodeError:
             return {"raw": response_text(response)}
+        # S-1.18.8: fix the label at the stage that read the speech.
+        batch_has_visual = any(VISUAL_MARKER_OPEN in t for t in batch_items)
+        _label_modality(parsed, visual_sources, batch_has_visual, modality_counts)
+        # N-002: "copied EXACTLY" enforced in code, before the audit record.
+        _verify_originals(parsed, source_texts, original_counts)
+        return parsed
 
     # Process each batch with one level of bisect-retry (S-1.12.6): a
     # failed batch (context overflow, transient 4xx/5xx) is split in half
     # and each half retried before any content is declared lost.
     summaries = []
+    records: list[dict] = []
+    modality_counts: dict[str, int] = {}
+    map_model = resolve_config("report_map_chunks").model
     failed_batches = 0
     dropped_chunk_groups = 0
     for i, batch in enumerate(batches):
+        metas = batch_metas[i]
         try:
-            summaries.append(_invoke_batch(batch))
+            summary = _invoke_batch(batch)
+            summaries.append(summary)
+            records.append(_map_record(i, None, summary, metas, map_model))
             continue
         except Exception as e:
             logger.warning(
                 f"Map batch {i + 1}/{len(batches)} failed ({e}); "
                 f"bisecting {len(batch)} chunks and retrying halves"
             )
+            first_error = e
         if len(batch) < 2:
             failed_batches += 1
             dropped_chunk_groups += len(batch)
+            records.append(_map_record(i, None, None, metas, map_model, error=first_error))
             logger.error(f"Map batch {i + 1} unrecoverable (single chunk); content dropped")
             continue
         mid = len(batch) // 2
-        for half_idx, half in enumerate((batch[:mid], batch[mid:])):
+        halves = ((batch[:mid], metas[:mid]), (batch[mid:], metas[mid:]))
+        for half_idx, (half, half_metas) in enumerate(halves):
             try:
-                summaries.append(_invoke_batch(half))
+                summary = _invoke_batch(half)
+                summaries.append(summary)
+                records.append(_map_record(i, half_idx, summary, half_metas, map_model))
             except Exception as e2:
                 failed_batches += 1
                 dropped_chunk_groups += len(half)
+                records.append(_map_record(i, half_idx, None, half_metas, map_model, error=e2))
                 logger.error(
                     f"Map batch {i + 1} half {half_idx + 1} failed after bisect ({e2}); "
                     f"{len(half)} chunks dropped from the report"
@@ -363,18 +406,324 @@ def map_chunks(state: ReportAgentState) -> dict:
             "map_batches_failed": failed_batches,
             "map_chunks_dropped": dropped_chunk_groups,
             "map_chunks_total": len(chunks),
+            "map_modality": dict(sorted(modality_counts.items())),
+            "map_originals_kept": original_counts["kept"],
+            "map_originals_dropped": original_counts["dropped"],
+            "map_originals_dropped_by_reason": dict(sorted(original_counts.get("reasons", {}).items())),
         }
     )
+    if original_counts["dropped"]:
+        logger.warning(
+            "map_chunks: dropped %d of %d `original` quotes not found word for "
+            "word in their own source's transcript",
+            original_counts["dropped"], original_counts["kept"] + original_counts["dropped"],
+        )
     if failed_batches:
         logger.error(
             "map_chunks: %d batch(es) failed permanently; ~%d of %d chunks "
             "excluded from the report",
             failed_batches, dropped_chunk_groups, len(chunks),
         )
-    return {"chunk_summaries": summaries, "processing_notes": notes}
+    return {
+        "chunk_summaries": summaries,
+        "processing_notes": notes,
+        "map_batch_records": records,
+    }
 
 
 _REDUCE_KEYS = ("facts", "comments", "conclusions", "references", "speakers")
+
+
+# --- N-002: kept wording must be the source's own words ------------------------
+
+def _source_identity(meta: dict) -> str:
+    return str(
+        meta.get("document_id") or meta.get("video_id")
+        or _source_key(meta.get("video_url") or meta.get("url") or meta.get("permalink"))
+        or meta.get("video_title") or ""
+    )
+
+
+def _source_texts_for_verification(chunks: list[dict]) -> dict:
+    """``{"videos": {source: VideoText}, "by_url": {...}, "by_title": {...}}``.
+
+    Each source's chunks are put back in order, merged without their overlap
+    (so a quote spanning a chunk boundary still matches) and stripped of
+    `[VISUAL @]` spans: an `original` is something SAID.
+    """
+    by_source: dict[str, list[tuple[float, int, str]]] = {}
+    titles: dict[str, str] = {}
+    by_url: dict[str, str] = {}
+    by_title: dict[str, str] = {}
+    for ch in chunks:
+        meta = ch.get("metadata") or {}
+        sid = _source_identity(meta)
+        if not sid:
+            continue
+        order = (float(meta.get("timestamp_start") or 0), int(meta.get("chunk_index") or 0))
+        by_source.setdefault(sid, []).append((*order, strip_annotations(ch.get("text") or "")))
+        titles.setdefault(sid, str(meta.get("video_title") or ""))
+        for key in (meta.get("video_url"), meta.get("url"), meta.get("permalink")):
+            if _source_key(key):
+                by_url.setdefault(_source_key(key), sid)
+        if meta.get("video_title"):
+            by_title.setdefault(str(meta["video_title"]), sid)
+    videos = {
+        sid: quote_fidelity.VideoText.from_raw(
+            titles[sid], quote_fidelity.merge_chunk_texts(t for _, _, t in sorted(parts))
+        )
+        for sid, parts in by_source.items()
+    }
+    return {"videos": videos, "by_url": by_url, "by_title": by_title}
+
+
+def _verify_originals(parsed: object, sources: dict, counts: dict) -> None:
+    """Drop any `original` that does not trace back to its own source's speech.
+
+    The rule is `quote_fidelity.problem` — the same definition the R1 run-6
+    gate (`scripts/audit_quote_fidelity.py`) audits with, so the pipeline keeps
+    exactly what the gate passes: verbatim or near (caption spelling) against
+    the item's OWN source, no word mixing two scripts, no script other than
+    the source's. The source is resolved through the item's `video_url`, then
+    its title; an item that resolves to none cannot be checked and loses its
+    `original` too. A dropped value is kept as `original_rejected` (with
+    `original_rejected_reason`) so the persisted map record shows what was
+    removed; the composer never sees it. The English `content` always
+    survives.
+    """
+    if not isinstance(parsed, dict):
+        return
+    for key in _REDUCE_KEYS:
+        for item in parsed.get(key) or []:
+            if not isinstance(item, dict) or not item.get("original"):
+                continue
+            original = str(item["original"])
+            sid = sources["by_url"].get(_source_key(item.get("video_url"))) or sources["by_title"].get(
+                str(item.get("video_title") or "")
+            )
+            reason = quote_fidelity.problem(original, sources["videos"].get(sid) if sid else None)
+            if reason is None:
+                counts["kept"] += 1
+                continue
+            item.pop("original", None)
+            item["original_rejected"] = original
+            item["original_rejected_reason"] = reason
+            counts["dropped"] += 1
+            counts.setdefault("reasons", {})
+            counts["reasons"][reason] = counts["reasons"].get(reason, 0) + 1
+
+
+# --- S-1.18.8: modality provenance -----------------------------------------
+#
+# D-075: the composer inferred said-vs-shown from interleaved text and got it
+# wrong in both directions, worst where it could not read the speech. The
+# label is now fixed at map, where the model reads one chunk of native speech
+# at a time; reduce carries it; compose renders it as a tag.
+
+_MODALITY_SYNONYMS = {
+    "said": MODALITY_SAID, "spoken": MODALITY_SAID, "speech": MODALITY_SAID,
+    "audio": MODALITY_SAID, "verbal": MODALITY_SAID,
+    "shown": MODALITY_SHOWN, "screen": MODALITY_SHOWN, "on_screen": MODALITY_SHOWN,
+    "on-screen": MODALITY_SHOWN, "on screen": MODALITY_SHOWN, "visual": MODALITY_SHOWN,
+    "displayed": MODALITY_SHOWN,
+    "both": MODALITY_BOTH, "said+shown": MODALITY_BOTH, "said and shown": MODALITY_BOTH,
+    "said/shown": MODALITY_BOTH,
+}
+
+_MODALITY_TAG = {
+    MODALITY_SAID: "[SAID]",
+    MODALITY_SHOWN: "[SHOWN]",
+    MODALITY_BOTH: "[SAID+SHOWN]",
+    MODALITY_UNKNOWN: "[UNLABELLED]",
+}
+
+
+def _source_keys_of(meta_or_item: dict) -> list[str]:
+    """Identity keys of a source, shared by chunk metadata and map items."""
+    keys = [
+        _source_key(meta_or_item.get(k))
+        for k in ("video_url", "url", "permalink")
+        if _source_key(meta_or_item.get(k))
+    ]
+    title = meta_or_item.get("video_title")
+    if title:
+        keys.append(f"title:{title}")
+    return keys
+
+
+def _visual_source_keys(metas) -> set[str]:
+    """Keys of every source with at least one visual annotation in its chunks."""
+    keys: set[str] = set()
+    for meta in metas:
+        if int(meta.get("visual_frame_count") or 0) > 0:
+            keys.update(_source_keys_of(meta))
+    return keys
+
+
+def _normalise_modality(value: object) -> str:
+    text = str(value or "").strip().lower()
+    return _MODALITY_SYNONYMS.get(text, MODALITY_UNKNOWN)
+
+
+def _label_modality(
+    summary: object,
+    visual_sources: set[str],
+    batch_has_visual: bool,
+    counts: dict[str, int] | None = None,
+) -> None:
+    """Set ``modality`` on every item of one parsed map summary, in place.
+
+    An item from a source with no visual annotation is "said" whatever the
+    model wrote: there was nothing on screen for it to come from. Elsewhere
+    the model's label stands after normalisation, and a missing or unusable
+    label becomes "unknown" rather than a guess. Where the pipeline overrides
+    the model, the model's own value is kept as ``modality_model`` so the
+    persisted map record (S-1.14.6) shows both.
+    """
+    if not isinstance(summary, dict):
+        return
+    for key in _REDUCE_KEYS:
+        items = summary.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            raw = item.get("modality")
+            item_keys = _source_keys_of(item)
+            if item_keys:
+                has_visual = any(k in visual_sources for k in item_keys)
+            else:
+                has_visual = batch_has_visual
+            label = MODALITY_SAID if not has_visual else _normalise_modality(raw)
+            if raw is not None and str(raw).strip().lower() != label:
+                item["modality_model"] = raw
+            item["modality"] = label
+            if counts is not None:
+                counts[label] = counts.get(label, 0) + 1
+                if not has_visual and _normalise_modality(raw) in (MODALITY_SHOWN, MODALITY_BOTH):
+                    counts["forced_said"] = counts.get("forced_said", 0) + 1
+
+
+def _combine_modality(a: object, b: object) -> str:
+    """Union of two pieces of evidence for the same item."""
+    labels = {str(a or MODALITY_UNKNOWN), str(b or MODALITY_UNKNOWN)} - {MODALITY_UNKNOWN}
+    if not labels:
+        return MODALITY_UNKNOWN
+    if MODALITY_BOTH in labels or labels == {MODALITY_SAID, MODALITY_SHOWN}:
+        return MODALITY_BOTH
+    return labels.pop()
+
+
+def _uses_modality_tags(consolidated: dict) -> bool:
+    """Tags are rendered only when some item was shown on screen.
+
+    A corpus with no visual evidence would get [SAID] on every item and an
+    instruction block about tags it can never act on — tokens for nothing.
+    """
+    return any(
+        isinstance(item, dict) and item.get("modality") in (MODALITY_SHOWN, MODALITY_BOTH)
+        for items in consolidated.values()
+        for item in items or []
+    )
+
+
+_PIPELINE_ONLY_KEYS = (
+    "modality", "modality_model", "original_rejected", "original_rejected_reason",
+)
+
+
+def _render_items_for_compose(items: list, tagged: bool) -> list:
+    """Copies of ``items`` as the composer should read them.
+
+    With tags: content is prefixed with the evidence tag. Either way the
+    pipeline-only ``modality`` / ``modality_model`` / ``original_rejected``
+    keys are dropped — the tag carries the label, a rejected original must
+    never reach the composer, and the persisted records keep the raw fields.
+    Never mutates the consolidated items.
+    """
+    rendered: list = []
+    for item in items:
+        if not isinstance(item, dict):
+            rendered.append(item)
+            continue
+        copy = {k: v for k, v in item.items() if k not in _PIPELINE_ONLY_KEYS}
+        if tagged:
+            tag = _MODALITY_TAG.get(item.get("modality"), _MODALITY_TAG[MODALITY_UNKNOWN])
+            copy["content"] = f"{tag} {copy.get('content', '')}"
+        rendered.append(copy)
+    return rendered
+
+
+def _count_items(summary: object) -> int:
+    """Items across the five reduce keys of one summary dict."""
+    if not isinstance(summary, dict):
+        return 0
+    return sum(
+        len(summary.get(k) or []) for k in _REDUCE_KEYS
+        if isinstance(summary.get(k), list)
+    )
+
+
+def _map_record(
+    batch_index: int,
+    sub_index: int | None,
+    summary: dict | None,
+    metas: list[dict],
+    model: str,
+    error: Exception | None = None,
+) -> dict:
+    """S-1.14.6 audit record for one map call, serialised NOW.
+
+    Compose later mutates the very item dicts map produced (quote forms,
+    S-1.18.8 tags); serialising here keeps the record faithful to what map
+    emitted.
+    """
+    from app.models.job_report_intermediate import MAP_FAILED, MAP_PARSED, MAP_UNPARSED
+
+    videos = list(dict.fromkeys(
+        str(m.get("video_title") or m.get("video_id") or "") for m in metas
+    ))
+    if error is not None:
+        status = MAP_FAILED
+    elif isinstance(summary, dict) and any(k in summary for k in _REDUCE_KEYS):
+        status = MAP_PARSED
+    else:
+        status = MAP_UNPARSED
+    notes: dict = {"videos": [v for v in videos if v]}
+    if error is not None:
+        notes["error"] = f"{type(error).__name__}: {str(error)[:500]}"
+    return {
+        "batch_index": batch_index,
+        "sub_index": sub_index,
+        "status": status,
+        "chunk_count": len(metas),
+        "item_count": _count_items(summary),
+        "payload_json": (
+            None if summary is None
+            else json.dumps(summary, ensure_ascii=False, default=str)
+        ),
+        "notes_json": json.dumps(notes, ensure_ascii=False),
+        "model": model,
+    }
+
+
+def _reduce_record(dataset: dict, notes: dict, status: str) -> dict:
+    """S-1.14.6 audit record for the reduce output, serialised NOW."""
+    kept = {
+        k: v for k, v in notes.items()
+        if k.startswith("reduce_") or k.startswith("map_")
+    }
+    return {
+        "batch_index": 0,
+        "sub_index": None,
+        "status": status,
+        "chunk_count": None,
+        "item_count": _count_items(dataset),
+        "payload_json": json.dumps(dataset, ensure_ascii=False, default=str),
+        "notes_json": json.dumps(kept, ensure_ascii=False, default=str),
+        "model": None,
+    }
 
 
 def _item_video(item: dict) -> str:
@@ -401,7 +750,7 @@ def _merge_structurally(summaries: list) -> tuple[dict, dict]:
     citation-backed report and is deliberately kept.
     """
     merged: dict[str, list] = {k: [] for k in _REDUCE_KEYS}
-    seen: set = set()
+    seen: dict = {}
     exact_dupes = 0
     unparsed = 0
 
@@ -436,8 +785,18 @@ def _merge_structurally(summaries: list) -> tuple[dict, dict]:
                 )
                 if identity in seen:
                     exact_dupes += 1
+                    # S-1.18.8: the same item extracted twice (overlapping
+                    # chunks) may carry different evidence — once from the
+                    # speech, once from a span. Keep the union, not the first.
+                    kept = seen[identity]
+                    if item.get("modality") != kept.get("modality") and (
+                        "modality" in item or "modality" in kept
+                    ):
+                        kept["modality"] = _combine_modality(
+                            kept.get("modality"), item.get("modality")
+                        )
                     continue
-                seen.add(identity)
+                seen[identity] = item
                 merged[key].append(item)
 
     notes = {
@@ -478,7 +837,7 @@ def _compress_evenly(merged: dict, budget: int, topic: str) -> tuple[dict, dict]
                 if key in closed or not pools[key]:
                     continue
                 item = pools[key][0]
-                cost = _count_tokens(json.dumps(item, default=str))
+                cost = _count_tokens(json.dumps(item, ensure_ascii=False, default=str))
                 if spent + cost > per_video_budget:
                     # Stop this category for this video, but LEAVE the
                     # remaining items in the pool so they are counted as
@@ -520,7 +879,7 @@ def reduce_summaries(state: ReportAgentState) -> dict:
     # Compose splits each section across as many calls as its material needs,
     # so the only bound here is the cost guard — not a per-call window.
     target_budget = _MAX_COMPOSE_INPUT_TOKENS
-    total_tokens = _count_tokens(json.dumps(merged, default=str))
+    total_tokens = _count_tokens(json.dumps(merged, ensure_ascii=False, default=str))
     notes["reduce_tokens_lossless"] = total_tokens
     notes["reduce_budget"] = target_budget
 
@@ -533,7 +892,11 @@ def reduce_summaries(state: ReportAgentState) -> dict:
             len({_item_video(i) for v in merged.values() for i in v}),
         )
         notes["reduce_items_trimmed"] = 0
-        return {"chunk_summaries": [merged], "processing_notes": notes}
+        return {
+            "chunk_summaries": [merged],
+            "processing_notes": notes,
+            "reduce_record": _reduce_record(merged, notes, "lossless"),
+        }
 
     # Step 2 — over budget: compress per-video EVENLY so no video is lost.
     logger.info(
@@ -551,7 +914,11 @@ def reduce_summaries(state: ReportAgentState) -> dict:
             trim_notes["reduce_videos_represented"],
             trim_notes["reduce_per_video_token_quota"],
         )
-    return {"chunk_summaries": [compressed], "processing_notes": notes}
+    return {
+        "chunk_summaries": [compressed],
+        "processing_notes": notes,
+        "reduce_record": _reduce_record(compressed, notes, "compressed"),
+    }
 
 
 def _corpus_facts(statistics: dict) -> str:
@@ -649,8 +1016,17 @@ def _quote_forms_by_source(chunk_metas: list[dict]) -> dict[str, str]:
     return forms
 
 
+_PLAIN_ENGLISH_FORM = "plain English (translate the borrowed words inline; no original form)"
+
+
 def _attach_quote_forms(consolidated: dict, forms: dict[str, str]) -> int:
-    """Set `quote_form` on every item that kept `original` wording."""
+    """Set `quote_form` on every item that kept `original` wording.
+
+    The SOURCE decides the script; the span still decides whether it is
+    English at all (T-1.16.2.4's resolution). Without the second half the
+    held-out evaluation quoted an English sentence the speaker said in
+    Devanagari-captioned Hinglish in full three-part form.
+    """
     if not forms:
         return 0
     n = 0
@@ -661,9 +1037,15 @@ def _attach_quote_forms(consolidated: dict, forms: dict[str, str]) -> int:
             form = forms.get(_source_key(item.get("video_url"))) or forms.get(
                 f"title:{item.get('video_title', '')}"
             )
-            if form:
-                item["quote_form"] = form
-                n += 1
+            if not form:
+                continue
+            span_mode = code_mixing_service.rendering_mode(
+                code_mixing_service.analyse_span(str(item["original"]))
+            )
+            item["quote_form"] = (
+                _PLAIN_ENGLISH_FORM if span_mode == code_mixing_service.PLAIN_ENGLISH else form
+            )
+            n += 1
     return n
 
 
@@ -726,6 +1108,10 @@ def compose_report(state: ReportAgentState) -> dict:
     _attach_quote_forms(consolidated, _quote_forms_by_source(chunk_metas))
     language_note = compose_block(language_note, code_mixing_service.corpus_note(chunk_metas))
 
+    # S-1.18.8 / D-075: attribute from provenance, not from how text reads.
+    tagged = _uses_modality_tags(consolidated)
+    modality_labels = MODALITY_TAGS_NOTE if tagged else ""
+
     parts: list[str] = []
     digest: list[str] = []
     sections_failed = 0
@@ -738,7 +1124,14 @@ def compose_report(state: ReportAgentState) -> dict:
         # with the corpus instead of being clipped by one completion cap.
         groups = _split_items_to_budget(items, section_input_budget)
         for idx, group in enumerate(groups, 1):
-            material = json.dumps(group, indent=2, default=str)
+            # ensure_ascii=False: with the default, every Devanagari or Bengali
+            # `original` (and any non-English title) reached the composer as
+            # \uXXXX escapes — several tokens a character, and wording the
+            # model had to decode before it could quote it.
+            material = json.dumps(
+                _render_items_for_compose(group, tagged), ensure_ascii=False,
+                indent=2, default=str,
+            )
             material_tokens = _count_tokens(material)
             # Prose expands on structured input; allow generous headroom,
             # then apply the depth policy (R4).
@@ -755,6 +1148,7 @@ def compose_report(state: ReportAgentState) -> dict:
                 quote_rules=compose_block(QUOTE_RENDERING_RULES, CODE_MIXED_QUOTE_FORMS),
                 temporal=TEMPORAL_AWARENESS,
                 visual_annotations=VISUAL_ANNOTATION_CONTRACT,
+                modality_labels=modality_labels,
                 topic=topic,
                 section_title=spec["title"],
                 section_guidance=(
@@ -845,6 +1239,13 @@ def compose_report(state: ReportAgentState) -> dict:
             f"{notes.get('reduce_videos_represented', '?')} videos so every source "
             "remains represented"
         )
+    if notes.get("map_originals_dropped"):
+        dropped = notes["map_originals_dropped"]
+        disclosures.append(
+            f"{dropped} quoted passage(s) the analysis attributed to a speaker were "
+            "not found word for word in that speaker's transcript and were left out "
+            "(the points they supported were kept, in English)"
+        )
     if sections_failed:
         disclosures.append(f"{sections_failed} report section(s) failed to compose")
     if disclosures:
@@ -928,7 +1329,7 @@ def _split_items_to_budget(items: list, budget: int) -> list[list]:
     current: list = []
     current_tokens = 0
     for item in items:
-        cost = _count_tokens(json.dumps(item, default=str))
+        cost = _count_tokens(json.dumps(item, ensure_ascii=False, default=str))
         if cost > budget:
             content = str(item.get("content", "")) if isinstance(item, dict) else str(item)
             logger.warning(
@@ -939,7 +1340,7 @@ def _split_items_to_budget(items: list, budget: int) -> list[list]:
             # Leave room for the item's own metadata keys.
             item = {**(item if isinstance(item, dict) else {}),
                     "content": _truncate_to_tokens(content, max(200, int(budget * 0.8)))}
-            cost = _count_tokens(json.dumps(item, default=str))
+            cost = _count_tokens(json.dumps(item, ensure_ascii=False, default=str))
         if current and current_tokens + cost > budget:
             groups.append(current)
             current, current_tokens = [], 0
@@ -1047,6 +1448,10 @@ def compose_channel_report(state: ReportAgentState) -> dict:
             channel_name=channel_name,
             video_count=len(video_ids),
             chunks="\n\n".join(excerpt_parts),
+            # T-1.18.1.12: a channel job that opts into visual analysis gets
+            # annotated chunks too; without the contract the model reads the
+            # descriptions as speech.
+            visual_annotations=VISUAL_ANNOTATION_CONTRACT,
         )
         try:
             response = llm.invoke([HumanMessage(content=prompt)])
@@ -1120,17 +1525,24 @@ def run_report_agent(
     topic: str,
     transcript_chunks: list[dict],
     output_length: str | None = None,
+    intermediates_out: dict | None = None,
 ) -> tuple[dict, str]:
-    """
-    Run the report agent.
+    """Run the report agent. Returns ``(statistics, html_body)``.
 
-    Returns:
+    For channel jobs the body is the lightweight per-channel narrative; for
+    topic jobs it is the full research report composed from map-reduce
+    summaries.
+
     ``output_length`` (R4) is the user's optional depth override —
     None/'auto' lets the corpus size bracket decide. It scales the derived
     completion budget and changes the composer's brief; it is never a cap.
 
-        lightweight per-channel narrative; for topic jobs it is the full
-        research report composed from map-reduce summaries.
+    ``intermediates_out`` (S-1.14.6), when given, is filled with
+    ``{"map": [record, ...], "reduce": record | None}`` — what each map call
+    emitted and what reduce handed to compose — for the caller to persist
+    (`job_tasks._persist_report_intermediates`). Same shape as the
+    ``candidates_out`` hook on the search agent. Channel jobs have no
+    map/reduce stage and produce none.
     """
     graph = build_report_graph()
     result = graph.invoke({
@@ -1144,5 +1556,10 @@ def run_report_agent(
         "statistics": {},
         "final_html": "",
         "processing_notes": {},
+        "map_batch_records": [],
+        "reduce_record": {},
     })
+    if intermediates_out is not None:
+        intermediates_out["map"] = list(result.get("map_batch_records") or [])
+        intermediates_out["reduce"] = result.get("reduce_record") or None
     return result.get("statistics", {}), result.get("final_html", "")

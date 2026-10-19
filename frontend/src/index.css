@@ -229,7 +229,9 @@ button {
   position: sticky;
   top: 1.5rem;
   max-height: calc(100vh - 3rem);
+  max-height: calc(100dvh - 3rem);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* The outline column only earns its place when the prose still gets a real
@@ -246,7 +248,8 @@ button {
 
 .reader-body {
   font-family: 'Source Serif Pro', 'Fraunces', Georgia, serif;
-  font-size: 1.125rem;
+  /* Fluid 16 → 18 px, times the reader's text-size step (S-8.12.1). */
+  font-size: calc(var(--reader-size) * var(--reader-scale, 1));
   line-height: 1.7;
   max-width: 75ch;
   color: var(--color-text);
@@ -275,7 +278,7 @@ button {
 }
 
 .reader-body h2 {
-  font-size: 1.5rem;
+  font-size: calc(var(--reader-h2) * var(--reader-scale, 1));
   margin: 3rem 0 1rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--color-border);
@@ -287,7 +290,7 @@ button {
 }
 
 .reader-body h3 {
-  font-size: 1.25rem;
+  font-size: calc(var(--reader-h3) * var(--reader-scale, 1));
   margin: 2rem 0 0.75rem;
 }
 
@@ -596,5 +599,151 @@ button.reader-citation {
     display: inline;
     font-size: 0.8em;
     overflow-wrap: anywhere;
+  }
+}
+
+/* --- Mobile reading pass (S-8.12.1, ui-design §2.4) ----------------------
+   Values mirror theme.ts: fluidType, readerScale, target (24 / 44 px).
+   AppLayout's chrome is inline-styled, so the overrides below need
+   !important, as the existing AppLayout switch above does. */
+
+:root {
+  --reader-size: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --reader-h1: clamp(1.625rem, 1.35rem + 1.2vw, 2rem);
+  --reader-h2: clamp(1.25rem, 1.15rem + 0.5vw, 1.5rem);
+  --reader-h3: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem);
+}
+
+.reader-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* The bottom reading toolbar replaces the outline column and the progress
+   pill wherever the column is hidden; it must not cover what has focus
+   (WCAG 2.2 SC 2.4.11), hence the scroll padding. */
+.reader-toolbar {
+  display: none !important;
+}
+
+@media screen and (max-width: 1199px) {
+  .reader-toolbar {
+    display: flex !important;
+  }
+  .reader-progress {
+    display: none !important;
+  }
+  .reader-grid {
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+  html:has(.reader-toolbar) {
+    scroll-padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+.reader-tool:hover:not(:disabled) {
+  background: var(--color-surface-alt) !important;
+}
+
+.reader-tool:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+/* Page padding per ui-design §2.2 (space.4 tablet, space.3 phone), with the
+   safe areas of a notched phone in landscape. 320 px must reflow without a
+   horizontal scroll (WCAG 1.4.10). */
+@media screen and (max-width: 959px) {
+  main {
+    padding: 1.5rem max(1rem, env(safe-area-inset-right)) 3rem max(1rem, env(safe-area-inset-left)) !important;
+  }
+  .pratidhvani-mobile-bar {
+    padding-top: max(0.75rem, env(safe-area-inset-top)) !important;
+  }
+  /* Primary navigation on a phone: the hamburger and the drawer's items. */
+  .pratidhvani-mobile-bar button[aria-expanded] {
+    min-width: 44px !important;
+    min-height: 44px !important;
+    justify-content: center;
+  }
+  .pratidhvani-mobile-drawer nav button {
+    min-height: 44px;
+  }
+}
+
+@media screen and (max-width: 640px) {
+  main {
+    padding: 1rem max(0.75rem, env(safe-area-inset-right)) 3rem max(0.75rem, env(safe-area-inset-left)) !important;
+  }
+
+  /* iOS zooms into any focused field under 16 px; the fix is the size, never
+     maximum-scale (ignored by iOS 10+ and a WCAG 1.4.4 failure). */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  /* Docked Q&A composer (components/qa/Composer.tsx): the thread first, the
+     composer stuck to the bottom while the card is on screen, lifted above
+     the on-screen keyboard by --kb-inset. */
+  .qa-dock {
+    display: flex;
+    flex-direction: column;
+  }
+  .qa-dock > .qa-thread {
+    order: 1;
+  }
+  .qa-dock > .qa-composer {
+    order: 2;
+    position: sticky;
+    bottom: var(--kb-inset, 0px);
+    z-index: 100;
+    margin-top: 0.75rem;
+    padding: 0.75rem 0 calc(0.75rem + env(safe-area-inset-bottom));
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+  }
+  .qa-composer form {
+    margin-bottom: 0 !important;
+    flex-wrap: nowrap !important;
+  }
+  .qa-composer form > div {
+    flex: 1 1 auto !important;
+    min-width: 0;
+  }
+  .qa-composer input,
+  .qa-composer button[type='submit'] {
+    min-height: 44px;
+  }
+  .qa-composer button[type='submit'] {
+    min-width: 64px;
+  }
+  html:has(.qa-composer) {
+    scroll-padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Coarse pointers: the reader's own controls and the card's link become
+   44 px targets. Inline citation chips stay inline (SC 2.5.8's inline
+   exception); the card is how a finger opens them. */
+@media (pointer: coarse) {
+  .reader-no-print button {
+    min-height: 44px !important;
+  }
+  .reader-citation-card a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .reader-outline a,
+  .reader-endnotes summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
   }
 }

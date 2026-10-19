@@ -12,11 +12,11 @@ class SearchItem(BaseModel):
     id: str
     title: str
     subtitle: str = ""
-    # A frontend route the palette navigates to. Documents and knowledge
-    # reports point at the library with `?document=<document_id>` (and
-    # `&view=knowledge`) — the canonical id, since most non-video documents
-    # have no video_id (D-070) — which the palette PR (S-8.2.2) teaches
-    # the library page to honour.
+    # A frontend route the palette navigates to. Documents point at the
+    # library with `?document=<document_id>` — the canonical id, since most
+    # non-video documents have no video_id (D-070) — which the library page
+    # honours as a one-row filter (S-8.2.2). Knowledge reports open in their
+    # reader at `/knowledge/<document_id>` (S-8.8.3).
     href: str
     # Higher is better. The LIKE fallback has no ranking and reports 0.0.
     score: float = 0.0

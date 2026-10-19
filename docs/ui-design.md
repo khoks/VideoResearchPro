@@ -44,6 +44,8 @@ export const colors = {
 };
 ```
 
+**Chart colours** (`chartColors` in `theme.ts`, resolved with `useChartColors()`). A single-series hue (`series`) and a warm/cool diverging pair with gray midpoints for stance and sentiment (`positive`, `negative`, `neutral`, `muted`), with separate validated steps per mode. Checked on 2026-10-19 with the dataviz palette validator against `surface` (lightness band, chroma floor, CVD and normal-vision separation, 3:1 contrast). The gray midpoint is gray by design, so stacked charts always carry a legend, surface gaps and a table view. Not the status tokens: in this theme success / warn / error double as brand accents.
+
 **Label palette** (`palette` in `theme.ts`, resolved with `usePaletteColor(name)`). Ten named colours for user-applied labels (shelves now, tags next): `default gray brown orange yellow green blue purple pink red`, Notion's set. The API stores the *name*, never a hex. Each name has a `bg` / `fg` pair per mode, every pair at least 4.5:1 (checked 2026-10-19). A label always shows its text in a bordered pill; colour is a hint, never the only signal.
 
 Component-level rules:
@@ -218,7 +220,7 @@ AUTHOR  (greyed; unlocks at L2)
 - Width: 240 px expanded, 56 px collapsed (icons only). Collapse state persists in `uiStore`.
 - Active item: oxblood `accent` text + 2 px left border in `accent`. Inactive: `textSecondary`.
 - Group headers: `ui` font, `xs` size, `textMuted`, uppercase, letter-spacing 0.08em.
-- Keyboard shortcuts: `g + r` → research, `g + l` → library, `g + k` → knowledge, `g + a` → author. (Implemented via a global `useShortcuts` hook.)
+- Keyboard shortcuts (`frontend/src/hooks/useShortcuts.ts`, S-8.2.2): **Mod-K** opens the command palette (Cmd on macOS, Ctrl elsewhere; macOS keeps Ctrl-K as the fields' kill-line) and **Ctrl-Alt-K** is the alternate, since Chrome and Firefox bind Ctrl-K to the address bar until the page has focus. **`/`** focuses the page's own search box (`data-page-search`) or opens the palette. **`g r`** → research, **`g l`** → library, **`g k`** → knowledge (Echoes), **`g a`** → author. Single keys and the `g` chords never fire while typing in a field, and the palette's "Turn single-key shortcuts off" switches them off per browser (WCAG 2.1 SC 2.1.4). A **Search…** button under the brand lockup (and a 44 px search icon in the mobile bar) opens the same palette for pointer and touch users.
 
 ### 2.2. Page padding & measure
 
@@ -258,6 +260,15 @@ Reports are the longest single piece of content. They get the most editorial tre
 - Reports: drop the outline, keep drop cap and citations.
 - Q&A textarea: docked at bottom; chat-like.
 
+**As built (S-8.12.1, 2026-10-19).**
+- Tokens in `theme.ts`: `fluidType` (reader body 16 → 18 px across 320 → 1200 px; headings in proportion), `readerScale` (five text-size steps), `target` (24 px minimum, 44 px primary). Mirrored as CSS custom properties because the reader body is sanitised HTML.
+- The outline column needs the desktop breakpoint (1200 px) to leave the prose its measure. Below it, a **bottom reading toolbar** replaces both the outline and the progress pill. It holds **Contents** (the outline as a bottom sheet), **A− / A+** (text size, kept per browser), the **theme** toggle and the reading percentage. Every control is 44 px, the bar clears the home indicator with `env(safe-area-inset-bottom)`, and `scroll-padding-bottom` keeps focus from hiding behind it (SC 2.4.11).
+- Citation chips stay inline (SC 2.5.8's inline exception). On touch, the first tap previews the card and a second tap opens the source; the card's link is a 44 px target on coarse pointers.
+- The Q&A composer on the job page and the library page moves under the thread and sticks to the bottom while the card is on screen. It is lifted above the on-screen keyboard by the VisualViewport API (`components/qa/Composer.tsx`).
+- Fields are 16 px under 640 px so iOS does not zoom on focus. The viewport meta adds `viewport-fit=cover` and never `maximum-scale`.
+- Page padding is `space.4` on tablets and `space.3` on phones, with the safe areas added. The hamburger and the drawer's items are 44 px.
+- No swipe gestures: iOS Safari's edge swipe owns history.
+
 ---
 
 ## 3. Component primitives
@@ -272,6 +283,7 @@ A small, opinionated set of primitives lives at `frontend/src/components/primiti
 | `Input`, `Textarea`, `Select` | `surface` fill, focus ring in `accent`. Errors render `error`-colored border + helper text below. |
 | `FormField` | Wraps a label + control + helper text. Generates IDs for `htmlFor`. |
 | `Badge` | Pill, `surfaceAlt` fill + status text color. Sizes: `sm`, `md`. |
+| Charts (`components/charts/`) | `ColumnChart` (single or stacked columns over an ordered axis: ≤24px marks with a 4px rounded data-end and square baseline, 2px surface gaps, hairline grid, a legend only for ≥2 series, a hover and keyboard readout — focus the chart, then ←/→, Home, End, Escape — and a **Show as table** view), `BarList` (ranked horizontal bars, value at the tip, rows that open for drill-down), `ChartTable`. Colours come from `chartColors` (§1.1); text never wears them. |
 | `LabelPill` | A user-applied label (shelf, tag) in one of the ten label-palette colours (§1.1): bordered pill, text always present. Optional `to` (router link, clicks never bubble to an enclosing card) and `onRemove` (a small ×). |
 | `StatusPill` | Specialized Badge with semantic statuses for jobs (pending, searching, awaiting_approval, etc.). |
 | `Tabs` | Underlined active tab in `accent`. Keyboard accessible (arrow keys). |

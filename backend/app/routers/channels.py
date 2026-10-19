@@ -10,8 +10,9 @@ from app.models.channel import Channel
 from app.models.job import Job
 from app.models.document import Document
 from app.schemas.channel import ChannelResponse, ChannelWeightRequest, SubscribeResponse
+from app.schemas.channel_intelligence import ChannelIntelligenceResponse
 from app.schemas.video import VideoResponse
-from app.services import subscription_service, visibility_service
+from app.services import channel_intelligence_service, subscription_service, visibility_service
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +218,25 @@ def list_channel_videos(
         }
         for v in videos
     ]
+
+
+@router.get("/{channel_id}/intelligence", response_model=ChannelIntelligenceResponse)
+def get_channel_intelligence(
+    channel_id: str,
+    refresh: bool = False,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """What the channel says, over the documents of it this reader can see
+    (S-8.7.2, D-063). Cached per (channel, tenant) and recomputed when the
+    visible documents, their knowledge or their transcripts change;
+    ``refresh=true`` forces it. The Q&A part is always live."""
+    channel = db.query(Channel).filter(Channel.channel_id == channel_id).first()
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    return channel_intelligence_service.get_intelligence(
+        db, current_user.id, channel, refresh=refresh
+    )
 
 
 def _dispatch_subscription_sync(

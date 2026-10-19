@@ -8,6 +8,10 @@ Devanagari auto-captions, and 20 English library transcripts. Comments are
 stored as text only, with no author names or IDs; URLs, handles and
 timestamps were stripped.
 
+`heldout_units.json` — 80 comments from the five held-back videos of the third
+job, labelled the same way AFTER every parameter was frozen; the out-of-sample
+check in T-1.16.2.6. Never tune against it either.
+
 `llm_predictions.json` — the `code_mixing_detect` model's raw answers for every
 unit (`gpt-5.6-luna`, reasoning off), so the test suite scores the LLM detector
 without calling a provider. `scripts/eval_code_mixing.py --llm` regenerates it.

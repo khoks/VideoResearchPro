@@ -12,7 +12,8 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 |------|-----------|------|---------|
 | `/login` | `LoginPage` | public | Email + password login |
 | `/register` | `RegisterPage` | public | Create a new account |
-| `/` | (redirect → `/submit`) | protected | Default landing |
+| `/` | `OnboardingGate` | protected | Default landing: `/welcome` while the server says the account should onboard, otherwise `/submit` |
+| `/welcome` | `WelcomePage` | protected | First-run wizard: channels, a small first run, its report (S-8.10.1) |
 | `/submit` | `SubmitJobPage` | protected | Start a new research run |
 | `/jobs` | `JobsListPage` | protected | All jobs the user owns |
 | `/jobs/:jobId` | `JobDetailPage` | protected | Single job: status, approval, report, Q&A |
@@ -29,12 +30,13 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/exports` | `ExportsPage` | protected | Dataset export endpoints + downloads |
 | `/notes` | `NotesPage` | protected | Every note the user wrote, grouped by target, searchable, exportable |
 | `/author` | `AuthorPage` | protected, Pro+ | Author Studio: bind finished runs into a book; other kinds shown as coming later |
-| `/echo` | `EchoPage` | protected, Studio | Echo: personal-context store, readiness meter, sources and connectors |
+| `/echo` | `EchoPage` | protected, Studio | Echo: personal-context store, readiness meter, sources and connectors, export and delete |
+| `/echo/inbox` | `EchoInboxPage` | protected, Studio | Echo's shares inbox: everything the user forwarded, with state and authorship |
 | `/account/subscription` | `SubscriptionPage` | protected | Tier, upgrade / downgrade (demo billing) |
 | `/account/ai-models` | `AIModelsPage` | protected | Per-use-case LLM overrides and BYOK keys |
 | `*` | (redirect → `/`) | — | 404 → home |
 
-Protected routes are wrapped in `<ProtectedRoute>` which redirects unauthenticated visitors to `/login`. Public-only routes (`/login`, `/register`) are wrapped in `<PublicOnlyRoute>` which redirects authenticated users to `/submit`.
+Protected routes are wrapped in `<ProtectedRoute>` which redirects unauthenticated visitors to `/login`. Public-only routes (`/login`, `/register`) are wrapped in `<PublicOnlyRoute>` which redirects authenticated users to `/`, where the gate decides between the wizard and `/submit`.
 
 `VideoKnowledgePage.tsx` exports `VideoKnowledgeDrawer` — used as an inline drawer inside `JobDetailPage` to show a video's knowledge artifact, not as its own route.
 
@@ -45,7 +47,7 @@ The protected routes share `<AppLayout>` (top-tabs nav today, sidebar after the 
 ## Page-by-page
 
 ### `LoginPage` — `/login`
-**Purpose.** Email + password login. Calls `POST /api/v1/auth/login`, stores the JWT in the auth context, redirects to `from.pathname` (or `/submit`).
+**Purpose.** Email + password login. Calls `POST /api/v1/auth/login`, stores the JWT in the auth context, redirects to `from.pathname` (or `/`, which the onboarding gate resolves).
 
 | State | What renders |
 |-------|--------------|
@@ -55,13 +57,28 @@ The protected routes share `<AppLayout>` (top-tabs nav today, sidebar after the 
 | Network error | Toast via the global `ToastContainer`. |
 
 ### `RegisterPage` — `/register`
-**Purpose.** Account creation. Calls `POST /api/v1/auth/register`, immediately follows with a login call to capture the JWT.
+**Purpose.** Account creation. Calls `POST /api/v1/auth/register`, immediately follows with a login call to capture the JWT (the register response carries the user, not a token; until 2026-10-19 the context stored the missing token and every new account landed signed out on `/login`). Then goes to `/`, so a new account opens the wizard.
 
 | State | What renders |
 |-------|--------------|
 | Default | Email + password + confirm-password, "Create account" button. |
 | Validation error | Inline below the offending field. |
 | Email exists | "An account with this email already exists. Sign in instead?" with link. |
+
+### `WelcomePage` — `/welcome`
+**Purpose.** The first-run wizard (S-8.10.1, plan [m10-onboarding](plans/m10-onboarding.md)): a task flow with real actions, not an overlay tour. Its state lives on the user row (`GET` / `PATCH /auth/me/onboarding`), so it resumes at the same step on any device. `/` sends an account here while `should_onboard` is true: no runs yet, or the wizard already started, and neither finished nor skipped. Accounts that had runs before the wizard shipped are not sent. **Skip for now** is always in the header (it records the dismissal and goes to `/submit`); after a skip or a finish it reads **Close** and the page stays reachable from the palette's **Getting started** action. A `Stepper` (ordered list, `aria-current="step"`) lets the reader go back to a finished step without losing what they entered.
+
+| Step | What renders | Action |
+|------|--------------|--------|
+| 1. Choose channels | Channel link or @handle field (validated like the submit page's channel list), the chosen channels as removable chips, one to five | **Continue** saves the channels and the step, then shows step 2 |
+| 2. Start a small run | The saved channels as radios (first chosen), what the run does, a "How long it takes" note (a few minutes; transcripts are throttled; captionless videos go through Whisper; the run pauses once for approval) | **Start the run** creates a channel run of five videos from the **Channel deep-dive** starter (`template_id` provenance), stores its id, shows step 3. A first run already under way offers **See its progress** instead; a failed one says so and offers another go |
+| 3. Read the report | Live progress (`role="progressbar"`, polite status text, link to the run's page); at `awaiting_approval` the found titles with **Approve these N videos**; at `completed` **Read the report**; a failed or cancelled run shows its error with **Try again** | **Read the report** finishes the wizard (`onboarded_at`) and opens `/reports/:jobId`; a run that ended without a report offers **Open the run** |
+
+| State | What renders |
+|-------|--------------|
+| Loading | Skeleton rows under the header (Skip already usable) |
+| Error | `EmptyState` "Couldn't load your progress." with **Retry**; Skip still works |
+| Finished earlier | A note with the date it was finished; the steps still work |
 
 ### `SubmitJobPage` — `/submit`
 **Purpose.** Start a research run. Three tabs: **Topic**, **Channels**, **Subscribe**.
@@ -113,7 +130,7 @@ Sections (rendered conditionally on `job.status` and `job.job_type`):
 | **Your notes on this run** | always, once the job loads | Section-variant notes panel (M5 / S-8.5.1): the user's own Markdown on the run, newest first, with add / edit / delete. |
 | **Approved videos** | status ∈ {extracting, building_rag, ...completed} | Read-only list of approved videos with per-video transcript status. Each row has a "Knowledge" button that opens the `VideoKnowledgeDrawer`, and an inline notes control: a note on a document shows on every surface that shows the document (the shelf, every job containing it). |
 | **Report** | `job.report_path` is set | "Read report" (primary) → navigates to the reading room at `/reports/:jobId`; "Quick peek" (secondary) → the legacy HTML in an iframe modal, which also owns "Open in new tab". |
-| **Q&A panel** | status == `completed` | Question textarea, "Clarify first" optional toggle, language selector, "Ask" button. Below: list of past exchanges with citations rendered as chips that deep-link to `&t=` timestamps. Each exchange card carries the inline notes control (target `qa_exchange`). |
+| **Q&A panel** | status == `completed` | Question textarea, "Clarify first" optional toggle, language selector, "Ask" button. Below: list of past exchanges with citations rendered as chips that deep-link to `&t=` timestamps. Each exchange card carries the inline notes control (target `qa_exchange`). Under 640 px the composer moves below the thread and docks at the bottom of the screen while the panel is in view, above the keyboard (S-8.12.1). |
 | **Knowledge drawer** | user clicks the Knowledge button on a video row | Slides in from the right; shows the structured `{topics, concepts, events, facts}` + Markdown report; "Generate" button if not yet extracted. |
 
 | State | What renders |
@@ -151,10 +168,12 @@ Layout: 75ch serif measure, `text-wrap: pretty` on prose and `balance` on headin
 
 **Print (S-8.8.2).** "Print or save as PDF" in the toolbar, or Ctrl-P: app chrome, outline, progress pill, toolbar, card, health banner and toasts are hidden; text prints black on white whatever the theme; every `h2` after the first starts a page; tables, lists items, blockquotes and code avoid breaking; chips print as the writer's text plus a bracketed footnote number; the endnote list opens itself on `beforeprint` and prints each source's URL; other links print their URL after the text; `@page` margin 2 cm. The 102 kB R1 report prints to 37 A4 pages.
 
-Not yet (later stories): knowledge artifacts and Author outputs in the same shell (S-8.8.3); the mobile pass (S-8.12.1), including a tap-to-preview pattern for chips on touch screens, where hover does not exist.
+**Small screens (S-8.12.1).** Below 1200 px the outline column and progress pill give way to a bottom reading toolbar: Contents (the outline as a bottom sheet, focus on the current section, Escape closes and returns focus), A− / A+ text size (five steps, kept per browser), theme, and the percentage. On touch, the first tap on a citation chip previews its card; a second tap, or the card's "Open at" link, opens the source; a tap elsewhere closes it. The same toolbar serves the knowledge and book readers.
 
 ### `LibraryPage` — `/library`
 **Purpose.** Browse the caller's view of the global, deduplicated library and add sources that do not come through a research run. Three tabs: **Sources**, **Channels**, **Add sources**.
+
+**One source** (`/library?document=<document_id>`, S-8.2.2): where a palette or search result for a source lands. The Sources tab shows only that row under a banner, "Showing the one source you opened from search", with **Show all sources**, which drops the parameter.
 
 **Sources tab.** Filters: search text, language, channel, transcript status. Sort: newest / oldest / longest / shortest. Rows for PDFs and pasted pages carry a source-type pill instead of a channel, and no duration. Above the filters, a **Tag** bar (S-8.1.3): a tag select with counts, the active tag as a pill with **Clear**, and **Manage tags** (a dialog to rename, recolour, merge into another tag, or delete, with the source count). The tag lives in the URL (`/library?tag=<id>`), so every tag chip in the app is a plain link; the bar hides until the reader has a tag. Each row shows the reader's tag chips and a **+ Tag** control (checkbox per tag, saved on toggle; inline create applies the new tag). The same rows on a channel page and a shelf page carry the same control. Every row ends with the inline notes control ("N notes · + Add a note"); the channel rows on the **Channels** tab carry the same control, and typing in it never opens the channel.
 
@@ -186,7 +205,8 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 | **Header** | Eyebrow "Channel", name, subscribers · volumes on your shelf · last synced. Actions: Subscribe / Subscribed (per tenant, [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)), Sync now (the dispatched sync job is watched until it ends, then counts and the list refresh), "YouTube →" when the channel has a public URL. |
 | **Trust weight** | Sunken card (`data-slot="trust-weight"`): a badge (`1.0 · neutral`, otherwise promoted / demoted), a 0.0–2.0 slider in steps of 0.1 that holds a draft, **Save** (`PUT /channels/{id}/weight`, disabled until the draft differs) and **Reset** to 1.0. A failed save shows an inline alert. The copy states the measured trade-off ([D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18), T-7.1.1.5): raising a weight also narrows answers toward the channel, and near 0 a channel appears only when little else matches. |
 | **Documents** | Heading with the visible count, filter card (search titles, transcript status, sort), the rows (`channelLink={false}` so they do not link back to the page), pager at 50 per page. |
-| **Intelligence** | Not yet: E-8.7's aggregate endpoint and tab attach here (S-8.7.2 / S-8.7.3). |
+| **Documents / Intelligence tabs** | Below the trust-weight slot; the tab is in `?tab=intelligence` so it can be linked (S-8.7.3). **Documents** is the filtered list above. **Intelligence** reads `GET /channels/{id}/intelligence` over the documents of the channel the reader can see: a "Read … over N documents" line with **Refresh**; a **coverage** card (share of documents with a knowledge report, a meter, how many lack a transcript) with **Extract knowledge for N documents**; **Publishing** (monthly columns, keyboard-readable with ←/→, Show as table); **Length** (six duration buckets and the median); **Topics** and **Concepts** (ranked bars; each row opens to its example documents, linked to the source); **Words it keeps using** (a text keyword cloud, alphabetical, sized by weight); **Your questions about it** (the reader's job and library answers that cite the channel, linked); **Stance and sentiment** (stacked monthly columns with a legend where social classification exists, otherwise the reason). Each panel shows the aggregate's `notes` when it is empty or partial. |
+| **Extract knowledge for N documents** | Plans at most the reader's remaining monthly knowledge extractions (`GET /auth/quota`), confirms ("This makes N knowledge reports, one after another, about a minute each, and uses N of your … Keep this page open"), then runs the existing `POST /videos/{id}/extract-knowledge` one document at a time with a progress bar, the current title and **Stop after this one**. Stops at the first quota refusal; skips no-transcript / already-done; summarises made / skipped / failed; refreshes the aggregate. Disabled while the knowledge LLM is down. |
 
 | State | What renders |
 |-------|--------------|
@@ -231,11 +251,11 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 ### `LibraryQAPage` — `/library/qa`
 **Purpose.** Ask questions across the entire library, with no per-job filter.
 
-Layout: question textarea + clarify-first toggle + language selector at the top; past exchanges below ordered ascending by `created_at`, each with citation chips that link to the source video at the cited timestamp and the inline notes control (target `library_qa_exchange`).
+Layout: question textarea + clarify-first toggle + language selector at the top; past exchanges below ordered ascending by `created_at`, each with citation chips that link to the source video at the cited timestamp and the inline notes control (target `library_qa_exchange`). A YouTube chip whose video the reader can see also names its channel as a link to `/library/channels/:id` (S-8.7.4); the same holds for the Q&A panel on a run's page.
 
 | State | What renders |
 |-------|--------------|
-| Default | Textarea + button + history list. |
+| Default | Textarea + button + history list. Under 640 px the composer docks at the bottom below the history, as on the job page (S-8.12.1). |
 | Clarifying | Inline "Interpretation: ..." plus three suggested clarifying questions; user picks one or types their own context. |
 | Asking | Streaming answer area appears; citations populate as the agent extracts references. |
 | Empty | "No echoes yet. Ask your first question to begin." |
@@ -295,19 +315,32 @@ Sections: **What you can make** (one card per kind from `GET /author/kinds`: `av
 ### `EchoPage` — `/echo` (Studio)
 **Purpose.** Echo's personal-context store. Backend: `backend/app/routers/echo.py`. Honest about scope: the store and readiness gates are real; connectors (E-3.2) and the "speak as me" agent (E-3.4) are not, and the page says so wherever it would otherwise imply them.
 
-Sections: **Readiness**, **Connectors** (with **Sources on record**), **What Echo knows** (grouped by the 10 kinds), a **Not here yet** footer, and three modals (add / edit, forget, revoke).
+Sections: **Readiness**, **Connectors** (with **Sources on record**), **What Echo knows** (grouped by the 10 kinds), **Your Echo data** (S-3.10.1 / S-3.10.2), a **Not here yet** footer, and three modals (add / edit, forget, revoke). The subtitle links to the shares inbox.
 
 | State | What renders |
 |-------|--------------|
 | Below tier, or API 403 | Editorial lock: "Echo opens at Studio." → `/account/subscription?upgrade=studio`. |
-| Readiness | Large percentage (mean of the three gates; 100 only when the backend says `ready`), then one meter per gate: facts recorded vs `threshold_total`, distinct sources vs `threshold_sources`, personality trait recorded / missing. The sources hint states plainly that the gate cannot be met while no connector exists. Below the meters, "Your voice so far: N notes · W words" from `notes_total` / `notes_words` (S-8.5.3), stated as a feeder, not a gate. |
+| Readiness | Large percentage (mean of the three gates; 100 only when the backend says `ready`), then one meter per gate: facts recorded vs `threshold_total`, distinct sources vs `threshold_sources`, personality trait recorded / missing. The sources hint states plainly that the gate cannot be met while no connector exists. Below the meters, "Your voice so far: N notes · W words" from `notes_total` / `notes_words` (S-8.5.3), stated as a feeder, not a gate. Then "Shared with Echo: N items in the shares inbox" from `shares_total`, also not a gate. |
 | Connectors empty | "No connectors yet." with the planned list. Sources on record lists each `source` with its row count and a **Revoke** button (confirm → `DELETE /echo/sources/{source}`; the toast reports `deleted_count`). |
 | Context browser | Filters: kind, source, "Show expired" (`include_expired`). Every known kind renders as a card, empty or not, each with an **Add** shortcut preselecting that kind; rows show label, value, source pill, confidence, captured date, expiry (an **Expired** pill when past). **Edit** reopens the form with kind and label locked (the backend upserts on `(kind, key)`; renaming means forget + add). **Forget** confirms, then `DELETE /echo/context/{kind}/{key}`. |
 | Add / edit modal | Kind, label (≤128 chars, no `/` because the key travels as a path segment; warns when the label already exists under that kind and would overwrite), the fact, confidence 0–1, optional expiry date (sent as end-of-day UTC). Source is always `manual`. |
 | Loading | Skeleton rows / paragraphs per card. |
 | Error | Inline retry line per card; the browser uses an editorial error state with Retry. |
+| Your Echo data | `EchoDataCard`: what the archive holds, then "Echo holds: N facts · N shares · N files · N search vectors" from `GET /echo/brain/footprint`. **Export everything** downloads the zip through an authenticated blob fetch (no token in the URL). **Delete everything Echo knows** opens a modal that restates the counts, says there is no undo, and enables **Delete permanently** only after the user types DELETE; the toast reports "Echo now holds nothing about you." when the server's after-count is zero. Both buttons are disabled when Echo holds nothing. |
 
 Pure logic (gates, grouping, expiry, label validation) lives in `frontend/src/utils/echoReadiness.ts`.
+
+### `EchoInboxPage` — `/echo/inbox` (Studio)
+**Purpose.** The shares inbox (S-3.7.1): everything the user handed to Echo, newest first, with no approval step. Same Studio lock as `EchoPage`. Header: back link to Echo and an **Add to Echo** button.
+
+| State | What renders |
+|-------|--------------|
+| Default | Search (debounced; text, links, file names, annotations) and a state filter; then one card per share: content-type badge, **Your words** or **Context only** (tooltip explains the default), processing state ("Waiting for processing" until S-3.7.2 exists), shared date; the link, the text (scrollable block, gold rule for the user's own words) or the file name, size and **Download**; the "why" annotation. Actions: **Add why** / **Edit why** inline, **These are my words** / **Not my words**, **Delete** (confirm: the share, its file and anything derived are removed). |
+| More than 100 | "Show N more" grows the page by 100. |
+| Empty | "Nothing shared yet." pointing at Add to Echo; with filters, "Nothing matches." |
+| Loading / error | Skeleton rows; editorial error with Retry. |
+
+Pure logic (quick-share parsing, labels, sizes, footprint sums) lives in `frontend/src/utils/echoShares.ts`, unit-tested.
 
 ### `KnowledgeReaderPage` — `/knowledge/:videoId`
 **Purpose.** A source's knowledge report in the reading room (S-8.8.3). `GET /videos/{id}/knowledge` (YouTube id or `document_id`, resolved through the tenant's visibility grants) supplies the Markdown and, since S-8.8.3, the source's title, channel, kind, URL and dates. The Markdown's leading `# Title` becomes the page title and leaves the body; "From <source title> · <channel> · Extracted <date>" sits under it; tiles count topics, concepts, events and facts; toolbar: Back, Open the source, Print or save as PDF.
@@ -346,10 +379,18 @@ Tabs: **Structured** (topics / concepts / events / facts) and **Report** (Markdo
 
 ## Cross-cutting page concerns
 
+### Command palette (every protected page)
+`components/palette/` (S-8.2.2), mounted once in `AppLayout`. **Mod-K** or **Ctrl-Alt-K** anywhere, or the sidebar's **Search…** button (a search icon in the mobile bar). An input with combobox / listbox semantics (focus stays in the input; arrows move `aria-activedescendant`; Enter opens; Escape closes and returns focus). With no query: **Recent** (the last six items opened from it, per browser) and **Go to and do** (every page in the nav, **Getting started** for the first-run wizard, export notes as Markdown or JSON-LD, switch theme, turn single-key shortcuts off / on). Typing filters the actions on the client and, after 180 ms, asks `GET /search` (superseded requests are cancelled), showing **Runs**, **Sources**, **Channels**, **Questions** and **Knowledge reports** groups; empty groups are hidden. States: "Searching…" while the debounce or request is pending, "Nothing in your library matches “…”", and "Search is unavailable" (actions still work); the result count is announced politely. The panel and `cmdk` load on first open (a 19.6 kB-gzip chunk).
+
+Where results land: a run → `/jobs/<id>`; a question → its page with `?exchange=<id>`, which scrolls to the exchange card, focuses it and outlines it briefly (job page, library Q&A, Q&A history; the history page also keeps its `#exchange-<id>` links); a source → `/library?document=<id>`, the library narrowed to that row with "Show all sources"; a knowledge report → `/knowledge/<id>`; a channel → its page.
+
 ### Layout (`AppLayout`)
 - Today: top horizontal tab bar with the protected pages.
 - Post-redesign (per [branding.md](branding.md) §sidebar-mockup): slim left sidebar grouped by purpose (Library / Research / Knowledge / Author/future / Settings).
 - Persistent global elements: top-right user avatar + sign-out, top-right LLM-status dot (green/yellow/red), `ToastContainer`.
+- **Add to Echo** (S-3.7.1, tiers with `echo_personal_brain` only): a dashed button above the user chrome in the sidebar and the mobile drawer. It opens `QuickShare`'s dialog: one box (a single http(s) link becomes a link share; anything else is text), **Attach a file instead** (up to 25 MB), an optional "why", and **These are my own words** (off by default; the hint explains context-only). Shares go straight into the inbox.
+
+While the wizard is unfinished and not skipped, a **Start here** group at the top of the sidebar holds **Getting started** (`/welcome`); it disappears on finish or skip (the palette action remains).
 
 The sidebar's **Shelves** group (after Library) lists the reader's shelves with a colour dot, the first eight then "Show all N", plus **Manage shelves** (or **Start a shelf** when there are none); it is hidden for a reader who has no shelves and no `shelves` capability. Shelf entries navigate by path because the `AppTab` union is fixed.
 

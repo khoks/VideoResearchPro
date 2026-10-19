@@ -64,3 +64,5 @@ celery_app.autodiscover_tasks(["app.tasks"], related_name="job_tasks")
 # lives apart from job orchestration so the beat entry and the kind registry
 # are greppable on their own. Each `related_name` is one module to import.
 celery_app.autodiscover_tasks(["app.tasks"], related_name="scheduler_tasks")
+# S-6.7.1: Author Studio generation runs in the worker.
+celery_app.autodiscover_tasks(["app.tasks"], related_name="output_tasks")

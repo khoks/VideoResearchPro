@@ -410,7 +410,7 @@ Tests drive each production caller and assert on what reaches the model
 (`tests/test_agents/test_code_mixing_wiring.py`). Profiling adds about 0.85 s
 per 7,400-word Hindi transcript at chunk time and almost nothing for English.
 
-**Part B: retrieval runs on English (measured here, built in PR 5b).**
+**Part B: retrieval runs on English (measured here, built in PR 5b; [D-084](../decisions.md#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19)).**
 "Ranking on the English rendering" is the one stage with no model in the
 loop: retrieval is raw embedding similarity. `scripts/measure_code_mixed_retrieval.py`
 holds content fixed and varies only the script. It takes 132 real chunks from
@@ -434,6 +434,128 @@ English rendering lifts both scripts above either original. With questions
 written by the rendering model itself, the ordering is the same (MRR 0.523 /
 0.372 / 0.766), so the gain is not that model echoing its own wording.
 
+**Built.** A chunk of a non-English source whose own Hindi share exceeds the
+borrowing threshold, or whose grammar is Hindi, is embedded as its English
+rendering (`code_mixing_render_english`, six chunks per call, once per
+document, inside `chroma_service.insert_chunks`). The stored text stays the
+original, and the rendering is kept as metadata `text_en`. Rendering cost about
+1.5 input and 1.0 output tokens per word. Chunks embedded before this keep
+their original vectors; there is no backfill.
+
+## 11. End-to-end evaluation on held-out sources (T-1.16.2.6)
+
+Nothing in this section was used to tune anything. The five videos of the
+third job (personal finance) were approved at the start and left unread until
+every parameter was frozen. Their comments were fetched afterwards.
+
+**The honest failure mode, measured directly.** The question is whether
+Hinglish gets passed through as English. It was checked at four points:
+
+| Where | What was measured | Result |
+|---|---|---|
+| Detection | 80 unseen comments, labelled per token after freezing (`tests/fixtures/code_mixing/heldout_units.json`) | 17 of 18 Hindi-bearing comments caught. The miss is one borrowed word ("rupye") in an English comment, which renders as plain English anyway. Token P 0.986, R 0.849. One English comment flagged (a misspelling, "mauch") |
+| Extraction (report map, `gpt-5.6-luna`) | Items still carrying non-English text, with and without N-002's metadata, on a held-out Hindi lecture and two held-out comment threads (`scripts/eval_code_mixing_e2e.py`) | **0 true pass-through in all six runs, before and after.** The automatic count flagged 2–3 items per thread; all were English sentences containing names or crypto tickers |
+| Retrieval | 50 English questions (different model) over 168 held-out chunks, through the production renderer (`scripts/eval_code_mixed_retrieval_heldout.py`) | 165 of 168 chunks rendered; the 3 failures fell back to their originals as designed. MRR 0.554 → 0.762, recall@5 0.62 → 0.90, recall@15 0.92 → 0.92 |
+| Fetch | Caption track actually ingested | **2 of the 13 Hindi-speech videos in this study arrived as machine-dubbed tracks**: one Bengali, one English (`v6CuYULP3tM` lists `en-US(auto)` and `hi(auto)`) |
+
+So the failure the brief predicted did not happen where it was expected.
+D-066's existing note was already enough for the extraction model to
+translate romanised Hindi. It happened in two places no prompt can reach:
+
+- **The fetch layer.** An auto-dubbed English track is fluent English text,
+  so no text-level detector can tell that the speaker said something else,
+  and every "quote" from it is words the speaker never said. This study's
+  rate is 2 in 13. S-1.11.11 (prefer the original-audio track) is filed with
+  this evidence and is worth doing before the next Hindi-heavy corpus.
+- **Retrieval.** Romanised Hindi is retrieved worst of all (MRR 0.40),
+  which D-084's English rendering addresses.
+
+**Quotation, end to end.** On the held-out Hindi lecture the map stage kept
+**25 items with original wording, against 0 without N-002's metadata**. All
+25 were in Devanagari and 23 were verbatim from the transcript; the other 2
+had small punctuation or spacing differences. The production composer
+(`claude-opus-5`) then wrote the Key Facts section from those items. All 8
+Devanagari quotes it chose were in the full three-part form, Devanagari then
+transliteration then translation, and all used the same form for the source.
+Before N-002 there was no original wording for it to quote. On the two
+comment threads the effect is not established. One thread went from 0 to 2
+kept originals (Roman script, verbatim). The other went from 5 (3 Roman, 2
+Devanagari, one of them Marathi) to 2 (Roman). That is one run each, in
+opposite directions.
+
+**Two fixes the evaluation forced.**
+
+1. *English-primary sources with real Hindi carried no profile.* The first
+   cut treated "English-primary, plain-English quote mode" as English, so
+   comment threads with 13–17% Hindi words got no metadata at all. A 3%
+   presence floor now separates them: English talks read 0.0–0.6% (0 of the
+   library's 214 English transcripts cross it), comment threads 3.3–30%.
+2. *An English sentence inside a Hindi source was quoted in three-part
+   form* ("आर यू स्ट्रेस्ड अबाउट मनी?" with a transliteration and a
+   "translation" identical to it). Compose now applies the T-1.16.2.4
+   resolution per item: the source chooses the script, and the span still
+   decides whether it is English.
+
+**Also seen, not fixed.**
+
+- Unseen names look Hindi to the character model. That inflates the Hindi
+  share of short spans and produced every false "non-English item" above.
+- Marathi in Devanagari is tagged as Hindi. The rendering decision is the
+  same (Devanagari, three-part), but the source note calls it "Hindi".
+  Telling Devanagari languages apart is out of scope here.
+- Matrix accuracy on the 17 held-out mixed comments was 0.82, against 0.95
+  on TEST. That is a small sample, and short comments often carry one
+  clause of each.
+
+**Verdict.** Detection, structure, policy and resolution behave on held-out
+data as they did on the labelled set. The bidirectional split delivers
+measurable gains: kept original wording, correct three-part quotes, and
+retrieval MRR +0.21 to +0.40. The failure the story was written against did
+not occur at extraction even before this work. It occurs at fetch, which this
+story cannot fix and S-1.11.11 can.
+
+## 12. Regression: invented "original" wording, and the fix (2026-10-19)
+
+PR #268 asked the map stage to copy a non-English speaker's words "EXACTLY"
+into `original`. The R1 run-5 replay (job `419e691d`) showed what a
+prompt-only rule produces when one map batch packs eight channels, Bengali and
+Hindi among them. The model quoted the Hindi speakers in **Bengali script**,
+in strings that exist in no transcript, and spliced Bengali letters into
+Devanagari words ("लिमিটेशंस", "জানेंगे"). The composer then quoted one of
+them in Bengali seven times. No original-wording check existed before #268,
+because no original wording did.
+
+**Fix.** The map stage now checks every `original` in code before the audit
+record is written, using `app/services/quote_fidelity.py`, the same rule the
+run-6 gate (`scripts/audit_quote_fidelity.py`, which now imports it) audits
+with. An original survives only when:
+
+- it is resolved to its own source (through `video_url`, then title);
+- no word mixes letters of two non-Latin scripts;
+- its script is the source's dominant script;
+- every ellipsis-separated fragment is verbatim or "near" (≥ 80% of
+  characters aligned with one stretch of that source's speech, `[VISUAL @]`
+  spans excluded).
+
+"Near" exists because the model regularises caption spelling. My first
+exact-substring version dropped near-verbatim quotes with up to 41 of 51
+words matching. A failing original is moved to `original_rejected` with a
+reason, where the persisted map record keeps it and the composer never sees
+it. The English `content` survives, and the processing note at the end of
+the report discloses how many quotes were left out.
+
+**Measured on job 419e691d** (`scripts/measure_original_verification.py`).
+Offline over run 5's own map output, the plain arm keeps 33 originals and
+drops 4 (all mixed-script); the visual arm keeps 39 and drops 12 (11 Bengali
+script for Hindi speakers, and 1 Bengali rendering of DeepLoop's sentence
+filed under CodeWithMunnaX). Both match the audit's failing counts exactly.
+A fresh map replay of the plain arm kept 26 and dropped 2.
+
+**Found alongside.** Compose material was serialised with `json.dumps`'s
+default `ensure_ascii=True`, so every Devanagari or Bengali original reached
+the composer as `\uXXXX` escapes. It is now plain text, and the budget
+estimates count the same text the composer reads.
+
 ## Reproduce
 
 ```bash
@@ -441,4 +563,6 @@ cd backend
 ./venv/Scripts/python scripts/eval_code_mixing.py --split test
 ./venv/Scripts/python scripts/eval_code_mixing.py --llm --split all   # live; rewrites the cache
 ./venv/Scripts/python -m pytest tests/test_services/test_code_mixing_service.py -q
+./venv/Scripts/python scripts/eval_code_mixing_e2e.py --env-file <.env> --db <db> --video QSlta0EnGJo --comments <comments.json>:GSA8jvzIjjQ --out e2e.json --compose
+./venv/Scripts/python scripts/eval_code_mixed_retrieval_heldout.py --env-file <.env> --db <db> --videos QSlta0EnGJo GSA8jvzIjjQ --cache heldout_retrieval.json
 ```

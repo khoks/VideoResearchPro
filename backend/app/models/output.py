@@ -5,7 +5,8 @@ deck, a newsletter issue, a video / reel. The lifecycle is a small
 state machine:
 
     pending → generating → completed
-                        \\→ failed
+       │              \\→ failed
+       └──────────────┴─→ cancelled   (S-6.7.1: POST /outputs/{id}/cancel)
 
 ``kind`` selects the outputter implementation. ``source_ids_json`` is
 the list of source IDs (job_ids / document_ids / library Q&A
@@ -21,7 +22,7 @@ video files) point at ``content_path`` on disk.
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -63,6 +64,15 @@ class Output(Base):
     content_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Set when status=failed. Reason becomes operator-readable in audits.
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # S-6.7.1: generation runs in the Celery `generate_output` task. The task
+    # id lets cancel revoke it; progress mirrors what the worker publishes on
+    # `job_progress:{output_id}` so a page opened mid-run starts from the
+    # right place instead of 0 %.
+    celery_task_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    progress_pct: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    progress_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),

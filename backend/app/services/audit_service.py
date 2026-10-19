@@ -46,6 +46,16 @@ class Event(str, Enum):
     MFA_RECOVERY_CODE_USED = "mfa_recovery_code_used"
     # E-5.2.X self-service tier flip with mock payment (D-050)
     TIER_CHANGED = "tier_changed"
+    # S-8.10.1 activation events (M10): how far new accounts get, and how
+    # fast. Written by services/onboarding_service.py.
+    ONBOARDING_STARTED = "onboarding_started"
+    ONBOARDING_COMPLETED = "onboarding_completed"
+    ONBOARDING_SKIPPED = "onboarding_skipped"
+    FIRST_JOB_CREATED = "first_job_created"
+    FIRST_REPORT_OPENED = "first_report_opened"
+    # S-3.10.1 / S-3.10.2 Echo privacy (counts only in metadata, never content)
+    ECHO_EXPORTED = "echo_exported"
+    ECHO_BRAIN_DELETED = "echo_brain_deleted"
 
 
 def _ip_from_request(request: Request | None) -> str | None:

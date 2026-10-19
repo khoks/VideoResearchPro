@@ -10,6 +10,310 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: first-run onboarding wizard (2026-10-19)
+
+PR [#299](https://github.com/khoks/VideoResearchPro/pull/299). S-8.10.1, plan [m10-onboarding](docs/plans/m10-onboarding.md).
+
+- A new account now lands on **`/welcome`**: choose one to five channels, start a
+  five-video channel run from the Channel deep-dive starter, approve what it
+  found, and open the report in the reader. **Skip for now** is always there.
+- Progress is kept on the server (`users.onboarded_at`,
+  `users.onboarding_state_json`; `GET` / `PATCH /api/v1/auth/me/onboarding`), so
+  the wizard resumes at the same step on another device. `/` decides between the
+  wizard and the submit page; accounts that already had runs are left alone.
+- Activation events in `audit_log`: `onboarding_started`, `onboarding_completed`,
+  `onboarding_skipped`, `first_job_created` (from job creation) and
+  `first_report_opened` (from the reader's body route).
+- A **Getting started** link in the sidebar until the wizard is finished or
+  skipped, and a palette action that reopens it any time.
+
+### Fixed: new accounts were signed out right after registering (2026-10-19)
+
+PR [#299](https://github.com/khoks/VideoResearchPro/pull/299). `POST /auth/register` returns the user without a token, and the
+frontend stored that missing token, so every new account landed on `/login`.
+Registration now signs in with the same credentials.
+
+### Books carry numbered endnotes (2026-10-19, S-6.1.4)
+
+PR [#298](https://github.com/khoks/VideoResearchPro/pull/298). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **Endnotes.** Every citation in a book is now its working timestamp link
+  plus a GFM footnote, `[1:15](https://…&t=75)[^7]`, numbered across chapters
+  in reading order, with `## Endnotes` listing `*Title* — Channel, 1:15. <url>`.
+  Footnote `n` is `output_citations` position `n`. Bare `&t=` anchors from
+  older reports get their resolved URL; one nothing matches keeps its label,
+  loses the dead link, and its endnote says the source was not identified.
+- **Q&A cites from stored references**, not from links in the answer prose.
+- **Table of contents** links to the ids the chapter headings actually get
+  (`#1-first-topic`, Devanagari included), in the reader, on GitHub and in
+  the coming EPUB/PDF.
+- **Fixed:** in a tight list a later item's bare anchor could borrow an
+  earlier item's title; the citation context is now the list item.
+
+### Library graph endpoint (2026-10-19)
+
+[S-8.9.1](docs/initiatives.md#s-891--graph-endpoint), PR [#297](https://github.com/khoks/VideoResearchPro/pull/297).
+
+- **`GET /api/v1/library/graph`**: your visible documents, their channels and
+  topics, and your answers that cite them, as nodes and edges, with stable
+  ids, a cap that keeps the most connected, a local view around any node,
+  shelf / job / channel filters and a one-paragraph summary. Nothing of
+  another reader's appears; an empty library is an empty graph.
+
+### Fixed: invented "original" quotes in code-mixed reports (2026-10-19)
+
+PR [#294](https://github.com/khoks/VideoResearchPro/pull/294). Regression from #268, found in the R1 run-5 replay;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- The map stage could put **words a speaker never said** into a report
+  quote. Hindi speakers were quoted in Bengali script, with Bengali letters
+  spliced into Devanagari words, when one batch mixed Bengali and Hindi
+  sources. Every kept `original` is now checked in code against its own
+  source's speech. A quote with mixed-script words, the wrong script, or
+  wording not found (verbatim or ≥ 80% aligned) is dropped, the English
+  point is kept, and the report's processing note says how many were left out.
+- One rule for the pipeline and the R1 run-6 gate: `app/services/quote_fidelity.py`,
+  now imported by `scripts/audit_quote_fidelity.py`. On run 5 the pipeline
+  drops exactly what the audit fails.
+- Compose material no longer reaches the composer as `\uXXXX` escapes for
+  Devanagari and Bengali text.
+
+### Author Studio citations: every source an output cites, resolved like the reader (2026-10-19, S-6.7.3)
+
+PR [#293](https://github.com/khoks/VideoResearchPro/pull/293). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **`output_citations`** (migration `c5ee7a568ef8`): one row per citation in
+  output order, written by every outputter through
+  `output_citation_service.record_citations`. The book records each chapter's
+  links.
+- **Resolved, not just copied.** A port of the reading room's resolver ties
+  each link to a library document by YouTube id, URL, or a known title or
+  channel near it, using only the run's documents the user can see, and
+  rebuilds `watch?v=…&t=…` URLs for bare `&t=` anchors. On the stored
+  smoke-test report all 30 anchors resolve. An anchor nothing matches is kept
+  without a URL rather than given an invented one.
+- **`GET /api/v1/author/outputs/{id}/citations`** and `citation_count` on
+  every output; the Author list and the reader show the count.
+
+### Citations link to the channel (2026-10-19)
+
+[S-8.7.4](docs/initiatives.md#s-874--citation-chips-link-to-the-channel-page), PR [#291](https://github.com/khoks/VideoResearchPro/pull/291).
+
+- A YouTube citation in job or library Q&A names its channel as a link to the
+  channel page, when you can see the cited video. Resolved at read time by
+  `GET /library/video-channels` (one batched request per screen), so every
+  past answer gains it.
+
+
+### Echo: the shares inbox, with whole-brain export and delete (S-3.7.1, S-3.10.1, S-3.10.2, 2026-10-19)
+
+The first new Echo table, shipped with its export and its erasure. PR [#286](https://github.com/khoks/VideoResearchPro/pull/286). Plan: [docs/plans/l3-echo-personal-brain.md](docs/plans/l3-echo-personal-brain.md).
+
+- **Shares inbox.** `shares_inbox` (migration `007c708bb890`, which also gives
+  `personal_context` a `tenant_id` backfilled from `user_id`). `/api/v1/echo/shares`
+  takes a link, text or a file (25 MB cap, stored under `ECHO_SHARES_DIR/<tenant>/`
+  by share id), lists, edits and deletes; deleting a share removes its file,
+  vector and derived facts. Studio only.
+- **Context-only by default.** A share is someone else's words unless the user
+  says otherwise: retrievable as context later, never quoted, never in a dataset
+  export. The plan's recommended default for its open question; no per-thread
+  override was built.
+- **Export.** `GET /api/v1/echo/export`: one zip with a manifest, JSONL per table
+  and the files; `read_archive` is its tested inverse.
+- **Delete.** `DELETE /api/v1/echo/brain?confirm=delete-everything` removes every
+  Echo row, file and vector; tests check each store directly for both tenants.
+  `GET /api/v1/echo/brain/footprint` shows the counts.
+- **UI.** "Add to Echo" in the sidebar, an `/echo/inbox` page, and a "Your Echo
+  data" card on the Echo page with export and a typed-confirmation delete.
+### Command palette and keyboard shortcuts (2026-10-19)
+
+S-8.2.2 ([plan](docs/plans/m2-command-palette.md)). Find any run, source,
+channel, question or knowledge report from anywhere, and get around without
+the mouse.
+
+- **Mod-K** (Cmd on macOS, Ctrl elsewhere) or **Ctrl-Alt-K**, or the new
+  **Search…** button: grouped results from `GET /search`, navigation
+  actions, notes exports, theme, recent items. Built on `cmdk` (MIT), loaded
+  on first open.
+- **Shortcuts:** `/` focuses the page's search box, and `g r` / `g l` /
+  `g k` / `g a` jump to research, library, knowledge and author — the chords
+  `ui-design.md` had long described without an implementation. None fire
+  while typing; the palette turns them off (WCAG 2.1.4).
+- **Results land on the item:** a source narrows the library to its row, a
+  question scrolls to and focuses its exchange, a knowledge report opens the
+  reader.
+### Channel Intelligence tab (2026-10-19)
+
+[S-8.7.3](docs/initiatives.md#s-873--intelligence-tab-ui), PR [#285](https://github.com/khoks/VideoResearchPro/pull/285).
+
+- **Intelligence** beside **Documents** on every channel page: publishing
+  cadence, lengths, topics and concepts with their documents, the words the
+  channel keeps using, your questions that cite it, and stance where it exists.
+- **Extract knowledge for N documents** fills the knowledge gap from the page,
+  within your monthly quota, one document at a time, stoppable.
+- **Charts** follow the dataviz method (validated colours per theme, keyboard
+  readouts, a table view on every chart): `ColumnChart`, `BarList`.
+
+### Author Studio downloads: binary artifacts on disk, one endpoint per output (2026-10-19, S-6.7.2)
+
+PR [#284](https://github.com/khoks/VideoResearchPro/pull/284). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **Artifacts on disk** under `OUTPUTS_DIR` (default `./data/outputs`), one
+  directory per output: `<user_id>/<output_id>/artifact.<format>`, written
+  atomically; `outputs.content_path` is relative to the root so the worker and
+  the API agree. Formats come from a whitelist with their media types.
+- **`GET /api/v1/author/outputs/{id}/download?format=`** serves the text
+  (`md` for books) or any artifact present, named from the title with a UTF-8
+  `filename*` (Devanagari titles survive). Header-bearer only, per D-079.
+  `OutputItem.formats` lists what is available; the Author page and reader
+  show one download button per format and open only text outputs.
+- **No stray files:** deleting an output removes its directory, a cancelled
+  or failed run discards partial files, and
+  `scripts/sweep_output_artifacts.py` lists (or with `--apply` deletes)
+  directories left without a row.
+- **Safety:** ids must match `[A-Za-z0-9_-]`, every resolved path must stay
+  inside the root, and downloads never trust the stored `content_path`.
+
+### Author Studio generates in the worker, with live progress and cancel (2026-10-19, S-6.7.1)
+
+PR [#281](https://github.com/khoks/VideoResearchPro/pull/281). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **`POST /api/v1/author/outputs` returns `pending` at once** and queues the
+  new `author.generate_output` Celery task on the owner's tier queue;
+  `?sync=true` keeps inline generation for tests and scripts. `outputs` gains
+  `celery_task_id`, `progress_pct` and `progress_message` (migration
+  `72d7e46ef057`). A kind with no outputter is now 501 before any row is
+  written.
+- **Progress on the existing socket.** Status changes and per-chapter
+  progress publish on `job_progress:{output_id}`; the socket's ownership
+  check accepts outputs. The Author page shows a progress bar, opens the
+  book it just queued when it finishes, and the reader follows a book still
+  being written.
+- **`POST /api/v1/author/outputs/{id}/cancel`** and a `cancelled` status.
+  Cancellation is cooperative, since the solo-pool worker cannot be
+  interrupted: the next progress report stops the run, and a late cancel
+  still wins over `completed`.
+- **Fixed:** `wsClient.ts` threw `InvalidStateError: Still in CONNECTING
+  state` in dev (and as an uncaught error on the job page) when a second
+  subscribe arrived while the socket was connecting.
+
+### Channel intelligence aggregate (2026-10-19)
+
+[S-8.7.2](docs/initiatives.md#s-872--intelligence-aggregate-endpoint), PR [#280](https://github.com/khoks/VideoResearchPro/pull/280).
+
+- **`GET /api/v1/channels/{id}/intelligence`**: publishing cadence, durations,
+  topics and concepts from knowledge reports, a keyword cloud from transcripts,
+  the reader's own questions that cite the channel, and a stance series where
+  social classification exists, each with a note when it is empty or partial.
+- **Per reader.** Everything is over the documents of the channel that reader
+  can see; an empty view is an empty aggregate.
+- **Cached** per channel and reader (migration `b4c5d6e7f8a0`) until a new
+  document, knowledge report or transcript changes the inputs.
+
+
+### Code-mixed speech: held-out evaluation, and two fixes it forced (2026-10-19, T-1.16.2.6)
+
+PR [#276](https://github.com/khoks/VideoResearchPro/pull/276). Closes S-1.16.2 (invention N-002 now
+"implemented and measured"); method and numbers in
+[section 11 of the detection note](docs/notes/2026-10-19-code-mixing-detection.md#11-end-to-end-evaluation-on-held-out-sources-t-11626).
+
+- **Measured on sources nothing was tuned on.** 17 of 18 Hindi-bearing unseen
+  comments detected. No Hinglish passed through as English at extraction in
+  six end-to-end runs, with or without N-002. On a held-out Hindi lecture,
+  original wording kept went from 0 to 25 items, and every quote the composer
+  chose was in the three-part form. Retrieval MRR through the production
+  renderer rose from 0.554 to 0.762.
+- **Where the failure actually is:** 2 of 13 Hindi-speech videos in the study
+  were fetched as machine-dubbed tracks (one Bengali, one English), which no
+  text detector can catch. S-1.11.11 is raised in priority with this
+  evidence.
+- **Fixed:** English-primary sources with real Hindi (comment threads,
+  13–17% Hindi) carried no code-mixing metadata. A 3% presence floor
+  includes them, and none of the library's 214 English transcripts crosses
+  it. Compose now lets an English sentence inside a Hindi source stay
+  English instead of quoting it in three parts.
+- New scripts `eval_code_mixing_e2e.py` and
+  `eval_code_mixed_retrieval_heldout.py`, and the held-out comments as a
+  test fixture.
+### Said or shown: modality provenance through the report pipeline (2026-10-19, S-1.18.8 T-1 to T-3)
+
+D-075 found that prompt rules moved visual attribution errors from one
+direction to the other rather than removing them, and that four of the five
+confirmed errors sat in the one Bengali-language video, where the composer
+could not read the speech. Whether a fact was said or shown is now decided at
+the map stage, where the model reads the native speech one chunk at a time:
+every item carries `modality` (said / shown / both), code forces `said` for
+sources without visual annotations, the lossless reduce keeps the label, and
+compose renders it as a `[SAID]` / `[SHOWN]` tag the composer attributes from.
+The visual contract gains the converse rule ("on screen" only for what was
+shown). Corpora without visual evidence get no tags and pay nothing. The
+protocol re-run (T-1.18.8.4) is still to come.
+
+### Report map/reduce intermediates are persisted (2026-10-19, S-1.14.6)
+
+The report pipeline kept its per-batch map extractions and its reduced dataset
+only in memory, so a map regression stayed invisible unless it spoiled the
+finished report, and every stage measurement had to replay a job's inputs.
+They are now stored in `job_report_intermediates` (migration `a3b4c5d6e7f9`):
+one row per map call, with bisected halves and failed batches recorded as rows,
+plus one reduce row, grouped by run. On by default via
+`REPORT_INTERMEDIATES_ENABLED`; `scripts/audit_report_intermediates.py` reads a
+run back. Decision [D-088](docs/decisions.md#d-088--report-intermediates-persisted-per-run-on-by-default-frozen-at-the-stage-that-produced-them-2026-10-19).
+### Installable web app: manifest and the echo mark (2026-10-19)
+
+S-8.12.2. Pratidhvani installs from the browser and from the iOS and
+Android home screens with its own name, colours and icon.
+
+- `manifest.webmanifest` (standalone, paper background, `theme_color`
+  `#7a2c1a`), linked from `index.html` with `theme-color`, an Apple touch
+  icon and the page title from `branding.md` §8. No service worker, by
+  design (JWT-gated fetches and report invalidation; offline reading is not
+  a requirement).
+- The icon renders the echo mark `branding.md` §3 recommends: three
+  concentric arcs fading inward. `logo-mark.svg`, a light / dark
+  `favicon.svg` (Vite's bolt is gone), 192 / 512 / maskable PNGs and a 180 px
+  touch icon, all re-rendered from the SVG by `npm run icons`. Interim until
+  the rebrand's logo work lands.
+- Tests check real icon sizes and opaque backgrounds, the page's links, and
+  Chromium's own installability verdict.
+### Code-mixed speech: retrieval runs on an English rendering (2026-10-19, T-1.16.2.5 part B)
+
+PR [#271](https://github.com/khoks/VideoResearchPro/pull/271). Decision
+[D-084](docs/decisions.md#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19).
+
+- **Hindi and Hinglish chunks are now found by English questions.** A chunk
+  of a non-English source is embedded as its English rendering, while the
+  stored text stays the original for quoting. Measured on 132 real chunks:
+  MRR 0.565 for the Devanagari originals, 0.402 for the same text romanised,
+  0.805 rendered in English.
+- New use case `code_mixing_render_english` (registry entry 25, volume tier,
+  reasoning off, fail-soft). It runs once per document inside
+  `chroma_service.insert_chunks`, the one place every ingest path writes
+  chunks, and stores the rendering as metadata `text_en`.
+- New setting `CODE_MIX_ENGLISH_RENDERING_ENABLED` (on; off for the test
+  suite). Chunks embedded earlier are not re-embedded.
+
+### Mobile reading pass: toolbar, docked composer, device tests (2026-10-19)
+
+S-8.12.1 ([plan](docs/plans/m12-mobile-reading.md)). Reports, knowledge
+reports, books and both Q&A threads read properly on a phone.
+
+- **Reading toolbar** below 1200 px: Contents (the outline as a bottom
+  sheet), text size in five steps, theme, percentage; 44 px controls above
+  the home indicator. Fluid reading type (16 → 18 px) from new `theme.ts`
+  tokens.
+- **Docked Q&A composer** on the job and library pages under 640 px: under
+  the thread, stuck to the bottom, lifted above the keyboard with the
+  VisualViewport API.
+- **Touch:** a chip's first tap previews its card, the second opens the
+  source; 44 px primary controls; 16 px fields so iOS does not zoom;
+  `viewport-fit=cover` with safe-area padding; phone page padding per
+  ui-design.
+- **Device tests:** `npm run test:mobile` runs Playwright against an iPhone,
+  a Pixel and a 320 px phone in both themes with fixture-served APIs and 18
+  checked-in baselines.
+- **Fix:** clicking an unresolved citation chip opened its card and closed
+  it in the same click, because the click's focus opened it first.
 ### Code-mixed speech: quotes keep the original wording (2026-10-19, T-1.16.2.5 part A)
 
 PR [#268](https://github.com/khoks/VideoResearchPro/pull/268). The quotation half of N-002's bidirectional split;

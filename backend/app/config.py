@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     CHROMA_PERSIST_DIR: str = "./data/chroma"
     CHROMA_GLOBAL_COLLECTION_NAME: str = "pratidhvani_global"
     CHROMA_QA_COLLECTION_NAME: str = "qa_library_global"
+    # Echo (I-3) collections. Private per tenant: every query carries a
+    # fail-closed tenant filter, and `DELETE /echo/brain` removes the
+    # tenant's vectors from each. Created by the processing story
+    # (S-3.7.2); erasure already sweeps them if they exist.
+    CHROMA_SHARES_COLLECTION_NAME: str = "shares_global"
+    CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME: str = "personal_context_global"
 
     # YouTube
     YOUTUBE_API_KEY: str = ""
@@ -217,6 +223,15 @@ class Settings(BaseSettings):
     # be split before upload.
     PDF_MAX_BYTES: int = 100 * 1024 * 1024  # 100 MB
 
+    # Echo shares inbox (S-3.7.1). Files land under
+    # `ECHO_SHARES_DIR/<tenant>/` and nowhere else; the full Echo delete
+    # removes that directory. The cap bounds one quick-share upload (a
+    # screenshot, a voice memo, a small export), not the bulk importers
+    # that S-3.7.5 adds.
+    ECHO_SHARES_DIR: str = "./data/echo/shares"
+    ECHO_SHARE_MAX_BYTES: int = 25 * 1024 * 1024  # 25 MB
+    ECHO_SHARE_TEXT_MAX_CHARS: int = 50_000
+
     # -------------------------------------------------------------------
     # Visual understanding (R1 / E-1.18) — frame capture + description
     # -------------------------------------------------------------------
@@ -277,6 +292,15 @@ class Settings(BaseSettings):
     # subject; the middle and close catch a source that pivots.
     TEMPORAL_SCOPE_WINDOW_TOKENS: int = 1500
 
+    # S-1.14.6: persist the report pipeline's map/reduce intermediates
+    # (per-batch extraction JSON, the reduced dataset) to
+    # `job_report_intermediates`, so stage quality can be audited after a
+    # run instead of only replayed. On by default: about twice the reduced
+    # dataset's size per run (~3 MB on the 200-video reference job), and the
+    # rows are what makes a map regression or a modality label (S-1.18.8)
+    # checkable on real runs. Off = nothing is captured or written.
+    REPORT_INTERMEDIATES_ENABLED: bool = True
+
     # R5 / S-1.16.2 (invention N-002): how a code-mixed span is QUOTED,
     # decided from its measured Hindi share and matrix (grammar) language.
     # - Hindi grammar and Hindi share >= DOMINANT -> the whole quote in
@@ -290,6 +314,12 @@ class Settings(BaseSettings):
     # DOMINANT should rest on is an open question recorded in D-080.
     CODE_MIX_DOMINANT_SHARE: float = 0.6
     CODE_MIX_BORROWING_MAX_SHARE: float = 0.2
+    # T-1.16.2.5 part B: embed non-English chunks as an English rendering
+    # (`code_mixing_render_english`, one volume-tier call per ~6 chunks, once
+    # per document) while the stored text stays the original. Off = chunks
+    # embed as written, which retrieval measured at MRR 0.565 (Devanagari) /
+    # 0.402 (romanised) against 0.805 rendered.
+    CODE_MIX_ENGLISH_RENDERING_ENABLED: bool = True
 
     # -------------------------------------------------------------------
     # Scheduler (S-8.3.1 / M3) — the shared Celery-beat tick
@@ -484,6 +514,10 @@ class Settings(BaseSettings):
 
     # Reports
     REPORTS_DIR: str = "./data/reports"
+    # S-6.7.2: Author Studio binary artifacts (PDF, EPUB, PPTX, site zips),
+    # one directory per output: <OUTPUTS_DIR>/<user_id>/<output_id>/.
+    # `outputs.content_path` is stored relative to this root.
+    OUTPUTS_DIR: str = "./data/outputs"
     MAX_REPORT_WORDS: int = 20000
 
     # Knowledge extraction (Unit 4)

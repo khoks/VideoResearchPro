@@ -18,6 +18,12 @@ from app.services import auth_service, rate_limit_service
 # monkeypatch and resetting the in-memory bucket between tests.
 settings.RATE_LIMIT_ENABLED = False
 
+# T-1.16.2.5 part B: rendering non-English chunks into English is an LLM call
+# inside `chroma_service.insert_chunks`. Off for the suite so no test that
+# inserts Hindi chunks can reach a provider; the feature's own tests opt back
+# in with a stubbed model.
+settings.CODE_MIX_ENGLISH_RENDERING_ENABLED = False
+
 # Tests must never touch the developer's database, the network or a wallet.
 # The app lifespan runs schema init against ``settings.DATABASE_URL``, a Chroma
 # backfill, and the real LLM smoke probes. Point schema init at a scratch file
@@ -108,6 +114,8 @@ def client(db, auth_headers):
         patch("app.routers.jobs.execute_channel_job") as mock_channel,
         patch("app.routers.jobs.execute_subscription_job") as mock_subscription,
         patch("app.routers.jobs.resume_job_after_approval") as mock_resume,
+        # S-6.7.1: Author Studio generation is a Celery task too.
+        patch("app.routers.author.generate_output") as mock_generate_output,
     ):
         mock_topic.delay.return_value = MagicMock(id="mock-topic-task-id")
         mock_topic.apply_async.return_value = MagicMock(id="mock-topic-task-id")
@@ -119,6 +127,7 @@ def client(db, auth_headers):
         )
         mock_resume.delay.return_value = MagicMock(id="mock-resume-task-id")
         mock_resume.apply_async.return_value = MagicMock(id="mock-resume-task-id")
+        mock_generate_output.apply_async.return_value = MagicMock(id="mock-generate-output-task-id")
         with TestClient(app, headers=auth_headers) as c:
             yield c
 
@@ -141,6 +150,8 @@ def unauthenticated_client(db):
         patch("app.routers.jobs.execute_channel_job") as mock_channel,
         patch("app.routers.jobs.execute_subscription_job") as mock_subscription,
         patch("app.routers.jobs.resume_job_after_approval") as mock_resume,
+        # S-6.7.1: Author Studio generation is a Celery task too.
+        patch("app.routers.author.generate_output") as mock_generate_output,
     ):
         mock_topic.delay.return_value = MagicMock(id="mock-topic-task-id")
         mock_topic.apply_async.return_value = MagicMock(id="mock-topic-task-id")
@@ -152,6 +163,7 @@ def unauthenticated_client(db):
         )
         mock_resume.delay.return_value = MagicMock(id="mock-resume-task-id")
         mock_resume.apply_async.return_value = MagicMock(id="mock-resume-task-id")
+        mock_generate_output.apply_async.return_value = MagicMock(id="mock-generate-output-task-id")
         with TestClient(app) as c:
             yield c
 

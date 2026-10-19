@@ -122,6 +122,7 @@ def record_context(
 
     row = PersonalContext(
         user_id=user_id,
+        tenant_id=user_id,
         kind=kind,
         key=key,
         value=encoded,
@@ -268,6 +269,9 @@ class EchoReadiness:
     # Reported, not gated — S-3.5.1 sets the per-language voice floor.
     notes_total: int = 0
     notes_words: int = 0
+    # Domain 5 feeder (S-3.7.1): items shared to the inbox. Reported, not
+    # gated, for the same reason as notes (D-074).
+    shares_total: int = 0
 
 
 # Tunable thresholds. Conservative defaults — Echo features should not
@@ -308,9 +312,10 @@ def is_ready(
         and len(sources) >= sources_threshold
         and has_personality
     )
-    from app.services import note_service
+    from app.services import echo_intake_service, note_service
 
     voice = note_service.voice_stats(db, user_id)
+    shares = echo_intake_service.count_shares(db, user_id)
     return EchoReadiness(
         ready=ready,
         total_rows=total,
@@ -320,4 +325,5 @@ def is_ready(
         threshold_sources=sources_threshold,
         notes_total=voice.notes_total,
         notes_words=voice.words_total,
+        shares_total=shares,
     )

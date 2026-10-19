@@ -10,13 +10,12 @@ import {
   useUnsubscribeChannel,
 } from '../hooks/useChannels';
 import { useJob } from '../hooks/useJobs';
-import { DocumentsBrowser } from '../components/library/DocumentsBrowser';
+import { ChannelTabs } from '../components/channel/ChannelTabs';
 import { Badge, Button, Card, EmptyState, Skeleton, Spinner } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
 import { formatDate } from '../utils/formatters';
 import type { Channel } from '../services/channelsApi';
-import { libraryApi } from '../services/libraryApi';
 
 const CHANNELS_TAB_HREF = '/library?tab=channels';
 
@@ -136,14 +135,7 @@ export function ChannelPage() {
             onSync={() => handleSync(channel)}
           />
           <TrustWeightControl channelId={channel.channel_id} weight={channel.source_weight} />
-          <DocumentsBrowser
-            queryKey={['libraryVideos', 'channel', channel.channel_id]}
-            fetch={(params) => libraryApi.listVideos({ ...params, channel_id: channel.channel_id })}
-            total={channel.video_count}
-            channelLink={false}
-            emptyTitle="Nothing from this channel on your shelf yet."
-            emptyDescription="Subscribe and sync to shelve its uploads, or pick its videos in a research run; either way they appear here."
-          />
+          <ChannelTabs channel={channel} />
         </>
       )}
     </div>

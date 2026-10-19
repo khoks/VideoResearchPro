@@ -1,0 +1,16 @@
+{
+  "status": "ok",
+  "app": "Pratidhvani",
+  "llm": {
+    "status": "ok",
+    "unavailable_features": [],
+    "last_checked_at": 1792433964.6259403
+  },
+  "capabilities": {
+    "twitter_search_enabled": false,
+    "article_search_enabled": false,
+    "playwright_fallback_enabled": false,
+    "whisper_transcribe_enabled": true
+  },
+  "search_backend": "fts5"
+}

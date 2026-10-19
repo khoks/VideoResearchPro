@@ -8,6 +8,8 @@ type: project
 
 **Status:** future-work, design-only (2026-04-24). Not on the immediate roadmap. This doc exists so today's schema and connector decisions stay forward-compatible.
 
+**Building since 2026-10-19.** Domain 1 (facts, PR #172) and the first piece of Domain 5 (the shares inbox, S-3.7.1) exist, and so do the whole-brain export and delete (S-3.10.1 / S-3.10.2). Sections below say "as built" where the shipped shape differs from the sketch. The build plan is [`plans/l3-echo-personal-brain.md`](plans/l3-echo-personal-brain.md).
+
 This is Ring 3 of the [vision](vision.md). It begins after Phase 4 of the [feature-roadmap](feature-roadmap.md) ships (post-2027 Q3). Nothing in this document is a commitment — it is the picture we're navigating toward, written down so day-to-day choices don't accidentally foreclose it.
 
 ---
@@ -365,6 +367,8 @@ A new table, `shares_inbox`:
 | `linked_source_id` | UUID | nullable; if the share resolves to an ingestable source (a YouTube video, a podcast episode), it is also added to the user's source library via the standard ingest pipeline |
 | `embedding_id` | string | nullable; for semantic retrieval over shares |
 
+**As built (S-3.7.1, 2026-10-19).** The table matches the sketch with four differences: `raw_payload_json` is JSON text whose `kind` is `url`, `text` or `file` (files keep `filename`, `mime`, `size`, `sha256`); `linked_document_id` replaces `linked_source_id`; `author_is_tenant` (default false) records whose words these are; `updated_at` is added. Files live under `ECHO_SHARES_DIR/<tenant>/` named by share id, never by the client's filename. Only `manual_quick_share` writes rows today, and processing (OCR, Whisper, embedding, signals) is S-3.7.2, so every share is `pending`. `personal_context` gained `tenant_id` (backfilled `= user_id`) in the same revision.
+
 A new Chroma collection (`shares_global`) embeds shares with meaningful text. Shares with `linked_source_id` set are *also* embedded in the regular source-library collection so they participate in normal Q&A retrieval.
 
 ### Friction model: zero approval, not zero trust
@@ -389,6 +393,7 @@ This cross-wiring is what gives Echo its substance: a single share simultaneousl
 Everything in the privacy model below applies to constant-stream intake too. Most importantly:
 
 - **Other people's content.** A WhatsApp thread the user shares often contains another person's words. Treat per the Domain 2 rule: ingest for the user's personal index but never cross-tenant, never bulk-share, and offer a one-click "redact other party" before final storage.
+- **Context-only by default (as built, 2026-10-19).** Every share is someone else's words unless the user says otherwise (`author_is_tenant` false; the quick-share's "These are my own words" box and the inbox's toggle set it). A context-only share may be retrieved as context, is never quoted verbatim in anything Echo writes, never feeds voice signals as the user's own words, and never enters a dataset or derived export (a test pins the dataset and notes exports). The whole-brain archive is the one export that carries it, because it is the user's own copy of what they handed over. A per-thread override ("quote this one") is the user's open question and was not built.
 - **OCR'd faces / images.** Default to *no* face detection / identification; OCR text only.
 - **Voice memos.** Transcribed locally where possible (self-host Whisper); SaaS routes through the standard transcription pipeline with the same retention rules.
 
@@ -403,6 +408,7 @@ The single hardest constraint in this entire roadmap. Every choice below is dura
 - **Local data, period.** The activity stream, personal facts, voice signals, and connector OAuth tokens never leave the user's machine.
 - **No telemetry on personal-brain features.** General app telemetry stays opt-in and never sees personal-brain content.
 - **Local LLM is supported.** Per-use-case LLM config already supports `provider=local`. A user can run the entire brain off a local model with zero outbound LLM calls.
+- **Export and delete, as built (S-3.10.1 / S-3.10.2, 2026-10-19).** *The brain* is every table in `echo_privacy_service.ECHO_TABLES` (today `personal_context` and `shares_inbox`), the tenant's directory under `ECHO_SHARES_DIR`, and the tenant's vectors in every Echo Chroma collection (`shares_global`, `personal_context_global`). `GET /echo/export` returns one zip: `manifest.json`, one JSON Lines file per table with every column, and the files byte for byte with SHA-256 in the manifest; it round-trips losslessly. `DELETE /echo/brain` removes vectors, then files, then rows, re-counts every store and fails rather than report success with anything left; it takes effect immediately on self-host. Both are audited with counts only. Not the brain, and untouched by both: the research library, notes (exported at `/exports/notes.*`), the account and BYOK keys.
 
 ### SaaS (future)
 
@@ -465,6 +471,7 @@ Even though Personal Brain is years out, today's choices matter. Specifically:
 3. **Connector code never lives in `app/services/`.** Even today, when we add YouTube ingestion features, we resist the temptation to colocate "fetch user's watch history" with "fetch a video's transcript." Watch history is a connector; transcripts are a service. Keep them apart.
 4. **Voice/style hints in user-facing copy stay generic.** Don't write "your library" assuming a single user — write it in a way that survives multi-user tenants.
 5. **`anthropic-skills` and similar provider-specific surfaces** (used today for PPTX generation in [feature-roadmap](feature-roadmap.md) L2) must not absorb personal-brain content into their cloud-side processing in zero-knowledge mode. Audit the skill's data flow before wiring it to brain content.
+6. **Every new Echo store is registered for export and erasure.** A table goes into `echo_privacy_service.ECHO_TABLES`, a Chroma collection into `echo_vectors.echo_collection_names()`, files under the tenant's directory. An unregistered store is neither exported nor deleted, which breaks the promise above.
 
 ---
 

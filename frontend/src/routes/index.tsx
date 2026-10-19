@@ -23,7 +23,10 @@ import { RegisterPage } from '../pages/RegisterPage';
 import { SubscriptionPage } from '../pages/SubscriptionPage';
 import { AIModelsPage } from '../pages/AIModelsPage';
 import { EchoPage } from '../pages/EchoPage';
+import { EchoInboxPage } from '../pages/EchoInboxPage';
 import { AuthorPage } from '../pages/AuthorPage';
+import { WelcomePage } from '../pages/WelcomePage';
+import { OnboardingGate } from '../components/onboarding/OnboardingGate';
 import { useAuth } from '../contexts/AuthContext';
 
 function ProtectedRoute() {
@@ -38,7 +41,8 @@ function ProtectedRoute() {
 function PublicOnlyRoute() {
   const { isAuthenticated } = useAuth();
   if (isAuthenticated) {
-    return <Navigate to="/submit" replace />;
+    // `/` decides between the wizard and the submit page (S-8.10.1).
+    return <Navigate to="/" replace />;
   }
   return <Outlet />;
 }
@@ -69,7 +73,9 @@ export const router = createBrowserRouter([
         path: '/',
         element: <AppLayout />,
         children: [
-          { index: true, element: <Navigate to="/submit" replace /> },
+          // S-8.10.1: a new account goes to the wizard, everyone else to /submit.
+          { index: true, element: <OnboardingGate /> },
+          { path: 'welcome', element: <WelcomePage /> },
           { path: 'submit', element: <SubmitJobPage /> },
           { path: 'jobs', element: <JobsListPage /> },
           { path: 'jobs/:jobId', element: <JobDetailPage /> },
@@ -87,6 +93,7 @@ export const router = createBrowserRouter([
           { path: 'notes', element: <NotesPage /> },
           { path: 'author', element: <AuthorPage /> },
           { path: 'echo', element: <EchoPage /> },
+          { path: 'echo/inbox', element: <EchoInboxPage /> },
           { path: 'account/subscription', element: <SubscriptionPage /> },
           { path: 'account/ai-models', element: <AIModelsPage /> },
         ],

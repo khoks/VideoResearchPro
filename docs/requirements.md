@@ -1,6 +1,6 @@
 # Pratidhvani — Requirements
 
-**Status:** current as of 2026-04-24. Functional requirements describe what the running system does; non-functional requirements describe the quality bars it must meet. Forward-looking requirements (multi-source, Author Studio, Personal Brain, SaaS) live in their owning docs and are not duplicated here — see [feature-roadmap.md](feature-roadmap.md).
+**Status:** current as of 2026-04-24; NFR-4 amended 2026-10-19. Functional requirements describe what the running system does; non-functional requirements describe the quality bars it must meet. Forward-looking requirements (multi-source, Author Studio, Personal Brain, SaaS) live in their owning docs and are not duplicated here — see [feature-roadmap.md](feature-roadmap.md).
 
 ---
 
@@ -53,7 +53,7 @@
 
 - **FR-5.1.** Transcripts are chunked at 512 tokens with 50-token overlap.
 - **FR-5.2.** Each chunk preserves `start_time` / `end_time` derived from the source segments.
-- **FR-5.3.** Chunks are embedded with `paraphrase-multilingual-MiniLM-L12-v2` (CPU SentenceTransformer; no embedding API).
+- **FR-5.3.** Chunks are embedded with `paraphrase-multilingual-MiniLM-L12-v2` (CPU SentenceTransformer; no embedding API). A chunk of a non-English source is embedded as its English rendering, while its stored text stays the original ([D-084](decisions.md#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19)).
 - **FR-5.4.** Chunks live in **a single global ChromaDB collection** (`videoresearchpro_global`). Per-job scoping is a metadata filter at query time.
 - **FR-5.5.** Chunk metadata: `{video_id, job_id, chunk_index, start_time, end_time, channel_id, ingested_at}`.
 - **FR-5.6.** **One-time embedding.** Each video's `Video.embedded_in_chroma` flips to `true` after first chunking. Subsequent jobs referencing that video skip embedding.
@@ -68,7 +68,8 @@
 - **FR-6.3.** **Subscription jobs** generate **no report**.
 - **FR-6.4.** Reports include: key facts, perspectives, conclusions, references with `&t=` timestamp links, speaker attribution where identifiable, statistics (video count, total duration, word count, channel breakdown).
 - **FR-6.5.** Reports are saved as standalone HTML files under `data/reports/` and served via `GET /jobs/{id}/report`.
-- **FR-6.6.** The report endpoint accepts a `?token=` query string in addition to the bearer header (iframe-friendly).
+- **FR-6.6.** The report endpoint accepts a `?token=` query string in addition to the bearer header (iframe-friendly). Kept only for the job page's quick-peek modal until T-8.8.1.5 retires it.
+- **FR-6.7.** Reports are read natively at `/reports/:jobId` from `GET /jobs/{id}/report/body` (header-bearer only), sanitised and parsed in the browser, with an outline, citation cards, endnotes and a print stylesheet; knowledge reports and Author Studio books read in the same shell ([D-085](decisions.md#d-085--reading-room-reports-stay-html-sanitised-and-parsed-in-the-browser-one-shared-citation-card-fed-by-the-runs-documents-2026-10-19), [D-086](decisions.md#d-086--markdown-readers-react-markdowns-own-pipeline-run-once-with-a-tree-transform-the-outline-is-the-two-shallowest-structural-heading-levels-2026-10-19)).
 
 ### FR-7 — Per-job Q&A
 
@@ -204,6 +205,7 @@
 - **NFR-4.1.** Embedding model is multilingual; Hindi transcripts and English questions land in similar vector space.
 - **NFR-4.2.** Whisper transcribes (does not translate); mixed-language audio is preserved faithfully with proper nouns in their original script.
 - **NFR-4.3.** The Q&A agent translates quoted non-English context into the requested `answer_language` while preserving proper nouns.
+- **NFR-4.4.** Code-mixed and romanised speech is recognised as non-English, per word, in Latin and Devanagari script alike (held-out romanised text: token precision 0.93, recall 0.89; 17 of 18 Hindi-bearing unseen comments). Every source's quotes use one quote form chosen from its measured language mix: Devanagari + transliteration + translation, Roman script + translation, or plain English ([N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31), [D-080](decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)).
 
 ### NFR-5 — Observability
 
@@ -255,7 +257,7 @@ Things that are intentionally **not** requirements today:
 
 - Video hosting / re-encoding / streaming.
 - A creator-facing analytics surface.
-- Public sharing of reports beyond the in-app "open report" iframe.
+- Public sharing of reports beyond the in-app reader (M11, decision-gated).
 - Realtime collaborative editing of Q&A or notes.
 - Multi-tenant data sharing between workspaces (each tenant is isolated by default).
 - Anything requiring a paid embedding API (we use local SentenceTransformer).

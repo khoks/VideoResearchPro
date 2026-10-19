@@ -33,6 +33,9 @@ class UserResponse(BaseModel):
     email: str
     created_at: datetime
     tier: str = "free"
+    # S-8.10.1: set when the first-run wizard is finished. The wizard's
+    # state lives at GET /auth/me/onboarding.
+    onboarded_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

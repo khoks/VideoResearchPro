@@ -149,7 +149,65 @@ VISUAL_ANNOTATION_CONTRACT = """ON-SCREEN VISUAL ANNOTATIONS — READ CAREFULLY:
   than silently picking one.
 - If a passage has no annotations, that means no frames were captured there —
   it does not mean nothing was shown. Never infer absence of visuals from
-  absence of annotations."""
+  absence of annotations.
+- CONVERSE: describe something as shown, displayed or visible on screen ONLY
+  when an annotation actually shows it (or its item is tagged [SHOWN] or
+  [SAID+SHOWN]). A detail the speaker only said is never "on screen", however
+  much it reads like screen text — a version number, a file name, an error
+  message, code read aloud. This holds in every language: a figure spoken in
+  Hindi or Bengali, native digits included (০.১৩.২), is speech."""
+
+
+# T-1.18.1.13: the Q&A refine step rewrites raw chunks into extracts before
+# the answer prompt sees them. A span paraphrased into prose at that step
+# reaches the answer model as speech, and the answer-stage contract can no
+# longer apply. Both refine prompts carry the contract plus this rule.
+VISUAL_SPAN_EXTRACT_RULE = """VISUAL SPANS IN EXTRACTS: when an extract draws on a `[VISUAL @ mm:ss — ...]`
+span, copy the span whole, marker and timestamp included, as its own extract.
+Never fold an annotation's content into an extract of speech, and never
+restate it as plain prose: the answer step tells what was shown from what was
+said only by the marker."""
+
+
+# --- R1 / S-1.18.8: modality provenance -------------------------------------
+#
+# D-075: prompt rules alone moved attribution errors from one direction to
+# the other instead of removing them, and four of the five confirmed errors
+# sat in the one Bengali video, where the composer cannot read the speech.
+# So whether a fact was SAID or SHOWN is decided at the map stage — where the
+# model reads one chunk of native-language speech at a time — carried through
+# the lossless reduce, and rendered to the composer as a tag it attributes
+# from. These are the four values the pipeline uses.
+MODALITY_SAID = "said"
+MODALITY_SHOWN = "shown"
+MODALITY_BOTH = "both"
+MODALITY_UNKNOWN = "unknown"
+
+MODALITY_FIELD_RULE = """EVIDENCE MODALITY — one field on EVERY item:
+- `modality` says where the item's evidence sits in the segment it came from:
+  "said"  — only in the spoken transcript;
+  "shown" — only inside a `[VISUAL @ mm:ss — ...]` span (nobody said it);
+  "both"  — the speaker says it AND a span shows it.
+- Decide from the segment itself, reading the speech in its own language. A
+  version number, name, figure or error message the speaker pronounces — in
+  Hindi, Bengali or any other language, native digits included — is "said",
+  even when its English rendering looks like on-screen text.
+- A segment with no `[VISUAL @` span yields only "said" items."""
+
+MODALITY_TAGS_NOTE = """EVIDENCE TAGS — WHERE EACH ITEM CAME FROM:
+- Each item's content begins with a tag fixed when the transcript was read,
+  by a model reading the original speech in whatever language it was spoken:
+    [SAID]        the speaker said it. Credit it to the speaker.
+    [SHOWN]       it appeared only on screen; nobody said it. Write it as
+                  shown ("on screen at mm:ss, ..."), never inside a sentence
+                  credited to a speaker.
+    [SAID+SHOWN]  the speaker said it and the screen showed it. Credit the
+                  speaker; you may add that it was also on screen.
+    [UNLABELLED]  provenance unknown; apply the on-screen annotation rules.
+- Attribute from the tag, not from how the content reads: a [SAID] item that
+  sounds like screen text was spoken; a [SHOWN] item that sounds like speech
+  was not said.
+- The tags are for you. Never print them in the report."""
 
 
 def compose_block(*fragments: str) -> str:

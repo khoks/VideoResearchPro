@@ -30,6 +30,8 @@ interface CitationUi {
   show: (citationIndex: number, anchor: HTMLElement, immediate?: boolean) => void;
   hide: (immediate?: boolean) => void;
   toggle: (citationIndex: number, anchor: HTMLElement) => void;
+  /** Whether this chip's card is the open one (read at event time; no re-render). */
+  isOpen: (citationIndex: number) => boolean;
 }
 
 const Ctx = createContext<CitationUi | null>(null);
@@ -94,6 +96,8 @@ export function CitationCardProvider({ index, resolveStill, children }: Citation
     [hide, show],
   );
 
+  const isOpen = useCallback((n: number) => activeRef.current?.n === n, []);
+
   // Escape closes. Scrolling moves the card with its chip and closes it only
   // once the chip has left the viewport. (Closing on any scroll broke keyboard
   // use: tabbing to a chip scrolls it into view, which fired the close.)
@@ -112,11 +116,21 @@ export function CitationCardProvider({ index, resolveStill, children }: Citation
         else setLayoutTick((t) => t + 1);
       });
     };
+    // A tap or click outside both the card and its chip closes it (touch has
+    // no mouseleave).
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target as Node | null;
+      const card = document.getElementById(CITATION_CARD_ID);
+      if (t && (active.anchor.contains(t) || card?.contains(t))) return;
+      hide(true);
+    };
     document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('scroll', follow, { passive: true });
     window.addEventListener('resize', follow);
     return () => {
       document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('scroll', follow);
       window.removeEventListener('resize', follow);
       if (frame) cancelAnimationFrame(frame);
@@ -125,7 +139,10 @@ export function CitationCardProvider({ index, resolveStill, children }: Citation
 
   useEffect(() => () => clearTimers(), []);
 
-  const value = useMemo<CitationUi>(() => ({ index, show, hide, toggle }), [index, show, hide, toggle]);
+  const value = useMemo<CitationUi>(
+    () => ({ index, show, hide, toggle, isOpen }),
+    [index, show, hide, toggle, isOpen],
+  );
   const citation = active && index ? (index.byIndex.get(active.n) ?? null) : null;
 
   return (

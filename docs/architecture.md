@@ -1,6 +1,6 @@
 # Pratidhvani — System Architecture
 
-**Status:** current as of 2026-04-24; sections amended through 2026-10-19. Brand-name forward; the codebase still ships under `videoresearchpro` package paths and Chroma collection names — see [feature-roadmap.md](feature-roadmap.md) §Rebrand-asset-rollout for the rename plan.
+**Status:** current as of 2026-04-24; sections amended through 2026-10-19 (latest: code-mixed speech, D-080 / D-084). Brand-name forward; the codebase still ships under `videoresearchpro` package paths and Chroma collection names — see [feature-roadmap.md](feature-roadmap.md) §Rebrand-asset-rollout for the rename plan.
 
 This document is the single source of truth for **how the running system is wired**. The vision (why it exists) lives in [vision.md](vision.md). The future shape (multi-source ingest, Author Studio, Personal Brain, SaaS) lives in [feature-roadmap.md](feature-roadmap.md), [source-types.md](source-types.md), [personal-brain.md](personal-brain.md), and [saas-roadmap.md](saas-roadmap.md). API endpoints live in [api-reference.md](api-reference.md). Page-level UI lives in [ui-pages.md](ui-pages.md). This file owns: process topology, data model, request lifecycles, agent pipelines, and the cross-cutting concerns that bind them.
 
@@ -60,9 +60,9 @@ Production targets the same shape, with SQLite swapped for Postgres and ChromaDB
 
 ### Celery worker (`celery -A app.tasks.celery_app worker --pool=solo`)
 
-- Runs all long-running orchestration: search, transcript fetch, embedding, report generation, knowledge extraction.
+- Runs all long-running orchestration: search, transcript fetch, embedding, report generation, knowledge extraction, and Author Studio generation (`author.generate_output`, S-6.7.1).
 - Has its own SQLAlchemy session factory (created per task) so request-side and worker-side don't share connections.
-- Publishes progress events to Redis pub/sub (`job_progress:{job_id}`) at every phase boundary.
+- Publishes progress events to Redis pub/sub (`job_progress:{job_id}`) at every phase boundary. Author outputs publish on the same channel under the output's id; `routers/ws.py` lets a socket subscribe to any job or output its user owns. Output cancellation is cooperative: `output_service.report_progress` raises once the row is `cancelled`, because `revoke(terminate=True)` cannot stop a task on the solo pool.
 - On Windows, **must use `--pool=solo`** because the multiprocessing prefork pool doesn't work cleanly with our embedding model + ChromaDB locks.
 - Does **not** run the LLM smoke check. Task-time LLM failures surface on the Jobs page via the worker's progress publisher.
 - A backfill runs once per worker startup that idempotently upserts every existing row from `qa_exchanges`, `library_qa_exchanges`, and `qa_history_exchanges` into the `qa_library_global` Chroma collection.
@@ -88,7 +88,7 @@ Three logical databases on the same instance:
 
 ### SQLite
 
-`data/videoresearchpro.db` (env `DATABASE_URL`). All structured state: users, jobs, documents (formerly `videos`; renamed in L1 PR 4), channels, transcript cache, Q&A exchanges, knowledge artifact metadata, scheduled runs. Alembic migrations under `backend/alembic/`. Beside the ORM tables sit the S-8.2.1 search index's FTS5 virtual tables (`fts_documents`, `fts_jobs`, `fts_channels`, `fts_qa`, `fts_knowledge`, plus SQLite's `fts_*_data` / `_idx` / `_content` / `_docsize` / `_config` shadow tables): one trigram-tokenised table per entity, each row carrying the entity id as an `UNINDEXED` column and a copy of the indexed text, kept current by triggers. They have no ORM model and `schema_init_service` ignores the `fts_` prefix when comparing the live schema to the ORM. External-content mode was rejected because it maps on rowid and every base table has a string primary key, whose rowids are not stable across `VACUUM`.
+`data/videoresearchpro.db` (env `DATABASE_URL`). Author Studio's binary artifacts sit beside it under `data/outputs/<user_id>/<output_id>/artifact.<format>` (env `OUTPUTS_DIR`, S-6.7.2); `outputs.content_path` is stored relative to that root, deleting an output removes its directory, and `scripts/sweep_output_artifacts.py` finds directories left without a row. All structured state: users, jobs, documents (formerly `videos`; renamed in L1 PR 4), channels, transcript cache, Q&A exchanges, knowledge artifact metadata, scheduled runs. Alembic migrations under `backend/alembic/`. Beside the ORM tables sit the S-8.2.1 search index's FTS5 virtual tables (`fts_documents`, `fts_jobs`, `fts_channels`, `fts_qa`, `fts_knowledge`, plus SQLite's `fts_*_data` / `_idx` / `_content` / `_docsize` / `_config` shadow tables): one trigram-tokenised table per entity, each row carrying the entity id as an `UNINDEXED` column and a copy of the indexed text, kept current by triggers. They have no ORM model and `schema_init_service` ignores the `fts_` prefix when comparing the live schema to the ORM. External-content mode was rejected because it maps on rowid and every base table has a string primary key, whose rowids are not stable across `VACUUM`.
 
 ### ChromaDB
 
@@ -232,6 +232,8 @@ User ──┬──< Job ──< JobVideo >── Document ──> Channel
        ├──< QAHistoryExchange
        ├──< Note ──> (document | knowledge_artifact | job | qa_exchange |
        │              library_qa_exchange | qa_history_exchange | channel)
+       ├──< PersonalContext                                 (Echo facts, per tenant)
+       ├──< Share ──> file under ECHO_SHARES_DIR/<tenant>/  (Echo shares inbox, per tenant)
        ├──< Shelf ──< ShelfJob >── Job                      (M1, per tenant)
        ├──< Tag ──< Tagging ──> Document                    (M1, per tenant)
        └──< JobTemplate ──< JobTemplateVersion              (M6; tenant NULL = built-in)
@@ -262,6 +264,7 @@ ApiQuotaLog (append-only ledger of YouTube + LLM calls)
   - `qa_history_exchanges` (meta-chat surface)
 
   All three are stored separately for SQL-level filtering but indexed together in `qa_library_global` so meta-chat retrieval crosses surfaces.
+- **Echo's data is a registered set of stores, per tenant** (I-3). `personal_context` (facts) and `shares_inbox` (everything the user forwards; files under `ECHO_SHARES_DIR/<tenant>/`) are listed in `echo_privacy_service.ECHO_TABLES`, and Echo's Chroma collections (`shares_global`, `personal_context_global`) in `echo_vectors.echo_collection_names()`. `GET /echo/export` writes all of it into one lossless archive; `DELETE /echo/brain` removes vectors, then files, then rows, and re-counts every store. A share is context-only unless the user marks it as their own words. See [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19).
 - **Notes are the user's own text, private per tenant** (M5). `notes(id, tenant_id, target_type, target_id, selector_json, body_md, motivation, created_at, updated_at, deleted_at)`. The target set is closed; the target is checked through visibility or ownership on every write; a document note is stored under `document_id`, so one document has one note stream. Delete is soft, and the JSON-LD export carries withdrawals losslessly. Notes are not in Chroma until S-8.5.2. See [D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19).
 - **Shelves, tags and templates are per tenant** (M1, M6). `shelves` + `shelf_jobs` group runs (a run on many shelves; deleting either side removes only memberships, through ORM cascades because SQLite here never enforces FK cascades). `tags` + `taggings` label documents per reader, even on shared documents; every count and filter re-applies visibility. `job_templates` + immutable `job_template_versions` hold reusable recipes; runs record `(template_id, template_version)` and templates are soft-deleted so that provenance survives. See [D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19) and [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19).
 - **Knowledge artifacts live on the Document row.** Three nullable columns (`extracted_knowledge_json`, `knowledge_report_md`, `knowledge_extracted_at`). One artifact per document.
@@ -379,9 +382,29 @@ The frontend's `useJobProgress` hook drives React Query cache invalidation off W
 
 Since 2026-10-19 each chunk also carries its source's two dates as flat scalars — `published_at` (ISO string, legacy) plus numeric `published_ts` / `published_year`, and `era_start` / `era_end` / `era_confidence` / `is_retrospective` from the document's discussed era. **Unknown values are omitted, never written as sentinels**, so a Chroma range filter such as `{"published_ts": {"$gte": ...}}` excludes undated chunks instead of matching them against 1970. Chunks embedded before that date carry none of these and read as unknown; there is no backfill (D-072).
 
+Also since 2026-10-19, a non-English source's chunks carry its measured language mix
+(R5 / [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31),
+[D-080](decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)). `chunk_transcript`
+profiles the whole transcript once (`code_mixing_service.profile_transcript`, a free per-word tagger) and writes
+`code_mix_primary` / `_script` / `_share` / `_matrix_share` / `_quote` on every chunk, plus per-chunk
+`code_mix_chunk_share` / `_chunk_matrix`. Sources under 3% non-English words get none of these fields, so English
+chunks are unchanged. Prompts read the fields through `code_mixing_service.source_note` as a `speech: … — quote in …`
+fragment on each source header.
+
 ### Embedding
 
 `embedding_service.py` wraps a single `SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")` instance. Loaded once per process (FastAPI and Celery each load their own). CPU-only by default; the model is small enough for that to be fine on commodity hardware.
+
+**Non-English chunks are embedded as an English rendering**
+([D-084](decisions.md#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19)).
+`chroma_service.insert_chunks`, the one write path every ingest uses, first calls
+`code_mixing_service.ensure_english_renderings`. A chunk whose own Hindi share exceeds the borrowing threshold, or
+whose grammar is Hindi, gets an English rendering (`code_mixing_render_english`, six chunks per call, once per
+document) stored as metadata `text_en`. The vector is computed from that rendering with the collection's own
+embedding function; the stored document text stays the original, which is what Q&A shows and quotes. Measured on
+132 real chunks with independent English questions: MRR 0.565 for Devanagari originals, 0.402 for the same text
+romanised, 0.805 for the rendering. Fail-soft (a failed batch embeds as written), switchable with
+`CODE_MIX_ENGLISH_RENDERING_ENABLED`, off for the test suite. There is no backfill.
 
 ### ChromaDB
 
@@ -484,6 +507,8 @@ Merging happens later and elsewhere: `services/visual_service.annotate_segments`
 **Annotations are marked in the chunk TEXT**, as `[VISUAL @ mm:ss — …]`, not only in metadata. Chunking splits, merges, overlaps and re-packs segments, and the dominant-segment heuristic promotes exactly one segment's metadata to chunk level — a 12-token annotation beside 240 tokens of speech loses that vote every time. Text physically inside the chunk arrives regardless. Two chunking rules support this: `extra["atomic"]` exempts annotations from sentence-splitting, and visual presence is aggregated across all segments rather than voted on (annotations are excluded from the vote so they cannot steal a social chunk's reply attribution).
 
 The reader-side half is `prompts/shared.py::VISUAL_ANNOTATION_CONTRACT`, injected into every prompt family that reads transcript text. It states that these spans were never spoken, must not be attributed to the speaker, must be cited as "on screen at mm:ss", and lose to the words where the two conflict. **Any new prompt that reads transcript text must include it**, or the model reads machine-written description as something a human said.
+
+**Modality provenance** (S-1.18.8, [D-075](decisions.md#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19)). Whether a fact was said or shown is decided at the report's map stage, where the model reads one chunk of native-language speech at a time: every extracted item carries `modality` (`said` / `shown` / `both`, or `unknown`), and code forces `said` for any source without a visual annotation. The lossless reduce keeps the label (two extractions of one item with different evidence become `both`), and compose renders it as an `[SAID]` / `[SHOWN]` / `[SAID+SHOWN]` / `[UNLABELLED]` tag the composer attributes from — only when the corpus has a shown item. The labels are in the persisted map records (`job_report_intermediates`), so a report can be checked against item provenance after the run.
 
 Gated by `VISUAL_ENABLED` (install) AND `jobs.visual_analysis` (per job); both must be true. Off by default — it is the only multimodal spend and the only path that downloads video rather than audio.
 
@@ -595,9 +620,9 @@ Structured logs via stdlib `logging` with a simple JSON formatter. Celery task l
 
 ### Agent-intermediate retention gap (identified 2026-07-29)
 
-Two classes of agent state were **discarded** once a job completed, and their absence blocked retrospective quality auditing. The second was closed on 2026-07-30; the first is still open:
+Two classes of agent state were **discarded** once a job completed, and their absence blocked retrospective quality auditing. Both are now closed (2026-07-30 and 2026-10-19):
 
-- **Map/reduce intermediates.** `report_map_chunks` output (per-batch extraction JSON) and the reduced summary live only in LangGraph state for the duration of the task. Once `compose_report` runs, only the final HTML survives. There is therefore no way to ask "what did the map phase actually extract, and what did reduce drop?" after the fact — a regression in map quality is invisible unless it is large enough to degrade the finished report.
+- **Map/reduce intermediates. Closed 2026-10-19 (S-1.14.6, [D-088](decisions.md#d-088--report-intermediates-persisted-per-run-on-by-default-frozen-at-the-stage-that-produced-them-2026-10-19)).** `report_map_chunks` output (per-batch extraction JSON) and the reduced summary used to live only in LangGraph state, so a regression in map quality was invisible unless it degraded the finished report. They are now written to `job_report_intermediates` — one row per map call (bisected halves and failed batches included) plus one reduce row, grouped by `run_id` — through `run_report_agent(..., intermediates_out=)` and `job_tasks._persist_report_intermediates`, behind `REPORT_INTERMEDIATES_ENABLED` (default on). Payloads are serialised when each stage produces them. `backend/scripts/audit_report_intermediates.py` reads a run back.
 - **Rejected search candidates. Closed 2026-07-30 (S-1.14.6, PR [#205](https://github.com/khoks/VideoResearchPro/pull/205)).** `search_rank_and_curate` ranks a candidate pool (417 candidates on job `0d4db8c3`) down to the approved set. Previously only the winners were persisted, via `job_documents`. The whole pool is now written to `job_search_candidates` with a `selected` flag (`tasks/job_tasks.py`), so a ranking decision can be replayed against a different model or prompt. Rejected candidates never enter the global `documents` library.
 
 Consequence, established empirically by the [D-055](decisions.md#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29) evaluation: intermediate-stage quality can only be measured by *replaying* the original inputs (rebuildable, because transcripts and chunking are deterministic) rather than by inspecting what the run actually produced. Persisting these artifacts — even sampled or behind a debug flag — is the prerequisite for continuous per-use-case quality monitoring, and is tracked as follow-up work under [E-1.14](initiatives.md#e-114--model-tier-quality-evaluation-harness).
@@ -620,7 +645,9 @@ Four streaming JSONL endpoints (`routers/exports.py`):
 ## Multilingual posture
 
 - **Whisper** is invoked with `task="transcribe"` (not `translate`) so mixed-language audio (e.g. Hindi-English code-mixed) is preserved faithfully.
-- The **embedding model** is multilingual (`paraphrase-multilingual-MiniLM-L12-v2`), so a Hindi transcript and an English question land in similar vector space.
+- The **embedding model** is multilingual (`paraphrase-multilingual-MiniLM-L12-v2`), so a Hindi transcript and an English question land in similar vector space — passably for Devanagari, badly for romanised Hindi. Non-English chunks are therefore embedded as an English rendering (see [Embedding](#embedding), D-084).
+- **Code-mixed speech** ([N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31), S-1.16.2). `language_service` profiles scripts exactly and is blind to Hindi in Latin letters by design. `code_mixing_service` answers the other question, which language each word is in, and runs on Latin and Devanagari alike. It works in four steps: a lexicon + character n-gram + Viterbi tagger; a matrix-language vote over system morphemes, which tells "Hindi grammar with English nouns" from "English with a Hindi clause"; a proportion-to-quote-form policy (`CODE_MIX_DOMINANT_SHARE` 0.6, `CODE_MIX_BORROWING_MAX_SHARE` 0.2); and one primary language per source, so a report never switches script for one speaker. The analysis path reads English (every prompt carries the English contract and the source's `speech:` note). Quotation keeps the original: report map items may carry `original` beside English `content`, and compose attaches the source's `quote_form`. Every kept `original` is verified in code before anything is composed: `app/services/quote_fidelity.py` (the same rule the R1 quote-fidelity audit uses) drops wording that is not verbatim or 80%-aligned with its own source's speech, mixes two scripts in one word, or is in a script other than the source's; the drop is disclosed in the report's processing note. Method and measurements: [the detection note](notes/2026-10-19-code-mixing-detection.md).
+- **Caption-track choice is the known weak point.** `_fetch_transcript_once` falls back to the first listed track, so an auto-dubbed track can be ingested instead of the original audio. In the S-1.16.2 study, 2 of 13 Hindi-speech videos arrived this way. An English dub cannot be detected downstream. Tracked as S-1.11.11.
 - The **Q&A agent** accepts an `answer_language` parameter and is instructed to translate quoted non-English context into the target language while preserving proper nouns in their original script.
 - **Visual annotations are always written in English**, whatever the spoken language, because they are our text rather than the speaker's. `visual_service.strip_annotations` exists so that speech-only surfaces — dataset exports, word counts, and the language profiler — measure the source and not our own commentary.
 

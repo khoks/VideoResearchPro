@@ -1,4 +1,5 @@
 from app.agents.prompts.shared import (
+    CODE_MIXED_QUOTE_FORMS,
     CODE_MIXING_NOTE,
     compose_block,
     ENGLISH_OUTPUT_CONTRACT,
@@ -86,6 +87,7 @@ QA_SYSTEM_PROMPT = compose_block(
     QA_SYSTEM_PROMPT,
     ENGLISH_OUTPUT_CONTRACT,
     QUOTE_RENDERING_RULES,
+    CODE_MIXED_QUOTE_FORMS,
     CODE_MIXING_NOTE,
     TEMPORAL_AWARENESS,
     VISUAL_ANNOTATION_CONTRACT,
@@ -96,7 +98,7 @@ QA_ANSWER_PROMPT = """Answer the question below using ONLY the curated context e
 
 Question: {question}
 
-Allowed sources (these are the ONLY videos/channels you may cite; the text after "|" is each source's publication date and, where known, the period it discusses — context for you, never part of the citation):
+Allowed sources (these are the ONLY videos/channels you may cite; the text after "|" is each source's publication date, where known the period it discusses, and for a non-English source its measured language and quote form — context for you, never part of the citation):
 {allowed_sources}
 
 Relevant context (extracted from those sources):
@@ -165,6 +167,10 @@ Other guidelines:
 # fragment contains braces, so the `{answer_language}` format below is safe.
 LIBRARY_QA_SYSTEM_PROMPT = compose_block(
     LIBRARY_QA_SYSTEM_PROMPT,
+    # N-002: recognising romanised Hindi and reading the `speech:` header.
+    # Not the quote forms: this prompt answers in a requested language and
+    # has its own excerpt-translation rule.
+    CODE_MIXING_NOTE,
     TEMPORAL_AWARENESS,
     VISUAL_ANNOTATION_CONTRACT,
 )
@@ -176,7 +182,7 @@ Question: {question}
 
 Answer language (ISO code): {answer_language}
 
-Allowed sources (these are the ONLY videos/channels you may cite; format is `<video_id> | "TITLE" by CHANNEL | published <date> | discusses <era>` — the date and era are context for you, never part of the citation):
+Allowed sources (these are the ONLY videos/channels you may cite; format is `<video_id> | "TITLE" by CHANNEL | published <date> | discusses <era> | speech: <language>` — the date, era and language are context for you, never part of the citation):
 {allowed_sources}
 
 Relevant context (extracted from those sources, possibly in mixed languages):

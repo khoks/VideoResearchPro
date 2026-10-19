@@ -13,6 +13,7 @@ EXTRACT_BATCH_PROMPT = """You are extracting structured knowledge from one batch
 Video: "{video_title}"
 Channel: {channel_name}
 {temporal_note}
+{language_note}
 
 Transcript batch:
 {batch_text}
@@ -70,6 +71,7 @@ SYNTHESIZE_REPORT_PROMPT = """You are writing a Wikipedia-style knowledge report
 Video: "{video_title}"
 Channel: {channel_name}
 {temporal_note}
+{language_note}
 
 Merged structured extraction (deduplicated union across transcript batches):
 {merged_extraction_json}

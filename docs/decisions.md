@@ -2459,7 +2459,21 @@ transcripts read as 0% non-English. Every non-Latin script now counts, and
 the profile records which one (`native_script`). Details in [the detection
 note](notes/2026-10-19-code-mixing-detection.md#9-transcript-level-primary-language-t-11624).
 
-**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1 to T-1.16.2.4), E-1.16, N-002.
+**Addendum (2026-10-19): the quotation half of the bidirectional split,
+T-1.16.2.5 part A.** The measured profile travels as `code_mix_*` chunk
+metadata, absent for English sources. Source headers in the report map and
+in Q&A name each non-English source's language and quote form. Map items may
+carry the speaker's `original` wording beside the English `content`, and
+compose attaches the source's quote form to it from metadata. Before this,
+the report pipeline translated at the map stage and kept no original wording
+for D-066's three-part rule to quote. Library Q&A gets recognition but not
+the English quote forms, because it answers in a requested language. The
+retrieval half (embedding an English rendering) was measured first: MRR 0.565
+for Devanagari chunks, 0.402 romanised, 0.805 English. It is decided
+separately. Details in [the detection
+note](notes/2026-10-19-code-mixing-detection.md#10-the-bidirectional-split-t-11625).
+
+**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1 to T-1.16.2.5), E-1.16, N-002.
 
 ## D-081 — Frame describer default: spend against report-level quality (2026-10-19)
 

@@ -21,6 +21,12 @@ For each item, include:
 - The video title and channel
 - The approximate timestamp
 - The speaker (if identifiable)
+- For a source whose header carries `speech: ...` (not English), when the
+  item is a direct quote or a remark whose exact wording matters: `original`,
+  the speaker's words copied EXACTLY from the transcript — same script, same
+  spelling, nothing translated. `content` stays in English either way; that
+  is what the analysis reads. Omit `original` for ordinary speech and for
+  English sources.
 
 {english_contract}
 
@@ -42,7 +48,7 @@ OUTPUT FORMAT (STRICT):
 - The JSON must be parseable by a standard JSON parser (double-quoted keys/strings, no trailing commas).
 
 The JSON object must have keys: facts, comments, conclusions, references, speakers.
-Each value is an array of objects with fields: content, video_title, channel_name, timestamp_display, timestamp_seconds, video_url, speaker.
+Each value is an array of objects with fields: content, video_title, channel_name, timestamp_display, timestamp_seconds, video_url, speaker, and optionally original.
 """
 
 REDUCE_PROMPT = """You are consolidating extracted information from multiple batches of YouTube transcripts

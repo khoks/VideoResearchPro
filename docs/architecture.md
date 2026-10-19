@@ -228,7 +228,9 @@ User ──┬──< Job ──< JobVideo >── Document ──> Channel
        │           └── status, type, parameters (JSON)
        │
        ├──< LibraryQAExchange
-       └──< QAHistoryExchange
+       ├──< QAHistoryExchange
+       └──< Note ──> (document | knowledge_artifact | job | qa_exchange |
+                      library_qa_exchange | qa_history_exchange | channel)
 
 Document ──< KnowledgeArtifact (columns on Document, not a separate table)
 Document ──  DiscussedEra (column `discussed_era_json` on Document — R3, see below)
@@ -254,6 +256,7 @@ ApiQuotaLog (append-only ledger of YouTube + LLM calls)
   - `qa_history_exchanges` (meta-chat surface)
 
   All three are stored separately for SQL-level filtering but indexed together in `qa_library_global` so meta-chat retrieval crosses surfaces.
+- **Notes are the user's own text, private per tenant** (M5). `notes(id, tenant_id, target_type, target_id, selector_json, body_md, motivation, created_at, updated_at, deleted_at)`. The target set is closed; the target is checked through visibility or ownership on every write; a document note is stored under `document_id`, so one document has one note stream. Delete is soft, and the JSON-LD export carries withdrawals losslessly. Notes are not in Chroma until S-8.5.2. See [D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19).
 - **Knowledge artifacts live on the Document row.** Three nullable columns (`extracted_knowledge_json`, `knowledge_report_md`, `knowledge_extracted_at`). One artifact per document.
 - **Jobs carry a status enum**: `pending → searching → awaiting_approval → extracting → building_rag → generating_report → completed`. Terminal: `completed`, `failed`, `cancelled`. Subscription jobs skip `awaiting_approval` and `generating_report`.
 

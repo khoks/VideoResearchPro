@@ -274,7 +274,7 @@ export function EchoPage() {
 
           <section>
             <div style={{ display: 'flex', alignItems: 'center', gap: space['3'], flexWrap: 'wrap', marginBottom: space['3'] }}>
-              <SectionHeading style={{ marginBottom: 0, flex: 1 }}>
+              <SectionHeading style={{ marginBottom: 0, flex: '1 0 auto', whiteSpace: 'nowrap' }}>
                 What Echo knows
                 {context.data && (
                   <span style={{ color: c.textMuted, fontWeight: fontWeight.regular }}> ({filteredRows.length})</span>

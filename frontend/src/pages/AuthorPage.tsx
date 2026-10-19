@@ -181,7 +181,7 @@ export function AuthorPage() {
                 marginBottom: space['3'],
               }}
             >
-              <SectionHeading style={{ marginBottom: 0, flex: 1 }}>
+              <SectionHeading style={{ marginBottom: 0, flex: '1 0 auto', whiteSpace: 'nowrap' }}>
                 Your outputs
                 {outputs.data && (
                   <span style={{ color: c.textMuted, fontWeight: fontWeight.regular }}>

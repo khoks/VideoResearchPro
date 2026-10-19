@@ -43,7 +43,6 @@ will all run on this; none of them exists yet, so nothing is scheduled today.
   and row counts. Settings: `SCHEDULER_ENABLED`, `SCHEDULER_TICK_SECONDS`,
   `SCHEDULER_LEASE_SECONDS`, `SCHEDULER_GRACE_SECONDS`,
   `SCHEDULER_BATCH_SIZE`, `SCHEDULER_MAX_RETRY_TICKS`.
-=======
 ### Visual contract: speaker-attribution boundary (2026-10-19)
 
 The R1 measurement ([D-071](docs/decisions.md#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19)) found two report

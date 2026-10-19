@@ -44,7 +44,36 @@ CODE_MIXING_NOTE = """CODE-MIXED SPEECH:
   render its MEANING in English rather than translating word by word.
 - Romanised non-English text (Hindi written in Latin letters, e.g. "mujhe ye
   samajh nahi aaya") is still non-English. Translate it; do not pass it through
-  as if it were English."""
+  as if it were English.
+- A source header may carry `speech: ...`, MEASURED from that source's words
+  and grammar: which language it is spoken in, and — when it says "this
+  passage in Hindi grammar" — that a passage full of English words is
+  nonetheless a Hindi sentence ("model ko train karna padta hai": Hindi with
+  English nouns). Read such a passage in the language of its grammar, then
+  translate its meaning. A source marked as Hindi is Hindi even where it is
+  written in Latin letters."""
+
+# N-002 / S-1.16.2: which script kept wording is shown in. QUOTE_RENDERING_RULES
+# decides WHETHER wording is kept; this decides HOW, per source, from the
+# measured language mix (code_mixing_service.quote_form). One form per source,
+# so a report never switches script for the same speaker.
+CODE_MIXED_QUOTE_FORMS = """QUOTE FORM PER SOURCE (code-mixed speech):
+- A source or item may name its quote form, measured from that source's
+  language mix. When you keep a speaker's wording, use exactly that form:
+  - "quote in <script> + transliteration + English translation": the wording
+    in that script, then a romanisation, then the translation —
+    अहिंसा परमो धर्मः (ahiṃsā paramo dharmaḥ) — "non-violence is the highest
+    virtue". If the source wrote it in Latin letters, put it in the named
+    script and use the source's own spelling as the transliteration.
+  - "quote in Roman script + English translation": the wording in Latin
+    letters as spoken — English words in English spelling, Hindi words
+    romanised — then the translation: taaki baadme koi kasar na reh jaye —
+    "so that nothing is left wanting later". The Roman original is its own
+    transliteration; do not write it twice.
+- Use ONE form for every quote from the same source, even where a single
+  sentence leans the other way.
+- A source with no quote form is English: gloss any borrowed word inline
+  ("bhai (brother)") instead of quoting it."""
 
 
 # --- R3: time --------------------------------------------------------------

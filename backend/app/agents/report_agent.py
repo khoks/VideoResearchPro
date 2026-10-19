@@ -16,15 +16,17 @@ from app.agents.prompts.report_prompts import (
     REPORT_SECTIONS,
 )
 from app.agents.prompts.shared import (
+    CODE_MIXED_QUOTE_FORMS,
     CODE_MIXING_NOTE,
     ENGLISH_OUTPUT_CONTRACT,
     QUOTE_RENDERING_RULES,
+    compose_block,
     TEMPORAL_AWARENESS,
     TEMPORAL_EXTRACTION_NOTE,
     VISUAL_ANNOTATION_CONTRACT,
 )
 from app.agents.state import ReportAgentState
-from app.services import language_service
+from app.services import code_mixing_service, language_service
 from app.services.llm_service import get_llm_for, response_text
 from app.services.llm_routing import (
     context_window_for,
@@ -274,11 +276,16 @@ def map_chunks(state: ReportAgentState) -> dict:
         pub = str(meta.get("published_at") or "")[:10]
         # S-1.17.2: ... nor tell a 2026 source about 2019 from a 2019 source.
         era = temporal_service.era_for_prompt(temporal_service.era_from_chunk_metadata(meta))
+        # N-002: the source's measured language mix and quote form, so the
+        # extractor knows romanised Hindi is Hindi and when to keep wording.
+        # Empty for English sources.
+        speech = code_mixing_service.source_note(meta)
         formatted = (
             f"[{meta.get('video_title', 'Unknown')} | {meta.get('channel_name', 'Unknown')} | "
             f"{format_timestamp(meta.get('timestamp_start', 0))}"
             f"{' | published ' + pub if pub else ''}"
             f"{' | ' + era if era else ''}"
+            f"{' | ' + speech if speech else ''}"
             f"{' | ' + url if url else ''}]\n{text}"
         )
         tokens = _count_tokens(formatted)
@@ -622,6 +629,44 @@ def _section_text_digest(parts: list[str], budget_tokens: int) -> str:
 _SUMMARY_INPUT_TOKENS = 60_000
 
 
+def _source_key(value: object) -> str:
+    """A source's URL without the `&t=` timestamp the map may append."""
+    return str(value or "").split("&t=")[0].split("?t=")[0].strip()
+
+
+def _quote_forms_by_source(chunk_metas: list[dict]) -> dict[str, str]:
+    """Quote form per source (by URL and by title) for non-English sources."""
+    forms: dict[str, str] = {}
+    for meta in chunk_metas:
+        form = code_mixing_service.quote_form(meta)
+        if not form:
+            continue
+        for key in (meta.get("video_url"), meta.get("url"), meta.get("permalink")):
+            if _source_key(key):
+                forms.setdefault(_source_key(key), form)
+        if meta.get("video_title"):
+            forms.setdefault(f"title:{meta['video_title']}", form)
+    return forms
+
+
+def _attach_quote_forms(consolidated: dict, forms: dict[str, str]) -> int:
+    """Set `quote_form` on every item that kept `original` wording."""
+    if not forms:
+        return 0
+    n = 0
+    for items in consolidated.values():
+        for item in items or []:
+            if not isinstance(item, dict) or not item.get("original"):
+                continue
+            form = forms.get(_source_key(item.get("video_url"))) or forms.get(
+                f"title:{item.get('video_title', '')}"
+            )
+            if form:
+                item["quote_form"] = form
+                n += 1
+    return n
+
+
 def compose_report(state: ReportAgentState) -> dict:
     """Compose the final HTML report body using LLM."""
     if state["job_type"] == "channel":
@@ -670,6 +715,16 @@ def compose_report(state: ReportAgentState) -> dict:
     language_note = language_service.describe_for_prompt(
         statistics.get("language_profile") or {}
     )
+    # N-002 / T-1.16.2.5: the quotation half of the bidirectional split. Map
+    # items carry English `content` (what the analysis reads) and, for
+    # quotable wording from a non-English source, the speaker's `original`.
+    # Each such item gets its source's quote form here — from the chunk
+    # metadata, deterministically — so every quote from one source is shown
+    # the same way. Script profiling cannot see romanised Hindi, so the
+    # corpus note counts sources from their measured profiles instead.
+    chunk_metas = [ch.get("metadata") or {} for ch in state.get("transcript_chunks") or []]
+    _attach_quote_forms(consolidated, _quote_forms_by_source(chunk_metas))
+    language_note = compose_block(language_note, code_mixing_service.corpus_note(chunk_metas))
 
     parts: list[str] = []
     digest: list[str] = []
@@ -697,7 +752,7 @@ def compose_report(state: ReportAgentState) -> dict:
             )
             prompt = COMPOSE_SECTION_PROMPT.format(
                 english_contract=ENGLISH_OUTPUT_CONTRACT,
-                quote_rules=QUOTE_RENDERING_RULES,
+                quote_rules=compose_block(QUOTE_RENDERING_RULES, CODE_MIXED_QUOTE_FORMS),
                 temporal=TEMPORAL_AWARENESS,
                 visual_annotations=VISUAL_ANNOTATION_CONTRACT,
                 topic=topic,

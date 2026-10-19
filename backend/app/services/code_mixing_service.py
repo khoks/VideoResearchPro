@@ -647,6 +647,132 @@ def resolve_quote_mode(span_mode: str, transcript_profile: dict[str, Any]) -> st
     return ROMAN
 
 
+# --- chunk metadata and prompt notes (T-1.16.2.5) -------------------------------
+#
+# The transcript profile is computed once, at chunk time, and flattened into
+# every chunk's Chroma metadata — the same pattern as the discussed era — so
+# every later stage (report map, compose, job and library Q&A) reads the
+# source's language and quote form without recomputing it. English documents
+# get NO fields: the common case stays byte-identical, and an absent field
+# means "English, or chunked before this shipped".
+
+def chunk_metadata_for_transcript(segments_or_text: Any) -> dict[str, Any]:
+    """Document-level fields for chunk metadata; empty for English sources."""
+    p = profile_transcript(segments_or_text)
+    if p["primary_language"] in ("en", "none") and p["quote_mode"] == PLAIN_ENGLISH:
+        return {}
+    return {
+        "code_mix_primary": p["primary_language"],
+        "code_mix_script": p["native_script"] or "",
+        "code_mix_share": p["hi_share"],
+        "code_mix_matrix_share": p["matrix_hi_share"],
+        "code_mix_quote": p["quote_mode"],
+    }
+
+
+def chunk_fields(text: str) -> dict[str, Any]:
+    """Per-chunk share and grammar, for chunks of a non-English source."""
+    a = analyse_span(text)
+    return {"code_mix_chunk_share": a["hi_share"], "code_mix_chunk_matrix": a["matrix"]}
+
+
+_LANGUAGE_BY_SCRIPT = {"Devanagari": "Hindi", "Latin": "Hindi", "Arabic": "Urdu/Hindi"}
+
+
+def quote_form(meta: dict[str, Any] | None) -> str:
+    """How quoted wording from this source is shown, in words; "" for English.
+
+    Every quote from one source takes this form (T-1.16.2.4), so a report
+    never switches script for the same speaker.
+    """
+    meta = meta or {}
+    if not meta.get("code_mix_primary"):
+        return ""
+    if meta.get("code_mix_quote") == NATIVE_SCRIPT:
+        # Hindi-dominant speech is shown in Hindi's script even when the
+        # source typed it in Latin letters — N-002's "dominant language keeps
+        # its script"; the romanised original becomes the transliteration.
+        script = meta.get("code_mix_script") or ""
+        target = script if script and script != "Latin" else "Devanagari"
+        return f"quote in {target} + transliteration + English translation"
+    # Heavy interleaving, or the occasional Hindi clause in an English-primary
+    # source: Roman script throughout, the original is its own transliteration.
+    return "quote in Roman script + English translation"
+
+
+def source_note(meta: dict[str, Any] | None) -> str:
+    """One header fragment naming a source's language and quote form.
+
+    ``speech: Hindi (romanised) mixed with English, Hindi grammar in this
+    passage — quote in Roman script + English translation``. Empty for
+    English sources, so the common case adds no tokens.
+    """
+    meta = meta or {}
+    primary = meta.get("code_mix_primary")
+    if not primary:
+        return ""
+    script = meta.get("code_mix_script") or ""
+    share = meta.get("code_mix_share") or 0.0
+    if primary == "other":
+        lang = f"a {script}-script language" if script else "a non-English language"
+    else:
+        name = _LANGUAGE_BY_SCRIPT.get(script, "Hindi")
+        lang = f"{name} (romanised)" if script == "Latin" else name
+    if primary == "en":
+        desc = f"mostly English with {lang} ({share:.0%} of words)"
+    elif share < 0.95:
+        desc = f"{lang} mixed with English ({share:.0%} {lang.split(' ')[0]})"
+    else:
+        desc = lang
+    chunk_matrix = meta.get("code_mix_chunk_matrix")
+    if primary == "en" and chunk_matrix == "hi":
+        desc += ", this passage in Hindi grammar"
+    elif primary in ("hi", "other") and chunk_matrix == "en":
+        desc += ", this passage in English grammar"
+    form = quote_form(meta)
+    return f"speech: {desc}" + (f" — {form}" if form else "")
+
+
+def describe_source_for_prompt(segments_or_text: Any) -> str:
+    """A self-contained note for a prompt that reads ONE source's transcript
+    (knowledge extraction). Empty for English sources."""
+    note = source_note(chunk_metadata_for_transcript(segments_or_text))
+    if not note:
+        return ""
+    return (
+        f"SOURCE LANGUAGE (measured from this transcript) — {note}. Hindi "
+        f"written in Latin letters is Hindi, not English: read each sentence in "
+        f"the language of its grammar and translate its meaning. Where you keep "
+        f"a speaker's exact wording, show it in the quote form named here."
+    )
+
+
+def corpus_note(metas: Iterable[dict[str, Any]]) -> str:
+    """One line for compose prompts: how many sources are not English.
+
+    Script profiling (`language_service.describe_for_prompt`) cannot see
+    romanised Hindi; this counts sources from their measured profiles.
+    """
+    sources: dict[str, dict] = {}
+    for m in metas:
+        if not m or not m.get("code_mix_primary"):
+            continue
+        key = str(m.get("document_id") or m.get("video_url") or m.get("video_title") or "")
+        sources.setdefault(key, m)
+    if not sources:
+        return ""
+    by = Counter(
+        quote_form(m) or "English" for m in sources.values()
+    )
+    forms = "; ".join(f"{n} → {form}" for form, n in by.most_common())
+    return (
+        f"CODE-MIXED SOURCES: {len(sources)} source(s) in this material are not "
+        f"plain English (per-source quote forms: {forms}). Their extracted items "
+        f"are already in English; where an item carries `original` wording, show "
+        f"it in the item's `quote_form`."
+    )
+
+
 # --- LLM detector -------------------------------------------------------------
 
 LLM_BATCH_SIZE = 25

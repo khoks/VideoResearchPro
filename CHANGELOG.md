@@ -10,6 +10,27 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Code-mixed speech: quotes keep the original wording (2026-10-19, T-1.16.2.5 part A)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). The quotation half of N-002's bidirectional split;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- **Chunks of non-English sources carry their measured profile**
+  (`code_mix_primary`, `_script`, `_share`, `_quote`, plus per-chunk share
+  and grammar). English chunks are unchanged.
+- **Every non-English source header** in the report map, job Q&A and library
+  Q&A now reads `speech: Hindi (romanised) mixed with English (46% Hindi) —
+  quote in Roman script + English translation`, so the model knows
+  romanised Hindi is Hindi and how to show a quote from that source.
+- **Reports can quote originals again.** Map items may carry the speaker's
+  `original` wording beside the English `content`; compose attaches the
+  source's quote form, and the new `CODE_MIXED_QUOTE_FORMS` rules apply one
+  form per source. Until now the map stage translated everything and kept no
+  original wording for D-066's three-part quote rule to use.
+- Knowledge extraction is told the video's measured language and quote form.
+- Measured for part B (next PR): English questions retrieve Hindi chunks at
+  MRR 0.565 in Devanagari, 0.402 romanised and 0.805 as an English rendering.
+
 ### Code-mixed speech: one primary language per transcript (2026-10-19, T-1.16.2.4)
 
 PR [#264](https://github.com/khoks/VideoResearchPro/pull/264). Fourth task of N-002;

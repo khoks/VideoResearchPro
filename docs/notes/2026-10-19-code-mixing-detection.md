@@ -514,6 +514,48 @@ retrieval MRR +0.21 to +0.40. The failure the story was written against did
 not occur at extraction even before this work. It occurs at fetch, which this
 story cannot fix and S-1.11.11 can.
 
+## 12. Regression: invented "original" wording, and the fix (2026-10-19)
+
+PR #268 asked the map stage to copy a non-English speaker's words "EXACTLY"
+into `original`. The R1 run-5 replay (job `419e691d`) showed what a
+prompt-only rule produces when one map batch packs eight channels, Bengali and
+Hindi among them. The model quoted the Hindi speakers in **Bengali script**,
+in strings that exist in no transcript, and spliced Bengali letters into
+Devanagari words ("लिमিটेशंस", "জানेंगे"). The composer then quoted one of
+them in Bengali seven times. No original-wording check existed before #268,
+because no original wording did.
+
+**Fix.** The map stage now checks every `original` in code before the audit
+record is written, using `app/services/quote_fidelity.py`, the same rule the
+run-6 gate (`scripts/audit_quote_fidelity.py`, which now imports it) audits
+with. An original survives only when:
+
+- it is resolved to its own source (through `video_url`, then title);
+- no word mixes letters of two non-Latin scripts;
+- its script is the source's dominant script;
+- every ellipsis-separated fragment is verbatim or "near" (≥ 80% of
+  characters aligned with one stretch of that source's speech, `[VISUAL @]`
+  spans excluded).
+
+"Near" exists because the model regularises caption spelling. My first
+exact-substring version dropped near-verbatim quotes with up to 41 of 51
+words matching. A failing original is moved to `original_rejected` with a
+reason, where the persisted map record keeps it and the composer never sees
+it. The English `content` survives, and the processing note at the end of
+the report discloses how many quotes were left out.
+
+**Measured on job 419e691d** (`scripts/measure_original_verification.py`).
+Offline over run 5's own map output, the plain arm keeps 33 originals and
+drops 4 (all mixed-script); the visual arm keeps 39 and drops 12 (11 Bengali
+script for Hindi speakers, and 1 Bengali rendering of DeepLoop's sentence
+filed under CodeWithMunnaX). Both match the audit's failing counts exactly.
+A fresh map replay of the plain arm kept 26 and dropped 2.
+
+**Found alongside.** Compose material was serialised with `json.dumps`'s
+default `ensure_ascii=True`, so every Devanagari or Bengali original reached
+the composer as `\uXXXX` escapes. It is now plain text, and the budget
+estimates count the same text the composer reads.
+
 ## Reproduce
 
 ```bash

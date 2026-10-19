@@ -33,7 +33,8 @@ from app.agents.prompts.shared import (
     VISUAL_ANNOTATION_CONTRACT,
 )
 from app.agents.state import ReportAgentState
-from app.services import code_mixing_service, language_service
+from app.services import code_mixing_service, language_service, quote_fidelity
+from app.services.visual_service import strip_annotations
 from app.services.llm_service import get_llm_for, response_text
 from app.services.llm_routing import (
     context_window_for,
@@ -408,6 +409,7 @@ def map_chunks(state: ReportAgentState) -> dict:
             "map_modality": dict(sorted(modality_counts.items())),
             "map_originals_kept": original_counts["kept"],
             "map_originals_dropped": original_counts["dropped"],
+            "map_originals_dropped_by_reason": dict(sorted(original_counts.get("reasons", {}).items())),
         }
     )
     if original_counts["dropped"]:
@@ -443,12 +445,14 @@ def _source_identity(meta: dict) -> str:
 
 
 def _source_texts_for_verification(chunks: list[dict]) -> dict:
-    """``{"text": {source: normalised text}, "by_url": {...}, "by_title": {...}}``.
+    """``{"videos": {source: VideoText}, "by_url": {...}, "by_title": {...}}``.
 
-    Each source's chunks are put back in order and merged without their
-    overlap, so a quote spanning a chunk boundary still matches.
+    Each source's chunks are put back in order, merged without their overlap
+    (so a quote spanning a chunk boundary still matches) and stripped of
+    `[VISUAL @]` spans: an `original` is something SAID.
     """
     by_source: dict[str, list[tuple[float, int, str]]] = {}
+    titles: dict[str, str] = {}
     by_url: dict[str, str] = {}
     by_title: dict[str, str] = {}
     for ch in chunks:
@@ -457,29 +461,35 @@ def _source_texts_for_verification(chunks: list[dict]) -> dict:
         if not sid:
             continue
         order = (float(meta.get("timestamp_start") or 0), int(meta.get("chunk_index") or 0))
-        by_source.setdefault(sid, []).append((*order, ch.get("text") or ""))
+        by_source.setdefault(sid, []).append((*order, strip_annotations(ch.get("text") or "")))
+        titles.setdefault(sid, str(meta.get("video_title") or ""))
         for key in (meta.get("video_url"), meta.get("url"), meta.get("permalink")):
             if _source_key(key):
                 by_url.setdefault(_source_key(key), sid)
         if meta.get("video_title"):
             by_title.setdefault(str(meta["video_title"]), sid)
-    text = {
-        sid: code_mixing_service.normalise_for_match(
-            code_mixing_service.merge_chunk_texts(t for _, _, t in sorted(parts))
+    videos = {
+        sid: quote_fidelity.VideoText.from_raw(
+            titles[sid], quote_fidelity.merge_chunk_texts(t for _, _, t in sorted(parts))
         )
         for sid, parts in by_source.items()
     }
-    return {"text": text, "by_url": by_url, "by_title": by_title}
+    return {"videos": videos, "by_url": by_url, "by_title": by_title}
 
 
 def _verify_originals(parsed: object, sources: dict, counts: dict) -> None:
-    """Drop any `original` that is not word for word in its own source.
+    """Drop any `original` that does not trace back to its own source's speech.
 
-    Resolved through the item's `video_url` (then its title) to that source's
-    transcript; an item that resolves to no source cannot be checked and
-    loses its `original` too. A dropped value is kept as `original_rejected`
-    so the persisted map record shows what was removed; the composer never
-    sees it. The English `content` always survives.
+    The rule is `quote_fidelity.problem` — the same definition the R1 run-6
+    gate (`scripts/audit_quote_fidelity.py`) audits with, so the pipeline keeps
+    exactly what the gate passes: verbatim or near (caption spelling) against
+    the item's OWN source, no word mixing two scripts, no script other than
+    the source's. The source is resolved through the item's `video_url`, then
+    its title; an item that resolves to none cannot be checked and loses its
+    `original` too. A dropped value is kept as `original_rejected` (with
+    `original_rejected_reason`) so the persisted map record shows what was
+    removed; the composer never sees it. The English `content` always
+    survives.
     """
     if not isinstance(parsed, dict):
         return
@@ -491,12 +501,16 @@ def _verify_originals(parsed: object, sources: dict, counts: dict) -> None:
             sid = sources["by_url"].get(_source_key(item.get("video_url"))) or sources["by_title"].get(
                 str(item.get("video_title") or "")
             )
-            if sid and code_mixing_service.verbatim_in(original, sources["text"].get(sid, "")):
+            reason = quote_fidelity.problem(original, sources["videos"].get(sid) if sid else None)
+            if reason is None:
                 counts["kept"] += 1
                 continue
             item.pop("original", None)
             item["original_rejected"] = original
+            item["original_rejected_reason"] = reason
             counts["dropped"] += 1
+            counts.setdefault("reasons", {})
+            counts["reasons"][reason] = counts["reasons"].get(reason, 0) + 1
 
 
 # --- S-1.18.8: modality provenance -----------------------------------------
@@ -614,7 +628,9 @@ def _uses_modality_tags(consolidated: dict) -> bool:
     )
 
 
-_PIPELINE_ONLY_KEYS = ("modality", "modality_model", "original_rejected")
+_PIPELINE_ONLY_KEYS = (
+    "modality", "modality_model", "original_rejected", "original_rejected_reason",
+)
 
 
 def _render_items_for_compose(items: list, tagged: bool) -> list:

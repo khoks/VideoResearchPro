@@ -43,7 +43,7 @@ _KEYS = report_agent._REDUCE_KEYS
 
 
 def _tally(summaries: list[dict]) -> dict:
-    kept, dropped = Counter(), Counter()
+    kept, dropped, reasons = Counter(), Counter(), Counter()
     examples = []
     for s in summaries:
         if not isinstance(s, dict):
@@ -58,12 +58,14 @@ def _tally(summaries: list[dict]) -> dict:
                 if it.get("original_rejected"):
                     rej = it["original_rejected"]
                     dropped[(ch, language_service.dominant_script(rej) or "?")] += 1
+                    reasons[it.get("original_rejected_reason") or "?"] += 1
                     if len(examples) < 6:
                         examples.append(f"{ch}: {rej[:80]}")
     return {
         "kept": sum(kept.values()), "dropped": sum(dropped.values()),
         "kept_by_channel_script": {f"{c} / {s}": n for (c, s), n in sorted(kept.items())},
         "dropped_by_channel_script": {f"{c} / {s}": n for (c, s), n in sorted(dropped.items())},
+        "dropped_by_reason": dict(sorted(reasons.items())),
         "dropped_examples": examples,
     }
 
@@ -81,12 +83,12 @@ def main() -> None:
     finally:
         db.close()
     sources = report_agent._source_texts_for_verification(chunks_off)
-    report = {"job_id": args.job_id, "chunks": len(chunks_off), "sources": len(sources["text"])}
+    report = {"job_id": args.job_id, "chunks": len(chunks_off), "sources": len(sources["videos"])}
 
     for path in args.intermediates:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         summaries = [json.loads(r["payload_json"]) for r in data["map"] if r.get("payload_json")]
-        counts = {"kept": 0, "dropped": 0}
+        counts: dict = {"kept": 0, "dropped": 0}
         for s in summaries:
             report_agent._verify_originals(s, sources, counts)
         report[f"offline:{Path(path).name}"] = _tally(summaries)

@@ -2494,7 +2494,20 @@ either with N-002 or without it; the failure occurred at fetch instead
 (S-1.11.11). Details in [the detection
 note](notes/2026-10-19-code-mixing-detection.md#11-end-to-end-evaluation-on-held-out-sources-t-11626).
 
-**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1 to T-1.16.2.6), E-1.16, N-002.
+**Addendum (2026-10-19): kept wording is verified in code.** The R1
+run-5 replay showed the prompt-only "copy EXACTLY" failing: Hindi speakers
+were quoted in Bengali script in strings found in no transcript. Every map
+`original` is now checked against its OWN source's speech by
+`app/services/quote_fidelity.py`, the same rule the run-6 gate audits with.
+It requires no mixed-script words, the source's own script, and verbatim or
+≥ 80% aligned fragments. A failing original is dropped, the English point is
+kept, and the drop is disclosed. The tolerance is deliberate: an
+exact-substring check dropped near-verbatim quotes where the model had only
+regularised caption spelling. On run 5 the check drops exactly what the
+audit fails (4 of 37 and 12 of 51). Details in [section 12 of the detection
+note](notes/2026-10-19-code-mixing-detection.md#12-regression-invented-original-wording-and-the-fix-2026-10-19).
+
+**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1 to T-1.16.2.6, T-1.16.2.10), E-1.16, N-002, T-1.18.8.4.
 
 ## D-081 — Frame describer default: spend against report-level quality (2026-10-19)
 

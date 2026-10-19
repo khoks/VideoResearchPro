@@ -10,6 +10,24 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Fixed: invented "original" quotes in code-mixed reports (2026-10-19)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Regression from #268, found in the R1 run-5 replay;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- The map stage could put **words a speaker never said** into a report
+  quote. Hindi speakers were quoted in Bengali script, with Bengali letters
+  spliced into Devanagari words, when one batch mixed Bengali and Hindi
+  sources. Every kept `original` is now checked in code against its own
+  source's speech. A quote with mixed-script words, the wrong script, or
+  wording not found (verbatim or ≥ 80% aligned) is dropped, the English
+  point is kept, and the report's processing note says how many were left out.
+- One rule for the pipeline and the R1 run-6 gate: `app/services/quote_fidelity.py`,
+  now imported by `scripts/audit_quote_fidelity.py`. On run 5 the pipeline
+  drops exactly what the audit fails.
+- Compose material no longer reaches the composer as `\uXXXX` escapes for
+  Devanagari and Bengali text.
+
 ### Channel Intelligence tab (2026-10-19)
 
 [S-8.7.3](docs/initiatives.md#s-873--intelligence-tab-ui), PR [#285](https://github.com/khoks/VideoResearchPro/pull/285).

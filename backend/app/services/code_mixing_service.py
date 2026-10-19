@@ -31,7 +31,6 @@ from __future__ import annotations
 import json
 import logging
 import math
-import re
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass
@@ -786,80 +785,6 @@ def corpus_note(metas: Iterable[dict[str, Any]]) -> str:
         f"are already in English; where an item carries `original` wording, show "
         f"it in the item's `quote_form`."
     )
-
-
-# --- verbatim check for kept wording ----------------------------------------------
-#
-# The map prompt asks for `original` "copied EXACTLY from the transcript", and
-# a prompt is not a guarantee. The R1 run-5 replay (2026-10-19) found a batch
-# packing a Bengali and two Hindi sources whose Hindi speaker came back with
-# `original` values in BENGALI script — strings that exist in no transcript —
-# and the composer quoted him in Bengali seven times. So kept wording is
-# checked in code against the transcript of the item's OWN source, and an
-# original that is not there is dropped (the English `content` survives).
-
-_ELLIPSIS_SPLIT = re.compile(r"…|\.{3,}")
-VERBATIM_MIN_FRAGMENT_CHARS = 12
-_NUKTA = "़"
-_CHANDRABINDU = "ँ"
-_ANUSVARA = "ं"
-
-
-def normalise_for_match(text: str) -> str:
-    """Text reduced to what "the same words" means across renderings.
-
-    NFD (so a precomposed nukta letter equals base + nukta), nukta dropped and
-    chandrabindu folded into anusvara (spellings ASR and writers use
-    interchangeably), every decimal digit to ASCII (Devanagari and Bengali
-    digits included), letters lower-cased, everything else a single space.
-    Script is NOT folded: Bengali letters never match Devanagari ones.
-    """
-    out: list[str] = []
-    for ch in unicodedata.normalize("NFD", text or ""):
-        if ch == _NUKTA:
-            continue
-        if ch == _CHANDRABINDU:
-            ch = _ANUSVARA
-        if ch.isdigit():
-            d = unicodedata.decimal(ch, None)
-            out.append(str(d) if d is not None else " ")
-            continue
-        out.append(ch.lower() if unicodedata.category(ch)[0] in ("L", "M") else " ")
-    return " ".join("".join(out).split())
-
-
-def merge_chunk_texts(texts: Iterable[str]) -> str:
-    """Rebuild one source's text from its ordered chunks, dropping the overlap.
-
-    Concatenating overlapping chunks would duplicate the overlap and break any
-    quote that spans a chunk boundary; the longest suffix of the text so far
-    that equals a prefix of the next chunk (word-level) is removed instead.
-    """
-    words: list[str] = []
-    for text in texts:
-        w = (text or "").split()
-        overlap = 0
-        for n in range(min(len(words), len(w), 300), 0, -1):
-            if words[-n:] == w[:n]:
-                overlap = n
-                break
-        words.extend(w[overlap:])
-    return " ".join(words)
-
-
-def verbatim_in(original: str, source_normalised: str) -> bool:
-    """Whether `original` occurs word for word in the (normalised) source.
-
-    An original may elide with "…" or "..."; each fragment of at least
-    `VERBATIM_MIN_FRAGMENT_CHARS` normalised characters must occur. A short
-    original with no such fragment must occur as a whole.
-    """
-    fragments = [normalise_for_match(f) for f in _ELLIPSIS_SPLIT.split(original or "")]
-    fragments = [f for f in fragments if f]
-    if not fragments or not source_normalised:
-        return False
-    long = [f for f in fragments if len(f) >= VERBATIM_MIN_FRAGMENT_CHARS]
-    return all(f in source_normalised for f in (long or [" ".join(fragments)]))
 
 
 # --- LLM detector -------------------------------------------------------------

@@ -38,7 +38,8 @@ from typing import Awaitable, Callable
 
 from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError as JWTError  # T-5.4.9: PyJWT replaced python-jose (unfixed CVE)
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings

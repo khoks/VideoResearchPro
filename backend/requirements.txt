@@ -39,7 +39,7 @@ pydantic-settings>=2.9.0
 python-dotenv>=1.1.0
 
 # Auth
-python-jose[cryptography]>=3.3.0
+PyJWT>=2.8.0  # T-5.4.9: replaced python-jose (unfixed critical CVE); HS256 needs no extras
 passlib[bcrypt]>=1.7.4
 bcrypt>=3.2.0,<4.0.0
 email-validator>=2.0.0

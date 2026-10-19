@@ -1195,7 +1195,7 @@ Linked decision: [D-065](decisions.md#d-065--channel-subscriptions-become-per-te
 ### E-5.4 🟡 Auth hardening
 
 **Scope-changed 2026-10-19:** 🟢 → 🟡. Research for M11 found that `python-jose` 3.5.0 (the latest release, 2025-05-28) carries CVE-2026-85394 (CVSS 9.3, published 2026-09-03, no fixed version): a DER-encoded public key is accepted as an HMAC secret, an incomplete fix of CVE-2024-33663. The app decodes JWTs with it in `auth_service.py`, `mfa_service.py` and `middleware/rate_limit.py`. All three sites pin `algorithms=[settings.JWT_ALGORITHM]`, which neutralises the known confusion path, but the dependency is unfixed and effectively unmaintained.
-- [ ] T-5.4.9 🔵 Replace `python-jose` with `PyJWT` (MIT, actively released) at the three call sites, keep `algorithms` pinned, keep the `jti` session semantics; one PR, tests unchanged. M11 share tokens must never be JWTs regardless
+- [x] T-5.4.9 🟢 **Shipped 2026-10-19 — PR [#232](https://github.com/khoks/VideoResearchPro/pull/232).** Found on the way: the dev `.env` had `JWT_SECRET=` blank and python-jose had been signing every token with an empty HMAC key; PyJWT refuses, and a config validator now maps blank to the dev default with a loud warning. Replace `python-jose` with `PyJWT` (MIT, actively released) at the three call sites, keep `algorithms` pinned, keep the `jti` session semantics; one PR, tests unchanged. M11 share tokens must never be JWTs regardless
 
 **Scope.** OAuth (Google / GitHub), MFA, session management, password reset, account lockout, audit log.
 

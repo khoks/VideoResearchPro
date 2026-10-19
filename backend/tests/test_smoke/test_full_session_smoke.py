@@ -15,7 +15,7 @@ from unittest.mock import patch
 import pyotp
 import pytest
 from cryptography.fernet import Fernet
-from jose import jwt as jose_jwt
+import jwt as jose_jwt  # T-5.4.9: PyJWT
 
 from app.config import settings
 from app.services import auth_service, byok_service

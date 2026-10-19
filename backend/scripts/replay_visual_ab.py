@@ -195,7 +195,11 @@ def main() -> int:
         chunks = chunks_on if arm == "on" else chunks_off
         _log(f"running report agent for arm={arm} over {len(chunks)} chunks ...")
         t0 = time.time()
-        stats, html = run_report_agent(manifest["job_type"], topic, chunks, output_length=manifest["output_length"])
+        intermediates: dict = {}
+        stats, html = run_report_agent(manifest["job_type"], topic, chunks, output_length=manifest["output_length"],
+                                       intermediates_out=intermediates)
+        if intermediates:
+            (out / f"{arm}.intermediates.json").write_text(json.dumps(intermediates, indent=1, default=str, ensure_ascii=False), encoding="utf-8")
         secs = round(time.time() - t0, 1)
         (out / f"{arm}.html").write_text(html or "", encoding="utf-8")
         (out / f"{arm}.statistics.json").write_text(json.dumps(stats, indent=2, default=str), encoding="utf-8")

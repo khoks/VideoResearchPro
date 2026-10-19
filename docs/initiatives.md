@@ -410,7 +410,7 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 **Unblocked downstream:** T-1.5.1.4 + T-1.5.2.5 (Reddit/HN storage — shipped 2026-05-02 PR [#113](https://github.com/khoks/VideoResearchPro/pull/113)). T-1.5.3.4 (classifier persistence — also PR #113). M-1.5 e2e tests (still pending orchestrator wiring).
 
-### E-1.11 🟢 Transcript-pipeline resilience at scale
+### E-1.11 🟡 Transcript-pipeline resilience at scale
 
 **Shipped:** 2026-07-22 — PR [#189](https://github.com/khoks/VideoResearchPro/pull/189). Recovery fully validated live on job 0d4db8c3 across three waves: 31/63 recovered 2026-07-22 (segmented Whisper + yt-dlp client ladder while the IP block was active), and the final 32 recovered 2026-07-24 after the block lifted (fast caption path, paced by the new limiter). **Final corpus: 200/200 videos — 162 youtube (591,843 words) + 38 whisper (355,396 words) = 947,239 transcript words.** The wait-out-the-block strategy from D-051 proved correct; cookies/proxy knobs (S-1.11.10) remain available for blocks that persist.
 
@@ -452,6 +452,13 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 #### S-1.11.9 🟢 Recovery tooling
 
 **Scope.** `scripts/retry_unavailable_transcripts.py` re-fetches a job's unavailable documents, then chunks + embeds them into the global collection. Validated on job `0d4db8c3`'s 63 lost videos.
+
+#### S-1.11.11 ⚪ Caption-track choice prefers the spoken language over auto-dubs
+
+**Filed 2026-10-19** from the S-1.16.2 corpus build ([D-080](decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)). `_fetch_transcript_once` tries `en` / `en-auto` and then takes the FIRST listed track. Video `1v3_AQ26jZ0` (a Hindi lecture) lists `bn(auto)`, `en-US(auto)`, `hi(auto)`: `en-US` matched nothing, so the library now holds a machine-dubbed Bengali transcript of a Hindi lecture.
+- [ ] T-1.11.11.1 Match regional English codes (`en-US`, `en-GB`) as English, but only when the track is the video's original audio language
+- [ ] T-1.11.11.2 When English is unavailable, prefer the original-audio track over auto-dubbed ones; take the default audio language from the Data API (`snippet.defaultAudioLanguage`) when present
+- [ ] T-1.11.11.3 Re-fetch documents whose stored transcript language differs from their default audio language (one-off script, reporting counts)
 
 ---
 
@@ -594,10 +601,10 @@ Knowledge synthesis already scales its budget with extraction size (S-1.14.8) bu
 - [ ] T-1.16.1.7 Persist the per-document language profile (`documents.language_mix`) so the per-video label stops being the only signal
 - [x] T-1.16.1.8 English-preference in `search_rank_and_curate` ranking — shipped 2026-10-19 (PR [#227](https://github.com/khoks/VideoResearchPro/pull/227)). A `LANGUAGE (a preference, never a filter)` block in the ranking prompt plus a `Script:` hint on titles not in Latin script (exact via `language_service.dominant_script`; the model infers the language). A test confirms a Devanagari-titled pick survives untouched
 
-#### S-1.16.2 🔵 Proportion-driven rendering for code-mixed speech — implements [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31)
+#### S-1.16.2 🟡 Proportion-driven rendering for code-mixed speech — implements [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31)
 The shipped script profiler is exact for script mixing and **blind to romanised code-mixing** — the user's own example ("...taaki baadme koi kasar koi zarra na reh jaye...") is entirely Latin and reads as English today. This story closes that gap.
-- [ ] T-1.16.2.1 Detect romanised non-English spans. Script analysis cannot; candidates are an LLM pass over the transcript (cheap, volume tier) or a lexicon/n-gram approach. **Measure before choosing** — do not assume a library solves it
-- [ ] T-1.16.2.2 Estimate matrix vs embedded language per span (which language supplies grammar, which supplies vocabulary) — the distinguishing part of N-002
+- [x] T-1.16.2.1 Detect romanised non-English spans — shipped 2026-10-19 (PR [#258](https://github.com/khoks/VideoResearchPro/pull/258), [D-080](decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)). Measured a lexicon + n-gram + Viterbi tagger against a `gpt-5.6-luna` pass on 300 hand-labelled units: real comments and captions from three Hinglish jobs, split DEV/TEST. On held-out romanised text the lexicon tagger is more precise at equal recall (token P 0.929 vs 0.803, R 0.890 vs 0.895), free, and runs at chunk time; the LLM is better only on English written in Devanagari (F1 0.965 vs 0.868) and stays registered as the reference `code_mixing_detect`. First finding: YouTube captions Hinglish speech in Devanagari, not romanised; romanised Hinglish arrives through comments and text sources. [Method and results](notes/2026-10-19-code-mixing-detection.md)
+- [x] T-1.16.2.2 Estimate matrix vs embedded language per span — shipped 2026-10-19 (PR [#260](https://github.com/khoks/VideoResearchPro/pull/260), [D-080 addendum](decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)). `analyse_span` returns `{hi_share, matrix, embedded}`; the matrix comes from a Matrix Language Frame vote of system morphemes (auxiliaries, light verbs, postpositions), so content words never decide it. Held-out mixed units: 0.952 vs 0.855 for word majority (LLM reference 0.968). Every baseline miss was Hindi grammar with mostly English words — 11% of all mixed units in the labelled set. A closed list of English function words in Devanagari (इज, टू, द) now tags English, so an English-matrix sentence in Devanagari is recognisable
 - [ ] T-1.16.2.3 Proportion thresholds as a RENDERING policy: dominant-language (>60%) keeps that script; heavy interleaving → Roman transliteration; light borrowing → plain English
 - [ ] T-1.16.2.4 Transcript-level "primary language of communication" resolution, so a report does not flicker between scripts paragraph to paragraph
 - [ ] T-1.16.2.5 Bidirectional split: analysis/extraction/ranking run on the English rendering; quotation retains original + transliteration + translation
@@ -650,6 +657,7 @@ Both confirmed errors bundle a screen-only detail into a sentence credited to a 
 
 #### S-1.18.8 🔵 Modality provenance through the map/reduce pipeline
 Decided by [D-075](decisions.md#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19): the composer currently infers whether a fact was said or shown from interleaved text, and prompt rules have not stopped it mixing the two. **Sequenced after S-1.14.6** (persisted map items make the labels auditable) and after the R5 session's prompt changes.
+*Evidence added 2026-10-19:* four of the five confirmed attribution errors after the S-1.18.6 rule are in the one Bengali-language video (1 of 11). The composer misjudges modality where it cannot read the speech; the map stage reads each chunk's native speech, so that is where the label must be fixed. This ties S-1.18.8 to R5 (E-1.16).
 - [ ] T-1.18.8.1 Map stage: every extracted item carries `modality: said | shown | both`, decided from whether its evidence sits in speech, in a `[VISUAL @]` span, or both
 - [ ] T-1.18.8.2 Reduce preserves the label losslessly (D-056); compose renders items as `[SAID]` / `[SHOWN]` and attributes from the labels
 - [ ] T-1.18.8.3 Converse rule in the contract: say "on screen" only for `shown` items (a ride-along, not relied on)
@@ -661,7 +669,7 @@ Filed 2026-10-19 from the S-1.18.3 run: at the registry defaults (`visual_select
 - [x] T-1.18.5.2 `visual_describe_frame` → **gemini-3.1-flash-lite** ([D-073](decisions.md#d-073--frame-description-moves-to-gemini-31-flash-lite-on-image-grounded-grading-selection-stays-on-gpt-55-2026-10-19)). Same 120 frames re-described by each model; 33 frames × 2 graders looked at the image, blind: gpt-5.5 mean 4.52/5, best in 54 of 66, 3 unusable; flash-lite 4.21, 5 unusable; luna 3.97, **22 unusable** (misread dates, axis values, mistook a code cell for output). Real cost $0.133 → $0.008 per video.
 - [x] T-1.18.5.3 Measured total for the visual pass: **$0.075 per video** (select $0.067 + describe $0.008) against $0.230 before, under the $0.10 ceiling; pinned by `tests/test_services/test_vision_tier.py` at the measured token counts. The first pass of these numbers divided by 12 approved videos instead of the 11 that produced calls and understated everything by 8%; the test caught it.
 - [ ] T-1.18.5.4 Revisit the S-1.18.2 UI decision after S-1.18.6's re-run (T-1.18.6.3) passes the attribution criterion with these tiers. *2026-10-19: the re-run failed (D-075); now waits on S-1.18.8.*
-- [ ] T-1.18.5.6 🟡 **Describer chosen at report level, not per frame** (D-075). Flash-Lite graded only 0.3 below gpt-5.5 per frame, yet the report-level benefit disappeared (run 2: 1/3 vs run 3: 3/3). Grade three mid-priced describers per frame (gpt-5.4-mini $0.018/video measured, claude-haiku-4-5, gemini-3.5-flash), then confirm the best one with a report-level run before changing the D-073 default.
+- [ ] T-1.18.5.6 🟡 **Describer chosen at report level, not per frame** (D-075). Flash-Lite graded only 0.3 below gpt-5.5 per frame, yet the report-level benefit disappeared (run 2: 1/3 vs run 3: 3/3). Grade three mid-priced describers per frame (gpt-5.4-mini $0.018/video measured, claude-haiku-4-5, gemini-3.5-flash), then confirm the best one with a report-level run before changing the D-073 default. **Measured 2026-10-19:** per frame, gemini-3.5-flash 4.70 (0/62 unusable) > gpt-5.5 4.54 > gpt-5.4-mini 4.37 >> claude-haiku-4-5 2.39 (55/62 unusable). Report level (run 4, Flash descriptions): 2/3 judges, substance level, 2 attribution errors. The report-level ranking follows how often graders picked a description as most useful, not its accuracy. The default awaits the user's spend-vs-quality call in [D-081](decisions.md#d-081--frame-describer-default-spend-against-report-level-quality-2026-10-19).
 - [ ] T-1.18.5.5 🔵 Frame resolution: every model misread small text at 640×360 (`worstvideo[height>=360]`); graders had to upscale to read labels. Try `height>=720` on the same 11 videos, re-grade, and weigh download size (D-051 bot-wall traffic) against the accuracy gain.
 
 #### S-1.18.4 🔵 Beyond YouTube

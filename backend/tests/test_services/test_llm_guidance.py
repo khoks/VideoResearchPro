@@ -71,6 +71,8 @@ def test_measured_set_matches_the_decision_log() -> None:
         "report_compose": "D-062",
         "visual_select_moments": "D-073",
         "visual_describe_frame": "D-073",
+        # Graded against 300 hand-labelled units (S-1.16.2), not a flagship.
+        "code_mixing_detect": "D-080",
     }
 
 

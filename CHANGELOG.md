@@ -10,6 +10,25 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Books download as EPUB and PDF (2026-10-19, S-6.1.5)
+
+PR [#303](https://github.com/khoks/VideoResearchPro/pull/303). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **EPUB 3 for every book**, built in-process (no new native dependency):
+  one file per chapter, a navigation document, endnotes as EPUB endnotes
+  with working back-links.
+- **PDF when the server has a converter**: WeasyPrint (needs Pango) or
+  Chromium through Playwright, both in the new optional
+  `backend/requirements-author.txt`. A5 pages, a page per chapter, page
+  numbers, a PDF outline and clickable contents and endnotes; Devanagari
+  quotes print as real text. Neither engine fetches anything from the
+  network.
+- **Choose the files** when creating a book. Without a converter the PDF
+  box is disabled with what to install, and the API answers a PDF request
+  with 501 before creating anything. `GET /author/kinds` reports it.
+- New settings: `AUTHOR_PDF_ENGINE` (auto, weasyprint, chromium, off) and
+  `AUTHOR_PDF_TIMEOUT_SEC`.
+
 ### Added: the library map (2026-10-19)
 
 [S-8.9.2](docs/initiatives.md#s-892--graph-ui), PR [#301](https://github.com/khoks/VideoResearchPro/pull/301), plan [m9-citation-graph](docs/plans/m9-citation-graph.md).

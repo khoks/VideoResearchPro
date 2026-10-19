@@ -1,0 +1,25 @@
+/* PDF-only rules (S-6.1.5), appended after book.css.
+ * WeasyPrint (the plan's engine) honours all of it: A5 pages, running
+ * chapter titles, page numbers, and page numbers in the table of contents.
+ * Chromium (the fallback) honours the page size, margins, breaks and the
+ * page-number margin box (Chromium 131+), and ignores string-set and
+ * target-counter: no running titles, no page numbers in the contents. */
+@page {
+  size: A5;
+  margin: 18mm 16mm 20mm;
+  @bottom-center { content: counter(page); font-size: 8pt; color: #6b6358; }
+  @top-center { content: string(chapter); font-size: 8pt; color: #6b6358; }
+}
+@page :first {
+  @top-center { content: none; }
+  @bottom-center { content: none; }
+}
+body { font-size: 10.5pt; }
+main.book > h2 { break-before: page; string-set: chapter content(); }
+h1, h2, h3, h4, h5, h6 { break-after: avoid; }
+table, pre, blockquote { break-inside: avoid; }
+li { break-inside: avoid; }
+p { orphans: 2; widows: 2; }
+main.book > h2#table-of-contents + ol a::after {
+  content: leader(".") target-counter(attr(href url), page);
+}

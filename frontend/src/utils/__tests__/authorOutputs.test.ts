@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   applyOutputProgress,
   downloadLabel,
+  fileFormatOptions,
   filenameFromDisposition,
+  formatsParameter,
   isReadableOutput,
   isActiveOutput,
   isOrphanedPending,
@@ -116,6 +118,27 @@ describe('S-6.7.2 download helpers', () => {
 
   it('labels download buttons', () => {
     expect(downloadLabel('md', 1)).toBe('Download');
-    expect(downloadLabel('pdf', 3)).toBe('Download .pdf');
+    expect(downloadLabel('pdf', 3)).toBe('Download PDF');
+    expect(downloadLabel('xyz', 2)).toBe('Download .xyz');
+  });
+
+  it('offers the files a kind can be built as, and why one is missing (S-6.1.5)', () => {
+    const kinds = {
+      available: ['book'],
+      supported: ['book', 'deck'],
+      formats: {
+        book: { available: ['md', 'epub'], unavailable: { pdf: 'Install WeasyPrint or Chromium.' }, pdf_engine: null },
+      },
+    };
+    const options = fileFormatOptions(kinds, 'book');
+    expect(options).toEqual([
+      { format: 'epub', label: 'EPUB', available: true, reason: null },
+      { format: 'pdf', label: 'PDF', available: false, reason: 'Install WeasyPrint or Chromium.' },
+    ]);
+    expect(formatsParameter(options, new Set(['epub', 'pdf']))).toEqual(['md', 'epub']);
+    expect(formatsParameter(options, new Set())).toEqual(['md']);
+    expect(fileFormatOptions(kinds, 'deck')).toEqual([]);
+    expect(formatsParameter([], new Set(['pdf']))).toBeUndefined();
+    expect(fileFormatOptions({ available: ['book'], supported: ['book'] }, 'book')).toEqual([]);
   });
 });

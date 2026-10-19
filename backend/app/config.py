@@ -532,6 +532,13 @@ class Settings(BaseSettings):
     # one directory per output: <OUTPUTS_DIR>/<user_id>/<output_id>/.
     # `outputs.content_path` is stored relative to this root.
     OUTPUTS_DIR: str = "./data/outputs"
+    # S-6.1.5: which converter prints a book's PDF. "auto" tries WeasyPrint
+    # (needs Pango) and then Chromium through Playwright; "weasyprint" or
+    # "chromium" pins one; "off" disables PDF. Both are optional installs
+    # (backend/requirements-author.txt); EPUB and Markdown need neither.
+    AUTHOR_PDF_ENGINE: str = "auto"
+    # Wall-clock budget for Chromium to launch and lay out one book.
+    AUTHOR_PDF_TIMEOUT_SEC: int = 180
     MAX_REPORT_WORDS: int = 20000
 
     # Knowledge extraction (Unit 4)

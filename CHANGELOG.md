@@ -10,6 +10,21 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Channel detail page (2026-10-19)
+
+First PR of the organisation lane of the workbench build order
+([S-8.7.1](docs/initiatives.md#s-871--channel-detail-page), PR [#237](https://github.com/khoks/VideoResearchPro/pull/237)).
+
+- **`/library/channels/:id`.** Header with the caller's own subscribe state
+  and sync (D-065), the channel's visible documents with search, transcript
+  filter, sort and paging (D-063), links from `ChannelRow` and `VideoRow`;
+  `/library?tab=channels` opens the Channels tab.
+- **Trust-weight slot.** The page shows the per-tenant `source_weight`
+  read-only; the control and the retrieval re-rank arrive with E-7.1 (D-068).
+- **Fixed.** The Channels tab keyed Subscribe / Sync on a `channel.id` the
+  API never sent, so every call went to `/channels/undefined/...`;
+  `ChannelResponse` now carries `id`, `url`, `source_weight`, `created_at`.
+
 ### R3 closed, R4's Q&A half wired, executive-summary defects fixed (2026-10-19)
 
 Requirement R3 asked for two dates per source — when it was posted and which

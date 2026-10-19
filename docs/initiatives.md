@@ -1822,10 +1822,12 @@ Linked decision: D-074.
 - **Not built (plan item outside the board's tasks):** topic clusters by k-means over Chroma chunk embeddings. Needs a new Chroma read helper while E-7.1 is editing retrieval, and overlaps the gated S-8.9.3
 - `scikit-learn` is now declared in `requirements.txt` (it was only a transitive dependency of sentence-transformers)
 
-#### S-8.7.3 🔵 Intelligence tab UI
-**PR:** TBD
-- [ ] T-8.7.3.1 Tab with cadence bars, topic list with drill-down, keyword cloud (own SVG layout, no library), coverage call-to-action, "Extract knowledge for all" batch action that respects the knowledge quota
-- [ ] T-8.7.3.2 Concept graph panel reusing the E-8.9 graph component filtered to the channel
+#### S-8.7.3 🟢 Intelligence tab UI
+**PR:** [#285](https://github.com/khoks/VideoResearchPro/pull/285) (merged 2026-10-19)
+- [x] T-8.7.3.1 Documents / Intelligence tabs on the channel page (`?tab=intelligence`). Cadence columns, duration bars, topic and concept lists with drill-down to linked example documents, a text keyword cloud (inline words sized by √weight; no library), the reader's citing questions, a stance / sentiment panel where classification exists, per-panel notes, and a coverage card with **Extract knowledge for N documents**. The batch runs the existing per-document endpoint one at a time from the page (visibility and quota enforced per call), plans no more than the remaining monthly quota from `GET /auth/quota`, stops at the first quota refusal and refreshes the aggregate. **Deviation from the plan:** not a server-side batch with WebSocket progress; that needs a new Celery task (the `celery_app` hot spot), and the solo worker would queue it behind ingest. Cost is shown as quota, not dollars
+- [x] Charts follow the dataviz method: validated `chartColors` per mode, thin marks, surface gaps, a legend only for ≥2 series, hover + keyboard readouts, a table view on every chart. New primitives: `ColumnChart`, `BarList`, `ChartTable`
+- [x] Tests: `utils/batchExtract.ts` unit tests (quota cap, outcome classes, stop on quota, stop on request); aggregate gains `coverage.extractable` and example URLs (router test). The cache fingerprint now carries a payload version so rows written by older code recompute
+- [ ] ~~T-8.7.3.2 Concept graph panel reusing the E-8.9 graph component filtered to the channel~~ — *moved 2026-10-19 to [S-8.9.2](#s-892--graph-ui): the graph component does not exist until that story; it adds the channel-filtered view*
 
 #### S-8.7.4 🔵 Citation chips link to the channel page
 **PR:** TBD
@@ -1884,6 +1886,7 @@ Linked decision: D-074.
 **PR:** TBD
 - [ ] T-8.9.2.1 Lazy-loaded graph route on `sigma` + `graphology` + `@react-sigma/core` with the ForceAtlas2 web-worker layout and Louvain communities (all MIT, about 113 kB gzipped; `react-force-graph-2d`, MIT, 60 kB, is the smaller alternative), inline-styled chrome, zoom / pan, hover labels, click → detail card with links to the document, job or exchange; layout frozen after convergence
 - [ ] T-8.9.2.2 Filters (shelf, channel, type), local-graph mode, legend, reduced-motion respect
+- [ ] T-8.9.2.4 The channel page's concept graph (moved from T-8.7.3.2): the graph filtered to the channel, reachable from the Intelligence tab
 - [ ] T-8.9.2.3 Accessibility, which is real work for a canvas: an equivalent node / edge table view, keyboard focus over nodes with a drawn focus ring, button alternatives to drag and pan (WCAG 2.5.7), a one-paragraph textual summary; the table doubles as the narrow-screen fallback
 
 #### S-8.9.3 ⚪ Topic clusters

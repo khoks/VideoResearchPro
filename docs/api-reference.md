@@ -514,7 +514,8 @@ What the channel says, over **the documents of it the caller can see** (S-8.7.2,
 ```json
 {
   "channel_id": "UC…", "computed_at": "…", "cached": true,
-  "coverage": { "documents": 120, "with_knowledge": 30, "without_knowledge": 90, "ratio": 0.25, "with_transcript": 118 },
+  "coverage": { "documents": 120, "with_knowledge": 30, "without_knowledge": 90, "ratio": 0.25, "with_transcript": 118,
+                "extractable": [{ "id": "…", "title": "…", "url": "…" }] },   // no knowledge yet, transcript cached: what the batch action runs over
   "cadence": { "months": [{ "month": "2026-01", "count": 4 }, …], "undated": 2 },   // contiguous, zeros included
   "durations": { "buckets": [{ "label": "5–15 min", "min_minutes": 5, "max_minutes": 15, "count": 31 }, …], "unknown": 3, "median_minutes": 18.5 },
   "topics":   [{ "label": "Monetary policy", "documents": 12, "examples": [{ "id": "…", "title": "…" }] }],   // top 25, from knowledge artifacts

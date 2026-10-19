@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Books carry numbered endnotes (2026-10-19, S-6.1.4)
 
-PR [#PR_S614](https://github.com/khoks/VideoResearchPro/pull/PR_S614). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+PR [#298](https://github.com/khoks/VideoResearchPro/pull/298). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
 
 - **Endnotes.** Every citation in a book is now its working timestamp link
   plus a GFM footnote, `[1:15](https://…&t=75)[^7]`, numbered across chapters

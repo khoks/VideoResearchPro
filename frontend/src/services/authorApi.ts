@@ -23,6 +23,8 @@ export interface OutputItem {
   progress_pct?: number;
   progress_message?: string | null;
   celery_task_id?: string | null;
+  /** S-6.7.2: formats `download` can serve, text first (`md` for books). */
+  formats?: string[];
 }
 
 /** `available` = kinds with a concrete outputter; `supported` = every kind
@@ -68,6 +70,13 @@ export const authorApi = {
    * the output's id. A kind without an outputter is 501 (no row written). */
   createOutput: (payload: CreateOutputPayload) =>
     api.post<OutputItem>('/author/outputs', payload).then(r => r.data),
+
+  /** S-6.7.2: the output as a file. Header auth, so the page saves a blob
+   * rather than navigating (D-079). The server names the file. */
+  download: (id: string, format?: string) =>
+    api
+      .get<Blob>(`/author/outputs/${id}/download`, { params: format ? { format } : undefined, responseType: 'blob' })
+      .then((r) => ({ blob: r.data, disposition: String(r.headers['content-disposition'] ?? '') })),
 
   cancelOutput: (id: string) =>
     api.post<OutputItem>(`/author/outputs/${id}/cancel`).then(r => r.data),

@@ -689,6 +689,7 @@ Decided by [D-075](decisions.md#d-075--r1-after-three-runs-the-modality-boundary
 - [x] T-1.18.8.3 Converse rule added once to `VISUAL_ANNOTATION_CONTRACT`: "on screen" only where an annotation shows it or the item is tagged shown; a spoken detail is never "on screen", in any language. A ride-along, not relied on
 - Tests: `test_modality_provenance.py` (15, stub LLMs) — a Bengali chunk with a version number spoken in native digits and a ValueError visible only on screen, labelled said / shown / both at map; forced to said without frames; synonyms and missing labels; reduce keeps and unions labels; compose carries the tags, the note, and no raw keys; no tags without shown items; prompt bindings; labels in the persisted S-1.14.6 record and the audit. Mutation-checked: removing map labelling, the tags, or the union each fails a test
 - [ ] T-1.18.8.4 Check the composed report against item provenance (deterministic, now that the provenance exists), then re-run the S-1.18.3 protocol with the multilingual-verification rule from D-075
+  - *Run 5, 2026-10-19:* **0 confirmed attribution errors** in the annotated report, the first run of five. Substance judging was confounded by an R5 regression (#268's map-stage `original` quotes, fabricated in the wrong script) and by a Gemini Pro quota fallback. Run 6 follows the R5 fix. See the protocol note.
 
 #### S-1.18.5 🔵 Re-tier the two vision use cases, then re-measure cost
 Filed 2026-10-19 from the S-1.18.3 run: at the registry defaults (`visual_select_moments` gpt-5.5 medium, `visual_describe_frame` gpt-5.5 low) the estimated vision spend was **$0.198 per video** (11 videos, 120 frames at 640×360; selection ≈ 75K input tokens, description ≈ 159K input tokens), double the $0.10 ceiling the protocol fixed in advance. Both cheaper candidates are already on `VISION_CAPABLE_MODELS`.
@@ -1549,12 +1550,12 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [x] T-6.7.1.5 *Shipped 2026-10-19; the test asserts zero rows.* Refuse a kind with no outputter before writing the row: today `POST /author/outputs` creates a `pending` row and then returns 501 (the UI never offers such kinds, so only API callers hit it). Filed 2026-10-19 by S-6.1.1
 - [x] T-6.7.1.6 *Shipped 2026-10-19: a connecting socket is reused, handlers talk to their own socket, a replaced socket's close never reconnects; vitest with a fake WebSocket that throws like the browser.* Fix `wsClient.ts`'s dev-mode `InvalidStateError: Still in CONNECTING state` (its `onopen` sends on a socket that a second connect has replaced) before AuthorPage subscribes to progress. Seen in the S-6.1.2 live check, 2026-10-19. Also seen on `JobDetailPage` in the lane A live checks (S-8.8.2, S-8.12.1), where it surfaces as an uncaught page error, so it is not Author-specific
 
-#### S-6.7.2 🔵 Binary artifacts and downloads
-**PR:** TBD
-- [ ] T-6.7.2.1 `OUTPUTS_DIR` setting; artifacts under `<OUTPUTS_DIR>/<tenant>/<output_id>/`; path-traversal guard (the `frame_service` precedent)
-- [ ] T-6.7.2.2 `GET /api/v1/author/outputs/{id}/download` streaming `content_path` with media type by kind; same query-token fallback the report route uses for browser navigation
-- [ ] T-6.7.2.3 Delete removes files; orphan sweep script
-- [ ] T-6.7.2.4 Tests: cross-user 404, traversal rejected, media types
+#### S-6.7.2 🟢 Binary artifacts and downloads
+**PR:** [#284](https://github.com/khoks/VideoResearchPro/pull/284) — *shipped 2026-10-19.* `services/output_artifacts.py`: one directory per output so a book can carry Markdown, PDF and EPUB side by side; formats come from a whitelist with their media types; downloads are always derived from the row's own ids, never from the stored `content_path`, so a tampered column cannot read another file.
+- [x] T-6.7.2.1 `OUTPUTS_DIR` (default `./data/outputs`); `<OUTPUTS_DIR>/<user_id>/<output_id>/artifact.<format>`, written atomically by `write_artifact`; `content_path` stored relative to the root (the worker writes, the API serves); ids must match `[A-Za-z0-9_-]` (rejected, never sanitised into a colliding name) and every resolved path must stay inside the root — *shipped 2026-10-19*
+- [x] T-6.7.2.2 `GET /api/v1/author/outputs/{id}/download?format=` serves the text (`md` for books) or any artifact present, with its media type and an RFC 6266 `Content-Disposition` (UTF-8 `filename*` so Devanagari titles survive, ASCII fallback); `OutputItem.formats` lists what is available. **Deviates from the story text:** header-bearer only, no `?token=`, per [D-079](decisions.md#d-079--report-markdown-source-on-markdownify-new-report-routes-are-header-bearer-only-2026-10-19); the page fetches and saves a blob — *shipped 2026-10-19*
+- [x] T-6.7.2.3 Deleting an output removes its directory (and an emptied user directory); a cancelled or failed run discards its partial files; `scripts/sweep_output_artifacts.py` lists directories with no row or under the wrong owner, `--apply` deletes them — *shipped 2026-10-19*
+- [x] T-6.7.2.4 Tests: binary and text downloads with media types and names, extra format beside the text, missing format 404 and malformed format 422, cross-user 404, query token 401, tampered `content_path` never served, unsafe ids rejected, delete and cancel/failure leave no files, orphan sweep dry run then apply, Devanagari file names. Frontend: one download button per format, Read only for text outputs, vitest for the helpers — *shipped 2026-10-19*
 
 #### S-6.7.3 🔵 `output_citations`
 **PR:** TBD
@@ -1821,10 +1822,12 @@ Linked decision: D-074.
 - **Not built (plan item outside the board's tasks):** topic clusters by k-means over Chroma chunk embeddings. Needs a new Chroma read helper while E-7.1 is editing retrieval, and overlaps the gated S-8.9.3
 - `scikit-learn` is now declared in `requirements.txt` (it was only a transitive dependency of sentence-transformers)
 
-#### S-8.7.3 🔵 Intelligence tab UI
-**PR:** TBD
-- [ ] T-8.7.3.1 Tab with cadence bars, topic list with drill-down, keyword cloud (own SVG layout, no library), coverage call-to-action, "Extract knowledge for all" batch action that respects the knowledge quota
-- [ ] T-8.7.3.2 Concept graph panel reusing the E-8.9 graph component filtered to the channel
+#### S-8.7.3 🟢 Intelligence tab UI
+**PR:** [#285](https://github.com/khoks/VideoResearchPro/pull/285) (merged 2026-10-19)
+- [x] T-8.7.3.1 Documents / Intelligence tabs on the channel page (`?tab=intelligence`). Cadence columns, duration bars, topic and concept lists with drill-down to linked example documents, a text keyword cloud (inline words sized by √weight; no library), the reader's citing questions, a stance / sentiment panel where classification exists, per-panel notes, and a coverage card with **Extract knowledge for N documents**. The batch runs the existing per-document endpoint one at a time from the page (visibility and quota enforced per call), plans no more than the remaining monthly quota from `GET /auth/quota`, stops at the first quota refusal and refreshes the aggregate. **Deviation from the plan:** not a server-side batch with WebSocket progress; that needs a new Celery task (the `celery_app` hot spot), and the solo worker would queue it behind ingest. Cost is shown as quota, not dollars
+- [x] Charts follow the dataviz method: validated `chartColors` per mode, thin marks, surface gaps, a legend only for ≥2 series, hover + keyboard readouts, a table view on every chart. New primitives: `ColumnChart`, `BarList`, `ChartTable`
+- [x] Tests: `utils/batchExtract.ts` unit tests (quota cap, outcome classes, stop on quota, stop on request); aggregate gains `coverage.extractable` and example URLs (router test). The cache fingerprint now carries a payload version so rows written by older code recompute
+- [ ] ~~T-8.7.3.2 Concept graph panel reusing the E-8.9 graph component filtered to the channel~~ — *moved 2026-10-19 to [S-8.9.2](#s-892--graph-ui): the graph component does not exist until that story; it adds the channel-filtered view*
 
 #### S-8.7.4 🔵 Citation chips link to the channel page
 **PR:** TBD
@@ -1883,6 +1886,7 @@ Linked decision: D-074.
 **PR:** TBD
 - [ ] T-8.9.2.1 Lazy-loaded graph route on `sigma` + `graphology` + `@react-sigma/core` with the ForceAtlas2 web-worker layout and Louvain communities (all MIT, about 113 kB gzipped; `react-force-graph-2d`, MIT, 60 kB, is the smaller alternative), inline-styled chrome, zoom / pan, hover labels, click → detail card with links to the document, job or exchange; layout frozen after convergence
 - [ ] T-8.9.2.2 Filters (shelf, channel, type), local-graph mode, legend, reduced-motion respect
+- [ ] T-8.9.2.4 The channel page's concept graph (moved from T-8.7.3.2): the graph filtered to the channel, reachable from the Intelligence tab
 - [ ] T-8.9.2.3 Accessibility, which is real work for a canvas: an equivalent node / edge table view, keyboard focus over nodes with a drawn focus ring, button alternatives to drag and pan (WCAG 2.5.7), a one-paragraph textual summary; the table doubles as the narrow-screen fallback
 
 #### S-8.9.3 ⚪ Topic clusters

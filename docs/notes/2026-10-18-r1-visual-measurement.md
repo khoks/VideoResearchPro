@@ -144,3 +144,40 @@ Gemini 3.5 Flash is the most accurate. The one figure this run checked by hand i
 - it said the screen displayed a version number the presenter only spoke.
 
 The English-language videos produced one error across the same three runs. The modality boundary is hardest exactly where the composer cannot read the speech, which is an argument for labelling said/shown at the map stage (S-1.18.8). There the model reads one chunk of native-language speech at a time and the label is fixed before composition. It also ties R1 to R5.
+
+## Run 5: said/shown provenance (T-1.18.8.4, appended 2026-10-19)
+
+Code after S-1.14.6 (#273) and S-1.18.8 (#277); gpt-5.5 descriptions (the D-081 default); both arms regenerated on the same code.
+
+- **Labels populated:** the annotated arm has 154 map items (96 `said`, 57 `both`, 1 `shown`); the plain arm is all `said`, forced by code. No `[SAID]`/`[SHOWN]` tag leaked into either HTML.
+- **Attribution: zero confirmed errors in the annotated report**, the first run of five to meet that criterion. The sweep raised 4 candidates and all 4 were refuted. The plain arm had 2 (it presented an on-screen tool list as recited).
+- **Substance is not a clean read.** Judges split 1 ON / 1 OFF / 1 tie (mean 7.0 vs 8.0). Gemini 3.1 Pro hit its daily per-model quota (resets in about 11 hours), so Gemini 3.5 Flash stood in as the third family, a protocol deviation.
+- **Run 5 is confounded by an R5 regression.** #268 (T-1.16.2.5 part A) added a map-stage `original` field ("the speaker's words copied EXACTLY"). Map batch 0 mixed 400 chunks from eight channels, including one Bengali and two Hindi videos. For DeepLoop Circle (100% Devanagari speech) the model wrote `original`s in Bengali script: 8 items in the annotated arm, 3 in the plain one. None of those strings exists anywhere in the corpus. The annotated report then quoted Vivek in Bengali seven times; the Flash judge's preference for the plain arm rests on exactly that. Runs 3 and 4, which predate #268, have none. The fix belongs to R5: enforce "copied exactly" in code, by checking each `original` against its own video's transcript.
+
+**Verdict for now:** the provenance labels did what D-075 predicted for attribution (one run). The substance criterion has to be re-measured as run 6, once the R5 fix lands and the Gemini Pro quota resets.
+
+### Run 5, audited mechanically (2026-10-19)
+
+`backend/scripts/audit_quote_fidelity.py` checks every non-English quotation against the speech it claims to come from. It works at two levels: map items' `original` against their own video's speech (visual spans excluded), and every Devanagari/Bengali run in the report against all speech in the corpus. On run 5:
+
+| | `original` items failing | report quotes failing |
+|---|---|---|
+| ON | 12 of 51 (11 in the wrong script) | **8 of 27** |
+| OFF | 4 of 37 (mixed script) | **2 of 14** |
+
+It found two more defects than the hand reading did:
+- The plain arm is affected too. Its Hindi quotes have Bengali letters spliced into words (`जানेंगे`), a form that no caption contains.
+- One ON item quotes a CodeWithMunnaX sentence about species, island and flipper length. The Bengali speech never mentions those words. It is DeepLoop's Hindi sentence rendered in Bengali under the wrong channel.
+
+The fuzzy match is a deliberate tolerance: the model regularises caption spelling (ম্যাটপ্লোটলিব এ becomes ম্যাটপ্লটলিবে), and that counts as `near`, not invented. Run 4, which predates #268, has no native-script quotes in either report.
+
+## Run 6: pre-registered rules (fixed 2026-10-19, before run 6 exists)
+
+Run 6 replays the same job on the code that carries the R5 fix for `original` quotes. Both arms are regenerated, and descriptions come from gpt-5.5 (D-081).
+
+1. **Quote fidelity (new, deterministic):** `audit_quote_fidelity.py <run6> --check` exits 0. Zero failing report-level quotes in both arms (absent, other-video, visual-only, wrong script, or mixed script). If this fails, the run is invalid for the substance comparison, as run 5 was.
+2. **Attribution:** zero confirmed attribution errors in ON after the three-lens verification and the sweep, as in run 5.
+3. **Substance:** at least two of three judge families prefer ON, with Gemini 3.1 Pro as the third family. No substitute is allowed. If its quota is exhausted, the run waits.
+4. **Fabrication:** ON has no more confirmed fabrications than OFF.
+
+All four pass → R1's quality claim holds, and S-1.18.2 (the R1 UI) is unblocked. Rule 1 fails → the defect goes back to R5 and run 6 is repeated. Rule 2 or 4 fails → the claim is reported as unproven. Rule 3 alone fails → D-081 stands on attribution, and the UI ships as opt-in with no quality claim.

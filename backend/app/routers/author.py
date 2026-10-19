@@ -15,6 +15,9 @@ Endpoints under ``/api/v1/author/*``:
 - ``GET /author/outputs`` — list current user's outputs (kind / status
   query filters).
 - ``GET /author/outputs/{id}`` — get one (404 cross-user — existence-leak posture).
+- ``GET /author/outputs/{id}/download?format=`` — the output as a file
+  (S-6.7.2): its text (`md` for books) or a binary artifact (`pdf`,
+  `epub`, `pptx`, `zip`) from `OUTPUTS_DIR`. Header-bearer only (D-079).
 - ``GET /author/outputs/{id}/content`` — fetch generated content.
   Plain-text response (Content-Type: text/markdown for books).
 - ``DELETE /author/outputs/{id}`` — delete.
@@ -28,7 +31,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -36,7 +39,7 @@ from sqlalchemy.orm import Session
 from app.services import outputters  # noqa: F401
 from app.dependencies import get_db
 from app.models.user import User
-from app.services import output_service, task_routing_service
+from app.services import output_artifacts, output_service, task_routing_service
 from app.services.output_service import (
     OutputError,
     OutputKind,
@@ -70,6 +73,8 @@ class OutputItem(BaseModel):
     progress_pct: int = 0
     progress_message: str | None = None
     celery_task_id: str | None = None
+    # S-6.7.2: the formats `GET …/download?format=` can serve, text first.
+    formats: list[str] = []
     # S-6.1.1: whitespace-separated words in the generated text; None
     # until there is content. The page shows it beside the chapter count.
     word_count: int | None = None
@@ -111,6 +116,7 @@ def _to_item(row) -> OutputItem:
         created_at=row.created_at,
         updated_at=row.updated_at,
         has_content=bool(row.content_text or row.content_path),
+        formats=output_artifacts.available_formats(row),
         word_count=len(row.content_text.split()) if row.content_text else None,
         progress_pct=row.progress_pct or 0,
         progress_message=row.progress_message,
@@ -275,6 +281,50 @@ def get_output_content(
         )
     media_type = "text/markdown" if row.kind == OutputKind.BOOK.value else "text/plain"
     return PlainTextResponse(row.content_text, media_type=media_type)
+
+
+@router.get("/outputs/{output_id}/download")
+def download_output(
+    output_id: str,
+    fmt: str | None = Query(None, alias="format", pattern=r"^[a-z0-9]{1,8}$"),
+    current_user: User = Depends(require_feature("author_studio")),
+    db: Session = Depends(get_db),
+):
+    """The output as a file (S-6.7.2). ``format`` picks one of the row's
+    ``formats``; without it the first (the text, for a book) is served.
+
+    Header-bearer only, like every new report-shaped route since D-079: the
+    page fetches with the header and saves a blob, so no token ever sits in
+    a URL. 404 for another user's output, for a format the output does not
+    have, and for an artifact whose stored path resolves outside
+    ``OUTPUTS_DIR``.
+    """
+    row = output_service.get_output(db, current_user.id, output_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Output not found")
+    formats = output_artifacts.available_formats(row)
+    if not formats:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Output has no content (status={row.status})",
+        )
+    chosen = fmt or formats[0]
+    if chosen not in formats:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No '{chosen}' file for this output; available: {formats}",
+        )
+    filename = output_artifacts.download_filename(row.title, chosen)
+    headers = {"Content-Disposition": output_artifacts.content_disposition(filename)}
+    media_type = output_artifacts.FORMATS[chosen]
+
+    if chosen == output_artifacts.text_format(row) and row.content_text:
+        return Response(row.content_text, media_type=media_type, headers=headers)
+
+    path = output_artifacts.artifact_file(row, chosen)
+    if not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact file is missing")
+    return FileResponse(path, media_type=media_type, headers=headers)
 
 
 @router.delete("/outputs/{output_id}", response_model=DeleteResponse)

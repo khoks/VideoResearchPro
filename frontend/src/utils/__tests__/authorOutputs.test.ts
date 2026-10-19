@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyOutputProgress,
+  downloadLabel,
+  filenameFromDisposition,
+  isReadableOutput,
   isActiveOutput,
   isOrphanedPending,
   isTerminalMessage,
@@ -85,5 +88,28 @@ describe('S-6.7.1 progress helpers', () => {
     expect(outputProgressLine({ progress_pct: 49.6, progress_message: ' Chapter 2 of 5: Tariffs ' })).toBe('50% · Chapter 2 of 5: Tariffs');
     expect(outputProgressLine({ progress_pct: 140, progress_message: null })).toBe('100%');
     expect(outputProgressLine({})).toBe('0%');
+  });
+});
+
+describe('S-6.7.2 download helpers', () => {
+  it('prefers the UTF-8 file name and falls back to the ASCII one', () => {
+    const h = `attachment; filename="output.pdf"; filename*=UTF-8''%E0%A4%B9%E0%A4%BF%E0%A4%82%E0%A4%A6%E0%A5%80.pdf`;
+    expect(filenameFromDisposition(h, 'x.pdf')).toBe('हिंदी.pdf');
+    expect(filenameFromDisposition('attachment; filename="my-book.md"', 'x')).toBe('my-book.md');
+    expect(filenameFromDisposition(`attachment; filename="a.md"; filename*=UTF-8''%E0%A4`, 'x')).toBe('a.md');
+    expect(filenameFromDisposition('', 'fallback.md')).toBe('fallback.md');
+    expect(filenameFromDisposition(undefined, 'fallback.md')).toBe('fallback.md');
+  });
+
+  it('opens only text outputs in the reader', () => {
+    expect(isReadableOutput({ status: 'completed', has_content: true, formats: ['md', 'pdf'] })).toBe(true);
+    expect(isReadableOutput({ status: 'completed', has_content: true, formats: ['pptx'] })).toBe(false);
+    expect(isReadableOutput({ status: 'generating', has_content: false, formats: [] })).toBe(false);
+    expect(isReadableOutput({ status: 'completed', has_content: true })).toBe(true);
+  });
+
+  it('labels download buttons', () => {
+    expect(downloadLabel('md', 1)).toBe('Download');
+    expect(downloadLabel('pdf', 3)).toBe('Download .pdf');
   });
 });

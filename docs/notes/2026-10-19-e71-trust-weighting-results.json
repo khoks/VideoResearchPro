@@ -1,0 +1,125 @@
+{
+  "protocol": "notes/2026-10-19-e71-trust-weighting-measurement.md",
+  "code_commit": "6b402f3",
+  "summary": {
+    "pairs": 20,
+    "judges_ok": 60,
+    "judges_total": 60,
+    "M1": {
+      "mean_promoted_chunk_share": {
+        "on": 0.574,
+        "off": 0.226
+      },
+      "mean_demoted_chunk_share": {
+        "on": 0.0,
+        "off": 0.098
+      },
+      "mean_promoted_ref_share": {
+        "on": 0.895,
+        "off": 0.236
+      },
+      "mean_demoted_ref_share": {
+        "on": 0.0,
+        "off": 0.115
+      },
+      "job_questions_where_promoted_share_rose": 10,
+      "job_questions": 10,
+      "by_surface": {
+        "job": {
+          "promoted_chunks": {
+            "on": 0.578,
+            "off": 0.225
+          },
+          "demoted_chunks": {
+            "on": 0.0,
+            "off": 0.109
+          }
+        },
+        "library": {
+          "promoted_chunks": {
+            "on": 0.57,
+            "off": 0.226
+          },
+          "demoted_chunks": {
+            "on": 0.0,
+            "off": 0.087
+          }
+        }
+      }
+    },
+    "M2_on_chunks_over_threshold": 0,
+    "R": {
+      "mean_relevance": {
+        "on": 8.533,
+        "off": 8.583
+      },
+      "mean_faithfulness": {
+        "on": 7.067,
+        "off": 7.233
+      },
+      "preferred": {
+        "on": 22,
+        "off": 34,
+        "tie": 4
+      },
+      "off_share_of_non_tie": 0.607,
+      "by_surface": {
+        "job": {
+          "mean_relevance": {
+            "on": 8.633,
+            "off": 8.267
+          },
+          "preferred": {
+            "on": 15,
+            "off": 13,
+            "tie": 2
+          }
+        },
+        "library": {
+          "mean_relevance": {
+            "on": 8.433,
+            "off": 8.9
+          },
+          "preferred": {
+            "on": 7,
+            "off": 21,
+            "tie": 2
+          }
+        }
+      }
+    },
+    "V": {
+      "unique_claims_flagged": {
+        "on": 199,
+        "off": 192
+      },
+      "confirmed_unsupported": {
+        "on": 110,
+        "off": 95
+      },
+      "unresolved": 0,
+      "decided_with_tiebreak_lens": 98,
+      "tiebreak_lens": "google:gemini-3.5-flash:low"
+    },
+    "mean_words": {
+      "on": 1211.7,
+      "off": 1267.2
+    },
+    "rule": {
+      "1_mechanism": true,
+      "2_threshold": true,
+      "3_relevance": false,
+      "4_faithfulness": false
+    }
+  },
+  "confirmed_by_surface": {
+    "job": {
+      "on": 65,
+      "off": 56
+    },
+    "library": {
+      "on": 45,
+      "off": 39
+    }
+  }
+}

@@ -16,8 +16,9 @@ export interface Channel {
   url: string | null;
   subscribed: boolean;
   /**
-   * Per-tenant trust weight, 1.0 = neutral. Read-only until S-7.1.1 ships
-   * `PUT /channels/{id}/weight` and the retrieval re-rank (D-068).
+   * Per-tenant trust weight, 0.0 to 2.0, 1.0 = neutral. Set with
+   * `setWeight`; re-ranks this reader's Q&A retrieval as `distance / weight`
+   * after the relevance threshold (D-068). Never a filter.
    */
   source_weight: number;
   subscriber_count: number | null;
@@ -46,4 +47,6 @@ export const channelsApi = {
     api.post<Channel>(`/channels/${id}/unsubscribe`).then(r => r.data),
   sync: (id: string) =>
     api.post<SubscribeResponse>(`/channels/${id}/sync`).then(r => r.data),
+  setWeight: (id: string, weight: number) =>
+    api.put<Channel>(`/channels/${id}/weight`, { weight }).then(r => r.data),
 };

@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
 import {
   useChannel,
+  useSetChannelWeight,
   useSubscribeChannel,
   useSyncChannel,
   useUnsubscribeChannel,
@@ -24,8 +25,7 @@ const CHANNELS_TAB_HREF = '/library?tab=channels';
  *
  * Header: the shared channel facts plus the caller's own subscription state
  * (D-065); actions subscribe, sync and open the public page. Below it the
- * trust-weight slot (read-only until S-7.1.1 ships the write path and the
- * retrieval re-rank, D-068) and the documents this tenant can see from the
+ * trust-weight control (S-7.1.1, D-068) and the documents this tenant can see from the
  * channel (D-063), listed through the library endpoint so the rows carry
  * "referenced in N runs" like everywhere else. The Intelligence tab (E-8.7)
  * attaches here once its aggregate endpoint exists.
@@ -134,7 +134,7 @@ export function ChannelPage() {
             onToggleSubscribe={() => handleToggleSubscribe(channel)}
             onSync={() => handleSync(channel)}
           />
-          <TrustWeightSlot weight={channel.source_weight} />
+          <TrustWeightControl channelId={channel.channel_id} weight={channel.source_weight} />
           <ChannelTabs channel={channel} />
         </>
       )}
@@ -299,20 +299,33 @@ function HeaderSkeleton() {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Trust weight — the slot S-7.1.1's control lands in
+// Trust weight — S-7.1.1
+
+const WEIGHT_MIN = 0;
+const WEIGHT_MAX = 2;
+const WEIGHT_STEP = 0.1;
 
 /**
- * Shows this reader's trust weight for the channel. The number is already
- * per tenant (`channel_subscriptions.source_weight`, D-065) and the formula
- * that will use it is pre-registered in D-068 (`distance / weight` after
- * the relevance threshold). Until E-7.1 ships `PUT /channels/{id}/weight`
- * and the re-rank, the slot is read-only; a control here that saved a
- * number nothing reads would mislead.
+ * This reader's trust weight for the channel, 0.0 to 2.0 (1.0 neutral),
+ * stored per tenant (`channel_subscriptions.source_weight`, D-065). The
+ * server re-ranks this reader's job and library Q&A as `distance / weight`
+ * after the relevance threshold (D-068): a higher weight lets the channel's
+ * relevant passages outrank others, a lower one lets them sink, and no
+ * weight ever brings in an off-topic passage. Measured (T-7.1.1.5): strong
+ * weights narrow answers toward the promoted channels, and near 0 a channel
+ * effectively drops out on a broad corpus, so the copy says both.
+ * The slider holds a draft; Save sends it, Reset returns to neutral.
  */
-function TrustWeightSlot({ weight }: { weight: number }) {
+function TrustWeightControl({ channelId, weight }: { channelId: string; weight: number }) {
   const c = useColors();
-  const neutral = Math.abs(weight - 1) < 1e-9;
-  const standing = neutral ? 'neutral' : weight > 1 ? 'promoted' : 'demoted';
+  const setWeight = useSetChannelWeight();
+  const [draft, setDraft] = useState(weight);
+  useEffect(() => setDraft(weight), [weight]);
+
+  const neutral = Math.abs(draft - 1) < 1e-9;
+  const standing = neutral ? 'neutral' : draft > 1 ? 'promoted' : 'demoted';
+  const dirty = Math.abs(draft - weight) > 1e-9;
+  const save = (value: number) => setWeight.mutate({ id: channelId, weight: value });
 
   return (
     <Card sunken data-slot="trust-weight" style={{ marginBottom: space['5'], padding: `${space['3']} ${space['4']}` }}>
@@ -335,8 +348,34 @@ function TrustWeightSlot({ weight }: { weight: number }) {
           Trust weight
         </span>
         <Badge tone={neutral ? 'neutral' : 'accent'} size="md">
-          {weight.toFixed(1)} · {standing}
+          {draft.toFixed(1)} · {standing}
         </Badge>
+        <input
+          type="range"
+          min={WEIGHT_MIN}
+          max={WEIGHT_MAX}
+          step={WEIGHT_STEP}
+          value={draft}
+          onChange={(e) => setDraft(Number(e.target.value))}
+          disabled={setWeight.isPending}
+          aria-label="Trust weight for this channel"
+          aria-valuetext={`${draft.toFixed(1)}, ${standing}`}
+          style={{ flex: '0 1 200px', accentColor: c.accent }}
+        />
+        <Button size="sm" onClick={() => save(draft)} disabled={!dirty || setWeight.isPending}>
+          {setWeight.isPending ? 'Saving…' : 'Save'}
+        </Button>
+        <Button
+          size="sm"
+          variant="tertiary"
+          onClick={() => {
+            setDraft(1);
+            save(1);
+          }}
+          disabled={(neutral && !dirty) || setWeight.isPending}
+        >
+          Reset
+        </Button>
         <span
           style={{
             fontFamily: fonts.body,
@@ -346,9 +385,15 @@ function TrustWeightSlot({ weight }: { weight: number }) {
             flex: '1 1 320px',
           }}
         >
-          Raising it lets this channel's passages outrank others in your answers; lowering it
-          lets them sink. The control arrives with trust-weighted retrieval; until then the
-          weight is shown, not set.
+          Raising it lets this channel's relevant passages outrank others in your answers, which
+          also narrows them toward this channel. Lowering it lets them sink; near 0 they appear
+          only when little else matches. It never pulls in an off-topic passage, and only your
+          answers change.
+          {setWeight.isError && (
+            <span role="alert" style={{ color: c.error, marginLeft: space['2'] }}>
+              Could not save the weight. Try again.
+            </span>
+          )}
         </span>
       </div>
     </Card>

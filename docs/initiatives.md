@@ -1591,27 +1591,36 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 
 ---
 
-## I-7 ⚪ Curated source ranking (L4)
+## I-7 🟡 Curated source ranking (L4)
 
 **Filed 2026-10-18** from a "what's remaining" code audit.
 **Why it exists.** The product is meant to be *curated, not balanced*: the user's trust in a source should shape retrieval ordering, answer composition and disagreement surfacing. Today curation stops at approval, and every approved source counts equally after that.
 **North-star doc:** [feature-roadmap.md L4](feature-roadmap.md#l4--curated-source-ranking-) · [vision.md](vision.md)
 **Decision links:** [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31) (amended 2026-10-18)
 
-**Current state.** Only a seed exists: `channel_subscriptions.source_weight` (per-tenant, default 1.0, moved there by D-065). Nothing reads it, no endpoint sets it, and no UI exposes it. `channel_subscription.py` nonetheless documents it as "the trust score that re-ranks retrieval".
+**Current state (2026-10-19).** Trust-weighted retrieval v1 shipped (S-7.1.1, PR [#287](https://github.com/khoks/VideoResearchPro/pull/287)): `PUT /channels/{id}/weight`, the D-068 re-rank in job and library Q&A, and a slider on the channel page. Measured: it moves the context as intended, and at strong weights it costs breadth enough that library-Q&A judges preferred unweighted answers, so the formula is reopened (S-7.1.2). *Before:* only the `channel_subscriptions.source_weight` column existed; nothing read it.
 
-### E-7.1 🔵 Trust-weighted retrieval (v1)
+### E-7.1 🟡 Trust-weighted retrieval (v1)
 
 **Decided 2026-10-18 by [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18):** weighted retrieval first, as a pure re-rank (`distance / weight` after the raw relevance threshold, over a 3× pool), weights resolved per tenant at query time and never stored on chunks or used as a filter. Perspective banding is E-7.2. **Sequenced after the R3/R4 batch**, which is rewriting `qa_agent.py`.
 
-#### S-7.1.1 ⚪ Make `source_weight` re-rank retrieval
-**PR:** TBD
-**Acceptance.** A user who raises one channel's weight sees that channel's chunks rank higher in their own job and library Q&A, and no other tenant's ranking changes.
-- [ ] T-7.1.1.1 `PUT /api/v1/channels/{id}/weight` writing `channel_subscriptions.source_weight` through `subscription_service`
-- [ ] T-7.1.1.2 Apply the weight when re-ranking job and library retrieval. Weights are per-tenant and chunks are global ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)), so resolve them at query time and never store them in chunk metadata
-- [ ] T-7.1.1.3 Weight control on the channel page — *the page and a read-only `TrustWeightSlot` (`data-slot="trust-weight"`) shipped in S-8.7.1, PR [#237](https://github.com/khoks/VideoResearchPro/pull/237); replace the slot with the control ([D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19))*
-- [ ] T-7.1.1.4 Make the `channel_subscription.py` docstring true, or correct it
-- [ ] T-7.1.1.5 Measure: the same questions with and without weighting, judged blind (E-1.14 harness)
+#### S-7.1.1 🟢 Make `source_weight` re-rank retrieval — shipped 2026-10-19
+**PR:** [#287](https://github.com/khoks/VideoResearchPro/pull/287)
+**Acceptance (met).** A user who raises one channel's weight sees that channel's chunks rank higher in their own job and library Q&A, and no other tenant's ranking changes (`tests/test_routers/test_channel_weight.py`, two tenants through the real routers and agent). A weight-2.0 off-topic chunk never reaches the answer (`tests/test_agents/test_trust_weighting.py`, real Chroma, distances measured as preconditions).
+- [x] T-7.1.1.1 `PUT /api/v1/channels/{id}/weight` (0.0–2.0, 422 outside) through `subscription_service.set_weight`; `channel_weights(db, tenant)` returns only non-neutral rows
+- [x] T-7.1.1.2 Both Q&A routers resolve the asker's weights at request time and pass them to the agent; `qa_agent._scoped_query` implements D-068 exactly (3× pool, raw threshold first, `distance / weight`, 0 → 0.05, no channel → 1.0). With no weights it is one top-K query, unchanged. Never stored on chunks, never a filter
+- [x] T-7.1.1.3 The channel page's trust-weight slot became a slider with Save / Reset; its copy states the measured trade-off
+- [x] T-7.1.1.4 `channel_subscription.py` docstring is now true and says where the weight is applied
+- [x] T-7.1.1.5 Measured per [the pre-registered protocol](notes/2026-10-19-e71-trust-weighting-measurement.md): mechanism and threshold clauses met; relevance clause **not met** (61% of non-tie verdicts favoured OFF against a 60% limit, concentrated in library Q&A); faithfulness clause **not met** too (confirmed unsupported claims ON 110 / OFF 95, both inflated by date claims). Recorded in D-068; formula reopened as S-7.1.2. Scripts: `measure_trust_weighting.py`, `judge_qa_pairs.py`
+
+#### S-7.1.2 ⚪ Reopen the re-rank formula: concentration and last-resort weights
+**PR:** TBD. Filed 2026-10-19 from T-7.1.1.5's result ([D-068 amendment](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18)).
+**Why.** At 2.0 / 0 the re-rank took promoted channels from about a quarter to more than half of each answer's context, cut distinct channels per answer by a third, and judges preferred unweighted library answers 21 to 7. A weight of 0 never let a source surface, contrary to D-068's intent.
+**Acceptance.** A revised formula, chosen before measuring, re-run on the same ten questions and the same weights, meets all four clauses of the original rule, or the result is recorded and weights are capped in the UI instead.
+- [ ] T-7.1.2.1 Pre-register the candidates and pick one before running: a per-channel share cap on the top-K (D-059's concentration-cap pattern), `distance / weight^α` with α < 1, or both
+- [ ] T-7.1.2.2 Make low weights a real last resort: a weight below a cut-off only fills slots left empty after everything else that passes the threshold
+- [ ] T-7.1.2.3 Re-run `measure_trust_weighting.py` + `judge_qa_pairs.py` against the same baseline; add publication dates to the judge and verifier excerpts so date claims stop inflating both arms' unsupported-claim counts
+- [ ] T-7.1.2.4 Test milder settings (1.5 / 0.5) alongside the original strong ones
 
 ### E-7.2 ⚪ Perspective banding in answers
 

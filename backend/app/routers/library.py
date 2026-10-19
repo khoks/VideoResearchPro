@@ -764,7 +764,11 @@ def _ingest_single_paste_url(url: str, db: Session, current_user) -> dict:
 
 
 @router.get("/pdf/{digest}.pdf")
-def serve_pdf(digest: str, db: Session = Depends(get_db)):
+def serve_pdf(
+    digest: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     """Serve an uploaded PDF by digest.
 
     Used by the per-page deep-link citation rendering — clicking a
@@ -777,9 +781,18 @@ def serve_pdf(digest: str, db: Session = Depends(get_db)):
     # Sanity check that the document exists in our library before
     # serving the file (prevents serving arbitrary uploads via path
     # manipulation).
+    # D-063: the bytes are only served to a tenant who ingested this PDF.
+    # Before 2026-10-19 any signed-in user holding the digest could fetch
+    # another tenant's upload; a foreign PDF now 404s like a missing one.
     existing = (
         db.query(Document)
-        .filter(Document.source_type == "pdf", Document.source_id == source_id)
+        .filter(
+            Document.source_type == "pdf",
+            Document.source_id == source_id,
+            Document.document_id.in_(
+                visibility_service.visible_document_ids(db, current_user.id)
+            ),
+        )
         .one_or_none()
     )
     if existing is None:

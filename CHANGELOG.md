@@ -10,6 +10,40 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Scheduler tick — the first scheduled work in the app (2026-10-19, S-8.3.1)
+
+PR [#238](https://github.com/khoks/VideoResearchPro/pull/238). Plan:
+[docs/plans/m3-saved-searches-alerts.md](docs/plans/m3-saved-searches-alerts.md).
+Saved searches (S-8.3.2), the newsletter (E-6.4) and Echo syncs (S-3.2.1)
+will all run on this; none of them exists yet, so nothing is scheduled today.
+
+- **One static Celery beat entry**, `scheduler.tick`, every
+  `SCHEDULER_TICK_SECONDS` (300) on the `default` queue with `expires` so a
+  backlog of ticks never replays after downtime. Beat is a separate process
+  (`celery -A app.tasks.celery_app beat`) started by `scripts/start.ps1` and
+  `scripts/restart_services.ps1`, which kill any earlier beat first.
+  `--pidfile` is deliberately not used: Celery's stale-pidfile probe is
+  `os.kill(pid, 0)`, which on Windows terminates whatever process holds that
+  pid.
+- **`scheduled_runs` table** (migration `c7d8e9f0a1b2`): one row per
+  `(kind, target_id)` with a human cadence (`daily` / `weekly` / `monthly`
+  with hour, minute, weekday or day-of-month 1–28 and an IANA zone; `every`
+  N seconds for system kinds), a UTC `next_run_at`, and a `claimed_at` lease.
+  `next_run_at` is computed by Celery's own `crontab` on the row's local wall
+  clock, so 09:00 local stays 09:00 local across DST.
+- **The tick** claims each due row with a single conditional `UPDATE` (a
+  duplicate tick claims nothing; a lease older than
+  `SCHEDULER_LEASE_SECONDS` is reclaimable), dispatches the row's kind
+  through `task_routing_service.dispatch_for_tenant_id` so tier queues
+  apply, and advances from `max(now, next_run_at)` so an early tick inside
+  `SCHEDULER_GRACE_SECONDS` never runs a row twice. Dispatch failures retry
+  at the next tick up to `SCHEDULER_MAX_RETRY_TICKS` times; unknown kinds
+  are recorded as `no_handler` and advanced.
+- `GET /api/v1/health/scheduler` reports configuration, registered kinds
+  and row counts. Settings: `SCHEDULER_ENABLED`, `SCHEDULER_TICK_SECONDS`,
+  `SCHEDULER_LEASE_SECONDS`, `SCHEDULER_GRACE_SECONDS`,
+  `SCHEDULER_BATCH_SIZE`, `SCHEDULER_MAX_RETRY_TICKS`.
+
 ### Channel detail page (2026-10-19)
 
 First PR of the organisation lane of the workbench build order

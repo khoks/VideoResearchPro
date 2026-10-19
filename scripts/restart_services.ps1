@@ -7,7 +7,10 @@ starts them again. Verifies Redis (which runs as a Windows service).
 One-stop restart for the four services that make up the app:
   1. Redis                 -- Windows service, just checked + started if stopped
   2. Backend (uvicorn)     -- killed by PID on port 8000, relaunched detached
-  3. Celery worker         -- killed by matching "celery" in its command line
+  3. Celery worker + beat  -- killed by matching "celery" in its command line
+                              (the match catches both the worker and the
+                              S-8.3.1 scheduler beat); exactly one beat is
+                              relaunched
   4. Frontend (vite dev)   -- killed by PID on port 5173, relaunched detached
 
 This is also the script invoked by POST /api/v1/admin/restart. Because
@@ -147,6 +150,9 @@ $backendOut  = Join-Path $repoRoot '.uvicorn.out.log'
 $backendErr  = Join-Path $repoRoot '.uvicorn.err.log'
 $celeryOut   = Join-Path $repoRoot '.celery.out.log'
 $celeryErr   = Join-Path $repoRoot '.celery.err.log'
+$beatOut     = Join-Path $repoRoot '.celerybeat.out.log'
+$beatErr     = Join-Path $repoRoot '.celerybeat.err.log'
+$beatSchedule = Join-Path $backendDir 'data\celerybeat-schedule'
 $frontendOut = Join-Path $repoRoot '.frontend.out.log'
 $frontendErr = Join-Path $repoRoot '.frontend.err.log'
 
@@ -196,6 +202,24 @@ if (-not (Test-Path $venvCelery)) {
         -WindowStyle Hidden `
         -RedirectStandardOutput $celeryOut `
         -RedirectStandardError $celeryErr
+}
+
+# ---- 6b. Start Celery beat detached (scheduler tick, S-8.3.1) ----
+# One beat per install. The kill phase above already removed any earlier
+# beat (its command line contains "celery"). No --pidfile on purpose:
+# Celery's stale-pidfile probe is os.kill(pid, 0), which on Windows
+# terminates whatever process now holds that pid. See scripts/start.ps1.
+Write-Step "Starting Celery beat (scheduler tick) -> $beatOut / $beatErr"
+if (-not (Test-Path $venvCelery)) {
+    Write-Step "  ERROR: celery not found at $venvCelery"
+} else {
+    New-Item -ItemType Directory -Force -Path (Split-Path $beatSchedule -Parent) | Out-Null
+    Start-Process -FilePath $venvCelery `
+        -ArgumentList @('-A', 'app.tasks.celery_app', 'beat', '--loglevel=info', '-s', $beatSchedule) `
+        -WorkingDirectory $backendDir `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $beatOut `
+        -RedirectStandardError $beatErr
 }
 
 # ---- 7. Start frontend dev server detached ----

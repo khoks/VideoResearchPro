@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Code-mixed speech: one primary language per transcript (2026-10-19, T-1.16.2.4)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Fourth task of N-002;
+PR [#264](https://github.com/khoks/VideoResearchPro/pull/264). Fourth task of N-002;
 [D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
 
 - **`code_mixing_service.profile_transcript`** finds a source's primary

@@ -14,6 +14,7 @@ import {
   jobToFormState,
   parseChannelList,
   parseDraft,
+  templateNeedsChannels,
   templateToFormState,
   validateChannels,
   type ChannelTypeOption,
@@ -62,6 +63,7 @@ interface TemplateOrigin {
   builtin: boolean;
   jobType: JobType;
   problems: string[];
+  needsChannels: boolean;
 }
 
 export function SubmitJobPage() {
@@ -109,6 +111,7 @@ export function SubmitJobPage() {
       builtin: t.builtin,
       jobType: t.job_type,
       problems: t.problems,
+      needsChannels: templateNeedsChannels(t.parameters),
     });
     setCloneFrom(null);
     setValidationError(null);
@@ -158,6 +161,7 @@ export function SubmitJobPage() {
       builtin: false,
       jobType: t.job_type,
       problems: t.problems,
+      needsChannels: templateNeedsChannels(t.parameters),
     });
     pushToast('success', `Saved template "${t.name}".`);
   };
@@ -865,7 +869,11 @@ function TemplateOriginBanner({
           {!origin.builtin && <> · v{origin.version}</>}.{' '}
           {typeChanged
             ? 'You switched the research type, so this run will not be recorded as from the template.'
-            : 'Type a topic; any other change applies to this run only.'}
+            : origin.jobType === 'topic'
+              ? 'Type a topic; any other change applies to this run only.'
+              : origin.needsChannels
+                ? 'Add the channels; any other change applies to this run only.'
+                : 'Any change applies to this run only.'}
         </span>
         {!origin.builtin && !typeChanged && (
           <Button size="sm" variant="secondary" type="button" onClick={onSaveChanges} loading={saving}>

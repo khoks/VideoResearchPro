@@ -1725,7 +1725,7 @@ Linked decision: D-074.
 - [x] T-8.5.3.2 `GET /api/v1/exports/notes.jsonl` (W3C Web Annotation JSON-LD under the `anno.jsonld` context, one per line, oldest first, withdrawn notes included with `deleted`; `note_export_service.parse_note_jsonld` is the exact inverse and the round-trip test holds every column to it) and `GET /api/v1/exports/notes.md` (grouped by target type and target, every column in an HTML comment per note). Both stream like the dataset exports and accept `?token=`. On the Exports page and the notes page. **Not in the command palette**: E-8.2's palette UI (S-8.2.2) does not exist yet; add the group there when it lands (filed as [T-8.2.2.5](#s-822--palette-ui-and-shortcuts))
 - [x] T-8.5.3.3 `GET /echo/status` reports `notes_total` and `notes_words` (live notes) as the Domain 3 feeder; the Echo readiness panel shows them. **Reported, not gated**: the per-language voice floor is S-3.5.1's to set, so `ready` does not move
 
-### E-8.6 🔵 Job templates (M6)
+### E-8.6 🟡 Job templates (M6)
 
 **Scope.** Save a job's parameters as a named template; instantiate with a new topic and run. Generalises the shipped "Duplicate" flow from "copy one job" to "named reusable recipe", and seeds the starter templates the onboarding wizard (E-8.10) offers.
 **Plan:** [`docs/plans/m6-job-templates.md`](plans/m6-job-templates.md)
@@ -1742,10 +1742,11 @@ Linked decision: D-074.
 - [x] T-8.6.1.5 Tests incl. isolation (every endpoint against a second reader) and built-in immutability; live check in the browser pane (save a deep visual run as a template, Duplicate keeps depth and the flag, pick the template, save v2 from the form, history, Use)
 - **Finding, not fixed (outside this lane):** `JobCreate` has **no `source_types` field** and nothing writes `jobs.source_types_json`, so every topic run searches video only. The worker's multi-source dispatch (`job_tasks._resolve_source_types` → `connector_dispatch`) is unreachable from the API. The plan listed `source_types` as a frozen template field on the assumption it existed; templates freeze what `JobCreate` really accepts. Starter templates that need it (podcast digest, mixed-source debate) wait for that wiring (S-8.6.2)
 
-#### S-8.6.2 🔵 Starter templates
-**PR:** TBD
-- [ ] T-8.6.2.1 Five seeded templates (topic scan, channel deep-dive, podcast digest, mixed-source debate, subscription follow) inserted by migration, versioned by a `builtin_key`
-- [ ] T-8.6.2.2 Used by the onboarding wizard (E-8.10) as the first-job step
+#### S-8.6.2 🟢 Starter templates
+**PR:** [#265](https://github.com/khoks/VideoResearchPro/pull/265) (merged 2026-10-19)
+- [x] T-8.6.2.1 Five built-ins seeded by migration `f1a2b3c4d5e6`, keyed by `builtin_key`, read-only, listed for every reader under "Starters": **Topic scan** (20 videos), **Deep dive** (60 long-form videos, deep report), **Quick brief** (8 short videos, brief report), **Channel deep-dive** (25 per channel), **Subscription follow**. The upsert is idempotent and versioned (identical → no-op, changed parameters → next version); a later revision copies it into a new migration. **Plan open question 2 (which five) answered by substitution:** podcast digest and mixed-source debate need `source_types`, which `JobCreate` does not accept (S-8.6.1 finding), so Deep dive and Quick brief stand in until that field is wired. No starter turns on visual analysis (its opt-in is deferred, D-071 / D-075)
+- [x] Channel and subscription recipes may leave the channel list empty, meaning "add the channels each run" (as topic recipes leave the topic); validation fills a placeholder for the check, submission still requires channels, and the submit banner says "Add the channels"
+- [ ] T-8.6.2.2 Used by the onboarding wizard (E-8.10) as the first-job step. Waits for S-8.10.1; the wizard can pick a starter by `builtin_key` from `GET /api/v1/job-templates`
 
 ### E-8.7 🟡 Channel intelligence (M7)
 

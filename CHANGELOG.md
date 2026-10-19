@@ -10,6 +10,20 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Starter templates (2026-10-19)
+
+Sixth and last PR of the organisation lane ([S-8.6.2](docs/initiatives.md#s-862--starter-templates), PR [#265](https://github.com/khoks/VideoResearchPro/pull/265)).
+
+- **Five read-only starters for every reader**, seeded by migration
+  `f1a2b3c4d5e6` and keyed by `builtin_key`: Topic scan, Deep dive, Quick
+  brief, Channel deep-dive, Subscription follow. Re-running the seed changes
+  nothing; a revised starter becomes its next version.
+- **Channel recipes can leave the channels open**, to be added each run, as a
+  topic recipe leaves the topic.
+- Podcast digest and mixed-source debate, proposed by the plan, wait for
+  `source_types` on job creation.
+
+
 ### Reading room: knowledge reports and books in the same shell (2026-10-19)
 
 S-8.8.3. Knowledge artifacts and Author Studio books now read in the same

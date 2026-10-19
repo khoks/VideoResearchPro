@@ -161,7 +161,7 @@ Cancel a running job. Revokes the active Celery task. Returns updated `JobRespon
 Delete a job. Drops `job_videos` rows (videos and chunks survive in the global library), deletes the report file if present, and clears the per-job Q&A exchanges. Returns 204.
 
 ### `GET /api/v1/jobs/{job_id}/videos`
-List the videos selected for this job. Returns `list[VideoResponse]`. Each row includes the per-job `approved` flag.
+List the documents selected for this job. Returns `list[VideoResponse]`. Each row includes the per-job `approved` flag and the polymorphic fields `document_id`, `source_type` (default `"video"`), `source_id`, `source_url`, `source_metadata` (parsed JSON object) and `classification`. `video_id`, `url`, `duration_seconds` and `channel_name` are nullable: they are NULL for non-video documents. Until S-8.8.2 (2026-10-19) the schema did not declare the polymorphic fields, so they were stripped from every response and a non-video document on a job failed serialisation.
 
 ---
 

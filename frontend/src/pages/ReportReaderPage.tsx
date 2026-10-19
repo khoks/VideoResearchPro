@@ -9,8 +9,17 @@
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useReportBody } from '../hooks/useReport';
+import { useJobVideos } from '../hooks/useJobs';
 import { Button, EmptyState, Spinner } from '../components/primitives';
-import { ReaderCitation, ReaderShell, parseReportHtml, sanitizeReportHtml } from '../components/reader';
+import {
+  CitationCardProvider,
+  Endnotes,
+  ReaderCitation,
+  ReaderShell,
+  parseReportHtml,
+  resolveCitations,
+  sanitizeReportHtml,
+} from '../components/reader';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
 import type { ReportStatistics } from '../types/report';
@@ -26,6 +35,9 @@ export function ReportReaderPage() {
   const navigate = useNavigate();
   const c = useColors();
   const { data: body, isLoading, error } = useReportBody(jobId ?? null);
+  // The run's documents turn a citation's href (or, for old reports, the
+  // title written beside it) into a source for the hover card (S-8.8.2).
+  const { data: videos } = useJobVideos(jobId ?? null);
 
   const parsed = useMemo(() => {
     if (!body) return null;
@@ -34,6 +46,11 @@ export function ReportReaderPage() {
       renderCitation: (citation) => <ReaderCitation key={citation.index} citation={citation} />,
     });
   }, [body]);
+
+  const citationIndex = useMemo(
+    () => (parsed ? resolveCitations(parsed.citations, videos ?? []) : null),
+    [parsed, videos],
+  );
 
   useEffect(() => {
     if (!body) return;
@@ -76,16 +93,26 @@ export function ReportReaderPage() {
   const meta = formatMeta(body.generated_at, body.statistics);
 
   return (
-    <ReaderShell
-      kicker={KICKER[body.job_type] ?? 'Report'}
-      title={body.title}
-      meta={meta}
-      actions={backToRun}
-      outline={parsed.outline}
-      before={body.statistics ? <StatisticsTiles statistics={body.statistics} /> : null}
-    >
-      {parsed.content}
-    </ReaderShell>
+    <CitationCardProvider index={citationIndex}>
+      <ReaderShell
+        kicker={KICKER[body.job_type] ?? 'Report'}
+        title={body.title}
+        meta={meta}
+        actions={
+          <>
+            {backToRun}
+            <Button size="sm" variant="secondary" onClick={() => window.print()}>
+              Print or save as PDF
+            </Button>
+          </>
+        }
+        outline={parsed.outline}
+        before={body.statistics ? <StatisticsTiles statistics={body.statistics} /> : null}
+        after={citationIndex ? <Endnotes endnotes={citationIndex.endnotes} /> : null}
+      >
+        {parsed.content}
+      </ReaderShell>
+    </CitationCardProvider>
   );
 }
 

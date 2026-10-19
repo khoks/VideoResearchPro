@@ -33,6 +33,26 @@ PR [#PR_S612](https://github.com/khoks/VideoResearchPro/pull/PR_S612). Plan: [do
   renders the manuscript's tables through `remark-gfm` (MIT); without it
   they showed as a run of pipes.
 
+
+### Reading room: citation cards, endnotes and print (2026-10-19)
+
+S-8.8.2. Every citation chip in a report now opens a card naming its source,
+and the reader prints as a clean document with numbered footnotes.
+
+- **Sources for every chip.** The reader resolves each citation against the
+  run's documents: by YouTube id, by URL, or — for reports written before
+  S-1.14.9, whose anchors carry only `&t=` — by the title or the sole channel
+  named beside the timestamp. All 30 dead anchors in the stored smoke-test
+  report are now real links.
+- **One shared card** (Popover API, placed from the chip's rect) on hover and
+  keyboard focus, polymorphic by `source_type`, with `aria-describedby`,
+  Escape to close, and a still slot for R1 frames once S-1.18.2 serves them.
+- **Print:** chrome hidden, monochrome, `h2` page breaks, chips as `[n]`
+  footnotes, a "Sources cited" endnote list with URLs, 2 cm margins.
+- **Fix:** `GET /jobs/{id}/videos` now declares `source_type`, `document_id`,
+  `source_metadata` and friends. They had always been built and always been
+  stripped by the response schema, and a non-video document on a job failed
+  serialisation outright.
 ### Global search endpoint on SQLite FTS5 (2026-10-19, S-8.2.1)
 
 PR [#245](https://github.com/khoks/VideoResearchPro/pull/245). Plan:

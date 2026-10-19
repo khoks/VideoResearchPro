@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Code-mixed speech: held-out evaluation, and two fixes it forced (2026-10-19, T-1.16.2.6)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Closes S-1.16.2 (invention N-002 now
+PR [#276](https://github.com/khoks/VideoResearchPro/pull/276). Closes S-1.16.2 (invention N-002 now
 "implemented and measured"); method and numbers in
 [section 11 of the detection note](docs/notes/2026-10-19-code-mixing-detection.md#11-end-to-end-evaluation-on-held-out-sources-t-11626).
 

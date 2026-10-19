@@ -33,7 +33,8 @@ _DECISION_ID = re.compile(r"^D-\d{3}$")
 
 def _decision_headings() -> set[str]:
     text = _DECISIONS_MD.read_text(encoding="utf-8")
-    return set(re.findall(r"^## (D-\d{3}) ", text, flags=re.MULTILINE))
+    # D-067 is an H3; accept both levels.
+    return set(re.findall(r"^#{2,3} (D-\d{3}) ", text, flags=re.MULTILINE))
 
 
 def test_every_use_case_is_measured_with_a_decision_or_marked_unmeasured() -> None:

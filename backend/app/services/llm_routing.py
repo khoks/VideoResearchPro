@@ -140,7 +140,7 @@ VISION_USE_CASES: frozenset[str] = frozenset({"visual_describe_frame"})
 
 # Models known to accept image inputs. Used to WARN on a misconfiguration,
 # never to block one — same fail-soft rule as the rest of this module
-# (D-036): an operator pointing a vision use case at an unlisted model gets
+# (D-067): an operator pointing a vision use case at an unlisted model gets
 # a loud log line, not a dead app, because this list will always lag new
 # model releases.
 VISION_CAPABLE_MODELS: frozenset[str] = frozenset({

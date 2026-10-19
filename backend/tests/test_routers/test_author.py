@@ -454,3 +454,101 @@ def test_book_cannot_compile_another_tenants_job(db, monkeypatch):
     assert "Owner-only findings." not in md
     assert "Owner's Private Research" not in md
     assert "Job not found in your library" in md
+
+
+# ---------------------------------------------------------------------------
+# S-6.1.2: the book reads the report's Markdown source
+# ---------------------------------------------------------------------------
+
+
+_FIXTURE_REPORT = (
+    __import__("pathlib").Path(__file__).resolve().parent.parent
+    / "fixtures" / "reports" / "topic_three_videos.html"
+)
+
+
+def test_book_chapter_is_the_reports_markdown_with_headings_demoted(db, tmp_path):
+    user = auth_service.create_user(db, email="bmd@x.com", password="pw" * 6)
+    job = _make_job(db, user.id, "pratidhvani smoke test")
+    report = tmp_path / "report.html"
+    report.write_text(_FIXTURE_REPORT.read_text(encoding="utf-8"), encoding="utf-8")
+    job.report_path = str(report)
+    db.commit()
+
+    import app.services.outputters  # noqa: F401
+    row = create_output(
+        db, user_id=user.id, kind="book", title="Smoke Book",
+        source_ids=[job.id], parameters={"include_qa": False},
+    )
+    row = run_generation(db, user, row)
+    assert row.status == OutputStatus.COMPLETED.value
+    md = row.content_text
+
+    # One H1 (the book), chapter H2, the report's H2 sections demoted to H4.
+    assert [ln for ln in md.splitlines() if ln.startswith("# ")] == ["# Smoke Book"]
+    assert "## 1. pratidhvani smoke test" in md
+    assert "#### Executive Summary" in md and "\n## Executive Summary" not in md
+    assert "Research Report: pratidhvani smoke test" not in md  # report H1 dropped
+    # Citations survive as Markdown links with their timestamps; tables survive.
+    assert md.count("&t=") == _FIXTURE_REPORT.read_text(encoding="utf-8").count("&t=")
+    assert "| Videos Analyzed | Transcripts Fetched | Total Words | Total Minutes |" in md
+    # No HTML or stylesheet left (the regex stripper used to leak both).
+    assert "<div" not in md and "font-family" not in md
+
+
+def test_book_discloses_a_missing_report_file(db, tmp_path):
+    user = auth_service.create_user(db, email="bm-missing@x.com", password="pw" * 6)
+    job = _make_job(db, user.id, "Gone")
+    job.report_path = str(tmp_path / "missing.html")
+    db.commit()
+    import app.services.outputters  # noqa: F401
+    row = create_output(db, user_id=user.id, kind="book", title="B", source_ids=[job.id],
+                        parameters={"include_qa": False})
+    row = run_generation(db, user, row)
+    assert row.status == OutputStatus.COMPLETED.value
+    assert "The report file for ‘Gone’ is missing." in row.content_text
+
+
+def test_tag_stripping_fallback_is_retired():
+    from app.services.outputters import book_markdown
+    assert not hasattr(book_markdown, "_strip_html_to_markdownish")
+
+
+# ---------------------------------------------------------------------------
+# S-6.1.1 remainder: the router refuses an empty book; outputs carry counts
+# ---------------------------------------------------------------------------
+
+
+def test_create_book_with_empty_source_ids_is_400_and_writes_no_row(unauthenticated_client, db):
+    from app.models.output import Output
+
+    user, headers = _pro_headers(db, "empty-book@x.com")
+    r = unauthenticated_client.post(
+        "/api/v1/author/outputs", headers=headers,
+        json={"kind": "book", "title": "Nothing", "source_ids": []},
+    )
+    assert r.status_code == 400
+    assert "at least one" in r.json()["detail"]
+    assert db.query(Output).filter(Output.user_id == user.id).count() == 0
+
+
+def test_output_items_carry_word_count(unauthenticated_client, db, monkeypatch):
+    user, headers = _pro_headers(db, "wc@x.com")
+    job = _make_job(db, user.id, "Counted")
+    job.report_path = "/fake/r.html"
+    db.commit()
+    from app.services import report_service
+    monkeypatch.setattr(report_service, "get_report_html", lambda p: "<h1>T</h1><p>one two three</p>")
+
+    r = unauthenticated_client.post(
+        "/api/v1/author/outputs", headers=headers,
+        json={"kind": "book", "title": "WC", "source_ids": [job.id], "parameters": {"include_qa": False, "include_toc": False}},
+    )
+    assert r.status_code == 200, r.text
+    created = r.json()
+    assert created["status"] == "completed"
+    content = unauthenticated_client.get(f"/api/v1/author/outputs/{created['id']}/content", headers=headers).text
+    assert created["word_count"] == len(content.split())
+
+    listed = unauthenticated_client.get("/api/v1/author/outputs", headers=headers).json()
+    assert listed[0]["word_count"] == created["word_count"]

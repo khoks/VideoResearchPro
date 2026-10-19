@@ -10,6 +10,29 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Report Markdown source; books built from it (2026-10-19, S-6.1.2 + S-6.1.1 remainder)
+
+PR [#PR_S612](https://github.com/khoks/VideoResearchPro/pull/PR_S612). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **`report_service.report_markdown(job)`** converts the stored HTML report
+  to Markdown with a `markdownify` (MIT) subclass and caches it beside the
+  HTML at `<report_path>.md`: ATX headings, citation links kept as
+  `[text](href)` with their `&t=` timestamps, tables kept, the statistics
+  grid as a one-row table, stylesheet and document head dropped,
+  `[VISUAL @ …]` spans verbatim. Round-trip tests run on three real stored
+  reports. New dependency `markdownify>=1.2.3` (brings `beautifulsoup4`).
+- **Books read it.** `BookMarkdownOutputter` drops the regex tag-stripper;
+  each chapter is the report's Markdown with its headings demoted under the
+  chapter heading; S-5.10.6's tenant-scoped job lookup is kept.
+- **`GET /api/v1/jobs/{id}/report.md`** in `routers/reports.py`,
+  header-bearer auth only (no `?token=`, the reader PR's posture).
+- **Author Studio (S-6.1.1 remainder):** an empty book is a 400 with no row
+  written; outputs carry `word_count` and the list shows chapters and
+  words; "Add to a book" on a finished run's page opens the create flow with
+  that run pre-selected (`/author?new=book&job=<id>`). The Author reader
+  renders the manuscript's tables through `remark-gfm` (MIT); without it
+  they showed as a run of pipes.
+
 ### Global search endpoint on SQLite FTS5 (2026-10-19, S-8.2.1)
 
 PR [#245](https://github.com/khoks/VideoResearchPro/pull/245). Plan:

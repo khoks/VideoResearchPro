@@ -1,0 +1,24 @@
+# Optional Author Studio converters (S-6.1.5): a book's PDF.
+#
+# The EPUB and the Markdown need nothing beyond requirements.txt. A PDF needs
+# one of two converters; AUTHOR_PDF_ENGINE=auto tries them in this order:
+#
+# 1. WeasyPrint (BSD-3-Clause). The better book: running chapter titles and
+#    page numbers in the table of contents (CSS Paged Media). Needs Pango:
+#      Windows: install MSYS2, then `pacman -S mingw-w64-ucrt-x86_64-pango`,
+#               and set WEASYPRINT_DLL_DIRECTORIES=C:\msys64\ucrt64\bin
+#      Debian / Ubuntu: apt install libpango-1.0-0 libpangoft2-1.0-0
+#    Without Pango WeasyPrint installs but cannot load, and auto moves on.
+# 2. Chromium through Playwright (Apache-2.0), the same optional dependency the
+#    SPA article fallback uses (requirements-spa.txt). After installing:
+#      playwright install chromium
+#
+#   pip install -r backend/requirements-author.txt
+#
+# Restart the API and the worker afterwards: each probes for a converter once.
+# With neither, `GET /author/kinds` says why and a request for a PDF is 501.
+
+-r requirements.txt
+
+weasyprint>=66.0
+playwright>=1.50.0

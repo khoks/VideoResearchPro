@@ -22,7 +22,7 @@ export const OUTPUT_KIND_META: Record<string, KindMeta> = {
   book: {
     label: 'Book',
     description:
-      'A Markdown manuscript assembled from the research runs you pick: one chapter per run, with its report and Q&A.',
+      'A manuscript assembled from the research runs you pick: one chapter per run, with its report and Q&A, as Markdown, EPUB or PDF.',
     epic: 'E-6.1',
   },
   site: {
@@ -260,6 +260,49 @@ export function isReadableOutput(output: Pick<OutputItem, 'status' | 'has_conten
 
 /** Button text for one download format: "Download" alone when there is only
  * one, else "Download .pdf". */
+/** Human names for download formats. */
+export const FORMAT_NAMES: Record<string, string> = {
+  md: 'Markdown',
+  txt: 'Text',
+  html: 'HTML',
+  pdf: 'PDF',
+  epub: 'EPUB',
+  pptx: 'PowerPoint',
+  zip: 'Zip',
+  mp4: 'Video',
+};
+
 export function downloadLabel(format: string, count: number): string {
-  return count > 1 ? `Download .${format}` : 'Download';
+  if (count <= 1) return 'Download';
+  return `Download ${FORMAT_NAMES[format] ?? `.${format}`}`;
+}
+
+export interface FileFormatOption {
+  format: string;
+  label: string;
+  available: boolean;
+  /** Why the server cannot build it, with what to install; null if it can. */
+  reason: string | null;
+}
+
+/** S-6.1.5: the files a kind can be built as beside its text, for the create
+ * modal. Empty when the server does not report formats (nothing to choose). */
+export function fileFormatOptions(kinds: KindsResponse | undefined, kind: string): FileFormatOption[] {
+  const f = kinds?.formats?.[kind];
+  if (!f) return [];
+  const names = [...new Set([...f.available, ...Object.keys(f.unavailable ?? {})])].filter((x) => x !== 'md');
+  return names.map((format) => ({
+    format,
+    label: FORMAT_NAMES[format] ?? format.toUpperCase(),
+    available: f.available.includes(format),
+    reason: f.unavailable?.[format] ?? null,
+  }));
+}
+
+/** The `parameters.formats` to send: the text plus every available file the
+ * user kept ticked. Undefined when there was nothing to choose, so the server
+ * applies its own default. */
+export function formatsParameter(options: FileFormatOption[], chosen: Set<string>): string[] | undefined {
+  if (options.length === 0) return undefined;
+  return ['md', ...options.filter((o) => o.available && chosen.has(o.format)).map((o) => o.format)];
 }

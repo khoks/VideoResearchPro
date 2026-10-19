@@ -32,7 +32,9 @@ import { downloadUrl } from '../utils/download';
 import {
   describeCreateError,
   downloadLabel,
+  fileFormatOptions,
   filenameFromDisposition,
+  formatsParameter,
   isActiveOutput,
   isOrphanedPending,
   isReadableOutput,
@@ -556,6 +558,18 @@ function CreateOutputModal({
   const [includeToc, setIncludeToc] = useState(true);
   const jobs = useJobs({ limit: 200 });
   const create = useCreateOutput();
+  // S-6.1.5: which files to build beside the Markdown. Until the user
+  // touches a box, every format the server can build is ticked.
+  const kinds = useAuthorKinds();
+  const formatOptions = useMemo(() => fileFormatOptions(kinds.data, kind), [kinds.data, kind]);
+  const [chosenFormats, setChosenFormats] = useState<Set<string> | null>(null);
+  const chosen = chosenFormats ?? new Set(formatOptions.filter((o) => o.available).map((o) => o.format));
+  const toggleFormat = (format: string, on: boolean) => {
+    const next = new Set(chosen);
+    if (on) next.add(format);
+    else next.delete(format);
+    setChosenFormats(next);
+  };
 
   const candidates = useMemo(() => {
     const all = (jobs.data ?? []).filter((j) => j.job_type !== 'subscription');
@@ -581,7 +595,11 @@ function CreateOutputModal({
         kind,
         title: title.trim(),
         source_ids: [...selected],
-        parameters: { include_qa: includeQa, include_toc: includeToc },
+        parameters: {
+          include_qa: includeQa,
+          include_toc: includeToc,
+          ...(formatsParameter(formatOptions, chosen) ? { formats: formatsParameter(formatOptions, chosen) } : {}),
+        },
       },
       {
         onSuccess: (output) => {
@@ -680,6 +698,35 @@ function CreateOutputModal({
           <CheckboxRow checked={includeQa} onChange={setIncludeQa} label="Include each run's Q&A" />
           <CheckboxRow checked={includeToc} onChange={setIncludeToc} label="Table of contents" />
         </div>
+
+        {formatOptions.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
+            <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, fontWeight: fontWeight.medium, color: c.textPrimary }}>
+              Downloads <span style={{ fontWeight: fontWeight.regular, color: c.textMuted }}>· Markdown is always included</span>
+            </span>
+            <div style={{ display: 'flex', gap: space['5'], flexWrap: 'wrap' }}>
+              {formatOptions.map((o) => (
+                <CheckboxRow
+                  key={o.format}
+                  checked={o.available && chosen.has(o.format)}
+                  disabled={!o.available}
+                  onChange={(v) => toggleFormat(o.format, v)}
+                  label={o.label}
+                />
+              ))}
+            </div>
+            {formatOptions
+              .filter((o) => !o.available && o.reason)
+              .map((o) => (
+                <p
+                  key={o.format}
+                  style={{ margin: 0, fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted, lineHeight: lineHeight.normal }}
+                >
+                  {o.label} is not available on this server. {o.reason}
+                </p>
+              ))}
+          </div>
+        )}
       </div>
     </Modal>
   );
@@ -730,11 +777,38 @@ function JobPickRow({ job, checked, onToggle }: { job: Job; checked: boolean; on
   );
 }
 
-function CheckboxRow({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+function CheckboxRow({
+  checked,
+  onChange,
+  label,
+  disabled = false,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  disabled?: boolean;
+}) {
   const c = useColors();
   return (
-    <label style={{ display: 'inline-flex', alignItems: 'center', gap: space['2'], fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textPrimary, cursor: 'pointer' }}>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ accentColor: c.accent }} />
+    <label
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: space['2'],
+        fontFamily: fonts.ui,
+        fontSize: fontSize.sm,
+        color: c.textPrimary,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.55 : 1,
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ accentColor: c.accent }}
+      />
       {label}
     </label>
   );

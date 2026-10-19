@@ -37,6 +37,13 @@ jinja2>=3.1.6
 # S-6.1.2: report HTML -> Markdown source (MIT; pulls in beautifulsoup4,
 # also MIT). html2text was rejected as GPL-3.0; see docs/plans/l2-author-studio.md.
 markdownify>=1.2.3
+# S-6.1.5: a book's Markdown -> HTML for its EPUB and PDF. markdown-it-py (MIT)
+# with mdit-py-plugins (MIT) for GFM tables and footnotes; raw HTML stays off.
+markdown-it-py>=3.0
+mdit-py-plugins>=0.4
+# The EPUB's XHTML is built and checked with lxml (BSD-3-Clause). Already pulled
+# in by trafilatura; declared because the app imports it directly.
+lxml>=5.0
 
 # Config
 pydantic-settings>=2.9.0

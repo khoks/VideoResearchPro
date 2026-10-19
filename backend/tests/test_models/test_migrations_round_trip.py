@@ -71,3 +71,27 @@ def test_upgrade_downgrade_upgrade_round_trip(tmp_path, revision, tables):
 
     command.upgrade(cfg, "head")
     assert tables <= _tables(url)
+
+
+def _columns(url: str, table: str) -> set[str]:
+    engine = create_engine(url)
+    try:
+        return {c["name"] for c in inspect(engine).get_columns(table)}
+    finally:
+        engine.dispose()
+
+
+def test_onboarding_columns_round_trip(tmp_path):
+    """S-8.10.1 adds columns, not tables, so it gets its own check."""
+    url = "sqlite:///" + (tmp_path / "round_trip.db").as_posix()
+    cfg = _alembic_config()
+    cfg.set_main_option("sqlalchemy.url", url)
+    cols = {"onboarded_at", "onboarding_state_json"}
+
+    command.upgrade(cfg, "head")
+    assert cols <= _columns(url, "users")
+    below = ScriptDirectory.from_config(cfg).get_revision("e8667092c208").down_revision
+    command.downgrade(cfg, below)
+    assert not (cols & _columns(url, "users"))
+    command.upgrade(cfg, "head")
+    assert cols <= _columns(url, "users")

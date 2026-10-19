@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { inferSourceType, libraryApi, type LibraryVideoResponse } from '../../services/libraryApi';
 import { formatDate, formatDuration } from '../../utils/formatters';
 import { sourceTypeLabel } from '../../utils/ingestResults';
@@ -10,7 +11,12 @@ import { fonts, fontSize, fontWeight, radius, space } from '../../theme';
 
 interface Props {
   video: LibraryVideoResponse;
-  onChannelClick?: (channelId: string, channelName: string) => void;
+  /**
+   * Render the channel name as a link to its page (`/library/channels/:id`,
+   * S-8.7.1). The channel page passes `false` so rows do not link back to
+   * the page they are on.
+   */
+  channelLink?: boolean;
 }
 
 function transcriptBadgeTone(status: string): BadgeTone {
@@ -31,7 +37,7 @@ function transcriptBadgeTone(status: string): BadgeTone {
  * pages, which have no channel, duration or thumbnail (see D-063 and the
  * Add sources tab).
  */
-export function VideoRow({ video, onChannelClick }: Props) {
+export function VideoRow({ video, channelLink = true }: Props) {
   const c = useColors();
   const pushToast = useJobStore((s) => s.pushToast);
   const [opening, setOpening] = useState(false);
@@ -152,28 +158,24 @@ export function VideoRow({ video, onChannelClick }: Props) {
               alignItems: 'center',
             }}
           >
-            {hasChannel ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onChannelClick?.(video.channel_id!, video.channel_name);
-                }}
+            {hasChannel && channelLink ? (
+              <Link
+                to={`/library/channels/${video.channel_id}`}
+                onClick={(e) => e.stopPropagation()}
+                title={`Open ${video.channel_name}`}
                 style={{
-                  background: 'transparent',
-                  border: 'none',
-                  padding: 0,
                   color: c.accent,
-                  cursor: onChannelClick ? 'pointer' : 'default',
                   fontFamily: fonts.ui,
                   fontSize: fontSize.sm,
                   fontWeight: fontWeight.medium,
-                  textDecoration: onChannelClick ? 'underline' : 'none',
+                  textDecoration: 'underline',
                   textUnderlineOffset: '3px',
                 }}
               >
                 {video.channel_name}
-              </button>
+              </Link>
+            ) : hasChannel ? (
+              <span style={{ fontWeight: fontWeight.medium }}>{video.channel_name}</span>
             ) : (
               <span style={{ fontWeight: fontWeight.medium }}>{sourceTypeLabel(sourceType)}</span>
             )}

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import type { Channel } from '../../services/channelsApi';
 import { formatDate } from '../../utils/formatters';
 import { Button, Card, Spinner } from '../primitives';
@@ -7,7 +8,8 @@ import { fonts, fontSize, fontWeight, space } from '../../theme';
 
 interface Props {
   channel: Channel;
-  onOpenVideos: (channelId: string) => void;
+  /** Open the channel's page (`/library/channels/:id`). */
+  onOpen: (channelId: string) => void;
   onToggleSubscribe: (channel: Channel) => void;
   onSync: (channelId: string) => void;
   subscribeBusy?: boolean;
@@ -16,7 +18,7 @@ interface Props {
 
 export function ChannelRow({
   channel,
-  onOpenVideos,
+  onOpen,
   onToggleSubscribe,
   onSync,
   subscribeBusy,
@@ -24,17 +26,18 @@ export function ChannelRow({
 }: Props) {
   const c = useColors();
   const subscribed = channel.subscribed;
+  const href = `/library/channels/${channel.channel_id}`;
 
   return (
     <Card
       interactive
-      onClick={() => onOpenVideos(channel.channel_id)}
+      onClick={() => onOpen(channel.channel_id)}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          onOpenVideos(channel.channel_id);
+          onOpen(channel.channel_id);
         }
       }}
     >
@@ -51,7 +54,6 @@ export function ChannelRow({
               fontFamily: fonts.display,
               fontWeight: fontWeight.semibold,
               fontSize: fontSize.md,
-              color: c.textPrimary,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -59,7 +61,15 @@ export function ChannelRow({
             }}
             title={channel.name}
           >
-            {channel.name}
+            {/* A real anchor so middle-click and "open in new tab" work; the
+                card's own click handler covers the rest of the row. */}
+            <Link
+              to={href}
+              onClick={(e) => e.stopPropagation()}
+              style={{ color: c.textPrimary, textDecoration: 'none' }}
+            >
+              {channel.name}
+            </Link>
           </div>
           <div
             style={{
@@ -103,6 +113,7 @@ export function ChannelRow({
             flexShrink: 0,
           }}
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
         >
           <Button
             size="sm"
@@ -115,7 +126,7 @@ export function ChannelRow({
           <Button
             size="sm"
             variant="tertiary"
-            onClick={() => onSync(channel.id)}
+            onClick={() => onSync(channel.channel_id)}
             disabled={syncBusy}
             leadingIcon={syncBusy ? <Spinner size={12} /> : undefined}
           >

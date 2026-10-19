@@ -1,7 +1,7 @@
 """notes — the user's own voice in the library (M5 / S-8.5.1)
 
 Revision ID: c2d3e4f5a6b7
-Revises: b1a2c3d4e5f8
+Revises: c7d8e9f0a1b2
 Create Date: 2026-10-19
 
 One row per note the user writes on a document, job, Q&A exchange, channel
@@ -13,7 +13,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "c2d3e4f5a6b7"
-down_revision = "b1a2c3d4e5f8"
+down_revision = "c7d8e9f0a1b2"
 branch_labels = None
 depends_on = None
 

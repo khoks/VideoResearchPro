@@ -1939,8 +1939,8 @@ Linked decision: D-074.
 Scope-changed 2026-10-19: (1) step 1 takes channel links or handles instead of "existing search + subscribe": the channels list is per tenant (D-065), so a new account has nothing to pick from, and subscribe starts a full-channel ingest, the opposite of a small first run. (2) The plan's risk note said a channel job does not pause for approval; it does (`job_tasks` channel fetch ends at `awaiting_approval`), so step 3 approves inline. (3) Milestones are derived on read from `jobs` and `audit_log`, so `tasks/job_tasks.py` gained no onboarding code. (4) Plan open questions, taken at the recommended defaults: Q1 a channel job of five videos; Q2 accounts that already have runs are not sent to the wizard, while new and mid-wizard accounts are. (5) The sidebar link shows until the wizard is finished or skipped; after a skip the palette's **Getting started** action reopens it.
 
 #### S-8.10.2 🟢 Empty-state audit
-**PR:** [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)
-**Shipped:** 2026-10-19 — PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)
+**PR:** [#302](https://github.com/khoks/VideoResearchPro/pull/302)
+**Shipped:** 2026-10-19 — PR [#302](https://github.com/khoks/VideoResearchPro/pull/302)
 - [x] T-8.10.2.1 Every page's zero-data state uses the `EmptyState` primitive with editorial copy and one action (jobs, library, channels, Q&A history, exports, author, echo, shelves, notes; there is no saved-searches page). Each list now tells loading, error (with Retry), zero data and "nothing matches" (with Clear filters) apart
 - [x] T-8.10.2.2 First-run checklist card on the jobs page until three milestones are hit: a run, a report opened, a question asked (`milestones.questions`, new); hidden on request through `PATCH /auth/me/onboarding {checklist_dismissed}`, kept on the server
 

@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Changed: empty states say what is true (2026-10-19)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). S-8.10.2, plan [m10-onboarding](docs/plans/m10-onboarding.md).
+PR [#302](https://github.com/khoks/VideoResearchPro/pull/302). S-8.10.2, plan [m10-onboarding](docs/plans/m10-onboarding.md).
 
 - Lists tell loading, a failed fetch (with **Retry**), "nothing yet" (with the
   one action that fills it) and "nothing matches" (with **Clear filters**) apart.

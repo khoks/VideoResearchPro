@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useLibraryVideos } from '../hooks/useLibrary';
 import ReactMarkdown from 'react-markdown';
 import {
   useAskLibraryQA,
@@ -14,6 +16,7 @@ import {
   Badge,
   Button,
   Card,
+  EmptyState,
   FormField,
   Input,
   Select,
@@ -43,6 +46,12 @@ const LANGUAGE_OPTIONS: Array<{ value: AnswerLanguage; label: string }> = [
 export function LibraryQAPage() {
   const c = useColors();
   const { data: history } = useLibraryQAHistory();
+  const navigate = useNavigate();
+  // S-8.10.2: with nothing in the library there is nothing to ask; say so
+  // and offer the one action that fixes it, instead of a composer that can
+  // only answer "no sources".
+  const firstSource = useLibraryVideos({ limit: 1 });
+  const libraryEmpty = firstSource.isSuccess && firstSource.data.length === 0 && !(history && history.length > 0);
   const askQuestion = useAskLibraryQA();
   const clarifyQuestion = useClarifyLibraryQA();
   const libraryQAAvailable = useFeatureAvailable('library_qa');
@@ -130,6 +139,13 @@ export function LibraryQAPage() {
         </p>
       </header>
 
+      {libraryEmpty ? (
+        <EmptyState
+          title="Nothing to ask yet."
+          description="Library questions are answered from the sources you have ingested, and there are none yet. Start a run, or upload a PDF or paste a link."
+          action={<Button onClick={() => navigate('/library?tab=ingest')}>Add sources</Button>}
+        />
+      ) : (
       <Card>
         <QADock>
         <div
@@ -393,6 +409,7 @@ export function LibraryQAPage() {
         )}
         </QADock>
       </Card>
+      )}
     </div>
   );
 }

@@ -61,7 +61,7 @@ function payload(over: Omit<Partial<Onboarding>, 'state'> & { state?: Partial<On
     onboarded_at: null,
     started: false,
     should_onboard: true,
-    milestones: { jobs: 0, first_job: null, report_opened: false },
+    milestones: { jobs: 0, first_job: null, report_opened: false, questions: 0 },
     ...rest,
     state: {
       step: 1,
@@ -70,6 +70,8 @@ function payload(over: Omit<Partial<Onboarding>, 'state'> & { state?: Partial<On
       started_at: null,
       completed_at: null,
       dismissed_at: null,
+      checklist_dismissed: false,
+      checklist_dismissed_at: null,
       ...state,
     },
   };

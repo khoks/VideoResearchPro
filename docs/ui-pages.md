@@ -112,9 +112,11 @@ Columns: title, type icon, status pill, video count, created_at, last activity. 
 | State | What renders |
 |-------|--------------|
 | Default | Sortable table; default sort by `last activity` desc. |
-| Empty | Editorial empty state: "No volumes on your shelf yet. Begin a research run to start building your library." with a primary CTA → `/submit`. |
-| Loading | Skeleton rows matching the table column shape. |
-| Network error | Toast + retry banner. |
+| First run | **Getting started** checklist card above the filters (S-8.10.2): *Start a research run*, *Read a report*, *Ask your sources a question*, each with the one link that completes it, "N of 3 done", and **Hide this** (kept on the server, `checklist_dismissed`). It disappears by itself once all three are done, so accounts that already work never see it. |
+| Empty (no runs, nothing filtered) | "Nothing researched yet." with **New research** → `/submit`. |
+| Empty (search or status filter returns nothing) | "Nothing matches these filters." with **Clear filters**. Until S-8.10.2 a status filter with no hits showed the first-run copy. |
+| Loading | Skeletons in the shape of the header, filter card and two run cards. |
+| Network error | "Couldn't load your runs." with **Retry**. |
 | Background WS event | Status pill updates in place; if a job transitions to `awaiting_approval`, a small "review needed" badge appears. |
 
 ### `JobDetailPage` — `/jobs/:jobId`
@@ -181,11 +183,12 @@ Layout: 75ch serif measure, `text-wrap: pretty` on prose and `balance` on headin
 |-------|--------------|
 | Default | Row list. Each row: thumbnail (or source-type placeholder), title, channel or source type, duration where it applies, language pill, transcript-status pill, "referenced in N runs" footer, open link. |
 | Filtering | Filter controls at the top; results update in place. |
-| Empty (no sources at all) | "Nothing matches these filters." (the shelf copy also points at the Add sources tab). |
-| Empty (filters return nothing) | "Nothing matches these filters." with a "Clear" on the channel chip. |
-| Loading | Spinner on first page; subsequent pages keep the list. |
+| Empty (no sources, nothing filtered) | "Your library is empty." with **Add sources**, which opens the Add sources tab (S-8.10.2; it used to say "Nothing matches these filters." with no filter set). |
+| Empty (filters return nothing) | "Nothing matches these filters." with **Clear filters**, which clears search, language, channel, transcript status, tag and the one-source filter. |
+| Error | "Couldn't load your sources." with **Retry**. |
+| Loading | Skeleton cards on the first page; later pages keep the list. |
 
-**Channels tab.** One `ChannelRow` per channel this tenant can see ([D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)): name (a real link), subscribers, volumes on your shelf, last synced, Subscribe / Sync now. The row and the name open the channel's page (`/library/channels/:channelId`, below). `/library?tab=channels` (or `?tab=ingest`) opens the page on that tab; the channel page's breadcrumb uses it.
+**Channels tab.** Empty: "No channels yet." with **Start a channel run** (→ `/submit`); error: "Couldn't load channels." with **Retry**; loading: skeleton cards (S-8.10.2). One `ChannelRow` per channel this tenant can see ([D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)): name (a real link), subscribers, volumes on your shelf, last synced, Subscribe / Sync now. The row and the name open the channel's page (`/library/channels/:channelId`, below). `/library?tab=channels` (or `?tab=ingest`) opens the page on that tab; the channel page's breadcrumb uses it.
 
 **Add sources tab** (shipped 2026-10-19). Why a tab and not the Submit page or a modal: both endpoints are library-scoped and start no job, the per-file / per-URL result tables need room and should outlive a dialog, and the page already uses tabs for its sections.
 
@@ -258,7 +261,8 @@ Layout: question textarea + clarify-first toggle + language selector at the top;
 | Default | Textarea + button + history list. Under 640 px the composer docks at the bottom below the history, as on the job page (S-8.12.1). |
 | Clarifying | Inline "Interpretation: ..." plus three suggested clarifying questions; user picks one or types their own context. |
 | Asking | Streaming answer area appears; citations populate as the agent extracts references. |
-| Empty | "No echoes yet. Ask your first question to begin." |
+| Empty (no exchanges yet) | Composer and an empty thread. |
+| Empty library | "Nothing to ask yet." with **Add sources** (→ `/library?tab=ingest`) in place of the composer, when the reader can see no source and has asked nothing (S-8.10.2). |
 | LLM down | Banner + Ask disabled. |
 
 ### `QAHistoryChatPage` — `/qa-history`
@@ -272,6 +276,8 @@ Layout: chat-like — past meta-questions and meta-answers. Each meta-answer cit
 | Empty (no past exchanges anywhere) | "Once you've asked questions on a job or library page, they'll start echoing here." |
 | Empty (past exchanges exist but no meta-questions yet) | "Ask anything across your past questions. e.g. 'What have I learned about supply chains?'" |
 | Asking | Inline "thinking" indicator with skeleton paragraphs. |
+| Loading | Skeleton cards (S-8.10.2). |
+| Error | "Couldn't load your echoes." with **Retry**; the composer still works. |
 | LLM down for `qa_history_formulate_answer` | Banner + Ask disabled. |
 
 ### `NotesPage` — `/notes`
@@ -290,13 +296,13 @@ Layout: header with **Export Markdown** / **Export JSON-LD**; a controls card (s
 ### `ExportsPage` — `/exports`
 **Purpose.** Download dataset exports for fine-tuning, plus the user's own notes. Four dataset endpoints: Q&A in OpenAI chat format, Q&A in tuple format, Knowledge in OpenAI chat format, Knowledge in tuple format; and two notes exports, Markdown and JSON-LD (S-8.5.3).
 
-Layout: card grid, one card per dataset. Each card shows: dataset name, current row count, last-modified hint, "Download" button (initiates a streaming download), "Copy URL" button.
+Layout: one card per dataset (Q&A, knowledge, notes), each with its description and download buttons. There are no row counts.
 
 | State | What renders |
 |-------|--------------|
-| Default | Four cards. |
-| Empty (zero rows for that dataset) | Card shows "0 records — no exchanges yet" and disables the Download button. |
-| Downloading | Subtle progress indicator in the card. |
+| Default | Three cards. |
+| No questions yet | The Q&A card says both files download empty, from the onboarding `questions` milestone (S-8.10.2). The buttons still work. No count exists for the knowledge dataset, so it has no such note. |
+| Downloading | A toast on start and on failure. |
 
 ### `AuthorPage` — `/author` (Pro+)
 **Purpose.** Author Studio. Turn finished research runs into long-form output. Backend: `backend/app/routers/author.py`. Only `book` has a generator today; the page never offers a kind that would 501.
@@ -415,6 +421,8 @@ The sidebar's **Shelves** group (after Library) lists the reader's shelves with 
 
 ### Empty states (editorial voice)
 Every page has at least one purposeful empty state. The voice is consistent (per [branding.md](branding.md) §voice): "library", "volumes", "echoes". No "No data." or "Empty list".
+
+The S-8.10.2 audit (2026-10-19, NN/g and Atlassian empty-state guidance, plan [m10-onboarding](plans/m10-onboarding.md)) holds every list to four distinct states: **loading** (skeletons shaped like the content, never "nothing here" while loading), **error** (says the fetch failed and offers **Retry**), **zero data** (what the space is for and the one action that fills it), and **nothing matches** (a filter is set; offers **Clear filters**). Audited: runs, library sources and channels, library Q&A, Q&A history, exports; the author, Echo, Echo inbox, shelves, shelf, notes and templates pages already met it. There is no saved-searches page to audit. `pages/__tests__/emptyStates.test.tsx` pins the jobs page's three states, the checklist and the library Q&A empty state, and fails if a page uses generic copy ("No data", "No results", "Empty list", "Nothing here").
 
 ### Loading states
 Skeletons match content shape. No bare spinners on data-bearing pages. Action buttons show inline spinners during their action.

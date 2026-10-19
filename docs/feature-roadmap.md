@@ -382,7 +382,7 @@ Visualize how Q&As cite documents, how documents relate to topics, how topics cl
 
 ---
 
-### M10 — Onboarding wizard + empty-state polish 🔵
+### M10 — Onboarding wizard + empty-state polish 🟢
 
 First-run flow: pick 3-5 channels, run a first job, see the result. Today there's no onboarding.
 
@@ -392,7 +392,7 @@ First-run flow: pick 3-5 channels, run a first job, see the result. Today there'
 
 **UI:** Multi-step wizard surfaced on first login; dismissible afterwards.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.10](initiatives.md#e-810--onboarding-wizard-and-empty-states-m10); plan [`plans/m10-onboarding.md`](plans/m10-onboarding.md). Uses M6 starter templates for the first job; `users.onboarded_at` plus a resumable state column. High-leverage for SaaS conversion later. **🟡 2026-10-19:** the wizard shipped (S-8.10.1, PR [#299](https://github.com/khoks/VideoResearchPro/pull/299)): `/welcome` with channels, a five-video channel run from the Channel deep-dive starter, inline approval and the report in the reader; server-side state; activation events. The empty-state audit (S-8.10.2) is next.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.10](initiatives.md#e-810--onboarding-wizard-and-empty-states-m10); plan [`plans/m10-onboarding.md`](plans/m10-onboarding.md). Uses M6 starter templates for the first job; `users.onboarded_at` plus a resumable state column. High-leverage for SaaS conversion later. **🟡 2026-10-19:** the wizard shipped (S-8.10.1, PR [#299](https://github.com/khoks/VideoResearchPro/pull/299)): `/welcome` with channels, a five-video channel run from the Channel deep-dive starter, inline approval and the report in the reader; server-side state; activation events. **🟢 2026-10-19:** the empty-state audit shipped (S-8.10.2, PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)) with the jobs-page first-run checklist.
 
 ---
 

@@ -52,16 +52,18 @@ The first-run wizard's state for the caller (S-8.10.1). `state` is the default w
     "dismissed": false,
     "started_at": "2026-10-19T20:31:02+00:00",
     "completed_at": null,
-    "dismissed_at": null
+    "dismissed_at": null,
+    "checklist_dismissed": false,
+    "checklist_dismissed_at": null
   },
   "started": true,
-  "milestones": { "jobs": 0, "first_job": null, "report_opened": false },
+  "milestones": { "jobs": 0, "first_job": null, "report_opened": false, "questions": 0 },
   "should_onboard": true
 }
 ```
 
 ### `PATCH /api/v1/auth/me/onboarding`
-Merge a change into the caller's state; returns the same shape as `GET`. Every field is optional and unknown fields are a 422. `step` is 1 to 3. `channels` replaces the list (at most five; trimmed, de-duplicated, blanks dropped). `first_job_id` must be one of the caller's runs, else 404. `completed: true` sets `onboarded_at`; `dismissed: true` records a skip. The first PATCH writes `started_at`. Audit events, each once per account: `onboarding_started`, `onboarding_completed`, `onboarding_skipped`; `first_job_created` is written by `POST /jobs` and `first_report_opened` by `GET /jobs/{id}/report/body`.
+Merge a change into the caller's state; returns the same shape as `GET`. Every field is optional and unknown fields are a 422. `step` is 1 to 3. `channels` replaces the list (at most five; trimmed, de-duplicated, blanks dropped). `first_job_id` must be one of the caller's runs, else 404. `completed: true` sets `onboarded_at`; `dismissed: true` records a skip; `checklist_dismissed: true` hides the jobs page's first-run checklist (S-8.10.2) and, unlike every other field, does not start the wizard. The first PATCH that touches the wizard writes `started_at`. `milestones.questions` counts the caller's questions on runs, the library and the history chat. Audit events, each once per account: `onboarding_started`, `onboarding_completed`, `onboarding_skipped`; `first_job_created` is written by `POST /jobs` and `first_report_opened` by `GET /jobs/{id}/report/body`.
 
 ```json
 // request

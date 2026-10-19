@@ -10,6 +10,20 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: empty states say what is true (2026-10-19)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). S-8.10.2, plan [m10-onboarding](docs/plans/m10-onboarding.md).
+
+- Lists tell loading, a failed fetch (with **Retry**), "nothing yet" (with the
+  one action that fills it) and "nothing matches" (with **Clear filters**) apart.
+  Fixed on the way: the runs page showed the first-run copy when a status filter
+  had no hits, and the library said "Nothing matches these filters." with no
+  filter set.
+- A **Getting started** checklist on the runs page (start a run, read a report,
+  ask a question) until all three are done, hideable for good.
+- Library Q&A with an empty library says there is nothing to ask and links to
+  **Add sources**; the exports page says when the Q&A files would be empty.
+
 ### Added: first-run onboarding wizard (2026-10-19)
 
 PR [#299](https://github.com/khoks/VideoResearchPro/pull/299). S-8.10.1, plan [m10-onboarding](docs/plans/m10-onboarding.md).

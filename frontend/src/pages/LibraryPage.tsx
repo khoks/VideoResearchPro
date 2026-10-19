@@ -19,7 +19,7 @@ import {
   EmptyState,
   Input,
   Select,
-  Spinner,
+  Skeleton,
 } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
 import {
@@ -139,6 +139,26 @@ export function LibraryPage() {
   });
 
   const resetPage = () => setPage(0);
+
+  // S-8.10.2: an empty list means "your library is empty" only when nothing
+  // narrows it; otherwise it means "nothing matches", with a way back.
+  const anyFilter = !!(search.trim() || language || transcriptStatus || channelFilter || tagFilter || documentFilter);
+  const clearAllFilters = () => {
+    setSearch('');
+    setLanguage('');
+    setTranscriptStatus('');
+    setChannelFilter('');
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('tag');
+        next.delete('document');
+        return next;
+      },
+      { replace: true },
+    );
+    resetPage();
+  };
 
   // Opening a channel goes to its page (S-8.7.1); the in-place channel
   // filter on the Sources tab remains available from the filter rail.
@@ -284,6 +304,10 @@ export function LibraryPage() {
           videos={videosQuery.data ?? []}
           isLoading={videosQuery.isLoading}
           isError={videosQuery.isError}
+          anyFilter={anyFilter}
+          onClearFilters={clearAllFilters}
+          onAddSources={() => setTab('ingest')}
+          onRetry={() => void videosQuery.refetch()}
         />
         </>
       ) : (
@@ -291,6 +315,8 @@ export function LibraryPage() {
           channels={channelsQuery.data ?? []}
           isLoading={channelsQuery.isLoading}
           isError={channelsQuery.isError}
+          onRetry={() => void channelsQuery.refetch()}
+          onStartChannelRun={() => navigate('/submit')}
           onOpen={handleOpenChannel}
           onToggleSubscribe={handleToggleSubscribe}
           onSync={handleSync}
@@ -422,6 +448,11 @@ interface VideosTabProps {
   videos: LibraryVideoResponse[];
   isLoading: boolean;
   isError: boolean;
+  /** Any filter narrows the list (including the tag and one-source filters). */
+  anyFilter: boolean;
+  onClearFilters: () => void;
+  onAddSources: () => void;
+  onRetry: () => void;
 }
 
 function VideosTab({
@@ -442,6 +473,10 @@ function VideosTab({
   videos,
   isLoading,
   isError,
+  anyFilter,
+  onClearFilters,
+  onAddSources,
+  onRetry,
 }: VideosTabProps) {
   const c = useColors();
   const hasNextPage = videos.length === PAGE_SIZE;
@@ -551,20 +586,40 @@ function VideosTab({
       )}
 
       {isLoading && page === 0 ? (
-        <div style={{ textAlign: 'center', padding: space['8'] }}>
-          <Spinner size={32} />
+        <div aria-busy style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
+          <Skeleton variant="card" height={104} />
+          <Skeleton variant="card" height={104} />
+          <Skeleton variant="card" height={104} />
         </div>
       ) : isError ? (
         <EmptyState
           size="sm"
-          title="Couldn't load the shelves."
-          description="Something blocked the library fetch. Try refreshing the page."
+          title="Couldn't load your sources."
+          description="Something blocked the library fetch."
+          action={
+            <Button size="sm" variant="secondary" onClick={onRetry}>
+              Retry
+            </Button>
+          }
+        />
+      ) : videos.length === 0 && !anyFilter && page === 0 ? (
+        <EmptyState
+          title="Your library is empty."
+          description="Sources land here when a run fetches them, or when you upload a PDF or paste a link. Each one is read once and kept for every run after."
+          action={<Button onClick={onAddSources}>Add sources</Button>}
         />
       ) : videos.length === 0 ? (
         <EmptyState
           size="sm"
           title="Nothing matches these filters."
-          description="Loosen the filters or clear the channel pick to see more volumes."
+          description="Loosen the filters or clear the channel pick to see more sources."
+          action={
+            anyFilter ? (
+              <Button size="sm" variant="tertiary" onClick={onClearFilters}>
+                Clear filters
+              </Button>
+            ) : undefined
+          }
         />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
@@ -624,6 +679,8 @@ interface ChannelsTabProps {
   channels: Channel[];
   isLoading: boolean;
   isError: boolean;
+  onRetry: () => void;
+  onStartChannelRun: () => void;
   onOpen: (channelId: string) => void;
   onToggleSubscribe: (channel: Channel) => void;
   onSync: (channelId: string) => void;
@@ -636,6 +693,8 @@ function ChannelsTab({
   channels,
   isLoading,
   isError,
+  onRetry,
+  onStartChannelRun,
   onOpen,
   onToggleSubscribe,
   onSync,
@@ -645,8 +704,9 @@ function ChannelsTab({
 }: ChannelsTabProps) {
   if (isLoading) {
     return (
-      <div style={{ textAlign: 'center', padding: space['8'] }}>
-        <Spinner size={32} />
+      <div aria-busy style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
+        <Skeleton variant="card" height={88} />
+        <Skeleton variant="card" height={88} />
       </div>
     );
   }
@@ -655,15 +715,21 @@ function ChannelsTab({
       <EmptyState
         size="sm"
         title="Couldn't load channels."
-        description="Something blocked the channels fetch. Try refreshing the page."
+        description="Something blocked the channels fetch."
+        action={
+          <Button size="sm" variant="secondary" onClick={onRetry}>
+            Retry
+          </Button>
+        }
       />
     );
   }
   if (channels.length === 0) {
     return (
       <EmptyState
-        title="No channels on the shelf yet."
-        description="Subscribe to a channel from a research run, or add them from the submit page."
+        title="No channels yet."
+        description="A channel appears here once one of its videos joins your library. A channel run reads a few of its latest uploads."
+        action={<Button onClick={onStartChannelRun}>Start a channel run</Button>}
       />
     );
   }

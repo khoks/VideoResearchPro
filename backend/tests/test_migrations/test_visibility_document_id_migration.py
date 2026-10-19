@@ -138,6 +138,15 @@ def test_migration_is_the_head_the_orm_expects(migrated):
 
     cfg, eng = migrated
     command.upgrade(cfg, "head")
-    assert _exec(eng, "SELECT version_num FROM alembic_version") == [(THIS,)]
+    # Later revisions (shelves, tags, ...) build on this one, so assert it is
+    # in the applied lineage rather than that it is literally the head.
+    from alembic.script import ScriptDirectory
+
+    (current,) = _exec(eng, "SELECT version_num FROM alembic_version")[0]
+    lineage = {
+        rev.revision
+        for rev in ScriptDirectory.from_config(cfg).walk_revisions(base="base", head=current)
+    }
+    assert THIS in lineage, "a fresh install must pass through the D-070 revision"
     orm = {c.name for c in Base.metadata.tables["document_visibility"].columns}
     assert _columns(eng, "document_visibility") == orm

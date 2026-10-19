@@ -29,6 +29,7 @@ from app.routers import (
     reports,
     sessions,
     shelves,
+    tags,
     ws,
 )
 from app.services import chroma_service
@@ -118,6 +119,7 @@ app.include_router(author.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
 app.include_router(shelves.router, prefix="/api/v1")
+app.include_router(tags.router, prefix="/api/v1")
 app.include_router(qa.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
 app.include_router(library.router, prefix="/api/v1")

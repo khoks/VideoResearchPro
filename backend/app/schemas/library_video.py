@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.schemas.tag import TagSummary
+
 
 LibrarySort = Literal["newest", "oldest", "longest", "shortest"]
 
@@ -41,5 +43,9 @@ class LibraryVideoResponse(BaseModel):
 
     job_count: int = 0
     job_titles: list[str] = []
+
+    # S-8.1.3: the caller's own tags on this document, A→Z. Another reader's
+    # tags on the same shared document never appear (D-063).
+    tags: list[TagSummary] = []
 
     model_config = {"from_attributes": True}

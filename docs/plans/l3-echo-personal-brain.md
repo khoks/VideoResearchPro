@@ -142,7 +142,7 @@ Export (one archive, JSONL per table plus files) and full delete (cascading acro
 ## Open questions (the user's call)
 
 1. **Private-by-key or nothing for SaaS.** True zero-knowledge is incompatible with the pipeline; is server-readable, tenant-key-encrypted at rest an acceptable promise if labelled honestly?
-2. **Third-party content default.** Context-only (retrievable, never quoted, never exported) is the recommendation; should the user be able to override it for a specific thread?
+2. **Third-party content default.** Context-only (retrievable, never quoted, never exported) is the recommendation; should the user be able to override it for a specific thread? **Default taken in S-3.7.1** (no override built), and "never exported" read as dataset and derived exports, not the user's own whole-brain archive; see [D-089](../decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19). The archive reading awaits the user's confirmation.
 3. **The bubble's shortcut.** `Ctrl/Cmd-Shift-E` is proposed; the roadmap said `Cmd-E`, which conflicts.
 4. **Spotify live tail.** Worth building at all given it is self-host-only, or export import only?
 5. **When Gmail.** Only with revenue to fund the annual assessment, or never, with IMAP plus app password as the self-host answer?

@@ -443,3 +443,158 @@ button {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
+
+/* --- Citation chips, card and print (S-8.8.2) --------------------------- */
+
+/* The footnote number exists for print and for the endnote list; on screen
+   the chip shows the writer's own timestamp text. */
+.reader-fn {
+  display: none;
+}
+
+button.reader-citation {
+  border-style: solid;
+}
+
+.reader-citation-card a:hover {
+  text-decoration: underline;
+}
+
+.reader-endnote-url {
+  display: none;
+}
+
+.reader-endnotes summary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+@media print {
+  @page {
+    margin: 2cm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /* App chrome and reader chrome. AppLayout's sidebar and mobile bar carry
+     these classes already, so the layout itself needs no print code. */
+  .pratidhvani-sidebar,
+  .pratidhvani-mobile-bar,
+  .pratidhvani-mobile-drawer,
+  .reader-outline,
+  .reader-progress,
+  .reader-no-print,
+  .reader-citation-card {
+    display: none !important;
+  }
+
+  /* The health banner and the toast stack are live regions; neither belongs
+     on paper, and the reader itself has none. */
+  [role='status'],
+  [aria-live] {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  .reader-grid {
+    display: block;
+  }
+
+  /* Monochrome: inline colours come from the active theme, and a dark-mode
+     reader must not print pale text on white. */
+  .reader-print-root,
+  .reader-print-root * {
+    color: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border-color: #999 !important;
+  }
+
+  .reader-body {
+    max-width: none;
+    font-size: 11pt;
+    line-height: 1.5;
+  }
+
+  .reader-body h2 {
+    break-before: page;
+    break-after: avoid;
+  }
+
+  .reader-body > h2:first-child,
+  .reader-body > :first-child > h2:first-child {
+    break-before: auto;
+  }
+
+  .reader-body h3,
+  .reader-body h4 {
+    break-after: avoid;
+  }
+
+  .reader-body table,
+  .reader-body blockquote,
+  .reader-body pre,
+  .reader-body figure,
+  .reader-body li {
+    break-inside: avoid;
+  }
+
+  .reader-table-scroll {
+    overflow: visible;
+  }
+
+  /* Chips print as the writer's text plus a footnote number. */
+  .reader-citation {
+    border: none !important;
+    padding: 0 !important;
+    font-family: inherit !important;
+    font-size: inherit !important;
+  }
+
+  .reader-fn {
+    display: inline;
+    font-size: 0.7em;
+    margin-left: 0.1em;
+  }
+
+  .reader-fn::before {
+    content: '[';
+  }
+
+  .reader-fn::after {
+    content: ']';
+  }
+
+  /* Ordinary links keep their destination on paper. */
+  .reader-body a[href^='http']:not(.reader-citation)::after {
+    content: ' (' attr(href) ')';
+    font-size: 0.8em;
+    overflow-wrap: anywhere;
+  }
+
+  .reader-endnotes {
+    break-before: page;
+    max-width: none !important;
+  }
+
+  .reader-endnotes summary {
+    list-style: none;
+  }
+
+  .reader-endnotes summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .reader-endnote-url {
+    display: inline;
+    font-size: 0.8em;
+    overflow-wrap: anywhere;
+  }
+}

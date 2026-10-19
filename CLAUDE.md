@@ -311,6 +311,9 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | **Temporal awareness (R3 / E-1.17)** | | | |
 | `TEMPORAL_SCOPE_ENABLED` | No | `True` | Per-document discussed-era extraction on first ingest (`temporal_scope_extract`, one economy-tier call per NEW document). Off = every era reads as unknown, which is also how a missing value is treated |
 | `TEMPORAL_SCOPE_WINDOW_TOKENS` | No | `1500` | Size of each of the three transcript windows (opening / middle / close) sampled for the era call |
+| **Code-mixed speech (R5 / N-002 / D-080)** | | | |
+| `CODE_MIX_DOMINANT_SHARE` | No | `0.6` | A Hindi-grammar span with at least this Hindi share is quoted in Devanagari (with transliteration + translation). The threshold is the user's; a lower one is more robust to the tagger's Devanagari blind spot (open question in D-080) |
+| `CODE_MIX_BORROWING_MAX_SHARE` | No | `0.2` | An English-grammar span with at most this Hindi share is rendered as plain English; between the two thresholds, quotes stay in Roman script |
 | **Scheduler (S-8.3.1 / M3)** | | | |
 | `SCHEDULER_ENABLED` | No | `True` | Registers the single beat entry `scheduler.tick`; off = no entry and a tick that still arrives no-ops. Beat is its own process (`celery -A app.tasks.celery_app beat`), started by `scripts/start.ps1`; run exactly one |
 | `SCHEDULER_TICK_SECONDS` | No | `300` | Tick interval; also the tick's `expires`, so a backlog never replays after a restart |

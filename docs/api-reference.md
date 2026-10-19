@@ -249,6 +249,8 @@ Optional fields accepted on every job type:
 
 Returns 201 + `JobResponse`. Both fields are echoed back on `JobResponse`.
 
+**From a template** (E-8.6): `POST /api/v1/jobs?template_id=<id>[&template_version=<n>]` records which template version the run started from; `template_version` defaults to the latest. The body is still a full `JobCreate`, validated as any submission. A foreign, deleted or unknown template or version is a 404; a body whose `job_type` differs from the template's is a 422. `JobResponse` carries `template_id` and `template_version` (null otherwise). `{{topic}}` in `search_instructions` is filled with the topic on every topic run, template or not.
+
 ### `GET /api/v1/jobs`
 List the current user's jobs. Returns `list[JobResponse]`.
 
@@ -505,6 +507,60 @@ Dispatch a fresh subscription sync for the channel. Returns `SubscribeResponse`.
 
 ### `GET /api/v1/channels/{channel_id}/videos`
 The caller's visible documents from the channel, newest first (`limit`, `offset`). Returns `list[VideoResponse]`. The channel page lists documents through `GET /library/videos?channel_id=` instead, because those rows carry `job_count` / `job_titles`; both routes scope to the same visible set.
+
+---
+
+## Job templates
+
+Named, reusable research recipes (E-8.6 / M6; plan: [`docs/plans/m6-job-templates.md`](plans/m6-job-templates.md)). A template freezes everything on `JobCreate` except the topic; a reader types a new topic each time. **Not tier-gated.** Built-ins (`builtin: true`, S-8.6.2) are listed for everyone and are read-only (403 on any write). Another reader's template is a 404.
+
+`JobTemplateResponse`:
+
+```json
+{
+  "id": "…",
+  "name": "Weekly AI policy scan",
+  "description": null,
+  "job_type": "topic",
+  "builtin": false,
+  "builtin_key": null,
+  "version": 3,
+  "parameters": {
+    "job_type": "topic",
+    "search_instructions": "Long-form interviews about {{topic}}",
+    "num_videos": 25, "min_duration_minutes": 10, "max_duration_minutes": null,
+    "channel_type_filters": ["educational"], "preferred_channels": ["@lexfridman"],
+    "output_length": "deep", "visual_analysis": false,
+    "channel_list": null, "videos_per_channel": null
+  },
+  "problems": [],          // why the caller could not run it today, e.g. a tier cap below num_videos
+  "created_at": "…",
+  "updated_at": "…"
+}
+```
+
+Parameters are validated the way a submission is (`JobCreate`, with a placeholder topic); a recipe that would fail is a **422**, and unknown fields are refused rather than dropped. Names are unique per reader among live templates, case-insensitively (409). `{{topic}}` in `search_instructions` is replaced by the run's topic at submission.
+
+### `GET /api/v1/job-templates`
+The caller's templates A→Z, then the built-ins A→Z.
+
+### `POST /api/v1/job-templates`
+Body `{ "name", "description"?, "parameters" }`. 201.
+
+### `GET /api/v1/job-templates/{template_id}`
+One template with its latest parameters.
+
+### `PUT /api/v1/job-templates/{template_id}`
+Partial. `name` / `description` change in place; `parameters` that differ from the latest version create the **next version** (identical ones do not). A template cannot change its research type. The newest 20 versions are kept.
+
+### `DELETE /api/v1/job-templates/{template_id}`
+204. Soft delete: gone from every listing and lookup, but its versions stay so runs that started from it keep their provenance. The name becomes free again.
+
+### `GET /api/v1/job-templates/{template_id}/versions`
+`[{ "version", "parameters", "created_at" }]`, newest first.
+
+### `POST /api/v1/jobs/{job_id}/save-as-template`
+Body `{ "name", "description"? }`. Freezes the run's recipe (everything but the topic, including `output_length` and `visual_analysis`) as version 1 of a new template. 201 `JobTemplateResponse`; 409 on a name collision.
 
 ---
 

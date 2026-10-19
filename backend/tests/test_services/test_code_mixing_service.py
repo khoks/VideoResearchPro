@@ -299,3 +299,77 @@ def test_use_case_registered_with_reasoning_off_and_gating_nothing():
     assert USE_CASE_REGISTRY["code_mixing_detect"].typical_output_tokens < cm.LLM_MAX_COMPLETION_TOKENS
     gated = {uc for ucs in llm_smoke.FEATURE_TO_USE_CASES.values() for uc in ucs}
     assert "code_mixing_detect" not in gated
+
+
+# --- rendering policy (T-1.16.2.3) ------------------------------------------------
+def _a(share, matrix):
+    return {"hi_share": share, "matrix": matrix}
+
+
+def test_policy_modes_at_the_default_thresholds():
+    assert cm.rendering_mode(_a(0.8, "hi")) == cm.NATIVE_SCRIPT     # Hindi-dominant
+    assert cm.rendering_mode(_a(0.1, "en")) == cm.PLAIN_ENGLISH     # light borrowing
+    assert cm.rendering_mode(_a(0.45, "en")) == cm.ROMAN            # heavy interleaving
+    assert cm.rendering_mode(_a(0.33, "hi")) == cm.ROMAN            # English words in Hindi grammar
+    assert cm.rendering_mode(_a(0.0, "en")) == cm.PLAIN_ENGLISH
+    assert cm.rendering_mode(_a(0.0, "none")) == cm.PLAIN_ENGLISH
+
+
+def test_matrix_gates_both_ends_of_the_scale():
+    # A Hindi-grammar sentence is never "light borrowing"...
+    assert cm.rendering_mode(_a(0.15, "hi")) == cm.ROMAN
+    # ...and an English-grammar sentence is never shown in Devanagari.
+    assert cm.rendering_mode(_a(0.9, "en")) == cm.ROMAN
+
+
+def test_policy_on_real_spans():
+    assert cm.rendering_mode(cm.analyse_span(USER_EXAMPLE)) == cm.ROMAN
+    assert cm.rendering_mode(cm.analyse_span("thank you bhai you are the best")) == cm.PLAIN_ENGLISH
+    assert cm.rendering_mode(cm.analyse_span("mujhe ye concept samajh nahi aaya yaar")) == cm.NATIVE_SCRIPT
+    assert cm.rendering_mode(cm.analyse_span("We wanted to expect JSON formats")) == cm.PLAIN_ENGLISH
+
+
+def test_thresholds_come_from_settings(monkeypatch):
+    from app.config import settings
+
+    a = _a(0.55, "hi")
+    assert cm.rendering_mode(a) == cm.ROMAN
+    monkeypatch.setattr(settings, "CODE_MIX_DOMINANT_SHARE", 0.5)
+    assert cm.rendering_mode(a) == cm.NATIVE_SCRIPT
+    b = _a(0.25, "en")
+    assert cm.rendering_mode(b) == cm.ROMAN
+    monkeypatch.setattr(settings, "CODE_MIX_BORROWING_MAX_SHARE", 0.3)
+    assert cm.rendering_mode(b) == cm.PLAIN_ENGLISH
+    # Explicit arguments win over settings.
+    assert cm.rendering_mode(a, dominant=0.9) == cm.ROMAN
+
+
+def test_policy_decisions_on_held_out_units_match_gold_decisions():
+    """Measured 2026-10-19 at the defaults (0.6 / 0.2): the mode computed from
+    the detector's analysis equals the mode computed from the labels for
+    0.970 of Latin units and 0.823 of mixed units."""
+    r = ev.policy_agreement(_test_units())
+    assert r["agreement"]["latin"] >= 0.95
+    assert r["agreement"]["mixed"] >= 0.80
+
+
+def test_the_open_question_on_the_dominant_threshold_is_pinned():
+    """D-080 records it: the tagger cannot see English nouns in Devanagari, so
+    it overstates the Hindi share of Devanagari Hinglish, and a HIGHER
+    dominant threshold flips more Devanagari decisions. Measured on TEST:
+    0.912 agreement at 0.5, 0.824 at 0.6, 0.647 at 0.8. If this ever
+    inverts, the detector changed and the default deserves a second look."""
+    units = _test_units()
+    by = {d: ev.policy_agreement(units, d, 0.2)["agreement"]["devanagari"] for d in (0.5, 0.6, 0.8)}
+    assert by[0.5] > by[0.6] > by[0.8]
+
+
+def test_known_limitation_unseen_names_count_as_hindi():
+    """Out-of-vocabulary names look Hindi to the character n-gram model
+    ("harry", "pranjali"), so a name adds a Hindi word to the share. The
+    labels mark names as neither language and do not score them, so this
+    costs nothing in the token scores; it shows up as policy flips on short
+    spans. Pinned so a name-handling fix is noticed, not to endorse it."""
+    a = cm.analyse_span("harry bhai you are the best")
+    assert a["hi_tokens"] == 2
+    assert cm.rendering_mode(a) == cm.ROMAN

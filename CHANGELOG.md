@@ -26,6 +26,42 @@ reading room as reports: outline, measure, drop cap, progress and print.
   Raw HTML is dropped; unsafe URLs are blanked.
 - **Fix:** `GET /videos/{id}/knowledge` names its source (title, channel,
   kind, URL, dates) and no longer fails for documents without a YouTube id.
+### Job templates; Duplicate keeps depth and the visual flag (2026-10-19)
+
+Fifth PR of the organisation lane ([S-8.6.1](docs/initiatives.md#s-861--templates-schema-rest-and-submit-page-integration), PR [#263](https://github.com/khoks/VideoResearchPro/pull/263)).
+
+- **Templates.** Save a run (or the submit form) as a named recipe; start a run
+  from it and type only the topic. Parameters are versioned (`PUT` with new
+  parameters makes the next version; the newest 20 are kept), runs record the
+  version they used, and a deleted template keeps that provenance.
+  `{{topic}}` in instructions is filled with the run's topic.
+- **Where.** "Save as template" on a run and on the submit form, "Start from a
+  template" and a "Save changes as vN" banner on the submit form, a
+  `/templates` page with history.
+- **Fixed.** Duplicate reset report depth to Auto and dropped the visual flag.
+  The form's logic moved to `utils/jobForm.ts` with unit tests; the visual flag
+  is carried, not offered (the opt-in stays deferred per D-071 / D-075).
+- **Not yet.** The relative publish window needs the search agent's prompt and
+  is split out.
+
+
+### Code-mixed speech: proportion thresholds as a rendering policy (2026-10-19, T-1.16.2.3)
+
+PR [#262](https://github.com/khoks/VideoResearchPro/pull/262). Third task of N-002;
+[D-080](docs/decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) addendum.
+
+- **`code_mixing_service.rendering_mode`** turns a span's measured Hindi share
+  and matrix language into how it is quoted: Devanagari with transliteration
+  and translation when Hindi dominates (≥ 60%) in Hindi grammar, plain
+  English for light borrowing (≤ 20%) in English grammar, Roman script
+  throughout in between.
+- **New settings** `CODE_MIX_DOMINANT_SHARE` (0.6) and
+  `CODE_MIX_BORROWING_MAX_SHARE` (0.2). Defaults come from where detector
+  decisions agree with gold decisions (TEST: 0.970 Latin, 0.823 mixed units).
+- **Open question recorded:** the user's 60% stays the default, but 50% is
+  measurably more robust while English nouns in Devanagari stay invisible
+  to the tagger.
+
 ### Code-mixed speech: matrix vs embedded language (2026-10-19, T-1.16.2.2)
 
 PR [#260](https://github.com/khoks/VideoResearchPro/pull/260). Second task of N-002;

@@ -24,6 +24,7 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/library/channels/:channelId` | `ChannelPage` | protected | One channel: header, subscribe / sync, trust-weight slot, its documents |
 | `/shelves` | `ShelvesPage` | protected (writes Pro+) | The reader's shelves: create, edit, delete |
 | `/shelves/:shelfId` | `ShelfPage` | protected (writes Pro+) | One shelf: its runs and the union of their sources |
+| `/templates` | `TemplatesPage` | protected | Job templates: the reader's own (use, history, rename, delete) and the starters |
 | `/qa-history` | `QAHistoryChatPage` | protected | Meta-chat across all past Q&A |
 | `/exports` | `ExportsPage` | protected | Dataset export endpoints + downloads |
 | `/notes` | `NotesPage` | protected | Every note the user wrote, grouped by target, searchable, exportable |
@@ -80,6 +81,10 @@ The protected routes share `<AppLayout>` (top-tabs nav today, sidebar after the 
 | Quota exhausted | Red banner: "YouTube quota exhausted until {resets_at}." Submit blocked. |
 | Success | Redirects to `/jobs/{id}` for the new job. |
 
+**Templates** (S-8.6.1). Above the tabs, **Start from a template** lists the reader's templates and the starters, and links to **Manage templates →**. Choosing one fills every field but the topic (a topic already typed is kept) and shows a banner: "From template *Name* · vN. Type a topic; any other change applies to this run only." with **Save changes as vN+1** (own templates only) and **Detach**. The run is submitted with `?template_id=&template_version=`; switching the research type drops the provenance and says so. **Save as template** beside **Begin research** saves the form's recipe as a new template without running it. Arriving from `/templates` with **Use** applies that template.
+
+**Duplicate** carries every parameter of the source run, including report depth and the visual-analysis flag (before S-8.6.1 it reset depth to Auto and dropped the flag). The form has **no** visual-analysis opt-in: that toggle is S-1.18.2, deferred by D-071 / D-075. When a duplicated run or a template carries the flag, an info box says so ("Visual analysis is on, carried from the run or template you started from…") with **Turn off**. The form's state and its conversions live in `utils/jobForm.ts` and are unit-tested (`npm test`).
+
 ### `JobsListPage` — `/jobs`
 **Purpose.** Dashboard of every job the user owns. Real-time updates via the WS hook.
 
@@ -102,7 +107,7 @@ Sections (rendered conditionally on `job.status` and `job.job_type`):
 
 | Section | When shown | Notes |
 |---------|------------|-------|
-| **Header** | always | Title, type, status pill, created_at, "Cancel" / "Delete" overflow menu. Shelf chips under the meta line and the **Add to shelf** picker beside the status pill (S-8.1.2). |
+| **Header** | always | Title, type, status pill, created_at, "Cancel" / "Delete" overflow menu. Shelf chips under the meta line and the **Add to shelf** picker beside the status pill (S-8.1.2). **Save as template** beside Duplicate (S-8.6.1) names the run's recipe as a reusable template. |
 | **Progress** | status ∈ {searching, extracting, building_rag, generating_report} | Phase, progress bar (`completed / total`), message line, last-event timestamp. Driven by `useJobProgress`. |
 | **Search results / Approval** | status == `awaiting_approval` (topic only) | Table of candidate videos with checkboxes, "Approve selected" button. Auto-populates when WS reports the status change. |
 | **Your notes on this run** | always, once the job loads | Section-variant notes panel (M5 / S-8.5.1): the user's own Markdown on the run, newest first, with add / edit / delete. |
@@ -213,6 +218,15 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 | No runs | "No runs on this shelf yet." with **Go to active runs**. |
 | No sources | "No sources on this shelf yet." |
 | Deleted from here | Navigates to `/shelves`. |
+
+### `TemplatesPage` — `/templates`
+**Purpose.** The reader's job templates and the starters (S-8.6.1, [M6](plans/m6-job-templates.md)). Each card: name, type, `vN · updated …` (or a **starter** badge), description, a one-line summary of the recipe (videos, depth, preferred channels, durations, filters, visual analysis), the instructions in italics, and any **problems** (e.g. "Asks for 300 videos; the free plan allows 100"). Actions: **Use** (opens `/submit` with the template applied), **History** (when there is more than one version: each version with its date and summary), **Rename** (name and description), **Delete…** (two-step; says that runs keep pointing at the version they used). Starters have **Use** only.
+
+| State | What renders |
+|-------|--------------|
+| Loading | Two row skeletons. |
+| No templates of your own | "No templates of your own yet." pointing at Save as template on a run or the submit form. |
+| Error | Editorial error card with Retry. |
 
 ### `LibraryQAPage` — `/library/qa`
 **Purpose.** Ask questions across the entire library, with no per-job filter.

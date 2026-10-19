@@ -71,6 +71,9 @@ class JobResponse(BaseModel):
     videos_per_channel: int | None = None
     output_length: str | None = None
     visual_analysis: bool = False
+    # E-8.6: the template version this run started from, if any.
+    template_id: str | None = None
+    template_version: int | None = None
     search_queries_used: list[str] | None = None
     channel_list_resolved: list[dict] | None = None
     progress_pct: int

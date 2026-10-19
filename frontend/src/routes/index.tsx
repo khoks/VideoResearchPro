@@ -14,6 +14,7 @@ import { LibraryQAPage } from '../pages/LibraryQAPage';
 import { ChannelPage } from '../pages/ChannelPage';
 import { ShelvesPage } from '../pages/ShelvesPage';
 import { ShelfPage } from '../pages/ShelfPage';
+import { TemplatesPage } from '../pages/TemplatesPage';
 import { QAHistoryChatPage } from '../pages/QAHistoryChatPage';
 import { ExportsPage } from '../pages/ExportsPage';
 import { NotesPage } from '../pages/NotesPage';
@@ -80,6 +81,7 @@ export const router = createBrowserRouter([
           { path: 'library/channels/:channelId', element: <ChannelPage /> },
           { path: 'shelves', element: <ShelvesPage /> },
           { path: 'shelves/:shelfId', element: <ShelfPage /> },
+          { path: 'templates', element: <TemplatesPage /> },
           { path: 'qa-history', element: <QAHistoryChatPage /> },
           { path: 'exports', element: <ExportsPage /> },
           { path: 'notes', element: <NotesPage /> },

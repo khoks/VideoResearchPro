@@ -294,7 +294,8 @@ from app.models import *  # noqa
 engine = create_engine(f'sqlite:///{fresh}')
 db_meta = MetaData(); db_meta.reflect(bind=engine)
 orm = set(Base.metadata.tables.keys())
-db = set(db_meta.tables.keys()) - {'alembic_version'}
+# `fts_*` is the S-8.2.1 search index (FTS5 virtual + shadow tables, no ORM model).
+db = {t for t in db_meta.tables if t != 'alembic_version' and not t.startswith('fts_')}
 print('ORM-only:', orm - db)
 print('DB-only:', db - orm)
 print('parity:', 'OK' if orm == db else 'MISMATCH')

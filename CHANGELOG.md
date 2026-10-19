@@ -10,6 +10,40 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Global search endpoint on SQLite FTS5 (2026-10-19, S-8.2.1)
+
+PR [#245](https://github.com/khoks/VideoResearchPro/pull/245). Plan:
+[docs/plans/m2-command-palette.md](docs/plans/m2-command-palette.md). The
+endpoint the command palette (S-8.2.2) will call; no UI in this PR.
+
+- **`GET /api/v1/search?q=&types=&limit=`** returns `{q, backend, groups}`
+  with one group each for jobs, documents, channels, Q&A exchanges (all
+  three surfaces) and knowledge reports. Every group is scoped to the
+  caller by joining the entity's tenant anchor onto the FTS hit list —
+  `jobs.tenant_id`, `document_visibility` on `document_id` (D-070), subscriptions ∪ visible
+  documents' channels, `*_qa_exchanges.tenant_id` — so a tenant with
+  nothing visible gets empty groups, never everything (D-063).
+- **FTS5 trigram tables** `fts_documents`, `fts_jobs`, `fts_channels`,
+  `fts_qa`, `fts_knowledge`, kept current by `AFTER INSERT / UPDATE OF /
+  DELETE` triggers; created conditionally by migration `a9f3c1e7b5d2` and
+  re-ensured at every boot (`search_service.ensure_index`). Substring
+  matching from three characters, case- and diacritics-insensitive,
+  Devanagari by codepoint trigrams; `bm25()` with the title weighted 5:1
+  over the body and a recency tie-break. Two deliberate deviations from the
+  plan's sketch: one trigram table per entity instead of `unicode61` plus
+  trigram (the trigram tokenizer covers both cases), and no
+  external-content mode (it maps on rowid, and string-keyed tables' rowids
+  are not stable across `VACUUM`).
+- **`LIKE` fallback** when the linked SQLite lacks FTS5 or its trigram
+  tokenizer (some Linux distro Pythons): the probe logs a warning, nothing
+  is created, searches scan with `LIKE` ordered by recency, and `GET
+  /health` reports `search_backend: "like"`. Queries whose tokens are all
+  under three characters take the same path even with FTS5 present.
+- `schema_init_service` ignores the `fts_` prefix when comparing the live
+  schema to the ORM, so the recovery path and the parity check keep working
+  with the index present.
+
+
 ### Shelves in the app (2026-10-19)
 
 Third PR of the organisation lane ([S-8.1.2](docs/initiatives.md#s-812--shelves-ui), PR [#250](https://github.com/khoks/VideoResearchPro/pull/250)).

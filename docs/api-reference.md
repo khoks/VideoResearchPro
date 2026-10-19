@@ -35,7 +35,37 @@ Return the current user. Requires bearer token.
 
 ```json
 // response
-{ "id": "...", "email": "...", "created_at": "..." }
+{ "id": "...", "email": "...", "created_at": "...", "tier": "free", "onboarded_at": null }
+```
+
+`onboarded_at` (S-8.10.1) is set when the first-run wizard is finished.
+
+### `GET /api/v1/auth/me/onboarding`
+The first-run wizard's state for the caller (S-8.10.1). `state` is the default when the wizard was never touched. Milestones are derived on read: `jobs` counts the caller's runs, `first_job` is the run the wizard started (else the oldest), `report_opened` is whether a `first_report_opened` audit event exists. `should_onboard` is what `/` uses: false once `onboarded_at` is set or the wizard was skipped; true once it was started; otherwise true only for an account with no runs.
+
+```json
+{
+  "onboarded_at": null,
+  "state": {
+    "step": 2,
+    "choices": { "channels": ["@3blue1brown"], "first_job_id": null },
+    "dismissed": false,
+    "started_at": "2026-10-19T20:31:02+00:00",
+    "completed_at": null,
+    "dismissed_at": null
+  },
+  "started": true,
+  "milestones": { "jobs": 0, "first_job": null, "report_opened": false },
+  "should_onboard": true
+}
+```
+
+### `PATCH /api/v1/auth/me/onboarding`
+Merge a change into the caller's state; returns the same shape as `GET`. Every field is optional and unknown fields are a 422. `step` is 1 to 3. `channels` replaces the list (at most five; trimmed, de-duplicated, blanks dropped). `first_job_id` must be one of the caller's runs, else 404. `completed: true` sets `onboarded_at`; `dismissed: true` records a skip. The first PATCH writes `started_at`. Audit events, each once per account: `onboarding_started`, `onboarding_completed`, `onboarding_skipped`; `first_job_created` is written by `POST /jobs` and `first_report_opened` by `GET /jobs/{id}/report/body`.
+
+```json
+// request
+{ "step": 3, "first_job_id": "..." }
 ```
 
 ---

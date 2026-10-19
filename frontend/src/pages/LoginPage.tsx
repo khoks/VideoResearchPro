@@ -19,7 +19,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const redirectTo = (location.state as LocationState | null)?.from?.pathname ?? '/submit';
+  const redirectTo = (location.state as LocationState | null)?.from?.pathname ?? '/';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

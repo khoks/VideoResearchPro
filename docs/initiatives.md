@@ -574,6 +574,15 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
   - [ ] T-1.14.18.5 `search_rank_and_curate` head-to-head on the persisted candidate pool (S-1.14.6). This makes the slot replayable for the first time
   - [ ] T-1.14.18.6 Luna on frame selection with captured alternative frames, so agreement can be replaced by graded quality (shares the run with T-1.18.5.5)
 
+- S-1.14.19 🟡 Map batches never mix sources; a truncated map response is a failure. Filed 2026-10-19 from R1 run 6. Linked decision: [D-090](decisions.md#d-090--map-batches-never-mix-sources-source-batching-at-a-30k-cap-a-truncated-map-response-is-a-failure-and-map-calls-run-concurrently-2026-10-19). Evidence: [notes/2026-10-19-map-coverage.md](notes/2026-10-19-map-coverage.md). The map model writes about 100 to 140 items per call whatever a batch holds, so sources late in a 120K batch got none (two of ten channels in run 6's annotated arm). Small batches were cut off at a 40% completion budget, and the truncated JSON reached the composer as one unattributed "fact".
+  - [x] T-1.14.19.1 A length stop or a non-JSON map response raises `MapOutputError` and goes through bisect-retry; a batch that still fails is dropped and disclosed. Completion budget = the batch cap (ratio 1.0), clamped to the output ceiling
+  - [x] T-1.14.19.2 `REPORT_MAP_BATCHING` (`source` / `packed`), `REPORT_MAP_BATCH_TOKENS` (30K), `REPORT_MAP_CONCURRENCY` (4, results merged in batch order)
+  - [x] T-1.14.19.3 Measured: `scripts/measure_map_coverage.py`, 2 experiments × 2 arms. With source batching the worst-source density is 0.77 (against 0.00 for the old default) and wrong-script quotes are 0. The pre-registered floor-ratio rule was not met by any config, because the threshold was mis-specified (D-090)
+  - [x] T-1.14.19.4 Tests: `test_map_batching.py` (14, mutation-checked: source boundary, length stop, completion order); the three tests that pinned `{"raw": ...}` now pin the failure path
+  - [x] T-1.14.19.7 Adversarial review (4 lenses, 3 skeptics per finding): 8 confirmed findings, 4 distinct defects, all fixed. Per-call completion budget, batch cap at 1.5× the output ceiling plus recursive bisect on truncation, backoff on transient errors, a lock on `VideoText`'s matcher. The race test fails without the lock 3 of 3 times
+  - [ ] T-1.14.19.5 Report-level check: run 7's batching comparison (run-7 OFF vs run-6 OFF, blind three-family judges, rule in the note). A failure reverts the default to `packed`
+  - [ ] T-1.14.19.6 Within-source mislabelling: about 1% of `shown`/`both` items have no span from their own source within ±60 s, in every config. Batching cannot fix this one
+
 **Open questions**
 - OQ-7: does the harness generalize to a scheduled regression check (re-run on every model-lineup shift), or stay a manual audit? Depends on S-1.14.6 landing.
 - OQ-8: judging currently uses a single model family; is a multi-judge panel needed to control for self-preference bias when the challenger shares that family?
@@ -692,6 +701,7 @@ Decided by [D-075](decisions.md#d-075--r1-after-three-runs-the-modality-boundary
 - Tests: `test_modality_provenance.py` (15, stub LLMs) — a Bengali chunk with a version number spoken in native digits and a ValueError visible only on screen, labelled said / shown / both at map; forced to said without frames; synonyms and missing labels; reduce keeps and unions labels; compose carries the tags, the note, and no raw keys; no tags without shown items; prompt bindings; labels in the persisted S-1.14.6 record and the audit. Mutation-checked: removing map labelling, the tags, or the union each fails a test
 - [ ] T-1.18.8.4 Check the composed report against item provenance (deterministic, now that the provenance exists), then re-run the S-1.18.3 protocol with the multilingual-verification rule from D-075
   - *Run 5, 2026-10-19:* **0 confirmed attribution errors** in the annotated report, the first run of five. Substance judging was confounded by an R5 regression (#268's map-stage `original` quotes, fabricated in the wrong script) and by a Gemini Pro quota fallback. Run 6 follows the R5 fix. See the protocol note.
+  - *Run 6, 2026-10-19:* fails rules 2 (two confirmed attribution errors) and 3 (both available judges prefer the plain arm; Gemini 3.1 Pro quota-blocked); passes 1 (quote fidelity, 0 failing) and 4 (0 fabrications vs 4). Both failures trace to map batching, not to the annotations: two channels got zero items, and one error is a span from Simplilearn's video credited to CodeWithMunnaX. That led to S-1.14.19 / D-090. Run 7 is pre-registered in the map-coverage note.
 
 #### S-1.18.5 🔵 Re-tier the two vision use cases, then re-measure cost
 Filed 2026-10-19 from the S-1.18.3 run: at the registry defaults (`visual_select_moments` gpt-5.5 medium, `visual_describe_frame` gpt-5.5 low) the estimated vision spend was **$0.198 per video** (11 videos, 120 frames at 640×360; selection ≈ 75K input tokens, description ≈ 159K input tokens), double the $0.10 ceiling the protocol fixed in advance. Both cheaper candidates are already on `VISION_CAPABLE_MODELS`.
@@ -1909,18 +1919,24 @@ Linked decision: D-074.
 #### S-8.9.3 ⚪ Topic clusters
 - [ ] T-8.9.3.1 Cluster documents by embedding centroid (k-means over stored chunk means) and colour the graph by cluster; only if S-8.9.2's topic edges prove too sparse
 
-### E-8.10 🔵 Onboarding wizard and empty states (M10)
+### E-8.10 🟡 Onboarding wizard and empty states (M10)
 
 **Scope.** A first-run flow: pick channels → start a first job from a starter template → watch it run → open the report in the reader; dismissible, resumable, recorded server-side so it survives devices. Plus an audit of every empty state against the editorial voice and a first-run checklist. High leverage for SaaS conversion later, useful for self-hosters now.
 **Plan:** [`docs/plans/m10-onboarding.md`](plans/m10-onboarding.md)
 **Acceptance.** A new account lands on `/welcome`, completes three steps in under five minutes to a running job, can skip at any point and reopen from the sidebar; `users.onboarded_at` is set on completion; activation events are logged; every list page has an empty state with one primary action.
 
-#### S-8.10.1 🔵 Wizard
-**PR:** TBD
-- [ ] T-8.10.1.1 `users.onboarded_at` + `onboarding_state_json` (step, choices); `PATCH /api/v1/auth/me/onboarding`
-- [ ] T-8.10.1.2 `/welcome` route as a plain stepper page (no tour library: Shepherd.js ≥ 14 and Intro.js are AGPL-3.0, and overlay walkthroughs underperform task-flow wizards) with three steps: channels via existing search + subscribe, a deliberately tiny first job (3 to 5 videos from one channel, so the transcript throttle does not make "see the result" take half an hour) from a starter template, progress + "read it"; redirect from `/` while incomplete, skip link always visible
-- [ ] T-8.10.1.3 Activation events in `audit_log` (`onboarding_started`, `first_job_created`, `first_report_opened`)
-- [ ] T-8.10.1.4 Tests: redirect logic, resumability, skip
+#### S-8.10.1 🟢 Wizard
+**PR:** [#299](https://github.com/khoks/VideoResearchPro/pull/299)
+**Shipped:** 2026-10-19 — PR [#299](https://github.com/khoks/VideoResearchPro/pull/299)
+- [x] T-8.10.1.1 `users.onboarded_at` + `onboarding_state_json` (step, choices); `PATCH /api/v1/auth/me/onboarding` (plus `GET`, and `onboarded_at` on `/auth/me`)
+- [x] T-8.10.1.2 `/welcome` route as a plain stepper page (no tour library: Shepherd.js ≥ 14 and Intro.js are AGPL-3.0, and overlay walkthroughs underperform task-flow wizards) with three steps: channels via existing search + subscribe, a deliberately tiny first job (3 to 5 videos from one channel, so the transcript throttle does not make "see the result" take half an hour) from a starter template, progress + "read it"; redirect from `/` while incomplete, skip link always visible
+- [x] T-8.10.1.3 Activation events in `audit_log` (`onboarding_started`, `first_job_created`, `first_report_opened`, plus `onboarding_completed` and `onboarding_skipped`)
+- [x] T-8.10.1.4 Tests: redirect logic, resumability, skip (backend router tests drive job creation and the reader's body route for the two milestone events; vitest covers every step, the gate, the route wiring, the register redirect and the palette action)
+- [x] T-8.10.1.5 Registration signs the new account in. `/auth/register` returns the user, not a token, and the auth context stored the missing token, so every new account landed signed out on `/login` (found in the live check; ui-pages had described the login follow-up as if it existed)
+- [ ] T-8.10.1.6 `first_cited_answer` activation event (the plan's alternative milestone), written by the job and library Q&A routers
+- [ ] T-8.10.1.7 Pre-fill the submit page's channel list from the wizard's other saved channels (today only the first run reads one of them)
+
+Scope-changed 2026-10-19: (1) step 1 takes channel links or handles instead of "existing search + subscribe": the channels list is per tenant (D-065), so a new account has nothing to pick from, and subscribe starts a full-channel ingest, the opposite of a small first run. (2) The plan's risk note said a channel job does not pause for approval; it does (`job_tasks` channel fetch ends at `awaiting_approval`), so step 3 approves inline. (3) Milestones are derived on read from `jobs` and `audit_log`, so `tasks/job_tasks.py` gained no onboarding code. (4) Plan open questions, taken at the recommended defaults: Q1 a channel job of five videos; Q2 accounts that already have runs are not sent to the wizard, while new and mid-wizard accounts are. (5) The sidebar link shows until the wizard is finished or skipped; after a skip the palette's **Getting started** action reopens it.
 
 #### S-8.10.2 🔵 Empty-state audit
 **PR:** TBD

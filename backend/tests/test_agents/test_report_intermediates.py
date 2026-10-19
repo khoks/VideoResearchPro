@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.agents import report_agent
+from app.config import settings
 from app.models.job import Job
 from app.models.job_report_intermediate import (
     MAP_FAILED,
@@ -29,6 +30,13 @@ from app.tasks import job_tasks
 from app.tasks.job_tasks import _persist_report_intermediates, _report_intermediates_sink
 
 KEYS = ("facts", "comments", "conclusions", "references", "speakers")
+
+
+@pytest.fixture(autouse=True)
+def _packed_batching(monkeypatch):
+    # Failures here are injected by CALL NUMBER over batches that each hold
+    # several videos; D-090's per-source default would renumber every call.
+    monkeypatch.setattr(settings, "REPORT_MAP_BATCHING", "packed")
 
 
 def _chunk(i: int, vid: str) -> dict:
@@ -59,7 +67,9 @@ class _MapLLM:
     def invoke(self, messages):
         self.calls += 1
         if self.calls in self.fail_on_calls:
-            raise RuntimeError("provider 500")
+            # Permanent on purpose: since S-1.14.19 a 5xx or 429 is retried
+            # with backoff before any bisect.
+            raise RuntimeError("provider rejected the request")
         if self.calls in self.garbage_on_calls:
             return MagicMock(content="not json at all")
         prompt = messages[0].content
@@ -147,7 +157,8 @@ def test_failed_and_unparsed_batches_are_recorded_not_absent(db, job):
     """A dropped batch must show up as a row — absence is what hid regressions."""
     chunks = [_chunk(i, f"v{i}") for i in range(6)]
     # Call 1 fails (bisect: calls 2, 3 are its halves); call 3 fails too, so
-    # half 1 of batch 0 is lost. Call 4 returns non-JSON.
+    # half 1 of batch 0 is lost. Call 4 returns non-JSON, which S-1.14.19
+    # treats as a failure: batch 1 is bisected into calls 5 and 6.
     llm = _MapLLM(fail_on_calls={1, 3}, garbage_on_calls={4})
     intermediates: dict = {}
     _run(chunks, llm, intermediates)
@@ -163,9 +174,13 @@ def test_failed_and_unparsed_batches_are_recorded_not_absent(db, job):
     assert [(r.sub_index, r.status) for r in b0] == [(0, MAP_PARSED), (1, MAP_FAILED)]
     failed = b0[1]
     assert failed.payload_json is None and failed.item_count == 0
-    assert "provider 500" in json.loads(failed.notes_json)["error"]
+    assert "provider rejected the request" in json.loads(failed.notes_json)["error"]
     assert failed.chunk_count >= 1
-    assert any(r.status == MAP_UNPARSED for r in maps)
+    # The garbage response was retried in halves, and both halves parsed:
+    # nothing is recorded as unparsed any more.
+    b1 = [r for r in maps if r.batch_index == 1]
+    assert [(r.sub_index, r.status) for r in b1] == [(0, MAP_PARSED), (1, MAP_PARSED)]
+    assert not any(r.status == MAP_UNPARSED for r in maps)
     assert sum(r.chunk_count for r in maps) == len(chunks)
 
 

@@ -10,6 +10,7 @@ import { ShelfDot } from '../components/shelves/ShelfDot';
 import { SystemStatusBanner } from '../components/common/SystemStatusBanner';
 import { CommandPalette } from '../components/palette/CommandPalette';
 import { SearchButton } from '../components/palette/SearchButton';
+import { useShowGettingStarted } from '../hooks/useOnboarding';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, motion } from '../theme';
 
@@ -238,8 +239,17 @@ function NavContent({
   onNavigatePath,
   canWriteShelves,
 }: NavContentProps) {
+  // S-8.10.1: the wizard is reopenable from here until it is finished or skipped.
+  const showGettingStarted = useShowGettingStarted();
   return (
     <nav aria-label="Primary" style={{ display: 'flex', flexDirection: 'column', gap: space['5'] }}>
+      {showGettingStarted && (
+        <NavGroup label="Start here">
+          <NavItem active={pathname === '/welcome'} onClick={() => onNavigatePath('/welcome')}>
+            Getting started
+          </NavItem>
+        </NavGroup>
+      )}
       <NavGroup label="Research">
         <NavItem active={active.submit}      onClick={() => onChange('submit')}>New research</NavItem>
         <NavItem active={active.jobs}        onClick={() => onChange('jobs')}>Active runs</NavItem>

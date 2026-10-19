@@ -79,8 +79,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = useCallback(async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      const { data } = await api.post<AuthResponse>('/auth/register', { email, password });
-      persistSession(data, email);
+      const { data } = await api.post<Partial<AuthResponse>>('/auth/register', { email, password });
+      if (data.access_token) {
+        persistSession(data as AuthResponse, email);
+      } else {
+        // `POST /auth/register` answers with the new user, not a session
+        // (routers/auth.py `UserResponse`), so sign in with the same
+        // credentials. Storing the absent token left every new account
+        // signed out on its first page.
+        const { data: session } = await api.post<AuthResponse>('/auth/login', { email, password });
+        persistSession(session, email);
+      }
     } finally {
       setIsLoading(false);
     }

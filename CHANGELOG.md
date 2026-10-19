@@ -28,6 +28,44 @@ the mouse.
   question scrolls to and focuses its exchange, a knowledge report opens the
   reader.
 
+### Channel intelligence aggregate (2026-10-19)
+
+[S-8.7.2](docs/initiatives.md#s-872--intelligence-aggregate-endpoint), PR [#280](https://github.com/khoks/VideoResearchPro/pull/280).
+
+- **`GET /api/v1/channels/{id}/intelligence`**: publishing cadence, durations,
+  topics and concepts from knowledge reports, a keyword cloud from transcripts,
+  the reader's own questions that cite the channel, and a stance series where
+  social classification exists, each with a note when it is empty or partial.
+- **Per reader.** Everything is over the documents of the channel that reader
+  can see; an empty view is an empty aggregate.
+- **Cached** per channel and reader (migration `b4c5d6e7f8a0`) until a new
+  document, knowledge report or transcript changes the inputs.
+
+
+### Code-mixed speech: held-out evaluation, and two fixes it forced (2026-10-19, T-1.16.2.6)
+
+PR [#276](https://github.com/khoks/VideoResearchPro/pull/276). Closes S-1.16.2 (invention N-002 now
+"implemented and measured"); method and numbers in
+[section 11 of the detection note](docs/notes/2026-10-19-code-mixing-detection.md#11-end-to-end-evaluation-on-held-out-sources-t-11626).
+
+- **Measured on sources nothing was tuned on.** 17 of 18 Hindi-bearing unseen
+  comments detected. No Hinglish passed through as English at extraction in
+  six end-to-end runs, with or without N-002. On a held-out Hindi lecture,
+  original wording kept went from 0 to 25 items, and every quote the composer
+  chose was in the three-part form. Retrieval MRR through the production
+  renderer rose from 0.554 to 0.762.
+- **Where the failure actually is:** 2 of 13 Hindi-speech videos in the study
+  were fetched as machine-dubbed tracks (one Bengali, one English), which no
+  text detector can catch. S-1.11.11 is raised in priority with this
+  evidence.
+- **Fixed:** English-primary sources with real Hindi (comment threads,
+  13–17% Hindi) carried no code-mixing metadata. A 3% presence floor
+  includes them, and none of the library's 214 English transcripts crosses
+  it. Compose now lets an English sentence inside a Hindi source stay
+  English instead of quoting it in three parts.
+- New scripts `eval_code_mixing_e2e.py` and
+  `eval_code_mixed_retrieval_heldout.py`, and the held-out comments as a
+  test fixture.
 ### Said or shown: modality provenance through the report pipeline (2026-10-19, S-1.18.8 T-1 to T-3)
 
 D-075 found that prompt rules moved visual attribution errors from one

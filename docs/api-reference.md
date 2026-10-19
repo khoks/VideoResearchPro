@@ -506,6 +506,28 @@ Flip the caller's subscription off; other tenants are unaffected. Returns the up
 ### `POST /api/v1/channels/{channel_id}/sync`
 Dispatch a fresh subscription sync for the channel. Returns `SubscribeResponse`.
 
+### `GET /api/v1/channels/{channel_id}/intelligence`
+What the channel says, over **the documents of it the caller can see** (S-8.7.2, [M7 plan](plans/m7-channel-intelligence.md); D-063 / D-070). Two readers following the same channel can get different figures; a reader who can see none of its documents gets an empty aggregate, never the channel's global one. 404 for an unknown channel.
+
+`?refresh=true` forces a recompute. Otherwise the document-derived part is served from a per-(channel, reader) cache (`channel_intelligence_cache`) until its fingerprint changes: a new visible document, new knowledge on one, a new transcript. The `qa` part is always computed live. Computed in the request (about 1.6 s cold at 500 documents, about 15 ms cached), not in the solo Celery worker, which is often busy with ingest for hours.
+
+```json
+{
+  "channel_id": "UC…", "computed_at": "…", "cached": true,
+  "coverage": { "documents": 120, "with_knowledge": 30, "without_knowledge": 90, "ratio": 0.25, "with_transcript": 118 },
+  "cadence": { "months": [{ "month": "2026-01", "count": 4 }, …], "undated": 2 },   // contiguous, zeros included
+  "durations": { "buckets": [{ "label": "5–15 min", "min_minutes": 5, "max_minutes": 15, "count": 31 }, …], "unknown": 3, "median_minutes": 18.5 },
+  "topics":   [{ "label": "Monetary policy", "documents": 12, "examples": [{ "id": "…", "title": "…" }] }],   // top 25, from knowledge artifacts
+  "concepts": [ … ],
+  "keywords": [{ "term": "inflation", "weight": 1.0, "documents": 40 }],   // top 60, TF-IDF over cached transcripts
+  "stance": null,      // { stance: [{month, counts}], sentiment: [...], classified_documents } where social classification exists
+  "notes": { "topics": "Built from 30 of 120 documents. Extract knowledge for 90 more to fill these in.", "stance": "…" },
+  "qa": { "exchanges": 7, "most_cited": [ … ], "recent": [{ "id": "…", "kind": "library", "question": "…", "created_at": "…", "job_id": null }] }
+}
+```
+
+`notes` explains, per panel, why it is empty or partial. Topics and concepts are merged case-insensitively and counted once per document. Keywords drop English function words and spoken filler (not scikit-learn's Glasgow stop list, which removes content words like "interest"); the newest 500 documents and 40,000 characters each are read. `qa` counts the caller's own job and library exchanges whose citations include a document of this channel that the caller can see.
+
 ### `GET /api/v1/channels/{channel_id}/videos`
 The caller's visible documents from the channel, newest first (`limit`, `offset`). Returns `list[VideoResponse]`. The channel page lists documents through `GET /library/videos?channel_id=` instead, because those rows carry `job_count` / `job_titles`; both routes scope to the same visible set.
 

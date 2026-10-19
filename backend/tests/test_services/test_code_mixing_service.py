@@ -465,3 +465,22 @@ def test_resolution_removes_the_flicker_a_per_quote_policy_would_produce():
     resolved = [cm.resolve_quote_mode(m, p) for m in span_modes]
     assert cm.script_flicker(resolved) == 0
     assert {m for m in resolved if m != cm.PLAIN_ENGLISH} == {cm.NATIVE_SCRIPT}
+
+
+# --- held-out evaluation (T-1.16.2.6) -----------------------------------------------
+def test_frozen_detector_on_80_unseen_comments():
+    """80 comments from the five held-back videos, labelled after every
+    parameter was frozen. Measured 2026-10-19: token P 0.986 R 0.849; 17 of
+    18 Hindi-bearing comments caught — the miss is one borrowed word
+    ("rupye") in an English comment, which renders as plain English anyway;
+    no English comment flagged except one misspelling ("mauch")."""
+    from pathlib import Path
+
+    units = ev.load_units(Path(ev.FIXTURE).parent / "heldout_units.json")
+    assert len(units) == 80
+    pred = {u["id"]: [t for _, t in cm.tag_tokens(u["text"])] for u in units}
+    s = ev.score(units, pred)["latin"]
+    assert s["token_hindi"]["precision"] >= 0.95
+    assert s["token_hindi"]["recall"] >= 0.82
+    assert s["unit_contains_hindi"]["recall"] >= 0.9
+    assert s["unit_contains_hindi"]["fp"] <= 2

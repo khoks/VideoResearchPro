@@ -410,7 +410,7 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 
 **Unblocked downstream:** T-1.5.1.4 + T-1.5.2.5 (Reddit/HN storage — shipped 2026-05-02 PR [#113](https://github.com/khoks/VideoResearchPro/pull/113)). T-1.5.3.4 (classifier persistence — also PR #113). M-1.5 e2e tests (still pending orchestrator wiring).
 
-### E-1.11 🟢 Transcript-pipeline resilience at scale
+### E-1.11 🟡 Transcript-pipeline resilience at scale
 
 **Shipped:** 2026-07-22 — PR [#189](https://github.com/khoks/VideoResearchPro/pull/189). Recovery fully validated live on job 0d4db8c3 across three waves: 31/63 recovered 2026-07-22 (segmented Whisper + yt-dlp client ladder while the IP block was active), and the final 32 recovered 2026-07-24 after the block lifted (fast caption path, paced by the new limiter). **Final corpus: 200/200 videos — 162 youtube (591,843 words) + 38 whisper (355,396 words) = 947,239 transcript words.** The wait-out-the-block strategy from D-051 proved correct; cookies/proxy knobs (S-1.11.10) remain available for blocks that persist.
 
@@ -452,6 +452,13 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
 #### S-1.11.9 🟢 Recovery tooling
 
 **Scope.** `scripts/retry_unavailable_transcripts.py` re-fetches a job's unavailable documents, then chunks + embeds them into the global collection. Validated on job `0d4db8c3`'s 63 lost videos.
+
+#### S-1.11.11 ⚪ Caption-track choice prefers the spoken language over auto-dubs
+
+**Filed 2026-10-19** from the S-1.16.2 corpus build ([D-076](decisions.md#d-076--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)). `_fetch_transcript_once` tries `en` / `en-auto` and then takes the FIRST listed track. Video `1v3_AQ26jZ0` (a Hindi lecture) lists `bn(auto)`, `en-US(auto)`, `hi(auto)`: `en-US` matched nothing, so the library now holds a machine-dubbed Bengali transcript of a Hindi lecture.
+- [ ] T-1.11.11.1 Match regional English codes (`en-US`, `en-GB`) as English, but only when the track is the video's original audio language
+- [ ] T-1.11.11.2 When English is unavailable, prefer the original-audio track over auto-dubbed ones; take the default audio language from the Data API (`snippet.defaultAudioLanguage`) when present
+- [ ] T-1.11.11.3 Re-fetch documents whose stored transcript language differs from their default audio language (one-off script, reporting counts)
 
 ---
 
@@ -575,9 +582,9 @@ Knowledge synthesis already scales its budget with extraction size (S-1.14.8) bu
 - [ ] T-1.16.1.7 Persist the per-document language profile (`documents.language_mix`) so the per-video label stops being the only signal
 - [x] T-1.16.1.8 English-preference in `search_rank_and_curate` ranking — shipped 2026-10-19 (PR [#227](https://github.com/khoks/VideoResearchPro/pull/227)). A `LANGUAGE (a preference, never a filter)` block in the ranking prompt plus a `Script:` hint on titles not in Latin script (exact via `language_service.dominant_script`; the model infers the language). A test confirms a Devanagari-titled pick survives untouched
 
-#### S-1.16.2 🔵 Proportion-driven rendering for code-mixed speech — implements [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31)
+#### S-1.16.2 🟡 Proportion-driven rendering for code-mixed speech — implements [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31)
 The shipped script profiler is exact for script mixing and **blind to romanised code-mixing** — the user's own example ("...taaki baadme koi kasar koi zarra na reh jaye...") is entirely Latin and reads as English today. This story closes that gap.
-- [ ] T-1.16.2.1 Detect romanised non-English spans. Script analysis cannot; candidates are an LLM pass over the transcript (cheap, volume tier) or a lexicon/n-gram approach. **Measure before choosing** — do not assume a library solves it
+- [x] T-1.16.2.1 Detect romanised non-English spans — shipped 2026-10-19 (PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM), [D-076](decisions.md#d-076--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)). Measured a lexicon + n-gram + Viterbi tagger against a `gpt-5.6-luna` pass on 300 hand-labelled units: real comments and captions from three Hinglish jobs, split DEV/TEST. On held-out romanised text the lexicon tagger is more precise at equal recall (token P 0.929 vs 0.803, R 0.890 vs 0.895), free, and runs at chunk time; the LLM is better only on English written in Devanagari (F1 0.965 vs 0.868) and stays registered as the reference `code_mixing_detect`. First finding: YouTube captions Hinglish speech in Devanagari, not romanised; romanised Hinglish arrives through comments and text sources. [Method and results](notes/2026-10-19-code-mixing-detection.md)
 - [ ] T-1.16.2.2 Estimate matrix vs embedded language per span (which language supplies grammar, which supplies vocabulary) — the distinguishing part of N-002
 - [ ] T-1.16.2.3 Proportion thresholds as a RENDERING policy: dominant-language (>60%) keeps that script; heavy interleaving → Roman transliteration; light borrowing → plain English
 - [ ] T-1.16.2.4 Transcript-level "primary language of communication" resolution, so a report does not flicker between scripts paragraph to paragraph

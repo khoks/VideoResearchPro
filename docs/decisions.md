@@ -2278,3 +2278,41 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 **Consequences.** The visual feature stays opt-in and off by default, now with measured quality and known failure modes. S-1.18.8 touches the map and compose prompts and the item schema, so it is serialised after the R5 session's prompt work and after S-1.14.6.
 
 **Linked initiatives / PRs.** S-1.18.2 (deferred), S-1.18.5, S-1.18.6 (T-3 done), S-1.18.7 (measured), S-1.18.8 (new), S-1.14.6.
+
+## D-076 — Code-mixing detection: a lexicon tagger, not an LLM pass (2026-10-19)
+
+**Status:** accepted. Implements T-1.16.2.1 of [N-002](inventions.md#n-002--proportion-driven-rendering-policy-for-code-mixed-speech-2026-07-31); extends [D-066](#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31). Method and numbers: [the detection note](notes/2026-10-19-code-mixing-detection.md).
+
+**Context.** `language_service` profiles scripts exactly and cannot see Hindi written in Latin letters, which is the case N-002 targets. The task was to measure at least two ways of finding romanised Hindi before choosing one. Three Hinglish topic jobs on the dev backend gave the first finding: YouTube captions Hindi speech in Devanagari, English words included ("इट इज नॉट बीइंग एक्सप्लीसिटली प्रोग्राम"), and its English captions of Indian podcasts are English-dominant. Romanised Hinglish appears in the comments under those videos, and in the Reddit, chat and social sources the roadmap adds. The 300-unit labelled set therefore combines 180 real comments with 120 caption windows (Latin Indian English, Devanagari Hinglish, English tech talk), labelled per token and split one third DEV, two thirds TEST.
+
+**Measurements (held-out TEST, 168 Latin and 34 Devanagari units).**
+
+| | Latin token P | Latin token R | Latin F1 | Devanagari F1 | Cost |
+|---|---|---|---|---|---|
+| Lexicon + n-gram + Viterbi | 0.929 [0.88, 0.96] | 0.890 | 0.909 | 0.868 | none, ~1 ms per unit |
+| `gpt-5.6-luna`, reasoning off | 0.803 [0.74, 0.85] | 0.895 | 0.847 | 0.965 | ~24K in + 12K out tokens per hour of speech |
+
+Both caught 28–29 of the 30 Hindi-bearing Latin units. The lexicon tagger flagged one word in each of 4 of 138 English units; the LLM flagged none. The LLM also named the matrix language correctly on 60 of 62 mixed units.
+
+**Decision.** The lexicon tagger (`code_mixing_service.tag_tokens`) is the production detector. It is more precise on romanised text at the same recall, with non-overlapping intervals on precision; it is deterministic, so a chunk's profile never changes between runs; and it is cheap enough to run on every chunk of every transcript at chunk time, with no ingest step, no persistence and no backfill. The LLM detector stays registered as `code_mixing_detect`. It is the evaluation harness's reference and the better instrument for English written in Devanagari, but it is not on the ingest path.
+
+**Alternatives considered.**
+
+- *LLM pass at ingest.* Rejected as the primary detector. It is less precise on romanised text, because it returns whole clauses as "Hindi runs" and swallows the English nouns inside them, which is exactly the insertional pattern N-002 measures. It would also add an ingest step and a persisted profile per document, and its output format drifted between batches (see the next point).
+- *Strict span matching of the LLM's output.* Rejected after measurement. On some Devanagari batches the model returned all of a snippet's Hindi words as one span with the English words dropped; matched literally, Devanagari recall fell to 0.48. The mapper now matches spans as in-order subsequences with bounded gaps, which keeps the skipped words English and never reads the labels.
+- *An off-the-shelf language-ID library* (lingua, fastText lid.176, CLD3). Not evaluated: none ship a romanised-Hindi class, and the venv has none installed. They label documents, not tokens, and the task was to measure rather than assume a library solves the problem.
+- *Hybrid: lexicon for Latin text, LLM for Devanagari text.* Deferred. The lexicon tagger's Devanagari blind spot changes the Hindi share (MAE 0.236) but not the N-002 rendering decision on this data: all 50 labelled Devanagari units are Hindi-matrix and Hindi-dominant either way. It becomes worth building if the end-to-end evaluation (T-1.16.2.6) finds English-matrix speech in Devanagari changing a decision.
+
+**Open questions (recorded, not decided).**
+
+1. *Labeller.* The labels are Claude's (Opus 5.5), not a native speaker's. A native spot check of the 42 Hindi-bearing Latin units and 10 Devanagari units would take about half an hour, and should come before the numbers are used to compare future detectors.
+2. *Where romanised Hinglish enters in volume.* Not YouTube captions, on this evidence. Whisper on Hinglish audio could not be tested (yt-dlp is bot-walled). Whether Whisper romanises, writes Devanagari or silently translates Hinglish decides how much of the problem the podcast and Whisper paths carry.
+
+**Consequences.**
+
+- `code_mixing_service` (tokenizer, lexicon tagger, LLM detector, span mapper) and `code_mixing_eval` (gold parsing, scoring). The lexicon files live in `app/services/lexicons/`, and DEV-derived additions sit in marked sections.
+- Registry entry 24, `code_mixing_detect`: volume tier, reasoning off, fail-soft, not a feature gate.
+- `tests/fixtures/code_mixing/` holds the labelled set and the LLM's cached answers. The test suite scores both detectors without calling a provider and fails if the lexicon tagger drops below its measured held-out precision and recall.
+- Found in passing, not fixed: `_fetch_transcript_once` falls back to the first listed caption track, which ingested a machine-dubbed Bengali transcript of a Hindi lecture (`1v3_AQ26jZ0`).
+
+**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1), E-1.16, N-002.

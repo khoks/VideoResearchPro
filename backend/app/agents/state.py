@@ -83,6 +83,10 @@ class QAAgentState(TypedDict):
     # D-068: the asking tenant's non-neutral trust weights, {channel_id:
     # weight}, resolved by the router at request time. Empty = unweighted.
     channel_weights: dict[str, float]
+    # S-8.5.2: whose notes join retrieval, and on which targets (job
+    # scope). None tenant = no notes; None keys = every note of the tenant.
+    notes_tenant_id: str | None
+    note_target_keys: list[str] | None
     sub_queries: list[str]
     rag_results: list[dict]
     report_context: str | None

@@ -23,6 +23,11 @@ settings.RATE_LIMIT_ENABLED = False
 # inserts Hindi chunks can reach a provider; the feature's own tests opt back
 # in with a stubbed model.
 settings.CODE_MIX_ENGLISH_RENDERING_ENABLED = False
+# S-8.5.2: the notes index embeds on every note write and is queried by
+# every Q&A call. Off for the suite so no router test loads the embedder
+# or touches a persistent collection; the notes-retrieval tests opt back
+# in against an in-memory Chroma.
+settings.NOTES_INDEX_ENABLED = False
 # S-1.14.19: map batches run concurrently in production. Stub LLMs that hand
 # out responses in call order need one batch at a time; the concurrent path
 # has its own tests that set this back up.

@@ -1,0 +1,478 @@
+{
+  "job": "0d4db8c3-5f3a-482e-aa00-784d94bb548c",
+  "documents": 200,
+  "top_k": 15,
+  "threshold": 0.6,
+  "summary": {
+    "1.0": {
+      "M1_paired_recall": 0.2,
+      "M2_paired_mean_rank": 13.0,
+      "M3_off_topic_leaks": 0,
+      "M4_mean_displaced": 0.1,
+      "M5_mean_channel_delta": -0.1,
+      "unpaired_question_note_hits": {
+        "Q6": [],
+        "Q7": [],
+        "Q8": [],
+        "Q9": [],
+        "Q10": []
+      }
+    },
+    "1.5": {
+      "M1_paired_recall": 1.0,
+      "M2_paired_mean_rank": 5.0,
+      "M3_off_topic_leaks": 0,
+      "M4_mean_displaced": 0.7,
+      "M5_mean_channel_delta": -0.3,
+      "unpaired_question_note_hits": {
+        "Q6": [],
+        "Q7": [],
+        "Q8": [],
+        "Q9": [
+          "N4"
+        ],
+        "Q10": []
+      }
+    },
+    "2.0": {
+      "M1_paired_recall": 1.0,
+      "M2_paired_mean_rank": 1.4,
+      "M3_off_topic_leaks": 0,
+      "M4_mean_displaced": 0.8,
+      "M5_mean_channel_delta": -0.3,
+      "unpaired_question_note_hits": {
+        "Q6": [],
+        "Q7": [],
+        "Q8": [
+          "N4"
+        ],
+        "Q9": [
+          "N4"
+        ],
+        "Q10": []
+      }
+    }
+  },
+  "per_question": {
+    "Q1": {
+      "top_chunk_distance": 0.1441,
+      "note_raw_distances": {
+        "N1": 0.2909,
+        "N4": 0.5403,
+        "N5": 0.7472,
+        "N2": 0.7631,
+        "N3": 0.8063,
+        "N7": 0.9985,
+        "N9": 1.0016,
+        "N10": 1.0298,
+        "N6": 1.0574,
+        "N8": 1.0912
+      },
+      "baseline_size": 15,
+      "weights": {
+        "1.0": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        },
+        "1.5": {
+          "notes_in": [
+            "N1"
+          ],
+          "paired_rank": 3,
+          "off_topic_in": [],
+          "displaced": 1,
+          "channel_delta": -1
+        },
+        "2.0": {
+          "notes_in": [
+            "N1"
+          ],
+          "paired_rank": 2,
+          "off_topic_in": [],
+          "displaced": 1,
+          "channel_delta": -1
+        }
+      }
+    },
+    "Q2": {
+      "top_chunk_distance": 0.2336,
+      "note_raw_distances": {
+        "N2": 0.3522,
+        "N4": 0.7186,
+        "N1": 0.7938,
+        "N5": 0.8225,
+        "N3": 0.8328,
+        "N7": 0.9261,
+        "N6": 1.0098,
+        "N10": 1.019,
+        "N8": 1.0463,
+        "N9": 1.0888
+      },
+      "baseline_size": 15,
+      "weights": {
+        "1.0": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        },
+        "1.5": {
+          "notes_in": [
+            "N2"
+          ],
+          "paired_rank": 2,
+          "off_topic_in": [],
+          "displaced": 1,
+          "channel_delta": 0
+        },
+        "2.0": {
+          "notes_in": [
+            "N2"
+          ],
+          "paired_rank": 1,
+          "off_topic_in": [],
+          "displaced": 1,
+          "channel_delta": 0
+        }
+      }
+    },
+    "Q3": {
+      "top_chunk_distance": 0.2177,
+      "note_raw_distances": {
+        "N3": 0.5025,
+        "N4": 0.6546,
+        "N2": 0.669,
+        "N1": 0.7206,
+        "N7": 0.8887,
+        "N10": 0.9245,
+        "N5": 0.9717,
+        "N6": 1.0614,
+        "N9": 1.064,
+        "N8": 1.1702
+      },
+      "baseline_size": 15,
+      "weights": {
+        "1.0": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        },
+        "1.5": {
+          "notes_in": [
+            "N3"
+          ],
+          "paired_rank": 13,
+          "off_topic_in": [],
+          "displaced": 1,
+          "channel_delta": -1
+        },
+        "2.0": {
+          "notes_in": [
+            "N3"
+          ],
+          "paired_rank": 2,
+          "off_topic_in": [],
+          "displaced": 1,
+          "channel_delta": -1
+        }
+      }
+    },
+    "Q4": {
+      "top_chunk_distance": 0.2644,
+      "note_raw_distances": {
+        "N4": 0.3185,
+        "N1": 0.6097,
+        "N2": 0.7501,
+        "N3": 0.8457,
+        "N7": 0.8558,
+        "N5": 0.8637,
+        "N9": 0.9129,
+        "N10": 1.0434,
+        "N6": 1.0457,
+        "N8": 1.1807
+      },
+      "baseline_size": 15,
+      "weights": {
+        "1.0": {
+          "notes_in": [
+            "N4"
+          ],
+          "paired_rank": 13,
+          "off_topic_in": [],
+          "displaced": 1,
+          "channel_delta": -1
+        },
+        "1.5": {
+          "notes_in": [
+            "N4"
+          ],
+          "paired_rank": 1,
+          "off_topic_in": [],
+          "displaced": 1,
+          "channel_delta": -1
+        },
+        "2.0": {
+          "notes_in": [
+            "N4"
+          ],
+          "paired_rank": 1,
+          "off_topic_in": [],
+          "displaced": 1,
+          "channel_delta": -1
+        }
+      }
+    },
+    "Q5": {
+      "top_chunk_distance": 0.281,
+      "note_raw_distances": {
+        "N5": 0.5546,
+        "N1": 0.5933,
+        "N3": 0.6513,
+        "N2": 0.7021,
+        "N4": 0.8006,
+        "N7": 0.8773,
+        "N10": 0.9894,
+        "N6": 1.0189,
+        "N8": 1.0314,
+        "N9": 1.0508
+      },
+      "baseline_size": 15,
+      "weights": {
+        "1.0": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        },
+        "1.5": {
+          "notes_in": [
+            "N5",
+            "N1"
+          ],
+          "paired_rank": 6,
+          "off_topic_in": [],
+          "displaced": 2,
+          "channel_delta": 0
+        },
+        "2.0": {
+          "notes_in": [
+            "N5",
+            "N1"
+          ],
+          "paired_rank": 1,
+          "off_topic_in": [],
+          "displaced": 2,
+          "channel_delta": 0
+        }
+      }
+    },
+    "Q6": {
+      "top_chunk_distance": 0.2785,
+      "note_raw_distances": {
+        "N2": 0.618,
+        "N4": 0.661,
+        "N1": 0.7065,
+        "N3": 0.7722,
+        "N5": 0.8707,
+        "N7": 0.8824,
+        "N9": 0.9718,
+        "N10": 0.985,
+        "N8": 1.0305,
+        "N6": 1.0428
+      },
+      "baseline_size": 15,
+      "weights": {
+        "1.0": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        },
+        "1.5": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        },
+        "2.0": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        }
+      }
+    },
+    "Q7": {
+      "top_chunk_distance": 0.3731,
+      "note_raw_distances": {
+        "N2": 0.6714,
+        "N3": 0.7024,
+        "N5": 0.7407,
+        "N4": 0.7559,
+        "N1": 0.768,
+        "N7": 0.9672,
+        "N9": 1.0037,
+        "N10": 1.0102,
+        "N6": 1.0546,
+        "N8": 1.1259
+      },
+      "baseline_size": 15,
+      "weights": {
+        "1.0": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        },
+        "1.5": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        },
+        "2.0": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        }
+      }
+    },
+    "Q8": {
+      "top_chunk_distance": 0.1832,
+      "note_raw_distances": {
+        "N4": 0.5736,
+        "N1": 0.6788,
+        "N3": 0.6993,
+        "N2": 0.7159,
+        "N7": 0.8736,
+        "N5": 0.8929,
+        "N9": 0.9873,
+        "N10": 1.0086,
+        "N6": 1.081,
+        "N8": 1.1415
+      },
+      "baseline_size": 15,
+      "weights": {
+        "1.0": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        },
+        "1.5": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        },
+        "2.0": {
+          "notes_in": [
+            "N4"
+          ],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 1,
+          "channel_delta": 0
+        }
+      }
+    },
+    "Q9": {
+      "top_chunk_distance": 0.3128,
+      "note_raw_distances": {
+        "N4": 0.5594,
+        "N1": 0.6765,
+        "N3": 0.712,
+        "N2": 0.7994,
+        "N5": 0.8577,
+        "N7": 0.946,
+        "N9": 0.9622,
+        "N10": 0.9728,
+        "N8": 1.0039,
+        "N6": 1.0189
+      },
+      "baseline_size": 15,
+      "weights": {
+        "1.0": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        },
+        "1.5": {
+          "notes_in": [
+            "N4"
+          ],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 1,
+          "channel_delta": 0
+        },
+        "2.0": {
+          "notes_in": [
+            "N4"
+          ],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 1,
+          "channel_delta": 0
+        }
+      }
+    },
+    "Q10": {
+      "top_chunk_distance": 0.2974,
+      "note_raw_distances": {
+        "N4": 0.6856,
+        "N1": 0.7297,
+        "N3": 0.7403,
+        "N2": 0.7537,
+        "N7": 0.8878,
+        "N5": 0.9666,
+        "N10": 0.9782,
+        "N6": 1.0554,
+        "N9": 1.056,
+        "N8": 1.1872
+      },
+      "baseline_size": 15,
+      "weights": {
+        "1.0": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        },
+        "1.5": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        },
+        "2.0": {
+          "notes_in": [],
+          "paired_rank": null,
+          "off_topic_in": [],
+          "displaced": 0,
+          "channel_delta": 0
+        }
+      }
+    }
+  }
+}

@@ -37,7 +37,7 @@ from app.routers import (
     tags,
     ws,
 )
-from app.services import chroma_service, search_service
+from app.services import chroma_service, note_index, search_service
 from app.services.llm_smoke import run_startup_probes
 from app.services.schema_init_service import ensure_schema_at_head
 
@@ -96,6 +96,13 @@ async def lifespan(app: FastAPI):
         chroma_service.backfill_chunk_document_ids()
     except Exception:
         logger.exception("Chunk document_id backfill failed; continuing startup")
+
+    # S-8.5.2: the notes retrieval index. Idempotent (upsert live notes on
+    # `note:{id}`, remove withdrawn ones); a failure never stops startup.
+    try:
+        note_index.backfill()
+    except Exception:
+        logger.exception("Notes index backfill failed; continuing startup")
 
     try:
         await run_startup_probes()

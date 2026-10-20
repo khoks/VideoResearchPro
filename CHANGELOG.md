@@ -23,6 +23,25 @@ PR [#316](https://github.com/khoks/VideoResearchPro/pull/316).
   always showed a subscribed channel as never synced. It now marks the job's
   tenant subscribed and synced through `subscription_service`.
 
+### Notes in Q&A retrieval and citations (S-8.5.2, 2026-10-19)
+
+The user's own notes now answer questions alongside the sources, and are cited as "you wrote this on <date>". PR [#322](https://github.com/khoks/VideoResearchPro/pull/322). Plan: [docs/plans/m5-notes.md](docs/plans/m5-notes.md).
+
+- **Retrieval.** A private `notes_global` collection, kept in step with every
+  note write and backfilled at startup. Job Q&A draws notes on the job's own
+  material; library Q&A draws every note of the asker. Notes pass the same
+  raw relevance threshold, then join the D-068 re-rank at weight 1.5.
+- **Measured first.** On the 200-video reference corpus, at 1.0 one note in
+  five reached the top 15 for the question it answers; at 1.5 all five did,
+  costing 0.7 chunks per question; no off-topic note ever entered ([note](docs/notes/2026-10-19-s852-note-weight-measurement.md)).
+- **Never mistaken for a source.** Notes reach the answer step verbatim under
+  `[NOTE by you, <date>]` with a contract saying they are the asker's words.
+  The live check found the refine step dropping notes, so they skip it.
+- **Citations.** A `note` reference renders "You wrote this on <date>" and
+  links to the note's target.
+- **Fixed on the way.** The Q&A response schemas stripped every non-YouTube
+  citation field (`source_type`, permalink, page); they now pass through.
+
 ### Added: saved searches (2026-10-19)
 
 PR [#320](https://github.com/khoks/VideoResearchPro/pull/320). S-8.3.2, plan [m3-saved-searches-alerts](docs/plans/m3-saved-searches-alerts.md).

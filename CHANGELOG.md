@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Legacy global channel columns dropped; per-tenant sync time finally recorded (2026-10-19, S-5.10.3)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM).
+PR [#316](https://github.com/khoks/VideoResearchPro/pull/316).
 
 - Migration `1a6e09517250` drops `channels.subscribed`, `last_synced_at` and
   `source_weight`, which D-065 had left in place after moving per-user state

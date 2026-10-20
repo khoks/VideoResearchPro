@@ -27,12 +27,12 @@ export const OUTPUT_KIND_META: Record<string, KindMeta> = {
   },
   site: {
     label: 'Site',
-    description: 'A static personal wiki generated from your library.',
+    description: 'A static wiki of your reports and their sources: a zip of linked pages, with search, that opens from disk.',
     epic: 'E-6.2',
   },
   deck: {
     label: 'Deck',
-    description: 'A slide deck distilled from one or more runs.',
+    description: 'A PowerPoint deck planned from one or more runs, every slide citing its sources in its notes.',
     epic: 'E-6.3',
   },
   newsletter: {

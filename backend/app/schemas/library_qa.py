@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.qa_scope import QAScope
+
 
 class LibraryReference(BaseModel):
     """A citation surfaced from the global library RAG.
@@ -47,5 +49,8 @@ class LibraryQAResponse(BaseModel):
     references: list[LibraryReference]
     answer_language: str
     created_at: datetime
+    # S-8.1.4: what the question was asked over; null is the whole library.
+    # Shape and rules: app/schemas/qa_scope.py.
+    scope: QAScope | None = None
 
     model_config = {"from_attributes": True}

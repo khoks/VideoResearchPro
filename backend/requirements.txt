@@ -44,6 +44,8 @@ mdit-py-plugins>=0.4
 # The EPUB's XHTML is built and checked with lxml (BSD-3-Clause). Already pulled
 # in by trafilatura; declared because the app imports it directly.
 lxml>=5.0
+# S-6.3.1: slide decks (MIT). Pure Python over lxml, Pillow and XlsxWriter.
+python-pptx>=1.0.2
 
 # Config
 pydantic-settings>=2.9.0

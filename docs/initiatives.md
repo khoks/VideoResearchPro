@@ -1497,37 +1497,37 @@ Backend suite 835 → 855.
 - [x] T-6.1.5.3 WeasyPrint and Playwright live in `requirements-author.txt` with the Pango steps for Windows and Linux. `parameters.formats` picks the files (default: EPUB, plus PDF when a converter exists); the router resolves it before the row exists and writes it back, so an explicit PDF with no converter is 501 with what to install and leaves no row. `GET /author/kinds` reports per kind what can be built and why not; the create modal offers EPUB and PDF and shows the reason when PDF is unavailable. A worker without a converter fails the row with the same message before building chapters — *shipped 2026-10-19*
 - [x] T-6.1.5.4 `test_book_formats.py` (16 tests) on two chapters of the real smoke-test report: the EPUB container, manifest, spine and nav are valid and every in-book link (60 endnote references, back-links, navigation) lands on an element that exists; the PDF has an outline, contents links that jump to the chapter pages, its endnote URLs, every font embedded, and a Devanagari quote extractable as text; the PDF engine fetches nothing from a local HTTP server the document points at; 501 and worker-failure paths; engine order. EPUBCheck (Java) was not run — *shipped 2026-10-19*
 
-### E-6.2 🔵 Static personal-wiki site
+### E-6.2 🟡 Static personal-wiki site
 
-Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported and the route returns 501 until an outputter ships.
+`kind="site"` ships with `SiteOutputter` (S-6.2.1, PR [#315](https://github.com/khoks/VideoResearchPro/pull/315), 2026-10-19); publishing integrations (S-6.2.2) remain.
 
 **Scope (2026-10-18).** A downloadable static site built from a shelf or a set of jobs: one page per report (reader typography), one per knowledge artifact, an index, tag pages, client-side search, citation links out to sources. Built by the backend with Jinja2 templates, **not** by Astro or 11ty: the plan rejects a Node toolchain inside the Python worker. Hosting integrations are a later story.
 **Acceptance.** A user picks a shelf, generates a site, downloads a zip, opens `index.html` from disk and can read every report, search by title, and follow citations; the site has no app chrome and makes no network calls except to sources.
 
-#### S-6.2.1 🔵 `SiteOutputter` (zip of static HTML)
-**PR:** TBD. Depends on S-6.1.2 (Markdown source) and S-8.1.1 (shelves) for the picker.
-- [ ] T-6.2.1.1 `source_ids` accepts `shelf:<id>` and `job:<id>`; resolves to visible documents and the tenant's exchanges only
-- [ ] T-6.2.1.2 Jinja2 templates under `app/templates/site/` (index, report, knowledge, tag, about) with the reader stylesheet inlined
-- [ ] T-6.2.1.3 Client-side search index (prebuilt JSON + a small vanilla script; no CDN)
-- [ ] T-6.2.1.4 Zip written to `content_path`; download through E-6.7
-- [ ] T-6.2.1.5 Tests: every link inside the zip resolves; no absolute app URLs
+#### S-6.2.1 🟢 `SiteOutputter` (zip of static HTML)
+**PR:** [#315](https://github.com/khoks/VideoResearchPro/pull/315) — *shipped 2026-10-19.* No model is called. Found on the first live site: page names took eight id characters, and two seed runs (`lanec-job-1`, `lanec-job-2`) shared them, so paths are now allocated unique within the site. Knowledge artifacts appear on their source's page when one was extracted; there is no separate knowledge page.
+- [x] T-6.2.1.1 `source_ids` take `shelf:<id>`, `job:<id>` or a bare run id; shelves, runs, documents (D-063 visibility), tags and Q&A all resolve inside the caller's library; anything else is left out and named on the index and about pages; nothing publishable fails the output with the reason — *shipped 2026-10-19*
+- [x] T-6.2.1.2 Jinja2 templates (autoescaped) under `app/templates/site/`: index, report (the run's report and Q&A, citations as endnotes linking both to the source's page and to the moment in the video), source (backlinks with moments, tags, the knowledge report when extracted), tag, about, search; one stylesheet built from the book stylesheet plus layout and a dark scheme, no web fonts — *shipped 2026-10-19*
+- [x] T-6.2.1.3 Search: the index is a script (`assets/search-index.js` sets `window.SITE_INDEX`) because browsers will not load JSON from a page opened from disk; a 40-line vanilla script ranks title hits first; no CDN — *shipped 2026-10-19*
+- [x] T-6.2.1.4 The zip is the primary artifact (`format=zip`), with a Markdown contents page in `content_text` for the reader; `output_citations` holds every citation on every report page — *shipped 2026-10-19*
+- [x] T-6.2.1.5 `test_site_outputter.py` (5 tests): a shelf with two real-report runs, a tag and Q&A becomes a site whose every relative link and fragment resolves inside the zip, whose only absolute links go to video hosts, with ASCII file names, backlinks, a search index listing every page and no `fetch`; another user's shelf and run are left out and said so; nothing publishable fails; same-topic runs get distinct pages — *shipped 2026-10-19*
 
 #### S-6.2.2 ⚪ Publish integrations
 - [ ] T-6.2.2.1 GitHub Pages push (user-supplied token through the BYOK credential store) and Netlify drop; design only until S-6.2.1 is used
 
-### E-6.3 🔵 Slides (PPTX)
+### E-6.3 🟢 Slides (PPTX)
 
-`kind="deck"` reserved; outputter pending.
+`kind="deck"` ships with `DeckOutputter` (S-6.3.1, PR [#314](https://github.com/khoks/VideoResearchPro/pull/314), 2026-10-19).
 
 **Scope (2026-10-18).** A deck from one job or a knowledge artifact: an LLM-planned outline (8 to 15 slides), each slide carrying its citations in the notes and a sources slide at the end, rendered with `python-pptx` (the `anthropic-skills:pptx` skill named in the roadmap is a harness skill, not a library the worker can call).
 **Acceptance.** A user picks a job, gets a `.pptx` whose every content slide has at least one citation in its notes, and the sources slide lists every cited source with a link.
 
-#### S-6.3.1 🔵 `DeckOutputter`
-**PR:** TBD
-- [ ] T-6.3.1.1 `author_deck_outline` use case (structured JSON: title, slides[{heading, bullets, speaker_notes, citations}])
-- [ ] T-6.3.1.2 `python-pptx` renderer with one editorial template (title, section, bullets, quote, sources); brand tokens from `docs/branding.md`
-- [ ] T-6.3.1.3 Citations copied into slide notes and the sources slide; `output_citations` rows
-- [ ] T-6.3.1.4 Tests: slide count within bounds, notes non-empty, file opens
+#### S-6.3.1 🟢 `DeckOutputter`
+**PR:** [#314](https://github.com/khoks/VideoResearchPro/pull/314) — *shipped 2026-10-19.* Sources are the user's own runs (tenant-scoped like books). **Scope-changed 2026-10-19:** a knowledge artifact as the deck's source is not in this story; runs only. Found on the first real deck: 80 timestamped citations made ten sources slides, so a source is now a video listed once with its cited moments as links (19 slides instead of 26). A real two-run deck cost $0.31-0.39 on gpt-5.5.
+- [x] T-6.3.1.1 `author_deck_outline` (openai gpt-5.5 medium, guidance entry): the reports reach the model with every RESOLVED citation as a marker `[S12]` (unresolved ones lose theirs, so a slide can only cite what the sources slide can link); JSON with section, bullets and quote slides citing markers; `VISUAL_ANNOTATION_CONTRACT`, English output, quote rendering and time contracts injected — *shipped 2026-10-19*
+- [x] T-6.3.1.2 `deck_render`: python-pptx (MIT), 16:9, one template drawn in code in the `docs/branding.md` palette (paper, ink, oxblood rules, gold quote bar), Georgia with Nirmala UI as the complex-script face; title (model disclosed), section, bullets, quote and sources slides; rendered through PowerPoint and checked by eye — *shipped 2026-10-19*
+- [x] T-6.3.1.3 Each content slide: source numbers in its footer, and in its notes every source with the exact moments it cites and their links; the sources slide(s) list each video once with its moments in time order as links; `output_citations` holds one row per cited moment in order of first use; a slide citing nothing is dropped and the count is shown on the last slide; `content_text` is a Markdown rendering for the reader — *shipped 2026-10-19*
+- [x] T-6.3.1.4 `test_deck_outputter.py` (6 tests, model patched): the file opens; 3 to 15 content slides; every content slide's notes carry a YouTube link and its text no marker, link or footnote; every cited moment is linked from the sources slide, one entry per video, moments in time order; first-use numbering; uncited slides dropped and disclosed; a plan with nothing cited, a failed call and another user's run each fail the output; the estimate endpoint calls no model and writes nothing — *shipped 2026-10-19*
 
 ### E-6.4 🔵 Newsletter / digest (recurring scheduled output)
 
@@ -1690,10 +1690,11 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [x] Found on the way: list popovers were painted under the next card (each `Card` is its own stacking context through `transform`); `LabelPicker` now portals to `<body>` with fixed coordinates and listens for outside clicks and Escape in the capture phase
 - **Decision taken (flagged):** tags are **not tier-gated**. They cost the operator nothing (the M6 plan's reasoning), the `shelves` capability is about grouping runs, and `frontend/src/data/tiers.ts` does not advertise tags. One `require_feature` line per write route if the user wants them Pro
 
-#### S-8.1.4 🔵 Shelf-scoped Q&A
-**PR:** TBD
+#### S-8.1.4 🟡 Shelf-scoped Q&A
+**PR:** [#313](https://github.com/khoks/VideoResearchPro/pull/313) (merged 2026-10-19: the `scope_json` column, its shape and resolver); the endpoint and panel follow
+**Linked decision:** [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19)
 - [ ] T-8.1.4.1 `POST /api/v1/shelves/{id}/qa` resolving the shelf's job set to a document set and calling the library Q&A agent with that `video_ids` filter (an empty shelf retrieves nothing)
-- [ ] T-8.1.4.2 Exchanges stored as `library_qa_exchanges` with a `scope_json` column (`{"shelf_id": …}`) so history and the Q&A library index keep working
+- [ ] T-8.1.4.2 Exchanges stored as `library_qa_exchanges` with a `scope_json` column (`{"shelf_id": …}`) so history and the Q&A library index keep working. Column (migration `cd4c5467506d`), documented shape (`app/schemas/qa_scope.py`: null = whole library, narrowing `shelf_id`, provenance `saved_search_id`, unknown keys kept on read and refused on resolve), `qa_scope_service` and `scope` on every history row landed in [#313](https://github.com/khoks/VideoResearchPro/pull/313) so lane A's saved searches can build on it
 - [ ] T-8.1.4.3 Q&A panel on the shelf page reusing the library Q&A components
 - [ ] T-8.1.4.4 Tests: scope restricts citations; empty scope never widens
 

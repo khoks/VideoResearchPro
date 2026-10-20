@@ -225,11 +225,11 @@ def test_full_session_e2e(unauthenticated_client, db):
     assert r.status_code == 200
     body = r.json()
     assert "book" in body["available"]
-    assert "site" in body["supported"] and "site" not in body["available"]
+    assert "reel" in body["supported"] and "reel" not in body["available"]
 
     r = unauthenticated_client.post(
         "/api/v1/author/outputs",
-        json={"kind": "site", "title": "no-outputter", "source_ids": []},
+        json={"kind": "reel", "title": "no-outputter", "source_ids": []},
         headers=h,
     )
     assert r.status_code == 501

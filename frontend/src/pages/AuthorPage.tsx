@@ -11,6 +11,7 @@ import {
 import { useOutputsProgress } from '../hooks/useOutputProgress';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { useJobs } from '../hooks/useJobs';
+import { useShelves } from '../hooks/useShelves';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { useJobStore } from '../stores/jobStore';
 import { authorApi, type OutputItem } from '../services/authorApi';
@@ -573,9 +574,23 @@ function CreateOutputModal({
   // S-6.1.3: model-written framing around the unchanged chapters, priced
   // before it runs.
   const [cohesion, setCohesion] = useState<CohesionLevel>(DEFAULT_COHESION);
+  const isBook = kind === 'book';
+  // S-6.2.1: a site takes shelves as well as runs.
+  const isSite = kind === 'site';
+  const shelves = useShelves();
+  const [shelvesSelected, setShelvesSelected] = useState<Set<string>>(() => new Set());
+  const toggleShelf = (id: string) => {
+    setShelvesSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  // A deck always calls a model (S-6.3.1); a book only with framing.
   const estimate = useOutputEstimate(
-    { kind, title: title.trim() || 'Untitled', source_ids: [...selected], parameters: { cohesion } },
-    kind === 'book' && cohesion !== 'none' && selected.size > 0,
+    { kind, title: title.trim() || 'Untitled', source_ids: [...selected], parameters: isBook ? { cohesion } : {} },
+    selected.size > 0 && (isBook ? cohesion !== 'none' : kind === 'deck'),
   );
   const toggleFormat = (format: string, on: boolean) => {
     const next = new Set(chosen);
@@ -599,7 +614,11 @@ function CreateOutputModal({
     });
   };
 
-  const canSubmit = title.trim().length > 0 && selected.size > 0 && !create.isPending;
+  const canSubmit =
+    title.trim().length > 0 && (selected.size > 0 || (isSite && shelvesSelected.size > 0)) && !create.isPending;
+  const sourceIds = isSite
+    ? [...[...shelvesSelected].map((id) => `shelf:${id}`), ...[...selected].map((id) => `job:${id}`)]
+    : [...selected];
 
   const submit = () => {
     if (!canSubmit) return;
@@ -607,13 +626,15 @@ function CreateOutputModal({
       {
         kind,
         title: title.trim(),
-        source_ids: [...selected],
-        parameters: {
-          include_qa: includeQa,
-          include_toc: includeToc,
-          ...(kind === 'book' ? { cohesion } : {}),
-          ...(formatsParameter(formatOptions, chosen) ? { formats: formatsParameter(formatOptions, chosen) } : {}),
-        },
+        source_ids: sourceIds,
+        parameters: isBook
+          ? {
+              include_qa: includeQa,
+              include_toc: includeToc,
+              cohesion,
+              ...(formatsParameter(formatOptions, chosen) ? { formats: formatsParameter(formatOptions, chosen) } : {}),
+            }
+          : {},
       },
       {
         onSuccess: (output) => {
@@ -651,8 +672,12 @@ function CreateOutputModal({
       <div style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}>
         <p style={{ margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal }}>
           {meta.description} Generation runs in the background and shows its progress in the
-          list below. Each chapter is its run's report exactly as it is; a model only writes the
-          framing around the chapters, and only if you choose it below.
+          list below.{' '}
+          {isBook
+            ? "Each chapter is its run's report exactly as it is; a model only writes the framing around the chapters, and only if you choose it below."
+            : isSite
+              ? "Each run's report becomes a page with its citations, and each source gets a page listing the reports that cite it. No model is involved, and nothing on the site loads from the web."
+              : 'A model plans the slides from the reports. A slide that cites no source is left out, and every slide lists its sources in its notes.'}
         </p>
 
         <FormField label="Title" required>
@@ -668,10 +693,52 @@ function CreateOutputModal({
           )}
         </FormField>
 
+        {isSite && (
+          <FormField
+            label="Shelves"
+            helperText={`${shelvesSelected.size} selected. Every run on a shelf becomes a page; pick single runs below as well if you like.`}
+          >
+            {() => (
+              <div style={{ maxHeight: 180, overflowY: 'auto', border: `1px solid ${c.border}`, borderRadius: radius.md, background: c.surface }}>
+                {shelves.isLoading ? (
+                  <div style={{ padding: space['4'], textAlign: 'center' }}>
+                    <Spinner />
+                  </div>
+                ) : (shelves.data ?? []).length === 0 ? (
+                  <div style={{ padding: space['4'], fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textMuted, fontStyle: 'italic' }}>
+                    No shelves yet. Pick runs below, or start a shelf from the sidebar.
+                  </div>
+                ) : (
+                  (shelves.data ?? []).map((shelf) => (
+                    <label
+                      key={shelf.id}
+                      style={{ display: 'flex', alignItems: 'center', gap: space['3'], padding: `${space['2']} ${space['3']}`, borderBottom: `1px solid ${c.border}`, cursor: 'pointer' }}
+                    >
+                      <input type="checkbox" checked={shelvesSelected.has(shelf.id)} onChange={() => toggleShelf(shelf.id)} style={{ accentColor: c.accent }} />
+                      <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textPrimary }}>{shelf.name}</span>
+                      <span style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>
+                        {shelf.job_count} {shelf.job_count === 1 ? 'run' : 'runs'}
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+            )}
+          </FormField>
+        )}
+
         <FormField
-          label="Chapters"
-          required
-          helperText={`${selected.size} selected. One chapter per run: its report, and its Q&A if you keep that on.`}
+          label={isBook ? 'Chapters' : 'Runs'}
+          required={!isSite}
+          helperText={
+            isBook
+              ? `${selected.size} selected. One chapter per run: its report, and its Q&A if you keep that on.`
+              : isSite
+              ? `${selected.size} selected.`
+              : `${selected.size} selected. The deck draws on every report you pick.${
+                  selected.size > 0 && estimateLabel(estimate.data) ? ` ${estimateLabel(estimate.data)}.` : ''
+                }`
+          }
         >
           {(id) => (
             <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
@@ -708,12 +775,14 @@ function CreateOutputModal({
           )}
         </FormField>
 
-        <div style={{ display: 'flex', gap: space['5'], flexWrap: 'wrap' }}>
-          <CheckboxRow checked={includeQa} onChange={setIncludeQa} label="Include each run's Q&A" />
-          <CheckboxRow checked={includeToc} onChange={setIncludeToc} label="Table of contents" />
-        </div>
+        {isBook && (
+          <div style={{ display: 'flex', gap: space['5'], flexWrap: 'wrap' }}>
+            <CheckboxRow checked={includeQa} onChange={setIncludeQa} label="Include each run's Q&A" />
+            <CheckboxRow checked={includeToc} onChange={setIncludeToc} label="Table of contents" />
+          </div>
+        )}
 
-        {kind === 'book' && (
+        {isBook && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
             <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, fontWeight: fontWeight.medium, color: c.textPrimary }}>
               Framing

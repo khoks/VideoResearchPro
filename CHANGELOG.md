@@ -28,6 +28,41 @@ The user's own notes now answer questions alongside the sources, and are cited a
   links to the note's target.
 - **Fixed on the way.** The Q&A response schemas stripped every non-YouTube
   citation field (`source_type`, permalink, page); they now pass through.
+### Static wiki sites (2026-10-19, S-6.2.1)
+
+PR [#315](https://github.com/khoks/VideoResearchPro/pull/315). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **New site** on the Author page: pick shelves and runs, download a zip,
+  open `index.html` from disk. Every report is a page with its Q&A and
+  endnotes; every source has a page listing the reports that cite it, at
+  which moments, with its knowledge report when one exists; tags get pages.
+- **Search works offline** and nothing on the site loads from the web; the
+  only links that leave it go to the sources.
+
+### Added: the scope of a library question (2026-10-19)
+
+[S-8.1.4](docs/initiatives.md#s-814--shelf-scoped-qa), PR [#313](https://github.com/khoks/VideoResearchPro/pull/313), [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19).
+
+- `library_qa_exchanges.scope_json` records what a library question was asked
+  over: null for the whole library (every existing row), `{"shelf_id": …}`
+  for a shelf, `{"saved_search_id": …}` for a saved search's run. Library Q&A
+  history returns it as `scope`.
+- `qa_scope_service.resolve_document_ids` turns a scope into the documents a
+  question may retrieve: always inside what the reader can see, nothing for
+  an empty shelf, an error for another reader's shelf or a key it does not
+  know. Shelf-scoped Q&A and saved searches both use it.
+
+### Slide decks from research runs (2026-10-19, S-6.3.1)
+
+PR [#314](https://github.com/khoks/VideoResearchPro/pull/314). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **New deck** on the Author page: pick runs, get a PowerPoint file in the
+  app's paper-and-ink style. A model plans the slides from the reports.
+- **Every content slide cites its sources**: the numbers in the slide footer,
+  the exact moments and links in its notes, and a closing sources slide
+  listing each video once with its timestamps as links. A slide that cites
+  nothing is left out, and the deck says how many were.
+- Priced before it runs; a two-run deck costs about $0.30-0.40.
 
 ### Books can carry model-written framing, opt-in (2026-10-19, S-6.1.3)
 

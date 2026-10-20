@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { authorApi, type CreateOutputPayload, type ListOutputsParams } from '../services/authorApi';
+import { authorApi, type CreateOutputPayload, type ListOutputsParams, type NewsletterSettings } from '../services/authorApi';
 
 const OUTPUTS_KEY = ['author', 'outputs'] as const;
 
@@ -52,6 +52,40 @@ export function useOutputEstimate(payload: CreateOutputPayload, enabled: boolean
     queryFn: () => authorApi.estimateOutput(payload),
     enabled,
     staleTime: 5 * 60_000,
+  });
+}
+
+const NEWSLETTER_KEY = ['author', 'newsletter'] as const;
+
+/** S-6.4.2: the reader's digest subscription (null when there is none). */
+export function useNewsletter(enabled = true) {
+  return useQuery({ queryKey: NEWSLETTER_KEY, queryFn: () => authorApi.getNewsletter(), enabled });
+}
+
+export function useSaveNewsletter() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: NewsletterSettings) => authorApi.saveNewsletter(settings),
+    onSuccess: (sub) => qc.setQueryData(NEWSLETTER_KEY, sub),
+  });
+}
+
+export function useDeleteNewsletter() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => authorApi.deleteNewsletter(),
+    onSuccess: () => qc.setQueryData(NEWSLETTER_KEY, null),
+  });
+}
+
+export function useSendNewsletterNow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => authorApi.sendNewsletterNow(),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: NEWSLETTER_KEY });
+      qc.invalidateQueries({ queryKey: OUTPUTS_KEY });
+    },
   });
 }
 

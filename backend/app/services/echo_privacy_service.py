@@ -328,6 +328,16 @@ def delete_brain(db: Session, tenant_id: str) -> dict[str, Any]:
     and removes it. Returns what was removed and the footprint afterwards,
     which must be empty.
     """
+    # S-3.2.1: revoke every connector grant at its provider and drop its
+    # schedule first. Best effort and never fatal: the tokens themselves are
+    # erased below with the rows whatever the provider says.
+    try:
+        from app.services import echo_connector_service
+
+        echo_connector_service.revoke_all_for_brain_delete(db, tenant_id)
+    except Exception:
+        logger.exception("echo: provider revocation before the full delete failed")
+
     try:
         vectors = echo_vectors.delete_tenant_vectors(tenant_id)
     except Exception as e:

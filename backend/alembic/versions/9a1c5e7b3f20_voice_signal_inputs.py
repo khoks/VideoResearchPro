@@ -1,7 +1,7 @@
 """voice_signal_inputs — the texts signal extraction has read (S-3.3.2 / E-3.3)
 
 Revision ID: 9a1c5e7b3f20
-Revises: e5773663cb2d
+Revises: 3e03de05cc5f
 Create Date: 2026-10-19
 
 Additive. One row per input the extraction read, with the hash of the
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "9a1c5e7b3f20"
-down_revision = "e5773663cb2d"  # re-parented onto S-3.2.1 (merged first)
+down_revision = "3e03de05cc5f"  # re-parented onto S-6.4.2 (merged first)
 branch_labels = None
 depends_on = None
 

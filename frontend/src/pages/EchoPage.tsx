@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { EchoDataCard } from '../components/echo/EchoDataCard';
 import { SignalsPanel } from '../components/echo/SignalsPanel';
+import { ActivityTimeline } from '../components/echo/ActivityTimeline';
+import { ConnectorsPanel } from '../components/echo/ConnectorsPanel';
 import {
   useDeleteContext,
   useEchoConnectors,
@@ -82,6 +84,9 @@ export function EchoPage() {
 
   const status = useEchoStatus(allowed);
   const connectors = useEchoConnectors(allowed);
+  const [searchParams] = useSearchParams();
+  // Back from a provider through /echo/connectors/:name/callback.
+  const connectedNow = searchParams.get('connected');
   const context = useEchoContext({ include_expired: showExpired }, allowed);
   const record = useRecordContext();
   const del = useDeleteContext();
@@ -232,18 +237,16 @@ export function EchoPage() {
                 <Skeleton variant="paragraph" />
               ) : connectors.isError ? (
                 <ErrorLine onRetry={() => connectors.refetch()}>Couldn't list connectors.</ErrorLine>
-              ) : connectors.data && connectors.data.connectors.length > 0 ? (
-                <ul style={{ margin: 0, paddingLeft: space['5'], fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textPrimary }}>
-                  {connectors.data.connectors.map((name) => (
-                    <li key={name}>{name}</li>
-                  ))}
-                </ul>
               ) : (
-                <EmptyState
-                  size="sm"
-                  title="No connectors yet."
-                  description="YouTube watch history, Spotify, email and calendar are planned (E-3.2). Until they ship, everything Echo knows is what you write here."
-                />
+                <>
+                  {connectedNow && (
+                    <p role="status" style={{ margin: `0 0 ${space['3']}`, fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.success }}>
+                      Connected. The first sync runs in the background; its events appear in the timeline below.
+                    </p>
+                  )}
+                  {/* S-3.2.1: consent before any redirect; disconnect deletes what it brought in. */}
+                  <ConnectorsPanel connectors={connectors.data?.items ?? []} />
+                </>
               )}
 
               <div style={{ marginTop: space['4'] }}>
@@ -272,6 +275,11 @@ export function EchoPage() {
                   </ul>
                 )}
               </div>
+            </Card>
+
+            <Card>
+              <SectionHeading>Activity</SectionHeading>
+              <ActivityTimeline enabled={allowed} />
             </Card>
           </div>
 

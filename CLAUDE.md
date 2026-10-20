@@ -314,6 +314,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `CHROMA_SHARES_COLLECTION_NAME` / `CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME` | No | `shares_global` / `personal_context_global` | Echo's private collections (tenant-filtered). The full Echo delete sweeps both |
 | `ECHO_SHARES_DIR` | No | `./data/echo/shares` | Echo shares inbox files, one directory per tenant; removed by the full Echo delete |
 | `ECHO_SHARE_MAX_BYTES` / `ECHO_SHARE_TEXT_MAX_CHARS` | No | `26214400` / `50000` | Caps on one quick-share file (25 MB) and one text share |
+| `ECHO_CONNECTOR_SYNC` | No | `celery` | How a connector sync runs after connecting and on "Sync now" (S-3.2.1): `celery` (`echo.sync_connector`), `inline`, or `off` (the suite). Scheduled syncs always go through the scheduler tick (`echo_sync`) |
 | `ECHO_SHARE_PROCESSING` | No | `celery` | How shares are processed after intake: `celery` (the `echo.process_share` task), `inline` (in the request, single-process dev) or `off` (the test suite) |
 | `ECHO_SHARE_EMBED_MAX_CHARS` | No | `2000` | Text embedded per share in `shares_global`: annotation, title and the opening of the extracted text |
 | `ECHO_REMOTE_MEDIA` | No | `True` | Whether a shared image (vision fallback) or recording (Whisper) may go to a remote provider. Off, or a local-only tenant: images use on-device OCR only, recordings are skipped with a note |
@@ -380,6 +381,8 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `SMTP_USE_STARTTLS` | No | `True` | STARTTLS after connect (port 587 typical). |
 | `OAUTH_GOOGLE_CLIENT_ID` / `OAUTH_GOOGLE_CLIENT_SECRET` | No | (unset) | Google OAuth 2.0 + PKCE. Both must be set; endpoint returns 503 when unconfigured. |
 | `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET` | No | (unset) | GitHub OAuth 2.0 + PKCE. |
+| `OAUTH_GITHUB_CONNECTOR_CLIENT_ID` / `_SECRET` | No | (unset) | Echo's GitHub connector (S-3.2.4). Unset, it uses the sign-in app above, whose callback URL must then cover both redirects (register the frontend origin) |
+| `OAUTH_GOOGLE_CONNECTOR_CLIENT_ID` / `_SECRET` | No | (unset) | Reserved for the Google connectors (S-3.2.2, S-3.2.5), on their own client so a scope review never touches Google sign-in |
 | `OAUTH_REDIRECT_BASE_URL` | No | (unset) | Override the redirect base when frontend lives on a different origin. |
 | **Rate limiting (E-5.5)** | | | |
 | `RATE_LIMIT_ENABLED` | No | `True` | Kill switch. Set `False` for dev / under-test. |

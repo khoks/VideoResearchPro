@@ -960,7 +960,7 @@ Create the row and queue its generation in the worker (S-6.7.1). Body `{ "kind":
 ```
 
 ### `GET /api/v1/author/outputs`
-List the caller's outputs. Query params: `kind`, `status` (`pending` / `generating` / `completed` / `failed` / `cancelled`). A `pending` row with no `celery_task_id` predates S-6.7.1 and will never run.
+List the caller's outputs. Query params: `kind`, `status` (`pending` / `generating` / `completed` / `failed` / `cancelled` / `skipped`; `skipped` is a newsletter with nothing new, S-6.4.1). A `pending` row with no `celery_task_id` predates S-6.7.1 and will never run.
 
 ### `POST /api/v1/author/outputs/estimate`
 What generating an output would cost before it runs (S-6.1.3). Same body as create. Writes nothing. For a book with `parameters.cohesion` of `light` or `full`: `{ "cohesion": "full", "calls": [{ "use_case": "author_book_outline", "provider": "openai", "model": "gpt-5.5", "reasoning": "medium", "input_tokens": 3436, "output_tokens": 1800, "cost_usd": 0.069 }, …], "cost_usd": 0.12, "pricing_as_of": "…" }`; with `none` (the default), no calls and `cost_usd` 0. `cost_usd` is null when a resolved model has no published pricing. 400 for an unknown cohesion level; 501 for a kind with no outputter.
@@ -982,6 +982,24 @@ The generated text as `text/markdown` for books, `text/plain` otherwise. 404 whe
 
 ### `DELETE /api/v1/author/outputs/{output_id}`
 `{ "deleted": true }`; 404 if absent.
+
+### `GET /api/v1/author/newsletter`
+The caller's digest subscription (S-6.4.2), or `{ "subscription": null }`:
+
+```json
+{ "subscription": { "id": "...", "title": "Your library digest", "cadence": { "cadence": "weekly", "weekday": 0, "hour": 8, "minute": 0, "timezone": "UTC" }, "sections": { "featured": false, "library": true, "knowledge": true, "questions": true, "saved_searches": true, "outputs": true }, "enabled": true, "last_issue_at": null, "next_issue_at": "2026-10-26T08:00:00", "created_at": "...", "sends": [{ "period_key": "2026-W43", "status": "sent", "output_id": "...", "trigger": "schedule", "detail": null, "created_at": "...", "finished_at": "..." }] } }
+```
+
+`sends` is the latest ten periods. `status` is `started`, `sent`, `email_failed` (the issue is in the outputs list but the email failed), `skipped` (nothing new; nothing sent) or `failed`. `next_issue_at` is null while the digest is off.
+
+### `PUT /api/v1/author/newsletter`
+Create or update the subscription, and schedule it. Body fields are all optional: `{ "title": "…", "cadence": { … }, "sections": { … }, "enabled": true }`. `cadence` takes the scheduler's shape (`daily` / `weekly` / `monthly` with hour, minute, weekday or day of month, and an IANA timezone; default weekly, Monday 08:00 UTC). `sections` takes the newsletter's toggles, with `featured` off by default (D-097). 400 for a bad cadence, an unknown section or no section on. `enabled: false` keeps the settings and disables the schedule.
+
+### `DELETE /api/v1/author/newsletter`
+Unsubscribe: `{ "deleted": true }` (`false` when there was none). Removes the subscription, its send history and its schedule. Past issues stay in the outputs list.
+
+### `POST /api/v1/author/newsletter/send-now`
+Make and send an issue now, outside the schedule. It covers what is new since the last issue and counts as one. Returns `{ "status": "queued", "task_id": "…" }` (the worker runs it); `?sync=true` runs it in the request and returns `{ "status": "sent" | "skipped" | "email_failed" | "failed", "period_key": "manual:…", "output_id": "…" }`. 400 when there is no subscription or it is off.
 
 ---
 
@@ -1005,7 +1023,32 @@ Deletes one row; 404 if absent. The key is a path segment and Starlette decodes 
 Revoke a source: deletes every row attributed to it for the caller. `{ "deleted_count": n }`, idempotent.
 
 ### `GET /api/v1/echo/connectors`
-`{ "connectors": [], "supported_kinds": [...] }`. The connector registry is empty until E-3.2 ships a concrete connector.
+Every connector this install offers, with the caller's grant (S-3.2.1, [#336](https://github.com/khoks/VideoResearchPro/pull/336)). `connectors` (names) and `supported_kinds` are kept from v1.
+
+```json
+{ "connectors": ["github"], "supported_kinds": ["interest", "..."],
+  "items": [{ "name": "github", "display_name": "GitHub", "privacy_weight": "low",
+              "consent_disclosure": "…", "consent_version": "2026-10-19", "event_types": ["pushed_commit", "…"],
+              "configured": true, "connected": true,
+              "grant": { "account_label": "octocat", "granted_at": "…", "consent_version": "2026-10-19", "consent_outdated": false,
+                         "status": "idle", "last_sync_at": "…", "backfilled_at": "…", "last_error": null,
+                         "last_counts": { "added": 40, "updated": 2, "facts": 3 }, "events": 412 } }] }
+```
+
+### `POST /api/v1/echo/connectors/{name}/authorize`
+Body `{ "consent_version": "…" }`: the disclosure version the consent screen showed. Returns `{ "authorize_url": "…" }` for the browser to open. Records a single-use OAuth state bound to the caller (PKCE, ten minutes); the redirect URI is `APP_BASE_URL` + `/echo/connectors/{name}/callback`, never taken from the client. 404 unknown connector, 409 the disclosure changed (show it again), 503 the install has no OAuth client for it.
+
+### `POST /api/v1/echo/connectors/{name}/callback`
+Body `{ "code": "…", "state": "…" }`, posted by the frontend route the provider redirects to, with the caller's token. The state must be the caller's, for this connector, and unexpired; it is consumed. Stores the tokens Fernet-encrypted, records the grant, schedules syncs (`echo_sync`) and queues the backfill. Returns the connector item. Any failure is one generic 400, never which step failed.
+
+### `POST /api/v1/echo/connectors/{name}/sync`
+Sync now. `{ "dispatched": "queued" | "ran" | "off" | "queue_failed", "connector": {…} }`. 404 when not connected. The first sync after connecting is a backfill; later ones are incremental from the last success. A provider failure is recorded on the grant (`status: "error"`, `last_error`, "Reconnect to sync: …" when the grant no longer works), never raised.
+
+### `DELETE /api/v1/echo/connectors/{name}`
+Disconnect. Revokes at the provider (best effort) and deletes, in one request, the grant, the tokens, any pending state, every event the connector wrote, the facts derived from them, and its schedule. `{ "connector": "github", "events": 412, "facts": 3, "provider_revoked": true }`.
+
+### `GET /api/v1/echo/activity`
+The caller's activity timeline, newest first: `connector` (filter), `before` (ISO time; pass the previous page's `next_before`), `limit` (default 50, max 200). `{ "items": [{ "id", "connector", "event_type", "occurred_at", "payload", "text_content", "linked_document_id" }], "next_before": "…" | null }`.
 
 ### Shares inbox (S-3.7.1)
 Everything the user forwards to Echo, no approval step. Every share is `pending` until S-3.7.2's processing exists. **Context-only by default:** `author_is_tenant` is false unless the user says the words are theirs; such a share is never quoted and never enters a dataset or derived export.

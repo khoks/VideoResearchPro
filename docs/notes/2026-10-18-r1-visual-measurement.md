@@ -231,3 +231,37 @@ ON 136,623 chars (887 s; 3 starved sources re-mapped), OFF 101,375 chars (749 s;
 
 **Consequence, fixed by the pre-registration:** both remaining outcomes build S-1.18.2. If Gemini prefers ON, all four rules pass and R1's quality claim holds. Otherwise rule 3 alone fails, and the UI ships opt-in with no quality claim. Either way the UI is built now; only the copy waits for the vote.
 
+### Run 8: final (Gemini 3.1 Pro's vote, recorded 2026-10-19 ~21:00 PT)
+
+Gemini 3.1 Pro **preferred ON** (substance 9 vs 9; visual use 9 vs 5). Its claims were verified like every other judge's:
+- **Attribution, ON: confirmed 3 of 3.** The executive summary credits Data Analytics Lab with reading the coffee data "to a full analytical story", seven two-decimal weekday totals included. Those totals exist only in the `[VISUAL @ 18:24]` day_totals table; the presenter never speaks a figure. This is the original D-071 shape (a screen detail inside a speaker-credited sentence), and the three-strategy sweep had missed it.
+- **"22 March 2026" fabrications, both arms: refuted.** DeepLoop Circle's `published_at` is 2026-03-22, supplied to the composer in the chunk headers. The judges saw only the corpus statistics.
+
+| Rule | Final | Evidence |
+|---|---|---|
+| 1. Quote fidelity | pass | 0 failing in either arm |
+| 2. Attribution | **fail** | 1 confirmed ON error (found by Gemini, missed by the sweep) |
+| 3. Substance | pass | ON 2 (Sonnet 5, Gemini 3.1 Pro) / OFF 1 (GPT-5.5). Mean substance favours OFF, 8.33 vs 9.0: both ON preferences were 9-9 ties broken towards ON, and GPT-5.5 scored ON 7, OFF 9 |
+| 4. Fabrication | pass | 0 confirmed in either arm |
+
+**Consequence, as pre-registered:** rule 2 failed, so R1's quality claim stays unproven and the UI decision goes to the user. The UI (S-1.18.2, #329) had already shipped on the premise that rules 2 and 4 had passed, which was true until this late claim was verified. It is opt-in, makes no quality claim, and now discloses the measured risk in its copy.
+
+## Eight runs, summarised for the user's decision
+
+| Run | Describer / pipeline | ON attribution errors (confirmed) | Substance (ON / OFF / tie) | Confirmed fabrications ON vs OFF |
+|---|---|---|---|---|
+| 1 | gpt-5.5, old prompt | 2 | 3 / 0 / 0 (length-confounded) | 0 vs 5 |
+| 2 | Flash-Lite | 1 | 1 / 2 / 0 | n/a |
+| 3 | gpt-5.5 + attribution rule | 2 (direction reversed) | 3 / 0 / 0 | n/a |
+| 4 | Gemini 3.5 Flash | 2 | 2 / 1 / 0 | n/a |
+| 5 | gpt-5.5 + said/shown labels | **0** | 1 / 1 / 1 (confounded by the R5 regression) | 0 vs 2 |
+| 6 | + R5 fix | 2 (one cross-source) | 0 / 2 / 1 (map starved two channels) | 0 vs 4 |
+| 7 | source batching | invalid (quote gate) | exploratory only | n/a |
+| 8 | packed + re-map, quote scrub | 1 | 2 / 1 / 0 | 0 vs 0 |
+
+What the eight runs show:
+- **Fabrication** is never worse with annotations; where it differs, ON is better (0 vs 2 to 5).
+- **Visual use** is consistently judged higher.
+- **Substance preference** swings with whatever pipeline defect a run exposed.
+- **Attribution** settles at roughly one confirmed error per report: speaker-credited sentences that absorb a screen-only detail. Prompt rules and said/shown labels reduced it from two to about one; they did not remove it. A deterministic guard (`modality_check.py`) caught only 2 of 5 at its best setting, so nothing yet removes it.
+

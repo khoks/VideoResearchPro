@@ -2985,6 +2985,8 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Linked initiatives / PRs.** S-1.18.2 (E-1.18), D-067, D-081, D-085, D-079; R1 runs 1-8.
 
+*Addendum, 2026-10-19 (run 8 final).* Gemini 3.1 Pro's late vote passed rule 3, but its attribution claim was confirmed 3 of 3, so **rule 2 failed**. The UI had shipped on the premise that rules 2 and 4 passed. It stays opt-in with no quality claim, and its copy now discloses the measured risk. Keeping, hiding or flagging R1 is the user's decision, as the pre-registration requires (protocol note, "Eight runs, summarised").
+
 ## D-097 — Newsletter: featured section ships opt-in; the rest of an issue is listed from the database (2026-10-19)
 
 **Status:** accepted.

@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Echo: images, recordings and PDFs are read (S-3.7.2 part 2, 2026-10-19)
 
-PR [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__). Measurements: [docs/notes/2026-10-19-s372-share-ocr-measurement.md](docs/notes/2026-10-19-s372-share-ocr-measurement.md).
+PR [#331](https://github.com/khoks/VideoResearchPro/pull/331). Measurements: [docs/notes/2026-10-19-s372-share-ocr-measurement.md](docs/notes/2026-10-19-s372-share-ocr-measurement.md).
 
 - Shared images are read by on-device OCR (RapidOCR). A reading with too
   little text or low confidence goes to a vision model, the new

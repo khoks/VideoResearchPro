@@ -129,6 +129,8 @@ UseCase = Literal[
     # Author Studio book cohesion (S-6.1.3) — app/services/outputters/book_cohesion.py
     "author_book_outline",
     "author_book_prose",
+    # Author Studio slide deck (S-6.3.1) — app/services/outputters/deck.py
+    "author_deck_outline",
 ]
 
 # Use cases whose prompts carry IMAGES, not just text.
@@ -1462,6 +1464,37 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "knowledge, remarks on how the book was made), so cohesion stays "
             "opt-in (D-093). About $0.05-0.07 per book. No other model has "
             "been judged for the prose.",
+            related=("D-093",),
+        ),
+    ),
+    "author_deck_outline": UseCaseInfo(
+        default_route="primary",
+        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
+        summary=(
+            "Plan a slide deck (8 to 15 slides: section, bullets, quote) from "
+            "one or more research reports whose citations arrive as source "
+            "markers; every content slide cites markers. Strict JSON. The "
+            "renderer drops any slide citing nothing it was given."
+        ),
+        typical_input_tokens=30_000,
+        p95_input_tokens=70_000,
+        typical_output_tokens=5_000,
+        min_context_recommended=131_072,
+        rationale=(
+            "One call per deck that both selects and compresses (a report's "
+            "hundreds of points into fifty bullets) and must keep each bullet "
+            "tied to its source marker: the flagship tier with reasoning on, "
+            "the configuration that produced clean JSON for the book outline "
+            "(S-6.1.3). The completion cap is 20,000 because OpenAI counts "
+            "reasoning tokens against it. Not fail-soft: a deck has nothing to "
+            "show without its plan, so a failed call fails the output with "
+            "the provider's error."
+        ),
+        guidance=_unmeasured(
+            "Not judged. The renderer enforces the parts that matter most "
+            "regardless of model: a slide citing no source the reports gave "
+            "it is dropped and disclosed, and every source is linked from the "
+            "sources slide.",
             related=("D-093",),
         ),
     ),

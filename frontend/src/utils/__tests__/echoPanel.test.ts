@@ -27,6 +27,24 @@ describe('readiness in words', () => {
   it('says ready when the backend does', () => {
     expect(readinessLine(status({ ready: true, total_rows: 100 }))).toBe('Echo is ready.');
   });
+
+  it('names the unmet domains once the server sends them, not the v1 gates (S-3.5.1)', () => {
+    const domain = (key: string, label: string, met: boolean, progress: number) => ({
+      key, domain: 1, label, status: met ? 'met' : 'in_progress', met, progress, criteria: [], summary: '', missing: null, details: {},
+    });
+    const v2 = status({
+      total_rows: 10, distinct_sources: 1, has_personality_trait: false, progress: 0.5,
+      domains: [
+        domain('facts', 'Facts about you', false, 0.4),
+        domain('activity', 'What you do', true, 1),
+        domain('signals', 'How you think', true, 1),
+        domain('voice', 'How you write', false, 0.1),
+        domain('shares', 'What you share', true, 1),
+      ],
+    });
+    expect(missingParts(v2)).toEqual(['facts about you', 'writing of your own']);
+    expect(readinessLine(v2)).toBe('50% ready. Still needs more facts about you and writing of your own.');
+  });
 });
 
 describe('the speak-as-me gate', () => {

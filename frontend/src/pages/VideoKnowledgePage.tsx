@@ -5,6 +5,7 @@ import { useKnowledge, useExtractKnowledge } from '../hooks/useKnowledge';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { Badge, Button, Spinner, type BadgeTone } from '../components/primitives';
 import { NotesPanel } from '../components/notes';
+import { SuggestionCard } from '../components/qa/SuggestionCard';
 import { useColors, useShadows } from '../hooks/useTheme';
 import {
   fonts,
@@ -37,6 +38,7 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
   const { data: artifact, isLoading: isLoadingCached, isError } = useKnowledge(videoId);
   const extract = useExtractKnowledge(videoId);
   const knowledgeExtractionAvailable = useFeatureAvailable('knowledge_extraction');
+  const libraryQAAvailable = useFeatureAvailable('library_qa');
 
   useEffect(() => {
     if (isLoadingCached) return;
@@ -225,6 +227,17 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
           )}
 
           {displayed && <KnowledgeBody artifact={displayed} />}
+          {displayed && (
+            // S-8.4.2: no per-source Q&A exists, so a suggestion goes to
+            // the library Q&A page (filled, or asked on Shift-click).
+            <SuggestionCard
+              context={`document:${videoId}`}
+              enabled={libraryQAAvailable}
+              note="Asked across your library."
+              onFill={(q) => navigate('/library/qa', { state: { question: q } })}
+              onAsk={(q) => navigate('/library/qa', { state: { question: q, ask: true } })}
+            />
+          )}
           {displayed && (
             <div style={{ marginTop: space['5'] }}>
               <NotesPanel

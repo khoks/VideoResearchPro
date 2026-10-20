@@ -133,7 +133,7 @@ Sections (rendered conditionally on `job.status` and `job.job_type`):
 | **Your notes on this run** | always, once the job loads | Section-variant notes panel (M5 / S-8.5.1): the user's own Markdown on the run, newest first, with add / edit / delete. |
 | **Approved videos** | status ∈ {extracting, building_rag, ...completed} | Read-only list of approved videos with per-video transcript status. Each row has a "Knowledge" button that opens the `VideoKnowledgeDrawer`, and an inline notes control: a note on a document shows on every surface that shows the document (the shelf, every job containing it). |
 | **Report** | `job.report_path` is set | "Read report" (primary) → navigates to the reading room at `/reports/:jobId`; "Quick peek" (secondary) → the legacy HTML in an iframe modal, which also owns "Open in new tab". |
-| **Q&A panel** | status == `completed` | Question textarea, "Clarify first" optional toggle, language selector, "Ask" button. Below: list of past exchanges with citations rendered as chips that deep-link to `&t=` timestamps. Each exchange card carries the inline notes control (target `qa_exchange`). Under 640 px the composer moves below the thread and docks at the bottom of the screen while the panel is in view, above the keyboard (S-8.12.1). |
+| **Q&A panel** | status == `completed` | Question textarea, "Clarify first" optional toggle, language selector, "Ask" button. Below: list of past exchanges with citations rendered as chips that deep-link to `&t=` timestamps. Each exchange card carries the inline notes control (target `qa_exchange`). Under 640 px the composer moves below the thread and docks at the bottom of the screen while the panel is in view, above the keyboard (S-8.12.1). **You might ask** (S-8.4.2): under the composer, up to five suggested next questions from `GET /suggestions` (generated from the context, or the reader's own past questions, marked "You asked this before."). A click fills the composer; Shift-click asks at once, skipping the clarify step. Each use is logged through `POST /suggestions/feedback`. The card loads after the page, shows "Finding questions worth asking…" meanwhile, and renders nothing when there is nothing to suggest, when the request fails, or when the Q&A feature is down. Context `job:<id>`. |
 | **Knowledge drawer** | user clicks the Knowledge button on a video row | Slides in from the right; shows the structured `{topics, concepts, events, facts}` + Markdown report; "Generate" button if not yet extracted. |
 
 | State | What renders |
@@ -259,7 +259,7 @@ Layout: question textarea + clarify-first toggle + language selector at the top;
 
 | State | What renders |
 |-------|--------------|
-| Default | Textarea + button + history list. Under 640 px the composer docks at the bottom below the history, as on the job page (S-8.12.1). |
+| Default | Textarea + button + history list. Under 640 px the composer docks at the bottom below the history, as on the job page (S-8.12.1). **You might ask** (S-8.4.2): under the composer, up to five suggested next questions from `GET /suggestions` (generated from the context, or the reader's own past questions, marked "You asked this before."). A click fills the composer; Shift-click asks at once, skipping the clarify step. Each use is logged through `POST /suggestions/feedback`. The card loads after the page, shows "Finding questions worth asking…" meanwhile, and renders nothing when there is nothing to suggest, when the request fails, or when the Q&A feature is down. Context `library`. A question handed over from the knowledge drawer (route state) fills the composer, or is asked at once after a Shift-click. |
 | Clarifying | Inline "Interpretation: ..." plus three suggested clarifying questions; user picks one or types their own context. |
 | Asking | Streaming answer area appears; citations populate as the agent extracts references. |
 | Empty (no exchanges yet) | Composer and an empty thread. |
@@ -400,7 +400,7 @@ Tabs: **Structured** (topics / concepts / events / facts) and **Report** (Markdo
 |-------|--------------|
 | Not yet extracted | "No knowledge report yet for this video." + "Generate" button. |
 | Extracting | Progress indicator, disabled drawer-close (so user doesn't accidentally lose progress). |
-| Extracted | Two tabs populated; "Regenerate" button at the bottom (calls the endpoint with `?force=true`). Below the report: "Your notes on this report" (section-variant notes panel, target `knowledge_artifact`; the target only exists once extraction has run). |
+| Extracted | Two tabs populated; "Regenerate" button at the bottom (calls the endpoint with `?force=true`). Under the report, **You might ask** for this source (context `document:<id>`, S-8.4.2), noted "Asked across your library.": there is no per-source Q&A, so a click opens library Q&A with the question filled in and a Shift-click asks it there; hidden while library Q&A is down. Below the report: "Your notes on this report" (section-variant notes panel, target `knowledge_artifact`; the target only exists once extraction has run). |
 | LLM down | "Generate" disabled with a tooltip pointing at health status. |
 
 ---

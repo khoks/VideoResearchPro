@@ -529,6 +529,29 @@ Groups come back in that fixed order, only the requested ones, each possibly emp
 
 ---
 
+## Question suggestions
+
+### `GET /api/v1/suggestions?context=`
+"You might ask…" for one context (S-8.4.1, plan [m4-question-suggestions](plans/m4-question-suggestions.md)). `context` is `job:<id>` (a completed run of the caller's), `document:<id>` (a source the caller can see; the YouTube id or `document_id`) or `library`. Returns up to five questions from two pools: **generated** from a summary of the context (report headings, knowledge topics, source titles) by `qa_suggest_questions`, and **history**, the caller's own nearest past questions from `qa_library_global` (tenant-filtered; exchanges on this same context are skipped). Both are de-duplicated against what was already asked on the context and against each other, then diversified with maximal marginal relevance. Cached per (caller, context) for `SUGGESTIONS_CACHE_TTL_MIN` minutes or until the context changes (a new exchange, report or knowledge state). When the generator's probe failed or the call fails, the response carries history items only, `generated: false`, and is not cached. A context with no sources (an empty library) returns an empty list without a model call. Every response records a `suggestion_shown` audit event. 422 for a malformed context, 404 for one the caller cannot see, 400 for a run that has not finished.
+
+```json
+{
+  "context": "job:…",
+  "suggestions": [
+    { "question": "…", "rationale": "…", "source": "generated", "origin": null },
+    { "question": "…", "rationale": "You asked this in another run; ask it here too.", "source": "history",
+      "origin": { "source": "job", "exchange_id": "…", "job_id": "…" } }
+  ],
+  "cached": false,
+  "generated": true
+}
+```
+
+### `POST /api/v1/suggestions/feedback`
+A suggestion was used. Body `{context, question, action: "fill" | "ask", source?}` (unknown fields 422); 204. Records `suggestion_clicked` with the context, action, source and question, for your own contexts only (404 otherwise).
+
+---
+
 ## Channels
 
 All `/channels` endpoints require auth. The channel *record* is shared; subscription state (`subscribed`, `source_weight`, `last_synced_at`) is the caller's own ([D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)), and every count or listing covers only documents the caller can see ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)).

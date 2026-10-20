@@ -1744,24 +1744,33 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.3.3.4 `notifications(id, tenant_id, kind, title, body, href, read_at, created_at)` + `GET /api/v1/notifications`, bell in the sidebar chrome
 - [ ] T-8.3.3.5 Tests: unchanged answers do not notify; a run that fails leaves the previous result intact
 
-### E-8.4 🔵 Question suggestions (M4)
+### E-8.4 🟢 Question suggestions (M4)
 
 **Scope.** "You might ask…" suggestions on the job page, the library Q&A page and the knowledge page, generated from the user's own past questions (nearest neighbours in `qa_library_global`) plus the current context, deduplicated and cached. Directly answers the user's "learn from past questions" ask and is the first piece of Echo's *anticipation* capability.
 **Plan:** [`docs/plans/m4-question-suggestions.md`](plans/m4-question-suggestions.md)
 **Acceptance.** Opening a completed job shows three to five suggested questions within two seconds; clicking one fills the composer; suggestions never repeat a question already asked on that job; a user with no history still gets context-derived suggestions; a second open within the cache window makes no LLM call.
 
-#### S-8.4.1 🔵 Suggestion endpoint
-**PR:** TBD
-- [ ] T-8.4.1.1 `GET /api/v1/suggestions?context=job:<id>|document:<id>|library` → `{suggestions: [{question, rationale, source}]}`; tenant-scoped retrieval of past questions, context summary from report sections or knowledge topics
-- [ ] T-8.4.1.2 `qa_suggest_questions` use case in `USE_CASE_REGISTRY` (economy tier, structured JSON, low reasoning); diversity pass so the five differ
-- [ ] T-8.4.1.3 Cache per `(tenant, context)` for a configurable window; invalidated when a new exchange lands on that context
-- [ ] T-8.4.1.4 Tests with the LLM patched at the factory boundary; no-history and cache-hit paths
+#### S-8.4.1 🟢 Suggestion endpoint
+**PR:** [#306](https://github.com/khoks/VideoResearchPro/pull/306)
+**Shipped:** 2026-10-19 — PR [#306](https://github.com/khoks/VideoResearchPro/pull/306)
+- [x] T-8.4.1.1 `GET /api/v1/suggestions?context=job:<id>|document:<id>|library` → `{suggestions: [{question, rationale, source, origin}], cached, generated}`; tenant-scoped retrieval of past questions, context summary from report sections or knowledge topics (all three contexts, so S-8.4.2 is frontend-only)
+- [x] T-8.4.1.2 `qa_suggest_questions` use case in `USE_CASE_REGISTRY` (volume tier `gpt-5.6-luna`, structured JSON, reasoning OFF under a 900-token cap; guidance `unmeasured` with a smoke run recorded); dedupe against asked questions and each other, then MMR so the five differ
+- [x] T-8.4.1.3 Cache per `(tenant, context)` in `suggestion_cache` for `SUGGESTIONS_CACHE_TTL_MIN` (60); a fingerprint of the context's inputs invalidates it when a new exchange, report or knowledge state lands
+- [x] T-8.4.1.4 Tests with the LLM patched at the factory boundary; no-history, history merge, MMR, cache hit, invalidation, expiry, failed generator, down probe, metering, two-tenant isolation on a real in-memory Chroma, router and feedback
+- [x] T-8.4.1.5 `POST /suggestions/feedback` and `suggestion_shown` / `suggestion_clicked` audit events (pulled forward from T-8.4.2.2 so the card only calls it)
+- [ ] T-8.4.1.6 Grade suggestion quality (and the cheaper-tier choice) once click-through exists, then promote the guidance to `measured` with a decision entry
 
-#### S-8.4.2 🔵 Suggestion cards
-**PR:** TBD
-- [ ] T-8.4.2.1 Card below the composer on `JobDetailPage`, `LibraryQAPage`, `VideoKnowledgePage`; click fills, Shift-click asks immediately
-- [ ] T-8.4.2.2 Click-through recorded as an `audit_log` event so the feature can be measured
-- [ ] T-8.4.2.3 Hidden when `/health` reports the Q&A feature down
+Scope-changed 2026-10-19: (1) the prompt lives in `services/suggestion_service.py`, not `agents/prompts/` (that package belongs to E-7.1 and R5). (2) Not a `FEATURE_TO_USE_CASES` gate: like `temporal_scope_extract` it is fail-soft, so a failed probe turns the generator off and the reader's past questions still come back. (3) The acceptance's "within two seconds" holds for cached opens only: a first open measured 3.5 s median for the model call (three calls, 2026-10-19), so the card loads after the page and never blocks it. (4) Plan open questions at the recommended defaults: a one-hour cache window; suggestions on the Q&A pages only, not yet in Echo's anticipation cards.
+
+#### S-8.4.2 🟢 Suggestion cards
+**PR:** [#308](https://github.com/khoks/VideoResearchPro/pull/308)
+**Shipped:** 2026-10-19 — PR [#308](https://github.com/khoks/VideoResearchPro/pull/308)
+- [x] T-8.4.2.1 Card below the composer on `JobDetailPage`, `LibraryQAPage`, `VideoKnowledgePage`; click fills, Shift-click asks immediately
+- [x] T-8.4.2.2 Click-through recorded as an `audit_log` event so the feature can be measured (the card calls `POST /suggestions/feedback`, built in S-8.4.1)
+- [x] T-8.4.2.3 Hidden when `/health` reports the Q&A feature down
+- [ ] T-8.4.2.4 A per-source Q&A scope (retrieval filtered to one `document_id`), so the knowledge drawer's suggestions are asked about that source rather than across the library
+
+Scope-changed 2026-10-19: the knowledge drawer has no composer and the app has no per-source Q&A, so its card hands the question to library Q&A (filled, or asked on Shift-click) and says "Asked across your library." T-8.4.2.4 would make it exact.
 
 ### E-8.5 🟡 Notes — the user's own voice in the library (M5)
 

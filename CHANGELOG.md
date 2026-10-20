@@ -28,6 +28,33 @@ PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Found by the 
 - A source typed in Latin letters is quoted in Latin letters, even when it
   is mostly Hindi (T-1.16.2.11).
 
+### Added: "You might ask…" suggestion cards (2026-10-19)
+
+PR [#308](https://github.com/khoks/VideoResearchPro/pull/308). S-8.4.2, plan [m4-question-suggestions](docs/plans/m4-question-suggestions.md).
+
+- Under the composer on a run's page and on library Q&A, up to five suggested
+  next questions. A click puts one in the box; Shift-click asks it at once.
+- The knowledge drawer suggests questions about its source and hands them to
+  library Q&A.
+- The card loads after the page, disappears when there is nothing to suggest,
+  and is hidden while Q&A is down. Each use is logged for click-through.
+
+### Added: question suggestions endpoint (2026-10-19)
+
+PR [#306](https://github.com/khoks/VideoResearchPro/pull/306). S-8.4.1, plan [m4-question-suggestions](docs/plans/m4-question-suggestions.md).
+
+- `GET /api/v1/suggestions?context=job:<id>|document:<id>|library` returns up to
+  five next questions: generated from the context (report headings, knowledge
+  topics, source titles) and the reader's own nearest past questions,
+  de-duplicated against what was already asked and diversified.
+- New use case `qa_suggest_questions` (volume tier, reasoning off), metered
+  under the daily token keys. When it is unavailable the reader's past
+  questions still come back.
+- Cached per reader and context (`suggestion_cache`, `SUGGESTIONS_CACHE_TTL_MIN`,
+  default 60); a new question on the context recomputes it.
+- `POST /api/v1/suggestions/feedback` and the `suggestion_shown` /
+  `suggestion_clicked` audit events, so click-through is measurable from day one.
+
 ### Fixed: real code-mixed quotes dropped when the model appended a transliteration (2026-10-19)
 
 PR [#307](https://github.com/khoks/VideoResearchPro/pull/307). Follow-up to #294, found in the R1 run-7 replay.

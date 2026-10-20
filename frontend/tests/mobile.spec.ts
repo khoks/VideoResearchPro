@@ -28,8 +28,30 @@ const ROUTES: Record<string, string> = {
   'GET /api/v1/library/qa': 'job-qa',
 };
 
+// Calls pages gained after the baselines were recorded, answered with the
+// state the baselines show: an account past onboarding (no "Start here"
+// group), no suggestions, no channel links on citations.
 const EMPTY: Record<string, unknown> = {
   'GET /api/v1/notes': { items: [], total: 0, limit: 2000, offset: 0 },
+  'GET /api/v1/auth/me/onboarding': {
+    onboarded_at: '2026-10-19T00:00:00Z',
+    state: {
+      step: 3,
+      choices: { channels: [], first_job_id: null },
+      dismissed: false,
+      started_at: null,
+      completed_at: '2026-10-19T00:00:00Z',
+      dismissed_at: null,
+      checklist_dismissed: true,
+      checklist_dismissed_at: null,
+    },
+    started: true,
+    milestones: { jobs: 1, first_job: null, report_opened: true, questions: 1 },
+    should_onboard: false,
+  },
+  'GET /api/v1/library/videos': [],
+  'GET /api/v1/suggestions': { context: 'library', cached: false, generated: false, suggestions: [] },
+  'GET /api/v1/library/video-channels': {},
 };
 
 async function boot(page: Page, scheme: 'light' | 'dark'): Promise<string[]> {

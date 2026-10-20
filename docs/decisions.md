@@ -2087,6 +2087,20 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 Per the rule written before the run, the mechanism stays (it changes nothing until a user sets a weight), the result is recorded here, and the formula is reopened as **S-7.1.2** rather than tuned to pass: candidates are a per-channel share cap in the spirit of D-059's concentration cap, a softened transform (`distance / weight^α`, α < 1), and a true last-resort rule for low weights. Each is to be compared on the same questions and weights. E-7.2 (banding) stays deferred; this measurement is the evidence it was waiting for, and it says concentration, not ordering, is the problem to solve first.
 
+**Re-judged 2026-10-19 with dated excerpts (PR [#330](https://github.com/khoks/VideoResearchPro/pull/330)).** The judging above showed judges and verifiers excerpts without the publication dates the answers cite (found by T-5.10.2.7), so correctly cited dates read as unsupported. The same answers were re-judged under the same four clauses, unchanged, with dates visible. Both readings are kept:
+
+| Clause | Undated (as recorded) | Dated re-judge |
+|---|---|---|
+| 1. Mechanism (promoted share up, demoted down, 7+ of 10 job questions) | met | met (retrieval, unchanged) |
+| 2. No weighted chunk over the raw threshold | met | met (retrieval, unchanged) |
+| 3. Relevance: mean ON ≥ OFF − 0.5 **and** ≤ 60% of non-tie verdicts favour OFF | **not met** — 8.53 vs 8.58; OFF 60.7% | met — 8.73 vs 8.82; OFF 59.3% |
+| 3, two unchanged judges only (GPT-5.5, Sonnet 5) | met — 8.28 vs 8.45; OFF 57.5% | met — 8.40 vs 8.47; OFF 55.0% |
+| 4. Confirmed unsupported claims ON ≤ OFF + 2 | **not met** — 110 vs 95 | met — 11 vs 26 |
+
+Verdicts ON / OFF / tie: undated 22 / 34 / 4, dated 24 / 35 / 1. By surface (dated): job 16 / 14 / 0, library 8 / 21 / 1; mean faithfulness ON / OFF undated 7.07 / 7.23, dated 8.82 / 8.57.
+
+**Outcome, per the rule fixed before the re-judge:** the dated reading meets clauses 3 and 4, so **S-7.1.2 closes as "artifact, no rework"** and weighting stays as shipped. The two clauses moved for different reasons, and the difference matters. **Clause 4's failure was the artifact:** with dates visible, weighted answers carry fewer confirmed unsupported claims than unweighted ones (11 vs 26, against 110 vs 95). **Clause 3 crossed its line by less than a point** (60.7% → 59.3% of non-tie verdicts favouring OFF; limit 60%), which is within run-to-run noise. The two judges common to both readings (GPT-5.5, Claude Sonnet 5) meet clause 3 in both, at 57.5% and 55.0%; the recorded failure came from Gemini 3.1 Pro, 69% of whose non-tie verdicts favoured OFF. **Library Q&A's preference for unweighted answers is not an artifact:** it held with dates visible (OFF 21 to ON 8, against 21 to 7 undated), while job Q&A stays even. So strong weights do narrow library answers in a way judges dislike; it is a real cost of the setting, recorded rather than reworked, and the channel-page copy already warns that raising a weight narrows answers. The weight-0 finding also stands, because it comes from retrieval: no demoted chunk reached any weighted answer.
+
 
 ## D-069 — Shipped-backend surfaces: ingest as a Library tab, Author Studio as one page, readiness as a gate mean (2026-10-19)
 

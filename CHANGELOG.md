@@ -10,6 +10,10 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### E-7.1 re-judged with dated excerpts (2026-10-19)
+
+PR [#330](https://github.com/khoks/VideoResearchPro/pull/330). The E-7.1 answers were re-judged under the same four D-068 clauses with each source's publication date visible to judges and verifiers. Relevance clause: undated **not met**, dated met. Faithfulness clause: undated **not met**, dated met. S-7.1.2 closes as an artifact; weighting stays as shipped. Both readings are recorded side by side in D-068.
+
 ### Added: what was on screen, in the app (2026-10-19)
 
 S-1.18.2 (R1), [D-096](docs/decisions.md). Built after R1 run 8 passed quote fidelity, attribution and fabrication.

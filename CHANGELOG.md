@@ -10,6 +10,23 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: the GitHub connector (2026-10-19)
+
+[S-3.2.4](docs/initiatives.md#s-324--github-connector), PR [#342](https://github.com/khoks/VideoResearchPro/pull/342).
+
+- Connect GitHub from the Echo page and Echo records your public activity:
+  pushes and the commits you wrote, pull requests, reviews, issues, comments,
+  releases, repositories you create, star or fork. What you wrote (commit
+  messages, PR and issue text, comments) is kept as your own words; nothing
+  private and no code is read.
+- The languages of your own repositories become skills Echo thinks you have,
+  marked as guesses (for example "Python (GitHub)").
+- It syncs nightly; the first sync also reads your commits from your own
+  repositories, because GitHub keeps only 30 days of activity.
+- Setup: create a GitHub OAuth app (or reuse the sign-in one with the
+  frontend origin as its callback URL) and set
+  `OAUTH_GITHUB_CONNECTOR_CLIENT_ID` / `_SECRET`.
+
 ### Added: connect services to Echo (2026-10-19)
 
 [S-3.2.1](docs/initiatives.md#s-321--connector-runtime-and-activity_events), PRs [#332](https://github.com/khoks/VideoResearchPro/pull/332) and [#336](https://github.com/khoks/VideoResearchPro/pull/336).

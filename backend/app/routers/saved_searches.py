@@ -11,6 +11,7 @@ from app.dependencies import get_db
 from app.models.user import User
 from app.schemas.saved_search import (
     RunNowResponse,
+    SavedSearchRunResponse,
     SavedSearchCreate,
     SavedSearchList,
     SavedSearchResponse,
@@ -139,3 +140,14 @@ def run_saved_search_now(
 
     task_routing_service.dispatch_for_user(run_saved_search, current_user, ss.id, trigger="manual")
     return RunNowResponse(status="queued")
+
+
+@router.get("/{saved_search_id}/runs", response_model=list[SavedSearchRunResponse])
+def list_saved_search_runs(
+    saved_search_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(SAVED_SEARCHES),
+):
+    """The last 20 runs, newest first: what each did, the change signals, the diff."""
+    ss = _own_or_404(db, current_user, saved_search_id)
+    return [SavedSearchRunResponse(**saved_search_service.run_to_dict(r)) for r in saved_search_service.runs_for(db, ss)]

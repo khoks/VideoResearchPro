@@ -40,3 +40,17 @@ Only aggregates: the counts, percentiles, chosen thresholds and rates above. No 
 - **Re-asks are a proxy.** A same-question pair asked minutes apart is the closest thing in the history to "a saved search re-run over an unchanged library", but people re-ask when the first answer disappointed, so U may be noisier than real saved-search runs. That bias makes the thresholds conservative: they notify less.
 - **One embedder and one language mix.** The thresholds are for MiniLM and this library's mostly English answers. A different embedder, or a corpus answered mostly in another language, needs this protocol re-run.
 - **This only calibrates "unchanged".** Whether a crossed threshold means a change worth a notification is the judge's call where the signals disagree, and the click data's (`notifications.read_at`) after that.
+
+---
+
+## Results (2026-10-19, appended after the rule was merged as #323)
+
+Run with `backend/scripts/calibrate_saved_search_thresholds.py` on a copy of the dev database. Aggregates are in [`2026-10-19-saved-search-change-thresholds-results.json`](2026-10-19-saved-search-change-thresholds-results.json).
+
+| Measure | Value |
+|---|---|
+| Q&A exchanges in the history (library and job) | 4 |
+| Re-ask pairs over an unchanged corpus, \|U\| | 2 (job 2, library 0) |
+| Negative-control pairs, \|N\| | 2 |
+
+**Decision (rule 1): calibration pending.** |U| is below 20, so no percentile was computed. The detector ships with the priors **J < 0.50** and **D > 0.15** (`SAVED_SEARCH_JACCARD_THRESHOLD`, `SAVED_SEARCH_EMBEDDING_THRESHOLD`). The protocol is re-run unchanged once the history holds 20 re-ask pairs; saved-search runs themselves produce such pairs, filed as T-8.3.3.6.

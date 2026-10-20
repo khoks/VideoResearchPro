@@ -75,6 +75,24 @@ def _no_chroma():
         yield up
 
 
+def cheap_encode(texts):
+    """Bag of words hashed into 64 dims, so no test loads the sentence-transformer."""
+    import hashlib
+
+    out = []
+    for t in texts:
+        v = [0.0] * 64
+        for w in t.lower().split():
+            v[int(hashlib.md5(w.encode()).hexdigest(), 16) % 64] += 1.0
+        out.append(v)
+    return out
+
+
+@pytest.fixture(autouse=True)
+def _cheap_embedder(monkeypatch):
+    monkeypatch.setattr(saved_search_service, "_encode", cheap_encode)
+
+
 # ---------------------------------------------------------------- gate + CRUD
 
 
@@ -230,7 +248,7 @@ def test_over_quota_skips_before_spending_and_keeps_the_baseline(db, pro):
     baseline = (ss.last_exchange_id, ss.last_answer_hash)
     agent = FakeAgent(answer="different")
     with patch("app.services.quota_metering_service.check_quota", return_value=(False, None)):
-        out = saved_search_service.execute(db, ss.id, agent=agent)
+        out = saved_search_service.execute(db, ss.id, trigger="manual", agent=agent)  # manual: past the gate
     assert out["status"] == "quota_exceeded" and agent.calls == []
     db.refresh(ss)
     assert ss.last_status == "quota_exceeded" and (ss.last_exchange_id, ss.last_answer_hash) == baseline
@@ -241,7 +259,7 @@ def test_a_failed_run_is_recorded_and_leaves_the_previous_result(db, pro):
     saved_search_service.execute(db, ss.id, agent=FakeAgent())
     db.refresh(ss)
     baseline = ss.last_exchange_id
-    out = saved_search_service.execute(db, ss.id, agent=FakeAgent(fail=True))
+    out = saved_search_service.execute(db, ss.id, trigger="manual", agent=FakeAgent(fail=True))
     assert out["status"] == "failed"
     db.refresh(ss)
     assert ss.last_status == "failed" and "provider down" in ss.last_error

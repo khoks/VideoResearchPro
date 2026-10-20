@@ -299,6 +299,23 @@ class Settings(BaseSettings):
     # question 2). 0 = never reuse.
     SUGGESTIONS_CACHE_TTL_MIN: int = 60
 
+    # S-8.3.3 saved-search change detection. Pre-registered in
+    # docs/notes/2026-10-19-saved-search-change-thresholds.md (#323): the
+    # history held 2 re-ask pairs, under the protocol's minimum of 20, so
+    # these are its priors until the protocol is re-run (T-8.3.3.6).
+    # A run is "changed" when the cited-set Jaccard is BELOW the first or
+    # the answer-embedding cosine distance is ABOVE the second; when only
+    # one says so, the saved_search_judge decides.
+    SAVED_SEARCH_JACCARD_THRESHOLD: float = 0.50
+    SAVED_SEARCH_EMBEDDING_THRESHOLD: float = 0.15
+    # Stage 1: skip a scheduled run whose scope gained no newly visible
+    # document since the last good run (cost follows ingest). Run now
+    # always asks.
+    SAVED_SEARCH_GATE_ENABLED: bool = True
+
+    # Links in emails (saved-search alerts) point here.
+    APP_BASE_URL: str = "http://localhost:5173"
+
     # S-1.14.6: persist the report pipeline's map/reduce intermediates
     # (per-batch extraction JSON, the reduced dataset) to
     # `job_report_intermediates`, so stage quality can be audited after a

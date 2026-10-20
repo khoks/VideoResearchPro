@@ -131,6 +131,8 @@ UseCase = Literal[
     "author_book_prose",
     # Author Studio slide deck (S-6.3.1) — app/services/outputters/deck.py
     "author_deck_outline",
+    # Saved-search change judge (M3 / S-8.3.3) — app/services/saved_search_change_service.py
+    "saved_search_judge",
 ]
 
 # Use cases whose prompts carry IMAGES, not just text.
@@ -1219,6 +1221,37 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
                 ),
             ),
             related_decisions=("D-071", "D-075"),
+        ),
+    ),
+    # --- Saved-search change judge (M3 / S-8.3.3) ------------------------
+    "saved_search_judge": UseCaseInfo(
+        default_route="fast",
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
+        summary=(
+            "Did a saved search's answer change in substance? Called only when "
+            "the two deterministic signals disagree (cited-set Jaccard vs "
+            "answer-embedding distance). Reads the previous and the new answer "
+            "and the cited source titles; returns strict JSON {changed, "
+            "what_changed}, and what_changed becomes the notification text."
+        ),
+        typical_input_tokens=2_500,
+        p95_input_tokens=3_800,
+        typical_output_tokens=60,
+        min_context_recommended=8_192,
+        rationale=(
+            "Runs on a fraction of scheduled re-asks (the gate skips runs with "
+            "nothing new; agreeing signals skip the judge), with a one-sentence "
+            "structured output: the volume tier with reasoning OFF (D-057). Off "
+            "is also a correctness rule under the 400-token cap (the D-052 "
+            "trap). Fail-soft: a failed call lets the citation signal decide, "
+            "so it is not a feature gate in llm_smoke."
+        ),
+        guidance=_unmeasured(
+            "The judge has not been graded. Its decisions are stored on each "
+            "saved_search_runs row (decided_by = judged) and its notifications' "
+            "read state is recorded, which is the data a grading would use. "
+            "Reasoning must stay off: the call caps output at 400 tokens.",
+            related=("D-057",),
         ),
     ),
     # --- Question suggestions (M4 / S-8.4.1) ----------------------------

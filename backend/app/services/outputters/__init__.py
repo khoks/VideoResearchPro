@@ -6,9 +6,11 @@ lifespan, tests, scripts) import this module to ensure the registry
 is populated before resolving an outputter by kind.
 """
 from app.services.outputters.book_markdown import BookMarkdownOutputter
+from app.services.outputters.deck import DeckOutputter
 from app.services.output_service import register_outputter
 
 # Register on module import. Idempotent.
 register_outputter(BookMarkdownOutputter())
+register_outputter(DeckOutputter())  # S-6.3.1
 
-__all__ = ["BookMarkdownOutputter"]
+__all__ = ["BookMarkdownOutputter", "DeckOutputter"]

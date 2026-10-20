@@ -573,9 +573,11 @@ function CreateOutputModal({
   // S-6.1.3: model-written framing around the unchanged chapters, priced
   // before it runs.
   const [cohesion, setCohesion] = useState<CohesionLevel>(DEFAULT_COHESION);
+  const isBook = kind === 'book';
+  // A deck always calls a model (S-6.3.1); a book only with framing.
   const estimate = useOutputEstimate(
-    { kind, title: title.trim() || 'Untitled', source_ids: [...selected], parameters: { cohesion } },
-    kind === 'book' && cohesion !== 'none' && selected.size > 0,
+    { kind, title: title.trim() || 'Untitled', source_ids: [...selected], parameters: isBook ? { cohesion } : {} },
+    selected.size > 0 && (isBook ? cohesion !== 'none' : kind === 'deck'),
   );
   const toggleFormat = (format: string, on: boolean) => {
     const next = new Set(chosen);
@@ -608,12 +610,14 @@ function CreateOutputModal({
         kind,
         title: title.trim(),
         source_ids: [...selected],
-        parameters: {
-          include_qa: includeQa,
-          include_toc: includeToc,
-          ...(kind === 'book' ? { cohesion } : {}),
-          ...(formatsParameter(formatOptions, chosen) ? { formats: formatsParameter(formatOptions, chosen) } : {}),
-        },
+        parameters: isBook
+          ? {
+              include_qa: includeQa,
+              include_toc: includeToc,
+              cohesion,
+              ...(formatsParameter(formatOptions, chosen) ? { formats: formatsParameter(formatOptions, chosen) } : {}),
+            }
+          : {},
       },
       {
         onSuccess: (output) => {
@@ -651,8 +655,10 @@ function CreateOutputModal({
       <div style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}>
         <p style={{ margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal }}>
           {meta.description} Generation runs in the background and shows its progress in the
-          list below. Each chapter is its run's report exactly as it is; a model only writes the
-          framing around the chapters, and only if you choose it below.
+          list below.{' '}
+          {isBook
+            ? "Each chapter is its run's report exactly as it is; a model only writes the framing around the chapters, and only if you choose it below."
+            : 'A model plans the slides from the reports. A slide that cites no source is left out, and every slide lists its sources in its notes.'}
         </p>
 
         <FormField label="Title" required>
@@ -669,9 +675,15 @@ function CreateOutputModal({
         </FormField>
 
         <FormField
-          label="Chapters"
+          label={isBook ? 'Chapters' : 'Runs'}
           required
-          helperText={`${selected.size} selected. One chapter per run: its report, and its Q&A if you keep that on.`}
+          helperText={
+            isBook
+              ? `${selected.size} selected. One chapter per run: its report, and its Q&A if you keep that on.`
+              : `${selected.size} selected. The deck draws on every report you pick.${
+                  selected.size > 0 && estimateLabel(estimate.data) ? ` ${estimateLabel(estimate.data)}.` : ''
+                }`
+          }
         >
           {(id) => (
             <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
@@ -708,12 +720,14 @@ function CreateOutputModal({
           )}
         </FormField>
 
-        <div style={{ display: 'flex', gap: space['5'], flexWrap: 'wrap' }}>
-          <CheckboxRow checked={includeQa} onChange={setIncludeQa} label="Include each run's Q&A" />
-          <CheckboxRow checked={includeToc} onChange={setIncludeToc} label="Table of contents" />
-        </div>
+        {isBook && (
+          <div style={{ display: 'flex', gap: space['5'], flexWrap: 'wrap' }}>
+            <CheckboxRow checked={includeQa} onChange={setIncludeQa} label="Include each run's Q&A" />
+            <CheckboxRow checked={includeToc} onChange={setIncludeToc} label="Table of contents" />
+          </div>
+        )}
 
-        {kind === 'book' && (
+        {isBook && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
             <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, fontWeight: fontWeight.medium, color: c.textPrimary }}>
               Framing

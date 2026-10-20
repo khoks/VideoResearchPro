@@ -1,7 +1,7 @@
 """drop the legacy global subscription columns on channels (S-5.10.3)
 
 Revision ID: 1a6e09517250
-Revises: cd4c5467506d
+Revises: 5d2e8b1f4a60
 Create Date: 2026-10-19
 
 D-065 moved per-user channel state — `subscribed`, `source_weight`,
@@ -26,7 +26,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "1a6e09517250"
-down_revision = "cd4c5467506d"  # re-parented onto S-8.1.4 (merged first)
+down_revision = "5d2e8b1f4a60"  # re-parented onto S-8.3.2 saved searches (merged first)
 branch_labels = None
 depends_on = None
 

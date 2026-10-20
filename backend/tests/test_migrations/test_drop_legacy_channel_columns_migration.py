@@ -12,7 +12,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
-PREVIOUS = "cd4c5467506d"  # S-8.1.4 scope_json, merged first
+PREVIOUS = "5d2e8b1f4a60"  # S-8.3.2 saved searches, merged first
 THIS = "1a6e09517250"
 LEGACY = {"subscribed", "last_synced_at", "source_weight"}
 

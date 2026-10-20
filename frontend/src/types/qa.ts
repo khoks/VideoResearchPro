@@ -107,6 +107,8 @@ export interface LibraryQAExchange {
   question: string;
   answer: string;
   references: Reference[];
+  /** The backend has always sent it; typed for S-8.3.2's pin. */
+  answer_language?: string;
   created_at: string;
   scope?: QAScope | null;
 }

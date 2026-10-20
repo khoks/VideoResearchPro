@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   useAddShareToLibrary,
   useDeleteShare,
+  useImports,
   useReprocessShare,
   useShares,
   useUpdateShare,
@@ -23,6 +24,7 @@ import {
   shareReadingLabel,
 } from '../utils/echoShares';
 import { detailFromErrorBody, type HttpErrorLike } from '../utils/ingestResults';
+import { importedProvenance, importerLabel } from '../utils/echoImports';
 
 const PAGE = 100;
 
@@ -52,8 +54,17 @@ export function EchoInboxPage() {
   const [state, setState] = useState<ShareProcessingState | ''>('');
   const [limit, setLimit] = useState(PAGE);
   const [deleting, setDeleting] = useState<Share | null>(null);
+  // S-3.7.5: hand-picked shares by default; imports on request.
+  const [params, setParams] = useSearchParams();
+  const importId = params.get('import') || undefined;
+  const [origin, setOrigin] = useState<'direct' | 'import' | 'all'>('direct');
+  const imports = useImports(allowed && !!importId);
+  const viewing = importId ? imports.data?.items.find((i) => i.id === importId) : undefined;
 
-  const shares = useShares({ q: q || undefined, state: state || undefined, limit }, allowed);
+  const shares = useShares(
+    { q: q || undefined, state: state || undefined, limit, origin, import_id: importId },
+    allowed,
+  );
   const del = useDeleteShare();
   const items = shares.data?.items ?? [];
   const total = shares.data?.total ?? 0;
@@ -86,8 +97,11 @@ export function EchoInboxPage() {
           </p>
         </div>
         {allowed && !forbidden && (
-          <div style={{ width: 200 }}>
+          <div style={{ width: 200, display: 'flex', flexDirection: 'column', gap: space['2'], alignItems: 'stretch' }}>
             <QuickShare />
+            <Link to="/echo/import" style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.accent, textAlign: 'center' }}>
+              Import a WhatsApp chat or Keep notes →
+            </Link>
           </div>
         )}
       </header>
@@ -100,6 +114,19 @@ export function EchoInboxPage() {
         />
       ) : (
         <>
+          {importId && (
+            <Card>
+              <div style={{ display: 'flex', gap: space['3'], flexWrap: 'wrap', alignItems: 'center', fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textSecondary }}>
+                <span>
+                  Showing one import{viewing ? `: ${importerLabel(viewing.importer)}, ${viewing.filename}` : ''}, oldest first.
+                </span>
+                <Button size="sm" variant="tertiary" onClick={() => { params.delete('import'); setParams(params); }}>
+                  Back to the inbox
+                </Button>
+                <Link to="/echo/import" style={{ color: c.accent }}>All imports →</Link>
+              </div>
+            </Card>
+          )}
           <Card>
             <div style={{ display: 'flex', gap: space['3'], flexWrap: 'wrap', alignItems: 'center' }}>
               <div style={{ flex: '1 1 260px' }}>
@@ -120,6 +147,15 @@ export function EchoInboxPage() {
                   <option value="skipped">Skipped</option>
                 </Select>
               </div>
+              {!importId && (
+                <div style={{ width: 220 }}>
+                  <Select value={origin} onChange={(e) => setOrigin(e.target.value as 'direct' | 'import' | 'all')} aria-label="Filter by origin">
+                    <option value="direct">Shared one at a time</option>
+                    <option value="import">From imports</option>
+                    <option value="all">Everything</option>
+                  </Select>
+                </div>
+              )}
               <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textMuted }}>
                 {shares.data ? `${total} ${total === 1 ? 'share' : 'shares'}` : ''}
               </span>
@@ -230,9 +266,15 @@ function ShareCard({ share, onDelete }: { share: Share; onDelete: () => void }) 
           <Badge tone={share.processing_state === 'failed' ? 'error' : share.processing_state === 'processed' ? 'success' : 'warn'} size="sm">
             {processingStateLabel(share.processing_state)}
           </Badge>
-          <span style={{ ...metaStyle, marginLeft: 'auto' }}>Shared {formatDate(share.received_at)}</span>
+          <span style={{ ...metaStyle, marginLeft: 'auto' }}>{share.import_id ? 'Imported' : 'Shared'} {formatDate(share.received_at)}</span>
         </div>
 
+        {importedProvenance(share.imported) && (
+          <span style={metaStyle}>
+            {importedProvenance(share.imported)}
+            {share.occurred_at ? ` · ${formatDate(share.occurred_at)}` : ''}
+          </span>
+        )}
         {share.processing?.title && (
           <div style={{ fontFamily: fonts.display, fontSize: fontSize.md, fontWeight: fontWeight.semibold, color: c.textPrimary }}>
             {share.processing.title}

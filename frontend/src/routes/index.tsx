@@ -25,6 +25,7 @@ import { SubscriptionPage } from '../pages/SubscriptionPage';
 import { AIModelsPage } from '../pages/AIModelsPage';
 import { EchoPage } from '../pages/EchoPage';
 import { EchoInboxPage } from '../pages/EchoInboxPage';
+import { EchoImportPage } from '../pages/EchoImportPage';
 import { AuthorPage } from '../pages/AuthorPage';
 import { WelcomePage } from '../pages/WelcomePage';
 import { SavedSearchesPage } from '../pages/SavedSearchesPage';
@@ -109,6 +110,7 @@ export const router = createBrowserRouter([
           { path: 'author', element: <AuthorPage /> },
           { path: 'echo', element: <EchoPage /> },
           { path: 'echo/inbox', element: <EchoInboxPage /> },
+          { path: 'echo/import', element: <EchoImportPage /> },
           { path: 'account/subscription', element: <SubscriptionPage /> },
           { path: 'account/ai-models', element: <AIModelsPage /> },
         ],

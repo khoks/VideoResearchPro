@@ -316,6 +316,8 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `ECHO_SHARE_MAX_BYTES` / `ECHO_SHARE_TEXT_MAX_CHARS` | No | `26214400` / `50000` | Caps on one quick-share file (25 MB) and one text share |
 | `ECHO_SHARE_PROCESSING` | No | `celery` | How shares are processed after intake: `celery` (the `echo.process_share` task), `inline` (in the request, single-process dev) or `off` (the test suite) |
 | `ECHO_SHARE_EMBED_MAX_CHARS` | No | `2000` | Text embedded per share in `shares_global`: annotation, title and the opening of the extracted text |
+| `ECHO_IMPORT_MAX_BYTES` / `ECHO_IMPORT_MAX_UNCOMPRESSED_BYTES` | No | `200 MB` / `1 GB` | Caps on one export upload (S-3.7.5) and on what a zip may unpack to (a zip-bomb guard). Parsing streams, so memory stays flat |
+| `ECHO_IMPORT_TURN_GAP_MIN` / `ECHO_IMPORT_TURN_MAX_CHARS` | No | `10` / `2000` | A WhatsApp chat is stored as turns: consecutive messages from one sender at most this many minutes apart, up to this many characters |
 | `ECHO_REMOTE_MEDIA` | No | `True` | Whether a shared image (vision fallback) or recording (Whisper) may go to a remote provider. Off, or a local-only tenant: images use on-device OCR only, recordings are skipped with a note |
 | `ECHO_OCR_MIN_CHARS` / `ECHO_OCR_MIN_CONFIDENCE` | No | `20` / `0.90` | When an on-device OCR reading is kept rather than sent to the vision fallback (measured: English 0.978+, Hindi and mixed 0.87 or less) |
 | `ECHO_OCR_THREADS` | No | `4` | ONNX threads for on-device OCR; the all-cores default was four times slower on a 32-thread machine |

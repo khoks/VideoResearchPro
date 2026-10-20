@@ -34,6 +34,7 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/author` | `AuthorPage` | protected, Pro+ | Author Studio: bind finished runs into a book; other kinds shown as coming later |
 | `/echo` | `EchoPage` | protected, Studio | Echo: personal-context store, readiness meter, sources and connectors, export and delete |
 | `/echo/inbox` | `EchoInboxPage` | protected, Studio | Echo's shares inbox: everything the user forwarded, with state and authorship |
+| `/echo/import` | `EchoImportPage` | protected, Studio | Import a WhatsApp chat or Google Keep notes: preview, choose whose words are whose, import, undo |
 | `/account/subscription` | `SubscriptionPage` | protected | Tier, upgrade / downgrade (demo billing) |
 | `/account/ai-models` | `AIModelsPage` | protected | Per-use-case LLM overrides and BYOK keys |
 | `*` | (redirect → `/`) | — | 404 → home |
@@ -380,11 +381,24 @@ Pure logic (gates, grouping, expiry, label validation) lives in `frontend/src/ut
 |-------|--------------|
 | Default | Search (debounced; text, links, file names, annotations) and a state filter; then one card per share: content-type badge, **Your words** or **Context only** (tooltip explains the default), processing state ("Waiting for processing" until S-3.7.2 exists), shared date; the link, the text (scrollable block, gold rule for the user's own words) or the file name, size and **Download**; the "why" annotation. Actions: **Add why** / **Edit why** inline, **These are my words** / **Not my words**, **Delete** (confirm: the share, its file and anything derived are removed). |
 | Processing (S-3.7.2) | A processed link shows its resolved title and author above the URL, and the opening of the extracted text below it. A processed file says how it was read: "Text read by local OCR", "Text read by a vision model", "Transcribed by Whisper · 0:13 · Hindi", "Text from 12 of 14 pages". A note, when there is one, follows in muted text (low confidence, text cut short, nothing found). A failed share shows the reason in red with **Retry**; a skipped share shows why it was not read, also with **Retry**. An eligible link shows **Add to library**; once added, **In your library →**. |
+| Imports (S-3.7.5) | The header links to the import page. A third filter picks **Shared one at a time** (the default), **From imports** or **Everything**. `?import=<id>` shows one import oldest first, with a banner and **Back to the inbox**. An imported card shows where it came from ("WhatsApp chat with Asha · Asha" or "Keep · Tariff thoughts · Essays") with the time it was written, and says "Imported" rather than "Shared". |
 | More than 100 | "Show N more" grows the page by 100. |
 | Empty | "Nothing shared yet." pointing at Add to Echo; with filters, "Nothing matches." |
 | Loading / error | Skeleton rows; editorial error with Retry. |
 
 Pure logic (quick-share parsing, labels, sizes, footprint sums) lives in `frontend/src/utils/echoShares.ts`, unit-tested.
+
+### `EchoImportPage` — `/echo/import` (Studio)
+**Purpose.** Bring an export from another service into Echo (S-3.7.5). Same Studio lock as `EchoPage`. Linked from the Echo page and the inbox.
+
+| State | What renders |
+|-------|--------------|
+| Pick a file | A file picker (`.txt`, `.zip`, `.json`). Choosing a file runs the preview at once; nothing is stored. |
+| WhatsApp preview | The detected kind, then "with Asha: 6 messages from … to …, stored as 4 turns". **Which of these is you?** lists each participant with a message count, plus "None of them: keep it all as context". **Keep only my side of the chat** is enabled once a participant is chosen and explains what happens to the others' messages either way. When no date decides day-first or month-first, a select re-reads the dates. A line names the browser's time zone, used for the phone's local times. **Import** stays disabled until a participant is chosen. |
+| Keep preview | Note counts and date span, warnings for other Takeout products in the archive, **These notes are my own words** (on by default) and **Include notes in the trash**. |
+| Your imports | One card per import: importer, status (Importing, Indexing with progress, Imported, Needs a retry, Undoing), filename, date, and a line such as "4 turns: 2 in your words, 2 context only · 4 of the other side's messages not stored". **See what it stored →** opens the inbox on that import. **Retry indexing** appears after a failure. **Undo import** asks first, then removes everything the import stored. The list polls while an import is indexing. |
+
+Pure logic (labels, count lines, provenance, the browser time zone) lives in `frontend/src/utils/echoImports.ts`, unit-tested.
 
 ### `KnowledgeReaderPage` — `/knowledge/:videoId`
 **Purpose.** A source's knowledge report in the reading room (S-8.8.3). `GET /videos/{id}/knowledge` (YouTube id or `document_id`, resolved through the tenant's visibility grants) supplies the Markdown and, since S-8.8.3, the source's title, channel, kind, URL and dates. The Markdown's leading `# Title` becomes the page title and leaves the body; "From <source title> · <channel> · Extracted <date>" sits under it; tiles count topics, concepts, events and facts; toolbar: Back, Open the source, Print or save as PDF.

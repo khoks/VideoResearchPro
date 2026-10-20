@@ -49,6 +49,9 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
   pdf: 'PDF',
   archive: 'Archive',
   text_file: 'Text file',
+  whatsapp_message: 'WhatsApp message',
+  whatsapp_thread: 'WhatsApp thread',
+  keep_note: 'Keep note',
   file: 'File',
 };
 

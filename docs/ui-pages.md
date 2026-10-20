@@ -27,6 +27,7 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/shelves` | `ShelvesPage` | protected (writes Pro+) | The reader's shelves: create, edit, delete |
 | `/shelves/:shelfId` | `ShelfPage` | protected (writes Pro+) | One shelf: its runs and the union of their sources |
 | `/templates` | `TemplatesPage` | protected | Job templates: the reader's own (use, history, rename, delete) and the starters |
+| `/saved-searches` | `SavedSearchesPage` | protected, Pro+ | Pinned library questions: schedule, next run, last answer; run now, pause, edit, delete (S-8.3.2) |
 | `/qa-history` | `QAHistoryChatPage` | protected | Meta-chat across all past Q&A |
 | `/exports` | `ExportsPage` | protected | Dataset export endpoints + downloads |
 | `/notes` | `NotesPage` | protected | Every note the user wrote, grouped by target, searchable, exportable |
@@ -252,6 +253,16 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 | No templates of your own | "No templates of your own yet." pointing at Save as template on a run or the submit form. |
 | Error | Editorial error card with Retry. |
 
+### `SavedSearchesPage` — `/saved-searches` (Pro+)
+**Purpose.** Every library question the reader pinned (S-8.3.2, plan [M3](plans/m3-saved-searches-alerts.md)). Each card: the question, badges (**Paused**, the last run's status: **Answered**, **Last run failed**, **Skipped: monthly quota**, **Not in your plan**, **Shelf deleted**; **One shelf** when scoped), the schedule in words ("Weekly on Monday at 09:00", the zone named only when it is not the reader's), next run and last run in local time, whether it emails, the last run's reason when it did not answer, and the last answer clamped to four lines with **Read the full answer, with citations** (→ `/library/qa?exchange=<id>`). Actions: **Change schedule** (the same daily / weekly / monthly fields as the pin dialog), **Stop emails** / **Email me**, **Pause** / **Resume**, **Run now** (queues a run; "Queued. The answer appears here in a minute or so."), **Delete** (confirms; past answers stay in library Q&A). "N of M active" shows the tier's cap. The list polls every 10 s while a search has never run. The sidebar's Library group and the palette link here on tiers with the feature.
+
+| State | What renders |
+|-------|--------------|
+| Loading (tier or list) | Skeleton cards; the plan message never shows before the tier is known. |
+| Nothing pinned | "Nothing pinned yet." with **Ask the library**. |
+| Error | "Couldn't load your saved searches." with **Retry**. |
+| Tier without the feature | "Saved searches come with Pro." with **See plans**; nothing is fetched. |
+
 ### `LibraryQAPage` — `/library/qa`
 **Purpose.** Ask questions across the entire library, with no per-job filter.
 
@@ -261,6 +272,7 @@ Layout: question textarea + clarify-first toggle + language selector at the top;
 |-------|--------------|
 | Default | Textarea + button + history list. Under 640 px the composer docks at the bottom below the history, as on the job page (S-8.12.1). **You might ask** (S-8.4.2): under the composer, up to five suggested next questions from `GET /suggestions` (generated from the context, or the reader's own past questions, marked "You asked this before."). A click fills the composer; Shift-click asks at once, skipping the clarify step. Each use is logged through `POST /suggestions/feedback`. The card loads after the page, shows "Finding questions worth asking…" meanwhile, and renders nothing when there is nothing to suggest, when the request fails, or when the Q&A feature is down. Context `library`. A question handed over from the knowledge drawer (route state) fills the composer, or is asked at once after a Shift-click. |
 | Clarifying | Inline "Interpretation: ..." plus three suggested clarifying questions; user picks one or types their own context. |
+| Pin (Pro+) | Each answer card carries **Pin this question** beside **Copy answer** (S-8.3.2). The dialog shows the question and asks only when: daily, weekly or monthly, the day, the hour in the reader's zone (weekly at 09:00 by default), and "Email me when the answer changes". **Pin it** creates the saved search; the button becomes a **Pinned** link to `/saved-searches`. Hidden on tiers without `saved_searches`. |
 | Asking | Streaming answer area appears; citations populate as the agent extracts references. |
 | Empty (no exchanges yet) | Composer and an empty thread. |
 | Empty library | "Nothing to ask yet." with **Add sources** (→ `/library?tab=ingest`) in place of the composer, when the reader can see no source and has asked nothing (S-8.10.2). |

@@ -625,6 +625,46 @@ The caller's visible documents from the channel, newest first (`limit`, `offset`
 
 ---
 
+## Saved searches
+
+Pinned library questions re-asked on a schedule (S-8.3.2, plan [m3-saved-searches-alerts](plans/m3-saved-searches-alerts.md)). Every route acts on the caller's own rows and needs the `saved_searches` tier feature (Pro and Studio; 403 otherwise). The schedule is a `scheduled_runs` row of kind `saved_search` (S-8.3.1) the service keeps in step: created, re-cadenced, paused and deleted with the saved search.
+
+### `GET /api/v1/saved-searches`
+`{items: [SavedSearch], active, cap}`: newest first; `active` counts enabled rows and `cap` is the tier's limit on them (`saved_searches_active_cap`: Pro 10, Studio 50, Free 0; `-1` = unlimited).
+
+```json
+{
+  "id": "…",
+  "question": "What do my sources say about rate cuts?",
+  "answer_language": "en",
+  "scope": null,
+  "cadence": { "cadence": "weekly", "hour": 9, "minute": 0, "weekday": 0, "timezone": "Europe/London" },
+  "next_run_at": "2026-10-26T08:00:00",
+  "notify_email": true,
+  "enabled": true,
+  "created_at": "…",
+  "last_run_at": "…",
+  "last_status": "ok",
+  "last_error": null,
+  "last_success_at": "…",
+  "last_exchange_id": "…",
+  "last_answer": "…"
+}
+```
+
+Times are naive UTC. `next_run_at` is null while paused. `last_status` is `ok`, `failed`, `quota_exceeded` (the month's library-question quota was used up, so the run was skipped before any spend, D-045), `feature_unavailable` (the tier no longer has the feature) or `scope_missing` (the shelf was deleted); every status but `ok` leaves the last answer in place.
+
+### `POST /api/v1/saved-searches`
+Body `{question, cadence, answer_language?, scope?, notify_email?}`, unknown fields 422; 201 with the saved search. `cadence` is `daily`, `weekly` (with `weekday`, 0 = Monday) or `monthly` (with `day_of_month` 1 to 28), an `hour`, optional `minute`, and an IANA `timezone` (default UTC); `every` is for system kinds and is refused. `scope` is null (the whole library) or `{"shelf_id"}` for one of the caller's shelves (404 otherwise): the library-question scope of S-8.1.4, resolved by `qa_scope_service`. 409 when the tier's active cap is reached.
+
+### `GET` / `PATCH` / `DELETE /api/v1/saved-searches/{id}`
+PATCH accepts any of the create fields plus `enabled`; a new cadence recomputes `next_run_at`; resuming checks the cap (409) and moves a slot that passed while paused to the next one. DELETE removes the schedule too; past answers stay in library Q&A. Another tenant's id is a 404.
+
+### `POST /api/v1/saved-searches/{id}/run-now`
+Queues one run on the caller's tier queue outside the schedule; 202 `{status: "queued"}`. The quota is checked here as well as in the run, so an exhausted month answers 429 at once. A run asks the library Q&A agent over the caller's visible set (narrowed to the shelf's runs' approved documents when scoped, never widened when that is empty), with corpus statistics and trust weights as `POST /library/qa` passes them, records the quota, stores a `library_qa_exchanges` row (indexed in `qa_library_global`, `scope_json` = the scope plus `saved_search_id`) and updates the saved search's baseline: answer hash, cited document set, last exchange.
+
+---
+
 ## Job templates
 
 Named, reusable research recipes (E-8.6 / M6; plan: [`docs/plans/m6-job-templates.md`](plans/m6-job-templates.md)). A template freezes everything on `JobCreate` except the topic; a reader types a new topic each time. **Not tier-gated.** Built-ins (`builtin: true`, S-8.6.2) are listed for everyone and are read-only (403 on any write). Another reader's template is a 404.

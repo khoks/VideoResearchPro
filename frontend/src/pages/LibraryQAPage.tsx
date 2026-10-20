@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SuggestionCard } from '../components/qa/SuggestionCard';
+import { PinQuestionButton } from '../components/savedSearches/PinQuestionButton';
 import { useLibraryVideos } from '../hooks/useLibrary';
 import ReactMarkdown from 'react-markdown';
 import {
@@ -525,15 +526,19 @@ function LibraryQAExchangeCard({ qa }: { qa: LibraryQAExchange }) {
         >
           {qa.question}
         </p>
-        <Button size="sm" variant="tertiary" onClick={handleCopy}>
-          {copied ? (
-            <Badge tone="success" size="sm">
-              Copied
-            </Badge>
-          ) : (
-            'Copy answer'
-          )}
-        </Button>
+        <div style={{ display: 'flex', gap: space['1'], flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {/* S-8.3.2: re-ask this question on a schedule. */}
+          <PinQuestionButton question={qa.question} answerLanguage={qa.answer_language ?? 'en'} />
+          <Button size="sm" variant="tertiary" onClick={handleCopy}>
+            {copied ? (
+              <Badge tone="success" size="sm">
+                Copied
+              </Badge>
+            ) : (
+              'Copy answer'
+            )}
+          </Button>
+        </div>
       </div>
       <div
         className="reading"

@@ -10,6 +10,18 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: saved searches (2026-10-19)
+
+PR [#320](https://github.com/khoks/VideoResearchPro/pull/320). S-8.3.2, plan [m3-saved-searches-alerts](docs/plans/m3-saved-searches-alerts.md).
+
+- **Pin this question** on a library Q&A answer re-asks it daily, weekly or
+  monthly at an hour in your zone (Pro and Studio; up to 10 and 50 active).
+- `/saved-searches` lists each pinned question with its schedule, next run and
+  last answer; run now, pause, change the schedule, delete.
+- Runs go through the scheduler tick, count against the monthly library-question
+  quota (checked before each run, so an exhausted month skips without spending),
+  and land in library Q&A like any other answer.
+
 ### Static wiki sites (2026-10-19, S-6.2.1)
 
 PR [#315](https://github.com/khoks/VideoResearchPro/pull/315). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).

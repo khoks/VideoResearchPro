@@ -302,7 +302,7 @@ Save a Q&A query → re-run on a schedule → notify when new library content ma
 
 **UI:** "Pin this question" button on Q&A answer cards.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.3](initiatives.md#e-83--saved-searches-and-alerts-m3); plan [`plans/m3-saved-searches-alerts.md`](plans/m3-saved-searches-alerts.md). Audit: Celery has no beat scheduler; E-8.3 builds the project's first one and the newsletter (E-6.4) reuses it. Schedules are human presets, not cron. Foundation for "research monitoring" / digest features.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.3](initiatives.md#e-83--saved-searches-and-alerts-m3); plan [`plans/m3-saved-searches-alerts.md`](plans/m3-saved-searches-alerts.md). Audit: Celery has no beat scheduler; E-8.3 builds the project's first one and the newsletter (E-6.4) reuses it. Schedules are human presets, not cron. Foundation for "research monitoring" / digest features. **🟡 2026-10-19:** pinned searches shipped (S-8.3.2, PR [#320](https://github.com/khoks/VideoResearchPro/pull/320)): pin on library Q&A answers, `/saved-searches`, scheduled runs through the S-8.3.1 tick, quota before every run. Change detection and notifications (S-8.3.3) are next.
 
 ---
 

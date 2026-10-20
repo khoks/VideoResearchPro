@@ -27,6 +27,7 @@ import { EchoPage } from '../pages/EchoPage';
 import { EchoInboxPage } from '../pages/EchoInboxPage';
 import { AuthorPage } from '../pages/AuthorPage';
 import { WelcomePage } from '../pages/WelcomePage';
+import { SavedSearchesPage } from '../pages/SavedSearchesPage';
 import { OnboardingGate } from '../components/onboarding/OnboardingGate';
 import { useAuth } from '../contexts/AuthContext';
 import { Spinner } from '../components/primitives';
@@ -101,6 +102,7 @@ export const router = createBrowserRouter([
           { path: 'shelves', element: <ShelvesPage /> },
           { path: 'shelves/:shelfId', element: <ShelfPage /> },
           { path: 'templates', element: <TemplatesPage /> },
+          { path: 'saved-searches', element: <SavedSearchesPage /> },
           { path: 'qa-history', element: <QAHistoryChatPage /> },
           { path: 'exports', element: <ExportsPage /> },
           { path: 'notes', element: <NotesPage /> },

@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.connectors import registry
-from app.connectors.base import ConnectorError, ConnectorTokens, SyncContext
+from app.connectors.base import ActivityConnector, ConnectorError, ConnectorTokens, SyncContext
 from app.models.echo_connector import (
     EchoConnectorCredential,
     EchoConnectorGrant,
@@ -149,6 +149,9 @@ def list_for_tenant(db: Session, tenant_id: str) -> list[dict[str, Any]]:
     registry.load_builtin()
     out = []
     for conn in registry.connectors():
+        if not isinstance(conn, ActivityConnector):
+            logger.warning("echo: registered connector %r does not implement the contract; skipped", conn)
+            continue
         grant = get_grant(db, tenant_id, conn.name)
         count = activity_event_service.count_events(db, tenant_id, conn.name) if grant else 0
         out.append(describe(conn, grant, count))

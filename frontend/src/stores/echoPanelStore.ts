@@ -19,6 +19,9 @@ export interface EchoTurn {
   /** The response body as the endpoint returned it. */
   result?: unknown;
   error?: string;
+  /** A draft that names private people waits for the user to confirm them
+   * (S-3.4.1's guard). */
+  confirmNames?: string[];
 }
 
 interface EchoPanelStore {

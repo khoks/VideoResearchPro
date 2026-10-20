@@ -88,6 +88,7 @@ export function draftGateView(gate: DraftGate | undefined, error: unknown, readi
   }
   if (!gate) return { available: false, title: 'Checking…', lines: [] };
   if (gate.enabled) return { available: true, title: 'Draft as me', lines: [] };
+  if (gate.blockers?.length) return blockersView(gate.blockers);
 
   const reasons = (gate.reasons ?? []).filter(Boolean);
   const notes =
@@ -120,6 +121,32 @@ export function draftGateView(gate: DraftGate | undefined, error: unknown, readi
     default:
       return { available: false, title: 'Not switched on for you', lines: reasons.length ? reasons : [TEST_EXPLAINED] };
   }
+}
+
+const BLOCKER_TITLE: Record<string, string> = {
+  install_off: 'Turned off on this install',
+  not_ready: 'Echo is not ready yet',
+  voice_test_required: 'Your voice test comes first',
+  voice_test_failed: 'Your voice test has not passed yet',
+  daily_cap: 'That was today’s last draft',
+};
+
+/**
+ * S-3.4.1's own blockers, first one as the title. The not-ready message
+ * repeats every unmet domain, which the readiness line above the tabs
+ * already names, so it is shortened here.
+ */
+function blockersView(blockers: Array<{ code: string; message: string }>): GateView {
+  const lines = blockers.map((b) =>
+    b.code === 'not_ready' ? 'Echo needs more to go on first: the line above says what is missing.' : b.message,
+  );
+  const codes = new Set(blockers.map((b) => b.code));
+  const action = codes.has('not_ready')
+    ? { label: 'See what is missing', href: '/echo' }
+    : codes.has('voice_test_required')
+      ? { label: 'Write a note', href: '/notes' }
+      : undefined;
+  return { available: false, title: BLOCKER_TITLE[blockers[0].code] ?? 'Not switched on for you', lines, action };
 }
 
 /** Words for a failed ask or draft. */

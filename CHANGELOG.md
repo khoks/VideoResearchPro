@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Echo: import a WhatsApp chat or Google Keep notes (S-3.7.5 part 1, 2026-10-19)
 
-PR [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__). Sizing: [docs/notes/2026-10-19-s375-import-sizing.md](docs/notes/2026-10-19-s375-import-sizing.md).
+PR [#341](https://github.com/khoks/VideoResearchPro/pull/341). Sizing: [docs/notes/2026-10-19-s375-import-sizing.md](docs/notes/2026-10-19-s375-import-sizing.md).
 
 - A new import page previews a WhatsApp export (`.txt` or `.zip`, iOS or
   Android) or Keep notes from Takeout before anything is stored.

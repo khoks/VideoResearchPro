@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block main %}
+<p class="kicker">Source</p>
+<h1>{{ title }}</h1>
+<p class="meta">{{ meta }}</p>
+{% if url %}<p><a class="out" href="{{ url }}">Open the original</a></p>{% endif %}
+{% if tags %}<p class="tags">{% for t in tags %}<a class="tag" href="{{ t.href }}">{{ t.name }}</a> {% endfor %}</p>{% endif %}
+{% if cited_in %}
+<h2 id="cited-in">Cited in</h2>
+<ul class="listing">
+{% for c in cited_in %}
+  <li><a href="{{ c.href }}">{{ c.title }}</a>{% if c.moments %} <span class="meta">at {% for m in c.moments %}<a class="out" href="{{ m.url }}">{{ m.clock }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}</li>
+{% endfor %}
+</ul>
+{% endif %}
+{% if knowledge %}
+<h2 id="knowledge">Knowledge report</h2>
+<article class="prose">
+{{ knowledge }}
+</article>
+{% endif %}
+{% endblock %}

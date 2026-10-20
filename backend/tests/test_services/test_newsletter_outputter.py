@@ -145,7 +145,7 @@ def test_featured_section_links_its_markers_and_drops_unknown_ones(db, tmp_path)
                     f"Revisit the BP advice next.",
             usage_metadata={"input_tokens": 3_100, "output_tokens": 480, "total_tokens": 3_580})
 
-    out = _issue(db, user, invoke=answer)
+    out = _issue(db, user, invoke=answer, sections={"featured": True})
     md = out.content_text
     assert "## Featured: Smoking is the leading cause" in md
     featured = md.split("## Featured:")[1].split("\n## ")[0]
@@ -165,7 +165,7 @@ def test_featured_section_links_its_markers_and_drops_unknown_ones(db, tmp_path)
 ])
 def test_an_unusable_featured_section_falls_back_to_the_sources_summary(db, tmp_path, reply, note):
     user, _ = _setup(db, tmp_path, email=f"nl-{abs(hash(note))}@x.com")
-    out = _issue(db, user, invoke=FakeModel(reply))
+    out = _issue(db, user, invoke=FakeModel(reply), sections={"featured": True})
     assert out.status == "completed"
     md = out.content_text
     assert f"Processing note: The " in md and note in md
@@ -180,7 +180,7 @@ def test_a_quiet_week_resurfaces_the_least_recently_featured_source(db, tmp_path
     db.commit()
     answer = lambda u, s, p, m: AIMessage(content=f"# Back again\n\nA point [S{_markers(p)[0]}].",
                                           usage_metadata={"input_tokens": 1, "output_tokens": 1, "total_tokens": 2})
-    out = _issue(db, user, invoke=answer)
+    out = _issue(db, user, invoke=answer, sections={"featured": True})
     assert "## From your library: Back again" in out.content_text
     assert json.loads(out.parameters_json)["featured_ref"] == f"job:{job.id}"
 
@@ -224,5 +224,25 @@ def test_router_validates_and_estimates(unauthenticated_client, db, tmp_path):
     assert bad.status_code == 400
     with patch.object(book_cohesion, "_default_invoke", lambda *a: pytest.fail("estimate must not call a model")):
         est = unauthenticated_client.post("/api/v1/author/outputs/estimate", headers=h,
-                                          json={"kind": "newsletter", "title": "D"}).json()
+                                          json={"kind": "newsletter", "title": "D", "parameters": {"sections": {"featured": True}}}).json()
     assert [c["use_case"] for c in est["calls"]] == ["author_newsletter_compose"] and est["cost_usd"] > 0
+
+
+def test_by_default_an_issue_has_no_featured_section_and_calls_no_model(db, tmp_path):
+    # D-097: the featured section is opt-in.
+    user, _ = _setup(db, tmp_path, email="nl-default@x.com")
+    out = _issue(db, user, invoke=lambda *a: pytest.fail("no model call by default"))
+    assert out.status == "completed" and "## Featured" not in out.content_text and out.usage_json is None
+    assert json.loads(out.parameters_json)["sections"]["featured"] is False
+
+
+def test_only_markers_shown_to_the_model_can_become_links(db, tmp_path):
+    # The S-6.4.1 trial: with every report marker valid, an invented "[S2]"
+    # linked a claim to an unrelated moment.
+    from app.services.outputters import newsletter
+
+    user, job = _setup(db, tmp_path, email="nl-shown@x.com")
+    featured = newsletter._featured_source(db, user, "job", db.get(Job, job.id), False)
+    shown = {int(n) for n in re.findall(r"\[S(\d+)\]", featured.text)}
+    assert shown and set(featured.links) == shown
+    assert "CITED POINTS" in featured.text

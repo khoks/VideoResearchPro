@@ -5,6 +5,8 @@ import {
   estimateLabel,
   fileFormatOptions,
   formatUsd,
+  defaultNewsletterSections,
+  newsletterParameters,
   usageLabel,
   filenameFromDisposition,
   formatsParameter,
@@ -123,6 +125,20 @@ describe('S-6.7.2 download helpers', () => {
     expect(downloadLabel('md', 1)).toBe('Download');
     expect(downloadLabel('pdf', 3)).toBe('Download PDF');
     expect(downloadLabel('xyz', 2)).toBe('Download .xyz');
+  });
+
+  it('builds newsletter parameters with the featured section off by default (S-6.4.1)', () => {
+    const sections = defaultNewsletterSections();
+    expect(sections.featured).toBe(false);
+    expect(sections.library && sections.questions && sections.outputs).toBe(true);
+    expect(newsletterParameters('last', sections)).toEqual({ sections });
+    const now = new Date('2026-10-19T12:00:00Z');
+    expect(newsletterParameters('7', { ...sections, featured: true }, now)).toEqual({
+      sections: { ...sections, featured: true },
+      since: '2026-10-12T12:00:00.000Z',
+    });
+    expect(outputStatusLabel('skipped')).toBe('Skipped');
+    expect(outputStatusTone('skipped')).toBe('neutral');
   });
 
   it('labels cohesion estimates and recorded usage (S-6.1.3)', () => {

@@ -1598,9 +1598,12 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "issue says so, so it is not a feature gate."
         ),
         guidance=_unmeasured(
-            "Judged blind against the source's own summary before it became "
-            "the default featured section; see the S-6.4.1 notes in the "
-            "decision log. No other model has been judged for it.",
+            "Judged blind with this default against the source's own summary: "
+            "preferred in 12 of 12 verdicts, but drew 16 unsupported-claim "
+            "flags against a limit of 4 (most often a marker on the "
+            "neighbouring moment), so the featured section is opt-in "
+            "(D-097). About $0.016 per issue. No other model has been judged.",
+            related=("D-097",),
         ),
     ),
     # --- Social-media candidate classification (S-1.5.3) ---------------

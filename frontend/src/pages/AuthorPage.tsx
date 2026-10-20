@@ -35,6 +35,11 @@ import {
   describeCreateError,
   COHESION_OPTIONS,
   DEFAULT_COHESION,
+  NEWSLETTER_PERIODS,
+  NEWSLETTER_SECTIONS,
+  defaultNewsletterSections,
+  newsletterParameters,
+  type NewsletterPeriod,
   downloadLabel,
   estimateLabel,
   fileFormatOptions,
@@ -110,6 +115,8 @@ export function AuthorPage() {
       navigate(`/author/outputs/${row.id}`);
     } else if (row.status === 'failed') {
       pushToast('error', row.error_message ?? 'Generation failed.');
+    } else if (row.status === 'skipped') {
+      pushToast('info', row.progress_message ?? 'Nothing new; no issue was made.');
     }
   }, [awaiting, outputs.data, navigate, pushToast]);
 
@@ -505,6 +512,11 @@ function OutputRow({
               </Button>
             </span>
           </div>
+          {output.status === 'skipped' && output.progress_message && (
+            <div style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted, lineHeight: lineHeight.snug }}>
+              {output.progress_message}
+            </div>
+          )}
           {output.status === 'failed' && output.error_message && (
             <div
               style={{
@@ -577,6 +589,10 @@ function CreateOutputModal({
   const isBook = kind === 'book';
   // S-6.2.1: a site takes shelves as well as runs.
   const isSite = kind === 'site';
+  // S-6.4.1: a newsletter takes a period and sections, not runs.
+  const isNewsletter = kind === 'newsletter';
+  const [period, setPeriod] = useState<NewsletterPeriod>('last');
+  const [nlSections, setNlSections] = useState<Record<string, boolean>>(defaultNewsletterSections);
   const shelves = useShelves();
   const [shelvesSelected, setShelvesSelected] = useState<Set<string>>(() => new Set());
   const toggleShelf = (id: string) => {
@@ -589,8 +605,15 @@ function CreateOutputModal({
   };
   // A deck always calls a model (S-6.3.1); a book only with framing.
   const estimate = useOutputEstimate(
-    { kind, title: title.trim() || 'Untitled', source_ids: [...selected], parameters: isBook ? { cohesion } : {} },
-    selected.size > 0 && (isBook ? cohesion !== 'none' : kind === 'deck'),
+    {
+      kind,
+      title: title.trim() || 'Untitled',
+      source_ids: [...selected],
+      parameters: isBook ? { cohesion } : kind === 'newsletter' ? { sections: { featured: true } } : {},
+    },
+    kind === 'newsletter'
+      ? Boolean(nlSections.featured)
+      : selected.size > 0 && (isBook ? cohesion !== 'none' : kind === 'deck'),
   );
   const toggleFormat = (format: string, on: boolean) => {
     const next = new Set(chosen);
@@ -615,7 +638,9 @@ function CreateOutputModal({
   };
 
   const canSubmit =
-    title.trim().length > 0 && (selected.size > 0 || (isSite && shelvesSelected.size > 0)) && !create.isPending;
+    title.trim().length > 0 &&
+    (isNewsletter ? Object.values(nlSections).some(Boolean) : selected.size > 0 || (isSite && shelvesSelected.size > 0)) &&
+    !create.isPending;
   const sourceIds = isSite
     ? [...[...shelvesSelected].map((id) => `shelf:${id}`), ...[...selected].map((id) => `job:${id}`)]
     : [...selected];
@@ -634,7 +659,9 @@ function CreateOutputModal({
               cohesion,
               ...(formatsParameter(formatOptions, chosen) ? { formats: formatsParameter(formatOptions, chosen) } : {}),
             }
-          : {},
+          : isNewsletter
+            ? newsletterParameters(period, nlSections)
+            : {},
       },
       {
         onSuccess: (output) => {
@@ -642,6 +669,8 @@ function CreateOutputModal({
             pushToast('success', `${meta.label} ready: “${output.title}”.`);
           } else if (output.status === 'failed') {
             pushToast('error', output.error_message ?? `${meta.label} generation failed.`);
+          } else if (output.status === 'skipped') {
+            pushToast('info', output.progress_message ?? 'Nothing new; no issue was made.');
           } else {
             pushToast('info', `Generating “${output.title}” in the background; it opens when it is ready.`);
           }
@@ -677,7 +706,9 @@ function CreateOutputModal({
             ? "Each chapter is its run's report exactly as it is; a model only writes the framing around the chapters, and only if you choose it below."
             : isSite
               ? "Each run's report becomes a page with its citations, and each source gets a page listing the reports that cite it. No model is involved, and nothing on the site loads from the web."
-              : 'A model plans the slides from the reports. A slide that cites no source is left out, and every slide lists its sources in its notes.'}
+              : isNewsletter
+                ? 'The lists come straight from your library. If nothing is new in the period, no issue is made.'
+                : 'A model plans the slides from the reports. A slide that cites no source is left out, and every slide lists its sources in its notes.'}
         </p>
 
         <FormField label="Title" required>
@@ -727,6 +758,49 @@ function CreateOutputModal({
           </FormField>
         )}
 
+        {isNewsletter && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
+            <FormField label="Period">
+              {(id) => (
+                <select
+                  id={id}
+                  value={period}
+                  onChange={(e) => setPeriod(e.target.value as NewsletterPeriod)}
+                  style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, padding: space['2'], borderRadius: radius.md, border: `1px solid ${c.border}`, background: c.surface, color: c.textPrimary }}
+                >
+                  {NEWSLETTER_PERIODS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </FormField>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
+              <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, fontWeight: fontWeight.medium, color: c.textPrimary }}>Sections</span>
+              <div style={{ display: 'flex', gap: space['3'], flexWrap: 'wrap' }}>
+                {NEWSLETTER_SECTIONS.map((s) => (
+                  <CheckboxRow
+                    key={s.key}
+                    checked={Boolean(nlSections[s.key])}
+                    onChange={(v) => setNlSections((prev) => ({ ...prev, [s.key]: v }))}
+                    label={s.label}
+                  />
+                ))}
+              </div>
+              {nlSections.featured && (
+                <p style={{ margin: 0, fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted, lineHeight: lineHeight.normal }}>
+                  A model writes about one report from your library, linking each sentence to its source. In blind tests it
+                  was the most useful part, but it sometimes pins a sentence to the neighbouring moment, so it is off by
+                  default.{' '}
+                  {estimate.isLoading ? 'Estimating the cost…' : estimateLabel(estimate.data) ? `${estimateLabel(estimate.data)}.` : ''}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!isNewsletter && (
         <FormField
           label={isBook ? 'Chapters' : 'Runs'}
           required={!isSite}
@@ -774,6 +848,7 @@ function CreateOutputModal({
             </div>
           )}
         </FormField>
+        )}
 
         {isBook && (
           <div style={{ display: 'flex', gap: space['5'], flexWrap: 'wrap' }}>

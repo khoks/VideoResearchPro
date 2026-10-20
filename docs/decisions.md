@@ -2984,3 +2984,28 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 **Consequences.** The tier numbers should be revisited with pricing. Stills beside Q&A references (T-1.18.2.5) reuse the same matcher. Annotations still do not reach Chroma or knowledge extraction for documents embedded before their frames existed (T-1.18.1.10/11). That only matters once Q&A shows stills.
 
 **Linked initiatives / PRs.** S-1.18.2 (E-1.18), D-067, D-081, D-085, D-079; R1 runs 1-8.
+
+## D-097 — Newsletter: featured section ships opt-in; the rest of an issue is listed from the database (2026-10-19)
+
+**Status:** accepted.
+
+**Context.** S-6.4.1 builds the newsletter: one issue per window, listing what is new to the reader and adding a model-written featured deep-dive about one source from their own library. The plan made the featured section the only model-written part. Its quality bar was fixed before any section was generated, in [docs/notes/2026-10-19-newsletter-featured-judging.md](notes/2026-10-19-newsletter-featured-judging.md). The material was four real reports, judged blind against the report's own summary paragraph by three judges from different families, with Gemini 3.6 Flash named in advance as the Google judge. The rule required at least 8 of 12 verdicts for the model, the non-Anthropic judges agreeing, and at most 4 unsupported claims in total.
+
+**Decision.**
+- The featured section ships **off by default and opt-in**. The trial met both preference rules: 12 of 12 verdicts, and usefulness about 9.4 against 2.1. It failed the accuracy rule with 16 flags.
+- **Everything else in an issue is listed from the database**, with no model: documents new to this reader (visibility grants), knowledge reports, their questions, saved searches with new answers, and what they made.
+- **An issue with nothing new is skipped**: a new `skipped` output status, with the reason as the row's message.
+- The email is HTML with inline styles and no external CSS, images or scripts; its plain-text part is the issue's Markdown.
+
+**Alternatives considered.**
+- *Ship the featured section on by default on the preference result.* Every round so far has drawn real accuracy flags. The most common was a marker attached to the neighbouring moment, which a reader following the link would find does not say what the sentence claims.
+- *Drop the featured section.* The judges found it far more useful than the summary, so readers who accept the risk can turn it on; the section names the model that wrote it.
+- *premailer for the email styles (the plan's choice).* Our HTML comes from one renderer with a small, known set of tags, so a 15-line tag-to-style map does the same without a dependency.
+
+**Consequences.**
+- Three generation defects were fixed before judging: excerpts without markers, invented markers that resolved, and doubled timestamps. The notes describe them.
+- Revisit the default together with D-093 when a sentence-level check exists that tests each cited sentence against the point its marker names (S-6.1.6 covers books).
+- Cost of the featured call: $0.015 to $0.017 per issue on claude-sonnet-5 at reasoning low.
+
+**Linked initiatives / PRs.** E-6.4 / S-6.4.1, D-093, D-056, D-063.
+

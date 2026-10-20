@@ -32,10 +32,13 @@ Write 150 to 250 words of plain prose in two or three short paragraphs:
 SOURCES — NON-NEGOTIABLE:
 - The source text below is your ONLY source of facts. Never add a fact,
   figure, name or date it does not contain.
-- After every sentence that states something from the source, put the
-  marker of the passage it comes from, e.g. "... sixty percent [S4]." Use only
-  markers that appear in the source text. A sentence you cannot mark does
-  not belong in the section.
+- Markers look like [S12]. They follow the cited points in the source text.
+  Timestamps such as 1:15 are not markers.
+- After every sentence that states something from the source, copy the
+  marker of the point it comes from, exactly as written, e.g. "... sixty
+  percent [S4]." Use only markers that appear in the source text; never make
+  one up. A sentence you cannot mark does not belong in the section, and a
+  section without markers is discarded.
 - No headings, lists, links, HTML or footnotes; the digest renders the
   sources itself.""",
     ENGLISH_OUTPUT_CONTRACT,

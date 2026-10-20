@@ -75,12 +75,17 @@ LIST_SECTIONS = SECTIONS[1:]
 DEFAULT_WINDOW = timedelta(days=7)
 MAX_ITEMS = 20
 EXCERPT_WORDS = 1_200
+SUMMARY_WORDS = 300
 FEATURED_MAX_WORDS = 300
 MAX_TOKENS = 6_000
-OUTPUT_TOKENS_EST = 1_500  # calibrated on real issues; see estimate()
+OUTPUT_TOKENS_EST = 800  # four real issues billed 553-697 (S-6.4.1 trial)
+# D-097: the featured section is opt-in. Judges preferred it 12 of 12 but
+# flagged 16 unsupported claims against a pre-registered limit of 4.
+DEFAULT_SECTIONS = {name: name != "featured" for name in SECTIONS}
 TEMPLATES = Path(__file__).resolve().parents[2] / "templates" / "newsletter"
 
 _MARKER = re.compile(r"\s*\[S(\d+)\]")
+_CLOCK_MARKER = re.compile(r"\b(\d{1,2}:\d{2}(?::\d{2})?)\s*\[S(\d+)\]")
 _LINK = re.compile(r"!?\[([^\]\n]*)\]\([^)\s]*\)")
 
 
@@ -103,7 +108,7 @@ def _naive_utc(value: Any, name: str) -> datetime | None:
 
 def sections_from(params: dict[str, Any]) -> dict[str, bool]:
     raw = params.get("sections")
-    out = {name: True for name in SECTIONS}
+    out = dict(DEFAULT_SECTIONS)
     if raw is None:
         return out
     if not isinstance(raw, dict):
@@ -301,6 +306,30 @@ def _pick_featured(db: Session, user: User, since: datetime, until: datetime) ->
     return _featured_source(db, user, kind, obj, resurfaced)
 
 
+def _report_excerpt(title: str, marked: str) -> str:
+    """What the featured call sees of a report: its summary for context (up
+    to ``SUMMARY_WORDS``), then its CITED points in report order up to
+    ``EXCERPT_WORDS`` in all. A summary-first excerpt alone held no citation
+    marker at all for three of four real reports, whose summaries are long
+    uncited prose (S-6.4.1 trial), and a section must cite to be shown."""
+    digest = book_cohesion.digest(1, title, marked)
+    summary = digest.excerpt(SUMMARY_WORDS)
+    budget = EXCERPT_WORDS - len(summary.split())
+    points: list[str] = []
+    for is_heading, line in book_cohesion._plain_lines(marked):
+        if is_heading or not _MARKER.search(line) or line in summary:
+            continue
+        words = len(line.split())
+        if words > budget:
+            break
+        points.append(line.lstrip("-* ").strip())
+        budget -= words
+    parts = [summary]
+    if points:
+        parts += ["", "CITED POINTS (each carries the marker of its source):", *points]
+    return "\n".join(parts).strip()
+
+
 def _featured_source(db: Session, user: User, kind: str, obj, resurfaced: bool) -> Featured | None:
     if kind == "job":
         md = _job_report_markdown(obj)
@@ -309,10 +338,14 @@ def _featured_source(db: Session, user: User, kind: str, obj, resurfaced: bool) 
         cited, specs = output_citation_service.cite_markdown(md, _chapter_documents(db, user, obj.id), 1)
         by_n = dict(enumerate(specs, start=1))
         marked = _marked(cited, by_n)
-        text = book_cohesion.digest(1, obj.topic or "Report", marked).excerpt(EXCERPT_WORDS)
+        text = _report_excerpt(obj.topic or "Report", marked)
+        # Only markers the model was actually shown are valid. With every
+        # report marker allowed, a model that invented "[S2]" linked a claim
+        # to an unrelated moment (S-6.4.1 trial, 2026-10-19).
+        shown = {int(n) for n in _MARKER.findall(text)}
         links = {
             n: (output_citation_service.clock(s.seconds) if s.seconds is not None else "source", s.url)
-            for n, s in by_n.items() if s.url
+            for n, s in by_n.items() if s.url and n in shown
         }
         return Featured(ref=f"job:{obj.id}", kind="report", title=obj.topic or "Report", href=_link(f"/jobs/{obj.id}"),
                         text=text, links=links, specs={n: by_n[n] for n in links}, resurfaced=resurfaced)
@@ -337,6 +370,16 @@ def _linkify(text: str, featured: Featured) -> tuple[str, list[int]]:
     """``[S4]`` markers to Markdown links; unknown markers dropped."""
     cited: list[int] = []
 
+    def clocked(m: re.Match) -> str:
+        # "1:15 [S7]" whose marker is that very moment becomes "[1:15](url)",
+        # not "1:15 ([1:15](url))".
+        clock, n = m.group(1), int(m.group(2))
+        if n in featured.links and featured.links[n][0] == clock:
+            if n not in cited:
+                cited.append(n)
+            return f"[{clock}]({featured.links[n][1]})"
+        return m.group(0)
+
     def sub(m: re.Match) -> str:
         n = int(m.group(1))
         if n not in featured.links:
@@ -346,7 +389,7 @@ def _linkify(text: str, featured: Featured) -> tuple[str, list[int]]:
         label, url = featured.links[n]
         return f" ([{label}]({url}))"
 
-    return _MARKER.sub(sub, text), cited
+    return _MARKER.sub(sub, _CLOCK_MARKER.sub(clocked, text)), cited
 
 
 def _fallback(featured: Featured) -> None:
@@ -424,6 +467,9 @@ def _inline_styles(body_html: str) -> str:
 
 
 def _period(since: datetime, until: datetime) -> str:
+    if until - since < timedelta(days=2):
+        # A short window reads as "20 Oct 2026 to 20 Oct 2026" without times.
+        return f"{since:%d %b %H:%M} to {until:%d %b %Y %H:%M} UTC"
     if since.year == until.year:
         return f"{since:%d %b} to {until:%d %b %Y}"
     return f"{since:%d %b %Y} to {until:%d %b %Y}"
@@ -431,7 +477,9 @@ def _period(since: datetime, until: datetime) -> str:
 
 def _markdown(title: str, since: datetime, until: datetime, featured: Featured | None,
               sections: list[Section], notes: list[str]) -> str:
-    out = [f"# {_md(title)}", "", f"_Your library from {_period(since, until)} (UTC)._", ""]
+    window = _period(since, until)
+    window += "" if window.endswith("UTC") else " (UTC)"
+    out = [f"# {_md(title)}", "", f"_Your library from {window}._", ""]
     for note in notes:
         out += [f"_Processing note: {_md(note)}_", ""]
     if featured and featured.body:

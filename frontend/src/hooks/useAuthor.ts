@@ -43,6 +43,18 @@ export function useAuthorOutputContent(id: string | null) {
   });
 }
 
+/** S-6.1.3: the cost of generating with these settings, before it runs.
+ * Keyed on what changes the price (runs and cohesion level), not the title. */
+export function useOutputEstimate(payload: CreateOutputPayload, enabled: boolean) {
+  const cohesion = String(payload.parameters?.cohesion ?? 'none');
+  return useQuery({
+    queryKey: ['author', 'estimate', payload.kind, [...payload.source_ids].sort(), cohesion],
+    queryFn: () => authorApi.estimateOutput(payload),
+    enabled,
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useCreateOutput() {
   const qc = useQueryClient();
   return useMutation({

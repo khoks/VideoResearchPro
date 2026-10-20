@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   useAuthorKinds,
+  useOutputEstimate,
   useAuthorOutputs,
   useCreateOutput,
   useCancelOutput,
@@ -31,7 +32,10 @@ import { formatDate } from '../utils/formatters';
 import { downloadUrl } from '../utils/download';
 import {
   describeCreateError,
+  COHESION_OPTIONS,
+  DEFAULT_COHESION,
   downloadLabel,
+  estimateLabel,
   fileFormatOptions,
   filenameFromDisposition,
   formatsParameter,
@@ -46,6 +50,8 @@ import {
   outputStatusTone,
   parseCreateIntent,
   partitionKinds,
+  usageLabel,
+  type CohesionLevel,
 } from '../utils/authorOutputs';
 import type { HttpErrorLike } from '../utils/ingestResults';
 import type { Job } from '../types/job';
@@ -474,7 +480,7 @@ function OutputRow({
               {kindMeta(output.kind).label}
             </span>
             <span style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>
-              {outputSizeLabel(output)} · {formatDate(output.created_at)}
+              {[outputSizeLabel(output), usageLabel(output.usage), formatDate(output.created_at)].filter(Boolean).join(' · ')}
             </span>
             <span style={{ display: 'inline-flex', gap: space['1'] }}>
               {isReadableOutput(output) && (
@@ -564,6 +570,13 @@ function CreateOutputModal({
   const formatOptions = useMemo(() => fileFormatOptions(kinds.data, kind), [kinds.data, kind]);
   const [chosenFormats, setChosenFormats] = useState<Set<string> | null>(null);
   const chosen = chosenFormats ?? new Set(formatOptions.filter((o) => o.available).map((o) => o.format));
+  // S-6.1.3: model-written framing around the unchanged chapters, priced
+  // before it runs.
+  const [cohesion, setCohesion] = useState<CohesionLevel>(DEFAULT_COHESION);
+  const estimate = useOutputEstimate(
+    { kind, title: title.trim() || 'Untitled', source_ids: [...selected], parameters: { cohesion } },
+    kind === 'book' && cohesion !== 'none' && selected.size > 0,
+  );
   const toggleFormat = (format: string, on: boolean) => {
     const next = new Set(chosen);
     if (on) next.add(format);
@@ -598,6 +611,7 @@ function CreateOutputModal({
         parameters: {
           include_qa: includeQa,
           include_toc: includeToc,
+          ...(kind === 'book' ? { cohesion } : {}),
           ...(formatsParameter(formatOptions, chosen) ? { formats: formatsParameter(formatOptions, chosen) } : {}),
         },
       },
@@ -637,8 +651,8 @@ function CreateOutputModal({
       <div style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}>
         <p style={{ margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal }}>
           {meta.description} Generation runs in the background and shows its progress in the
-          list below; the manuscript is deterministic (no model involved yet), so what you pick is
-          what you get.
+          list below. Each chapter is its run's report exactly as it is; a model only writes the
+          framing around the chapters, and only if you choose it below.
         </p>
 
         <FormField label="Title" required>
@@ -698,6 +712,42 @@ function CreateOutputModal({
           <CheckboxRow checked={includeQa} onChange={setIncludeQa} label="Include each run's Q&A" />
           <CheckboxRow checked={includeToc} onChange={setIncludeToc} label="Table of contents" />
         </div>
+
+        {kind === 'book' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
+            <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, fontWeight: fontWeight.medium, color: c.textPrimary }}>
+              Framing
+            </span>
+            <div role="radiogroup" aria-label="Framing" style={{ display: 'flex', gap: space['5'], flexWrap: 'wrap' }}>
+              {COHESION_OPTIONS.map((o) => (
+                <label
+                  key={o.value}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: space['2'], fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textPrimary, cursor: 'pointer' }}
+                >
+                  <input
+                    type="radio"
+                    name="cohesion"
+                    value={o.value}
+                    checked={cohesion === o.value}
+                    onChange={() => setCohesion(o.value)}
+                    style={{ accentColor: c.accent }}
+                  />
+                  {o.label}
+                </label>
+              ))}
+            </div>
+            <p style={{ margin: 0, fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted, lineHeight: lineHeight.normal }}>
+              {COHESION_OPTIONS.find((o) => o.value === cohesion)?.description}
+              {cohesion !== 'none' && selected.size > 0 && (
+                <>
+                  {' '}
+                  {estimate.isLoading ? 'Estimating the cost…' : estimate.isError ? 'Could not estimate the cost.' : estimateLabel(estimate.data)}
+                  {estimate.data && estimateLabel(estimate.data) ? '.' : ''}
+                </>
+              )}
+            </p>
+          </div>
+        )}
 
         {formatOptions.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>

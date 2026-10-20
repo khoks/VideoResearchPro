@@ -1382,9 +1382,12 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "and the manuscript says so, so it is not a feature gate."
         ),
         guidance=_unmeasured(
-            "Judged only as part of the whole cohesion pass, blind against the "
-            "book without it; see the S-6.1.3 entry in the decision log. Each "
-            "model choice for the outline alone is unmeasured.",
+            "Judged only as part of the whole cohesion pass with this default "
+            "and the prose default: three judges preferred the framed book in "
+            "18 of 18 blind verdicts over two rounds, but flagged 27 framing "
+            "statements per round as unsupported, so cohesion stays opt-in "
+            "(D-093). No other model has been judged for the outline.",
+            related=("D-093",),
         ),
     ),
     "author_book_prose": UseCaseInfo(
@@ -1410,9 +1413,13 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "shorter framing and says so."
         ),
         guidance=_unmeasured(
-            "Judged only as part of the whole cohesion pass, blind against the "
-            "book without it; see the S-6.1.3 entry in the decision log. Each "
-            "model choice for the prose alone is unmeasured.",
+            "Judged only as part of the whole cohesion pass with this default "
+            "and the outline default: preferred in 18 of 18 blind verdicts, but "
+            "its framing drew 27 flags per round as unsupported (outside "
+            "knowledge, remarks on how the book was made), so cohesion stays "
+            "opt-in (D-093). About $0.05-0.07 per book. No other model has "
+            "been judged for the prose.",
+            related=("D-093",),
         ),
     ),
     # --- Social-media candidate classification (S-1.5.3) ---------------

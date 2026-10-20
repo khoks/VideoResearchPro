@@ -64,10 +64,19 @@ class OutputStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    # S-6.4.1: generation found nothing to make (a newsletter with nothing
+    # new since the last issue). Not a failure; the reason is the row's
+    # progress message.
+    SKIPPED = "skipped"
 
 
 TERMINAL_STATUSES: frozenset[str] = frozenset(
-    {OutputStatus.COMPLETED.value, OutputStatus.FAILED.value, OutputStatus.CANCELLED.value}
+    {
+        OutputStatus.COMPLETED.value,
+        OutputStatus.FAILED.value,
+        OutputStatus.CANCELLED.value,
+        OutputStatus.SKIPPED.value,
+    }
 )
 
 
@@ -90,6 +99,12 @@ class NoOutputterError(OutputError):
 
 class OutputCancelled(OutputError):
     """Raised by ``report_progress`` when the row was cancelled meanwhile."""
+
+
+class OutputSkipped(OutputError):
+    """Raised by an outputter that found nothing to make (S-6.4.1). The row
+    ends ``skipped`` with this message as its progress message, and no
+    content or files."""
 
 
 class OutputUnavailable(OutputError):
@@ -374,6 +389,16 @@ def run_generation(db: Session, user: User, output: Output) -> Output:
             transition_to(db, output, OutputStatus.CANCELLED, progress_message="Cancelled by user")
         else:
             db.commit()
+        db.refresh(output)
+        return output
+    except OutputSkipped as e:
+        logger.info("output_service: output_id=%s skipped: %s", output.id, e)
+        db.rollback()
+        db.refresh(output)
+        output.content_text = None
+        output.content_path = None
+        _discard_artifacts(output)
+        transition_to(db, output, OutputStatus.SKIPPED, progress_message=str(e)[:500])
         db.refresh(output)
         return output
     except OutputError as e:

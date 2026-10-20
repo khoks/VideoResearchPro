@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Fix: the Echo panel words the speak-as-me gate from its blockers (S-3.8.1 with S-3.4.1, 2026-10-20)
 
-PR [#PRG](https://github.com/khoks/VideoResearchPro/pull/PRG).
+PR [#360](https://github.com/khoks/VideoResearchPro/pull/360).
 
 - Draft as me titles the gate by S-3.4.1's first blocker ("Turned off on
   this install", "Your voice test comes first"...). The not-ready reason

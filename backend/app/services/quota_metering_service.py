@@ -12,6 +12,7 @@ Resource keys (must match the tier capability table):
 - ``library_qa_exchanges`` — count, monthly.
 - ``qa_history_chats`` — count, monthly.
 - ``knowledge_extractions`` — count, monthly.
+- ``visual_extractions`` — count, monthly (S-1.18.2 on-demand frame capture).
 - ``documents`` — count, lifetime (period_kind=``lifetime`` so the cap
   applies to the user's library size, not "per month").
 - ``llm_tokens_in`` / ``llm_tokens_out`` — count, daily. Sum tracked
@@ -83,6 +84,12 @@ _RESOURCES: dict[str, _Resource] = {
     ),
     "knowledge_extractions": _Resource(
         "knowledge_extractions", "monthly", "knowledge_extractions_per_month"
+    ),
+    # S-1.18.2: an on-demand frame capture (one document, about $0.20 of
+    # vision spend at the D-081 defaults). Charged only when frames were
+    # actually captured.
+    "visual_extractions": _Resource(
+        "visual_extractions", "monthly", "visual_extractions_per_month"
     ),
     "documents": _Resource(
         "documents", "lifetime", "document_count_cap"

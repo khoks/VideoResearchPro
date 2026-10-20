@@ -2950,3 +2950,23 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Linked initiatives / PRs.** S-8.1.4 (E-8.1), S-8.3.2 / S-8.3.3 (E-8.3), S-8.5.2 (E-8.5), M1 and M3 plans, PRs [#313](https://github.com/khoks/VideoResearchPro/pull/313), [#319](https://github.com/khoks/VideoResearchPro/pull/319). Follows D-063, D-070, D-083.
 
+## D-096 — R1 frames reach the user: opt-in per run, lazy stills, and a `visual_extractions` quota (2026-10-19)
+
+**Status:** accepted. The tier numbers are defaults flagged for the user's pricing call.
+
+**Context.** S-1.18.2 surfaces R1's frames: a per-run toggle, stills on citation cards, and on-demand capture for a document already in the library. R1 run 8 passed quote fidelity, attribution and fabrication; its substance vote waits on Gemini Pro. The pre-registration says both remaining outcomes build the UI, opt-in, so the build did not wait.
+
+**Decision.**
+1. Visual analysis stays **opt-in per run** and per document. The copy makes no quality claim until run 8's vote is in; it states the cost (about $0.20 per video at D-081) and that frames are reused.
+2. Report stills load **lazily**, when a citation card first asks for one. Eager prefetch was built first and measured in the browser at about 110 image requests per report. It spent the per-user rate limit (60 per minute on free) and starved the page's other calls.
+3. On-demand capture is a **worker task** with a per-document Redis marker. Capture downloads video for up to `VISUAL_CAPTURE_TIMEOUT_SEC` (15 minutes), so it cannot run inline the way knowledge extraction does.
+4. A new monthly quota `visual_extractions`: **free 2, Pro 30, Studio 300**. It is charged only when frames were actually captured, the same rule the job budget follows. At about $0.20 per capture that is $0.40, $6 and $60 of vision spend per month at the cap.
+
+**Alternatives considered.**
+- *Charge captures to `knowledge_extractions`.* Mixes a $0.20 multimodal pass with a text pass that costs cents, and hides which one ran out.
+- *No quota.* The capture is the app's most expensive single action per document.
+- *Tag stills into the report HTML server-side.* Reports are sanitised and parsed in the browser (D-085), and the citation card already had the slot.
+
+**Consequences.** The tier numbers should be revisited with pricing. Stills beside Q&A references (T-1.18.2.5) reuse the same matcher. Annotations still do not reach Chroma or knowledge extraction for documents embedded before their frames existed (T-1.18.1.10/11). That only matters once Q&A shows stills.
+
+**Linked initiatives / PRs.** S-1.18.2 (E-1.18), D-067, D-081, D-085, D-079; R1 runs 1-8.

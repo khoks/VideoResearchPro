@@ -1263,10 +1263,10 @@ Linked decision: [D-065](decisions.md#d-065--channel-subscriptions-become-per-te
 - [x] T-5.10.2.6 Q&A-history Chroma collection — verify tenant filtering matches the transcript collection. *Verified 2026-10-18: `query_qa_collection` restricts to `tenant_id` metadata (T-5.6.6), the counterpart of the transcript collection's visible-set filter*
 - [ ] T-5.10.2.7 Re-run the D-055 harness: library Q&A now answers from a per-user corpus
 
-#### S-5.10.3 🔵 Drop the legacy global columns on `channels`
-`subscribed`, `source_weight`, `last_synced_at` are retained on `channels` so a partial rollout stays recoverable. Remove once nothing reads them.
-- [ ] T-5.10.3.1 Audit remaining readers of the legacy columns (subscription sync task, any scripts). *2026-10-18 findings: still written in `tasks/job_tasks.py` (`channel.subscribed = True` in the subscription path, `channel.last_synced_at` in the sync path). Routers read through `subscription_service`. `source_weight` has no reader anywhere (see I-7)*
-- [ ] T-5.10.3.2 Migration to drop them, with a downgrade that restores from `channel_subscriptions`
+#### S-5.10.3 🟢 Drop the legacy global columns on `channels` — shipped 2026-10-19
+**PR:** [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). `subscribed`, `source_weight`, `last_synced_at` were retained on `channels` so a partial rollout stayed recoverable; nothing read them any more, so migration `1a6e09517250` drops them.
+- [x] T-5.10.3.1 Audit remaining readers and writers. *2026-10-19: no reader anywhere (app, scripts, schemas; routers already went through `subscription_service`). The last writer was `execute_subscription_job`, which set the global `subscribed` and `last_synced_at` — and never the per-tenant ones: `subscription_service.mark_synced` had no caller, so a tenant's sync time was never recorded and the channel page always showed "never synced". The job now writes the job tenant's `channel_subscriptions` row (`set_subscribed`, `mark_synced`); `test_subscription_task.py` asserts it, and that another tenant's row is untouched*
+- [x] T-5.10.3.2 Migration `1a6e09517250` drops the three columns (SQLite batch rebuild). Downgrade rebuilds them from `channel_subscriptions`: subscribed if any tenant subscribes, the latest sync, weight back to neutral (a global weight cannot be rebuilt from several tenants' without picking one, and every revision with the columns reads weights per tenant). Round trip in `tests/test_migrations/test_drop_legacy_channel_columns_migration.py`
 
 #### S-5.10.4 🟢 Key document visibility on `document_id` — shipped 2026-10-19
 **PR:** [#241](https://github.com/khoks/VideoResearchPro/pull/241). Proposed as a side-session card on 2026-10-19; landed after the R3/R4 batch (PR #227) because both touch `qa_agent.py` and the library Q&A route.

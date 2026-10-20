@@ -10,6 +10,19 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Legacy global channel columns dropped; per-tenant sync time finally recorded (2026-10-19, S-5.10.3)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM).
+
+- Migration `1a6e09517250` drops `channels.subscribed`, `last_synced_at` and
+  `source_weight`, which D-065 had left in place after moving per-user state
+  to `channel_subscriptions`. Nothing read them. The downgrade rebuilds them
+  from `channel_subscriptions`.
+- The subscription job was the last writer, and it wrote only the global
+  columns: a tenant's own sync time was never recorded, so the channel page
+  always showed a subscribed channel as never synced. It now marks the job's
+  tenant subscribed and synced through `subscription_service`.
+
 ### Books can carry model-written framing, opt-in (2026-10-19, S-6.1.3)
 
 PR [#310](https://github.com/khoks/VideoResearchPro/pull/310). Decision [D-093](docs/decisions.md#d-093--book-cohesion-pass-ships-opt-in-none-stays-the-default-after-two-blind-rounds-2026-10-19); judging [notes](docs/notes/2026-10-19-book-cohesion-judging.md).

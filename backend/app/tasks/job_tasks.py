@@ -1734,10 +1734,13 @@ def execute_subscription_job(self, job_id: str) -> None:
     """Fire-and-forget subscription ingest: resolve channels, walk uploads, extract, embed.
 
     Skips the approval pause and the report phase. Channels are upserted into
-    the global ``channels`` table and marked ``subscribed=True``. All uploads
-    are ingested as approved videos so the existing extraction pipeline runs
-    untouched.
+    the global ``channels`` table (shared facts only) and the job's tenant is
+    marked subscribed and, per channel, synced in ``channel_subscriptions``
+    (D-065). All uploads are ingested as approved videos so the existing
+    extraction pipeline runs untouched.
     """
+    from app.services import subscription_service
+
     db = SessionLocal()
     try:
         job = _get_job(db, job_id)
@@ -1801,7 +1804,6 @@ def execute_subscription_job(self, job_id: str) -> None:
                     name=creator.name or "",
                     uploads_playlist_id=uploads_playlist_id,
                     subscriber_count=creator.subscriber_count,
-                    subscribed=True,
                 )
                 db.add(channel)
             else:
@@ -1811,8 +1813,11 @@ def execute_subscription_job(self, job_id: str) -> None:
                     channel.uploads_playlist_id = uploads_playlist_id
                 if creator.subscriber_count is not None:
                     channel.subscriber_count = creator.subscriber_count
-                channel.subscribed = True
             db.commit()
+            # S-5.10.3: subscription state is per tenant. Until 2026-10-19 this
+            # set the global `channels.subscribed`, which nothing read.
+            if job.tenant_id:
+                subscription_service.set_subscribed(db, channel_id, job.tenant_id, True)
 
             resolved_channels.append({
                 "channel_id": channel_id,
@@ -1914,11 +1919,12 @@ def execute_subscription_job(self, job_id: str) -> None:
                     total_ingested += 1
                 db.commit()
 
-            # Update last_synced_at on the channel once all its uploads are staged.
-            channel = db.query(Channel).filter(Channel.channel_id == channel_id).first()
-            if channel is not None:
-                channel.last_synced_at = datetime.now(timezone.utc)
-                db.commit()
+            # The tenant's sync time, once all the channel's uploads are staged.
+            # Until 2026-10-19 this wrote the global `channels.last_synced_at`,
+            # which nothing read, while the per-tenant value the channel page
+            # shows was never written at all (S-5.10.3).
+            if job.tenant_id:
+                subscription_service.mark_synced(db, channel_id, job.tenant_id)
 
             progress_service.publish_progress(
                 job_id, "searching", 18 + int(7 * ((i + 1) / max(1, len(resolved_channels)))),

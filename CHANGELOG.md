@@ -10,6 +10,19 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: the scope of a library question (2026-10-19)
+
+[S-8.1.4](docs/initiatives.md#s-814--shelf-scoped-qa), PR [#313](https://github.com/khoks/VideoResearchPro/pull/313), [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19).
+
+- `library_qa_exchanges.scope_json` records what a library question was asked
+  over: null for the whole library (every existing row), `{"shelf_id": …}`
+  for a shelf, `{"saved_search_id": …}` for a saved search's run. Library Q&A
+  history returns it as `scope`.
+- `qa_scope_service.resolve_document_ids` turns a scope into the documents a
+  question may retrieve: always inside what the reader can see, nothing for
+  an empty shelf, an error for another reader's shelf or a key it does not
+  know. Shelf-scoped Q&A and saved searches both use it.
+
 ### Books can carry model-written framing, opt-in (2026-10-19, S-6.1.3)
 
 PR [#310](https://github.com/khoks/VideoResearchPro/pull/310). Decision [D-093](docs/decisions.md#d-093--book-cohesion-pass-ships-opt-in-none-stays-the-default-after-two-blind-rounds-2026-10-19); judging [notes](docs/notes/2026-10-19-book-cohesion-judging.md).

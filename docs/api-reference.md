@@ -395,12 +395,15 @@ Ask a question across everything the tenant can see (D-063). Runs `run_library_q
     { "video_id": "...", "title": "...", "url": "...", "timestamp": 145.3, "quote": "..." }
   ],
   "answer_language": "English",
-  "created_at": "..."
+  "created_at": "...",
+  "scope": null
 }
 ```
 
+`scope` (S-8.1.4, [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19)) is what the question was asked over: `null` for the whole library (this endpoint always), or an object such as `{"shelf_id": "…"}` for a question asked on a shelf. Narrowing keys (`shelf_id`) only ever restrict the reader's visible documents, and a scope with no documents retrieves nothing; provenance keys (`saved_search_id`, M3) record where an exchange came from. Unknown keys from newer builds may appear; clients keep them and do not interpret them. Shape: `backend/app/schemas/qa_scope.py`.
+
 ### `GET /api/v1/library/qa`
-Library Q&A history. Query params: `limit` (default 100), `offset` (default 0). Ordered ascending by `created_at`. Returns `list[LibraryQAResponse]`.
+Library Q&A history. Query params: `limit` (default 100), `offset` (default 0). Ordered ascending by `created_at`. Returns `list[LibraryQAResponse]`, every exchange whatever its scope, each with its `scope` (a malformed stored value reads as `null`).
 
 ### `DELETE /api/v1/library/qa/{exchange_id}`
 Delete a single library Q&A exchange. Returns 204. (The matching `qa_library_global` Chroma entry is left as orphan; cleanup is a maintenance task, not a request-time concern.)

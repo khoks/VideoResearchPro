@@ -2916,3 +2916,35 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 **Consequences.** Reports keep roughly today's length and gain coverage for starved sources at the cost of a second map phase (about 200 s map-only, against 55 to 95 s). Within-source under-coverage above the 0.2 floor remains. A report-level comparison of packed + re-map against `source` is the natural next measurement if the user wants one.
 
 **Linked initiatives / PRs.** S-1.14.19, S-1.14.20 (E-1.14), D-090, R1 run 7 (E-1.18).
+
+---
+
+## D-095 — Scoped library questions: one history table with a `scope_json` object, narrowing and provenance keys, unknown keys refused (2026-10-19)
+
+**Status:** accepted.
+
+**Context.** Shelf-scoped Q&A (S-8.1.4) and saved searches (S-8.3.2, lane A) both ask the library agent over something narrower than the whole library, and both want their exchanges in the one history the library Q&A page, the Q&A library index (`qa_library_global`) and the dataset exports already read. The M1 and M3 plans each named a `scope_json` column; they had to agree on one shape before either shipped.
+
+**Decision.** `library_qa_exchanges.scope_json` holds a small JSON object documented in `app/schemas/qa_scope.py`, written and read only through `qa_scope_service` (`dump`, `load`, `resolve_document_ids`).
+- `null` is the whole library: every document the reader can see. Every earlier row reads so.
+- **Narrowing keys** intersect with the visible set and never widen it: `shelf_id` (the documents of the runs on one of the reader's shelves).
+- **Provenance keys** record where an exchange came from and never change retrieval: `saved_search_id` (M3).
+- Keys are added, never repurposed. Reading keeps keys this build does not know; resolving **refuses** them (`UnknownScopeKey`), because ignoring an unknown narrowing key would widen the question to the library.
+- A scope that resolves to no documents retrieves nothing; a shelf that is not the reader's is `ScopeNotFound`, the same as a missing one.
+- The scope is stored as asked, not as the resolved document list, so a shelf question later reads as "asked on Rates", not a frozen list of ids.
+- Resolution uses the same query builder as the library listing (`library_query_service.documents_query`, extracted from `query_library_documents`), so a shelf means the same documents in its list and in its answers (D-083). It lives in a service so a Celery task can call it.
+
+**Alternatives considered.**
+- *A separate `shelf_qa_exchanges` table.* A second history to merge into the library page, the Q&A library index, the dataset exports and the palette search.
+- *Typed columns (`shelf_id`, `saved_search_id`).* One migration per new scope kind, and the two lanes would each add their own column.
+- *Storing the resolved document ids.* Large rows, and a shelf's history would stop meaning "this shelf" as runs are added.
+- *Ignoring unknown keys when resolving.* The failure mode is silent widening, the exact thing D-063 forbids.
+
+**Consequences.**
+- The library Q&A history returns `scope` on every exchange; pages must badge scoped ones or a shelf answer reads as library-wide (M1 plan risk).
+- Saved searches store the same object on `saved_searches.scope_json`, resolve it with `resolve_document_ids` before each run and stamp `saved_search_id` on the exchanges they produce.
+- A new scope kind (a tag, a channel, a run) is a new key plus one branch in the resolver and its isolation test; no migration.
+- Exchanges are not re-checked against their scope later: deleting a shelf leaves its questions in history with a dangling `shelf_id`.
+
+**Linked initiatives / PRs.** S-8.1.4 (E-8.1), S-8.3.2 / S-8.3.3 (E-8.3), M1 and M3 plans, PR [#313](https://github.com/khoks/VideoResearchPro/pull/313). Follows D-063, D-070, D-083.
+

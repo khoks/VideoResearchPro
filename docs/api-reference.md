@@ -1100,6 +1100,21 @@ Share shape: `{ id, received_at, updated_at, surface, content_type, kind: "url"|
 - **Source.** `POST /api/v1/echo/shares` takes optional `source_url` (http/https, validated like a share URL) and `source_title`: the page a quote or an image came from. The share shape gains `source: { url, title }`.
 - **Images by address.** A URL share with `content_type: "image"`, or a URL ending in an image extension, is fetched by processing into the tenant's share directory, then read like an uploaded image. Hosts that resolve to private, loopback, link-local or other non-global addresses are refused, and so is every redirect into one, unless `ECHO_FETCH_ALLOW_PRIVATE` is set. Only image content types are kept, up to `ECHO_SHARE_MAX_BYTES`. A refused fetch fails the share with a reason, and Retry runs it again.
 
+### Echo anticipation cards (S-3.8.2)
+Studio (`echo_personal_brain`). The Echo panel reads these when it opens; nothing here notifies. The cap and the dismissal rule are [D-103](decisions.md#d-103--anticipation-cards-only-in-the-opened-panel-three-a-view-three-days-a-key-three-dismissals-turn-a-kind-off-2026-10-20), pre-registered in [the note](notes/2026-10-20-anticipation-cards-preregistration.md).
+- `GET /api/v1/echo/cards?context=library|job:<id>|document:<id>` → `{ cards: [{ key, kind: saved_search|shares|questions, title, body?, href?, action_label?, context? }], muted_kinds, notice?, notice_kind? }`.
+  - At most three cards, one per kind, each shown on at most three distinct days.
+  - Viewing counts a card once per day, except a questions card, which the panel reports itself (below).
+  - `notice` is said once, after three dismissals turned a kind off.
+  - A malformed context is 422.
+  - A questions card carries no questions: the panel fetches `GET /suggestions?context=`.
+- `POST /api/v1/echo/cards/dismiss?key=` → `{ muted_kind }`. Retires the key; the third dismissal of a kind within 30 days turns that kind off and returns it.
+- `POST /api/v1/echo/cards/act?key=` → 204. Retires the key without counting as a dismissal. A saved-search card also marks its notification read; another tenant's notification is untouched.
+- `POST /api/v1/echo/cards/shown?key=` → 204. A questions card was rendered with at least one question.
+- `GET /api/v1/echo/cards/settings` and `PUT /api/v1/echo/cards/settings { kinds: { saved_search?, shares?, questions? } }` → `{ kinds }`. Turning a kind back on restarts its dismissal count; an unknown kind is 422.
+- `POST /api/v1/echo/cards/seen/shares` → 204. Called by the shares inbox when it opens: what is there now is not news.
+- Keys are `saved_search:<notification id>`, `shares:<newest share id>` or `questions:<context>`. Anything else is 422.
+
 ### Echo export-file imports (S-3.7.5)
 Studio (`echo_personal_brain`). Uploads are multipart `file`, plus `importer` (optional; detected otherwise) and `options` (a JSON object). Over `ECHO_IMPORT_MAX_BYTES` (200 MB) is 413. An empty file, an unknown format, a zip unpacking past `ECHO_IMPORT_MAX_UNCOMPRESSED_BYTES` or impossible options are 422. The upload is never stored.
 - `POST /api/v1/echo/import/preview` — what an import would produce; writes nothing. `{ importer, label, summary, participants: [{ name, messages }], options, warnings }`. `whatsapp` options: `self_name`, `redact_other_party`, `timezone` (IANA), `date_order` (`dmy`, `mdy`, `ymd`; inferred, with a warning when nothing decides it). `google_keep` options: `own_words` (default true), `include_trashed`. `google_takeout` options: `include_keep`, `include_youtube` (both default true), plus Keep's `own_words` and `include_trashed`. `apple_health_export` options: `window_days` (30 to 3,650, default 365). The others take none.
@@ -1150,7 +1165,7 @@ Backend: `backend/app/routers/echo_drafts.py`, service `services/echo_draft_serv
   A stopped draft is not counted against the cap.
 - `GET /api/v1/echo/drafts?limit=` — the caller's drafts, newest first: `{ items }`.
 - `GET /api/v1/echo/drafts/{id}` and `DELETE /api/v1/echo/drafts/{id}` (204) — the caller's own only; another tenant's id is a 404. Deleting a draft withdraws what its edit taught (below) at once.
-- `POST /api/v1/echo/drafts/{id}/feedback` (S-3.4.2, [D-103](decisions.md#d-103--a-draft-edit-teaches-only-the-words-the-user-typed-2026-10-20)) — body `{ final_text (1-16000 chars), disclosure_kept: bool = true }`; unknown fields refused. The text the user used, sent again as often as they like (the newest wins). A trailing disclosure line is removed first. 200 with the draft, whose `final_text`, `disclosure_kept` and `feedback_at` are now set and whose `edit` is `{ written_words, removed_words, kept_words, written: [runs the user typed, verbatim], removed: [draft runs they cut] }` (`edit` is null before feedback). 404 for another tenant's draft; 422 for a text that is only the disclosure. Not counted against the daily cap; audited as `echo_draft_feedback` with counts only.
+- `POST /api/v1/echo/drafts/{id}/feedback` (S-3.4.2, [D-104](decisions.md#d-104--a-draft-edit-teaches-only-the-words-the-user-typed-2026-10-20)) — body `{ final_text (1-16000 chars), disclosure_kept: bool = true }`; unknown fields refused. The text the user used, sent again as often as they like (the newest wins). A trailing disclosure line is removed first. 200 with the draft, whose `final_text`, `disclosure_kept` and `feedback_at` are now set and whose `edit` is `{ written_words, removed_words, kept_words, written: [runs the user typed, verbatim], removed: [draft runs they cut] }` (`edit` is null before feedback). 404 for another tenant's draft; 422 for a text that is only the disclosure. Not counted against the daily cap; audited as `echo_draft_feedback` with counts only.
 
 Each draft is metered as the daily quota resource `echo_drafts` (`echo_drafts_per_day`: Free 0, Pro 0, Studio 20) and audited as `echo_drafted` with counts only. Drafts and voice-test results (`echo_drafts`, `echo_voice_gates`) are part of the brain: exported and erased with it.
 

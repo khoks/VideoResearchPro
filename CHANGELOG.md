@@ -12,13 +12,24 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Added: edit a "speak as me" draft into your own version, and Echo learns from the words you typed (S-3.4.2, 2026-10-20)
 
-PR [#359](https://github.com/khoks/VideoResearchPro/pull/359). [D-103](docs/decisions.md#d-103--a-draft-edit-teaches-only-the-words-the-user-typed-2026-10-20).
+PR [#359](https://github.com/khoks/VideoResearchPro/pull/359). [D-104](docs/decisions.md#d-104--a-draft-edit-teaches-only-the-words-the-user-typed-2026-10-20).
 
 - A draft now opens as "Your version", which you can edit. **Save my version** records what you actually used.
 - Echo learns your voice only from the words you typed into it, never from the words it drafted that you kept. A signal learned this way quotes your own words and points back to the draft. Deleting the draft takes back what it taught, straight away.
 - The disclosure line ("Drafted with Echo, reviewed by you") is on by default. Untick **Add the disclosure line** to leave it off when you copy. Whether you kept it is recorded.
 - Saving a version does not use up one of the day's drafts.
 
+### Echo: anticipation cards in the panel (S-3.8.2, 2026-10-20)
+
+PR [#358](https://github.com/khoks/VideoResearchPro/pull/358).
+
+- When you open the Echo panel, up to three one-line cards offer a next
+  step: a saved search whose answer changed, shares read since you last
+  opened the inbox, or questions for the page you are on.
+- They never pop up, badge or notify. Each card shows on three days at
+  most, × retires it, and three dismissals of a kind in a month turn that
+  kind off (D-103). These rules were pre-registered before any card was
+  built.
 ### Added: "Speak as me" drafts a reply in your voice, off until you pass your voice test (S-3.4.1, 2026-10-20)
 
 PR [#357](https://github.com/khoks/VideoResearchPro/pull/357). [D-102](docs/decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20).

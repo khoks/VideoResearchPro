@@ -52,7 +52,8 @@ from app.services import (
 from app.models.echo_import import EchoImport
 from app.models.echo_draft import EchoDraft, EchoVoiceGate
 from app.models.echo_share_token import EchoShareToken
-from app.services import echo_import_service, echo_share_token_service
+from app.models.echo_card_state import EchoCardState
+from app.services import echo_card_service, echo_import_service, echo_share_token_service
 from app.services.echo_privacy_service import ECHO_SECRET_TABLES, ECHO_TABLES, read_archive, row_columns
 
 EXPORT = "/api/v1/echo/export"
@@ -171,6 +172,8 @@ def _seed_brain(db, chroma, user, *, marker: str) -> dict:
     imported = echo_import_service.run_import(
         db, user, io.BytesIO(chat), "WhatsApp Chat with Friend.txt", options={"self_name": "Me"},
     )
+    # S-3.8.2: a dismissed card in the Echo panel.
+    echo_card_service.dismiss(db, user.id, "questions:library")
     return {"facts": [f1.id, f2.id], "shares": [link.id, text.id, file.id], "file_id": file.id, "blob": blob,
             "token": token, "verifier": f"verifier-{marker}-SECRET", "import_id": imported.id,
             "share_token": share_token}
@@ -197,6 +200,7 @@ def _direct_footprint(db, chroma, shares_dir, tenant_id: str) -> dict:
         "echo_imports": db.query(EchoImport).filter(EchoImport.tenant_id == tenant_id).count(),
         "echo_drafts": db.query(EchoDraft).filter(EchoDraft.tenant_id == tenant_id).count(),
         "echo_voice_gates": db.query(EchoVoiceGate).filter(EchoVoiceGate.tenant_id == tenant_id).count(),
+        "echo_card_state": db.query(EchoCardState).filter(EchoCardState.tenant_id == tenant_id).count(),
         "echo_share_tokens": db.query(EchoShareToken).filter(EchoShareToken.tenant_id == tenant_id).count(),
         "voice_signals": db.query(VoiceSignal).filter(VoiceSignal.tenant_id == tenant_id).count(),
         "voice_signal_inputs": db.query(VoiceSignalInput).filter(VoiceSignalInput.tenant_id == tenant_id).count(),
@@ -291,7 +295,7 @@ def test_export_is_audited_with_counts_only(unauthenticated_client, db, brains):
     assert row.user_id == brains["a"].id
     meta = json.loads(row.metadata_json)
     assert meta == {
-        "rows": {"personal_context": 2, "shares_inbox": 5, "voice_signals": 2, "voice_signal_inputs": 1, "activity_events": 1, "echo_connector_grants": 1, "echo_imports": 1, "echo_drafts": 1, "echo_voice_gates": 1},
+        "rows": {"personal_context": 2, "shares_inbox": 5, "voice_signals": 2, "voice_signal_inputs": 1, "activity_events": 1, "echo_connector_grants": 1, "echo_imports": 1, "echo_drafts": 1, "echo_voice_gates": 1, "echo_card_state": 1},
         "files": 1,
         "missing_files": 0,
     }
@@ -350,7 +354,7 @@ def test_delete_brain_empties_every_store_and_spares_the_other_tenant(
     before_a = _direct_footprint(db, chroma, shares_dir, a.id)
     before_b = _direct_footprint(db, chroma, shares_dir, b.id)
     assert before_a == {
-        "rows": {"personal_context": 2, "shares_inbox": 5, "voice_signals": 2, "voice_signal_inputs": 1, "activity_events": 1, "echo_connector_grants": 1, "echo_connector_credentials": 1, "echo_connector_oauth_states": 1, "echo_imports": 1, "echo_drafts": 1, "echo_voice_gates": 1, "echo_share_tokens": 1},
+        "rows": {"personal_context": 2, "shares_inbox": 5, "voice_signals": 2, "voice_signal_inputs": 1, "activity_events": 1, "echo_connector_grants": 1, "echo_connector_credentials": 1, "echo_connector_oauth_states": 1, "echo_imports": 1, "echo_drafts": 1, "echo_voice_gates": 1, "echo_card_state": 1, "echo_share_tokens": 1},
         "files": 1,
         "vectors": {settings.CHROMA_SHARES_COLLECTION_NAME: 1, settings.CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME: 1},
     }
@@ -360,14 +364,14 @@ def test_delete_brain_empties_every_store_and_spares_the_other_tenant(
     body = r.json()
     assert body["removed"] == before_a
     assert body["footprint_after"] == {
-        "rows": {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0, "echo_imports": 0, "echo_drafts": 0, "echo_voice_gates": 0, "echo_share_tokens": 0},
+        "rows": {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0, "echo_imports": 0, "echo_drafts": 0, "echo_voice_gates": 0, "echo_card_state": 0, "echo_share_tokens": 0},
         "files": 0,
         "vectors": {n: 0 for n in echo_vectors.echo_collection_names()},
     }
 
     db.expire_all()
     after_a = _direct_footprint(db, chroma, shares_dir, a.id)
-    assert after_a["rows"] == {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0, "echo_imports": 0, "echo_drafts": 0, "echo_voice_gates": 0, "echo_share_tokens": 0}
+    assert after_a["rows"] == {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0, "echo_imports": 0, "echo_drafts": 0, "echo_voice_gates": 0, "echo_card_state": 0, "echo_share_tokens": 0}
     assert after_a["files"] == 0 and not (shares_dir / a.id).exists()
     assert not any(after_a["vectors"].values())
     for share_id in brains["seed_a"]["shares"]:
@@ -409,7 +413,7 @@ def test_delete_brain_twice_is_harmless(unauthenticated_client, brains):
     assert unauthenticated_client.delete(BRAIN, params=CONFIRM, headers=brains["ha"]).status_code == 200
     r = unauthenticated_client.delete(BRAIN, params=CONFIRM, headers=brains["ha"])
     assert r.status_code == 200
-    assert r.json()["removed"]["rows"] == {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0, "echo_imports": 0, "echo_drafts": 0, "echo_voice_gates": 0, "echo_share_tokens": 0}
+    assert r.json()["removed"]["rows"] == {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0, "echo_imports": 0, "echo_drafts": 0, "echo_voice_gates": 0, "echo_card_state": 0, "echo_share_tokens": 0}
 
 
 def test_delete_brain_leaves_notes_and_the_library_alone(unauthenticated_client, db, brains):
@@ -457,7 +461,7 @@ def test_every_echo_table_is_tenant_keyed():
     exported nor deleted per tenant."""
     assert [name for name, _ in ECHO_TABLES] == [
         "personal_context", "shares_inbox", "voice_signals", "voice_signal_inputs", "activity_events", "echo_connector_grants",
-        "echo_imports", "echo_drafts", "echo_voice_gates",
+        "echo_imports", "echo_drafts", "echo_voice_gates", "echo_card_state",
     ]
     assert [name for name, _ in ECHO_SECRET_TABLES] == [
         "echo_connector_credentials", "echo_connector_oauth_states", "echo_share_tokens",

@@ -28,6 +28,7 @@ from app.models.password_reset_token import PasswordResetToken
 from app.models.personal_context import PersonalContext
 from app.models.echo_import import EchoImport
 from app.models.echo_share_token import EchoShareToken
+from app.models.echo_card_state import EchoCardState
 from app.models.qa_exchange import QAExchange
 from app.models.qa_history_exchange import QAHistoryExchange
 from app.models.quota_usage import QuotaUsage
@@ -83,6 +84,7 @@ __all__ = [
     "PersonalContext",
     "EchoImport",
     "EchoShareToken",
+    "EchoCardState",
     "QAExchange",
     "QAHistoryExchange",
     "QuotaUsage",

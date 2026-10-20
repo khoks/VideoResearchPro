@@ -3175,7 +3175,32 @@ The D-100 user-as-judge test is **not** part of `ready`. Readiness reports wheth
 
 **Linked initiatives / PRs.** E-3.4 / S-3.4.1 (PR [#357](https://github.com/khoks/VideoResearchPro/pull/357)), E-3.8 / S-3.8.1 (PR [#355](https://github.com/khoks/VideoResearchPro/pull/355)), [D-100](#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19), [D-101](#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20), [D-089](#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 1, D-066.
 
-## D-103 — A draft edit teaches only the words the user typed (2026-10-20)
+## D-103 — Anticipation cards: only in the opened panel, three a view, three days a key, three dismissals turn a kind off (2026-10-20)
+
+**Status:** accepted. Pre-registered in [the note](notes/2026-10-20-anticipation-cards-preregistration.md) before any card was built.
+
+**Context.** S-3.8.2 adds one-line next steps ("anticipation cards") to the Echo panel (S-3.8.1). There are three kinds: a saved search whose answer changed, shares read since the user last opened the inbox, and questions for the page in view. A surface that offers things unasked can become a nag, so the frequency cap and the dismissal rule were fixed before anything was shown.
+
+**Decision.**
+- **Where.** Cards appear only inside the Echo panel, after the user opened it, and only while that panel's conversation is empty. Never a popup, toast, sound, push, email, or badge or dot on the bubble.
+- **Cap.** At most three cards a view, one per kind, in a fixed order. A card's key is shown on at most three distinct UTC days, and repeat views on one day count once. A card counts as shown only if it rendered: a questions card counts when a question is on screen.
+- **Dismissal.** × retires a key for good. Acting on a card retires it without counting as a dismissal. Three dismissals of one kind within 30 days turn that kind off; the panel says so once and offers to turn it back on. The user can switch any kind off or on, and turning one back on restarts its count.
+- **State.** One Echo table, `echo_card_state`, per tenant and key. It is exported and erased with the brain (D-089).
+- **Reading after 30 days.** A kind with a dismiss rate above 50%, or an act rate below 10%, over at least 20 shown keys, is switched off by default. Nothing adjusts itself.
+
+**Alternatives considered.**
+- *A dot on the bubble when a card is waiting.* This is how a quiet surface becomes a nag. The value of a card is not worth an interruption, and the bell already carries the saved-search notice.
+- *Server-side impression counting for every kind.* The questions card's content arrives separately and is often empty in a new library, so counting it on read would understate its act rate. The panel reports it shown instead.
+- *Per-device state in browser storage.* The cap would reset on each device, and the reading needs the counts on the server.
+
+**Consequences.**
+- Routes `GET /echo/cards`, plus `POST /echo/cards/dismiss`, `/act`, `/shown` and `/seen/shares`, and `GET` and `PUT /echo/cards/settings`, in their own router (`routers/echo_cards.py`).
+- The shares inbox reports when it opens, which resets the shares card.
+- Any change to these numbers needs a new note and a new decision entry.
+
+**Linked initiatives / PRs.** E-3.8 / S-3.8.2 (PR [#358](https://github.com/khoks/VideoResearchPro/pull/358)), D-089, S-8.3.3, S-8.4.1.
+
+## D-104 — A draft edit teaches only the words the user typed (2026-10-20)
 
 **Status:** accepted.
 

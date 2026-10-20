@@ -3064,3 +3064,29 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Linked initiatives / PRs.** E-3.3 / S-3.3.2 (PR [#335](https://github.com/khoks/VideoResearchPro/pull/335)), D-089, D-074, D-057, D-080.
 
+## D-100 — Voice-match gate: Mode A passes on synthetic writers; speak as me may be built, and is enabled per user only after the user-as-judge test (2026-10-19)
+
+**Status:** accepted.
+
+**Context.** S-3.3.4 is the gate for E-3.4. Its material, conditions, judges and pass rule were pre-registered in [docs/notes/2026-10-19-voice-match-preregistration.md](notes/2026-10-19-voice-match-preregistration.md) (#338) before any draft existed. The install holds none of the user's own writing (no notes on 2026-10-19), so the run used three synthetic writers with sharply different styles.
+
+**Decision.**
+- **The pre-registered gate is met.** E-3.4 may be built on Mode A: retrieval of the user's signals from `personal_context_global`, plus five style-diverse exemplars, with no fine-tuning.
+- **Voice.** The voice draft was preferred in 36 of 36 verdicts. Both judges (claude-sonnet-5, and gemini-3.6-flash declared as the substitute for Gemini 3.1 Pro) preferred it for all three writers, with no abstentions.
+- **Quality.** The guard passed: V was preferred or tied in 47% of quality verdicts, with 17 for V, 17 for N and 2 unparsed counted against V.
+- **Automatic score.** Tier (i) passed with 15 of 18.
+- **Not enabled for anyone yet.** "Speak as me" is switched on per user only after tier (iii), the user picking their own text in at most 80% of at least 20 blinded pairs, passes for that user. Tier (iii) needs at least 40 of their notes.
+
+**Alternatives considered.**
+- *Treat the synthetic pass as the product gate.* The writers were built to differ, and the neutral drafts are generic, so 100% is a ceiling. It shows the pipeline carries style through; it does not show the user would mistake a draft for their own writing.
+- *Wait for the user's notes before building E-3.4.* The pre-registered rule says a pass on this run unblocks building. Holding the agent back would leave nothing to test tier (iii) with.
+
+**Consequences.**
+- S-3.4.1 is unblocked to build on this design.
+- Tier (iii) is the per-user switch: `scripts/voice_match_harness.py user-pairs` and `user-score` are ready.
+- Things to watch in S-3.4: phrase lifting from exemplars (none found here: no voice draft shared a run of four words with the writer's notes), and the 2 of 36 quality verdicts that named neither draft.
+- Running the gate cost $0.31.
+- The first launch stopped at its first judge call: `claude-sonnet-5` refuses an explicit temperature of 0. The app's Anthropic builder sends 0 whenever reasoning is off, so any use case set to `claude-sonnet-5` with reasoning off would fail the same way. Filed as a follow-up.
+
+**Linked initiatives / PRs.** E-3.3 / S-3.3.4 (PR [#346](https://github.com/khoks/VideoResearchPro/pull/346)), #338 (pre-registration), D-055, D-097, [D-099](#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19).
+

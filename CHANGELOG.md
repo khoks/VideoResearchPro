@@ -10,6 +10,19 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Evaluation: the voice-match gate passes on synthetic writers (S-3.3.4, 2026-10-19)
+
+PR [#346](https://github.com/khoks/VideoResearchPro/pull/346). Decision [D-100](docs/decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19); [pre-registration](docs/notes/2026-10-19-voice-match-preregistration.md) (#338); [result](docs/notes/2026-10-19-voice-match-result.md).
+
+- `backend/scripts/voice_match_harness.py` runs the three tiers the plan asks
+  for: an automatic style score, two model judges that may abstain, and a
+  blinded "which of these did you write?" test for the user.
+- On three invented writers, drafts that used the learned signals and five of
+  the writer's notes were judged closer to the writer in 36 of 36 verdicts,
+  without reading worse than a neutral draft. Building "speak as me" on this
+  design is unblocked; it is turned on for a person only after they pass the
+  "which did you write?" test themselves.
+
 ### Added: Echo's facts and signals are searchable for retrieval (S-3.3.3, 2026-10-19)
 
 PR [#343](https://github.com/khoks/VideoResearchPro/pull/343).

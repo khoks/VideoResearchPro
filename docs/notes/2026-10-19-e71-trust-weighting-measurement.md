@@ -107,3 +107,18 @@ By judge, the share of non-tie verdicts favouring OFF was 55% (Claude Sonnet 5),
 ## Related: library Q&A model-tier delta (T-5.10.2.7)
 
 The D-055 replay of library Q&A on the same ten questions and the same per-user corpus, unweighted, is in [2026-10-19-t51027-library-qa-d055-replay.md](2026-10-19-t51027-library-qa-d055-replay.md): no re-tier warranted (challenger won 2 of 10 questions; mean relevance 8.63 vs 8.97). **It also bears on clauses 3 and 4 above.** In that replay, re-judging the same answers with each source's publication date in the excerpts flipped the preference from 21–8 for production to 15–11 for the challenger and cut confirmed unsupported claims from 119/54 to 18/8. This measurement's judges saw undated excerpts too, so its relevance and faithfulness clauses may be contaminated the same way; T-7.1.2.3's re-run with dated excerpts decides it.
+
+## Dated re-judge (pre-registered 2026-10-19, before it runs)
+
+**Why.** The T-5.10.2.7 replay found that judges and verifiers were shown excerpts without the publication dates the answer prompt carries (D-072), so a correctly cited date read as unsupported. The results above were judged the same way. The coordinator ruled that the answers be re-judged with dates visible and the outcome decide S-7.1.2.
+
+**What changes.** Only the judging. The same 40 answers, the same chunks, the same four clauses with the same thresholds. `judge_qa_pairs.py --dates-db` adds each source's `published <date>` (and discussed era, when known) to every excerpt header, as `qa_agent._vintage_parts` renders it for the answer model. Fresh coins. Clauses 1 and 2 are computed from retrieval and cannot change; they are reported again for completeness.
+
+**Deviation, declared now.** Gemini 3.1 Pro's daily quota is exhausted, so the Google judge and the Google verifier lens are `gemini-3.5-flash` (medium and low). GPT-5.5 and Claude Sonnet 5 are unchanged. Because two things now differ from the reading above (dates, and one judge model), clause 3 is also reported for the **two unchanged judges alone**, which isolates the effect of the dates.
+
+**Rule for what follows (the coordinator's, fixed now).** If the dated reading meets clauses 3 and 4, S-7.1.2 closes as "artifact, no rework" and weighting stays as shipped. If either still fails, S-7.1.2 proceeds as filed. Both readings are kept side by side; the undated one is not overwritten.
+
+### Dated re-judge — results
+
+*(appended after the run)*
+

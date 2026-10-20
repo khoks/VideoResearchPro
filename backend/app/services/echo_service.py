@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
@@ -255,6 +255,10 @@ class EchoReadiness:
     # Domain 5 feeder (S-3.7.1): items shared to the inbox. Reported, not
     # gated, for the same reason as notes (D-074).
     shares_total: int = 0
+    # S-3.5.1: readiness v2. ``ready`` is all five domains met; the fields
+    # above stay as reported figures (the v1 triple no longer gates).
+    progress: float = 0.0
+    domains: list = field(default_factory=list)
 
 
 # Tunable thresholds. Conservative defaults — Echo features should not
@@ -290,17 +294,17 @@ def is_ready(
     total = len(rows)
     sources = {r.source for r in rows}
     has_personality = any(r.kind == "personality_trait" for r in rows)
-    ready = (
-        total >= total_threshold
-        and len(sources) >= sources_threshold
-        and has_personality
-    )
-    from app.services import echo_intake_service, note_service
+    from app.services import echo_intake_service, echo_readiness_service, note_service
+
+    # S-3.5.1: the gate is the five-domain readiness, measured from the
+    # stores. The v1 triple (rows, sources, a personality trait) is reported
+    # only; the thresholds above no longer decide `ready`.
+    v2 = echo_readiness_service.evaluate(db, user_id)
 
     voice = note_service.voice_stats(db, user_id)
     shares = echo_intake_service.count_shares(db, user_id)
     return EchoReadiness(
-        ready=ready,
+        ready=v2.ready,
         total_rows=total,
         distinct_sources=len(sources),
         has_personality_trait=has_personality,
@@ -309,4 +313,6 @@ def is_ready(
         notes_total=voice.notes_total,
         notes_words=voice.words_total,
         shares_total=shares,
+        progress=v2.progress,
+        domains=[d.to_dict() for d in v2.domains],
     )

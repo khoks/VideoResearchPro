@@ -227,7 +227,10 @@ def test_is_ready_false_on_empty_user(db):
     assert r.has_personality_trait is False
 
 
-def test_is_ready_true_when_thresholds_met(db):
+def test_the_v1_triple_is_reported_but_no_longer_the_gate(db):
+    """S-3.5.1: the v1 figures stay on the status, but `ready` is the
+    five-domain gate (tests/test_services/test_echo_readiness.py), which seven
+    facts do not meet."""
     user = auth_service.create_user(db, email="cs2@x.com", password="pw" * 6)
     # Use small thresholds so the test stays fast.
     for i in range(5):
@@ -245,7 +248,8 @@ def test_is_ready_true_when_thresholds_met(db):
     )
 
     r = is_ready(db, user.id, total_threshold=3, sources_threshold=3)
-    assert r.ready is True
+    assert r.ready is False
+    assert {d["key"] for d in r.domains} == {"facts", "activity", "signals", "voice", "shares"}
     assert r.total_rows == 7
     assert r.distinct_sources == 3
     assert r.has_personality_trait is True

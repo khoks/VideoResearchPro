@@ -52,6 +52,12 @@ from app.services import activity_event_service, byok_service, echo_service, sch
 logger = logging.getLogger(__name__)
 
 KIND = "echo_sync"
+# Connectors the roadmap names that this build cannot offer yet, with why.
+# Readiness lists them as "not connected" rather than missing (S-3.5.1).
+PLANNED_CONNECTORS: tuple[tuple[str, str, str], ...] = (
+    ("youtube_likes", "YouTube likes", "Waits on this install's Google sign-in setup (S-3.2.2)."),
+    ("google_calendar", "Google Calendar", "Waits on this install's Google sign-in setup (S-3.2.5)."),
+)
 STATE_TTL = timedelta(minutes=10)
 MAX_FACT_CONFIDENCE = 0.9
 

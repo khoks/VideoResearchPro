@@ -3,7 +3,7 @@ import logging
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -26,7 +26,7 @@ from app.schemas.library_video import LibrarySort, LibraryVideoResponse
 from app.schemas.graph import GraphResponse
 from app.schemas.tag import TagSummary
 from app.services import chroma_service
-from app.services import graph_service, tag_service, visibility_service
+from app.services import graph_service, library_query_service, qa_scope_service, tag_service, visibility_service
 from app.services.llm_service import get_llm_for
 from app.sources.pdf.connector import (
     SOURCE_ID_PREFIX as PDF_SOURCE_ID_PREFIX,
@@ -225,6 +225,7 @@ def get_library_qa_history(
             references=refs,
             answer_language=qa.answer_language,
             created_at=qa.created_at,
+            scope=qa_scope_service.load(qa.scope_json),
         ))
     return results
 
@@ -408,45 +409,21 @@ def query_library_documents(
     rather than everything — the D-063 posture: a narrower scope never
     widens to the whole library by accident.
     """
-    if job_ids is not None and not job_ids:
-        return []
-
-    q = (
-        db.query(Document)
-        .outerjoin(Channel, Document.channel_id == Channel.channel_id)
-        .filter(
-            Document.document_id.in_(
-                visibility_service.visible_document_ids(db, tenant_id)
-            )
-        )
+    # One builder for the listing and for scoped Q&A (S-8.1.4), so a shelf
+    # means the same documents in its list and in its answers.
+    q = library_query_service.documents_query(
+        db,
+        tenant_id,
+        job_ids=job_ids,
+        search=search,
+        language=language,
+        channel_id=channel_id,
+        transcript_status=transcript_status,
+        tag_id=tag_id,
+        document_id=document_id,
     )
-    if job_ids is not None:
-        q = q.filter(
-            Document.document_id.in_(
-                db.query(JobVideo.document_id).filter(JobVideo.job_id.in_(job_ids))
-            )
-        )
-
-    if search:
-        like = f"%{search}%"
-        q = q.filter(or_(Document.title.ilike(like), Channel.name.ilike(like)))
-    if language:
-        q = q.filter(Document.transcript_language == language)
-    if channel_id:
-        q = q.filter(Document.channel_id == channel_id)
-    if transcript_status:
-        q = q.filter(Document.transcript_status == transcript_status)
-    if document_id:
-        # S-8.2.2: a palette result lands on its one row
-        # (`/library?document=<id>`). Inside the visibility scope above, so
-        # another tenant's id matches nothing.
-        q = q.filter(Document.document_id == document_id)
-    if tag_id:
-        # The tenant is part of the subquery, so another reader's tag id
-        # matches nothing rather than revealing what they tagged.
-        q = q.filter(
-            Document.document_id.in_(tag_service.tagged_document_ids(db, tenant_id, tag_id))
-        )
+    if q is None:
+        return []
 
     if sort == "newest":
         q = q.order_by(Document.created_at.desc())

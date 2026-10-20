@@ -192,6 +192,19 @@ button {
   .pratidhvani-mobile-drawer {
     display: block !important;
   }
+  /* S-3.8.1: the Echo bubble moves into the mobile bar, and the panel
+     fills the screen. */
+  .pratidhvani-echo-bubble {
+    display: none !important;
+  }
+  .pratidhvani-echo-panel {
+    inset: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }
 
 @media (max-width: 640px) {
@@ -488,6 +501,8 @@ button.reader-citation {
   .pratidhvani-sidebar,
   .pratidhvani-mobile-bar,
   .pratidhvani-mobile-drawer,
+  .pratidhvani-echo-bubble,
+  .pratidhvani-echo-panel,
   .reader-outline,
   .reader-progress,
   .reader-no-print,

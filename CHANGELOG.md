@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Echo: listening, reading, watching, workouts and health from export files (S-3.7.5 part 2, 2026-10-19)
 
-PR [#PR2](https://github.com/khoks/VideoResearchPro/pull/PR2).
+PR [#349](https://github.com/khoks/VideoResearchPro/pull/349).
 
 - Google Takeout (Keep notes plus YouTube watch and search history),
   Spotify listening history, a Goodreads library, Letterboxd films and

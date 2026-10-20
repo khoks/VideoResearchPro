@@ -121,3 +121,33 @@ Same job and descriptions as run 6, regenerated on the code with source batching
 
 1. **R1 (ON vs OFF):** the same four rules as run 6, unchanged.
 2. **Batching (run-7 OFF vs run-6 OFF, both without annotations):** a blind three-family judge pair on substance. The source-batched report must be preferred by at least two of three families, and its confirmed fabrications must not exceed the packed report's. If it fails, the default goes back to `packed`. Gemini 3.1 Pro is the third family; there are no substitutes.
+
+## Run 7: results (2026-10-19)
+
+Regenerated on #300 (source batching at 30K). ON 180,896 chars (1,149 s), OFF 158,381 chars (954 s): about twice run 6's length.
+
+**Batching comparison (run-7 OFF source-batched vs run-6 OFF packed 120K): fails its pre-registered gate.**
+
+| Judge | Prefers | Substance |
+|---|---|---|
+| GPT-5.5 | source | 8 vs 7 |
+| Sonnet 5 | tie | 8 vs 8 |
+| Gemini 3.1 Pro | tie | 9 vs 9 |
+
+One of three preferred source; the gate needed two. Fabrications after three-lens verification: source 0 of 5 claims, packed **6 of 12**. Five of the six are false exclusivity, the symptom of a composer that never saw two channels. Coverage: every channel is substantially present in both run-7 arms (Absent Data 31 to 34 mentions, against 1 in run 6 ON). Per the rule, the default reverts to `packed` (D-094), and the switch to `source` goes to the user.
+
+**R1 comparison (run-7 ON vs OFF): invalid as a confirmatory test.** It fails rule 1: one report quote in OFF, "वेरी इंपॉर्टेंट लाइब्रेरी", was **back-translated by the composer** from the English content. The map `original` was verbatim, garbled ASR and all ("वेरी वेरीेंट"). The check is report-level, so the fix belongs at compose and is with R5. Exploratory judge reads: GPT-5.5 prefers OFF, Sonnet 5 ties, Gemini Pro quota-blocked. Separately, the map dropped 68 of 176 CodeWithMunnaX originals because, in single-source calls, the model wrote the full three-part quote form into `original`. R5 is salvaging the native line.
+
+## Experiment 3: packed 120K + starved-source re-map (S-1.14.20)
+
+| Arm | Items | Zero-item sources | Floor ratio | Worst-source density | Seconds |
+|---|---|---|---|---|---|
+| ON | 392 | 0 | 0.485 | 0.27 | 196 |
+| OFF | 340 | 0 | 0.718 | 0.57 | 213 |
+
+This is the first configuration to meet the pre-registered coverage rule in both arms. ON's 0.485 is within 0.1 of the threshold, so a repeat is required; it is recorded below.
+
+**Repeat (rule 2):** ON 419 items, floor ratio 0.489, worst density 0.32, 9 wrong-script quotes, 329 s; OFF 586 items, floor ratio 0.422, worst density 0.78, 0 wrong-script quotes, 302 s. No zero-item sources. It passes twice, so packed + re-map meets the pre-registered coverage rule.
+
+**Against source batching, from the same measurements:** the re-map is *slower* (300 to 330 s map-only against 144 to 161 s, because the re-map is a second phase after the first), reaches a similar item volume in OFF (586 against 579), and keeps cross-source contamination (9 wrong-script quotes in one ON pass; source batching has had 0 in every pass). Its one advantage is shorter reports when few sources starve, and in this corpus several do.
+

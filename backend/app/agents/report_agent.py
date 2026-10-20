@@ -300,6 +300,68 @@ _MAP_MAX_BISECT_DEPTH = 4
 # serve every batch size.
 _MAP_BUDGET_STEP = 4_096
 
+# S-1.14.20: a source a packed batch starved is re-mapped on its own. Solo,
+# no source in the R1 corpus extracted below 0.77 items per chunk; inside a
+# 120K packed batch, starved ones sat at 0.00-0.17 (notes/2026-10-19-
+# map-coverage.md). Sources under 10 chunks may legitimately yield little.
+_STARVED_DENSITY = 0.2
+_STARVED_MIN_CHUNKS = 10
+_STARVED_REMAP_TOKENS = 30_000
+
+
+def _item_source_index(metas: list[dict]) -> tuple[dict[str, str], dict[str, str]]:
+    """(url key -> source identity, title -> source identity) for map items."""
+    by_url: dict[str, str] = {}
+    by_title: dict[str, str] = {}
+    for meta in metas:
+        sid = _source_identity(meta)
+        key = _source_key(meta.get("video_url") or meta.get("url") or meta.get("permalink"))
+        if key:
+            by_url.setdefault(key, sid)
+        if meta.get("video_title"):
+            by_title.setdefault(str(meta["video_title"]), sid)
+    return by_url, by_title
+
+
+def _item_source(item: dict, by_url: dict[str, str], by_title: dict[str, str]) -> str | None:
+    return by_url.get(_source_key(item.get("video_url"))) or by_title.get(str(item.get("video_title") or ""))
+
+
+def _starved_sources(metas: list[dict], summaries: list, by_url: dict, by_title: dict) -> list[str]:
+    """Sources with at least ``_STARVED_MIN_CHUNKS`` chunks whose items per
+    chunk fell under ``_STARVED_DENSITY``, in first-appearance order."""
+    chunk_counts: dict[str, int] = {}
+    for meta in metas:
+        sid = _source_identity(meta)
+        chunk_counts[sid] = chunk_counts.get(sid, 0) + 1
+    item_counts: dict[str, int] = {}
+    for summary in summaries:
+        if not isinstance(summary, dict):
+            continue
+        for key in _REDUCE_KEYS:
+            for item in summary.get(key) or []:
+                if isinstance(item, dict):
+                    sid = _item_source(item, by_url, by_title)
+                    if sid:
+                        item_counts[sid] = item_counts.get(sid, 0) + 1
+    return [
+        sid for sid, n in chunk_counts.items()
+        if n >= _STARVED_MIN_CHUNKS and item_counts.get(sid, 0) / n < _STARVED_DENSITY
+    ]
+
+
+def _without_sources(summary: dict, drop: set[str], by_url: dict, by_title: dict) -> dict:
+    """``summary`` minus the items of the sources in ``drop``."""
+    if not isinstance(summary, dict):
+        return summary
+    out = dict(summary)
+    for key in _REDUCE_KEYS:
+        items = summary.get(key)
+        if isinstance(items, list):
+            out[key] = [it for it in items
+                        if not (isinstance(it, dict) and _item_source(it, by_url, by_title) in drop)]
+    return out
+
 
 def _map_call_budget(batch_tokens: int, cap: int) -> int:
     """Completion budget for ONE map call: its own input size times
@@ -539,6 +601,50 @@ def map_chunks(state: ReportAgentState) -> dict:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             results = list(pool.map(_run_batch, range(len(batches))))
 
+    # S-1.14.20: a packed batch can starve a source (the model writes a
+    # roughly fixed number of items per call). Re-map each starved source on
+    # its own and let those items replace the thin ones; the other sources
+    # keep their packed extraction.
+    all_metas = [m for ms in batch_metas for m in ms]
+    by_url, by_title = _item_source_index(all_metas)
+    first_pass = [summary for res in results for summary, _ in res["pairs"] if summary is not None]
+    starved = _starved_sources(all_metas, first_pass, by_url, by_title) if batching == "packed" else []
+    remap_start = len(batches)
+    if starved:
+        groups: dict[str, tuple[list, list, list]] = {sid: ([], [], []) for sid in starved}
+        for items_, metas_, toks_ in zip(batches, batch_metas, batch_tokens):
+            for item, meta, tok in zip(items_, metas_, toks_):
+                sid = _source_identity(meta)
+                if sid in groups:
+                    groups[sid][0].append(item)
+                    groups[sid][1].append(meta)
+                    groups[sid][2].append(tok)
+        for sid in starved:
+            items_, metas_, toks_ = groups[sid]
+            cur: tuple[list, list, list] = ([], [], [])
+            for item, meta, tok in zip(items_, metas_, toks_):
+                if cur[0] and sum(cur[2]) + tok > min(_STARVED_REMAP_TOKENS, budget_per_batch):
+                    batches.append(cur[0]); batch_metas.append(cur[1]); batch_tokens.append(cur[2])
+                    cur = ([], [], [])
+                cur[0].append(item); cur[1].append(meta); cur[2].append(tok)
+            if cur[0]:
+                batches.append(cur[0]); batch_metas.append(cur[1]); batch_tokens.append(cur[2])
+        logger.warning(
+            "map_chunks: %d source(s) starved by packed batching; re-mapping them alone in %d call(s)",
+            len(starved), len(batches) - remap_start,
+        )
+        remap_ids = list(range(remap_start, len(batches)))
+        if workers == 1 or len(remap_ids) == 1:
+            remap_results = [_run_batch(i) for i in remap_ids]
+        else:
+            with ThreadPoolExecutor(max_workers=min(workers, len(remap_ids))) as pool:
+                remap_results = list(pool.map(_run_batch, remap_ids))
+        drop = set(starved)
+        for res in results:
+            res["pairs"] = [(_without_sources(sm, drop, by_url, by_title) if sm is not None else None, rec)
+                            for sm, rec in res["pairs"]]
+        results = results + remap_results
+
     summaries = []
     records: list[dict] = []
     modality_counts: dict[str, int] = {}
@@ -564,8 +670,10 @@ def map_chunks(state: ReportAgentState) -> dict:
     notes = dict(state.get("processing_notes") or {})
     notes.update(
         {
-            "map_batches": len(batches),
+            "map_batches": remap_start,
             "map_batching": batching,
+            "map_sources_remapped": len(starved),
+            "map_remap_calls": len(batches) - remap_start,
             "map_batch_tokens": budget_per_batch,
             "map_batches_failed": failed_batches,
             "map_chunks_dropped": dropped_chunk_groups,

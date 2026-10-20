@@ -580,8 +580,14 @@ Any can start first; none block the other. E-1.10 still gates Reddit / HN orches
   - [x] T-1.14.19.3 Measured: `scripts/measure_map_coverage.py`, 2 experiments × 2 arms. With source batching the worst-source density is 0.77 (against 0.00 for the old default) and wrong-script quotes are 0. The pre-registered floor-ratio rule was not met by any config, because the threshold was mis-specified (D-090)
   - [x] T-1.14.19.4 Tests: `test_map_batching.py` (14, mutation-checked: source boundary, length stop, completion order); the three tests that pinned `{"raw": ...}` now pin the failure path
   - [x] T-1.14.19.7 Adversarial review (4 lenses, 3 skeptics per finding): 8 confirmed findings, 4 distinct defects, all fixed. Per-call completion budget, batch cap at 1.5× the output ceiling plus recursive bisect on truncation, backoff on transient errors, a lock on `VideoText`'s matcher. The race test fails without the lock 3 of 3 times
-  - [ ] T-1.14.19.5 Report-level check: run 7's batching comparison (run-7 OFF vs run-6 OFF, blind three-family judges, rule in the note). A failure reverts the default to `packed`
+  - [x] T-1.14.19.5 Report-level check (run 7): **failed the substance gate** (1 of 3 families preferred source; 2 ties). Fabrications went the other way: source 0 confirmed, packed 6 (5 of them false exclusivity). The default reverted to `packed` per the rule ([D-094](decisions.md#d-094--map-batching-packed-restored-by-run-7s-pre-registered-rule-starved-sources-re-mapped-alone-the-switch-to-source-is-the-users-call-2026-10-19)); switching to `source` is the user's call
   - [ ] T-1.14.19.6 Within-source mislabelling: about 1% of `shown`/`both` items have no span from their own source within ±60 s, in every config. Batching cannot fix this one
+
+- S-1.14.20 🟡 Re-map sources a packed batch starved. Filed 2026-10-19. Linked decision: [D-094](decisions.md#d-094--map-batching-packed-restored-by-run-7s-pre-registered-rule-starved-sources-re-mapped-alone-the-switch-to-source-is-the-users-call-2026-10-19).
+  - [x] T-1.14.20.1 After a packed map pass, a source with ≥10 chunks and <0.2 items per chunk is re-mapped alone (30K calls), and its new items replace the thin ones; `map_sources_remapped` and `map_remap_calls` go into the processing notes
+  - [x] T-1.14.20.2 Tests: re-map and replacement, small sources exempt, source mode never re-maps, density rather than presence (mutation-checked)
+  - [x] T-1.14.20.3 Map-only measurement: zero-item sources 1→0; floor ratio 0.49/0.72; worst-source density 0.27/0.57; items about 2.4× packed
+  - [ ] T-1.14.20.4 Repeat (rule 2), then a report-level comparison against `source` if the user wants the default decided by measurement
 
 **Open questions**
 - OQ-7: does the harness generalize to a scheduled regression check (re-run on every model-lineup shift), or stay a manual audit? Depends on S-1.14.6 landing.
@@ -704,6 +710,7 @@ Decided by [D-075](decisions.md#d-075--r1-after-three-runs-the-modality-boundary
 - [ ] T-1.18.8.4 Check the composed report against item provenance (deterministic, now that the provenance exists), then re-run the S-1.18.3 protocol with the multilingual-verification rule from D-075
   - *Run 5, 2026-10-19:* **0 confirmed attribution errors** in the annotated report, the first run of five. Substance judging was confounded by an R5 regression (#268's map-stage `original` quotes, fabricated in the wrong script) and by a Gemini Pro quota fallback. Run 6 follows the R5 fix. See the protocol note.
   - *Run 6, 2026-10-19:* fails rules 2 (two confirmed attribution errors) and 3 (both available judges prefer the plain arm; Gemini 3.1 Pro quota-blocked); passes 1 (quote fidelity, 0 failing) and 4 (0 fabrications vs 4). Both failures trace to map batching, not to the annotations: two channels got zero items, and one error is a span from Simplilearn's video credited to CodeWithMunnaX. That led to S-1.14.19 / D-090. Run 7 is pre-registered in the map-coverage note.
+  - *Run 7, 2026-10-19:* **invalid as a confirmatory test**. It fails rule 1 on a single report quote the composer back-translated from English (a compose-level gap, now with R5). Exploratory reads: GPT-5.5 prefers OFF, Sonnet ties. Run 8 waits on R5's report-level quote enforcement.
 
 #### S-1.18.5 🔵 Re-tier the two vision use cases, then re-measure cost
 Filed 2026-10-19 from the S-1.18.3 run: at the registry defaults (`visual_select_moments` gpt-5.5 medium, `visual_describe_frame` gpt-5.5 low) the estimated vision spend was **$0.198 per video** (11 videos, 120 frames at 640×360; selection ≈ 75K input tokens, description ≈ 159K input tokens), double the $0.10 ceiling the protocol fixed in advance. Both cheaper candidates are already on `VISION_CAPABLE_MODELS`.

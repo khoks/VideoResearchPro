@@ -2893,3 +2893,26 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 - `gemini-3.1-pro-preview` hit its daily request quota (250, shared across sessions) and `gemini-3.6-flash` judged instead, as the notes record.
 
 **Linked initiatives / PRs.** E-6.1 / S-6.1.3 (PR [#310](https://github.com/khoks/VideoResearchPro/pull/310)), D-055 (judging method), D-056 (disclose, never drop), D-066, D-067.
+
+## D-094 — Map batching: `packed` restored by run 7's pre-registered rule, starved sources re-mapped alone; the switch to `source` is the user's call (2026-10-19)
+
+**Status:** accepted for the default. Supersedes [D-090](#d-090--map-batches-never-mix-sources-source-batching-at-a-30k-cap-a-truncated-map-response-is-a-failure-and-map-calls-run-concurrently-2026-10-19)'s default choice only; every other part of D-090 stands: truncation is a failure, recursive bisect, backoff on transient errors, per-call budgets, concurrency, the matcher lock. **Open question for the user:** switch the default to `source` on the fabrication evidence below?
+
+**Context.** D-090 made `source` batching the default and pre-registered a report-level test: run 7's plain arm (source-batched) against run 6's plain arm (packed 120K), blind three-family judges. Source had to be **preferred by at least two of three families** and have **no more confirmed fabrications**. Results ([notes/2026-10-19-map-coverage.md](notes/2026-10-19-map-coverage.md)):
+- *Substance:* GPT-5.5 preferred source (8 vs 7); Sonnet 5 and Gemini 3.1 Pro tied. That is 1 of 3, so the gate **fails**.
+- *Fabrications, after three-lens verification:* source **0** of 5 claims; packed **6** of 12. Five of the six are false exclusivity ("the one explicit API supersession", "no other source mentions distplot", "the only numerically specific conclusions"), which is what a composer asserts when the map stage never showed it two channels.
+- *Cost:* the source-batched reports are about twice as long (17.9K against 10.4K words) and compose takes about twice as long.
+
+**Decision.**
+1. The default goes back to `packed` at 120K, as the pre-registered rule says. The rule was written before the data, so it stands even though its second criterion favoured `source`.
+2. **S-1.14.20:** after a packed map pass, any source with at least 10 chunks and under 0.2 items per chunk is re-mapped on its own (30K calls), and those items **replace** its thin ones. The threshold comes from the data: solo, no source fell below 0.77; starved ones sat at 0.00 to 0.17. Map-only measurement on job 419e691d: zero-item sources go from 1 to 0, the floor ratio from 0.00/0.14 to 0.485/0.718 (the first config to clear the pre-registered 0.4 in both arms), worst-source density from 0.00/0.09 to 0.27/0.57, and items from about 150 to about 370 (source batching: about 600).
+3. Whether to switch the default to `source` (0 confirmed fabrications, full coverage, double length) or keep `packed` with the re-map (unmeasured at report level) goes to the user. Overriding a pre-registered rule is a judgment, not a measurement.
+
+**Alternatives considered.**
+- *Keep `source` despite the failed gate.* That overrides the pre-registration on evidence the rule did not weigh. It may be right, and it is offered to the user rather than taken.
+- *Plain `packed` with no repair.* Restores a measured defect: sources starved to zero in three of four runs, and false exclusivity in the report.
+- *Lower the packed cap.* Measured in D-090: 60K failed its repeat, and 30K produced 16 wrong-script quotes.
+
+**Consequences.** Reports keep roughly today's length and gain coverage for starved sources at the cost of a second map phase (about 200 s map-only, against 55 to 95 s). Within-source under-coverage above the 0.2 floor remains. A report-level comparison of packed + re-map against `source` is the natural next measurement if the user wants one.
+
+**Linked initiatives / PRs.** S-1.14.19, S-1.14.20 (E-1.14), D-090, R1 run 7 (E-1.18).

@@ -1389,7 +1389,14 @@ def compose_report(state: ReportAgentState) -> dict:
     # undercounted the corpus by 31.5% and dropped ~20 channels; D-055).
     stats_html = _render_statistics_html(statistics)
 
-    html = "\n".join([p for p in [summary_html, *parts, stats_html] if p])
+    # N-002: native-script text the COMPOSER wrote must trace back to speech
+    # too. The map check keeps only true originals, but R1 run 7's composer
+    # back-translated an item's English into Devanagari ("वेरी इंपॉर्टेंट
+    # लाइब्रेरी (very important library)") and put it in the speaker's mouth.
+    # Checked on the prose only: the statistics table is ours, not quotation.
+    prose = "\n".join([p for p in [summary_html, *parts] if p])
+    prose, scrubbed = _scrub_unverified_quotes(prose, state.get("transcript_chunks") or [])
+    html = "\n".join([p for p in [prose, stats_html] if p])
     html, broken = _strip_broken_links(html)
     if broken:
         logger.warning(
@@ -1426,6 +1433,12 @@ def compose_report(state: ReportAgentState) -> dict:
             "not found word for word in that speaker's transcript and were left out "
             "(the points they supported were kept, in English)"
         )
+    if scrubbed:
+        disclosures.append(
+            f"{sum(r['occurrences'] for r in scrubbed)} passage(s) of non-English text "
+            "in the report did not match any source's speech and were removed "
+            "(the English beside them was kept)"
+        )
     if sections_failed:
         disclosures.append(f"{sections_failed} report section(s) failed to compose")
     if disclosures:
@@ -1434,7 +1447,40 @@ def compose_report(state: ReportAgentState) -> dict:
             "border-radius:4px;margin-top:24px\"><strong>Processing note:</strong> "
             + "; ".join(disclosures) + ".</p>"
         )
-    return {"final_html": html}
+    out_notes = dict(notes)
+    out_notes["report_quotes_removed"] = sum(r["occurrences"] for r in scrubbed)
+    return {"final_html": html, "processing_notes": out_notes}
+
+
+def _scrub_unverified_quotes(prose: str, chunks: list[dict]) -> tuple[str, list[dict]]:
+    """Remove native-script runs in composed prose that no source said.
+
+    Same rule as the R1 quote-fidelity gate (`quote_fidelity.scrub_report`),
+    against every source's speech. Each source's title and channel name are
+    admitted as well: a Devanagari video title in a citation label is not
+    speech, and removing it would break the attribution rather than a quote.
+    """
+    if not quote_fidelity.report_native_runs(prose):
+        return prose, []
+    sources = _source_texts_for_verification(chunks)
+    corpus = dict(sources["videos"])
+    labels: dict[str, str] = {}
+    for ch in chunks:
+        meta = ch.get("metadata") or {}
+        sid = _source_identity(meta)
+        if sid and sid not in labels:
+            labels[sid] = f"{meta.get('video_title') or ''} {meta.get('channel_name') or ''}"
+    for sid, label in labels.items():
+        if label.strip():
+            corpus[f"label:{sid}"] = quote_fidelity.VideoText.from_raw(label, label)
+    prose, removed = quote_fidelity.scrub_report(prose, corpus)
+    if removed:
+        logger.warning(
+            "compose_report: removed %d native-script passage(s) not found in any "
+            "source's speech: %s", sum(r["occurrences"] for r in removed),
+            "; ".join(r["run"][:60] for r in removed),
+        )
+    return prose, removed
 
 
 _BROKEN_ANCHOR = re.compile(

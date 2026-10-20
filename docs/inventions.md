@@ -123,6 +123,13 @@ speaker's; English nouns written in Devanagari remain invisible to the
 tagger; what the 60% threshold should rest on is the user's call; and **a
 proper prior-art search has still not been done**.
 
+**Refined 2026-10-19 (T-1.16.2.11).** "Keep the whole sentence in that
+language's script" now applies only to speech already in that script. A
+Hindi-dominant source typed in Latin letters is quoted in Latin letters,
+because re-scripting it puts words in the speaker's mouth that they never
+wrote. Every native-script passage in a composed report is now checked
+against the sources' speech in code, and any that fails is removed.
+
 **Originally captured:** 2026-07-31
 
 **Source.** User, session 2026-07-31, while reviewing R5. Introduced unprompted and explicitly flagged: *"R5 seems to be a candidate for novel invention if we carefully detect and handle the balance of words from different scripts and grammar used and syntax used in different portions of the speech."* Verbatim message preserved at [docs/notes/2026-07-31-novel-code-mixing-rendering.md](notes/2026-07-31-novel-code-mixing-rendering.md).

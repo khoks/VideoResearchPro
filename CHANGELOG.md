@@ -10,6 +10,24 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Fixed: back-translated wording removed from composed reports (2026-10-19)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Found by the R1 run-7 quote gate.
+
+- The composer wrote "Matplotlib वेरी इंपॉर्टेंट लाइब्रेरी (very important
+  library)", translating the English back into Devanagari and attributing it
+  to the speaker. After composing, every native-script passage in the report
+  is now looked up in the sources' speech with the quote gate's own rule.
+  A passage found in no source is removed together with its transliteration,
+  and the English beside it is kept. The removal is counted in
+  `processing_notes.report_quotes_removed` and disclosed in the report.
+  Titles and channel names are left alone. On R1 runs 5–7 it removes exactly
+  what the gate fails.
+- The compose prompt now says non-English wording comes only from a quote's
+  `original`, copied exactly.
+- A source typed in Latin letters is quoted in Latin letters, even when it
+  is mostly Hindi (T-1.16.2.11).
+
 ### Fixed: real code-mixed quotes dropped when the model appended a transliteration (2026-10-19)
 
 PR [#307](https://github.com/khoks/VideoResearchPro/pull/307). Follow-up to #294, found in the R1 run-7 replay.

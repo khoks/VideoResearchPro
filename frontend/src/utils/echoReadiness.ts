@@ -6,7 +6,7 @@
  * the backend rejects anything else with 400, so keep the two in sync.
  */
 
-import type { EchoStatus, PersonalContextItem } from '../services/echoApi';
+import type { EchoStatus, PersonalContextItem, ReadinessDomain } from '../services/echoApi';
 
 export interface KindMeta {
   kind: string;
@@ -70,6 +70,9 @@ export interface Readiness {
   /** 0..100. 100 when the backend says ready, else the mean of the gates. */
   percent: number;
   parts: ReadinessPart[];
+  /** S-3.5.1: the five domains, each with what is missing in words. Null when
+   * the backend predates readiness v2 (the three legacy gates show instead). */
+  domains: ReadinessDomain[] | null;
   /** Domain 3 feeder: what the user has written in their own words (notes).
    * Reported, not a gate, until S-3.5.1 sets the voice floor. Null when the
    * backend predates the field. */
@@ -130,13 +133,16 @@ export function computeReadiness(status: EchoStatus, connectorsAvailable: number
   ];
 
   const mean = (rowsFraction + sourcesFraction + personalityFraction) / 3;
-  const percent = status.ready ? 100 : Math.min(99, Math.round(mean * 100));
+  // S-3.5.1: with the five-domain gate the backend reports its own progress.
+  const domains = status.domains && status.domains.length > 0 ? status.domains : null;
+  const progress = domains ? (status.progress ?? 0) : mean;
+  const percent = status.ready ? 100 : Math.min(99, Math.round(progress * 100));
   const voice =
     typeof status.notes_total === 'number'
       ? { notes: status.notes_total, words: status.notes_words ?? 0 }
       : null;
   const shares = typeof status.shares_total === 'number' ? status.shares_total : null;
-  return { ready: status.ready, percent, parts, voice, shares };
+  return { ready: status.ready, percent, parts, voice, shares, domains };
 }
 
 // ---------------------------------------------------------------------------

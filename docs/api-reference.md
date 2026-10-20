@@ -1008,7 +1008,31 @@ Make and send an issue now, outside the schedule. It covers what is new since th
 All `/echo` endpoints require `require_feature("echo_personal_brain")` (Studio only). Backend: `backend/app/routers/echo.py` (I-3, PR #172). Page: [`EchoPage`](ui-pages.md#echopage--echo-studio).
 
 ### `GET /api/v1/echo/status`
-Cold-start readiness: `{ "ready": false, "total_rows": 1, "distinct_sources": 1, "has_personality_trait": true, "threshold_total": 100, "threshold_sources": 3, "notes_total": 4, "notes_words": 120 }`. `ready` is the AND of the three gates. `notes_total` / `notes_words` (S-8.5.3) count the caller's live notes as the Domain 3 feeder; they are reported, not gated, until S-3.5.1 sets the voice floor. `shares_total` (S-3.7.1) counts the shares inbox as the Domain 5 feeder, reported the same way.
+Cold-start readiness, v2 since S-3.5.1 ([D-101](decisions.md#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20)). `ready` is the AND of five domains, each measured from its store on every call: `facts`, `activity`, `signals`, `voice` and `shares`. `progress` is the mean of the domains' progress.
+
+```json
+{ "ready": false, "progress": 0.31,
+  "domains": [{ "key": "facts", "domain": 1, "label": "Facts about you", "status": "in_progress", "met": false, "progress": 0.53,
+                "criteria": [{ "key": "facts", "label": "Facts you wrote", "current": 12, "target": 30, "met": false, "fraction": 0.4 }, "…"],
+                "summary": "12 facts you wrote, across 2 kinds.", "missing": "To finish: write 18 more facts …",
+                "details": { "self_authored": 12, "inferred": 3 } }, "…"],
+  "total_rows": 15, "distinct_sources": 2, "has_personality_trait": true, "threshold_total": 100, "threshold_sources": 3,
+  "notes_total": 4, "notes_words": 120, "shares_total": 9 }
+```
+
+- **`status`** is one of four values:
+  - `met`;
+  - `in_progress`;
+  - `not_started` (nothing yet);
+  - `not_connected`, used only by activity, when there are no events and nothing is connected. It is not a failure.
+- **`missing`** is null once the domain is met.
+- **`details`** depends on the domain:
+  - activity has `first_at`, `last_at` and `sources`. Each source has `name`, `label`, `kind` (`connector` | `import`), `status` (`connected` | `not_connected` | `imported`), `available`, `reason` and `events`. A connector this install cannot offer yet reads `not_connected` with its reason; YouTube likes and Google Calendar are listed this way until the install's Google sign-in setup exists.
+  - voice has `per_script` (pieces and words per script), `best_script`, `stability` (`measured`, `spread`, `max`, `vectors`, `reason`) and `voice_test` (`eligible`, `notes`, `notes_needed`). The voice test is D-100's user-as-judge test, reported and not gated.
+  - facts has `self_authored` and `inferred`; the facts Echo inferred are kept but not counted.
+  - signals has `types`; shares has `content_types` (count per type).
+- **Thresholds** are settings (`ECHO_READY_*`); a threshold of 0 switches that check off.
+- **The v1 fields** (`total_rows`, `distinct_sources`, `has_personality_trait`, `threshold_*`) and the feeders (`notes_total`, `notes_words`, `shares_total`) are still returned. They are reported only.
 
 ### `GET /api/v1/echo/context`
 The caller's personal-context rows. Query params: `kind`, `source`, `include_expired` (default false). Rows: `{ id, kind, key, value, source, confidence, captured_at, expires_at }`. `kind` is closed to ten values (`location`, `interest`, `hobby`, `work`, `talent`, `skill`, `personality_trait`, `life_event`, `daily_routine`, `place`); anything else is 400.
@@ -1226,7 +1250,7 @@ The shape above will evolve in three ways as the [feature-roadmap](feature-roadm
 
 1. **L1 Multi-source ingest.** Landed differently from this sketch: uploads and pasted URLs are library-scoped (`/library/upload-pdf`, `/library/paste-urls`) rather than new `job_type` values, per [D-069](decisions.md#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19). Still ahead: `VideoResponse` → `DocumentResponse` with `source_type`, and `video_id` path parameters becoming `document_id` (the legacy path stays as an alias for one release). See [source-types.md](source-types.md) and [D-070](decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).
 2. **L5 SaaS.** All resource paths gain an implicit `tenant_id` filter via the JWT claim. Public per-tenant aliases (e.g. `/t/{tenant_slug}/...`) appear for shared/published resources. See [saas-roadmap.md](saas-roadmap.md).
-3. **L3 Personal Brain.** The context store, readiness gate and connector registry shipped under `/echo/*` (above), not `/brain/*`. Still ahead: activity stream, voice signals, and the "speak as me" agent. See [personal-brain.md](personal-brain.md).
+3. **L3 Personal Brain.** The context store, the five-domain readiness gate, connectors, the activity stream, shares and voice signals shipped under `/echo/*` (above), not `/brain/*`. Still ahead: the "speak as me" agent. See [personal-brain.md](personal-brain.md).
 
 ---
 

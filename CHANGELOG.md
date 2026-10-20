@@ -10,6 +10,28 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: Echo readiness counts five parts of you, and says what each is missing (S-3.5.1, 2026-10-20)
+
+PR [#354](https://github.com/khoks/VideoResearchPro/pull/354). [D-101](decisions.md#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20), superseding D-049.
+
+- Echo is ready when five parts are each far enough along:
+  - facts you wrote yourself;
+  - what you do, from connected services and imports;
+  - how you think, from voice signals;
+  - how you write, in one language;
+  - what you share.
+  Before, it was 100 facts from 3 sources plus a personality trait.
+- The Echo page shows each part with a progress bar and what is missing in
+  words, such as "write 18 more facts about yourself".
+- Services this install cannot connect yet (YouTube likes and Google Calendar
+  wait on Google sign-in setup) read "not connected", with the reason, not as
+  a failure.
+- The page also says how many notes you need before you can take the voice
+  test that switches on "speak as me".
+- Facts Echo inferred from a service are kept but no longer count as facts you
+  wrote.
+- Thresholds are settings (`ECHO_READY_*`).
+
 ### Echo: a bubble on every page, and a panel to ask or draft from (S-3.8.1, 2026-10-20)
 
 PR [#355](https://github.com/khoks/VideoResearchPro/pull/355).

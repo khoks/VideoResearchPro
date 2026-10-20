@@ -10,6 +10,19 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Newsletter by email (2026-10-19, S-6.4.2)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Runs on the scheduler ([D-077](docs/decisions.md#d-077--scheduler-one-static-beat-entry-over-table-rows-beat-is-its-own-process-with-no-pidfile-2026-10-19)).
+
+- **Digest by email** on the Author page: turn the newsletter on, pick a
+  day and time in your timezone and the sections, and an issue arrives each
+  period with only what is new since the last one. It also lands in your
+  outputs and the bell.
+- **Nothing new, nothing sent**: the period shows "Nothing new, not sent".
+- **Never twice**: each period is claimed before the issue is made, so a
+  retried run sends nothing more. "Send one now" makes an extra issue.
+- Without SMTP the email goes to the server log, as password resets do.
+
 ### Newsletter issues (2026-10-19, S-6.4.1)
 
 PR [#334](https://github.com/khoks/VideoResearchPro/pull/334). Decision [D-097](docs/decisions.md#d-097--newsletter-featured-section-ships-opt-in-the-rest-of-an-issue-is-listed-from-the-database-2026-10-19); judging [notes](docs/notes/2026-10-19-newsletter-featured-judging.md).

@@ -354,6 +354,7 @@ Sections: **What you can make** (one card per kind from `GET /author/kinds`: `av
 | Outputs empty | "Nothing authored yet." with a "New book" button; with filters active, "Nothing matches these filters." |
 | Output row | Status pill (Ready / Failed / Generating / Pending), title, kind, source count, created date; **Read** (→ `/author/outputs/:id`) and **Download** when `has_content`; **Delete** always. Failed rows show `error_message` in full; pending rows explain they were created when their kind had no generator. |
 | Delete | Confirmation modal; the runs the book was built from are untouched. |
+| Digest by email (S-6.4.2) | Shown when `newsletter` is available. Off: "Turn on" with cadence (the saved-search schedule fields) and section toggles. On: the cadence in words and the next issue time, **Save changes**, **Send one now**, **Turn off** (keeps settings), **Unsubscribe** (removes them), and the latest sends ("Sent · read it", "Nothing new, not sent", "Made, but the email failed"). |
 
 ### `EchoPage` — `/echo` (Studio)
 **Purpose.** Echo's personal-context store. Backend: `backend/app/routers/echo.py`. Honest about scope: the store and readiness gates are real; connectors (E-3.2) and the "speak as me" agent (E-3.4) are not, and the page says so wherever it would otherwise imply them.

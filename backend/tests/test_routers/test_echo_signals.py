@@ -211,3 +211,13 @@ def test_withdraw_source_without_ids_scans_every_live_signal(db, two):
     assert json.loads(db.get(VoiceSignal, theirs.id).derived_from) == ["note:n-9"], "only the caller's tenant"
 
     assert echo_signal_service.withdraw_source(db, a.id, "note:n-9", signal_ids=[]) == echo_signal_service.SourceWithdrawal(0, 0)
+
+
+def test_the_api_vocabularies_are_the_service_vocabularies():
+    from typing import get_args
+
+    from app.schemas import voice_signal as schema
+
+    assert get_args(schema.SignalType) == echo_signal_service.SIGNAL_TYPES
+    assert get_args(schema.Language) == echo_signal_service.LANGUAGES
+    assert get_args(schema.Register) == echo_signal_service.REGISTERS

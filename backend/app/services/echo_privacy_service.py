@@ -54,6 +54,7 @@ from app.models.echo_connector import (
     EchoConnectorOAuthState,
 )
 from app.models.echo_import import EchoImport
+from app.models.echo_draft import EchoDraft, EchoVoiceGate
 from app.models.echo_share_token import EchoShareToken
 from app.models.personal_context import PersonalContext
 from app.models.share import Share
@@ -82,6 +83,10 @@ ECHO_TABLES: tuple[tuple[str, Any], ...] = (
     ("echo_connector_grants", EchoConnectorGrant),
     # S-3.7.5: each export import, so it can be listed and undone.
     ("echo_imports", EchoImport),
+    # S-3.4.1: every "speak as me" draft, and the per-user voice test that
+    # gates it (deleting the brain resets the gate).
+    ("echo_drafts", EchoDraft),
+    ("echo_voice_gates", EchoVoiceGate),
 )
 
 # Echo tables that hold secrets: OAuth tokens (encrypted, D-043) and the PKCE

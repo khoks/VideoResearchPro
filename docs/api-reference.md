@@ -1138,6 +1138,21 @@ Signal shape: `{ id, signal_type, layer: "style"|"personality", value, weight, e
 
 Deleting a share withdraws it as evidence: its examples and provenance leave the signals listed in its `derived_signal_ids_json`, and a signal with no source left is suppressed as `source_deleted` (unlike a rejection, new evidence may derive it again).
 
+### Speak as me (S-3.4.1)
+Backend: `backend/app/routers/echo_drafts.py`, service `services/echo_draft_service.py`, agent `agents/echo_agent.py` ([D-102](decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20)). Every route needs the `echo_speak_as_me` feature (Studio); other tiers get 403. A draft is never sent anywhere.
+
+- `GET /api/v1/echo/draft/status` — what stands between the caller and a draft. `{ enabled, blockers: [{code, message}], readiness, voice_gate: {status: "not_run"|"passed"|"failed", run_at, pairs, picked_own_share, notes_total, notes_needed}, drafts_today, drafts_per_day }`. Blocker codes, in order: `install_off` (`ECHO_SPEAK_AS_ME_ENABLED` is false, the default), `not_ready` (readiness v2; the message names each unmet domain), `voice_test_required` or `voice_test_failed`, `daily_cap`. The Echo bubble's summary fields ride along: `state` (`enabled`, or the first blocker's code, with `voice_test_required` reported as `voice_test_needed`), `reasons` (every blocker's message), `notes`, `notes_needed`, `pairs_judged`, `pairs_needed`.
+- `POST /api/v1/echo/draft` — body `{ message (1-8000 chars), audience? (≤200), register?: "intimate"|"casual"|"professional"|"public", language?: "en"|"hi-Deva"|"hi-Latn"|"mixed", acknowledge_names?: [string] }`; unknown fields are refused. 201 with the draft: `{ id, message, draft, language, register, audience, intent, voice_match_score (0-100), confidence (0-1), citations: [{kind: "source"|"note"|"fact"|"qa"|"share", ref, label, url?}], deviation_notes, flags, disclosure, final_text, disclosure_kept, created_at }`. `ref` is the draft's marker for the item (S1, N2, F1); `url` is a link outside the app, such as a source at its timestamp. `flags` may hold `verbatim_removed` (a sentence quoting a third party was dropped) and `ungrounded`. Errors:
+  - 409 `{code, message, status}` for a closed gate.
+  - 409 `{code: "names_need_confirmation", names, message}` when the message names a private person. Send the request again with those names in `acknowledge_names`.
+  - 429 `{code: "daily_cap"}`.
+
+  A stopped draft is not counted against the cap.
+- `GET /api/v1/echo/drafts?limit=` — the caller's drafts, newest first: `{ items }`.
+- `GET /api/v1/echo/drafts/{id}` and `DELETE /api/v1/echo/drafts/{id}` (204) — the caller's own only; another tenant's id is a 404.
+
+Each draft is metered as the daily quota resource `echo_drafts` (`echo_drafts_per_day`: Free 0, Pro 0, Studio 20) and audited as `echo_drafted` with counts only. Drafts and voice-test results (`echo_drafts`, `echo_voice_gates`) are part of the brain: exported and erased with it.
+
 ### `GET /api/v1/echo/export`
 The whole brain as one zip (S-3.10.1): `manifest.json` (format `pratidhvani-echo-archive`, version 1, export time, tenant, row counts per table, every file with size and SHA-256, any missing file), `personal_context.jsonl`, `shares_inbox.jsonl`, `voice_signals.jsonl` and `voice_signal_inputs.jsonl` (every column; datetimes ISO-8601 with offset), and `files/<stored path>`. Lossless: `services/echo_privacy_service.py::read_archive` is the exact inverse. Built in a temporary file and removed after sending. Audited (`echo_exported`, counts only). Notes and the library are not part of Echo; notes export at `/exports/notes.*`.
 

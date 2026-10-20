@@ -10,6 +10,30 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: "Speak as me" drafts a reply in your voice, off until you pass your voice test (S-3.4.1, 2026-10-20)
+
+PR [#357](https://github.com/khoks/VideoResearchPro/pull/357). [D-102](docs/decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20).
+
+- Paste a message on the Echo page and get a draft reply as you would write it. It is grounded in your sources, notes, facts and past answers, and cites each one it used.
+- Each draft shows:
+  - a "sounds like you" score;
+  - how well grounded it is;
+  - where it departs from how you usually write;
+  - a disclosure line, "Drafted with Echo, reviewed by you".
+
+  Nothing is ever sent.
+- It is off until two switches are on:
+  - the operator turns it on for the install (`ECHO_SPEAK_AS_ME_ENABLED`, off by default);
+  - you pass the blinded "which of these did you write?" test ([D-100](docs/decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19)).
+
+  Until then, the page and the Echo bubble say which gate is still closed, in words.
+- Rules the code enforces:
+  - Words from other people's material are never quoted; a quoting sentence is rewritten or removed.
+  - Only your own notes and own-words shares shape the voice.
+  - A message that names a private person asks you to confirm before drafting.
+- Drafts are written in the language of the reply (English, Hindi in either script, or the mix), not translated to English.
+- Studio gets 20 drafts a day. Drafts and test results are part of your Echo data: exported and deleted with it.
+
 ### Changed: Echo readiness counts five parts of you, and says what each is missing (S-3.5.1, 2026-10-20)
 
 PR [#354](https://github.com/khoks/VideoResearchPro/pull/354). [D-101](decisions.md#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20), superseding D-049.

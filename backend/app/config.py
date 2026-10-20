@@ -342,6 +342,16 @@ class Settings(BaseSettings):
     # no view.
     ECHO_SIGNALS_IMPORT_SAMPLE: int = 300
     ECHO_SIGNALS_MIN_PASSAGE_WORDS: int = 4
+    # S-3.4.1 "speak as me". Off by default for the whole install, AND
+    # enabled per user only after they pass the blinded "which did you
+    # write?" test (D-100; echo_voice_gates). A draft is never sent.
+    ECHO_SPEAK_AS_ME_ENABLED: bool = False
+    # Critique rounds per draft, and the mean voice score (1-5, tone,
+    # vocabulary, structure, topicality) at which the critic stops early.
+    ECHO_DRAFT_CRITIQUE_ROUNDS: int = 2
+    ECHO_DRAFT_CRITIQUE_TARGET: float = 4.0
+    # Library sources retrieved for one draft.
+    ECHO_DRAFT_SOURCES: int = 6
     # S-3.3.3: keep personal_context_global (one vector per live fact and
     # signal) in step on every write and at startup. Off for the test suite,
     # like NOTES_INDEX_ENABLED, so no test embeds into a persistent Chroma;

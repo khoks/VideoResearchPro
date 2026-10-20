@@ -13,7 +13,8 @@ Modes:
     # Tier (iii), when a real user has the material: build the blinded pairs
     # from a COPY of a database, then score the user's answers.
     python scripts/voice_match_harness.py user-pairs --db copy.db --tenant <id> --out pairs.json --key key.json
-    python scripts/voice_match_harness.py user-score --key key.json --answers answers.json
+    python scripts/voice_match_harness.py user-score --key key.json --answers answers.json \
+        --record data/videoresearchpro.db --tenant <id>   # stores the gate (S-3.4.1)
 
 Keys come from ``--env-file`` (default backend/.env beside this script), read
 before the app is imported, as in scripts/judge_pair.py.
@@ -404,7 +405,23 @@ def user_score(key: pathlib.Path, answers: pathlib.Path) -> dict:
     share = picked_own / len(k) if k else 1.0
     result = {"pairs": len(k), "picked_own_share": round(share, 3), "pass": len(k) >= 20 and share <= 0.80}
     print(json.dumps(result, indent=2))
-    return result
+    return {**result, "picked_own": picked_own}
+
+
+def record_result(db_path: pathlib.Path, tenant_id: str, result: dict) -> None:
+    """Store a scored test as the tenant's voice gate (S-3.4.1). This is the
+    LIVE database, not the copy user-pairs worked on: the pass is what turns
+    "speak as me" on for this user (D-100)."""
+    os.environ["DATABASE_URL"] = f"sqlite:///{db_path.as_posix()}"
+    from app.database import SessionLocal
+    from app.services import echo_draft_service
+
+    db = SessionLocal()
+    try:
+        row = echo_draft_service.record_voice_test(db, tenant_id, pairs=result["pairs"], picked_own=result["picked_own"])
+        print(f"recorded: {row.status} ({row.pairs} pairs, own text picked in {row.picked_own_share:.0%})")
+    finally:
+        db.close()
 
 
 def main() -> None:
@@ -423,13 +440,19 @@ def main() -> None:
     s = sub.add_parser("user-score")
     s.add_argument("--key", type=pathlib.Path, required=True)
     s.add_argument("--answers", type=pathlib.Path, required=True)
+    s.add_argument("--record", type=pathlib.Path, help="the LIVE database to store the result in (turns speak-as-me on when it passes)")
+    s.add_argument("--tenant", help="whose gate --record writes")
     args = ap.parse_args()
     if args.mode == "run":
         run(args.out)
     elif args.mode == "user-pairs":
         user_pairs(args.db, args.tenant, args.out, args.key)
     else:
-        user_score(args.key, args.answers)
+        result = user_score(args.key, args.answers)
+        if args.record:
+            if not args.tenant:
+                raise SystemExit("--record needs --tenant")
+            record_result(args.record, args.tenant, result)
 
 
 if __name__ == "__main__":

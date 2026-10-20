@@ -180,3 +180,32 @@ def _embedding_function():
     from app.services import chroma_service
 
     return chroma_service._get_embedding_function()
+
+
+def query_share_vectors(tenant_id: str, text: str, n: int = 4) -> list[dict]:
+    """The tenant's shares nearest ``text`` (S-3.4.1 grounds drafts with
+    them). Fails closed: no tenant raises; every query filters on it, and
+    every hit is checked again. Returns ``{"text", "metadata", "distance"}``.
+    Never creates the collection."""
+    if not tenant_id:
+        raise ValueError("tenant_id is required; an unscoped share query would read everyone's inbox")
+    col = _existing(settings.CHROMA_SHARES_COLLECTION_NAME)
+    if col is None or not (text or "").strip():
+        return []
+    where = {"tenant_id": tenant_id}
+    total = len(col.get(where=where, include=[]).get("ids") or [])
+    if total == 0:
+        return []
+    from app.services import chroma_service
+
+    res = col.query(
+        query_embeddings=chroma_service._get_embedding_function()([text]),
+        n_results=min(n, total),
+        where=where,
+        include=["documents", "metadatas", "distances"],
+    )
+    return [
+        {"text": doc, "metadata": meta or {}, "distance": float(dist)}
+        for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0])
+        if (meta or {}).get("tenant_id") == tenant_id
+    ]

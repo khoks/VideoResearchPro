@@ -4,6 +4,7 @@ import {
   type CreateSharePayload,
   type ImportOptions,
   type CreateSignalPayload,
+  type CreateDraftPayload,
   type ListContextParams,
   type ListSharesParams,
   type RecordContextPayload,
@@ -280,6 +281,39 @@ export function useUpdateSignal() {
   return useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: UpdateSignalPayload }) => echoApi.updateSignal(id, payload),
     onSuccess: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// "Speak as me" (S-3.4.1)
+// ---------------------------------------------------------------------------
+
+const DRAFTS_KEY = ['echo', 'drafts'] as const;
+
+export function useDraftStatus(enabled = true) {
+  return useQuery({ queryKey: [...DRAFTS_KEY, 'status'], queryFn: () => echoApi.draftStatus(), staleTime: 15_000, enabled });
+}
+
+export function useRecentDrafts(enabled = true) {
+  return useQuery({ queryKey: [...DRAFTS_KEY, 'recent'], queryFn: () => echoApi.listDrafts(5), staleTime: 15_000, enabled });
+}
+
+export function useCreateDraft() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateDraftPayload) => echoApi.createDraft(payload),
+    onSettled: () => qc.invalidateQueries({ queryKey: DRAFTS_KEY }),
+  });
+}
+
+export function useDeleteDraft() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => echoApi.deleteDraft(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: DRAFTS_KEY });
+      qc.invalidateQueries({ queryKey: FOOTPRINT_KEY });
+    },
   });
 }
 

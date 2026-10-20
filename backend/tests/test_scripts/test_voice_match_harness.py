@@ -129,7 +129,7 @@ def test_user_score_applies_the_tier_three_rule(tmp_path):
     (tmp_path / "key.json").write_text(json.dumps(key))
     answers = {f"p{i:02d}": ("A" if i < 16 else "B") for i in range(20)}
     (tmp_path / "answers.json").write_text(json.dumps(answers))
-    assert user_score(tmp_path / "key.json", tmp_path / "answers.json") == {"pairs": 20, "picked_own_share": 0.8, "pass": True}
+    assert user_score(tmp_path / "key.json", tmp_path / "answers.json") == {"pairs": 20, "picked_own_share": 0.8, "pass": True, "picked_own": 16}
     answers["p16"] = "A"
     (tmp_path / "answers.json").write_text(json.dumps(answers))
     assert user_score(tmp_path / "key.json", tmp_path / "answers.json")["pass"] is False

@@ -10,6 +10,19 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: Echo's activity stream storage (2026-10-19)
+
+[S-3.2.1](docs/initiatives.md#s-321--connector-runtime-and-activity_events), PR [#332](https://github.com/khoks/VideoResearchPro/pull/332), [D-098](decisions.md#d-098--echo-connectors-events-unique-per-reader-tokens-in-a-secret-store-that-is-erased-with-the-brain-but-never-exported-2026-10-19).
+
+- `activity_events`: what you did, from connectors, stored once per event
+  however often it syncs. Sharing something to Echo is now one such event
+  (metadata only; the shared words stay in the inbox).
+- Connector grants, encrypted tokens and pending sign-ins have their own
+  tables. Your Echo export carries the events and the grants; the tokens are
+  erased with your brain but never exported, and the archive says so.
+- The connector and archive-importer contracts, which GitHub (S-3.2.4) and
+  the export importers (S-3.7.5) build on.
+
 ### Newsletter issues (2026-10-19, S-6.4.1)
 
 PR [#334](https://github.com/khoks/VideoResearchPro/pull/334). Decision [D-097](docs/decisions.md#d-097--newsletter-featured-section-ships-opt-in-the-rest-of-an-issue-is-listed-from-the-database-2026-10-19); judging [notes](docs/notes/2026-10-19-newsletter-featured-judging.md).

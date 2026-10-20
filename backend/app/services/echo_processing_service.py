@@ -375,6 +375,16 @@ def _finish(db: Session, share: Share, processing: dict, state: str, error: str 
     share.processing_state = state
     share.updated_at = datetime.now(timezone.utc)
     db.commit()
+    if state != "failed":
+        # T-3.2.1.9: sharing is something the user did. Fail-soft: the event
+        # is a by-product, never a reason for processing to fail.
+        try:
+            from app.services import activity_event_service
+
+            activity_event_service.record_share_event(db, share, title=processing.get("title"))
+        except Exception:
+            db.rollback()
+            logger.exception("echo: could not record the share event for %s", share.id)
     logger.info("echo: share %s -> %s%s", share.id[:8], state, f" ({error})" if error else "")
     return ProcessResult(state, error or processing.get("note"))
 

@@ -642,6 +642,7 @@ The shipped script profiler is exact for script mixing and **blind to romanised 
   - [x] Part B, ranking on English — shipped 2026-10-19 (PR [#271](https://github.com/khoks/VideoResearchPro/pull/271), [D-084](decisions.md#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19)). Non-English chunks are embedded as an English rendering (`code_mixing_render_english`, metadata `text_en`) inside `chroma_service.insert_chunks`; stored text stays the original. Measured first: MRR 0.565 Devanagari / 0.402 romanised / 0.805 English rendering (55 independent questions, 132 real chunks). No backfill
 - [x] T-1.16.2.6 Evaluate on real code-mixed transcripts before claiming it works — shipped 2026-10-19 (PR [#276](https://github.com/khoks/VideoResearchPro/pull/276)). Held-out sources only: 80 unseen comments (17/18 Hindi-bearing caught), the map stage before/after on a held-out lecture and two comment threads (**0 Hinglish passed through in six runs, with or without N-002**; originals kept 0 → 25 on the lecture), the production composer (8/8 three-part quotes), retrieval through the production renderer (MRR 0.554 → 0.762). The predicted failure happened at FETCH instead: 2 of 13 Hindi videos arrived as auto-dubbed tracks (S-1.11.11). Two fixes forced: a 3% presence floor so English-primary sources with real Hindi carry the profile, and per-item quote resolution in compose. [Section 11](notes/2026-10-19-code-mixing-detection.md#11-end-to-end-evaluation-on-held-out-sources-t-11626)
 - [x] T-1.16.2.10 Verify kept `original` wording in code — fixed 2026-10-19 (PR [#294](https://github.com/khoks/VideoResearchPro/pull/294)). Regression from #268 found in R1 run 5: Hindi speakers quoted in Bengali script, strings in no transcript. Map originals are now checked against their own source with `quote_fidelity` (the run-6 gate's rule): mixed-script words, wrong script and unaligned wording are dropped, the English point kept, the drop disclosed. Drops exactly what the audit fails on run 5 (4/37 off, 12/51 on). Compose material no longer JSON-escapes non-Latin text. [Section 12](notes/2026-10-19-code-mixing-detection.md#12-regression-invented-original-wording-and-the-fix-2026-10-19)
+- [x] T-1.16.2.12 Keep the speech inside an over-full `original` — fixed 2026-10-19 (PR [#307](https://github.com/khoks/VideoResearchPro/pull/307)). R1 run 7: one-source map calls (D-090) wrote speech + transliteration + translation into `original`, and 68/176 real Bengali quotes dropped as `not_in_speech`. `quote_fidelity.keepable` keeps the lines in the source's script, strips Latin glosses the speaker did not say, records the rest as `original_stripped`, and the reading must still pass in full. Run 7 re-verified: 66 of 68 recovered, 2 still dropped, no kept quote lost. Map prompt: `original` is the speaker's words only
 - [ ] T-1.16.2.7 Native-speaker spot check of the labelled set (42 Hindi-bearing Latin units + 10 Devanagari units, ~30 min) before its numbers compare future detectors (D-080 open question 1)
 - [ ] T-1.16.2.8 English CONTENT words in Devanagari (मशीन लर्निंग) — the tagger's measured blind spot; a hybrid (LLM on Devanagari) or a transliteration lexicon. Would also make a 50% dominant threshold unnecessary (D-080 open question 3)
 - [ ] T-1.16.2.9 Measure a stronger multilingual embedder (E5/BGE-M3) on the D-084 pool before the library grows; it would replace or complement the English rendering
@@ -1742,24 +1743,33 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [ ] T-8.3.3.4 `notifications(id, tenant_id, kind, title, body, href, read_at, created_at)` + `GET /api/v1/notifications`, bell in the sidebar chrome
 - [ ] T-8.3.3.5 Tests: unchanged answers do not notify; a run that fails leaves the previous result intact
 
-### E-8.4 🔵 Question suggestions (M4)
+### E-8.4 🟢 Question suggestions (M4)
 
 **Scope.** "You might ask…" suggestions on the job page, the library Q&A page and the knowledge page, generated from the user's own past questions (nearest neighbours in `qa_library_global`) plus the current context, deduplicated and cached. Directly answers the user's "learn from past questions" ask and is the first piece of Echo's *anticipation* capability.
 **Plan:** [`docs/plans/m4-question-suggestions.md`](plans/m4-question-suggestions.md)
 **Acceptance.** Opening a completed job shows three to five suggested questions within two seconds; clicking one fills the composer; suggestions never repeat a question already asked on that job; a user with no history still gets context-derived suggestions; a second open within the cache window makes no LLM call.
 
-#### S-8.4.1 🔵 Suggestion endpoint
-**PR:** TBD
-- [ ] T-8.4.1.1 `GET /api/v1/suggestions?context=job:<id>|document:<id>|library` → `{suggestions: [{question, rationale, source}]}`; tenant-scoped retrieval of past questions, context summary from report sections or knowledge topics
-- [ ] T-8.4.1.2 `qa_suggest_questions` use case in `USE_CASE_REGISTRY` (economy tier, structured JSON, low reasoning); diversity pass so the five differ
-- [ ] T-8.4.1.3 Cache per `(tenant, context)` for a configurable window; invalidated when a new exchange lands on that context
-- [ ] T-8.4.1.4 Tests with the LLM patched at the factory boundary; no-history and cache-hit paths
+#### S-8.4.1 🟢 Suggestion endpoint
+**PR:** [#306](https://github.com/khoks/VideoResearchPro/pull/306)
+**Shipped:** 2026-10-19 — PR [#306](https://github.com/khoks/VideoResearchPro/pull/306)
+- [x] T-8.4.1.1 `GET /api/v1/suggestions?context=job:<id>|document:<id>|library` → `{suggestions: [{question, rationale, source, origin}], cached, generated}`; tenant-scoped retrieval of past questions, context summary from report sections or knowledge topics (all three contexts, so S-8.4.2 is frontend-only)
+- [x] T-8.4.1.2 `qa_suggest_questions` use case in `USE_CASE_REGISTRY` (volume tier `gpt-5.6-luna`, structured JSON, reasoning OFF under a 900-token cap; guidance `unmeasured` with a smoke run recorded); dedupe against asked questions and each other, then MMR so the five differ
+- [x] T-8.4.1.3 Cache per `(tenant, context)` in `suggestion_cache` for `SUGGESTIONS_CACHE_TTL_MIN` (60); a fingerprint of the context's inputs invalidates it when a new exchange, report or knowledge state lands
+- [x] T-8.4.1.4 Tests with the LLM patched at the factory boundary; no-history, history merge, MMR, cache hit, invalidation, expiry, failed generator, down probe, metering, two-tenant isolation on a real in-memory Chroma, router and feedback
+- [x] T-8.4.1.5 `POST /suggestions/feedback` and `suggestion_shown` / `suggestion_clicked` audit events (pulled forward from T-8.4.2.2 so the card only calls it)
+- [ ] T-8.4.1.6 Grade suggestion quality (and the cheaper-tier choice) once click-through exists, then promote the guidance to `measured` with a decision entry
 
-#### S-8.4.2 🔵 Suggestion cards
-**PR:** TBD
-- [ ] T-8.4.2.1 Card below the composer on `JobDetailPage`, `LibraryQAPage`, `VideoKnowledgePage`; click fills, Shift-click asks immediately
-- [ ] T-8.4.2.2 Click-through recorded as an `audit_log` event so the feature can be measured
-- [ ] T-8.4.2.3 Hidden when `/health` reports the Q&A feature down
+Scope-changed 2026-10-19: (1) the prompt lives in `services/suggestion_service.py`, not `agents/prompts/` (that package belongs to E-7.1 and R5). (2) Not a `FEATURE_TO_USE_CASES` gate: like `temporal_scope_extract` it is fail-soft, so a failed probe turns the generator off and the reader's past questions still come back. (3) The acceptance's "within two seconds" holds for cached opens only: a first open measured 3.5 s median for the model call (three calls, 2026-10-19), so the card loads after the page and never blocks it. (4) Plan open questions at the recommended defaults: a one-hour cache window; suggestions on the Q&A pages only, not yet in Echo's anticipation cards.
+
+#### S-8.4.2 🟢 Suggestion cards
+**PR:** [#308](https://github.com/khoks/VideoResearchPro/pull/308)
+**Shipped:** 2026-10-19 — PR [#308](https://github.com/khoks/VideoResearchPro/pull/308)
+- [x] T-8.4.2.1 Card below the composer on `JobDetailPage`, `LibraryQAPage`, `VideoKnowledgePage`; click fills, Shift-click asks immediately
+- [x] T-8.4.2.2 Click-through recorded as an `audit_log` event so the feature can be measured (the card calls `POST /suggestions/feedback`, built in S-8.4.1)
+- [x] T-8.4.2.3 Hidden when `/health` reports the Q&A feature down
+- [ ] T-8.4.2.4 A per-source Q&A scope (retrieval filtered to one `document_id`), so the knowledge drawer's suggestions are asked about that source rather than across the library
+
+Scope-changed 2026-10-19: the knowledge drawer has no composer and the app has no per-source Q&A, so its card hands the question to library Q&A (filled, or asked on Shift-click) and says "Asked across your library." T-8.4.2.4 would make it exact.
 
 ### E-8.5 🟡 Notes — the user's own voice in the library (M5)
 
@@ -1938,7 +1948,7 @@ Linked decision: D-074.
 - [ ] T-8.9.3.1 Cluster documents by embedding centroid (k-means over stored chunk means) and colour the graph by cluster; only if S-8.9.2's topic edges prove too sparse
 - Scope-changed 2026-10-19: also carries M7's channel topic clusters (the same k-means, scoped to one channel), which S-8.7.2 did not build. The gate needs the library map tried on a real library; S-8.9.2 colours only the three largest Louvain groups (D-092), so clusters would need their own encoding, not a fourth hue
 
-### E-8.10 🟡 Onboarding wizard and empty states (M10)
+### E-8.10 🟢 Onboarding wizard and empty states (M10)
 
 **Scope.** A first-run flow: pick channels → start a first job from a starter template → watch it run → open the report in the reader; dismissible, resumable, recorded server-side so it survives devices. Plus an audit of every empty state against the editorial voice and a first-run checklist. High leverage for SaaS conversion later, useful for self-hosters now.
 **Plan:** [`docs/plans/m10-onboarding.md`](plans/m10-onboarding.md)
@@ -1957,10 +1967,13 @@ Linked decision: D-074.
 
 Scope-changed 2026-10-19: (1) step 1 takes channel links or handles instead of "existing search + subscribe": the channels list is per tenant (D-065), so a new account has nothing to pick from, and subscribe starts a full-channel ingest, the opposite of a small first run. (2) The plan's risk note said a channel job does not pause for approval; it does (`job_tasks` channel fetch ends at `awaiting_approval`), so step 3 approves inline. (3) Milestones are derived on read from `jobs` and `audit_log`, so `tasks/job_tasks.py` gained no onboarding code. (4) Plan open questions, taken at the recommended defaults: Q1 a channel job of five videos; Q2 accounts that already have runs are not sent to the wizard, while new and mid-wizard accounts are. (5) The sidebar link shows until the wizard is finished or skipped; after a skip the palette's **Getting started** action reopens it.
 
-#### S-8.10.2 🔵 Empty-state audit
-**PR:** TBD
-- [ ] T-8.10.2.1 Every page's zero-data state uses the `EmptyState` primitive with editorial copy and one action (jobs, library, channels, Q&A history, exports, author, echo, shelves, notes, saved searches)
-- [ ] T-8.10.2.2 First-run checklist card on the jobs page until three milestones are hit
+#### S-8.10.2 🟢 Empty-state audit
+**PR:** [#302](https://github.com/khoks/VideoResearchPro/pull/302)
+**Shipped:** 2026-10-19 — PR [#302](https://github.com/khoks/VideoResearchPro/pull/302)
+- [x] T-8.10.2.1 Every page's zero-data state uses the `EmptyState` primitive with editorial copy and one action (jobs, library, channels, Q&A history, exports, author, echo, shelves, notes; there is no saved-searches page). Each list now tells loading, error (with Retry), zero data and "nothing matches" (with Clear filters) apart
+- [x] T-8.10.2.2 First-run checklist card on the jobs page until three milestones are hit: a run, a report opened, a question asked (`milestones.questions`, new); hidden on request through `PATCH /auth/me/onboarding {checklist_dismissed}`, kept on the server
+
+Scope-changed 2026-10-19: the audit found three states that said something untrue, and fixed them. The jobs page showed the first-run copy when a status filter had no hits. The library's Sources tab said "Nothing matches these filters." with no filter set. Two lists had no error state. The exports page's documented row counts never existed, so ui-pages now describes the real page and a "no questions yet" note. The plan's per-page snapshot tests became behaviour tests plus a guard against generic copy.
 
 ### E-8.11 ⚪ Public report sharing (M11)
 

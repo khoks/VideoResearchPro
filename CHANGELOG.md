@@ -10,6 +10,60 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: "You might ask…" suggestion cards (2026-10-19)
+
+PR [#308](https://github.com/khoks/VideoResearchPro/pull/308). S-8.4.2, plan [m4-question-suggestions](docs/plans/m4-question-suggestions.md).
+
+- Under the composer on a run's page and on library Q&A, up to five suggested
+  next questions. A click puts one in the box; Shift-click asks it at once.
+- The knowledge drawer suggests questions about its source and hands them to
+  library Q&A.
+- The card loads after the page, disappears when there is nothing to suggest,
+  and is hidden while Q&A is down. Each use is logged for click-through.
+
+### Added: question suggestions endpoint (2026-10-19)
+
+PR [#306](https://github.com/khoks/VideoResearchPro/pull/306). S-8.4.1, plan [m4-question-suggestions](docs/plans/m4-question-suggestions.md).
+
+- `GET /api/v1/suggestions?context=job:<id>|document:<id>|library` returns up to
+  five next questions: generated from the context (report headings, knowledge
+  topics, source titles) and the reader's own nearest past questions,
+  de-duplicated against what was already asked and diversified.
+- New use case `qa_suggest_questions` (volume tier, reasoning off), metered
+  under the daily token keys. When it is unavailable the reader's past
+  questions still come back.
+- Cached per reader and context (`suggestion_cache`, `SUGGESTIONS_CACHE_TTL_MIN`,
+  default 60); a new question on the context recomputes it.
+- `POST /api/v1/suggestions/feedback` and the `suggestion_shown` /
+  `suggestion_clicked` audit events, so click-through is measurable from day one.
+
+### Fixed: real code-mixed quotes dropped when the model appended a transliteration (2026-10-19)
+
+PR [#307](https://github.com/khoks/VideoResearchPro/pull/307). Follow-up to #294, found in the R1 run-7 replay.
+
+- With one source per map call, the model often put the speech, a
+  transliteration and a translation into `original` together. The quote
+  check then rejected 68 of 176 genuine Bengali quotes. It now keeps the
+  lines in the source's own script and removes bracketed Latin glosses the
+  speaker did not say (keeping ones the caption has), and records what it
+  removed as `original_stripped`. The kept reading must still pass the full
+  check. On run 7: 66 of the 68 recovered, and no previously kept quote lost.
+- The map prompt says `original` is the speaker's words only; the report adds
+  the transliteration and translation.
+### Changed: empty states say what is true (2026-10-19)
+
+PR [#302](https://github.com/khoks/VideoResearchPro/pull/302). S-8.10.2, plan [m10-onboarding](docs/plans/m10-onboarding.md).
+
+- Lists tell loading, a failed fetch (with **Retry**), "nothing yet" (with the
+  one action that fills it) and "nothing matches" (with **Clear filters**) apart.
+  Fixed on the way: the runs page showed the first-run copy when a status filter
+  had no hits, and the library said "Nothing matches these filters." with no
+  filter set.
+- A **Getting started** checklist on the runs page (start a run, read a report,
+  ask a question) until all three are done, hideable for good.
+- Library Q&A with an empty library says there is nothing to ask and links to
+  **Add sources**; the exports page says when the Q&A files would be empty.
+
 ### Books download as EPUB and PDF (2026-10-19, S-6.1.5)
 
 PR [#303](https://github.com/khoks/VideoResearchPro/pull/303). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).

@@ -16,6 +16,7 @@ import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { CitationLink } from '../components/citation';
 import { DockedComposer, QADock, QAThread } from '../components/qa/Composer';
+import { SuggestionCard } from '../components/qa/SuggestionCard';
 import { useExchangeFocus } from '../hooks/useExchangeFocus';
 import { NotesPanel } from '../components/notes';
 import { JobShelfChips, ShelfPicker } from '../components/shelves';
@@ -968,6 +969,17 @@ function QASection({ jobId }: { jobId: string }) {
     resetToAsk();
   };
 
+  // S-8.4.2: Shift-click on a suggestion asks it at once, skipping the
+  // clarify step (the "Skip clarifications" path).
+  const askSuggestion = async (q: string) => {
+    if (!qaAvailable) return;
+    setQuestion(q);
+    const ok = await submitQuestion({ question: q });
+    if (!ok) return;
+    setQuestion('');
+    resetToAsk();
+  };
+
   // `?exchange=<id>` from the palette lands on that card (S-8.2.2).
   useExchangeFocus(!!history?.length);
 
@@ -1012,6 +1024,14 @@ function QASection({ jobId }: { jobId: string }) {
           </form>
           </DockedComposer>
           {clarifyQuestion.isPending && <InfoStripe text="Generating clarifying questions…" />}
+          {!answering && (
+            <SuggestionCard
+              context={`job:${jobId}`}
+              enabled={qaAvailable}
+              onFill={setQuestion}
+              onAsk={(q) => void askSuggestion(q)}
+            />
+          )}
         </>
       )}
 

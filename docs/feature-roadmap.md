@@ -298,7 +298,7 @@ Save a Q&A query → re-run on a schedule → notify when new library content ma
 
 ---
 
-### M4 — Question suggestions 🔵
+### M4 — Question suggestions 🟢
 
 Use the `qa_library_global` collection to suggest follow-up questions when the user opens a job, document, or knowledge artifact. Directly answers the user's "learn from past questions" ask.
 
@@ -308,7 +308,7 @@ Use the `qa_library_global` collection to suggest follow-up questions when the u
 
 **UI:** "You might ask..." card below the Q&A input.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.4](initiatives.md#e-84--question-suggestions-m4); plan [`plans/m4-question-suggestions.md`](plans/m4-question-suggestions.md). Nearest past questions from `qa_library_global` plus a cheap-tier generation call, cached per context; the first piece of Echo's anticipation capability.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.4](initiatives.md#e-84--question-suggestions-m4); plan [`plans/m4-question-suggestions.md`](plans/m4-question-suggestions.md). Nearest past questions from `qa_library_global` plus a cheap-tier generation call, cached per context; the first piece of Echo's anticipation capability. **🟡 2026-10-19:** the endpoint shipped (S-8.4.1, PR [#306](https://github.com/khoks/VideoResearchPro/pull/306)): `GET /suggestions` for runs, sources and the library, `qa_suggest_questions` on the volume tier with reasoning off, a fingerprinted per-context cache, click logging. **🟢 2026-10-19:** the cards shipped (S-8.4.2, PR [#308](https://github.com/khoks/VideoResearchPro/pull/308)) on the job page, library Q&A and the knowledge drawer.
 
 ---
 
@@ -382,7 +382,7 @@ Visualize how Q&As cite documents, how documents relate to topics, how topics cl
 
 ---
 
-### M10 — Onboarding wizard + empty-state polish 🔵
+### M10 — Onboarding wizard + empty-state polish 🟢
 
 First-run flow: pick 3-5 channels, run a first job, see the result. Today there's no onboarding.
 
@@ -392,7 +392,7 @@ First-run flow: pick 3-5 channels, run a first job, see the result. Today there'
 
 **UI:** Multi-step wizard surfaced on first login; dismissible afterwards.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.10](initiatives.md#e-810--onboarding-wizard-and-empty-states-m10); plan [`plans/m10-onboarding.md`](plans/m10-onboarding.md). Uses M6 starter templates for the first job; `users.onboarded_at` plus a resumable state column. High-leverage for SaaS conversion later. **🟡 2026-10-19:** the wizard shipped (S-8.10.1, PR [#299](https://github.com/khoks/VideoResearchPro/pull/299)): `/welcome` with channels, a five-video channel run from the Channel deep-dive starter, inline approval and the report in the reader; server-side state; activation events. The empty-state audit (S-8.10.2) is next.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.10](initiatives.md#e-810--onboarding-wizard-and-empty-states-m10); plan [`plans/m10-onboarding.md`](plans/m10-onboarding.md). Uses M6 starter templates for the first job; `users.onboarded_at` plus a resumable state column. High-leverage for SaaS conversion later. **🟡 2026-10-19:** the wizard shipped (S-8.10.1, PR [#299](https://github.com/khoks/VideoResearchPro/pull/299)): `/welcome` with channels, a five-video channel run from the Channel deep-dive starter, inline approval and the report in the reader; server-side state; activation events. **🟢 2026-10-19:** the empty-state audit shipped (S-8.10.2, PR [#302](https://github.com/khoks/VideoResearchPro/pull/302)) with the jobs-page first-run checklist.
 
 ---
 

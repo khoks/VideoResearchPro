@@ -1,4 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { SuggestionCard } from '../components/qa/SuggestionCard';
+import { useLibraryVideos } from '../hooks/useLibrary';
 import ReactMarkdown from 'react-markdown';
 import {
   useAskLibraryQA,
@@ -14,6 +17,7 @@ import {
   Badge,
   Button,
   Card,
+  EmptyState,
   FormField,
   Input,
   Select,
@@ -43,6 +47,12 @@ const LANGUAGE_OPTIONS: Array<{ value: AnswerLanguage; label: string }> = [
 export function LibraryQAPage() {
   const c = useColors();
   const { data: history } = useLibraryQAHistory();
+  const navigate = useNavigate();
+  // S-8.10.2: with nothing in the library there is nothing to ask; say so
+  // and offer the one action that fixes it, instead of a composer that can
+  // only answer "no sources".
+  const firstSource = useLibraryVideos({ limit: 1 });
+  const libraryEmpty = firstSource.isSuccess && firstSource.data.length === 0 && !(history && history.length > 0);
   const askQuestion = useAskLibraryQA();
   const clarifyQuestion = useClarifyLibraryQA();
   const libraryQAAvailable = useFeatureAvailable('library_qa');
@@ -98,6 +108,33 @@ export function LibraryQAPage() {
     resetToAsk();
   };
 
+  // S-8.4.2: Shift-click on a suggestion asks at once (no clarify step).
+  const askSuggestion = async (q: string) => {
+    if (!libraryQAAvailable) return;
+    setQuestion(q);
+    try {
+      await askQuestion.mutateAsync({ question: q, answer_language: language });
+    } catch {
+      return; // the global mutation cache already toasted
+    }
+    setQuestion('');
+    resetToAsk();
+  };
+
+  // A suggestion picked in the knowledge drawer arrives as route state:
+  // fill the composer, or ask at once for a Shift-click. Once per visit.
+  const location = useLocation();
+  const handedOver = useRef(false);
+  useEffect(() => {
+    const state = location.state as { question?: string; ask?: boolean } | null;
+    if (handedOver.current || !state?.question) return;
+    handedOver.current = true;
+    navigate(location.pathname, { replace: true, state: null });
+    if (state.ask) void askSuggestion(state.question);
+    else setQuestion(state.question);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
+
   // `?exchange=<id>` from the palette lands on that card (S-8.2.2).
   useExchangeFocus(!!history?.length);
 
@@ -130,6 +167,13 @@ export function LibraryQAPage() {
         </p>
       </header>
 
+      {libraryEmpty ? (
+        <EmptyState
+          title="Nothing to ask yet."
+          description="Library questions are answered from the sources you have ingested, and there are none yet. Start a run, or upload a PDF or paste a link."
+          action={<Button onClick={() => navigate('/library?tab=ingest')}>Add sources</Button>}
+        />
+      ) : (
       <Card>
         <QADock>
         <div
@@ -232,6 +276,14 @@ export function LibraryQAPage() {
             </form>
             </DockedComposer>
             {clarifyQuestion.isPending && <InfoStripe text="Listening for the echo of your question…" />}
+            {!askQuestion.isPending && (
+              <SuggestionCard
+                context="library"
+                enabled={libraryQAAvailable}
+                onFill={setQuestion}
+                onAsk={(q) => void askSuggestion(q)}
+              />
+            )}
           </>
         )}
 
@@ -393,6 +445,7 @@ export function LibraryQAPage() {
         )}
         </QADock>
       </Card>
+      )}
     </div>
   );
 }

@@ -4,7 +4,8 @@ import { useJobs, useCancelJob, useDeleteJob } from '../hooks/useJobs';
 import { useAllJobsProgress } from '../hooks/useJobProgress';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { JobShelfChips, ShelfPicker } from '../components/shelves';
-import { Button, Card, EmptyState, Input, Select, Spinner, StatusPill } from '../components/primitives';
+import { Button, Card, EmptyState, Input, Select, Skeleton, StatusPill } from '../components/primitives';
+import { ChecklistCard } from '../components/onboarding/ChecklistCard';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
 import { formatDate, statusTone } from '../utils/formatters';
@@ -38,7 +39,7 @@ export function JobsListPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const [page, setPage] = useState(0);
 
-  const { data: jobs, isLoading } = useJobs({
+  const { data: jobs, isLoading, isError, refetch } = useJobs({
     status: statusFilter || undefined,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
@@ -70,14 +71,25 @@ export function JobsListPage() {
 
   if (isLoading && page === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: space['8'] }}>
-        <Spinner size={32} />
+      <div aria-busy style={{ maxWidth: measure.grid, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: space['4'] }}>
+        <Skeleton variant="text" width="30%" height={32} />
+        <Skeleton variant="card" height={72} />
+        <Skeleton variant="card" height={112} />
+        <Skeleton variant="card" height={112} />
       </div>
     );
   }
 
   const hasNextPage = (jobs?.length ?? 0) === PAGE_SIZE;
-  const showingEmpty = !isLoading && (!jobs || jobs.length === 0) && page === 0;
+  // S-8.10.2: "nothing yet" only when nothing is filtered. A status filter
+  // with no hits used to show the first-run copy to an account full of runs.
+  const filtering = !!statusFilter || !!search.trim();
+  const showingEmpty = !isLoading && !isError && (!jobs || jobs.length === 0) && page === 0 && !filtering;
+  const clearFilters = () => {
+    setSearch('');
+    setStatusFilter('');
+    resetPage();
+  };
 
   return (
     <div style={{ maxWidth: measure.grid, margin: '0 auto' }}>
@@ -106,6 +118,8 @@ export function JobsListPage() {
           Every volume in progress, every volume retired.
         </p>
       </header>
+
+      <ChecklistCard />
 
       <Card style={{ marginBottom: space['4'] }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: space['3'], alignItems: 'center' }}>
@@ -142,17 +156,35 @@ export function JobsListPage() {
         </div>
       </Card>
 
-      {showingEmpty ? (
+      {isError ? (
         <EmptyState
-          title="No volumes on your shelf yet."
-          description="Begin your first research run to start building your personal library."
+          size="sm"
+          title="Couldn't load your runs."
+          description="Something blocked the request. Your runs are still there."
+          action={
+            <Button variant="secondary" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : showingEmpty ? (
+        <EmptyState
+          title="Nothing researched yet."
+          description="A run reads the sources you choose and writes a report you can question, every claim tied to the moment it was said."
           action={<Button onClick={() => navigate('/submit')}>New research</Button>}
         />
       ) : filteredJobs.length === 0 ? (
         <EmptyState
           size="sm"
           title="Nothing matches these filters."
-          description="Adjust the search term or status filter to find the run you're after."
+          description="No run fits this search and status together."
+          action={
+            filtering ? (
+              <Button size="sm" variant="tertiary" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            ) : undefined
+          }
         />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}>

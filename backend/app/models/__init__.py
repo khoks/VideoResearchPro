@@ -31,6 +31,7 @@ from app.models.session import Session
 from app.models.share import Share
 from app.models.shelf import Shelf
 from app.models.shelf_job import ShelfJob
+from app.models.suggestion_cache import SuggestionCache
 from app.models.tag import Tag
 from app.models.tagging import Tagging
 from app.models.transcript_cache import TranscriptCache
@@ -71,6 +72,7 @@ __all__ = [
     "Share",
     "Shelf",
     "ShelfJob",
+    "SuggestionCache",
     "Tag",
     "Tagging",
     "TranscriptCache",

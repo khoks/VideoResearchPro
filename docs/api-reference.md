@@ -52,16 +52,18 @@ The first-run wizard's state for the caller (S-8.10.1). `state` is the default w
     "dismissed": false,
     "started_at": "2026-10-19T20:31:02+00:00",
     "completed_at": null,
-    "dismissed_at": null
+    "dismissed_at": null,
+    "checklist_dismissed": false,
+    "checklist_dismissed_at": null
   },
   "started": true,
-  "milestones": { "jobs": 0, "first_job": null, "report_opened": false },
+  "milestones": { "jobs": 0, "first_job": null, "report_opened": false, "questions": 0 },
   "should_onboard": true
 }
 ```
 
 ### `PATCH /api/v1/auth/me/onboarding`
-Merge a change into the caller's state; returns the same shape as `GET`. Every field is optional and unknown fields are a 422. `step` is 1 to 3. `channels` replaces the list (at most five; trimmed, de-duplicated, blanks dropped). `first_job_id` must be one of the caller's runs, else 404. `completed: true` sets `onboarded_at`; `dismissed: true` records a skip. The first PATCH writes `started_at`. Audit events, each once per account: `onboarding_started`, `onboarding_completed`, `onboarding_skipped`; `first_job_created` is written by `POST /jobs` and `first_report_opened` by `GET /jobs/{id}/report/body`.
+Merge a change into the caller's state; returns the same shape as `GET`. Every field is optional and unknown fields are a 422. `step` is 1 to 3. `channels` replaces the list (at most five; trimmed, de-duplicated, blanks dropped). `first_job_id` must be one of the caller's runs, else 404. `completed: true` sets `onboarded_at`; `dismissed: true` records a skip; `checklist_dismissed: true` hides the jobs page's first-run checklist (S-8.10.2) and, unlike every other field, does not start the wizard. The first PATCH that touches the wizard writes `started_at`. `milestones.questions` counts the caller's questions on runs, the library and the history chat. Audit events, each once per account: `onboarding_started`, `onboarding_completed`, `onboarding_skipped`; `first_job_created` is written by `POST /jobs` and `first_report_opened` by `GET /jobs/{id}/report/body`.
 
 ```json
 // request
@@ -524,6 +526,29 @@ Query params: `q` (1–200 chars; whitespace-separated tokens of three or more c
 ```
 
 Groups come back in that fixed order, only the requested ones, each possibly empty. Every group is scoped to the caller — jobs by `tenant_id`, documents and knowledge by `document_visibility` keyed on `document_id` (D-070), channels by subscription or a visible document, Q&A by `tenant_id` on each of the three exchange tables — so a tenant who has ingested nothing gets empty groups, never everything (D-063). `score` is higher-is-better (`-bm25`, title weighted over body, recency tie-break); on the `like` backend every score is `0.0` and items are ordered by recency. `backend` is the engine used for *this* query: `like` also when FTS5 is present but every token is shorter than three characters. Q&A hrefs carry `?exchange=<id>` on the originating page (`/jobs/<job_id>`, `/library/qa`, `/qa-history`), which scrolls to and focuses that exchange. Document hrefs carry `?document=<document_id>` on `/library` (the canonical id, because most non-video documents have no `video_id`), which narrows the list to that row through `GET /library/videos?document_id=`. Knowledge hrefs open the reader at `/knowledge/<document_id>` (S-8.8.3) since S-8.2.2.
+
+---
+
+## Question suggestions
+
+### `GET /api/v1/suggestions?context=`
+"You might ask…" for one context (S-8.4.1, plan [m4-question-suggestions](plans/m4-question-suggestions.md)). `context` is `job:<id>` (a completed run of the caller's), `document:<id>` (a source the caller can see; the YouTube id or `document_id`) or `library`. Returns up to five questions from two pools: **generated** from a summary of the context (report headings, knowledge topics, source titles) by `qa_suggest_questions`, and **history**, the caller's own nearest past questions from `qa_library_global` (tenant-filtered; exchanges on this same context are skipped). Both are de-duplicated against what was already asked on the context and against each other, then diversified with maximal marginal relevance. Cached per (caller, context) for `SUGGESTIONS_CACHE_TTL_MIN` minutes or until the context changes (a new exchange, report or knowledge state). When the generator's probe failed or the call fails, the response carries history items only, `generated: false`, and is not cached. A context with no sources (an empty library) returns an empty list without a model call. Every response records a `suggestion_shown` audit event. 422 for a malformed context, 404 for one the caller cannot see, 400 for a run that has not finished.
+
+```json
+{
+  "context": "job:…",
+  "suggestions": [
+    { "question": "…", "rationale": "…", "source": "generated", "origin": null },
+    { "question": "…", "rationale": "You asked this in another run; ask it here too.", "source": "history",
+      "origin": { "source": "job", "exchange_id": "…", "job_id": "…" } }
+  ],
+  "cached": false,
+  "generated": true
+}
+```
+
+### `POST /api/v1/suggestions/feedback`
+A suggestion was used. Body `{context, question, action: "fill" | "ask", source?}` (unknown fields 422); 204. Records `suggestion_clicked` with the context, action, source and question, for your own contexts only (404 otherwise).
 
 ---
 

@@ -23,6 +23,9 @@ from sqlalchemy.orm import Session
 
 from app.models.audit_log import AuditLog
 from app.models.job import Job
+from app.models.library_qa_exchange import LibraryQAExchange
+from app.models.qa_exchange import QAExchange
+from app.models.qa_history_exchange import QAHistoryExchange
 from app.models.user import User
 from app.services import audit_service
 
@@ -61,6 +64,9 @@ def _default_state() -> dict[str, Any]:
         "started_at": None,
         "completed_at": None,
         "dismissed_at": None,
+        # S-8.10.2: the jobs page's first-run checklist, hidden on request.
+        "checklist_dismissed": False,
+        "checklist_dismissed_at": None,
     }
 
 
@@ -95,7 +101,17 @@ def milestones(db: Session, user: User, state: dict[str, Any] | None) -> dict[st
             else None
         ),
         "report_opened": _has_event(db, user.id, audit_service.Event.FIRST_REPORT_OPENED),
+        "questions": _questions_asked(db, user.id),
     }
+
+
+def _questions_asked(db: Session, user_id: str) -> int:
+    """Questions the caller asked on any surface: a run, the library, or the
+    Q&A history chat (S-8.10.2's third checklist item)."""
+    return sum(
+        db.query(model.id).filter(model.tenant_id == user_id).count()
+        for model in (QAExchange, LibraryQAExchange, QAHistoryExchange)
+    )
 
 
 def should_onboard(user: User, state: dict[str, Any] | None, job_count: int) -> bool:
@@ -121,7 +137,7 @@ def payload(db: Session, user: User) -> dict[str, Any]:
     m = milestones(db, user, state)
     return {
         "onboarded_at": _iso(user.onboarded_at),
-        "state": state or _default_state(),
+        "state": {**_default_state(), **(state or {})},
         "started": state is not None and bool(state.get("started_at")),
         "milestones": m,
         "should_onboard": should_onboard(user, state, m["jobs"]),
@@ -141,13 +157,18 @@ def update(
     first_job_id: str | None = None,
     completed: bool = False,
     dismissed: bool = False,
+    checklist_dismissed: bool = False,
     request=None,
 ) -> dict[str, Any]:
     """Merge a patch into the user's state; returns the fresh payload."""
     previous = load_state(user)
-    state = previous or _default_state()
+    state = {**_default_state(), **(previous or {})}
     events: list[audit_service.Event] = []
-    if not state.get("started_at"):
+    touches_wizard = any(
+        v for v in (step is not None, channels is not None, first_job_id is not None, completed, dismissed)
+    )
+    # Hiding the jobs-page checklist is not starting the wizard.
+    if touches_wizard and not state.get("started_at"):
         state["started_at"] = _now().isoformat()
         events.append(audit_service.Event.ONBOARDING_STARTED)
 
@@ -173,6 +194,9 @@ def update(
         state["dismissed"] = True
         state["dismissed_at"] = _now().isoformat()
         events.append(audit_service.Event.ONBOARDING_SKIPPED)
+    if checklist_dismissed and not state.get("checklist_dismissed"):
+        state["checklist_dismissed"] = True
+        state["checklist_dismissed_at"] = _now().isoformat()
 
     user.onboarding_state_json = json.dumps(state)
     db.add(user)

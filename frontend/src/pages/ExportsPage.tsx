@@ -1,4 +1,5 @@
 import { useAuth } from '../contexts/AuthContext';
+import { useOnboarding } from '../hooks/useOnboarding';
 import { useJobStore } from '../stores/jobStore';
 import { exportsApi } from '../services/exportsApi';
 import { downloadUrl } from '../utils/download';
@@ -24,18 +25,26 @@ interface DatasetCard {
   title: string;
   description: string;
   downloads: Download[];
+  /** Shown when the dataset would download empty (S-8.10.2). */
+  emptyNote?: string;
 }
 
 export function ExportsPage() {
   const c = useColors();
   const { token } = useAuth();
   const pushToast = useJobStore((s) => s.pushToast);
+  // The onboarding milestones already count questions on every surface.
+  const questions = useOnboarding().data?.milestones.questions;
 
   const cards: DatasetCard[] = [
     {
       title: 'Q&A dataset',
       description:
         'Every question you asked together with the assistant answer, packaged for fine-tuning.',
+      emptyNote:
+        questions === 0
+          ? 'You have not asked a question yet, so both files download empty. Ask a run or the library first.'
+          : undefined,
       downloads: [
         { label: 'OpenAI JSONL', url: exportsApi.getQaOpenaiUrl(token), filename: 'qa-dataset-openai.jsonl', variant: 'primary' },
         { label: 'Tuple JSONL', url: exportsApi.getQaTupleUrl(token), filename: 'qa-dataset-tuple.jsonl', variant: 'secondary' },
@@ -124,6 +133,20 @@ export function ExportsPage() {
             >
               {card.description}
             </p>
+            {card.emptyNote && (
+              <p
+                role="note"
+                style={{
+                  margin: `0 0 ${space['4']}`,
+                  fontFamily: fonts.ui,
+                  fontSize: fontSize.sm,
+                  color: c.textMuted,
+                  maxWidth: measure.reading,
+                }}
+              >
+                {card.emptyNote}
+              </p>
+            )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: space['2'] }}>
               {card.downloads.map((d) => (
                 <Button key={d.label} variant={d.variant} onClick={() => handleDownload(d.url, d.filename)}>

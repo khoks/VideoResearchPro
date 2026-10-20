@@ -124,6 +124,8 @@ UseCase = Literal[
     # Code-mixed speech (R5 / S-1.16.2) — app/services/code_mixing_service.py
     "code_mixing_detect",
     "code_mixing_render_english",
+    # Question suggestions (M4 / S-8.4.1) — app/services/suggestion_service.py
+    "qa_suggest_questions",
     # Author Studio book cohesion (S-6.1.3) — app/services/outputters/book_cohesion.py
     "author_book_outline",
     "author_book_prose",
@@ -1215,6 +1217,47 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
                 ),
             ),
             related_decisions=("D-071", "D-075"),
+        ),
+    ),
+    # --- Question suggestions (M4 / S-8.4.1) ----------------------------
+    "qa_suggest_questions": UseCaseInfo(
+        default_route="fast",
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
+        summary=(
+            "\"You might ask…\": five to seven next questions for a run, a "
+            "source or the whole library, from a short summary of it (report "
+            "headings, knowledge topics, source titles) and the questions "
+            "already asked there. Strict JSON {suggestions: [{question, "
+            "rationale}]}; merged with the caller's nearest past questions, "
+            "de-duplicated and diversified (MMR) in suggestion_service, and "
+            "cached per (tenant, context) until the context changes."
+        ),
+        typical_input_tokens=600,
+        p95_input_tokens=1_800,
+        typical_output_tokens=320,
+        min_context_recommended=8_192,
+        rationale=(
+            "The first LLM spend in I-8, and an impression-driven one: it runs "
+            "when a Q&A page opens, not when the reader asks for something, "
+            "so it sits on the volume tier with reasoning OFF like the other "
+            "high-frequency structured calls (D-057). Off is also a "
+            "correctness rule: the call caps output at 900 tokens and OpenAI "
+            "models count reasoning tokens against that cap (the D-052 trap). "
+            "The output is a suggestion the reader edits or ignores, never a "
+            "claim shown as fact, so a cheaper model's weaker wording costs "
+            "little. Cached per (tenant, context) with a fingerprint of the "
+            "context's inputs, so a re-open costs nothing. Fail-soft: a "
+            "failed call leaves the reader's past questions only."
+        ),
+        guidance=_unmeasured(
+            "Suggestion quality has not been graded, and click-through "
+            "(suggestion_shown / suggestion_clicked in audit_log) is logged "
+            "from day one so it can be. A smoke run on 2026-10-19 (three "
+            "calls on an 11-source run) returned valid JSON with seven "
+            "questions each time, median 3.5 s, 564 tokens in and about 300 "
+            "out. Reasoning must stay off: the call caps output at 900 "
+            "tokens and OpenAI models count reasoning tokens against it.",
+            related=("D-057",),
         ),
     ),
     # --- Discussed-era extraction (R3 / S-1.17.2) ----------------------

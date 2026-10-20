@@ -38,6 +38,7 @@ def patch_onboarding(
             first_job_id=body.first_job_id,
             completed=body.completed,
             dismissed=body.dismissed,
+            checklist_dismissed=body.checklist_dismissed,
             request=request,
         )
     except onboarding_service.OnboardingError as e:

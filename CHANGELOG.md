@@ -10,6 +10,15 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Fix: the Echo panel shows a draft the way speak-as-me returns it (S-3.8.1, 2026-10-20)
+
+PR [#361](https://github.com/khoks/VideoResearchPro/pull/361).
+
+- The voice-match score reads on its 0 to 100 scale ("Sounds like you:
+  82%"). The old reading treated 1 as 100%.
+- A draft's flags are shown. Its sources carry their marker, and a source
+  at its timestamp opens in a new tab.
+
 ### Fix: the Echo panel words the speak-as-me gate from its blockers (S-3.8.1 with S-3.4.1, 2026-10-20)
 
 PR [#360](https://github.com/khoks/VideoResearchPro/pull/360).

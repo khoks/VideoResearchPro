@@ -264,7 +264,7 @@ Days each. Each one is shippable as a single PR or a small series. All twelve we
 
 ---
 
-### M1 — Shelves (collections / folders) 🟡
+### M1 — Shelves (collections / folders) 🟢
 
 Group jobs into named projects. A job can belong to multiple shelves. Tag documents. Filter library views by shelf.
 
@@ -274,7 +274,7 @@ Group jobs into named projects. A job can belong to multiple shelves. Tag docume
 
 **UI:** New left-sidebar section "Shelves". Shelf detail page = filtered library view.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.1](initiatives.md#e-81--shelves--collections-tags-and-shelf-scoped-views-m1); plan [`plans/m1-shelves.md`](plans/m1-shelves.md). Audit: no table exists; the `shelves` tier gate already does. Tags become a per-tenant side table ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)) and shelf-scoped Q&A is added to the sketch. **🟡 2026-10-19:** shelves (schema, REST, pages, Add-to-shelf, sidebar group) and per-tenant tags shipped (PRs #242, #250, #257); shelf-scoped Q&A ([S-8.1.4](initiatives.md#s-814--shelf-scoped-qa)) is Phase 2. Defaults on the plan's open questions: [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19).
+**Status.** 🔵 accepted 2026-10-18 as [E-8.1](initiatives.md#e-81--shelves--collections-tags-and-shelf-scoped-views-m1); plan [`plans/m1-shelves.md`](plans/m1-shelves.md). Audit: no table exists; the `shelves` tier gate already does. Tags become a per-tenant side table ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)) and shelf-scoped Q&A is added to the sketch. **🟡 2026-10-19:** shelves (schema, REST, pages, Add-to-shelf, sidebar group) and per-tenant tags shipped (PRs #242, #250, #257); shelf-scoped Q&A ([S-8.1.4](initiatives.md#s-814--shelf-scoped-qa)) is Phase 2. **🟢 2026-10-19:** shelf-scoped Q&A shipped ([#313](https://github.com/khoks/VideoResearchPro/pull/313), [#319](https://github.com/khoks/VideoResearchPro/pull/319)): `POST /shelves/{id}/qa` answers from the shelf's documents only, an empty shelf retrieves nothing, and the exchange joins the library history with its scope (`scope_json`, shared with M3's saved searches). Defaults on the plan's open questions: [D-083](decisions.md#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19).
 
 ---
 

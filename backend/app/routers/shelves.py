@@ -24,8 +24,15 @@ from app.schemas.shelf import (
     ShelfResponse,
     ShelfUpdate,
 )
-from app.routers.library import query_library_documents
-from app.services import job_service, shelf_service
+from app.models.library_qa_exchange import LibraryQAExchange
+from app.routers.library import (
+    answer_library_question,
+    library_exchange_response,
+    query_library_documents,
+)
+from app.schemas.library_qa import LibraryQARequest, LibraryQAResponse
+from app.schemas.qa_scope import QAScope
+from app.services import job_service, qa_scope_service, shelf_service
 from app.services.shelf_service import ForeignJob, ShelfNameTaken
 from app.services.tier_service import require_feature
 
@@ -130,6 +137,53 @@ def list_shelf_documents(
         offset=offset,
         job_ids=job_ids,
     )
+
+
+@router.post("/{shelf_id}/qa", response_model=LibraryQAResponse)
+def ask_shelf_question(
+    shelf_id: str,
+    request: LibraryQARequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Ask the library agent over this shelf's documents only (S-8.1.4): the
+    documents selected by the shelf's runs, within what the caller can see.
+    An empty shelf retrieves nothing; it never widens to the library. The
+    exchange joins the library Q&A history with ``scope: {"shelf_id": …}``.
+    Open to every tier, like reading the shelf; the library Q&A quota applies."""
+    try:
+        return answer_library_question(db, current_user, request, QAScope(shelf_id=shelf_id))
+    except qa_scope_service.ScopeNotFound:
+        raise HTTPException(status_code=404, detail="Shelf not found")
+
+
+@router.get("/{shelf_id}/qa", response_model=list[LibraryQAResponse])
+def list_shelf_questions(
+    shelf_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The caller's questions asked on this shelf, oldest first (the library
+    history's order). Includes saved-search runs scoped to the shelf."""
+    shelf = _shelf_or_404(db, shelf_id, current_user.id)
+    # A cheap prefilter on the canonical JSON, then the parsed scope decides,
+    # so a malformed value or a lookalike id never matches.
+    candidates = (
+        db.query(LibraryQAExchange)
+        .filter(
+            LibraryQAExchange.tenant_id == current_user.id,
+            LibraryQAExchange.scope_json.like(f'%"shelf_id":"{shelf.id}"%'),
+        )
+        .order_by(LibraryQAExchange.created_at.asc())
+        .all()
+    )
+    mine = [
+        qa for qa in candidates
+        if (scope := qa_scope_service.load(qa.scope_json)) is not None and scope.shelf_id == shelf.id
+    ]
+    return [library_exchange_response(qa) for qa in mine[offset:offset + limit]]
 
 
 @router.put("/{shelf_id}", response_model=ShelfResponse)

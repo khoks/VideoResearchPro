@@ -42,7 +42,13 @@ from app.config import settings
 from app.dependencies import get_db
 from app.models.share import Share
 from app.models.user import User
-from app.services import audit_service, echo_intake_service, echo_privacy_service, echo_service
+from app.services import (
+    audit_service,
+    echo_intake_service,
+    echo_privacy_service,
+    echo_processing_service,
+    echo_service,
+)
 from app.services.echo_intake_service import InvalidShare, ShareNotFound, ShareTooLarge
 from app.services.echo_service import SUPPORTED_KINDS, UnsupportedKindError
 from app.services.tier_service import require_feature
@@ -236,6 +242,25 @@ class ShareFileInfo(BaseModel):
     size: int
 
 
+class ShareLibraryOffer(BaseModel):
+    eligible: bool = False
+    reason: str | None = None
+    source_type: str | None = None
+
+
+class ShareProcessing(BaseModel):
+    """What processing made of a share (S-3.7.2). Absent until it ran."""
+
+    title: str | None = None
+    author: str | None = None
+    extractor: str | None = None
+    error: str | None = None
+    note: str | None = None
+    embedded: bool | None = None
+    processed_at: str | None = None
+    library_offer: ShareLibraryOffer | None = None
+
+
 class ShareItem(BaseModel):
     id: str
     received_at: datetime
@@ -253,6 +278,9 @@ class ShareItem(BaseModel):
     author_is_tenant: bool
     processing_state: str
     linked_document_id: str | None = None
+    # S-3.7.2: the extracted text (any kind) and what processing found.
+    extracted_text: str | None = None
+    processing: ShareProcessing | None = None
 
 
 class ShareListResponse(BaseModel):
@@ -316,7 +344,25 @@ def _share_item(share: Share) -> ShareItem:
         author_is_tenant=bool(share.author_is_tenant),
         processing_state=share.processing_state,
         linked_document_id=share.linked_document_id,
+        extracted_text=share.extracted_text if kind != "text" else None,
+        processing=_processing(share),
     )
+
+
+def _processing(share: Share) -> ShareProcessing | None:
+    data = echo_processing_service.load_processing(share)
+    if not data:
+        return None
+    known = {k: data.get(k) for k in ShareProcessing.model_fields if k in data}
+    return ShareProcessing.model_validate(known)
+
+
+def _queued(db: Session, share: Share, user: User) -> Share:
+    """S-3.7.2: hand the share to processing; inline mode changes it now."""
+    if echo_processing_service.enqueue(share, user) == "processed":
+        db.expire(share)
+        db.refresh(share)
+    return share
 
 
 def _invalid(e: InvalidShare) -> HTTPException:
@@ -351,7 +397,7 @@ def create_share_endpoint(
             )
     except InvalidShare as e:
         raise _invalid(e)
-    return _share_item(share)
+    return _share_item(_queued(db, share, current_user))
 
 
 @router.post("/shares/upload", response_model=ShareItem, status_code=status.HTTP_201_CREATED)
@@ -382,7 +428,7 @@ async def upload_share_endpoint(
         )
     except InvalidShare as e:
         raise _invalid(e)
-    return _share_item(share)
+    return _share_item(_queued(db, share, current_user))
 
 
 @router.get("/shares", response_model=ShareListResponse)
@@ -454,6 +500,60 @@ def delete_share_endpoint(
         files=result.files,
         derived_facts=result.derived_facts,
     )
+
+
+@router.post("/shares/{share_id}/process", response_model=ShareItem)
+def reprocess_share_endpoint(
+    share_id: str,
+    current_user: User = Depends(require_feature("echo_personal_brain")),
+    db: Session = Depends(get_db),
+) -> ShareItem:
+    """S-3.7.2: queue the share for processing again ("Retry" in the inbox).
+    Processing is idempotent: it re-derives everything from what arrived."""
+    try:
+        share = echo_intake_service.get_share(db, current_user.id, share_id)
+    except ShareNotFound:
+        raise HTTPException(status_code=404, detail="Share not found")
+    return _share_item(_queued(db, share, current_user))
+
+
+@router.post("/shares/{share_id}/library", response_model=ShareItem)
+def add_share_to_library_endpoint(
+    share_id: str,
+    current_user: User = Depends(require_feature("echo_personal_brain")),
+    db: Session = Depends(get_db),
+) -> ShareItem:
+    """S-3.7.2: the library offer. Ingests a shared link through the same path
+    as the library's "Paste URLs" (so it is deduplicated and visible to the
+    sharer only, D-063) and links the share to the document. Only for links
+    processing marked eligible; videos enter the library through a research
+    run."""
+    try:
+        share = echo_intake_service.get_share(db, current_user.id, share_id)
+    except ShareNotFound:
+        raise HTTPException(status_code=404, detail="Share not found")
+    offer = (echo_processing_service.load_processing(share).get("library_offer") or {})
+    payload = echo_intake_service.load_payload(share)
+    if payload.get("kind") != "url" or not offer.get("eligible"):
+        raise HTTPException(
+            status_code=409,
+            detail=offer.get("reason") or "This share cannot be added to the library.",
+        )
+    if share.linked_document_id:
+        return _share_item(share)
+
+    from app.routers.library import _ingest_single_paste_url
+
+    result = _ingest_single_paste_url(payload.get("url") or "", db, current_user)
+    if result.get("status") not in ("created", "deduped") or not result.get("document_id"):
+        raise HTTPException(
+            status_code=422,
+            detail="The page could not be extracted for the library. It stays in your inbox.",
+        )
+    share.linked_document_id = result["document_id"]
+    db.commit()
+    db.refresh(share)
+    return _share_item(share)
 
 
 @router.get("/shares/{share_id}/file")

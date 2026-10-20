@@ -5,11 +5,12 @@ Echo keeps personal vectors apart from the shared transcript collection:
 (facts, written by S-3.3.3). Both carry ``tenant_id`` metadata and every query
 against them filters on it, the ``qa_library_global`` pattern.
 
-This module owns only what erasure and the footprint check need: find a
-collection if it exists, count a tenant's vectors, delete a tenant's or one
-share's vectors. It never creates a collection — deleting from a collection
-that was never written is a no-op, not an error — and it never embeds, so it
-does not load the sentence-transformer. It deliberately does not live in
+The erasure side (find a collection if it exists, count a tenant's vectors,
+delete a tenant's or one share's vectors) never creates a collection —
+deleting from a collection that was never written is a no-op, not an error —
+and never embeds, so it does not load the sentence-transformer. The one
+write, ``upsert_share_vector`` (S-3.7.2), creates ``shares_global`` with the
+shared embedder on first use. It deliberately does not live in
 ``chroma_service``: that module is the retrieval path, and Echo's erasure must
 not depend on retrieval-side changes.
 """
@@ -98,3 +99,28 @@ def delete_share_vector(tenant_id: str, share_id: str) -> int:
     if ids:
         col.delete(ids=ids)
     return len(ids)
+
+
+def upsert_share_vector(share_id: str, text: str, metadata: dict) -> str:
+    """Embed one share (S-3.7.2) under ``share_vector_id`` with its tenant in
+    the metadata, the only shape the deletes above look for. Returns the
+    vector id. Raises on a Chroma failure; the caller decides fail-soft."""
+    tenant_id = (metadata or {}).get("tenant_id")
+    if not tenant_id:
+        raise ValueError("a share vector needs tenant_id metadata")
+    client = get_chroma_client()
+    col = client.get_or_create_collection(
+        name=settings.CHROMA_SHARES_COLLECTION_NAME,
+        metadata={"scope": "echo_shares"},
+        embedding_function=_embedding_function(),
+    )
+    vid = share_vector_id(share_id)
+    clean = {k: v for k, v in metadata.items() if v is not None}
+    col.upsert(ids=[vid], documents=[text], metadatas=[clean])
+    return vid
+
+
+def _embedding_function():
+    from app.services import chroma_service
+
+    return chroma_service._get_embedding_function()

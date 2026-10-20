@@ -8,6 +8,6 @@
 | `job-qa.json` | **Synthetic.** Written by hand about the same three public videos, because the test account has no Q&A history and the user's own exchanges do not belong in a public repository. Every answer starts with "Synthetic fixture answer". |
 | `graph.json` | **Synthetic.** A hand-made `GET /library/graph` response for `tests/graph.spec.ts`: nine sources on one channel, three topics, one question. Source 9 links only to its channel, so the single-link rule leaves 13 nodes drawn. |
 
-Routes the pages call that have no file here are answered with an empty list (`/notes`, `/library/qa`). Any other unmatched `/api/v1/` request fails the test, so a page that starts calling something new is noticed.
+Routes the pages call that have no file here are answered inline in the spec: an empty notes page, an onboarded account (`/auth/me/onboarding`), no library rows, no suggestions and no citation channels (`/library/video-channels`), the state the baselines were recorded in. Any other unmatched `/api/v1/` request fails the test, so a page that starts calling something new is noticed.
 
 To refresh the captured files, re-run the capture against a backend that has the reference job, and check the diff for anything account-specific before committing.

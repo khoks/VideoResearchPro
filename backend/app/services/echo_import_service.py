@@ -15,12 +15,20 @@ Three steps, the first two in the request:
 
 Undo deletes every share an import wrote through ``delete_shares``, the
 same cascade a single delete uses, then the import row.
+
+**Events and facts** (part 2). Events go through S-3.2.1's writer under
+the importer's name as their connector, but only events Echo does not
+already hold: a re-import of a longer history adds what is new and leaves
+the rest alone. Each added event carries the import's id in its payload
+(``_import``), and each fact has ``source = import:<id>``, so undoing an
+import removes exactly what that import added.
 """
 from __future__ import annotations
 
 import json
 import logging
 import uuid
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import IO, Any
 
@@ -32,12 +40,14 @@ from app.models.echo_import import EchoImport
 from app.models.share import Share
 from app.connectors import registry
 from app.connectors.archive import ExportUnreadable, ImportPreview, ImportSource
-from app.connectors.base import ImportedShare
+from app.connectors.base import ActivityEvent as EventIn
+from app.connectors.base import DerivedFact, ImportedShare
 from app.services import echo_intake_service, echo_processing_service, echo_vectors
 
 logger = logging.getLogger(__name__)
 
 _BATCH = 1000
+_EVENT_BATCH = 1000
 _EMBED_BATCH = 256
 _SUPPORTED = "WhatsApp chat exports (.txt or .zip) and Google Keep notes from Google Takeout"
 
@@ -159,15 +169,23 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
     db.commit()
 
     counts = {"shares": 0, "own_words": 0, "context_only": 0}
+    events: list[EventIn] = []
     stats: dict[str, int] = {}
     batch: list[dict[str, Any]] = []
     checked: set[str] = set()
     surface = echo_intake_service._validate_surface("file_import")
     try:
         for item in _parse(module, source, opts, stats, tenant_id=user.id):
+            if isinstance(item, EventIn):
+                events.append(item)
+                if len(events) >= _EVENT_BATCH:
+                    _store_new_events(db, user.id, module.name, record.id, events, counts)
+                    events = []
+                continue
+            if isinstance(item, DerivedFact):
+                _record_fact(db, user.id, record.id, item, counts)
+                continue
             if not isinstance(item, ImportedShare):
-                # Events and facts are stored by the importers that yield
-                # them (S-3.7.5 part 2); none does yet.
                 stats["not_stored"] = stats.get("not_stored", 0) + 1
                 continue
             meta = dict(item.metadata or {})
@@ -216,6 +234,8 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
         if batch:
             db.execute(insert(Share), batch)
             db.commit()
+        if events:
+            _store_new_events(db, user.id, module.name, record.id, events, counts)
     except Exception as e:
         db.rollback()
         record = db.get(EchoImport, record.id)
@@ -336,9 +356,51 @@ def get_import(db: Session, tenant_id: str, import_id: str) -> EchoImport:
     return record
 
 
+def _store_new_events(db: Session, tenant_id: str, connector: str, import_id: str,
+                      events: list[EventIn], counts: dict[str, int]) -> None:
+    """Hand S-3.2.1's writer only the events not already held, each marked
+    with the import that added it."""
+    from app.models.activity_event import ActivityEvent
+    from app.services import activity_event_service
+
+    unique = {e.external_id: e for e in events}
+    ids = list(unique)
+    held: set[str] = set()
+    for i in range(0, len(ids), 900):
+        held.update(
+            eid for (eid,) in db.query(ActivityEvent.external_id).filter(
+                ActivityEvent.tenant_id == tenant_id,
+                ActivityEvent.connector == connector,
+                ActivityEvent.external_id.in_(ids[i : i + 900]),
+            )
+        )
+    fresh = [
+        replace(e, payload={**(e.payload or {}), "_import": import_id})
+        for eid, e in unique.items() if eid not in held
+    ]
+    if fresh:
+        result = activity_event_service.store_events(db, tenant_id, connector, fresh)
+        counts["events"] = counts.get("events", 0) + result["added"]
+    counts["events_already_held"] = counts.get("events_already_held", 0) + len(held)
+
+
+def _record_fact(db: Session, tenant_id: str, import_id: str, fact: DerivedFact, counts: dict[str, int]) -> None:
+    from app.services import echo_service
+
+    echo_service.record_context(
+        db, user_id=tenant_id, kind=fact.kind, key=fact.key, value=fact.value,
+        source=f"import:{import_id}", confidence=min(float(fact.confidence), 0.99),
+    )
+    counts["facts"] = counts.get("facts", 0) + 1
+
+
 def delete_import(db: Session, tenant_id: str, import_id: str) -> dict[str, int]:
     """Undo an import: every share it wrote, their vectors and whatever was
-    derived from them, then the import row."""
+    derived from them; the events it added; the facts it recorded (unless a
+    later import or the user has since restated them); then the import row."""
+    from app.models.activity_event import ActivityEvent
+    from app.models.personal_context import PersonalContext
+
     record = get_import(db, tenant_id, import_id)
     record.status = "deleting"
     db.commit()
@@ -350,7 +412,24 @@ def delete_import(db: Session, tenant_id: str, import_id: str) -> dict[str, int]
     result = echo_intake_service.delete_shares(db, tenant_id, share_ids)
     vectors += result.vectors
     facts = result.derived_facts
+    events = (
+        db.query(ActivityEvent)
+        .filter(
+            ActivityEvent.tenant_id == tenant_id,
+            ActivityEvent.connector == record.importer,
+            ActivityEvent.payload_json.like(f"%{import_id}%"),
+        )
+        .delete(synchronize_session=False)
+    )
+    facts += (
+        db.query(PersonalContext)
+        .filter(PersonalContext.tenant_id == tenant_id, PersonalContext.source == f"import:{import_id}")
+        .delete(synchronize_session=False)
+    )
     db.delete(db.get(EchoImport, import_id))
     db.commit()
-    logger.info("echo: tenant %s undid import %s (%d shares)", tenant_id[:8], import_id[:8], len(share_ids))
-    return {"shares": len(share_ids), "vectors": vectors, "facts": facts}
+    logger.info(
+        "echo: tenant %s undid import %s (%d shares, %d events, %d facts)",
+        tenant_id[:8], import_id[:8], len(share_ids), events, facts,
+    )
+    return {"shares": len(share_ids), "vectors": vectors, "facts": facts, "events": events}

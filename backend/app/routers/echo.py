@@ -776,6 +776,7 @@ class ImportDeleteResponse(BaseModel):
     shares: int
     vectors: int
     facts: int
+    events: int = 0
 
 
 def _import_item(record) -> ImportItem:

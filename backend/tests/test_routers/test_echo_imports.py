@@ -276,11 +276,12 @@ def test_a_zip_bomb_is_refused_before_reading(two, monkeypatch):
 def test_keep_takeout_import(unauthenticated_client, db, two):
     data = _takeout()
     pv = _post(unauthenticated_client, PREVIEW, two["ha"], "takeout-20241019.zip", data).json()
-    assert pv["importer"] == "google_keep"
+    # S-3.7.5 part 2: a Takeout zip belongs to the Takeout importer, which
+    # reads its Keep notes through the Keep importer.
+    assert pv["importer"] == "google_takeout"
     s = pv["summary"]
-    assert (s["notes"], s["trashed"], s["empty"], s["pinned"], s["lists"]) == (2, 1, 1, 1, 1)
+    assert (s["notes"], s["notes_trashed"], s["watched"], s["searches"]) == (2, 1, 0, 0)
     assert s["labels"] == {"Essays": 1, "Economics": 1}
-    assert any("YouTube and YouTube Music" in w for w in pv["warnings"])
 
     item = _post(unauthenticated_client, IMPORT, two["ha"], "takeout-20241019.zip", data).json()
     assert item["counts"]["shares"] == 2 and item["counts"]["own_words"] == 2
@@ -350,7 +351,7 @@ def test_undo_removes_one_import_and_nothing_else(unauthenticated_client, db, tw
     assert len(_vectors(chroma, two["a"].id)) == 7
 
     r = unauthenticated_client.delete(f"{IMPORTS}/{chat['id']}", headers=two["ha"])
-    assert r.status_code == 200 and r.json() == {"deleted": True, "shares": 5, "vectors": 5, "facts": 0}
+    assert r.status_code == 200 and r.json() == {"deleted": True, "shares": 5, "vectors": 5, "facts": 0, "events": 0}
 
     db.expire_all()
     assert db.query(Share).filter(Share.import_id == chat["id"]).count() == 0
@@ -397,8 +398,8 @@ def test_the_importers_meet_the_archive_contract_and_register_once():
     # By filename alone they claim only their own exports.
     assert registry.importer_for("WhatsApp Chat with Asha.txt").name == "whatsapp"
     assert registry.importer_for("folder/_chat.txt").name == "whatsapp"
-    assert registry.importer_for("takeout-20241019T101010Z-001.zip").name == "google_keep"
-    for other in ("mine.txt", "notes.json", "StreamingHistory_music_0.json", "export.zip"):
+    assert registry.importer_for("takeout-20241019T101010Z-001.zip").name == "google_takeout"
+    for other in ("mine.txt", "notes.json", "photos.zip"):
         assert registry.importer_for(other) is None, other
 
 
@@ -406,7 +407,7 @@ def test_a_renamed_export_is_still_recognised_by_its_content():
     pv = _preview_file("chat-backup-final.txt", _bytes(ANDROID))
     assert pv.importer == "whatsapp" and pv.summary["messages"] == 6
     pv = _preview_file("my-notes.zip", _takeout())
-    assert pv.importer == "google_keep"
+    assert pv.importer == "google_takeout"
 
 
 def test_the_contract_parse_works_without_the_extras():

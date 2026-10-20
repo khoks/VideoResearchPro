@@ -472,6 +472,13 @@ Top to bottom:
 | Ask | **My library** / **My past questions**, a field (Enter asks, Shift-Enter breaks the line) and **Ask**. A library answer is Markdown with its sources (citation links) and "Saved in Library Q&A →". A past-questions answer lists the exchanges it drew on, each linking to where it was asked. Failures say why ("You have reached today’s limit for this…"). When the model for the chosen target is down, **Ask** is disabled and says so. |
 | Draft as me | The per-user gate in words, never hidden. "Not on this install yet" while S-3.4.1 has not shipped. "Echo is not ready yet" with what is missing and **See what is missing →**. "Your voice test comes first" with how many notes the test still needs and **Write a note →**. "Your voice test has not passed yet". Once on: a field for the message to answer and **Draft a reply**. The draft comes back with "82% like you", deviation notes, sources, the disclosure line and **Copy draft**. |
 
+**Cards (S-3.8.2).** While the conversation is empty, up to three one-line cards sit above it:
+- a saved search whose answer changed (**See what changed →**, which also marks the notice read);
+- "New in your shares inbox" with what was read and what needs a retry (**Open the inbox →**);
+- "You might ask" with up to three questions for the page in view. A question goes into the Ask field.
+
+Each card has a × to dismiss it. **Card settings** turns each kind on or off. After a third dismissal of one kind within 30 days, a line says that kind is off, with **Turn back on**. The rules are [D-102](decisions.md#d-102--anticipation-cards-only-in-the-opened-panel-three-a-view-three-days-a-key-three-dismissals-turn-a-kind-off-2026-10-20). The shares inbox page tells the server when it opens.
+
 The conversation lasts for the session: each answer is already saved where it was asked. **Clear** empties the panel. Pure logic (readiness wording, the gate in words, error wording) lives in `frontend/src/utils/echoPanel.ts`, unit-tested.
 
 ### Notification bell (every protected page)

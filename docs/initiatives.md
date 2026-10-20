@@ -1123,7 +1123,7 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 #### S-3.7.6 ⚪ OS share target
 - [ ] T-3.7.6.1 Web-app manifest `share_target` (depends on S-8.12.2) so Android shares land in the inbox; iOS via a Shortcut that posts to `/echo/shares`
 
-### E-3.8 🔵 Always-evokable Echo surface
+### E-3.8 🟢 Always-evokable Echo surface
 
 **Filed 2026-10-18.** The floating bubble on every page: one click or `Ctrl-E` expands a chat panel; below readiness it shows the meter and what is missing; above it, it answers *as the user* by routing to the E-3.4 agent for drafts and to the library / history agents for questions, and surfaces anticipation cards (unread saved items, suggested questions from E-8.4).
 **Acceptance.** The bubble is present for Studio users on every authenticated page, opens with its shortcut, shows readiness progress in words, and once ready holds a conversation whose answers cite sources, facts and past Q&As; it never covers the Q&A composer on mobile.
@@ -1142,9 +1142,16 @@ The panel is labelled as an AI. On desktop it is non-modal and stays open beside
 - [x] T-3.8.1.2 *(re-scoped: no `/echo/chat`; the existing Q&A endpoints and S-3.4.1's draft endpoint, see call 1)* `POST /echo/chat` routing by intent to draft, library Q&A or history Q&A; exchanges stored as `qa_history_exchanges` with `source=echo` so they enter the Q&A library index
 - [x] T-3.8.1.3 *(in the top bar instead, see call 4)* Mobile placement above the docked composer (S-8.12.1)
 
-#### S-3.8.2 🔵 Anticipation cards
-**PR:** TBD
-- [ ] T-3.8.2.1 Cards in the panel: suggested questions for the current page (E-8.4), shares not yet read, saved searches that changed (E-8.3)
+#### S-3.8.2 🟢 Anticipation cards
+**Shipped:** 2026-10-20 — PR [#PRC](https://github.com/khoks/VideoResearchPro/pull/PRC). **Linked decision:** [D-102](decisions.md#d-102--anticipation-cards-only-in-the-opened-panel-three-a-view-three-days-a-key-three-dismissals-turn-a-kind-off-2026-10-20). The frequency cap and dismissal rule were pre-registered before any card was built ([note](notes/2026-10-20-anticipation-cards-preregistration.md), committed first on the branch).
+
+**Calls made.**
+1. *Only in the opened panel,* and only while its conversation is empty. Nothing badges the bubble.
+2. *What "shares not yet read" means.* Shares have no read state, so it means direct shares (never imports) that processing finished or failed since the user last opened the inbox. The inbox page reports when it opens (`POST /echo/cards/seen/shares`). With no visit on record, the last 14 days count.
+3. *Questions for the page in view* use S-8.4.1's contexts: a run or its report (`job:<id>`), a knowledge page (`document:<id>`), else `library`. A question goes into the panel's Ask field, which asks the library, and records a `fill` with the suggestions feedback.
+4. *A card counts as shown only once it renders.* The live check found the questions card empty in a new library, which would have understated its act rate. The note records this addition, dated before the first card shipped.
+5. *Card settings live in the panel.* No Echo page edit, since other lanes are working on that page.
+- [x] T-3.8.2.1 Cards in the panel: suggested questions for the current page (E-8.4), shares not yet read, saved searches that changed (E-8.3)
 
 ### E-3.9 ⚪ Mode B: opt-in per-user fine-tuning
 

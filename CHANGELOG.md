@@ -10,6 +10,18 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Echo: anticipation cards in the panel (S-3.8.2, 2026-10-20)
+
+PR [#PRC](https://github.com/khoks/VideoResearchPro/pull/PRC).
+
+- When you open the Echo panel, up to three one-line cards offer a next
+  step: a saved search whose answer changed, shares read since you last
+  opened the inbox, or questions for the page you are on.
+- They never pop up, badge or notify. Each card shows on three days at
+  most, × retires it, and three dismissals of a kind in a month turn that
+  kind off (D-102). These rules were pre-registered before any card was
+  built.
+
 ### Changed: Echo readiness counts five parts of you, and says what each is missing (S-3.5.1, 2026-10-20)
 
 PR [#354](https://github.com/khoks/VideoResearchPro/pull/354). [D-101](decisions.md#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20), superseding D-049.

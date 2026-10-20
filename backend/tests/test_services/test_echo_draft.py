@@ -78,8 +78,8 @@ def test_citations_are_what_the_draft_cited_and_markers_are_stripped():
     r = state["result"]
     assert r["draft"] == "Mostly the importer pays first. I care about this. Also."
     assert r["citations"] == [
-        {"kind": "source", "label": "Tariff study — Econ Channel", "url": "https://youtube.com/watch?v=x&t=42s"},
-        {"kind": "fact", "label": "what Echo knows about you"},
+        {"kind": "source", "ref": "S1", "label": "Tariff study — Econ Channel", "url": "https://youtube.com/watch?v=x&t=42s"},
+        {"kind": "fact", "ref": "F1", "label": "what Echo knows about you"},
     ], "S9 matched nothing and is dropped"
     assert r["voice_match_score"] == 100.0 and r["confidence"] == 1.0
     prompt = calls.prompts["draft"][0]
@@ -137,7 +137,7 @@ def test_a_good_paraphrase_is_kept_and_own_words_may_repeat():
     d, calls = deps(knowledge=[note], drafts=["What is the base rate here? Nobody in this video says. That is the first thing I check [N1]."])
     r = agent.run_echo_draft(d, message="Thoughts?")["result"]
     assert len(calls.prompts["draft"]) == 1, "the user's own words are not a quote to avoid"
-    assert r["citations"] == [{"kind": "note", "label": "your note"}]
+    assert r["citations"] == [{"kind": "note", "ref": "N1", "label": "your note"}]
 
 
 def test_an_ungrounded_opinion_is_flagged():

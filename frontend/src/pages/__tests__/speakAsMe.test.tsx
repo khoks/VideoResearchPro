@@ -43,12 +43,18 @@ const OFF: DraftStatus = {
   voice_gate: GATE,
   drafts_today: 0,
   drafts_per_day: 20,
+  state: 'install_off',
+  reasons: [],
+  notes: 3,
+  notes_needed: 40,
+  pairs_judged: 0,
+  pairs_needed: 20,
 };
-const ON: DraftStatus = { ...OFF, enabled: true, blockers: [], voice_gate: { ...GATE, status: 'passed' } };
+const ON: DraftStatus = { ...OFF, enabled: true, blockers: [], state: 'enabled', voice_gate: { ...GATE, status: 'passed' } };
 const DRAFT: EchoDraft = {
   id: 'd1', message: 'Who pays?', draft: 'Mostly the importer pays first.', language: 'en', register: 'casual', audience: 'my brother',
   intent: 'opinion', voice_match_score: 87.5, confidence: 0.8,
-  citations: [{ kind: 'source', label: 'Tariff study — Econ', url: 'https://youtube.com/watch?v=x&t=42s' }, { kind: 'fact', label: 'what Echo knows about you' }],
+  citations: [{ kind: 'source', ref: 'S1', label: 'Tariff study — Econ', url: 'https://youtube.com/watch?v=x&t=42s' }, { kind: 'fact', ref: 'F1', label: 'what Echo knows about you' }],
   deviation_notes: ['Slightly more formal than you.'], flags: [], disclosure: 'Drafted with Echo, reviewed by sam',
   final_text: null, disclosure_kept: null, created_at: '2026-10-20T10:00:00',
 };

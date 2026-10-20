@@ -60,6 +60,9 @@ def test_status_and_a_blocked_draft_say_why_in_words(unauthenticated_client, db,
     assert [b["code"] for b in st["blockers"]] == ["install_off", "not_ready", "voice_test_required"]
     assert st["voice_gate"] == {"status": "not_run", "run_at": None, "pairs": 0, "picked_own_share": None,
                                 "notes_total": 0, "notes_needed": 40}
+    # The fields the Echo bubble (S-3.8.1) reads.
+    assert st["state"] == "install_off" and st["reasons"] == [b["message"] for b in st["blockers"]]
+    assert (st["notes"], st["notes_needed"], st["pairs_judged"], st["pairs_needed"]) == (0, 40, 0, 20)
 
     r = unauthenticated_client.post(DRAFT, json={"message": "Who pays?"}, headers=h)
     assert r.status_code == 409
@@ -71,7 +74,8 @@ def test_status_and_a_blocked_draft_say_why_in_words(unauthenticated_client, db,
 def test_an_enabled_user_gets_a_cited_draft(unauthenticated_client, db, fake, monkeypatch):
     user, h = _user(db)
     _enable(db, user, monkeypatch)
-    assert unauthenticated_client.get(f"{DRAFT}/status", headers=h).json()["enabled"] is True
+    st = unauthenticated_client.get(f"{DRAFT}/status", headers=h).json()
+    assert st["enabled"] is True and st["state"] == "enabled" and st["reasons"] == []
 
     r = unauthenticated_client.post(DRAFT, json={"message": "Who really pays for tariffs?", "register": "casual", "audience": "my brother"}, headers=h)
     assert r.status_code == 201, r.text

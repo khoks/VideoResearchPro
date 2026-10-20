@@ -323,8 +323,9 @@ def build_graph(deps: DraftDeps):
                 notes.append("A sentence that repeated a source word for word was removed.")
                 flags.append("verbatim_removed")
         items = {i.marker: i for i in (state.get("knowledge") or []) + (state.get("facts") or [])}
+        # ``ref`` is the marker (unique per draft); ``url`` an outside link.
         citations = [
-            {"kind": items[m].kind, "label": items[m].label, **({"url": items[m].url} if items[m].url else {})}
+            {"kind": items[m].kind, "ref": m, "label": items[m].label, **({"url": items[m].url} if items[m].url else {})}
             for m in cited_markers(text) if m in items
         ]
         if not citations and state.get("intent") in ("question", "opinion", "recommendation"):

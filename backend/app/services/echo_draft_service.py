@@ -69,6 +69,10 @@ class DraftNotFound(LookupError):
     pass
 
 
+#: Blocker code -> the bubble's ``state`` name (S-3.8.1 shipped with these).
+BUBBLE_STATES = {"voice_test_required": "voice_test_needed"}
+
+
 @dataclass
 class DraftStatus:
     enabled: bool
@@ -79,7 +83,18 @@ class DraftStatus:
     drafts_per_day: int
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        """The contract, plus the summary fields the Echo bubble (S-3.8.1)
+        reads: ``state`` (the first blocker in the bubble's words),
+        ``reasons`` (every blocker's message), and the test's counts."""
+        d = asdict(self)
+        first = self.blockers[0]["code"] if self.blockers else None
+        d["state"] = "enabled" if self.enabled else BUBBLE_STATES.get(first, first)
+        d["reasons"] = [b["message"] for b in self.blockers]
+        d["notes"] = self.voice_gate["notes_total"]
+        d["notes_needed"] = self.voice_gate["notes_needed"]
+        d["pairs_judged"] = self.voice_gate["pairs"]
+        d["pairs_needed"] = VOICE_TEST_MIN_PAIRS
+        return d
 
 
 def _now() -> datetime:

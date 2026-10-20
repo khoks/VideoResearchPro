@@ -1497,20 +1497,20 @@ Backend suite 835 → 855.
 - [x] T-6.1.5.3 WeasyPrint and Playwright live in `requirements-author.txt` with the Pango steps for Windows and Linux. `parameters.formats` picks the files (default: EPUB, plus PDF when a converter exists); the router resolves it before the row exists and writes it back, so an explicit PDF with no converter is 501 with what to install and leaves no row. `GET /author/kinds` reports per kind what can be built and why not; the create modal offers EPUB and PDF and shows the reason when PDF is unavailable. A worker without a converter fails the row with the same message before building chapters — *shipped 2026-10-19*
 - [x] T-6.1.5.4 `test_book_formats.py` (16 tests) on two chapters of the real smoke-test report: the EPUB container, manifest, spine and nav are valid and every in-book link (60 endnote references, back-links, navigation) lands on an element that exists; the PDF has an outline, contents links that jump to the chapter pages, its endnote URLs, every font embedded, and a Devanagari quote extractable as text; the PDF engine fetches nothing from a local HTTP server the document points at; 501 and worker-failure paths; engine order. EPUBCheck (Java) was not run — *shipped 2026-10-19*
 
-### E-6.2 🔵 Static personal-wiki site
+### E-6.2 🟡 Static personal-wiki site
 
-Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported and the route returns 501 until an outputter ships.
+`kind="site"` ships with `SiteOutputter` (S-6.2.1, PR [#315](https://github.com/khoks/VideoResearchPro/pull/315), 2026-10-19); publishing integrations (S-6.2.2) remain.
 
 **Scope (2026-10-18).** A downloadable static site built from a shelf or a set of jobs: one page per report (reader typography), one per knowledge artifact, an index, tag pages, client-side search, citation links out to sources. Built by the backend with Jinja2 templates, **not** by Astro or 11ty: the plan rejects a Node toolchain inside the Python worker. Hosting integrations are a later story.
 **Acceptance.** A user picks a shelf, generates a site, downloads a zip, opens `index.html` from disk and can read every report, search by title, and follow citations; the site has no app chrome and makes no network calls except to sources.
 
-#### S-6.2.1 🔵 `SiteOutputter` (zip of static HTML)
-**PR:** TBD. Depends on S-6.1.2 (Markdown source) and S-8.1.1 (shelves) for the picker.
-- [ ] T-6.2.1.1 `source_ids` accepts `shelf:<id>` and `job:<id>`; resolves to visible documents and the tenant's exchanges only
-- [ ] T-6.2.1.2 Jinja2 templates under `app/templates/site/` (index, report, knowledge, tag, about) with the reader stylesheet inlined
-- [ ] T-6.2.1.3 Client-side search index (prebuilt JSON + a small vanilla script; no CDN)
-- [ ] T-6.2.1.4 Zip written to `content_path`; download through E-6.7
-- [ ] T-6.2.1.5 Tests: every link inside the zip resolves; no absolute app URLs
+#### S-6.2.1 🟢 `SiteOutputter` (zip of static HTML)
+**PR:** [#315](https://github.com/khoks/VideoResearchPro/pull/315) — *shipped 2026-10-19.* No model is called. Found on the first live site: page names took eight id characters, and two seed runs (`lanec-job-1`, `lanec-job-2`) shared them, so paths are now allocated unique within the site. Knowledge artifacts appear on their source's page when one was extracted; there is no separate knowledge page.
+- [x] T-6.2.1.1 `source_ids` take `shelf:<id>`, `job:<id>` or a bare run id; shelves, runs, documents (D-063 visibility), tags and Q&A all resolve inside the caller's library; anything else is left out and named on the index and about pages; nothing publishable fails the output with the reason — *shipped 2026-10-19*
+- [x] T-6.2.1.2 Jinja2 templates (autoescaped) under `app/templates/site/`: index, report (the run's report and Q&A, citations as endnotes linking both to the source's page and to the moment in the video), source (backlinks with moments, tags, the knowledge report when extracted), tag, about, search; one stylesheet built from the book stylesheet plus layout and a dark scheme, no web fonts — *shipped 2026-10-19*
+- [x] T-6.2.1.3 Search: the index is a script (`assets/search-index.js` sets `window.SITE_INDEX`) because browsers will not load JSON from a page opened from disk; a 40-line vanilla script ranks title hits first; no CDN — *shipped 2026-10-19*
+- [x] T-6.2.1.4 The zip is the primary artifact (`format=zip`), with a Markdown contents page in `content_text` for the reader; `output_citations` holds every citation on every report page — *shipped 2026-10-19*
+- [x] T-6.2.1.5 `test_site_outputter.py` (5 tests): a shelf with two real-report runs, a tag and Q&A becomes a site whose every relative link and fragment resolves inside the zip, whose only absolute links go to video hosts, with ASCII file names, backlinks, a search index listing every page and no `fetch`; another user's shelf and run are left out and said so; nothing publishable fails; same-topic runs get distinct pages — *shipped 2026-10-19*
 
 #### S-6.2.2 ⚪ Publish integrations
 - [ ] T-6.2.2.1 GitHub Pages push (user-supplied token through the BYOK credential store) and Netlify drop; design only until S-6.2.1 is used

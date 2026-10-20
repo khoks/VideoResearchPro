@@ -66,7 +66,7 @@ async function mount() {
 }
 
 const bell = () => host.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
-const byText = (t: string) => Array.from(host.querySelectorAll('button')).find((b) => b.textContent?.includes(t)) as HTMLButtonElement;
+const byText = (t: string) => Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes(t)) as HTMLButtonElement;
 
 beforeEach(() => {
   host = document.createElement('div');
@@ -91,12 +91,14 @@ describe('NotificationBell', () => {
   it('opening a notice marks it read and goes to its page', async () => {
     await mount();
     act(() => bell().click());
-    expect(host.querySelector('[role="dialog"]')?.textContent).toContain('Now cites 1 new source.');
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Now cites 1 new source.');
+    // Portalled: inside the sticky sidebar it would be painted under the page.
+    expect(document.querySelector('[role="dialog"]')!.parentElement).toBe(document.body);
     await act(async () => byText('New answer: rate cuts').click());
     await flush();
     expect(api.markRead).toHaveBeenCalledWith('n1');
     expect(host.querySelector('[data-where]')?.textContent).toBe('/saved-searches?search=s1&run=r1');
-    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it('a read notice is not marked again', async () => {
@@ -114,7 +116,7 @@ describe('NotificationBell', () => {
     act(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
-    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(bell());
   });
 
@@ -123,7 +125,7 @@ describe('NotificationBell', () => {
     await mount();
     expect(bell().getAttribute('aria-label')).toBe('Notifications');
     act(() => bell().click());
-    expect(host.textContent).toContain('Nothing new.');
+    expect(document.body.textContent).toContain('Nothing new.');
   });
 
   it('is mounted by the layout', () => {

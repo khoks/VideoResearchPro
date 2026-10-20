@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useColors, useShadows } from '../../hooks/useTheme';
 import {
@@ -31,7 +32,9 @@ function BellIcon() {
  * The bell (S-8.3.3): unread count on the button, the latest notices in a
  * panel. Opening a notice marks it read and goes to its page; "Mark all
  * read" clears the count. Escape or a click outside closes the panel and
- * focus returns to the bell.
+ * focus returns to the bell. The panel is portalled to <body> with fixed
+ * coordinates: the sidebar is `position: sticky`, which makes it its own
+ * stacking context, so a panel inside it would be painted under the page.
  */
 export function NotificationBell({ align = 'left' }: { align?: 'left' | 'right' }) {
   const c = useColors();
@@ -44,6 +47,25 @@ export function NotificationBell({ align = 'left' }: { align?: 'left' | 'right' 
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
+  const [place, setPlace] = useState<CSSProperties>({});
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const r = buttonRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const width = Math.min(340, window.innerWidth - 32);
+      const left = align === 'right' ? r.right - width : r.left;
+      setPlace({ top: r.bottom + 4, left: Math.max(16, Math.min(left, window.innerWidth - width - 16)), width });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
+  }, [open, align]);
   const unread = data?.unread ?? 0;
   const items = data?.items ?? [];
 
@@ -124,26 +146,22 @@ export function NotificationBell({ align = 'left' }: { align?: 'left' | 'right' 
           </span>
         )}
       </button>
-      {open && (
+      {open && createPortal(
         <div
           ref={panelRef}
           id={panelId}
           role="dialog"
           aria-label="Notifications"
           style={{
-            position: 'absolute',
-            top: '100%',
-            [align]: 0,
-            marginTop: space['1'],
-            width: 340,
-            maxWidth: 'calc(100vw - 32px)',
+            position: 'fixed',
+            ...place,
             maxHeight: '70vh',
             overflowY: 'auto',
             background: c.surface,
             border: `1px solid ${c.border}`,
             borderRadius: radius.md,
             boxShadow: s.floating,
-            zIndex: 50,
+            zIndex: 200,
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: `${space['2']} ${space['3']}`, borderBottom: `1px solid ${c.border}` }}>
@@ -194,7 +212,8 @@ export function NotificationBell({ align = 'left' }: { align?: 'left' | 'right' 
               ))}
             </ul>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Added: edit a "speak as me" draft into your own version, and Echo learns from the words you typed (S-3.4.2, 2026-10-20)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). [D-103](docs/decisions.md#d-103--a-draft-edit-teaches-only-the-words-the-user-typed-2026-10-20).
+PR [#359](https://github.com/khoks/VideoResearchPro/pull/359). [D-103](docs/decisions.md#d-103--a-draft-edit-teaches-only-the-words-the-user-typed-2026-10-20).
 
 - A draft now opens as "Your version", which you can edit. **Save my version** records what you actually used.
 - Echo learns your voice only from the words you typed into it, never from the words it drafted that you kept. A signal learned this way quotes your own words and points back to the draft. Deleting the draft takes back what it taught, straight away.

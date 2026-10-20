@@ -3203,5 +3203,5 @@ The D-100 user-as-judge test is **not** part of `ready`. Readiness reports wheth
 - The cut words are recorded, but nothing learns from them. "Avoids this phrasing" signals would need their own design.
 - One additive column, `echo_drafts.written_words`.
 
-**Linked initiatives / PRs.** E-3.4 / S-3.4.2 (PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)), [D-102](#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20), [D-099](#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19), [D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19).
+**Linked initiatives / PRs.** E-3.4 / S-3.4.2 (PR [#359](https://github.com/khoks/VideoResearchPro/pull/359)), [D-102](#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20), [D-099](#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19), [D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19).
 

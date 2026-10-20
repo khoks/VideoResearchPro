@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Notes in Q&A retrieval and citations (S-8.5.2, 2026-10-19)
 
-The user's own notes now answer questions alongside the sources, and are cited as "you wrote this on <date>". PR [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__). Plan: [docs/plans/m5-notes.md](docs/plans/m5-notes.md).
+The user's own notes now answer questions alongside the sources, and are cited as "you wrote this on <date>". PR [#322](https://github.com/khoks/VideoResearchPro/pull/322). Plan: [docs/plans/m5-notes.md](docs/plans/m5-notes.md).
 
 - **Retrieval.** A private `notes_global` collection, kept in step with every
   note write and backfilled at startup. Job Q&A draws notes on the job's own

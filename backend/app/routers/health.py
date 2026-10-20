@@ -33,6 +33,9 @@ def _capabilities() -> dict[str, bool]:
         "article_search_enabled": bool(settings.BRAVE_SEARCH_API_KEY),
         "playwright_fallback_enabled": bool(settings.ARTICLE_PLAYWRIGHT_ENABLED),
         "whisper_transcribe_enabled": bool(settings.OPENAI_API_KEY),
+        # S-1.18.2: the install-wide R1 switch. Off means the job toggle and
+        # "Capture frames" are disabled; stored frames still show.
+        "visual_analysis_enabled": bool(settings.VISUAL_ENABLED),
     }
 
 

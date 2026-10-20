@@ -677,12 +677,16 @@ The shipped script profiler is exact for script mixing and **blind to romanised 
 - [x] T-1.18.1.12 🟢 *Fixed 2026-10-19: `{visual_annotations}` in `CHANNEL_MAP_PROMPT`, passed at the call site, and added to both parametrised lists plus a stubbed-LLM test that a span reaches the channel map prompt with the rule in force.* **The channel-report map prompt carries no visual contract** (found 2026-10-19 while landing S-1.18.6, PR [#234](https://github.com/khoks/VideoResearchPro/pull/234); [D-067](decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31) amended the same day). `_with_visuals` in `job_tasks.py` gates frame capture on `VISUAL_ENABLED`, `jobs.visual_analysis` and `source_type == "video"`, never on job type, so a channel job that opts in gets annotated chunks and `CHANNEL_MAP_PROMPT` formats them with no `{visual_annotations}` placeholder (T-1.18.1.7 never listed the channel-report family). Fix: placeholder + call-site kwarg in `report_agent.py`, and add `CHANNEL_MAP_PROMPT` to both parametrised lists in `tests/test_agents/test_prompt_contracts.py`.
 - [x] T-1.18.1.13 🟢 *Fixed 2026-10-19, ahead of T-1.18.1.10 because the gap is live today for videos new to the library: both refine prompts take `REFINE_VISUAL_RULES` (the contract plus `VISUAL_SPAN_EXTRACT_RULE`, which tells the extractor to copy a span whole, marker included, and never fold it into a speech extract). Pinned by the call-site, rule-once and stubbed-LLM tests; mutation-checked.* **The two Q&A refine prompts carry no visual contract.** `REFINE_CONTEXT_PROMPT` and `LIBRARY_REFINE_CONTEXT_PROMPT` rewrite raw chunks into extracts before the answer prompt sees them, so a span can be paraphrased into plain prose before the answer-stage contract applies. Masked today by T-1.18.1.10 (spans rarely reach Chroma for an already-embedded video); land together with it.
 
-#### S-1.18.2 🔵 Surfacing frames to the user
-The backend produces frames and descriptions; nothing shows them yet. *Verified 2026-10-18: no frontend reference to `visual_analysis` and no frame-serving route.*
-- [ ] T-1.18.2.1 Job-creation UI: the opt-in toggle, disabled when `/health` reports the `visual_analysis` feature down
-- [ ] T-1.18.2.2 Serve frame images (auth + `document_visibility` check — a frame is as private as its document)
-- [ ] T-1.18.2.3 Show the frame inline where a report or answer cites "on screen at mm:ss"
-- [ ] T-1.18.2.4 On-demand per-document extraction endpoint, mirroring `/videos/{id}/extract-knowledge`
+#### S-1.18.2 🟢 Surfacing frames to the user — shipped 2026-10-19
+Built after R1 run 8 passed rules 1, 2 and 4. By the pre-registration, both remaining outcomes of rule 3 build the UI, so only the quality claim waits on Gemini Pro's vote (protocol note, run 8). Linked decision: [D-096](decisions.md).
+- [x] T-1.18.2.1 Job-creation opt-in (`VisualAnalysisOption`). It is disabled, with the reason shown, when the install switch is off (`/health` `capabilities.visual_analysis_enabled`, new) or the vision models failed their probe. A run carried over while it cannot run says so and offers "Turn off"
+- [x] T-1.18.2.2 `GET /videos/{id}/frames` and `/frames/{frame_id}/image`: visibility 404s identical to missing, frame-to-document ownership, a traversal guard on stored paths, a private cache header
+- [x] T-1.18.2.3 The reading room's citation card shows the still nearest a cited moment (−20 s … +120 s; links point at chunk starts) through the `resolveStill` slot D-085 left for it. **Lazy**: the first version prefetched every matched still, about 110 requests on the R1 report, which spent the per-user rate limit and starved the page; verification in the browser caught it before merge. Q&A answers do not show stills yet (T-1.18.2.5)
+- [x] T-1.18.2.4 `POST /videos/{id}/extract-frames` → 202 and a worker task (`visual.extract_frames`). A Redis marker per document makes a second request a 409; quota `visual_extractions` (D-096) is charged only for frames actually captured. The video drawer gains an "On screen" panel with the stills and "Capture key frames"
+- [x] Found on the way: `useFeatureAvailable` greyed out EVERY feature whenever any one failed its probe (any degraded status), so a vision-only outage would have disabled Q&A and reports. It now checks only the named feature and `down`
+- [x] Found on the way: the rate limiter was the outermost middleware, so its 429s carried no CORS headers (the browser reported a CORS failure) and it rate-limited CORS preflights. CORS now wraps it; pinned by a test that fails under the old order
+- [x] Tests: backend 19 (`test_frames.py`) + 2 middleware-order tests; frontend 28 across the matcher, the feature hook, the opt-in, the frames panel and lazy stills. Verified in the browser on job `419e691d`: 11 frame-list requests and 0 images at load; hovering a citation fetched exactly one still and showed it
+- [ ] T-1.18.2.5 Stills beside Q&A answer references (references already carry `video_id` and `timestamp_seconds`)
 
 #### S-1.18.3 🟢 Measure whether visual annotations improve output — measured 2026-10-19
 Protocol and results: [docs/notes/2026-10-18-r1-visual-measurement.md](notes/2026-10-18-r1-visual-measurement.md). Decision: [D-071](decisions.md#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19). Sequenced before S-1.18.2 on 2026-10-18, by the user's instruction to test before building.
@@ -1264,7 +1268,7 @@ Linked decision: [D-065](decisions.md#d-065--channel-subscriptions-become-per-te
 - [x] T-5.10.2.4 8 isolation tests: subscribe/weight/sync-timestamp do not cross tenants; video counts show only visible documents
 - [ ] T-5.10.2.5 `api_quota_log` unscoped (low sensitivity — leaks usage volume only). *Verified 2026-10-18: its columns are id / timestamp / operation / units, with no user or tenant*
 - [x] T-5.10.2.6 Q&A-history Chroma collection — verify tenant filtering matches the transcript collection. *Verified 2026-10-18: `query_qa_collection` restricts to `tenant_id` metadata (T-5.6.6), the counterpart of the transcript collection's visible-set filter*
-- [ ] T-5.10.2.7 Re-run the D-055 harness: library Q&A now answers from a per-user corpus
+- [x] T-5.10.2.7 Re-run the D-055 harness: library Q&A now answers from a per-user corpus. *2026-10-19, PR [#326](https://github.com/khoks/VideoResearchPro/pull/326): exact-input replay of the answer step on the ten E-7.1 questions, `claude-sonnet-5` medium vs `claude-opus-5` high, three blind judges and three-lens verification ([note](notes/2026-10-19-t51027-library-qa-d055-replay.md)). Challenger won 2 of 10 questions; mean relevance 8.63 vs 8.97, faithfulness 6.63 vs 7.77; confirmed unsupported claims 119 vs 54. **No re-tier warranted** under the pre-registered rule. A sensitivity re-judge with each source's publication date in the excerpts (outside the rule) gave challenger 15 / production 11, 6 of 10 questions, relevance +0.03: still no re-tier, and it shows the undated run's 21–8 for production was mostly a harness artifact (judges could not see the dates answers cite). `judge_qa_pairs.py --dates-db` fixes the harness for T-7.1.2.3*
 
 #### S-5.10.3 🟢 Drop the legacy global columns on `channels` — shipped 2026-10-19
 **PR:** [#316](https://github.com/khoks/VideoResearchPro/pull/316). `subscribed`, `source_weight`, `last_synced_at` were retained on `channels` so a partial rollout stayed recoverable; nothing read them any more, so migration `1a6e09517250` drops them.
@@ -1677,7 +1681,9 @@ Backend suite 835 → 855.
 - Responsive handling is two CSS media rules in `index.css` (sidebar collapse under 960px, `.form-row` stacking under 640px); no reading-specific mobile work exists.
 - `users` has no `onboarded_at`; there is no first-run flow.
 
-### E-8.1 🟡 Shelves — collections, tags and shelf-scoped views (M1)
+### E-8.1 🟢 Shelves — collections, tags and shelf-scoped views (M1)
+
+**Shipped:** 2026-10-19 — PRs [#242](https://github.com/khoks/VideoResearchPro/pull/242), [#250](https://github.com/khoks/VideoResearchPro/pull/250), [#257](https://github.com/khoks/VideoResearchPro/pull/257), [#313](https://github.com/khoks/VideoResearchPro/pull/313), [#319](https://github.com/khoks/VideoResearchPro/pull/319).
 
 **Scope.** Named collections of jobs (many-to-many), per-tenant tags on documents, a shelf detail page that is a filtered library view, and Q&A scoped to a shelf. Tags are a per-tenant side table because `documents` is a shared cache ([D-063](decisions.md#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)): a tag is private to the user who applied it.
 **Plan:** [`docs/plans/m1-shelves.md`](plans/m1-shelves.md)
@@ -1710,13 +1716,15 @@ Backend suite 835 → 855.
 - [x] Found on the way: list popovers were painted under the next card (each `Card` is its own stacking context through `transform`); `LabelPicker` now portals to `<body>` with fixed coordinates and listens for outside clicks and Escape in the capture phase
 - **Decision taken (flagged):** tags are **not tier-gated**. They cost the operator nothing (the M6 plan's reasoning), the `shelves` capability is about grouping runs, and `frontend/src/data/tiers.ts` does not advertise tags. One `require_feature` line per write route if the user wants them Pro
 
-#### S-8.1.4 🟡 Shelf-scoped Q&A
-**PR:** [#313](https://github.com/khoks/VideoResearchPro/pull/313) (merged 2026-10-19: the `scope_json` column, its shape and resolver); the endpoint and panel follow
+#### S-8.1.4 🟢 Shelf-scoped Q&A
+**PRs:** [#313](https://github.com/khoks/VideoResearchPro/pull/313) (the `scope_json` column, its shape and resolver, landed first for lane A's saved searches) and [#319](https://github.com/khoks/VideoResearchPro/pull/319) (endpoint, history, panel), both merged 2026-10-19
 **Linked decision:** [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19)
-- [ ] T-8.1.4.1 `POST /api/v1/shelves/{id}/qa` resolving the shelf's job set to a document set and calling the library Q&A agent with that `video_ids` filter (an empty shelf retrieves nothing)
-- [ ] T-8.1.4.2 Exchanges stored as `library_qa_exchanges` with a `scope_json` column (`{"shelf_id": …}`) so history and the Q&A library index keep working. Column (migration `cd4c5467506d`), documented shape (`app/schemas/qa_scope.py`: null = whole library, narrowing `shelf_id`, provenance `saved_search_id`, unknown keys kept on read and refused on resolve), `qa_scope_service` and `scope` on every history row landed in [#313](https://github.com/khoks/VideoResearchPro/pull/313) so lane A's saved searches can build on it
-- [ ] T-8.1.4.3 Q&A panel on the shelf page reusing the library Q&A components
-- [ ] T-8.1.4.4 Tests: scope restricts citations; empty scope never widens
+- [x] T-8.1.4.1 `POST /api/v1/shelves/{id}/qa` resolving the shelf's job set to a document set and calling the library Q&A agent with that `video_ids` filter (an empty shelf retrieves nothing). Library Q&A became one scoped function (`routers/library.py::answer_library_question`): the whole library passes no scope, a shelf passes `{"shelf_id": …}`; the scope resolves through `qa_scope_service` (the library listing's builder) before the quota check, so another reader's shelf is a 404 that runs nothing, and an empty shelf hands the agent `[]`, never `None`. A scoped answer also drops any citation outside its scope. Notes (S-8.5.2, merged while this was open) follow the scope: a shelf question draws only what job Q&A would draw for each run on the shelf plus notes on the shelf's earlier answers (`qa_scope_service.note_target_keys`, forwarded by a new `note_target_keys` argument on `run_library_qa_agent`), an empty shelf none, the library every note; a note citation outside the scope is dropped Plus `GET /api/v1/shelves/{id}/qa`, the caller's questions on that shelf (saved-search runs on it included). Every tier may ask, like reading a shelf; the library Q&A quota applies
+- [x] T-8.1.4.2 Exchanges stored as `library_qa_exchanges` with a `scope_json` column (`{"shelf_id": …}`) so history and the Q&A library index keep working. Column (migration `cd4c5467506d`), documented shape (`app/schemas/qa_scope.py`: null = whole library, narrowing `shelf_id`, provenance `saved_search_id`, unknown keys kept on read and refused on resolve), `qa_scope_service` and `scope` on every history row landed in [#313](https://github.com/khoks/VideoResearchPro/pull/313) so lane A's saved searches can build on it; the shelf ask writes it ([#319](https://github.com/khoks/VideoResearchPro/pull/319))
+- [x] T-8.1.4.3 Q&A panel on the shelf page reusing the library Q&A components: **Ask this shelf** (question, answer language, Ask; nothing to ask on a shelf with no sources; disabled with the reason when Q&A is down) and the shelf's own history. The exchange card moved to `components/qa/LibraryQAExchangeCard.tsx`; in the library history a scoped answer reads "Asked on shelf Rates" (a link), or that the shelf no longer exists. The card also carries S-8.3.2's **Pin this question**, which now passes the exchange's scope, so pinning a shelf answer re-asks the shelf, never the whole library
+- [x] T-8.1.4.4 Tests: scope restricts citations; empty scope never widens. `tests/test_routers/test_shelf_qa.py` (7: the agent gets only the shelf's documents and the corpus figures for them, an off-shelf citation is dropped, the row and both histories carry the scope, a library question stays unscoped and unfiltered, an empty shelf hands `[]`, a foreign or missing shelf is a 404 with no agent call and no row, two readers never mix, the shelf history parses the scope, the free tier can ask) and `test_qa_scope_service.py` (11); `shelfQAPanel.test.tsx` (4)
+- Fixed on the way: `LibraryReference` required `video_id`, which a note citation (S-8.5.2) does not have, so a library answer citing a note failed while building its response, and the history parser emptied an exchange's whole citation list on any one bad entry. `video_id` is optional and history parses citations one by one
+- Found on the way: (1) the phone device tests had been failing on master since four calls appeared that their fixtures did not serve (onboarding, the library probe, suggestions, and this lane's own citation channels from S-8.7.4); answered inline with the baselines' state, all 32 pass unchanged. (2) The library Q&A page sends the clarify step's answers as `context`, but `LibraryQARequest` has no `context` field and the agent takes none, so they are silently dropped: the clarify step changes nothing. Not fixed here (it needs the agent); the shelf panel asks directly
 
 ### E-8.2 🟡 Command palette and global search (M2)
 
@@ -1774,6 +1782,7 @@ Scope-changed 2026-10-19: (1) plan open question 1 at its suggested default, cap
 - [ ] T-8.3.3.3 Email via `email_service.send_email` (already fail-soft when SMTP is unset) and an in-app `notifications` row
 - [ ] T-8.3.3.4 `notifications(id, tenant_id, kind, title, body, href, read_at, created_at)` + `GET /api/v1/notifications`, bell in the sidebar chrome
 - [ ] T-8.3.3.5 Tests: unchanged answers do not notify; a run that fails leaves the previous result intact
+- [ ] T-8.3.3.6 *(filed 2026-10-19 by S-8.1.4)* Runs share the interactive library Q&A core. `saved_search_service` calls `run_library_qa_agent` directly, so a pinned question draws none of the reader's notes (S-8.5.2) and skips the scoped citation check that `routers/library.py::answer_library_question` applies. Extract that core (scope → documents and `note_target_keys` → corpus stats → trust weights → agent → citation check) and use it for both; quota and persistence stay per caller. Tests: a shelf-scoped run passes the shelf's note keys and drops an off-shelf citation. Linked decision: [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19)
 
 ### E-8.4 🟢 Question suggestions (M4)
 
@@ -2053,6 +2062,17 @@ Scope-changed 2026-10-19: the audit found three states that said something untru
 - [ ] T-8.12.3.4 Add to Home Screen on both: the echo-mark icon, the paper splash, standalone launch at `/`, and back-gesture behaviour in standalone mode (unverified per the plan's risks)
 
 ---
+
+### E-8.13 ⚪ Library Q&A correctness follow-ups
+
+**Filed 2026-10-19** by S-8.1.4, which made library and shelf questions one path (`answer_library_question`, PR [#319](https://github.com/khoks/VideoResearchPro/pull/319)) and found what that path still gets wrong. The saved-search side of the same gap is [T-8.3.3.6](#s-833--re-run-change-detection-and-notification).
+
+#### S-8.13.1 ⚪ Clarify answers reach the agent
+**PR:** TBD
+**Found.** The library Q&A page runs a clarify step, then sends the interpretation and the reader's answers as `context` on `POST /library/qa`. `LibraryQARequest` has no `context` field and `run_library_qa_agent` takes none, so they are dropped: "Confirm & search" answers exactly like "Skip clarifications". The shelf panel asks directly for this reason.
+- [ ] T-8.13.1.1 Check how job Q&A carries clarify context (`schemas/qa.py`, `routers/qa.py`, `run_qa_agent`); if it drops it too, fix both
+- [ ] T-8.13.1.2 `context` (bounded) on `LibraryQARequest`, through `answer_library_question` (library and shelf) into `run_library_qa_agent` and its answer prompt, keeping the shared prompt contracts
+- [ ] T-8.13.1.3 Tests: the router passes `context` to the agent; the agent's answer prompt contains it
 
 ## Open questions parking lot
 

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useCreateJob } from '../hooks/useJobs';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
+import { useCapability } from '../hooks/useCapability';
+import { VisualAnalysisOption } from '../components/jobs/VisualAnalysisOption';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { useCreateTemplate, useJobTemplates, useUpdateTemplate } from '../hooks/useJobTemplates';
 import { SaveTemplateModal, TemplatePicker } from '../components/templates';
@@ -73,6 +75,8 @@ export function SubmitJobPage() {
   const createJob = useCreateJob();
   const pushToast = useJobStore((s) => s.pushToast);
   const topicJobAvailable = useFeatureAvailable('topic_job');
+  const visualModelsAvailable = useFeatureAvailable('visual_analysis');
+  const visualInstallEnabled = useCapability('visual_analysis_enabled');
   const { tier, numVideosCap } = useTierCapabilities();
 
   const routeState = location.state as { cloneFrom?: Job; fromTemplateId?: string } | null;
@@ -666,33 +670,14 @@ export function SubmitJobPage() {
             </>
           )}
 
-          {form.visualAnalysis && (
-            <div
-              style={{
-                display: 'flex',
-                gap: space['3'],
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                background: c.infoSubtle,
-                border: `1px solid ${c.info}`,
-                borderRadius: radius.md,
-                padding: `${space['3']} ${space['4']}`,
-                fontFamily: fonts.ui,
-                fontSize: fontSize.sm,
-                color: c.textPrimary,
-                lineHeight: lineHeight.snug,
-              }}
-            >
-              <span style={{ flex: '1 1 280px' }}>
-                <strong style={{ fontWeight: fontWeight.semibold }}>Visual analysis is on</strong>, carried
-                from the run or template you started from. It captures frames where the transcript
-                suggests something is being shown, and costs more per video.
-              </span>
-              <Button size="sm" variant="tertiary" type="button" onClick={() => update('visualAnalysis', false)}>
-                Turn off
-              </Button>
-            </div>
-          )}
+          {/* S-1.18.2: the R1 opt-in, measured before it was built (runs 1-8,
+              docs/notes/2026-10-18-r1-visual-measurement.md). */}
+          <VisualAnalysisOption
+            checked={form.visualAnalysis}
+            onChange={(next) => update('visualAnalysis', next)}
+            installEnabled={visualInstallEnabled}
+            modelsAvailable={visualModelsAvailable}
+          />
 
           <div
             style={{

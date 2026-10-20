@@ -23,6 +23,7 @@ from app.schemas.library_qa import (
     LibraryReference,
 )
 from app.schemas.library_video import LibrarySort, LibraryVideoResponse
+from app.schemas.qa_scope import QAScope
 from app.schemas.graph import GraphResponse
 from app.schemas.tag import TagSummary
 from app.services import chroma_service
@@ -102,30 +103,94 @@ def ask_library_question(
     current_user=Depends(get_current_user),
 ) -> LibraryQAResponse:
     """Run library-wide Q&A across the global video library and persist the exchange."""
+    return answer_library_question(db, current_user, request, scope=None)
+
+
+def _within_scope(
+    db: Session,
+    references: list[dict],
+    document_ids: list[str],
+    note_keys: list[str] | None = None,
+) -> list[dict]:
+    """Drop citations of documents outside a narrowed scope (S-8.1.4).
+
+    Retrieval is already restricted to ``document_ids``; this is the check on
+    what the answer cites, so a scoped answer can never point outside its
+    scope even if a future context source does. A note citation (S-8.5.2)
+    must target something in ``note_keys``. References that name neither a
+    document nor a note are left alone.
+    """
+    allowed = set(document_ids)
+    allowed_notes = set(note_keys or [])
+    allowed_videos = (
+        {
+            row[0]
+            for row in db.query(Document.video_id).filter(Document.document_id.in_(allowed))
+            if row[0]
+        }
+        if allowed
+        else set()
+    )
+    kept = []
+    for ref in references:
+        doc_id = ref.get("document_id") if isinstance(ref, dict) else None
+        vid = ref.get("video_id") if isinstance(ref, dict) else None
+        if isinstance(ref, dict) and ref.get("source_type") == "note":
+            ok = f"{ref.get('note_target_type', '')}:{ref.get('note_target_id', '')}" in allowed_notes
+        elif doc_id is not None:
+            ok = doc_id in allowed
+        elif vid is not None:
+            ok = vid in allowed_videos
+        else:
+            ok = True
+        if ok:
+            kept.append(ref)
+    if len(kept) != len(references):
+        logger.warning(
+            "Dropped %d citation(s) outside the question's scope", len(references) - len(kept)
+        )
+    return kept
+
+
+def answer_library_question(
+    db: Session,
+    current_user,
+    request: LibraryQARequest,
+    scope: QAScope | None,
+) -> LibraryQAResponse:
+    """Ask the library agent over ``scope`` and persist the exchange.
+
+    One path for the whole library (``scope=None``, ``POST /library/qa``) and
+    for narrowed scopes such as a shelf (``POST /shelves/{id}/qa``, S-8.1.4),
+    so quota, corpus statistics, trust weights and the Q&A library index work
+    the same everywhere. Raises ``qa_scope_service.ScopeNotFound`` for a scope
+    that is not the caller's; the route turns it into a 404.
+    """
+    # S-5.7.1 / S-8.1.4: retrieval is restricted to the documents this tenant
+    # may see, narrowed by the scope. An empty list is meaningful ("nothing
+    # here") and correctly returns no context rather than falling back to a
+    # library-wide search. Resolved first, so a foreign shelf is a 404 before
+    # any quota is checked.
+    visible = qa_scope_service.resolve_document_ids(db, current_user.id, scope)
+    narrowed = bool(qa_scope_service.narrowing(scope))
+    # S-8.5.2 x S-8.1.4: a narrowed scope draws only the notes on its own
+    # material, as job Q&A does; the whole library draws every note.
+    note_keys = qa_scope_service.note_target_keys(db, current_user.id, scope, visible)
+
     # T-5.5.5: per-user quota check BEFORE the (expensive) agent runs.
     from app.services import quota_metering_service
     quota_metering_service.enforce_quota_or_raise(
         db, current_user, "library_qa_exchanges"
     )
 
-    # Import inside the handler so the agent is only loaded when needed
-    # (and so tests that patch ``app.routers.library.run_library_qa_agent``
+    # Import inside the function so the agent is only loaded when needed
+    # (and so tests that patch ``app.agents.qa_agent.run_library_qa_agent``
     # work as expected).
     from app.agents.qa_agent import run_library_qa_agent
     from app.services import llm_service
 
-    # T-5.6.4: BYOK context — Studio users' OpenAI / Anthropic / Google
-    # credentials override the install-wide env-var keys for the duration
-    # of this request.
-    # S-5.7.1: retrieval is restricted to the documents this tenant may see.
-    # An empty list is meaningful — "you have ingested nothing" — and correctly
-    # returns no context rather than falling back to a library-wide search.
-    visible = [
-        row[0] for row in visibility_service.visible_document_ids(db, current_user.id)
-    ]
-
     # S-1.15.2: the same corpus-aware length policy as job Q&A, over the
-    # VISIBLE set. Until 2026-10-18 this call ran a fixed 4,500 tokens.
+    # scoped set. Until 2026-10-18 this call ran a fixed 4,500 tokens.
     from app.services import corpus_stats_service
 
     corpus_statistics = corpus_stats_service.corpus_statistics_for_document_ids(db, visible)
@@ -135,6 +200,9 @@ def ask_library_question(
 
     channel_weights = subscription_service.channel_weights(db, current_user.id)
 
+    # T-5.6.4: BYOK context: Studio users' OpenAI / Anthropic / Google
+    # credentials override the install-wide env-var keys for the duration
+    # of this request.
     with llm_service.byok_context(current_user.id, db):
         result = run_library_qa_agent(
             question=request.question,
@@ -145,6 +213,7 @@ def ask_library_question(
             channel_weights=channel_weights,
             # S-8.5.2: every note of the asker may join retrieval.
             notes_tenant_id=current_user.id,
+            note_target_keys=note_keys,
         )
 
     # T-5.5.5: track consumption.
@@ -153,6 +222,8 @@ def ask_library_question(
     )
     answer = result.get("answer", "")
     references = result.get("references", [])
+    if narrowed:
+        references = _within_scope(db, references, visible, note_keys)
 
     # Per E-5.1 phase 2a, stamp tenant_id from the authenticated user.
     exchange = LibraryQAExchange(
@@ -161,6 +232,7 @@ def ask_library_question(
         references_json=json.dumps(references),
         answer_language=request.answer_language,
         tenant_id=current_user.id,
+        scope_json=qa_scope_service.dump(scope),
     )
     db.add(exchange)
     db.commit()
@@ -176,14 +248,7 @@ def ask_library_question(
             exchange.id,
         )
 
-    return LibraryQAResponse(
-        id=exchange.id,
-        question=exchange.question,
-        answer=exchange.answer,
-        references=[LibraryReference(**r) for r in references],
-        answer_language=exchange.answer_language,
-        created_at=exchange.created_at,
-    )
+    return library_exchange_response(exchange)
 
 
 @router.get(
@@ -209,27 +274,35 @@ def get_library_qa_history(
         .all()
     )
 
-    results: list[LibraryQAResponse] = []
-    for qa in exchanges:
+    return [library_exchange_response(qa) for qa in exchanges]
+
+
+def library_exchange_response(qa: LibraryQAExchange) -> LibraryQAResponse:
+    """One stored exchange as the API returns it (library and shelf history).
+
+    Citations are parsed one by one: a malformed entry is skipped (and
+    logged) instead of emptying the exchange's whole list.
+    """
+    try:
+        raw_refs = json.loads(qa.references_json or "[]")
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("Failed to parse references_json for library_qa_exchange id=%s", qa.id)
+        raw_refs = []
+    refs: list[LibraryReference] = []
+    for r in raw_refs if isinstance(raw_refs, list) else []:
         try:
-            raw_refs = json.loads(qa.references_json)
-            refs = [LibraryReference(**r) for r in raw_refs]
-        except (json.JSONDecodeError, TypeError, ValueError):
-            logger.warning(
-                "Failed to parse references_json for library_qa_exchange id=%s",
-                qa.id,
-            )
-            refs = []
-        results.append(LibraryQAResponse(
-            id=qa.id,
-            question=qa.question,
-            answer=qa.answer,
-            references=refs,
-            answer_language=qa.answer_language,
-            created_at=qa.created_at,
-            scope=qa_scope_service.load(qa.scope_json),
-        ))
-    return results
+            refs.append(LibraryReference(**r))
+        except (TypeError, ValueError):
+            logger.warning("Skipped a malformed citation on library_qa_exchange id=%s", qa.id)
+    return LibraryQAResponse(
+        id=qa.id,
+        question=qa.question,
+        answer=qa.answer,
+        references=refs,
+        answer_language=qa.answer_language,
+        created_at=qa.created_at,
+        scope=qa_scope_service.load(qa.scope_json),
+    )
 
 
 @router.delete(

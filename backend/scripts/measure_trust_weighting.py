@@ -96,7 +96,19 @@ def _chunk_record(r: dict) -> dict:
         "timestamp_start": m.get("timestamp_start"),
         "distance": r.get("distance"),
         "text": r.get("text", ""),
+        # The source's dates as the answer prompt saw them (D-072), so judges
+        # and verifiers can check a date claim instead of flagging it.
+        "vintage": _vintage(m),
     }
+
+
+def _vintage(meta: dict) -> str:
+    try:
+        from app.agents.qa_agent import _vintage_parts
+
+        return " | ".join(_vintage_parts(meta))
+    except Exception:
+        return ""
 
 
 def main() -> int:

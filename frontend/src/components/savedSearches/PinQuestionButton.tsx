@@ -15,7 +15,16 @@ import { fonts, fontSize, lineHeight, space } from '../../theme';
  * Shown only on tiers with the `saved_searches` feature. The dialog asks
  * only for when; the question and its language come from the exchange.
  */
-export function PinQuestionButton({ question, answerLanguage }: { question: string; answerLanguage: string }) {
+export function PinQuestionButton({
+  question,
+  answerLanguage,
+  scope = null,
+}: {
+  question: string;
+  answerLanguage: string;
+  /** S-8.1.4: a shelf answer pins the shelf; null pins the whole library. */
+  scope?: { shelf_id: string } | null;
+}) {
   const c = useColors();
   const { has } = useTierCapabilities();
   const create = useCreateSavedSearch();
@@ -33,7 +42,7 @@ export function PinQuestionButton({ question, answerLanguage }: { question: stri
 
   const save = async () => {
     try {
-      await create.mutateAsync({ question, cadence, answer_language: answerLanguage, notify_email: notifyEmail });
+      await create.mutateAsync({ question, cadence, answer_language: answerLanguage, scope, notify_email: notifyEmail });
       setDone(true);
       setOpen(false);
     } catch {

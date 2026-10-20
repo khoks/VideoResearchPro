@@ -6,6 +6,7 @@ import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { Badge, Button, Spinner, type BadgeTone } from '../components/primitives';
 import { NotesPanel } from '../components/notes';
 import { SuggestionCard } from '../components/qa/SuggestionCard';
+import { VideoFramesPanel } from '../components/frames/VideoFramesPanel';
 import { useColors, useShadows } from '../hooks/useTheme';
 import {
   fonts,
@@ -227,6 +228,8 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
           )}
 
           {displayed && <KnowledgeBody artifact={displayed} />}
+          {/* S-1.18.2: frames are independent of the knowledge report. */}
+          <VideoFramesPanel videoId={videoId} />
           {displayed && (
             // S-8.4.2: no per-source Q&A exists, so a suggestion goes to
             // the library Q&A page (filled, or asked on Shift-click).

@@ -234,14 +234,15 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 | Name collision | The form shows the server's 409 text inline ("You already have a shelf named …"). |
 
 ### `ShelfPage` — `/shelves/:shelfId`
-**Purpose.** One shelf as a filtered view of the library. Header: eyebrow with the colour dot, name, description, "N runs · updated …" (plus "read-only on your plan" when the tier lacks shelves), Edit / Delete for Pro+. **Runs**: one row per run (title link, status pill, type, sources · created), **Remove** for Pro+. **Sources**: the union of the runs' documents, each once, through `GET /shelves/{id}/documents` (visibility-scoped, D-063), with the library's search / transcript / sort filters and paging (`DocumentsBrowser`, shared with the channel page). The shelf-scoped question box arrives with S-8.1.4.
+**Purpose.** One shelf as a filtered view of the library. Header: eyebrow with the colour dot, name, description, "N runs · updated …" (plus "read-only on your plan" when the tier lacks shelves), Edit / Delete for Pro+. **Runs**: one row per run (title link, status pill, type, sources · created), **Remove** for Pro+. **Sources**: the union of the runs' documents, each once, through `GET /shelves/{id}/documents` (visibility-scoped, D-063), with the library's search / transcript / sort filters and paging (`DocumentsBrowser`, shared with the channel page). **Ask this shelf** (S-8.1.4), between Runs and Sources: a question box, answer language and **Ask this shelf**, then the shelf's own history (`GET /shelves/{id}/qa`) as library exchange cards; answers draw only on the shelf's sources. On a shelf with no sources it says there is nothing to ask instead of showing the box.
 
 | State | What renders |
 |-------|--------------|
 | Loading | Header skeleton. |
 | 404 (foreign or deleted) | "This shelf isn't here." with **All shelves**. |
 | No runs | "No runs on this shelf yet." with **Go to active runs**. |
-| No sources | "No sources on this shelf yet." |
+| No sources | "No sources on this shelf yet." Ask this shelf: "This shelf has no sources yet, so there is nothing to ask." |
+| Q&A down | Ask this shelf disabled, with the reason as its tooltip; the history still shows. |
 | Deleted from here | Navigates to `/shelves`. |
 
 ### `TemplatesPage` — `/templates`
@@ -264,7 +265,7 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 | Tier without the feature | "Saved searches come with Pro." with **See plans**; nothing is fetched. |
 
 ### `LibraryQAPage` — `/library/qa`
-**Purpose.** Ask questions across the entire library, with no per-job filter.
+**Purpose.** Ask questions across the entire library, with no per-job filter. The history holds shelf questions too (S-8.1.4): a scoped exchange reads "Asked on shelf Rates" above its question (a link to the shelf, or "a shelf that no longer exists"), so it never passes for a library-wide answer.
 
 Layout: question textarea + clarify-first toggle + language selector at the top; past exchanges below ordered ascending by `created_at`, each with citation chips that link to the source video at the cited timestamp and the inline notes control (target `library_qa_exchange`). A YouTube chip whose video the reader can see also names its channel as a link to `/library/channels/:id` (S-8.7.4); the same holds for the Q&A panel on a run's page. A chip for one of the reader's own notes (S-8.5.2) reads "You wrote this on <date> · on <target>", in italics, shows the note's opening on hover, and links inside the app to what the note is on (the run, the channel page, the shelf, or `/notes` when the target cannot be linked).
 

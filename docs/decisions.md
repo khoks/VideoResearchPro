@@ -2945,6 +2945,28 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 - Saved searches store the same object on `saved_searches.scope_json`, resolve it with `resolve_document_ids` before each run and stamp `saved_search_id` on the exchanges they produce.
 - A new scope kind (a tag, a channel, a run) is a new key plus one branch in the resolver and its isolation test; no migration.
 - Exchanges are not re-checked against their scope later: deleting a shelf leaves its questions in history with a dangling `shelf_id`.
+- **Notes follow the scope** (added 2026-10-19 with PR [#319](https://github.com/khoks/VideoResearchPro/pull/319), after notes joined retrieval in S-8.5.2): a narrowing key narrows the asker's notes too. `qa_scope_service.note_target_keys` gives a shelf what job Q&A would draw for each run on it, plus notes on the shelf's earlier answers. It returns `[]` (no notes) for an empty shelf and `None` (every note) only for the whole library, and `run_library_qa_agent` takes them as `note_target_keys`. The scoped citation check covers note citations as well. The alternative, every note in every scope, would let a shelf answer cite a note about a source outside the shelf.
+- Citations are polymorphic, so `LibraryReference.video_id` is optional (a note has none) and history parses citations one at a time; before this, a library answer citing a note failed while building its response.
 
-**Linked initiatives / PRs.** S-8.1.4 (E-8.1), S-8.3.2 / S-8.3.3 (E-8.3), M1 and M3 plans, PR [#313](https://github.com/khoks/VideoResearchPro/pull/313). Follows D-063, D-070, D-083.
+**Linked initiatives / PRs.** S-8.1.4 (E-8.1), S-8.3.2 / S-8.3.3 (E-8.3), S-8.5.2 (E-8.5), M1 and M3 plans, PRs [#313](https://github.com/khoks/VideoResearchPro/pull/313), [#319](https://github.com/khoks/VideoResearchPro/pull/319). Follows D-063, D-070, D-083.
 
+## D-096 — R1 frames reach the user: opt-in per run, lazy stills, and a `visual_extractions` quota (2026-10-19)
+
+**Status:** accepted. The tier numbers are defaults flagged for the user's pricing call.
+
+**Context.** S-1.18.2 surfaces R1's frames: a per-run toggle, stills on citation cards, and on-demand capture for a document already in the library. R1 run 8 passed quote fidelity, attribution and fabrication; its substance vote waits on Gemini Pro. The pre-registration says both remaining outcomes build the UI, opt-in, so the build did not wait.
+
+**Decision.**
+1. Visual analysis stays **opt-in per run** and per document. The copy makes no quality claim until run 8's vote is in; it states the cost (about $0.20 per video at D-081) and that frames are reused.
+2. Report stills load **lazily**, when a citation card first asks for one. Eager prefetch was built first and measured in the browser at about 110 image requests per report. It spent the per-user rate limit (60 per minute on free) and starved the page's other calls.
+3. On-demand capture is a **worker task** with a per-document Redis marker. Capture downloads video for up to `VISUAL_CAPTURE_TIMEOUT_SEC` (15 minutes), so it cannot run inline the way knowledge extraction does.
+4. A new monthly quota `visual_extractions`: **free 2, Pro 30, Studio 300**. It is charged only when frames were actually captured, the same rule the job budget follows. At about $0.20 per capture that is $0.40, $6 and $60 of vision spend per month at the cap.
+
+**Alternatives considered.**
+- *Charge captures to `knowledge_extractions`.* Mixes a $0.20 multimodal pass with a text pass that costs cents, and hides which one ran out.
+- *No quota.* The capture is the app's most expensive single action per document.
+- *Tag stills into the report HTML server-side.* Reports are sanitised and parsed in the browser (D-085), and the citation card already had the slot.
+
+**Consequences.** The tier numbers should be revisited with pricing. Stills beside Q&A references (T-1.18.2.5) reuse the same matcher. Annotations still do not reach Chroma or knowledge extraction for documents embedded before their frames existed (T-1.18.1.10/11). That only matters once Q&A shows stills.
+
+**Linked initiatives / PRs.** S-1.18.2 (E-1.18), D-067, D-081, D-085, D-079; R1 runs 1-8.

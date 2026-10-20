@@ -74,6 +74,8 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         # T-5.5.5 quota-metered resources (monthly counts).
         "qa_exchanges_per_month": 50,
         "knowledge_extractions_per_month": 10,
+        # S-1.18.2 / D-096: on-demand frame captures (~$0.20 each at D-081).
+        "visual_extractions_per_month": 2,
         # S-8.3.2: enabled saved searches a tenant may hold (-1 = unlimited).
         "saved_searches_active_cap": 0,
         "features": frozenset(
@@ -94,6 +96,7 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         "num_videos_cap": 250,
         "qa_exchanges_per_month": 1_000,
         "knowledge_extractions_per_month": 200,
+        "visual_extractions_per_month": 30,
         "saved_searches_active_cap": 10,
         "features": frozenset(
             {
@@ -117,6 +120,7 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         "num_videos_cap": 500,
         "qa_exchanges_per_month": -1,
         "knowledge_extractions_per_month": 2_000,
+        "visual_extractions_per_month": 300,
         "saved_searches_active_cap": 50,
         "features": frozenset(
             {

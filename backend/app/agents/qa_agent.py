@@ -1357,6 +1357,7 @@ def run_library_qa_agent(
     output_length: str | None = None,
     channel_weights: dict[str, float] | None = None,
     notes_tenant_id: str | None = None,
+    note_target_keys: list[str] | None = None,
 ) -> dict:
     """Run library-wide Q&A against the global video library.
 
@@ -1370,6 +1371,10 @@ def run_library_qa_agent(
     the router computes them via `corpus_stats_service`; ``output_length``
     is the request's optional depth override. Both drive the same D-064
     policy as job Q&A; absent, the answer is classified `small`.
+
+    ``note_target_keys`` (S-8.1.4) restricts the asker's notes to those
+    targets, as job Q&A does; ``None`` draws every note (the whole
+    library), and a narrowed scope such as a shelf passes its own keys.
 
     Flow: sub-query expansion -> chroma retrieve over the visible set -> dedupe
     -> LLM context refinement -> LLM answer with language + citation rules
@@ -1391,7 +1396,7 @@ def run_library_qa_agent(
         raw.extend(
             _with_notes(
                 _query_library(q, visible_document_ids, channel_weights),
-                q, notes_tenant_id, None, channel_weights,
+                q, notes_tenant_id, note_target_keys, channel_weights,
             )
         )
 

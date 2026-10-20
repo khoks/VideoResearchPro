@@ -23,6 +23,9 @@ const ROUTES: Record<string, string> = {
 
 /** 14 nodes; one source links only to the channel, so 13 are drawn. */
 const DRAWN = 13;
+/** The first render pulls the lazy graph chunk through the dev server; under
+ * the full parallel run that alone has taken 5 to 8 s on this machine. */
+const FIRST_RENDER = { timeout: 20_000 };
 
 async function boot(page: Page) {
   await page.addInitScript(() => {
@@ -52,8 +55,8 @@ test('one tab stop: arrows move between nodes, Enter opens the card, Escape clos
   await boot(page);
   await page.goto('/library/graph');
   const map = page.getByRole('application', { name: 'Library map' });
-  await expect(map).toHaveAttribute('data-node-count', String(DRAWN));
-  await expect(map).toHaveAttribute('data-layout', 'settled', { timeout: 10_000 });
+  await expect(map).toHaveAttribute('data-node-count', String(DRAWN), FIRST_RENDER);
+  await expect(map).toHaveAttribute('data-layout', 'settled', FIRST_RENDER);
   await expect(page.locator('[data-graph-summary]')).toContainText('1 single-link node is hidden');
 
   // Tab from the control just before the map lands on it, on the most connected node.
@@ -100,7 +103,7 @@ test('the table lists exactly the drawn nodes and opens the same card', async ({
   await boot(page);
   await page.goto('/library/graph');
   const map = page.getByRole('application', { name: 'Library map' });
-  await expect(map).toHaveAttribute('data-node-count', String(DRAWN));
+  await expect(map).toHaveAttribute('data-node-count', String(DRAWN), FIRST_RENDER);
 
   await page.getByRole('button', { name: 'Table', exact: true }).click();
   await expect(page).toHaveURL(/view=table/);
@@ -122,7 +125,7 @@ test('reduced motion lays the map out before the first frame', async ({ page }) 
   await boot(page);
   await page.goto('/library/graph');
   const map = page.getByRole('application', { name: 'Library map' });
-  await expect(map).toHaveAttribute('data-layout', 'settled');
+  await expect(map).toHaveAttribute('data-layout', 'settled', FIRST_RENDER);
   await page.waitForTimeout(500);
   const seen = await page.evaluate(() => (window as unknown as { __layoutSeen: string[] }).__layoutSeen);
   expect(seen).not.toContain('running');
@@ -132,7 +135,7 @@ test('without reduced motion the layout animates, then freezes', async ({ page }
   await boot(page);
   await page.goto('/library/graph');
   const map = page.getByRole('application', { name: 'Library map' });
-  await expect(map).toHaveAttribute('data-layout', 'settled', { timeout: 10_000 });
+  await expect(map).toHaveAttribute('data-layout', 'settled', FIRST_RENDER);
   const seen = await page.evaluate(() => (window as unknown as { __layoutSeen: string[] }).__layoutSeen);
   expect(seen).toEqual(expect.arrayContaining(['running', 'settled']));
 });
@@ -141,6 +144,6 @@ test('a narrow screen opens on the table', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 800 });
   await boot(page);
   await page.goto('/library/graph');
-  await expect(page.locator('[data-graph-table] tbody tr')).toHaveCount(DRAWN);
+  await expect(page.locator('[data-graph-table] tbody tr')).toHaveCount(DRAWN, FIRST_RENDER);
   await expect(page.getByRole('application', { name: 'Library map' })).toHaveCount(0);
 });

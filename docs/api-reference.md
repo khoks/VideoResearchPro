@@ -754,6 +754,12 @@ Body `{ "name", "description"?, "color"? }`. Returns 201 `ShelfResponse`. Pro+.
 ### `GET /api/v1/shelves/{shelf_id}/documents`
 The union of the documents selected by the shelf's jobs, each once, filtered through the caller's visibility (D-063). Takes the library listing's `search`, `language`, `channel_id`, `transcript_status`, `tag`, `sort`, `limit`, `offset` and returns the same `LibraryVideoResponse[]` rows (with `job_count` / `job_titles` across all the caller's runs). **An empty shelf returns `[]`, never the whole library.** Any tier.
 
+### `POST /api/v1/shelves/{shelf_id}/qa`
+Ask the library agent over this shelf's documents only (S-8.1.4): the documents selected by the shelf's runs, within what the caller can see. Request and response are `POST /library/qa`'s; the response's `scope` is `{"shelf_id": "…"}` and the exchange joins the library Q&A history and the Q&A library index. **An empty shelf retrieves nothing**, never the whole library, and a citation outside the shelf is dropped from the answer. The asker's notes (S-8.5.2) follow the same scope: only notes on the shelf's runs, their documents, knowledge reports, answers and channels, and on the shelf's earlier answers. A shelf that is not the caller's is a **404** and runs nothing. Any tier; the library Q&A quota applies (429 when spent).
+
+### `GET /api/v1/shelves/{shelf_id}/qa`
+The caller's questions asked on this shelf (including saved-search runs scoped to it), oldest first, as `LibraryQAResponse[]`. `limit` (default 100, max 500), `offset`. 404 for a shelf that is not the caller's.
+
 ### `PUT /api/v1/shelves/{shelf_id}`
 Partial update: fields left out are untouched; `"description": null` clears it; renaming onto another shelf's name is a 409. Returns `ShelfResponse`. Pro+.
 
@@ -857,6 +863,23 @@ Query param: `?force=true` to re-run if already extracted. Returns 409 if alread
 
 ### `GET /api/v1/videos/{video_id}/knowledge`
 Fetch the stored knowledge artifact. Returns 404 if not yet extracted. The path segment may be the YouTube `video_id` or the `document_id`. Besides the four lists, `knowledge_report_md` and `knowledge_extracted_at`, the response names its source (S-8.8.3): `document_id`, `source_type`, `title`, `channel_name`, `url`, `published_at`. `video_id` is NULL for non-video documents; before S-8.8.3 it was declared non-nullable, so a PDF's artifact failed serialisation.
+
+### Frames (S-1.18.2, R1)
+
+A frame is as private as its document: each route resolves the document through the caller's visibility grants, and a document they cannot see 404s exactly like a missing one. The path segment may be the YouTube `video_id` or the `document_id`.
+
+#### `GET /api/v1/videos/{video_id}/frames`
+The document's captured frames in time order: `{document_id, video_id, visual_enabled, in_progress, frames: [{frame_id, timestamp_seconds, timestamp_display, description, informative, status, width, height, has_image}]}`. `visual_enabled` mirrors the install switch (`VISUAL_ENABLED`); stored frames are listed whatever it says. `in_progress` is true while an on-demand capture runs, so a client polls until it clears.
+
+#### `GET /api/v1/videos/{video_id}/frames/{frame_id}/image`
+One still as `image/jpeg` (`Cache-Control: private, max-age=86400`). 404 for a frame of another document, for a stored path outside `VISUAL_FRAMES_DIR` (traversal guard), and for a missing file. Report routes take no token in a URL (D-079), so the frontend fetches the bytes with the bearer header and shows them through an object URL.
+
+#### `POST /api/v1/videos/{video_id}/extract-frames`
+Queues select → capture → describe → persist for one document on the worker (`visual.extract_frames`) and returns **202** `{status: "queued", document_id}`. `?force=true` recaptures. Errors:
+- 503: the install switch is off, or the vision models failed their startup probe;
+- 422: not a YouTube video, or no transcript;
+- 409: frames exist and `force` is omitted, or a capture is already running;
+- 429: the monthly `visual_extractions` quota is spent (free 2, Pro 30, Studio 300; D-096). The quota is charged only when frames were actually captured.
 
 ---
 

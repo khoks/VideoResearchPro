@@ -1035,6 +1035,8 @@ Every connector this install offers, with the caller's grant (S-3.2.1, [#336](ht
                          "last_counts": { "added": 40, "updated": 2, "facts": 3 }, "events": 412 } }] }
 ```
 
+Connectors on this build: `github` (S-3.2.4; public activity under `read:user`; event types `pushed`, `committed`, `opened_pull_request`, `merged_pull_request`, `reviewed_pull_request`, `opened_issue`, `commented`, `published_release`, `created_repository`, `starred`, `forked`; nightly).
+
 ### `POST /api/v1/echo/connectors/{name}/authorize`
 Body `{ "consent_version": "…" }`: the disclosure version the consent screen showed. Returns `{ "authorize_url": "…" }` for the browser to open. Records a single-use OAuth state bound to the caller (PKCE, ten minutes); the redirect URI is `APP_BASE_URL` + `/echo/connectors/{name}/callback`, never taken from the client. 404 unknown connector, 409 the disclosure changed (show it again), 503 the install has no OAuth client for it.
 

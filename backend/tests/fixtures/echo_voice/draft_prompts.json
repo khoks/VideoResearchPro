@@ -1,0 +1,34 @@
+{
+  "about": "Fixed drafting prompts for the S-3.3.4 voice-match harness, written before any draft was generated (pre-registered in docs/notes/2026-10-19-voice-match-preregistration.md). Each is a situation the synthetic writer (personas.json) would write a short note about, in their own domain. Both conditions are told the writer's language, so a voice win is about style, not language.",
+  "prompts": {
+    "asha": [
+      "A news article says a new import duty on electronics will protect domestic jobs.",
+      "A friend forwards a study claiming remote work raises productivity by 13 percent.",
+      "A video argues the central bank should cut rates because inflation feels lower.",
+      "A founder on a podcast credits their success to waking up at 5 a.m. every day.",
+      "A report says exports in a new sector grew 40 percent last quarter.",
+      "An influencer says a single chart proves the housing market will crash."
+    ],
+    "bharat": [
+      "A popular documentary blames the Mughal decline on one emperor's policies.",
+      "A lecture claims the railways in colonial India were built mainly for Indians' benefit.",
+      "A review praises a new history of the 1857 uprising for its simple, clear story.",
+      "A podcast compares the British Empire to Rome.",
+      "An article describes the 1950s as a golden age of Indian planning.",
+      "A talk argues the Permanent Settlement of 1793 was a complete failure."
+    ],
+    "chetan": [
+      "A quick-commerce startup raised a huge round and promises 10-minute delivery everywhere.",
+      "A founder posts that their app hit one million downloads in its first month.",
+      "An investor says profitability does not matter in a startup's first five years.",
+      "A friend wants to start a D2C brand and spend most of the money on influencer marketing.",
+      "A podcast guest says AI will replace all customer-support jobs next year.",
+      "A food-delivery company announces it is finally profitable."
+    ]
+  },
+  "languages": {
+    "asha": "English",
+    "bharat": "English",
+    "chetan": "Hinglish (Hindi and English mixed, written in Roman letters)"
+  }
+}

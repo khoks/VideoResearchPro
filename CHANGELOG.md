@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Fixed: back-translated wording removed from composed reports (2026-10-19)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). Found by the R1 run-7 quote gate.
+PR [#309](https://github.com/khoks/VideoResearchPro/pull/309). Found by the R1 run-7 quote gate.
 
 - The composer wrote "Matplotlib वेरी इंपॉर्टेंट लाइब्रेरी (very important
   library)", translating the English back into Devanagari and attributing it

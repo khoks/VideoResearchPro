@@ -1628,9 +1628,9 @@ Backend suite 835 → 855.
 **North-star doc:** [feature-roadmap.md L4](feature-roadmap.md#l4--curated-source-ranking-) · [vision.md](vision.md)
 **Decision links:** [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31) (amended 2026-10-18)
 
-**Current state (2026-10-19).** Trust-weighted retrieval v1 shipped (S-7.1.1, PR [#287](https://github.com/khoks/VideoResearchPro/pull/287)): `PUT /channels/{id}/weight`, the D-068 re-rank in job and library Q&A, and a slider on the channel page. Measured: it moves the context as intended, and at strong weights it costs breadth enough that library-Q&A judges preferred unweighted answers, so the formula is reopened (S-7.1.2). *Before:* only the `channel_subscriptions.source_weight` column existed; nothing read it.
+**Current state (2026-10-19).** Trust-weighted retrieval v1 shipped (S-7.1.1, PR [#287](https://github.com/khoks/VideoResearchPro/pull/287)): `PUT /channels/{id}/weight`, the D-068 re-rank in job and library Q&A, and a slider on the channel page. Measured, then re-judged with dated excerpts (PR [#330](https://github.com/khoks/VideoResearchPro/pull/330)): it moves the context as intended and meets all four pre-registered clauses once judges can see source dates, so the formula stays as shipped (S-7.1.2 closed as an artifact). Strong weights still narrow library answers in a way judges dislike, recorded in D-068. *Before:* only the `channel_subscriptions.source_weight` column existed; nothing read it.
 
-### E-7.1 🟡 Trust-weighted retrieval (v1)
+### E-7.1 🟢 Trust-weighted retrieval (v1)
 
 **Decided 2026-10-18 by [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18):** weighted retrieval first, as a pure re-rank (`distance / weight` after the raw relevance threshold, over a 3× pool), weights resolved per tenant at query time and never stored on chunks or used as a filter. Perspective banding is E-7.2. **Sequenced after the R3/R4 batch**, which is rewriting `qa_agent.py`.
 

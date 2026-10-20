@@ -1690,10 +1690,11 @@ Backend suite 835 → 855.
 - [x] Found on the way: list popovers were painted under the next card (each `Card` is its own stacking context through `transform`); `LabelPicker` now portals to `<body>` with fixed coordinates and listens for outside clicks and Escape in the capture phase
 - **Decision taken (flagged):** tags are **not tier-gated**. They cost the operator nothing (the M6 plan's reasoning), the `shelves` capability is about grouping runs, and `frontend/src/data/tiers.ts` does not advertise tags. One `require_feature` line per write route if the user wants them Pro
 
-#### S-8.1.4 🔵 Shelf-scoped Q&A
-**PR:** TBD
+#### S-8.1.4 🟡 Shelf-scoped Q&A
+**PR:** [#313](https://github.com/khoks/VideoResearchPro/pull/313) (merged 2026-10-19: the `scope_json` column, its shape and resolver); the endpoint and panel follow
+**Linked decision:** [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19)
 - [ ] T-8.1.4.1 `POST /api/v1/shelves/{id}/qa` resolving the shelf's job set to a document set and calling the library Q&A agent with that `video_ids` filter (an empty shelf retrieves nothing)
-- [ ] T-8.1.4.2 Exchanges stored as `library_qa_exchanges` with a `scope_json` column (`{"shelf_id": …}`) so history and the Q&A library index keep working
+- [ ] T-8.1.4.2 Exchanges stored as `library_qa_exchanges` with a `scope_json` column (`{"shelf_id": …}`) so history and the Q&A library index keep working. Column (migration `cd4c5467506d`), documented shape (`app/schemas/qa_scope.py`: null = whole library, narrowing `shelf_id`, provenance `saved_search_id`, unknown keys kept on read and refused on resolve), `qa_scope_service` and `scope` on every history row landed in [#313](https://github.com/khoks/VideoResearchPro/pull/313) so lane A's saved searches can build on it
 - [ ] T-8.1.4.3 Q&A panel on the shelf page reusing the library Q&A components
 - [ ] T-8.1.4.4 Tests: scope restricts citations; empty scope never widens
 

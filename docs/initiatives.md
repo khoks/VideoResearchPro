@@ -1515,19 +1515,19 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 #### S-6.2.2 ⚪ Publish integrations
 - [ ] T-6.2.2.1 GitHub Pages push (user-supplied token through the BYOK credential store) and Netlify drop; design only until S-6.2.1 is used
 
-### E-6.3 🔵 Slides (PPTX)
+### E-6.3 🟢 Slides (PPTX)
 
-`kind="deck"` reserved; outputter pending.
+`kind="deck"` ships with `DeckOutputter` (S-6.3.1, PR [#314](https://github.com/khoks/VideoResearchPro/pull/314), 2026-10-19).
 
 **Scope (2026-10-18).** A deck from one job or a knowledge artifact: an LLM-planned outline (8 to 15 slides), each slide carrying its citations in the notes and a sources slide at the end, rendered with `python-pptx` (the `anthropic-skills:pptx` skill named in the roadmap is a harness skill, not a library the worker can call).
 **Acceptance.** A user picks a job, gets a `.pptx` whose every content slide has at least one citation in its notes, and the sources slide lists every cited source with a link.
 
-#### S-6.3.1 🔵 `DeckOutputter`
-**PR:** TBD
-- [ ] T-6.3.1.1 `author_deck_outline` use case (structured JSON: title, slides[{heading, bullets, speaker_notes, citations}])
-- [ ] T-6.3.1.2 `python-pptx` renderer with one editorial template (title, section, bullets, quote, sources); brand tokens from `docs/branding.md`
-- [ ] T-6.3.1.3 Citations copied into slide notes and the sources slide; `output_citations` rows
-- [ ] T-6.3.1.4 Tests: slide count within bounds, notes non-empty, file opens
+#### S-6.3.1 🟢 `DeckOutputter`
+**PR:** [#314](https://github.com/khoks/VideoResearchPro/pull/314) — *shipped 2026-10-19.* Sources are the user's own runs (tenant-scoped like books). **Scope-changed 2026-10-19:** a knowledge artifact as the deck's source is not in this story; runs only. Found on the first real deck: 80 timestamped citations made ten sources slides, so a source is now a video listed once with its cited moments as links (19 slides instead of 26). A real two-run deck cost $0.31-0.39 on gpt-5.5.
+- [x] T-6.3.1.1 `author_deck_outline` (openai gpt-5.5 medium, guidance entry): the reports reach the model with every RESOLVED citation as a marker `[S12]` (unresolved ones lose theirs, so a slide can only cite what the sources slide can link); JSON with section, bullets and quote slides citing markers; `VISUAL_ANNOTATION_CONTRACT`, English output, quote rendering and time contracts injected — *shipped 2026-10-19*
+- [x] T-6.3.1.2 `deck_render`: python-pptx (MIT), 16:9, one template drawn in code in the `docs/branding.md` palette (paper, ink, oxblood rules, gold quote bar), Georgia with Nirmala UI as the complex-script face; title (model disclosed), section, bullets, quote and sources slides; rendered through PowerPoint and checked by eye — *shipped 2026-10-19*
+- [x] T-6.3.1.3 Each content slide: source numbers in its footer, and in its notes every source with the exact moments it cites and their links; the sources slide(s) list each video once with its moments in time order as links; `output_citations` holds one row per cited moment in order of first use; a slide citing nothing is dropped and the count is shown on the last slide; `content_text` is a Markdown rendering for the reader — *shipped 2026-10-19*
+- [x] T-6.3.1.4 `test_deck_outputter.py` (6 tests, model patched): the file opens; 3 to 15 content slides; every content slide's notes carry a YouTube link and its text no marker, link or footnote; every cited moment is linked from the sources slide, one entry per video, moments in time order; first-use numbering; uncited slides dropped and disclosed; a plan with nothing cited, a failed call and another user's run each fail the output; the estimate endpoint calls no model and writes nothing — *shipped 2026-10-19*
 
 ### E-6.4 🔵 Newsletter / digest (recurring scheduled output)
 

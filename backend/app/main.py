@@ -19,6 +19,7 @@ from app.routers import (
     health,
     job_templates,
     jobs,
+    frames,
     knowledge,
     library,
     llm_settings,
@@ -119,6 +120,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# E-5.5: per-route + per-tier rate limiting. Disabled in tests via
+# RATE_LIMIT_ENABLED=False (set automatically in conftest.py).
+# Added BEFORE CORS on purpose: Starlette makes the last-added middleware the
+# outermost, and CORS must wrap the limiter. The other way round, a 429 went
+# out without CORS headers (the browser reported a CORS failure, not a rate
+# limit) and preflight OPTIONS requests were themselves rate-limited.
+# Found 2026-10-19 verifying S-1.18.2.
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:3000"],
@@ -126,9 +135,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# E-5.5: per-route + per-tier rate limiting. Disabled in tests via
-# RATE_LIMIT_ENABLED=False (set automatically in conftest.py).
-app.add_middleware(RateLimitMiddleware)
 
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(auth.router, prefix="/api/v1")
@@ -152,6 +158,7 @@ app.include_router(reports.markdown_router, prefix="/api/v1")
 app.include_router(library.router, prefix="/api/v1")
 app.include_router(qa_history.router, prefix="/api/v1")
 app.include_router(knowledge.router, prefix="/api/v1")
+app.include_router(frames.router, prefix="/api/v1")
 app.include_router(search.router, prefix="/api/v1")
 app.include_router(notes.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")

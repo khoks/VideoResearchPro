@@ -252,6 +252,9 @@ POST   /api/v1/qa-history/chat               # Ask meta-question across all Q&A 
 GET    /api/v1/qa-history/exchanges          # List history chat exchanges
 POST   /api/v1/videos/{id}/extract-knowledge # Run knowledge extraction (409 if exists unless ?force)
 GET    /api/v1/videos/{id}/knowledge         # Fetch stored knowledge artifact
+GET    /api/v1/videos/{id}/frames            # Captured frames (R1, S-1.18.2)
+GET    /api/v1/videos/{id}/frames/{fid}/image  # One still (JPEG), visibility-checked
+POST   /api/v1/videos/{id}/extract-frames    # Capture frames on demand (202, worker task)
 GET    /api/v1/exports/qa-dataset/openai.jsonl         # Q&A dataset, OpenAI chat format
 GET    /api/v1/exports/qa-dataset/tuple.jsonl          # Q&A dataset, plain tuple format
 GET    /api/v1/exports/knowledge-dataset/openai.jsonl  # Knowledge dataset, chat format

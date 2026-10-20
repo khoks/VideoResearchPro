@@ -367,6 +367,23 @@ def test_undo_removes_the_facts_an_import_still_owns(unauthenticated_client, db,
     assert db.query(PersonalContext).filter(PersonalContext.tenant_id == two["a"].id).count() == 0
 
 
+def test_undo_takes_the_facts_out_of_the_personal_index(unauthenticated_client, db, two, monkeypatch):
+    """An import with no shares never reaches the share cascade's vector sync,
+    so undo has to sync after the facts are gone, or retrieval keeps them."""
+    from app.services import echo_personal_vectors
+
+    item = _run(unauthenticated_client, two["ha"], *apple_health())
+    live_at_sync = []
+    monkeypatch.setattr(
+        echo_personal_vectors, "sync_soft",
+        lambda db_, tenant_id: live_at_sync.append(
+            db_.query(PersonalContext).filter(PersonalContext.tenant_id == tenant_id).count()
+        ),
+    )
+    assert unauthenticated_client.delete(f"{IMPORTS}/{item['id']}", headers=two["ha"]).json()["facts"] == 3
+    assert live_at_sync and live_at_sync[-1] == 0
+
+
 def test_imported_events_belong_to_their_tenant_and_reach_the_timeline(unauthenticated_client, db, two):
     name, data = letterboxd()
     _run(unauthenticated_client, two["ha"], name, data)

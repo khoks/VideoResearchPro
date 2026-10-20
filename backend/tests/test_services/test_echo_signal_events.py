@@ -128,6 +128,32 @@ def test_a_bulk_event_delete_elsewhere_is_reconciled_by_the_next_run(db):
     assert db.query(VoiceSignalInput).filter(VoiceSignalInput.tenant_id == user.id).count() == 0
 
 
+def test_undoing_an_event_import_withdraws_its_words_at_once_and_syncs(db, monkeypatch):
+    from app.models.echo_import import EchoImport
+    from app.services import echo_import_service, echo_personal_vectors
+
+    user = _user(db)
+    record = EchoImport(tenant_id=user.id, user_id=user.id, importer="letterboxd_export", filename="x.zip", status="done")
+    db.add(record)
+    db.commit()
+    e = ActivityEvent(
+        id=str(uuid.uuid4()), tenant_id=user.id, user_id=user.id, connector="letterboxd_export",
+        external_id="film-1", event_type="reviewed_film", occurred_at=T0,
+        payload_json=json.dumps({"import_id": record.id}), text_content="A slow film that rewards patience with every frame",
+    )
+    db.add(e)
+    db.commit()
+    ex.run(db, user.id, llm=_llm("A slow film that rewards"), model="m")
+    sig = next(r for r in echo_signal_service.list_signals(db, user.id) if r.signal_type == "methodology")
+
+    synced = []
+    monkeypatch.setattr(echo_personal_vectors, "sync_soft", lambda db_, tenant: synced.append(tenant))
+    echo_import_service.delete_import(db, user.id, record.id)
+    db.expire_all()
+    assert db.get(VoiceSignal, sig.id).suppressed_reason == "source_deleted", "no run needed"
+    assert user.id in synced
+
+
 def test_withdraw_sources_is_one_pass_over_many_refs(db):
     user = _user(db)
     row = echo_signal_service.create(

@@ -101,6 +101,25 @@ def delete_share_vector(tenant_id: str, share_id: str) -> int:
     return len(ids)
 
 
+def delete_share_vectors(tenant_id: str, share_ids: list[str], *, chunk: int = 2000) -> int:
+    """Delete many shares' vectors, only those belonging to ``tenant_id``."""
+    col = _existing(settings.CHROMA_SHARES_COLLECTION_NAME)
+    if col is None or not share_ids:
+        return 0
+    removed = 0
+    for i in range(0, len(share_ids), chunk):
+        got = col.get(ids=[share_vector_id(s) for s in share_ids[i : i + chunk]], include=["metadatas"])
+        ids = [
+            vid
+            for vid, meta in zip(got.get("ids") or [], got.get("metadatas") or [])
+            if (meta or {}).get("tenant_id") == tenant_id
+        ]
+        if ids:
+            col.delete(ids=ids)
+            removed += len(ids)
+    return removed
+
+
 def upsert_share_vector(share_id: str, text: str, metadata: dict) -> str:
     """Embed one share (S-3.7.2) under ``share_vector_id`` with its tenant in
     the metadata, the only shape the deletes above look for. Returns the
@@ -118,6 +137,43 @@ def upsert_share_vector(share_id: str, text: str, metadata: dict) -> str:
     clean = {k: v for k, v in metadata.items() if v is not None}
     col.upsert(ids=[vid], documents=[text], metadatas=[clean])
     return vid
+
+
+def upsert_share_vectors(items: list[tuple[str, str, dict]]) -> list[str]:
+    """Batch form of ``upsert_share_vector`` for imports (S-3.7.5): one
+    embedder pass over ``(share_id, text, metadata)`` items. Same ids and
+    metadata shape, so the per-share and whole-brain deletes find them."""
+    if not items:
+        return []
+    if any(not (meta or {}).get("tenant_id") for _, _, meta in items):
+        raise ValueError("a share vector needs tenant_id metadata")
+    client = get_chroma_client()
+    col = client.get_or_create_collection(
+        name=settings.CHROMA_SHARES_COLLECTION_NAME,
+        metadata={"scope": "echo_shares"},
+        embedding_function=_embedding_function(),
+    )
+    ids = [share_vector_id(sid) for sid, _, _ in items]
+    col.upsert(
+        ids=ids,
+        documents=[text for _, text, _ in items],
+        metadatas=[{k: v for k, v in meta.items() if v is not None} for _, _, meta in items],
+    )
+    return ids
+
+
+def delete_import_vectors(tenant_id: str, import_id: str) -> int:
+    """Remove every vector an import wrote (S-3.7.5), matched on both the
+    tenant and the import id. Returns how many were removed."""
+    col = _existing(settings.CHROMA_SHARES_COLLECTION_NAME)
+    if col is None:
+        return 0
+    where = {"$and": [{"tenant_id": tenant_id}, {"import_id": import_id}]}
+    got = col.get(where=where, include=[])
+    ids = got.get("ids") or []
+    if ids:
+        col.delete(ids=ids)
+    return len(ids)
 
 
 def _embedding_function():

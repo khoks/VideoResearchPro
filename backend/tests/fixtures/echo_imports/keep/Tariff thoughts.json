@@ -1,0 +1,26 @@
+{
+  "color": "DEFAULT",
+  "isTrashed": false,
+  "isPinned": true,
+  "isArchived": false,
+  "title": "Tariff thoughts",
+  "textContent": "Tariffs are a tax on your own consumers. Write the essay around the 2018 pass-through numbers.",
+  "labels": [
+    {
+      "name": "Essays"
+    },
+    {
+      "name": "Economics"
+    }
+  ],
+  "annotations": [
+    {
+      "description": "",
+      "source": "WEBLINK",
+      "title": "Who pays",
+      "url": "https://example.org/who-pays"
+    }
+  ],
+  "userEditedTimestampUsec": 1707000000000000,
+  "createdTimestampUsec": 1706000000000000
+}

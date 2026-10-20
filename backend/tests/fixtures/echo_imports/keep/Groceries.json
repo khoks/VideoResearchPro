@@ -1,0 +1,19 @@
+{
+  "color": "YELLOW",
+  "isTrashed": false,
+  "isPinned": false,
+  "isArchived": true,
+  "title": "Groceries",
+  "listContent": [
+    {
+      "text": "doodh",
+      "isChecked": true
+    },
+    {
+      "text": "atta",
+      "isChecked": false
+    }
+  ],
+  "labels": [],
+  "userEditedTimestampUsec": 1707100000000000
+}

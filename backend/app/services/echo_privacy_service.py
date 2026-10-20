@@ -47,6 +47,7 @@ from typing import IO, Any
 from sqlalchemy import DateTime, func, or_
 from sqlalchemy.orm import Session
 
+from app.models.echo_import import EchoImport
 from app.models.personal_context import PersonalContext
 from app.models.share import Share
 from app.services import echo_intake_service, echo_vectors
@@ -62,6 +63,7 @@ ARCHIVE_VERSION = 1
 ECHO_TABLES: tuple[tuple[str, Any], ...] = (
     ("personal_context", PersonalContext),
     ("shares_inbox", Share),
+    ("echo_imports", EchoImport),
 )
 
 _BATCH = 200

@@ -37,6 +37,7 @@ class Share(Base):
     __table_args__ = (
         Index("ix_shares_inbox_tenant_received", "tenant_id", "received_at"),
         Index("ix_shares_inbox_tenant_state", "tenant_id", "processing_state"),
+        Index("ix_shares_inbox_tenant_import", "tenant_id", "import_id"),
     )
 
     id: Mapped[str] = mapped_column(
@@ -76,6 +77,11 @@ class Share(Base):
     # never changes; this does.
     processing_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     embedding_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # S-3.7.5: the import that wrote this share (echo_imports.id), and when
+    # the message or note itself was written. NULL for shares made one at
+    # a time, whose moment is `received_at`.
+    import_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<Share {self.id[:8]} {self.content_type} {self.processing_state}>"

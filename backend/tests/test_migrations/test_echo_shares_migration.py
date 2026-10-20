@@ -81,3 +81,27 @@ def test_processing_column_round_trips(migrated):
     assert "processing_json" not in {c["name"] for c in inspect(eng).get_columns("shares_inbox")}
     command.upgrade(cfg, "head")
     assert "processing_json" in {c["name"] for c in inspect(eng).get_columns("shares_inbox")}
+
+
+def test_imports_table_and_share_columns_round_trip(migrated):
+    """509a4efd9319 (S-3.7.5) adds echo_imports and shares_inbox.import_id /
+    occurred_at, and removes them; existing shares keep their rows."""
+    cfg, eng = migrated
+    command.upgrade(cfg, "7c1d9e3a5b42")
+    _exec(
+        eng,
+        "INSERT INTO shares_inbox (id, tenant_id, user_id, received_at, updated_at, surface, content_type, "
+        "raw_payload_json, author_is_tenant, processing_state) VALUES ('s-1', 't', 't', CURRENT_TIMESTAMP, "
+        "CURRENT_TIMESTAMP, 'manual_quick_share', 'text_snippet', '{\"kind\":\"text\"}', 0, 'pending')",
+    )
+    command.upgrade(cfg, "509a4efd9319")
+    inspector = inspect(eng)
+    assert "echo_imports" in inspector.get_table_names()
+    assert {"import_id", "occurred_at"} <= {c["name"] for c in inspector.get_columns("shares_inbox")}
+    assert _exec(eng, "SELECT id, import_id, occurred_at FROM shares_inbox") == [("s-1", None, None)]
+    command.downgrade(cfg, "7c1d9e3a5b42")
+    inspector = inspect(eng)
+    assert "echo_imports" not in inspector.get_table_names()
+    assert "import_id" not in {c["name"] for c in inspector.get_columns("shares_inbox")}
+    assert _exec(eng, "SELECT id FROM shares_inbox") == [("s-1",)]
+    command.upgrade(cfg, "head")

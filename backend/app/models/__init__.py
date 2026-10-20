@@ -23,6 +23,7 @@ from app.models.output import Output
 from app.models.output_citation import OutputCitation
 from app.models.password_reset_token import PasswordResetToken
 from app.models.personal_context import PersonalContext
+from app.models.echo_import import EchoImport
 from app.models.qa_exchange import QAExchange
 from app.models.qa_history_exchange import QAHistoryExchange
 from app.models.quota_usage import QuotaUsage
@@ -67,6 +68,7 @@ __all__ = [
     "OutputCitation",
     "PasswordResetToken",
     "PersonalContext",
+    "EchoImport",
     "QAExchange",
     "QAHistoryExchange",
     "QuotaUsage",

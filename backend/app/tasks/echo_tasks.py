@@ -23,3 +23,18 @@ def process_share_task(share_id: str) -> str:
         return echo_processing_service.process_share(db, share_id).state
     finally:
         db.close()
+
+
+EMBED_IMPORT_TASK_NAME = "echo.embed_import"
+
+
+@celery_app.task(name=EMBED_IMPORT_TASK_NAME, ignore_result=True)
+def embed_import_task(import_id: str) -> str:
+    """Embed an export import's shares (S-3.7.5), a batch at a time; resumable."""
+    from app.services import echo_import_service
+
+    db = SessionLocal()
+    try:
+        return echo_import_service.embed_import(db, import_id)
+    finally:
+        db.close()

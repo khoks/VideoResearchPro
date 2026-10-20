@@ -1094,7 +1094,7 @@ Studio (`echo_personal_brain`). Uploads are multipart `file`, plus `importer` (o
   An export renamed on the way is still recognised by its contents. Exports past the upload cap go through `backend/scripts/echo_import.py --email … --file …` (`--preview`, `--options`, `--max-unpacked-mb`), the same flow from the command line.
 - `GET /api/v1/echo/imports` and `GET /api/v1/echo/imports/{id}` — the caller's imports, newest first.
 - `POST /api/v1/echo/imports/{id}/embed` — retry indexing after a failure; resumes where it stopped. 409 while importing or undoing.
-- `DELETE /api/v1/echo/imports/{id}` — undo: every share the import wrote, their vectors and anything derived from them; the events it added (not ones it found already held, which belong to the import that added them); the facts it recorded that still carry its source (a fact restated since is kept); then the import. `{ deleted, shares, vectors, facts, events }`.
+- `DELETE /api/v1/echo/imports/{id}` — undo: every share the import wrote, their vectors and anything derived from them; the events it added (not ones it found already held, which belong to the import that added them); the facts it recorded that still carry its source (a fact restated since is kept), and their vectors in `personal_context_global`; then the import. `{ deleted, shares, vectors, facts, events }`.
 
 ### Voice and personality signals (S-3.3.1)
 The signals panel's rows, the caller's own only (another tenant's id is a 404). Learned only from the user's own words: notes, questions, and shares marked `author_is_tenant`; never a context-only share ([D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19)).

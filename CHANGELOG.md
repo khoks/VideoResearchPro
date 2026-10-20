@@ -10,6 +10,15 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Fix: undoing an import takes its facts out of Echo's retrieval index (S-3.7.5, 2026-10-19)
+
+PR [#351](https://github.com/khoks/VideoResearchPro/pull/351).
+
+- Undoing an Apple Health import deleted its three routine facts but left
+  their vectors in `personal_context_global` until the next sync, so
+  retrieval could still surface them. Undo now resyncs once the facts are
+  gone.
+
 ### Echo: listening, reading, watching, workouts and health from export files (S-3.7.5 part 2, 2026-10-19)
 
 PR [#349](https://github.com/khoks/VideoResearchPro/pull/349).

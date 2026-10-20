@@ -260,7 +260,7 @@ ApiQuotaLog (append-only ledger of YouTube + LLM calls)
 - **Embeddings happen exactly once per document.** `Document.embedded_in_chroma` flips to `true` after chunks land in `videoresearchpro_global`. Subsequent jobs referencing that document skip embedding.
 - **Q&A exchanges have three flavors** that union into one Chroma collection:
   - `qa_exchanges` (job-scoped)
-  - `library_qa_exchanges` (library-scoped; `scope_json` narrows a question to a shelf or records that a saved search asked it, null = the whole visible library: [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19))
+  - `library_qa_exchanges` (library-scoped; `scope_json` narrows a question to a shelf, documents and the asker's notes alike, or records that a saved search asked it, null = the whole visible library and every note: [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19))
   - `qa_history_exchanges` (meta-chat surface)
 
   All three are stored separately for SQL-level filtering but indexed together in `qa_library_global` so meta-chat retrieval crosses surfaces.

@@ -2945,6 +2945,8 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 - Saved searches store the same object on `saved_searches.scope_json`, resolve it with `resolve_document_ids` before each run and stamp `saved_search_id` on the exchanges they produce.
 - A new scope kind (a tag, a channel, a run) is a new key plus one branch in the resolver and its isolation test; no migration.
 - Exchanges are not re-checked against their scope later: deleting a shelf leaves its questions in history with a dangling `shelf_id`.
+- **Notes follow the scope** (added 2026-10-19 with PR [#319](https://github.com/khoks/VideoResearchPro/pull/319), after notes joined retrieval in S-8.5.2): a narrowing key narrows the asker's notes too. `qa_scope_service.note_target_keys` gives a shelf what job Q&A would draw for each run on it, plus notes on the shelf's earlier answers. It returns `[]` (no notes) for an empty shelf and `None` (every note) only for the whole library, and `run_library_qa_agent` takes them as `note_target_keys`. The scoped citation check covers note citations as well. The alternative, every note in every scope, would let a shelf answer cite a note about a source outside the shelf.
+- Citations are polymorphic, so `LibraryReference.video_id` is optional (a note has none) and history parses citations one at a time; before this, a library answer citing a note failed while building its response.
 
-**Linked initiatives / PRs.** S-8.1.4 (E-8.1), S-8.3.2 / S-8.3.3 (E-8.3), M1 and M3 plans, PR [#313](https://github.com/khoks/VideoResearchPro/pull/313). Follows D-063, D-070, D-083.
+**Linked initiatives / PRs.** S-8.1.4 (E-8.1), S-8.3.2 / S-8.3.3 (E-8.3), S-8.5.2 (E-8.5), M1 and M3 plans, PRs [#313](https://github.com/khoks/VideoResearchPro/pull/313), [#319](https://github.com/khoks/VideoResearchPro/pull/319). Follows D-063, D-070, D-083.
 

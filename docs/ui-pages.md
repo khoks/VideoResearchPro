@@ -464,7 +464,7 @@ Where results land: a run → `/jobs/<id>`; a question → its page with `?excha
 
 Top to bottom:
 - **Echo**, an **AI** badge, and "You are talking to an AI. It answers from your library, notes and past questions, and can be wrong: check what it cites."
-- Readiness in one line ("24% ready. Still needs 60 more facts, 2 more sources and a personality trait." with **What counts** linking to `/echo`).
+- Readiness in one line, with **What counts** linking to `/echo`. Since S-3.5.1 the line names the unmet domains, such as "24% ready. Still needs more facts about you and writing of your own." Against an older backend without `domains`, it names the v1 gates instead: "Still needs 60 more facts, 2 more sources and a personality trait."
 - Two tabs, then the conversation, then the composer.
 
 | Mode | What renders |

@@ -31,6 +31,8 @@ PR [#354](https://github.com/khoks/VideoResearchPro/pull/354). [D-101](decisions
 - Facts Echo inferred from a service are kept but no longer count as facts you
   wrote.
 - Thresholds are settings (`ECHO_READY_*`).
+- The Echo bubble's readiness line names the parts still missing, matching
+  its percentage, instead of the old three gates.
 
 ### Echo: a bubble on every page, and a panel to ask or draft from (S-3.8.1, 2026-10-20)
 

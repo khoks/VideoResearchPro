@@ -218,7 +218,7 @@ def create(
     if origin not in ORIGINS:
         raise SignalError(f"origin must be one of: {', '.join(ORIGINS)}")
     if is_suppressed(db, tenant_id, signal_type, v, language):
-        raise SignalError("You marked this signal as not you. Remove that first if it is.")
+        raise SignalError("You marked this as not you earlier, so Echo will not add it again.")
     cleaned = [clean_example(e.get("text", ""), e.get("source", "user"), e.get("at")) for e in (examples or [])]
     row = VoiceSignal(
         tenant_id=tenant_id,
@@ -260,7 +260,12 @@ def update(
     new_register = row.register if register is _UNSET else register
     _check(row.signal_type, new_language, new_register)
     if value is not None:
-        row.value = _clean_value(value)
+        cleaned = _clean_value(value)
+        if cleaned != row.value and row.origin != "user":
+            # The user has reworded a learned signal: it is theirs now, and a
+            # later run recomputing cadence must not delete it.
+            row.origin = "user"
+        row.value = cleaned
         row.value_key = value_key(row.value)
     row.language = new_language
     row.register = new_register

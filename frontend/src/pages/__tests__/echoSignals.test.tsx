@@ -10,7 +10,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VoiceSignal, VoiceSignalList } from '../../services/echoApi';
-import { SIGNAL_TYPES, evidenceSummary, groupSignals, sourceLabel } from '../../utils/echoSignals';
+import { SIGNAL_TYPES, evidenceSummary, groupSignals, originLabel, sourceLabel } from '../../utils/echoSignals';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -137,6 +137,13 @@ describe('signal helpers', () => {
     expect(evidenceSummary(FRAMING)).toBe('2 × a note, a question you asked');
     expect(sourceLabel('share:abc')).toBe('a share in your own words');
     expect(sourceLabel('user')).toBe('you said so');
+  });
+
+  it('say who a signal belongs to', () => {
+    expect(originLabel('user')).toBe('You added this');
+    expect(originLabel('user', ['note:n1'])).toBe('You corrected this');
+    expect(originLabel('stylometry', ['note:n1'])).toBe('Measured from your writing');
+    expect(originLabel('llm', ['note:n1'])).toBe('Learned from your writing');
   });
 });
 

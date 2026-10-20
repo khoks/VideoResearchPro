@@ -221,3 +221,14 @@ def test_the_api_vocabularies_are_the_service_vocabularies():
     assert get_args(schema.SignalType) == echo_signal_service.SIGNAL_TYPES
     assert get_args(schema.Language) == echo_signal_service.LANGUAGES
     assert get_args(schema.Register) == echo_signal_service.REGISTERS
+
+
+def test_rewording_a_learned_signal_makes_it_the_users(unauthenticated_client, db, two):
+    a, ha, _, _ = two
+    learned = _derived(db, a, ["note:n-3"], "Leans on base rates", signal_type="methodology")
+
+    r = unauthenticated_client.patch(f"{SIGNALS}/{learned.id}", json={"register": "professional"}, headers=ha)
+    assert r.json()["origin"] == "llm", "a language or audience fix leaves the provenance alone"
+    r = unauthenticated_client.patch(f"{SIGNALS}/{learned.id}", json={"value": "Starts from base rates"}, headers=ha)
+    assert r.json()["origin"] == "user"
+    assert r.json()["derived_from"] == ["note:n-3"], "the evidence is kept"

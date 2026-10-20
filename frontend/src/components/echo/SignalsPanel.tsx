@@ -171,7 +171,8 @@ export function SignalsPanel() {
       >
         <p style={{ margin: 0, fontFamily: fonts.body, lineHeight: lineHeight.normal }}>
           Echo will forget “{rejecting?.value}” under {rejecting ? signalTypeMeta(rejecting.signal_type).label.toLowerCase() : ''} and
-          will not learn it again from anything you write. The notes and shares it came from are kept.
+          will not learn it again from anything you write.
+          {rejecting && rejecting.origin !== 'user' ? ' The notes and shares it came from are kept.' : ''}
         </p>
       </Modal>
     </Card>
@@ -196,9 +197,9 @@ function LayerSection({
   const c = useColors();
   return (
     <section>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: space['3'], marginBottom: space['2'] }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: space['3'], marginBottom: space['2'], flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0, fontFamily: fonts.display, fontSize: fontSize.md, fontWeight: fontWeight.semibold, color: c.textPrimary }}>{label}</h3>
-        <span style={{ flex: 1, fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>{hint}</span>
+        <span style={{ flex: '1 1 12rem', fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>{hint}</span>
         <Button size="sm" variant="tertiary" onClick={onAdd}>
           Add
         </Button>
@@ -234,8 +235,8 @@ function SignalRow({ signal, onEdit, onReject }: { signal: VoiceSignal; onEdit: 
   const evidence = evidenceSummary(signal);
   return (
     <li data-signal={signal.id} style={{ padding: `${space['2']} ${space['4']} ${space['3']}`, display: 'flex', flexDirection: 'column', gap: space['1'] }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: space['3'] }}>
-        <span style={{ flex: 1, minWidth: 0, fontFamily: fonts.body, fontSize: fontSize.base, color: c.textPrimary, lineHeight: lineHeight.normal }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: space['3'], flexWrap: 'wrap' }}>
+        <span style={{ flex: '1 1 14rem', minWidth: 0, fontFamily: fonts.body, fontSize: fontSize.base, color: c.textPrimary, lineHeight: lineHeight.normal }}>
           {signal.value}
         </span>
         <Button size="sm" variant="tertiary" onClick={onEdit}>
@@ -248,7 +249,7 @@ function SignalRow({ signal, onEdit, onReject }: { signal: VoiceSignal; onEdit: 
       <div style={{ display: 'flex', alignItems: 'center', gap: space['2'], flexWrap: 'wrap', fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>
         {language && <Badge size="sm">{language}</Badge>}
         {register && <Badge size="sm">{register}</Badge>}
-        <span>{originLabel(signal.origin)}</span>
+        <span>{originLabel(signal.origin, signal.derived_from)}</span>
         {evidence && signal.origin !== 'user' && (
           <>
             <span aria-hidden>·</span>

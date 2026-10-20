@@ -85,10 +85,10 @@ export function sourceLabel(ref: string): string {
   }
 }
 
-export function originLabel(origin: string): string {
+export function originLabel(origin: string, derivedFrom: string[] = []): string {
   switch (origin) {
     case 'user':
-      return 'You added this';
+      return derivedFrom.some((ref) => ref !== 'user') ? 'You corrected this' : 'You added this';
     case 'stylometry':
       return 'Measured from your writing';
     default:

@@ -89,7 +89,7 @@ def test_an_empty_account_says_what_is_missing_and_is_not_ready(db, user):
     assert d["facts"].status == "not_started" and "write 30 more facts" in d["facts"].missing
     assert d["activity"].status == "not_connected", "nothing connected is not a failure"
     assert d["activity"].missing.startswith("Not connected yet")
-    assert "Write 30 more notes or 2000 more words" in d["voice"].missing
+    assert "Write 30 more notes or 2,000 more words" in d["voice"].missing
     sources = {s["name"]: s for s in d["activity"].details["sources"]}
     assert sources["github"]["status"] == "not_connected" and sources["github"]["reason"]  # no OAuth app in tests
     for planned in ("youtube_likes", "google_calendar"):

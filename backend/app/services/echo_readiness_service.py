@@ -135,7 +135,7 @@ def _domain(key, domain, label, criteria, summary, missing, *, empty: bool, deta
 
 
 def _plural(n: int, one: str, many: str | None = None) -> str:
-    return f"{n} {one if n == 1 else (many or one + 's')}"
+    return f"{n:,} {one if n == 1 else (many or one + 's')}"
 
 
 # --------------------------------------------------------------------------- 1 facts

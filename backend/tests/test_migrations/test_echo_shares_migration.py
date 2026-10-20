@@ -70,3 +70,14 @@ def test_backfill_sets_tenant_from_user_and_enforces_not_null(migrated):
     assert "shares_inbox" not in inspector.get_table_names()
     assert "tenant_id" not in {c["name"] for c in inspector.get_columns("personal_context")}
     assert len(_exec(eng, "SELECT id FROM personal_context")) == 2, "downgrade keeps the facts"
+
+
+def test_processing_column_round_trips(migrated):
+    """65ce471f8571 (S-3.7.2) adds shares_inbox.processing_json and removes it."""
+    cfg, eng = migrated
+    command.upgrade(cfg, "65ce471f8571")
+    assert "processing_json" in {c["name"] for c in inspect(eng).get_columns("shares_inbox")}
+    command.downgrade(cfg, "5d2e8b1f4a60")
+    assert "processing_json" not in {c["name"] for c in inspect(eng).get_columns("shares_inbox")}
+    command.upgrade(cfg, "head")
+    assert "processing_json" in {c["name"] for c in inspect(eng).get_columns("shares_inbox")}

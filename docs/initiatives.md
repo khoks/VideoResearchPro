@@ -1022,15 +1022,15 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 - [x] T-3.7.1.4 Files stored under `ECHO_SHARES_DIR/<tenant>/` with the frame-service traversal guard; size cap
 - [x] T-3.7.1.5 Isolation and cascade tests (`tests/test_routers/test_echo_shares.py`: gating, every content type, traversal and size cap, a tampered path, two tenants on every verb, the per-share cascade to file, vector and derived facts)
 
-#### S-3.7.2 🔵 Processing pipeline
-**PR:** TBD
+#### S-3.7.2 🟡 Processing pipeline
+**PR:** part 1 [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__) — merged 2026-10-19: the `echo.process_share` task (or inline, or off), text and links (YouTube through the Data API, everything else through the article extractor), text files, embedding into `shares_global`, the library offer, Retry, fail-soft. **Part 2 (next):** images (local OCR first, vision-LLM fallback off for local-only tenants) and audio (the Whisper path); until then such shares stay `pending` with a note saying so. **Calls made in part 1.** A YouTube link gets no library offer: there is no single-video library ingest, and a research run is the way in. Processing results live in a new `shares_inbox.processing_json` (migration `65ce471f8571`), so `raw_payload_json` stays exactly what arrived. One vector per share, like notes: the annotation, the title and the opening of the text (`ECHO_SHARE_EMBED_MAX_CHARS`).
 - [ ] T-3.7.2.1 `process_share` Celery task: URL → `paste_url_resolver` / article extraction / YouTube metadata; image → local OCR first (Apache-2.0 engine with a Devanagari model, chosen in the plan) with a vision-LLM fallback for stylised text that is off when the tenant's LLM is local-only; audio → the existing Whisper path; text → as is
-- [ ] T-3.7.2.2 Embedding into a `shares_global` collection with `tenant_id`; shares resolving to a source are offered to the library (one-click ingest through the paste path, visibility granted to the sharer only)
-- [ ] T-3.7.2.3 Share → activity event (`connector=internal`, `event_type=shared_to_pratidhvani`) and → signal-extraction queue (S-3.3.2)
-- [ ] T-3.7.2.4 Fail-soft: a share whose processing fails stays browsable with the failure shown
+- [x] T-3.7.2.2 Embedding into a `shares_global` collection with `tenant_id`; shares resolving to a source are offered to the library (one-click ingest through the paste path, visibility granted to the sharer only)
+- [ ] T-3.7.2.3 Share → activity event (`connector=internal`, `event_type=shared_to_pratidhvani`) and → signal-extraction queue (S-3.3.2). **Waits on its targets:** neither `activity_events` (S-3.2.1) nor the signal queue (S-3.3.2) exists yet; each of those stories adds its call in `echo_processing_service.process_share`. The voice gate is already there: `voice_eligible(share)` is true only for the user's own words, and the vector metadata carries it
+- [x] T-3.7.2.4 Fail-soft: a share whose processing fails stays browsable with the failure shown
 - [ ] T-3.7.2.5 Tests per content type with external calls patched
-- [ ] T-3.7.2.6 Embed each share under `echo_vectors.share_vector_id(id)` with `tenant_id` metadata in `CHROMA_SHARES_COLLECTION_NAME`, and set `embedding_id`. The per-share delete and the full delete (S-3.10.2) find vectors only by that id and that metadata
-- [ ] T-3.7.2.7 A context-only share (`author_is_tenant` false) feeds context retrieval but never voice-signal extraction as the user's own words; the user's own words (`author_is_tenant` true) do
+- [x] T-3.7.2.6 Embed each share under `echo_vectors.share_vector_id(id)` with `tenant_id` metadata in `CHROMA_SHARES_COLLECTION_NAME`, and set `embedding_id`. The per-share delete and the full delete (S-3.10.2) find vectors only by that id and that metadata
+- [x] T-3.7.2.7 A context-only share (`author_is_tenant` false) feeds context retrieval but never voice-signal extraction as the user's own words; the user's own words (`author_is_tenant` true) do
 
 #### S-3.7.3 🔵 Drag-drop and browser extension
 **PR:** TBD

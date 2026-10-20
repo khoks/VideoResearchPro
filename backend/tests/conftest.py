@@ -28,6 +28,10 @@ settings.CODE_MIX_ENGLISH_RENDERING_ENABLED = False
 # or touches a persistent collection; the notes-retrieval tests opt back
 # in against an in-memory Chroma.
 settings.NOTES_INDEX_ENABLED = False
+# S-3.7.2: Echo share processing is queued to Celery in production. Off for
+# the suite (shares stay pending); the processing tests call the processor
+# directly with every external call patched.
+settings.ECHO_SHARE_PROCESSING = "off"
 # S-1.14.19: map batches run concurrently in production. Stub LLMs that hand
 # out responses in call order need one batch at a time; the concurrent path
 # has its own tests that set this back up.

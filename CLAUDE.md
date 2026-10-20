@@ -307,6 +307,8 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `CHROMA_SHARES_COLLECTION_NAME` / `CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME` | No | `shares_global` / `personal_context_global` | Echo's private collections (tenant-filtered). The full Echo delete sweeps both |
 | `ECHO_SHARES_DIR` | No | `./data/echo/shares` | Echo shares inbox files, one directory per tenant; removed by the full Echo delete |
 | `ECHO_SHARE_MAX_BYTES` / `ECHO_SHARE_TEXT_MAX_CHARS` | No | `26214400` / `50000` | Caps on one quick-share file (25 MB) and one text share |
+| `ECHO_SHARE_PROCESSING` | No | `celery` | How shares are processed after intake: `celery` (the `echo.process_share` task), `inline` (in the request, single-process dev) or `off` (the test suite) |
+| `ECHO_SHARE_EMBED_MAX_CHARS` | No | `2000` | Text embedded per share in `shares_global`: annotation, title and the opening of the extracted text |
 | `KNOWLEDGE_EXTRACT_BATCH_TOKENS` | No | `8000` | Max tokens per extract batch |
 | `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS` | No | `60000` | Max transcript size for knowledge extraction |
 | `LLM_USE_CASE_CONFIG` | No | (unset) | Primary per-use-case override knob — see "LLM configuration" below |

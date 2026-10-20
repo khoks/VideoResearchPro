@@ -209,6 +209,7 @@ def test_a_run_asks_over_the_visible_set_and_stores_the_baseline(db, pro, _no_ch
     assert out["status"] == "ok"
     assert agent.calls[0]["visible_document_ids"] == [mine.document_id]
     assert agent.calls[0]["question"] == ss.question
+    assert agent.calls[0]["notes_tenant_id"] == pro.id  # S-8.5.2, as the library route does
     db.refresh(ss)
     assert ss.last_status == "ok" and ss.last_exchange_id == out["exchange_id"]
     assert json.loads(ss.last_reference_ids_json) == ["vidA", "vidB"]
@@ -235,6 +236,7 @@ def test_a_shelf_scope_narrows_to_that_shelfs_documents(db, pro):
     saved_search_service.execute(db, _saved(db, pro, scope={"shelf_id": empty.id}).id, agent=agent)
     assert agent.calls[0]["visible_document_ids"] == [in_shelf.document_id]
     assert agent.calls[1]["visible_document_ids"] == []  # never widens to the library
+    assert agent.calls[0]["notes_tenant_id"] is None  # notes cannot be narrowed to a shelf yet
     assert outside.document_id not in agent.calls[0]["visible_document_ids"]
     scopes = [json.loads(e.scope_json) for e in db.query(LibraryQAExchange).all()]
     assert {s.get("shelf_id") for s in scopes} == {shelf.id, empty.id}  # each run is stamped with its scope

@@ -435,6 +435,11 @@ def execute(db: Session, saved_search_id: str, *, trigger: str = "schedule", age
                 corpus_statistics=corpus_statistics,
                 output_length=None,
                 channel_weights=channel_weights,
+                # S-8.5.2: the reader's own notes compete in retrieval, as on
+                # the library route. Only for the library scope: the library
+                # agent cannot narrow notes to a shelf, and a scope must never
+                # widen what a question draws on (T-8.3.3.9).
+                notes_tenant_id=user.id if not scope else None,
             )
         answer = result.get("answer", "") or ""
         references = result.get("references", []) or []

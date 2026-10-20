@@ -1,7 +1,7 @@
 """saved_search_runs + notifications (S-8.3.3 / M3)
 
 Revision ID: 7c1d9e3a5b42
-Revises: 5d2e8b1f4a60
+Revises: 1a6e09517250
 Create Date: 2026-10-19
 
 Additive. A row per saved-search run (status, change signals, diff), the
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "7c1d9e3a5b42"
-down_revision = "5d2e8b1f4a60"
+down_revision = "1a6e09517250"  # re-parented onto S-5.10.3 (merged first)
 branch_labels = None
 depends_on = None
 

@@ -113,6 +113,7 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
       nav('qa-history', 'Echoes — Q&A history', '/qa-history', 'history questions answers knowledge'),
       nav('shelves', 'Shelves', '/shelves', 'collections organise'),
       nav('templates', 'Templates', '/templates', 'job templates starter'),
+      nav('saved-searches', 'Saved searches', '/saved-searches', 'pinned questions alerts schedule watch'),
       nav('notes', 'Your notes', '/notes', 'notes annotations'),
       nav('welcome', 'Getting started', '/welcome', 'onboarding welcome wizard first run tour help'),
       {

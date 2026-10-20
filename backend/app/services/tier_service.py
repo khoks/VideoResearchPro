@@ -74,6 +74,8 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         # T-5.5.5 quota-metered resources (monthly counts).
         "qa_exchanges_per_month": 50,
         "knowledge_extractions_per_month": 10,
+        # S-8.3.2: enabled saved searches a tenant may hold (-1 = unlimited).
+        "saved_searches_active_cap": 0,
         "features": frozenset(
             {
                 "topic_jobs",
@@ -92,6 +94,7 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         "num_videos_cap": 250,
         "qa_exchanges_per_month": 1_000,
         "knowledge_extractions_per_month": 200,
+        "saved_searches_active_cap": 10,
         "features": frozenset(
             {
                 "topic_jobs",
@@ -114,6 +117,7 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         "num_videos_cap": 500,
         "qa_exchanges_per_month": -1,
         "knowledge_extractions_per_month": 2_000,
+        "saved_searches_active_cap": 50,
         "features": frozenset(
             {
                 "topic_jobs",

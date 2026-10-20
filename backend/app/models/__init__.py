@@ -30,6 +30,7 @@ from app.models.scheduled_run import ScheduledRun
 from app.models.session import Session
 from app.models.share import Share
 from app.models.shelf import Shelf
+from app.models.saved_search import SavedSearch
 from app.models.shelf_job import ShelfJob
 from app.models.suggestion_cache import SuggestionCache
 from app.models.tag import Tag
@@ -71,6 +72,7 @@ __all__ = [
     "Session",
     "Share",
     "Shelf",
+    "SavedSearch",
     "ShelfJob",
     "SuggestionCache",
     "Tag",

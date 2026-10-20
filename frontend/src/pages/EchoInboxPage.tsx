@@ -275,6 +275,14 @@ function ShareCard({ share, onDelete }: { share: Share; onDelete: () => void }) 
             {share.occurred_at ? ` · ${formatDate(share.occurred_at)}` : ''}
           </span>
         )}
+        {share.source?.url && (
+          <span style={metaStyle}>
+            From{' '}
+            <a href={share.source.url} target="_blank" rel="noopener noreferrer" style={{ color: c.accent, overflowWrap: 'anywhere' }}>
+              {share.source.title || share.source.url}
+            </a>
+          </span>
+        )}
         {share.processing?.title && (
           <div style={{ fontFamily: fonts.display, fontSize: fontSize.md, fontWeight: fontWeight.semibold, color: c.textPrimary }}>
             {share.processing.title}

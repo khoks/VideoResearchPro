@@ -143,6 +143,8 @@ export interface Share {
   occurred_at?: string | null;
   /** The importer's provenance: chat and sender, or note title and labels. */
   imported?: Record<string, unknown> | null;
+  /** S-3.7.3: the page a quote or an image came from. */
+  source?: { url?: string; title?: string } | null;
 }
 
 export interface ShareProcessing {
@@ -219,18 +221,38 @@ export interface ImportOptions {
   include_trashed?: boolean;
 }
 
+export type ShareSurface = 'manual_quick_share' | 'drag_drop' | 'browser_ext' | 'email_in' | 'os_share';
+
 export interface CreateSharePayload {
   url?: string;
   text?: string;
   annotation?: string | null;
   content_type?: string;
   author_is_tenant?: boolean;
+  surface?: ShareSurface;
+  source_url?: string;
+  source_title?: string;
 }
 
 export interface UploadShareFields {
   annotation?: string | null;
   content_type?: string;
   author_is_tenant?: boolean;
+  surface?: ShareSurface;
+}
+
+/** S-3.7.3: a token the browser extension adds shares with. */
+export interface ShareToken {
+  id: string;
+  label: string;
+  prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+/** Returned once, when the token is made. */
+export interface CreatedShareToken extends ShareToken {
+  token: string;
 }
 
 export interface UpdateSharePayload {
@@ -428,10 +450,21 @@ export const echoApi = {
     if (fields.annotation) form.append('annotation', fields.annotation);
     if (fields.content_type) form.append('content_type', fields.content_type);
     form.append('author_is_tenant', fields.author_is_tenant ? 'true' : 'false');
+    if (fields.surface) form.append('surface', fields.surface);
     return api
       .post<Share>('/echo/shares/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } })
       .then(r => r.data);
   },
+
+  /** S-3.7.3: share tokens for the browser extension. */
+  listShareTokens: () =>
+    api.get<{ items: ShareToken[]; max: number }>('/echo/share-tokens').then(r => r.data),
+
+  createShareToken: (label: string) =>
+    api.post<CreatedShareToken>('/echo/share-tokens', { label }).then(r => r.data),
+
+  revokeShareToken: (id: string) =>
+    api.delete<{ revoked: boolean }>(`/echo/share-tokens/${encodeURIComponent(id)}`).then(r => r.data),
 
   /** S-3.7.5: what importing this file would produce. Writes nothing. */
   previewImport: (file: File, options: ImportOptions = {}) =>

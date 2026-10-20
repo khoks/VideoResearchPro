@@ -266,6 +266,13 @@ class Settings(BaseSettings):
     ECHO_IMPORT_MAX_UNCOMPRESSED_BYTES: int = 1024 * 1024 * 1024
     ECHO_IMPORT_TURN_GAP_MIN: int = 10
     ECHO_IMPORT_TURN_MAX_CHARS: int = 2000
+    # S-3.7.3: share tokens (browser extension) per tenant, and fetching an
+    # image shared by its address. The fetch refuses hosts that resolve to
+    # private, loopback or link-local addresses unless the install allows it
+    # (a self-hosted LAN).
+    ECHO_SHARE_TOKENS_MAX: int = 10
+    ECHO_FETCH_TIMEOUT_SEC: int = 20
+    ECHO_FETCH_ALLOW_PRIVATE: bool = False
     # S-3.7.2 part 2: media shares. Images go through on-device OCR
     # (RapidOCR) first; a reading counts as confident when it has at least
     # ECHO_OCR_MIN_CHARS non-space characters at a mean box score of at

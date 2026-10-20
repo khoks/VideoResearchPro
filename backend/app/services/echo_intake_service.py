@@ -221,6 +221,21 @@ def _new_share(
     )
 
 
+def share_source(source_url: str | None, source_title: str | None) -> dict | None:
+    """Where a quote or an image came from (S-3.7.3): the page it was on.
+    Stored in the payload as ``source``; the URL is validated like any share
+    URL, and the title is trimmed."""
+    if not source_url and not source_title:
+        return None
+    out: dict = {}
+    if source_url:
+        out["url"] = validate_url(source_url)
+    title = " ".join((source_title or "").split())[:300]
+    if title:
+        out["title"] = title
+    return out or None
+
+
 def create_url_share(
     db: Session,
     tenant_id: str,
@@ -231,6 +246,7 @@ def create_url_share(
     content_type: str | None = None,
     author_is_tenant: bool = False,
     surface: str = "manual_quick_share",
+    source: dict | None = None,
 ) -> Share:
     url = validate_url(url)
     share = _new_share(
@@ -238,7 +254,7 @@ def create_url_share(
         user_id=user_id,
         surface=surface,
         content_type=content_type or infer_url_content_type(url),
-        payload={"kind": "url", "url": url},
+        payload={"kind": "url", "url": url, **({"source": source} if source else {})},
         annotation=annotation,
         author_is_tenant=author_is_tenant,
     )
@@ -258,6 +274,7 @@ def create_text_share(
     content_type: str | None = None,
     author_is_tenant: bool = False,
     surface: str = "manual_quick_share",
+    source: dict | None = None,
 ) -> Share:
     if not text or not text.strip():
         raise InvalidShare("text must not be blank")
@@ -271,7 +288,7 @@ def create_text_share(
         user_id=user_id,
         surface=surface,
         content_type=content_type or "text_snippet",
-        payload={"kind": "text", "text": text},
+        payload={"kind": "text", "text": text, **({"source": source} if source else {})},
         annotation=annotation,
         author_is_tenant=author_is_tenant,
         # The words are the content; no extraction step stands between them

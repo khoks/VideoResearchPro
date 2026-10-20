@@ -1067,6 +1067,15 @@ Share shape: `{ id, received_at, updated_at, surface, content_type, kind: "url"|
 - `POST /api/v1/echo/shares/{id}/process` — queue processing again (Retry). Idempotent: everything is re-derived from what arrived.
 - `POST /api/v1/echo/shares/{id}/library` — the library offer. For a link processing marked eligible, ingests it through the same path as `POST /library/paste-urls` (deduplicated, visible to the sharer only) and sets `linked_document_id`; a second call returns the same document. 409 for anything not eligible (text, files, YouTube links, unprocessed links), 422 when the page cannot be extracted.
 
+### Adding to Echo from outside the app (S-3.7.3)
+- **Share tokens.** `POST /api/v1/echo/shares` and `POST /api/v1/echo/shares/upload` accept, besides a session, `Authorization: Bearer pec_…`, a share token. A token is refused everywhere else (401), including the token routes themselves, so it cannot read anything or mint another. The Studio check runs on every use. A revoked or unknown token is 401.
+- `POST /api/v1/echo/share-tokens` — body `{ label }`; needs a session. 201 `{ id, label, prefix, created_at, last_used_at, token }`. The `token` is in this response only; only its SHA-256 hash is stored. 409 at `ECHO_SHARE_TOKENS_MAX` (10) active tokens.
+- `GET /api/v1/echo/share-tokens` — `{ items: [{ id, label, prefix, created_at, last_used_at }], max }`, active tokens only.
+- `DELETE /api/v1/echo/share-tokens/{id}` — `{ revoked: true }`; 404 for another tenant's or an already revoked token.
+- `GET /api/v1/echo/share-tokens/check` — for the extension's settings: `{ ok, email, via: "share_token" | "session" }`.
+- **Source.** `POST /api/v1/echo/shares` takes optional `source_url` (http/https, validated like a share URL) and `source_title`: the page a quote or an image came from. The share shape gains `source: { url, title }`.
+- **Images by address.** A URL share with `content_type: "image"`, or a URL ending in an image extension, is fetched by processing into the tenant's share directory, then read like an uploaded image. Hosts that resolve to private, loopback, link-local or other non-global addresses are refused, and so is every redirect into one, unless `ECHO_FETCH_ALLOW_PRIVATE` is set. Only image content types are kept, up to `ECHO_SHARE_MAX_BYTES`. A refused fetch fails the share with a reason, and Retry runs it again.
+
 ### Echo export-file imports (S-3.7.5)
 Studio (`echo_personal_brain`). Uploads are multipart `file`, plus `importer` (optional; detected otherwise) and `options` (a JSON object). Over `ECHO_IMPORT_MAX_BYTES` (200 MB) is 413. An empty file, an unknown format, a zip unpacking past `ECHO_IMPORT_MAX_UNCOMPRESSED_BYTES` or impossible options are 422. The upload is never stored.
 - `POST /api/v1/echo/import/preview` — what an import would produce; writes nothing. `{ importer, label, summary, participants: [{ name, messages }], options, warnings }`. `whatsapp` options: `self_name`, `redact_other_party`, `timezone` (IANA), `date_order` (`dmy`, `mdy`, `ymd`; inferred, with a warning when nothing decides it). `google_keep` options: `own_words` (default true), `include_trashed`.

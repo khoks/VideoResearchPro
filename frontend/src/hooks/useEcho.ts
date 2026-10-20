@@ -121,6 +121,29 @@ function useInvalidateShares() {
   };
 }
 
+// S-3.7.3: share tokens for the browser extension.
+const TOKENS_KEY = ['echo', 'share-tokens'] as const;
+
+export function useShareTokens(enabled = true) {
+  return useQuery({ queryKey: TOKENS_KEY, queryFn: () => echoApi.listShareTokens(), staleTime: 10_000, enabled });
+}
+
+export function useCreateShareToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (label: string) => echoApi.createShareToken(label),
+    onSuccess: () => qc.invalidateQueries({ queryKey: TOKENS_KEY }),
+  });
+}
+
+export function useRevokeShareToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => echoApi.revokeShareToken(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: TOKENS_KEY }),
+  });
+}
+
 // S-3.7.5: export-file imports.
 const IMPORTS_KEY = ['echo', 'imports'] as const;
 

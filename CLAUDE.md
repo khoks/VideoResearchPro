@@ -71,6 +71,9 @@ cd backend && ./venv/Scripts/python -m pytest tests/test_routers/test_jobs.py::t
 
 # Frontend type check
 cd frontend && npm run build
+
+# Browser extension's logic (S-3.7.3; Node's built-in runner, no install)
+cd extension && npm test
 ```
 
 ### One-shot launcher (recommended for dev)
@@ -318,6 +321,8 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `ECHO_SHARE_PROCESSING` | No | `celery` | How shares are processed after intake: `celery` (the `echo.process_share` task), `inline` (in the request, single-process dev) or `off` (the test suite) |
 | `ECHO_SHARE_EMBED_MAX_CHARS` | No | `2000` | Text embedded per share in `shares_global`: annotation, title and the opening of the extracted text |
 | `ECHO_IMPORT_MAX_BYTES` / `ECHO_IMPORT_MAX_UNCOMPRESSED_BYTES` | No | `200 MB` / `1 GB` | Caps on one export upload (S-3.7.5) and on what a zip may unpack to (a zip-bomb guard). Parsing streams, so memory stays flat |
+| `ECHO_SHARE_TOKENS_MAX` | No | `10` | Active share tokens per tenant (S-3.7.3): the browser extension's credential, accepted only by the share intake routes |
+| `ECHO_FETCH_TIMEOUT_SEC` / `ECHO_FETCH_ALLOW_PRIVATE` | No | `20` / `False` | Fetching an image shared by its address. Hosts resolving to private, loopback or link-local addresses are refused unless allowed (a self-hosted LAN) |
 | `ECHO_IMPORT_TURN_GAP_MIN` / `ECHO_IMPORT_TURN_MAX_CHARS` | No | `10` / `2000` | A WhatsApp chat is stored as turns: consecutive messages from one sender at most this many minutes apart, up to this many characters |
 | `ECHO_REMOTE_MEDIA` | No | `True` | Whether a shared image (vision fallback) or recording (Whisper) may go to a remote provider. Off, or a local-only tenant: images use on-device OCR only, recordings are skipped with a note |
 | `ECHO_OCR_MIN_CHARS` / `ECHO_OCR_MIN_CONFIDENCE` | No | `20` / `0.90` | When an on-device OCR reading is kept rather than sent to the vision fallback (measured: English 0.978+, Hindi and mixed 0.87 or less) |

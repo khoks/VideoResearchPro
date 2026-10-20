@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Add to Echo</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <h1>Add to Echo</h1>
+      <p id="page" class="muted">…</p>
+      <label for="why">Why does it matter? <span class="muted">(optional)</span></label>
+      <textarea id="why" rows="3" maxlength="5000" placeholder="In your words"></textarea>
+      <div class="row">
+        <button id="share" type="button">Add this page</button>
+        <a id="settings" href="#">Settings</a>
+      </div>
+      <p id="status" role="status"></p>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

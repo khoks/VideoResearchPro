@@ -321,3 +321,87 @@ def pdf_text(path: Path) -> PdfText:
     total = int((segments[0].get("extra") or {}).get("total_pages") or len(segments))
     text = "\n\n".join(s["text"] for s in segments if s.get("text"))
     return PdfText(text=text, pages_with_text=len(segments), total_pages=total)
+
+
+# ---------------------------------------------------------------------------
+# Images by address (S-3.7.3: "Add this image to Echo" from the extension)
+# ---------------------------------------------------------------------------
+
+_IMAGE_TYPES = {
+    "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif",
+    "image/bmp": ".bmp", "image/tiff": ".tiff",
+}
+_MAX_REDIRECTS = 3
+
+
+def _getaddrinfo(host: str, port: int):
+    """DNS, behind a seam so tests answer without touching the process-wide
+    resolver."""
+    import socket
+
+    return socket.getaddrinfo(host, port)
+
+
+def _http_client(**kwargs):
+    """The HTTP client for image fetches, behind a seam for the same reason."""
+    import httpx
+
+    return httpx.Client(**kwargs)
+
+
+def _public_address(url: str) -> None:
+    """Refuse a URL whose host resolves to a private, loopback, link-local or
+    otherwise non-public address, so a share cannot make the server fetch from
+    its own network. ``ECHO_FETCH_ALLOW_PRIVATE`` lifts this for a self-hosted
+    install whose images live on the LAN."""
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise MediaError("Only http(s) image addresses can be fetched.")
+    if settings.ECHO_FETCH_ALLOW_PRIVATE:
+        return
+    try:
+        infos = _getaddrinfo(parts.hostname, parts.port or (443 if parts.scheme == "https" else 80))
+    except OSError as e:
+        raise MediaError("The image's host could not be found.") from e
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if not ip.is_global or ip.is_multicast:
+            raise MediaError("That address points into a private network, so it is not fetched.")
+
+
+def fetch_image(url: str, dest_dir: Path, stem: str) -> tuple[Path, str]:
+    """Download an image the user shared by its address into ``dest_dir`` as
+    ``<stem><ext>``. Refuses non-public hosts (checked again on every
+    redirect), anything that is not an image, and anything over
+    ``ECHO_SHARE_MAX_BYTES``. Returns the path and the content type."""
+    current = url
+    with _http_client(timeout=settings.ECHO_FETCH_TIMEOUT_SEC, follow_redirects=False) as client:
+        for _ in range(_MAX_REDIRECTS + 1):
+            _public_address(current)
+            with client.stream("GET", current, headers={"User-Agent": "Pratidhvani-Echo/1"}) as resp:
+                if resp.is_redirect:
+                    location = resp.headers.get("location")
+                    if not location:
+                        raise MediaError("The image address redirects nowhere.")
+                    current = str(resp.url.join(location))
+                    continue
+                if resp.status_code != 200:
+                    raise MediaError(f"The image could not be fetched (HTTP {resp.status_code}).")
+                ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+                if ctype not in _IMAGE_TYPES:
+                    raise MediaError("That address does not serve an image.")
+                path = dest_dir / f"{stem}{_IMAGE_TYPES[ctype]}"
+                size = 0
+                with open(path, "wb") as fh:
+                    for chunk in resp.iter_bytes():
+                        size += len(chunk)
+                        if size > settings.ECHO_SHARE_MAX_BYTES:
+                            fh.close()
+                            path.unlink(missing_ok=True)
+                            raise MediaError("The image is larger than a share may be.")
+                        fh.write(chunk)
+                return path, ctype
+    raise MediaError("The image address redirects too many times.")

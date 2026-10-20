@@ -78,6 +78,7 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         "visual_extractions_per_month": 2,
         # S-8.3.2: enabled saved searches a tenant may hold (-1 = unlimited).
         "saved_searches_active_cap": 0,
+        "echo_drafts_per_day": 0,
         "features": frozenset(
             {
                 "topic_jobs",
@@ -98,6 +99,7 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         "knowledge_extractions_per_month": 200,
         "visual_extractions_per_month": 30,
         "saved_searches_active_cap": 10,
+        "echo_drafts_per_day": 0,
         "features": frozenset(
             {
                 "topic_jobs",
@@ -122,6 +124,8 @@ TIER_CAPABILITIES: dict[Tier, dict] = {
         "knowledge_extractions_per_month": 2_000,
         "visual_extractions_per_month": 300,
         "saved_searches_active_cap": 50,
+        # S-3.4.1: "speak as me" drafts per day (D-100, E-3.4).
+        "echo_drafts_per_day": 20,
         "features": frozenset(
             {
                 "topic_jobs",

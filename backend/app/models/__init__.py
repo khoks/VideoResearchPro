@@ -49,6 +49,7 @@ from app.models.user_credential import UserCredential
 from app.models.visual_frame import VisualFrame
 from app.models.voice_signal import VoiceSignal
 from app.models.voice_signal_input import VoiceSignalInput
+from app.models.echo_draft import EchoDraft, EchoVoiceGate
 
 __all__ = [
     "ActivityEvent",
@@ -103,4 +104,6 @@ __all__ = [
     "VisualFrame",
     "VoiceSignal",
     "VoiceSignalInput",
+    "EchoDraft",
+    "EchoVoiceGate",
 ]

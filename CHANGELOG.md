@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Added: saved searches (2026-10-19)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). S-8.3.2, plan [m3-saved-searches-alerts](docs/plans/m3-saved-searches-alerts.md).
+PR [#320](https://github.com/khoks/VideoResearchPro/pull/320). S-8.3.2, plan [m3-saved-searches-alerts](docs/plans/m3-saved-searches-alerts.md).
 
 - **Pin this question** on a library Q&A answer re-asks it daily, weekly or
   monthly at an hour in your zone (Pro and Studio; up to 10 and 50 active).

@@ -1737,8 +1737,8 @@ Outputter scaffolded by I-6 foundation; the schema's `kind="site"` is supported 
 - [x] T-8.3.1.4 Tests: due selection, disabled rows, fresh vs stale lease, duplicate tick, batch limit, clock skew (a tick inside `SCHEDULER_GRACE_SECONDS` runs the row and advances from the *scheduled* time, so nothing runs twice), DST spring-forward and fall-back, per-tier queue, no-handler, retry budget, corrupt cadence; plus the wiring tests (beat entry names the task, task registered, task calls the service) — *shipped 2026-10-19*
 
 #### S-8.3.2 🟢 Saved searches schema, REST and pin UI
-**PR:** [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)
-**Shipped:** 2026-10-19 — PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)
+**PR:** [#320](https://github.com/khoks/VideoResearchPro/pull/320)
+**Shipped:** 2026-10-19 — PR [#320](https://github.com/khoks/VideoResearchPro/pull/320)
 - [x] T-8.3.2.1 `saved_searches(id, tenant_id, question, answer_language, scope_json, notify_email, enabled, last_run_at, last_status, last_error, last_success_at, last_exchange_id, last_answer_hash, last_reference_ids_json, last_answer_embedding_json)` (migration `5d2e8b1f4a60`); the schedule is the `scheduled_runs` row of kind `saved_search`, the one home of the cadence and `next_run_at`; human presets only (`every` refused)
 - [x] T-8.3.2.2 `GET/POST/PATCH/DELETE /api/v1/saved-searches`, `POST /api/v1/saved-searches/{id}/run-now`; gated on `require_feature("saved_searches")`
 - [x] T-8.3.2.3 "Pin this question" on library Q&A answer cards; `/saved-searches` list page with last result and next run (plus run now, pause, schedule edit, email toggle, delete; sidebar and palette entries)

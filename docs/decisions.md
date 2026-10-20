@@ -2515,7 +2515,26 @@ regularised caption spelling. On run 5 the check drops exactly what the
 audit fails (4 of 37 and 12 of 51). Details in [section 12 of the detection
 note](notes/2026-10-19-code-mixing-detection.md#12-regression-invented-original-wording-and-the-fix-2026-10-19).
 
-**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1 to T-1.16.2.6, T-1.16.2.10), E-1.16, N-002, T-1.18.8.4.
+**Addendum (2026-10-19): the composed report is checked too, and romanised
+sources are quoted in Roman.** R1 run 7's composer translated an item's
+English back into Devanagari ("वेरी इंपॉर्टेंट लाइब्रेरी (very important
+library)") beside a verbatim `original`, so a map-level check alone cannot
+guarantee that non-English text in a report is speech. After composing,
+`quote_fidelity.scrub_report` looks every native-script run in the prose up
+in the corpus by the gate's rule. It removes each failing run and its
+transliteration, keeps the English, and counts and discloses the removal.
+Titles and channel names are admitted. On runs 5–7 it removes exactly what
+the gate fails (2, 8, 0, 0, 1, 0 per report) and leaves none failing. The
+same reasoning decides T-1.16.2.11: a source typed in Latin letters is
+quoted in Latin letters even when it is Hindi-dominant. N-002 had said
+Devanagari, but that means re-scripting the speaker's words, which this
+check would remove as unspoken. The rejected alternative was to transliterate
+before matching: no exact Devanagari-to-Roman transliterator exists here,
+and the reader would still see a script the speaker did not use. Details in
+[section 12 of the detection
+note](notes/2026-10-19-code-mixing-detection.md#12-regression-invented-original-wording-and-the-fix-2026-10-19).
+
+**Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1 to T-1.16.2.6, T-1.16.2.10 to T-1.16.2.13), E-1.16, N-002, T-1.18.8.4.
 
 ## D-081 — Frame describer default: spend against report-level quality (2026-10-19)
 
@@ -2873,4 +2892,4 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 - Revisit when a grounding check exists that tests each framing sentence against the chapters (for example an entailment pass) or a judge panel with a verified-flag protocol is fixed in advance.
 - `gemini-3.1-pro-preview` hit its daily request quota (250, shared across sessions) and `gemini-3.6-flash` judged instead, as the notes record.
 
-**Linked initiatives / PRs.** E-6.1 / S-6.1.3 (PR TBD), D-055 (judging method), D-056 (disclose, never drop), D-066, D-067.
+**Linked initiatives / PRs.** E-6.1 / S-6.1.3 (PR [#310](https://github.com/khoks/VideoResearchPro/pull/310)), D-055 (judging method), D-056 (disclose, never drop), D-066, D-067.

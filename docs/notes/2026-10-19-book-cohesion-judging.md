@@ -1,6 +1,6 @@
 # Book cohesion pass: blind judging (S-6.1.3)
 
-**Status:** protocol fixed before any edition was generated or judged (2026-10-19). Results are appended below the protocol; the protocol is not edited after the run.
+**Status:** complete (2026-10-19). Protocol fixed before any edition was generated or judged; results appended below it. Outcome: `none` stays the default ([D-093](../decisions.md#d-093--book-cohesion-pass-ships-opt-in-none-stays-the-default-after-two-blind-rounds-2026-10-19)).
 
 ## Question
 
@@ -83,3 +83,33 @@ Cost per book (from `usage_json`, registry defaults, prices as of 2026-10-19):
 The prompts change to target the real flags. Both prompts now forbid statements about the world outside the chapters and about how the book was made, and they refer to chapters by title. The prose call sees reading-order numbers, and glossary definitions are built only from what the chapters say, with a term left out when the chapters do not explain it. The chapters and the `none` editions are unchanged; only the `full` editions are regenerated.
 
 Judges: `openai:gpt-5.5:medium`, `anthropic:claude-opus-5:medium`, `google:gemini-3.6-flash:medium` (the Pro quota is still exhausted). The decision rule is unchanged, including rule 3's strict count. If round 2 meets all three rules, `full` becomes the default. Otherwise `none` stays the default, with `light` and `full` as opt-in. There is no round 3.
+
+### Round 2 (revised prompts)
+
+The full editions were regenerated with the revised prompts. Book 3 now has two parts, and no framing cites a chapter number.
+
+| Book | Judge | Prefers | Cohesion full / none | Orientation full / none | Accuracy of framing full / none | Flags on full |
+|---|---|---|---|---|---|---|
+| 1 | gpt-5.5 | full | 8 / 2 | 8 / 4 | 7 / 10 | 12 |
+| 1 | claude-opus-5 | full | 7 / 3 | 8 / 3 | 9 / 10 | 2 |
+| 1 | gemini-3.6-flash | full | 9 / 3 | 9 / 2 | 10 / 10 | 0 |
+| 2 | gpt-5.5 | full | 8 / 4 | 9 / 6 | 8 / 10 | 4 |
+| 2 | claude-opus-5 | full | 7 / 3 | 8 / 3 | 9 / 10 | 1 |
+| 2 | gemini-3.6-flash | full | 10 / 3 | 10 / 1 | 10 / 10 | 0 |
+| 3 | gpt-5.5 | full | 8 / 3 | 9 / 5 | 8 / 10 | 5 |
+| 3 | claude-opus-5 | full | 7 / 3 | 8 / 3 | 8 / 10 | 3 |
+| 3 | gemini-3.6-flash | full | 9 / 2 | 9 / 1 | 10 / 10 | 0 |
+
+- Rule 1: 9 of 9 prefer `full`. **Met.**
+- Rule 2: the non-Anthropic judges prefer `full` in 6 of 6. **Met.**
+- Rule 3: 27 flags, against at most 3. **Not met.** gpt-5.5 listed most of its sentences under both headings (book 1: 6 sentences, 12 flags), and the count follows the rule as written.
+
+**Round 2 outcome: `none` stays the default.** Recorded as [D-093](../decisions.md#d-093--book-cohesion-pass-ships-opt-in-none-stays-the-default-after-two-blind-rounds-2026-10-19).
+
+What the round 2 flags are (not part of the rule):
+- The edition disclosure line, again.
+- Claims about the world outside the chapters still slip through ("usually taught apart but rarely reflected on together").
+- Interpretive readings across chapters ("they trace a plausible arc from inspecting data visually to formalising it into a model"). Judges disagree on whether that is framing or misrepresentation: gemini-3.6-flash flagged none of them.
+- Characterisations of one chapter that a judge reads as overstated ("dated to their origin", "a single spectacular outcome").
+
+Cost per book in round 2: $0.111, $0.098 and $0.169 (books 1, 2, 3). A live book generated through the UI and the worker cost $0.10 against a $0.12 estimate.

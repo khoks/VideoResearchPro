@@ -43,6 +43,7 @@ from app.models.user import User
 from app.models.user_llm_override import UserLLMOverride
 from app.models.user_credential import UserCredential
 from app.models.visual_frame import VisualFrame
+from app.models.voice_signal import VoiceSignal
 
 __all__ = [
     "ApiQuotaLog",
@@ -89,4 +90,5 @@ __all__ = [
     "UserLLMOverride",
     "UserCredential",
     "VisualFrame",
+    "VoiceSignal",
 ]

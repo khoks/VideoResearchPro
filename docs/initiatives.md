@@ -935,20 +935,23 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.2.5.1 Google Calendar read-only; events `event_attended` with titles only by default (attendees and descriptions opt-in); derived `daily_routine` facts
 - [ ] T-3.2.5.2 Tests on fixtures
 
-### E-3.3 🔵 Voice & personality capture (Domain 3)
+### E-3.3 🟡 Voice & personality capture (Domain 3)
 
 **Scope.** Store user writing samples, Q&A patterns, opinion threads. Train fine-tune adapters on user-tagged content for persona.
 
 **Scope-changed 2026-10-18.** Mode A only in this epic: `voice_signals` as inspectable, editable, exportable, revocable rows, extracted by an LLM pass over the user's own text (notes from E-8.5, questions, journal entries, shares, outgoing messages from connectors), embedded with the personal facts for retrieval. Fine-tuning moves to E-3.9.
 **Acceptance.** After a user has written twenty notes and asked fifty questions, the Echo page shows a signals panel listing style and personality signals with the verbatim examples they were learned from; the user deletes one and it never returns; the user exports the profile as JSON; the "speak as me" agent (E-3.4) retrieves these signals and a blind judge prefers drafts with them over drafts without.
 
-#### S-3.3.1 🔵 `voice_signals` schema, CRUD and the signals panel
-**PR:** TBD
-- [ ] T-3.3.1.1 `voice_signals(id, tenant_id, user_id, signal_type, value, weight, examples_json, language, register, derived_from, consent_version, created_at, updated_at, suppressed_at)`; `signal_type` closed set covering the style and personality layers in `personal-brain.md` Domain 3; `language` ∈ {en, hi-Deva, hi-Latn, mixed} and `register` ∈ {intimate, casual, professional, public} because bilingual users measurably shift voice per language (see plan)
-- [ ] T-3.3.1.2 `GET/POST/PATCH/DELETE /echo/signals`, `GET /echo/signals/export`; suppression is a tombstone so re-extraction cannot resurrect a deleted signal
-- [ ] T-3.3.1.3 Signals panel on the Echo page grouped by type, with examples and a one-click "that's not me"
-- [ ] T-3.3.1.4 Isolation and tombstone tests
-- [ ] T-3.3.1.5 Register `voice_signals` for export and erasure (`echo_privacy_service.ECHO_TABLES`, `echo_vectors.echo_collection_names()`; [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 2); `echo_intake_service.delete_share` tombstones the signals listed in `derived_signal_ids_json`; signals derive only from the user's own words (`author_is_tenant`), never from context-only shares
+#### S-3.3.1 🟢 `voice_signals` schema, CRUD and the signals panel
+**Shipped:** 2026-10-19 — PR [#333](https://github.com/khoks/VideoResearchPro/pull/333)
+- [x] T-3.3.1.1 `voice_signals(id, tenant_id, user_id, signal_type, value, weight, examples_json, language, register, derived_from, consent_version, created_at, updated_at, suppressed_at)`; `signal_type` closed set covering the style and personality layers in `personal-brain.md` Domain 3; `language` ∈ {en, hi-Deva, hi-Latn, mixed} and `register` ∈ {intimate, casual, professional, public} because bilingual users measurably shift voice per language (see plan)
+- [x] T-3.3.1.2 `GET/POST/PATCH/DELETE /echo/signals`, `GET /echo/signals/export`; suppression is a tombstone so re-extraction cannot resurrect a deleted signal
+- [x] T-3.3.1.3 Signals panel on the Echo page grouped by type, with examples and a one-click "that's not me"
+- [x] T-3.3.1.4 Isolation and tombstone tests
+- [x] T-3.3.1.5 Register `voice_signals` for export and erasure (`echo_privacy_service.ECHO_TABLES`, `echo_vectors.echo_collection_names()`; [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 2); `echo_intake_service.delete_share` tombstones the signals listed in `derived_signal_ids_json`; signals derive only from the user's own words (`author_is_tenant`), never from context-only shares
+- [ ] T-3.3.1.6 List and restore rejected signals. The panel has no undo for "That's not me": re-adding a rejected signal is refused with a 422 that says so, and the profile export lists rejections under `rejected`. A "Rejected (N)" disclosure with **Restore** would clear `suppressed_at` for `suppressed_reason='user'` rows
+
+**As built.** `voice_signals` adds `value_key` (casefolded, whitespace-collapsed, quotes and full stops trimmed), the merge and tombstone key, and `origin` ∈ {user, llm, stylometry}. `suppressed_reason` tells the user's rejection (`user`, permanent) from a signal whose every source was deleted (`source_deleted`, which new evidence may re-derive). `echo_signal_service` owns the closed vocabularies (the schema `Literal`s are pinned to them by a test), `is_suppressed` (the check extraction calls before writing), and `withdraw_source(tenant, "share:<id>" | "note:<id>", signal_ids?)`, which drops a source's examples and provenance and is what `delete_share` calls. A separate router, `routers/echo_signals.py`, keeps this work clear of the intake and connector routes in `routers/echo.py`. `consent_version` is `2026-10-19`, stamped on every row.
 
 #### S-3.3.2 🔵 Signal extraction
 **PR:** TBD. Depends on E-8.5 (notes) for its richest input. That input exists since 2026-10-19 (S-8.5.1 / S-8.5.3): read live notes through `note_service.iter_notes(include_deleted=False)` and treat a withdrawn note as a reason to suppress any signal derived from it, not as a missing row ([D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19)).
@@ -1552,19 +1555,19 @@ Backend suite 835 → 855.
 - [ ] T-6.3.2.2 The create modal offers documents with a knowledge report beside runs
 - [ ] T-6.3.2.3 Tests: the same acceptance as S-6.3.1 (every content slide cites a linked source; uncited slides dropped and disclosed)
 
-### E-6.4 🔵 Newsletter / digest (recurring scheduled output)
+### E-6.4 🟡 Newsletter / digest (recurring scheduled output)
 
-`kind="newsletter"` reserved; outputter pending.
+`kind="newsletter"` ships with `NewsletterOutputter` (S-6.4.1, PR [#334](https://github.com/khoks/VideoResearchPro/pull/334), 2026-10-19); subscription and delivery (S-6.4.2) remain.
 
 **Scope (2026-10-18).** A periodic email digest: what entered the library since the last issue, new Q&As, a featured deep-dive (one report section or knowledge artifact), and pinned saved-search changes (E-8.3). Runs on the scheduler E-8.3 builds (S-8.3.1); sends through the existing `email_service`.
 **Acceptance.** A user enables a weekly digest; an issue is generated and emailed every week with only material newer than the previous issue; an issue with nothing new is skipped and says so in the outputs list; the digest is also readable in-app as an output.
 
-#### S-6.4.1 🔵 `NewsletterOutputter`
-**PR:** TBD. Depends on S-8.3.1.
-- [ ] T-6.4.1.1 `parameters_json` carries `since` (last issue timestamp) and section toggles; content from documents, exchanges and outputs newer than `since`, visible to the tenant
-- [ ] T-6.4.1.2 `author_newsletter_compose` use case for the featured section only; the rest is deterministic
-- [ ] T-6.4.1.3 Plain-HTML email template (no external CSS, inlined styles) plus a Markdown `content_text` for in-app reading
-- [ ] T-6.4.1.4 Tests: `since` boundary, empty issue skipped
+#### S-6.4.1 🟢 `NewsletterOutputter`
+**PR:** [#334](https://github.com/khoks/VideoResearchPro/pull/334) — *shipped 2026-10-19.* Linked decision: [D-097](decisions.md#d-097--newsletter-featured-section-ships-opt-in-the-rest-of-an-issue-is-listed-from-the-database-2026-10-19). The featured section was judged blind against the report's own summary under a rule fixed in advance ([notes](notes/2026-10-19-newsletter-featured-judging.md)). It was preferred in 12 of 12 verdicts but drew 16 unsupported-claim flags against a limit of 4, so it is **opt-in**. Three generation defects were found and fixed before judging: excerpts with no citation markers, invented markers that resolved, and doubled timestamps. The plan's premailer was not needed; a tag-to-style map inlines the email styles.
+- [x] T-6.4.1.1 `parameters` carry `since` / `until` (ISO; `since` defaults to the reader's last issue, else seven days) and `sections` (featured, library, knowledge, questions, saved_searches, outputs; unknown names refused); lists are documents new to this reader by visibility grant (D-063), knowledge reports, the reader's job / library / history Q&A, saved searches whose answer changed, and completed outputs, each in `(since, until]`; the resolved window, counts and featured source are written back to the row — *shipped 2026-10-19*
+- [x] T-6.4.1.2 `author_newsletter_compose` (anthropic claude-sonnet-5 low, guidance entry) writes the featured deep-dive only, from one report or knowledge report: one new in the window, else the least recently featured (resurfacing the reader's own library). The excerpt is the summary plus the report's cited points, and only markers shown to the model can become links. A section citing nothing, or a failed call, falls back to the source's own summary with a processing note. **Off by default** per [D-097](decisions.md#d-097--newsletter-featured-section-ships-opt-in-the-rest-of-an-issue-is-listed-from-the-database-2026-10-19). About $0.016 per issue — *shipped 2026-10-19*
+- [x] T-6.4.1.3 `templates/newsletter/email.html`: a table layout with inline styles, a tag-to-style map applied to the rendered issue, and no `<style>`, `<link>`, images or scripts; links are absolute to `APP_BASE_URL`. The email is `artifact.html` (Download HTML); `content_text` is the Markdown issue (the reader and the email's plain-text part) — *shipped 2026-10-19*
+- [x] T-6.4.1.4 `test_newsletter_outputter.py` (12 tests): the window boundaries (a grant exactly at `since` is out, one at `until` in); an empty issue ends with the new `skipped` status and its reason, with no files; section toggles and unknown names; featured markers linked, unknown and unshown ones dropped, citations recorded; both fallbacks disclosed; resurfacing; a self-contained email; `since` defaulting to the last issue; router validation and the estimate; featured off by default with no model call — *shipped 2026-10-19*
 
 #### S-6.4.2 🔵 Subscription and delivery
 **PR:** TBD

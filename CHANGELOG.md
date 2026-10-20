@@ -10,6 +10,35 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Newsletter issues (2026-10-19, S-6.4.1)
+
+PR [#334](https://github.com/khoks/VideoResearchPro/pull/334). Decision [D-097](docs/decisions.md#d-097--newsletter-featured-section-ships-opt-in-the-rest-of-an-issue-is-listed-from-the-database-2026-10-19); judging [notes](docs/notes/2026-10-19-newsletter-featured-judging.md).
+
+- **New newsletter** on the Author page lists what is new to you in a
+  period: sources, knowledge reports, your questions, saved searches whose
+  answer changed, and what you made. You can read it in the app or download
+  it as an email-ready HTML file.
+- **Nothing new, no issue**: the output is marked *Skipped* with the reason.
+- **Featured deep-dive, opt-in.** A model writes about one report from your
+  library, linking each sentence to its source. Blind judges preferred it
+  every time but flagged too many sentences pinned to the wrong moment, so
+  it is off by default. About $0.02 an issue.
+
+### Added: Echo's signals panel (S-3.3.1, 2026-10-19)
+
+PR [#333](https://github.com/khoks/VideoResearchPro/pull/333). Plan [l3-echo-personal-brain](docs/plans/l3-echo-personal-brain.md), Domain 3.
+
+- The Echo page gains **How you sound**: what Echo has learned about how you
+  write and what you think, as rows you can read, correct and add to, each with
+  the verbatim examples behind it.
+- **That's not me** removes a signal for good: it is kept as a tombstone so
+  that Echo never learns it again, and re-adding it is refused.
+- **Export voice profile** downloads the signals as JSON. Signals are part of
+  the whole-brain export and the full delete, and deleting a share withdraws
+  it as evidence from every signal it fed.
+- Automatic learning from your notes and questions is the next story (S-3.3.2);
+  until then the panel holds what you add.
+
 ### Added: saved-search alerts (2026-10-19)
 
 PR [#328](https://github.com/khoks/VideoResearchPro/pull/328). S-8.3.3, plan [m3-saved-searches-alerts](docs/plans/m3-saved-searches-alerts.md).

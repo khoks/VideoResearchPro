@@ -62,7 +62,7 @@ export function EchoDataCard() {
         Your Echo data
       </h2>
       <p style={text}>
-        One archive holds every fact and share Echo keeps, with the files: a manifest, one JSON Lines file per table, and the
+        One archive holds every fact, share and signal Echo keeps, with the files: a manifest, one JSON Lines file per table, and the
         files byte for byte. Your notes and the research library are not part of Echo and are not touched here.
       </p>
 
@@ -105,7 +105,7 @@ export function EchoDataCard() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: space['3'] }}>
             <p style={text}>
               This removes {footprintTotal(fp)} {footprintTotal(fp) === 1 ? 'item' : 'items'} from every place Echo keeps them:
-              the facts and shares tables, the shared files, and the search vectors. There is no undo. Export first if you want a copy.
+              the facts, shares and signals tables, the shared files, and the search vectors. There is no undo. Export first if you want a copy.
             </p>
             <FootprintLine fp={fp} />
             <label style={{ display: 'flex', flexDirection: 'column', gap: space['1'], fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textSecondary }}>
@@ -123,10 +123,12 @@ function FootprintLine({ fp }: { fp: EchoFootprint }) {
   const c = useColors();
   const facts = fp.rows.personal_context ?? 0;
   const shares = fp.rows.shares_inbox ?? 0;
+  const signals = fp.rows.voice_signals ?? 0;
   const vectors = Object.values(fp.vectors).reduce((a, b) => a + b, 0);
   const parts = [
     `${facts} ${facts === 1 ? 'fact' : 'facts'}`,
     `${shares} ${shares === 1 ? 'share' : 'shares'}`,
+    `${signals} ${signals === 1 ? 'signal' : 'signals'}`,
     `${fp.files} ${fp.files === 1 ? 'file' : 'files'}`,
     `${vectors} search ${vectors === 1 ? 'vector' : 'vectors'}`,
   ];

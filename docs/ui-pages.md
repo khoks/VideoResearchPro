@@ -358,7 +358,7 @@ Sections: **What you can make** (one card per kind from `GET /author/kinds`: `av
 ### `EchoPage` — `/echo` (Studio)
 **Purpose.** Echo's personal-context store. Backend: `backend/app/routers/echo.py`. Honest about scope: the store and readiness gates are real; connectors (E-3.2) and the "speak as me" agent (E-3.4) are not, and the page says so wherever it would otherwise imply them.
 
-Sections: **Readiness**, **Connectors** (with **Sources on record**), **What Echo knows** (grouped by the 10 kinds), **Your Echo data** (S-3.10.1 / S-3.10.2), a **Not here yet** footer, and three modals (add / edit, forget, revoke). The subtitle links to the shares inbox.
+Sections: **Readiness**, **Connectors** (with **Sources on record**), **What Echo knows** (grouped by the 10 kinds), **How you sound** (S-3.3.1), **Your Echo data** (S-3.10.1 / S-3.10.2), a **Not here yet** footer, and three modals (add / edit, forget, revoke). The subtitle links to the shares inbox.
 
 | State | What renders |
 |-------|--------------|
@@ -369,9 +369,10 @@ Sections: **Readiness**, **Connectors** (with **Sources on record**), **What Ech
 | Add / edit modal | Kind, label (≤128 chars, no `/` because the key travels as a path segment; warns when the label already exists under that kind and would overwrite), the fact, confidence 0–1, optional expiry date (sent as end-of-day UTC). Source is always `manual`. |
 | Loading | Skeleton rows / paragraphs per card. |
 | Error | Inline retry line per card; the browser uses an editorial error state with Retry. |
-| Your Echo data | `EchoDataCard`: what the archive holds, then "Echo holds: N facts · N shares · N files · N search vectors" from `GET /echo/brain/footprint`. **Export everything** downloads the zip through an authenticated blob fetch (no token in the URL). **Delete everything Echo knows** opens a modal that restates the counts, says there is no undo, and enables **Delete permanently** only after the user types DELETE; the toast reports "Echo now holds nothing about you." when the server's after-count is zero. Both buttons are disabled when Echo holds nothing. |
+| How you sound | `SignalsPanel` (S-3.3.1): what Echo learned about the user's style and personality, from `GET /echo/signals`. Two layers, **How you write** (style) and **What you think** (personality), each with an **Add** button; inside a layer, one block per signal type that has signals, in the vocabulary's order. A row shows the signal, its language and audience pills when set, where it came from ("You added this", "Learned from your writing", "Measured from your writing") with the evidence in words ("from 2 × a note, a question you asked", never a raw id), and a collapsible list of up to five verbatim examples. **Edit** corrects the wording, language or audience (the type is locked). **That's not me** confirms, then `DELETE /echo/signals/{id}`: a tombstone, so the signal leaves the list and is never learned again; re-adding it is refused with a toast that says so. An empty layer says signals appear as Echo reads notes and questions. **Export voice profile** downloads `GET /echo/signals/export`. The footer names the learning-terms version and that shares the user did not write never shape signals. Actions wrap under the signal at phone width. |
+| Your Echo data | `EchoDataCard`: what the archive holds, then "Echo holds: N facts · N shares · N signals · N files · N search vectors" from `GET /echo/brain/footprint`. **Export everything** downloads the zip through an authenticated blob fetch (no token in the URL). **Delete everything Echo knows** opens a modal that restates the counts, says there is no undo, and enables **Delete permanently** only after the user types DELETE; the toast reports "Echo now holds nothing about you." when the server's after-count is zero. Both buttons are disabled when Echo holds nothing. |
 
-Pure logic (gates, grouping, expiry, label validation) lives in `frontend/src/utils/echoReadiness.ts`.
+Pure logic (gates, grouping, expiry, label validation) lives in `frontend/src/utils/echoReadiness.ts`; the signal vocabularies, grouping and evidence wording in `frontend/src/utils/echoSignals.ts`.
 
 ### `EchoInboxPage` — `/echo/inbox` (Studio)
 **Purpose.** The shares inbox (S-3.7.1): everything the user handed to Echo, newest first, with no approval step. Same Studio lock as `EchoPage`. Header: back link to Echo and an **Add to Echo** button.
@@ -488,7 +489,7 @@ These pages are defined ahead of time so today's components have a place to land
 | `/author` | **built** (2026-10-19) as a single page, see [`AuthorPage`](#authorpage--author-pro) | [feature-roadmap.md](feature-roadmap.md) |
 | `/author/books` / `/author/sites` / `/author/decks` | L2; per-kind sub-routes only if the single page outgrows its kind filter | [feature-roadmap.md](feature-roadmap.md) |
 | `/brain` | **built** (2026-10-19) as `/echo`, see [`EchoPage`](#echopage--echo-studio) | [personal-brain.md](personal-brain.md) |
-| `/brain/context` / `/brain/activity` / `/brain/voice` | L3; context lives on `/echo` today, activity and voice await E-3.2 / E-3.3 | [personal-brain.md](personal-brain.md) |
+| `/brain/context` / `/brain/activity` / `/brain/voice` | L3; context and voice signals (S-3.3.1) live on `/echo` today, activity awaits E-3.2 | [personal-brain.md](personal-brain.md) |
 | `/settings` | M (foundational) | [ui-design.md](ui-design.md) |
 | `/billing` | L5 (SaaS) | [saas-roadmap.md](saas-roadmap.md) |
 

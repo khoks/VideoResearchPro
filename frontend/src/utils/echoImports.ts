@@ -8,7 +8,25 @@
 const IMPORTER_LABELS: Record<string, string> = {
   whatsapp: 'WhatsApp chat',
   google_keep: 'Google Keep notes',
+  google_takeout: 'Google Takeout',
+  spotify_export: 'Spotify history',
+  goodreads_export: 'Goodreads library',
+  letterboxd_export: 'Letterboxd films',
+  strava_export: 'Strava activities',
+  apple_health_export: 'Apple Health',
 };
+
+/** What one event is called, per importer, for the counts line. */
+const EVENT_NOUN: Record<string, [string, string]> = {
+  google_takeout: ['YouTube history entry', 'YouTube history entries'],
+  spotify_export: ['play', 'plays'],
+  goodreads_export: ['book', 'books'],
+  letterboxd_export: ['film entry', 'film entries'],
+  strava_export: ['activity', 'activities'],
+};
+
+/** Importers that write shares (and so have authorship to report). */
+const SHARE_IMPORTERS = new Set(['whatsapp', 'google_keep', 'google_takeout']);
 
 export function importerLabel(name: string): string {
   return IMPORTER_LABELS[name] ?? name.replace(/_/g, ' ');
@@ -42,8 +60,24 @@ function plural(count: number, one: string, many: string): string {
  */
 export function importCountsLine(importer: string, counts: Record<string, number | undefined>): string {
   const shares = n(counts, 'shares');
-  const unit = importer === 'google_keep' ? ['note', 'notes'] : ['turn', 'turns'];
-  const parts = [`${plural(shares, unit[0], unit[1])}: ${n(counts, 'own_words').toLocaleString()} in your words, ${n(counts, 'context_only').toLocaleString()} context only`];
+  const unit = importer === 'whatsapp' ? ['turn', 'turns'] : ['note', 'notes'];
+  const parts: string[] = [];
+  if (SHARE_IMPORTERS.has(importer) && (shares || !n(counts, 'events'))) {
+    parts.push(`${plural(shares, unit[0], unit[1])}: ${n(counts, 'own_words').toLocaleString()} in your words, ${n(counts, 'context_only').toLocaleString()} context only`);
+  }
+  const events = n(counts, 'events');
+  const held = n(counts, 'events_already_held');
+  if (events || held || EVENT_NOUN[importer]) {
+    const noun = EVENT_NOUN[importer] ?? ['event', 'events'];
+    parts.push(`${plural(events, noun[0], noun[1])} recorded`);
+    if (held) parts.push(`${held.toLocaleString()} already in Echo`);
+  }
+  const facts = n(counts, 'facts');
+  if (facts) parts.push(`${plural(facts, 'routine summary', 'routine summaries')}`);
+  const privateSkipped = n(counts, 'private_session_skipped');
+  if (privateSkipped) parts.push(`${plural(privateSkipped, 'private-session play', 'private-session plays')} left out`);
+  const ads = n(counts, 'ads_skipped');
+  if (ads) parts.push(`${plural(ads, 'ad', 'ads')} left out`);
   const redacted = n(counts, 'redacted_messages');
   if (redacted) parts.push(`${plural(redacted, "of the other side's messages", "of the other side's messages")} not stored`);
   const trashed = n(counts, 'skipped_trashed');

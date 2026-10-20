@@ -148,3 +148,93 @@ class _NonClosing(io.RawIOBase):
 
     def close(self) -> None:  # leave the underlying file open
         super().close()
+
+
+# ---------------------------------------------------------------------------
+# Streaming readers for the exports' formats (S-3.7.5 part 2)
+# ---------------------------------------------------------------------------
+
+
+def iter_json_array(stream, *, chunk: int = 65536):
+    """Yield the items of a top-level JSON array one at a time, reading the
+    text stream in chunks: a 100 MB history file never sits in memory whole.
+    Raises ``ExportUnreadable`` for anything but a well-formed array."""
+    import json
+
+    decoder = json.JSONDecoder()
+    buf = ""
+    eof = False
+    started = False
+
+    def more() -> None:
+        nonlocal buf, eof
+        data = stream.read(chunk)
+        if not data:
+            eof = True
+        buf += data
+
+    more()
+    while True:
+        i = 0
+        n = len(buf)
+        while i < n and buf[i] in " \t\r\n":
+            i += 1
+        if i >= n:
+            if eof:
+                raise ExportUnreadable("The JSON file ends before its list does.")
+            buf = ""
+            more()
+            continue
+        if not started:
+            if buf[i] != "[":
+                raise ExportUnreadable("This JSON file is not a list of records.")
+            started = True
+            buf = buf[i + 1:]
+            continue
+        ch = buf[i]
+        if ch == "]":
+            return
+        if ch == ",":
+            buf = buf[i + 1:]
+            continue
+        try:
+            item, end = decoder.raw_decode(buf, i)
+        except json.JSONDecodeError:
+            if eof:
+                raise ExportUnreadable("The JSON file is damaged.") from None
+            buf = buf[i:]
+            more()
+            continue
+        yield item
+        buf = buf[end:]
+
+
+def parse_datetime(value: str | None, formats: tuple[str, ...] = ()):
+    """An aware UTC datetime from the timestamps exports use: ISO 8601 (with
+    ``Z``), or one of ``formats`` (read as UTC when they carry no zone).
+    None when nothing matches."""
+    from datetime import datetime, timezone
+
+    text = (value or "").strip()
+    if not text:
+        return None
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        dt = None
+        for fmt in formats:
+            try:
+                dt = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+        if dt is None:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def find_members(source: "ImportSource", pattern) -> list[str]:
+    """Zip members whose path matches ``pattern`` (a compiled regex)."""
+    return [n for n in source.member_names() if pattern.search(n)]

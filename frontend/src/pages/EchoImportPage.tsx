@@ -45,6 +45,9 @@ export function EchoImportPage() {
   const [dateOrder, setDateOrder] = useState<'dmy' | 'mdy' | ''>('');
   const [ownWords, setOwnWords] = useState(true);
   const [includeTrashed, setIncludeTrashed] = useState(false);
+  const [includeKeep, setIncludeKeep] = useState(true);
+  const [includeYoutube, setIncludeYoutube] = useState(true);
+  const [windowDays, setWindowDays] = useState(365);
   const [undoing, setUndoing] = useState<EchoImportItem | null>(null);
 
   const imports = useImports(allowed);
@@ -66,6 +69,9 @@ export function EchoImportPage() {
     setDateOrder('');
     setOwnWords(true);
     setIncludeTrashed(false);
+    setIncludeKeep(true);
+    setIncludeYoutube(true);
+    setWindowDays(365);
   };
 
   const reset = () => {
@@ -83,6 +89,10 @@ export function EchoImportPage() {
       };
     }
     if (preview?.importer === 'google_keep') return { own_words: ownWords, include_trashed: includeTrashed };
+    if (preview?.importer === 'google_takeout') {
+      return { own_words: ownWords, include_trashed: includeTrashed, include_keep: includeKeep, include_youtube: includeYoutube };
+    }
+    if (preview?.importer === 'apple_health_export') return { window_days: windowDays };
     return {};
   };
 
@@ -147,8 +157,11 @@ export function EchoImportPage() {
           Import an export
         </h1>
         <p style={{ fontFamily: fonts.body, fontSize: fontSize.base, color: c.textSecondary, margin: `${space['2']} 0 0`, lineHeight: lineHeight.normal, maxWidth: measure.reading }}>
-          Bring in a WhatsApp chat export (the .txt, or the .zip with media) or Google Keep notes from Google Takeout.
-          You see what it holds before anything is stored, the file itself is never kept, and any import can be undone.
+          Bring in what other services let you download: a WhatsApp chat (.txt or .zip), a Google Takeout archive (Keep
+          notes, YouTube watch and search history), Spotify listening history, a Goodreads library, a Letterboxd export,
+          Strava activities, or an Apple Health export. You see what it holds before anything is stored, the file itself is
+          never kept, and any import can be undone. Exports larger than the upload limit, like most Apple Health exports,
+          go in with <code>backend/scripts/echo_import.py</code>.
         </p>
       </header>
 
@@ -241,7 +254,33 @@ export function EchoImportPage() {
                     </>
                   )}
 
-                  {preview.importer === 'google_keep' && (
+                  {preview.importer === 'google_takeout' && (
+                    <>
+                      <label style={{ display: 'flex', gap: space['2'], alignItems: 'center', fontFamily: fonts.ui, fontSize: fontSize.base, color: c.textPrimary }}>
+                        <input type="checkbox" checked={includeKeep} onChange={(e) => setIncludeKeep(e.target.checked)} style={{ accentColor: c.accent }} />
+                        Keep notes
+                      </label>
+                      <label style={{ display: 'flex', gap: space['2'], alignItems: 'center', fontFamily: fonts.ui, fontSize: fontSize.base, color: c.textPrimary }}>
+                        <input type="checkbox" checked={includeYoutube} onChange={(e) => setIncludeYoutube(e.target.checked)} style={{ accentColor: c.accent }} />
+                        YouTube watch and search history
+                      </label>
+                    </>
+                  )}
+
+                  {preview.importer === 'apple_health_export' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: space['2'], flexWrap: 'wrap' }}>
+                      <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textSecondary }}>Summarise the last</span>
+                      <div style={{ width: 160 }}>
+                        <Select value={String(windowDays)} onChange={(e) => setWindowDays(Number(e.target.value))} aria-label="Window">
+                          <option value="90">3 months</option>
+                          <option value="365">year</option>
+                          <option value="730">2 years</option>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
+
+                  {(preview.importer === 'google_keep' || (preview.importer === 'google_takeout' && includeKeep)) && (
                     <>
                       <label style={{ display: 'flex', gap: space['2'], alignItems: 'center', fontFamily: fonts.ui, fontSize: fontSize.base, color: c.textPrimary }}>
                         <input type="checkbox" checked={ownWords} onChange={(e) => setOwnWords(e.target.checked)} style={{ accentColor: c.accent }} />
@@ -347,8 +386,8 @@ export function EchoImportPage() {
           }
         >
           <p style={{ margin: 0, fontFamily: fonts.body, fontSize: fontSize.base, color: c.textSecondary, lineHeight: lineHeight.normal }}>
-            Everything this import stored ({importCountsLine(undoing.importer, undoing.counts)}) is deleted, with anything Echo derived from it. Shares you
-            added yourself are not touched.
+            Everything this import added ({importCountsLine(undoing.importer, undoing.counts)}) is deleted, with anything Echo derived from it. Things
+            another import or you added yourself are not touched.
           </p>
         </Modal>
       )}
@@ -363,6 +402,33 @@ function summaryLine(pv: ImportPreview): string {
   if (pv.importer === 'whatsapp') {
     const chat = s.chat ? `with ${String(s.chat)}: ` : '';
     return `${chat}${num('messages').toLocaleString()} messages${span}, stored as ${num('turns').toLocaleString()} turns. ${num('media').toLocaleString()} media files are noted, not imported.`;
+  }
+  if (pv.importer === 'google_takeout') {
+    return `${num('notes').toLocaleString()} Keep notes, ${num('watched').toLocaleString()} watched videos and ${num('searches').toLocaleString()} searches${span}. Ads are left out.`;
+  }
+  if (pv.importer === 'spotify_export') {
+    const artists = Object.keys((s.top_artists as Record<string, number>) ?? {}).slice(0, 3).join(', ');
+    return `${num('plays').toLocaleString()} plays (${num('hours')} hours)${span}${artists ? `, most of all ${artists}` : ''}. Private-session plays are left out.`;
+  }
+  if (pv.importer === 'goodreads_export') {
+    return `${num('books').toLocaleString()} books: ${num('read')} read, ${num('reading')} reading, ${num('want_to_read')} to read; ${num('reviewed')} with your review.`;
+  }
+  if (pv.importer === 'letterboxd_export') {
+    return `${num('watched').toLocaleString()} films watched, ${num('reviews')} reviews, ${num('watchlist')} on the watchlist${span}.`;
+  }
+  if (pv.importer === 'strava_export') {
+    return `${num('activities').toLocaleString()} activities${span}; ${num('described')} with your description. Routes are not read.`;
+  }
+  if (pv.importer === 'apple_health_export') {
+    const facts = (s.facts as Record<string, Record<string, unknown>>) ?? {};
+    const sleep = facts.sleep;
+    const steps = facts.steps;
+    const bits = [
+      sleep ? `${sleep.median_hours_asleep} hours of sleep a night, to bed about ${sleep.typical_bedtime}` : null,
+      steps ? `${Number(steps.median_daily_steps).toLocaleString()} steps a day` : null,
+      facts.workouts ? `${facts.workouts.per_week} workouts a week` : null,
+    ].filter(Boolean);
+    return `Read ${num('records_read').toLocaleString()} records: ${bits.join('; ')}. Only these summaries are kept.`;
   }
   if (pv.importer === 'google_keep') {
     const trashed = num('trashed') ? `, ${num('trashed')} in the trash` : '';

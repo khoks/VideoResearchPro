@@ -17,6 +17,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Iterable
 
+from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
 from app.connectors.base import ActivityEvent as EventIn
@@ -39,11 +40,13 @@ def _payload(event: EventIn) -> str:
     return json.dumps(event.payload or {}, ensure_ascii=False, sort_keys=True, default=str)
 
 
-def store_events(db: Session, tenant_id: str, connector: str, events: Iterable[EventIn]) -> dict[str, int]:
+def store_events(db: Session, tenant_id: str, connector: str, events: Iterable[EventIn],
+                 *, batch_size: int = _BATCH) -> dict[str, int]:
     """Insert new events and refresh known ones. Returns
     ``{"added": n, "updated": n, "unchanged": n}``. Commits per batch, so a
     long backfill keeps what it stored if it fails part-way (the next sync
-    resumes idempotently)."""
+    resumes idempotently). Export imports pass a larger ``batch_size``: a
+    commit costs about 25 ms on SQLite, which dominated a 200k-event import."""
     counts = {"added": 0, "updated": 0, "unchanged": 0}
     batch: dict[str, EventIn] = {}
 
@@ -58,6 +61,7 @@ def store_events(db: Session, tenant_id: str, connector: str, events: Iterable[E
                 ActivityEvent.external_id.in_(list(batch)),
             )
         }
+        new_rows = []
         for external_id, ev in batch.items():
             fields = {
                 "event_type": ev.event_type,
@@ -68,10 +72,10 @@ def store_events(db: Session, tenant_id: str, connector: str, events: Iterable[E
             }
             row = existing.get(external_id)
             if row is None:
-                db.add(ActivityEvent(
-                    tenant_id=tenant_id, user_id=tenant_id, connector=connector,
-                    external_id=external_id, **fields,
-                ))
+                new_rows.append({
+                    "tenant_id": tenant_id, "user_id": tenant_id, "connector": connector,
+                    "external_id": external_id, **fields,
+                })
                 counts["added"] += 1
             elif any(getattr(row, k) != v for k, v in fields.items()):
                 for k, v in fields.items():
@@ -80,6 +84,9 @@ def store_events(db: Session, tenant_id: str, connector: str, events: Iterable[E
                 counts["updated"] += 1
             else:
                 counts["unchanged"] += 1
+        if new_rows:
+            # One executemany per batch; ORM objects cost several times more.
+            db.execute(insert(ActivityEvent), new_rows)
         db.commit()
         batch.clear()
 
@@ -87,7 +94,7 @@ def store_events(db: Session, tenant_id: str, connector: str, events: Iterable[E
         if not ev.external_id:
             raise ValueError(f"{connector}: an event without external_id cannot be stored idempotently")
         batch[ev.external_id] = ev  # the same id twice in a batch: last wins
-        if len(batch) >= _BATCH:
+        if len(batch) >= batch_size:
             flush()
     flush()
     return counts

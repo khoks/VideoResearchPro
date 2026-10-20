@@ -31,3 +31,29 @@ Embedding is bound by the embedder. `paraphrase-multilingual-MiniLM-L12-v2` enco
 - The 200 MB upload cap (`ECHO_IMPORT_MAX_BYTES`) holds about 2 million messages. Parsing it takes about 45 s per pass, and an import makes two passes.
 - Import and undo run in the request; embedding runs in the background.
 - One cascade serves every delete path. `delete_share` now calls `delete_shares`, so anything added to the cascade later, such as voice-signal tombstones, covers undo as well.
+
+## Part 2 — event importers and Apple Health
+
+**What was measured.** Synthetic exports in each service's format against a scratch SQLite database: Spotify's extended streaming history (200,000 plays in files of 16,000, 2% private-session), a Takeout `watch-history.json` (100,000 entries), and Apple Health `export.xml` files with a day's records as a watch and phone write them (200 step samples from two sources, 500 heart-rate samples with metadata, 600 active-energy samples, 20 sleep-stage segments, a workout every other day). Same machine as part 1. Real exports have more record types; the per-record costs should carry over.
+
+### Apple Health parse
+
+| Export | Records | Size | Seconds | Peak working set |
+|---|---|---|---|---|
+| One year, as first written | 481,800 | 136 MB | 2.1 | 86 MB (36 MB before the parse) |
+| Five years, as first written | 2,409,000 | 679 MB | 32.0 | 266 MB |
+| Five years, root cleared | 2,409,000 | 679 MB | 23.0 | 50 MB |
+
+`iterparse` with `elem.clear()` is the usual advice, and it is not enough: a cleared element stays in its parent's child list, so memory grew by about 95 bytes a record. A ten-year export of 20 million records would have needed 2 GB. Clearing the root after each top-level element holds memory flat. What remains is the per-day totals and the sleep segments, about 14 MB for five years. A test pins it: the root has no children after a parse.
+
+### Event import, re-import, undo
+
+| Step | Spotify, 196,033 plays (5.2 MB zipped) | Takeout, 100,000 watches (2.3 MB zipped) |
+|---|---|---|
+| Preview | 4.4 s | 2.0 s (3.7 s before the URL fast path) |
+| Import, ORM rows, a commit every 200 | 53.1 s | 43.0 s |
+| Import, one `executemany` and commit per 1,000 | 33.3 s | 23.4 s |
+| Re-import (all already held) | 9.0 s | 5.3 s |
+| Undo | 4.4 s | 8.8 s |
+
+A commit costs about 25 ms here, so S-3.2.1's 200-row batches spent 25 s of a 200k-event import on commits alone. The writer now inserts new rows with one `executemany` and takes a `batch_size`, which the importers set to 1,000; its default, and so the API connectors' behaviour, is unchanged. Parsing ran twice (preview, then import), and for Takeout a third of it was `urlsplit` and `parse_qs` on each URL; nearly every entry is a plain `https://www.youtube.com/watch?v=` address, which now takes a fast path. What is left is SQLite maintaining three indexes on a growing table. A heavy listener's lifetime history imports in well under a minute, in the request, as in part 1.

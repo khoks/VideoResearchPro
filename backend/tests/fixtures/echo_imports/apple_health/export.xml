@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE HealthData [
+<!ELEMENT HealthData (ExportDate,Me,(Record|Correlation|Workout|ActivitySummary)*)>
+]>
+<HealthData locale="en_IN">
+ <ExportDate value="2024-02-01 08:00:00 +0530"/>
+ <Me HKCharacteristicTypeIdentifierDateOfBirth="1990-01-01"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" unit="count" startDate="2024-01-29 23:10:00 +0530" endDate="2024-01-30 06:40:00 +0530" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="iPhone" unit="count" startDate="2024-01-29 23:10:00 +0530" endDate="2024-01-30 06:40:00 +0530" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" unit="count" startDate="2024-01-29 23:10:00 +0530" endDate="2024-01-29 23:10:00 +0530" value="HKCategoryValueSleepAnalysisInBed"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" unit="count" startDate="2024-01-30 23:40:00 +0530" endDate="2024-01-31 07:10:00 +0530" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="iPhone" unit="count" startDate="2024-01-30 23:40:00 +0530" endDate="2024-01-31 07:10:00 +0530" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" unit="count" startDate="2024-01-30 23:40:00 +0530" endDate="2024-01-30 23:40:00 +0530" value="HKCategoryValueSleepAnalysisInBed"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" unit="count" startDate="2024-02-01 00:20:00 +0530" endDate="2024-02-01 07:30:00 +0530" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="iPhone" unit="count" startDate="2024-02-01 00:20:00 +0530" endDate="2024-02-01 07:30:00 +0530" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" unit="count" startDate="2024-02-01 00:20:00 +0530" endDate="2024-02-01 00:20:00 +0530" value="HKCategoryValueSleepAnalysisInBed"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" unit="count" startDate="2024-01-31 14:00:00 +0530" endDate="2024-01-31 14:40:00 +0530" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" unit="count" startDate="2024-01-29 09:00:00 +0530" endDate="2024-01-29 10:00:00 +0530" value="4000"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" unit="count" startDate="2024-01-29 18:00:00 +0530" endDate="2024-01-29 19:00:00 +0530" value="4000"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" unit="count" startDate="2024-01-29 09:00:00 +0530" endDate="2024-01-29 19:00:00 +0530" value="7500"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" unit="count" startDate="2024-01-30 09:00:00 +0530" endDate="2024-01-30 10:00:00 +0530" value="5000"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" unit="count" startDate="2024-01-30 18:00:00 +0530" endDate="2024-01-30 19:00:00 +0530" value="5000"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" unit="count" startDate="2024-01-30 09:00:00 +0530" endDate="2024-01-30 19:00:00 +0530" value="9000"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" unit="count" startDate="2024-01-31 09:00:00 +0530" endDate="2024-01-31 10:00:00 +0530" value="3000"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" unit="count" startDate="2024-01-31 18:00:00 +0530" endDate="2024-01-31 19:00:00 +0530" value="3000"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" unit="count" startDate="2024-01-31 09:00:00 +0530" endDate="2024-01-31 19:00:00 +0530" value="6500"/>
+ <Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" unit="count" startDate="2024-01-31 09:00:00 +0530" endDate="2024-01-31 09:00:00 +0530" value="72"/>
+ <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="30.5" durationUnit="min" sourceName="Apple Watch" startDate="2024-01-29 06:00:00 +0530" endDate="2024-01-29 06:30:30 +0530"/>
+ <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="32" durationUnit="min" sourceName="Apple Watch" startDate="2024-01-31 06:00:00 +0530" endDate="2024-01-31 06:32:00 +0530"/>
+ <Workout workoutActivityType="HKWorkoutActivityTypeYoga" duration="2700" durationUnit="s" sourceName="Apple Watch" startDate="2024-01-30 19:00:00 +0530" endDate="2024-01-30 19:45:00 +0530"/>
+ <ActivitySummary dateComponents="2024-01-31" activeEnergyBurned="400"/>
+</HealthData>

@@ -1,0 +1,3 @@
+Activity ID,Activity Date,Activity Name,Activity Type,Activity Description,Elapsed Time,Distance,Max Heart Rate,Relative Effort,Commute,Activity Private Note,Activity Gear,Filename,Athlete Weight,Bike Weight,Elapsed Time,Moving Time,Distance
+9001,"Jan 31, 2024, 1:05:00 AM",Morning Run,Run,"Easy 5k before work, knee felt fine",1800,5.02,171,40,false,,,activities/9001.gpx,,,1800.0,1750.0,5020.3
+9002,"Feb 2, 2024, 12:30:00 PM",Lunch Ride,Ride,,3600,20.5,,,false,,,activities/9002.fit.gz,,,3600.0,3400.0,20500.0

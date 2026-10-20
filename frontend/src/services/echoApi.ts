@@ -219,6 +219,11 @@ export interface ImportOptions {
   date_order?: 'dmy' | 'mdy' | 'ymd';
   own_words?: boolean;
   include_trashed?: boolean;
+  /** Google Takeout: which parts to import. */
+  include_keep?: boolean;
+  include_youtube?: boolean;
+  /** Apple Health: how many days the routine summaries cover. */
+  window_days?: number;
 }
 
 export type ShareSurface = 'manual_quick_share' | 'drag_drop' | 'browser_ext' | 'email_in' | 'os_share';

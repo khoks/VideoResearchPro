@@ -10,6 +10,22 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Echo: listening, reading, watching, workouts and health from export files (S-3.7.5 part 2, 2026-10-19)
+
+PR [#349](https://github.com/khoks/VideoResearchPro/pull/349).
+
+- Google Takeout (Keep notes plus YouTube watch and search history),
+  Spotify listening history, a Goodreads library, Letterboxd films and
+  Strava activities import as Echo activity events, labelled by service on
+  the Echo timeline.
+- An Apple Health export becomes three routine summaries (sleep, steps,
+  workouts); the health records are never stored. A five-year export
+  parses in 23 s at a flat 50 MB.
+- Re-importing adds only what is new, and undo removes exactly what that
+  import added. Private-session plays, IP addresses, ads and GPS routes are
+  dropped while parsing.
+- Exports past the upload cap go in with `backend/scripts/echo_import.py`.
+
 ### Echo: drop anything in, and the Add to Echo browser extension (S-3.7.3 part 1, 2026-10-19)
 
 PR [#348](https://github.com/khoks/VideoResearchPro/pull/348).

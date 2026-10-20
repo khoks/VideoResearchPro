@@ -1,0 +1,66 @@
+[
+  {
+    "header": "YouTube",
+    "title": "Watched Why tariffs raise prices",
+    "titleUrl": "https://www.youtube.com/watch?v=abcdefghijk",
+    "subtitles": [
+      {
+        "name": "Econ Channel",
+        "url": "https://www.youtube.com/channel/UC123"
+      }
+    ],
+    "time": "2024-01-31T21:05:00.123Z",
+    "products": [
+      "YouTube"
+    ],
+    "activityControls": [
+      "YouTube watch history"
+    ]
+  },
+  {
+    "header": "YouTube",
+    "title": "Watched The China shock, revisited",
+    "titleUrl": "https://www.youtube.com/watch?v=bcdefghijkl",
+    "subtitles": [
+      {
+        "name": "Econ Channel",
+        "url": "https://www.youtube.com/channel/UC123"
+      }
+    ],
+    "time": "2024-02-01T07:30:00Z",
+    "products": [
+      "YouTube"
+    ]
+  },
+  {
+    "header": "YouTube",
+    "title": "Watched Buy now!",
+    "titleUrl": "https://www.youtube.com/watch?v=adadadadada",
+    "time": "2024-02-01T07:31:00Z",
+    "products": [
+      "YouTube"
+    ],
+    "details": [
+      {
+        "name": "From Google Ads"
+      }
+    ]
+  },
+  {
+    "header": "YouTube",
+    "title": "Watched a video that has been removed",
+    "time": "2024-02-02T10:00:00Z",
+    "products": [
+      "YouTube"
+    ]
+  },
+  {
+    "header": "YouTube Music",
+    "title": "देखा गया Raag Yaman",
+    "titleUrl": "https://music.youtube.com/watch?v=cdefghijklm",
+    "time": "2024-02-03T20:00:00Z",
+    "products": [
+      "YouTube Music"
+    ]
+  }
+]

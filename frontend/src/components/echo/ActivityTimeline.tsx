@@ -12,7 +12,16 @@ import type { ActivityItem } from '../../services/echoApi';
 import { fonts, fontSize, fontWeight, lineHeight, space } from '../../theme';
 import { humanize } from './ConnectorsPanel';
 
-const CONNECTOR_LABEL: Record<string, string> = { internal: 'Pratidhvani', github: 'GitHub' };
+const CONNECTOR_LABEL: Record<string, string> = {
+  internal: 'Pratidhvani',
+  github: 'GitHub',
+  // S-3.7.5: events from export imports carry the importer's name.
+  google_takeout: 'YouTube (Takeout)',
+  spotify_export: 'Spotify',
+  goodreads_export: 'Goodreads',
+  letterboxd_export: 'Letterboxd',
+  strava_export: 'Strava',
+};
 
 /** A one-line summary from whatever the event carries. */
 export function summarize(item: ActivityItem): string {
@@ -39,7 +48,7 @@ export function ActivityTimeline({ enabled = true }: { enabled?: boolean }) {
         />
       ))}
       <p style={{ margin: `${space['2']} 0 0`, fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>
-        Disconnecting a connector removes its events from here.
+        Disconnecting a connector or undoing an import removes its events from here.
       </p>
     </div>
   );

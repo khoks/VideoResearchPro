@@ -49,9 +49,11 @@ def _looks_like_note(data: dict) -> bool:
 
 
 def sniff(source: ImportSource) -> bool:
+    """One note's JSON. A Takeout zip belongs to the Takeout importer, which
+    reads its Keep notes through this module (S-3.7.5 part 2)."""
     try:
         if source.is_zip:
-            return bool(_members(source))
+            return False
         if not source.filename.lower().endswith(".json"):
             return False
         head = source.head(65536).decode("utf-8", "replace")
@@ -219,10 +221,10 @@ class GoogleKeepImporter:
     content_type = CONTENT_TYPE
 
     def accepts(self, filename: str) -> bool:
-        """By name only: a Takeout archive. A single note's ``.json`` is found
-        by ``sniff``, so this importer never claims another service's JSON."""
-        base = (filename or "").replace("\\", "/").rsplit("/", 1)[-1].lower()
-        return base.startswith("takeout") and base.endswith(".zip")
+        """Nothing by name: a single note's ``.json`` is found by ``sniff``, so
+        this importer never claims another service's JSON, and Takeout zips go to
+        the Takeout importer."""
+        return False
 
     def sniff(self, source: ImportSource) -> bool:
         return sniff(source)

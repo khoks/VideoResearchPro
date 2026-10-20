@@ -11,7 +11,8 @@ describe('importerLabel and importStatusLabel', () => {
   it('names the known importers and statuses, and degrades for new ones', () => {
     expect(importerLabel('whatsapp')).toBe('WhatsApp chat');
     expect(importerLabel('google_keep')).toBe('Google Keep notes');
-    expect(importerLabel('spotify_export')).toBe('spotify export');
+    expect(importerLabel('spotify_export')).toBe('Spotify history');
+    expect(importerLabel('mastodon_export')).toBe('mastodon export');
     expect(importStatusLabel('embedding')).toBe('Indexing');
     expect(importStatusLabel('failed')).toBe('Needs a retry');
     expect(importStatusLabel('something_new')).toBe('something_new');
@@ -29,6 +30,17 @@ describe('importCountsLine', () => {
     expect(importCountsLine('google_keep', { shares: 1, own_words: 1, context_only: 0, skipped_trashed: 1 })).toBe(
       '1 note: 1 in your words, 0 context only · 1 trashed note left out',
     );
+  });
+
+  it('counts the event imports in their own nouns, and what Echo already held', () => {
+    expect(importCountsLine('spotify_export', { events: 3, events_already_held: 2, private_session_skipped: 1 })).toBe(
+      '3 plays recorded · 2 already in Echo · 1 private-session play left out',
+    );
+    expect(importCountsLine('google_takeout', { shares: 2, own_words: 2, context_only: 0, events: 5, ads_skipped: 1 })).toBe(
+      '2 notes: 2 in your words, 0 context only · 5 YouTube history entries recorded · 1 ad left out',
+    );
+    expect(importCountsLine('apple_health_export', { facts: 3 })).toBe('3 routine summaries');
+    expect(importCountsLine('strava_export', { events: 0 })).toBe('0 activities recorded');
   });
 
   it('survives missing counts', () => {

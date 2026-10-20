@@ -420,6 +420,11 @@ def revoke(db: Session, tenant_id: str, name: str) -> dict[str, Any]:
         scheduler_service.unschedule(db, KIND, grant.id)
         db.delete(grant)
     db.commit()
+    # S-3.3.3: the revoked facts and the signals that lost their examples
+    # leave personal_context_global now, not at the next startup backfill.
+    from app.services import echo_personal_vectors
+
+    echo_personal_vectors.sync_soft(db, tenant_id)
     logger.info("echo: tenant %s revoked %s (events=%d facts=%d)", tenant_id[:8], name, events, facts)
     return {"connector": name, "events": events, "facts": facts, "provider_revoked": provider_revoked}
 

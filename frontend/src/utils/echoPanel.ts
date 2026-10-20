@@ -18,8 +18,21 @@ function plural(n: number, one: string, many: string): string {
   return `${n.toLocaleString()} ${n === 1 ? one : many}`;
 }
 
-/** What readiness still needs, as short phrases ("12 more facts"). */
+/** What each unmet readiness domain (S-3.5.1) still needs, after "more". */
+const DOMAIN_NEEDS: Record<string, string> = {
+  facts: 'facts about you',
+  activity: 'activity history',
+  signals: 'signals of how you think',
+  voice: 'writing of your own',
+  shares: 'shares',
+};
+
+/** What readiness still needs, as short phrases: the unmet domains when the
+ * server sends them ("facts about you"), else the v1 gates ("12 more facts"). */
 export function missingParts(readiness: Readiness): string[] {
+  if (readiness.domains) {
+    return readiness.domains.filter((d) => !d.met).map((d) => DOMAIN_NEEDS[d.key] ?? d.label.toLowerCase());
+  }
   const out: string[] = [];
   for (const p of readiness.parts) {
     if (p.met) continue;
@@ -30,13 +43,14 @@ export function missingParts(readiness: Readiness): string[] {
   return out;
 }
 
-/** "Echo is ready." or "40% ready. Still needs 12 more facts and a personality trait." */
+/** "Echo is ready." or "40% ready. Still needs more facts about you and shares."
+ * (v1: "40% ready. Still needs 12 more facts and a personality trait.") */
 export function readinessLine(readiness: Readiness): string {
   if (readiness.ready) return 'Echo is ready.';
   const missing = missingParts(readiness);
   if (!missing.length) return `${readiness.percent}% ready.`;
   const list = missing.length === 1 ? missing[0] : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`;
-  return `${readiness.percent}% ready. Still needs ${list}.`;
+  return `${readiness.percent}% ready. Still needs ${readiness.domains ? 'more ' : ''}${list}.`;
 }
 
 /** The HTTP status of a failed request, if it has one. */

@@ -971,6 +971,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.3.3.4 Write vectors with `tenant_id` metadata only into `CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME`, which the full delete already sweeps; add a `test_echo_privacy` case that a fact's vector is gone after `DELETE /echo/brain`
 
 #### S-3.3.4 🔵 Voice-match evaluation harness
+**Pre-registered 2026-10-19:** [docs/notes/2026-10-19-voice-match-preregistration.md](notes/2026-10-19-voice-match-preregistration.md) fixes the material (three synthetic writers, 18 prompts in `backend/tests/fixtures/echo_voice/draft_prompts.json`), the two conditions, the judges (claude-sonnet-5 and gemini-3.6-flash, the latter declared as the substitute for Gemini 3.1 Pro) and the pass rule, before any draft is generated. Tier (iii), the user as judge, is fixed too and waits for 40 of the user's own notes.
 **PR:** TBD. The gate for E-3.4; the [D-055](decisions.md#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29) method applied to voice.
 - [ ] T-3.3.4.1 Three tiers, per the plan: (i) an automatic authorship-verification score against the user's held-out texts per language, (ii) an LLM judge that may abstain, used only for the in-UI voice-match number, (iii) a blinded "which of these did you write?" pairwise test with the user as judge, the only credible product gate
 - [ ] T-3.3.4.2 Pre-registered pass rule before the first run; a quality guard (preference against a neutral draft) so a style win never ships unreadable text

@@ -218,3 +218,16 @@ Rule 1 is now enforced in the pipeline by #309, so its pass is expected and weak
 
 **All four pass** → R1's quality claim holds, and S-1.18.2 (the R1 UI) is built. **Rule 3 alone fails** → the UI ships opt-in with no quality claim, as run 6's rule set out. **Rule 2 or 4 fails** → the claim stays unproven, and the UI decision goes to the user with all eight runs summarised.
 
+## Run 8: results (2026-10-19)
+
+ON 136,623 chars (887 s; 3 starved sources re-mapped), OFF 101,375 chars (749 s; 1 re-mapped).
+
+| Rule | Result | Evidence |
+|---|---|---|
+| 1. Quote fidelity | **pass** | Report level: ON 56 quotes, OFF 52, none failing. Map: 2 of 133 originals dropped |
+| 2. Attribution | **pass** | The one judge claim was refuted 3 of 3; the sweep raised 3 candidates and confirmed none. Zero confirmed attribution errors in ON, the second such run (run 5 was the first) |
+| 3. Substance | **pending** | Sonnet 5 prefers ON, GPT-5.5 prefers OFF (7 vs 9). Gemini 3.1 Pro is quota-blocked (250 requests per day, shared across sessions). A background waiter judges when it unblocks. Its vote decides |
+| 4. Fabrication | **pass** | ON 0 confirmed (1 metadata leak), OFF 0 confirmed |
+
+**Consequence, fixed by the pre-registration:** both remaining outcomes build S-1.18.2. If Gemini prefers ON, all four rules pass and R1's quality claim holds. Otherwise rule 3 alone fails, and the UI ships opt-in with no quality claim. Either way the UI is built now; only the copy waits for the vote.
+

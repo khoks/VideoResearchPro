@@ -428,6 +428,13 @@ def delete_import(db: Session, tenant_id: str, import_id: str) -> dict[str, int]
     )
     db.delete(db.get(EchoImport, import_id))
     db.commit()
+    if facts:
+        # S-3.3.3: the facts' vectors leave personal_context_global too. The
+        # cascade above synced before these facts went, and an import with no
+        # shares (Apple Health) never reached it.
+        from app.services import echo_personal_vectors
+
+        echo_personal_vectors.sync_soft(db, tenant_id)
     logger.info(
         "echo: tenant %s undid import %s (%d shares, %d events, %d facts)",
         tenant_id[:8], import_id[:8], len(share_ids), events, facts,

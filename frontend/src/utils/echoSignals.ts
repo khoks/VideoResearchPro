@@ -3,7 +3,7 @@
  * server enforces (`echo_signal_service.SIGNAL_TYPES`), in the panel's
  * order, with the words the panel shows for each.
  */
-import type { VoiceSignal } from '../services/echoApi';
+import type { LearnResponse, LearningState, VoiceSignal } from '../services/echoApi';
 
 export type SignalLayer = 'style' | 'personality';
 
@@ -93,6 +93,49 @@ export function originLabel(origin: string, derivedFrom: string[] = []): string 
       return 'Measured from your writing';
     default:
       return 'Learned from your writing';
+  }
+}
+
+export interface LearningSummary {
+  text: string;
+  /** Whether "Learn now" has anything to do. */
+  canLearn: boolean;
+}
+
+/** The learning line under the panel's intro (S-3.3.2). */
+export function learningSummary(state: LearningState | null | undefined, formatDate: (iso: string) => string): LearningSummary | null {
+  if (!state) return null;
+  const off = state.mode === 'off' ? ' Automatic learning is off on this install.' : '';
+  const last = state.last_learned_at ? ` Echo last learned on ${formatDate(state.last_learned_at)}.` : '';
+  if (state.inputs === 0 && state.pending === 0) {
+    return { text: `Echo learns from your notes, the questions you ask and shares you wrote. Write a note to start.${off}`, canLearn: false };
+  }
+  if (state.pending === 0) {
+    const what = state.inputs === 1 ? 'your one text' : `all ${state.inputs} of your texts`;
+    return { text: `Up to date: Echo has read ${what}.${last}${off}`, canLearn: false };
+  }
+  const waiting = state.pending === 1 ? '1 text is waiting to be read.' : `${state.pending} texts are waiting to be read.`;
+  const auto =
+    state.mode === 'off'
+      ? ''
+      : state.pending >= state.threshold
+        ? ' Echo will read them shortly.'
+        : ` Echo starts on its own once ${state.threshold} are waiting.`;
+  return { text: `${waiting}${last}${auto}${off}`, canLearn: state.mode !== 'off' };
+}
+
+export function learnToast(status: LearnResponse['status']): { tone: 'success' | 'error'; text: string } {
+  switch (status) {
+    case 'queued':
+      return { tone: 'success', text: 'Learning started. New signals appear here in a minute or two.' };
+    case 'ran':
+      return { tone: 'success', text: 'Echo has read your new writing.' };
+    case 'waiting':
+      return { tone: 'success', text: 'Nothing new to learn from yet.' };
+    case 'off':
+      return { tone: 'error', text: 'Automatic learning is off on this install.' };
+    default:
+      return { tone: 'error', text: 'Could not start learning. Try again.' };
   }
 }
 

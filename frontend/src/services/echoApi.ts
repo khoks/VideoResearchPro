@@ -226,9 +226,29 @@ export interface VoiceSignal {
   updated_at: string;
 }
 
+/** S-3.3.2: what extraction has read and what is waiting. */
+export interface LearningState {
+  /** `celery`, `inline` or `off` (this install never learns automatically). */
+  mode: string;
+  /** Live notes, questions and own-words shares Echo may learn from. */
+  inputs: number;
+  by_language: Record<string, number>;
+  /** New, edited or deleted texts not read yet. */
+  pending: number;
+  /** A run starts on its own once this many are waiting. */
+  threshold: number;
+  last_learned_at: string | null;
+}
+
 export interface VoiceSignalList {
   items: VoiceSignal[];
   consent_version: string;
+  learning?: LearningState | null;
+}
+
+export interface LearnResponse {
+  status: 'queued' | 'ran' | 'waiting' | 'off' | 'not_entitled' | 'queue_failed';
+  pending: number;
 }
 
 export interface CreateSignalPayload {
@@ -398,6 +418,9 @@ export const echoApi = {
     api.delete<VoiceSignal>(`/echo/signals/${encodeURIComponent(id)}`).then(r => r.data),
 
   exportSignals: () => downloadAuthenticated('/echo/signals/export', 'echo-voice-profile.json'),
+
+  /** S-3.3.2 "Learn now": queue a run for whatever is waiting. */
+  learnSignals: () => api.post<LearnResponse>('/echo/signals/learn').then(r => r.data),
 
   footprint: () => api.get<EchoFootprint>('/echo/brain/footprint').then(r => r.data),
 

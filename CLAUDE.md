@@ -332,6 +332,12 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `LLM_FAST_BASE_URL` | No | (unset) | **Deprecated.** Legacy alias for `LLM_LOCAL_BASE_URL`; still honored when the canonical name is unset |
 | `LLM_FAST_API_KEY` | No | `not-needed` | **Deprecated.** Legacy alias for `LLM_LOCAL_API_KEY` |
 | `LLM_MODEL` | No | `gpt-5` | **Deprecated.** Legacy primary-model name retained for back-compat; per-use-case defaults live in `app/services/llm_routing.py::USE_CASE_REGISTRY` |
+| **Echo signal extraction (S-3.3.2 / D-099)** | | | |
+| `ECHO_SIGNAL_EXTRACTION` | No | `celery` | `celery` queues one `echo.extract_signals` run per tenant; `inline` runs in the request; `off` never runs (the test suite) |
+| `ECHO_SIGNALS_MIN_NEW_INPUTS` | No | `10` | New, edited or deleted texts waiting before a run starts on its own ("Learn now" runs below it) |
+| `ECHO_SIGNALS_BATCH_TOKENS` | No | `6000` | User text per economy-tier call |
+| `ECHO_SIGNALS_MAX_PER_BATCH` / `ECHO_SIGNALS_MAX_OUTPUT_TOKENS` | No | `12` / `2500` | Candidates per call and the output cap that bounds them (reasoning stays off) |
+| `ECHO_SIGNALS_MAX_BATCHES_PER_RUN` | No | `20` | Cost bound per run; a larger backlog is read over several runs |
 | **Visual understanding (R1 / E-1.18)** | | | |
 | `VISUAL_ENABLED` | No | `False` | Install-wide switch for frame capture + description. AND-ed with the per-job `visual_analysis` opt-in — both must be true. Off by default: capture needs a *video* stream (more yt-dlp traffic than the audio path that caused the D-051 IP block) and it is the app's only multimodal spend |
 | `VISUAL_FRAMES_DIR` | No | `./data/frames` | Where extracted JPEGs live, keyed by document so they are computed once and reused |
@@ -464,7 +470,7 @@ From highest to lowest:
 
 ### Registered use cases
 
-Thirty-two named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
+Thirty-three named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
 
 ### Measured guidance (S-1.14.7)
 
@@ -504,6 +510,9 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 **Echo share processing (`app/services/echo_media.py`, S-3.7.2):**
 - `echo_share_ocr` — **MULTIMODAL.** Copy out the text in a shared image when on-device OCR read too little or with low confidence (Devanagari always, since the default OCR models cannot read it). Original script kept: transcription, not a deliverable. Listed in `VISION_USE_CASES`. Runs only when `ECHO_REMOTE_MEDIA` is on and the tenant is not local-only, or when it resolves to a local model. Reasoning OFF, fail-soft, not a feature gate
 
+**Echo voice and personality signals (`app/services/echo_signal_extraction.py`, S-3.3.2):**
+- `echo_extract_signals` — a batch of the user's OWN words (notes, questions, own-words shares) → candidate style and personality signals with verbatim examples cited by passage id; code keeps an example only when found exactly in its passage (D-099). Economy tier, reasoning OFF, fail-soft, not a feature gate
+
 **Author Studio (`app/services/outputters/`, S-6.1.3 / S-6.3.1):**
 - `author_book_outline` — plan a book from chapter digests (order, parts, bridges, briefs, glossary terms); JSON. Opt-in per book (`cohesion=light|full`), fail-soft, not a feature gate
 - `author_book_prose` — introduction, bridges, conclusion and glossary around the unchanged chapters; marked plain-text sections. `cohesion=full` only; `none` stays the default after two blind rounds (D-093)
@@ -529,7 +538,7 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 
 ## LLM startup smoke check + fail-soft
 
-`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 32 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
+`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 33 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
 
 **Health endpoints:**
 - `GET /api/v1/health` — overall status plus an `llm` field with `status` (`ok` / `degraded` / `down` / `unknown`) and `unavailable_features` (a list of feature names whose required use cases failed probing).

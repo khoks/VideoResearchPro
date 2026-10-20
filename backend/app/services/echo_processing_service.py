@@ -386,6 +386,12 @@ def _finish(db: Session, share: Share, processing: dict, state: str, error: str 
             db.rollback()
             logger.exception("echo: could not record the share event for %s", share.id)
     logger.info("echo: share %s -> %s%s", share.id[:8], state, f" ({error})" if error else "")
+    # T-3.3.2.6: only the user's own words are voice input; a context-only
+    # share never is (D-089).
+    if state == "processed" and voice_eligible(share):
+        from app.services import echo_signal_extraction
+
+        echo_signal_extraction.maybe_queue(db, share.tenant_id)
     return ProcessResult(state, error or processing.get("note"))
 
 

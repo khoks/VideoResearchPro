@@ -61,8 +61,15 @@ def _learning(db: Session, tenant_id: str) -> LearningState:
         by_language=extraction.inputs_by_language(inputs),
         pending=extraction.pending(db, tenant_id, inputs).count,
         threshold=settings.ECHO_SIGNALS_MIN_NEW_INPUTS,
-        last_learned_at=extraction.last_learned_at(db, tenant_id),
+        last_learned_at=_utc(extraction.last_learned_at(db, tenant_id)),
     )
+
+
+def _utc(dt):
+    """Stored naive in UTC; sent with its offset so the browser shows local time."""
+    from datetime import timezone
+
+    return dt.replace(tzinfo=timezone.utc) if dt is not None and dt.tzinfo is None else dt
 
 
 @router.post("/learn", response_model=LearnResponse, status_code=202)

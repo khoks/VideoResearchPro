@@ -115,7 +115,12 @@ export function learningSummary(state: LearningState | null | undefined, formatD
     return { text: `Up to date: Echo has read ${what}.${last}${off}`, canLearn: false };
   }
   const waiting = state.pending === 1 ? '1 text is waiting to be read.' : `${state.pending} texts are waiting to be read.`;
-  const auto = state.mode === 'off' ? '' : ` Echo starts on its own once ${state.threshold} are waiting.`;
+  const auto =
+    state.mode === 'off'
+      ? ''
+      : state.pending >= state.threshold
+        ? ' Echo will read them shortly.'
+        : ` Echo starts on its own once ${state.threshold} are waiting.`;
   return { text: `${waiting}${last}${auto}${off}`, canLearn: state.mode !== 'off' };
 }
 

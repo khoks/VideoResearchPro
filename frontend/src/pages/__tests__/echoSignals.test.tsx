@@ -160,6 +160,7 @@ describe('learning line (S-3.3.2)', () => {
       text: '3 texts are waiting to be read. Echo starts on its own once 10 are waiting.',
       canLearn: true,
     });
+    expect(learningSummary({ ...base, pending: 12 }, fmt)?.text).toBe('12 texts are waiting to be read. Echo will read them shortly.');
     expect(learningSummary({ ...base, pending: 1, last_learned_at: '2026-10-19T10:00:00' }, fmt)?.text).toBe(
       '1 text is waiting to be read. Echo last learned on 19 Oct 2026. Echo starts on its own once 10 are waiting.',
     );

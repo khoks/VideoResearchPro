@@ -458,5 +458,6 @@ def test_signals_endpoint_reports_learning_state(unauthenticated_client, db, ash
     r = unauthenticated_client.post("/api/v1/echo/signals/learn", headers=h)
     assert r.status_code == 202 and r.json() == {"status": "ran", "pending": 0}
     body = unauthenticated_client.get("/api/v1/echo/signals", headers=h).json()
-    assert body["learning"]["pending"] == 0 and body["learning"]["last_learned_at"] is not None
+    assert body["learning"]["pending"] == 0
+    assert body["learning"]["last_learned_at"].endswith(("+00:00", "Z")), "sent as UTC so the browser shows local time"
     assert any(s["value"] == "Checks the base rate before believing a claim" for s in body["items"])

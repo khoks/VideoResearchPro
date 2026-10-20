@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Echo: drop anything in, and the Add to Echo browser extension (S-3.7.3 part 1, 2026-10-19)
 
-PR [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__).
+PR [#348](https://github.com/khoks/VideoResearchPro/pull/348).
 
 - Drop a file, a link or some text anywhere in the app and it goes to the
   Echo inbox; a dropped WhatsApp or Takeout export opens the importer.

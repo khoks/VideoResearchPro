@@ -3009,3 +3009,30 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Linked initiatives / PRs.** E-6.4 / S-6.4.1 (PR [#334](https://github.com/khoks/VideoResearchPro/pull/334)), D-093, D-056, D-063.
 
+## D-098 — Signal extraction: verbatim-checked examples, language-free beliefs, stylometry without a model (2026-10-19)
+
+**Status:** accepted.
+
+**Context.** S-3.3.2 learns voice and personality signals from the user's own words. The plan specifies three layers: model-free stylometry, an open author embedding, and a batched economy-tier LLM pass. It requires that only the user's own text feeds a signal ([D-089](#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19)), and that a withdrawn note stops counting ([D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19)). Building it and measuring it on three synthetic writers ([cost note](notes/2026-10-19-signal-extraction-cost.md)) forced five choices.
+
+**Decision.**
+1. **Code, not the model, ties a signal to the user's words.** The model cites a passage id and quotes it. An example is kept only when its quote is found in that passage, ignoring case, spacing and curly quotes; the stored text is the passage's own span. A signal with no surviving example is dropped.
+2. **A personality signal has no language; a style signal takes its language from its examples' passages**, as `language_of` reads them (script plus the word-level Hindi share), never from the model's label. The model labelled the same Hinglish `mixed` on one run and `hi-Latn` on the next, which split one belief into two rows.
+3. **Stylometry is heuristic and model-free.** Sentence length, punctuation habits, function words from `code_mixing_service`'s closed classes (Roman and Devanagari), and character trigrams, with coarse floors, about three times the ordinary-prose rate. Similarity for S-3.3.4 is a cosine over function-word and trigram rates. Burrows' Delta needs a reference corpus for its z-scores, and a single user does not have one. **The open author embedding is not built:** both candidates are English-trained, and LUAR-MUD loads remote code. It is filed as T-3.3.2.7. Cadence reads prose only (notes and shares), because Q&A questions are always questions.
+4. **Strict own-words inputs.** Live notes; the questions on the three Q&A surfaces (never the answers, and never a saved search's scheduled re-asks); and shares marked `author_is_tenant`. A context-only share's annotation is excluded too: D-089 says context-only shares never feed signals, and an annotation is part of the share.
+5. **A ledger, `voice_signal_inputs`, records what was read.** It holds each input's content hash, its language, and a stylometric profile. An edit is read again, with its old evidence withdrawn first. A deletion is withdrawn at once (note delete, share delete), and the next run reconciles anything else. A failed call leaves its inputs pending and stylometry still runs. The ledger is in D-089's registry.
+
+**Alternatives considered.**
+- *Trust the model's quotes.* Measured drop rate was low (about 1 in 200), but one invented quote shown as "you wrote this" would break the panel's promise.
+- *Per-language personality signals.* The bilingual-voice evidence the plan cites is about how opinions are expressed, which style signals capture. A belief split by language only fragments its weight.
+- *Add `faststylometry` for Burrows' Delta.* It is a dependency for a statistic that needs a reference corpus Echo does not have per user.
+- *Queue extraction on a beat schedule.* The scheduler has one beat entry by design (S-8.3.1). Hooks where the user writes (note create and edit, the three Q&A routes, own-words share processing) call `maybe_queue`. It runs once `ECHO_SIGNALS_MIN_NEW_INPUTS` (10) texts are waiting, or on "Learn now".
+
+**Consequences.**
+- Cost on the economy tier: about $0.005 per 100 inputs for a backlog and $0.02 per 100 for incremental runs.
+- Signal quality is ungraded until S-3.3.4.
+- `echo_extract_signals` is the 33rd registry entry, with guidance `unmeasured`.
+- Connector text written by the user (lane B's runtime) joins the inputs when it exists, as T-3.3.2.8.
+
+**Linked initiatives / PRs.** E-3.3 / S-3.3.2 (PR [#335](https://github.com/khoks/VideoResearchPro/pull/335)), D-089, D-074, D-057, D-080.
+

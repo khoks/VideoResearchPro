@@ -131,6 +131,9 @@ def main() -> int:
     ap.add_argument("--judges", default=JUDGES)
     ap.add_argument("--verifiers", default=VERIFIERS)
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--arms", default="on,off",
+                    help="the two arm names in the run files, mapped onto the internal on/off slots "
+                         "(e.g. challenger,production for a D-055 replay); the summary records the mapping")
     ap.add_argument("--tiebreak", default=None,
                     help="same-family fallback for the THIRD verifier: votes only on a claim the first two "
                          "split on and the third has no valid vote for (e.g. after a provider quota runs out)")
@@ -147,9 +150,12 @@ def main() -> int:
     threshold = float(meta["threshold"])
     report_text = html_to_text(Path(args.report).read_text(encoding="utf-8", errors="replace")) if args.report else ""
 
+    first_arm, second_arm = [a.strip() for a in args.arms.split(",")]
+    arm_map = {first_arm: "on", second_arm: "off"}
     pairs: dict[tuple, dict] = {}
     for f in sorted(runs.glob("q*_*_*.json")):
         rec = json.loads(f.read_text(encoding="utf-8"))
+        rec["arm"] = arm_map.get(rec["arm"], rec["arm"])
         pairs.setdefault((rec["q"], rec["surface"]), {})[rec["arm"]] = rec
     pairs = {k: v for k, v in pairs.items() if "on" in v and "off" in v and v["on"].get("answer") and v["off"].get("answer")}
     print(f"{len(pairs)} complete pairs", flush=True)
@@ -340,6 +346,7 @@ def main() -> int:
     confirmed = {arm: sum(1 for c in claim_rows if c["arm"] == arm and c["status"] == "confirmed") for arm in ("on", "off")}
     job_rows = [r for r in per_pair if r["surface"] == "job"]
     summary = {
+        "arm_names": {"on": first_arm, "off": second_arm},
         "pairs": len(per_pair),
         "judges_ok": len(ok), "judges_total": len(verdicts),
         "M1": {

@@ -24,6 +24,38 @@ PR [#341](https://github.com/khoks/VideoResearchPro/pull/341). Sizing: [docs/not
 - One bulk cascade now serves every share delete; undoing 125,000 shares
   takes about 7 s.
 
+### Added: the GitHub connector (2026-10-19)
+
+[S-3.2.4](docs/initiatives.md#s-324--github-connector), PR [#342](https://github.com/khoks/VideoResearchPro/pull/342).
+
+- Connect GitHub from the Echo page and Echo records your public activity:
+  pushes and the commits you wrote, pull requests, reviews, issues, comments,
+  releases, repositories you create, star or fork. What you wrote (commit
+  messages, PR and issue text, comments) is kept as your own words; nothing
+  private and no code is read.
+- The languages of your own repositories become skills Echo thinks you have,
+  marked as guesses (for example "Python (GitHub)").
+- It syncs nightly; the first sync also reads your commits from your own
+  repositories, because GitHub keeps only 30 days of activity.
+- Setup: create a GitHub OAuth app (or reuse the sign-in one with the
+  frontend origin as its callback URL) and set
+  `OAUTH_GITHUB_CONNECTOR_CLIENT_ID` / `_SECRET`.
+
+### Added: Echo learns how you write (S-3.3.2, 2026-10-19)
+
+PR [#335](https://github.com/khoks/VideoResearchPro/pull/335). Decision [D-099](docs/decisions.md#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19); cost [measurement](docs/notes/2026-10-19-signal-extraction-cost.md).
+
+- Echo now learns style and personality signals from your own words: your
+  notes, the questions you ask, and shares you marked as written by you. A
+  share you did not write never shapes them, its note to Echo included.
+- Every example is checked against the text it quotes and kept only if you
+  really wrote it. How you write (sentence length, questions, asides, emoji)
+  is measured without a model.
+- Learning starts on its own once ten new texts are waiting, or with
+  **Learn now** on the signals panel. Deleting a note or a share takes it out
+  of every signal at once, and a signal you rejected is never learned again.
+- Cost on the economy model: about half a cent per hundred texts.
+
 ### Added: connect services to Echo (2026-10-19)
 
 [S-3.2.1](docs/initiatives.md#s-321--connector-runtime-and-activity_events), PRs [#332](https://github.com/khoks/VideoResearchPro/pull/332) and [#336](https://github.com/khoks/VideoResearchPro/pull/336).

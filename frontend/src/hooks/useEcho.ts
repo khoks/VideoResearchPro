@@ -260,6 +260,14 @@ export function useUpdateSignal() {
   });
 }
 
+export function useLearnSignals() {
+  const invalidate = useInvalidateSignals();
+  return useMutation({
+    mutationFn: () => echoApi.learnSignals(),
+    onSuccess: invalidate,
+  });
+}
+
 export function useRejectSignal() {
   const invalidate = useInvalidateSignals();
   return useMutation({

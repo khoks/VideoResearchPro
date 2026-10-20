@@ -408,7 +408,7 @@ The single hardest constraint in this entire roadmap. Every choice below is dura
 - **Local data, period.** The activity stream, personal facts, voice signals, and connector OAuth tokens never leave the user's machine.
 - **No telemetry on personal-brain features.** General app telemetry stays opt-in and never sees personal-brain content.
 - **Local LLM is supported.** Per-use-case LLM config already supports `provider=local`. A user can run the entire brain off a local model with zero outbound LLM calls.
-- **Export and delete, as built (S-3.10.1 / S-3.10.2, 2026-10-19).** *The brain* is every table in `echo_privacy_service.ECHO_TABLES` (today `personal_context`, `shares_inbox` and `voice_signals`), the tenant's directory under `ECHO_SHARES_DIR`, and the tenant's vectors in every Echo Chroma collection (`shares_global`, `personal_context_global`). `GET /echo/export` returns one zip: `manifest.json`, one JSON Lines file per table with every column, and the files byte for byte with SHA-256 in the manifest; it round-trips losslessly. `DELETE /echo/brain` removes vectors, then files, then rows, re-counts every store and fails rather than report success with anything left; it takes effect immediately on self-host. Both are audited with counts only. Not the brain, and untouched by both: the research library, notes (exported at `/exports/notes.*`), the account and BYOK keys.
+- **Export and delete, as built (S-3.10.1 / S-3.10.2, 2026-10-19).** *The brain* is every table in `echo_privacy_service.ECHO_TABLES` (today `personal_context`, `shares_inbox`, `voice_signals` and `voice_signal_inputs`), the tenant's directory under `ECHO_SHARES_DIR`, and the tenant's vectors in every Echo Chroma collection (`shares_global`, `personal_context_global`). `GET /echo/export` returns one zip: `manifest.json`, one JSON Lines file per table with every column, and the files byte for byte with SHA-256 in the manifest; it round-trips losslessly. `DELETE /echo/brain` removes vectors, then files, then rows, re-counts every store and fails rather than report success with anything left; it takes effect immediately on self-host. Both are audited with counts only. Not the brain, and untouched by both: the research library, notes (exported at `/exports/notes.*`), the account and BYOK keys.
 
 ### SaaS (future)
 
@@ -452,6 +452,8 @@ class ActivityConnector:
     def event_types(self) -> list[str]: ...
     def schema_for_event_type(self, event_type: str) -> dict: ...
 ```
+
+**As built (S-3.2.1, 2026-10-19):** `backend/app/connectors/base.py::ActivityConnector`. It adds `display_name`, `consent_version` (the grant records which disclosure the user agreed to) and `schedule`. `authenticate` became `authorize_url` + `handle_callback`, because the runtime owns state, PKCE and token storage. The sync methods take a `SyncContext` (tokens, a cursor the connector keeps between syncs, derived facts) instead of a user id. File importers implement `ArchiveImporter` beside it. See [D-098](decisions.md#d-098--echo-connectors-events-unique-per-reader-tokens-in-a-secret-store-that-is-erased-with-the-brain-but-never-exported-2026-10-19).
 
 Conformance to this interface is the *only* way new connectors enter the system. PR-time review of any new connector specifically checks:
 

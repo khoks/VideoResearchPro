@@ -135,6 +135,12 @@ async def ask_qa_history(
     # meta-questions can reference today's meta-answers.
     _index_exchange_in_qa_library(exchange)
 
+    # S-3.3.2: the question is the user's own words, so Echo may learn
+    # from it. Fail-soft and cheap until enough new text is waiting.
+    from app.services import echo_signal_extraction
+
+    echo_signal_extraction.maybe_queue(db, current_user.id)
+
     return QAHistoryChatResponse(
         id=exchange.id,
         question=exchange.question,

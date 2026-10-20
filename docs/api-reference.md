@@ -1035,6 +1035,8 @@ Every connector this install offers, with the caller's grant (S-3.2.1, [#336](ht
                          "last_counts": { "added": 40, "updated": 2, "facts": 3 }, "events": 412 } }] }
 ```
 
+Connectors on this build: `github` (S-3.2.4; public activity under `read:user`; event types `pushed`, `committed`, `opened_pull_request`, `merged_pull_request`, `reviewed_pull_request`, `opened_issue`, `commented`, `published_release`, `created_repository`, `starred`, `forked`; nightly).
+
 ### `POST /api/v1/echo/connectors/{name}/authorize`
 Body `{ "consent_version": "…" }`: the disclosure version the consent screen showed. Returns `{ "authorize_url": "…" }` for the browser to open. Records a single-use OAuth state bound to the caller (PKCE, ten minutes); the redirect URI is `APP_BASE_URL` + `/echo/connectors/{name}/callback`, never taken from the client. 404 unknown connector, 409 the disclosure changed (show it again), 503 the install has no OAuth client for it.
 
@@ -1078,19 +1080,22 @@ The signals panel's rows, the caller's own only (another tenant's id is a 404). 
 
 Signal shape: `{ id, signal_type, layer: "style"|"personality", value, weight, examples: [{text, source, at?}], language, register, derived_from: [source refs], origin: "user"|"llm"|"stylometry", consent_version, created_at, updated_at }`. `signal_type` is one of `vocabulary`, `cadence`, `framing`, `recurring_reference`, `formality_register`, `register_per_audience` (style) or `trusted_conclusion`, `preferred_solution`, `recommendation_lens`, `apprehension`, `methodology`, `topic_emphasis`, `perception_lens`, `interest` (personality). `language` ∈ `en`, `hi-Deva`, `hi-Latn`, `mixed`; `register` ∈ `intimate`, `casual`, `professional`, `public`; both nullable. Source refs are `note:<id>`, `share:<id>`, `qa:<id>`, `library_qa:<id>`, `history_qa:<id>` or `user`.
 
-- `GET /api/v1/echo/signals` — `?signal_type=&language=`; live signals, style types first, each type by weight. `{ items, consent_version }`.
+- `GET /api/v1/echo/signals` — `?signal_type=&language=`; live signals, style types first, each type by weight. `{ items, consent_version, learning }`. `learning` (S-3.3.2) is `{ mode: "celery"|"inline"|"off", inputs, by_language, pending, threshold, last_learned_at }`: how many of the user's own texts Echo may learn from, how many are new, edited or deleted since the last read, and the count at which a run starts on its own.
+- `POST /api/v1/echo/signals/learn` — "Learn now" (S-3.3.2): queue a run for whatever is waiting, below the threshold too. 202 `{ status: "queued"|"ran"|"waiting"|"off"|"not_entitled"|"queue_failed", pending }`.
 - `POST /api/v1/echo/signals` — body `{ signal_type, value (1-500 chars), language?, register? }`; a signal the user states (`origin: "user"`). 201. 422 for an unknown type, language or register, and for a signal the user already rejected (same type, language and `value` ignoring case, spacing and surrounding quotes or full stops).
 - `PATCH /api/v1/echo/signals/{id}` — any of `value`, `language`, `register` (an explicit `null` clears; an absent field is kept), `weight` (0-100). The type is fixed.
 - `DELETE /api/v1/echo/signals/{id}` — "That's not me". A tombstone, not a delete: the row is kept with `suppressed_reason: "user"` so extraction never writes the signal again; it leaves every list and the live profile. Returns the signal. `DELETE /echo/brain` removes tombstones too.
 - `GET /api/v1/echo/signals/export` — the voice profile as a JSON download (`echo-voice-profile.json`): `{ format: "pratidhvani-voice-profile", version: 1, exported_at, consent_version, style: [...], personality: [...], rejected: [{signal_type, value, language}] }`. Every column of every row, tombstones included, is in the whole-brain archive below.
 
+**Learning (S-3.3.2).** Signals with `origin: "llm"` come from one economy-tier call per batch of the user's own texts. Each example is checked against the passage it cites and stored only if found there exactly. Signals with `origin: "stylometry"` (type `cadence`) are measured without a model and recomputed on every run. A personality signal has `language: null`; a style signal's language is that of its examples' passages ([D-099](decisions.md#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19)). Deleting a note withdraws it from every signal at once.
+
 Deleting a share withdraws it as evidence: its examples and provenance leave the signals listed in its `derived_signal_ids_json`, and a signal with no source left is suppressed as `source_deleted` (unlike a rejection, new evidence may derive it again).
 
 ### `GET /api/v1/echo/export`
-The whole brain as one zip (S-3.10.1): `manifest.json` (format `pratidhvani-echo-archive`, version 1, export time, tenant, row counts per table, every file with size and SHA-256, any missing file), `personal_context.jsonl`, `shares_inbox.jsonl` and `voice_signals.jsonl` (every column; datetimes ISO-8601 with offset), and `files/<stored path>`. Lossless: `services/echo_privacy_service.py::read_archive` is the exact inverse. Built in a temporary file and removed after sending. Audited (`echo_exported`, counts only). Notes and the library are not part of Echo; notes export at `/exports/notes.*`.
+The whole brain as one zip (S-3.10.1): `manifest.json` (format `pratidhvani-echo-archive`, version 1, export time, tenant, row counts per table, every file with size and SHA-256, any missing file), `personal_context.jsonl`, `shares_inbox.jsonl`, `voice_signals.jsonl` and `voice_signal_inputs.jsonl` (every column; datetimes ISO-8601 with offset), and `files/<stored path>`. Lossless: `services/echo_privacy_service.py::read_archive` is the exact inverse. Built in a temporary file and removed after sending. Audited (`echo_exported`, counts only). Notes and the library are not part of Echo; notes export at `/exports/notes.*`.
 
 ### `GET /api/v1/echo/brain/footprint`
-What Echo holds for the caller in every store: `{ "rows": {"personal_context": n, "shares_inbox": n, "voice_signals": n}, "files": n, "vectors": {"shares_global": n, "personal_context_global": n} }`.
+What Echo holds for the caller in every store: `{ "rows": {"personal_context": n, "shares_inbox": n, "voice_signals": n, "voice_signal_inputs": n}, "files": n, "vectors": {"shares_global": n, "personal_context_global": n} }`.
 
 ### `DELETE /api/v1/echo/brain?confirm=delete-everything`
 Deletes every Echo row, file and vector of the caller (S-3.10.2). Without the exact confirmation: 422 (missing) or 400 (wrong). Order: vectors, files, then rows in one commit; a failing store returns 500 naming it and leaves the rows that let a retry finish. Returns `{ deleted, removed: <footprint>, footprint_after: <footprint> }`; `footprint_after` is all zeros or the call fails. Audited (`echo_brain_deleted`, counts only). Irreversible; the library, notes, account and BYOK keys are untouched.

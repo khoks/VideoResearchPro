@@ -1,0 +1,972 @@
+{
+  "summary": {
+    "model": "openai:gpt-5.6-luna:off",
+    "repeats": 2,
+    "backlog_cost_per_100_inputs_usd": 0.00525,
+    "backlog_cost_per_10k_words_usd": 0.03306,
+    "incremental_cost_per_100_inputs_usd": 0.02056,
+    "examples_dropped_total": 0,
+    "calls_failed_total": 0
+  },
+  "runs": [
+    {
+      "persona": "asha",
+      "inputs": 34,
+      "words": 404,
+      "backlog_run": {
+        "inputs_read": 34,
+        "withdrawn": 0,
+        "batches": 1,
+        "calls_failed": 0,
+        "tokens_in": 1230,
+        "tokens_out": 1121,
+        "cost_usd": 0.001591,
+        "examples_dropped": 0,
+        "stylometry_removed": 0,
+        "model": "gpt-5.6-luna",
+        "created": 11,
+        "merged": 0,
+        "revived": 0,
+        "rejected_by_user": 0,
+        "seconds": 18.1
+      },
+      "incremental_run": {
+        "inputs_read": 6,
+        "withdrawn": 0,
+        "batches": 1,
+        "calls_failed": 0,
+        "tokens_in": 785,
+        "tokens_out": 670,
+        "cost_usd": 0.000961,
+        "examples_dropped": 0,
+        "stylometry_removed": 0,
+        "model": "gpt-5.6-luna",
+        "created": 0,
+        "merged": 10,
+        "revived": 0,
+        "rejected_by_user": 0,
+        "seconds": 5.7,
+        "new_inputs": 6
+      },
+      "signals_live": 11,
+      "by_origin": {
+        "stylometry": 2,
+        "llm": 9
+      },
+      "by_type": {
+        "cadence": 2,
+        "recurring_reference": 1,
+        "trusted_conclusion": 1,
+        "preferred_solution": 1,
+        "recommendation_lens": 1,
+        "apprehension": 1,
+        "methodology": 1,
+        "topic_emphasis": 1,
+        "perception_lens": 1,
+        "interest": 1
+      },
+      "signals": [
+        {
+          "type": "cadence",
+          "value": "Writes in short sentences (under 12 words on average)",
+          "weight": 3.0,
+          "language": "en",
+          "examples": 3
+        },
+        {
+          "type": "cadence",
+          "value": "Asks questions often (more than one sentence in seven)",
+          "weight": 3.0,
+          "language": "en",
+          "examples": 3
+        },
+        {
+          "type": "recurring_reference",
+          "value": "Uses cricket analogies to explain changing conditions and policy dynamics.",
+          "weight": 4.0,
+          "language": "en",
+          "examples": 4
+        },
+        {
+          "type": "trusted_conclusion",
+          "value": "Treats base rates and denominators as essential checks on apparently impressive claims.",
+          "weight": 6.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "preferred_solution",
+          "value": "Looks first for a concrete counterfactual or disconfirming condition before accepting a claim.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "recommendation_lens",
+          "value": "Values analytical honesty, especially clear distinctions between evidence, forecasts, wishes, and intentions.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "apprehension",
+          "value": "Distrusts claims that rest on thin, dependent, or financially interested evidence.",
+          "weight": 6.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "methodology",
+          "value": "Tests claims by checking independence, representativeness, base rates, incentives, counterfactuals, and whether evidence supports the conclusion.",
+          "weight": 7.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "topic_emphasis",
+          "value": "Gives special weight to incentives and who ultimately benefits or pays.",
+          "weight": 6.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "perception_lens",
+          "value": "Separates correlation from causation and tests whether apparent changes are real, representative, and durable.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "interest",
+          "value": "Returns repeatedly to the 1991 reforms as a key reference point for liberalisation and crises.",
+          "weight": 3.0,
+          "language": null,
+          "examples": 3
+        }
+      ],
+      "repeat": 1
+    },
+    {
+      "persona": "bharat",
+      "inputs": 34,
+      "words": 792,
+      "backlog_run": {
+        "inputs_read": 34,
+        "withdrawn": 0,
+        "batches": 1,
+        "calls_failed": 0,
+        "tokens_in": 1685,
+        "tokens_out": 1515,
+        "cost_usd": 0.002155,
+        "examples_dropped": 0,
+        "stylometry_removed": 0,
+        "model": "gpt-5.6-luna",
+        "created": 14,
+        "merged": 0,
+        "revived": 0,
+        "rejected_by_user": 0,
+        "seconds": 10.9
+      },
+      "incremental_run": {
+        "inputs_read": 6,
+        "withdrawn": 0,
+        "batches": 1,
+        "calls_failed": 0,
+        "tokens_in": 969,
+        "tokens_out": 1069,
+        "cost_usd": 0.001477,
+        "examples_dropped": 0,
+        "stylometry_removed": 0,
+        "model": "gpt-5.6-luna",
+        "created": 0,
+        "merged": 13,
+        "revived": 0,
+        "rejected_by_user": 0,
+        "seconds": 8.2,
+        "new_inputs": 6
+      },
+      "signals_live": 14,
+      "by_origin": {
+        "llm": 12,
+        "stylometry": 2
+      },
+      "by_type": {
+        "vocabulary": 1,
+        "cadence": 2,
+        "framing": 1,
+        "recurring_reference": 1,
+        "trusted_conclusion": 1,
+        "preferred_solution": 1,
+        "recommendation_lens": 1,
+        "apprehension": 1,
+        "methodology": 1,
+        "topic_emphasis": 1,
+        "perception_lens": 1,
+        "interest": 2
+      },
+      "signals": [
+        {
+          "type": "vocabulary",
+          "value": "Frequently uses careful evaluative language such as “measured,” “cautious,” “sober,” “even-handed,” and “incomplete.”",
+          "weight": 5.0,
+          "language": "en",
+          "examples": 5
+        },
+        {
+          "type": "cadence",
+          "value": "Writes in long sentences (over 20 words on average)",
+          "weight": 3.0,
+          "language": "en",
+          "examples": 3
+        },
+        {
+          "type": "cadence",
+          "value": "Adds asides in parentheses",
+          "weight": 3.0,
+          "language": "en",
+          "examples": 3
+        },
+        {
+          "type": "framing",
+          "value": "Opens criticism with measured qualifications and closes by identifying what remains incomplete or obscured.",
+          "weight": 5.0,
+          "language": "en",
+          "examples": 5
+        },
+        {
+          "type": "recurring_reference",
+          "value": "Returns to the contrast between imperial comparison and the specific institutional or economic context of each case.",
+          "weight": 5.0,
+          "language": "en",
+          "examples": 5
+        },
+        {
+          "type": "trusted_conclusion",
+          "value": "Historical conclusions should remain measured, qualified, and explicit about where the evidence ends.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "preferred_solution",
+          "value": "Improves an argument by adding caveats, comparisons, and finer distinctions rather than replacing it wholesale.",
+          "weight": 6.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "recommendation_lens",
+          "value": "Favors arguments that acknowledge benefits and costs while distinguishing what the evidence actually supports.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "apprehension",
+          "value": "Distrusts explanations that are overly simple, retrospective, or dependent on a single cause.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "methodology",
+          "value": "Tests historical claims against primary sources, chronology, and the limits of available evidence.",
+          "weight": 6.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "topic_emphasis",
+          "value": "Gives particular weight to agrarian relations, revenue systems, markets, and the unequal distribution of economic change.",
+          "weight": 6.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "perception_lens",
+          "value": "Reads history through the interaction of institutions, incentives, administrative choices, and material consequences.",
+          "weight": 6.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "interest",
+          "value": "Keeps examining how political institutions persist, change, and structure power across historical transitions.",
+          "weight": 6.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "interest",
+          "value": "Returns repeatedly to how colonial institutions reshaped agrarian economies and social boundaries.",
+          "weight": 3.0,
+          "language": null,
+          "examples": 3
+        }
+      ],
+      "repeat": 1
+    },
+    {
+      "persona": "chetan",
+      "inputs": 34,
+      "words": 425,
+      "backlog_run": {
+        "inputs_read": 34,
+        "withdrawn": 0,
+        "batches": 1,
+        "calls_failed": 0,
+        "tokens_in": 1476,
+        "tokens_out": 1286,
+        "cost_usd": 0.001838,
+        "examples_dropped": 0,
+        "stylometry_removed": 0,
+        "model": "gpt-5.6-luna",
+        "created": 16,
+        "merged": 0,
+        "revived": 0,
+        "rejected_by_user": 0,
+        "seconds": 10.0
+      },
+      "incremental_run": {
+        "inputs_read": 6,
+        "withdrawn": 0,
+        "batches": 1,
+        "calls_failed": 0,
+        "tokens_in": 904,
+        "tokens_out": 1070,
+        "cost_usd": 0.001465,
+        "examples_dropped": 0,
+        "stylometry_removed": 1,
+        "model": "gpt-5.6-luna",
+        "created": 0,
+        "merged": 15,
+        "revived": 0,
+        "rejected_by_user": 0,
+        "seconds": 7.5,
+        "new_inputs": 6
+      },
+      "signals_live": 15,
+      "by_origin": {
+        "llm": 11,
+        "stylometry": 4
+      },
+      "by_type": {
+        "vocabulary": 1,
+        "cadence": 4,
+        "formality_register": 1,
+        "trusted_conclusion": 1,
+        "preferred_solution": 1,
+        "recommendation_lens": 1,
+        "apprehension": 1,
+        "methodology": 1,
+        "topic_emphasis": 1,
+        "perception_lens": 1,
+        "interest": 2
+      },
+      "signals": [
+        {
+          "type": "vocabulary",
+          "value": "Frequently uses startup metrics and business-model terms such as unit economics, CAC, LTV, burn rate, retention, valuation, and profitability.",
+          "weight": 5.0,
+          "language": "hi-Latn",
+          "examples": 5
+        },
+        {
+          "type": "cadence",
+          "value": "Writes in medium-length sentences (12 to 20 words on average)",
+          "weight": 3.0,
+          "language": "hi-Latn",
+          "examples": 3
+        },
+        {
+          "type": "cadence",
+          "value": "Asks questions often (more than one sentence in seven)",
+          "weight": 3.0,
+          "language": "hi-Latn",
+          "examples": 3
+        },
+        {
+          "type": "cadence",
+          "value": "Uses emoji",
+          "weight": 3.0,
+          "language": "hi-Latn",
+          "examples": 3
+        },
+        {
+          "type": "cadence",
+          "value": "Often starts sentences in lowercase",
+          "weight": 3.0,
+          "language": "hi-Latn",
+          "examples": 3
+        },
+        {
+          "type": "formality_register",
+          "value": "Uses an informal, conversational Hinglish register with humor, emojis, and direct address.",
+          "weight": 5.0,
+          "language": "hi-Latn",
+          "examples": 5
+        },
+        {
+          "type": "trusted_conclusion",
+          "value": "Believes sustainable businesses must ultimately demonstrate real profitability and sound unit economics.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "preferred_solution",
+          "value": "Reaches first for simplicity, focused scope, and operational discipline rather than hype or aggressive expansion.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "recommendation_lens",
+          "value": "Judges businesses by who pays, why they pay, retention, profitability, and the evidence supporting growth.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "apprehension",
+          "value": "Is wary of subsidy-dependent growth, excessive funding, hype, and costly expansion without a durable business model.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "methodology",
+          "value": "Works things out by testing business assumptions against customers, data, metrics, and concrete execution.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "topic_emphasis",
+          "value": "Gives particular weight to sustainable startup economics, especially profitability, retention, customer acquisition, and operating costs.",
+          "weight": 6.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "perception_lens",
+          "value": "Reads startup success through execution and durable fundamentals rather than headline valuation, growth, or technology hype.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "interest",
+          "value": "Returns repeatedly to startup business models, especially marketplaces, food delivery, quick commerce, and B2B versus B2C sustainability.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "interest",
+          "value": "Shows sustained interest in understanding and evaluating startup metrics such as unit economics, CAC, LTV, burn rate, valuation, and retention.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        }
+      ],
+      "repeat": 1
+    },
+    {
+      "persona": "asha",
+      "inputs": 34,
+      "words": 404,
+      "backlog_run": {
+        "inputs_read": 34,
+        "withdrawn": 0,
+        "batches": 1,
+        "calls_failed": 0,
+        "tokens_in": 1230,
+        "tokens_out": 1171,
+        "cost_usd": 0.001651,
+        "examples_dropped": 0,
+        "stylometry_removed": 0,
+        "model": "gpt-5.6-luna",
+        "created": 14,
+        "merged": 0,
+        "revived": 0,
+        "rejected_by_user": 0,
+        "seconds": 8.2
+      },
+      "incremental_run": {
+        "inputs_read": 6,
+        "withdrawn": 0,
+        "batches": 1,
+        "calls_failed": 0,
+        "tokens_in": 809,
+        "tokens_out": 753,
+        "cost_usd": 0.001065,
+        "examples_dropped": 0,
+        "stylometry_removed": 0,
+        "model": "gpt-5.6-luna",
+        "created": 0,
+        "merged": 12,
+        "revived": 0,
+        "rejected_by_user": 0,
+        "seconds": 5.7,
+        "new_inputs": 6
+      },
+      "signals_live": 14,
+      "by_origin": {
+        "llm": 12,
+        "stylometry": 2
+      },
+      "by_type": {
+        "vocabulary": 1,
+        "cadence": 2,
+        "framing": 1,
+        "recurring_reference": 1,
+        "formality_register": 1,
+        "trusted_conclusion": 1,
+        "preferred_solution": 1,
+        "recommendation_lens": 1,
+        "apprehension": 1,
+        "methodology": 1,
+        "topic_emphasis": 1,
+        "perception_lens": 1,
+        "interest": 1
+      },
+      "signals": [
+        {
+          "type": "vocabulary",
+          "value": "Frequently reaches for terms from statistics, economics, and causal inference.",
+          "weight": 5.0,
+          "language": "en",
+          "examples": 5
+        },
+        {
+          "type": "cadence",
+          "value": "Writes in short sentences (under 12 words on average)",
+          "weight": 3.0,
+          "language": "en",
+          "examples": 3
+        },
+        {
+          "type": "cadence",
+          "value": "Asks questions often (more than one sentence in seven)",
+          "weight": 3.0,
+          "language": "en",
+          "examples": 3
+        },
+        {
+          "type": "framing",
+          "value": "Frames analysis through concise skeptical questions before accepting a claim.",
+          "weight": 5.0,
+          "language": "en",
+          "examples": 5
+        },
+        {
+          "type": "recurring_reference",
+          "value": "Returns repeatedly to cricket analogies and the 1991 reforms.",
+          "weight": 4.0,
+          "language": "en",
+          "examples": 4
+        },
+        {
+          "type": "formality_register",
+          "value": "Writes in a terse, analytical professional register.",
+          "weight": 4.0,
+          "language": "en",
+          "examples": 4
+        },
+        {
+          "type": "trusted_conclusion",
+          "value": "Treats source independence and replication as necessary for evidence.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "preferred_solution",
+          "value": "Reaches first for base rates, denominators, and counterfactuals to test claims.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "recommendation_lens",
+          "value": "Weighs incentives, funding, and who ultimately bears costs.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "apprehension",
+          "value": "Is wary of confident causal or predictive claims built on weak, biased, or insufficient evidence.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "methodology",
+          "value": "Tests arguments by checking assumptions, comparators, incentives, and what could falsify them.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "topic_emphasis",
+          "value": "Gives particular weight to tariffs, policy incentives, and their distributional effects.",
+          "weight": 3.0,
+          "language": null,
+          "examples": 3
+        },
+        {
+          "type": "perception_lens",
+          "value": "Reads public claims through incentives rather than stated intentions.",
+          "weight": 4.0,
+          "language": null,
+          "examples": 4
+        },
+        {
+          "type": "interest",
+          "value": "Keeps returning to the 1991 reforms as a central comparison for liberalisation and crises.",
+          "weight": 3.0,
+          "language": null,
+          "examples": 3
+        }
+      ],
+      "repeat": 2
+    },
+    {
+      "persona": "bharat",
+      "inputs": 34,
+      "words": 792,
+      "backlog_run": {
+        "inputs_read": 34,
+        "withdrawn": 0,
+        "batches": 1,
+        "calls_failed": 0,
+        "tokens_in": 1685,
+        "tokens_out": 1307,
+        "cost_usd": 0.001905,
+        "examples_dropped": 0,
+        "stylometry_removed": 0,
+        "model": "gpt-5.6-luna",
+        "created": 14,
+        "merged": 0,
+        "revived": 0,
+        "rejected_by_user": 0,
+        "seconds": 11.1
+      },
+      "incremental_run": {
+        "inputs_read": 6,
+        "withdrawn": 0,
+        "batches": 1,
+        "calls_failed": 0,
+        "tokens_in": 932,
+        "tokens_out": 714,
+        "cost_usd": 0.001043,
+        "examples_dropped": 0,
+        "stylometry_removed": 0,
+        "model": "gpt-5.6-luna",
+        "created": 0,
+        "merged": 11,
+        "revived": 0,
+        "rejected_by_user": 0,
+        "seconds": 5.3,
+        "new_inputs": 6
+      },
+      "signals_live": 14,
+      "by_origin": {
+        "llm": 12,
+        "stylometry": 2
+      },
+      "by_type": {
+        "vocabulary": 1,
+        "cadence": 2,
+        "framing": 1,
+        "recurring_reference": 1,
+        "formality_register": 1,
+        "trusted_conclusion": 1,
+        "preferred_solution": 1,
+        "recommendation_lens": 1,
+        "apprehension": 1,
+        "methodology": 1,
+        "topic_emphasis": 1,
+        "perception_lens": 1,
+        "interest": 1
+      },
+      "signals": [
+        {
+          "type": "vocabulary",
+          "value": "Uses carefully qualified language to distinguish evidence, interpretation and uncertainty.",
+          "weight": 4.0,
+          "language": "en",
+          "examples": 4
+        },
+        {
+          "type": "cadence",
+          "value": "Writes in long sentences (over 20 words on average)",
+          "weight": 3.0,
+          "language": "en",
+          "examples": 3
+        },
+        {
+          "type": "cadence",
+          "value": "Adds asides in parentheses",
+          "weight": 3.0,
+          "language": "en",
+          "examples": 3
+        },
+        {
+          "type": "framing",
+          "value": "Builds arguments through qualified agreement followed by a specific reservation.",
+          "weight": 4.0,
+          "language": "en",
+          "examples": 4
+        },
+        {
+          "type": "recurring_reference",
+          "value": "Returns to institutions, incentives and administrative arrangements as explanations of historical change.",
+          "weight": 3.0,
+          "language": "en",
+          "examples": 3
+        },
+        {
+          "type": "formality_register",
+          "value": "Writes in a formal, measured academic register.",
+          "weight": 4.0,
+          "language": "en",
+          "examples": 4
+        },
+        {
+          "type": "trusted_conclusion",
+          "value": "Treats historical claims as strongest when they acknowledge uncertainty and stop where the evidence ends.",
+          "weight": 4.0,
+          "language": null,
+          "examples": 4
+        },
+        {
+          "type": "preferred_solution",
+          "value": "Prefers more precise chronology, source checking and institutional analysis over broad generalisation.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "recommendation_lens",
+          "value": "Values arguments that are balanced, well documented and explicit about their limitations.",
+          "weight": 4.0,
+          "language": null,
+          "examples": 4
+        },
+        {
+          "type": "apprehension",
+          "value": "Is wary of single-cause explanations, retrospective categories and analogies that obscure historical specificity.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "methodology",
+          "value": "Works by testing claims against primary sources, institutional context and the sequence of events.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "topic_emphasis",
+          "value": "Gives particular weight to how institutions distribute power and produce unequal social and regional consequences.",
+          "weight": 3.0,
+          "language": null,
+          "examples": 3
+        },
+        {
+          "type": "perception_lens",
+          "value": "Reads historical developments through contingency, uneven effects and the gap between formal arrangements and lived outcomes.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "interest",
+          "value": "Frequently examines colonial and postcolonial South Asian history through political economy, administration and historical evidence.",
+          "weight": 3.0,
+          "language": null,
+          "examples": 3
+        }
+      ],
+      "repeat": 2
+    },
+    {
+      "persona": "chetan",
+      "inputs": 34,
+      "words": 425,
+      "backlog_run": {
+        "inputs_read": 34,
+        "withdrawn": 0,
+        "batches": 1,
+        "calls_failed": 0,
+        "tokens_in": 1476,
+        "tokens_out": 1070,
+        "cost_usd": 0.001579,
+        "examples_dropped": 0,
+        "stylometry_removed": 0,
+        "model": "gpt-5.6-luna",
+        "created": 17,
+        "merged": 0,
+        "revived": 0,
+        "rejected_by_user": 0,
+        "seconds": 9.0
+      },
+      "incremental_run": {
+        "inputs_read": 6,
+        "withdrawn": 0,
+        "batches": 1,
+        "calls_failed": 0,
+        "tokens_in": 876,
+        "tokens_out": 1013,
+        "cost_usd": 0.001391,
+        "examples_dropped": 0,
+        "stylometry_removed": 1,
+        "model": "gpt-5.6-luna",
+        "created": 0,
+        "merged": 14,
+        "revived": 0,
+        "rejected_by_user": 0,
+        "seconds": 7.8,
+        "new_inputs": 6
+      },
+      "signals_live": 16,
+      "by_origin": {
+        "llm": 12,
+        "stylometry": 4
+      },
+      "by_type": {
+        "vocabulary": 1,
+        "cadence": 4,
+        "framing": 1,
+        "formality_register": 1,
+        "trusted_conclusion": 1,
+        "preferred_solution": 1,
+        "recommendation_lens": 1,
+        "apprehension": 1,
+        "methodology": 1,
+        "topic_emphasis": 1,
+        "perception_lens": 1,
+        "interest": 2
+      },
+      "signals": [
+        {
+          "type": "vocabulary",
+          "value": "Frequently uses startup, marketplace, and business-metric terminology in conversational Hinglish.",
+          "weight": 4.0,
+          "language": "hi-Latn",
+          "examples": 4
+        },
+        {
+          "type": "cadence",
+          "value": "Writes in medium-length sentences (12 to 20 words on average)",
+          "weight": 3.0,
+          "language": "hi-Latn",
+          "examples": 3
+        },
+        {
+          "type": "cadence",
+          "value": "Asks questions often (more than one sentence in seven)",
+          "weight": 3.0,
+          "language": "hi-Latn",
+          "examples": 3
+        },
+        {
+          "type": "cadence",
+          "value": "Uses emoji",
+          "weight": 3.0,
+          "language": "hi-Latn",
+          "examples": 3
+        },
+        {
+          "type": "cadence",
+          "value": "Often starts sentences in lowercase",
+          "weight": 3.0,
+          "language": "hi-Latn",
+          "examples": 3
+        },
+        {
+          "type": "framing",
+          "value": "Cuts through broad claims by demanding concrete economics, evidence, or a clear point.",
+          "weight": 4.0,
+          "language": "hi-Latn",
+          "examples": 4
+        },
+        {
+          "type": "formality_register",
+          "value": "Writes in informal, conversational Hinglish with humor, slang, and emojis.",
+          "weight": 4.0,
+          "language": "hi-Latn",
+          "examples": 4
+        },
+        {
+          "type": "trusted_conclusion",
+          "value": "Believes durable businesses depend on profitability and execution rather than valuation, hype, or funding alone.",
+          "weight": 4.0,
+          "language": null,
+          "examples": 4
+        },
+        {
+          "type": "preferred_solution",
+          "value": "Starts with direct customer understanding and a simple, focused product-solution fit.",
+          "weight": 4.0,
+          "language": null,
+          "examples": 4
+        },
+        {
+          "type": "recommendation_lens",
+          "value": "Weighs sustainability, unit economics, and who actually pays when assessing businesses.",
+          "weight": 4.0,
+          "language": null,
+          "examples": 4
+        },
+        {
+          "type": "apprehension",
+          "value": "Is wary of subsidy-dependent models, excessive hype, and growth claims unsupported by retention or data.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "methodology",
+          "value": "Tests claims by examining metrics, asking focused questions, and seeking evidence from customers.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "topic_emphasis",
+          "value": "Gives particular weight to startup economics, including burn rate, CAC, LTV, retention, pricing, and profitability.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "perception_lens",
+          "value": "Reads startup stories through operational discipline and financial sustainability rather than promotional narratives.",
+          "weight": 5.0,
+          "language": null,
+          "examples": 5
+        },
+        {
+          "type": "interest",
+          "value": "Returns repeatedly to Zomato and comparable marketplace businesses as practical case studies.",
+          "weight": 2.0,
+          "language": null,
+          "examples": 2
+        },
+        {
+          "type": "interest",
+          "value": "Keeps coming back to marketplace dynamics and the challenge of balancing both sides.",
+          "weight": 2.0,
+          "language": null,
+          "examples": 2
+        }
+      ],
+      "repeat": 2
+    }
+  ]
+}

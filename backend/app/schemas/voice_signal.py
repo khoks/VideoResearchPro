@@ -44,9 +44,32 @@ class VoiceSignalItem(BaseModel):
     updated_at: datetime
 
 
+class LearningState(BaseModel):
+    """What extraction has read and what is waiting (S-3.3.2)."""
+
+    #: celery | inline | off
+    mode: str
+    #: The user's own texts Echo may learn from: live notes, questions,
+    #: own-words shares.
+    inputs: int
+    by_language: dict[str, int]
+    #: New, edited or deleted texts not yet read.
+    pending: int
+    #: A run is queued automatically once this many are waiting.
+    threshold: int
+    last_learned_at: datetime | None
+
+
 class VoiceSignalList(BaseModel):
     items: list[VoiceSignalItem]
     consent_version: str
+    learning: LearningState | None = None
+
+
+class LearnResponse(BaseModel):
+    #: queued | ran | waiting | off | not_entitled | queue_failed
+    status: str
+    pending: int
 
 
 class VoiceSignalCreate(BaseModel):

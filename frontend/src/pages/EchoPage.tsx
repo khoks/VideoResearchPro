@@ -365,7 +365,6 @@ export function EchoPage() {
             </h3>
             <ul style={{ margin: `${space['2']} 0 0`, paddingLeft: space['5'], fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal }}>
               <li>Pull-mode connectors: YouTube watch history, Spotify, email, calendar (E-3.2)</li>
-              <li>Learning signals automatically from your notes and questions (E-3.3)</li>
               <li>The "speak as me" agent that drafts in your voice once readiness is met (E-3.4)</li>
             </ul>
           </Card>

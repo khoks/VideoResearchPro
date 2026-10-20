@@ -47,6 +47,7 @@ from app.models.user_llm_override import UserLLMOverride
 from app.models.user_credential import UserCredential
 from app.models.visual_frame import VisualFrame
 from app.models.voice_signal import VoiceSignal
+from app.models.voice_signal_input import VoiceSignalInput
 
 __all__ = [
     "ActivityEvent",
@@ -99,4 +100,5 @@ __all__ = [
     "UserCredential",
     "VisualFrame",
     "VoiceSignal",
+    "VoiceSignalInput",
 ]

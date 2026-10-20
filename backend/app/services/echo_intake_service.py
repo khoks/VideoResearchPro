@@ -540,6 +540,7 @@ def delete_shares(db: Session, tenant_id: str, share_ids: list[str]) -> ShareDel
     # signals it fed (listed in `derived_signal_ids_json`); a signal with no
     # source left is tombstoned as `source_deleted`.
     from app.models.activity_event import ActivityEvent
+    from app.models.voice_signal_input import VoiceSignalInput
     from app.services import activity_event_service, echo_signal_service
 
     for share in shares:
@@ -555,6 +556,11 @@ def delete_shares(db: Session, tenant_id: str, share_ids: list[str]) -> ShareDel
             ActivityEvent.tenant_id == tenant_id,
             ActivityEvent.connector == activity_event_service.INTERNAL,
             ActivityEvent.external_id.in_([activity_event_service.share_external_id(sid) for sid in chunk]),
+        ).delete(synchronize_session=False)
+        # S-3.3.2: and out of the extraction ledger, with its style profile.
+        db.query(VoiceSignalInput).filter(
+            VoiceSignalInput.tenant_id == tenant_id,
+            VoiceSignalInput.source_ref.in_([f"share:{sid}" for sid in chunk]),
         ).delete(synchronize_session=False)
         db.query(Share).filter(Share.id.in_(chunk)).delete(synchronize_session=False)
     db.commit()

@@ -32,6 +32,8 @@ settings.NOTES_INDEX_ENABLED = False
 # the suite (shares stay pending); the processing tests call the processor
 # directly with every external call patched.
 settings.ECHO_SHARE_PROCESSING = "off"
+settings.ECHO_SIGNAL_EXTRACTION = "off"
+
 # S-3.2.1: connector syncs are queued to Celery in production; the suite
 # never queues (the connector tests run syncs inline with fakes).
 settings.ECHO_CONNECTOR_SYNC = "off"

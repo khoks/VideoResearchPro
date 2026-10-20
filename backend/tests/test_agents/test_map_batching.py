@@ -325,3 +325,75 @@ def test_shared_source_text_gives_the_same_verdicts_under_threads(monkeypatch):
     finally:
         sys.setswitchinterval(old)
     assert got == expected * 20
+
+
+# ---------- starved-source re-map (S-1.14.20) ---------------------------------
+
+class _FirstSourceOnly(_EchoLLM):
+    """Extracts only the FIRST video in each prompt: the starvation a large
+    packed batch produced for late sources in R1 runs 5-7."""
+
+    def invoke(self, messages):
+        prompt = messages[0].content
+        self.prompts.append(prompt)
+        first = re.search(r"\[Video (\w+) \|", prompt).group(1)
+        kept = "\n".join(line for line in prompt.splitlines()
+                         if not line.startswith("[Video ") or line.startswith(f"[Video {first} |"))
+        return _response(_items_for(kept))
+
+
+def _two_sources(n_a=12, n_b=12):
+    return [_chunk("a", i) for i in range(n_a)] + [_chunk("b", i) for i in range(n_b)]
+
+
+def test_a_starved_source_is_remapped_alone_and_replaces_its_thin_items(monkeypatch):
+    monkeypatch.setattr(settings, "REPORT_MAP_BATCHING", "packed")
+    monkeypatch.setattr(settings, "REPORT_MAP_BATCH_TOKENS", 6_000)      # both sources in one call
+    llm = _FirstSourceOnly()
+    out = _run(_two_sources(), llm)
+    calls = _videos_per_call(llm.prompts)
+    assert calls[0] == {"a", "b"} and calls[1:] == [{"b"}]
+    facts = [f["content"].split()[1] for s in out["chunk_summaries"] for f in s["facts"]]
+    assert facts.count("a") == 12 and facts.count("b") == 12
+    notes = out["processing_notes"]
+    assert (notes["map_batches"], notes["map_sources_remapped"], notes["map_remap_calls"]) == (1, 1, 1)
+    assert [r["batch_index"] for r in out["map_batch_records"]] == [0, 1]
+
+
+def test_a_small_source_is_not_called_starved(monkeypatch):
+    monkeypatch.setattr(settings, "REPORT_MAP_BATCHING", "packed")
+    monkeypatch.setattr(settings, "REPORT_MAP_BATCH_TOKENS", 6_000)
+    llm = _FirstSourceOnly()
+    out = _run(_two_sources(n_b=5), llm)                             # 5 chunks: under the floor
+    assert len(llm.prompts) == 1
+    assert out["processing_notes"]["map_sources_remapped"] == 0
+
+
+def test_source_batching_never_remaps(monkeypatch, small_batches):
+    monkeypatch.setattr(settings, "REPORT_MAP_BATCHING", "source")
+    llm = _FirstSourceOnly()
+    out = _run(_two_sources(), llm)
+    assert all(len(c) == 1 for c in _videos_per_call(llm.prompts))
+    assert out["processing_notes"]["map_sources_remapped"] == 0
+
+
+def test_starvation_is_judged_on_density_not_presence(monkeypatch):
+    # A source with a token item or two is still starved at 24 chunks.
+    monkeypatch.setattr(settings, "REPORT_MAP_BATCHING", "packed")
+    monkeypatch.setattr(settings, "REPORT_MAP_BATCH_TOKENS", 9_000)
+
+    class _OneItemForB(_FirstSourceOnly):
+        def invoke(self, messages):
+            r = super().invoke(messages)
+            body = json.loads(r.content)
+            if "[Video b |" in messages[0].content and len(_videos_per_call([messages[0].content])[0]) > 1:
+                body["facts"].append({"content": "fact b 0:00", "video_title": "Video b", "channel_name": "Chb",
+                                      "video_url": "https://www.youtube.com/watch?v=b", "timestamp_display": "0:00",
+                                      "timestamp_seconds": 0, "modality": "said"})
+            return _response(json.dumps(body))
+
+    out = _run(_two_sources(n_b=24), _OneItemForB())
+    assert out["processing_notes"]["map_sources_remapped"] == 1
+    # The token item from the starved pass is replaced, not kept beside the re-map.
+    facts = [f["content"] for s in out["chunk_summaries"] for f in s["facts"]]
+    assert sum(1 for f in facts if f.split()[1] == "b") == 24

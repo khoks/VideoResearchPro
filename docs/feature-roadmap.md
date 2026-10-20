@@ -132,7 +132,7 @@ Reels wait on the TTS decision. Site publishing (S-6.2.2) is design only.
 
 ### L3 — Echo (the personal brain) 🟡
 
-**Progress 2026-10-19.** The shares inbox (Domain 5, S-3.7.1) shipped with the whole-brain export and delete (S-3.10.1 / S-3.10.2) in [#286](https://github.com/khoks/VideoResearchPro/pull/286). Third-party content is context-only by default; see [personal-brain.md](personal-brain.md#privacy-carry-over).
+**Progress 2026-10-19.** The shares inbox (Domain 5, S-3.7.1) shipped with the whole-brain export and delete (S-3.10.1 / S-3.10.2) in [#286](https://github.com/khoks/VideoResearchPro/pull/286). Third-party content is context-only by default; see [personal-brain.md](personal-brain.md#privacy-carry-over). **Connectors (Domain 2):** the runtime (S-3.2.1, [#332](https://github.com/khoks/VideoResearchPro/pull/332), [#336](https://github.com/khoks/VideoResearchPro/pull/336); [D-098](decisions.md#d-098--echo-connectors-events-unique-per-reader-tokens-in-a-secret-store-that-is-erased-with-the-brain-but-never-exported-2026-10-19)) and the GitHub connector (S-3.2.4, [#342](https://github.com/khoks/VideoResearchPro/pull/342); public activity only, commit messages kept as the user's own words) shipped; YouTube likes and Calendar wait on a verified Google OAuth client only the user can set up.
 
 **Motivation.** The widest ring of the vision (see [vision.md](vision.md) Ring 3). Pratidhvani learns enough about the user — through opt-in life connectors *and* constant-stream sharing of liked videos / reels / memes / WhatsApp threads / Keep notes / quotes — that it can suggest questions before they ask, anticipate their needs, capture their personality, and eventually speak on their behalf.
 

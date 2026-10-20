@@ -22,6 +22,23 @@ PR [#343](https://github.com/khoks/VideoResearchPro/pull/343).
   happened. Startup repairs anything a failed update missed.
 - Searches always filter on your account; there is no unscoped query.
 
+### Added: the GitHub connector (2026-10-19)
+
+[S-3.2.4](docs/initiatives.md#s-324--github-connector), PR [#342](https://github.com/khoks/VideoResearchPro/pull/342).
+
+- Connect GitHub from the Echo page and Echo records your public activity:
+  pushes and the commits you wrote, pull requests, reviews, issues, comments,
+  releases, repositories you create, star or fork. What you wrote (commit
+  messages, PR and issue text, comments) is kept as your own words; nothing
+  private and no code is read.
+- The languages of your own repositories become skills Echo thinks you have,
+  marked as guesses (for example "Python (GitHub)").
+- It syncs nightly; the first sync also reads your commits from your own
+  repositories, because GitHub keeps only 30 days of activity.
+- Setup: create a GitHub OAuth app (or reuse the sign-in one with the
+  frontend origin as its callback URL) and set
+  `OAUTH_GITHUB_CONNECTOR_CLIENT_ID` / `_SECRET`.
+
 ### Added: Echo learns how you write (S-3.3.2, 2026-10-19)
 
 PR [#335](https://github.com/khoks/VideoResearchPro/pull/335). Decision [D-099](docs/decisions.md#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19); cost [measurement](docs/notes/2026-10-19-signal-extraction-cost.md).

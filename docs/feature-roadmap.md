@@ -137,7 +137,7 @@ Reels wait on the TTS decision. Site publishing (S-6.2.2) is design only.
 - extraction from the user's own words (S-3.3.2, [#335](https://github.com/khoks/VideoResearchPro/pull/335), [D-099](decisions.md#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19));
 - the personal retrieval collection (S-3.3.3, [#343](https://github.com/khoks/VideoResearchPro/pull/343));
 - the voice-match harness (S-3.3.4, [#346](https://github.com/khoks/VideoResearchPro/pull/346));
-- "speak as me" itself (S-3.4.1, [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM), [D-102](decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20)), built and off until the install switch and the user's own voice test are both on.
+- "speak as me" itself (S-3.4.1, [#357](https://github.com/khoks/VideoResearchPro/pull/357), [D-102](decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20)), built and off until the install switch and the user's own voice test are both on.
 
 Its pre-registered gate passed on synthetic writers ([D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19)), so "speak as me" may be built; it is enabled per user only after the user-as-judge test.
 

@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Added: "Speak as me" drafts a reply in your voice, off until you pass your voice test (S-3.4.1, 2026-10-20)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). [D-102](docs/decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20).
+PR [#357](https://github.com/khoks/VideoResearchPro/pull/357). [D-102](docs/decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20).
 
 - Paste a message on the Echo page and get a draft reply as you would write it. It is grounded in your sources, notes, facts and past answers, and cites each one it used.
 - Each draft shows:

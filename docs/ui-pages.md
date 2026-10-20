@@ -263,6 +263,8 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 | Error | "Couldn't load your saved searches." with **Retry**. |
 | Tier without the feature | "Saved searches come with Pro." with **See plans**; nothing is fetched. |
 
+**History** (S-8.3.3) opens a card's last runs: a badge per run (**Changed**, **No change**, **First answer**, **Nothing new to read** for the gate's skip, or the skip reason), when, whether it was scheduled or Run now, what changed ("Now cites 1 new source: …", or the judge's sentence), and links to **This answer** and, for a change, **The previous answer**. A notification lands here as `?search=<id>&run=<id>`: that card scrolls into view with its history open and the run outlined.
+
 ### `LibraryQAPage` — `/library/qa`
 **Purpose.** Ask questions across the entire library, with no per-job filter.
 
@@ -423,6 +425,9 @@ Tabs: **Structured** (topics / concepts / events / facts) and **Report** (Markdo
 `components/palette/` (S-8.2.2), mounted once in `AppLayout`. **Mod-K** or **Ctrl-Alt-K** anywhere, or the sidebar's **Search…** button (a search icon in the mobile bar). An input with combobox / listbox semantics (focus stays in the input; arrows move `aria-activedescendant`; Enter opens; Escape closes and returns focus). With no query: **Recent** (the last six items opened from it, per browser) and **Go to and do** (every page in the nav, **Getting started** for the first-run wizard, export notes as Markdown or JSON-LD, switch theme, turn single-key shortcuts off / on). Typing filters the actions on the client and, after 180 ms, asks `GET /search` (superseded requests are cancelled), showing **Runs**, **Sources**, **Channels**, **Questions** and **Knowledge reports** groups; empty groups are hidden. States: "Searching…" while the debounce or request is pending, "Nothing in your library matches “…”", and "Search is unavailable" (actions still work); the result count is announced politely. The panel and `cmdk` load on first open (a 19.6 kB-gzip chunk).
 
 Where results land: a run → `/jobs/<id>`; a question → its page with `?exchange=<id>`, which scrolls to the exchange card, focuses it and outlines it briefly (job page, library Q&A, Q&A history; the history page also keeps its `#exchange-<id>` links); a source → `/library?document=<id>`, the library narrowed to that row with "Show all sources"; a knowledge report → `/knowledge/<id>`; a channel → its page.
+
+### Notification bell (every protected page)
+`components/notifications/NotificationBell.tsx` (S-8.3.3), beside **Search…** in the sidebar and before the search icon in the mobile bar. The button names its unread count ("Notifications, 2 unread") and shows it as a badge. It opens a panel (dialog role) with the latest notices, newest first, unread ones tinted: title, body, how long ago. Opening one marks it read and goes to its `href`; **Mark all read** clears the count; Escape or a click outside closes it and focus returns to the bell. Empty: "Nothing new. A saved search tells you here when its answer changes." The list polls every minute and on focus; a WebSocket channel for it is a follow-up.
 
 ### Layout (`AppLayout`)
 - Today: top horizontal tab bar with the protected pages.

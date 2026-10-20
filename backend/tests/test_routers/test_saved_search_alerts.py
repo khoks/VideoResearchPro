@@ -195,11 +195,11 @@ def test_new_sources_and_a_new_answer_notify_in_app_and_by_email(db, pro, _seams
     assert json.loads(run.added_reference_ids_json) == ["v9"] and json.loads(run.dropped_reference_ids_json) == ["v1", "v2"]
     assert "October statement" in run.diff_summary and "No longer cites" in run.diff_summary
     (note,) = _notes(db, pro)
-    assert note.kind == "saved_search_changed" and note.href == f"/saved-searches?run={run.id}"
+    assert note.kind == "saved_search_changed" and note.href == f"/saved-searches?search={ss.id}&run={run.id}"
     assert note.title.startswith("New answer: What do my sources say")
     to, subject, body = _seams.call_args.args
     assert to == pro.email and "new answer" in subject
-    assert f"/saved-searches?run={run.id}" in body and saved_search_service_settings_base() in body
+    assert f"/saved-searches?search={ss.id}&run={run.id}" in body and saved_search_service_settings_base() in body
 
 
 def saved_search_service_settings_base():

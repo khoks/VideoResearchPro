@@ -343,7 +343,7 @@ def _notify(db: Session, user: User, ss: SavedSearch, run: SavedSearchRun, summa
     from app.services import email_service, notification_service
 
     short = ss.question if len(ss.question) <= 90 else ss.question[:87] + "…"
-    href = f"/saved-searches?run={run.id}"
+    href = f"/saved-searches?search={ss.id}&run={run.id}"
     try:
         notification_service.create(
             db,

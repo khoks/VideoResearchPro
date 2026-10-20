@@ -10,6 +10,20 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: saved-search alerts (2026-10-19)
+
+PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). S-8.3.3, plan [m3-saved-searches-alerts](docs/plans/m3-saved-searches-alerts.md).
+
+- A saved search now tells you when its answer **changes**: an in-app notice
+  under the new bell in the sidebar, and an email when the search asks for one.
+- Cheap by design: a scheduled run whose sources have not changed is skipped
+  before any quota or model call. When it does run, two signals decide (did the
+  cited sources change, did the answer's meaning move); a small judge breaks a
+  tie and writes the one-line "what changed".
+- Each saved search keeps its run history, with links to the new and previous
+  answers. The thresholds were [pre-registered](docs/notes/2026-10-19-saved-search-change-thresholds.md)
+  before calibration; the history held too few re-asks, so its priors apply for now.
+
 ### Added: saved searches (2026-10-19)
 
 PR [#320](https://github.com/khoks/VideoResearchPro/pull/320). S-8.3.2, plan [m3-saved-searches-alerts](docs/plans/m3-saved-searches-alerts.md).

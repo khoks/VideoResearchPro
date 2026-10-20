@@ -45,6 +45,16 @@ export function useDeleteSavedSearch() {
   return useMutation({ mutationFn: (id: string) => savedSearchesApi.remove(id), onSuccess: invalidate });
 }
 
+/** A saved search's last runs (S-8.3.3), fetched when its history is open. */
+export function useSavedSearchRuns(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: [...savedSearchesKey, id, 'runs'],
+    queryFn: () => savedSearchesApi.runs(id),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
 export function useRunSavedSearchNow() {
   const invalidate = useInvalidate();
   return useMutation({ mutationFn: (id: string) => savedSearchesApi.runNow(id), onSuccess: invalidate });

@@ -663,6 +663,26 @@ PATCH accepts any of the create fields plus `enabled`; a new cadence recomputes 
 ### `POST /api/v1/saved-searches/{id}/run-now`
 Queues one run on the caller's tier queue outside the schedule; 202 `{status: "queued"}`. The quota is checked here as well as in the run, so an exhausted month answers 429 at once. A run asks the library Q&A agent over the caller's visible set (narrowed to the shelf's runs' approved documents when scoped, never widened when that is empty), with corpus statistics and trust weights as `POST /library/qa` passes them, records the quota, stores a `library_qa_exchanges` row (indexed in `qa_library_global`, `scope_json` = the scope plus `saved_search_id`) and updates the saved search's baseline: answer hash, cited document set, last exchange.
 
+### `GET /api/v1/saved-searches/{id}/runs`
+The last 20 runs, newest first (S-8.3.3). Each: `ran_at`, `trigger` (`schedule` / `manual`), `status` (the saved-search statuses plus `no_new_sources`, the gate's skip), `exchange_id`, `previous_exchange_id`, `changed` (null on the first run, which sets the baseline, and on runs that did not answer), `jaccard` and `embedding_distance` (the two signals), `decided_by` (`none` / `agreed` / `judged` / `judge_failed`), `added_reference_ids`, `dropped_reference_ids`, `diff_summary`.
+
+**How a run decides it changed** ([pre-registered thresholds](notes/2026-10-19-saved-search-change-thresholds.md)): (1) a scheduled run whose scope resolves to the same document set as the last good run is skipped (`no_new_sources`, no quota, no model); Run now always asks. (2) After answering, the cited-set Jaccard below `SAVED_SEARCH_JACCARD_THRESHOLD` (0.50) or the answer-embedding cosine distance above `SAVED_SEARCH_EMBEDDING_THRESHOLD` (0.15) votes "changed". (3) When exactly one votes, `saved_search_judge` decides and writes the sentence; if it fails, the citation vote decides. A change writes a notification (`saved_search_changed`, `href` `/saved-searches?search=<id>&run=<run_id>`) and, when `notify_email` is on, an email through `email_service` linking to `APP_BASE_URL` + that path.
+
+---
+
+## Notifications
+
+In-app notices for the caller (S-8.3.3). No tier gate; today's only producer is a saved search whose answer changed.
+
+### `GET /api/v1/notifications?unread_only=&limit=`
+`{items: [{id, kind, title, body, href, read_at, created_at}], unread}`: newest first, `limit` 1 to 100 (default 30); `unread` counts every unread notice whatever the filter.
+
+### `PATCH /api/v1/notifications/{id}`
+Body `{read: true | false}`; another tenant's id is a 404.
+
+### `POST /api/v1/notifications/read-all`
+Marks every unread notice read; `{marked}`.
+
 ---
 
 ## Job templates

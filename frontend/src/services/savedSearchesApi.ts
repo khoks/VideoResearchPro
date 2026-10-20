@@ -12,6 +12,7 @@ export interface Cadence {
 
 export type SavedSearchStatus =
   | 'ok'
+  | 'no_new_sources'
   | 'failed'
   | 'quota_exceeded'
   | 'feature_unavailable'
@@ -34,6 +35,24 @@ export interface SavedSearch {
   last_success_at: string | null;
   last_exchange_id: string | null;
   last_answer: string | null;
+}
+
+/** One run (S-8.3.3). `changed` is null on the first run and when nothing was answered. */
+export interface SavedSearchRun {
+  id: string;
+  ran_at: string;
+  trigger: 'schedule' | 'manual';
+  status: SavedSearchStatus;
+  error: string | null;
+  exchange_id: string | null;
+  previous_exchange_id: string | null;
+  changed: boolean | null;
+  jaccard: number | null;
+  embedding_distance: number | null;
+  decided_by: 'none' | 'agreed' | 'judged' | 'judge_failed' | null;
+  added_reference_ids: string[];
+  dropped_reference_ids: string[];
+  diff_summary: string | null;
 }
 
 export interface SavedSearchList {
@@ -63,4 +82,5 @@ export const savedSearchesApi = {
     api.patch<SavedSearch>(`/saved-searches/${id}`, body).then((r) => r.data),
   remove: (id: string) => api.delete(`/saved-searches/${id}`).then(() => undefined),
   runNow: (id: string) => api.post<{ status: 'queued' }>(`/saved-searches/${id}/run-now`).then((r) => r.data),
+  runs: (id: string) => api.get<SavedSearchRun[]>(`/saved-searches/${id}/runs`).then((r) => r.data),
 };

@@ -10,6 +10,7 @@ import { ShelfDot } from '../components/shelves/ShelfDot';
 import { SystemStatusBanner } from '../components/common/SystemStatusBanner';
 import { CommandPalette } from '../components/palette/CommandPalette';
 import { SearchButton } from '../components/palette/SearchButton';
+import { NotificationBell } from '../components/notifications/NotificationBell';
 import { useShowGettingStarted } from '../hooks/useOnboarding';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, motion } from '../theme';
@@ -153,8 +154,12 @@ export function AppLayout() {
         }}
       >
         <BrandLockup onClick={() => handleTabChange('submit')} />
-        <div style={{ marginTop: space['5'] }}>
-          <SearchButton />
+        <div style={{ marginTop: space['5'], display: 'flex', alignItems: 'center', gap: space['1'] }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <SearchButton />
+          </div>
+          {/* S-8.3.3: saved-search alerts and later notices. */}
+          <NotificationBell />
         </div>
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', marginTop: space['5'] }}>
           {nav}
@@ -181,6 +186,7 @@ export function AppLayout() {
         >
           <BrandLockup compact onClick={() => handleTabChange('submit')} />
           <div style={{ display: 'flex', alignItems: 'center', gap: space['1'] }}>
+            <NotificationBell align="right" />
             <SearchButton compact />
             <HamburgerButton
               open={mobileNavOpen}

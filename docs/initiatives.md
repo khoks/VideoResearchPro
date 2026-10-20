@@ -1740,7 +1740,7 @@ Backend suite 835 → 855.
 #### S-8.2.3 ⚪ Semantic group
 - [ ] T-8.2.3.1 `semantic=true` adds a group from `qa_library_global` and the transcript collection (visible set only), merged with the keyword results by reciprocal rank fusion (rank-only, so FTS5 scores and Chroma distances need no calibration); labelled separately in the palette
 
-### E-8.3 🟡 Saved searches and alerts (M3)
+### E-8.3 🟢 Saved searches and alerts (M3)
 
 **Scope.** Pin a library question, re-run it on a schedule, detect whether new library content materially changed the answer, and notify by email and in-app. Carries the project's first scheduler, which [E-6.4](#e-64--newsletter--digest-recurring-scheduled-output) reuses.
 **Plan:** [`docs/plans/m3-saved-searches-alerts.md`](plans/m3-saved-searches-alerts.md)
@@ -1764,13 +1764,19 @@ Backend suite 835 → 855.
 
 Scope-changed 2026-10-19: (1) plan open question 1 at its suggested default, caps Free 0 / Pro 10 / Studio 50; question 2 at the narrower answer, library and shelf scopes only, no job scope. (2) The scope is S-8.1.4's library-question scope (`app/schemas/qa_scope.py`, merged as #313 while this was in progress), stored with `qa_scope_service.dump` and resolved with `resolve_document_ids`, so a shelf means the same documents here as in its list and its Q&A (D-083); a key the resolver does not know is a 422. (3) Each run's exchange carries `scope_json` with the narrowing scope plus the `saved_search_id` provenance key. (4) A run already records the baseline the detector needs (answer hash, cited set); the detector, run history, notifications and the email are S-8.3.3.
 
-#### S-8.3.3 🔵 Re-run, change detection and notification
-**PR:** TBD
-- [ ] T-8.3.3.1 Celery task runs the library Q&A agent with the saved scope and stores a `saved_search_runs` row (answer, references, embedding, changed flag, diff summary)
-- [ ] T-8.3.3.2 *(thresholds pre-registered 2026-10-19 in [`notes/2026-10-19-saved-search-change-thresholds.md`](notes/2026-10-19-saved-search-change-thresholds.md), before calibration)* Change detector in three stages: skip the re-run entirely when no document visible to the tenant has been granted since the last run (cost then scales with ingest, not with the number of saved searches); otherwise cited-document-set Jaccard below a threshold OR answer-embedding distance above a threshold → "changed"; an LLM judge (cheap tier) only when those two disagree, and it writes the notification text; thresholds in settings, pre-registered before tuning and calibrated on the app's own Q&A history
-- [ ] T-8.3.3.3 Email via `email_service.send_email` (already fail-soft when SMTP is unset) and an in-app `notifications` row
-- [ ] T-8.3.3.4 `notifications(id, tenant_id, kind, title, body, href, read_at, created_at)` + `GET /api/v1/notifications`, bell in the sidebar chrome
-- [ ] T-8.3.3.5 Tests: unchanged answers do not notify; a run that fails leaves the previous result intact
+#### S-8.3.3 🟢 Re-run, change detection and notification
+**PR:** [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)
+**Shipped:** 2026-10-19 — PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)
+- [x] T-8.3.3.1 Celery task runs the library Q&A agent with the saved scope and stores a `saved_search_runs` row (answer, references, embedding, changed flag, diff summary)
+- [x] T-8.3.3.2 *(thresholds pre-registered 2026-10-19 in [`notes/2026-10-19-saved-search-change-thresholds.md`](notes/2026-10-19-saved-search-change-thresholds.md), before calibration)* Change detector in three stages: skip the re-run entirely when no document visible to the tenant has been granted since the last run (cost then scales with ingest, not with the number of saved searches); otherwise cited-document-set Jaccard below a threshold OR answer-embedding distance above a threshold → "changed"; an LLM judge (cheap tier) only when those two disagree, and it writes the notification text; thresholds in settings, pre-registered before tuning and calibrated on the app's own Q&A history
+- [x] T-8.3.3.3 Email via `email_service.send_email` (already fail-soft when SMTP is unset) and an in-app `notifications` row
+- [x] T-8.3.3.4 `notifications(id, tenant_id, kind, title, body, href, read_at, created_at)` + `GET /api/v1/notifications`, bell in the sidebar chrome
+- [x] T-8.3.3.5 Tests: unchanged answers do not notify; a run that fails leaves the previous result intact
+- [ ] T-8.3.3.6 Re-run the pre-registered calibration once the history holds 20 re-ask pairs (`backend/scripts/calibrate_saved_search_thresholds.py`; saved-search runs produce such pairs) and set the two thresholds from it; until then the protocol's priors (J < 0.50, D > 0.15) apply
+- [ ] T-8.3.3.7 `subscribe:notifications` on the `/ws/jobs` WebSocket so the bell updates live (it polls every minute today)
+- [ ] T-8.3.3.8 Grade the `saved_search_judge` against its stored decisions (`decided_by = judged`) and notification read state, then promote its guidance to `measured`
+
+Scope-changed 2026-10-19: (1) **Calibration pending.** The pre-registered protocol ([#323](https://github.com/khoks/VideoResearchPro/pull/323), merged before any value was computed) found 4 Q&A exchanges and 2 re-ask pairs in the dev history, under its minimum of 20, so the detector ships with the protocol's priors; results are appended below the rule in the note. (2) **The gate compares document sets, not visibility timestamps.** A fingerprint of the scope's resolved document ids (`saved_searches.last_scope_hash`) is stored at each good run, and a scheduled run with the same set is skipped. A timestamp gate cannot see a shelf gaining a run whose documents were already visible, and on Windows a grant and a run can share a ~15 ms clock tick (found by the tests). (3) A judge failure lets the citation signal decide. (4) Notification links carry both ids (`?search=…&run=…`) so the page can open the right card. (5) The bell polls; the WebSocket channel is T-8.3.3.7. (6) New `APP_BASE_URL` for links in emails.
 
 ### E-8.4 🟢 Question suggestions (M4)
 

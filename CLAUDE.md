@@ -239,6 +239,10 @@ GET    /api/v1/saved-searches            # Pinned library questions (Pro+), S-8.
 POST   /api/v1/saved-searches            # Pin: {question, cadence, scope?, notify_email?}
 GET/PATCH/DELETE /api/v1/saved-searches/{id}
 POST   /api/v1/saved-searches/{id}/run-now  # Queue a run now (quota checked first)
+GET    /api/v1/saved-searches/{id}/runs     # Run history: change signals, diff (S-8.3.3)
+GET    /api/v1/notifications             # The bell: {items, unread}
+PATCH  /api/v1/notifications/{id}        # {read}
+POST   /api/v1/notifications/read-all
 
 GET    /api/v1/channels                # List all channels
 GET    /api/v1/channels/{id}           # Single channel detail
@@ -327,6 +331,10 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | **Temporal awareness (R3 / E-1.17)** | | | |
 | `TEMPORAL_SCOPE_ENABLED` | No | `True` | Per-document discussed-era extraction on first ingest (`temporal_scope_extract`, one economy-tier call per NEW document). Off = every era reads as unknown, which is also how a missing value is treated |
 | `TEMPORAL_SCOPE_WINDOW_TOKENS` | No | `1500` | Size of each of the three transcript windows (opening / middle / close) sampled for the era call |
+| `SAVED_SEARCH_JACCARD_THRESHOLD` | No | `0.50` | S-8.3.3: a run whose cited document set overlaps the previous one less than this votes "changed". Pre-registered prior (docs/notes/2026-10-19-saved-search-change-thresholds.md); calibration pending |
+| `SAVED_SEARCH_EMBEDDING_THRESHOLD` | No | `0.15` | S-8.3.3: an answer whose embedding is further than this (cosine distance) from the previous one votes "changed". Pre-registered prior; calibration pending |
+| `SAVED_SEARCH_GATE_ENABLED` | No | `True` | Skip a scheduled saved-search run whose scope resolves to the same document set as the last good run (no quota, no model). Run now always asks |
+| `APP_BASE_URL` | No | `http://localhost:5173` | Base of the links in emails (saved-search alerts) |
 | `SUGGESTIONS_CACHE_TTL_MIN` | No | `60` | How long a context's question suggestions (S-8.4.1) are reused before recomputing; a new exchange, report or knowledge state invalidates sooner. `0` = never reuse |
 | `REPORT_INTERMEDIATES_ENABLED` | No | `True` | Persist the report pipeline's per-batch map extractions and reduced dataset to `job_report_intermediates` (S-1.14.6), about twice the reduced dataset's size per run. Audit with `backend/scripts/audit_report_intermediates.py` |
 | **Code-mixed speech (R5 / N-002 / D-080)** | | | |
@@ -440,7 +448,7 @@ From highest to lowest:
 
 ### Registered use cases
 
-Twenty-nine named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
+Thirty named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
 
 ### Measured guidance (S-1.14.7)
 
@@ -486,6 +494,9 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 - `code_mixing_detect` — word-level language of 25 snippets per call: each snippet's Hindi runs verbatim plus its matrix (grammar) language. The evaluation reference, not on the ingest path: the lexicon tagger was more precise on romanised text at equal recall (D-080). Reasoning OFF, fail-soft, not a feature gate
 - `code_mixing_render_english` — English rendering of a non-English chunk, used only as what the chunk is EMBEDDED as (stored text stays the original; rendering kept as metadata `text_en`). Six chunks per call, once per document, inside `chroma_service.insert_chunks`. Retrieval MRR 0.565 → 0.805 on Devanagari chunks, 0.402 → 0.805 romanised (D-084). Reasoning OFF, fail-soft, not a feature gate
 
+**Saved-search change judge (`app/services/saved_search_change_service.py`, M3 / S-8.3.3):**
+- `saved_search_judge` — called only when a saved search's two change signals disagree (cited-set Jaccard vs answer-embedding distance, pre-registered thresholds); strict JSON `{changed, what_changed}`, which becomes the notification text. Volume tier, reasoning OFF (400-token cap), fail-soft (the citation signal decides), not a feature gate
+
 **Question suggestions (`app/services/suggestion_service.py`, M4 / S-8.4.1):**
 - `qa_suggest_questions` — "You might ask…": seven next questions from a summary of a run, a source or the library plus what was already asked there; merged with the caller's nearest past questions, de-duplicated, MMR-diversified, cached per (tenant, context) in `suggestion_cache`. Volume tier, reasoning OFF (900-token cap), fail-soft (history only), not a feature gate. The first LLM spend in I-8; impressions and clicks go to `audit_log`
 
@@ -498,7 +509,7 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 
 ## LLM startup smoke check + fail-soft
 
-`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 29 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
+`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 30 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
 
 **Health endpoints:**
 - `GET /api/v1/health` — overall status plus an `llm` field with `status` (`ok` / `degraded` / `down` / `unknown`) and `unavailable_features` (a list of feature names whose required use cases failed probing).

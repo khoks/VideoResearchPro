@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useSystemStatus } from '../hooks/useSystemStatus';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { QuickShare } from '../components/echo/QuickShare';
+import { EchoDropZone } from '../components/echo/EchoDropZone';
 import { useShelves } from '../hooks/useShelves';
 import { ShelfDot } from '../components/shelves/ShelfDot';
 import { SystemStatusBanner } from '../components/common/SystemStatusBanner';
@@ -117,6 +118,8 @@ export function AppLayout() {
       {has('echo_personal_brain') && (
         <div style={{ marginBottom: space['3'] }}>
           <QuickShare />
+          {/* S-3.7.3: drop a file, link or text anywhere. */}
+          <EchoDropZone />
         </div>
       )}
       <UserChrome

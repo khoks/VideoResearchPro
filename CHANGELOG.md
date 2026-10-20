@@ -10,6 +10,20 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Echo: drop anything in, and the Add to Echo browser extension (S-3.7.3 part 1, 2026-10-19)
+
+PR [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__).
+
+- Drop a file, a link or some text anywhere in the app and it goes to the
+  Echo inbox; a dropped WhatsApp or Takeout export opens the importer.
+- `extension/`: a Manifest V3 extension that adds the page, a link, a quote
+  or an image from the right-click menu, only when asked.
+- Share tokens (Echo page): they last until revoked, can only add to the
+  inbox, and are stored as hashes (`echo_share_tokens`, migration
+  `d3bc5b91fcce`, an Echo secret table).
+- Quotes and images keep the page they came from. Images shared by address
+  are fetched behind a public-address guard and read like uploads.
+
 ### Echo: import a WhatsApp chat or Google Keep notes (S-3.7.5 part 1, 2026-10-19)
 
 PR [#341](https://github.com/khoks/VideoResearchPro/pull/341). Sizing: [docs/notes/2026-10-19-s375-import-sizing.md](docs/notes/2026-10-19-s375-import-sizing.md).

@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useDeleteImport, useImports, usePreviewImport, useRetryImportEmbedding, useRunImport } from '../hooks/useEcho';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { useJobStore } from '../stores/jobStore';
@@ -53,6 +53,10 @@ export function EchoImportPage() {
   const retry = useRetryImportEmbedding();
   const undo = useDeleteImport();
   const tz = browserTimeZone();
+  // S-3.7.3: an export dropped anywhere in the app arrives here as router
+  // state and is previewed at once.
+  const location = useLocation();
+  const handed = (location.state as { file?: File } | null)?.file;
 
   const clearChoices = () => {
     setFile(null);
@@ -121,6 +125,15 @@ export function EchoImportPage() {
     );
   };
 
+  useEffect(() => {
+    if (handed instanceof File && allowed) {
+      pick(handed);
+      navigate('.', { replace: true, state: null });
+    }
+    // pick is recreated each render; run once per handed file.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handed, allowed]);
+
   const needsSelf = preview?.importer === 'whatsapp' && !self;
   const s = preview?.summary ?? {};
 
@@ -158,6 +171,9 @@ export function EchoImportPage() {
                   aria-label="Choose an export file"
                   style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textPrimary }}
                 />
+                {file && !inputRef.current?.files?.length && (
+                  <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textPrimary }}>{file.name}</span>
+                )}
                 {previewImport.isPending && <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textMuted }}>Reading it…</span>}
               </div>
 

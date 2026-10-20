@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { EchoDataCard } from '../components/echo/EchoDataCard';
+import { ShareTokensCard } from '../components/echo/ShareTokensCard';
 import { SignalsPanel } from '../components/echo/SignalsPanel';
 import { ActivityTimeline } from '../components/echo/ActivityTimeline';
 import { ConnectorsPanel } from '../components/echo/ConnectorsPanel';
@@ -353,6 +354,10 @@ export function EchoPage() {
 
           <div style={{ marginTop: space['6'] }}>
             <SignalsPanel />
+          </div>
+
+          <div style={{ marginTop: space['6'] }}>
+            <ShareTokensCard />
           </div>
 
           <div style={{ marginTop: space['6'] }}>

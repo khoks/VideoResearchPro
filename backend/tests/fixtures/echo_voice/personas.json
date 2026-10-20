@@ -1,0 +1,152 @@
+{
+  "about": "Three SYNTHETIC writers, invented for tests (S-3.3.2 extraction, S-3.3.4 voice-match harness). No real person's words. Each has notes, questions, and held-out texts the harness never shows the drafter. Their styles differ on purpose: Asha writes short, questioning English; Bharat writes long, formal English with parentheses and semicolons; Chetan writes casual Hinglish in Roman script, lowercase, with emoji.",
+  "personas": {
+    "asha": {
+      "language": "en",
+      "notes": [
+        "What is the base rate here? Nobody in this video says. That is the first thing I check.",
+        "One source is not evidence. Two sources that copy each other are still one source.",
+        "The incentive explains the behaviour. Look at who gets paid when the policy passes.",
+        "Interesting point on tariffs. But who pays them in the end? Usually the importer, then the buyer.",
+        "I keep coming back to the 1991 reforms. Every argument about liberalisation routes through them.",
+        "This is a classic Duckworth-Lewis problem. The target changes when the rules change mid-game.",
+        "Good data, weak conclusion. The chart shows correlation and the speaker sells causation.",
+        "Why do central banks move together? Coordination, or the same models with the same inputs?",
+        "Base rates again. Most startups fail. So a founder story proves very little.",
+        "Short note: check the denominator. Growth from a tiny base looks huge.",
+        "Who funded the study? I want that before I read the abstract.",
+        "The speaker hedges well. I trust people who say what would change their mind.",
+        "Tariffs are a tax with better marketing. That is my working view until shown otherwise.",
+        "Like a slow over in cricket: nothing happens, then everything happens. Inflation felt like that.",
+        "Is this a trend or a blip? Three data points are not a trend.",
+        "Incentives first, intentions second. Intentions are cheap to claim.",
+        "I like how she separates the forecast from the wish. Most people blend them.",
+        "What would the counterfactual look like? Without that, the claim floats.",
+        "Single-source claim again. Flagging it and moving on.",
+        "Read the footnotes. The real argument is usually hiding there.",
+        "Compare the 1991 crisis with this one. Reserves, debt, politics. Different on every axis.",
+        "Is the sample representative? A survey of app users says nothing about non-users.",
+        "Strong claim, thin evidence. I would bet against it at even odds.",
+        "Field position matters, as in cricket. Policy works when the field is set for it."
+      ],
+      "questions": [
+        "What is the base rate of success for policies like this?",
+        "Which sources here are independent of each other?",
+        "Who benefits financially if this tariff passes?",
+        "How did the 1991 reforms change the import regime?",
+        "What evidence would change the speaker's conclusion?",
+        "Is the growth figure measured from a small base?",
+        "Who funded the studies cited in these videos?",
+        "What is the counterfactual for this policy?",
+        "Do any sources disagree with the consensus here?",
+        "How representative is the sample in this survey?"
+      ],
+      "held_out": [
+        "What is the denominator? Without it the percentage is noise. Ask that first.",
+        "Two think tanks, one funder. That is one source, not two.",
+        "The incentive is obvious once you look. Follow the money, then the rules.",
+        "Is this a trend? Four quarters is barely a season. Wait for more data.",
+        "Like chasing in the last over: the required rate hides how much risk you are taking.",
+        "Strong story, no base rate. I would not bet on it."
+      ]
+    },
+    "bharat": {
+      "language": "en",
+      "notes": [
+        "It is worth recalling, before one passes judgement on the present arrangement, that the Mughal revenue system (the zabt, as Todar Mal refined it) was itself an attempt to reconcile central authority with local custom; the parallel is imperfect, but it is instructive.",
+        "The speaker's account of the partition is careful, although it underweights the administrative haste of 1947; one cannot understand the violence without understanding how little time the boundary commission was given.",
+        "I remain cautious about narratives that assign a single cause to the decline of an empire; the evidence, where it exists at all, points to a convergence of fiscal strain, military overextension and succession disputes.",
+        "There is a tendency (common among popular historians) to read the nineteenth century backwards from the twentieth; it flatters our hindsight and distorts the choices people actually faced.",
+        "The lecture's treatment of the Permanent Settlement of 1793 is admirably even-handed; it notes the revenue stability Cornwallis sought while acknowledging the burden it placed upon cultivators in lean years.",
+        "One ought to distinguish, as the archival record permits, between what a treaty promised and what the parties subsequently did; the gap between the two is often where the history lies.",
+        "My reservation concerns the use of census categories as though they were timeless; the colonial census did not merely count communities, it helped to fix their boundaries.",
+        "The comparison with the Habsburg monarchy is suggestive (both were composite polities held together by dynastic loyalty), yet the economic foundations differed in ways the speaker does not address.",
+        "I should like to see the primary sources for the claim about grain exports during the famine; the figures quoted are plausible, but plausibility is not proof.",
+        "The second half of the talk is stronger than the first; once the speaker turns to the land records, the argument acquires a firmness that the earlier generalisations lacked.",
+        "It would be a mistake, I think, to treat the Company as a mere trading concern after 1765; with the diwani it became a revenue authority, and its incentives changed accordingly.",
+        "The question of continuity versus rupture in 1857 has no simple answer; the institutions that followed were new in name, though many of the men and the habits were not.",
+        "I am persuaded by the argument about railways and market integration, although the welfare consequences (particularly for regions that lost their local markets) deserve a fuller treatment.",
+        "Historians of the period disagree, and they disagree for good reasons; the sources are fragmentary, partisan and frequently written long after the events they describe.",
+        "The speaker is right to emphasise the role of moneylenders in the agrarian economy; the colonial courts, by enforcing contracts strictly, shifted bargaining power in their favour.",
+        "A careful reader will notice that the timeline offered here compresses two decades into a single sentence; the compression is convenient, but it obscures the sequence of causes.",
+        "I find the economic interpretation of the salt march less convincing than the symbolic one; the tax itself was modest, whereas the act of defiance was legible to everyone.",
+        "There is an elegance to the argument that princely states survived because they were useful (as buffers, as allies, as examples of indirect rule); it is, however, incomplete.",
+        "We should be wary of the word 'golden age'; it usually tells us more about the writer's present than about the past being described.",
+        "The treatment of the Bengal famine of 1943 is sober and well documented; the speaker resists the temptation to simplify, which is to be commended.",
+        "If one reads the debates of the Constituent Assembly, one is struck by how openly the members acknowledged their uncertainty; the document they produced was a wager as much as a settlement.",
+        "I would add one caveat to the discussion of the Green Revolution: its gains were real, but they were regionally concentrated, and the ecological costs arrived later and unevenly.",
+        "The analogy with Rome is overworked; every empire is compared to Rome eventually, and the comparison rarely clarifies as much as its users suppose.",
+        "On balance, the lecture succeeds; its conclusions are measured, its sources are cited, and its author is willing to say where the evidence runs out."
+      ],
+      "questions": [
+        "What primary sources support the figures on grain exports during the famine?",
+        "How did the diwani of 1765 change the Company's incentives?",
+        "In what ways did the colonial census shape community boundaries?",
+        "How do historians assess continuity and rupture after 1857?",
+        "What were the regional consequences of railway market integration?",
+        "How did the Permanent Settlement affect cultivators in lean years?",
+        "Which institutions survived the transfer of power in 1947?",
+        "What do the Constituent Assembly debates reveal about the framers' uncertainty?",
+        "How concentrated were the gains of the Green Revolution?",
+        "Why did the princely states survive under indirect rule?"
+      ],
+      "held_out": [
+        "The argument is persuasive in outline, although it rests (as such arguments often do) on a reading of the revenue records that other historians would contest; one would wish to see the disputed figures set out in full.",
+        "It is tempting to describe the reform as a turning point; I am inclined, however, to see it as the culmination of changes already under way, which the legislation merely recognised.",
+        "We should distinguish between the stated aims of the policy and its administration in the districts; the archive suggests that the two diverged almost at once.",
+        "The comparison with the Ottoman experience is apt in part (both empires governed through intermediaries), yet the fiscal arrangements were quite different, and the difference matters.",
+        "I remain unconvinced that a single cause will bear the weight the speaker places upon it; the decline was gradual, contested and, above all, uneven across regions.",
+        "On balance, the account is fair; its author is candid about the limits of the sources, which is more than one can say for most popular treatments of the period."
+      ]
+    },
+    "chetan": {
+      "language": "hi-Latn",
+      "notes": [
+        "yaar ye video toh ekdum mast hai 😂 but data kahan hai bhai??",
+        "honestly mujhe lagta hai ki startup culture overhyped hai, sab log bas funding ke peeche bhaag rahe hain!",
+        "bhai ye wala point sahi hai, product pehle banao, marketing baad mein",
+        "lol ye banda har baat mein AI ghusa deta hai 🙄 kuch bhi bolo AI se solve ho jayega",
+        "mera simple funda hai, customer se baat karo, wo bata dega kya chahiye",
+        "ye pricing wala logic samajh nahi aaya, itna sasta kaise chal raha hai inka business??",
+        "bilkul sahi bola, jugaad se company nahi chalti, process chahiye 💯",
+        "yaar mujhe ye zomato wala case study bahut pasand hai, har baar kuch naya seekhne ko milta hai",
+        "dekho bhai burn rate ka scene samjho pehle, warna 18 mahine mein dukaan band",
+        "ye podcast wale log kitna bolte hain yaar 😅 point pe aao na",
+        "mujhe dar lagta hai ki ye sab subsidy ka khel hai, jab paisa khatam toh customer bhi khatam",
+        "ekdum faltu argument, unit economics dekho pehle phir bolo profitable hai",
+        "kya baat hai! finally kisi ne sahi se explain kiya ki CAC aur LTV kya hota hai",
+        "bhai main toh har startup ko ek hi sawaal poochta hoon, paisa kaun dega aur kyun dega?",
+        "ye wala founder genuine lagta hai, galti maan leta hai, mujhe aise log pasand hain 👍",
+        "yaar quick commerce ka hype dekh ke darr lagta hai, itne dark stores kaun chalayega?",
+        "sach bolu toh mujhe B2B zyada solid lagta hai, boring hai par paisa wahi hai",
+        "ye graph dekho, growth hai par retention gayab 😬 isko growth nahi bolte",
+        "mast explanation! ab samajh aaya ki marketplace mein dono side ko kaise pakadna hai",
+        "bhai ye 10x wala gyaan band karo, pehle 2x karke dikhao",
+        "zomato swiggy wala comparison phir se, har baar same lesson, execution sab kuch hai",
+        "mujhe ye nahi samajh aata ki log valuation pe itna khush kyun hote hain, profit kahan hai?",
+        "simple rakho yaar, ek problem, ek customer, ek solution 🙏",
+        "haha ye toh wahi baat hui, naam bada aur darshan chhote 😂"
+      ],
+      "questions": [
+        "is startup ka unit economics kya hai?",
+        "quick commerce mein dark stores ka cost kitna hota hai?",
+        "CAC aur LTV ka ratio kya hona chahiye?",
+        "zomato ne profitability kaise achieve ki?",
+        "burn rate kam karne ke tareeke kya hain?",
+        "B2B vs B2C mein kaunsa zyada sustainable hai?",
+        "retention kaise measure karte hain?",
+        "subsidy band hone ke baad customers kyun chale jaate hain?",
+        "marketplace mein chicken and egg problem kaise solve karte hain?",
+        "valuation aur profit mein kya fark hai?"
+      ],
+      "held_out": [
+        "bhai pehle ye batao paisa kahan se aa raha hai?? baaki sab baad mein 😅",
+        "mujhe toh ye pura model subsidy pe chalta dikh raha hai, jab funding rukegi tab dekhna",
+        "yaar retention dikhao, downloads se kuch nahi hota 🙄",
+        "simple funda, customer ki problem solve karo, paisa apne aap aayega 💯",
+        "ye founder ki baat sahi lagi, galti maani aur pivot kiya 👍",
+        "lol ek aur AI startup, kya hi solve kar lenge ye log 😂"
+      ]
+    }
+  }
+}

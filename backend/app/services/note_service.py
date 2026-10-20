@@ -267,6 +267,7 @@ def create_note(
         "notes: tenant %s wrote note %s on %s:%s",
         tenant_id[:8], note.id[:8], target.target_type, target.target_id[:12],
     )
+    _echo_learn(db, tenant_id)
     return note
 
 
@@ -308,6 +309,7 @@ def update_note(
     note.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(note)
+    _echo_learn(db, tenant_id)
     return note
 
 
@@ -316,9 +318,23 @@ def delete_note(db: Session, tenant_id: str, note_id: str) -> Note:
     signal); it leaves every live list and ``get_note`` at once."""
     note = get_note(db, tenant_id, note_id)
     note.deleted_at = datetime.now(timezone.utc)
+    # D-074 / S-3.3.2: a withdrawn note stops counting as the user's voice at
+    # once: out of every signal it fed (a signal with nothing left is
+    # suppressed), out of the extraction ledger.
+    from app.services import echo_signal_extraction
+
+    echo_signal_extraction.withdraw_input(db, tenant_id, f"note:{note.id}")
     db.commit()
     db.refresh(note)
     return note
+
+
+def _echo_learn(db: Session, tenant_id: str) -> None:
+    """S-3.3.2: notes are Echo's richest voice input. Queues signal
+    extraction once enough new text is waiting; fail-soft."""
+    from app.services import echo_signal_extraction
+
+    echo_signal_extraction.maybe_queue(db, tenant_id)
 
 
 def list_notes(

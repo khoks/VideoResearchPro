@@ -269,6 +269,22 @@ class Settings(BaseSettings):
     ECHO_REMOTE_MEDIA: bool = True
     # Wall-clock cap on decoding one shared recording with ffmpeg.
     ECHO_MEDIA_DECODE_TIMEOUT_SEC: int = 300
+    # S-3.3.2: voice and personality signal extraction. "celery" queues one
+    # `echo.extract_signals` run per tenant once ECHO_SIGNALS_MIN_NEW_INPUTS
+    # new or edited texts (notes, questions, own-words shares) are waiting;
+    # "inline" runs in the request (single-process dev); "off" never runs
+    # (the test suite).
+    ECHO_SIGNAL_EXTRACTION: str = "celery"
+    ECHO_SIGNALS_MIN_NEW_INPUTS: int = 10
+    # One economy-tier call reads up to this many tokens of the user's text.
+    ECHO_SIGNALS_BATCH_TOKENS: int = 6000
+    # Candidate signals one batch may return, and the output cap that bounds
+    # them (reasoning stays off: OpenAI counts reasoning tokens against it).
+    ECHO_SIGNALS_MAX_PER_BATCH: int = 12
+    ECHO_SIGNALS_MAX_OUTPUT_TOKENS: int = 2500
+    # Cost bound per run: a backlog larger than this many batches is read
+    # over several runs.
+    ECHO_SIGNALS_MAX_BATCHES_PER_RUN: int = 20
 
     # -------------------------------------------------------------------
     # Visual understanding (R1 / E-1.18) — frame capture + description

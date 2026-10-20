@@ -32,6 +32,7 @@ settings.NOTES_INDEX_ENABLED = False
 # the suite (shares stay pending); the processing tests call the processor
 # directly with every external call patched.
 settings.ECHO_SHARE_PROCESSING = "off"
+settings.ECHO_SIGNAL_EXTRACTION = "off"
 # S-3.7.2 part 2: no shared image or recording may reach a remote provider
 # from the suite. Tests of the vision fallback and Whisper turn this back on
 # with the remote call patched.

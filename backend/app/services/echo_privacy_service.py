@@ -50,6 +50,7 @@ from sqlalchemy.orm import Session
 from app.models.personal_context import PersonalContext
 from app.models.share import Share
 from app.models.voice_signal import VoiceSignal
+from app.models.voice_signal_input import VoiceSignalInput
 from app.services import echo_intake_service, echo_vectors
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,9 @@ ECHO_TABLES: tuple[tuple[str, Any], ...] = (
     ("shares_inbox", Share),
     # S-3.3.1: voice and personality signals, tombstones included.
     ("voice_signals", VoiceSignal),
+    # S-3.3.2: which of the user's texts extraction read, with their
+    # stylometric profiles.
+    ("voice_signal_inputs", VoiceSignalInput),
 )
 
 _BATCH = 200

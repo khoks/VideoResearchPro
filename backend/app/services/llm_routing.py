@@ -131,6 +131,8 @@ UseCase = Literal[
     "author_book_prose",
     # Author Studio slide deck (S-6.3.1) — app/services/outputters/deck.py
     "author_deck_outline",
+    # Author Studio newsletter (S-6.4.1) — app/services/outputters/newsletter.py
+    "author_newsletter_compose",
     # Saved-search change judge (M3 / S-8.3.3) — app/services/saved_search_change_service.py
     "saved_search_judge",
     # Echo share processing (S-3.7.2) — app/services/echo_processing_service.py
@@ -1570,6 +1572,35 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "see images invents text from nothing, so keep it on a vision "
             "model.",
             related=("D-073", "D-081", "D-089"),
+        ),
+    ),
+    "author_newsletter_compose": UseCaseInfo(
+        default_route="primary",
+        default_config=UseCaseConfig("anthropic", "claude-sonnet-5", "low"),
+        summary=(
+            "Write a newsletter issue's featured deep-dive (150 to 250 words) "
+            "from ONE source in the reader's library, a report or a knowledge "
+            "report, whose citations arrive as [S#] markers; every sentence "
+            "carries a marker. Plain prose, no JSON. The rest of the issue is "
+            "listed from the database."
+        ),
+        typical_input_tokens=3_500,
+        p95_input_tokens=6_000,
+        typical_output_tokens=600,
+        min_context_recommended=16_384,
+        rationale=(
+            "Short user-facing prose, the job claude-sonnet-5 does for "
+            "knowledge synthesis, at reasoning low because the piece is a "
+            "rewrite of one excerpt, not a synthesis across sources. Plain "
+            "text rather than JSON: the S-6.1.3 trial found Sonnet's prose "
+            "breaks JSON strings. Fail-soft: a failed call or a section that "
+            "cites nothing is replaced by the source's own summary and the "
+            "issue says so, so it is not a feature gate."
+        ),
+        guidance=_unmeasured(
+            "Judged blind against the source's own summary before it became "
+            "the default featured section; see the S-6.4.1 notes in the "
+            "decision log. No other model has been judged for it.",
         ),
     ),
     # --- Social-media candidate classification (S-1.5.3) ---------------

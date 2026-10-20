@@ -25,7 +25,7 @@ Reply with JSON only:
   "people": [{{"name": "a person named in the message", "public": true | false}}]}}
 
 "language" is the message's: en (English), hi-Deva (Hindi in Devanagari), hi-Latn (Hindi in Roman letters), mixed.
-List every person the message names. "public" is true only for a public figure (a politician, a famous author, a company's CEO in the news); a friend, colleague or relative is false."""
+List every person the message names BY NAME (a proper name such as "Priya" or "Rohan Mehta"). A relationship without a name ("my uncle", "your boss") is not a name: leave it out. "public" is true only for a public figure (a politician, a famous author, a company's CEO in the news); a friend, colleague or relative is false."""
 
 
 DRAFT_PROMPT = """You are drafting a reply AS a specific person, in their voice. The person will read your draft, edit it and decide whether to send it. You never send anything.
@@ -39,7 +39,7 @@ Things they actually wrote (match their style; do not copy their sentences):
 What they know about themselves:
 {facts}
 
-What their library and notes say about this topic. Use it for substance. Put a marker such as [S2] right after every claim it supports. Never copy its wording: say it the way this person would. A claim no item below supports must not be made; say less instead.
+What their library and their own notes say about this topic. Use it for substance: their own notes ([N#]) are their views, so build on them. After every point that comes from an item, put that item's marker in square brackets, for example [N1] or [S2]. The markers are removed before anyone reads the draft, so add them freely; a point without a marker counts as unsupported. Never copy a source's wording: say it the way this person would. A factual claim no item below supports must not be made; say less instead.
 {knowledge}
 
 The message they are replying to:

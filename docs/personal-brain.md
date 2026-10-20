@@ -50,6 +50,7 @@ The bubble is *always* there once a user has Echo enabled. Pages with their own 
 - **Phones:** the bubble moves into the top bar, so it never covers the docked composer.
 - **Not ready:** the bubble is never hidden or dimmed. The panel always opens, shows readiness in words, and answers questions over the library and past Q&As at any readiness.
 - **Speaking as the user** waits for both readiness and the per-user voice test ([D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19)). The panel says which of the two is missing.
+- **Anticipation (S-3.8.2)** is pull, not push. Cards about changed saved searches, newly read shares and questions for the page appear only inside the opened panel, under a pre-registered cap and dismissal rule ([D-103](decisions.md#d-103--anticipation-cards-only-in-the-opened-panel-three-a-view-three-days-a-key-three-dismissals-turn-a-kind-off-2026-10-20)).
 
 ### Cold-start: Echo refuses before it can echo well
 

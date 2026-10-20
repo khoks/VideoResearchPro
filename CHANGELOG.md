@@ -10,6 +10,17 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Echo: anticipation cards in the panel (S-3.8.2, 2026-10-20)
+
+PR [#358](https://github.com/khoks/VideoResearchPro/pull/358).
+
+- When you open the Echo panel, up to three one-line cards offer a next
+  step: a saved search whose answer changed, shares read since you last
+  opened the inbox, or questions for the page you are on.
+- They never pop up, badge or notify. Each card shows on three days at
+  most, × retires it, and three dismissals of a kind in a month turn that
+  kind off (D-103). These rules were pre-registered before any card was
+  built.
 ### Added: "Speak as me" drafts a reply in your voice, off until you pass your voice test (S-3.4.1, 2026-10-20)
 
 PR [#357](https://github.com/khoks/VideoResearchPro/pull/357). [D-102](docs/decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20).

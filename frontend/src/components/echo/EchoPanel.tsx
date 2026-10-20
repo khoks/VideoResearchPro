@@ -20,9 +20,9 @@
  */
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CitationLink } from '../citation';
 import { Badge, Button, Spinner, Textarea } from '../primitives';
 import { useAskLibraryQA } from '../../hooks/useLibraryQA';
@@ -31,13 +31,16 @@ import { useEchoConnectors, useEchoStatus } from '../../hooks/useEcho';
 import { useFeatureAvailable } from '../../hooks/useFeatureAvailable';
 import { isMacPlatform, useShortcuts } from '../../hooks/useShortcuts';
 import { useColors, useShadows } from '../../hooks/useTheme';
-import { echoApi, type DraftResponse } from '../../services/echoApi';
+import { echoApi, type DraftResponse, type EchoCard } from '../../services/echoApi';
+import { suggestionsApi, type SuggestionContext } from '../../services/suggestionsApi';
 import { useEchoPanelStore, type AskTarget, type EchoTurn } from '../../stores/echoPanelStore';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, target as touch, z } from '../../theme';
 import type { LibraryQAExchange, QAHistoryExchange } from '../../types/qa';
 import { computeReadiness } from '../../utils/echoReadiness';
 import {
+  CARD_KIND_LABELS,
   ECHO_SHORTCUT,
+  cardContext,
   draftGateView,
   historyRefHref,
   historyRefLabel,
@@ -279,7 +282,11 @@ export function EchoPanel() {
 
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: space['4'] }} aria-live="polite">
         {turns.length === 0 ? (
-          <EmptyThread mode={mode} />
+          <>
+            {/* S-3.8.2: only here, only while the conversation is empty. */}
+            <AnticipationCards />
+            <EmptyThread mode={mode} />
+          </>
         ) : (
           <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: space['4'] }}>
             {turns.map((t) => (
@@ -357,6 +364,208 @@ function EmptyThread({ mode }: { mode: 'ask' | 'draft' }) {
 }
 
 // ---------------------------------------------------------------------------
+// Anticipation cards (S-3.8.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * One-line next steps, shown only in the open panel and only before the
+ * first message. How often they show and what dismissing does are
+ * pre-registered (docs/notes/2026-10-20-anticipation-cards-preregistration.md)
+ * and enforced by the server; the panel renders what it is given.
+ */
+function AnticipationCards() {
+  const c = useColors();
+  const location = useLocation();
+  const qc = useQueryClient();
+  const context = cardContext(location.pathname);
+  const cards = useQuery({
+    queryKey: ['echo', 'cards', context],
+    queryFn: () => echoApi.cards(context),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const refresh = () => qc.invalidateQueries({ queryKey: ['echo', 'cards'] });
+
+  if (!cards.data) return null;
+  const { cards: list, notice, notice_kind, muted_kinds } = cards.data;
+  if (!list.length && !notice && !muted_kinds.length) return null;
+
+  const dismiss = async (key: string) => {
+    await echoApi.dismissCard(key).catch(() => undefined);
+    void refresh();
+  };
+  const act = (key: string) => {
+    void echoApi
+      .actOnCard(key)
+      .catch(() => undefined)
+      .then(refresh);
+  };
+
+  return (
+    <section aria-label="Suggestions from Echo" data-echo-cards="" style={{ display: 'flex', flexDirection: 'column', gap: space['2'], marginBottom: space['4'] }}>
+      {notice && (
+        <p role="status" style={{ margin: 0, fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textSecondary }}>
+          {notice}{' '}
+          {notice_kind && (
+            <button
+              type="button"
+              onClick={async () => {
+                await echoApi.setCardSettings({ [notice_kind]: true }).catch(() => undefined);
+                void refresh();
+              }}
+              style={linkButton(c.accent)}
+            >
+              Turn back on
+            </button>
+          )}
+        </p>
+      )}
+      {list.map((card) =>
+        card.kind === 'questions' ? (
+          <QuestionsCard key={card.key} card={card} onAct={act} onDismiss={dismiss} />
+        ) : (
+          <LinkCard key={card.key} card={card} onAct={act} onDismiss={dismiss} />
+        ),
+      )}
+      <button type="button" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((v) => !v)} style={{ ...linkButton(c.textMuted), alignSelf: 'flex-start' }}>
+        Card settings
+      </button>
+      {settingsOpen && <CardSettings onChange={refresh} />}
+    </section>
+  );
+}
+
+function linkButton(color: string) {
+  return {
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    color,
+    fontFamily: fonts.ui,
+    fontSize: fontSize.xs,
+    cursor: 'pointer',
+    textDecoration: 'underline',
+  } as const;
+}
+
+function CardFrame({ card, onDismiss, children }: { card: EchoCard; onDismiss: (key: string) => void; children: ReactNode }) {
+  const c = useColors();
+  return (
+    <div
+      data-echo-card={card.kind}
+      style={{ position: 'relative', padding: `${space['2']} ${space['8']} ${space['2']} ${space['3']}`, border: `1px solid ${c.border}`, borderRadius: radius.md, background: c.bg }}
+    >
+      <p style={{ margin: 0, fontFamily: fonts.ui, fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: c.textPrimary }}>{card.title}</p>
+      {children}
+      <button
+        type="button"
+        aria-label={`Dismiss: ${card.title}`}
+        onClick={() => onDismiss(card.key)}
+        style={{ position: 'absolute', top: 2, right: 2, width: 32, height: 32, border: 'none', background: 'transparent', color: c.textMuted, cursor: 'pointer', fontSize: fontSize.md }}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+function LinkCard({ card, onAct, onDismiss }: { card: EchoCard; onAct: (key: string) => void; onDismiss: (key: string) => void }) {
+  const c = useColors();
+  const navigate = useNavigate();
+  return (
+    <CardFrame card={card} onDismiss={onDismiss}>
+      {card.body && <p style={{ margin: `${space['1']} 0 0`, fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textSecondary }}>{card.body}</p>}
+      {card.href && (
+        <button
+          type="button"
+          onClick={() => {
+            onAct(card.key);
+            navigate(card.href!);
+          }}
+          style={{ ...linkButton(c.accent), marginTop: space['1'], textDecoration: 'none' }}
+        >
+          {card.action_label ?? 'Open'} →
+        </button>
+      )}
+    </CardFrame>
+  );
+}
+
+function QuestionsCard({ card, onAct, onDismiss }: { card: EchoCard; onAct: (key: string) => void; onDismiss: (key: string) => void }) {
+  const c = useColors();
+  const setAskText = useEchoPanelStore((st) => st.setAskText);
+  const setMode = useEchoPanelStore((st) => st.setMode);
+  const setTarget = useEchoPanelStore((st) => st.setTarget);
+  const context = (card.context ?? 'library') as SuggestionContext;
+  const suggestions = useQuery({
+    queryKey: ['suggestions', context],
+    queryFn: ({ signal }) => suggestionsApi.get(context, signal),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const items = (suggestions.data?.suggestions ?? []).slice(0, 3);
+  // Counted as shown only once a question is on screen (the pre-registered
+  // reading must not count empty cards).
+  const shown = items.length > 0;
+  useEffect(() => {
+    if (shown) void echoApi.cardShown(card.key).catch(() => undefined);
+  }, [shown, card.key]);
+  if (!items.length) return null;
+  return (
+    <CardFrame card={card} onDismiss={onDismiss}>
+      <ul style={{ listStyle: 'none', margin: `${space['1']} 0 0`, padding: 0, display: 'flex', flexDirection: 'column', gap: space['1'] }}>
+        {items.map((s) => (
+          <li key={s.question}>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('ask');
+                setTarget('library');
+                setAskText(s.question);
+                onAct(card.key);
+                void suggestionsApi.feedback({ context, question: s.question, action: 'fill', source: s.source }).catch(() => undefined);
+                requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('#echo-panel textarea')?.focus());
+              }}
+              style={{ border: 'none', background: 'transparent', padding: 0, textAlign: 'left', color: c.accent, fontFamily: fonts.body, fontSize: fontSize.sm, cursor: 'pointer' }}
+            >
+              {s.question}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </CardFrame>
+  );
+}
+
+function CardSettings({ onChange }: { onChange: () => void }) {
+  const c = useColors();
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ['echo', 'card-settings'], queryFn: () => echoApi.cardSettings() });
+  if (!settings.data) return null;
+  return (
+    <fieldset style={{ border: `1px solid ${c.border}`, borderRadius: radius.md, margin: 0, padding: space['2'] }}>
+      <legend style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textSecondary }}>Show cards for</legend>
+      {Object.entries(settings.data.kinds).map(([kind, on]) => (
+        <label key={kind} style={{ display: 'flex', alignItems: 'center', gap: space['2'], fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textPrimary }}>
+          <input
+            type="checkbox"
+            checked={on}
+            onChange={async (e) => {
+              const next = await echoApi.setCardSettings({ [kind]: e.target.checked }).catch(() => null);
+              if (next) qc.setQueryData(['echo', 'card-settings'], next);
+              onChange();
+            }}
+            style={{ accentColor: c.accent }}
+          />
+          {CARD_KIND_LABELS[kind] ?? kind}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Ask
 // ---------------------------------------------------------------------------
 
@@ -370,7 +579,8 @@ function AskComposer() {
   const askHistory = useAskQAHistoryChat();
   const libraryUp = useFeatureAvailable('library_qa');
   const historyUp = useFeatureAvailable('qa_history');
-  const [text, setText] = useState('');
+  const text = useEchoPanelStore((st) => st.askText);
+  const setText = useEchoPanelStore((st) => st.setAskText);
 
   const available = target === 'library' ? libraryUp : historyUp;
   const busy = askLibrary.isPending || askHistory.isPending;

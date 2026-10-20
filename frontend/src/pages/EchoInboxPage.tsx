@@ -45,6 +45,12 @@ export function EchoInboxPage() {
   const { has, tier, isLoading: tierLoading } = useTierCapabilities();
   const allowed = has('echo_personal_brain');
 
+  // S-3.8.2: opening the inbox makes what is in it old news for the Echo
+  // panel's shares card. Fire and forget.
+  useEffect(() => {
+    if (allowed) echoApi.sharesSeen().catch(() => undefined);
+  }, [allowed]);
+
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
   useEffect(() => {

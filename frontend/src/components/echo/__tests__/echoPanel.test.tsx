@@ -13,7 +13,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EchoBubble, EchoPanelHost } from '../EchoPanel';
 import { useEchoPanelStore } from '../../../stores/echoPanelStore';
-import type { DraftGate, DraftResponse, EchoStatus } from '../../../services/echoApi';
+import type { DraftGate, DraftResponse, EchoCardsResponse, EchoStatus } from '../../../services/echoApi';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -30,6 +30,13 @@ const draftStatusMock = vi.fn<() => Promise<DraftGate>>();
 const draftMock = vi.fn<(p: { message: string }) => Promise<DraftResponse>>();
 const askLibraryMock = vi.fn();
 const askHistoryMock = vi.fn();
+const cardsMock = vi.fn<(context?: string) => Promise<EchoCardsResponse>>();
+const dismissMock = vi.fn(async (_key: string) => ({ muted_kind: null }));
+const actMock = vi.fn(async (_key: string) => undefined);
+const shownMock = vi.fn(async (_key: string) => undefined);
+const settingsMock = vi.fn(async (kinds: Record<string, boolean>) => ({ kinds }));
+const suggestionsMock = vi.fn();
+const feedbackMock = vi.fn(async (_b: unknown) => undefined);
 
 vi.mock('../../../services/echoApi', async (orig) => ({
   ...(await orig<typeof import('../../../services/echoApi')>()),
@@ -38,7 +45,16 @@ vi.mock('../../../services/echoApi', async (orig) => ({
     listConnectors: async () => ({ connectors: [] }),
     draftStatus: () => draftStatusMock(),
     draft: (p: { message: string }) => draftMock(p),
+    cards: (context?: string) => cardsMock(context),
+    dismissCard: (key: string) => dismissMock(key),
+    actOnCard: (key: string) => actMock(key),
+    cardShown: (key: string) => shownMock(key),
+    setCardSettings: (kinds: Record<string, boolean>) => settingsMock(kinds),
+    cardSettings: async () => ({ kinds: { saved_search: true, shares: true, questions: true } }),
   },
+}));
+vi.mock('../../../services/suggestionsApi', () => ({
+  suggestionsApi: { get: (context: string) => suggestionsMock(context), feedback: (b: unknown) => feedbackMock(b) },
 }));
 vi.mock('../../../services/libraryQaApi', () => ({
   libraryQaApi: { ask: (d: unknown) => askLibraryMock(d), getHistory: async () => [], clarify: vi.fn() },
@@ -62,12 +78,12 @@ async function flush(n = 6) {
   }
 }
 
-function mount() {
+function mount(path = '/library') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   act(() =>
     root.render(
       <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={['/library']}>
+        <MemoryRouter initialEntries={[path]}>
           <input id="page-field" aria-label="a page field" />
           <EchoBubble />
           <EchoPanelHost />
@@ -113,6 +129,14 @@ beforeEach(() => {
   draftMock.mockReset();
   askLibraryMock.mockReset();
   askHistoryMock.mockReset();
+  cardsMock.mockReset();
+  cardsMock.mockResolvedValue({ cards: [], muted_kinds: [] });
+  dismissMock.mockClear();
+  actMock.mockClear();
+  shownMock.mockClear();
+  settingsMock.mockClear();
+  suggestionsMock.mockReset();
+  feedbackMock.mockClear();
 });
 
 afterEach(() => {
@@ -248,5 +272,89 @@ describe('draft as me', () => {
     expect(turn.textContent).toContain('Shorter than you usually write.');
     expect(turn.textContent).toContain('Drafted with Echo, reviewed by you.');
     expect(turn.textContent).toContain('Works from Pune');
+  });
+});
+
+describe('anticipation cards (S-3.8.2)', () => {
+  const CARDS: EchoCardsResponse = {
+    cards: [
+      { key: 'saved_search:n1', kind: 'saved_search', title: 'Your saved search changed', body: 'New sources.', href: '/saved-searches', action_label: 'See what changed' },
+      { key: 'shares:s1', kind: 'shares', title: 'New in your shares inbox', body: '2 shares were read since you last looked.', href: '/echo/inbox', action_label: 'Open the inbox' },
+      { key: 'questions:job:j-1', kind: 'questions', title: 'You might ask', context: 'job:j-1' },
+    ],
+    muted_kinds: [],
+  };
+
+  it('asks for the page in view and shows the cards above the empty conversation', async () => {
+    cardsMock.mockResolvedValue(CARDS);
+    suggestionsMock.mockResolvedValue({ context: 'job:j-1', suggestions: [{ question: 'Who disagrees?', rationale: '', source: 'generated', origin: null }], cached: true, generated: true });
+    useEchoPanelStore.setState({ open: true });
+    mount('/jobs/j-1');
+    await flush();
+    expect(cardsMock).toHaveBeenCalledWith('job:j-1');
+    expect(suggestionsMock).toHaveBeenCalledWith('job:j-1');
+    const kinds = Array.from(panel()!.querySelectorAll('[data-echo-card]')).map((el) => el.getAttribute('data-echo-card'));
+    expect(kinds).toEqual(['saved_search', 'shares', 'questions']);
+    expect(panel()!.textContent).toContain('2 shares were read since you last looked.');
+    expect(shownMock).toHaveBeenCalledWith('questions:job:j-1');
+  });
+
+  it('does not count a questions card that has no questions', async () => {
+    cardsMock.mockResolvedValue({ cards: [CARDS.cards[2]], muted_kinds: [] });
+    suggestionsMock.mockResolvedValue({ context: 'job:j-1', suggestions: [], cached: true, generated: false });
+    useEchoPanelStore.setState({ open: true });
+    mount('/jobs/j-1');
+    await flush();
+    expect(panel()!.querySelector('[data-echo-card]')).toBeNull();
+    expect(shownMock).not.toHaveBeenCalled();
+  });
+
+  it('puts a question in the Ask field, retires the card and records the fill', async () => {
+    cardsMock.mockResolvedValue({ cards: [CARDS.cards[2]], muted_kinds: [] });
+    suggestionsMock.mockResolvedValue({ context: 'job:j-1', suggestions: [{ question: 'Who disagrees?', rationale: '', source: 'history', origin: null }], cached: true, generated: false });
+    useEchoPanelStore.setState({ open: true, mode: 'draft' });
+    draftStatusMock.mockRejectedValue(notFound());
+    mount('/jobs/j-1');
+    await flush();
+    const question = Array.from(panel()!.querySelectorAll('[data-echo-card="questions"] li button')).find((b) => b.textContent === 'Who disagrees?')!;
+    click(question);
+    await flush();
+    expect(useEchoPanelStore.getState().mode).toBe('ask');
+    expect(panel()!.querySelector('textarea')!.value).toBe('Who disagrees?');
+    expect(actMock).toHaveBeenCalledWith('questions:job:j-1');
+    expect(feedbackMock).toHaveBeenCalledWith({ context: 'job:j-1', question: 'Who disagrees?', action: 'fill', source: 'history' });
+  });
+
+  it('dismisses with x and asks again', async () => {
+    cardsMock.mockResolvedValueOnce({ cards: [CARDS.cards[1]], muted_kinds: [] }).mockResolvedValue({ cards: [], muted_kinds: [] });
+    useEchoPanelStore.setState({ open: true });
+    mount();
+    await flush();
+    click(panel()!.querySelector('[aria-label="Dismiss: New in your shares inbox"]'));
+    await flush();
+    expect(dismissMock).toHaveBeenCalledWith('shares:s1');
+    expect(cardsMock).toHaveBeenCalledTimes(2);
+    expect(panel()!.querySelector('[data-echo-card]')).toBeNull();
+  });
+
+  it('steps aside once the conversation has started', async () => {
+    cardsMock.mockResolvedValue(CARDS);
+    useEchoPanelStore.setState({ open: true, turns: [{ id: 't', kind: 'library', text: 'q', status: 'pending' }] });
+    mount();
+    await flush();
+    expect(cardsMock).not.toHaveBeenCalled();
+    expect(panel()!.querySelector('[data-echo-cards]')).toBeNull();
+  });
+
+  it('says once when the dismissal rule turned a kind off, and turns it back on', async () => {
+    cardsMock.mockResolvedValue({ cards: [], muted_kinds: ['questions'], notice: 'You dismissed 3 of these, so question cards are off. You can turn them back on.', notice_kind: 'questions' });
+    useEchoPanelStore.setState({ open: true });
+    mount();
+    await flush();
+    const status = panel()!.querySelector('[data-echo-cards] [role="status"]')!;
+    expect(status.textContent).toContain('question cards are off');
+    click(Array.from(status.querySelectorAll('button')).find((b) => b.textContent === 'Turn back on')!);
+    await flush();
+    expect(settingsMock).toHaveBeenCalledWith({ questions: true });
   });
 });

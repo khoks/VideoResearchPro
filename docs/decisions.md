@@ -3175,3 +3175,33 @@ The D-100 user-as-judge test is **not** part of `ready`. Readiness reports wheth
 
 **Linked initiatives / PRs.** E-3.4 / S-3.4.1 (PR [#357](https://github.com/khoks/VideoResearchPro/pull/357)), E-3.8 / S-3.8.1 (PR [#355](https://github.com/khoks/VideoResearchPro/pull/355)), [D-100](#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19), [D-101](#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20), [D-089](#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 1, D-066.
 
+## D-103 — A draft edit teaches only the words the user typed (2026-10-20)
+
+**Status:** accepted.
+
+**Context.** S-3.4.2 closes the "speak as me" loop: when the user edits a draft into what they actually send, the edit should teach Echo their voice. The plan said to store "the diff as a voice-signals candidate". The provenance guard ([D-102](#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20)) says only the user's own words may set the voice. A draft is the model's text, and so are the words of it the user left alone.
+
+**Decision.**
+- **Only the typed words count.** `echo_draft_edits.edit_diff` compares the draft and the user's version word by word. A word counts as typed only if the user inserted it or wrote it in place of draft words. Case and surrounding punctuation are ignored, so "pays." becoming "pays!" is not something the user wrote. Each typed run is cut from the user's text exactly as they typed it.
+- **The typed runs become one extraction input, `draft_edit:<id>`.** The runs are kept one per line and pass through the existing verbatim-checked extraction ([D-099](#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19)). Every example a signal keeps is therefore the user's own typed words, and the signal's provenance cites the draft. An edit below `ECHO_SIGNALS_MIN_PASSAGE_WORDS` (4 typed words) is not an input at all.
+- **What the user cut is shown, never learned.** The removed runs are evidence of what the user would not say, but they are the model's words. They appear in the response's `edit` only.
+- **The disclosure is Echo's, never the user's.** A trailing disclosure line in the submitted text is stripped before the diff. Whether the user kept it is recorded as `disclosure_kept`.
+- **Edits are not prose for stylometry.** Typed runs joined together are fragments, and counting them would bend the user's sentence-length figures, so they do not feed cadence. Questions are left out of cadence for the same reason.
+- **Deleting the draft withdraws the edit at once,** as a deleted note does ([D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19)).
+- **Feedback is not a draft.** It does not count against the daily cap and may be sent again (the newest wins). It is audited as `echo_draft_feedback` with counts only.
+- **The cheap counter reads a stored count.** Feedback stores `written_words`. The cheap new-input counter reads it, so an edit too small to learn from never queues a run.
+
+**Alternatives considered.**
+- *Learn from the whole final text.* The unedited part is the model's writing. Echo would learn from itself and drift toward its own style, which is the feedback loop the provenance guard exists to prevent.
+- *Store the diff as a ready-made signal* (for example "prefers X over Y") without extraction. Extraction already checks every example verbatim, merges by value and respects tombstones. A parallel path would need all of that again.
+- *Learn from what the user removed.* That is the model's words. "Avoids X" could be inferred from it, but an example quoting X would put the model's text in the user's profile.
+- *Count edits in the cheap counter from the text.* That means reading every draft on every note and question hook, so a stored word count was chosen instead.
+
+**Consequences.**
+- The loop is closed and each signal it produces is inspectable: its example is a clause the user typed.
+- A lightly edited draft teaches little, by design.
+- The cut words are recorded, but nothing learns from them. "Avoids this phrasing" signals would need their own design.
+- One additive column, `echo_drafts.written_words`.
+
+**Linked initiatives / PRs.** E-3.4 / S-3.4.2 (PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM)), [D-102](#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20), [D-099](#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19), [D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19).
+

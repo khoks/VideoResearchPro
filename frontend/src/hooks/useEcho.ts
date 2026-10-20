@@ -5,6 +5,7 @@ import {
   type ImportOptions,
   type CreateSignalPayload,
   type CreateDraftPayload,
+  type DraftFeedbackPayload,
   type ListContextParams,
   type ListSharesParams,
   type RecordContextPayload,
@@ -313,6 +314,17 @@ export function useDeleteDraft() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: DRAFTS_KEY });
       qc.invalidateQueries({ queryKey: FOOTPRINT_KEY });
+    },
+  });
+}
+
+export function useDraftFeedback() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: { id: string } & DraftFeedbackPayload) => echoApi.draftFeedback(id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: DRAFTS_KEY });
+      qc.invalidateQueries({ queryKey: ['echo', 'signals'] });
     },
   });
 }

@@ -115,6 +115,11 @@ def _iso(dt: datetime | None) -> str | None:
     return dt.date().isoformat() if dt else None
 
 
+def _edit_floor() -> int:
+    """Typed words a draft edit needs before it is an input (S-3.4.2)."""
+    return max(1, settings.ECHO_SIGNALS_MIN_PASSAGE_WORDS)
+
+
 def gather_inputs(db: Session, tenant_id: str) -> list[Input]:
     """Every live input of the tenant, oldest first."""
     from app.services import note_service
@@ -180,6 +185,19 @@ def gather_inputs(db: Session, tenant_id: str) -> list[Input]:
             events.setdefault(connector, []).append((eid, t, occurred, not (event_type or "").startswith("searched_")))
     for connector, rows in events.items():
         out.append(_events_input(connector, rows))
+
+    # S-3.4.2: the words the user typed into a "speak as me" draft, never the
+    # draft words they kept (the model wrote those) nor the disclosure.
+    from app.models.echo_draft import EchoDraft
+    from app.services.echo_draft_edits import user_written_text
+
+    for did, draft, final, fb_at, created in db.query(
+        EchoDraft.id, EchoDraft.draft, EchoDraft.final_text, EchoDraft.feedback_at, EchoDraft.created_at,
+    ).filter(EchoDraft.tenant_id == tenant_id, EchoDraft.final_text.isnot(None),
+             EchoDraft.written_words >= _edit_floor()):
+        t = user_written_text(draft, final, min_words=_edit_floor())
+        if t:
+            out.append(Input(f"draft_edit:{did}", "draft_edit", t, _iso(fb_at or created), language_of(t)))
 
     out.sort(key=lambda i: (i.at or "", i.ref))
     return out
@@ -314,7 +332,7 @@ def withdraw_input(db: Session, tenant_id: str, source_ref: str) -> signals.Sour
 # ---------------------------------------------------------------------------
 # The LLM layer
 
-EXTRACT_PROMPT = """You are learning how one person thinks and writes, from their own words only. Below are numbered passages THEY wrote: notes, questions they asked, and pieces they marked as their own writing. Each passage says its kind and language.
+EXTRACT_PROMPT = """You are learning how one person thinks and writes, from their own words only. Below are numbered passages THEY wrote: notes, questions they asked, pieces they marked as their own writing, and the words they typed when correcting a reply drafted for them (kind draft_edit, one change per line). Each passage says its kind and language.
 
 Find signals of these kinds:
 STYLE
@@ -595,8 +613,9 @@ def sync_stylometry(db: Session, tenant_id: str, inputs: dict[str, Input], count
     by_lang: dict[str, list[VoiceSignalInput]] = {}
     for row in db.query(VoiceSignalInput).filter(VoiceSignalInput.tenant_id == tenant_id):
         # Prose only: a question typed into Q&A is always a question, and
-        # counting it would make everyone "ask questions often".
-        if row.language and row.kind != "question":
+        # counting it would make everyone "ask questions often". A draft edit
+        # is the user's changes joined, not sentences they wrote whole.
+        if row.language and row.kind not in ("question", "draft_edit"):
             by_lang.setdefault(row.language, []).append(row)
     kept_ids: set[str] = set()
     for language, rows in by_lang.items():
@@ -606,7 +625,7 @@ def sync_stylometry(db: Session, tenant_id: str, inputs: dict[str, Input], count
         mean = prof.mean_sentence_words
         for sig in found:
             examples = []
-            for i in (p for r in recent for p in (r.passages or (r,)) if p.kind != "query"):
+            for i in (p for r in recent for p in (r.passages or (r,)) if p.kind not in ("query", "draft_edit")):
                 for s in stylo.raw_sentences(i.text):
                     if stylo.exhibits(stylo.plain(s), sig.habit, mean):
                         examples.append({"text": s[: signals.MAX_EXAMPLE_CHARS], "source": i.ref, **({"at": i.at} if i.at else {})})
@@ -781,8 +800,9 @@ def run(db: Session, tenant_id: str, *, llm: LLMCall | None = None, model: str |
 
 def quick_new_count(db: Session, tenant_id: str) -> int:
     """How many inputs the ledger has not seen, from row counts alone: live
-    notes, questions (less a saved search's re-asks) and own-words shares,
-    minus ledger rows. No text is read, so it is cheap on the request path
+    notes, questions (less a saved search's re-asks), own-words shares,
+    connectors with text and draft edits big enough to learn from, minus
+    ledger rows. No text is read, so it is cheap on the request path
     of every note and question. It cannot see an edit (the count does not
     change); the run itself reconciles exactly, and "Learn now" and the
     signals panel use the exact ``pending``."""
@@ -817,8 +837,16 @@ def quick_new_count(db: Session, tenant_id: str) -> int:
         .scalar()
         or 0
     )
+    from app.models.echo_draft import EchoDraft
+
+    draft_edits = (
+        db.query(func.count(EchoDraft.id))
+        .filter(EchoDraft.tenant_id == tenant_id, EchoDraft.written_words >= _edit_floor())
+        .scalar()
+        or 0
+    )
     read = db.query(func.count(VoiceSignalInput.id)).filter(VoiceSignalInput.tenant_id == tenant_id).scalar() or 0
-    return max(0, notes + questions - reruns + shares + event_groups - read)
+    return max(0, notes + questions - reruns + shares + event_groups + draft_edits - read)
 
 
 def maybe_queue(db: Session, tenant_id: str, *, force: bool = False) -> str:

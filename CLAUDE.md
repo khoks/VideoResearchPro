@@ -198,6 +198,7 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/scripts/judge_report_sections.py` | Split a report into sections and judge each in full — replaces the 180,000-char judging cap |
 | `backend/scripts/audit_report_intermediates.py` | Read a job's persisted map/reduce intermediates back: batch statuses, item counts, reduce accounting |
 | `backend/app/agents/echo_agent.py` | "Speak as me" LangGraph agent; the verbatim, citation and private-name guards live here in code (S-3.4.1) |
+| `backend/app/services/echo_draft_edits.py` | What the user changed in a draft: only the words they TYPED are theirs (the provenance guard for S-3.4.2, D-103) |
 | `backend/scripts/echo_import.py` | Import an export into a user's Echo from the command line (`--email`, `--file`, `--preview`): the `/echo/import` flow for exports past the upload cap, such as Apple Health (S-3.7.5) |
 | `backend/app/websocket/manager.py` | Redis pub/sub → WebSocket fan-out |
 | `backend/app/services/youtube_service.py` | YouTube API + transcript fetching with language fallback + rate limiting |
@@ -533,7 +534,7 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 - `echo_share_ocr` — **MULTIMODAL.** Copy out the text in a shared image when on-device OCR read too little or with low confidence (Devanagari always, since the default OCR models cannot read it). Original script kept: transcription, not a deliverable. Listed in `VISION_USE_CASES`. Runs only when `ECHO_REMOTE_MEDIA` is on and the tenant is not local-only, or when it resolves to a local model. Reasoning OFF, fail-soft, not a feature gate
 
 **Echo voice and personality signals (`app/services/echo_signal_extraction.py`, S-3.3.2):**
-- `echo_extract_signals` — a batch of the user's OWN words (notes, questions, own-words shares) → candidate style and personality signals with verbatim examples cited by passage id; code keeps an example only when found exactly in its passage (D-099). Economy tier, reasoning OFF, fail-soft, not a feature gate
+- `echo_extract_signals` — a batch of the user's OWN words (notes, questions, own-words shares, the words they typed into a "speak as me" draft) → candidate style and personality signals with verbatim examples cited by passage id; code keeps an example only when found exactly in its passage (D-099). Economy tier, reasoning OFF, fail-soft, not a feature gate
 
 **Speak as me (`app/agents/echo_agent.py`, S-3.4.1 / D-102):**
 - `echo_classify_intent` — the incoming message's intent, topic, language and the people it names (by name only; "my uncle" is not a name), so private names are confirmed before drafting. Economy tier, reasoning OFF

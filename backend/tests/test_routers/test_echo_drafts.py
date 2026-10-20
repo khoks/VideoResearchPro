@@ -1,4 +1,4 @@
-"""``/echo/draft`` and ``/echo/drafts`` (S-3.4.1): the contract the Echo bubble hosts.
+"""``/echo/draft`` and ``/echo/drafts`` (S-3.4.1, S-3.4.2): the contract the Echo bubble hosts.
 
 Tier first (403), then every gate as a 409 with its code, a status object and
 words for the user; the private-person confirmation round trip; the daily
@@ -128,3 +128,24 @@ def test_the_request_is_validated(unauthenticated_client, db, fake, monkeypatch)
     _enable(db, user, monkeypatch)
     for body in ({"message": ""}, {"message": "x", "register": "shouty"}, {"message": "x", "language": "fr"}, {"message": "x", "send": True}):
         assert unauthenticated_client.post(DRAFT, json=body, headers=h).status_code == 422, body
+
+
+def test_feedback_records_the_users_version(unauthenticated_client, db, fake, monkeypatch):
+    user, h = _user(db)
+    _enable(db, user, monkeypatch)
+    _, ho = _user(db)
+    did = unauthenticated_client.post(DRAFT, json={"message": "Who pays?"}, headers=h).json()["id"]
+    url = f"/api/v1/echo/drafts/{did}/feedback"
+    final = "Mostly the importer pays first. Then the buyer, as I keep saying to everyone."
+
+    assert unauthenticated_client.post(url, json={"final_text": final}, headers=ho).status_code == 404
+    for bad in ({"final_text": ""}, {"disclosure_kept": False}, {"final_text": final, "send": True}):
+        assert unauthenticated_client.post(url, json=bad, headers=h).status_code == 422, bad
+
+    r = unauthenticated_client.post(url, json={"final_text": final, "disclosure_kept": False}, headers=h)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["final_text"] == final and body["disclosure_kept"] is False and body["feedback_at"]
+    assert body["edit"]["written"] == ["as I keep saying to everyone."] and body["edit"]["written_words"] == 6
+    assert unauthenticated_client.get(f"{DRAFT}/status", headers=h).json()["drafts_today"] == 1, "feedback is not a draft"
+    assert unauthenticated_client.get(f"/api/v1/echo/drafts/{did}", headers=h).json()["final_text"] == final

@@ -107,6 +107,21 @@ def test_onboarding_columns_round_trip(tmp_path):
     assert cols <= _columns(url, "users")
 
 
+def test_echo_draft_written_words_round_trip(tmp_path):
+    """S-3.4.2 adds a column, not a table, so it gets its own check."""
+    url = "sqlite:///" + (tmp_path / "round_trip.db").as_posix()
+    cfg = _alembic_config()
+    cfg.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(cfg, "head")
+    assert "written_words" in _columns(url, "echo_drafts")
+    below = ScriptDirectory.from_config(cfg).get_revision("e5a9c3d7b2f4").down_revision
+    command.downgrade(cfg, below)
+    assert "written_words" not in _columns(url, "echo_drafts")
+    command.upgrade(cfg, "head")
+    assert "written_words" in _columns(url, "echo_drafts")
+
+
 def test_library_qa_scope_column_round_trip(tmp_path):
     """S-8.1.4 adds a column, not a table, so it gets its own check."""
     url = "sqlite:///" + (tmp_path / "round_trip.db").as_posix()

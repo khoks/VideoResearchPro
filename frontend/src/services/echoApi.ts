@@ -446,7 +446,26 @@ export interface EchoDraft {
   disclosure: string;
   final_text: string | null;
   disclosure_kept: boolean | null;
+  /** S-3.4.2: when the user saved their version, and what they changed. */
+  feedback_at: string | null;
+  edit: DraftEdit | null;
   created_at: string;
+}
+
+/** What the user changed in a draft. Only `written` (the words they typed)
+ * teaches Echo their voice; the draft words they kept are the model's. */
+export interface DraftEdit {
+  written_words: number;
+  removed_words: number;
+  kept_words: number;
+  written: string[];
+  removed: string[];
+}
+
+export interface DraftFeedbackPayload {
+  /** The text the user used, without the disclosure line. */
+  final_text: string;
+  disclosure_kept: boolean;
 }
 
 export interface CreateDraftPayload {
@@ -685,6 +704,10 @@ export const echoApi = {
   listDrafts: (limit = 5) => api.get<{ items: EchoDraft[] }>('/echo/drafts', { params: { limit } }).then(r => r.data),
 
   deleteDraft: (id: string) => api.delete(`/echo/drafts/${encodeURIComponent(id)}`).then(() => undefined),
+
+  /** S-3.4.2: the version the user used; the words they typed teach Echo. */
+  draftFeedback: (id: string, payload: DraftFeedbackPayload) =>
+    api.post<EchoDraft>(`/echo/drafts/${encodeURIComponent(id)}/feedback`, payload).then(r => r.data),
 
   footprint: () => api.get<EchoFootprint>('/echo/brain/footprint').then(r => r.data),
 

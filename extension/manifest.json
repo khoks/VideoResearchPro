@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Pratidhvani — Add to Echo",
+  "short_name": "Add to Echo",
+  "version": "0.1.0",
+  "description": "Send a page, a link, a quote or an image to your Pratidhvani Echo inbox, only when you ask.",
+  "permissions": ["contextMenus", "storage", "activeTab"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Add to Echo",
+    "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png" }
+  },
+  "options_page": "options.html",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "minimum_chrome_version": "116"
+}

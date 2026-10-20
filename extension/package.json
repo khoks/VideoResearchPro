@@ -1,0 +1,9 @@
+{
+  "name": "pratidhvani-add-to-echo",
+  "private": true,
+  "type": "module",
+  "description": "The Add to Echo browser extension (S-3.7.3). No dependencies; load this folder unpacked.",
+  "scripts": {
+    "test": "node --test tests/echo.test.mjs"
+  }
+}

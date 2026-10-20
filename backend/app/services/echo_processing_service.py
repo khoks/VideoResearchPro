@@ -34,6 +34,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import re
 from urllib.parse import parse_qs, urlsplit
 
 from sqlalchemy.orm import Session
@@ -154,10 +155,42 @@ def _process_article(url: str) -> tuple[str, dict]:
     }
 
 
-def _process_url(share: Share, payload: dict) -> tuple[str, dict]:
+_IMAGE_PATH = re.compile(r"\.(jpe?g|png|webp|gif|bmp|tiff?)$", re.I)
+
+
+def _is_image_url(share: Share, url: str) -> bool:
+    return share.content_type == "image" or bool(_IMAGE_PATH.search(urlsplit(url).path))
+
+
+def _process_image_url(db: Session, share: Share, url: str) -> tuple[str, dict] | ProcessResult:
+    """S-3.7.3: an image shared by its address (the extension's "Add this
+    image"). Fetched once into the tenant's directory, behind the public-
+    address guard, then read like an uploaded image."""
+    try:
+        path = None
+        if share.file_path:
+            existing = echo_intake_service.resolve_share_file(share.file_path, share.tenant_id)
+            path = existing if existing.exists() else None
+        if path is None:
+            directory = echo_intake_service.tenant_dir(share.tenant_id, create=True)
+            path, _ctype = echo_media.fetch_image(url, directory, share.id)
+            share.file_path = path.resolve().relative_to(echo_intake_service.shares_root().resolve()).as_posix()
+        outcome = _process_image(db, share, path)
+    except echo_media.MediaSkipped as e:
+        return ProcessResult("skipped", str(e))
+    except echo_media.MediaError as e:
+        raise ProcessingError(str(e)) from e
+    if isinstance(outcome, ProcessResult):
+        return outcome
+    return _capped(*outcome)
+
+
+def _process_url(db: Session, share: Share, payload: dict) -> tuple[str, dict] | ProcessResult:
     url = payload.get("url") or ""
     if share.content_type in YOUTUBE_CONTENT_TYPES or youtube_video_id(url):
         return _process_youtube(url)
+    if _is_image_url(share, url):
+        return _process_image_url(db, share, url)
     return _process_article(url)
 
 
@@ -317,7 +350,7 @@ def process_share(db: Session, share_id: str) -> ProcessResult:
             if kind == "text":
                 outcome = _process_text(share, payload)
             elif kind == "url":
-                outcome = _process_url(share, payload)
+                outcome = _process_url(db, share, payload)
             elif kind == "file":
                 outcome = _process_file(db, share, payload)
             else:

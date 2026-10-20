@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Add to Echo — settings</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="options">
+      <h1>Connect to your Pratidhvani</h1>
+      <p class="muted">
+        On Pratidhvani's Echo page, under "Add from your browser", make a share token and paste it here with the
+        server address shown beside it. The token can only add to your Echo inbox; it cannot read anything.
+      </p>
+      <label for="server">Server address</label>
+      <input id="server" type="url" placeholder="http://localhost:8000" autocomplete="off" />
+      <label for="token">Share token</label>
+      <input id="token" type="password" placeholder="pec_…" autocomplete="off" />
+      <div class="row">
+        <button id="save" type="button">Save and test</button>
+        <button id="forget" type="button" class="secondary">Forget</button>
+      </div>
+      <p id="status" role="status"></p>
+      <p class="muted small">
+        The extension sends something only when you pick "Add … to Echo" from the right-click menu or the toolbar
+        button. It has no access to your browsing history. Quotes are kept as someone else's words unless you mark
+        them as yours in the Echo inbox.
+      </p>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

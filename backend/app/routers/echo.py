@@ -40,11 +40,13 @@ from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
 from app.config import settings
-from app.dependencies import get_db
+from app.dependencies import _resolve_user, get_db, oauth2_scheme
 from app.models.share import Share
 from app.models.user import User
 from app.services import (
     audit_service,
+    auth_service,
+    echo_share_token_service,
     echo_import_service,
     echo_intake_service,
     echo_privacy_service,
@@ -55,9 +57,42 @@ from app.services.echo_import_service import ImportNotFound
 from app.connectors.archive import ExportUnreadable
 from app.services.echo_intake_service import InvalidShare, ShareNotFound, ShareTooLarge
 from app.services.echo_service import SUPPORTED_KINDS, UnsupportedKindError
-from app.services.tier_service import require_feature
+from app.services.tier_service import has_feature, require_feature
 
 router = APIRouter(prefix="/echo", tags=["echo"])
+
+
+def _bearer(request: Request) -> str | None:
+    header = request.headers.get("authorization") or ""
+    scheme, _, value = header.partition(" ")
+    return value.strip() if scheme.lower() == "bearer" and value.strip() else None
+
+
+def share_intake_user(
+    token: str | None = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    """S-3.7.3: who is adding a share. A session as everywhere else, or a
+    share token (``pec_…``), which this dependency is the only one to accept.
+    The Studio check runs on every use, so a downgraded account's tokens stop
+    working without being revoked."""
+    if echo_share_token_service.looks_like_token(token):
+        tenant_id = echo_share_token_service.authenticate(db, token or "")
+        user = auth_service.get_user_by_id(db, tenant_id) if tenant_id else None
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or revoked share token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    else:
+        user = _resolve_user(token, db)
+    if not has_feature(user, "echo_personal_brain"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Echo needs the Studio plan.",
+        )
+    return user
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +321,8 @@ class ShareItem(BaseModel):
     import_id: str | None = None
     occurred_at: datetime | None = None
     imported: dict[str, Any] | None = None
+    # S-3.7.3: the page a quote or an image came from ({url, title}).
+    source: dict[str, Any] | None = None
 
 
 class ShareListResponse(BaseModel):
@@ -304,6 +341,9 @@ class CreateSharePayload(BaseModel):
     content_type: str | None = Field(default=None, max_length=64)
     author_is_tenant: bool = False
     surface: str = "manual_quick_share"
+    # S-3.7.3: the page a quote or an image came from.
+    source_url: str | None = Field(default=None, max_length=2000)
+    source_title: str | None = Field(default=None, max_length=300)
 
 
 class UpdateSharePayload(BaseModel):
@@ -354,6 +394,7 @@ def _share_item(share: Share) -> ShareItem:
         import_id=share.import_id,
         occurred_at=_aware(share.occurred_at) if share.occurred_at else None,  # type: ignore[arg-type]
         imported=(payload.get("import") if isinstance(payload.get("import"), dict) else None),
+        source=(payload.get("source") if isinstance(payload.get("source"), dict) else None),
     )
 
 
@@ -381,20 +422,21 @@ def _invalid(e: InvalidShare) -> HTTPException:
 @router.post("/shares", response_model=ShareItem, status_code=status.HTTP_201_CREATED)
 def create_share_endpoint(
     payload: CreateSharePayload,
-    current_user: User = Depends(require_feature("echo_personal_brain")),
+    current_user: User = Depends(share_intake_user),
     db: Session = Depends(get_db),
 ) -> ShareItem:
     has_url = bool(payload.url and payload.url.strip())
     has_text = bool(payload.text and payload.text.strip())
     if has_url == has_text:
         raise HTTPException(status_code=422, detail="send exactly one of url or text")
-    common = dict(
-        annotation=payload.annotation,
-        content_type=payload.content_type,
-        author_is_tenant=payload.author_is_tenant,
-        surface=payload.surface,
-    )
     try:
+        common = dict(
+            annotation=payload.annotation,
+            content_type=payload.content_type,
+            author_is_tenant=payload.author_is_tenant,
+            surface=payload.surface,
+            source=echo_intake_service.share_source(payload.source_url, payload.source_title),
+        )
         if has_url:
             share = echo_intake_service.create_url_share(
                 db, current_user.id, current_user.id, url=payload.url or "", **common
@@ -415,7 +457,7 @@ async def upload_share_endpoint(
     content_type: str | None = Form(None),
     author_is_tenant: bool = Form(False),
     surface: str = Form("manual_quick_share"),
-    current_user: User = Depends(require_feature("echo_personal_brain")),
+    current_user: User = Depends(share_intake_user),
     db: Session = Depends(get_db),
 ) -> ShareItem:
     # Read one byte past the cap so an oversized upload is refused without
@@ -877,3 +919,96 @@ def delete_import_endpoint(
     except ImportNotFound:
         raise HTTPException(status_code=404, detail="Import not found")
     return ImportDeleteResponse(deleted=True, **result)
+
+
+# ---------------------------------------------------------------------------
+# Share tokens: adding to Echo from outside the app (S-3.7.3)
+# ---------------------------------------------------------------------------
+
+
+class ShareTokenCreate(BaseModel):
+    label: str = Field(default="Browser extension", max_length=100)
+
+
+class ShareTokenItem(BaseModel):
+    id: str
+    label: str
+    prefix: str
+    created_at: datetime
+    last_used_at: datetime | None = None
+
+
+class ShareTokenCreated(ShareTokenItem):
+    # Shown once. Only its hash is stored.
+    token: str
+
+
+class ShareTokenList(BaseModel):
+    items: list[ShareTokenItem]
+    max: int
+
+
+class ShareTokenCheck(BaseModel):
+    ok: bool
+    email: str
+    via: str  # "share_token" | "session"
+
+
+def _token_item(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "label": row.label,
+        "prefix": row.prefix,
+        "created_at": _aware(row.created_at),
+        "last_used_at": _aware(row.last_used_at) if row.last_used_at else None,
+    }
+
+
+@router.get("/share-tokens", response_model=ShareTokenList)
+def list_share_tokens_endpoint(
+    current_user: User = Depends(require_feature("echo_personal_brain")),
+    db: Session = Depends(get_db),
+) -> ShareTokenList:
+    """The caller's active share tokens. A share token cannot call this."""
+    return ShareTokenList(
+        items=[ShareTokenItem(**_token_item(r)) for r in echo_share_token_service.active(db, current_user.id)],
+        max=settings.ECHO_SHARE_TOKENS_MAX,
+    )
+
+
+@router.post("/share-tokens", response_model=ShareTokenCreated, status_code=status.HTTP_201_CREATED)
+def create_share_token_endpoint(
+    payload: ShareTokenCreate,
+    current_user: User = Depends(require_feature("echo_personal_brain")),
+    db: Session = Depends(get_db),
+) -> ShareTokenCreated:
+    """Make a share token. The response is the only time the token is shown.
+    Needs a session: a share token cannot mint another."""
+    try:
+        row, token = echo_share_token_service.create(db, current_user.id, payload.label)
+    except echo_share_token_service.TokenLimitReached as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return ShareTokenCreated(**_token_item(row), token=token)
+
+
+@router.delete("/share-tokens/{token_id}")
+def revoke_share_token_endpoint(
+    token_id: str,
+    current_user: User = Depends(require_feature("echo_personal_brain")),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    try:
+        echo_share_token_service.revoke(db, current_user.id, token_id)
+    except echo_share_token_service.ShareTokenNotFound:
+        raise HTTPException(status_code=404, detail="Share token not found")
+    return {"revoked": True}
+
+
+@router.get("/share-tokens/check", response_model=ShareTokenCheck)
+def check_share_token_endpoint(
+    request: Request,
+    current_user: User = Depends(share_intake_user),
+) -> ShareTokenCheck:
+    """For the extension's settings page: does this credential work?"""
+    via = "share_token" if echo_share_token_service.looks_like_token(_bearer(request)) else "session"
+    return ShareTokenCheck(ok=True, email=current_user.email, via=via)

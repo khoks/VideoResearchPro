@@ -54,6 +54,7 @@ from app.models.echo_connector import (
     EchoConnectorOAuthState,
 )
 from app.models.echo_import import EchoImport
+from app.models.echo_share_token import EchoShareToken
 from app.models.personal_context import PersonalContext
 from app.models.share import Share
 from app.models.voice_signal import VoiceSignal
@@ -91,9 +92,11 @@ ECHO_TABLES: tuple[tuple[str, Any], ...] = (
 ECHO_SECRET_TABLES: tuple[tuple[str, Any], ...] = (
     ("echo_connector_credentials", EchoConnectorCredential),
     ("echo_connector_oauth_states", EchoConnectorOAuthState),
+    # S-3.7.3: the extension's share tokens (hashes only).
+    ("echo_share_tokens", EchoShareToken),
 )
 WITHHELD_REASON = (
-    "Connector access tokens and pending sign-in state are secrets: they are "
+    "Connector access tokens, share tokens and pending sign-in state are secrets: they are "
     "erased with your brain but never leave the server, encrypted or not. "
     "Reconnect the connector to grant access again."
 )

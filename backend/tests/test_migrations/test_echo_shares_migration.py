@@ -105,3 +105,18 @@ def test_imports_table_and_share_columns_round_trip(migrated):
     assert "import_id" not in {c["name"] for c in inspector.get_columns("shares_inbox")}
     assert _exec(eng, "SELECT id FROM shares_inbox") == [("s-1",)]
     command.upgrade(cfg, "head")
+
+
+def test_share_tokens_table_round_trips(migrated):
+    """d3bc5b91fcce (S-3.7.3) adds echo_share_tokens with a unique hash, and
+    removes it."""
+    cfg, eng = migrated
+    command.upgrade(cfg, "d3bc5b91fcce")
+    assert "echo_share_tokens" in inspect(eng).get_table_names()
+    row = "INSERT INTO echo_share_tokens (id, tenant_id, label, token_hash, prefix, created_at) VALUES (:id, 't', 'x', 'h', 'pec_', CURRENT_TIMESTAMP)"
+    _exec(eng, row, id="t-1")
+    with pytest.raises(IntegrityError):
+        _exec(eng, row, id="t-2")
+    command.downgrade(cfg, "509a4efd9319")
+    assert "echo_share_tokens" not in inspect(eng).get_table_names()
+    command.upgrade(cfg, "head")

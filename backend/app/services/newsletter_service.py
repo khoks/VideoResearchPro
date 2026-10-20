@@ -38,12 +38,20 @@ from app.config import settings
 from app.models.newsletter_subscription import NewsletterSend, NewsletterSubscription
 from app.models.output import Output
 from app.models.user import User
-from app.services import email_service, notification_service, output_artifacts, output_service, scheduler_service
+from app.services import (
+    email_service,
+    notification_service,
+    output_artifacts,
+    output_service,
+    scheduler_service,
+    tier_service,
+)
 from app.services.outputters.newsletter import DEFAULT_SECTIONS, sections_from
 
 logger = logging.getLogger(__name__)
 
 KIND = "newsletter"
+FEATURE = "author_studio"
 DEFAULT_CADENCE = {"cadence": "weekly", "weekday": 0, "hour": 8, "minute": 0, "timezone": "UTC"}
 DEFAULT_WINDOW = timedelta(days=7)
 
@@ -207,6 +215,11 @@ def deliver(db: Session, subscription_id: str, *, slot: datetime | None = None, 
     user = db.get(User, sub.tenant_id)
     if user is None:
         return {"status": "inactive"}
+    if not tier_service.has_feature(user, FEATURE):
+        # Re-checked at run time, as saved searches do: a reader who moved to
+        # a plan without Author Studio stops receiving issues.
+        logger.info("newsletter %s: plan no longer includes %s; not issued", sub.id, FEATURE)
+        return {"status": "not_entitled"}
 
     cadence = json.loads(sub.cadence_json)
     now = _now()

@@ -50,6 +50,8 @@ def sent():
 
 def _subscriber(db, tmp_path, email="sub@x.com", content=True):
     user = auth_service.create_user(db, email=email, password="pw" * 6)
+    user.tier = "pro"  # Author Studio
+    db.commit()
     if content:
         _smoke_run(db, user.id, tmp_path, topic="Smoking and lungs")  # three documents enter the library now
     return user, newsletter_service.save(db, user, cadence=WEEKLY)
@@ -118,6 +120,14 @@ def test_unsubscribing_or_turning_off_stops_the_next_run(db, tmp_path, sent):
     assert scheduler_service.get_run(db, "newsletter", sub.id) is None
     assert newsletter_service.deliver(db, sub.id) == {"status": "inactive"}
     assert sent == []
+
+
+def test_a_plan_without_author_studio_stops_the_issues(db, tmp_path, sent):
+    user, sub = _subscriber(db, tmp_path, email="sub5@x.com")
+    user.tier = "free"
+    db.commit()
+    assert newsletter_service.deliver(db, sub.id, slot=datetime(2026, 10, 19, 8, 0)) == {"status": "not_entitled"}
+    assert sent == [] and db.query(NewsletterSend).filter(NewsletterSend.subscription_id == sub.id).count() == 0
 
 
 def test_the_tick_dispatches_the_task_with_its_slot(db, tmp_path):

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { LibraryQARequest } from '../types/qa';
 import {
   shelvesApi,
   type Shelf,
@@ -12,6 +13,7 @@ export const shelvesKeys = {
   all: ['shelves'] as const,
   detail: (id: string | null) => ['shelf', id] as const,
   documents: (id: string | null) => ['shelfDocuments', id] as const,
+  questions: (id: string | null) => ['shelfQuestions', id] as const,
 };
 
 /**
@@ -102,5 +104,36 @@ export function useRemoveJobFromShelf() {
     mutationFn: ({ shelfId, jobId }: { shelfId: string; jobId: string }) =>
       shelvesApi.removeJob(shelfId, jobId),
     onSuccess: (_void, { shelfId }) => touchShelf(qc, shelfId),
+  });
+}
+
+/** Whether the shelf holds any source the caller can see (one-row probe).
+ * Keyed under the shelf's documents, so adding or removing a run refreshes it. */
+export function useShelfHasSources(id: string) {
+  return useQuery({
+    queryKey: [...shelvesKeys.documents(id), 'probe'] as const,
+    queryFn: () => shelvesApi.documents(id, { limit: 1 }),
+    select: (rows) => rows.length > 0,
+    staleTime: 30_000,
+  });
+}
+
+/** S-8.1.4: questions asked on this shelf. */
+export function useShelfQuestions(id: string) {
+  return useQuery({
+    queryKey: shelvesKeys.questions(id),
+    queryFn: () => shelvesApi.questions(id),
+  });
+}
+
+/** Ask over the shelf; the answer also joins the library Q&A history. */
+export function useAskShelf(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: LibraryQARequest) => shelvesApi.ask(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: shelvesKeys.questions(id) });
+      void qc.invalidateQueries({ queryKey: ['libraryQaHistory'] });
+    },
   });
 }

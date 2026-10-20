@@ -1,6 +1,7 @@
 import api from './api';
 import type { Job } from '../types/job';
 import type { LibraryVideoResponse, ListVideosParams } from './libraryApi';
+import type { LibraryQAExchange, LibraryQARequest } from '../types/qa';
 import { PALETTE_COLORS, type PaletteColor } from '../theme';
 
 /** A shelf's colour is one of the ten palette NAMES (never a hex). */
@@ -54,4 +55,9 @@ export const shelvesApi = {
     api.delete(`/shelves/${id}/jobs/${jobId}`).then(() => undefined),
   documents: (id: string, params?: ShelfDocumentsParams) =>
     api.get<LibraryVideoResponse[]>(`/shelves/${id}/documents`, { params }).then(r => r.data),
+  /** S-8.1.4: ask over this shelf's documents only; the exchange carries `scope.shelf_id`. */
+  ask: (id: string, body: LibraryQARequest) =>
+    api.post<LibraryQAExchange>(`/shelves/${id}/qa`, body).then(r => r.data),
+  /** The caller's questions asked on this shelf, oldest first. */
+  questions: (id: string) => api.get<LibraryQAExchange[]>(`/shelves/${id}/qa`).then(r => r.data),
 };

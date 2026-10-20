@@ -2,26 +2,22 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SuggestionCard } from '../components/qa/SuggestionCard';
 import { useLibraryVideos } from '../hooks/useLibrary';
-import ReactMarkdown from 'react-markdown';
 import {
   useAskLibraryQA,
   useClarifyLibraryQA,
   useLibraryQAHistory,
 } from '../hooks/useLibraryQA';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
-import { CitationLink } from '../components/citation';
 import { DockedComposer, QADock, QAThread } from '../components/qa/Composer';
+import { InfoStripe, LibraryQAExchangeCard } from '../components/qa/LibraryQAExchangeCard';
 import { useExchangeFocus } from '../hooks/useExchangeFocus';
-import { NotesPanel } from '../components/notes';
 import {
-  Badge,
   Button,
   Card,
   EmptyState,
   FormField,
   Input,
   Select,
-  Spinner,
 } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
 import {
@@ -33,7 +29,7 @@ import {
   radius,
   space,
 } from '../theme';
-import type { AnswerLanguage, LibraryQAExchange } from '../types/qa';
+import type { AnswerLanguage } from '../types/qa';
 
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
@@ -446,134 +442,6 @@ export function LibraryQAPage() {
         </QADock>
       </Card>
       )}
-    </div>
-  );
-}
-
-function InfoStripe({ text }: { text: string }) {
-  const c = useColors();
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: space['3'],
-        marginBottom: space['3'],
-        padding: space['3'],
-        background: c.accentSubtle,
-        borderRadius: radius.md,
-      }}
-    >
-      <Spinner size={16} />
-      <span
-        style={{
-          fontFamily: fonts.ui,
-          fontSize: fontSize.sm,
-          color: c.accent,
-          fontWeight: fontWeight.medium,
-        }}
-      >
-        {text}
-      </span>
-    </div>
-  );
-}
-
-function LibraryQAExchangeCard({ qa }: { qa: LibraryQAExchange }) {
-  const c = useColors();
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(qa.answer);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // clipboard unavailable (e.g. insecure context) — leave button state unchanged
-    }
-  };
-
-  return (
-    <div
-      id={`exchange-${qa.id}`}
-      style={{
-        padding: space['4'],
-        background: c.surfaceAlt,
-        borderRadius: radius.md,
-        border: `1px solid ${c.border}`,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          gap: space['3'],
-          marginBottom: space['3'],
-        }}
-      >
-        <p
-          style={{
-            margin: 0,
-            flex: 1,
-            fontFamily: fonts.display,
-            fontSize: fontSize.md,
-            fontWeight: fontWeight.semibold,
-            color: c.textPrimary,
-            lineHeight: lineHeight.snug,
-          }}
-        >
-          {qa.question}
-        </p>
-        <Button size="sm" variant="tertiary" onClick={handleCopy}>
-          {copied ? (
-            <Badge tone="success" size="sm">
-              Copied
-            </Badge>
-          ) : (
-            'Copy answer'
-          )}
-        </Button>
-      </div>
-      <div
-        className="reading"
-        style={{
-          color: c.textPrimary,
-          fontFamily: fonts.body,
-          fontSize: fontSize.base,
-          lineHeight: lineHeight.loose,
-        }}
-      >
-        <ReactMarkdown>{qa.answer}</ReactMarkdown>
-      </div>
-      {qa.references.length > 0 && (
-        <div
-          style={{
-            marginTop: space['3'],
-            borderTop: `1px solid ${c.border}`,
-            paddingTop: space['3'],
-          }}
-        >
-          <span
-            style={{
-              fontFamily: fonts.ui,
-              fontSize: fontSize.xs,
-              fontWeight: fontWeight.semibold,
-              color: c.textSecondary,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-            }}
-          >
-            References
-          </span>
-          <div style={{ marginTop: space['2'], display: 'flex', flexDirection: 'column', gap: space['1'] }}>
-            {qa.references.map((ref, i) => (
-              <CitationLink key={i} reference={ref} style={{ fontSize: fontSize.sm }} />
-            ))}
-          </div>
-        </div>
-      )}
-      <NotesPanel targetType="library_qa_exchange" targetId={qa.id} />
     </div>
   );
 }

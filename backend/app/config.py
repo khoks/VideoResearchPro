@@ -240,6 +240,20 @@ class Settings(BaseSettings):
     # `echo.process_share` task per share; "inline" processes in the request
     # (single-process dev); "off" leaves shares pending (the test suite).
     ECHO_SHARE_PROCESSING: str = "celery"
+    # S-3.2.1: how a connector sync runs after connect and on "Sync now":
+    # `celery` queues `echo.sync_connector` (production), `inline` runs it in
+    # the request (self-host without a worker), `off` leaves it to the
+    # scheduler tick. Scheduled syncs always go through the tick.
+    ECHO_CONNECTOR_SYNC: str = "celery"
+    # S-3.2.4: a separate GitHub OAuth app for the connector. Unset, the
+    # sign-in app (OAUTH_GITHUB_CLIENT_ID/SECRET) is used; its callback URL
+    # must then cover both redirects (register the frontend origin).
+    OAUTH_GITHUB_CONNECTOR_CLIENT_ID: str | None = None
+    OAUTH_GITHUB_CONNECTOR_CLIENT_SECRET: str | None = None
+    # S-3.2.2 / S-3.2.5 (not built): Google connectors use their own OAuth
+    # client so a scope review never touches Google sign-in.
+    OAUTH_GOOGLE_CONNECTOR_CLIENT_ID: str | None = None
+    OAUTH_GOOGLE_CONNECTOR_CLIENT_SECRET: str | None = None
     # Text embedded per share in shares_global (one vector per share, like
     # notes): the annotation, the title and the opening of the text.
     ECHO_SHARE_EMBED_MAX_CHARS: int = 2000

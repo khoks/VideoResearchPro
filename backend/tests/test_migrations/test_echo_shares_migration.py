@@ -87,7 +87,7 @@ def test_imports_table_and_share_columns_round_trip(migrated):
     """509a4efd9319 (S-3.7.5) adds echo_imports and shares_inbox.import_id /
     occurred_at, and removes them; existing shares keep their rows."""
     cfg, eng = migrated
-    command.upgrade(cfg, "e5773663cb2d")
+    command.upgrade(cfg, "3e03de05cc5f")
     _exec(
         eng,
         "INSERT INTO shares_inbox (id, tenant_id, user_id, received_at, updated_at, surface, content_type, "
@@ -99,7 +99,7 @@ def test_imports_table_and_share_columns_round_trip(migrated):
     assert "echo_imports" in inspector.get_table_names()
     assert {"import_id", "occurred_at"} <= {c["name"] for c in inspector.get_columns("shares_inbox")}
     assert _exec(eng, "SELECT id, import_id, occurred_at FROM shares_inbox") == [("s-1", None, None)]
-    command.downgrade(cfg, "e5773663cb2d")
+    command.downgrade(cfg, "3e03de05cc5f")
     inspector = inspect(eng)
     assert "echo_imports" not in inspector.get_table_names()
     assert "import_id" not in {c["name"] for c in inspector.get_columns("shares_inbox")}

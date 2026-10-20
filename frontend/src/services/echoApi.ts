@@ -44,9 +44,63 @@ export interface ListContextParams {
   include_expired?: boolean;
 }
 
+export type PrivacyWeight = 'low' | 'medium' | 'high' | 'very_high';
+
+/** A reader's grant for one connector (S-3.2.1). */
+export interface ConnectorGrant {
+  account_label: string | null;
+  granted_at: string | null;
+  consent_version: string;
+  /** The disclosure changed since the user agreed to it. */
+  consent_outdated: boolean;
+  status: 'idle' | 'syncing' | 'error' | string;
+  last_sync_at: string | null;
+  backfilled_at: string | null;
+  last_error: string | null;
+  last_counts: { added: number; updated: number; facts: number } | null;
+  events: number;
+}
+
+/** One connector this install offers, with what the consent screen shows. */
+export interface ConnectorItem {
+  name: string;
+  display_name: string;
+  privacy_weight: PrivacyWeight;
+  consent_disclosure: string;
+  consent_version: string;
+  event_types: string[];
+  /** The install has this connector's OAuth client. */
+  configured: boolean;
+  connected: boolean;
+  grant: ConnectorGrant | null;
+}
+
 export interface ConnectorListResponse {
   connectors: string[];
   supported_kinds: string[];
+  items: ConnectorItem[];
+}
+
+export interface ConnectorRevokeResult {
+  connector: string;
+  events: number;
+  facts: number;
+  provider_revoked: boolean;
+}
+
+export interface ActivityItem {
+  id: string;
+  connector: string;
+  event_type: string;
+  occurred_at: string;
+  payload: Record<string, unknown>;
+  text_content: string | null;
+  linked_document_id: string | null;
+}
+
+export interface ActivityResponse {
+  items: ActivityItem[];
+  next_before: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -314,6 +368,31 @@ export const echoApi = {
       .then(r => r.data),
 
   listConnectors: () => api.get<ConnectorListResponse>('/echo/connectors').then(r => r.data),
+
+  /** Start connecting (S-3.2.1): the provider's sign-in URL for the browser
+   * to open. `consentVersion` is the disclosure the consent screen showed. */
+  authorizeConnector: (name: string, consentVersion: string) =>
+    api
+      .post<{ authorize_url: string }>(`/echo/connectors/${encodeURIComponent(name)}/authorize`, {
+        consent_version: consentVersion,
+      })
+      .then(r => r.data),
+
+  /** Finish connecting with the code the provider sent back. */
+  completeConnector: (name: string, body: { code: string; state: string }) =>
+    api.post<ConnectorItem>(`/echo/connectors/${encodeURIComponent(name)}/callback`, body).then(r => r.data),
+
+  syncConnector: (name: string) =>
+    api
+      .post<{ dispatched: string; connector: ConnectorItem }>(`/echo/connectors/${encodeURIComponent(name)}/sync`)
+      .then(r => r.data),
+
+  /** Disconnect and delete everything the connector brought in. */
+  revokeConnector: (name: string) =>
+    api.delete<ConnectorRevokeResult>(`/echo/connectors/${encodeURIComponent(name)}`).then(r => r.data),
+
+  listActivity: (params?: { connector?: string; before?: string; limit?: number }) =>
+    api.get<ActivityResponse>('/echo/activity', { params }).then(r => r.data),
 
   listShares: (params?: ListSharesParams) =>
     api.get<ShareListResponse>('/echo/shares', { params }).then(r => r.data),

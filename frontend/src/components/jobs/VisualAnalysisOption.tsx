@@ -60,7 +60,8 @@ export function VisualAnalysisOption({ checked, onChange, installEnabled, models
           <span style={{ color: c.textSecondary }}>
             {' '}captures stills where the transcript suggests something is being shown, describes them, and lets
             the report say what was on screen and when. It adds roughly $0.20 per video and downloads each video
-            once; frames are kept and reused by later runs.
+            once; frames are kept and reused by later runs. Descriptions come from a model reading single
+            frames, and a report can occasionally credit an on-screen detail to the speaker.
           </span>
         </span>
       </label>

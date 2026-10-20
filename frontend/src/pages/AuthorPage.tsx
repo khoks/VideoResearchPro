@@ -10,6 +10,7 @@ import {
 } from '../hooks/useAuthor';
 import { useOutputsProgress } from '../hooks/useOutputProgress';
 import { ProgressBar } from '../components/common/ProgressBar';
+import { NewsletterCard } from '../components/author/NewsletterCard';
 import { useJobs } from '../hooks/useJobs';
 import { useShelves } from '../hooks/useShelves';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
@@ -222,6 +223,12 @@ export function AuthorPage() {
               </div>
             )}
           </section>
+
+          {partition.available.includes('newsletter') && (
+            <section style={{ marginBottom: space['6'] }}>
+              <NewsletterCard />
+            </section>
+          )}
 
           <section>
             <div

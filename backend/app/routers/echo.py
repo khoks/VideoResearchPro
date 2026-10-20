@@ -108,11 +108,6 @@ class RevokeSourceResponse(BaseModel):
     deleted_count: int
 
 
-class ConnectorListResponse(BaseModel):
-    connectors: list[str]
-    supported_kinds: list[str]
-
-
 # ---------------------------------------------------------------------------
 # Status
 # ---------------------------------------------------------------------------
@@ -223,16 +218,8 @@ def revoke_source_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/connectors", response_model=ConnectorListResponse)
-def list_connectors_endpoint(
-    _: User = Depends(require_feature("echo_personal_brain")),
-) -> ConnectorListResponse:
-    """List registered Echo connectors. v1 ships with an empty
-    registry; future connector PRs populate it."""
-    return ConnectorListResponse(
-        connectors=echo_service.list_connectors(),
-        supported_kinds=sorted(SUPPORTED_KINDS),
-    )
+# S-3.2.1: `GET /echo/connectors` and the rest of the connector API live in
+# `routers/echo_connectors.py`.
 
 
 # ---------------------------------------------------------------------------

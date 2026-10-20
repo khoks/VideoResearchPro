@@ -1,7 +1,7 @@
 """echo_imports + shares_inbox.import_id / occurred_at (S-3.7.5)
 
 Revision ID: 509a4efd9319
-Revises: e5773663cb2d
+Revises: 3e03de05cc5f
 Create Date: 2026-10-19
 
 An import (a WhatsApp chat, a Google Takeout archive) writes many shares at
@@ -15,7 +15,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "509a4efd9319"
-down_revision = "e5773663cb2d"
+down_revision = "3e03de05cc5f"
 branch_labels = None
 depends_on = None
 

@@ -343,6 +343,24 @@ export function newsletterParameters(
   return params;
 }
 
+/** S-6.4.2: how a digest period ended, for the subscription card. */
+export function sendStatusLabel(status: string): string {
+  switch (status) {
+    case 'sent':
+      return 'Sent';
+    case 'skipped':
+      return 'Nothing new, not sent';
+    case 'email_failed':
+      return 'Made, but the email failed';
+    case 'failed':
+      return 'Failed';
+    case 'started':
+      return 'In progress';
+    default:
+      return status.replace(/_/g, ' ');
+  }
+}
+
 /** Human names for download formats. */
 export const FORMAT_NAMES: Record<string, string> = {
   md: 'Markdown',

@@ -38,6 +38,7 @@ LANE_MIGRATIONS = [
     ("b4c5d6e7f8a0", {"channel_intelligence_cache"}),
     ("e5773663cb2d", {"activity_events", "echo_connector_grants", "echo_connector_credentials", "echo_connector_oauth_states"}),
     ("c5ee7a568ef8", {"output_citations"}),
+    ("3e03de05cc5f", {"newsletter_subscriptions", "newsletter_sends"}),
     ("007c708bb890", {"shares_inbox"}),
     ("3f8a1c2d9b7e", {"suggestion_cache"}),
     ("5d2e8b1f4a60", {"saved_searches"}),

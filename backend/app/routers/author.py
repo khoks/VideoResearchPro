@@ -44,7 +44,7 @@ from sqlalchemy.orm import Session, object_session
 from app.services import outputters  # noqa: F401
 from app.dependencies import get_db
 from app.models.user import User
-from app.services import output_artifacts, output_citation_service, output_service, task_routing_service
+from app.services import newsletter_service, output_artifacts, output_citation_service, output_service, task_routing_service
 from app.services.output_service import (
     OutputError,
     OutputKind,
@@ -52,6 +52,7 @@ from app.services.output_service import (
     UnsupportedKindError,
 )
 from app.services.tier_service import require_feature
+from app.tasks.newsletter_tasks import issue_newsletter
 from app.tasks.output_tasks import generate_output
 
 router = APIRouter(prefix="/author", tags=["author"])
@@ -448,3 +449,80 @@ def delete_output_endpoint(
             status_code=status.HTTP_404_NOT_FOUND, detail="Output not found"
         )
     return DeleteResponse(deleted=True)
+
+
+# ---------------------------------------------------------------------------
+# Newsletter subscription (S-6.4.2)
+# ---------------------------------------------------------------------------
+
+
+class NewsletterSettings(BaseModel):
+    """Every field optional: a PUT changes what it names. ``cadence`` is the
+    scheduler's shape (weekly / daily / monthly with hour, minute, weekday or
+    day_of_month, and an IANA timezone); ``sections`` the newsletter's."""
+
+    title: str | None = Field(default=None, max_length=200)
+    cadence: dict[str, Any] | None = None
+    sections: dict[str, bool] | None = None
+    enabled: bool | None = None
+
+
+@router.get("/newsletter")
+def get_newsletter(
+    current_user: User = Depends(require_feature("author_studio")),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """The caller's digest subscription, or ``{"subscription": null}``."""
+    sub = newsletter_service.get_for(db, current_user.id)
+    return {"subscription": newsletter_service.to_dict(db, sub) if sub else None}
+
+
+@router.put("/newsletter")
+def save_newsletter(
+    payload: NewsletterSettings,
+    current_user: User = Depends(require_feature("author_studio")),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Create or update the subscription; schedules it on the scheduler
+    (S-8.3.1). Turning it off disables the schedule. 400 for a bad cadence,
+    an unknown section or no section at all."""
+    try:
+        sub = newsletter_service.save(
+            db, current_user, cadence=payload.cadence, sections=payload.sections,
+            enabled=payload.enabled, title=payload.title,
+        )
+    except newsletter_service.NewsletterError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return {"subscription": newsletter_service.to_dict(db, sub)}
+
+
+@router.delete("/newsletter")
+def delete_newsletter(
+    current_user: User = Depends(require_feature("author_studio")),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    """Unsubscribe: removes the subscription and its schedule. Past issues
+    stay in the outputs list."""
+    sub = newsletter_service.get_for(db, current_user.id)
+    if sub is None:
+        return {"deleted": False}
+    newsletter_service.delete(db, sub)
+    return {"deleted": True}
+
+
+@router.post("/newsletter/send-now")
+def send_newsletter_now(
+    sync: bool = Query(False, description="Deliver inside the request (tests, scripts)"),
+    current_user: User = Depends(require_feature("author_studio")),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Make and send an issue now, outside the schedule. It covers what is
+    new since the last issue and counts as one."""
+    sub = newsletter_service.get_for(db, current_user.id)
+    if sub is None or not sub.enabled:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Turn the digest on first.")
+    if sync:
+        return newsletter_service.deliver(db, sub.id, trigger="manual")
+    result = task_routing_service.dispatch_for_user(issue_newsletter, current_user, sub.id, trigger="manual")
+    return {"status": "queued", "task_id": getattr(result, "id", None)}
+

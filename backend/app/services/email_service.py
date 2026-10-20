@@ -66,15 +66,30 @@ def _build_smtp(host: str, port: int):
     return smtp
 
 
-def _send_via_smtp(to: str, subject: str, body: str) -> None:
-    host = settings.SMTP_HOST
-    port = int(getattr(settings, "SMTP_PORT", 587) or 587)
-
+def build_message(
+    to: str, subject: str, body: str, *, html: str | None = None, message_id: str | None = None
+) -> EmailMessage:
+    """The message as sent: plain text, plus an HTML alternative when given
+    (S-6.4.2), and a caller-chosen ``Message-ID`` so a retried send is the
+    same message to the receiving server."""
     msg = EmailMessage()
     msg["From"] = _from_address()
     msg["To"] = to
     msg["Subject"] = subject
+    if message_id:
+        msg["Message-ID"] = message_id
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
+    return msg
+
+
+def _send_via_smtp(
+    to: str, subject: str, body: str, *, html: str | None = None, message_id: str | None = None
+) -> None:
+    host = settings.SMTP_HOST
+    port = int(getattr(settings, "SMTP_PORT", 587) or 587)
+    msg = build_message(to, subject, body, html=html, message_id=message_id)
 
     with _build_smtp(host, port) as smtp:
         username = getattr(settings, "SMTP_USERNAME", None)
@@ -84,36 +99,40 @@ def _send_via_smtp(to: str, subject: str, body: str) -> None:
         smtp.send_message(msg)
 
 
-def _log_email(to: str, subject: str, body: str) -> None:
+def _log_email(to: str, subject: str, body: str, *, html: str | None = None) -> None:
     """Self-host fallback: write the email to the log so the operator
     can hand-deliver it. Not for production SaaS use — operators should
-    set up SMTP."""
+    set up SMTP. An HTML part is noted, not logged."""
     logger.info(
-        "EMAIL (SMTP unconfigured — log fallback) → to=%s subject=%r\n"
+        "EMAIL (SMTP unconfigured — log fallback) → to=%s subject=%r%s\n"
         "----- BEGIN EMAIL BODY -----\n%s\n----- END EMAIL BODY -----",
         to,
         subject,
+        f" (HTML part of {len(html)} characters not logged)" if html else "",
         body,
     )
 
 
-def send_email(to: str, subject: str, body: str) -> bool:
+def send_email(
+    to: str, subject: str, body: str, *, html: str | None = None, message_id: str | None = None
+) -> bool:
     """Send an email. Returns True on success, False on failure.
 
     Never raises. Uses SMTP when ``SMTP_HOST`` is configured; otherwise
     falls back to logging the email body so self-host operators can
-    deliver out-of-band.
+    deliver out-of-band. ``html`` adds an HTML alternative to the plain
+    text, and ``message_id`` pins the Message-ID header (S-6.4.2).
     """
     if not to or not to.strip():
         logger.warning("send_email: empty recipient — dropping")
         return False
 
     if not _is_smtp_configured():
-        _log_email(to, subject, body)
+        _log_email(to, subject, body, html=html)
         return True
 
     try:
-        _send_via_smtp(to, subject, body)
+        _send_via_smtp(to, subject, body, html=html, message_id=message_id)
         logger.info("send_email: delivered to=%s subject=%r", to, subject)
         return True
     except Exception:
@@ -123,7 +142,7 @@ def send_email(to: str, subject: str, body: str) -> bool:
             to,
             subject,
         )
-        _log_email(to, subject, body)
+        _log_email(to, subject, body, html=html)
         return False
 
 

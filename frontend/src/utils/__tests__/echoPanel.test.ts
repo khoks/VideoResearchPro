@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeReadiness } from '../echoReadiness';
 import {
+  cardContext,
   draftGateView,
   historyRefHref,
   missingParts,
@@ -77,5 +78,15 @@ describe('small labels', () => {
   it('links a history citation to where it was asked', () => {
     expect(historyRefHref({ source_type: 'job', exchange_id: 'e', job_id: 'j1' })).toBe('/jobs/j1');
     expect(historyRefHref({ source_type: 'history', exchange_id: 'e2' })).toBe('/qa-history#exchange-e2');
+  });
+});
+
+describe('the cards context for the page in view', () => {
+  it('reads a run, its report, a knowledge page, else the library', () => {
+    expect(cardContext('/jobs/abc-1')).toBe('job:abc-1');
+    expect(cardContext('/reports/abc-1')).toBe('job:abc-1');
+    expect(cardContext('/knowledge/dQw4w9WgXcQ')).toBe('document:dQw4w9WgXcQ');
+    expect(cardContext('/jobs')).toBe('library');
+    expect(cardContext('/library/qa')).toBe('library');
   });
 });

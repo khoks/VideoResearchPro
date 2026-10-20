@@ -29,6 +29,9 @@ interface EchoPanelStore {
   setMode: (mode: EchoMode) => void;
   target: AskTarget;
   setTarget: (target: AskTarget) => void;
+  /** The Ask field's text: a card's question can be put there (S-3.8.2). */
+  askText: string;
+  setAskText: (text: string) => void;
   turns: EchoTurn[];
   addTurn: (turn: EchoTurn) => void;
   updateTurn: (id: string, patch: Partial<EchoTurn>) => void;
@@ -43,6 +46,8 @@ export const useEchoPanelStore = create<EchoPanelStore>((set, get) => ({
   setMode: (mode) => set({ mode }),
   target: 'library',
   setTarget: (target) => set({ target }),
+  askText: '',
+  setAskText: (askText) => set({ askText }),
   turns: [],
   addTurn: (turn) => set({ turns: [...get().turns, turn] }),
   updateTurn: (id, patch) => set({ turns: get().turns.map((t) => (t.id === id ? { ...t, ...patch } : t)) }),

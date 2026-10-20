@@ -30,6 +30,7 @@ from app.routers import (
     suggestions,
     saved_searches,
     notifications,
+    echo_cards,
     echo_connectors,
     echo_signals,
     qa,
@@ -161,6 +162,7 @@ app.include_router(saved_searches.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(echo_connectors.router, prefix="/api/v1")
 app.include_router(echo_signals.router, prefix="/api/v1")
+app.include_router(echo_cards.router, prefix="/api/v1")
 app.include_router(echo.router, prefix="/api/v1")
 app.include_router(author.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")

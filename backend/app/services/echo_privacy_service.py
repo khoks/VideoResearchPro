@@ -53,6 +53,7 @@ from app.models.echo_connector import (
     EchoConnectorGrant,
     EchoConnectorOAuthState,
 )
+from app.models.echo_card_state import EchoCardState
 from app.models.echo_import import EchoImport
 from app.models.echo_share_token import EchoShareToken
 from app.models.personal_context import PersonalContext
@@ -82,6 +83,8 @@ ECHO_TABLES: tuple[tuple[str, Any], ...] = (
     ("echo_connector_grants", EchoConnectorGrant),
     # S-3.7.5: each export import, so it can be listed and undone.
     ("echo_imports", EchoImport),
+    # S-3.8.2: what the panel's cards showed and what the user did with them.
+    ("echo_card_state", EchoCardState),
 )
 
 # Echo tables that hold secrets: OAuth tokens (encrypted, D-043) and the PKCE

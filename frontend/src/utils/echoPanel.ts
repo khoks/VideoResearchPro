@@ -138,3 +138,20 @@ export function voiceMatchLine(score: number | null | undefined): string | null 
   const pct = Math.round((score <= 1 ? score * 100 : score));
   return `${Math.max(0, Math.min(100, pct))}% like you`;
 }
+
+/** The suggestions context for the page in view (S-3.8.2): a run or its
+ * report, a source's knowledge page, else the library. */
+export function cardContext(pathname: string): string {
+  const run = pathname.match(/^\/(?:jobs|reports)\/([\w-]+)\/?$/);
+  if (run) return `job:${run[1]}`;
+  const doc = pathname.match(/^\/knowledge\/([\w:-]+)\/?$/);
+  if (doc) return `document:${doc[1]}`;
+  return 'library';
+}
+
+/** What each card kind is called in the panel's card settings. */
+export const CARD_KIND_LABELS: Record<string, string> = {
+  saved_search: 'Saved searches whose answer changed',
+  shares: 'News from your shares inbox',
+  questions: 'Questions for the page you are on',
+};

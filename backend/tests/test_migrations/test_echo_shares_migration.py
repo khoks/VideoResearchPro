@@ -120,3 +120,22 @@ def test_share_tokens_table_round_trips(migrated):
     command.downgrade(cfg, "509a4efd9319")
     assert "echo_share_tokens" not in inspect(eng).get_table_names()
     command.upgrade(cfg, "head")
+
+
+def test_card_state_table_round_trips(migrated):
+    """5029fce5d1ac (S-3.8.2) adds echo_card_state, one row per tenant and
+    card key, and removes it."""
+    cfg, eng = migrated
+    command.upgrade(cfg, "5029fce5d1ac")
+    assert "echo_card_state" in inspect(eng).get_table_names()
+    row = (
+        "INSERT INTO echo_card_state (id, tenant_id, key, kind, created_at, updated_at) "
+        "VALUES (:id, 't', 'questions:library', 'questions', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+    )
+    _exec(eng, row, id="c-1")
+    assert _exec(eng, "SELECT shown_days FROM echo_card_state") == [(0,)]
+    with pytest.raises(IntegrityError):
+        _exec(eng, row, id="c-2")
+    command.downgrade(cfg, "d3bc5b91fcce")
+    assert "echo_card_state" not in inspect(eng).get_table_names()
+    command.upgrade(cfg, "head")

@@ -26,6 +26,7 @@ The Echo panel (S-3.8.1) can offer one-line next steps ("anticipation cards"). A
 1. At most **3 cards** per panel view, at most **one per kind**, in the order `saved_search`, `shares`, `questions`.
 2. A card (its key) is shown on at most **3 distinct days**. After that it stays hidden. New content has a new key: another notice, newer shares, another page.
 3. "Shown" is counted once per key per calendar day (UTC), however often the panel opens.
+4. *Added before the first card shipped, 2026-10-20, from the live check:* a card counts as shown only if it rendered. A questions card is counted when the panel puts at least one question on screen. An empty library has none, and counting those views would understate the act rate.
 
 ## Dismissal rule
 

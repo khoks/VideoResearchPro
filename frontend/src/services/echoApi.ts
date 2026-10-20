@@ -431,7 +431,38 @@ export interface DraftResponse {
   disclosure?: string | null;
 }
 
+/** An anticipation card in the Echo panel (S-3.8.2). */
+export type CardKind = 'saved_search' | 'shares' | 'questions';
+
+export interface EchoCard {
+  key: string;
+  kind: CardKind | string;
+  title: string;
+  body?: string | null;
+  href?: string | null;
+  action_label?: string | null;
+  /** A questions card: the suggestions context to fetch. */
+  context?: string | null;
+}
+
+export interface EchoCardsResponse {
+  cards: EchoCard[];
+  muted_kinds: string[];
+  notice?: string | null;
+  notice_kind?: string | null;
+}
+
 export const echoApi = {
+  cards: (context?: string) =>
+    api.get<EchoCardsResponse>('/echo/cards', { params: context ? { context } : undefined }).then(r => r.data),
+  dismissCard: (key: string) =>
+    api.post<{ muted_kind: string | null }>('/echo/cards/dismiss', null, { params: { key } }).then(r => r.data),
+  actOnCard: (key: string) => api.post('/echo/cards/act', null, { params: { key } }).then(() => undefined),
+  cardShown: (key: string) => api.post('/echo/cards/shown', null, { params: { key } }).then(() => undefined),
+  cardSettings: () => api.get<{ kinds: Record<string, boolean> }>('/echo/cards/settings').then(r => r.data),
+  setCardSettings: (kinds: Record<string, boolean>) =>
+    api.put<{ kinds: Record<string, boolean> }>('/echo/cards/settings', { kinds }).then(r => r.data),
+  sharesSeen: () => api.post('/echo/cards/seen/shares').then(() => undefined),
   status: () => api.get<EchoStatus>('/echo/status').then(r => r.data),
   draftStatus: () => api.get<DraftGate>('/echo/draft/status').then(r => r.data),
   draft: (payload: DraftRequest) => api.post<DraftResponse>('/echo/draft', payload).then(r => r.data),

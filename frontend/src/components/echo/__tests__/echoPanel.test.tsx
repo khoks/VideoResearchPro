@@ -254,9 +254,13 @@ describe('draft as me', () => {
     draftMock.mockResolvedValue({
       id: 'd-1',
       draft: 'Happy to — Thursday works.',
-      voice_match_score: 0.82,
+      voice_match_score: 82,
       deviation_notes: ['Shorter than you usually write.'],
-      citations: [{ kind: 'fact', ref: 'fact:1', label: 'Works from Pune' }],
+      flags: ['The message names a private person; nothing was added about them.'],
+      citations: [
+        { kind: 'fact', ref: 'F1', label: 'Works from Pune' },
+        { kind: 'source', ref: 'S1', label: 'Tariffs explained', url: 'https://www.youtube.com/watch?v=v1&t=30' },
+      ],
       disclosure: 'Drafted with Echo, reviewed by you.',
     });
     useEchoPanelStore.setState({ open: true, mode: 'draft' });
@@ -268,10 +272,14 @@ describe('draft as me', () => {
     expect(draftMock).toHaveBeenCalledWith({ message: 'Can we meet Thursday?' });
     const turn = panel()!.querySelector('[data-echo-turn="draft"]')!;
     expect(turn.textContent).toContain('Happy to — Thursday works.');
-    expect(turn.textContent).toContain('82% like you');
+    expect(turn.textContent).toContain('Sounds like you: 82%');
     expect(turn.textContent).toContain('Shorter than you usually write.');
+    expect(turn.querySelector('[data-echo-draft-flags]')?.textContent).toContain('names a private person');
     expect(turn.textContent).toContain('Drafted with Echo, reviewed by you.');
-    expect(turn.textContent).toContain('Works from Pune');
+    expect(turn.textContent).toContain('F1 · what Echo knows about you');
+    const source = Array.from(turn.querySelectorAll('a')).find((a) => a.textContent === 'S1 · Tariffs explained')!;
+    expect(source.getAttribute('href')).toBe('https://www.youtube.com/watch?v=v1&t=30');
+    expect(source.getAttribute('target')).toBe('_blank');
   });
 });
 

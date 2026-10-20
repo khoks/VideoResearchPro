@@ -37,7 +37,7 @@ import { useEchoPanelStore, type AskTarget, type EchoTurn } from '../../stores/e
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, target as touch, z } from '../../theme';
 import type { LibraryQAExchange, QAHistoryExchange } from '../../types/qa';
 import { computeReadiness } from '../../utils/echoReadiness';
-import { draftErrorOf } from '../../utils/echoDrafts';
+import { citationLabel, draftErrorOf } from '../../utils/echoDrafts';
 import {
   CARD_KIND_LABELS,
   ECHO_SHORTCUT,
@@ -861,26 +861,47 @@ function DraftAnswer({ draft }: { draft: DraftResponse }) {
           {copied ? 'Copied' : 'Copy draft'}
         </Button>
       </div>
+      {(draft.flags ?? []).length > 0 && (
+        <ul data-echo-draft-flags="" style={{ margin: 0, paddingLeft: space['4'], fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.warn }}>
+          {draft.flags!.map((f, i) => (
+            <li key={i}>{f}</li>
+          ))}
+        </ul>
+      )}
       {(draft.deviation_notes ?? []).length > 0 && (
         <ul style={{ margin: 0, paddingLeft: space['4'], fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textSecondary }}>
-          {draft.deviation_notes!.map((n) => (
-            <li key={n}>{n}</li>
+          {draft.deviation_notes!.map((n, i) => (
+            <li key={i}>{n}</li>
           ))}
         </ul>
       )}
       {(draft.citations ?? []).length > 0 && (
         <SourcesList>
-          {draft.citations!.map((cit) =>
-            cit.href ? (
-              <Link key={cit.ref} to={cit.href} style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.accent }}>
-                {cit.label}
-              </Link>
-            ) : (
-              <span key={cit.ref} style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textSecondary }}>
-                {cit.label}
+          {draft.citations!.map((cit, i) => {
+            const label = `${cit.ref ? `${cit.ref} · ` : ''}${citationLabel(cit)}`;
+            const style = { fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.accent };
+            // A source at its timestamp is outside the app; anything inside it
+            // is a route.
+            if (cit.url) {
+              return (
+                <a key={i} href={cit.url} target="_blank" rel="noreferrer" style={style}>
+                  {label}
+                </a>
+              );
+            }
+            if (cit.href) {
+              return (
+                <Link key={i} to={cit.href} style={style}>
+                  {label}
+                </Link>
+              );
+            }
+            return (
+              <span key={i} style={{ ...style, color: c.textSecondary }}>
+                {label}
               </span>
-            ),
-          )}
+            );
+          })}
         </SourcesList>
       )}
     </>

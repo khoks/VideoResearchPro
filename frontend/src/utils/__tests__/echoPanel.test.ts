@@ -87,9 +87,10 @@ describe('small labels', () => {
     expect(requestErrorLine(new Error('offline'))).toBe('Could not reach the server.');
   });
 
-  it('reads a voice-match score either as a fraction or a percentage', () => {
-    expect(voiceMatchLine(0.824)).toBe('82% like you');
-    expect(voiceMatchLine(91)).toBe('91% like you');
+  it('reads a voice-match score on S-3.4.1’s 0 to 100 scale', () => {
+    expect(voiceMatchLine(82.4)).toBe('Sounds like you: 82%');
+    expect(voiceMatchLine(1)).toBe('Sounds like you: 1%');
+    expect(voiceMatchLine(140)).toBe('Sounds like you: 100%');
     expect(voiceMatchLine(null)).toBeNull();
   });
 

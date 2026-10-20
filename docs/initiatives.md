@@ -1628,9 +1628,9 @@ Backend suite 835 → 855.
 **North-star doc:** [feature-roadmap.md L4](feature-roadmap.md#l4--curated-source-ranking-) · [vision.md](vision.md)
 **Decision links:** [D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31) (amended 2026-10-18)
 
-**Current state (2026-10-19).** Trust-weighted retrieval v1 shipped (S-7.1.1, PR [#287](https://github.com/khoks/VideoResearchPro/pull/287)): `PUT /channels/{id}/weight`, the D-068 re-rank in job and library Q&A, and a slider on the channel page. Measured: it moves the context as intended, and at strong weights it costs breadth enough that library-Q&A judges preferred unweighted answers, so the formula is reopened (S-7.1.2). *Before:* only the `channel_subscriptions.source_weight` column existed; nothing read it.
+**Current state (2026-10-19).** Trust-weighted retrieval v1 shipped (S-7.1.1, PR [#287](https://github.com/khoks/VideoResearchPro/pull/287)): `PUT /channels/{id}/weight`, the D-068 re-rank in job and library Q&A, and a slider on the channel page. Measured, then re-judged with dated excerpts (PR [#330](https://github.com/khoks/VideoResearchPro/pull/330)): it moves the context as intended and meets all four pre-registered clauses once judges can see source dates, so the formula stays as shipped (S-7.1.2 closed as an artifact). Strong weights still narrow library answers in a way judges dislike, recorded in D-068. *Before:* only the `channel_subscriptions.source_weight` column existed; nothing read it.
 
-### E-7.1 🟡 Trust-weighted retrieval (v1)
+### E-7.1 🟢 Trust-weighted retrieval (v1)
 
 **Decided 2026-10-18 by [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18):** weighted retrieval first, as a pure re-rank (`distance / weight` after the raw relevance threshold, over a 3× pool), weights resolved per tenant at query time and never stored on chunks or used as a filter. Perspective banding is E-7.2. **Sequenced after the R3/R4 batch**, which is rewriting `qa_agent.py`.
 
@@ -1643,7 +1643,8 @@ Backend suite 835 → 855.
 - [x] T-7.1.1.4 `channel_subscription.py` docstring is now true and says where the weight is applied
 - [x] T-7.1.1.5 Measured per [the pre-registered protocol](notes/2026-10-19-e71-trust-weighting-measurement.md): mechanism and threshold clauses met; relevance clause **not met** (61% of non-tie verdicts favoured OFF against a 60% limit, concentrated in library Q&A); faithfulness clause **not met** too (confirmed unsupported claims ON 110 / OFF 95, both inflated by date claims). Recorded in D-068; formula reopened as S-7.1.2. Scripts: `measure_trust_weighting.py`, `judge_qa_pairs.py`
 
-#### S-7.1.2 ⚪ Reopen the re-rank formula: concentration and last-resort weights
+#### S-7.1.2 ✖ Reopen the re-rank formula: concentration and last-resort weights — closed 2026-10-19 as an artifact
+**Closed by:** the dated re-judge (PR [#330](https://github.com/khoks/VideoResearchPro/pull/330)). With publication dates in the judges' excerpts, the E-7.1 answers meet clauses 3 and 4 (relevance 8.73 vs 8.82, OFF 59.3% of non-tie verdicts; confirmed unsupported 11 vs 26). No rework; weighting stays as shipped. Library Q&A still prefers unweighted answers at strong weights (OFF 21 to 8 with dates), recorded in D-068 as a real cost of the setting. The tasks below are kept for history; T-7.1.2.2's last-resort rule for low weights remains a real, separate gap (weight 0 excludes in practice) and is not scheduled.
 **PR:** TBD. Filed 2026-10-19 from T-7.1.1.5's result ([D-068 amendment](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18)).
 **Why.** At 2.0 / 0 the re-rank took promoted channels from about a quarter to more than half of each answer's context, cut distinct channels per answer by a third, and judges preferred unweighted library answers 21 to 7. A weight of 0 never let a source surface, contrary to D-068's intent.
 **Acceptance.** A revised formula, chosen before measuring, re-run on the same ten questions and the same weights, meets all four clauses of the original rule, or the result is recorded and weights are capped in the UI instead.

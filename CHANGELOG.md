@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Added: saved-search alerts (2026-10-19)
 
-PR [#PRNUM](https://github.com/khoks/VideoResearchPro/pull/PRNUM). S-8.3.3, plan [m3-saved-searches-alerts](docs/plans/m3-saved-searches-alerts.md).
+PR [#328](https://github.com/khoks/VideoResearchPro/pull/328). S-8.3.3, plan [m3-saved-searches-alerts](docs/plans/m3-saved-searches-alerts.md).
 
 - A saved search now tells you when its answer **changes**: an in-app notice
   under the new bell in the sidebar, and an email when the search asks for one.

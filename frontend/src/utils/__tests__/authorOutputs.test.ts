@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   applyOutputProgress,
   downloadLabel,
+  estimateLabel,
   fileFormatOptions,
+  formatUsd,
+  usageLabel,
   filenameFromDisposition,
   formatsParameter,
   isReadableOutput,
@@ -120,6 +123,20 @@ describe('S-6.7.2 download helpers', () => {
     expect(downloadLabel('md', 1)).toBe('Download');
     expect(downloadLabel('pdf', 3)).toBe('Download PDF');
     expect(downloadLabel('xyz', 2)).toBe('Download .xyz');
+  });
+
+  it('labels cohesion estimates and recorded usage (S-6.1.3)', () => {
+    const call = { use_case: 'author_book_outline', provider: 'openai', model: 'gpt-5.5', reasoning: 'medium', input_tokens: 3000, output_tokens: 1300, cost_usd: 0.05 };
+    const prose = { ...call, use_case: 'author_book_prose', provider: 'anthropic', model: 'claude-sonnet-5', cost_usd: 0.04 };
+    expect(estimateLabel({ calls: [], cost_usd: 0 })).toBeNull();
+    expect(estimateLabel({ calls: [call, prose], cost_usd: 0.0923 })).toBe('About $0.09 on gpt-5.5, claude-sonnet-5');
+    expect(estimateLabel({ calls: [call], cost_usd: null })).toBe('Cost unknown: no published pricing for gpt-5.5');
+    expect(formatUsd(0.004)).toBe('under $0.01');
+    expect(usageLabel({ cohesion: { requested: 'full', applied: 'full' }, calls: [call, prose], input_tokens: 1, output_tokens: 1, cost_usd: 0.092 }))
+      .toBe('Framing: full · $0.09');
+    expect(usageLabel({ cohesion: { requested: 'full', applied: 'light' }, calls: [call, prose], input_tokens: 1, output_tokens: 1, cost_usd: 0.1 }))
+      .toBe('Framing: light (asked for full) · $0.10');
+    expect(usageLabel(null)).toBeNull();
   });
 
   it('offers the files a kind can be built as, and why one is missing (S-6.1.5)', () => {

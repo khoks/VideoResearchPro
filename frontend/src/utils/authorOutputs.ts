@@ -4,7 +4,7 @@
  */
 
 import type { BadgeTone } from '../components/primitives';
-import type { KindsResponse, OutputItem } from '../services/authorApi';
+import type { KindsResponse, OutputEstimate, OutputItem, OutputUsage } from '../services/authorApi';
 import type { WSProgressMessage } from '../types/ws';
 import { detailFromErrorBody, type HttpErrorLike } from './ingestResults';
 
@@ -260,6 +260,50 @@ export function isReadableOutput(output: Pick<OutputItem, 'status' | 'has_conten
 
 /** Button text for one download format: "Download" alone when there is only
  * one, else "Download .pdf". */
+export type CohesionLevel = 'none' | 'light' | 'full';
+
+/** S-6.1.3: what each cohesion level does, for the create modal. The default
+ * mirrors `book_cohesion.DEFAULT_LEVEL` on the server. */
+export const DEFAULT_COHESION: CohesionLevel = 'none';
+export const COHESION_OPTIONS: { value: CohesionLevel; label: string; description: string }[] = [
+  { value: 'none', label: 'None', description: 'The chapters in the order you pick, with nothing added.' },
+  {
+    value: 'light',
+    label: 'Light',
+    description: 'A model suggests the reading order and parts, and writes a short introduction and a bridge into each chapter.',
+  },
+  {
+    value: 'full',
+    label: 'Full',
+    description: 'Also a full introduction, a conclusion and a glossary. Chapters are never rewritten; the added text is labelled.',
+  },
+];
+
+export function formatUsd(cost: number | null | undefined): string {
+  if (cost === null || cost === undefined) return 'cost unknown';
+  if (cost > 0 && cost < 0.01) return 'under $0.01';
+  return `$${cost.toFixed(2)}`;
+}
+
+function models(calls: { model: string }[]): string {
+  return [...new Set(calls.map((c) => c.model))].join(', ');
+}
+
+/** "About $0.09 on gpt-5.5, claude-sonnet-5", or null when nothing is called. */
+export function estimateLabel(estimate: OutputEstimate | undefined): string | null {
+  if (!estimate || estimate.calls.length === 0) return null;
+  if (estimate.cost_usd === null) return `Cost unknown: no published pricing for ${models(estimate.calls)}`;
+  return `About ${formatUsd(estimate.cost_usd)} on ${models(estimate.calls)}`;
+}
+
+/** "Framing: full · $0.09", noting when less was applied than asked for. */
+export function usageLabel(usage: OutputUsage | null | undefined): string | null {
+  if (!usage || usage.calls.length === 0) return null;
+  const c = usage.cohesion;
+  const level = c ? (c.applied === c.requested ? c.applied : `${c.applied} (asked for ${c.requested})`) : null;
+  return [level ? `Framing: ${level}` : null, formatUsd(usage.cost_usd)].filter(Boolean).join(' · ');
+}
+
 /** Human names for download formats. */
 export const FORMAT_NAMES: Record<string, string> = {
   md: 'Markdown',

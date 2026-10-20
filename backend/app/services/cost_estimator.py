@@ -131,6 +131,8 @@ def _workload(use_case: str, model: str) -> tuple[int, int, int]:
         return kv, kv * (min(avg_tokens, 20_000) + 3_500), kv * 6_000
     if use_case in ("report_channel", "report_compose_channel_section", "social_classify_stance"):
         return 0, 0, 0                      # not exercised by this (topic/video) benchmark
+    if use_case in ("author_book_outline", "author_book_prose"):
+        return 0, 0, 0                      # books are estimated per book (estimate_calls)
     return 0, 0, 0
 
 
@@ -140,6 +142,41 @@ def _cost(model: str, calls: int, in_tok: int, out_tok: int) -> float | None:
     if not calls:
         return 0.0
     return estimate_call_cost(model, in_tok, out_tok, in_tok // calls)
+
+
+def call_cost(model: str, input_tokens: int, output_tokens: int) -> float | None:
+    """USD for one call on ``model``; None when the model has no pricing."""
+    return estimate_call_cost(model, input_tokens, output_tokens, input_tokens)
+
+
+def estimate_calls(calls: list[tuple[str, int, int]]) -> dict:
+    """S-6.1.3: what a planned set of calls costs on the configs they resolve
+    to now. ``calls`` holds ``(use_case, input_tokens, output_tokens)``;
+    output tokens include any reasoning the model is expected to bill."""
+    rows: list[dict] = []
+    total = 0.0
+    priced = True
+    for use_case, in_tok, out_tok in calls:
+        cfg = resolve_config(use_case)  # type: ignore[arg-type]
+        cost = call_cost(cfg.model, in_tok, out_tok)
+        if cost is None:
+            priced = False
+        else:
+            total += cost
+        rows.append({
+            "use_case": use_case,
+            "provider": cfg.provider,
+            "model": cfg.model,
+            "reasoning": cfg.reasoning,
+            "input_tokens": in_tok,
+            "output_tokens": out_tok,
+            "cost_usd": round(cost, 4) if cost is not None else None,
+        })
+    return {
+        "calls": rows,
+        "cost_usd": round(total, 4) if priced else None,
+        "pricing_as_of": PRICING_AS_OF,
+    }
 
 
 def estimate(overrides: dict[str, UseCaseConfig] | None = None) -> dict:

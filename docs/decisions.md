@@ -2871,3 +2871,25 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 - S-8.9.3 (topic clusters by embedding centroid) stays gated on topic edges proving too sparse on a real library.
 
 **Linked initiatives / PRs.** E-8.9 (S-8.9.1 #297, S-8.9.2 #301), M9 plan, D-063, D-070.
+
+## D-093 — Book cohesion pass ships opt-in; `none` stays the default after two blind rounds (2026-10-19)
+
+**Status:** accepted.
+
+**Context.** S-6.1.3 adds model-written framing around a book's unchanged chapters. `author_book_outline` (gpt-5.5, medium) proposes order, parts, bridges and briefs; `author_book_prose` (claude-sonnet-5, medium) writes the introduction, bridges, conclusion and glossary. The plan made `full` the default only if it beat the `none` book in a blind judgement. The protocol and decision rule were fixed before generation in [docs/notes/2026-10-19-book-cohesion-judging.md](notes/2026-10-19-book-cohesion-judging.md). The material was three books from four real runs. Three judges took part, from different families. The rule required at least 6 of 9 verdicts for `full`, the non-Anthropic judges agreeing, and at most 3 flagged framing statements in total.
+
+**Decision.** `cohesion` ships with `none` as the default and `light` / `full` as opt-in, priced before generation. Both rounds met the preference rules (18 of 18 verdicts for `full`, cohesion about 8 against 3) and failed the accuracy rule (27 flags per round). A book with framing says so in its front matter and names the models.
+
+**Alternatives considered.**
+- *Make `full` the default on the preference result.* The rule was fixed in advance to stop exactly that: framing a reader takes as fact must not invent. The flags include real defects as well as judge errors.
+- *A third round with more prompt changes.* The protocol allowed no third round. More tuning against the same three books and judges would fit them, not the problem.
+- *Count only flags verified against the chapters.* Judges do flag supported statements (the publication span, wording the chapter uses). But changing the rule after seeing the data would make the judgement meaningless; the notes report what the flags are without changing the outcome.
+
+**Consequences.**
+- Every book is still the deterministic manuscript unless the user chooses framing. The create modal shows the estimate, and the outputs list shows the measured cost from `usage_json`.
+- Two defects found by the trial are fixed and tested: prose returned as JSON broke on paragraph breaks and quotation marks (now marked plain-text sections), and a reordered book's prose cited the user's chapter numbers (now reading-order numbers and titles).
+- Cost per book: $0.09 to $0.17 for two to four chapters, input dominated by the digests (3,000 to 5,000 tokens for the outline, 10,000 to 17,000 for the prose).
+- Revisit when a grounding check exists that tests each framing sentence against the chapters (for example an entailment pass) or a judge panel with a verified-flag protocol is fixed in advance.
+- `gemini-3.1-pro-preview` hit its daily request quota (250, shared across sessions) and `gemini-3.6-flash` judged instead, as the notes record.
+
+**Linked initiatives / PRs.** E-6.1 / S-6.1.3 (PR [#310](https://github.com/khoks/VideoResearchPro/pull/310)), D-055 (judging method), D-056 (disclose, never drop), D-066, D-067.

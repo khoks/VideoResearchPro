@@ -79,7 +79,8 @@ def stylesheet(name: str = "book.css") -> str:
     return (ASSETS_DIR / name).read_text(encoding="utf-8")
 
 
-def _slugger():
+def slugger():
+    """The reader's heading-id function with `-2`, `-3` for repeats."""
     seen: dict[str, int] = {}
 
     def slug(text: str) -> str:
@@ -100,7 +101,7 @@ def render_book_html(markdown: str, *, title: str) -> BookHtml:
     source = _XML_INVALID.sub("", markdown or "")
     root = lxml_html.fragment_fromstring(_parser().render(source) or "<p></p>", create_parent="div")
 
-    slug = _slugger()
+    slug = slugger()
     headings: list[Heading] = []
     for el in root.iter("h1", "h2", "h3", "h4", "h5", "h6"):
         text = _normalise_space(el.text_content())

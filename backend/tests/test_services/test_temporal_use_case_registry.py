@@ -15,7 +15,7 @@ def test_registered_with_reasoning_off():
 
 def test_registry_count_matches_claude_md():
     """CLAUDE.md states the count; keep the two in step."""
-    assert len(USE_CASE_REGISTRY) == 26
+    assert len(USE_CASE_REGISTRY) == 28
 
 
 def test_probed_but_not_a_feature_gate():

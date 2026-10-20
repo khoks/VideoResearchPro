@@ -126,6 +126,9 @@ UseCase = Literal[
     "code_mixing_render_english",
     # Question suggestions (M4 / S-8.4.1) — app/services/suggestion_service.py
     "qa_suggest_questions",
+    # Author Studio book cohesion (S-6.1.3) — app/services/outputters/book_cohesion.py
+    "author_book_outline",
+    "author_book_prose",
 ]
 
 # Use cases whose prompts carry IMAGES, not just text.
@@ -1395,6 +1398,71 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
                 "About 1.5 input and 1.0 output tokens per word of transcript, "
                 "plus ~300 prompt tokens per six-chunk call; once per document."
             ),
+        ),
+    ),
+    # --- Author Studio: book cohesion (S-6.1.3) -------------------------
+    "author_book_outline": UseCaseInfo(
+        default_route="primary",
+        default_config=UseCaseConfig("openai", "gpt-5.5", "medium"),
+        summary=(
+            "Plan a book from digests of its chapters (title, section "
+            "headings, the summary section or opening, about 350 words "
+            "each): reading order, parts, a bridge paragraph into each "
+            "chapter, introduction and conclusion briefs, glossary terms. "
+            "Strict JSON. Chapters are never sent back or rewritten."
+        ),
+        typical_input_tokens=5_000,
+        p95_input_tokens=14_000,
+        typical_output_tokens=2_500,
+        min_context_recommended=32_768,
+        rationale=(
+            "A planning decision over the whole book (order, grouping) that "
+            "a cheaper model is most likely to get wrong silently, so the "
+            "flagship tier with reasoning on. One call per book, so the tier "
+            "costs cents. The completion cap is 16,000 because OpenAI counts "
+            "reasoning tokens against it (the D-052 trap). Fail-soft at the "
+            "call site: a failed or invalid outline leaves the user's order "
+            "and the manuscript says so, so it is not a feature gate."
+        ),
+        guidance=_unmeasured(
+            "Judged only as part of the whole cohesion pass with this default "
+            "and the prose default: three judges preferred the framed book in "
+            "18 of 18 blind verdicts over two rounds, but flagged 27 framing "
+            "statements per round as unsupported, so cohesion stays opt-in "
+            "(D-093). No other model has been judged for the outline.",
+            related=("D-093",),
+        ),
+    ),
+    "author_book_prose": UseCaseInfo(
+        default_route="primary",
+        default_config=UseCaseConfig("anthropic", "claude-sonnet-5", "medium"),
+        summary=(
+            "Write a book's introduction, chapter bridges, conclusion and "
+            "glossary from its outline plus about 1,200 words of each "
+            "chapter. Framing only: no links, citations or new facts; the "
+            "chapters stay the reports' own text."
+        ),
+        typical_input_tokens=9_000,
+        p95_input_tokens=36_000,
+        typical_output_tokens=6_000,
+        min_context_recommended=65_536,
+        rationale=(
+            "User-facing long-form prose, the job claude-sonnet-5 already "
+            "does for knowledge synthesis and Q&A answers. One call per book "
+            "at cohesion=full. Grounding is enforced twice: the prompt "
+            "forbids facts outside the excerpts and the call site strips "
+            "links, footnote markers, headings and HTML from whatever "
+            "returns. Fail-soft: on failure the book keeps the outline's "
+            "shorter framing and says so."
+        ),
+        guidance=_unmeasured(
+            "Judged only as part of the whole cohesion pass with this default "
+            "and the outline default: preferred in 18 of 18 blind verdicts, but "
+            "its framing drew 27 flags per round as unsupported (outside "
+            "knowledge, remarks on how the book was made), so cohesion stays "
+            "opt-in (D-093). About $0.05-0.07 per book. No other model has "
+            "been judged for the prose.",
+            related=("D-093",),
         ),
     ),
     # --- Social-media candidate classification (S-1.5.3) ---------------

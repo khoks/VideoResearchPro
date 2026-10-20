@@ -73,6 +73,9 @@ class Output(Base):
         Integer, nullable=False, default=0, server_default="0"
     )
     progress_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # S-6.1.3: the model calls generation made (use case, model, tokens,
+    # cost) as JSON; None when it made none (a book without cohesion).
+    usage_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),

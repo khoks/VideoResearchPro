@@ -27,6 +27,38 @@ export interface OutputItem {
   formats?: string[];
   /** S-6.7.3: rows in `output_citations` for this output. */
   citation_count?: number;
+  /** S-6.1.3: the model calls generation made and what they cost. */
+  usage?: OutputUsage | null;
+}
+
+/** One model call, as recorded on an output or planned by an estimate. */
+export interface ModelCallCost {
+  use_case: string;
+  provider: string;
+  model: string;
+  reasoning: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: number | null;
+  ok?: boolean;
+  error?: string | null;
+}
+
+/** S-6.1.3: `usage_json` of an output. */
+export interface OutputUsage {
+  cohesion?: { requested: string; applied: string };
+  calls: ModelCallCost[];
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+}
+
+/** S-6.1.3: `POST /author/outputs/estimate`. */
+export interface OutputEstimate {
+  cohesion?: string;
+  calls: ModelCallCost[];
+  cost_usd: number | null;
+  pricing_as_of?: string;
 }
 
 /** `available` = kinds with a concrete outputter; `supported` = every kind
@@ -90,6 +122,9 @@ export const authorApi = {
     api
       .get<Blob>(`/author/outputs/${id}/download`, { params: format ? { format } : undefined, responseType: 'blob' })
       .then((r) => ({ blob: r.data, disposition: String(r.headers['content-disposition'] ?? '') })),
+
+  estimateOutput: (payload: CreateOutputPayload) =>
+    api.post<OutputEstimate>('/author/outputs/estimate', payload).then(r => r.data),
 
   cancelOutput: (id: string) =>
     api.post<OutputItem>(`/author/outputs/${id}/cancel`).then(r => r.data),

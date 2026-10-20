@@ -13,6 +13,8 @@ Endpoints under ``/api/v1/author/*``:
   and returns the finished row (the test path). A kind with no outputter
   is 501 before any row is written, and so is a format the server cannot
   build (a book's ``pdf`` with no converter installed; S-6.1.5).
+- ``POST /author/outputs/estimate`` — what generating this output would
+  cost before it runs (S-6.1.3: a book's cohesion pass). Same body as create.
 - ``POST /author/outputs/{id}/cancel`` — cancel a pending or generating
   output (S-6.7.1).
 - ``GET /author/outputs`` — list current user's outputs (kind / status
@@ -83,6 +85,9 @@ class OutputItem(BaseModel):
     # S-6.1.1: whitespace-separated words in the generated text; None
     # until there is content. The page shows it beside the chapter count.
     word_count: int | None = None
+    # S-6.1.3: the model calls generation made (use case, model, tokens,
+    # cost) and their total; None when it made none.
+    usage: dict[str, Any] | None = None
 
     model_config = {"from_attributes": False}
 
@@ -141,6 +146,7 @@ def _to_item(row, citation_count: int | None = None) -> OutputItem:
         progress_pct=row.progress_pct or 0,
         progress_message=row.progress_message,
         celery_task_id=row.celery_task_id,
+        usage=json.loads(row.usage_json) if row.usage_json else None,
     )
 
 
@@ -249,6 +255,29 @@ def create_and_generate(
     db.commit()
     db.refresh(row)
     return _to_item(row)
+
+
+@router.post("/outputs/estimate")
+def estimate_output(
+    payload: CreateOutputPayload,
+    current_user: User = Depends(require_feature("author_studio")),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """S-6.1.3 / T-6.1.3.5: what generating this output would cost, before
+    it runs, on the models its use cases resolve to now. Writes nothing.
+    ``{"cohesion", "calls": [{use_case, provider, model, reasoning,
+    input_tokens, output_tokens, cost_usd}], "cost_usd", "pricing_as_of"}``;
+    a kind or setting that calls no model returns no calls and cost 0."""
+    outputter = output_service.get_outputter(payload.kind)
+    if outputter is None:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=f"No outputter for kind '{payload.kind}'.")
+    estimate = getattr(outputter, "estimate", None)
+    if estimate is None:
+        return {"calls": [], "cost_usd": 0.0}
+    try:
+        return estimate(db, current_user, payload.title, payload.source_ids, dict(payload.parameters))
+    except OutputError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/outputs/{output_id}/cancel", response_model=OutputItem)

@@ -38,6 +38,8 @@ One `shares_inbox` table (schema in `personal-brain.md`, plus `author_is_tenant`
 
 Surfaces: a sidebar quick-share and drop zone on every page; a Manifest V3 extension using `contextMenus` plus `activeTab` (no `history` permission, so no install warning and a lighter store review; Chrome Web Store's tightened Limited Use rule is enforced from 2026-08-01); a Web Share Target in the manifest for Android (installed PWA; iOS Safari still cannot be a share target, so ship an iOS Shortcut that POSTs to the intake endpoint); email-in as IMAP polling for self-host (IMAPClient, BSD-3-Clause) and an inbound-webhook provider for SaaS (Mailgun's free route or Cloudflare Email Routing plus a Worker are $0 entry points; Postmark needs Pro).
 
+**Passive browsing capture: deferred (2026-10-19).** S-3.7.3 closed without T-3.7.3.3. Whether Echo watches browsing in the background at all, even opt-in per site, is a question about Echo's privacy promise, and that promise is still the user's to make ([D-089](../decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) left it open; open question 7 below). Explicit capture through the extension covers the need meanwhile. **Preferred approach if the user opts in:** per-domain optional host permissions (Chrome asks for each site as the user adds it, so no `history` permission and no install warning); URL, title and time only, never page content; `incognito: not_allowed` in the manifest; domains grouped into categories the user can pause; visits posted with the share token to a write-only route that refuses without an active `browser_history` grant, which needs a third, "push" connector kind in S-3.2.1's runtime (consent screen, no OAuth, disconnect deletes the events). This keeps the reason the `history` permission was rejected (the install warning and the store's Limited Use review of that permission) out of the picture, because the extension never holds it.
+
 ### Domain 2 — connectors (E-3.2)
 
 What the research found changes the roadmap's list:
@@ -147,6 +149,7 @@ Export (one archive, JSONL per table plus files) and full delete (cascading acro
 4. **Spotify live tail.** Worth building at all given it is self-host-only, or export import only?
 5. **When Gmail.** Only with revenue to fund the annual assessment, or never, with IMAP plus app password as the self-host answer?
 6. **Mode B at all.** Given the provider shutdowns and the quality trade-off, is local LoRA worth pursuing, or does retrieval plus critique remain the product?
+7. **Passive browsing capture.** Does Echo's promise extend to recording browsing in the background, opt-in per site and per category, or does Echo only ever see what the user hands it? T-3.7.3.3 waits on this; the preferred design, should the answer be yes, is under Domain 5.
 
 ## Sources (fetched 2026-10-19)
 

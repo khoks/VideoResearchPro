@@ -79,6 +79,23 @@ export interface Share {
   author_is_tenant: boolean;
   processing_state: ShareProcessingState | string;
   linked_document_id: string | null;
+  /** S-3.7.2: extracted text for links and files (text shares carry `text`). */
+  extracted_text?: string | null;
+  /** S-3.7.2: what processing found; absent until it ran. */
+  processing?: ShareProcessing | null;
+}
+
+export interface ShareProcessing {
+  title?: string | null;
+  author?: string | null;
+  extractor?: string | null;
+  /** Why processing failed, in words fit to show. */
+  error?: string | null;
+  /** Why a share is still waiting (e.g. OCR not built yet). */
+  note?: string | null;
+  embedded?: boolean | null;
+  processed_at?: string | null;
+  library_offer?: { eligible: boolean; reason?: string | null; source_type?: string | null } | null;
 }
 
 export interface ShareListResponse {
@@ -214,6 +231,14 @@ export const echoApi = {
 
   updateShare: (id: string, payload: UpdateSharePayload) =>
     api.patch<Share>(`/echo/shares/${encodeURIComponent(id)}`, payload).then(r => r.data),
+
+  /** S-3.7.2: queue processing again ("Retry"). */
+  reprocessShare: (id: string) =>
+    api.post<Share>(`/echo/shares/${encodeURIComponent(id)}/process`).then(r => r.data),
+
+  /** S-3.7.2: the library offer; ingests the shared link for this reader only. */
+  addShareToLibrary: (id: string) =>
+    api.post<Share>(`/echo/shares/${encodeURIComponent(id)}/library`).then(r => r.data),
 
   deleteShare: (id: string) =>
     api

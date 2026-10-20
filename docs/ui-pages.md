@@ -376,6 +376,7 @@ Pure logic (gates, grouping, expiry, label validation) lives in `frontend/src/ut
 | State | What renders |
 |-------|--------------|
 | Default | Search (debounced; text, links, file names, annotations) and a state filter; then one card per share: content-type badge, **Your words** or **Context only** (tooltip explains the default), processing state ("Waiting for processing" until S-3.7.2 exists), shared date; the link, the text (scrollable block, gold rule for the user's own words) or the file name, size and **Download**; the "why" annotation. Actions: **Add why** / **Edit why** inline, **These are my words** / **Not my words**, **Delete** (confirm: the share, its file and anything derived are removed). |
+| Processing (S-3.7.2) | A processed link shows its resolved title and author above the URL, and the opening of the extracted text below it. A failed share shows the reason in red with **Retry**. A share still waiting shows why (images and audio until part 2). An eligible link shows **Add to library**; once added, **In your library →**. |
 | More than 100 | "Show N more" grows the page by 100. |
 | Empty | "Nothing shared yet." pointing at Add to Echo; with filters, "Nothing matches." |
 | Loading / error | Skeleton rows; editorial error with Retry. |

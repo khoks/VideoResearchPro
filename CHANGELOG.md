@@ -10,6 +10,19 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Echo: shares are processed — links, text, text files (S-3.7.2 part 1, 2026-10-19)
+
+PR [#324](https://github.com/khoks/VideoResearchPro/pull/324). Plan: [docs/plans/l3-echo-personal-brain.md](docs/plans/l3-echo-personal-brain.md).
+
+- Every share is queued to a new `echo.process_share` Celery task. Text is
+  embedded as is; a YouTube link resolves its title, channel and description;
+  any other link is extracted like a pasted article; text files are decoded.
+- One vector per share in `shares_global`, under the id and tenant the Echo
+  deletes already sweep, with `voice_eligible` (only the user's own words).
+- **Library offer:** an extracted link can be added to the library in one
+  click, through the paste path, visible to the sharer only.
+- Fail-soft with **Retry**; results in a new `processing_json` column
+  (migration `65ce471f8571`). Images and audio come in part 2.
 ### Legacy global channel columns dropped; per-tenant sync time finally recorded (2026-10-19, S-5.10.3)
 
 PR [#316](https://github.com/khoks/VideoResearchPro/pull/316).

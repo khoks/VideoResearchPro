@@ -37,6 +37,14 @@ GROUNDING_RULES = """WHAT YOU MAY WRITE — READ CAREFULLY:
   finding: phrase it as such ("read together, these chapters suggest ...").
 - Where chapters disagree or cover different periods, say so plainly rather
   than reconciling them.
+- Say nothing about the world outside the chapters: not how a subject is
+  "often" presented, what people "usually" believe, or how it is "sold".
+- Write about the subject, never about the making of this book: do not
+  describe how it was assembled, edited, ordered or numbered, or that it has
+  an introduction, bridges or a glossary.
+- Refer to a chapter by its title or its subject ("the visualisation
+  chapter"), never by a number: the printed book numbers its chapters in its
+  own reading order, which is not the numbering in this input.
 - Write no links, no footnote markers, no citations, no headings, no HTML and
   no Markdown tables. The chapters carry the citations; your prose is framing
   around them and must not look like it is citing anything.
@@ -87,30 +95,45 @@ prose; the chapters themselves will be printed exactly as they are.
 
 Write:
 1. INTRODUCTION — two to four paragraphs, at most 400 words: what the book
-   covers, why these chapters belong together, what the reader will be able to
-   do or understand after it, and how the chapters are ordered.
+   covers, why these chapters belong together, and what the reader will be
+   able to do or understand after it.
 2. BRIDGES — for each chapter listed in the plan's bridges, one paragraph of
    40 to 90 words leading the reader into that chapter. Improve on the plan's
-   draft where you can; keep its chapter number.
+   draft where you can; keep its chapter number in the marker. Chapter numbers
+   in this input are reading positions (1 is read first).
 3. CONCLUSION — two to four paragraphs, at most 400 words, drawing together
    the threads across chapters, including where they disagree or leave
    questions open. No new information.
 4. GLOSSARY — one entry per term in the plan that the chapters actually use,
    plus any you find essential (25 at most). Each definition is one or two
-   sentences, at most 40 words, explaining the term AS THE CHAPTERS USE IT.""",
+   sentences, at most 40 words, built ONLY from what the chapter material says
+   about the term. If the chapters use a term without explaining it, leave
+   the term out; never complete a definition from general knowledge.""",
     GROUNDING_RULES,
     ENGLISH_OUTPUT_CONTRACT,
     QUOTE_RENDERING_RULES,
     TEMPORAL_AWARENESS,
     VISUAL_ANNOTATION_CONTRACT,
-    """OUTPUT: return ONLY a JSON object, no prose before or after it:
-{
-  "introduction": "<paragraphs separated by a blank line>",
-  "bridges": [{"chapter": <chapter number>, "text": "<one paragraph>"}],
-  "conclusion": "<paragraphs separated by a blank line>",
-  "glossary": [{"term": "<term>", "definition": "<definition>"}]
-}""",
+    """OUTPUT: plain text in exactly these marked sections, in this order, and
+nothing before the first marker. Each marker is alone on its line.
+
+=== INTRODUCTION ===
+<paragraphs separated by a blank line>
+=== BRIDGE <chapter number> ===
+<one paragraph>
+(one BRIDGE section per bridge in the plan)
+=== CONCLUSION ===
+<paragraphs separated by a blank line>
+=== GLOSSARY ===
+<term> :: <definition>
+(one entry per line)""",
 )
+
+# Why marked sections and not JSON for the prose: on the first live run
+# (2026-10-19) claude-sonnet-5 twice returned JSON a parser could not read,
+# once with paragraph breaks inside strings and once with unescaped quotation
+# marks. Prose is full of both; the outline, which is short structured data,
+# stays JSON.
 
 
 def outline_user_prompt(book_title: str, digests: list[dict]) -> str:

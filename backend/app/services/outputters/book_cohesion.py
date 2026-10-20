@@ -53,9 +53,11 @@ MAX_HEADINGS = 24
 # trap), so they are generous; the visible output is a few thousand tokens.
 OUTLINE_MAX_TOKENS = 16_000
 PROSE_MAX_TOKENS = 24_000
-# What the output side is expected to be, for the estimate.
-OUTLINE_OUTPUT_TOKENS_EST = 2_500
-PROSE_OUTPUT_TOKENS_EST = 6_000
+# What the output side is expected to be, for the estimate: the largest
+# billed on the S-6.1.3 trial books (outline 1,003-1,738 tokens with its
+# reasoning, prose 2,631-3,094), rounded up.
+OUTLINE_OUTPUT_TOKENS_EST = 1_800
+PROSE_OUTPUT_TOKENS_EST = 3_500
 
 BRIDGE_MAX_WORDS = 120
 SECTION_MAX_WORDS = 520
@@ -267,10 +269,47 @@ def _parse_json(raw: str) -> dict:
     start, end = raw.find("{"), raw.rfind("}")
     if start < 0 or end <= start:
         raise ValueError("no JSON object in the response")
-    value = json.loads(raw[start : end + 1])
+    # strict=False: prose models put real newlines inside JSON strings
+    # (paragraph breaks), which strict parsing rejects as control characters.
+    # Found on the first live run (claude-sonnet-5, 2026-10-19).
+    value = json.loads(raw[start : end + 1], strict=False)
     if not isinstance(value, dict):
         raise ValueError("the response is not a JSON object")
     return value
+
+
+_SECTION_MARKER = re.compile(
+    r"^[ \t]*={3,}[ \t]*(INTRODUCTION|CONCLUSION|GLOSSARY|BRIDGE[ \t]+(\d+))[ \t]*={3,}[ \t]*$", re.M | re.I
+)
+
+
+def _parse_prose(raw: str) -> dict:
+    """The prose call's marked sections (see `author_prompts.PROSE_SYSTEM`) as
+    the same dict the JSON form would give. A model that answers in JSON
+    anyway is still read."""
+    markers = list(_SECTION_MARKER.finditer(raw))
+    if not markers:
+        return _parse_json(raw)
+    out: dict[str, Any] = {"introduction": "", "bridges": [], "conclusion": "", "glossary": []}
+    for i, m in enumerate(markers):
+        end = markers[i + 1].start() if i + 1 < len(markers) else len(raw)
+        text = raw[m.end() : end].strip()
+        name = m.group(1).upper()
+        if name == "INTRODUCTION":
+            out["introduction"] = text
+        elif name == "CONCLUSION":
+            out["conclusion"] = text
+        elif name == "GLOSSARY":
+            for line in text.splitlines():
+                line = line.strip().lstrip("-*• ").strip()
+                if "::" in line:
+                    term, definition = line.split("::", 1)
+                    out["glossary"].append({"term": term.strip(), "definition": definition.strip()})
+        else:
+            out["bridges"].append({"chapter": int(m.group(2)), "text": text})
+    if not any(out.values()):
+        raise ValueError("the marked sections are empty")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +338,14 @@ def _usage(response) -> tuple[int | None, int | None]:
     return None, None
 
 
-def _call(use_case: str, system: str, user: str, max_tokens: int, invoke: Invoker) -> tuple[dict | None, CallUsage]:
+def _call(
+    use_case: str,
+    system: str,
+    user: str,
+    max_tokens: int,
+    invoke: Invoker,
+    parse: Callable[[str], dict] = _parse_json,
+) -> tuple[dict | None, CallUsage]:
     cfg = resolve_config(use_case)
     t0 = time.perf_counter()
     record = CallUsage(use_case, cfg.provider, cfg.model, cfg.reasoning, ok=False, seconds=0.0)
@@ -308,7 +354,7 @@ def _call(use_case: str, system: str, user: str, max_tokens: int, invoke: Invoke
         record.input_tokens, record.output_tokens = _usage(response)
         if record.input_tokens is not None:
             record.cost_usd = cost_estimator.call_cost(cfg.model, record.input_tokens, record.output_tokens or 0)
-        parsed = _parse_json(llm_service.response_text(response))
+        parsed = parse(llm_service.response_text(response))
         record.ok = True
         return parsed, record
     except Exception as e:  # noqa: BLE001 — fail-soft, disclosed
@@ -443,23 +489,29 @@ def plan(
 
     if progress:
         progress(8, "Writing the introduction, bridges, conclusion and glossary")
+    # The prose call sees chapters numbered in READING order, as the printed
+    # book numbers them. With the user's numbering, a reordered book's
+    # introduction said "the chapters are printed in the order 4, 2, 1, 3"
+    # (first live trial, 2026-10-19).
     by_number = {d.number: d for d in digests}
+    position = {n: i for i, n in enumerate(result.order, start=1)}
+    original = {i: n for n, i in position.items()}
     plan_for_prompt = {
-        "order": result.order,
-        "parts": [{"title": t, "chapters": c} for t, c in result.parts],
-        "bridges": [{"chapter": n, "text": t} for n, t in result.bridges.items()],
+        "order": list(range(1, len(result.order) + 1)),
+        "parts": [{"title": t, "chapters": [position[n] for n in c]} for t, c in result.parts],
+        "bridges": [{"chapter": position[n], "text": t} for n, t in result.bridges.items()],
         "introduction_brief": outline["introduction_brief"],
         "conclusion_brief": outline["conclusion_brief"],
         "glossary_terms": outline["glossary_terms"],
     }
+    prose_digests = [{**by_number[n].as_prompt(PROSE_EXCERPT_WORDS), "number": position[n]} for n in result.order]
     raw, record = _call(
         PROSE_USE_CASE,
         author_prompts.PROSE_SYSTEM,
-        author_prompts.prose_user_prompt(
-            book_title, plan_for_prompt, [by_number[n].as_prompt(PROSE_EXCERPT_WORDS) for n in result.order]
-        ),
+        author_prompts.prose_user_prompt(book_title, plan_for_prompt, prose_digests),
         PROSE_MAX_TOKENS,
         invoke,
+        parse=_parse_prose,
     )
     result.calls.append(record)
     if raw is None:
@@ -476,10 +528,10 @@ def plan(
     result.conclusion = conclusion
     for b in raw.get("bridges") or []:
         if isinstance(b, dict):
-            n = _chapter_number(b.get("chapter"), set(result.order))
+            pos = _chapter_number(b.get("chapter"), set(original))
             text = _single_paragraph(b.get("text"), BRIDGE_MAX_WORDS)
-            if n is not None and n != result.order[0] and text:
-                result.bridges[n] = text
+            if pos is not None and pos != 1 and text:
+                result.bridges[original[pos]] = text
     result.glossary = _glossary(raw.get("glossary"))
     result.applied = "full"
     return result
@@ -490,8 +542,16 @@ def plan(
 # ---------------------------------------------------------------------------
 
 
-def _tokens(text: str) -> int:
-    return max(1, len(text) // 4)
+# Characters per billed input token, measured on the S-6.1.3 trial books
+# (2026-10-19, English and Hinglish chapters): the OpenAI outline billed 0.91x
+# and the Anthropic prose 1.47x a flat chars/4 count.
+_CHARS_PER_TOKEN = {"openai": 4.4, "anthropic": 2.75}
+_DEFAULT_CHARS_PER_TOKEN = 3.5
+
+
+def _tokens(text: str, use_case: str) -> int:
+    provider = resolve_config(use_case).provider  # type: ignore[arg-type]
+    return max(1, int(len(text) / _CHARS_PER_TOKEN.get(provider, _DEFAULT_CHARS_PER_TOKEN)))
 
 
 def estimate(digests: list[ChapterDigest], book_title: str, level: str) -> dict:
@@ -501,7 +561,8 @@ def estimate(digests: list[ChapterDigest], book_title: str, level: str) -> dict:
     if level in ("light", "full") and digests:
         outline_in = _tokens(
             author_prompts.OUTLINE_SYSTEM
-            + author_prompts.outline_user_prompt(book_title, [d.as_prompt(OUTLINE_EXCERPT_WORDS) for d in digests])
+            + author_prompts.outline_user_prompt(book_title, [d.as_prompt(OUTLINE_EXCERPT_WORDS) for d in digests]),
+            OUTLINE_USE_CASE,
         )
         calls.append((OUTLINE_USE_CASE, outline_in, OUTLINE_OUTPUT_TOKENS_EST))
     if level == "full" and digests:
@@ -509,7 +570,8 @@ def estimate(digests: list[ChapterDigest], book_title: str, level: str) -> dict:
                      "conclusion_brief": "x" * 400, "glossary_terms": ["term"] * 20}
         prose_in = _tokens(
             author_prompts.PROSE_SYSTEM
-            + author_prompts.prose_user_prompt(book_title, fake_plan, [d.as_prompt(PROSE_EXCERPT_WORDS) for d in digests])
+            + author_prompts.prose_user_prompt(book_title, fake_plan, [d.as_prompt(PROSE_EXCERPT_WORDS) for d in digests]),
+            PROSE_USE_CASE,
         )
         calls.append((PROSE_USE_CASE, prose_in, PROSE_OUTPUT_TOKENS_EST))
     return {"cohesion": level, **cost_estimator.estimate_calls(calls)}

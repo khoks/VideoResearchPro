@@ -31,6 +31,16 @@ REF = re.compile(r"\[\^(\d+)\](?!:)")
 LINK = re.compile(r"(?<!!)\[([^\]\n]*)\]\(([^)\s]+)\)")
 
 
+def _as_sections(prose: dict) -> str:
+    """The prose call's answer in its marked-section form."""
+    parts = ["=== INTRODUCTION ===", prose["introduction"]]
+    for b in prose["bridges"]:
+        parts += [f"=== BRIDGE {b['chapter']} ===", b["text"]]
+    parts += ["=== CONCLUSION ===", prose["conclusion"], "=== GLOSSARY ==="]
+    parts += [f"- {g['term']} :: {g['definition']}" for g in prose["glossary"]]
+    return "\n".join(parts)
+
+
 class FakeModel:
     """Stands in for both use cases; records what each call was sent."""
 
@@ -44,8 +54,9 @@ class FakeModel:
         if isinstance(answer, Exception):
             raise answer
         tokens = {"author_book_outline": (4_100, 900), "author_book_prose": (8_200, 2_400)}[use_case]
+        text = _as_sections(answer) if use_case == book_cohesion.PROSE_USE_CASE else "Here is the plan:\n" + json.dumps(answer)
         return AIMessage(
-            content="Here is the plan:\n" + json.dumps(answer),
+            content=text,
             usage_metadata={"input_tokens": tokens[0], "output_tokens": tokens[1], "total_tokens": sum(tokens)},
         )
 
@@ -60,7 +71,7 @@ OUTLINE = {
 }
 PROSE = {
     "introduction": "## Welcome\n\nThis book gathers two research runs on health.\n\n<b>Read</b> them in order; see [this](https://x.example) too[^4].",
-    "bridges": [{"chapter": 1, "text": "Where the previous chapter surveyed the field, this one narrows the focus."}],
+    "bridges": [{"chapter": 2, "text": "Where the previous chapter surveyed the field, this one narrows the focus."}],
     "conclusion": "Read together, these chapters suggest the same risks recur.\n\n| a | b |\n| --- | --- |",
     "glossary": [
         {"term": "Hypertension", "definition": "High blood pressure, as the chapters use it."},
@@ -129,6 +140,9 @@ def test_full_cohesion_frames_the_book_without_touching_a_chapter(db, two_runs, 
         assert VISUAL_ANNOTATION_CONTRACT in system and ENGLISH_OUTPUT_CONTRACT in system
         assert "[^" not in user_prompt and "](http" not in user_prompt, "digests carry no citation markup"
     assert len(model.calls[0][2]) < len(plain.content_text) / 2
+    # The outline sees the user's numbering; the prose sees the printed one.
+    assert "CHAPTER 1: First run" in model.calls[0][2]
+    assert "CHAPTER 1: Second run" in model.calls[1][2] and "CHAPTER 2: First run" in model.calls[1][2]
 
     # Reading order follows the outline; chapter bodies are the reports.
     plain_sections, sections = _sections(plain.content_text), _sections(md)
@@ -248,6 +262,23 @@ def test_clean_prose_strips_markup_and_caps_length():
     assert cleaned.startswith("Head\n\nSee x now.\n\nquoted")
     assert "code" not in cleaned and len(cleaned.split()) <= 21
     assert book_cohesion.clean_prose(None, 10) == "" and book_cohesion.clean_prose(42, 10) == ""
+
+
+def test_prose_sections_survive_quotes_and_paragraph_breaks_and_json_is_still_read():
+    # The two shapes that broke JSON on the first live run.
+    raw = (
+        'Sure.\n=== INTRODUCTION ===\nThe speaker calls it "the boring part".\n\nSecond paragraph.\n'
+        "=== BRIDGE 2 ===\nNext, the \"why\".\n=== CONCLUSION ===\nDone.\n=== GLOSSARY ===\n"
+        "- Seaborn :: A plotting library, per the chapters.\nnot an entry\n* Pandas :: Tables.\n"
+    )
+    parsed = book_cohesion._parse_prose(raw)
+    assert parsed["introduction"] == 'The speaker calls it "the boring part".\n\nSecond paragraph.'
+    assert parsed["bridges"] == [{"chapter": 2, "text": 'Next, the "why".'}]
+    assert [g["term"] for g in parsed["glossary"]] == ["Seaborn", "Pandas"]
+    as_json = book_cohesion._parse_prose('{"introduction": "line one\nline two", "conclusion": "c"}')
+    assert as_json["introduction"] == "line one\nline two"
+    with pytest.raises(ValueError):
+        book_cohesion._parse_prose("=== INTRODUCTION ===\n\n=== CONCLUSION ===\n")
 
 
 def test_cohesion_level_is_validated():

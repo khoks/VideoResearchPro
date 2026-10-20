@@ -38,4 +38,48 @@ Cost per book is recorded from `usage_json` whatever the outcome.
 
 ## Results
 
-_(appended after the run)_
+### Round 1 (prompts as first written)
+
+**Deviation from the protocol:** `gemini-3.1-pro-preview` had used its daily quota (250 requests per model per day, shared with other sessions on the same key; reset in about seven hours), so `google:gemini-3.6-flash:medium` judged instead. Recorded before its verdicts were read.
+
+**Two defects found in generation before judging**, both fixed and covered by tests:
+- The prose model put literal newlines and then unescaped quotation marks inside JSON strings, so the parser rejected its answer twice. The prose call now answers in marked plain-text sections; JSON is still read as a fallback.
+- When the outline reordered the chapters (book 3), the prose cited the user's original chapter numbers ("printed in the order 4, 2, 1, 3"), which do not match the printed headings. Found in the round 1 verdicts and fixed for round 2: the prose call now sees chapters numbered in reading order, and both prompts refer to chapters by title.
+
+| Book | Judge | Prefers | Cohesion full / none | Orientation full / none | Accuracy of framing full / none | Flags on full |
+|---|---|---|---|---|---|---|
+| 1 | gpt-5.5 | full | 8 / 3 | 9 / 5 | 7 / 10 | 10 |
+| 1 | claude-opus-5 | full | 7 / 3 | 8 / 3 | 9 / 10 | 2 |
+| 1 | gemini-3.6-flash | full | 8 / 3 | 9 / 2 | 10 / 10 | 0 |
+| 2 | gpt-5.5 | full | 8 / 4 | 9 / 5 | 8 / 10 | 3 |
+| 2 | claude-opus-5 | full | 7 / 3 | 8 / 3 | 9 / 10 | 2 |
+| 2 | gemini-3.6-flash | full | 9 / 3 | 9 / 2 | 10 / 10 | 0 |
+| 3 | gpt-5.5 | full | 7 / 2 | 8 / 4 | 8 / 10 | 4 |
+| 3 | claude-opus-5 | full | 7 / 3 | 8 / 3 | 8 / 10 | 4 |
+| 3 | gemini-3.6-flash | full | 8 / 2 | 8 / 1 | 8 / 10 | 2 |
+
+"Flags" are unsupported claims plus misframings attributed to the full edition. All quote framing text, none quote chapter text, so none is discarded under rule 3.
+
+- Rule 1: 9 of 9 prefer `full`. **Met.**
+- Rule 2: the non-Anthropic judges prefer `full` in 6 of 6. **Met.**
+- Rule 3: 27 flags, against at most 3. **Not met.**
+
+**Round 1 outcome: `none` stays the default.**
+
+What the flags are, read one by one (not part of the rule): some are real, some are the judge's error.
+- **Real:** framing about the world outside the chapters ("what is often sold as a single data skill"); remarks about how the book was made ("ordered as the chapters were conceived"); glossary definitions completed from general knowledge (seaborn's `clustermap` "combining a heatmap with hierarchical clustering", which the chapter never says); the wrong chapter numbers above; and the edition disclosure line itself, which the judges could not know was true.
+- **Judge error:** some flagged statements are in the chapters, for example the publication span 2018-11-22 to 2026-09-28 and "genuinely awkward in raw matplotlib".
+
+Cost per book (from `usage_json`, registry defaults, prices as of 2026-10-19):
+
+| Book | Chapters | Outline in / out tokens | Prose in / out tokens | Cost |
+|---|---|---|---|---|
+| 1 | 2 | 3,130 / 1,003 | 9,978 / 2,631 | $0.092 |
+| 2 | 2 | 3,247 / 1,031 | 9,941 / 3,022 | $0.097 |
+| 3 | 4 | 4,738 / 1,738 | 16,726 / 3,094 | $0.140 |
+
+### Round 2 protocol (fixed before round 2 was generated)
+
+The prompts change to target the real flags. Both prompts now forbid statements about the world outside the chapters and about how the book was made, and they refer to chapters by title. The prose call sees reading-order numbers, and glossary definitions are built only from what the chapters say, with a term left out when the chapters do not explain it. The chapters and the `none` editions are unchanged; only the `full` editions are regenerated.
+
+Judges: `openai:gpt-5.5:medium`, `anthropic:claude-opus-5:medium`, `google:gemini-3.6-flash:medium` (the Pro quota is still exhausted). The decision rule is unchanged, including rule 3's strict count. If round 2 meets all three rules, `full` becomes the default. Otherwise `none` stays the default, with `light` and `full` as opt-in. There is no round 3.

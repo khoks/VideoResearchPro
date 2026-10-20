@@ -80,6 +80,8 @@ export function sourceLabel(ref: string): string {
       return 'a library question';
     case 'history_qa':
       return 'a history question';
+    case 'event':
+      return 'something you wrote elsewhere';
     default:
       return 'your writing';
   }

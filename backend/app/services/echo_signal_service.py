@@ -63,7 +63,7 @@ CONSENT_VERSION = "2026-10-19"
 MAX_EXAMPLES = 5
 MAX_EXAMPLE_CHARS = 400
 MAX_VALUE_CHARS = 500
-SOURCE_PREFIXES = ("note:", "share:", "qa:", "library_qa:", "history_qa:", "user")
+SOURCE_PREFIXES = ("note:", "share:", "qa:", "library_qa:", "history_qa:", "event:", "user")
 
 
 class SignalError(ValueError):
@@ -334,6 +334,32 @@ def withdraw_source(db: Session, tenant_id: str, source_ref: str, *, signal_ids:
             suppressed += 1
         else:
             row.weight = max(0.0, float(row.weight) - 1.0) or 0.5
+            updated += 1
+    return SourceWithdrawal(updated, suppressed)
+
+
+def withdraw_sources(db: Session, tenant_id: str, source_refs: Iterable[str]) -> SourceWithdrawal:
+    """``withdraw_source`` for many refs in ONE pass over the tenant's live
+    signals: a connector revoke or an import undo can remove thousands of
+    events at once. Does not commit."""
+    refs = set(source_refs)
+    if not refs:
+        return SourceWithdrawal(0, 0)
+    updated = suppressed = 0
+    for row in _live(db.query(VoiceSignal).filter(VoiceSignal.tenant_id == tenant_id)).all():
+        sources = _json_list(row.derived_from)
+        gone = [s for s in sources if s in refs]
+        if not gone:
+            continue
+        remaining = [s for s in sources if s not in refs]
+        row.derived_from = json.dumps(remaining)
+        row.examples_json = json.dumps([e for e in _json_list(row.examples_json) if e.get("source") not in refs])
+        if not remaining:
+            row.suppressed_at = _now()
+            row.suppressed_reason = "source_deleted"
+            suppressed += 1
+        else:
+            row.weight = max(0.0, float(row.weight) - len(gone)) or 0.5
             updated += 1
     return SourceWithdrawal(updated, suppressed)
 

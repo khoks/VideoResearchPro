@@ -101,12 +101,19 @@ def store_events(db: Session, tenant_id: str, connector: str, events: Iterable[E
 
 
 def delete_connector_events(db: Session, tenant_id: str, connector: str) -> int:
-    """Every event ``connector`` wrote for ``tenant_id``. The caller commits."""
-    return (
+    """Every event ``connector`` wrote for ``tenant_id``, and their words out
+    of every voice signal that cited them (T-3.3.2.8). The caller commits,
+    then syncs ``personal_context_global``."""
+    n = (
         db.query(ActivityEvent)
         .filter(ActivityEvent.tenant_id == tenant_id, ActivityEvent.connector == connector)
         .delete(synchronize_session=False)
     )
+    if n:
+        from app.services import echo_signal_extraction
+
+        echo_signal_extraction.withdraw_missing_events(db, tenant_id)
+    return n
 
 
 def count_events(db: Session, tenant_id: str, connector: str | None = None) -> int:

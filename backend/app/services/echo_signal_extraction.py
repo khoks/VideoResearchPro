@@ -9,6 +9,9 @@ else (D-089 item 1):
   which are the model's words, and not a saved search's scheduled re-asks),
 - shares marked as the user's own writing (``voice_eligible``). A
   context-only share never feeds a signal, its annotation included.
+- ``activity_events.text_content``, which by its contract holds only the
+  user's own words (commit messages, reviews, workout descriptions, search
+  queries), one input per connector (T-3.3.2.8).
 
 Two layers, both batched and both cheap:
 
@@ -80,10 +83,14 @@ class Input:
     #: import's sampled turns, each with its own ``share:<id>`` ref so an
     #: example cites the turn the user wrote. Empty = the model reads ``text``.
     passages: tuple["Input", ...] = ()
+    #: What the content hash is taken over, when ``text`` is not all of it
+    #: (a connector's search queries change the input but are not prose).
+    hash_of: str | None = None
 
     @property
     def content_hash(self) -> str:
-        return hashlib.sha256(self.text.encode("utf-8")).hexdigest()
+        basis = self.hash_of if self.hash_of is not None else self.text
+        return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
 
 def language_of(text: str) -> str:
@@ -156,6 +163,24 @@ def gather_inputs(db: Session, tenant_id: str) -> list[Input]:
     for import_id, turns in imports.items():
         out.append(_import_input(import_id, turns))
 
+    from app.models.activity_event import ActivityEvent
+
+    events: dict[str, list[tuple[str, str, datetime | None, bool]]] = {}
+    for eid, connector, event_type, text, occurred in db.query(
+        ActivityEvent.id, ActivityEvent.connector, ActivityEvent.event_type,
+        ActivityEvent.text_content, ActivityEvent.occurred_at,
+    ).filter(
+        ActivityEvent.tenant_id == tenant_id,
+        ActivityEvent.text_content.isnot(None),
+        # The internal connector mirrors shares, which are inputs already.
+        ActivityEvent.connector != INTERNAL_CONNECTOR,
+    ).yield_per(1000):
+        t = (text or "").strip()
+        if t:
+            events.setdefault(connector, []).append((eid, t, occurred, not (event_type or "").startswith("searched_")))
+    for connector, rows in events.items():
+        out.append(_events_input(connector, rows))
+
     out.sort(key=lambda i: (i.at or "", i.ref))
     return out
 
@@ -180,6 +205,66 @@ def _import_input(import_id: str, turns: list[tuple[str, str, datetime | None]])
     sample = " ".join(p.text for p in passages[:60]) or text[:4000]
     last = turns[-1][2] if turns else None
     return Input(f"import:{import_id}", "import", text, _iso(last), language_of(sample), passages)
+
+
+INTERNAL_CONNECTOR = "internal"
+#: A search query is the user's words but not prose: like a Q&A question,
+#: the model reads it and stylometry does not. Shorter is normal for a query.
+MIN_QUERY_WORDS = 2
+
+
+def _events_input(connector: str, rows: list[tuple[str, str, datetime | None, bool]]) -> Input:
+    """One connector's events with text (T-3.3.2.8) as ONE input, sampled
+    like an import. ``text`` (stylometry) holds prose only; passages cite
+    each event as ``event:<id>``."""
+    rows = sorted(rows, key=lambda r: (r[2] or datetime.min, r[0]))
+    prose = "\n".join(r[1] for r in rows if r[3])
+    eligible = [
+        r for r in rows
+        if len(stylo.words(r[1])) >= (settings.ECHO_SIGNALS_MIN_PASSAGE_WORDS if r[3] else MIN_QUERY_WORDS)
+    ]
+    k = min(settings.ECHO_SIGNALS_IMPORT_SAMPLE, len(eligible))
+    picked = []
+    for b in range(k):
+        bucket = eligible[b * len(eligible) // k : (b + 1) * len(eligible) // k]
+        if bucket:
+            picked.append(max(bucket, key=lambda r: len(r[1])))
+    passages = tuple(
+        Input(f"event:{eid}", "event" if is_prose else "query", t, _iso(at), language_of(t))
+        for eid, t, at, is_prose in picked
+    )
+    # The hash covers every event with text, queries included, so a new
+    # review, commit or search is seen as new input; ``text`` stays prose.
+    basis = "\n".join(f"{r[0]}:{r[1]}" for r in rows)
+    sample = " ".join(p.text for p in passages[:60]) or prose[:4000]
+    last = rows[-1][2] if rows else None
+    return Input(f"events:{connector}", "events", prose, _iso(last), language_of(sample), passages, hash_of=basis)
+
+
+def live_event_ids(db: Session, tenant_id: str) -> set[str]:
+    from app.models.activity_event import ActivityEvent
+
+    return {
+        r[0]
+        for r in db.query(ActivityEvent.id).filter(
+            ActivityEvent.tenant_id == tenant_id, ActivityEvent.text_content.isnot(None)
+        )
+    }
+
+
+def withdraw_missing_events(db: Session, tenant_id: str) -> signals.SourceWithdrawal:
+    """Events are deleted in bulk (a connector revoke, an import undo), out
+    of this module's sight. Any ``event:<id>`` a signal still cites that no
+    longer exists leaves it now, in one pass. Called by those delete paths
+    and at the start of every run. Does not commit."""
+    live = live_event_ids(db, tenant_id)
+    cited = {
+        ref
+        for row in signals.list_signals(db, tenant_id)
+        for ref in json.loads(row.derived_from or "[]")
+        if ref.startswith("event:")
+    }
+    return signals.withdraw_sources(db, tenant_id, {ref for ref in cited if ref.split(":", 1)[1] not in live})
 
 
 @dataclass
@@ -521,7 +606,7 @@ def sync_stylometry(db: Session, tenant_id: str, inputs: dict[str, Input], count
         mean = prof.mean_sentence_words
         for sig in found:
             examples = []
-            for i in (p for r in recent for p in (r.passages or (r,))):
+            for i in (p for r in recent for p in (r.passages or (r,)) if p.kind != "query"):
                 for s in stylo.raw_sentences(i.text):
                     if stylo.exhibits(stylo.plain(s), sig.habit, mean):
                         examples.append({"text": s[: signals.MAX_EXAMPLE_CHARS], "source": i.ref, **({"at": i.at} if i.at else {})})
@@ -611,6 +696,7 @@ def run(db: Session, tenant_id: str, *, llm: LLMCall | None = None, model: str |
     state = pending(db, tenant_id, inputs)
     by_ref = {i.ref: i for i in inputs}
 
+    withdraw_missing_events(db, tenant_id)
     for ref in state.gone:
         withdraw_input(db, tenant_id, ref)
         report.withdrawn += 1
@@ -719,8 +805,20 @@ def quick_new_count(db: Session, tenant_id: str) -> int:
     shares = (db.query(func.count(Share.id)).filter(*own, Share.import_id.is_(None)).scalar() or 0) + (
         db.query(func.count(func.distinct(Share.import_id))).filter(*own, Share.import_id.isnot(None)).scalar() or 0
     )
+    from app.models.activity_event import ActivityEvent
+
+    event_groups = (
+        db.query(func.count(func.distinct(ActivityEvent.connector)))
+        .filter(
+            ActivityEvent.tenant_id == tenant_id,
+            ActivityEvent.text_content.isnot(None),
+            ActivityEvent.connector != INTERNAL_CONNECTOR,
+        )
+        .scalar()
+        or 0
+    )
     read = db.query(func.count(VoiceSignalInput.id)).filter(VoiceSignalInput.tenant_id == tenant_id).scalar() or 0
-    return max(0, notes + questions - reruns + shares - read)
+    return max(0, notes + questions - reruns + shares + event_groups - read)
 
 
 def maybe_queue(db: Session, tenant_id: str, *, force: bool = False) -> str:

@@ -10,6 +10,17 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: Echo learns from what you wrote in connected services (2026-10-20)
+
+PR [#350](https://github.com/khoks/VideoResearchPro/pull/350). T-3.3.2.8.
+
+- Your commit messages, film and book reviews, workout notes and search
+  queries now count as your own words for voice and personality signals,
+  one input per service, sampled like a chat export.
+- Disconnecting a service or undoing an import takes those words out of every
+  signal at once, and out of Echo's retrieval index; before, a disconnected
+  service's facts stayed searchable until the next restart.
+
 ### Fix: undoing an import takes its facts out of Echo's retrieval index (S-3.7.5, 2026-10-19)
 
 PR [#351](https://github.com/khoks/VideoResearchPro/pull/351).

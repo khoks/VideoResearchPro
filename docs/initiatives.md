@@ -984,7 +984,12 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [x] T-3.3.2.5 Tests with the LLM patched; the stylometric baseline on fixtures
 - [x] T-3.3.2.6 Queue processed shares from `echo_processing_service.process_share`, gated by `voice_eligible(share)`: only the user's own words (`author_is_tenant`) are voice inputs; a context-only share never is ([D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19)). Moved from T-3.7.2.3
 - [ ] T-3.3.2.7 The open author embedding (StyleDistance, MIT, a sentence-transformers model; not LUAR-MUD, which needs `trust_remote_code`), validated on Hinglish before its score is trusted. Not built in S-3.3.2: stylometry carries tier (i) of S-3.3.4 until then ([D-099](decisions.md#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19) item 3)
-- [ ] T-3.3.2.8 Connector `text_content` the user wrote (lane B's runtime, E-3.2) as an input, through `gather_inputs`
+- [x] T-3.3.2.8 Connector `text_content` the user wrote (lane B's runtime, E-3.2) as an input, through `gather_inputs`. Shipped 2026-10-20, PR [#350](https://github.com/khoks/VideoResearchPro/pull/350).
+  - Each connector's events with text are one input (`events:<connector>`), sampled like an import. The internal share connector is excluded, since shares are inputs already.
+  - Examples cite `event:<id>`.
+  - Search queries (`searched_*`) are read by the model but are not prose for stylometry (2-word floor).
+  - Events are deleted in bulk outside extraction, so `withdraw_missing_events` takes their words out of every signal in one pass (`echo_signal_service.withdraw_sources`). It runs inside `delete_connector_events`, in `delete_import` (import undo), and at the start of every run.
+  - Connector `revoke` now syncs `personal_context_global` after its commit. Revoked facts kept their vectors before, the gap lane D found for Apple Health
 - [x] T-3.3.2.10 Export imports (S-3.7.5) as one input each. Shipped 2026-10-19, PR [#347](https://github.com/khoks/VideoResearchPro/pull/347).
   - Stylometry profiles every own-words turn.
   - The model reads at most `ECHO_SIGNALS_IMPORT_SAMPLE` (300) turns of at least `ECHO_SIGNALS_MIN_PASSAGE_WORDS` (4) words: the longest in each equal slice of the chat's timeline.

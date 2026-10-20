@@ -421,6 +421,12 @@ def delete_import(db: Session, tenant_id: str, import_id: str) -> dict[str, int]
         )
         .delete(synchronize_session=False)
     )
+    if events:
+        # T-3.3.2.8: the deleted events' words leave every voice signal now,
+        # in one pass (the next extraction run would otherwise do it).
+        from app.services import echo_signal_extraction
+
+        echo_signal_extraction.withdraw_missing_events(db, tenant_id)
     facts += (
         db.query(PersonalContext)
         .filter(PersonalContext.tenant_id == tenant_id, PersonalContext.source == f"import:{import_id}")
@@ -428,10 +434,11 @@ def delete_import(db: Session, tenant_id: str, import_id: str) -> dict[str, int]
     )
     db.delete(db.get(EchoImport, import_id))
     db.commit()
-    if facts:
-        # S-3.3.3: the facts' vectors leave personal_context_global too. The
-        # cascade above synced before these facts went, and an import with no
-        # shares (Apple Health) never reached it.
+    if facts or events:
+        # S-3.3.3: the facts' vectors leave personal_context_global too, and
+        # so do signals that lost their event examples above. The cascade
+        # synced before these went, and an import with no shares (Apple
+        # Health, an event export) never reached it.
         from app.services import echo_personal_vectors
 
         echo_personal_vectors.sync_soft(db, tenant_id)

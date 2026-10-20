@@ -21,7 +21,10 @@ from app.config import settings
 from app.models.echo_import import EchoImport
 from app.models.share import Share
 from app.services import auth_service, echo_import_service, echo_intake_service, echo_vectors
-from app.services.echo_importers import ExportUnreadable, ImportSource, whatsapp
+from app.connectors import registry
+from app.connectors.archive import ExportUnreadable, ImportSource
+from app.connectors.base import ArchiveImporter, ImportedShare
+from app.connectors.whatsapp import importer as whatsapp
 
 FIX = Path(__file__).resolve().parents[1] / "fixtures" / "echo_imports"
 IMPORT = "/api/v1/echo/import"
@@ -125,8 +128,9 @@ def test_android_export_groups_turns_and_keeps_continuation_lines():
     stats: dict = {}
     with open(FIX / ANDROID, "rb") as fh:
         source = ImportSource(fh, ANDROID, max_uncompressed=10**9)
-        turns = list(whatsapp.parse(source, {"self_name": "Rahul"}, stats))
-    assert [(t.meta["sender"], t.meta["messages"], t.author_is_tenant) for t in turns] == [
+        turns = list(whatsapp.IMPORTER.parse(source, tenant_id="t", options={"self_name": "Rahul"}, stats=stats))
+    assert all(isinstance(t, ImportedShare) for t in turns)
+    assert [(t.author, t.metadata["messages"], t.author_is_tenant) for t in turns] == [
         ("Rahul", 2, True),   # the list, three lines, and the photo a minute later
         ("Rahul", 1, True),   # 34 minutes on: a new turn
         ("Asha", 1, False),
@@ -377,3 +381,38 @@ def test_imports_need_studio(unauthenticated_client, db):
     token, _ = auth_service.create_access_token(user.id)
     r = _post(unauthenticated_client, PREVIEW, {"Authorization": f"Bearer {token}"}, IOS, _bytes(IOS))
     assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# One registry (S-3.2.1's ArchiveImporter contract)
+# ---------------------------------------------------------------------------
+
+
+def test_the_importers_meet_the_archive_contract_and_register_once():
+    registry.load_builtin()
+    for name in ("whatsapp", "google_keep"):
+        importer = registry.get_importer(name)
+        assert isinstance(importer, ArchiveImporter), name
+        assert importer.consent_disclosure and importer.privacy_weight in ("high", "very_high")
+    # By filename alone they claim only their own exports.
+    assert registry.importer_for("WhatsApp Chat with Asha.txt").name == "whatsapp"
+    assert registry.importer_for("folder/_chat.txt").name == "whatsapp"
+    assert registry.importer_for("takeout-20241019T101010Z-001.zip").name == "google_keep"
+    for other in ("mine.txt", "notes.json", "StreamingHistory_music_0.json", "export.zip"):
+        assert registry.importer_for(other) is None, other
+
+
+def test_a_renamed_export_is_still_recognised_by_its_content():
+    pv = _preview_file("chat-backup-final.txt", _bytes(ANDROID))
+    assert pv.importer == "whatsapp" and pv.summary["messages"] == 6
+    pv = _preview_file("my-notes.zip", _takeout())
+    assert pv.importer == "google_keep"
+
+
+def test_the_contract_parse_works_without_the_extras():
+    stream = io.BytesIO(_bytes(ANDROID))
+    items = list(whatsapp.IMPORTER.parse(stream, tenant_id="t"))
+    assert len(items) == 4 and not any(i.author_is_tenant for i in items)
+    assert len({i.external_id for i in items}) == 4
+    again = list(whatsapp.IMPORTER.parse(io.BytesIO(_bytes(ANDROID)), tenant_id="t"))
+    assert [i.external_id for i in again] == [i.external_id for i in items], "stable across imports"

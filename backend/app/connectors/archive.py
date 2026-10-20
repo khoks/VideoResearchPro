@@ -1,50 +1,46 @@
-"""Export-file importers for Echo (S-3.7.5): the registry kind and its types.
+"""What archive importers share (S-3.7.5), beyond the ``ArchiveImporter``
+contract in ``base``.
 
-An importer turns a file the user downloaded from another service (a WhatsApp
-chat export, a Google Takeout archive) into items for the brain. Importers
-are a registry kind of their own, separate from live connectors: they have no
-``authorize_url`` and no sync, only
+The contract is the minimum every importer meets: ``accepts(filename)`` and
+``parse(stream, *, tenant_id)`` yielding ``ImportedShare`` / ``ActivityEvent``
+/ ``DerivedFact``. The import flow (``echo_import_service``) also uses three
+optional extras when an importer has them:
 
-- ``accepts(source)`` — does this upload look like mine? (cheap: filename,
-  zip member names, the first bytes);
-- ``preview(source, options)`` — what an import would produce, without
-  writing anything (counts, participants, warnings);
-- ``parse(source, options)`` — yield the items, streaming: an importer never
-  reads a whole member into memory, so a 100 MB export costs one line or one
-  small JSON file at a time.
+- ``sniff(source) -> bool`` — recognise the upload by its content (zip member
+  names, the first lines) when the filename says nothing, for instance a
+  renamed export;
+- ``preview(source, options) -> ImportPreview`` — what an import would
+  produce, without writing anything: counts, participants, warnings, and the
+  options the importer understands with their defaults;
+- keyword arguments on ``parse``: ``options`` (the user's choices),
+  ``filename`` and ``stats`` (a dict the importer fills with what it
+  deliberately left out, such as redacted turns).
 
-Items are ``ImportedShare`` today (shares inbox rows). Event and fact items
-(``activity_events``, ``personal_context``) arrive with the importers that
-need them.
+An importer without them still works: detection falls back to its
+``accepts(filename)`` and the preview to counting what ``parse`` yields.
 
-**Authorship.** Every item says whose words it carries (``author_is_tenant``).
-Third-party text, such as the other side of a WhatsApp thread, is stored as
-context only: retrievable, never quoted verbatim in generated output, never
-in a dataset export, and never a voice input (D-089).
+Importers read through ``ImportSource``, which never extracts to disk and
+refuses an archive that would unpack past ``ECHO_IMPORT_MAX_UNCOMPRESSED_BYTES``,
+so a 100 MB export costs one line or one small member at a time.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import zipfile
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import IO, Any, Iterator, Protocol
+from typing import IO, Any
 
 
 class ExportUnreadable(ValueError):
     """The upload cannot be imported; the message is fit to show the user."""
 
 
-@dataclass
-class ImportedShare:
-    """One shares-inbox row an importer produces."""
-
-    content_type: str
-    text: str
-    author_is_tenant: bool
-    occurred_at: datetime | None
-    # Importer-specific provenance kept in raw_payload_json["import"].
-    meta: dict[str, Any] = field(default_factory=dict)
+def stable_id(*parts: object) -> str:
+    """A short id that is the same every time the same thing is imported, for
+    ``ImportedShare.external_id``."""
+    digest = hashlib.sha1("\x1f".join(str(p) for p in parts).encode("utf-8")).hexdigest()
+    return digest[:20]
 
 
 @dataclass
@@ -152,18 +148,3 @@ class _NonClosing(io.RawIOBase):
 
     def close(self) -> None:  # leave the underlying file open
         super().close()
-
-
-class Importer(Protocol):
-    name: str
-    label: str
-
-    def accepts(self, source: ImportSource) -> bool: ...
-
-    def preview(self, source: ImportSource, options: dict[str, Any]) -> ImportPreview: ...
-
-    def parse(
-        self, source: ImportSource, options: dict[str, Any], stats: dict[str, int]
-    ) -> Iterator[ImportedShare]:
-        """Yield items; count what was deliberately left out in stats."""
-        ...

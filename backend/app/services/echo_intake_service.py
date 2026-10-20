@@ -497,7 +497,10 @@ def delete_shares(db: Session, tenant_id: str, share_ids: list[str]) -> ShareDel
     for i in range(0, len(ids), _IN_CHUNK):
         shares.extend(
             row
-            for row in db.query(Share.id, Share.tenant_id, Share.file_path, Share.derived_fact_ids_json)
+            for row in db.query(
+                Share.id, Share.tenant_id, Share.file_path,
+                Share.derived_fact_ids_json, Share.derived_signal_ids_json,
+            )
             .filter(Share.id.in_(ids[i : i + _IN_CHUNK]))
             .all()
             if row.tenant_id == tenant_id
@@ -533,11 +536,27 @@ def delete_shares(db: Session, tenant_id: str, share_ids: list[str]) -> ShareDel
             )
             .delete(synchronize_session=False)
         )
-    # Derived voice signals (S-3.3.1) do not exist yet; when they do, they are
-    # tombstoned here through `derived_signal_ids_json`.
+    # S-3.3.1: each share stops counting as evidence. Its examples leave the
+    # signals it fed (listed in `derived_signal_ids_json`); a signal with no
+    # source left is tombstoned as `source_deleted`.
+    from app.models.activity_event import ActivityEvent
+    from app.services import activity_event_service, echo_signal_service
+
+    for share in shares:
+        signal_ids = _id_list(share.derived_signal_ids_json)
+        if signal_ids:
+            echo_signal_service.withdraw_source(db, tenant_id, f"share:{share.id}", signal_ids=signal_ids)
     found = [s.id for s in shares]  # every one checked to be this tenant's above
     for i in range(0, len(found), _IN_CHUNK):
-        db.query(Share).filter(Share.id.in_(found[i : i + _IN_CHUNK])).delete(synchronize_session=False)
+        chunk = found[i : i + _IN_CHUNK]
+        # S-3.2.1: and their "shared to Pratidhvani" events go with them (the
+        # bulk form of activity_event_service.delete_share_event).
+        db.query(ActivityEvent).filter(
+            ActivityEvent.tenant_id == tenant_id,
+            ActivityEvent.connector == activity_event_service.INTERNAL,
+            ActivityEvent.external_id.in_([activity_event_service.share_external_id(sid) for sid in chunk]),
+        ).delete(synchronize_session=False)
+        db.query(Share).filter(Share.id.in_(chunk)).delete(synchronize_session=False)
     db.commit()
     logger.info(
         "echo: tenant %s deleted %d share(s) (vectors=%d files=%d facts=%d)",

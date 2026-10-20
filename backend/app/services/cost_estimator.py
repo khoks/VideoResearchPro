@@ -131,7 +131,7 @@ def _workload(use_case: str, model: str) -> tuple[int, int, int]:
         return kv, kv * (min(avg_tokens, 20_000) + 3_500), kv * 6_000
     if use_case in ("report_channel", "report_compose_channel_section", "social_classify_stance"):
         return 0, 0, 0                      # not exercised by this (topic/video) benchmark
-    if use_case in ("author_book_outline", "author_book_prose", "author_deck_outline"):
+    if use_case in ("author_book_outline", "author_book_prose", "author_deck_outline", "author_newsletter_compose"):
         return 0, 0, 0                      # books are estimated per book (estimate_calls)
     return 0, 0, 0
 

@@ -30,8 +30,10 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.echo_import import EchoImport
 from app.models.share import Share
-from app.services import echo_importers, echo_intake_service, echo_processing_service, echo_vectors
-from app.services.echo_importers import ExportUnreadable, ImportPreview, ImportSource
+from app.connectors import registry
+from app.connectors.archive import ExportUnreadable, ImportPreview, ImportSource
+from app.connectors.base import ImportedShare
+from app.services import echo_intake_service, echo_processing_service, echo_vectors
 
 logger = logging.getLogger(__name__)
 
@@ -55,12 +57,52 @@ def _source(fileobj: IO[bytes], filename: str) -> ImportSource:
 
 
 def _importer(source: ImportSource, name: str | None):
+    """The registered ``ArchiveImporter`` for this upload: the one named, or
+    the first whose ``sniff`` recognises the content, or the first whose
+    ``accepts`` recognises the filename (S-3.2.1's registry)."""
+    registry.load_builtin()
     if name:
-        return echo_importers.get(name)
-    importer = echo_importers.detect(source)
+        importer = registry.get_importer(name)
+        if importer is None:
+            raise ExportUnreadable(f"Unknown importer {name!r}.")
+        return importer
+    for candidate in registry.list_importers():
+        importer = registry.get_importer(candidate)
+        sniff = getattr(importer, "sniff", None)
+        if sniff is None:
+            continue
+        try:
+            if sniff(source):
+                return importer
+        except ExportUnreadable:
+            raise
+        except Exception:
+            logger.exception("echo: importer %s failed to sniff %r", candidate, source.filename)
+    importer = registry.importer_for(source.filename)
     if importer is None:
         raise ExportUnreadable(f"This file is not an export Echo can read yet. Supported: {_SUPPORTED}.")
     return importer
+
+
+def _parse(importer, source: ImportSource, options: dict[str, Any], stats: dict[str, int], tenant_id: str):
+    """Call ``parse`` with the extras when the importer takes them, else with
+    the contract's arguments only."""
+    try:
+        return importer.parse(source, tenant_id=tenant_id, options=options, filename=source.filename, stats=stats)
+    except TypeError:
+        source.fileobj.seek(0)
+        return importer.parse(source.fileobj, tenant_id=tenant_id)
+
+
+def _preview(importer, source: ImportSource, options: dict[str, Any]) -> ImportPreview:
+    """The importer's own preview, or a count of what ``parse`` yields."""
+    own = getattr(importer, "preview", None)
+    if own is not None:
+        return own(source, options)
+    counts = {"shares": 0, "events": 0, "facts": 0}
+    for item in _parse(importer, source, {}, {}, tenant_id="preview"):
+        counts["shares" if isinstance(item, ImportedShare) else "events" if hasattr(item, "event_type") else "facts"] += 1
+    return ImportPreview(importer=importer.name, label=getattr(importer, "display_name", importer.name), summary=counts)
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +113,7 @@ def _importer(source: ImportSource, name: str | None):
 def preview(fileobj: IO[bytes], filename: str, *, importer: str | None = None,
             options: dict[str, Any] | None = None) -> ImportPreview:
     source = _source(fileobj, filename)
-    return _importer(source, importer).preview(source, dict(options or {}))
+    return _preview(_importer(source, importer), source, dict(options or {}))
 
 
 def _validated(importer_name: str, pv: ImportPreview, options: dict[str, Any]) -> dict[str, Any]:
@@ -101,13 +143,13 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
     source = _source(fileobj, filename)
     module = _importer(source, importer)
     raw_options = dict(options or {})
-    pv = module.preview(source, raw_options)
-    opts = _validated(module.NAME, pv, raw_options)
+    pv = _preview(module, source, raw_options)
+    opts = _validated(module.name, pv, raw_options)
 
     record = EchoImport(
         tenant_id=user.id,
         user_id=user.id,
-        importer=module.NAME,
+        importer=module.name,
         filename=(filename or "upload")[-255:],
         status="importing",
         options_json=json.dumps(opts, ensure_ascii=False),
@@ -122,9 +164,27 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
     checked: set[str] = set()
     surface = echo_intake_service._validate_surface("file_import")
     try:
-        for item in module.parse(source, opts, stats):
-            if item.content_type not in checked:
-                checked.add(echo_intake_service._validate_content_type(item.content_type))
+        for item in _parse(module, source, opts, stats, tenant_id=user.id):
+            if not isinstance(item, ImportedShare):
+                # Events and facts are stored by the importers that yield
+                # them (S-3.7.5 part 2); none does yet.
+                stats["not_stored"] = stats.get("not_stored", 0) + 1
+                continue
+            meta = dict(item.metadata or {})
+            content_type = meta.pop("content_type", None) or getattr(module, "content_type", None) or "imported_text"
+            text = item.text or item.title or item.url or ""
+            if not text.strip():
+                stats["skipped_empty"] = stats.get("skipped_empty", 0) + 1
+                continue
+            if content_type not in checked:
+                checked.add(echo_intake_service._validate_content_type(content_type))
+            provenance = {
+                "importer": module.name,
+                "import_id": record.id,
+                "external_id": item.external_id,
+                **{k: v for k, v in (("title", item.title), ("author", item.author), ("url", item.url)) if v},
+                **meta,
+            }
             now = _now()
             # Plain rows through one executemany per batch: an import can be
             # 100k+ shares, and ORM objects cost ten times as much to insert.
@@ -135,12 +195,12 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
                 "received_at": now,
                 "updated_at": now,
                 "surface": surface,
-                "content_type": item.content_type,
+                "content_type": content_type,
                 "raw_payload_json": json.dumps(
-                    {"kind": "text", "import": {"importer": module.NAME, "import_id": record.id, **item.meta}},
-                    ensure_ascii=False, separators=(",", ":"),
+                    {"kind": "text", "import": provenance},
+                    ensure_ascii=False, separators=(",", ":"), default=str,
                 ),
-                "extracted_text": item.text,
+                "extracted_text": text,
                 "user_annotation": None,
                 "author_is_tenant": bool(item.author_is_tenant),
                 "processing_state": "pending",
@@ -172,7 +232,7 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
     if not counts["shares"]:
         record.finished_at = _now()
     db.commit()
-    logger.info("echo: tenant %s imported %d %s shares (%s)", user.id[:8], counts["shares"], module.NAME, record.id[:8])
+    logger.info("echo: tenant %s imported %d %s shares (%s)", user.id[:8], counts["shares"], module.name, record.id[:8])
     if counts["shares"]:
         enqueue_embedding(db, record, user)
         db.refresh(record)

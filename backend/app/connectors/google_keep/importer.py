@@ -22,7 +22,9 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Iterator
 
-from app.services.echo_importers.base import ImportedShare, ExportUnreadable, ImportPreview, ImportSource
+from app.config import settings
+from app.connectors.archive import ExportUnreadable, ImportPreview, ImportSource, stable_id
+from app.connectors.base import ImportedShare
 
 NAME = "google_keep"
 LABEL = "Google Keep notes (Takeout)"
@@ -46,7 +48,7 @@ def _looks_like_note(data: dict) -> bool:
     ) and ("userEditedTimestampUsec" in data or "createdTimestampUsec" in data)
 
 
-def accepts(source: ImportSource) -> bool:
+def sniff(source: ImportSource) -> bool:
     try:
         if source.is_zip:
             return bool(_members(source))
@@ -166,7 +168,7 @@ def preview(source: ImportSource, options: dict[str, Any]) -> ImportPreview:
     )
 
 
-def parse(source: ImportSource, options: dict[str, Any], stats: dict[str, int]) -> Iterator[ImportedShare]:
+def parse_source(source: ImportSource, options: dict[str, Any], stats: dict[str, int]) -> Iterator[ImportedShare]:
     own = options.get("own_words", True) is not False
     include_trashed = bool(options.get("include_trashed"))
     for member, note in _notes(source):
@@ -178,12 +180,17 @@ def parse(source: ImportSource, options: dict[str, Any], stats: dict[str, int]) 
             stats["skipped_empty"] = stats.get("skipped_empty", 0) + 1
             continue
         when = _when(note)
+        created = note.get("createdTimestampUsec") or note.get("userEditedTimestampUsec") or ""
         yield ImportedShare(
-            content_type=CONTENT_TYPE,
+            external_id=f"keep:{stable_id(member.rsplit('/', 1)[-1], created)}",
+            # A note with no timestamp at all is dated by its import.
+            occurred_at=when or datetime.now(timezone.utc),
             text=text,
+            title=(note.get("title") or "").strip() or None,
             author_is_tenant=own,
-            occurred_at=when,
-            meta={
+            metadata={
+                "content_type": CONTENT_TYPE,
+                "undated": when is None,
                 "title": (note.get("title") or "").strip() or None,
                 "labels": [lb.get("name") for lb in note.get("labels") or [] if lb.get("name")],
                 "pinned": bool(note.get("isPinned")),
@@ -193,3 +200,49 @@ def parse(source: ImportSource, options: dict[str, Any], stats: dict[str, int]) 
                 "file": member.rsplit("/", 1)[-1],
             },
         )
+
+
+# ---------------------------------------------------------------------------
+# The ArchiveImporter (registered in app/connectors/google_keep/__init__.py)
+# ---------------------------------------------------------------------------
+
+
+class GoogleKeepImporter:
+    name = NAME
+    display_name = LABEL
+    privacy_weight = "high"
+    consent_disclosure = (
+        "Reads the Google Keep notes in a Google Takeout archive (or one note's "
+        "JSON file). Notes count as your own words unless you say otherwise; "
+        "notes in the trash and images are left out. The archive itself is not kept."
+    )
+    content_type = CONTENT_TYPE
+
+    def accepts(self, filename: str) -> bool:
+        """By name only: a Takeout archive. A single note's ``.json`` is found
+        by ``sniff``, so this importer never claims another service's JSON."""
+        base = (filename or "").replace("\\", "/").rsplit("/", 1)[-1].lower()
+        return base.startswith("takeout") and base.endswith(".zip")
+
+    def sniff(self, source: ImportSource) -> bool:
+        return sniff(source)
+
+    def preview(self, source: ImportSource, options: dict[str, Any]) -> ImportPreview:
+        return preview(source, options)
+
+    def parse(
+        self,
+        stream,
+        *,
+        tenant_id: str,
+        options: dict[str, Any] | None = None,
+        filename: str = "takeout.zip",
+        stats: dict[str, int] | None = None,
+    ) -> Iterator[ImportedShare]:
+        source = stream if isinstance(stream, ImportSource) else ImportSource(
+            stream, filename, max_uncompressed=settings.ECHO_IMPORT_MAX_UNCOMPRESSED_BYTES
+        )
+        yield from parse_source(source, dict(options or {}), stats if stats is not None else {})
+
+
+IMPORTER = GoogleKeepImporter()

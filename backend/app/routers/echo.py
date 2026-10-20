@@ -52,7 +52,7 @@ from app.services import (
     echo_service,
 )
 from app.services.echo_import_service import ImportNotFound
-from app.services.echo_importers import ExportUnreadable
+from app.connectors.archive import ExportUnreadable
 from app.services.echo_intake_service import InvalidShare, ShareNotFound, ShareTooLarge
 from app.services.echo_service import SUPPORTED_KINDS, UnsupportedKindError
 from app.services.tier_service import require_feature

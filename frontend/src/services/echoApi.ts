@@ -192,6 +192,50 @@ export interface EchoFootprint {
   vectors: Record<string, number>;
 }
 
+/** One example of a signal in the user's own words (S-3.3.1). */
+export interface SignalExample {
+  text: string;
+  /** `note:<id>`, `share:<id>`, `qa:<id>`, `library_qa:<id>`, `history_qa:<id>` or `user`. */
+  source: string;
+  at?: string | null;
+}
+
+export interface VoiceSignal {
+  id: string;
+  signal_type: string;
+  layer: 'style' | 'personality';
+  value: string;
+  weight: number;
+  examples: SignalExample[];
+  language: string | null;
+  register: string | null;
+  derived_from: string[];
+  /** `user` (typed on the panel), `llm` (extracted), `stylometry` (measured). */
+  origin: string;
+  consent_version: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VoiceSignalList {
+  items: VoiceSignal[];
+  consent_version: string;
+}
+
+export interface CreateSignalPayload {
+  signal_type: string;
+  value: string;
+  language?: string | null;
+  register?: string | null;
+}
+
+export interface UpdateSignalPayload {
+  value?: string;
+  language?: string | null;
+  register?: string | null;
+  weight?: number;
+}
+
 export interface BrainDeleteResponse {
   deleted: boolean;
   removed: EchoFootprint;
@@ -341,6 +385,21 @@ export const echoApi = {
 
   /** The whole brain as one zip (manifest, JSONL per table, files). */
   exportBrain: () => downloadAuthenticated('/echo/export', 'echo-export.zip'),
+
+  /** S-3.3.1: the signals panel. */
+  listSignals: () => api.get<VoiceSignalList>('/echo/signals').then(r => r.data),
+
+  createSignal: (payload: CreateSignalPayload) =>
+    api.post<VoiceSignal>('/echo/signals', payload).then(r => r.data),
+
+  updateSignal: (id: string, payload: UpdateSignalPayload) =>
+    api.patch<VoiceSignal>(`/echo/signals/${encodeURIComponent(id)}`, payload).then(r => r.data),
+
+  /** "That's not me": a tombstone; Echo never learns the signal again. */
+  rejectSignal: (id: string) =>
+    api.delete<VoiceSignal>(`/echo/signals/${encodeURIComponent(id)}`).then(r => r.data),
+
+  exportSignals: () => downloadAuthenticated('/echo/signals/export', 'echo-voice-profile.json'),
 
   footprint: () => api.get<EchoFootprint>('/echo/brain/footprint').then(r => r.data),
 

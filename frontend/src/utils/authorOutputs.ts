@@ -37,7 +37,7 @@ export const OUTPUT_KIND_META: Record<string, KindMeta> = {
   },
   newsletter: {
     label: 'Newsletter',
-    description: 'A recurring digest of what changed on your shelves.',
+    description: 'A digest of what is new in your library: sources, knowledge reports, your questions, saved-search changes and what you made.',
     epic: 'E-6.4',
   },
   reel: {
@@ -88,6 +88,7 @@ export function outputStatusTone(status: string): BadgeTone {
       return 'info';
     case 'cancelled':
       return 'warn';
+    case 'skipped':
     case 'pending':
     default:
       return 'neutral';
@@ -106,6 +107,8 @@ export function outputStatusLabel(status: string): string {
       return 'Pending';
     case 'cancelled':
       return 'Cancelled';
+    case 'skipped':
+      return 'Skipped';
     default:
       return status.replace(/_/g, ' ');
   }
@@ -302,6 +305,42 @@ export function usageLabel(usage: OutputUsage | null | undefined): string | null
   const c = usage.cohesion;
   const level = c ? (c.applied === c.requested ? c.applied : `${c.applied} (asked for ${c.requested})`) : null;
   return [level ? `Framing: ${level}` : null, formatUsd(usage.cost_usd)].filter(Boolean).join(' · ');
+}
+
+/** S-6.4.1: newsletter sections, in issue order. `featured` is the one
+ * model-written part and is off by default (D-097). */
+export const NEWSLETTER_SECTIONS: { key: string; label: string; defaultOn: boolean }[] = [
+  { key: 'featured', label: 'Featured deep-dive (written by a model)', defaultOn: false },
+  { key: 'library', label: 'New in your library', defaultOn: true },
+  { key: 'knowledge', label: 'New knowledge reports', defaultOn: true },
+  { key: 'questions', label: 'Questions you asked', defaultOn: true },
+  { key: 'saved_searches', label: 'Saved searches with new answers', defaultOn: true },
+  { key: 'outputs', label: 'What you made', defaultOn: true },
+];
+
+export type NewsletterPeriod = 'last' | '7' | '30';
+export const NEWSLETTER_PERIODS: { value: NewsletterPeriod; label: string }[] = [
+  { value: 'last', label: 'Since your last issue (or the past 7 days)' },
+  { value: '7', label: 'The past 7 days' },
+  { value: '30', label: 'The past 30 days' },
+];
+
+export function defaultNewsletterSections(): Record<string, boolean> {
+  return Object.fromEntries(NEWSLETTER_SECTIONS.map((s) => [s.key, s.defaultOn]));
+}
+
+/** The create payload's parameters for a newsletter. `last` sends no
+ * `since`, so the server starts from the previous issue. */
+export function newsletterParameters(
+  period: NewsletterPeriod,
+  sections: Record<string, boolean>,
+  now: Date = new Date(),
+): Record<string, unknown> {
+  const params: Record<string, unknown> = { sections: { ...sections } };
+  if (period !== 'last') {
+    params.since = new Date(now.getTime() - Number(period) * 24 * 3600 * 1000).toISOString();
+  }
+  return params;
 }
 
 /** Human names for download formats. */

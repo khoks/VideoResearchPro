@@ -463,7 +463,7 @@ From highest to lowest:
 
 ### Registered use cases
 
-Thirty-one named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
+Thirty-two named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
 
 ### Measured guidance (S-1.14.7)
 
@@ -507,6 +507,7 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 - `author_book_outline` — plan a book from chapter digests (order, parts, bridges, briefs, glossary terms); JSON. Opt-in per book (`cohesion=light|full`), fail-soft, not a feature gate
 - `author_book_prose` — introduction, bridges, conclusion and glossary around the unchanged chapters; marked plain-text sections. `cohesion=full` only; `none` stays the default after two blind rounds (D-093)
 - `author_deck_outline` — plan a slide deck from one or more reports whose citations arrive as `[S#]` markers; JSON. Not fail-soft: a failed call fails the deck. Slides citing nothing are dropped by the renderer
+- `author_newsletter_compose` — a newsletter issue's featured deep-dive about one source, citing `[S#]` markers; plain prose. Opt-in per issue (D-097), fail-soft to the source's own summary
 
 **Code-mixed speech (`app/services/code_mixing_service.py`, R5 / N-002):**
 - `code_mixing_detect` — word-level language of 25 snippets per call: each snippet's Hindi runs verbatim plus its matrix (grammar) language. The evaluation reference, not on the ingest path: the lexicon tagger was more precise on romanised text at equal recall (D-080). Reasoning OFF, fail-soft, not a feature gate
@@ -527,7 +528,7 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 
 ## LLM startup smoke check + fail-soft
 
-`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 31 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
+`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 32 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
 
 **Health endpoints:**
 - `GET /api/v1/health` — overall status plus an `llm` field with `status` (`ok` / `degraded` / `down` / `unknown`) and `unavailable_features` (a list of feature names whose required use cases failed probing).

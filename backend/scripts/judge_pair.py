@@ -115,7 +115,34 @@ RUBRICS: dict[str, dict] = {
         "preference": "preferred_overall",
         "needs_corpus": False,
     },
+    "featured": {
+        "text": None,  # FEATURED_RUBRIC, set below
+        "doc": "SECTION",
+        "scores": ("faithfulness", "usefulness"),
+        "lists": ("unsupported_claims",),
+        "preference": "preferred_overall",
+        "needs_corpus": True,
+        "corpus_label": "SOURCE EXCERPT",
+    },
 }
+
+# S-6.4.1: a newsletter's featured section against the source's own summary.
+FEATURED_RUBRIC = """You are one of several independent judges comparing two versions of the featured section of a personal research digest, labelled A and B. Both are about the same research report from the reader's own library, and both were made from the source excerpt below. Their links point to moments in the source videos. You do not know how either version was produced.
+
+The reader opens the digest to be reminded of what their research found and to decide whether to go back to it. Judge for that reader, not by length.
+
+Score each version 1-10 on:
+1. faithfulness: every statement is supported by the source excerpt. Nothing is added, and nothing is overstated or reattributed.
+2. usefulness: how well it brings back the most useful finding, what supports it, and what is worth revisiting.
+
+Then list, for each version:
+- unsupported_claims: every sentence stating something the source excerpt does not support. Quote it.
+
+Finally state preferred_overall: "A", "B" or "tie", meaning which version you would put in the reader's digest.
+
+Return ONLY a JSON object with keys: faithfulness_A, faithfulness_B, usefulness_A, usefulness_B, unsupported_claims_A (list of strings), unsupported_claims_B (list), preferred_overall, rationale (<= 100 words).
+"""
+RUBRICS["featured"]["text"] = FEATURED_RUBRIC
 
 
 class _Text(HTMLParser):
@@ -252,7 +279,7 @@ def main() -> int:
             spec["text"]
             + f"\n\n===== {doc} A =====\n" + text_a
             + f"\n\n===== {doc} B =====\n" + text_b
-            + ("\n\n===== TRANSCRIPT (corpus) =====\n" + transcript if transcript else "")
+            + (f"\n\n===== {spec.get('corpus_label', 'TRANSCRIPT (corpus)')} =====\n" + transcript if transcript else "")
         )
         t0 = time.time()
         rec: dict = {"judge": judge, "rubric": args.rubric, "mapping": {"A": a_name, "B": b_name}}

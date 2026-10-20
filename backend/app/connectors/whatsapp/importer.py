@@ -31,7 +31,8 @@ from typing import Any, Iterator
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.config import settings
-from app.services.echo_importers.base import ImportedShare, ExportUnreadable, ImportPreview, ImportSource
+from app.connectors.archive import ExportUnreadable, ImportPreview, ImportSource, stable_id
+from app.connectors.base import ImportedShare
 
 NAME = "whatsapp"
 LABEL = "WhatsApp chat"
@@ -106,7 +107,7 @@ def _chat_member(source: ImportSource) -> str | None:
     return txts[0] if len(txts) == 1 else None
 
 
-def accepts(source: ImportSource) -> bool:
+def sniff(source: ImportSource) -> bool:
     try:
         if source.is_zip:
             member = _chat_member(source)
@@ -391,7 +392,7 @@ def preview(source: ImportSource, options: dict[str, Any]) -> ImportPreview:
     )
 
 
-def parse(source: ImportSource, options: dict[str, Any], stats: dict[str, int]) -> Iterator[ImportedShare]:
+def parse_source(source: ImportSource, options: dict[str, Any], stats: dict[str, int]) -> Iterator[ImportedShare]:
     member = _member(source)
     order, _ = _order(source, member, options)
     tz = _tz(options)
@@ -410,11 +411,14 @@ def parse(source: ImportSource, options: dict[str, Any], stats: dict[str, int]) 
             continue
         first = _to_utc(turn.first, tz)
         yield ImportedShare(
-            content_type=CONTENT_TYPE,
-            text="\n".join(turn.lines),
-            author_is_tenant=mine,
+            # The same turn imported again gets the same id.
+            external_id=f"whatsapp:{stable_id(chat, turn.sender, first.isoformat())}",
             occurred_at=first,
-            meta={
+            text="\n".join(turn.lines),
+            author=turn.sender,
+            author_is_tenant=mine,
+            metadata={
+                "content_type": CONTENT_TYPE,
                 "chat": chat,
                 "sender": turn.sender,
                 "first_at": first.isoformat(),
@@ -423,3 +427,51 @@ def parse(source: ImportSource, options: dict[str, Any], stats: dict[str, int]) 
                 "media": turn.media,
             },
         )
+
+
+# ---------------------------------------------------------------------------
+# The ArchiveImporter (registered in app/connectors/whatsapp/__init__.py)
+# ---------------------------------------------------------------------------
+
+
+class WhatsAppImporter:
+    name = NAME
+    display_name = LABEL
+    # Other people's messages: the most sensitive thing Echo can hold.
+    privacy_weight = "very_high"
+    consent_disclosure = (
+        "Reads a chat you exported from WhatsApp. Your messages become your own "
+        "words; everyone else's are kept as context only (searchable, never "
+        "quoted as yours, never a sample of your voice), or not at all if you "
+        "keep only your side. The exported file itself is not kept."
+    )
+    content_type = CONTENT_TYPE
+
+    def accepts(self, filename: str) -> bool:
+        """By name only: WhatsApp's own export names. A renamed export is
+        found by ``sniff``."""
+        base = (filename or "").replace("\\", "/").rsplit("/", 1)[-1].lower()
+        return base == "_chat.txt" or (base.startswith("whatsapp chat") and base.endswith((".txt", ".zip")))
+
+    def sniff(self, source: ImportSource) -> bool:
+        return sniff(source)
+
+    def preview(self, source: ImportSource, options: dict[str, Any]) -> ImportPreview:
+        return preview(source, options)
+
+    def parse(
+        self,
+        stream,
+        *,
+        tenant_id: str,
+        options: dict[str, Any] | None = None,
+        filename: str = "WhatsApp chat.txt",
+        stats: dict[str, int] | None = None,
+    ) -> Iterator[ImportedShare]:
+        source = stream if isinstance(stream, ImportSource) else ImportSource(
+            stream, filename, max_uncompressed=settings.ECHO_IMPORT_MAX_UNCOMPRESSED_BYTES
+        )
+        yield from parse_source(source, dict(options or {}), stats if stats is not None else {})
+
+
+IMPORTER = WhatsAppImporter()

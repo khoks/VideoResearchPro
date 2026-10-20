@@ -453,6 +453,8 @@ class ActivityConnector:
     def schema_for_event_type(self, event_type: str) -> dict: ...
 ```
 
+**As built (S-3.2.1, 2026-10-19):** `backend/app/connectors/base.py::ActivityConnector`. It adds `display_name`, `consent_version` (the grant records which disclosure the user agreed to) and `schedule`. `authenticate` became `authorize_url` + `handle_callback`, because the runtime owns state, PKCE and token storage. The sync methods take a `SyncContext` (tokens, a cursor the connector keeps between syncs, derived facts) instead of a user id. File importers implement `ArchiveImporter` beside it. See [D-098](decisions.md#d-098--echo-connectors-events-unique-per-reader-tokens-in-a-secret-store-that-is-erased-with-the-brain-but-never-exported-2026-10-19).
+
 Conformance to this interface is the *only* way new connectors enter the system. PR-time review of any new connector specifically checks:
 
 - The consent disclosure is human-readable, not legalese.

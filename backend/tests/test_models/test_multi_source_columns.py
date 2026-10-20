@@ -111,8 +111,9 @@ class TestChannelDefaults:
         c = _channel(db, channel_id="UClegacyAAAAAAAAAAAA")
         assert c.source_type == "video"
         assert c.creator_external_id == "UClegacyAAAAAAAAAAAA"
-        assert c.source_weight == 1.0
         assert c.creator_metadata_json is None
+        # S-5.10.3: the trust weight is per tenant (channel_subscriptions), not a column here.
+        assert not hasattr(c, "source_weight")
 
     def test_explicit_creator_fields_take_precedence(self, db):
         c = _channel(
@@ -120,8 +121,6 @@ class TestChannelDefaults:
             channel_id="UCpodcastBBBBBBBBBBBB",
             source_type="podcast",
             creator_external_id="show-rss-uuid",
-            source_weight=2.5,
         )
         assert c.source_type == "podcast"
         assert c.creator_external_id == "show-rss-uuid"
-        assert c.source_weight == 2.5

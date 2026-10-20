@@ -125,7 +125,7 @@ npm install
 
 ### Global Document Library
 - `documents` (renamed from `videos` in L1 PR 4) is a shared, global, deduplicated table: one row per source — today only YouTube videos (`source_type='video'`, primary key column still named `video_id`), tomorrow podcasts / articles / threads / PDFs. The ORM class is `Document` in `app/models/document.py`.
-- `channels` stores subscribed YouTube channels with `last_synced_at` for incremental re-sync. (Will generalize to `creators` in a later PR.)
+- `channels` stores the shared facts about YouTube channels (name, subscriber count, uploads playlist). Per-user state — `subscribed`, `source_weight`, `last_synced_at` — lives in `channel_subscriptions` and goes through `subscription_service` (D-065; the global columns were dropped in S-5.10.3). (Will generalize to `creators` in a later PR.)
 - `job_videos` is a many-to-many join linking jobs to the documents they selected. (Will rename to `job_documents` once the PK column is promoted to UUID.)
 - Deleting a job drops its `job_videos` rows but leaves the documents and their chunks in the library — other jobs can still reference them.
 - Transcripts are cached in `transcript_cache` (by `video_id`) and reused across jobs. (Will generalize to `text_cache` keyed on `(source_type, source_id)` in a later PR.)
@@ -198,7 +198,7 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/app/services/youtube_service.py` | YouTube API + transcript fetching with language fallback + rate limiting |
 | `backend/app/services/chroma_service.py` | ChromaDB collection management (singleton client) |
 | `backend/app/services/embedding_service.py` | Multilingual embedder (`paraphrase-multilingual-MiniLM-L12-v2`) |
-| `backend/app/models/channel.py` | Channel model (subscriptions, `last_synced_at`) |
+| `backend/app/models/channel.py` | Channel model (shared facts only; per-tenant state in `channel_subscription.py`) |
 | `backend/app/models/document.py` | Document model (global library — formerly `Video`) |
 | `backend/app/models/job_video.py` | JobVideo join table (global library ↔ jobs) |
 | `backend/app/models/library_qa_exchange.py` | Library-wide Q&A history |

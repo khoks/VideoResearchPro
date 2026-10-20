@@ -10,6 +10,19 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Legacy global channel columns dropped; per-tenant sync time finally recorded (2026-10-19, S-5.10.3)
+
+PR [#316](https://github.com/khoks/VideoResearchPro/pull/316).
+
+- Migration `1a6e09517250` drops `channels.subscribed`, `last_synced_at` and
+  `source_weight`, which D-065 had left in place after moving per-user state
+  to `channel_subscriptions`. Nothing read them. The downgrade rebuilds them
+  from `channel_subscriptions`.
+- The subscription job was the last writer, and it wrote only the global
+  columns: a tenant's own sync time was never recorded, so the channel page
+  always showed a subscribed channel as never synced. It now marks the job's
+  tenant subscribed and synced through `subscription_service`.
+
 ### Notes in Q&A retrieval and citations (S-8.5.2, 2026-10-19)
 
 The user's own notes now answer questions alongside the sources, and are cited as "you wrote this on <date>". PR [#322](https://github.com/khoks/VideoResearchPro/pull/322). Plan: [docs/plans/m5-notes.md](docs/plans/m5-notes.md).
@@ -28,6 +41,7 @@ The user's own notes now answer questions alongside the sources, and are cited a
   links to the note's target.
 - **Fixed on the way.** The Q&A response schemas stripped every non-YouTube
   citation field (`source_type`, permalink, page); they now pass through.
+
 ### Added: saved searches (2026-10-19)
 
 PR [#320](https://github.com/khoks/VideoResearchPro/pull/320). S-8.3.2, plan [m3-saved-searches-alerts](docs/plans/m3-saved-searches-alerts.md).

@@ -17,8 +17,6 @@ def _seed_channel(db, channel_id="UCabcdefghijklmnopqrstuv", tenant_id=None, **o
         name=overrides.get("name", "Test Channel"),
         uploads_playlist_id=overrides.get("uploads_playlist_id", "UUabcdefghijklmnopqrstuv"),
         subscriber_count=overrides.get("subscriber_count", 12345),
-        subscribed=overrides.get("subscribed", False),
-        last_synced_at=overrides.get("last_synced_at"),
     )
     db.add(channel)
     db.commit()

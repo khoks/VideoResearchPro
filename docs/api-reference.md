@@ -774,6 +774,12 @@ Body `{ "name", "description"?, "color"? }`. Returns 201 `ShelfResponse`. Pro+.
 ### `GET /api/v1/shelves/{shelf_id}/documents`
 The union of the documents selected by the shelf's jobs, each once, filtered through the caller's visibility (D-063). Takes the library listing's `search`, `language`, `channel_id`, `transcript_status`, `tag`, `sort`, `limit`, `offset` and returns the same `LibraryVideoResponse[]` rows (with `job_count` / `job_titles` across all the caller's runs). **An empty shelf returns `[]`, never the whole library.** Any tier.
 
+### `POST /api/v1/shelves/{shelf_id}/qa`
+Ask the library agent over this shelf's documents only (S-8.1.4): the documents selected by the shelf's runs, within what the caller can see. Request and response are `POST /library/qa`'s; the response's `scope` is `{"shelf_id": "…"}` and the exchange joins the library Q&A history and the Q&A library index. **An empty shelf retrieves nothing**, never the whole library, and a citation outside the shelf is dropped from the answer. The asker's notes (S-8.5.2) follow the same scope: only notes on the shelf's runs, their documents, knowledge reports, answers and channels, and on the shelf's earlier answers. A shelf that is not the caller's is a **404** and runs nothing. Any tier; the library Q&A quota applies (429 when spent).
+
+### `GET /api/v1/shelves/{shelf_id}/qa`
+The caller's questions asked on this shelf (including saved-search runs scoped to it), oldest first, as `LibraryQAResponse[]`. `limit` (default 100, max 500), `offset`. 404 for a shelf that is not the caller's.
+
 ### `PUT /api/v1/shelves/{shelf_id}`
 Partial update: fields left out are untouched; `"description": null` clears it; renaming onto another shelf's name is a 409. Returns `ShelfResponse`. Pro+.
 
@@ -995,6 +1001,9 @@ Share shape: `{ id, received_at, updated_at, surface, content_type, kind: "url"|
 - `GET /api/v1/echo/shares/{id}`; `PATCH /api/v1/echo/shares/{id}` with any of `annotation` (`null` clears), `content_type`, `author_is_tenant`.
 - `DELETE /api/v1/echo/shares/{id}` — removes the share's vector, file, derived facts and row. `{ deleted, vectors, files, derived_facts }`.
 - `GET /api/v1/echo/shares/{id}/file` — the stored bytes, always `Content-Disposition: attachment` with `X-Content-Type-Options: nosniff`. A row whose path points outside its tenant directory is never followed (404).
+- **Processing (S-3.7.2).** Every created share is queued to `echo.process_share` (`ECHO_SHARE_PROCESSING`: `celery`, `inline` or `off`); a queue failure leaves it `pending`. The share shape gains `extracted_text` (links and files) and `processing`: `{ title, author, extractor, error, note, embedded, processed_at, library_offer: { eligible, reason, source_type } }`, absent until processing ran.
+- `POST /api/v1/echo/shares/{id}/process` — queue processing again (Retry). Idempotent: everything is re-derived from what arrived.
+- `POST /api/v1/echo/shares/{id}/library` — the library offer. For a link processing marked eligible, ingests it through the same path as `POST /library/paste-urls` (deduplicated, visible to the sharer only) and sets `linked_document_id`; a second call returns the same document. 409 for anything not eligible (text, files, YouTube links, unprocessed links), 422 when the page cannot be extracted.
 
 ### `GET /api/v1/echo/export`
 The whole brain as one zip (S-3.10.1): `manifest.json` (format `pratidhvani-echo-archive`, version 1, export time, tenant, row counts per table, every file with size and SHA-256, any missing file), `personal_context.jsonl` and `shares_inbox.jsonl` (every column; datetimes ISO-8601 with offset), and `files/<stored path>`. Lossless: `services/echo_privacy_service.py::read_archive` is the exact inverse. Built in a temporary file and removed after sending. Audited (`echo_exported`, counts only). Notes and the library are not part of Echo; notes export at `/exports/notes.*`.

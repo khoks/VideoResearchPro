@@ -276,6 +276,8 @@ def get_video_details(video_ids: list[str], job_id: str = "") -> dict[str, dict]
                 "channel_id": snippet.get("channelId", ""),
                 "duration_seconds": parse_iso8601_duration(content.get("duration", "PT0S")),
                 "published_at": snippet.get("publishedAt"),
+                # S-3.7.2: Echo shares of a YouTube link keep the description.
+                "description": snippet.get("description", ""),
                 "thumbnail_url": snippet.get("thumbnails", {}).get("high", {}).get("url"),
                 "url": f"https://www.youtube.com/watch?v={vid}",
                 "view_count": _safe_int(stats.get("viewCount")),

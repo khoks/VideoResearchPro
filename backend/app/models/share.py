@@ -70,6 +70,11 @@ class Share(Base):
     derived_fact_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     derived_signal_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     linked_document_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # S-3.7.2: what processing made of the share, as JSON text: resolved
+    # title / author, the extraction path, the failure reason, the library
+    # offer, `processed_at`. NULL = not processed yet. `raw_payload_json`
+    # never changes; this does.
+    processing_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     embedding_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid

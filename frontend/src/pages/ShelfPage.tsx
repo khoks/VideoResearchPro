@@ -9,6 +9,7 @@ import {
 } from '../hooks/useShelves';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { DocumentsBrowser } from '../components/library/DocumentsBrowser';
+import { ShelfQAPanel } from '../components/shelves/ShelfQAPanel';
 import {
   DeleteShelfModal,
   ShelfDot,
@@ -197,6 +198,8 @@ export function ShelfPage() {
       </header>
 
       <ShelfRuns shelf={shelf} canWrite={canWrite} />
+
+      <ShelfQAPanel shelfId={shelf.id} shelfName={shelf.name} />
 
       <ShelfDocuments shelfId={shelf.id} />
 

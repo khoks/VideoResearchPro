@@ -236,6 +236,13 @@ class Settings(BaseSettings):
     ECHO_SHARES_DIR: str = "./data/echo/shares"
     ECHO_SHARE_MAX_BYTES: int = 25 * 1024 * 1024  # 25 MB
     ECHO_SHARE_TEXT_MAX_CHARS: int = 50_000
+    # S-3.7.2: how shares are processed after intake. "celery" queues one
+    # `echo.process_share` task per share; "inline" processes in the request
+    # (single-process dev); "off" leaves shares pending (the test suite).
+    ECHO_SHARE_PROCESSING: str = "celery"
+    # Text embedded per share in shares_global (one vector per share, like
+    # notes): the annotation, the title and the opening of the text.
+    ECHO_SHARE_EMBED_MAX_CHARS: int = 2000
 
     # -------------------------------------------------------------------
     # Visual understanding (R1 / E-1.18) — frame capture + description

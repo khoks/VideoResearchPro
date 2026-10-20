@@ -16,7 +16,9 @@ class LibraryReference(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    video_id: str
+    # Absent on a note citation (S-8.5.2), which has no video; required, it
+    # failed the whole response the moment an answer cited a note.
+    video_id: str | None = None
     video_url: str
     video_title: str
     channel_name: str

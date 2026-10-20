@@ -34,6 +34,7 @@ from app.models.job import Job
 from app.models.note import Note
 from app.models.personal_context import PersonalContext
 from app.models.share import Share
+from app.models.voice_signal import VoiceSignal
 from app.services import (
     activity_event_service,
     auth_service,
@@ -41,6 +42,7 @@ from app.services import (
     echo_intake_service,
     echo_privacy_service,
     echo_service,
+    echo_signal_service,
     echo_vectors,
     note_service,
 )
@@ -91,8 +93,9 @@ def _vector(client, collection: str, vector_id: str, tenant_id: str) -> None:
 
 
 def _seed_brain(db, chroma, user, *, marker: str) -> dict:
-    """Facts, three kinds of share (one with a binary file), and a vector in
-    each Echo collection, all for ``user``."""
+    """Facts, three kinds of share (one with a binary file), two voice
+    signals (one rejected: tombstones are part of the brain too), and a
+    vector in each Echo collection, all for ``user``."""
     f1 = echo_service.record_context(
         db, user_id=user.id, kind="interest", key=f"{marker}-tariffs",
         value={"since": 2019, "depth": "deep"}, source="manual", confidence=0.8,
@@ -115,6 +118,14 @@ def _seed_brain(db, chroma, user, *, marker: str) -> dict:
     )
     file.derived_fact_ids_json = json.dumps([f1.id])
     db.commit()
+    echo_signal_service.create(
+        db, tenant_id=user.id, user_id=user.id, signal_type="framing",
+        value=f"{marker} starts from first principles", language="en",
+    )
+    rejected = echo_signal_service.create(
+        db, tenant_id=user.id, user_id=user.id, signal_type="interest", value=f"{marker} cricket",
+    )
+    echo_signal_service.suppress(db, user.id, rejected.id)
     _vector(chroma, settings.CHROMA_SHARES_COLLECTION_NAME, echo_vectors.share_vector_id(file.id), user.id)
     _vector(chroma, settings.CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME, f"fact:{f2.id}", user.id)
     # S-3.2.1: a connector's event, its grant, its (encrypted) token and a
@@ -154,6 +165,7 @@ def _direct_footprint(db, chroma, shares_dir, tenant_id: str) -> dict:
             (PersonalContext.tenant_id == tenant_id) | (PersonalContext.user_id == tenant_id)
         ).count(),
         "shares_inbox": db.query(Share).filter(Share.tenant_id == tenant_id).count(),
+        "voice_signals": db.query(VoiceSignal).filter(VoiceSignal.tenant_id == tenant_id).count(),
         "activity_events": db.query(ActivityEvent).filter(ActivityEvent.tenant_id == tenant_id).count(),
         "echo_connector_grants": db.query(EchoConnectorGrant).filter(EchoConnectorGrant.tenant_id == tenant_id).count(),
         "echo_connector_credentials": db.query(EchoConnectorCredential)
@@ -240,7 +252,7 @@ def test_export_is_audited_with_counts_only(unauthenticated_client, db, brains):
     assert row.user_id == brains["a"].id
     meta = json.loads(row.metadata_json)
     assert meta == {
-        "rows": {"personal_context": 2, "shares_inbox": 3, "activity_events": 1, "echo_connector_grants": 1},
+        "rows": {"personal_context": 2, "shares_inbox": 3, "voice_signals": 2, "activity_events": 1, "echo_connector_grants": 1},
         "files": 1,
         "missing_files": 0,
     }
@@ -299,7 +311,7 @@ def test_delete_brain_empties_every_store_and_spares_the_other_tenant(
     before_a = _direct_footprint(db, chroma, shares_dir, a.id)
     before_b = _direct_footprint(db, chroma, shares_dir, b.id)
     assert before_a == {
-        "rows": {"personal_context": 2, "shares_inbox": 3, "activity_events": 1, "echo_connector_grants": 1, "echo_connector_credentials": 1, "echo_connector_oauth_states": 1},
+        "rows": {"personal_context": 2, "shares_inbox": 3, "voice_signals": 2, "activity_events": 1, "echo_connector_grants": 1, "echo_connector_credentials": 1, "echo_connector_oauth_states": 1},
         "files": 1,
         "vectors": {settings.CHROMA_SHARES_COLLECTION_NAME: 1, settings.CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME: 1},
     }
@@ -309,14 +321,14 @@ def test_delete_brain_empties_every_store_and_spares_the_other_tenant(
     body = r.json()
     assert body["removed"] == before_a
     assert body["footprint_after"] == {
-        "rows": {"personal_context": 0, "shares_inbox": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0},
+        "rows": {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0},
         "files": 0,
         "vectors": {n: 0 for n in echo_vectors.echo_collection_names()},
     }
 
     db.expire_all()
     after_a = _direct_footprint(db, chroma, shares_dir, a.id)
-    assert after_a["rows"] == {"personal_context": 0, "shares_inbox": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0}
+    assert after_a["rows"] == {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0}
     assert after_a["files"] == 0 and not (shares_dir / a.id).exists()
     assert not any(after_a["vectors"].values())
     for share_id in brains["seed_a"]["shares"]:
@@ -358,7 +370,7 @@ def test_delete_brain_twice_is_harmless(unauthenticated_client, brains):
     assert unauthenticated_client.delete(BRAIN, params=CONFIRM, headers=brains["ha"]).status_code == 200
     r = unauthenticated_client.delete(BRAIN, params=CONFIRM, headers=brains["ha"])
     assert r.status_code == 200
-    assert r.json()["removed"]["rows"] == {"personal_context": 0, "shares_inbox": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0}
+    assert r.json()["removed"]["rows"] == {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0}
 
 
 def test_delete_brain_leaves_notes_and_the_library_alone(unauthenticated_client, db, brains):
@@ -405,7 +417,7 @@ def test_every_echo_table_is_tenant_keyed():
     """A table added to ECHO_TABLES without `tenant_id` could be neither
     exported nor deleted per tenant."""
     assert [name for name, _ in ECHO_TABLES] == [
-        "personal_context", "shares_inbox", "activity_events", "echo_connector_grants",
+        "personal_context", "shares_inbox", "voice_signals", "activity_events", "echo_connector_grants",
     ]
     assert [name for name, _ in ECHO_SECRET_TABLES] == ["echo_connector_credentials", "echo_connector_oauth_states"]
     for _, model in ECHO_TABLES + ECHO_SECRET_TABLES:

@@ -1,7 +1,7 @@
 """activity_events + Echo connector grants, credentials and OAuth states (S-3.2.1)
 
 Revision ID: e5773663cb2d
-Revises: 7c1d9e3a5b42
+Revises: 8e2f4a6c1d93
 Create Date: 2026-10-19
 
 The connector runtime's storage (Domain 2). ``activity_events`` is idempotent
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "e5773663cb2d"
-down_revision = "7c1d9e3a5b42"
+down_revision = "8e2f4a6c1d93"  # re-parented onto S-3.3.1 (merged first)
 branch_labels = None
 depends_on = None
 

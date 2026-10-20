@@ -489,10 +489,15 @@ def delete_share(db: Session, tenant_id: str, share_id: str) -> ShareDeletion:
             )
             .delete(synchronize_session=False)
         )
-    # Derived voice signals (S-3.3.1) do not exist yet; when they do, they are
-    # tombstoned here through `derived_signal_ids_json`.
-    from app.services import activity_event_service
+    # S-3.3.1: the share stops counting as evidence. Its examples leave the
+    # signals it fed (listed in `derived_signal_ids_json`); a signal with no
+    # source left is tombstoned as `source_deleted`.
+    from app.services import activity_event_service, echo_signal_service
 
+    echo_signal_service.withdraw_source(
+        db, tenant_id, f"share:{share.id}", signal_ids=_id_list(share.derived_signal_ids_json)
+    )
+    # S-3.2.1: and its "shared to Pratidhvani" event goes with it.
     activity_event_service.delete_share_event(db, tenant_id, share.id)
     db.delete(share)
     db.commit()

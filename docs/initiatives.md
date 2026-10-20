@@ -936,20 +936,23 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.2.5.1 Google Calendar read-only; events `event_attended` with titles only by default (attendees and descriptions opt-in); derived `daily_routine` facts
 - [ ] T-3.2.5.2 Tests on fixtures
 
-### E-3.3 🔵 Voice & personality capture (Domain 3)
+### E-3.3 🟡 Voice & personality capture (Domain 3)
 
 **Scope.** Store user writing samples, Q&A patterns, opinion threads. Train fine-tune adapters on user-tagged content for persona.
 
 **Scope-changed 2026-10-18.** Mode A only in this epic: `voice_signals` as inspectable, editable, exportable, revocable rows, extracted by an LLM pass over the user's own text (notes from E-8.5, questions, journal entries, shares, outgoing messages from connectors), embedded with the personal facts for retrieval. Fine-tuning moves to E-3.9.
 **Acceptance.** After a user has written twenty notes and asked fifty questions, the Echo page shows a signals panel listing style and personality signals with the verbatim examples they were learned from; the user deletes one and it never returns; the user exports the profile as JSON; the "speak as me" agent (E-3.4) retrieves these signals and a blind judge prefers drafts with them over drafts without.
 
-#### S-3.3.1 🔵 `voice_signals` schema, CRUD and the signals panel
-**PR:** TBD
-- [ ] T-3.3.1.1 `voice_signals(id, tenant_id, user_id, signal_type, value, weight, examples_json, language, register, derived_from, consent_version, created_at, updated_at, suppressed_at)`; `signal_type` closed set covering the style and personality layers in `personal-brain.md` Domain 3; `language` ∈ {en, hi-Deva, hi-Latn, mixed} and `register` ∈ {intimate, casual, professional, public} because bilingual users measurably shift voice per language (see plan)
-- [ ] T-3.3.1.2 `GET/POST/PATCH/DELETE /echo/signals`, `GET /echo/signals/export`; suppression is a tombstone so re-extraction cannot resurrect a deleted signal
-- [ ] T-3.3.1.3 Signals panel on the Echo page grouped by type, with examples and a one-click "that's not me"
-- [ ] T-3.3.1.4 Isolation and tombstone tests
-- [ ] T-3.3.1.5 Register `voice_signals` for export and erasure (`echo_privacy_service.ECHO_TABLES`, `echo_vectors.echo_collection_names()`; [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 2); `echo_intake_service.delete_share` tombstones the signals listed in `derived_signal_ids_json`; signals derive only from the user's own words (`author_is_tenant`), never from context-only shares
+#### S-3.3.1 🟢 `voice_signals` schema, CRUD and the signals panel
+**Shipped:** 2026-10-19 — PR [#333](https://github.com/khoks/VideoResearchPro/pull/333)
+- [x] T-3.3.1.1 `voice_signals(id, tenant_id, user_id, signal_type, value, weight, examples_json, language, register, derived_from, consent_version, created_at, updated_at, suppressed_at)`; `signal_type` closed set covering the style and personality layers in `personal-brain.md` Domain 3; `language` ∈ {en, hi-Deva, hi-Latn, mixed} and `register` ∈ {intimate, casual, professional, public} because bilingual users measurably shift voice per language (see plan)
+- [x] T-3.3.1.2 `GET/POST/PATCH/DELETE /echo/signals`, `GET /echo/signals/export`; suppression is a tombstone so re-extraction cannot resurrect a deleted signal
+- [x] T-3.3.1.3 Signals panel on the Echo page grouped by type, with examples and a one-click "that's not me"
+- [x] T-3.3.1.4 Isolation and tombstone tests
+- [x] T-3.3.1.5 Register `voice_signals` for export and erasure (`echo_privacy_service.ECHO_TABLES`, `echo_vectors.echo_collection_names()`; [D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 2); `echo_intake_service.delete_share` tombstones the signals listed in `derived_signal_ids_json`; signals derive only from the user's own words (`author_is_tenant`), never from context-only shares
+- [ ] T-3.3.1.6 List and restore rejected signals. The panel has no undo for "That's not me": re-adding a rejected signal is refused with a 422 that says so, and the profile export lists rejections under `rejected`. A "Rejected (N)" disclosure with **Restore** would clear `suppressed_at` for `suppressed_reason='user'` rows
+
+**As built.** `voice_signals` adds `value_key` (casefolded, whitespace-collapsed, quotes and full stops trimmed), the merge and tombstone key, and `origin` ∈ {user, llm, stylometry}. `suppressed_reason` tells the user's rejection (`user`, permanent) from a signal whose every source was deleted (`source_deleted`, which new evidence may re-derive). `echo_signal_service` owns the closed vocabularies (the schema `Literal`s are pinned to them by a test), `is_suppressed` (the check extraction calls before writing), and `withdraw_source(tenant, "share:<id>" | "note:<id>", signal_ids?)`, which drops a source's examples and provenance and is what `delete_share` calls. A separate router, `routers/echo_signals.py`, keeps this work clear of the intake and connector routes in `routers/echo.py`. `consent_version` is `2026-10-19`, stamped on every row.
 
 #### S-3.3.2 🔵 Signal extraction
 **PR:** TBD. Depends on E-8.5 (notes) for its richest input. That input exists since 2026-10-19 (S-8.5.1 / S-8.5.3): read live notes through `note_service.iter_notes(include_deleted=False)` and treat a withdrawn note as a reason to suppress any signal derived from it, not as a missing row ([D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19)).

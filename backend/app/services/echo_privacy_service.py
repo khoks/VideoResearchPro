@@ -55,6 +55,7 @@ from app.models.echo_connector import (
 )
 from app.models.personal_context import PersonalContext
 from app.models.share import Share
+from app.models.voice_signal import VoiceSignal
 from app.services import echo_intake_service, echo_vectors
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,9 @@ ARCHIVE_VERSION = 1
 ECHO_TABLES: tuple[tuple[str, Any], ...] = (
     ("personal_context", PersonalContext),
     ("shares_inbox", Share),
+    # S-3.3.1: voice and personality signals, tombstones included.
+    ("voice_signals", VoiceSignal),
+    # S-3.2.1: what the user did, from connectors; and the grants themselves.
     ("activity_events", ActivityEvent),
     ("echo_connector_grants", EchoConnectorGrant),
 )

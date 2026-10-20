@@ -2,10 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   echoApi,
   type CreateSharePayload,
+  type CreateSignalPayload,
   type ListContextParams,
   type ListSharesParams,
   type RecordContextPayload,
   type UpdateSharePayload,
+  type UpdateSignalPayload,
   type UploadShareFields,
 } from '../services/echoApi';
 
@@ -158,6 +160,53 @@ export function useDeleteShare() {
   const invalidate = useInvalidateShares();
   return useMutation({
     mutationFn: (id: string) => echoApi.deleteShare(id),
+    onSuccess: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Voice and personality signals (S-3.3.1)
+// ---------------------------------------------------------------------------
+
+const SIGNALS_KEY = ['echo', 'signals'] as const;
+
+export function useVoiceSignals(enabled = true) {
+  return useQuery({
+    queryKey: SIGNALS_KEY,
+    queryFn: () => echoApi.listSignals(),
+    staleTime: 15_000,
+    enabled,
+  });
+}
+
+function useInvalidateSignals() {
+  const qc = useQueryClient();
+  return () => {
+    qc.invalidateQueries({ queryKey: SIGNALS_KEY });
+    qc.invalidateQueries({ queryKey: FOOTPRINT_KEY });
+  };
+}
+
+export function useCreateSignal() {
+  const invalidate = useInvalidateSignals();
+  return useMutation({
+    mutationFn: (payload: CreateSignalPayload) => echoApi.createSignal(payload),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateSignal() {
+  const invalidate = useInvalidateSignals();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: UpdateSignalPayload }) => echoApi.updateSignal(id, payload),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRejectSignal() {
+  const invalidate = useInvalidateSignals();
+  return useMutation({
+    mutationFn: (id: string) => echoApi.rejectSignal(id),
     onSuccess: invalidate,
   });
 }

@@ -23,6 +23,21 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 - The connector and archive-importer contracts, which GitHub (S-3.2.4) and
   the export importers (S-3.7.5) build on.
 
+### Added: Echo's signals panel (S-3.3.1, 2026-10-19)
+
+PR [#333](https://github.com/khoks/VideoResearchPro/pull/333). Plan [l3-echo-personal-brain](docs/plans/l3-echo-personal-brain.md), Domain 3.
+
+- The Echo page gains **How you sound**: what Echo has learned about how you
+  write and what you think, as rows you can read, correct and add to, each with
+  the verbatim examples behind it.
+- **That's not me** removes a signal for good: it is kept as a tombstone so
+  that Echo never learns it again, and re-adding it is refused.
+- **Export voice profile** downloads the signals as JSON. Signals are part of
+  the whole-brain export and the full delete, and deleting a share withdraws
+  it as evidence from every signal it fed.
+- Automatic learning from your notes and questions is the next story (S-3.3.2);
+  until then the panel holds what you add.
+
 ### Added: saved-search alerts (2026-10-19)
 
 PR [#328](https://github.com/khoks/VideoResearchPro/pull/328). S-8.3.3, plan [m3-saved-searches-alerts](docs/plans/m3-saved-searches-alerts.md).

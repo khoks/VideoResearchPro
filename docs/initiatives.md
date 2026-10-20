@@ -1263,10 +1263,10 @@ Linked decision: [D-065](decisions.md#d-065--channel-subscriptions-become-per-te
 - [x] T-5.10.2.6 Q&A-history Chroma collection — verify tenant filtering matches the transcript collection. *Verified 2026-10-18: `query_qa_collection` restricts to `tenant_id` metadata (T-5.6.6), the counterpart of the transcript collection's visible-set filter*
 - [ ] T-5.10.2.7 Re-run the D-055 harness: library Q&A now answers from a per-user corpus
 
-#### S-5.10.3 🔵 Drop the legacy global columns on `channels`
-`subscribed`, `source_weight`, `last_synced_at` are retained on `channels` so a partial rollout stays recoverable. Remove once nothing reads them.
-- [ ] T-5.10.3.1 Audit remaining readers of the legacy columns (subscription sync task, any scripts). *2026-10-18 findings: still written in `tasks/job_tasks.py` (`channel.subscribed = True` in the subscription path, `channel.last_synced_at` in the sync path). Routers read through `subscription_service`. `source_weight` has no reader anywhere (see I-7)*
-- [ ] T-5.10.3.2 Migration to drop them, with a downgrade that restores from `channel_subscriptions`
+#### S-5.10.3 🟢 Drop the legacy global columns on `channels` — shipped 2026-10-19
+**PR:** [#316](https://github.com/khoks/VideoResearchPro/pull/316). `subscribed`, `source_weight`, `last_synced_at` were retained on `channels` so a partial rollout stayed recoverable; nothing read them any more, so migration `1a6e09517250` drops them.
+- [x] T-5.10.3.1 Audit remaining readers and writers. *2026-10-19: no reader anywhere (app, scripts, schemas; routers already went through `subscription_service`). The last writer was `execute_subscription_job`, which set the global `subscribed` and `last_synced_at` — and never the per-tenant ones: `subscription_service.mark_synced` had no caller, so a tenant's sync time was never recorded and the channel page always showed "never synced". The job now writes the job tenant's `channel_subscriptions` row (`set_subscribed`, `mark_synced`); `test_subscription_task.py` asserts it, and that another tenant's row is untouched*
+- [x] T-5.10.3.2 Migration `1a6e09517250` drops the three columns (SQLite batch rebuild). Downgrade rebuilds them from `channel_subscriptions`: subscribed if any tenant subscribes, the latest sync, weight back to neutral (a global weight cannot be rebuilt from several tenants' without picking one, and every revision with the columns reads weights per tenant). Round trip in `tests/test_migrations/test_drop_legacy_channel_columns_migration.py`
 
 #### S-5.10.4 🟢 Key document visibility on `document_id` — shipped 2026-10-19
 **PR:** [#241](https://github.com/khoks/VideoResearchPro/pull/241). Proposed as a side-session card on 2026-10-19; landed after the R3/R4 batch (PR #227) because both touch `qa_agent.py` and the library Q&A route.
@@ -1806,9 +1806,9 @@ Scope-changed 2026-10-19: (1) the prompt lives in `services/suggestion_service.p
 
 Scope-changed 2026-10-19: the knowledge drawer has no composer and the app has no per-source Q&A, so its card hands the question to library Q&A (filled, or asked on Shift-click) and says "Asked across your library." T-8.4.2.4 would make it exact.
 
-### E-8.5 🟡 Notes — the user's own voice in the library (M5)
+### E-8.5 🟢 Notes — the user's own voice in the library (M5)
 
-**Progress 2026-10-19.** S-8.5.1 and S-8.5.3 shipped (Phase 1, lane D). S-8.5.2 remains and is sequenced after E-7.1.
+**Shipped 2026-10-19.** S-8.5.1 and S-8.5.3 in Phase 1 (lane D), S-8.5.2 in [#322](https://github.com/khoks/VideoResearchPro/pull/322) once E-7.1 had landed. Notes are written, shown, searched, exported, retrieved and cited.
 **Linked decision:** [D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) (one note stream per document, soft delete only, lossless JSON-LD export, Echo feeder reported not gated).
 
 **Scope.** Free-text Markdown notes on any entity (document, job, Q&A exchange, channel, knowledge artifact), private to the author, searchable, exportable, and **citable**: a note is retrieved alongside transcripts and cited as "you wrote this on <date>" with a 1.5× retrieval weight applied through the [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18) re-rank. Foundational for [E-3.3](#e-33--voice--personality-capture-domain-3): notes are the highest-density personality signal.
@@ -1823,17 +1823,18 @@ Scope-changed 2026-10-19: the knowledge drawer has no composer and the app has n
 - [x] T-8.5.1.3 "Add a note" control and inline note list on `VideoRow`, `JobDetailPage`, Q&A answer cards, `ChannelRow`, `VideoKnowledgePage`; plain textarea with Markdown preview (react-markdown is already a dependency)
 - [x] T-8.5.1.4 Isolation tests; a note on a document the tenant cannot see is rejected (`tests/test_routers/test_notes.py`: every target type mine-vs-theirs, two-tenant isolation on every verb, soft delete, one note stream per document)
 
-#### S-8.5.2 🔵 Notes in retrieval and citations
+#### S-8.5.2 🟢 Notes in retrieval and citations
+**Shipped:** 2026-10-19 — [#322](https://github.com/khoks/VideoResearchPro/pull/322). The weight was measured before shipping ([pre-registered note](notes/2026-10-19-s852-note-weight-measurement.md)): at 1.0 one note in five reached the top 15 for the question it answers, at 1.5 all five did (mean rank 5) at a cost of 0.7 transcript chunks and 0.3 channels per question, and no off-topic note ever entered. 1.5 stays. **Found by the live check and fixed:** the refine step dropped a directly relevant note even with the contract in its prompt, so notes skip refinement and reach the answer step verbatim under their marker; the real answer then cited the note in the second person. **Found and fixed on the way:** the Q&A response schemas declared only YouTube fields with `extra="ignore"`, so every Reddit, HN, PDF and article citation reached the browser without its `source_type` or permalink; they now pass extra fields through.
 **PR:** TBD. **Sequenced after [E-7.1](#e-71--trust-weighted-retrieval-v1)**, which lands the `distance / weight` re-rank this story reuses, and after the R3/R4 batch that is rewriting `qa_agent.py`.
-- [ ] T-8.5.2.1 A separate `notes_global` Chroma collection (same embedder, one document per note, `tenant_id` / `target_type` / `target_id` / `note_id` metadata, queried with the fail-closed tenant filter the Q&A collection uses) rather than mixing private notes into the shared transcript collection; the job and library retrieval paths query both and merge by raw distance
-- [ ] T-8.5.2.2 Weight `1.5` for notes in the D-068 re-rank (setting `NOTE_RETRIEVAL_WEIGHT`), applied after the raw relevance threshold like channel weights. The collections use Chroma's default squared-L2 space (the app never sets `hnsw:space`), so `distance / 1.5` is monotone but not a 1.5× cosine boost; keep the formula for consistency with channel weights and measure with the E-1.14 method before tuning
-- [ ] T-8.5.2.6 Prompts that read note text carry a marker contract like D-067's (`[NOTE by you, YYYY-MM-DD]`) so the model never attributes the user's words to a speaker
-- [ ] T-8.5.2.3 `_chunk_to_reference` emits a `note` reference `{note_id, target, created_at, quote}`; `<CitationLink>` renders "you wrote this on YYYY-MM-DD" and links to the note's target
-- [ ] T-8.5.2.4 Re-embed on edit, delete chunks on delete; backfill script for existing notes
-- [ ] T-8.5.2.5 Tests: note cited; weight ordering; absent for other tenants; empty visible set still returns the tenant's notes only when they match
-- [ ] T-8.5.2.7 Withdrawn notes (`deleted_at` set) never enter `notes_global`, and soft-deleting a note removes its vector ([D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) item 2); test both
-- [ ] T-8.5.2.8 A `document` note is retrievable from job-scoped Q&A on EVERY job that contains the document, not only the one it was written from (D-074 item 1): match note `target_id` against the job's approved `document_id` set
-- [ ] T-8.5.2.9 The citation reuses the shipped `NoteCard` phrasing ("You wrote this on <date>") so the inline list, the notes page and the answer read the same
+- [x] T-8.5.2.1 A separate `notes_global` Chroma collection (same embedder, one document per note, `tenant_id` / `target_type` / `target_id` / `note_id` metadata, queried with the fail-closed tenant filter the Q&A collection uses) rather than mixing private notes into the shared transcript collection; the job and library retrieval paths query both and merge by raw distance
+- [x] T-8.5.2.2 Weight `1.5` for notes in the D-068 re-rank (setting `NOTE_RETRIEVAL_WEIGHT`), applied after the raw relevance threshold like channel weights. The collections use Chroma's default squared-L2 space (the app never sets `hnsw:space`), so `distance / 1.5` is monotone but not a 1.5× cosine boost; keep the formula for consistency with channel weights and measure with the E-1.14 method before tuning
+- [x] T-8.5.2.6 Prompts that read note text carry a marker contract like D-067's (`[NOTE by you, YYYY-MM-DD]`) so the model never attributes the user's words to a speaker
+- [x] T-8.5.2.3 `_chunk_to_reference` emits a `note` reference `{note_id, target, created_at, quote}`; `<CitationLink>` renders "you wrote this on YYYY-MM-DD" and links to the note's target
+- [x] T-8.5.2.4 Re-embed on edit, delete chunks on delete; backfill script for existing notes
+- [x] T-8.5.2.5 Tests: note cited; weight ordering; absent for other tenants; empty visible set still returns the tenant's notes only when they match
+- [x] T-8.5.2.7 Withdrawn notes (`deleted_at` set) never enter `notes_global`, and soft-deleting a note removes its vector ([D-074](decisions.md#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) item 2); test both
+- [x] T-8.5.2.8 A `document` note is retrievable from job-scoped Q&A on EVERY job that contains the document, not only the one it was written from (D-074 item 1): match note `target_id` against the job's approved `document_id` set
+- [x] T-8.5.2.9 The citation reuses the shipped `NoteCard` phrasing ("You wrote this on <date>") so the inline list, the notes page and the answer read the same
 Linked decision: D-074.
 
 #### S-8.5.3 🟢 "Your notes" view, search and export

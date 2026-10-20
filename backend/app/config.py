@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # fail-closed tenant filter, and `DELETE /echo/brain` removes the
     # tenant's vectors from each. Created by the processing story
     # (S-3.7.2); erasure already sweeps them if they exist.
+    # M5 / S-8.5.2: the user's own notes, one vector per live note, private per
+    # tenant (every query carries a fail-closed tenant filter). Separate from
+    # the shared transcript collection because notes are private and chunks
+    # are shared (D-063).
+    CHROMA_NOTES_COLLECTION_NAME: str = "notes_global"
     CHROMA_SHARES_COLLECTION_NAME: str = "shares_global"
     CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME: str = "personal_context_global"
 
@@ -550,6 +555,15 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 32
     RAG_TOP_K: int = 15
     RAG_DISTANCE_THRESHOLD: float = 0.6
+    # S-8.5.2: notes join job and library Q&A retrieval. Off switch for the
+    # whole notes index (writes and reads); the test suite turns it off so no
+    # router test embeds or touches a persistent collection.
+    NOTES_INDEX_ENABLED: bool = True
+    # D-068 re-rank weight for the user's own notes: distance / weight, applied
+    # after the raw relevance threshold, like a channel trust weight. 1.5 is
+    # the M5 plan's starting value (the plan's open question 1); see the
+    # S-8.5.2 measurement before changing it.
+    NOTE_RETRIEVAL_WEIGHT: float = 1.5
     EMBEDDING_MODEL_NAME: str = "paraphrase-multilingual-MiniLM-L12-v2"
 
     # Reports

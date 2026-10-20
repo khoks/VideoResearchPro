@@ -268,7 +268,7 @@ Result-state logic is pure and lives in `frontend/src/utils/ingestResults.ts`; t
 ### `LibraryQAPage` — `/library/qa`
 **Purpose.** Ask questions across the entire library, with no per-job filter.
 
-Layout: question textarea + clarify-first toggle + language selector at the top; past exchanges below ordered ascending by `created_at`, each with citation chips that link to the source video at the cited timestamp and the inline notes control (target `library_qa_exchange`). A YouTube chip whose video the reader can see also names its channel as a link to `/library/channels/:id` (S-8.7.4); the same holds for the Q&A panel on a run's page.
+Layout: question textarea + clarify-first toggle + language selector at the top; past exchanges below ordered ascending by `created_at`, each with citation chips that link to the source video at the cited timestamp and the inline notes control (target `library_qa_exchange`). A YouTube chip whose video the reader can see also names its channel as a link to `/library/channels/:id` (S-8.7.4); the same holds for the Q&A panel on a run's page. A chip for one of the reader's own notes (S-8.5.2) reads "You wrote this on <date> · on <target>", in italics, shows the note's opening on hover, and links inside the app to what the note is on (the run, the channel page, the shelf, or `/notes` when the target cannot be linked).
 
 | State | What renders |
 |-------|--------------|

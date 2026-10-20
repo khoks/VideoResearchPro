@@ -30,7 +30,7 @@ from app.schemas.note import (
     NoteUpdate,
     Selector,
 )
-from app.services import note_service
+from app.services import note_index, note_service
 from app.services.note_service import (
     TARGET_TYPES,
     InvalidNote,
@@ -160,6 +160,8 @@ def create_note(
         raise HTTPException(status_code=404, detail="Target not found")
     except InvalidNote as e:
         raise HTTPException(status_code=422, detail=str(e))
+    # S-8.5.2: best-effort; never fails the write (startup backfill repairs).
+    note_index.sync_note(db, note)
     return _responses(db, [note])[0]
 
 
@@ -199,6 +201,7 @@ def update_note(
         raise HTTPException(status_code=404, detail="Note not found")
     except InvalidNote as e:
         raise HTTPException(status_code=422, detail=str(e))
+    note_index.sync_note(db, note)  # S-8.5.2: re-embed the edited text
     return _responses(db, [note])[0]
 
 
@@ -212,4 +215,5 @@ def delete_note(
         note = note_service.delete_note(db, current_user.id, note_id)
     except NoteNotFound:
         raise HTTPException(status_code=404, detail="Note not found")
+    note_index.remove_note(note.id)  # S-8.5.2: a withdrawn note leaves retrieval
     return NoteDeleteResponse(deleted=True, deleted_at=_aware(note.deleted_at))  # type: ignore[arg-type]

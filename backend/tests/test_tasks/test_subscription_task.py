@@ -43,7 +43,7 @@ def patch_session_local(monkeypatch, db):
     yield
 
 
-def _make_subscription_job(db, channel_id: str = "UCsub001") -> Job:
+def _make_subscription_job(db, channel_id: str = "UCsub001", tenant_id: str | None = "tenant-sub") -> Job:
     """Create a Job row representing a subscription ingest. The exact schema
     for 'subscription' job_type is defined in Unit 5; we use the string
     'subscription' consistently."""
@@ -52,6 +52,7 @@ def _make_subscription_job(db, channel_id: str = "UCsub001") -> Job:
         topic=None,
         num_videos=3,
         channel_list=f'["{channel_id}"]',
+        tenant_id=tenant_id,
     )
     db.add(job)
     db.commit()
@@ -118,10 +119,17 @@ def test_execute_subscription_job_auto_completes_without_approval(patch_session_
     assert job.status == "completed"
     assert job.report_path is None
 
-    # Channel row created and marked subscribed.
+    # Channel row created (shared facts only); the job's TENANT is marked
+    # subscribed and synced — per tenant, never globally (S-5.10.3 / D-065).
     ch = db.query(Channel).filter(Channel.channel_id == channel_id).first()
     assert ch is not None
-    assert ch.subscribed is True
+    from app.services import subscription_service
+
+    sub = subscription_service.get_or_create(db, channel_id, job.tenant_id)
+    assert sub.subscribed is True
+    assert sub.last_synced_at is not None, "the per-tenant sync time was never written before S-5.10.3"
+    other = subscription_service.get_or_create(db, channel_id, "someone-else")
+    assert other.subscribed is False and other.last_synced_at is None
 
 
 def test_execute_subscription_job_skips_duplicate_videos(patch_session_local, db):

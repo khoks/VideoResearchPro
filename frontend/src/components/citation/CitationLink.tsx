@@ -23,6 +23,8 @@ import { useColors } from '../../hooks/useTheme';
 import { useVideoChannel } from '../../hooks/useVideoChannel';
 import { fonts, fontSize } from '../../theme';
 import type { Reference } from '../../types/qa';
+import { noteTargetHref, type NoteTargetType } from '../../services/notesApi';
+import { formatDate } from '../../utils/formatters';
 import { youtubeVideoId } from '../../utils/videoId';
 
 export interface CitationLinkProps {
@@ -44,6 +46,24 @@ interface RenderedCitation {
  */
 function renderCitation(ref: Reference): RenderedCitation {
   const sourceType = ref.source_type ?? 'video';
+
+  if (sourceType === 'note') {
+    // S-8.5.2: the same phrasing as the note cards (NoteCard), so the
+    // inline list, the notes page and an answer read the same. The link
+    // goes to what the note is on, inside the app.
+    const when = ref.note_created_at ? formatDate(ref.note_created_at) : '';
+    const href =
+      noteTargetHref({
+        target_type: (ref.note_target_type ?? '') as NoteTargetType,
+        target_id: ref.note_target_id ?? '',
+        target_parent_id: ref.note_target_parent_id ?? null,
+      }) ?? '/notes';
+    const on = ref.note_target_label ? `on ${ref.note_target_label}` : '';
+    return {
+      href,
+      label: [when ? `You wrote this on ${when}` : 'Your note', on].filter(Boolean).join(' · '),
+    };
+  }
 
   if (sourceType === 'reddit_post') {
     const subreddit = ref.subreddit ? `r/${ref.subreddit}` : 'Reddit';
@@ -223,6 +243,27 @@ export function CitationLink({ reference, newTab = true, style }: CitationLinkPr
           </>
         )}
       </span>
+    );
+  }
+
+  if (reference.source_type === 'note') {
+    // An in-app link: the note's target is a page of this app, not a
+    // source on the web.
+    return (
+      <Link
+        to={href}
+        title={reference.quote || undefined}
+        style={{
+          color: c.accent,
+          textDecoration: 'none',
+          fontFamily: fonts.ui,
+          fontSize: fontSize.xs,
+          fontStyle: 'italic',
+          ...style,
+        }}
+      >
+        {label}
+      </Link>
     );
   }
 

@@ -25,7 +25,7 @@ from app.agents import echo_agent as agent
 from app.agents.echo_agent import ContextItem, DraftDeps
 from app.config import settings
 from app.models.echo_draft import EchoDraft
-from app.services import auth_service, echo_draft_service, echo_intake_service, echo_service
+from app.services import auth_service, echo_draft_service, echo_intake_service
 from app.services import quota_metering_service as quota
 
 SOURCE = "Tariffs raise prices for the importer first and then for the buyer, the study found across forty markets."
@@ -164,10 +164,15 @@ def _studio(db):
     return u
 
 
-def _make_ready(db, user):
-    for k in range(100):
-        echo_service.record_context(db, user_id=user.id, kind="interest", key=f"k{k}", value="v", source=f"src{k % 3}")
-    echo_service.record_context(db, user_id=user.id, kind="personality_trait", key="sceptic", value="yes", source="manual")
+READY_CHECKS = ("FACTS_MIN", "FACT_KINDS_MIN", "EVENTS_MIN", "EVENT_DAYS_MIN", "SIGNALS_MIN", "SIGNAL_TYPES_MIN",
+                "SHARES_MIN", "SHARE_TYPES_MIN", "VOICE_PIECES_MIN", "VOICE_WORDS_MIN", "VOICE_SPREAD_MAX")
+
+
+def _make_ready(monkeypatch):
+    """Readiness v2 is five domains measured from the stores; a zero threshold
+    switches a check off, which is how these tests stand a user past it."""
+    for name in READY_CHECKS:
+        monkeypatch.setattr(settings, f"ECHO_READY_{name}", 0)
 
 
 def test_status_names_every_gate_in_words(db, monkeypatch):
@@ -177,10 +182,13 @@ def test_status_names_every_gate_in_words(db, monkeypatch):
     assert codes == ["install_off", "not_ready", "voice_test_required"] and not st.enabled
     msg = next(b["message"] for b in st.blockers if b["code"] == "voice_test_required")
     assert "40 of your notes; you have 0" in msg
+    ready_msg = next(b["message"] for b in st.blockers if b["code"] == "not_ready")
+    assert ready_msg.startswith("Echo needs more to go on first, in 5 of 5 areas.")
+    assert "Facts about you: " in ready_msg and "How you write: " in ready_msg, "names each unmet domain"
     assert st.drafts_per_day == 20
 
     monkeypatch.setattr(settings, "ECHO_SPEAK_AS_ME_ENABLED", True)
-    _make_ready(db, user)
+    _make_ready(monkeypatch)
     echo_draft_service.record_voice_test(db, user.id, pairs=20, picked_own=17)
     st = echo_draft_service.status(db, user)
     assert [b["code"] for b in st.blockers] == ["voice_test_failed"]
@@ -214,7 +222,7 @@ def test_a_draft_is_stored_with_its_disclosure_counted_and_audited(db, monkeypat
 
     monkeypatch.setattr(settings, "ECHO_SPEAK_AS_ME_ENABLED", True)
     user = _studio(db)
-    _make_ready(db, user)
+    _make_ready(monkeypatch)
     echo_draft_service.record_voice_test(db, user.id, pairs=20, picked_own=12)
     d, _ = deps()
     row = echo_draft_service.draft(db, user, "Who really pays for tariffs?", audience="my brother", deps=d)
@@ -230,7 +238,7 @@ def test_a_draft_is_stored_with_its_disclosure_counted_and_audited(db, monkeypat
 def test_the_daily_cap_holds(db, monkeypatch):
     monkeypatch.setattr(settings, "ECHO_SPEAK_AS_ME_ENABLED", True)
     user = _studio(db)
-    _make_ready(db, user)
+    _make_ready(monkeypatch)
     echo_draft_service.record_voice_test(db, user.id, pairs=20, picked_own=12)
     for _ in range(20):
         quota.record_usage(db, user.id, "echo_drafts")

@@ -4,7 +4,7 @@ The agent is ``app.agents.echo_agent``; this module decides whether it may
 run and gives it the user's material. Gates, in order (``status``):
 
 1. ``install_off``: ``ECHO_SPEAK_AS_ME_ENABLED`` is off (the default).
-2. ``not_ready``: ``echo_service.is_ready`` (the readiness gate, D-049).
+2. ``not_ready``: ``echo_service.is_ready``, the five-domain readiness (S-3.5.1).
 3. ``voice_test_required`` / ``voice_test_failed``: the per-user switch D-100
    requires. A user passes the blinded "which of these did you write?"
    test (tier iii: at least 20 pairs, own text picked in at most 80%) with
@@ -25,11 +25,10 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -116,7 +115,7 @@ def voice_gate(db: Session, tenant_id: str) -> dict:
         "pairs": row.pairs if row else 0,
         "picked_own_share": row.picked_own_share if row else None,
         "notes_total": notes,
-        "notes_needed": settings.ECHO_VOICE_TEST_MIN_NOTES,
+        "notes_needed": settings.ECHO_VOICE_TEST_NOTES_MIN,
     }
 
 
@@ -167,11 +166,14 @@ def status(db: Session, user: User) -> DraftStatus:
     if not settings.ECHO_SPEAK_AS_ME_ENABLED:
         blockers.append({"code": "install_off", "message": "Speak as me is turned off on this install."})
     if not readiness["ready"]:
-        missing = [f"{readiness['total_rows']} of {readiness['threshold_total']} facts",
-                   f"{readiness['distinct_sources']} of {readiness['threshold_sources']} sources"]
-        if not readiness["has_personality_trait"]:
-            missing.append("a personality trait")
-        blockers.append({"code": "not_ready", "message": "Echo needs more to go on first: " + ", ".join(missing) + "."})
+        # Readiness v2 (S-3.5.1): every unmet domain, with what it is missing.
+        unmet = [d for d in readiness["domains"] if not d["met"]]
+        parts = [f"{d['label']}: {d['missing']}" if d.get("missing") else d["label"] for d in unmet]
+        blockers.append({
+            "code": "not_ready",
+            "message": f"Echo needs more to go on first, in {len(unmet)} of {len(readiness['domains'])} areas. "
+            + " ".join(p if p.endswith(".") else p + "." for p in parts),
+        })
     if gate["status"] == "not_run":
         blockers.append({
             "code": "voice_test_required",

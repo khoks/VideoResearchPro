@@ -11,9 +11,9 @@ import uuid
 import pytest
 
 from app.config import settings
-from app.services import auth_service, echo_draft_service, echo_service
+from app.services import auth_service, echo_draft_service
 from app.services import quota_metering_service as quota
-from tests.test_services.test_echo_draft import deps
+from tests.test_services.test_echo_draft import _make_ready, deps
 
 DRAFT = "/api/v1/echo/draft"
 
@@ -28,9 +28,7 @@ def _user(db, tier="studio"):
 
 def _enable(db, user, monkeypatch):
     monkeypatch.setattr(settings, "ECHO_SPEAK_AS_ME_ENABLED", True)
-    for k in range(100):
-        echo_service.record_context(db, user_id=user.id, kind="interest", key=f"k{k}", value="v", source=f"s{k % 3}")
-    echo_service.record_context(db, user_id=user.id, kind="personality_trait", key="t", value="v", source="manual")
+    _make_ready(monkeypatch)
     echo_draft_service.record_voice_test(db, user.id, pairs=20, picked_own=12)
 
 

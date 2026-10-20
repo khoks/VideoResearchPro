@@ -197,6 +197,7 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/scripts/regenerate_report.py` | Re-run a completed job's report phase from cached transcripts (before/after measurement) |
 | `backend/scripts/judge_report_sections.py` | Split a report into sections and judge each in full — replaces the 180,000-char judging cap |
 | `backend/scripts/audit_report_intermediates.py` | Read a job's persisted map/reduce intermediates back: batch statuses, item counts, reduce accounting |
+| `backend/app/agents/echo_agent.py` | "Speak as me" LangGraph agent; the verbatim, citation and private-name guards live here in code (S-3.4.1) |
 | `backend/scripts/echo_import.py` | Import an export into a user's Echo from the command line (`--email`, `--file`, `--preview`): the `/echo/import` flow for exports past the upload cap, such as Apple Health (S-3.7.5) |
 | `backend/app/websocket/manager.py` | Redis pub/sub → WebSocket fan-out |
 | `backend/app/services/youtube_service.py` | YouTube API + transcript fetching with language fallback + rate limiting |
@@ -354,6 +355,10 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `ECHO_SIGNALS_MAX_PER_BATCH` / `ECHO_SIGNALS_MAX_OUTPUT_TOKENS` | No | `12` / `2500` | Candidates per call and the output cap that bounds them (reasoning stays off) |
 | `ECHO_SIGNALS_MAX_BATCHES_PER_RUN` | No | `20` | Cost bound per run; a larger backlog is read over several runs |
 | `ECHO_SIGNALS_IMPORT_SAMPLE` / `ECHO_SIGNALS_MIN_PASSAGE_WORDS` | No | `300` / `4` | An export import is one input: stylometry reads every own-words turn; the model reads at most this many turns of at least this many words, spread over the chat's timeline (T-3.3.2.10) |
+| **Speak as me (S-3.4.1 / D-102)** | | | |
+| `ECHO_SPEAK_AS_ME_ENABLED` | No | `False` | The install switch. Each user also needs a passed voice test (`echo_voice_gates`, written by `scripts/voice_match_harness.py user-score --record`), readiness and the Studio tier |
+| `ECHO_DRAFT_CRITIQUE_ROUNDS` / `ECHO_DRAFT_CRITIQUE_TARGET` | No | `2` / `4.0` | Critique-and-revise rounds per draft, and the mean voice score (1-5) at which they stop early |
+| `ECHO_DRAFT_SOURCES` | No | `6` | Library chunks retrieved for one draft |
 | `ECHO_PERSONAL_INDEX_ENABLED` | No | `True` | S-3.3.3: keep `personal_context_global` (one vector per live fact and signal) in step on every write and at startup. Off for the test suite, like `NOTES_INDEX_ENABLED` |
 | **Visual understanding (R1 / E-1.18)** | | | |
 | `VISUAL_ENABLED` | No | `False` | Install-wide switch for frame capture + description. AND-ed with the per-job `visual_analysis` opt-in — both must be true. Off by default: capture needs a *video* stream (more yt-dlp traffic than the audio path that caused the D-051 IP block) and it is the app's only multimodal spend |
@@ -487,7 +492,7 @@ From highest to lowest:
 
 ### Registered use cases
 
-Thirty-three named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
+Thirty-six named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
 
 ### Measured guidance (S-1.14.7)
 
@@ -530,6 +535,11 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 **Echo voice and personality signals (`app/services/echo_signal_extraction.py`, S-3.3.2):**
 - `echo_extract_signals` — a batch of the user's OWN words (notes, questions, own-words shares) → candidate style and personality signals with verbatim examples cited by passage id; code keeps an example only when found exactly in its passage (D-099). Economy tier, reasoning OFF, fail-soft, not a feature gate
 
+**Speak as me (`app/agents/echo_agent.py`, S-3.4.1 / D-102):**
+- `echo_classify_intent` — the incoming message's intent, topic, language and the people it names (by name only; "my uncle" is not a name), so private names are confirmed before drafting. Economy tier, reasoning OFF
+- `echo_draft` — the draft in the user's voice and the reply's language (not D-066 English), from a trait card plus five style-diverse exemplars of the user's own writing (Mode A, D-100) and the cited knowledge; also the revision and the one-shot paraphrase of a third-party run the verbatim guard caught. Synthesis tier
+- `echo_critique` — scores a draft's tone, vocabulary, structure and topicality 1-5 against the trait card; advisory (the best round is kept). Volume tier
+
 **Author Studio (`app/services/outputters/`, S-6.1.3 / S-6.3.1):**
 - `author_book_outline` — plan a book from chapter digests (order, parts, bridges, briefs, glossary terms); JSON. Opt-in per book (`cohesion=light|full`), fail-soft, not a feature gate
 - `author_book_prose` — introduction, bridges, conclusion and glossary around the unchanged chapters; marked plain-text sections. `cohesion=full` only; `none` stays the default after two blind rounds (D-093)
@@ -555,7 +565,7 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 
 ## LLM startup smoke check + fail-soft
 
-`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 33 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
+`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 36 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
 
 **Health endpoints:**
 - `GET /api/v1/health` — overall status plus an `llm` field with `status` (`ok` / `degraded` / `down` / `unknown`) and `unavailable_features` (a list of feature names whose required use cases failed probing).

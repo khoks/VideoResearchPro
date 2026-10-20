@@ -137,6 +137,12 @@ export interface Share {
   extracted_text?: string | null;
   /** S-3.7.2: what processing found; absent until it ran. */
   processing?: ShareProcessing | null;
+  /** S-3.7.5: set on shares an export import wrote. */
+  import_id?: string | null;
+  /** When the message or note was written (imports); `received_at` otherwise. */
+  occurred_at?: string | null;
+  /** The importer's provenance: chat and sender, or note title and labels. */
+  imported?: Record<string, unknown> | null;
 }
 
 export interface ShareProcessing {
@@ -172,6 +178,45 @@ export interface ListSharesParams {
   q?: string;
   limit?: number;
   offset?: number;
+  /** S-3.7.5: `direct` (the default) | `import` | `all`. */
+  origin?: 'direct' | 'import' | 'all';
+  /** One import's shares, oldest first. */
+  import_id?: string;
+}
+
+// S-3.7.5: export-file imports.
+export type ImporterName = 'whatsapp' | 'google_keep' | string;
+export type ImportStatus = 'importing' | 'embedding' | 'done' | 'failed' | 'deleting';
+
+export interface ImportPreview {
+  importer: ImporterName;
+  label: string;
+  summary: Record<string, unknown>;
+  participants: { name: string; messages: number }[];
+  options: Record<string, unknown>;
+  warnings: string[];
+}
+
+export interface EchoImportItem {
+  id: string;
+  importer: ImporterName;
+  filename: string;
+  status: ImportStatus | string;
+  options: Record<string, unknown>;
+  counts: Record<string, number>;
+  summary: Record<string, unknown>;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface ImportOptions {
+  self_name?: string | null;
+  redact_other_party?: boolean;
+  timezone?: string | null;
+  date_order?: 'dmy' | 'mdy' | 'ymd';
+  own_words?: boolean;
+  include_trashed?: boolean;
 }
 
 export interface CreateSharePayload {
@@ -275,6 +320,14 @@ export interface BrainDeleteResponse {
 export const BRAIN_DELETE_CONFIRMATION = 'delete-everything';
 
 /** `filename="x.zip"` from a Content-Disposition header, or the fallback. */
+function importForm(file: File, options: ImportOptions): FormData {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  const clean = Object.fromEntries(Object.entries(options).filter(([, v]) => v !== undefined));
+  form.append('options', JSON.stringify(clean));
+  return form;
+}
+
 export function filenameFromDisposition(header: string | undefined | null, fallback: string): string {
   if (!header) return fallback;
   const star = /filename\*=UTF-8''([^;]+)/i.exec(header);
@@ -379,6 +432,34 @@ export const echoApi = {
       .post<Share>('/echo/shares/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } })
       .then(r => r.data);
   },
+
+  /** S-3.7.5: what importing this file would produce. Writes nothing. */
+  previewImport: (file: File, options: ImportOptions = {}) =>
+    api
+      .post<ImportPreview>('/echo/import/preview', importForm(file, options), {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then(r => r.data),
+
+  runImport: (file: File, options: ImportOptions = {}) =>
+    api
+      .post<EchoImportItem>('/echo/import', importForm(file, options), {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 0,
+      })
+      .then(r => r.data),
+
+  listImports: () => api.get<{ items: EchoImportItem[] }>('/echo/imports').then(r => r.data),
+
+  retryImportEmbedding: (id: string) =>
+    api.post<EchoImportItem>(`/echo/imports/${encodeURIComponent(id)}/embed`).then(r => r.data),
+
+  deleteImport: (id: string) =>
+    api
+      .delete<{ deleted: boolean; shares: number; vectors: number; facts: number }>(
+        `/echo/imports/${encodeURIComponent(id)}`,
+      )
+      .then(r => r.data),
 
   updateShare: (id: string, payload: UpdateSharePayload) =>
     api.patch<Share>(`/echo/shares/${encodeURIComponent(id)}`, payload).then(r => r.data),

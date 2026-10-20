@@ -28,6 +28,7 @@ Studio-tier-only initially.
 """
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timezone
 from typing import Any
@@ -44,11 +45,14 @@ from app.models.share import Share
 from app.models.user import User
 from app.services import (
     audit_service,
+    echo_import_service,
     echo_intake_service,
     echo_privacy_service,
     echo_processing_service,
     echo_service,
 )
+from app.services.echo_import_service import ImportNotFound
+from app.connectors.archive import ExportUnreadable
 from app.services.echo_intake_service import InvalidShare, ShareNotFound, ShareTooLarge
 from app.services.echo_service import SUPPORTED_KINDS, UnsupportedKindError
 from app.services.tier_service import require_feature
@@ -277,6 +281,11 @@ class ShareItem(BaseModel):
     # S-3.7.2: the extracted text (any kind) and what processing found.
     extracted_text: str | None = None
     processing: ShareProcessing | None = None
+    # S-3.7.5: set on shares an export import wrote. `imported` is the
+    # importer's provenance (chat, sender, note title, labels, ...).
+    import_id: str | None = None
+    occurred_at: datetime | None = None
+    imported: dict[str, Any] | None = None
 
 
 class ShareListResponse(BaseModel):
@@ -342,6 +351,9 @@ def _share_item(share: Share) -> ShareItem:
         linked_document_id=share.linked_document_id,
         extracted_text=share.extracted_text if kind != "text" else None,
         processing=_processing(share),
+        import_id=share.import_id,
+        occurred_at=_aware(share.occurred_at) if share.occurred_at else None,  # type: ignore[arg-type]
+        imported=(payload.get("import") if isinstance(payload.get("import"), dict) else None),
     )
 
 
@@ -433,12 +445,18 @@ def list_shares_endpoint(
     q: str | None = Query(None, max_length=200),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    origin: str = Query("direct", pattern="^(direct|import|all)$"),
+    import_id: str | None = Query(None, max_length=36),
     current_user: User = Depends(require_feature("echo_personal_brain")),
     db: Session = Depends(get_db),
 ) -> ShareListResponse:
+    """``origin``: ``direct`` (the default: shares handed over one at a
+    time), ``import`` (written by export imports) or ``all``. ``import_id``
+    lists one import's shares in the order they were written."""
     try:
         page, total = echo_intake_service.list_shares(
-            db, current_user.id, state=state, q=q, limit=limit, offset=offset
+            db, current_user.id, state=state, q=q, limit=limit, offset=offset,
+            origin=origin, import_id=import_id,
         )
     except InvalidShare as e:
         raise _invalid(e)
@@ -672,3 +690,190 @@ def delete_brain_endpoint(
         removed=FootprintResponse(**result["removed"]),
         footprint_after=FootprintResponse(**result["footprint_after"]),
     )
+
+
+# ---------------------------------------------------------------------------
+# Export-file imports (S-3.7.5)
+# ---------------------------------------------------------------------------
+
+
+class ImportParticipant(BaseModel):
+    name: str
+    messages: int
+
+
+class ImportPreviewResponse(BaseModel):
+    importer: str
+    label: str
+    summary: dict[str, Any]
+    participants: list[ImportParticipant]
+    options: dict[str, Any]
+    warnings: list[str]
+
+
+class ImportItem(BaseModel):
+    id: str
+    importer: str
+    filename: str
+    # importing | embedding | done | failed | deleting
+    status: str
+    options: dict[str, Any]
+    counts: dict[str, Any]
+    summary: dict[str, Any]
+    error: str | None = None
+    created_at: datetime
+    finished_at: datetime | None = None
+
+
+class ImportListResponse(BaseModel):
+    items: list[ImportItem]
+
+
+class ImportDeleteResponse(BaseModel):
+    deleted: bool
+    shares: int
+    vectors: int
+    facts: int
+
+
+def _import_item(record) -> ImportItem:
+    def _json(raw: str | None) -> dict[str, Any]:
+        try:
+            value = json.loads(raw) if raw else {}
+        except ValueError:
+            value = {}
+        return value if isinstance(value, dict) else {}
+
+    return ImportItem(
+        id=record.id,
+        importer=record.importer,
+        filename=record.filename,
+        status=record.status,
+        options=_json(record.options_json),
+        counts=_json(record.counts_json),
+        summary=_json(record.summary_json),
+        error=record.error,
+        created_at=_aware(record.created_at),  # type: ignore[arg-type]
+        finished_at=_aware(record.finished_at) if record.finished_at else None,  # type: ignore[arg-type]
+    )
+
+
+def _import_upload(file: UploadFile, options: str | None) -> tuple[Any, dict[str, Any]]:
+    """The spooled upload (never stored) and the parsed options object."""
+    fh = file.file
+    fh.seek(0, os.SEEK_END)
+    size = fh.tell()
+    fh.seek(0)
+    if size == 0:
+        raise HTTPException(status_code=422, detail="The file is empty.")
+    if size > settings.ECHO_IMPORT_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Exports up to {settings.ECHO_IMPORT_MAX_BYTES // (1024 * 1024)} MB can be imported here.",
+        )
+    try:
+        opts = json.loads(options) if options else {}
+    except ValueError:
+        raise HTTPException(status_code=422, detail="options must be a JSON object")
+    if not isinstance(opts, dict):
+        raise HTTPException(status_code=422, detail="options must be a JSON object")
+    return fh, opts
+
+
+@router.post("/import/preview", response_model=ImportPreviewResponse)
+def import_preview_endpoint(
+    file: UploadFile = File(...),
+    importer: str | None = Form(None),
+    options: str | None = Form(None),
+    current_user: User = Depends(require_feature("echo_personal_brain")),
+) -> ImportPreviewResponse:
+    """What importing this file would produce. Writes nothing."""
+    fh, opts = _import_upload(file, options)
+    try:
+        pv = echo_import_service.preview(fh, file.filename or "upload", importer=importer, options=opts)
+    except ExportUnreadable as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return ImportPreviewResponse(
+        importer=pv.importer,
+        label=pv.label,
+        summary=pv.summary,
+        participants=[ImportParticipant(name=p["name"], messages=p["messages"]) for p in pv.participants],
+        options=pv.options,
+        warnings=pv.warnings,
+    )
+
+
+@router.post("/import", response_model=ImportItem, status_code=status.HTTP_201_CREATED)
+def import_endpoint(
+    file: UploadFile = File(...),
+    importer: str | None = Form(None),
+    options: str | None = Form(None),
+    current_user: User = Depends(require_feature("echo_personal_brain")),
+    db: Session = Depends(get_db),
+) -> ImportItem:
+    """Import an export file as shares (``surface=file_import``). The upload
+    itself is not kept; embedding follows like share processing."""
+    fh, opts = _import_upload(file, options)
+    try:
+        record = echo_import_service.run_import(
+            db, current_user, fh, file.filename or "upload", importer=importer, options=opts
+        )
+    except ExportUnreadable as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return _import_item(record)
+
+
+@router.get("/imports", response_model=ImportListResponse)
+def list_imports_endpoint(
+    current_user: User = Depends(require_feature("echo_personal_brain")),
+    db: Session = Depends(get_db),
+) -> ImportListResponse:
+    return ImportListResponse(items=[_import_item(r) for r in echo_import_service.list_imports(db, current_user.id)])
+
+
+@router.get("/imports/{import_id}", response_model=ImportItem)
+def get_import_endpoint(
+    import_id: str,
+    current_user: User = Depends(require_feature("echo_personal_brain")),
+    db: Session = Depends(get_db),
+) -> ImportItem:
+    try:
+        return _import_item(echo_import_service.get_import(db, current_user.id, import_id))
+    except ImportNotFound:
+        raise HTTPException(status_code=404, detail="Import not found")
+
+
+@router.post("/imports/{import_id}/embed", response_model=ImportItem)
+def retry_import_embedding_endpoint(
+    import_id: str,
+    current_user: User = Depends(require_feature("echo_personal_brain")),
+    db: Session = Depends(get_db),
+) -> ImportItem:
+    """Embed whatever of this import is still pending (Retry after a failure)."""
+    try:
+        record = echo_import_service.get_import(db, current_user.id, import_id)
+    except ImportNotFound:
+        raise HTTPException(status_code=404, detail="Import not found")
+    if record.status in ("importing", "deleting"):
+        raise HTTPException(status_code=409, detail=f"This import is {record.status}.")
+    record.status = "embedding"
+    record.error = None
+    db.commit()
+    echo_import_service.enqueue_embedding(db, record, current_user)
+    db.refresh(record)
+    return _import_item(record)
+
+
+@router.delete("/imports/{import_id}", response_model=ImportDeleteResponse)
+def delete_import_endpoint(
+    import_id: str,
+    current_user: User = Depends(require_feature("echo_personal_brain")),
+    db: Session = Depends(get_db),
+) -> ImportDeleteResponse:
+    """Undo an import: every share it wrote, their vectors and anything
+    derived from them, then the import itself."""
+    try:
+        result = echo_import_service.delete_import(db, current_user.id, import_id)
+    except ImportNotFound:
+        raise HTTPException(status_code=404, detail="Import not found")
+    return ImportDeleteResponse(deleted=True, **result)

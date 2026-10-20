@@ -10,6 +10,20 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Echo: import a WhatsApp chat or Google Keep notes (S-3.7.5 part 1, 2026-10-19)
+
+PR [#341](https://github.com/khoks/VideoResearchPro/pull/341). Sizing: [docs/notes/2026-10-19-s375-import-sizing.md](docs/notes/2026-10-19-s375-import-sizing.md).
+
+- A new import page previews a WhatsApp export (`.txt` or `.zip`, iOS or
+  Android) or Keep notes from Takeout before anything is stored.
+- For a chat, the user says which participant they are; their turns are
+  their own words, everyone else's are context only, or are never stored
+  with "Keep only my side". The upload itself is never kept.
+- Every import can be undone. Shares carry `import_id` and `occurred_at`
+  (migration `509a4efd9319`), and `echo_imports` joins D-089's registry.
+- One bulk cascade now serves every share delete; undoing 125,000 shares
+  takes about 7 s.
+
 ### Evaluation: the voice-match gate passes on synthetic writers (S-3.3.4, 2026-10-19)
 
 PR [#346](https://github.com/khoks/VideoResearchPro/pull/346). Decision [D-100](docs/decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19); [pre-registration](docs/notes/2026-10-19-voice-match-preregistration.md) (#338); [result](docs/notes/2026-10-19-voice-match-result.md).

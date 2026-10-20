@@ -29,6 +29,21 @@ def process_share_task(share_id: str) -> str:
         db.close()
 
 
+EMBED_IMPORT_TASK_NAME = "echo.embed_import"
+
+
+@celery_app.task(name=EMBED_IMPORT_TASK_NAME, ignore_result=True)
+def embed_import_task(import_id: str) -> str:
+    """Embed an export import's shares (S-3.7.5), a batch at a time; resumable."""
+    from app.services import echo_import_service
+
+    db = SessionLocal()
+    try:
+        return echo_import_service.embed_import(db, import_id)
+    finally:
+        db.close()
+
+
 @celery_app.task(name=EXTRACT_SIGNALS_TASK, ignore_result=True)
 def extract_signals_task(tenant_id: str) -> dict:
     """One run; a second run queued while one is going reads what the first

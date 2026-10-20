@@ -1,0 +1,15 @@
+{
+  "color": "DEFAULT",
+  "isTrashed": false,
+  "isPinned": false,
+  "isArchived": false,
+  "title": "",
+  "textContent": "",
+  "attachments": [
+    {
+      "filePath": "1f2e3d.jpeg",
+      "mimetype": "image/jpeg"
+    }
+  ],
+  "userEditedTimestampUsec": 1707200000000000
+}

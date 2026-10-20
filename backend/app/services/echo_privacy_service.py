@@ -53,6 +53,7 @@ from app.models.echo_connector import (
     EchoConnectorGrant,
     EchoConnectorOAuthState,
 )
+from app.models.echo_import import EchoImport
 from app.models.personal_context import PersonalContext
 from app.models.share import Share
 from app.models.voice_signal import VoiceSignal
@@ -78,6 +79,8 @@ ECHO_TABLES: tuple[tuple[str, Any], ...] = (
     # S-3.2.1: what the user did, from connectors; and the grants themselves.
     ("activity_events", ActivityEvent),
     ("echo_connector_grants", EchoConnectorGrant),
+    # S-3.7.5: each export import, so it can be listed and undone.
+    ("echo_imports", EchoImport),
 )
 
 # Echo tables that hold secrets: OAuth tokens (encrypted, D-043) and the PKCE

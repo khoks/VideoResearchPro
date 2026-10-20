@@ -34,7 +34,8 @@ describe('parseQuickShareInput', () => {
 describe('labels', () => {
   it('names known content types and humanises the rest', () => {
     expect(contentTypeLabel('youtube_video')).toBe('YouTube video');
-    expect(contentTypeLabel('whatsapp_thread')).toBe('Whatsapp thread');
+    expect(contentTypeLabel('whatsapp_thread')).toBe('WhatsApp thread');
+    expect(contentTypeLabel('telegram_thread')).toBe('Telegram thread');
     expect(contentTypeLabel('')).toBe('Share');
   });
 

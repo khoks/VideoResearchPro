@@ -198,7 +198,8 @@ export function EchoPage() {
           }}
         >
           What the library knows about its reader.{' '}
-          <Link to="/echo/inbox" style={{ color: c.accent, fontStyle: 'normal' }}>Open the shares inbox →</Link>
+          <Link to="/echo/inbox" style={{ color: c.accent, fontStyle: 'normal' }}>Open the shares inbox →</Link>{' '}
+          <Link to="/echo/import" style={{ color: c.accent, fontStyle: 'normal' }}>Import an export →</Link>
         </p>
       </header>
 

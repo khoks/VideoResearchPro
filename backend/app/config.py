@@ -257,6 +257,15 @@ class Settings(BaseSettings):
     # Text embedded per share in shares_global (one vector per share, like
     # notes): the annotation, the title and the opening of the text.
     ECHO_SHARE_EMBED_MAX_CHARS: int = 2000
+    # S-3.7.5: export-file importers (WhatsApp, Google Takeout). The upload
+    # cap bounds one request; parsing streams, so memory stays flat. A zip may
+    # unpack to at most ECHO_IMPORT_MAX_UNCOMPRESSED_BYTES (a zip-bomb guard).
+    # A WhatsApp chat is stored as turns: consecutive messages from one sender
+    # at most ECHO_IMPORT_TURN_GAP_MIN apart, up to ECHO_IMPORT_TURN_MAX_CHARS.
+    ECHO_IMPORT_MAX_BYTES: int = 200 * 1024 * 1024
+    ECHO_IMPORT_MAX_UNCOMPRESSED_BYTES: int = 1024 * 1024 * 1024
+    ECHO_IMPORT_TURN_GAP_MIN: int = 10
+    ECHO_IMPORT_TURN_MAX_CHARS: int = 2000
     # S-3.7.2 part 2: media shares. Images go through on-device OCR
     # (RapidOCR) first; a reading counts as confident when it has at least
     # ECHO_OCR_MIN_CHARS non-space characters at a mean box score of at

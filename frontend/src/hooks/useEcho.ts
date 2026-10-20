@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   echoApi,
   type CreateSharePayload,
+  type ImportOptions,
   type CreateSignalPayload,
   type ListContextParams,
   type ListSharesParams,
@@ -87,7 +88,15 @@ const FOOTPRINT_KEY = ['echo', 'footprint'] as const;
 
 export function useShares(params: ListSharesParams, enabled = true) {
   return useQuery({
-    queryKey: [...SHARES_KEY, params.state ?? null, params.q ?? '', params.limit ?? null, params.offset ?? 0],
+    queryKey: [
+      ...SHARES_KEY,
+      params.state ?? null,
+      params.q ?? '',
+      params.limit ?? null,
+      params.offset ?? 0,
+      params.origin ?? 'direct',
+      params.import_id ?? null,
+    ],
     queryFn: () => echoApi.listShares(params),
     staleTime: 10_000,
     enabled,
@@ -110,6 +119,54 @@ function useInvalidateShares() {
     qc.invalidateQueries({ queryKey: FOOTPRINT_KEY });
     qc.invalidateQueries({ queryKey: STATUS_KEY });
   };
+}
+
+// S-3.7.5: export-file imports.
+const IMPORTS_KEY = ['echo', 'imports'] as const;
+
+export function useImports(enabled = true) {
+  return useQuery({
+    queryKey: IMPORTS_KEY,
+    queryFn: () => echoApi.listImports(),
+    staleTime: 5_000,
+    enabled,
+    // Embedding runs in the background; poll while any import is busy.
+    refetchInterval: (q) =>
+      q.state.data?.items.some(i => i.status === 'embedding' || i.status === 'deleting') ? 4_000 : false,
+  });
+}
+
+export function usePreviewImport() {
+  return useMutation({
+    mutationFn: ({ file, options }: { file: File; options?: ImportOptions }) => echoApi.previewImport(file, options),
+  });
+}
+
+function useInvalidateImports() {
+  const qc = useQueryClient();
+  const invalidateShares = useInvalidateShares();
+  return () => {
+    qc.invalidateQueries({ queryKey: IMPORTS_KEY });
+    invalidateShares();
+  };
+}
+
+export function useRunImport() {
+  const invalidate = useInvalidateImports();
+  return useMutation({
+    mutationFn: ({ file, options }: { file: File; options?: ImportOptions }) => echoApi.runImport(file, options),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRetryImportEmbedding() {
+  const invalidate = useInvalidateImports();
+  return useMutation({ mutationFn: (id: string) => echoApi.retryImportEmbedding(id), onSuccess: invalidate });
+}
+
+export function useDeleteImport() {
+  const invalidate = useInvalidateImports();
+  return useMutation({ mutationFn: (id: string) => echoApi.deleteImport(id), onSuccess: invalidate });
 }
 
 export function useCreateShare() {

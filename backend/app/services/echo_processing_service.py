@@ -286,6 +286,8 @@ def vector_metadata(share: Share) -> dict:
         "surface": share.surface,
         "author_is_tenant": bool(share.author_is_tenant),
         "voice_eligible": voice_eligible(share),
+        # S-3.7.5: lets an import be undone with one vector delete.
+        "import_id": share.import_id,
         "received_at": received.isoformat() if received else None,
     }
 

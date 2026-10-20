@@ -33,6 +33,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from sqlalchemy import func, or_
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -43,7 +44,7 @@ from app.services import echo_vectors
 logger = logging.getLogger(__name__)
 
 SURFACES: frozenset[str] = frozenset(
-    {"manual_quick_share", "drag_drop", "browser_ext", "email_in", "os_share"}
+    {"manual_quick_share", "drag_drop", "browser_ext", "email_in", "os_share", "file_import"}
 )
 PROCESSING_STATES: frozenset[str] = frozenset({"pending", "processed", "skipped", "failed"})
 
@@ -363,14 +364,24 @@ def list_shares(
     q: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    origin: str = "all",
+    import_id: str | None = None,
 ) -> tuple[list[Share], int]:
     """Newest first. ``q`` matches the text, the annotation or the payload
-    (a URL, a filename). Returns ``(page, total)``."""
+    (a URL, a filename). ``origin`` narrows to shares handed over one at a
+    time (``direct``) or written by an export import (``import``, S-3.7.5);
+    ``import_id`` lists one import oldest first. Returns ``(page, total)``."""
     if state is not None and state not in PROCESSING_STATES:
         raise InvalidShare(f"unknown processing_state {state!r}")
     query = db.query(Share).filter(Share.tenant_id == tenant_id)
     if state is not None:
         query = query.filter(Share.processing_state == state)
+    if import_id is not None:
+        query = query.filter(Share.import_id == import_id)
+    elif origin == "direct":
+        query = query.filter(Share.import_id.is_(None))
+    elif origin == "import":
+        query = query.filter(Share.import_id.is_not(None))
     if q:
         like = f"%{q}%"
         query = query.filter(
@@ -381,8 +392,13 @@ def list_shares(
             )
         )
     total = query.with_entities(func.count(Share.id)).scalar() or 0
+    order = (
+        (Share.occurred_at.asc(), Share.id.asc())
+        if import_id is not None
+        else (Share.received_at.desc(), Share.id.desc())
+    )
     page = (
-        query.order_by(Share.received_at.desc(), Share.id.desc())
+        query.order_by(*order)
         .offset(max(offset, 0))
         .limit(max(limit, 0))
         .all()
@@ -458,60 +474,110 @@ class ShareDeletion:
 
 
 def delete_share(db: Session, tenant_id: str, share_id: str) -> ShareDeletion:
-    """Remove the share and everything derived from it. Vector first (a
-    Chroma failure raises and nothing else is touched), then the file, then
-    the derived facts and the row in one commit."""
+    """Remove the share and everything derived from it (``delete_shares``)."""
     share = get_share(db, tenant_id, share_id)
+    result = delete_shares(db, tenant_id, [share.id])
+    return ShareDeletion(share_id, result.vectors, result.files, result.derived_facts)
 
-    vectors = echo_vectors.delete_share_vector(tenant_id, share.id)
+
+_IN_CHUNK = 900
+
+
+def delete_shares(db: Session, tenant_id: str, share_ids: list[str]) -> ShareDeletion:
+    """Remove shares and everything derived from them, in bulk: the one
+    cascade every delete path uses (a single share, an undone import,
+    S-3.7.5). Vectors first (a Chroma failure raises and nothing else is
+    touched), then files, then derived facts and the rows in one commit.
+    Ids that are not this tenant's are ignored. ``share_id`` in the result is
+    the first id, or "" for an empty list."""
+    ids = list(dict.fromkeys(share_ids))
+    # Only the columns the cascade needs: an undone import can be 100k+ rows.
+    # Look up by primary key and check the tenant here: with the tenant in the
+    # WHERE clause SQLite scans the tenant index once per chunk (quadratic).
+    shares = []
+    for i in range(0, len(ids), _IN_CHUNK):
+        shares.extend(
+            row
+            for row in db.query(
+                Share.id, Share.tenant_id, Share.file_path,
+                Share.derived_fact_ids_json, Share.derived_signal_ids_json,
+            )
+            .filter(Share.id.in_(ids[i : i + _IN_CHUNK]))
+            .all()
+            if row.tenant_id == tenant_id
+        )
+    if not shares:
+        return ShareDeletion(ids[0] if ids else "", 0, 0, 0)
+
+    vectors = echo_vectors.delete_share_vectors(tenant_id, [s.id for s in shares])
 
     files = 0
-    if share.file_path:
+    for share in shares:
+        if not share.file_path:
+            continue
         try:
             path = resolve_share_file(share.file_path, tenant_id)
         except InvalidShare:
             # A row whose path points outside this tenant's directory was
             # tampered with or corrupted. Never follow it; drop the row.
             logger.warning("echo: share %s has a file path outside its tenant dir", share.id)
-            path = None
-        if path is not None and path.exists():
+            continue
+        if path.exists():
             path.unlink()
-            files = 1
+            files += 1
 
-    fact_ids = _id_list(share.derived_fact_ids_json)
+    fact_ids = [fid for share in shares for fid in _id_list(share.derived_fact_ids_json)]
     facts = 0
-    if fact_ids:
-        facts = (
+    for i in range(0, len(fact_ids), _IN_CHUNK):
+        facts += (
             db.query(PersonalContext)
             .filter(
-                PersonalContext.id.in_(fact_ids),
+                PersonalContext.id.in_(fact_ids[i : i + _IN_CHUNK]),
                 PersonalContext.tenant_id == tenant_id,
             )
             .delete(synchronize_session=False)
         )
-    # S-3.3.1: the share stops counting as evidence. Its examples leave the
+    # S-3.3.1: each share stops counting as evidence. Its examples leave the
     # signals it fed (listed in `derived_signal_ids_json`); a signal with no
     # source left is tombstoned as `source_deleted`.
+    from app.models.activity_event import ActivityEvent
+    from app.models.voice_signal_input import VoiceSignalInput
     from app.services import activity_event_service, echo_signal_service
 
-    echo_signal_service.withdraw_source(
-        db, tenant_id, f"share:{share.id}", signal_ids=_id_list(share.derived_signal_ids_json)
-    )
-    # S-3.3.2: and out of the extraction ledger, with its style profile.
-    from app.models.voice_signal_input import VoiceSignalInput
-
-    db.query(VoiceSignalInput).filter(
-        VoiceSignalInput.tenant_id == tenant_id, VoiceSignalInput.source_ref == f"share:{share.id}"
-    ).delete(synchronize_session=False)
-    # S-3.2.1: and its "shared to Pratidhvani" event goes with it.
-    activity_event_service.delete_share_event(db, tenant_id, share.id)
-    db.delete(share)
+    for share in shares:
+        signal_ids = _id_list(share.derived_signal_ids_json)
+        if signal_ids:
+            echo_signal_service.withdraw_source(db, tenant_id, f"share:{share.id}", signal_ids=signal_ids)
+    found = [s.id for s in shares]  # every one checked to be this tenant's above
+    # The rows go by bulk statements, so detach any of them this session has
+    # loaded, as db.delete() would: a caller holding one must not refresh it.
+    gone = set(found)
+    for obj in list(db.identity_map.values()):
+        if isinstance(obj, Share):
+            identity = sa_inspect(obj).identity
+            if identity and identity[0] in gone:
+                db.expunge(obj)
+    for i in range(0, len(found), _IN_CHUNK):
+        chunk = found[i : i + _IN_CHUNK]
+        # S-3.2.1: and their "shared to Pratidhvani" events go with them (the
+        # bulk form of activity_event_service.delete_share_event).
+        db.query(ActivityEvent).filter(
+            ActivityEvent.tenant_id == tenant_id,
+            ActivityEvent.connector == activity_event_service.INTERNAL,
+            ActivityEvent.external_id.in_([activity_event_service.share_external_id(sid) for sid in chunk]),
+        ).delete(synchronize_session=False)
+        # S-3.3.2: and out of the extraction ledger, with its style profile.
+        db.query(VoiceSignalInput).filter(
+            VoiceSignalInput.tenant_id == tenant_id,
+            VoiceSignalInput.source_ref.in_([f"share:{sid}" for sid in chunk]),
+        ).delete(synchronize_session=False)
+        db.query(Share).filter(Share.id.in_(chunk)).delete(synchronize_session=False)
     db.commit()
     from app.services import echo_personal_vectors
 
     echo_personal_vectors.sync_soft(db, tenant_id)
     logger.info(
-        "echo: tenant %s deleted share %s (vectors=%d files=%d facts=%d)",
-        tenant_id[:8], share_id[:8], vectors, files, facts,
+        "echo: tenant %s deleted %d share(s) (vectors=%d files=%d facts=%d)",
+        tenant_id[:8], len(found), vectors, files, facts,
     )
-    return ShareDeletion(share_id, vectors, files, facts)
+    return ShareDeletion(found[0], vectors, files, facts)

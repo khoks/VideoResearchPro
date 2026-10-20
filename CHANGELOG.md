@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Library Q&A re-measured on the per-user corpus (2026-10-19, T-5.10.2.7)
 
-PR [#326](https://github.com/khoks/VideoResearchPro/pull/326). The D-055 method, replaying production's exact answer-step inputs through `claude-opus-5` at high effort and judging blind, run on library Q&A as it now behaves (per-user corpus, `document_id` scope, trust re-rank). The challenger won 2 of 10 questions, with mean relevance 8.63 vs 8.97. Under the pre-registered rule: **no re-tier warranted**. New script `backend/scripts/replay_library_qa_d055.py`; `judge_qa_pairs.py` gained `--arms`.
+PR [#326](https://github.com/khoks/VideoResearchPro/pull/326). The D-055 method, replaying production's exact answer-step inputs through `claude-opus-5` at high effort and judging blind, run on library Q&A as it now behaves (per-user corpus, `document_id` scope, trust re-rank). The challenger won 2 of 10 questions, with mean relevance 8.63 vs 8.97. Under the pre-registered rule: **no re-tier warranted**. That 21-to-8 preference for production turned out to be mostly a harness artifact: judges could not see the publication dates the answers cite, so cited dates read as invented. Re-judged with dates visible, the arms are level (challenger 15 / production 11; relevance 9.03 vs 9.00), which still means no re-tier. `judge_qa_pairs.py --dates-db` now supplies the dates, and E-7.1's clauses 3 and 4 are flagged for the same re-check. New script `backend/scripts/replay_library_qa_d055.py`; `judge_qa_pairs.py` gained `--arms`.
 
 ### Legacy global channel columns dropped; per-tenant sync time finally recorded (2026-10-19, S-5.10.3)
 

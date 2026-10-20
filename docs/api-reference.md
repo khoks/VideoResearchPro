@@ -1023,7 +1023,32 @@ Deletes one row; 404 if absent. The key is a path segment and Starlette decodes 
 Revoke a source: deletes every row attributed to it for the caller. `{ "deleted_count": n }`, idempotent.
 
 ### `GET /api/v1/echo/connectors`
-`{ "connectors": [], "supported_kinds": [...] }`. The connector registry is empty until E-3.2 ships a concrete connector.
+Every connector this install offers, with the caller's grant (S-3.2.1, [#336](https://github.com/khoks/VideoResearchPro/pull/336)). `connectors` (names) and `supported_kinds` are kept from v1.
+
+```json
+{ "connectors": ["github"], "supported_kinds": ["interest", "..."],
+  "items": [{ "name": "github", "display_name": "GitHub", "privacy_weight": "low",
+              "consent_disclosure": "…", "consent_version": "2026-10-19", "event_types": ["pushed_commit", "…"],
+              "configured": true, "connected": true,
+              "grant": { "account_label": "octocat", "granted_at": "…", "consent_version": "2026-10-19", "consent_outdated": false,
+                         "status": "idle", "last_sync_at": "…", "backfilled_at": "…", "last_error": null,
+                         "last_counts": { "added": 40, "updated": 2, "facts": 3 }, "events": 412 } }] }
+```
+
+### `POST /api/v1/echo/connectors/{name}/authorize`
+Body `{ "consent_version": "…" }`: the disclosure version the consent screen showed. Returns `{ "authorize_url": "…" }` for the browser to open. Records a single-use OAuth state bound to the caller (PKCE, ten minutes); the redirect URI is `APP_BASE_URL` + `/echo/connectors/{name}/callback`, never taken from the client. 404 unknown connector, 409 the disclosure changed (show it again), 503 the install has no OAuth client for it.
+
+### `POST /api/v1/echo/connectors/{name}/callback`
+Body `{ "code": "…", "state": "…" }`, posted by the frontend route the provider redirects to, with the caller's token. The state must be the caller's, for this connector, and unexpired; it is consumed. Stores the tokens Fernet-encrypted, records the grant, schedules syncs (`echo_sync`) and queues the backfill. Returns the connector item. Any failure is one generic 400, never which step failed.
+
+### `POST /api/v1/echo/connectors/{name}/sync`
+Sync now. `{ "dispatched": "queued" | "ran" | "off" | "queue_failed", "connector": {…} }`. 404 when not connected. The first sync after connecting is a backfill; later ones are incremental from the last success. A provider failure is recorded on the grant (`status: "error"`, `last_error`, "Reconnect to sync: …" when the grant no longer works), never raised.
+
+### `DELETE /api/v1/echo/connectors/{name}`
+Disconnect. Revokes at the provider (best effort) and deletes, in one request, the grant, the tokens, any pending state, every event the connector wrote, the facts derived from them, and its schedule. `{ "connector": "github", "events": 412, "facts": 3, "provider_revoked": true }`.
+
+### `GET /api/v1/echo/activity`
+The caller's activity timeline, newest first: `connector` (filter), `before` (ISO time; pass the previous page's `next_before`), `limit` (default 50, max 200). `{ "items": [{ "id", "connector", "event_type", "occurred_at", "payload", "text_content", "linked_document_id" }], "next_before": "…" | null }`.
 
 ### Shares inbox (S-3.7.1)
 Everything the user forwards to Echo, no approval step. Every share is `pending` until S-3.7.2's processing exists. **Context-only by default:** `author_is_tenant` is false unless the user says the words are theirs; such a share is never quoted and never enters a dataset or derived export.

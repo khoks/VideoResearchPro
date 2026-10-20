@@ -34,6 +34,7 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/author` | `AuthorPage` | protected, Pro+ | Author Studio: bind finished runs into a book; other kinds shown as coming later |
 | `/echo` | `EchoPage` | protected, Studio | Echo: personal-context store, readiness meter, sources and connectors, export and delete |
 | `/echo/inbox` | `EchoInboxPage` | protected, Studio | Echo's shares inbox: everything the user forwarded, with state and authorship |
+| `/echo/connectors/:name/callback` | `EchoConnectorCallbackPage` | protected | Where a provider returns after the user approves a connector: posts the code back, then returns to `/echo?connected=<name>` |
 | `/account/subscription` | `SubscriptionPage` | protected | Tier, upgrade / downgrade (demo billing) |
 | `/account/ai-models` | `AIModelsPage` | protected | Per-use-case LLM overrides and BYOK keys |
 | `*` | (redirect → `/`) | — | 404 → home |
@@ -359,7 +360,7 @@ Sections: **What you can make** (one card per kind from `GET /author/kinds`: `av
 ### `EchoPage` — `/echo` (Studio)
 **Purpose.** Echo's personal-context store. Backend: `backend/app/routers/echo.py`. Honest about scope: the store and readiness gates are real; connectors (E-3.2) and the "speak as me" agent (E-3.4) are not, and the page says so wherever it would otherwise imply them.
 
-Sections: **Readiness**, **Connectors** (with **Sources on record**), **What Echo knows** (grouped by the 10 kinds), **How you sound** (S-3.3.1), **Your Echo data** (S-3.10.1 / S-3.10.2), a **Not here yet** footer, and three modals (add / edit, forget, revoke). The subtitle links to the shares inbox.
+Sections: **Readiness**, **Connectors** (with **Sources on record**; S-3.2.1: one row per connector the install offers, with its privacy weight and status, **Connect** opening a consent dialog that shows the disclosure and what is recorded before any redirect, then **Sync now** and **Disconnect** (a confirmation saying how many events go); an auth failure offers **Reconnect**, a changed disclosure **Review and reconnect**; `?connected=<name>` after the callback shows a confirmation), **Activity** (S-3.2.1: the timeline, newest first, twenty at a time with **Show older**), **What Echo knows** (grouped by the 10 kinds), **How you sound** (S-3.3.1), **Your Echo data** (S-3.10.1 / S-3.10.2), a **Not here yet** footer, and three modals (add / edit, forget, revoke). The subtitle links to the shares inbox.
 
 | State | What renders |
 |-------|--------------|

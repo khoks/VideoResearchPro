@@ -268,28 +268,20 @@ def test_is_ready_false_when_no_personality_trait(db):
 # ---------------------------------------------------------------------------
 
 
-def test_list_connectors_starts_empty():
-    assert list_connectors() == []
+def test_the_old_registry_names_still_work():
+    """`echo_service.register_connector` / `list_connectors` re-export the
+    S-3.2.1 registry; registering adds, and the test leaves it as it found it."""
+    from app.connectors import registry
 
-
-def test_register_connector_adds_to_registry():
     class FakeConnector:
         name = "fake_test_connector"
 
-        def authorize_url(self, user, redirect_uri):
-            return ""
-
-        def revoke(self, db, user):
-            pass
-
-        def sync(self, db, user):
-            return 0
-
-        def supported_kinds(self):
-            return {"interest"}
-
     register_connector(FakeConnector())
-    assert "fake_test_connector" in list_connectors()
+    try:
+        assert "fake_test_connector" in list_connectors()
+    finally:
+        registry.unregister_connector("fake_test_connector")
+    assert "fake_test_connector" not in list_connectors()
 
 
 # ---------------------------------------------------------------------------

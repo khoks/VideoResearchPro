@@ -10,6 +10,21 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: connect services to Echo (2026-10-19)
+
+[S-3.2.1](docs/initiatives.md#s-321--connector-runtime-and-activity_events), PRs [#332](https://github.com/khoks/VideoResearchPro/pull/332) and [#336](https://github.com/khoks/VideoResearchPro/pull/336).
+
+- The Echo page lists the connectors this install offers. **Connect** shows
+  what the connector reads, how sensitive that is, and what it records,
+  before sending you to the provider; you come back connected and the first
+  sync runs in the background.
+- Syncs run on the scheduler, once to catch up and then from where they left
+  off; a provider failure is shown on the connector, never lost.
+- **Disconnect** deletes everything the connector brought in, and the facts
+  Echo inferred from it, in one step. The full Echo delete also revokes
+  every connector at its provider.
+- An **Activity** timeline shows what Echo has recorded you doing.
+
 ### Newsletter by email (2026-10-19, S-6.4.2)
 
 PR [#337](https://github.com/khoks/VideoResearchPro/pull/337). Runs on the scheduler ([D-077](docs/decisions.md#d-077--scheduler-one-static-beat-entry-over-table-rows-beat-is-its-own-process-with-no-pidfile-2026-10-19)).

@@ -90,6 +90,18 @@ export interface ClarifyResponse {
 
 export type AnswerLanguage = 'en' | 'hi' | 'es' | 'fr';
 
+/**
+ * What a library question was asked over (S-8.1.4; backend
+ * `app/schemas/qa_scope.py`). Null is the whole library. `shelf_id` narrows to
+ * a shelf's documents; `saved_search_id` only records that a saved search's run
+ * asked it. Unknown keys may appear from newer builds: keep, don't interpret.
+ */
+export interface QAScope {
+  shelf_id?: string | null;
+  saved_search_id?: string | null;
+  [key: string]: unknown;
+}
+
 export interface LibraryQAExchange {
   id: string;
   question: string;
@@ -98,6 +110,7 @@ export interface LibraryQAExchange {
   /** The backend has always sent it; typed for S-8.3.2's pin. */
   answer_language?: string;
   created_at: string;
+  scope?: QAScope | null;
 }
 
 export interface LibraryQARequest {

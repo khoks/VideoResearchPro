@@ -26,6 +26,10 @@ class LibraryQAExchange(Base):
     answer: Mapped[str] = mapped_column(Text)
     references_json: Mapped[str] = mapped_column(Text, default="[]")
     answer_language: Mapped[str] = mapped_column(String(10), default="en")
+    # S-8.1.4: what the question was asked over, as a JSON object (shape in
+    # app/schemas/qa_scope.py). NULL is the whole visible library — every row
+    # written before the column existed. Read through qa_scope_service.load.
+    scope_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )

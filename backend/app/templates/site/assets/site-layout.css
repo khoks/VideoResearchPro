@@ -1,0 +1,48 @@
+/* Site layout (S-6.2.1), appended after the book stylesheet (book.css).
+ * Paper-and-ink palette from docs/branding.md; dark mode follows the
+ * reader's system setting. No web fonts: nothing is fetched. */
+:root {
+  --paper: #faf6f0; --surface: #fffaf3; --sunken: #f0e9dd;
+  --ink: #1f1b16; --secondary: #5c5448; --muted: #7d756b;
+  --line: #d8cfc0; --accent: #7a2c1a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #1c1814; --surface: #252019; --sunken: #161310;
+    --ink: #e8e2d6; --secondary: #a89f93; --muted: #7c7264;
+    --line: #3a342b; --accent: #d07a5f;
+  }
+}
+body { background: var(--paper); color: var(--ink); }
+a { color: var(--accent); }
+.site-header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1.4rem;
+  padding: 0.8rem 1rem; border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.site-name { font-weight: 700; text-decoration: none; color: var(--ink); }
+.site-header nav { display: flex; gap: 1rem; }
+.site-header nav a { text-decoration: none; }
+.search { margin-left: auto; }
+.search input {
+  font: inherit; padding: 0.3rem 0.6rem; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--paper); color: var(--ink); min-width: 14rem;
+}
+.page { max-width: 75ch; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+.kicker { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: var(--muted); margin: 0; }
+.meta { color: var(--muted); font-size: 0.85em; }
+.lede { font-size: 1.1em; color: var(--secondary); }
+.note { font-style: italic; color: var(--secondary); }
+.listing { padding-left: 1.2em; }
+.listing li { margin: 0.35em 0; }
+.tags { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.tag {
+  display: inline-block; padding: 0.1rem 0.5rem; border: 1px solid var(--line);
+  border-radius: 999px; text-decoration: none; font-size: 0.85em;
+}
+.site-footer { border-top: 1px solid var(--line); color: var(--muted); font-size: 0.8em; padding: 1rem; text-align: center; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+th { background: var(--sunken); }
+th, td { border-color: var(--line); }
+blockquote { border-left-color: var(--line); color: var(--secondary); }
+pre { background: var(--sunken); }
+@media (max-width: 640px) { .search { margin-left: 0; width: 100%; } .search input { width: 100%; min-width: 0; } }

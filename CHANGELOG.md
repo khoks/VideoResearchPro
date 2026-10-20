@@ -10,6 +10,17 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Static wiki sites (2026-10-19, S-6.2.1)
+
+PR [#315](https://github.com/khoks/VideoResearchPro/pull/315). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **New site** on the Author page: pick shelves and runs, download a zip,
+  open `index.html` from disk. Every report is a page with its Q&A and
+  endnotes; every source has a page listing the reports that cite it, at
+  which moments, with its knowledge report when one exists; tags get pages.
+- **Search works offline** and nothing on the site loads from the web; the
+  only links that leave it go to the sources.
+
 ### Added: the scope of a library question (2026-10-19)
 
 [S-8.1.4](docs/initiatives.md#s-814--shelf-scoped-qa), PR [#313](https://github.com/khoks/VideoResearchPro/pull/313), [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19).

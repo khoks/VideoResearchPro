@@ -49,7 +49,7 @@ FORMATS: dict[str, str] = {
 }
 
 # How an output's ``content_text`` is served, by kind.
-TEXT_FORMAT_BY_KIND: dict[str, str] = {"book": "md", "deck": "md"}  # a deck's text is its Markdown rendering (S-6.3.1)
+TEXT_FORMAT_BY_KIND: dict[str, str] = {"book": "md", "deck": "md", "site": "md"}  # a deck's text is its Markdown rendering (S-6.3.1)
 DEFAULT_TEXT_FORMAT = "txt"
 
 ARTIFACT_STEM = "artifact"

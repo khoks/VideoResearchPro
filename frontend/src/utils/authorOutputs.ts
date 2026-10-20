@@ -27,7 +27,7 @@ export const OUTPUT_KIND_META: Record<string, KindMeta> = {
   },
   site: {
     label: 'Site',
-    description: 'A static personal wiki generated from your library.',
+    description: 'A static wiki of your reports and their sources: a zip of linked pages, with search, that opens from disk.',
     epic: 'E-6.2',
   },
   deck: {

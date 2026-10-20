@@ -33,6 +33,7 @@ settings.NOTES_INDEX_ENABLED = False
 # directly with every external call patched.
 settings.ECHO_SHARE_PROCESSING = "off"
 settings.ECHO_SIGNAL_EXTRACTION = "off"
+settings.ECHO_PERSONAL_INDEX_ENABLED = False
 
 # S-3.2.1: connector syncs are queued to Celery in production; the suite
 # never queues (the connector tests run syncs inline with fakes).

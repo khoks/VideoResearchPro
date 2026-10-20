@@ -118,6 +118,7 @@ def record_context(
         existing.expires_at = expires_at
         db.commit()
         db.refresh(existing)
+        _sync_vectors(db, user_id)
         return existing
 
     row = PersonalContext(
@@ -133,7 +134,16 @@ def record_context(
     db.add(row)
     db.commit()
     db.refresh(row)
+    _sync_vectors(db, user_id)
     return row
+
+
+def _sync_vectors(db: Session, tenant_id: str) -> None:
+    """S-3.3.3: keep ``personal_context_global`` matching the live facts and
+    signals. Fail-soft; the next sync (or the startup backfill) repairs it."""
+    from app.services import echo_personal_vectors
+
+    echo_personal_vectors.sync_soft(db, tenant_id)
 
 
 def get_context(
@@ -185,6 +195,7 @@ def delete_context(
         return False
     db.delete(row)
     db.commit()
+    _sync_vectors(db, user_id)
     return True
 
 
@@ -204,6 +215,7 @@ def revoke_source(db: Session, user_id: str, source: str) -> int:
         db.delete(r)
     if rows:
         db.commit()
+        _sync_vectors(db, user_id)
     return len(rows)
 
 

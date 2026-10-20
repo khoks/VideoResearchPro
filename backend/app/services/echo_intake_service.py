@@ -507,6 +507,9 @@ def delete_share(db: Session, tenant_id: str, share_id: str) -> ShareDeletion:
     activity_event_service.delete_share_event(db, tenant_id, share.id)
     db.delete(share)
     db.commit()
+    from app.services import echo_personal_vectors
+
+    echo_personal_vectors.sync_soft(db, tenant_id)
     logger.info(
         "echo: tenant %s deleted share %s (vectors=%d files=%d facts=%d)",
         tenant_id[:8], share_id[:8], vectors, files, facts,

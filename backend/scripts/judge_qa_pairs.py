@@ -111,10 +111,40 @@ def _chunk_key(c: dict) -> tuple:
     return (c.get("document_id"), c.get("chunk_index"), c.get("timestamp_start"))
 
 
+_VINTAGE: dict[str, str] = {}
+
+
+def _load_vintage(db_path: str) -> None:
+    """`--dates-db`: each document's `published <date> | discusses <era>`, as
+    the answer prompt renders it (qa_agent._vintage_parts), for run files
+    recorded before chunk records carried it. Without this, every date an
+    answer took from source metadata reads as unsupported to the judges."""
+    import sqlite3
+
+    from app.services import temporal_service
+
+    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    for doc_id, published_at, era_raw in con.execute(
+            "SELECT document_id, published_at, discussed_era_json FROM documents"):
+        parts = []
+        pub = temporal_service.published_display(published_at)
+        if pub:
+            parts.append(f"published {pub}")
+        era = temporal_service.era_for_prompt(temporal_service.load_era(temporal_service._EraRow(era_raw)))
+        if era:
+            parts.append(era)
+        if parts:
+            _VINTAGE[doc_id] = " | ".join(parts)
+    con.close()
+
+
 def _render(chunks: list[dict], labels: dict[tuple, str]) -> str:
     parts = []
     for c in chunks:
         head = f"[{labels[_chunk_key(c)]}] \"{c.get('title', '')}\" by {c.get('channel_name') or 'unknown'}"
+        vintage = c.get("vintage") or _VINTAGE.get(c.get("document_id") or "", "")
+        if vintage:
+            head += f" | {vintage}"
         parts.append(head + "\n" + (c.get("text") or "").strip())
     return "\n\n".join(parts)
 
@@ -134,6 +164,9 @@ def main() -> int:
     ap.add_argument("--arms", default="on,off",
                     help="the two arm names in the run files, mapped onto the internal on/off slots "
                          "(e.g. challenger,production for a D-055 replay); the summary records the mapping")
+    ap.add_argument("--dates-db", default=None,
+                    help="SQLite copy to read each document's publication date and era from, for run "
+                         "files whose chunk records predate the `vintage` field")
     ap.add_argument("--tiebreak", default=None,
                     help="same-family fallback for the THIRD verifier: votes only on a claim the first two "
                          "split on and the third has no valid vote for (e.g. after a provider quota runs out)")
@@ -141,6 +174,10 @@ def main() -> int:
 
     _load_keys()
     from judge_pair import html_to_text
+
+    if args.dates_db:
+        _load_vintage(args.dates_db)
+        print(f"dates for {len(_VINTAGE)} documents from {args.dates_db}", flush=True)
 
     runs, out = Path(args.runs), Path(args.out)
     out.mkdir(parents=True, exist_ok=True)

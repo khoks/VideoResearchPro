@@ -10,6 +10,17 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: "You might ask…" suggestion cards (2026-10-19)
+
+PR [#308](https://github.com/khoks/VideoResearchPro/pull/308). S-8.4.2, plan [m4-question-suggestions](docs/plans/m4-question-suggestions.md).
+
+- Under the composer on a run's page and on library Q&A, up to five suggested
+  next questions. A click puts one in the box; Shift-click asks it at once.
+- The knowledge drawer suggests questions about its source and hands them to
+  library Q&A.
+- The card loads after the page, disappears when there is nothing to suggest,
+  and is hidden while Q&A is down. Each use is logged for click-through.
+
 ### Added: question suggestions endpoint (2026-10-19)
 
 PR [#306](https://github.com/khoks/VideoResearchPro/pull/306). S-8.4.1, plan [m4-question-suggestions](docs/plans/m4-question-suggestions.md).

@@ -298,7 +298,7 @@ Save a Q&A query → re-run on a schedule → notify when new library content ma
 
 ---
 
-### M4 — Question suggestions 🔵
+### M4 — Question suggestions 🟢
 
 Use the `qa_library_global` collection to suggest follow-up questions when the user opens a job, document, or knowledge artifact. Directly answers the user's "learn from past questions" ask.
 
@@ -308,7 +308,7 @@ Use the `qa_library_global` collection to suggest follow-up questions when the u
 
 **UI:** "You might ask..." card below the Q&A input.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.4](initiatives.md#e-84--question-suggestions-m4); plan [`plans/m4-question-suggestions.md`](plans/m4-question-suggestions.md). Nearest past questions from `qa_library_global` plus a cheap-tier generation call, cached per context; the first piece of Echo's anticipation capability. **🟡 2026-10-19:** the endpoint shipped (S-8.4.1, PR [#306](https://github.com/khoks/VideoResearchPro/pull/306)): `GET /suggestions` for runs, sources and the library, `qa_suggest_questions` on the volume tier with reasoning off, a fingerprinted per-context cache, click logging. The cards (S-8.4.2) are next.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.4](initiatives.md#e-84--question-suggestions-m4); plan [`plans/m4-question-suggestions.md`](plans/m4-question-suggestions.md). Nearest past questions from `qa_library_global` plus a cheap-tier generation call, cached per context; the first piece of Echo's anticipation capability. **🟡 2026-10-19:** the endpoint shipped (S-8.4.1, PR [#306](https://github.com/khoks/VideoResearchPro/pull/306)): `GET /suggestions` for runs, sources and the library, `qa_suggest_questions` on the volume tier with reasoning off, a fingerprinted per-context cache, click logging. **🟢 2026-10-19:** the cards shipped (S-8.4.2, PR [#308](https://github.com/khoks/VideoResearchPro/pull/308)) on the job page, library Q&A and the knowledge drawer.
 
 ---
 

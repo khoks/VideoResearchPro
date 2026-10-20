@@ -340,6 +340,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `ECHO_SIGNALS_BATCH_TOKENS` | No | `6000` | User text per economy-tier call |
 | `ECHO_SIGNALS_MAX_PER_BATCH` / `ECHO_SIGNALS_MAX_OUTPUT_TOKENS` | No | `12` / `2500` | Candidates per call and the output cap that bounds them (reasoning stays off) |
 | `ECHO_SIGNALS_MAX_BATCHES_PER_RUN` | No | `20` | Cost bound per run; a larger backlog is read over several runs |
+| `ECHO_SIGNALS_IMPORT_SAMPLE` / `ECHO_SIGNALS_MIN_PASSAGE_WORDS` | No | `300` / `4` | An export import is one input: stylometry reads every own-words turn; the model reads at most this many turns of at least this many words, spread over the chat's timeline (T-3.3.2.10) |
 | `ECHO_PERSONAL_INDEX_ENABLED` | No | `True` | S-3.3.3: keep `personal_context_global` (one vector per live fact and signal) in step on every write and at startup. Off for the test suite, like `NOTES_INDEX_ENABLED` |
 | **Visual understanding (R1 / E-1.18)** | | | |
 | `VISUAL_ENABLED` | No | `False` | Install-wide switch for frame capture + description. AND-ed with the per-job `visual_analysis` opt-in — both must be true. Off by default: capture needs a *video* stream (more yt-dlp traffic than the audio path that caused the D-051 IP block) and it is the app's only multimodal spend |

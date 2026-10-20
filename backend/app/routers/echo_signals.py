@@ -14,7 +14,16 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
 from app.models.user import User
-from app.schemas.voice_signal import VoiceSignalCreate, VoiceSignalItem, VoiceSignalList, VoiceSignalPatch
+from app.config import settings
+from app.schemas.voice_signal import (
+    LearningState,
+    LearnResponse,
+    VoiceSignalCreate,
+    VoiceSignalItem,
+    VoiceSignalList,
+    VoiceSignalPatch,
+)
+from app.services import echo_signal_extraction as extraction
 from app.services import echo_signal_service as signals
 from app.services.tier_service import require_feature
 
@@ -37,7 +46,37 @@ def list_signals(
     current_user: User = Depends(ECHO),
 ):
     rows = signals.list_signals(db, current_user.id, signal_type=signal_type, language=language)
-    return VoiceSignalList(items=[_item(r) for r in rows], consent_version=signals.CONSENT_VERSION)
+    return VoiceSignalList(
+        items=[_item(r) for r in rows],
+        consent_version=signals.CONSENT_VERSION,
+        learning=_learning(db, current_user.id),
+    )
+
+
+def _learning(db: Session, tenant_id: str) -> LearningState:
+    inputs = extraction.gather_inputs(db, tenant_id)
+    return LearningState(
+        mode=(settings.ECHO_SIGNAL_EXTRACTION or "off").lower(),
+        inputs=len(inputs),
+        by_language=extraction.inputs_by_language(inputs),
+        pending=extraction.pending(db, tenant_id, inputs).count,
+        threshold=settings.ECHO_SIGNALS_MIN_NEW_INPUTS,
+        last_learned_at=_utc(extraction.last_learned_at(db, tenant_id)),
+    )
+
+
+def _utc(dt):
+    """Stored naive in UTC; sent with its offset so the browser shows local time."""
+    from datetime import timezone
+
+    return dt.replace(tzinfo=timezone.utc) if dt is not None and dt.tzinfo is None else dt
+
+
+@router.post("/learn", response_model=LearnResponse, status_code=202)
+def learn_now(db: Session = Depends(get_db), current_user: User = Depends(ECHO)):
+    """"Learn now": queue a run for whatever is waiting, below the threshold too."""
+    status = extraction.maybe_queue(db, current_user.id, force=True)
+    return LearnResponse(status=status, pending=extraction.pending(db, current_user.id).count)
 
 
 @router.get("/export")

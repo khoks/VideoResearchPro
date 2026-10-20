@@ -137,6 +137,8 @@ UseCase = Literal[
     "saved_search_judge",
     # Echo share processing (S-3.7.2) — app/services/echo_processing_service.py
     "echo_share_ocr",
+    # Echo voice and personality signals (S-3.3.2) — app/services/echo_signal_extraction.py
+    "echo_extract_signals",
 ]
 
 # Use cases whose prompts carry IMAGES, not just text.
@@ -1257,6 +1259,40 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "saved_search_runs row (decided_by = judged) and its notifications' "
             "read state is recorded, which is the data a grading would use. "
             "Reasoning must stay off: the call caps output at 400 tokens.",
+            related=("D-057",),
+        ),
+    ),
+    # --- Echo voice and personality signals (S-3.3.2) -----------------
+    "echo_extract_signals": UseCaseInfo(
+        default_route="fast",
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
+        summary=(
+            "Reads a batch of the user's OWN words (notes, the questions they "
+            "asked, shares they marked as written by them) and returns strict "
+            "JSON candidate style and personality signals, each with verbatim "
+            "examples cited by passage id. Code keeps an example only when it "
+            "is found exactly in its passage, then merges candidates into "
+            "voice_signals by (type, value, language)."
+        ),
+        typical_input_tokens=4_500,
+        p95_input_tokens=7_000,
+        typical_output_tokens=900,
+        min_context_recommended=16_384,
+        rationale=(
+            "Map-phase volume: one call per batch of about 6,000 tokens of new "
+            "text, run once per input version, so the economy tier with "
+            "reasoning OFF (D-057), as the plan asks. Off is also a correctness "
+            "rule under the 2,500-token output cap (the D-052 trap). The "
+            "verbatim check in code, not the model, is what keeps a signal "
+            "tied to the user's words. Fail-soft: a failed batch stays pending "
+            "and stylometry still runs, so it is not a feature gate in "
+            "llm_smoke."
+        ),
+        guidance=_unmeasured(
+            "Signal quality has not been graded; S-3.3.4's harness measures "
+            "whether drafts that use the signals sound more like the user. "
+            "Cost was measured at build time (S-3.3.2 PR). Reasoning must stay "
+            "off: the call caps output at 2,500 tokens.",
             related=("D-057",),
         ),
     ),

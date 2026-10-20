@@ -497,6 +497,12 @@ def delete_share(db: Session, tenant_id: str, share_id: str) -> ShareDeletion:
     echo_signal_service.withdraw_source(
         db, tenant_id, f"share:{share.id}", signal_ids=_id_list(share.derived_signal_ids_json)
     )
+    # S-3.3.2: and out of the extraction ledger, with its style profile.
+    from app.models.voice_signal_input import VoiceSignalInput
+
+    db.query(VoiceSignalInput).filter(
+        VoiceSignalInput.tenant_id == tenant_id, VoiceSignalInput.source_ref == f"share:{share.id}"
+    ).delete(synchronize_session=False)
     # S-3.2.1: and its "shared to Pratidhvani" event goes with it.
     activity_event_service.delete_share_event(db, tenant_id, share.id)
     db.delete(share)

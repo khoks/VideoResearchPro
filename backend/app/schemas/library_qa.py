@@ -6,7 +6,13 @@ from pydantic import BaseModel, Field
 
 
 class LibraryReference(BaseModel):
-    """A citation surfaced from the global library RAG."""
+    """A citation surfaced from the global library RAG.
+
+    Extra fields pass through: references are polymorphic by
+    `source_type` (see `schemas.qa.Reference`).
+    """
+
+    model_config = {"extra": "allow"}
 
     video_id: str
     video_url: str

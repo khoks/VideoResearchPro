@@ -32,7 +32,8 @@ export type ReferenceSourceType =
   | 'fb_post'
   | 'ig_post'
   | 'li_post'
-  | 'tweet';
+  | 'tweet'
+  | 'note';
 
 export interface Reference {
   /** Absent on legacy rows; defaults to "video" in the renderer. */
@@ -64,6 +65,19 @@ export interface Reference {
   instance?: string;
   /** PDF: 1-indexed page number where the chunk's dominant segment lives. */
   page_number?: string;
+
+  // S-8.5.2: the asker's own note, cited like a source. The renderer shows
+  // "You wrote this on <date>" and links to what the note is on.
+  note_id?: string;
+  note_target_type?: string;
+  note_target_id?: string;
+  note_target_label?: string | null;
+  /** qa_exchange targets only: the job that holds the exchange. */
+  note_target_parent_id?: string | null;
+  /** ISO-8601 with offset. */
+  note_created_at?: string;
+  /** The note's opening, for the hover title. */
+  quote?: string;
 }
 
 export interface QAExchange {

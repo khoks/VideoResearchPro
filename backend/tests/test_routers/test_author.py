@@ -288,13 +288,14 @@ def test_create_output_unsupported_kind_returns_400(unauthenticated_client, db):
     )
     assert r.status_code == 400
 
-
+    """`reel` is a supported kind with no outputter yet (sites and decks ship
+    as of S-6.2.1 / S-6.3.1) → 501."""
 def test_create_output_no_outputter_returns_501(unauthenticated_client, db):
     """`site` is a supported kind but no outputter ships in v1 → 501."""
     _, headers = _pro_headers(db, "no-out@x.com")
     r = unauthenticated_client.post(
         "/api/v1/author/outputs",
-        json={"kind": "site", "title": "x", "source_ids": []},
+        json={"kind": "reel", "title": "x", "source_ids": []},
         headers=headers,
     )
     assert r.status_code == 501

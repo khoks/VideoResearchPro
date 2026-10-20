@@ -33,6 +33,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from sqlalchemy import func, or_
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -548,6 +549,14 @@ def delete_shares(db: Session, tenant_id: str, share_ids: list[str]) -> ShareDel
         if signal_ids:
             echo_signal_service.withdraw_source(db, tenant_id, f"share:{share.id}", signal_ids=signal_ids)
     found = [s.id for s in shares]  # every one checked to be this tenant's above
+    # The rows go by bulk statements, so detach any of them this session has
+    # loaded, as db.delete() would: a caller holding one must not refresh it.
+    gone = set(found)
+    for obj in list(db.identity_map.values()):
+        if isinstance(obj, Share):
+            identity = sa_inspect(obj).identity
+            if identity and identity[0] in gone:
+                db.expunge(obj)
     for i in range(0, len(found), _IN_CHUNK):
         chunk = found[i : i + _IN_CHUNK]
         # S-3.2.1: and their "shared to Pratidhvani" events go with them (the

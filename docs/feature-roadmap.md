@@ -87,13 +87,15 @@ Targeted Phase 2 (2026 Q3) for non-foundation source types. Detailed design in [
 
 ### L2 — Author Studio (output generation) 🟡
 
-**Progress 2026-10-19.** Three of the five kinds ship.
+**Progress 2026-10-19.** Four of the five kinds ship.
 - **Books** generate in the worker with live progress, numbered endnotes and downloads as Markdown, EPUB and, with an optional converter, PDF (PRs #281, #284, #293, #298, #303).
 - **Model-written framing** for books ships opt-in. Two blind rounds preferred it every time but flagged too many unsupported framing sentences, so the default stays off ([D-093](decisions.md#d-093--book-cohesion-pass-ships-opt-in-none-stays-the-default-after-two-blind-rounds-2026-10-19), PR #310).
 - **Slide decks** ship as PowerPoint with every slide citing its sources (PR #314).
 - **Static wiki sites** ship as a zip that opens from disk (PR #315).
 
-Newsletters wait on Phase 2 notifications. Reels wait on the TTS decision.
+- **Newsletters** list what is new in your library since the last issue, straight from the database, and arrive by email on a schedule you set, once per period (PRs #334, #337). An issue with nothing new is skipped, not sent. The model-written featured section is opt-in: blind judges preferred it every time but flagged too many sentences pinned to the wrong source moment ([D-097](decisions.md#d-097--newsletter-featured-section-ships-opt-in-the-rest-of-an-issue-is-listed-from-the-database-2026-10-19)).
+
+Reels wait on the TTS decision. Site publishing (S-6.2.2) is design only.
 
 **Motivation.** The accumulated library is rich enough to produce **derivative artifacts** — books, websites, decks, newsletters, reels — not just answers. The user explicitly asked for this. Output generation closes the loop: ingest → understand → produce.
 

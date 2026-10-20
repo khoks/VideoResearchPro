@@ -235,6 +235,11 @@ GET    /api/v1/search?q=&types=&limit= # Grouped tenant-scoped keyword search (F
 GET    /api/v1/suggestions?context=      # "You might ask…": job:<id> | document:<id> | library (S-8.4.1)
 POST   /api/v1/suggestions/feedback      # A suggestion was used (fill | ask), for click-through
 
+GET    /api/v1/saved-searches            # Pinned library questions (Pro+), S-8.3.2
+POST   /api/v1/saved-searches            # Pin: {question, cadence, scope?, notify_email?}
+GET/PATCH/DELETE /api/v1/saved-searches/{id}
+POST   /api/v1/saved-searches/{id}/run-now  # Queue a run now (quota checked first)
+
 GET    /api/v1/channels                # List all channels
 GET    /api/v1/channels/{id}           # Single channel detail
 POST   /api/v1/channels/{id}/subscribe

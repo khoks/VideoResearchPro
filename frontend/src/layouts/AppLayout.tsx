@@ -242,6 +242,8 @@ function NavContent({
 }: NavContentProps) {
   // S-8.10.1: the wizard is reopenable from here until it is finished or skipped.
   const showGettingStarted = useShowGettingStarted();
+  // S-8.3.2: pinned questions, for tiers that have them.
+  const showSavedSearches = useTierCapabilities().has('saved_searches');
   return (
     <nav aria-label="Primary" style={{ display: 'flex', flexDirection: 'column', gap: space['5'] }}>
       {showGettingStarted && (
@@ -259,6 +261,9 @@ function NavContent({
         <NavItem active={active.library}     onClick={() => onChange('library')}>All sources</NavItem>
         <NavItem active={active['library-qa']} onClick={() => onChange('library-qa')}>Ask the library</NavItem>
         <NavItem active={pathname.startsWith('/library/graph')} onClick={() => onNavigatePath('/library/graph')}>Library map</NavItem>
+        {showSavedSearches && (
+          <NavItem active={pathname === '/saved-searches'} onClick={() => onNavigatePath('/saved-searches')}>Saved searches</NavItem>
+        )}
       </NavGroup>
       <ShelvesNavGroup pathname={pathname} onNavigate={onNavigatePath} canWrite={canWriteShelves} />
       <NavGroup label="Knowledge">

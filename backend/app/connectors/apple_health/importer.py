@@ -96,7 +96,20 @@ def _read(source: ImportSource, stats: dict[str, int]) -> _Totals:
     member = _member(source)
     with source.open_binary(member) as fh:
         try:
-            for _event, elem in ET.iterparse(fh, events=("end",)):
+            # Clearing an element leaves it in its parent's child list, so the
+            # root is cleared after each top-level element too; without that
+            # memory grew by about 95 bytes a record (230 MB for 2.4 million).
+            root = None
+            depth = 0
+            for event, elem in ET.iterparse(fh, events=("start", "end")):
+                if event == "start":
+                    if root is None:
+                        root = elem
+                    depth += 1
+                    continue
+                depth -= 1
+                if depth == 1:
+                    root.clear()
                 tag = elem.tag
                 if tag == "Record":
                     totals.records += 1
@@ -159,7 +172,8 @@ def nights(segments: list[tuple[datetime, datetime]]) -> list[tuple[float, datet
 def facts(totals: _Totals, window_days: int) -> list[DerivedFact]:
     if totals.latest is None:
         return []
-    since = totals.latest - timedelta(days=window_days)
+    # The window ends on the latest day and includes it.
+    since = totals.latest - timedelta(days=window_days - 1)
     out: list[DerivedFact] = []
 
     # Each source's nights, keyed by the date of waking; the source that

@@ -43,7 +43,15 @@ _SEARCH = re.compile(r"(^|/)YouTube[^/]*/history/search-history\.json$", re.I)
 _WATCHED_PREFIX = re.compile(r"^Watched\s+", re.I)
 
 
+_PLAIN_WATCH = "https://www.youtube.com/watch?v="
+
+
 def _video_id(url: str) -> str | None:
+    if url and url.startswith(_PLAIN_WATCH):
+        # Nearly every entry; urlsplit + parse_qs cost a third of the parse.
+        vid = url[len(_PLAIN_WATCH):].split("&", 1)[0].split("#", 1)[0]
+        if vid:
+            return vid
     parts = urlsplit(url or "")
     if "youtube.com" in parts.netloc and parts.path == "/watch":
         return (parse_qs(parts.query).get("v") or [None])[0]
@@ -66,7 +74,9 @@ def _is_ad(item: dict) -> bool:
 def watch_events(source: ImportSource, member: str, stats: dict[str, int]) -> Iterator[ActivityEvent]:
     with source.open_text(member) as stream:
         for item in iter_json_array(stream):
-            if not isinstance(item, dict) or _is_ad(item):
+            if not isinstance(item, dict):
+                continue
+            if _is_ad(item):
                 stats["ads_skipped"] = stats.get("ads_skipped", 0) + 1
                 continue
             vid = _video_id(item.get("titleUrl", ""))

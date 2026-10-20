@@ -293,6 +293,48 @@ def test_sleep_stages_join_into_one_night_and_a_long_gap_splits_it():
     assert len(split) == 1 and split[0][2] == _at("02:00", 13), "a three-hour gap starts a new session; one hour is no night"
 
 
+def _health_export(days: int) -> bytes:
+    """``days`` nights, step days and blood-pressure correlations (whose
+    nested records are not steps or sleep)."""
+    rows = []
+    for d in range(days):
+        day = datetime(2023, 1, 1) + timedelta(days=d)
+        bed, wake = day.replace(hour=23), day.replace(hour=23) + timedelta(hours=7)
+        rows.append(
+            f'<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Watch" startDate="{bed:%Y-%m-%d %H:%M:%S} +0530" '
+            f'endDate="{wake:%Y-%m-%d %H:%M:%S} +0530" value="HKCategoryValueSleepAnalysisAsleepCore"/>'
+        )
+        rows.append(
+            f'<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Watch" startDate="{day:%Y-%m-%d} 09:00:00 +0530" '
+            f'endDate="{day:%Y-%m-%d} 10:00:00 +0530" value="5000"><MetadataEntry key="k" value="v"/></Record>'
+        )
+        rows.append(
+            f'<Correlation type="HKCorrelationTypeIdentifierBloodPressure" startDate="{day:%Y-%m-%d} 08:00:00 +0530">'
+            '<Record type="HKQuantityTypeIdentifierBloodPressureSystolic" value="120"/></Correlation>'
+        )
+    return ('<?xml version="1.0"?><HealthData><ExportDate value="x"/>' + "".join(rows) + "</HealthData>").encode()
+
+
+def test_the_window_counts_exactly_its_days_and_the_parse_keeps_no_records(monkeypatch):
+    real = health.ET.iterparse
+    roots = []
+
+    def watched(*args, **kwargs):
+        for event, elem in real(*args, **kwargs):
+            if not roots:
+                roots.append(elem)
+            yield event, elem
+
+    monkeypatch.setattr(health.ET, "iterparse", watched)
+    source = ImportSource(io.BytesIO(_health_export(40)), "export.xml", max_uncompressed=10**9)
+    facts = {f.key: f.value for f in health.IMPORTER.parse(source, tenant_id="t", options={"window_days": 30})}
+    # The window ends on the last wake-up, the morning after the last step day.
+    assert facts["sleep"]["nights"] == 30 and facts["steps"]["days"] == 29
+    # Cleared records stay in the root's child list unless the root is
+    # cleared too; that grew memory by about 95 bytes a record.
+    assert len(roots[0]) == 0
+
+
 # ---------------------------------------------------------------------------
 # Re-imports, undo, tenants
 # ---------------------------------------------------------------------------

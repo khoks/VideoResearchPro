@@ -379,7 +379,7 @@ def _store_new_events(db: Session, tenant_id: str, connector: str, import_id: st
         for eid, e in unique.items() if eid not in held
     ]
     if fresh:
-        result = activity_event_service.store_events(db, tenant_id, connector, fresh)
+        result = activity_event_service.store_events(db, tenant_id, connector, fresh, batch_size=_EVENT_BATCH)
         counts["events"] = counts.get("events", 0) + result["added"]
     counts["events_already_held"] = counts.get("events_already_held", 0) + len(held)
 

@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Fix: the Echo panel shows a draft the way speak-as-me returns it (S-3.8.1, 2026-10-20)
 
-PR [#PRH](https://github.com/khoks/VideoResearchPro/pull/PRH).
+PR [#361](https://github.com/khoks/VideoResearchPro/pull/361).
 
 - The voice-match score reads on its 0 to 100 scale ("Sounds like you:
   82%"). The old reading treated 1 as 100%.

@@ -12,9 +12,13 @@ By kind:
   extractor the paste path uses. The extracted text is embedded. A non-YouTube
   link that the paste path can ingest gets a **library offer**: one click
   later adds it to the library, visible to the sharer only.
-- **file** — a plain-text file is decoded and embedded. Images (OCR) and audio
-  (transcription) are part 2 of this story; until then such shares stay
-  ``pending`` with a note saying why, and part 2 processes them.
+- **file** — a plain-text file is decoded. An image is read by on-device OCR,
+  with a vision-model fallback when that reading is not confident; a voice
+  memo or video clip is transcribed by Whisper; a PDF gives its text layer
+  (``echo_media``). Remote readers honour ``ECHO_REMOTE_MEDIA``: when it is
+  off a share they would need is ``skipped`` with a note saying so.
+  Extracted text is capped at ``ECHO_SHARE_TEXT_MAX_CHARS``; the file
+  itself stays whole in the archive.
 
 Fail-soft: a share whose processing fails is marked ``failed`` with the
 reason in ``processing_json`` and stays browsable, editable and deletable.
@@ -36,18 +40,13 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.share import Share
-from app.services import echo_intake_service, echo_vectors
+from app.services import echo_intake_service, echo_media, echo_vectors
 
 logger = logging.getLogger(__name__)
 
 YOUTUBE_CONTENT_TYPES = frozenset({"youtube_video", "youtube_short"})
 _TEXT_FILE_TYPES = frozenset({"text_file"})
-_PART_TWO_TYPES = {
-    "image": "Text recognition for images arrives with S-3.7.2 part 2.",
-    "voice_memo": "Transcription for audio arrives with S-3.7.2 part 2.",
-    "video_clip": "Transcription for video clips arrives with S-3.7.2 part 2.",
-    "pdf": "PDF text extraction for shares arrives with S-3.7.2 part 2.",
-}
+_RECORDING_TYPES = frozenset({"voice_memo", "video_clip"})
 
 
 class ProcessingError(RuntimeError):
@@ -162,19 +161,107 @@ def _process_url(share: Share, payload: dict) -> tuple[str, dict]:
     return _process_article(url)
 
 
-def _process_file(share: Share, payload: dict) -> tuple[str, dict] | ProcessResult:
-    if share.content_type in _TEXT_FILE_TYPES:
-        path = echo_intake_service.resolve_share_file(share.file_path or "", share.tenant_id)
-        data = path.read_bytes()
-        try:
-            text = data.decode("utf-8")
-        except UnicodeDecodeError:
-            text = data.decode("latin-1")
-        return text[: settings.ECHO_SHARE_TEXT_MAX_CHARS], {"extractor": "text_file"}
-    reason = _PART_TWO_TYPES.get(
-        share.content_type, "No processor handles this kind of file yet."
+def _capped(text: str, fields: dict) -> tuple[str, dict]:
+    """Keep the first ``ECHO_SHARE_TEXT_MAX_CHARS`` of a file's text; the
+    file itself stays whole in the archive."""
+    limit = settings.ECHO_SHARE_TEXT_MAX_CHARS
+    if len(text) <= limit:
+        return text, fields
+    note = (
+        f"Only the first {limit:,} of {len(text):,} characters are kept here; "
+        "the file itself is whole in your archive."
     )
-    return ProcessResult("pending", reason)
+    return text[:limit], {**fields, "truncated": True, "note": fields.get("note") or note}
+
+
+def _process_image(db: Session, share: Share, path) -> tuple[str, dict] | ProcessResult:
+    image = echo_media.load_image(path)
+    local = echo_media.ocr_local(image)
+    fields: dict = {"extractor": "ocr_local"}
+    if local is not None:
+        fields["ocr_confidence"] = round(local.mean_score, 3)
+        if local.confident():
+            return local.text, fields
+    if not echo_media.vision_permitted():
+        blocked = echo_media.remote_block_reason() or "no vision model is allowed"
+        if local is not None and local.text:
+            return local.text, {
+                **fields,
+                "note": "On-device OCR read this with low confidence. It was not "
+                f"sent to a vision model: {blocked}.",
+            }
+        return ProcessResult(
+            "skipped",
+            "On-device OCR found no text. The image was not sent to a vision "
+            f"model: {blocked}.",
+        )
+    try:
+        text = echo_media.ocr_vision(image, tenant_id=share.tenant_id, db=db)
+    except Exception as e:
+        logger.warning("echo: vision OCR failed for share %s: %s", share.id, e)
+        if local is not None and local.text:
+            return local.text, {
+                **fields,
+                "note": "The vision model could not be reached, so this is the "
+                "on-device reading, which had low confidence.",
+            }
+        raise ProcessingError("Reading the image failed: the vision model could not be reached.") from e
+    vision_fields = {k: v for k, v in fields.items() if k != "extractor"}
+    vision_fields["extractor"] = "ocr_vision"
+    if not text:
+        vision_fields["note"] = "No text found in this image."
+    return text, vision_fields
+
+
+def _process_recording(db: Session, share: Share, path) -> tuple[str, dict]:
+    transcript = echo_media.transcribe(
+        path, tenant_id=share.tenant_id, db=db, label=f"share:{share.id[:8]}"
+    )
+    fields = {
+        "extractor": "whisper",
+        "language": transcript.language,
+        "duration_seconds": transcript.duration_seconds,
+    }
+    if not transcript.text:
+        fields["note"] = "No speech found in this recording."
+    return transcript.text, fields
+
+
+def _process_pdf(path) -> tuple[str, dict]:
+    pdf = echo_media.pdf_text(path)
+    return pdf.text, {
+        "extractor": "pdf_text",
+        "page_count": pdf.total_pages,
+        "pages_with_text": pdf.pages_with_text,
+    }
+
+
+def _process_file(db: Session, share: Share, payload: dict) -> tuple[str, dict] | ProcessResult:
+    path = echo_intake_service.resolve_share_file(share.file_path or "", share.tenant_id)
+    kind = share.content_type
+    try:
+        if kind in _TEXT_FILE_TYPES:
+            data = path.read_bytes()
+            try:
+                text = data.decode("utf-8")
+            except UnicodeDecodeError:
+                text = data.decode("latin-1")
+            return _capped(text, {"extractor": "text_file"})
+        if kind == "image":
+            outcome = _process_image(db, share, path)
+            return outcome if isinstance(outcome, ProcessResult) else _capped(*outcome)
+        if kind in _RECORDING_TYPES:
+            return _capped(*_process_recording(db, share, path))
+        if kind == "pdf":
+            return _capped(*_process_pdf(path))
+    except echo_media.MediaSkipped as e:
+        return ProcessResult("skipped", str(e))
+    except echo_media.MediaError as e:
+        raise ProcessingError(str(e)) from e
+    return ProcessResult(
+        "skipped",
+        "No reader handles this kind of file yet; it is kept in your archive.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -219,32 +306,50 @@ def process_share(db: Session, share_id: str) -> ProcessResult:
     kind = payload.get("kind")
     processing = load_processing(share)
     processing.pop("error", None)
+    from app.services import llm_service
+
     try:
-        if kind == "text":
-            outcome = _process_text(share, payload)
-        elif kind == "url":
-            outcome = _process_url(share, payload)
-        elif kind == "file":
-            outcome = _process_file(share, payload)
-        else:
-            raise ProcessingError(f"Unknown share kind {kind!r}.")
+        # The tenant's own keys and model overrides decide which models read
+        # their media, and whether they count as local-only (echo_media).
+        with llm_service.byok_context(share.tenant_id, db):
+            if kind == "text":
+                outcome = _process_text(share, payload)
+            elif kind == "url":
+                outcome = _process_url(share, payload)
+            elif kind == "file":
+                outcome = _process_file(db, share, payload)
+            else:
+                raise ProcessingError(f"Unknown share kind {kind!r}.")
     except ProcessingError as e:
         return _finish(db, share, processing, "failed", error=str(e))
     except Exception as e:  # unexpected: still fail-soft, but logged loudly
         logger.exception("echo: processing share %s failed", share.id)
         return _finish(db, share, processing, "failed", error=f"Processing failed: {type(e).__name__}")
 
+    for stale in _DERIVED_FIELDS:
+        processing.pop(stale, None)
     if isinstance(outcome, ProcessResult):
         processing["note"] = outcome.reason
         return _finish(db, share, processing, outcome.state)
 
     text, fields = outcome
-    processing.pop("note", None)
     processing.update({k: v for k, v in fields.items() if v is not None})
     share.extracted_text = text
+    vector_text = embed_text(share, processing.get("title"))
+    if not vector_text:
+        # Nothing searchable (a photo with no text and no annotation):
+        # drop any vector an earlier run wrote rather than keep a stale one.
+        if share.embedding_id:
+            try:
+                echo_vectors.delete_share_vector(share.tenant_id, share.id)
+            except Exception:
+                logger.exception("echo: removing the stale vector of share %s failed", share.id)
+            share.embedding_id = None
+        processing["embedded"] = False
+        return _finish(db, share, processing, "processed")
     try:
         share.embedding_id = echo_vectors.upsert_share_vector(
-            share.id, embed_text(share, processing.get("title")), vector_metadata(share)
+            share.id, vector_text, vector_metadata(share)
         )
         processing["embedded"] = True
     except Exception:
@@ -253,6 +358,13 @@ def process_share(db: Session, share_id: str) -> ProcessResult:
         logger.exception("echo: embedding share %s failed", share.id)
         processing["embedded"] = False
     return _finish(db, share, processing, "processed")
+
+
+# Fields a reader derives; a re-run clears them so nothing stale survives.
+_DERIVED_FIELDS = (
+    "note", "extractor", "truncated", "ocr_confidence", "language",
+    "duration_seconds", "page_count", "pages_with_text",
+)
 
 
 def _finish(db: Session, share: Share, processing: dict, state: str, error: str | None = None) -> ProcessResult:

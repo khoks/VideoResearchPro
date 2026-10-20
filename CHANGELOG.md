@@ -10,6 +10,21 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Echo: images, recordings and PDFs are read (S-3.7.2 part 2, 2026-10-19)
+
+PR [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__). Measurements: [docs/notes/2026-10-19-s372-share-ocr-measurement.md](docs/notes/2026-10-19-s372-share-ocr-measurement.md).
+
+- Shared images are read by on-device OCR (RapidOCR). A reading with too
+  little text or low confidence goes to a vision model, the new
+  `echo_share_ocr` use case. Hindi images always do: the default OCR models
+  cannot read Devanagari.
+- Voice memos and video clips are transcribed by Whisper in the speaker's
+  language; PDFs give their text layer.
+- Nothing goes to a remote provider when `ECHO_REMOTE_MEDIA` is off or the
+  tenant runs every model locally; the share is `skipped` with a note.
+- The inbox says how each file was read, shows notes in every state, and
+  offers Retry on skipped shares.
+
 ### Echo: shares are processed — links, text, text files (S-3.7.2 part 1, 2026-10-19)
 
 PR [#324](https://github.com/khoks/VideoResearchPro/pull/324). Plan: [docs/plans/l3-echo-personal-brain.md](docs/plans/l3-echo-personal-brain.md).

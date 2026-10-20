@@ -82,3 +82,7 @@ feedparser>=6.0.10
 # permissive license we can swap to pdfminer.six (slower, fewer
 # features) or pypdf (very limited table support).
 pymupdf>=1.24.0
+# Echo share OCR (S-3.7.2) — RapidOCR (Apache-2.0), ONNX models only,
+# no PaddlePaddle. Reads Latin and Chinese scripts on-device; Devanagari
+# goes to the vision-model fallback.
+rapidocr_onnxruntime>=1.4.4

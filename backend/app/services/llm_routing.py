@@ -131,6 +131,8 @@ UseCase = Literal[
     "author_book_prose",
     # Author Studio slide deck (S-6.3.1) — app/services/outputters/deck.py
     "author_deck_outline",
+    # Echo share processing (S-3.7.2) — app/services/echo_processing_service.py
+    "echo_share_ocr",
 ]
 
 # Use cases whose prompts carry IMAGES, not just text.
@@ -146,7 +148,9 @@ UseCase = Literal[
 # 2. **The startup smoke check would lie.** `llm_smoke.probe_config` sends a
 #    text-only probe. A vision use case misconfigured onto a text model
 #    would probe green and fail on the first real call.
-VISION_USE_CASES: frozenset[str] = frozenset({"visual_describe_frame"})
+VISION_USE_CASES: frozenset[str] = frozenset(
+    {"visual_describe_frame", "echo_share_ocr"}
+)
 
 # Models known to accept image inputs. Used to WARN on a misconfiguration,
 # never to block one — same fail-soft rule as the rest of this module
@@ -1496,6 +1500,43 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
             "it is dropped and disclosed, and every source is linked from the "
             "sources slide.",
             related=("D-093",),
+        ),
+    ),
+    # --- Echo share processing (S-3.7.2) --------------------------------
+    "echo_share_ocr": UseCaseInfo(
+        default_route="primary",
+        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "off"),
+        summary=(
+            "MULTIMODAL. Copy out the text visible in an image the user "
+            "shared to Echo (a screenshot, a photo of a page or a slide). "
+            "Runs only when local OCR read too little and the tenant allows "
+            "remote media processing. Transcription, not description."
+        ),
+        typical_input_tokens=1_500,
+        p95_input_tokens=3_000,
+        typical_output_tokens=500,
+        min_context_recommended=32_768,
+        rationale=(
+            "A fallback behind local RapidOCR, so it runs on the minority "
+            "of shares where the picture defeats a classical OCR model "
+            "(handwriting, stylised type, photos at an angle). Reasoning "
+            "OFF: copying text needs no deliberation, and on OpenAI the "
+            "completion cap counts reasoning tokens, so a thinking model "
+            "can return nothing. The mid tier, not the economy one: luna "
+            "left a third of frame gradings unusable (D-073). OpenAI by "
+            "default because its key is the one every install has; "
+            "gemini-3.1-flash-lite read frames nearly as well for a "
+            "fraction of the price and is a sensible override. Fail-soft: "
+            "the share keeps whatever local OCR found."
+        ),
+        guidance=_unmeasured(
+            "Not judged on shared images. The frame-description grading "
+            "(D-073, D-081) is the nearest evidence: gpt-5.4-mini 4.37 of 5, "
+            "gemini-3.1-flash-lite 4.21, gpt-5.6-luna 3.97 with a third of "
+            "gradings unusable, claude-haiku-4-5 2.39. A model that cannot "
+            "see images invents text from nothing, so keep it on a vision "
+            "model.",
+            related=("D-073", "D-081", "D-089"),
         ),
     ),
     # --- Social-media candidate classification (S-1.5.3) ---------------

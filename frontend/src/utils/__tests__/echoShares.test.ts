@@ -8,6 +8,7 @@ import {
   isValidContentType,
   parseQuickShareInput,
   processingStateLabel,
+  shareReadingLabel,
 } from '../echoShares';
 import { filenameFromDisposition } from '../../services/echoApi';
 
@@ -79,5 +80,35 @@ describe('filenameFromDisposition', () => {
     expect(filenameFromDisposition('attachment; filename="echo-export-1.zip"', 'x')).toBe('echo-export-1.zip');
     expect(filenameFromDisposition("attachment; filename*=UTF-8''Meme%201.PNG", 'x')).toBe('Meme 1.PNG');
     expect(filenameFromDisposition(undefined, 'fallback.bin')).toBe('fallback.bin');
+  });
+});
+
+describe('shareReadingLabel', () => {
+  it('names local OCR and a vision model apart', () => {
+    expect(shareReadingLabel({ extractor: 'ocr_local' })).toBe('Text read by local OCR');
+    expect(shareReadingLabel({ extractor: 'ocr_vision' })).toBe('Text read by a vision model');
+  });
+
+  it('gives a recording its length and language', () => {
+    expect(shareReadingLabel({ extractor: 'whisper', duration_seconds: 12.5, language: 'hindi' })).toBe(
+      'Transcribed by Whisper · 0:13 · Hindi',
+    );
+    expect(shareReadingLabel({ extractor: 'whisper', duration_seconds: 3725, language: 'unknown' })).toBe(
+      'Transcribed by Whisper · 1:02:05',
+    );
+    expect(shareReadingLabel({ extractor: 'whisper' })).toBe('Transcribed by Whisper');
+  });
+
+  it('counts PDF pages, and says when some had no text', () => {
+    expect(shareReadingLabel({ extractor: 'pdf_text', page_count: 1, pages_with_text: 1 })).toBe('Text from 1 page');
+    expect(shareReadingLabel({ extractor: 'pdf_text', page_count: 14, pages_with_text: 12 })).toBe('Text from 12 of 14 pages');
+    expect(shareReadingLabel({ extractor: 'pdf_text' })).toBe('Text from the PDF');
+  });
+
+  it('says nothing about links, text files or unprocessed shares', () => {
+    expect(shareReadingLabel({ extractor: 'trafilatura' })).toBeNull();
+    expect(shareReadingLabel({ extractor: 'text_file' })).toBeNull();
+    expect(shareReadingLabel(null)).toBeNull();
+    expect(shareReadingLabel(undefined)).toBeNull();
   });
 });

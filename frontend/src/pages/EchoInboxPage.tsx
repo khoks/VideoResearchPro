@@ -20,6 +20,7 @@ import {
   contentTypeLabel,
   formatBytes,
   processingStateLabel,
+  shareReadingLabel,
 } from '../utils/echoShares';
 import { detailFromErrorBody, type HttpErrorLike } from '../utils/ingestResults';
 
@@ -352,16 +353,20 @@ function ProcessingLine({ share }: { share: Share }) {
   const p = share.processing;
   const offer = p?.library_offer;
   const failed = share.processing_state === 'failed';
-  const waiting = share.processing_state === 'pending' && p?.note;
+  const skipped = share.processing_state === 'skipped';
+  const note = !failed ? p?.note : null;
+  const reading = shareReadingLabel(p);
   const canOffer = share.kind === 'url' && offer?.eligible && !share.linked_document_id;
-  if (!failed && !waiting && !canOffer && !share.linked_document_id) return null;
+  if (!failed && !skipped && !note && !reading && !canOffer && !share.linked_document_id) return null;
 
   const line: React.CSSProperties = { fontFamily: fonts.ui, fontSize: fontSize.sm, lineHeight: lineHeight.snug };
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: space['2'], flexWrap: 'wrap' }}>
-      {failed && (
+      {reading && <span style={{ ...line, color: c.textMuted }}>{reading}</span>}
+      {failed && <span role="alert" style={{ ...line, color: c.error }}>{p?.error || 'Processing failed.'}</span>}
+      {note && <span style={{ ...line, color: c.textMuted }}>{note}</span>}
+      {(failed || skipped) && (
         <>
-          <span role="alert" style={{ ...line, color: c.error }}>{p?.error || 'Processing failed.'}</span>
           <Button
             size="sm"
             variant="tertiary"
@@ -374,7 +379,6 @@ function ProcessingLine({ share }: { share: Share }) {
           </Button>
         </>
       )}
-      {waiting && <span style={{ ...line, color: c.textMuted }}>{p?.note}</span>}
       {canOffer && (
         <Button
           size="sm"

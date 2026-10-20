@@ -91,11 +91,19 @@ export interface ShareProcessing {
   extractor?: string | null;
   /** Why processing failed, in words fit to show. */
   error?: string | null;
-  /** Why a share is still waiting (e.g. OCR not built yet). */
+  /** Anything worth knowing about the reading: why a share was skipped,
+   * that a reading had low confidence, that text was cut short. */
   note?: string | null;
   embedded?: boolean | null;
   processed_at?: string | null;
   library_offer?: { eligible: boolean; reason?: string | null; source_type?: string | null } | null;
+  /** Part 2 (media): how a file was read. */
+  ocr_confidence?: number | null;
+  language?: string | null;
+  duration_seconds?: number | null;
+  page_count?: number | null;
+  pages_with_text?: number | null;
+  truncated?: boolean | null;
 }
 
 export interface ShareListResponse {

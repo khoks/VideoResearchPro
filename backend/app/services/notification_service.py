@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.models.notification import Notification
 
 KIND_SAVED_SEARCH_CHANGED = "saved_search_changed"
+KIND_NEWSLETTER_ISSUE = "newsletter_issue"  # S-6.4.2: a scheduled digest was made
 
 
 def _now() -> datetime:

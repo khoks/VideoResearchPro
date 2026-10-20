@@ -122,7 +122,9 @@ def sections_from(params: dict[str, Any]) -> dict[str, bool]:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+    # Full precision: truncating to the second put rows written earlier in
+    # the same second just after the window, a second late (S-6.4.2 tests).
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _link(path: str) -> str:

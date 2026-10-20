@@ -199,3 +199,22 @@ Same job, regenerated on master after the R5 fix (#294) and the refine/channel c
 - *Attribution error 2:* the map item itself reads "the presenter describes the 538-like style as producing ... a light grid". The grid exists only in the 22:33 span. The `both` label is right, but the item's content already mixes speech and screen.
 
 **Verdict:** run 6 fails rules 2 and 3 as pre-registered, so R1's quality claim stays unproven. The failures point to a fix that is not R1-specific: map batches that never mix sources, plus a code-side check that a `shown` or `both` label has a span **from the item's own source** near its moment. That work is measured in the map-coverage note. A run 7 will be pre-registered there once the fix lands, under the same four rules.
+
+## Run 8: pre-registered (2026-10-19, before it runs)
+
+The same job and descriptions (gpt-5.5, D-081), regenerated on master at 7e2ac88. Since run 6, master has:
+- packed map batching with the starved-source re-map (D-094);
+- truncation as a failure, with retry and per-call budgets (D-090);
+- `original` salvage (#307);
+- report-level native-script quote checking in code (#309).
+
+The rules are run 6's four, unchanged:
+1. `audit_quote_fidelity.py --check` exits 0.
+2. Zero confirmed attribution errors in ON after three-lens verification and the sweep.
+3. At least two of three families (GPT-5.5, Sonnet 5, Gemini 3.1 Pro; no substitutes, so the run waits on quota) prefer ON on substance.
+4. ON has no more confirmed fabrications than OFF.
+
+Rule 1 is now enforced in the pipeline by #309, so its pass is expected and weak evidence. It still gates the run.
+
+**All four pass** → R1's quality claim holds, and S-1.18.2 (the R1 UI) is built. **Rule 3 alone fails** → the UI ships opt-in with no quality claim, as run 6's rule set out. **Rule 2 or 4 fails** → the claim stays unproven, and the UI decision goes to the user with all eight runs summarised.
+

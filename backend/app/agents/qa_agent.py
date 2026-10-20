@@ -17,9 +17,10 @@ from app.agents.prompts.qa_prompts import (
     SUB_QUERY_EXPANSION_PROMPT,
     USED_SOURCES_PROMPT,
 )
+from app.agents.prompts.shared import NOTE_ANNOTATION_CONTRACT, NOTE_MARKER_PREFIX, compose_block
 from app.agents.state import QAAgentState
 from app.config import settings
-from app.services import chroma_service, code_mixing_service
+from app.services import chroma_service, code_mixing_service, note_index
 from app.services.llm_service import get_llm_for, response_text
 from app.services.llm_routing import max_output_for, resolve_config
 from app.services import output_length as output_length_policy
@@ -129,8 +130,57 @@ def _speech_part(meta: dict, passage: bool) -> str:
     return code_mixing_service.source_note(m)
 
 
+def _is_note(chunk: dict) -> bool:
+    return ((chunk.get("metadata") or {}).get("source_type") or "") == note_index.NOTE_SOURCE_TYPE
+
+
+def _has_notes(chunks: list[dict]) -> bool:
+    return any(_is_note(c) for c in chunks)
+
+
+def _note_header(index: int, chunk: dict) -> str:
+    """`[NOTE by you, 2026-10-19 | Chunk N | source: "Your note of ..." by you | on: <target>]`.
+
+    S-8.5.2: the marker NOTE_ANNOTATION_CONTRACT teaches, so no model reads
+    the asker's own words as something a source said.
+    """
+    meta = chunk.get("metadata", {}) or {}
+    head = (
+        f"{NOTE_MARKER_PREFIX}, {meta.get('created_date', '')} | Chunk {index} | "
+        f"source: \"{meta.get('video_title', 'Your note')}\" by {meta.get('channel_name', 'you')}"
+    )
+    if meta.get("target_label"):
+        head += f" | on: {meta['target_label']}"
+    return head + "]"
+
+
+def _notes_block(chunks: list[dict]) -> str:
+    """The asker's own notes, verbatim, for the answer step.
+
+    S-8.5.2: notes skip the refine step. It compresses dense transcript
+    context and, in the live check on the reference corpus, dropped a
+    directly relevant note even with the note contract in its prompt. A
+    note is one short passage already, so it goes to the answer step whole,
+    under its marker, in rank order.
+    """
+    notes = [c for c in chunks if _is_note(c)]
+    if not notes:
+        return ""
+    parts = [f"{_note_header(i + 1, c)}\n{(c.get('text') or '').strip()}" for i, c in enumerate(notes)]
+    return "=== THE ASKER'S OWN NOTES (verbatim) ===\n" + "\n\n".join(parts)
+
+
+def _with_notes_block(refined: str, chunks: list[dict]) -> str:
+    block = _notes_block(chunks)
+    if not block:
+        return refined
+    return f"{refined}\n\n{block}" if refined else block
+
+
 def _chunk_header(index: int, chunk: dict) -> str:
     """`[Chunk N | Video: "T" by C at 12:34 | published 2025-03-12 | discusses 2019–2021]`."""
+    if _is_note(chunk):
+        return _note_header(index, chunk)
     meta = chunk.get("metadata", {}) or {}
     head = (
         f"[Chunk {index} | Video: \"{meta.get('video_title', 'Unknown')}\" "
@@ -210,7 +260,16 @@ MAX_TRUST_WEIGHT = 2.0
 def _trust_weight(meta: dict, channel_weights: dict[str, float] | None) -> float:
     """The weight this tenant gives the chunk's channel, clamped to
     [MIN_TRUST_WEIGHT, MAX_TRUST_WEIGHT]; 1.0 when it has no channel or no
-    weight. 0 becomes the floor so the source sinks but is never excluded."""
+    weight. 0 becomes the floor so the source sinks but is never excluded.
+
+    S-8.5.2: the asker's own notes take ``NOTE_RETRIEVAL_WEIGHT`` in the
+    same formula, after the same raw threshold."""
+    if ((meta or {}).get("source_type") or "") == note_index.NOTE_SOURCE_TYPE:
+        try:
+            note_weight = float(settings.NOTE_RETRIEVAL_WEIGHT)
+        except (TypeError, ValueError):
+            return 1.0
+        return min(MAX_TRUST_WEIGHT, max(MIN_TRUST_WEIGHT, note_weight))
     if not channel_weights:
         return 1.0
     channel_id = (meta or {}).get("channel_id") or ""
@@ -284,6 +343,36 @@ def _scoped_query(
     return _rerank_by_trust(results, channel_weights, top_k)
 
 
+def _with_notes(
+    results: list[dict],
+    query_text: str,
+    notes_tenant_id: str | None,
+    note_target_keys: list[str] | None,
+    channel_weights: dict[str, float] | None,
+) -> list[dict]:
+    """S-8.5.2: the asker's own notes compete for the same ``top_k`` slots.
+
+    Notes come from their own private collection (``note_index``), already
+    cut at the raw relevance threshold; the pool is then ordered by the D-068
+    score (notes at ``NOTE_RETRIEVAL_WEIGHT``) and cut to ``top_k``. No
+    tenant, or no matching note, leaves ``results`` untouched.
+    """
+    if not notes_tenant_id:
+        return results
+    notes = note_index.query_notes(
+        query_text,
+        notes_tenant_id,
+        target_keys=note_target_keys,
+        n_results=settings.RAG_TOP_K,
+        distance_threshold=settings.RAG_DISTANCE_THRESHOLD,
+    )
+    if not notes:
+        return results
+    pool = list(results) + notes
+    pool.sort(key=lambda r: _weighted_distance(r, channel_weights))
+    return pool[: settings.RAG_TOP_K]
+
+
 def retrieve_context(state: QAAgentState, tally: _TokenTally | None = None) -> dict:
     """Retrieve relevant chunks from ChromaDB using multi-query expansion, plus extract report text."""
     job_id = state.get("job_id", "")
@@ -308,6 +397,9 @@ def retrieve_context(state: QAAgentState, tally: _TokenTally | None = None) -> d
         )
     for q in all_queries:
         results = _scoped_query(q, document_ids, channel_weights) if document_ids else []
+        results = _with_notes(
+            results, q, state.get("notes_tenant_id"), state.get("note_target_keys"), channel_weights
+        )
         for r in results:
             meta = r.get("metadata", {})
             key = (
@@ -359,15 +451,21 @@ def refine_context(state: QAAgentState, tally: _TokenTally | None = None) -> dic
     rag_results = state.get("rag_results", [])
     report_context = state.get("report_context")
 
-    # Format raw RAG chunks with source attribution
+    # Format raw RAG chunks with source attribution. S-8.5.2: the asker's
+    # notes skip this lossy step and join the result verbatim below.
+    transcript = [r for r in rag_results if not _is_note(r)]
     raw_parts = []
-    for i, r in enumerate(rag_results):
+    for i, r in enumerate(transcript):
         raw_parts.append(f"{_chunk_header(i + 1, r)}\n{r.get('text', '')}")
     raw_rag = "\n\n".join(raw_parts) if raw_parts else ""
 
     raw_report = ""
     if report_context:
         raw_report = f"\n\n=== RESEARCH REPORT ===\n{report_context}"
+
+    if not (raw_rag or raw_report) and _has_notes(rag_results):
+        # Only notes matched: nothing to compress.
+        return {"refined_context": _notes_block(rag_results)}
 
     prompt = REFINE_CONTEXT_PROMPT.format(
         question=question,
@@ -382,7 +480,7 @@ def refine_context(state: QAAgentState, tally: _TokenTally | None = None) -> dic
 
     logger.info(f"Refined context: {len(refined)} chars from {len(raw_rag) + len(raw_report)} chars raw")
 
-    return {"refined_context": refined}
+    return {"refined_context": _with_notes_block(refined, rag_results)}
 
 
 def _build_allowed_sources(rag_results: list[dict], include_report: bool) -> str:
@@ -433,8 +531,13 @@ def formulate_answer(state: QAAgentState, tally: _TokenTally | None = None) -> d
         length_guidance=length_guidance,
     )
 
+    system = (
+        compose_block(QA_SYSTEM_PROMPT, NOTE_ANNOTATION_CONTRACT)
+        if _has_notes(rag_results)
+        else QA_SYSTEM_PROMPT
+    )
     response = llm.invoke([
-        SystemMessage(content=QA_SYSTEM_PROMPT),
+        SystemMessage(content=system),
         HumanMessage(content=prompt),
     ])
     if tally is not None:
@@ -497,6 +600,28 @@ def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
     meta = chunk.get("metadata", {})
     source_type = (meta.get("source_type") or "video").strip() or "video"
     source_id = meta.get("source_id") or meta.get("video_id") or ""
+
+    if source_type == note_index.NOTE_SOURCE_TYPE:
+        # S-8.5.2: the asker's own note. The frontend renders "You wrote
+        # this on <date>" and links to the note's target.
+        title = meta.get("video_title") or "Your note"
+        text = (chunk.get("text") or "").strip()
+        return f"note:{meta.get('note_id', '')}", {
+            "source_type": "note",
+            "note_id": meta.get("note_id", ""),
+            "note_target_type": meta.get("target_type", ""),
+            "note_target_id": meta.get("target_id", ""),
+            "note_target_label": meta.get("target_label") or None,
+            "note_target_parent_id": meta.get("target_parent_id") or None,
+            "note_created_at": meta.get("created_at", ""),
+            "quote": text[:280] + ("…" if len(text) > 280 else ""),
+            "video_url": "",
+            "video_title": title,
+            "channel_name": meta.get("channel_name") or "you",
+            "timestamp_seconds": 0.0,
+            "timestamp_display": "",
+            "youtube_link": "",
+        }
     title = (meta.get("video_title") or meta.get("title") or "Unknown") or "Unknown"
 
     if source_type == "reddit_post":
@@ -1062,6 +1187,8 @@ def run_qa_agent(
     corpus_statistics: dict | None = None,
     output_length: str | None = None,
     channel_weights: dict[str, float] | None = None,
+    notes_tenant_id: str | None = None,
+    note_target_keys: list[str] | None = None,
 ) -> tuple[str, list[dict]]:
     """
     Run the Q&A agent pipeline node-by-node (same order as the compiled graph).
@@ -1073,6 +1200,10 @@ def run_qa_agent(
     ``channel_weights`` are the asking tenant's non-neutral trust weights
     (D-068), resolved by the router; retrieval re-ranks by them after the
     relevance threshold. Absent or empty, retrieval is unweighted.
+
+    ``notes_tenant_id`` and ``note_target_keys`` (S-8.5.2) bring the asker's
+    own notes on this job's material into retrieval (``note_index``). No
+    tenant means no notes.
 
     ``progress_callback`` is invoked with a stage name before each node:
     "retrieving", "refining", "formulating", "extracting_references".
@@ -1101,6 +1232,8 @@ def run_qa_agent(
         "report_html": report_html or "",
         "document_ids": document_ids or [],
         "channel_weights": channel_weights or {},
+        "notes_tenant_id": notes_tenant_id,
+        "note_target_keys": note_target_keys,
         "sub_queries": [],
         "rag_results": [],
         "report_context": None,
@@ -1223,6 +1356,7 @@ def run_library_qa_agent(
     corpus_statistics: dict | None = None,
     output_length: str | None = None,
     channel_weights: dict[str, float] | None = None,
+    notes_tenant_id: str | None = None,
 ) -> dict:
     """Run library-wide Q&A against the global video library.
 
@@ -1252,26 +1386,39 @@ def run_library_qa_agent(
     # 2. Library-wide ChromaDB retrieval.
     raw: list[dict] = []
     for q in all_queries:
-        raw.extend(_query_library(q, visible_document_ids, channel_weights))
+        # S-8.5.2: every note of the asker competes with the visible
+        # transcripts. An empty visible set still lets a matching note in.
+        raw.extend(
+            _with_notes(
+                _query_library(q, visible_document_ids, channel_weights),
+                q, notes_tenant_id, None, channel_weights,
+            )
+        )
 
     # 3. Dedupe + enrich (ordered by the D-068 weighted score).
     rag_results = _dedupe_chunks(raw, channel_weights)
     _enrich_chunks(rag_results)
 
-    # 4. Refine context.
+    # 4. Refine context. S-8.5.2: notes skip this lossy step and join the
+    # refined context verbatim (see `_notes_block`).
     raw_parts = []
-    for i, r in enumerate(rag_results):
+    for i, r in enumerate([c for c in rag_results if not _is_note(c)]):
         raw_parts.append(f"{_chunk_header(i + 1, r)}\n{r.get('text', '')}")
     raw_context = "\n\n".join(raw_parts)
 
-    llm = get_llm_for("library_qa_refine_context", temperature=0.0, max_tokens=3000)
-    refine_prompt = LIBRARY_REFINE_CONTEXT_PROMPT.format(
-        question=question,
-        raw_context=raw_context,
-        visual_annotations=REFINE_VISUAL_RULES,
-    )
-    refined_response = llm.invoke([HumanMessage(content=refine_prompt)])
-    refined_context = response_text(refined_response).strip() or "No context available."
+    if not raw_context and _has_notes(rag_results):
+        refined_context = _notes_block(rag_results)
+    else:
+        llm = get_llm_for("library_qa_refine_context", temperature=0.0, max_tokens=3000)
+        refine_prompt = LIBRARY_REFINE_CONTEXT_PROMPT.format(
+            question=question,
+            raw_context=raw_context,
+            visual_annotations=REFINE_VISUAL_RULES,
+        )
+        refined_response = llm.invoke([HumanMessage(content=refine_prompt)])
+        refined_context = _with_notes_block(
+            response_text(refined_response).strip(), rag_results
+        ) or "No context available."
 
     logger.info(
         "Library Q&A refined context: %d chars from %d chars raw",
@@ -1289,6 +1436,8 @@ def run_library_qa_agent(
         "library_qa_formulate_answer", temperature=0.0, max_tokens=max_tokens
     )
     system_prompt = LIBRARY_QA_SYSTEM_PROMPT.format(answer_language=answer_language)
+    if _has_notes(rag_results):
+        system_prompt = compose_block(system_prompt, NOTE_ANNOTATION_CONTRACT)
     user_prompt = LIBRARY_QA_ANSWER_PROMPT.format(
         question=question,
         answer_language=answer_language,

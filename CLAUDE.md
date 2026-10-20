@@ -301,6 +301,9 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `EMBEDDING_MODEL_NAME` | No | `paraphrase-multilingual-MiniLM-L12-v2` | SentenceTransformer model |
 | `CHROMA_GLOBAL_COLLECTION_NAME` | No | `videoresearchpro_global` | Name of the single global Chroma collection |
 | `CHROMA_QA_COLLECTION_NAME` | No | `qa_library_global` | Central Q&A collection name |
+| `CHROMA_NOTES_COLLECTION_NAME` | No | `notes_global` | The asker's own notes, one vector per live note, tenant-filtered (S-8.5.2) |
+| `NOTES_INDEX_ENABLED` | No | `True` | Notes in Q&A retrieval: index writes on every note write, startup backfill, queries. The test suite turns it off |
+| `NOTE_RETRIEVAL_WEIGHT` | No | `1.5` | D-068 re-rank weight for notes, after the raw threshold. Measured before shipping (docs/notes/2026-10-19-s852-note-weight-measurement.md) |
 | `CHROMA_SHARES_COLLECTION_NAME` / `CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME` | No | `shares_global` / `personal_context_global` | Echo's private collections (tenant-filtered). The full Echo delete sweeps both |
 | `ECHO_SHARES_DIR` | No | `./data/echo/shares` | Echo shares inbox files, one directory per tenant; removed by the full Echo delete |
 | `ECHO_SHARE_MAX_BYTES` / `ECHO_SHARE_TEXT_MAX_CHARS` | No | `26214400` / `50000` | Caps on one quick-share file (25 MB) and one text share |

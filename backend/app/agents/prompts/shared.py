@@ -174,6 +174,31 @@ restate it as plain prose: the answer step tells what was shown from what was
 said only by the marker."""
 
 
+# --- M5 / S-8.5.2: the user's own notes in retrieved context ----------------
+
+# How a note is marked in raw context, defined next to the instruction that
+# teaches models to read it (the D-067 pattern). The agent builds the header
+# from this prefix; the contract below quotes it.
+NOTE_MARKER_PREFIX = "[NOTE by you"
+
+NOTE_ANNOTATION_CONTRACT = """THE ASKER'S OWN NOTES — READ CAREFULLY:
+- The context may end with a block of the asker's own notes, each headed
+  `[NOTE by you, YYYY-MM-DD | ...]`. Each is on the Allowed sources list as a
+  source whose title starts "Your note of" and whose author is "you".
+- These are notes the person asking this question wrote themselves: their own
+  opinions, observations, reminders and corrections. They are NOT transcript
+  text, nobody in any video or source said them, and they are not evidence of
+  what a source claims.
+- Never attribute a note's content to a speaker, channel, author or source,
+  and never let a note stand in as proof that a source said something.
+- When a note bears on the question, say so in the second person with its
+  date ("you noted on 2026-03-15 that ...") and cite it like any other
+  allowed source, copying its title exactly as listed:
+  [Source: "<the note's exact title>" by you].
+- A note can disagree with the sources. Report both and say which is which;
+  do not silently side with either."""
+
+
 # --- R1 / S-1.18.8: modality provenance -------------------------------------
 #
 # D-075: prompt rules alone moved attribution errors from one direction to

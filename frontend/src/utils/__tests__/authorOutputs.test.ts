@@ -6,6 +6,7 @@ import {
   fileFormatOptions,
   formatUsd,
   defaultNewsletterSections,
+  sendStatusLabel,
   newsletterParameters,
   usageLabel,
   filenameFromDisposition,
@@ -138,6 +139,8 @@ describe('S-6.7.2 download helpers', () => {
       since: '2026-10-12T12:00:00.000Z',
     });
     expect(outputStatusLabel('skipped')).toBe('Skipped');
+    expect(sendStatusLabel('skipped')).toBe('Nothing new, not sent');
+    expect(sendStatusLabel('email_failed')).toBe('Made, but the email failed');
     expect(outputStatusTone('skipped')).toBe('neutral');
   });
 

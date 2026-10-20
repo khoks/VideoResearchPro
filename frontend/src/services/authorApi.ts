@@ -1,3 +1,4 @@
+import type { Cadence } from './savedSearchesApi';
 import api from './api';
 
 // Mirrors backend/app/routers/author.py (I-6 foundation, PR #173).
@@ -87,6 +88,36 @@ export interface CreateOutputPayload {
   parameters?: Record<string, unknown>;
 }
 
+/** S-6.4.2: one digest subscription per reader. */
+export interface NewsletterSend {
+  period_key: string;
+  status: 'started' | 'sent' | 'email_failed' | 'skipped' | 'failed' | string;
+  output_id: string | null;
+  trigger: string;
+  detail: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface NewsletterSubscription {
+  id: string;
+  title: string;
+  cadence: Cadence;
+  sections: Record<string, boolean>;
+  enabled: boolean;
+  last_issue_at: string | null;
+  next_issue_at: string | null;
+  created_at: string;
+  sends: NewsletterSend[];
+}
+
+export interface NewsletterSettings {
+  title?: string;
+  cadence?: Cadence;
+  sections?: Record<string, boolean>;
+  enabled?: boolean;
+}
+
 export interface ListOutputsParams {
   kind?: string;
   status?: string;
@@ -125,6 +156,17 @@ export const authorApi = {
 
   estimateOutput: (payload: CreateOutputPayload) =>
     api.post<OutputEstimate>('/author/outputs/estimate', payload).then(r => r.data),
+
+  getNewsletter: () =>
+    api.get<{ subscription: NewsletterSubscription | null }>('/author/newsletter').then(r => r.data.subscription),
+
+  saveNewsletter: (settings: NewsletterSettings) =>
+    api.put<{ subscription: NewsletterSubscription }>('/author/newsletter', settings).then(r => r.data.subscription),
+
+  deleteNewsletter: () => api.delete<{ deleted: boolean }>('/author/newsletter').then(r => r.data),
+
+  sendNewsletterNow: () =>
+    api.post<{ status: string; task_id?: string | null }>('/author/newsletter/send-now').then(r => r.data),
 
   cancelOutput: (id: string) =>
     api.post<OutputItem>(`/author/outputs/${id}/cancel`).then(r => r.data),

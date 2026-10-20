@@ -152,6 +152,8 @@ def client(db, auth_headers):
         patch("app.routers.jobs.resume_job_after_approval") as mock_resume,
         # S-6.7.1: Author Studio generation is a Celery task too.
         patch("app.routers.author.generate_output") as mock_generate_output,
+        # S-6.4.2: "Send now" dispatches the newsletter task.
+        patch("app.routers.author.issue_newsletter") as mock_issue_newsletter,
         # S-1.18.2: on-demand frame capture.
         patch("app.routers.frames.extract_frames") as mock_extract_frames,
     ):
@@ -166,6 +168,7 @@ def client(db, auth_headers):
         mock_resume.delay.return_value = MagicMock(id="mock-resume-task-id")
         mock_resume.apply_async.return_value = MagicMock(id="mock-resume-task-id")
         mock_generate_output.apply_async.return_value = MagicMock(id="mock-generate-output-task-id")
+        mock_issue_newsletter.apply_async.return_value = MagicMock(id="mock-issue-newsletter-task-id")
         mock_extract_frames.apply_async.return_value = MagicMock(id="mock-extract-frames-task-id")
         with TestClient(app, headers=auth_headers) as c:
             yield c
@@ -191,6 +194,8 @@ def unauthenticated_client(db):
         patch("app.routers.jobs.resume_job_after_approval") as mock_resume,
         # S-6.7.1: Author Studio generation is a Celery task too.
         patch("app.routers.author.generate_output") as mock_generate_output,
+        # S-6.4.2: "Send now" dispatches the newsletter task.
+        patch("app.routers.author.issue_newsletter") as mock_issue_newsletter,
         # S-1.18.2: on-demand frame capture.
         patch("app.routers.frames.extract_frames") as mock_extract_frames,
     ):
@@ -205,6 +210,7 @@ def unauthenticated_client(db):
         mock_resume.delay.return_value = MagicMock(id="mock-resume-task-id")
         mock_resume.apply_async.return_value = MagicMock(id="mock-resume-task-id")
         mock_generate_output.apply_async.return_value = MagicMock(id="mock-generate-output-task-id")
+        mock_issue_newsletter.apply_async.return_value = MagicMock(id="mock-issue-newsletter-task-id")
         mock_extract_frames.apply_async.return_value = MagicMock(id="mock-extract-frames-task-id")
         with TestClient(app) as c:
             yield c

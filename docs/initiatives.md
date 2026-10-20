@@ -988,7 +988,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
   - Each connector's events with text are one input (`events:<connector>`), sampled like an import. The internal share connector is excluded, since shares are inputs already.
   - Examples cite `event:<id>`.
   - Search queries (`searched_*`) are read by the model but are not prose for stylometry (2-word floor).
-  - Events are deleted in bulk outside extraction, so `withdraw_missing_events` takes their words out of every signal in one pass (`echo_signal_service.withdraw_sources`). It runs inside `delete_connector_events`, at the start of every run, and, on lane D's side, in `delete_import`.
+  - Events are deleted in bulk outside extraction, so `withdraw_missing_events` takes their words out of every signal in one pass (`echo_signal_service.withdraw_sources`). It runs inside `delete_connector_events`, in `delete_import` (import undo), and at the start of every run.
   - Connector `revoke` now syncs `personal_context_global` after its commit. Revoked facts kept their vectors before, the gap lane D found for Apple Health
 - [x] T-3.3.2.10 Export imports (S-3.7.5) as one input each. Shipped 2026-10-19, PR [#347](https://github.com/khoks/VideoResearchPro/pull/347).
   - Stylometry profiles every own-words turn.

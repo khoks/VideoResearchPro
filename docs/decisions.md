@@ -1387,7 +1387,7 @@ The implementation has to make a choice that's consistent across all four hot en
 
 ## D-049 — Echo cold-start readiness threshold: shipped triple is v1; personal-brain.md sub-table is forward-looking spec (resolves OQ-6) (2026-05-06)
 
-**Status:** accepted. Resolves [OQ-6](initiatives.md#open-questions-parking-lot). Ratifies the shipped behavior in [E-3.5](initiatives.md#e-35--cold-start-readiness-threshold) (PR [#172](https://github.com/khoks/VideoResearchPro/pull/172)).
+**Status:** superseded by [D-101](#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20) (2026-10-20). Resolves [OQ-6](initiatives.md#open-questions-parking-lot). Ratifies the shipped behavior in [E-3.5](initiatives.md#e-35--cold-start-readiness-threshold) (PR [#172](https://github.com/khoks/VideoResearchPro/pull/172)).
 
 **Context.** The Echo "speak as me" agent should not fire on sparse data — output would be lazy-mimicry, breaking user trust. A cold-start gate is needed. OQ-6 asked: what are the quantitative criteria? `personal-brain.md` proposed a four-row sub-table (Domain 1: 30 facts × 3 categories; Domain 2: 90 days × 200 events; Domain 3: 50 signals × 4 types; Domain 5: 100 shares × 4 content types). PR #172 shipped a simpler three-criterion gate.
 
@@ -3090,3 +3090,48 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Linked initiatives / PRs.** E-3.3 / S-3.3.4 (PR [#346](https://github.com/khoks/VideoResearchPro/pull/346)), #338 (pre-registration), D-055, D-097, [D-099](#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19).
 
+## D-101 — Echo readiness v2: five domains measured from their stores, blocked reads as not connected, the voice test reported not gated (2026-10-20)
+
+**Status:** accepted. Supersedes [D-049](#d-049--echo-cold-start-readiness-threshold-shipped-triple-is-v1-personal-brainmd-sub-table-is-forward-looking-spec-resolves-oq-6-2026-05-06).
+
+**Context.** D-049 kept the shipped triple (100 personal-context rows, 3 distinct sources, one personality trait) as v1 until shares, activity and signals existed. They exist now: shares and importers (E-3.7), the connector runtime and GitHub (E-3.2), voice signals and the voice-match gate (E-3.3, [D-100](#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19)). The triple had also stopped measuring the right thing. A connector's derived facts and an import's facts counted as though the user had written them, and the sources gate could not be met by writing at all.
+
+**Decision.** `ready` is the AND of five domains. Each is measured from its store on every call (`echo_readiness_service.evaluate`), with its thresholds in settings:
+
+1. **Facts.** Live personal-context rows the user wrote (`source = 'manual'`): at least 30, across at least 3 kinds. Inferred facts are reported beside the count, not in it.
+2. **Activity.** `activity_events` from every connector and import except `internal`: at least 200 events spanning at least 90 days. The internal share event mirrors a share, which domain 5 already counts.
+3. **Signals.** Live voice signals (`suppressed_at` null): at least 50, across at least 4 types.
+4. **Voice.** The user's own writing (live notes, plus shares marked `author_is_tenant` that carry text), grouped by script. The floor is met when one script holds at least 30 pieces or at least 2,000 words. Once the floor is met, the note vectors already in `notes_global` must be stable: the mean cosine distance of 50 bootstrap centroids from the full centroid is at most 0.05, over at least 10 vectors. With the notes index off, stability is reported as not measurable and does not block.
+5. **Shares.** `shares_inbox`: at least 100, across at least 4 content types.
+
+Each domain returns:
+
+- its criteria;
+- a progress fraction, the mean of its criteria with each capped at 1;
+- what is missing, in words.
+
+The page shows each domain. Its percentage is the mean of the five, capped at 99 until `ready` ([D-069](#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19)'s rule, applied to domains).
+
+Some connectors cannot be offered on an install: there is no OAuth client for them, or they are not built yet. YouTube likes and Calendar wait on the user's Google setup (S-3.2.2, S-3.2.5). Such a connector reads `not_connected` with its reason. An activity domain with no events and nothing connected also reads `not_connected`, never as a failure.
+
+A threshold of 0 switches that check off.
+
+The D-100 user-as-judge test is **not** part of `ready`. Readiness reports whether the user can take the test (at least 40 live notes, `ECHO_VOICE_TEST_NOTES_MIN`). The test's result switches "speak as me" on per user, and storing it belongs to E-3.4.
+
+**Alternatives considered.**
+- *Keep the triple and add the domains beside it.* That gives two gates that can disagree, and inferred facts would still count as self-authored.
+- *Count connector-derived and imported facts in domain 1.* `personal-brain.md`'s minimum is self-authored facts. A nightly GitHub sync could otherwise fill domain 1 without a word from the user.
+- *One voice floor across languages.* A voice is learnt per language, and 1,000 English words plus 1,000 Hindi words is not 2,000 words of either. The split is by script, so romanised Hindi counts as Latin: `language_service`'s known gap. D-080 tags code-mixing per word, but no per-document language is stored to split on.
+- *Measure stability by embedding the writing on the status call.* That loads the embedding model on a status request. The vectors are already in `notes_global`.
+- *Put the user-as-judge test in the gate.* Deferred, because its result is not stored yet. Readiness can say when the user can take it.
+- *A stored readiness flag, updated on writes.* Every store has its own delete paths (disconnect, undo an import, forget, suppress a signal), and a stored flag would drift from them. The counts are tenant-filtered queries.
+
+**Consequences.**
+- `GET /echo/status` gains `progress` and `domains`. The v1 fields stay, reported only.
+- `ready` is stricter: an account that met the triple is not ready until all five domains are met.
+- On master only the Echo page read `ready`. The bubble (E-3.8) and "speak as me" (E-3.4) should read `ready` and each domain's `missing` text rather than recompute them.
+- The thresholds are untuned: `personal-brain.md`'s recommended minima plus the plan's voice floor. The 0.05 spread is a starting point, not a measurement, and needs a real user's notes; the install held none on 2026-10-20.
+- Once the voice floor is met, a status call reads the tenant's note vectors: one Chroma `get` filtered by tenant, bounded by their note count.
+- Open: should the user-as-judge result join the gate once E-3.4 stores it?
+
+**Linked initiatives / PRs.** E-3.5 / S-3.5.1 (PR [#354](https://github.com/khoks/VideoResearchPro/pull/354)), [D-049](#d-049--echo-cold-start-readiness-threshold-shipped-triple-is-v1-personal-brainmd-sub-table-is-forward-looking-spec-resolves-oq-6-2026-05-06) (superseded), [D-069](#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19), [D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) item 4, [D-100](#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19).

@@ -319,6 +319,13 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `ECHO_SHARES_DIR` | No | `./data/echo/shares` | Echo shares inbox files, one directory per tenant; removed by the full Echo delete |
 | `ECHO_SHARE_MAX_BYTES` / `ECHO_SHARE_TEXT_MAX_CHARS` | No | `26214400` / `50000` | Caps on one quick-share file (25 MB) and one text share |
 | `ECHO_CONNECTOR_SYNC` | No | `celery` | How a connector sync runs after connecting and on "Sync now" (S-3.2.1): `celery` (`echo.sync_connector`), `inline`, or `off` (the suite). Scheduled syncs always go through the scheduler tick (`echo_sync`) |
+| `ECHO_READY_FACTS_MIN` / `_FACT_KINDS_MIN` | No | `30` / `3` | Readiness domain 1 (S-3.5.1): facts the user wrote, and distinct kinds. Every `ECHO_READY_*` threshold set to `0` switches that check off |
+| `ECHO_READY_EVENTS_MIN` / `_EVENT_DAYS_MIN` | No | `200` / `90` | Domain 2: activity events from any connector or import, and days between the first and last |
+| `ECHO_READY_SIGNALS_MIN` / `_SIGNAL_TYPES_MIN` | No | `50` / `4` | Domain 3: live voice signals, and distinct types |
+| `ECHO_READY_SHARES_MIN` / `_SHARE_TYPES_MIN` | No | `100` / `4` | Domain 5: shares, and distinct content types |
+| `ECHO_READY_VOICE_PIECES_MIN` / `_VOICE_WORDS_MIN` | No | `30` / `2000` | Voice floor: own-writing pieces OR words in one script (notes plus own-words shares) |
+| `ECHO_READY_VOICE_SPREAD_MAX` / `_VOICE_MIN_VECTORS` | No | `0.05` / `10` | Voice stability: max bootstrap-centroid spread of the note vectors in `notes_global`, and the vectors needed to measure it. Untuned |
+| `ECHO_VOICE_TEST_NOTES_MIN` | No | `40` | Live notes before readiness says the user can take the D-100 voice test (reported, not gated) |
 | `ECHO_SHARE_PROCESSING` | No | `celery` | How shares are processed after intake: `celery` (the `echo.process_share` task), `inline` (in the request, single-process dev) or `off` (the test suite) |
 | `ECHO_SHARE_EMBED_MAX_CHARS` | No | `2000` | Text embedded per share in `shares_global`: annotation, title and the opening of the extracted text |
 | `ECHO_IMPORT_MAX_BYTES` / `ECHO_IMPORT_MAX_UNCOMPRESSED_BYTES` | No | `200 MB` / `1 GB` | Caps on one export upload (S-3.7.5) and on what a zip may unpack to (a zip-bomb guard). Parsing streams, so memory stays flat |

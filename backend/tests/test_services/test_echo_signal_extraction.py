@@ -419,6 +419,33 @@ def test_maybe_queue_waits_for_enough_new_text(db, asha, monkeypatch):
     assert ex.maybe_queue(db, free.id, force=True) == "not_entitled"
 
 
+def test_the_hook_trigger_reads_no_text(db, asha, monkeypatch):
+    """The note and question hooks run on the request path: they count rows
+    and never gather (tag, hash) the user's texts."""
+    monkeypatch.setattr(settings, "ECHO_SIGNAL_EXTRACTION", "celery")
+    monkeypatch.setattr(settings, "ECHO_SIGNALS_MIN_NEW_INPUTS", 2)
+    from app.services import task_routing_service
+
+    dispatched = []
+    monkeypatch.setattr(task_routing_service, "dispatch_for_user", lambda task, user, *a: dispatched.append(a))
+    gathered = []
+    real_gather = ex.gather_inputs
+    monkeypatch.setattr(ex, "gather_inputs", lambda *a, **k: gathered.append(1) or real_gather(*a, **k))
+
+    _note(db, asha, "first")
+    db.add(LibraryQAExchange(id="lq-quick", tenant_id=asha.id, question="Second?", answer="a"))
+    db.add(SavedSearchRun(saved_search_id="ss", tenant_id=asha.id, status="ok", exchange_id="lq-quick"))
+    db.commit()
+    assert ex.quick_new_count(db, asha.id) == 1, "a saved search's re-ask is not new input"
+    assert ex.maybe_queue(db, asha.id) == "waiting"
+    _note(db, asha, "second")
+    assert dispatched == [(asha.id,)]
+    assert gathered == [], "no text was read on the request path"
+
+    ex.run(db, asha.id, use_llm=False)
+    assert ex.quick_new_count(db, asha.id) == 0
+
+
 def test_the_qa_routes_and_share_processing_queue_learning(db, monkeypatch):
     """Wiring: each surface where the user writes calls maybe_queue."""
     import inspect

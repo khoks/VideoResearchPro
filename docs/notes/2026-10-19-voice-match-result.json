@@ -1,0 +1,642 @@
+{
+  "voice": {
+    "pooled_v_share": 1.0,
+    "abstain_share": 0.0,
+    "per_judge": {
+      "anthropic:claude-sonnet-5": {
+        "v_share": 1.0,
+        "decided": 18
+      },
+      "google:gemini-3.6-flash": {
+        "v_share": 1.0,
+        "decided": 18
+      }
+    },
+    "per_writer": {
+      "asha": {
+        "v_share": 1.0,
+        "decided": 12
+      },
+      "bharat": {
+        "v_share": 1.0,
+        "decided": 12
+      },
+      "chetan": {
+        "v_share": 1.0,
+        "decided": 12
+      }
+    },
+    "verdicts": 36
+  },
+  "quality": {
+    "v_or_tie_share": 0.472,
+    "counts": {
+      "v": 17,
+      "n": 17,
+      "tie": 0,
+      "unparsed": 2
+    }
+  },
+  "tier1": {
+    "sv_gt_sn": 15,
+    "of": 18,
+    "attribution": {
+      "v_correct": 15,
+      "n_correct": 12,
+      "of": 18
+    }
+  },
+  "rules": {
+    "voice_1_pooled_v_share_ge_0.70": true,
+    "voice_2_each_judge_ge_0.60": true,
+    "voice_3_abstain_le_0.50": true,
+    "voice_4_no_writer_below_half": true,
+    "quality_guard_v_or_tie_ge_0.40": true,
+    "tier1_sv_gt_sn_ge_12_of_18": true
+  },
+  "voice_pass": true,
+  "quality_pass": true,
+  "tier1_pass": true,
+  "gate_for_s34_design": true,
+  "spend": {
+    "tokens": {
+      "gpt-5.6-luna": [
+        4391,
+        2938
+      ],
+      "gpt-5.5": [
+        9142,
+        3969
+      ],
+      "claude-sonnet-5": [
+        17938,
+        1263
+      ],
+      "gemini-3.6-flash": [
+        11262,
+        9585
+      ]
+    },
+    "cost_usd": 0.3065
+  },
+  "config": {
+    "drafter": "openai:gpt-5.5:low",
+    "judges": [
+      "anthropic:claude-sonnet-5:off",
+      "google:gemini-3.6-flash:low"
+    ],
+    "seed": 3304
+  },
+  "items": [
+    {
+      "writer": "asha",
+      "situation": "A news article says a new import duty on electronics will protect domestic jobs.",
+      "neutral": "The new import duty on electronics may help some domestic factories and protect jobs in the short term. However, it could also raise prices for consumers and make devices less affordable. The policy will only succeed if it is paired with investment in skills, technology, and local supply chains. Otherwise, it may protect a few jobs while hurting many buyers.",
+      "voice": "Maybe. But who pays the duty first? Importers. Then consumers, through higher prices. Jobs are the numerator. What is the denominator? Higher costs for firms using electronics, and fewer choices for buyers.\n\nThis is a Duckworth-Lewis policy claim. Change the rules mid-innings, then declare protection worked. Compared to what? Lower tariffs, better logistics, easier credit? Check the base rate. Tariffs often protect margins before they protect jobs.",
+      "trait_card": [
+        "personality · recommendation lens: Evaluates policies by who pays, who benefits, and what incentives they create.",
+        "style · recurring reference: Uses cricket analogies to explain changing conditions, timing, and policy effectiveness.",
+        "style · formality register: Writes in concise, direct analytical prose with occasional conversational phrasing.",
+        "personality · interest: Keeps returning to base rates, incentives, tariffs, and the 1991 reforms.",
+        "personality · topic emphasis: Gives particular weight to policy evaluation, political economy, and economic history.",
+        "personality · methodology: Tests claims by checking denominators, base rates, counterfactuals, incentives, and source independence.",
+        "personality · trusted conclusion: Treats independent, representative evidence and explicit uncertainty as prerequisites for trust.",
+        "style · cadence: Asks questions often (more than one sentence in seven)",
+        "style · cadence: Writes in short sentences (under 12 words on average)"
+      ],
+      "v_is": "A",
+      "s_v": 0.6491,
+      "s_n": 0.4426,
+      "v_attributed_to": "bharat",
+      "n_attributed_to": "bharat",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "B",
+        "google:gemini-3.6-flash": "B"
+      }
+    },
+    {
+      "writer": "asha",
+      "situation": "A friend forwards a study claiming remote work raises productivity by 13 percent.",
+      "neutral": "Thanks for sharing. A 13% productivity boost is impressive, though I’d want to see how the study measured productivity and whether it applies across different roles. Remote work can reduce commuting and interruptions, but it also depends on good communication, home setup, and team culture. Still, it’s strong evidence that flexible work can be more than just an employee perk.",
+      "voice": "Interesting claim. But 13 percent against what base rate? Same workers, same firms, same tasks? Or firms already good at remote work?\n\nI’d check the denominator first. Hours worked or output per hour? Also attrition, hiring quality, and selection. Who chose remote?\n\nAnd who benefits if this becomes the headline? Employees, firms cutting office costs, or software vendors? One study is useful. It is not the policy.",
+      "trait_card": [
+        "style · cadence: Asks questions often (more than one sentence in seven)",
+        "style · cadence: Writes in short sentences (under 12 words on average)",
+        "personality · perception lens: Reads economic and policy events through causal mechanisms rather than stated intentions.",
+        "personality · methodology: Tests claims by checking denominators, base rates, counterfactuals, incentives, and source independence.",
+        "personality · interest: Keeps returning to base rates, incentives, tariffs, and the 1991 reforms.",
+        "style · formality register: Writes in concise, direct analytical prose with occasional conversational phrasing.",
+        "personality · apprehension: Distrusts strong claims built on weak, dependent, or undisclosed evidence.",
+        "personality · recommendation lens: Evaluates policies by who pays, who benefits, and what incentives they create."
+      ],
+      "v_is": "A",
+      "s_v": 0.5268,
+      "s_n": 0.373,
+      "v_attributed_to": "asha",
+      "n_attributed_to": "bharat",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "B"
+      }
+    },
+    {
+      "writer": "asha",
+      "situation": "A video argues the central bank should cut rates because inflation feels lower.",
+      "neutral": "Rate decisions shouldn’t be based on whether inflation “feels” lower. People may notice slower price increases, but the central bank needs hard data on inflation, wages, employment, and expectations. Cutting too early could let inflation rebound; waiting too long could hurt growth. A cautious, evidence-based approach is better than reacting to sentiment alone.",
+      "voice": "Feels lower to whom? That is not the denominator.\n\nRates should respond to measured inflation, expectations, and slack. Not vibes in one video. What is the counterfactual? If we cut too early, who gains first? Borrowers, asset holders, and the government. Who pays if inflation returns? Wage earners and savers.\n\nThis is a pitch after dew arrives. Conditions changed, yes. But check the scoreboard before changing the field.",
+      "trait_card": [
+        "personality · interest: Keeps returning to base rates, incentives, tariffs, and the 1991 reforms.",
+        "personality · topic emphasis: Gives particular weight to policy evaluation, political economy, and economic history.",
+        "personality · methodology: Tests claims by checking denominators, base rates, counterfactuals, incentives, and source independence.",
+        "personality · perception lens: Reads economic and policy events through causal mechanisms rather than stated intentions.",
+        "personality · apprehension: Distrusts strong claims built on weak, dependent, or undisclosed evidence.",
+        "personality · recommendation lens: Evaluates policies by who pays, who benefits, and what incentives they create.",
+        "style · recurring reference: Uses cricket analogies to explain changing conditions, timing, and policy effectiveness.",
+        "style · cadence: Asks questions often (more than one sentence in seven)",
+        "style · cadence: Writes in short sentences (under 12 words on average)"
+      ],
+      "v_is": "A",
+      "s_v": 0.6081,
+      "s_n": 0.3541,
+      "v_attributed_to": "bharat",
+      "n_attributed_to": "bharat",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "B",
+        "google:gemini-3.6-flash": "B"
+      }
+    },
+    {
+      "writer": "asha",
+      "situation": "A founder on a podcast credits their success to waking up at 5 a.m. every day.",
+      "neutral": "Interesting, but I’d be careful about treating 5 a.m. as the secret. Waking early may help some people focus, but success probably comes from consistency, priorities, resources, timing, and luck too. If a routine gives you energy and discipline, great. If you do your best work later, copying someone else’s alarm clock won’t magically build a company.",
+      "voice": "Base rates again. How many founders woke at 5 a.m. and still failed? We do not hear that panel.\n\nThe mechanism matters. Did early waking create customers, lower costs, or improve decisions? Maybe. But maybe success bought the story.\n\nWhat is the denominator? What is the counterfactual? Without that, this is not evidence. It is survivor narration with an alarm clock.",
+      "trait_card": [
+        "personality · interest: Keeps returning to base rates, incentives, tariffs, and the 1991 reforms.",
+        "personality · trusted conclusion: Treats independent, representative evidence and explicit uncertainty as prerequisites for trust.",
+        "style · cadence: Asks questions often (more than one sentence in seven)",
+        "personality · recommendation lens: Evaluates policies by who pays, who benefits, and what incentives they create.",
+        "personality · topic emphasis: Gives particular weight to policy evaluation, political economy, and economic history.",
+        "personality · perception lens: Reads economic and policy events through causal mechanisms rather than stated intentions.",
+        "style · cadence: Writes in short sentences (under 12 words on average)",
+        "personality · methodology: Tests claims by checking denominators, base rates, counterfactuals, incentives, and source independence."
+      ],
+      "v_is": "A",
+      "s_v": 0.7036,
+      "s_n": 0.2601,
+      "v_attributed_to": "asha",
+      "n_attributed_to": "bharat",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      }
+    },
+    {
+      "writer": "asha",
+      "situation": "A report says exports in a new sector grew 40 percent last quarter.",
+      "neutral": "The 40 percent growth in exports last quarter is very encouraging for the new sector. It suggests strong international demand and shows that local producers may be becoming more competitive. However, it will be important to see whether this growth can continue over the next few quarters. Policymakers and businesses should support the sector with investment, skills development, and stable trade conditions.",
+      "voice": "Good headline. But 40 percent of what base? A small denominator can flatter everyone. What happened to prices, subsidies, and tariff rebates? Who pays for those incentives? Did volumes rise, or just invoiced values? Compare with similar sectors, not slogans. Also check imports of inputs. Exports can grow while value added stays thin. This may be a powerplay over, not a Test match. Need more overs.",
+      "trait_card": [
+        "personality · interest: Keeps returning to base rates, incentives, tariffs, and the 1991 reforms.",
+        "personality · topic emphasis: Gives particular weight to policy evaluation, political economy, and economic history.",
+        "personality · recommendation lens: Evaluates policies by who pays, who benefits, and what incentives they create.",
+        "personality · perception lens: Reads economic and policy events through causal mechanisms rather than stated intentions.",
+        "personality · methodology: Tests claims by checking denominators, base rates, counterfactuals, incentives, and source independence.",
+        "style · recurring reference: Uses cricket analogies to explain changing conditions, timing, and policy effectiveness.",
+        "style · cadence: Writes in short sentences (under 12 words on average)",
+        "style · cadence: Asks questions often (more than one sentence in seven)"
+      ],
+      "v_is": "B",
+      "s_v": 0.2784,
+      "s_n": 0.514,
+      "v_attributed_to": "bharat",
+      "n_attributed_to": "bharat",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "B",
+        "google:gemini-3.6-flash": "B"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "UNPARSED",
+        "google:gemini-3.6-flash": "A"
+      }
+    },
+    {
+      "writer": "asha",
+      "situation": "An influencer says a single chart proves the housing market will crash.",
+      "neutral": "A single chart can be useful, but it rarely “proves” a housing crash is coming. Housing markets depend on many factors: interest rates, lending standards, supply, employment, wages, local demand, and investor behavior. One alarming graph may highlight a risk, not a certainty. I’d treat the claim as a prompt to look deeper, compare multiple data sources, and be cautious of anyone turning a complex market into a simple prediction.",
+      "voice": "One chart proves very little. What is the denominator? Which market? Housing is local, credit-driven, and slow to clear. A price-to-income chart can look scary for years before anything breaks.\n\nWhat changed in incentives? Lending standards? Rates? Supply? Forced sellers? Without that mechanism, it is just a line with a story attached. Show base rates across cycles, not one dramatic chart. Then we can talk about crash risk.",
+      "trait_card": [
+        "personality · apprehension: Distrusts strong claims built on weak, dependent, or undisclosed evidence.",
+        "personality · perception lens: Reads economic and policy events through causal mechanisms rather than stated intentions.",
+        "personality · methodology: Tests claims by checking denominators, base rates, counterfactuals, incentives, and source independence.",
+        "personality · trusted conclusion: Treats independent, representative evidence and explicit uncertainty as prerequisites for trust.",
+        "personality · interest: Keeps returning to base rates, incentives, tariffs, and the 1991 reforms.",
+        "style · cadence: Asks questions often (more than one sentence in seven)",
+        "personality · topic emphasis: Gives particular weight to policy evaluation, political economy, and economic history.",
+        "style · formality register: Writes in concise, direct analytical prose with occasional conversational phrasing.",
+        "style · cadence: Writes in short sentences (under 12 words on average)"
+      ],
+      "v_is": "B",
+      "s_v": 0.5379,
+      "s_n": 0.3428,
+      "v_attributed_to": "asha",
+      "n_attributed_to": "bharat",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "B",
+        "google:gemini-3.6-flash": "B"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "B",
+        "google:gemini-3.6-flash": "A"
+      }
+    },
+    {
+      "writer": "bharat",
+      "situation": "A popular documentary blames the Mughal decline on one emperor's policies.",
+      "neutral": "Blaming the Mughal decline on one emperor’s policies, often Aurangzeb’s, is too simplistic. His long wars, religious policies, and administrative pressures did weaken the empire, but deeper causes mattered too: succession conflicts, rising regional powers, economic strain, weak later rulers, and changing military conditions. The decline was a gradual process, not the result of a single ruler’s mistakes.",
+      "voice": "The documentary’s emphasis on one emperor is rhetorically tidy, but historically unsafe. Policies mattered, of course, and some decisions sharpened fiscal and religious tensions; yet Mughal decline also involved succession practices, military costs, regional elites, changing revenue bargains, and the limits of imperial administration (especially at distance). I should want to see the chronology established from contemporary records before accepting so singular a cause; consequence is not the same thing as explanation.",
+      "trait_card": [
+        "style · cadence: Writes in long sentences (over 20 words on average)",
+        "personality · recommendation lens: Values arguments that are measured, well documented and explicit about their evidentiary limits.",
+        "style · cadence: Adds asides in parentheses",
+        "style · vocabulary: Favors precise historical language about institutions, evidence, incentives and consequences.",
+        "personality · topic emphasis: Gives particular weight to how institutions and policies reshape power, incentives and social boundaries.",
+        "personality · perception lens: Reads historical change through the interaction of institutional continuity, rupture and unintended consequences.",
+        "personality · methodology: Tests historical claims against primary sources, archival records and the sequence of causes.",
+        "personality · apprehension: Distrusts oversimplification, hindsight and claims that exceed the available evidence."
+      ],
+      "v_is": "B",
+      "s_v": 0.674,
+      "s_n": 0.6538,
+      "v_attributed_to": "bharat",
+      "n_attributed_to": "bharat",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "B",
+        "google:gemini-3.6-flash": "B"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "B",
+        "google:gemini-3.6-flash": "B"
+      }
+    },
+    {
+      "writer": "bharat",
+      "situation": "A lecture claims the railways in colonial India were built mainly for Indians' benefit.",
+      "neutral": "The claim is misleading. Railways in colonial India did help Indians by improving travel and communication, but they were built mainly to serve British imperial interests. They moved raw materials like cotton and coal to ports, carried British goods into Indian markets, and helped the colonial government move troops quickly to control resistance. Any benefit to Indians was largely secondary.",
+      "voice": "I would be cautious about saying the railways were built mainly for Indians’ benefit; the evidence points to a more mixed set of incentives, including military mobility, export corridors and guaranteed returns to British investors. This does not mean Indians derived no benefit (markets, travel and information did change), but the distribution of those benefits matters. A convincing account would show who paid, who profited, and how famine, prices and local producers were affected.",
+      "trait_card": [
+        "style · framing: Builds arguments through measured qualifications, caveats and balanced contrasts.",
+        "style · cadence: Adds asides in parentheses",
+        "style · vocabulary: Favors precise historical language about institutions, evidence, incentives and consequences.",
+        "style · cadence: Writes in long sentences (over 20 words on average)",
+        "personality · interest: Returns repeatedly to colonial governance, political economy and the lived distribution of policy effects.",
+        "personality · topic emphasis: Gives particular weight to how institutions and policies reshape power, incentives and social boundaries.",
+        "personality · recommendation lens: Values arguments that are measured, well documented and explicit about their evidentiary limits.",
+        "personality · trusted conclusion: Historical explanations are strongest when they acknowledge uncertainty, complexity and evidentiary limits."
+      ],
+      "v_is": "A",
+      "s_v": 0.534,
+      "s_n": 0.446,
+      "v_attributed_to": "bharat",
+      "n_attributed_to": "bharat",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "UNPARSED",
+        "google:gemini-3.6-flash": "B"
+      }
+    },
+    {
+      "writer": "bharat",
+      "situation": "A review praises a new history of the 1857 uprising for its simple, clear story.",
+      "neutral": "A simple, clear account of the 1857 uprising is always welcome, especially for readers who may feel overwhelmed by dense historical writing. If the book can tell the story plainly without flattening its complexity, it could help many people understand why 1857 still matters. Clarity in history is not a weakness; it is often the best way to invite deeper interest.",
+      "voice": "I should be cautious about praising simplicity in a history of 1857; clarity is a virtue, but only if it does not flatten the uneven motives of sepoys, princes, peasants and colonial officials into a single narrative. The uprising was at once a military crisis, a revenue question and a failure of imperial intelligence (among other things), and a good account ought to show where the evidence permits synthesis, and where it resists it.",
+      "trait_card": [
+        "style · cadence: Writes in long sentences (over 20 words on average)",
+        "personality · recommendation lens: Values arguments that are measured, well documented and explicit about their evidentiary limits.",
+        "personality · interest: Returns repeatedly to colonial governance, political economy and the lived distribution of policy effects.",
+        "style · cadence: Adds asides in parentheses",
+        "style · vocabulary: Favors precise historical language about institutions, evidence, incentives and consequences.",
+        "personality · trusted conclusion: Historical explanations are strongest when they acknowledge uncertainty, complexity and evidentiary limits.",
+        "style · formality register: Writes in a formal, scholarly register with restrained evaluative language.",
+        "personality · perception lens: Reads historical change through the interaction of institutional continuity, rupture and unintended consequences."
+      ],
+      "v_is": "A",
+      "s_v": 0.5476,
+      "s_n": 0.6436,
+      "v_attributed_to": "bharat",
+      "n_attributed_to": "bharat",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      }
+    },
+    {
+      "writer": "bharat",
+      "situation": "A podcast compares the British Empire to Rome.",
+      "neutral": "Comparing the British Empire to Rome is compelling, especially in how both projected power through trade, military strength, law, and culture. But the differences matter too: their economies, technologies, and ideas of citizenship and race were shaped by very different worlds. It’s a useful analogy if it sparks discussion, but risky if it makes empire seem inevitable or overly glamorous.",
+      "voice": "The comparison with Rome is useful only if it does not become a substitute for explanation. Both empires relied on law, military coercion, and graded forms of citizenship or subjecthood, yet the British case was inseparable from industrial capitalism and maritime finance in ways Rome was not. One would want to ask, above all, how each imperial system altered local institutions, incentives, and social boundaries (often unintentionally), rather than treating empire as a single timeless form.",
+      "trait_card": [
+        "style · cadence: Adds asides in parentheses",
+        "style · vocabulary: Favors precise historical language about institutions, evidence, incentives and consequences.",
+        "style · formality register: Writes in a formal, scholarly register with restrained evaluative language.",
+        "style · cadence: Writes in long sentences (over 20 words on average)",
+        "personality · topic emphasis: Gives particular weight to how institutions and policies reshape power, incentives and social boundaries.",
+        "personality · interest: Returns repeatedly to colonial governance, political economy and the lived distribution of policy effects.",
+        "style · framing: Builds arguments through measured qualifications, caveats and balanced contrasts.",
+        "personality · perception lens: Reads historical change through the interaction of institutional continuity, rupture and unintended consequences."
+      ],
+      "v_is": "A",
+      "s_v": 0.5167,
+      "s_n": 0.5097,
+      "v_attributed_to": "bharat",
+      "n_attributed_to": "bharat",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      }
+    },
+    {
+      "writer": "bharat",
+      "situation": "An article describes the 1950s as a golden age of Indian planning.",
+      "neutral": "Calling the 1950s a golden age of Indian planning is understandable. The period saw strong faith in nation-building, public institutions, dams, industries, and scientific development. Planning gave a newly independent country direction and ambition. Yet the phrase should be used carefully, because poverty, inequality, and implementation failures remained serious. It was golden more for its optimism and vision than for complete success.",
+      "voice": "I would hesitate over the phrase ‘golden age’, since it risks turning a contested administrative experiment into a retrospective moral judgement. The early Five Year Plans were certainly ambitious, and in some sectors institution-building was real; but one would want clearer evidence on distributional consequences (rural credit, regional investment, food procurement) before praising the settlement too warmly. Planning created capacities, but also incentives and exclusions whose effects were uneven.",
+      "trait_card": [
+        "style · cadence: Writes in long sentences (over 20 words on average)",
+        "style · cadence: Adds asides in parentheses",
+        "personality · interest: Returns repeatedly to colonial governance, political economy and the lived distribution of policy effects.",
+        "style · vocabulary: Favors precise historical language about institutions, evidence, incentives and consequences.",
+        "personality · recommendation lens: Values arguments that are measured, well documented and explicit about their evidentiary limits.",
+        "style · framing: Builds arguments through measured qualifications, caveats and balanced contrasts.",
+        "personality · perception lens: Reads historical change through the interaction of institutional continuity, rupture and unintended consequences.",
+        "personality · trusted conclusion: Historical explanations are strongest when they acknowledge uncertainty, complexity and evidentiary limits."
+      ],
+      "v_is": "A",
+      "s_v": 0.5745,
+      "s_n": 0.5745,
+      "v_attributed_to": "bharat",
+      "n_attributed_to": "bharat",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "B",
+        "google:gemini-3.6-flash": "B"
+      }
+    },
+    {
+      "writer": "bharat",
+      "situation": "A talk argues the Permanent Settlement of 1793 was a complete failure.",
+      "neutral": "Calling the Permanent Settlement of 1793 a complete failure is too sweeping. It did fail to protect peasants, encouraged absentee landlordism, and often increased rural exploitation. However, it gave the British a stable land revenue system and created a loyal class of zamindars. So, while it was deeply damaging socially and economically, its failure depends on whose interests we judge it by.",
+      "voice": "I would hesitate over the word “complete.” The Permanent Settlement plainly created perverse incentives (especially where zamindars were insulated from cultivators’ distress), and its fiscal rigidity later proved costly; yet in some districts it also produced a class whose interests were tied to Company rule. The question is not whether it failed in the abstract, but for whom, over what period, and by what evidence we measure its consequences.",
+      "trait_card": [
+        "style · cadence: Writes in long sentences (over 20 words on average)",
+        "style · cadence: Adds asides in parentheses",
+        "personality · trusted conclusion: Historical explanations are strongest when they acknowledge uncertainty, complexity and evidentiary limits.",
+        "personality · interest: Returns repeatedly to colonial governance, political economy and the lived distribution of policy effects.",
+        "style · framing: Builds arguments through measured qualifications, caveats and balanced contrasts.",
+        "style · vocabulary: Favors precise historical language about institutions, evidence, incentives and consequences.",
+        "personality · recommendation lens: Values arguments that are measured, well documented and explicit about their evidentiary limits.",
+        "personality · apprehension: Distrusts oversimplification, hindsight and claims that exceed the available evidence."
+      ],
+      "v_is": "A",
+      "s_v": 0.6406,
+      "s_n": 0.509,
+      "v_attributed_to": "bharat",
+      "n_attributed_to": "bharat",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      }
+    },
+    {
+      "writer": "chetan",
+      "situation": "A quick-commerce startup raised a huge round and promises 10-minute delivery everywhere.",
+      "neutral": "10-minute delivery ka promise sunne mein exciting lagta hai, but “everywhere” thoda over-ambitious bhi hai. Funding se speed, dark stores aur logistics improve ho sakte hain, par traffic, unit economics, rider safety aur local demand ka real test hoga. Convenience achhi hai, lekin sustainable model aur fair working conditions bhi utne hi important hain. Hype se zyada execution matter karega.",
+      "voice": "haha headline mast hai, par 10-minute delivery everywhere ka maths kaun samjhayega? dark stores, riders, inventory, wastage, rent — sab ka bill kaun pay kar raha hai? agar customer delivery fee nahi de raha, toh subsidy ka pump kab tak chalega 😂 mujhe toh retention, basket size, contribution margin aur repeat frequency dekhni hai. execution solid ho toh game hai, warna naam bada aur unit economics chhote!",
+      "trait_card": [
+        "personality · interest: Repeatedly focuses on startup economics, sustainability, and operational fundamentals.",
+        "personality · recommendation lens: Evaluates businesses by who pays, why they pay, and whether the model can sustain itself.",
+        "style · cadence: Uses exclamation marks often",
+        "personality · perception lens: Reads startup success through execution and operational reality rather than branding or hype.",
+        "personality · preferred solution: Prefers simple, focused execution backed by sustainable unit economics.",
+        "style · cadence: Asks questions often (more than one sentence in seven)",
+        "personality · methodology: Works things out by examining data, customer feedback, retention, and concrete operating metrics.",
+        "style · cadence: Writes in medium-length sentences (12 to 20 words on average)",
+        "style · cadence: Uses emoji",
+        "style · cadence: Often starts sentences in lowercase"
+      ],
+      "v_is": "A",
+      "s_v": 0.4193,
+      "s_n": 0.3581,
+      "v_attributed_to": "chetan",
+      "n_attributed_to": "chetan",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "B"
+      }
+    },
+    {
+      "writer": "chetan",
+      "situation": "A founder posts that their app hit one million downloads in its first month.",
+      "neutral": "Bahut badiya news! First month mein 1 million downloads hit karna seriously impressive milestone hai. Ye sirf strong product ka signal nahi, balki team ki execution, timing aur user understanding bhi dikhata hai. Ab asli game retention, feedback aur scale ka hoga. Huge congratulations to you and the team—keep building, momentum zabardast hai!",
+      "voice": "mast milestone hai bhai, 1 million downloads sunke accha lagta hai! but asli sawaal ye hai ki D30 retention kya hai? paid users kitne bane, aur CAC vs LTV ka scene kaisa hai? agar downloads paid marketing ya referral subsidy se aaye hain toh thoda sambhalna padega 😂 naam bada ho gaya, ab darshan bhi dikhne chahiye. cash burn control mein hai na?",
+      "trait_card": [
+        "personality · perception lens: Reads startup success through execution and operational reality rather than branding or hype.",
+        "personality · methodology: Works things out by examining data, customer feedback, retention, and concrete operating metrics.",
+        "personality · interest: Repeatedly focuses on startup economics, sustainability, and operational fundamentals.",
+        "personality · recommendation lens: Evaluates businesses by who pays, why they pay, and whether the model can sustain itself.",
+        "personality · apprehension: Distrusts growth stories that depend on subsidies, hype, or unsustainable spending.",
+        "personality · topic emphasis: Gives particular weight to retention, profitability, cash flow, and unit economics.",
+        "personality · trusted conclusion: Believes profitability and durable economics matter more than valuation or headline growth.",
+        "personality · preferred solution: Prefers simple, focused execution backed by sustainable unit economics.",
+        "style · cadence: Writes in medium-length sentences (12 to 20 words on average)",
+        "style · cadence: Asks questions often (more than one sentence in seven)",
+        "style · cadence: Uses exclamation marks often",
+        "style · cadence: Uses emoji",
+        "style · cadence: Often starts sentences in lowercase"
+      ],
+      "v_is": "B",
+      "s_v": 0.4818,
+      "s_n": 0.4265,
+      "v_attributed_to": "chetan",
+      "n_attributed_to": "chetan",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "B",
+        "google:gemini-3.6-flash": "B"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "B",
+        "google:gemini-3.6-flash": "A"
+      }
+    },
+    {
+      "writer": "chetan",
+      "situation": "An investor says profitability does not matter in a startup's first five years.",
+      "neutral": "Profitability first five years mein matter karti hai, bas har startup ke liye same level par nahi. Early stage mein growth, product-market fit aur customer acquisition important hote hain, lekin unit economics aur clear path to profit ignore nahi karna chahiye. Agar business sirf funding par chal raha hai aur margins weak hain, toh risk high hai. Growth healthy tabhi hai jab future mein sustainable profits dikh sakein.",
+      "voice": "dekho bhai, first five years mein profitability nahi toh at least path to profitability toh dikhna chahiye na? sirf growth, discounts aur hype se business nahi banta 😂 customer kaun pay kar raha hai, kyun pay kar raha hai, aur repeat karega ya nahi, ye main point hai. Zomato se bhi yahi seekhne ko mila, execution aur unit economics eventually matter karte hain. burn infinite nahi hota!",
+      "trait_card": [
+        "personality · trusted conclusion: Believes profitability and durable economics matter more than valuation or headline growth.",
+        "personality · interest: Repeatedly focuses on startup economics, sustainability, and operational fundamentals.",
+        "personality · recommendation lens: Evaluates businesses by who pays, why they pay, and whether the model can sustain itself.",
+        "style · recurring reference: Returns to Zomato as a useful case study for learning about profitability and execution.",
+        "personality · preferred solution: Prefers simple, focused execution backed by sustainable unit economics.",
+        "personality · perception lens: Reads startup success through execution and operational reality rather than branding or hype.",
+        "personality · topic emphasis: Gives particular weight to retention, profitability, cash flow, and unit economics.",
+        "personality · apprehension: Distrusts growth stories that depend on subsidies, hype, or unsustainable spending.",
+        "style · cadence: Writes in medium-length sentences (12 to 20 words on average)",
+        "style · cadence: Asks questions often (more than one sentence in seven)",
+        "style · cadence: Uses exclamation marks often",
+        "style · cadence: Uses emoji",
+        "style · cadence: Often starts sentences in lowercase"
+      ],
+      "v_is": "B",
+      "s_v": 0.5221,
+      "s_n": 0.4155,
+      "v_attributed_to": "chetan",
+      "n_attributed_to": "chetan",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "B",
+        "google:gemini-3.6-flash": "B"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      }
+    },
+    {
+      "writer": "chetan",
+      "situation": "A friend wants to start a D2C brand and spend most of the money on influencer marketing.",
+      "neutral": "Influencer marketing useful hai, but D2C brand ke liye saara budget wahi daalna risky hoga. Pehle product quality, packaging, website experience, customer support aur repeat purchase ka system strong banao. Influencers awareness la sakte hain, par conversion aur retention ke bina paisa jal sakta hai. Better hai small tests karo, ROI track karo, aur performance ads, content, referrals aur reviews mein bhi budget balance rakho.",
+      "voice": "bhai D2C karna hai toh pehle repeat purchase aur gross margin ka maths pakka karo! influencer se traffic aa jayega, par customer wapas kyun aayega? agar har order subsidy aur CAC pe chal raha hai, toh ye brand nahi, marketing experiment hai 😂 pehle 1000 customers se feedback lo, retention dekho, contribution margin positive karo. hype baad mein, unit economics pehle!",
+      "trait_card": [
+        "personality · recommendation lens: Evaluates businesses by who pays, why they pay, and whether the model can sustain itself.",
+        "personality · apprehension: Distrusts growth stories that depend on subsidies, hype, or unsustainable spending.",
+        "personality · preferred solution: Prefers simple, focused execution backed by sustainable unit economics.",
+        "personality · perception lens: Reads startup success through execution and operational reality rather than branding or hype.",
+        "personality · interest: Repeatedly focuses on startup economics, sustainability, and operational fundamentals.",
+        "personality · methodology: Works things out by examining data, customer feedback, retention, and concrete operating metrics.",
+        "personality · trusted conclusion: Believes profitability and durable economics matter more than valuation or headline growth.",
+        "style · cadence: Uses exclamation marks often",
+        "style · cadence: Writes in medium-length sentences (12 to 20 words on average)",
+        "style · cadence: Asks questions often (more than one sentence in seven)",
+        "style · cadence: Uses emoji",
+        "style · cadence: Often starts sentences in lowercase"
+      ],
+      "v_is": "A",
+      "s_v": 0.5582,
+      "s_n": 0.3651,
+      "v_attributed_to": "chetan",
+      "n_attributed_to": "chetan",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "B"
+      }
+    },
+    {
+      "writer": "chetan",
+      "situation": "A podcast guest says AI will replace all customer-support jobs next year.",
+      "neutral": "Mujhe lagta hai yeh claim thoda exaggerated hai. AI definitely customer support mein bahut saare simple queries handle karega, jaise order status, refunds ya basic troubleshooting. Lekin har job next year replace ho jayegi, yeh realistic nahi lagta. Angry customers, complex issues aur empathy wali situations mein humans ki zaroorat rahegi. Better hoga log AI ke saath kaam karna seekhein, na ki sirf daren.",
+      "voice": "haha next year sab replace ho jayega, ye thoda naam bada darshan chhote type prediction lag raha hai 😂\n\ndekho bhai, AI support ka cost definitely giraega, par real question hai: customer issue solve ho raha hai ya bas ticket close ho raha hai? retention, CSAT, repeat complaints dekho pehle! Zomato jaisi companies se seekho, automation tab kaam karta hai jab ops tight ho. warna chatbot bhi subsidy jaisa hai, demo mast, reality mein dukaan hilti hai!",
+      "trait_card": [
+        "personality · preferred solution: Prefers simple, focused execution backed by sustainable unit economics.",
+        "personality · methodology: Works things out by examining data, customer feedback, retention, and concrete operating metrics.",
+        "style · cadence: Uses emoji",
+        "personality · recommendation lens: Evaluates businesses by who pays, why they pay, and whether the model can sustain itself.",
+        "style · recurring reference: Returns to Zomato as a useful case study for learning about profitability and execution.",
+        "personality · perception lens: Reads startup success through execution and operational reality rather than branding or hype.",
+        "style · formality register: Uses an informal, conversational Hindi-English register with humor and direct address.",
+        "personality · topic emphasis: Gives particular weight to retention, profitability, cash flow, and unit economics.",
+        "style · cadence: Writes in medium-length sentences (12 to 20 words on average)",
+        "style · cadence: Asks questions often (more than one sentence in seven)",
+        "style · cadence: Uses exclamation marks often",
+        "style · cadence: Often starts sentences in lowercase"
+      ],
+      "v_is": "A",
+      "s_v": 0.4366,
+      "s_n": 0.3821,
+      "v_attributed_to": "chetan",
+      "n_attributed_to": "chetan",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "B",
+        "google:gemini-3.6-flash": "B"
+      }
+    },
+    {
+      "writer": "chetan",
+      "situation": "A food-delivery company announces it is finally profitable.",
+      "neutral": "Finally profitable? Bahut badi news hai! Food-delivery space mein margins hamesha tight rahe hain, discounts aur delivery costs ne kaafi pressure dala. Agar company genuinely sustainable profits dikha rahi hai, toh investors ke liye confidence boost hoga aur industry ke liye bhi positive signal. Bas hope hai ki growth ke chakkar mein riders aur customers par extra burden na aaye.",
+      "voice": "dekho bhai, food-delivery mein profitable hona small thing nahi hai! Zomato se bhi yahi learning milti hai, growth tabhi meaningful hai jab order economics positive ho. main bas ye dekhunga ki profit real cash flow se aa raha hai ya accounting jugaad se? repeat customers kitne strong hain, delivery cost control mein hai, restaurants khush hain? agar subsidy kam karke bhi demand tik rahi hai, then finally model solid ban raha hai 🔥",
+      "trait_card": [
+        "personality · trusted conclusion: Believes profitability and durable economics matter more than valuation or headline growth.",
+        "style · recurring reference: Returns to Zomato as a useful case study for learning about profitability and execution.",
+        "personality · recommendation lens: Evaluates businesses by who pays, why they pay, and whether the model can sustain itself.",
+        "personality · preferred solution: Prefers simple, focused execution backed by sustainable unit economics.",
+        "personality · interest: Repeatedly focuses on startup economics, sustainability, and operational fundamentals.",
+        "personality · methodology: Works things out by examining data, customer feedback, retention, and concrete operating metrics.",
+        "personality · perception lens: Reads startup success through execution and operational reality rather than branding or hype.",
+        "personality · topic emphasis: Gives particular weight to retention, profitability, cash flow, and unit economics.",
+        "style · cadence: Writes in medium-length sentences (12 to 20 words on average)",
+        "style · cadence: Asks questions often (more than one sentence in seven)",
+        "style · cadence: Uses exclamation marks often",
+        "style · cadence: Uses emoji",
+        "style · cadence: Often starts sentences in lowercase"
+      ],
+      "v_is": "A",
+      "s_v": 0.469,
+      "s_n": 0.351,
+      "v_attributed_to": "chetan",
+      "n_attributed_to": "chetan",
+      "voice_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      },
+      "quality_verdicts": {
+        "anthropic:claude-sonnet-5": "A",
+        "google:gemini-3.6-flash": "A"
+      }
+    }
+  ]
+}

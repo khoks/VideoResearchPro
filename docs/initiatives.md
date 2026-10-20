@@ -951,7 +951,12 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.2.5.1 Google Calendar read-only; events `event_attended` with titles only by default (attendees and descriptions opt-in); derived `daily_routine` facts
 - [ ] T-3.2.5.2 Tests on fixtures
 
-### E-3.3 🟡 Voice & personality capture (Domain 3)
+### E-3.3 🟢 Voice & personality capture (Domain 3)
+
+**Shipped:** 2026-10-19 — S-3.3.1 [#333](https://github.com/khoks/VideoResearchPro/pull/333), S-3.3.2 [#335](https://github.com/khoks/VideoResearchPro/pull/335), S-3.3.3 [#343](https://github.com/khoks/VideoResearchPro/pull/343), S-3.3.4 [#346](https://github.com/khoks/VideoResearchPro/pull/346), with decisions [D-099](decisions.md#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19) and [D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19).
+- The acceptance's last clause, the agent retrieving these signals, belongs to E-3.4.
+- The harness has shown that clause on synthetic writers.
+- Open follow-up tasks: T-3.3.1.6, T-3.3.2.7 to T-3.3.2.9, and T-3.3.4.3, which is the user-as-judge run.
 
 **Scope.** Store user writing samples, Q&A patterns, opinion threads. Train fine-tune adapters on user-tagged content for persona.
 
@@ -993,11 +998,20 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 
 **As built.** `echo_personal_vectors.py`. One vector per live fact (`fact:<id>`) and per live signal (`signal:<id>`), with `tenant_id`, `kind`, `row_id` and, for signals, `signal_type`, `origin`, `weight`, `language` and `register` metadata. **A sync, not per-write bookkeeping:** `sync_tenant` compares the live rows with the stored vectors through a content hash in each vector's metadata, embeds only what is new or changed, and deletes vectors whose row is gone, expired, rejected or suppressed. Every write path calls it after its commit: fact record, delete and revoke; signal create, edit and reject; an extraction run; and a note or share delete. The startup backfill (`backfill`, the `note_index` pattern) runs it for every tenant with rows or vectors. Fail-soft at the callers. `query_personal_context(tenant_id, text, n, kinds, signal_types)` refuses an empty tenant and filters on it, with a defence-in-depth check on every hit.
 
-#### S-3.3.4 🔵 Voice-match evaluation harness
+#### S-3.3.4 🟢 Voice-match evaluation harness
 **Pre-registered 2026-10-19:** [docs/notes/2026-10-19-voice-match-preregistration.md](notes/2026-10-19-voice-match-preregistration.md) fixes the material (three synthetic writers, 18 prompts in `backend/tests/fixtures/echo_voice/draft_prompts.json`), the two conditions, the judges (claude-sonnet-5 and gemini-3.6-flash, the latter declared as the substitute for Gemini 3.1 Pro) and the pass rule, before any draft is generated. Tier (iii), the user as judge, is fixed too and waits for 40 of the user's own notes.
 **PR:** TBD. The gate for E-3.4; the [D-055](decisions.md#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29) method applied to voice.
-- [ ] T-3.3.4.1 Three tiers, per the plan: (i) an automatic authorship-verification score against the user's held-out texts per language, (ii) an LLM judge that may abstain, used only for the in-UI voice-match number, (iii) a blinded "which of these did you write?" pairwise test with the user as judge, the only credible product gate
-- [ ] T-3.3.4.2 Pre-registered pass rule before the first run; a quality guard (preference against a neutral draft) so a style win never ships unreadable text
+- [x] T-3.3.4.1 Three tiers, per the plan: (i) an automatic authorship-verification score against the user's held-out texts per language, (ii) an LLM judge that may abstain, used only for the in-UI voice-match number, (iii) a blinded "which of these did you write?" pairwise test with the user as judge, the only credible product gate
+- [x] T-3.3.4.2 Pre-registered pass rule before the first run; a quality guard (preference against a neutral draft) so a style win never ships unreadable text
+- [ ] T-3.3.4.3 Run tier (iii) for the user once they have 40 live notes in a language: `scripts/voice_match_harness.py user-pairs` on a copy of the database, then `user-score` on their answers. This is the per-user switch for E-3.4
+
+**Shipped:** 2026-10-19 — PR [#346](https://github.com/khoks/VideoResearchPro/pull/346). Linked decision: [D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19). Result: [docs/notes/2026-10-19-voice-match-result.md](notes/2026-10-19-voice-match-result.md). **The pre-registered gate passed on three synthetic writers**:
+- Voice: V preferred in 36 of 36 verdicts, by both judges for all three writers, with no abstentions.
+- Quality guard: 47% (17 V, 17 N, 2 unparsed).
+- Tier (i): 15 of 18.
+- Cost: $0.31.
+
+It is a ceiling, not a margin. E-3.4 may be built; it is enabled per user only after tier (iii).
 
 ### E-3.4 🔵 "Speak as me" agent (Domain 4)
 
@@ -1007,7 +1021,7 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 **Acceptance.** A ready user pastes an incoming message, gets a draft with citations to sources, facts and past Q&As, a voice-match score and deviation notes; editing the draft records the diff as a new signal; a not-ready user gets the readiness meter instead; the daily draft cap holds.
 
 #### S-3.4.1 🔵 Agent and endpoint
-**PR:** TBD. Depends on S-3.3.3 and S-3.3.4.
+**PR:** TBD. Depended on S-3.3.3 and S-3.3.4, both shipped 2026-10-19. **Unblocked by [D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19):** build on Mode A as the harness ran it (the `VOICE` prompt in `scripts/voice_match_harness.py` is the starting draft prompt). It is enabled per user only after tier (iii) passes for them.
 - [ ] T-3.4.1.1 `echo_agent.py` LangGraph graph with the seven nodes; `echo_classify_intent`, `echo_draft`, `echo_critique` use cases registered (`echo_draft` on the synthesis tier). Retrieval picks about five exemplars chosen for *style diversity within the target language and register*, not topical similarity (topical matching measurably hurt attribution in the literature); the critic scores tone, vocabulary, sentence structure and topicality against the trait card for two to three rounds with knockout
 - [ ] T-3.4.1.2 `POST /echo/draft {message, audience?, register?}` → `{draft, confidence, voice_match_score, citations, deviation_notes}`; 409 with readiness diagnostics when not ready; gated on `echo_speak_as_me`
 - [ ] T-3.4.1.3 Guardrails from `personal-brain.md`: no claims outside ingested sources and facts; names of non-public people flagged before drafting

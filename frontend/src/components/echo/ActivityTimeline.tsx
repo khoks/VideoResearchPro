@@ -48,7 +48,7 @@ export function ActivityTimeline({ enabled = true }: { enabled?: boolean }) {
         />
       ))}
       <p style={{ margin: `${space['2']} 0 0`, fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>
-        Disconnecting a connector removes its events from here.
+        Disconnecting a connector or undoing an import removes its events from here.
       </p>
     </div>
   );

@@ -200,6 +200,8 @@ Each connector ships as a **small, isolated module** under `backend/app/connecto
 
 The vocabulary is intentionally per-connector. We don't try to unify "watched a video" and "played a track" into one global event-type — they're searched and reasoned over differently.
 
+**As built (S-3.7.5, 2026-10-19).** Five of the catalogue's sources arrive as export files, not APIs, because no permitted API exists (Spotify's developer-mode limits, Strava's AI clause, Goodreads and Letterboxd closed, Apple Health has no web API). Each is an importer under `backend/app/connectors/<name>/`, writing through the same `activity_events` writer as the API connectors, with `connector` set to the importer's name. Event types as shipped: `google_takeout`: `watched_video`, `searched_youtube`; `spotify_export`: `played_track`, `played_episode`, `played_audiobook`; `goodreads_export`: `read_book`, `reading_book`, `want_to_read`; `letterboxd_export`: `watched_film`, `reviewed_film`, `want_to_watch`; `strava_export`: `workout`. Apple Health writes no events: it becomes three `daily_routine` facts (sleep, steps, workouts) in `personal_context`, and the records are never stored. Private-session plays, IP addresses, ads and GPS routes are dropped by the parser, before anything is stored.
+
 ### What we do NOT ingest, ever
 
 - **Other people's content.** A friend's email to the user is theirs, not the user's; we ingest it for the user's personal index but never embed it into anything that might leave the user's tenant.

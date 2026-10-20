@@ -219,3 +219,54 @@ export function useDeleteBrain() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['echo'] }),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Connectors and the activity timeline (S-3.2.1)
+// ---------------------------------------------------------------------------
+
+const CONNECTORS_KEY = ['echo', 'connectors'] as const;
+const ACTIVITY_KEY = ['echo', 'activity'] as const;
+
+function useInvalidateConnectors() {
+  const qc = useQueryClient();
+  return () => {
+    qc.invalidateQueries({ queryKey: CONNECTORS_KEY });
+    qc.invalidateQueries({ queryKey: ACTIVITY_KEY });
+    qc.invalidateQueries({ queryKey: STATUS_KEY });
+    qc.invalidateQueries({ queryKey: CONTEXT_KEY });
+  };
+}
+
+export function useSyncConnector() {
+  const invalidate = useInvalidateConnectors();
+  return useMutation({
+    mutationFn: (name: string) => echoApi.syncConnector(name),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRevokeConnector() {
+  const invalidate = useInvalidateConnectors();
+  return useMutation({
+    mutationFn: (name: string) => echoApi.revokeConnector(name),
+    onSuccess: invalidate,
+  });
+}
+
+export function useCompleteConnector() {
+  const invalidate = useInvalidateConnectors();
+  return useMutation({
+    mutationFn: ({ name, code, state }: { name: string; code: string; state: string }) =>
+      echoApi.completeConnector(name, { code, state }),
+    onSuccess: invalidate,
+  });
+}
+
+/** The newest activity, a page at a time (`before` = the previous page's `next_before`). */
+export function useEchoActivity(enabled = true, before?: string) {
+  return useQuery({
+    queryKey: [...ACTIVITY_KEY, before ?? null],
+    queryFn: () => echoApi.listActivity({ limit: 20, before }),
+    enabled,
+  });
+}

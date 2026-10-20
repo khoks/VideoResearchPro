@@ -395,13 +395,17 @@ def execute(db: Session, saved_search_id: str, *, trigger: str = "schedule", age
         return {"status": STATUS_FEATURE}
 
     scope = _load_scope(ss)
+    from app.services import library_qa_service
+
     try:
-        document_ids = scope_document_ids(db, user.id, scope)
+        # The core the library route uses (T-8.3.3.6): scope -> documents and
+        # the notes it may draw on.
+        prepared = library_qa_service.prepare(db, user.id, scope)
     except (qa_scope_service.ScopeNotFound, qa_scope_service.UnknownScopeKey):
         _record(db, ss, STATUS_SCOPE_MISSING, "The shelf this search was scoped to no longer exists.", trigger=trigger)
         return {"status": STATUS_SCOPE_MISSING}
 
-    fingerprint = change.scope_fingerprint(document_ids)
+    fingerprint = change.scope_fingerprint(prepared.document_ids)
     if (
         trigger == "schedule"
         and settings.SAVED_SEARCH_GATE_ENABLED
@@ -420,29 +424,15 @@ def execute(db: Session, saved_search_id: str, *, trigger: str = "schedule", age
         return {"status": STATUS_QUOTA}
 
     try:
-        from app.services import chroma_service, corpus_stats_service, llm_service, subscription_service
+        from app.services import chroma_service, llm_service
 
-        if agent is None:
-            from app.agents.qa_agent import run_library_qa_agent as agent  # noqa: N813
-
-        corpus_statistics = corpus_stats_service.corpus_statistics_for_document_ids(db, document_ids)
-        channel_weights = subscription_service.channel_weights(db, user.id)
-        with llm_service.byok_context(user.id, db):
-            result = agent(
-                question=ss.question,
-                answer_language=ss.answer_language,
-                visible_document_ids=document_ids,
-                corpus_statistics=corpus_statistics,
-                output_length=None,
-                channel_weights=channel_weights,
-                # S-8.5.2: the reader's own notes compete in retrieval, as on
-                # the library route. Only for the library scope: the library
-                # agent cannot narrow notes to a shelf, and a scope must never
-                # widen what a question draws on (T-8.3.3.9).
-                notes_tenant_id=user.id if not scope else None,
-            )
-        answer = result.get("answer", "") or ""
-        references = result.get("references", []) or []
+        # Corpus statistics, trust weights, BYOK, the agent with the scope's
+        # notes, and the scoped citation check: one path with the route.
+        result = library_qa_service.ask(
+            db, user.id, prepared, question=ss.question, answer_language=ss.answer_language, agent=agent
+        )
+        answer = result.answer
+        references = result.references
         quota_metering_service.record_usage(db, user.id, QUOTA_RESOURCE)
 
         previous_answer, previous_refs, previous_embedding = _previous(db, ss)

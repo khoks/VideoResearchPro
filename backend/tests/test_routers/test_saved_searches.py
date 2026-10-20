@@ -210,6 +210,7 @@ def test_a_run_asks_over_the_visible_set_and_stores_the_baseline(db, pro, _no_ch
     assert agent.calls[0]["visible_document_ids"] == [mine.document_id]
     assert agent.calls[0]["question"] == ss.question
     assert agent.calls[0]["notes_tenant_id"] == pro.id  # S-8.5.2, as the library route does
+    assert agent.calls[0]["note_target_keys"] is None  # the whole library: every note
     db.refresh(ss)
     assert ss.last_status == "ok" and ss.last_exchange_id == out["exchange_id"]
     assert json.loads(ss.last_reference_ids_json) == ["vidA", "vidB"]
@@ -236,7 +237,8 @@ def test_a_shelf_scope_narrows_to_that_shelfs_documents(db, pro):
     saved_search_service.execute(db, _saved(db, pro, scope={"shelf_id": empty.id}).id, agent=agent)
     assert agent.calls[0]["visible_document_ids"] == [in_shelf.document_id]
     assert agent.calls[1]["visible_document_ids"] == []  # never widens to the library
-    assert agent.calls[0]["notes_tenant_id"] is None  # notes cannot be narrowed to a shelf yet
+    assert agent.calls[0]["notes_tenant_id"] == pro.id
+    assert isinstance(agent.calls[0]["note_target_keys"], list)  # only the shelf's own notes (T-8.3.3.6)
     assert outside.document_id not in agent.calls[0]["visible_document_ids"]
     scopes = [json.loads(e.scope_json) for e in db.query(LibraryQAExchange).all()]
     assert {s.get("shelf_id") for s in scopes} == {shelf.id, empty.id}  # each run is stamped with its scope
@@ -331,3 +333,23 @@ def test_a_worker_registers_the_kind_through_autodiscovery():
     env = {**os.environ, "PYTHONPATH": str(backend)}
     out = subprocess.run([sys.executable, "-c", code], cwd=backend, env=env, capture_output=True, text=True, timeout=120)
     assert out.stdout.strip().splitlines()[-1] == "True True", out.stderr[-2000:]
+
+
+def test_a_shelf_run_shares_the_routes_core_and_drops_off_shelf_citations(db, pro):
+    """T-8.3.3.6 (filed by S-8.1.4): the run goes through library_qa_service,
+    so the scoped citation check applies to it as it does to the route."""
+    in_shelf, outside = _doc(db, pro.id, "In"), _doc(db, pro.id, "Out")
+    job = Job(job_type="topic", topic="t", status="completed", num_videos=1, tenant_id=pro.id)
+    db.add(job)
+    db.commit()
+    db.add(JobVideo(job_id=job.id, document_id=in_shelf.document_id, video_id=in_shelf.video_id, approved=True))
+    db.commit()
+    shelf = shelf_service.create_shelf(db, pro.id, name="Macro")
+    shelf_service.add_job(db, shelf, job)
+    ss = _saved(db, pro, scope={"shelf_id": shelf.id})
+    agent = FakeAgent(refs=(in_shelf.video_id, outside.video_id))
+    out = saved_search_service.execute(db, ss.id, agent=agent)
+    kept = [r["video_id"] for r in json.loads(db.get(LibraryQAExchange, out["exchange_id"]).references_json)]
+    assert kept == [in_shelf.video_id]
+    db.refresh(ss)
+    assert json.loads(ss.last_reference_ids_json) == [in_shelf.video_id]

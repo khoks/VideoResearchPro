@@ -53,4 +53,4 @@ Run with `backend/scripts/calibrate_saved_search_thresholds.py` on a copy of the
 | Re-ask pairs over an unchanged corpus, \|U\| | 2 (job 2, library 0) |
 | Negative-control pairs, \|N\| | 2 |
 
-**Decision (rule 1): calibration pending.** |U| is below 20, so no percentile was computed. The detector ships with the priors **J < 0.50** and **D > 0.15** (`SAVED_SEARCH_JACCARD_THRESHOLD`, `SAVED_SEARCH_EMBEDDING_THRESHOLD`). The protocol is re-run unchanged once the history holds 20 re-ask pairs; saved-search runs themselves produce such pairs, filed as T-8.3.3.6.
+**Decision (rule 1): calibration pending.** |U| is below 20, so no percentile was computed. The detector ships with the priors **J < 0.50** and **D > 0.15** (`SAVED_SEARCH_JACCARD_THRESHOLD`, `SAVED_SEARCH_EMBEDDING_THRESHOLD`). The protocol is re-run unchanged once the history holds 20 re-ask pairs; saved-search runs themselves produce such pairs, filed as T-8.3.3.7.

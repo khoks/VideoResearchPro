@@ -314,7 +314,7 @@ class Settings(BaseSettings):
     # S-8.3.3 saved-search change detection. Pre-registered in
     # docs/notes/2026-10-19-saved-search-change-thresholds.md (#323): the
     # history held 2 re-ask pairs, under the protocol's minimum of 20, so
-    # these are its priors until the protocol is re-run (T-8.3.3.6).
+    # these are its priors until the protocol is re-run (T-8.3.3.7).
     # A run is "changed" when the cited-set Jaccard is BELOW the first or
     # the answer-embedding cosine distance is ABOVE the second; when only
     # one says so, the saved_search_judge decides.

@@ -23,6 +23,19 @@ PR [#316](https://github.com/khoks/VideoResearchPro/pull/316).
   always showed a subscribed channel as never synced. It now marks the job's
   tenant subscribed and synced through `subscription_service`.
 
+### Added: the scope of a library question (2026-10-19)
+
+[S-8.1.4](docs/initiatives.md#s-814--shelf-scoped-qa), PR [#313](https://github.com/khoks/VideoResearchPro/pull/313), [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19).
+
+- `library_qa_exchanges.scope_json` records what a library question was asked
+  over: null for the whole library (every existing row), `{"shelf_id": …}`
+  for a shelf, `{"saved_search_id": …}` for a saved search's run. Library Q&A
+  history returns it as `scope`.
+- `qa_scope_service.resolve_document_ids` turns a scope into the documents a
+  question may retrieve: always inside what the reader can see, nothing for
+  an empty shelf, an error for another reader's shelf or a key it does not
+  know. Shelf-scoped Q&A and saved searches both use it.
+
 ### Slide decks from research runs (2026-10-19, S-6.3.1)
 
 PR [#314](https://github.com/khoks/VideoResearchPro/pull/314). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).

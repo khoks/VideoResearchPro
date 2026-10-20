@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { EchoDataCard } from '../components/echo/EchoDataCard';
 import { ShareTokensCard } from '../components/echo/ShareTokensCard';
 import { SignalsPanel } from '../components/echo/SignalsPanel';
+import { SpeakAsMePanel } from '../components/echo/SpeakAsMePanel';
 import { ActivityTimeline } from '../components/echo/ActivityTimeline';
 import { ConnectorsPanel } from '../components/echo/ConnectorsPanel';
 import {
@@ -356,6 +357,12 @@ export function EchoPage() {
             <SignalsPanel />
           </div>
 
+          {has('echo_speak_as_me') && (
+            <div style={{ marginTop: space['6'] }}>
+              <SpeakAsMePanel />
+            </div>
+          )}
+
           <div style={{ marginTop: space['6'] }}>
             <ShareTokensCard />
           </div>
@@ -370,7 +377,6 @@ export function EchoPage() {
             </h3>
             <ul style={{ margin: `${space['2']} 0 0`, paddingLeft: space['5'], fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal }}>
               <li>Pull-mode connectors: YouTube watch history, Spotify, email, calendar (E-3.2)</li>
-              <li>The "speak as me" agent that drafts in your voice once readiness is met (E-3.4)</li>
             </ul>
           </Card>
         </>

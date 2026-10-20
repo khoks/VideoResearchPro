@@ -337,6 +337,64 @@ export interface UpdateSignalPayload {
   weight?: number;
 }
 
+/** S-3.4.1 "speak as me". Contract agreed with the Echo bubble (S-3.8.1). */
+export interface DraftBlocker {
+  code: 'install_off' | 'not_ready' | 'voice_test_required' | 'voice_test_failed' | 'daily_cap' | string;
+  /** Written for the user; show it as is. */
+  message: string;
+}
+
+export interface VoiceGate {
+  status: 'not_run' | 'passed' | 'failed';
+  run_at: string | null;
+  pairs: number;
+  picked_own_share: number | null;
+  notes_total: number;
+  notes_needed: number;
+}
+
+export interface DraftStatus {
+  enabled: boolean;
+  blockers: DraftBlocker[];
+  readiness: Record<string, unknown>;
+  voice_gate: VoiceGate;
+  drafts_today: number;
+  drafts_per_day: number;
+}
+
+export interface DraftCitation {
+  kind: 'source' | 'fact' | 'note' | 'qa' | 'share' | string;
+  label: string;
+  url?: string;
+}
+
+export interface EchoDraft {
+  id: string;
+  message: string;
+  draft: string;
+  language: string;
+  register: string | null;
+  audience: string | null;
+  intent: string | null;
+  voice_match_score: number;
+  confidence: number;
+  citations: DraftCitation[];
+  deviation_notes: string[];
+  flags: string[];
+  disclosure: string;
+  final_text: string | null;
+  disclosure_kept: boolean | null;
+  created_at: string;
+}
+
+export interface CreateDraftPayload {
+  message: string;
+  audience?: string;
+  register?: 'intimate' | 'casual' | 'professional' | 'public';
+  language?: 'en' | 'hi-Deva' | 'hi-Latn' | 'mixed';
+  acknowledge_names?: string[];
+}
+
 export interface BrainDeleteResponse {
   deleted: boolean;
   removed: EchoFootprint;
@@ -540,6 +598,15 @@ export const echoApi = {
 
   /** S-3.3.2 "Learn now": queue a run for whatever is waiting. */
   learnSignals: () => api.post<LearnResponse>('/echo/signals/learn').then(r => r.data),
+
+  /** S-3.4.1: what stands between the user and a draft, in words. */
+  draftStatus: () => api.get<DraftStatus>('/echo/draft/status').then(r => r.data),
+
+  createDraft: (payload: CreateDraftPayload) => api.post<EchoDraft>('/echo/draft', payload).then(r => r.data),
+
+  listDrafts: (limit = 5) => api.get<{ items: EchoDraft[] }>('/echo/drafts', { params: { limit } }).then(r => r.data),
+
+  deleteDraft: (id: string) => api.delete(`/echo/drafts/${encodeURIComponent(id)}`).then(() => undefined),
 
   footprint: () => api.get<EchoFootprint>('/echo/brain/footprint').then(r => r.data),
 

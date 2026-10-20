@@ -11,12 +11,14 @@ interface HealthLLMPayload {
 
 interface HealthResponse {
   llm?: HealthLLMPayload;
+  capabilities?: Record<string, boolean>;
 }
 
 interface NormalizedHealth {
   status: LLMStatus;
   unavailableFeatures: string[];
   checkedAt: number;
+  capabilities: Record<string, boolean>;
 }
 
 async function fetchHealth(): Promise<NormalizedHealth> {
@@ -28,11 +30,13 @@ async function fetchHealth(): Promise<NormalizedHealth> {
     status: llm.status ?? 'ok',
     unavailableFeatures: llm.unavailable_features ?? [],
     checkedAt: Date.now(),
+    capabilities: data.capabilities ?? {},
   };
 }
 
 export function useSystemStatus() {
   const setStatus = useSystemStatusStore((s) => s.setStatus);
+  const setCapabilities = useSystemStatusStore((s) => s.setCapabilities);
 
   const query = useQuery({
     queryKey: ['systemStatus'],
@@ -48,7 +52,8 @@ export function useSystemStatus() {
   useEffect(() => {
     if (!query.data) return;
     setStatus(query.data.status, query.data.unavailableFeatures, query.data.checkedAt);
-  }, [query.data, setStatus]);
+    setCapabilities(query.data.capabilities);
+  }, [query.data, setStatus, setCapabilities]);
 
   return { refetch: query.refetch };
 }

@@ -10,6 +10,7 @@ import { useEffect, useMemo, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useReportBody } from '../hooks/useReport';
 import { useJobVideos } from '../hooks/useJobs';
+import { useCitationStills } from '../hooks/useVideoFrames';
 import { Button, EmptyState, Spinner } from '../components/primitives';
 import {
   CitationCardProvider,
@@ -52,6 +53,8 @@ export function ReportReaderPage() {
     () => (parsed ? resolveCitations(parsed.citations, videos ?? []) : null),
     [parsed, videos],
   );
+  // S-1.18.2: a cited moment with a captured frame shows that still on its card.
+  const resolveStill = useCitationStills(citationIndex);
 
   useEffect(() => {
     if (!body) return;
@@ -94,7 +97,7 @@ export function ReportReaderPage() {
   const meta = formatMeta(body.generated_at, body.statistics);
 
   return (
-    <CitationCardProvider index={citationIndex}>
+    <CitationCardProvider index={citationIndex} resolveStill={resolveStill}>
       <ReaderShell
         kicker={KICKER[body.job_type] ?? 'Report'}
         title={body.title}

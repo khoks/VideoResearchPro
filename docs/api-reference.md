@@ -884,6 +884,23 @@ Query param: `?force=true` to re-run if already extracted. Returns 409 if alread
 ### `GET /api/v1/videos/{video_id}/knowledge`
 Fetch the stored knowledge artifact. Returns 404 if not yet extracted. The path segment may be the YouTube `video_id` or the `document_id`. Besides the four lists, `knowledge_report_md` and `knowledge_extracted_at`, the response names its source (S-8.8.3): `document_id`, `source_type`, `title`, `channel_name`, `url`, `published_at`. `video_id` is NULL for non-video documents; before S-8.8.3 it was declared non-nullable, so a PDF's artifact failed serialisation.
 
+### Frames (S-1.18.2, R1)
+
+A frame is as private as its document: each route resolves the document through the caller's visibility grants, and a document they cannot see 404s exactly like a missing one. The path segment may be the YouTube `video_id` or the `document_id`.
+
+#### `GET /api/v1/videos/{video_id}/frames`
+The document's captured frames in time order: `{document_id, video_id, visual_enabled, in_progress, frames: [{frame_id, timestamp_seconds, timestamp_display, description, informative, status, width, height, has_image}]}`. `visual_enabled` mirrors the install switch (`VISUAL_ENABLED`); stored frames are listed whatever it says. `in_progress` is true while an on-demand capture runs, so a client polls until it clears.
+
+#### `GET /api/v1/videos/{video_id}/frames/{frame_id}/image`
+One still as `image/jpeg` (`Cache-Control: private, max-age=86400`). 404 for a frame of another document, for a stored path outside `VISUAL_FRAMES_DIR` (traversal guard), and for a missing file. Report routes take no token in a URL (D-079), so the frontend fetches the bytes with the bearer header and shows them through an object URL.
+
+#### `POST /api/v1/videos/{video_id}/extract-frames`
+Queues select → capture → describe → persist for one document on the worker (`visual.extract_frames`) and returns **202** `{status: "queued", document_id}`. `?force=true` recaptures. Errors:
+- 503: the install switch is off, or the vision models failed their startup probe;
+- 422: not a YouTube video, or no transcript;
+- 409: frames exist and `force` is omitted, or a capture is already running;
+- 429: the monthly `visual_extractions` quota is spent (free 2, Pro 30, Studio 300; D-096). The quota is charged only when frames were actually captured.
+
 ---
 
 ## Dataset exports

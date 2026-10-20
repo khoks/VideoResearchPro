@@ -12,6 +12,8 @@ const FEATURE_LABELS: Record<string, string> = {
   library_qa: 'Global library Q&A',
   qa_history: 'Q&A history chat',
   knowledge_extraction: 'Knowledge extraction',
+  visual_analysis: 'Visual analysis (frames)',
+  channel_report: 'Channel reports',
 };
 
 function featureLabel(feature: string): string {

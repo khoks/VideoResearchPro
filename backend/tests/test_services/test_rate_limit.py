@@ -223,3 +223,32 @@ def test_disabled_rate_limit_passes_through(client, monkeypatch):
         assert r.status_code == 200
     # No rate-limit headers when disabled.
     assert "X-RateLimit-Limit" not in r.headers
+
+
+def test_a_rate_limited_response_still_carries_cors_headers(client, monkeypatch):
+    """CORS must wrap the limiter. With the limiter outermost, a 429 went out
+    without Access-Control-Allow-Origin and the browser reported a CORS
+    failure instead of a rate limit (found verifying S-1.18.2)."""
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
+    monkeypatch.setattr(settings, "RATE_LIMIT_PER_MIN_STUDIO", 1)
+    monkeypatch.setattr(settings, "RATE_LIMIT_PER_MIN_PRO", 1)
+    monkeypatch.setattr(settings, "RATE_LIMIT_PER_MIN_FREE", 1)
+    rate_limit_service.reset()
+    origin = {"Origin": "http://localhost:5173"}
+    assert client.get("/api/v1/jobs", headers=origin).status_code == 200
+    r = client.get("/api/v1/jobs", headers=origin)
+    assert r.status_code == 429
+    assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+
+def test_cors_preflight_is_never_rate_limited(client, monkeypatch):
+    """A guard, not a regression test: under TestClient the old order also
+    passed this (preflights carry no token and the unauth cap counts GETs).
+    The browser did see 429 preflights; CORS outermost answers them first."""
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
+    monkeypatch.setattr(settings, "RATE_LIMIT_PER_MIN_UNAUTH", 1)
+    rate_limit_service.reset()
+    preflight = {"Origin": "http://localhost:5173", "Access-Control-Request-Method": "GET"}
+    for _ in range(5):
+        r = client.options("/api/v1/jobs", headers=preflight)
+        assert r.status_code == 200

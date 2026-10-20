@@ -71,3 +71,5 @@ celery_app.autodiscover_tasks(["app.tasks"], related_name="output_tasks")
 celery_app.autodiscover_tasks(["app.tasks"], related_name="saved_search_tasks")
 # S-3.7.2: Echo share processing, one task per share.
 celery_app.autodiscover_tasks(["app.tasks"], related_name="echo_tasks")
+# S-1.18.2: on-demand frame capture for one document.
+celery_app.autodiscover_tasks(["app.tasks"], related_name="visual_tasks")

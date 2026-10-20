@@ -6,7 +6,13 @@ interface SystemStatusState {
   llmStatus: LLMStatus;
   unavailableFeatures: string[];
   lastCheckedAt: number | null;
+  /**
+   * Install-level opt-in switches from `/health` `capabilities`
+   * (e.g. `visual_analysis_enabled`, S-1.18.2). Null until the first poll.
+   */
+  capabilities: Record<string, boolean> | null;
   setStatus: (status: LLMStatus, unavailableFeatures: string[], lastCheckedAt: number) => void;
+  setCapabilities: (capabilities: Record<string, boolean>) => void;
 }
 
 function arraysEqual(a: string[], b: string[]): boolean {
@@ -17,10 +23,17 @@ function arraysEqual(a: string[], b: string[]): boolean {
   return true;
 }
 
+function recordsEqual(a: Record<string, boolean> | null, b: Record<string, boolean>): boolean {
+  if (!a) return false;
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every((k) => a[k] === b[k]);
+}
+
 export const useSystemStatusStore = create<SystemStatusState>((set, get) => ({
   llmStatus: 'unknown',
   unavailableFeatures: [],
   lastCheckedAt: null,
+  capabilities: null,
   setStatus: (status, unavailableFeatures, lastCheckedAt) => {
     const prev = get();
     if (
@@ -33,5 +46,9 @@ export const useSystemStatusStore = create<SystemStatusState>((set, get) => ({
       return;
     }
     set({ llmStatus: status, unavailableFeatures, lastCheckedAt });
+  },
+  setCapabilities: (capabilities) => {
+    if (recordsEqual(get().capabilities, capabilities)) return;
+    set({ capabilities });
   },
 }));

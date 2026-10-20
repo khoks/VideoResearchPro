@@ -1,3 +1,5 @@
+from app.models.activity_event import ActivityEvent
+from app.models.echo_connector import EchoConnectorCredential, EchoConnectorGrant, EchoConnectorOAuthState
 from app.models.api_quota_log import ApiQuotaLog
 from app.models.audit_log import AuditLog
 from app.models.channel import Channel
@@ -44,6 +46,10 @@ from app.models.user_credential import UserCredential
 from app.models.visual_frame import VisualFrame
 
 __all__ = [
+    "ActivityEvent",
+    "EchoConnectorCredential",
+    "EchoConnectorGrant",
+    "EchoConnectorOAuthState",
     "ApiQuotaLog",
     "AuditLog",
     "Channel",

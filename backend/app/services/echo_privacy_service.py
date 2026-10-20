@@ -47,6 +47,12 @@ from typing import IO, Any
 from sqlalchemy import DateTime, func, or_
 from sqlalchemy.orm import Session
 
+from app.models.activity_event import ActivityEvent
+from app.models.echo_connector import (
+    EchoConnectorCredential,
+    EchoConnectorGrant,
+    EchoConnectorOAuthState,
+)
 from app.models.personal_context import PersonalContext
 from app.models.share import Share
 from app.services import echo_intake_service, echo_vectors
@@ -62,6 +68,23 @@ ARCHIVE_VERSION = 1
 ECHO_TABLES: tuple[tuple[str, Any], ...] = (
     ("personal_context", PersonalContext),
     ("shares_inbox", Share),
+    ("activity_events", ActivityEvent),
+    ("echo_connector_grants", EchoConnectorGrant),
+)
+
+# Echo tables that hold secrets: OAuth tokens (encrypted, D-043) and the PKCE
+# verifiers of connects in flight (S-3.2.1). Counted in the footprint and
+# erased by the full delete like every Echo table, but never written into an
+# export, encrypted or not: the manifest says how many rows were withheld and
+# why. A new secret store is registered here, not in ECHO_TABLES.
+ECHO_SECRET_TABLES: tuple[tuple[str, Any], ...] = (
+    ("echo_connector_credentials", EchoConnectorCredential),
+    ("echo_connector_oauth_states", EchoConnectorOAuthState),
+)
+WITHHELD_REASON = (
+    "Connector access tokens and pending sign-in state are secrets: they are "
+    "erased with your brain but never leave the server, encrypted or not. "
+    "Reconnect the connector to grant access again."
 )
 
 _BATCH = 200
@@ -148,9 +171,10 @@ def write_archive(db: Session, tenant_id: str, out: IO[bytes]) -> dict[str, Any]
         "files": [],
         "missing_files": [],
         "scope": (
-            "Echo only: facts and shares with their files. Notes export "
-            "separately (/api/v1/exports/notes.jsonl); the research library "
-            "is not part of Echo."
+            "Echo only: facts, shares with their files, activity events and "
+            "connector grants. Connector tokens are withheld (see withheld). "
+            "Notes export separately (/api/v1/exports/notes.jsonl); the "
+            "research library is not part of Echo."
         ),
     }
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -164,6 +188,14 @@ def write_archive(db: Session, tenant_id: str, out: IO[bytes]) -> dict[str, Any]
                     if model is Share and row.file_path:
                         file_paths.append(row.file_path)
             manifest["tables"][name] = {"file": f"{name}.jsonl", "rows": count}
+
+        withheld = {
+            name: int(
+                db.query(func.count()).select_from(model).filter(model.tenant_id == tenant_id).scalar() or 0
+            )
+            for name, model in ECHO_SECRET_TABLES
+        }
+        manifest["withheld"] = {"tables": withheld, "reason": WITHHELD_REASON}
 
         for stored in file_paths:
             try:
@@ -262,7 +294,7 @@ def footprint(db: Session, tenant_id: str) -> dict[str, Any]:
             db.query(func.count()).select_from(model).filter(_tenant_filter(model, tenant_id)).scalar()
             or 0
         )
-        for name, model in ECHO_TABLES
+        for name, model in ECHO_TABLES + ECHO_SECRET_TABLES
     }
     return {
         "rows": rows,
@@ -303,7 +335,7 @@ def delete_brain(db: Session, tenant_id: str) -> dict[str, Any]:
 
     removed_rows: dict[str, int] = {}
     try:
-        for name, model in ECHO_TABLES:
+        for name, model in ECHO_TABLES + ECHO_SECRET_TABLES:
             removed_rows[name] = (
                 db.query(model)
                 .filter(_tenant_filter(model, tenant_id))

@@ -491,6 +491,9 @@ def delete_share(db: Session, tenant_id: str, share_id: str) -> ShareDeletion:
         )
     # Derived voice signals (S-3.3.1) do not exist yet; when they do, they are
     # tombstoned here through `derived_signal_ids_json`.
+    from app.services import activity_event_service
+
+    activity_event_service.delete_share_event(db, tenant_id, share.id)
     db.delete(share)
     db.commit()
     logger.info(

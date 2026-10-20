@@ -8,10 +8,10 @@ Three layers:
 
 1. **CRUD** on PersonalContext rows (``record``, ``get``, ``list``,
    ``delete``, ``revoke_source``).
-2. **Connector abstraction** — `EchoConnector` Protocol + a
-   registry. Concrete connectors (YouTube watch history, Spotify,
-   email, calendar, browser history) live in future PRs and register
-   themselves at import.
+2. **Connector abstraction** — re-exported from ``app.connectors``
+   (S-3.2.1): the `ActivityConnector` contract, its registry, and the
+   archive-importer registry. Connectors live in ``app/connectors/<name>/``
+   and register themselves at import.
 3. **Cold-start gate** — Echo features are gated behind a readiness
    threshold so the "speak as me" agent doesn't fire prematurely on
    sparse data. ``is_ready(user)`` returns ``(bool, dict)`` with
@@ -23,7 +23,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Protocol
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -212,44 +212,15 @@ def revoke_source(db: Session, user_id: str, source: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-class EchoConnector(Protocol):
-    """Interface every Echo activity-stream connector implements.
-
-    Concrete instances (Spotify, YouTube watch history, email, etc.)
-    live in their own modules and register themselves into
-    ``_CONNECTORS``. v1 ships zero concrete implementations — the
-    Protocol is the contract that future PRs build against.
-    """
-
-    name: str  # e.g. "spotify_history", matches the `source` written to rows.
-
-    def authorize_url(self, user: User, redirect_uri: str) -> str: ...
-
-    def revoke(self, db: Session, user: User) -> None: ...
-
-    def sync(self, db: Session, user: User) -> int:
-        """Pull new data, persist via ``record_context``, return the
-        count of rows added or updated."""
-
-    def supported_kinds(self) -> set[str]:
-        """Which `kind` values this connector emits."""
-
-
-# Connector registry. Future PRs add entries via `register_connector`.
-_CONNECTORS: dict[str, EchoConnector] = {}
-
-
-def register_connector(connector: EchoConnector) -> None:
-    """Register an Echo connector. Idempotent on `connector.name`."""
-    _CONNECTORS[connector.name] = connector
-
-
-def get_connector(name: str) -> EchoConnector | None:
-    return _CONNECTORS.get(name)
-
-
-def list_connectors() -> list[str]:
-    return sorted(_CONNECTORS.keys())
+# S-3.2.1: the contract widened to `personal-brain.md`'s shape and moved to
+# ``app/connectors`` (one package per connector). These names stay so existing
+# callers keep working; new code imports from ``app.connectors``.
+from app.connectors.base import ActivityConnector as EchoConnector  # noqa: E402,F401
+from app.connectors.registry import (  # noqa: E402,F401
+    get_connector,
+    list_connectors,
+    register_connector,
+)
 
 
 # ---------------------------------------------------------------------------

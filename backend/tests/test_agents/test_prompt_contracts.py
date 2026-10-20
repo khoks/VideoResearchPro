@@ -379,3 +379,24 @@ def test_refine_prompt_tells_the_model_to_keep_spans_marked(which):
     assert VISUAL_SPAN_EXTRACT_RULE in prompt
     assert prompt.count(_ATTRIBUTION_RULE_HEAD) == 1
 
+
+
+def test_note_contract_quotes_the_marker_the_agent_writes():
+    """S-8.5.2 / T-8.5.2.6: the header the agent writes for a note starts with
+    the marker the contract teaches, and the notes block carries it verbatim
+    to the answer step (notes skip the lossy refine step)."""
+    from app.agents.prompts.shared import NOTE_ANNOTATION_CONTRACT, NOTE_MARKER_PREFIX
+
+    note = {"text": "my take", "metadata": {
+        "source_type": "note", "created_date": "2026-10-19",
+        "video_title": "Your note of 2026-10-19 on DNS explained", "channel_name": "you",
+        "target_label": "DNS explained",
+    }}
+    header = qa_agent._chunk_header(3, note)
+    assert header.startswith(f"{NOTE_MARKER_PREFIX}, 2026-10-19")
+    assert NOTE_MARKER_PREFIX in NOTE_ANNOTATION_CONTRACT
+    block = qa_agent._notes_block([note, {"text": "chunk", "metadata": {"video_title": "V"}}])
+    assert block.count(NOTE_MARKER_PREFIX) == 1 and block.rstrip().endswith("my take")
+    assert qa_agent._notes_block([{"text": "chunk", "metadata": {}}]) == ""
+    for brace in "{}":
+        assert brace not in NOTE_ANNOTATION_CONTRACT, "composed into a prompt that is .format()-ed"

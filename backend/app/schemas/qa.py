@@ -5,6 +5,14 @@ from pydantic import BaseModel, Field
 
 
 class Reference(BaseModel):
+    # The agent's references are polymorphic by `source_type` (S-1.5.5:
+    # permalink, thread_title, page_number, ...; S-8.5.2: note_id,
+    # note_target_*, quote). Declaring only the YouTube fields with the
+    # default `extra="ignore"` silently stripped all of that from every
+    # response, so a Reddit or PDF citation reached the browser as a
+    # YouTube link. Extra fields pass through.
+    model_config = {"extra": "allow"}
+
     video_url: str
     video_title: str
     channel_name: str

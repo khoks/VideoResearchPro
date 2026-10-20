@@ -116,8 +116,8 @@ def _seed_library(db, tenant_id: str) -> dict:
     "ingested via paste/PDF, never used by a job" case."""
     base = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
-    ch_a = Channel(channel_id="UCaaaaaaaaaaaaaaaaaaaaa1", name="Alpha Channel", subscribed=True)
-    ch_b = Channel(channel_id="UCbbbbbbbbbbbbbbbbbbbbb2", name="Beta Channel", subscribed=False)
+    ch_a = Channel(channel_id="UCaaaaaaaaaaaaaaaaaaaaa1", name="Alpha Channel")
+    ch_b = Channel(channel_id="UCbbbbbbbbbbbbbbbbbbbbb2", name="Beta Channel")
     db.add_all([ch_a, ch_b])
     db.commit()
 

@@ -5,7 +5,7 @@ table was originally `channels` and YouTube-only). E-1.9 generalises
 the concept to "creator" — any source-content producer (YouTube
 channel, podcast show, blog domain, X author, RSS feed). The class
 itself already carries the L1 multi-source columns (``source_type``,
-``creator_external_id``, ``source_weight``, ``creator_metadata_json``)
+``creator_external_id``, ``creator_metadata_json``; the per-tenant trust weight lives in ``channel_subscriptions``)
 so it's structurally Creator-shaped today; only the name needs to
 catch up.
 

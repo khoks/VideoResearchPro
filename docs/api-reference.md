@@ -368,6 +368,8 @@ Ask a question scoped to this job. Runs the Q&A agent (retrieve → refine → a
 
 Returns 400 if the job is not yet `completed`.
 
+**Reference shapes.** References are polymorphic by `source_type` (`video`, `reddit_post`, `hn_story`, `pdf`, `article`, ...) and every field the agent emits is returned; until S-8.5.2 the response schema kept only the YouTube fields. **Notes (S-8.5.2):** when the answer uses one of the asker's own notes, the reference is `{ "source_type": "note", "note_id", "note_target_type", "note_target_id", "note_target_label", "note_target_parent_id", "note_created_at", "quote", "video_title": "Your note of <date> on <target>", "channel_name": "you", ... }` with empty URL fields. Job Q&A draws notes on the job's own material; library Q&A (same reference shape) draws every note of the asker.
+
 ### `GET /api/v1/jobs/{job_id}/qa`
 Per-job Q&A history. Query params: `limit` (default 50), `offset` (default 0). Ordered ascending by `created_at`. Returns `list[QAResponse]`.
 

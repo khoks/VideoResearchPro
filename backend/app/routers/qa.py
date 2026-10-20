@@ -159,6 +159,13 @@ def _run_qa_and_persist(
 
     channel_weights = subscription_service.channel_weights(db, current_user.id)
 
+    # S-8.5.2: the asker's own notes on this job's material join retrieval
+    # (the job, its documents and their knowledge reports, its answers, the
+    # channels its documents come from).
+    from app.services import note_index
+
+    note_target_keys = note_index.job_target_keys(db, job.id, approved_document_ids)
+
     usage: dict = {}
     with llm_service.byok_context(current_user.id, db):
         answer, references = run_qa_agent(
@@ -172,6 +179,8 @@ def _run_qa_and_persist(
             corpus_statistics=corpus_statistics,
             output_length=output_length,
             channel_weights=channel_weights,
+            notes_tenant_id=current_user.id,
+            note_target_keys=note_target_keys,
         )
 
     # T-5.5.5: record the consumed resource AFTER the agent succeeds.

@@ -17,7 +17,7 @@ The user-facing claim of [vision](vision.md) Ring 2 is that **the curation flow 
 Three tables carry the document library:
 
 - **`documents`** — global, deduplicated, primary key is the platform-native ID (today: YouTube `video_id`; the column is still named `video_id` until a future PR promotes it to a UUID). Carries title, creator/channel reference, thumbnail, duration, published date, description, transcript state, RAG state, and (since Unit 4) extracted knowledge artifacts. The Python ORM class is `Document` (`app.models.document`); `source_type` defaults to `'video'` for every existing row and is the discriminator the connector layer dispatches on.
-- **`channels`** — subscribed YouTube channels with `last_synced_at`. (Generalizes to `creators` in a later PR.)
+- **`channels`** — shared facts about YouTube channels; per-user `subscribed` / `source_weight` / `last_synced_at` live in `channel_subscriptions` ([D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)). (Generalizes to `creators` in a later PR.)
 - **`transcript_cache`** — keyed by `video_id`, stores the raw segmented transcript so we never re-fetch. (Renamed to `text_cache` and re-keyed on `(source_type, source_id)` in a later PR.)
 - **`job_videos`** — many-to-many between `jobs` and `documents`. (Renamed to `job_documents` alongside the `video_id` → `document_id` PK promotion.)
 
@@ -83,9 +83,7 @@ No SQL `VIEW` is needed for back-compat: the `Document` ORM class keeps `__init_
 | `name` | string | |
 | `url` | string | |
 | `description` | text | nullable |
-| `subscribed` | bool | "is this creator on the user's auto-pull list?" |
-| `last_synced_at` | timestamp | nullable |
-| `source_weight` | float | default 1.0; per [feature-roadmap](feature-roadmap.md) L4 |
+| `subscribed`, `last_synced_at`, `source_weight` | — | **per tenant, not on this table**: `channel_subscriptions` ([D-065](decisions.md#d-065--channel-subscriptions-become-per-tenant-transliteration-reversed-2026-07-31)); the global columns were dropped in S-5.10.3 |
 | `metadata` | JSON | per-source-type extras |
 
 Migration: existing `channels` rows become `creators` rows with `source_type='video'`. The `videos.channel_id` foreign key becomes `documents.creator_id`.

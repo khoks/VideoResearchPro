@@ -199,6 +199,8 @@ def answer_library_question(
             corpus_statistics=corpus_statistics,
             output_length=request.output_length,
             channel_weights=channel_weights,
+            # S-8.5.2: every note of the asker may join retrieval.
+            notes_tenant_id=current_user.id,
         )
 
     # T-5.5.5: track consumption.

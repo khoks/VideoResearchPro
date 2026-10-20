@@ -10,6 +10,16 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Fix: the Echo panel words the speak-as-me gate from its blockers (S-3.8.1 with S-3.4.1, 2026-10-20)
+
+PR [#360](https://github.com/khoks/VideoResearchPro/pull/360).
+
+- Draft as me titles the gate by S-3.4.1's first blocker ("Turned off on
+  this install", "Your voice test comes first"...). The not-ready reason
+  points at the readiness line instead of repeating every domain.
+- A message naming a private person asks first, with **Draft anyway**.
+  Refusals use the server's own words.
+
 ### Echo: anticipation cards in the panel (S-3.8.2, 2026-10-20)
 
 PR [#358](https://github.com/khoks/VideoResearchPro/pull/358).

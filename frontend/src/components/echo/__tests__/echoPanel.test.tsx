@@ -275,6 +275,45 @@ describe('draft as me', () => {
   });
 });
 
+describe('drafting through S-3.4.1', () => {
+  it('asks before drafting about people the message names, then drafts on confirm', async () => {
+    draftStatusMock.mockResolvedValue({ enabled: true, state: 'enabled' });
+    draftMock
+      .mockRejectedValueOnce(
+        Object.assign(new Error('409'), {
+          response: { status: 409, data: { detail: { code: 'names_need_confirmation', names: ['Asha Rao'], message: 'This message names someone who looks like a private person: Asha Rao. Confirm to draft.' } } },
+        }),
+      )
+      .mockResolvedValue({ id: 'd-2', draft: 'Sure, tell Asha I said hello.' });
+    useEchoPanelStore.setState({ open: true, mode: 'draft' });
+    mount();
+    await flush();
+    await typeInto(panel()!.querySelector('textarea')!, 'Asha Rao asked if you are free.');
+    click(buttonNamed('Draft a reply'));
+    await flush();
+    const turn = () => panel()!.querySelector('[data-echo-turn="draft"]')!;
+    expect(turn().textContent).toContain('looks like a private person: Asha Rao');
+    click(Array.from(turn().querySelectorAll('button')).find((b) => b.textContent === 'Draft anyway')!);
+    await flush();
+    expect(draftMock).toHaveBeenLastCalledWith({ message: 'Asha Rao asked if you are free.', acknowledge_names: ['Asha Rao'] });
+    expect(turn().textContent).toContain('Sure, tell Asha I said hello.');
+  });
+
+  it('shows the server’s own words when a draft is refused', async () => {
+    draftStatusMock.mockResolvedValue({ enabled: true, state: 'enabled' });
+    draftMock.mockRejectedValue(
+      Object.assign(new Error('429'), { response: { status: 429, data: { detail: { code: 'daily_cap', message: 'You have used today’s 20 drafts. More tomorrow.' } } } }),
+    );
+    useEchoPanelStore.setState({ open: true, mode: 'draft' });
+    mount();
+    await flush();
+    await typeInto(panel()!.querySelector('textarea')!, 'Hello?');
+    click(buttonNamed('Draft a reply'));
+    await flush();
+    expect(panel()!.querySelector('[role="alert"]')?.textContent).toBe('You have used today’s 20 drafts. More tomorrow.');
+  });
+});
+
 describe('anticipation cards (S-3.8.2)', () => {
   const CARDS: EchoCardsResponse = {
     cards: [

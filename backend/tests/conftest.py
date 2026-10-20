@@ -222,7 +222,6 @@ def seeded_global_library(db, test_user):
             Channel(
                 channel_id=f"UC{'A' * 20}{i:02d}",
                 name=f"Channel {i}",
-                subscribed=False,
             )
         )
     db.add_all(channels)

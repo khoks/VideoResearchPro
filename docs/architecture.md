@@ -127,7 +127,7 @@ backend/
 │   │   ├── job.py               # Job (UUID PK, status, type, JSON fields)
 │   │   ├── document.py          # Document (global, deduped — renamed from video.py in L1 PR 4)
 │   │   ├── job_video.py         # job ↔ document join with approval flag
-│   │   ├── channel.py           # Channels (subscribed, last_synced_at)
+│   │   ├── channel.py           # Channels (shared facts; per-tenant state in channel_subscription.py)
 │   │   ├── transcript_cache.py  # cached raw transcript, PK = document_id (E-1.10)
 │   │   ├── qa_exchange.py       # job-scoped Q&A
 │   │   ├── library_qa_exchange.py  # library-wide Q&A

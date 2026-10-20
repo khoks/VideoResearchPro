@@ -77,7 +77,7 @@ def test_processing_column_round_trips(migrated):
     cfg, eng = migrated
     command.upgrade(cfg, "65ce471f8571")
     assert "processing_json" in {c["name"] for c in inspect(eng).get_columns("shares_inbox")}
-    command.downgrade(cfg, "5d2e8b1f4a60")
+    command.downgrade(cfg, "1a6e09517250")
     assert "processing_json" not in {c["name"] for c in inspect(eng).get_columns("shares_inbox")}
     command.upgrade(cfg, "head")
     assert "processing_json" in {c["name"] for c in inspect(eng).get_columns("shares_inbox")}

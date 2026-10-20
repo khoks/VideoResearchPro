@@ -951,7 +951,12 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 - [ ] T-3.2.5.1 Google Calendar read-only; events `event_attended` with titles only by default (attendees and descriptions opt-in); derived `daily_routine` facts
 - [ ] T-3.2.5.2 Tests on fixtures
 
-### E-3.3 🟡 Voice & personality capture (Domain 3)
+### E-3.3 🟢 Voice & personality capture (Domain 3)
+
+**Shipped:** 2026-10-19 — S-3.3.1 [#333](https://github.com/khoks/VideoResearchPro/pull/333), S-3.3.2 [#335](https://github.com/khoks/VideoResearchPro/pull/335), S-3.3.3 [#343](https://github.com/khoks/VideoResearchPro/pull/343), S-3.3.4 [#346](https://github.com/khoks/VideoResearchPro/pull/346), with decisions [D-099](decisions.md#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19) and [D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19).
+- The acceptance's last clause, the agent retrieving these signals, belongs to E-3.4.
+- The harness has shown that clause on synthetic writers.
+- Open follow-up tasks: T-3.3.1.6, T-3.3.2.7 to T-3.3.2.9, and T-3.3.4.3, which is the user-as-judge run.
 
 **Scope.** Store user writing samples, Q&A patterns, opinion threads. Train fine-tune adapters on user-tagged content for persona.
 

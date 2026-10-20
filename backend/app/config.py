@@ -314,10 +314,12 @@ class Settings(BaseSettings):
     # batches in source order up to REPORT_MAP_BATCH_TOKENS (also capped by
     # the model's window); `source` never puts two sources in one call (a
     # long source still splits at the cap), which also stops one video's
-    # on-screen span or script leaking into another video's items. Default
-    # `source` at 30K per D-090 (the old behaviour: `packed`, 120_000).
-    REPORT_MAP_BATCHING: str = "source"
-    REPORT_MAP_BATCH_TOKENS: int = 30_000
+    # on-screen span or script leaking into another video's items. D-090
+    # made `source` at 30K the default; R1 run 7's pre-registered batching
+    # comparison did not show it better on substance (1 for, 2 ties), so
+    # D-094 restored `packed` at 120_000. `source` doubles report length.
+    REPORT_MAP_BATCHING: str = "packed"
+    REPORT_MAP_BATCH_TOKENS: int = 120_000
     # Map calls in flight at once. Batches are independent and results are
     # kept in batch order, so the report never depends on completion order.
     REPORT_MAP_CONCURRENCY: int = 4

@@ -2873,4 +2873,4 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 - Revisit when a grounding check exists that tests each framing sentence against the chapters (for example an entailment pass) or a judge panel with a verified-flag protocol is fixed in advance.
 - `gemini-3.1-pro-preview` hit its daily request quota (250, shared across sessions) and `gemini-3.6-flash` judged instead, as the notes record.
 
-**Linked initiatives / PRs.** E-6.1 / S-6.1.3 (PR TBD), D-055 (judging method), D-056 (disclose, never drop), D-066, D-067.
+**Linked initiatives / PRs.** E-6.1 / S-6.1.3 (PR [#310](https://github.com/khoks/VideoResearchPro/pull/310)), D-055 (judging method), D-056 (disclose, never drop), D-066, D-067.

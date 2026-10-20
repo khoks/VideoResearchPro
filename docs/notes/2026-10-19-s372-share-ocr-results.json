@@ -1,0 +1,171 @@
+{
+  "date": "2026-10-19",
+  "on_device_ocr": [
+    {
+      "image": "english_tweet_clean",
+      "chars_truth": 158,
+      "chars_read": 158,
+      "boxes": 5,
+      "mean_score": 0.988,
+      "min_score": 0.982,
+      "accuracy": 1.0,
+      "seconds": 7.77
+    },
+    {
+      "image": "english_tweet_degraded",
+      "chars_truth": 158,
+      "chars_read": 158,
+      "boxes": 3,
+      "mean_score": 0.978,
+      "min_score": 0.964,
+      "accuracy": 0.981,
+      "seconds": 8.39
+    },
+    {
+      "image": "english_quote_clean",
+      "chars_truth": 64,
+      "chars_read": 64,
+      "boxes": 2,
+      "mean_score": 0.986,
+      "min_score": 0.986,
+      "accuracy": 1.0,
+      "seconds": 9.06
+    },
+    {
+      "image": "english_quote_degraded",
+      "chars_truth": 64,
+      "chars_read": 63,
+      "boxes": 2,
+      "mean_score": 0.98,
+      "min_score": 0.97,
+      "accuracy": 0.976,
+      "seconds": 6.77
+    },
+    {
+      "image": "hindi_paragraph_clean",
+      "chars_truth": 82,
+      "chars_read": 0,
+      "boxes": 0,
+      "mean_score": 0.0,
+      "min_score": 0.0,
+      "accuracy": 0.0,
+      "seconds": 8.96
+    },
+    {
+      "image": "hindi_paragraph_degraded",
+      "chars_truth": 82,
+      "chars_read": 39,
+      "boxes": 3,
+      "mean_score": 0.692,
+      "min_score": 0.668,
+      "accuracy": 0.0,
+      "seconds": 8.21
+    },
+    {
+      "image": "mixed_hinglish_clean",
+      "chars_truth": 79,
+      "chars_read": 43,
+      "boxes": 5,
+      "mean_score": 0.868,
+      "min_score": 0.624,
+      "accuracy": 0.541,
+      "seconds": 9.75
+    },
+    {
+      "image": "mixed_hinglish_degraded",
+      "chars_truth": 79,
+      "chars_read": 59,
+      "boxes": 2,
+      "mean_score": 0.818,
+      "min_score": 0.743,
+      "accuracy": 0.42,
+      "seconds": 7.38
+    }
+  ],
+  "threads_1080x1920_seconds": {
+    "default_32": [
+      6.05,
+      6.02,
+      6.09
+    ],
+    "8": [
+      1.49,
+      1.56,
+      1.44
+    ],
+    "4": [
+      1.45,
+      1.36,
+      1.37
+    ],
+    "2": [
+      2.06,
+      2.12,
+      2.11
+    ]
+  },
+  "vision_fallback_accuracy": {
+    "gpt-5.4-mini": [
+      0.982,
+      0.932,
+      1.0,
+      1.0
+    ],
+    "gemini-3.1-flash-lite": [
+      0.969,
+      0.975,
+      1.0,
+      0.987
+    ]
+  },
+  "pipeline": [
+    {
+      "image": "english_tweet_clean",
+      "state": "processed",
+      "extractor": "ocr_local",
+      "ocr_confidence": 0.988,
+      "accuracy": 1.0,
+      "chars": 191
+    },
+    {
+      "image": "english_tweet_degraded",
+      "state": "processed",
+      "extractor": "ocr_local",
+      "ocr_confidence": 0.978,
+      "accuracy": 0.981,
+      "chars": 191
+    },
+    {
+      "image": "hindi_paragraph_clean",
+      "state": "processed",
+      "extractor": "ocr_vision",
+      "ocr_confidence": 0.0,
+      "accuracy": 0.963,
+      "chars": 100
+    },
+    {
+      "image": "hindi_paragraph_degraded",
+      "state": "processed",
+      "extractor": "ocr_vision",
+      "ocr_confidence": 0.692,
+      "accuracy": 0.938,
+      "chars": 97
+    },
+    {
+      "image": "mixed_hinglish_clean",
+      "state": "processed",
+      "extractor": "ocr_vision",
+      "ocr_confidence": 0.868,
+      "accuracy": 1.0,
+      "chars": 95
+    },
+    {
+      "image": "mixed_hinglish_degraded",
+      "state": "processed",
+      "extractor": "ocr_vision",
+      "ocr_confidence": 0.818,
+      "accuracy": 0.987,
+      "chars": 93
+    }
+  ]
+}

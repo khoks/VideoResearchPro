@@ -52,6 +52,54 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
   file: 'File',
 };
 
+/** The fields of a share's processing record that say how a file was read. */
+export interface ShareReading {
+  extractor?: string | null;
+  language?: string | null;
+  duration_seconds?: number | null;
+  page_count?: number | null;
+  pages_with_text?: number | null;
+}
+
+function clock(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = String(total % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+/**
+ * How a processed file was read (S-3.7.2), in words. Local OCR and a vision
+ * model are named apart because only one of them sends the image out.
+ * Null for links, text and text files, whose reading needs no comment.
+ */
+export function shareReadingLabel(p: ShareReading | null | undefined): string | null {
+  switch (p?.extractor) {
+    case 'ocr_local':
+      return 'Text read by local OCR';
+    case 'ocr_vision':
+      return 'Text read by a vision model';
+    case 'whisper': {
+      const parts = ['Transcribed by Whisper'];
+      if (p.duration_seconds) parts.push(clock(p.duration_seconds));
+      if (p.language && p.language !== 'unknown') {
+        parts.push(p.language.charAt(0).toUpperCase() + p.language.slice(1));
+      }
+      return parts.join(' · ');
+    }
+    case 'pdf_text': {
+      const pages = p.page_count ?? 0;
+      if (!pages) return 'Text from the PDF';
+      const withText = p.pages_with_text ?? pages;
+      if (withText < pages) return `Text from ${withText} of ${pages} pages`;
+      return `Text from ${pages} ${pages === 1 ? 'page' : 'pages'}`;
+    }
+    default:
+      return null;
+  }
+}
+
 export function contentTypeLabel(type: string): string {
   if (CONTENT_TYPE_LABELS[type]) return CONTENT_TYPE_LABELS[type];
   const words = type.replace(/_/g, ' ').trim();

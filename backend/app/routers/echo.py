@@ -259,6 +259,15 @@ class ShareProcessing(BaseModel):
     embedded: bool | None = None
     processed_at: str | None = None
     library_offer: ShareLibraryOffer | None = None
+    # Part 2 (media): how a file was read. `extractor` says where the
+    # reading happened: ocr_local (on this machine), ocr_vision (a vision
+    # model), whisper (OpenAI), pdf_text, text_file.
+    ocr_confidence: float | None = None
+    language: str | None = None
+    duration_seconds: float | None = None
+    page_count: int | None = None
+    pages_with_text: int | None = None
+    truncated: bool | None = None
 
 
 class ShareItem(BaseModel):

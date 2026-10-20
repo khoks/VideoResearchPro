@@ -10,6 +10,20 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Newsletter issues (2026-10-19, S-6.4.1)
+
+PR [#334](https://github.com/khoks/VideoResearchPro/pull/334). Decision [D-097](docs/decisions.md#d-097--newsletter-featured-section-ships-opt-in-the-rest-of-an-issue-is-listed-from-the-database-2026-10-19); judging [notes](docs/notes/2026-10-19-newsletter-featured-judging.md).
+
+- **New newsletter** on the Author page lists what is new to you in a
+  period: sources, knowledge reports, your questions, saved searches whose
+  answer changed, and what you made. You can read it in the app or download
+  it as an email-ready HTML file.
+- **Nothing new, no issue**: the output is marked *Skipped* with the reason.
+- **Featured deep-dive, opt-in.** A model writes about one report from your
+  library, linking each sentence to its source. Blind judges preferred it
+  every time but flagged too many sentences pinned to the wrong moment, so
+  it is off by default. About $0.02 an issue.
+
 ### Added: saved-search alerts (2026-10-19)
 
 PR [#328](https://github.com/khoks/VideoResearchPro/pull/328). S-8.3.3, plan [m3-saved-searches-alerts](docs/plans/m3-saved-searches-alerts.md).

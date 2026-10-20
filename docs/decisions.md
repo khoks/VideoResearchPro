@@ -3007,5 +3007,5 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 - Revisit the default together with D-093 when a sentence-level check exists that tests each cited sentence against the point its marker names (S-6.1.6 covers books).
 - Cost of the featured call: $0.015 to $0.017 per issue on claude-sonnet-5 at reasoning low.
 
-**Linked initiatives / PRs.** E-6.4 / S-6.4.1, D-093, D-056, D-063.
+**Linked initiatives / PRs.** E-6.4 / S-6.4.1 (PR [#334](https://github.com/khoks/VideoResearchPro/pull/334)), D-093, D-056, D-063.
 

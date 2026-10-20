@@ -1552,19 +1552,19 @@ Backend suite 835 → 855.
 - [ ] T-6.3.2.2 The create modal offers documents with a knowledge report beside runs
 - [ ] T-6.3.2.3 Tests: the same acceptance as S-6.3.1 (every content slide cites a linked source; uncited slides dropped and disclosed)
 
-### E-6.4 🔵 Newsletter / digest (recurring scheduled output)
+### E-6.4 🟡 Newsletter / digest (recurring scheduled output)
 
-`kind="newsletter"` reserved; outputter pending.
+`kind="newsletter"` ships with `NewsletterOutputter` (S-6.4.1, PR [#334](https://github.com/khoks/VideoResearchPro/pull/334), 2026-10-19); subscription and delivery (S-6.4.2) remain.
 
 **Scope (2026-10-18).** A periodic email digest: what entered the library since the last issue, new Q&As, a featured deep-dive (one report section or knowledge artifact), and pinned saved-search changes (E-8.3). Runs on the scheduler E-8.3 builds (S-8.3.1); sends through the existing `email_service`.
 **Acceptance.** A user enables a weekly digest; an issue is generated and emailed every week with only material newer than the previous issue; an issue with nothing new is skipped and says so in the outputs list; the digest is also readable in-app as an output.
 
-#### S-6.4.1 🔵 `NewsletterOutputter`
-**PR:** TBD. Depends on S-8.3.1.
-- [ ] T-6.4.1.1 `parameters_json` carries `since` (last issue timestamp) and section toggles; content from documents, exchanges and outputs newer than `since`, visible to the tenant
-- [ ] T-6.4.1.2 `author_newsletter_compose` use case for the featured section only; the rest is deterministic
-- [ ] T-6.4.1.3 Plain-HTML email template (no external CSS, inlined styles) plus a Markdown `content_text` for in-app reading
-- [ ] T-6.4.1.4 Tests: `since` boundary, empty issue skipped
+#### S-6.4.1 🟢 `NewsletterOutputter`
+**PR:** [#334](https://github.com/khoks/VideoResearchPro/pull/334) — *shipped 2026-10-19.* Linked decision: [D-097](decisions.md#d-097--newsletter-featured-section-ships-opt-in-the-rest-of-an-issue-is-listed-from-the-database-2026-10-19). The featured section was judged blind against the report's own summary under a rule fixed in advance ([notes](notes/2026-10-19-newsletter-featured-judging.md)). It was preferred in 12 of 12 verdicts but drew 16 unsupported-claim flags against a limit of 4, so it is **opt-in**. Three generation defects were found and fixed before judging: excerpts with no citation markers, invented markers that resolved, and doubled timestamps. The plan's premailer was not needed; a tag-to-style map inlines the email styles.
+- [x] T-6.4.1.1 `parameters` carry `since` / `until` (ISO; `since` defaults to the reader's last issue, else seven days) and `sections` (featured, library, knowledge, questions, saved_searches, outputs; unknown names refused); lists are documents new to this reader by visibility grant (D-063), knowledge reports, the reader's job / library / history Q&A, saved searches whose answer changed, and completed outputs, each in `(since, until]`; the resolved window, counts and featured source are written back to the row — *shipped 2026-10-19*
+- [x] T-6.4.1.2 `author_newsletter_compose` (anthropic claude-sonnet-5 low, guidance entry) writes the featured deep-dive only, from one report or knowledge report: one new in the window, else the least recently featured (resurfacing the reader's own library). The excerpt is the summary plus the report's cited points, and only markers shown to the model can become links. A section citing nothing, or a failed call, falls back to the source's own summary with a processing note. **Off by default** per [D-097](decisions.md#d-097--newsletter-featured-section-ships-opt-in-the-rest-of-an-issue-is-listed-from-the-database-2026-10-19). About $0.016 per issue — *shipped 2026-10-19*
+- [x] T-6.4.1.3 `templates/newsletter/email.html`: a table layout with inline styles, a tag-to-style map applied to the rendered issue, and no `<style>`, `<link>`, images or scripts; links are absolute to `APP_BASE_URL`. The email is `artifact.html` (Download HTML); `content_text` is the Markdown issue (the reader and the email's plain-text part) — *shipped 2026-10-19*
+- [x] T-6.4.1.4 `test_newsletter_outputter.py` (12 tests): the window boundaries (a grant exactly at `since` is out, one at `until` in); an empty issue ends with the new `skipped` status and its reason, with no files; section toggles and unknown names; featured markers linked, unknown and unshown ones dropped, citations recorded; both fallbacks disclosed; resurfacing; a self-contained email; `since` defaulting to the last issue; router validation and the estimate; featured off by default with no model call — *shipped 2026-10-19*
 
 #### S-6.4.2 🔵 Subscription and delivery
 **PR:** TBD

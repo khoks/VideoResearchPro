@@ -66,3 +66,6 @@ celery_app.autodiscover_tasks(["app.tasks"], related_name="job_tasks")
 celery_app.autodiscover_tasks(["app.tasks"], related_name="scheduler_tasks")
 # S-6.7.1: Author Studio generation runs in the worker.
 celery_app.autodiscover_tasks(["app.tasks"], related_name="output_tasks")
+# S-8.3.2: registers the `saved_search` scheduler kind on import. Without
+# this the tick records `no_handler` and a saved search never runs.
+celery_app.autodiscover_tasks(["app.tasks"], related_name="saved_search_tasks")

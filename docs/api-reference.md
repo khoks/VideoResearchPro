@@ -625,6 +625,46 @@ The caller's visible documents from the channel, newest first (`limit`, `offset`
 
 ---
 
+## Saved searches
+
+Pinned library questions re-asked on a schedule (S-8.3.2, plan [m3-saved-searches-alerts](plans/m3-saved-searches-alerts.md)). Every route acts on the caller's own rows and needs the `saved_searches` tier feature (Pro and Studio; 403 otherwise). The schedule is a `scheduled_runs` row of kind `saved_search` (S-8.3.1) the service keeps in step: created, re-cadenced, paused and deleted with the saved search.
+
+### `GET /api/v1/saved-searches`
+`{items: [SavedSearch], active, cap}`: newest first; `active` counts enabled rows and `cap` is the tier's limit on them (`saved_searches_active_cap`: Pro 10, Studio 50, Free 0; `-1` = unlimited).
+
+```json
+{
+  "id": "…",
+  "question": "What do my sources say about rate cuts?",
+  "answer_language": "en",
+  "scope": null,
+  "cadence": { "cadence": "weekly", "hour": 9, "minute": 0, "weekday": 0, "timezone": "Europe/London" },
+  "next_run_at": "2026-10-26T08:00:00",
+  "notify_email": true,
+  "enabled": true,
+  "created_at": "…",
+  "last_run_at": "…",
+  "last_status": "ok",
+  "last_error": null,
+  "last_success_at": "…",
+  "last_exchange_id": "…",
+  "last_answer": "…"
+}
+```
+
+Times are naive UTC. `next_run_at` is null while paused. `last_status` is `ok`, `failed`, `quota_exceeded` (the month's library-question quota was used up, so the run was skipped before any spend, D-045), `feature_unavailable` (the tier no longer has the feature) or `scope_missing` (the shelf was deleted); every status but `ok` leaves the last answer in place.
+
+### `POST /api/v1/saved-searches`
+Body `{question, cadence, answer_language?, scope?, notify_email?}`, unknown fields 422; 201 with the saved search. `cadence` is `daily`, `weekly` (with `weekday`, 0 = Monday) or `monthly` (with `day_of_month` 1 to 28), an `hour`, optional `minute`, and an IANA `timezone` (default UTC); `every` is for system kinds and is refused. `scope` is null (the whole library) or `{"shelf_id"}` for one of the caller's shelves (404 otherwise): the library-question scope of S-8.1.4, resolved by `qa_scope_service`. 409 when the tier's active cap is reached.
+
+### `GET` / `PATCH` / `DELETE /api/v1/saved-searches/{id}`
+PATCH accepts any of the create fields plus `enabled`; a new cadence recomputes `next_run_at`; resuming checks the cap (409) and moves a slot that passed while paused to the next one. DELETE removes the schedule too; past answers stay in library Q&A. Another tenant's id is a 404.
+
+### `POST /api/v1/saved-searches/{id}/run-now`
+Queues one run on the caller's tier queue outside the schedule; 202 `{status: "queued"}`. The quota is checked here as well as in the run, so an exhausted month answers 429 at once. A run asks the library Q&A agent over the caller's visible set (narrowed to the shelf's runs' approved documents when scoped, never widened when that is empty), with corpus statistics and trust weights as `POST /library/qa` passes them, records the quota, stores a `library_qa_exchanges` row (indexed in `qa_library_global`, `scope_json` = the scope plus `saved_search_id`) and updates the saved search's baseline: answer hash, cited document set, last exchange.
+
+---
+
 ## Job templates
 
 Named, reusable research recipes (E-8.6 / M6; plan: [`docs/plans/m6-job-templates.md`](plans/m6-job-templates.md)). A template freezes everything on `JobCreate` except the topic; a reader types a new topic each time. **Not tier-gated.** Built-ins (`builtin: true`, S-8.6.2) are listed for everyone and are read-only (403 on any write). Another reader's template is a 404.
@@ -871,10 +911,10 @@ The same notes as a Markdown document (`text/markdown`): `## <target type>` → 
 All `/author` endpoints require `require_feature("author_studio")` (Pro and above); a lower tier gets 403. Backend: `backend/app/routers/author.py` (I-6, PR #173). Page: [`AuthorPage`](ui-pages.md#authorpage--author-pro).
 
 ### `GET /api/v1/author/kinds`
-`{ "available": ["book", "deck"], "supported": ["book", "deck", "newsletter", "reel", "site"], "formats": { "book": { "available": ["md", "epub"], "unavailable": { "pdf": "PDF export needs a converter on the server. Install one …" }, "pdf_engine": null } } }`. `available` lists kinds with a registered outputter; `supported` is every kind the schema accepts. Create a kind that is supported but not available and you get 501. `formats` (S-6.1.5) says, per available kind, which downloads this server can build and why any other cannot: a book's PDF needs WeasyPrint or Chromium (`backend/requirements-author.txt`), and `pdf_engine` names the one in use.
+`{ "available": ["book", "deck", "site"], "supported": ["book", "deck", "newsletter", "reel", "site"], "formats": { "book": { "available": ["md", "epub"], "unavailable": { "pdf": "PDF export needs a converter on the server. Install one …" }, "pdf_engine": null } } }`. `available` lists kinds with a registered outputter; `supported` is every kind the schema accepts. Create a kind that is supported but not available and you get 501. `formats` (S-6.1.5) says, per available kind, which downloads this server can build and why any other cannot: a book's PDF needs WeasyPrint or Chromium (`backend/requirements-author.txt`), and `pdf_engine` names the one in use.
 
 ### `POST /api/v1/author/outputs`
-Create the row and queue its generation in the worker (S-6.7.1). Body `{ "kind": "book", "title": "…", "source_ids": ["<job_id>", …], "parameters": { "include_qa": true, "include_toc": true } }`. For `book`, `source_ids` are job IDs **of the caller's own runs** (another tenant's id reads like a missing one), one chapter per run: its report's Markdown source (S-6.1.2) with headings demoted under the chapter heading, and its Q&A if `include_qa`; every citation becomes its working link plus a numbered GFM footnote, listed under `## Endnotes` with title, channel, timestamp and URL (S-6.1.4; footnote `n` is `GET …/citations` position `n`), and Q&A answers cite from their stored references; a run without a report, or whose file is missing, yields a disclosed placeholder chapter. An empty `source_ids` for `book` is 400 and writes no row. Returns the `OutputItem` at once in `pending` state with `celery_task_id` set; the worker (`author.generate_output`, on the owner's tier queue) publishes status changes and per-chapter progress on the `/ws/jobs` socket under the **output's id** (subscribe to it like a job id; the server checks the caller owns it). `?sync=true` generates inside the request and returns the finished row (`completed` or `failed`), the path tests and scripts use. If the broker is unreachable the row is returned `failed` with `Could not queue generation: …`. For `deck` (S-6.3.1), `source_ids` are the caller's own runs and there are no parameters: one `author_deck_outline` call plans 3 to 15 content slides from the reports, and the output carries a PPTX (`GET …/download?format=pptx`) and a Markdown rendering (`format=md`); every content slide cites at least one linked source (in its notes and on the closing sources slide), a slide citing none is left out and counted on the last slide, and `GET …/citations` lists one row per cited moment. A deck whose plan cites nothing, or whose call fails, is `failed` with the reason. A book's `parameters.cohesion` (S-6.1.3: `none` default, `light`, `full`) adds model-written framing around the unchanged chapters, disclosed in the front matter; the row's `usage` then carries each call's model, tokens and cost. A book's `parameters.formats` (S-6.1.5) picks the files built beside the Markdown, from `epub` and `pdf`; without it a book gets EPUB, plus PDF when the server has a converter. The resolved list is written back into `parameters` (`["md", "epub", "pdf"]`). 400 unknown kind, empty title or unknown format; 501 kind without an outputter, or `pdf` asked for on a server with no PDF converter (the detail says what to install), in both cases before any row is written.
+Create the row and queue its generation in the worker (S-6.7.1). Body `{ "kind": "book", "title": "…", "source_ids": ["<job_id>", …], "parameters": { "include_qa": true, "include_toc": true } }`. For `book`, `source_ids` are job IDs **of the caller's own runs** (another tenant's id reads like a missing one), one chapter per run: its report's Markdown source (S-6.1.2) with headings demoted under the chapter heading, and its Q&A if `include_qa`; every citation becomes its working link plus a numbered GFM footnote, listed under `## Endnotes` with title, channel, timestamp and URL (S-6.1.4; footnote `n` is `GET …/citations` position `n`), and Q&A answers cite from their stored references; a run without a report, or whose file is missing, yields a disclosed placeholder chapter. An empty `source_ids` for `book` is 400 and writes no row. Returns the `OutputItem` at once in `pending` state with `celery_task_id` set; the worker (`author.generate_output`, on the owner's tier queue) publishes status changes and per-chapter progress on the `/ws/jobs` socket under the **output's id** (subscribe to it like a job id; the server checks the caller owns it). `?sync=true` generates inside the request and returns the finished row (`completed` or `failed`), the path tests and scripts use. If the broker is unreachable the row is returned `failed` with `Could not queue generation: …`. For `site` (S-6.2.1), `source_ids` name shelves and runs (`shelf:<id>`, `job:<id>`, or a bare run id), resolved inside the caller's library; the output is a zip of static pages (`format=zip`) that opens from disk, plus a Markdown contents page (`format=md`). No model is called. For `deck` (S-6.3.1), `source_ids` are the caller's own runs and there are no parameters: one `author_deck_outline` call plans 3 to 15 content slides from the reports, and the output carries a PPTX (`GET …/download?format=pptx`) and a Markdown rendering (`format=md`); every content slide cites at least one linked source (in its notes and on the closing sources slide), a slide citing none is left out and counted on the last slide, and `GET …/citations` lists one row per cited moment. A deck whose plan cites nothing, or whose call fails, is `failed` with the reason. A book's `parameters.cohesion` (S-6.1.3: `none` default, `light`, `full`) adds model-written framing around the unchanged chapters, disclosed in the front matter; the row's `usage` then carries each call's model, tokens and cost. A book's `parameters.formats` (S-6.1.5) picks the files built beside the Markdown, from `epub` and `pdf`; without it a book gets EPUB, plus PDF when the server has a converter. The resolved list is written back into `parameters` (`["md", "epub", "pdf"]`). 400 unknown kind, empty title or unknown format; 501 kind without an outputter, or `pdf` asked for on a server with no PDF converter (the detail says what to install), in both cases before any row is written.
 
 ```json
 { "id": "...", "kind": "book", "title": "...", "status": "pending", "source_ids": ["..."], "parameters": {}, "error_message": null, "created_at": "...", "updated_at": "...", "has_content": false, "word_count": null, "progress_pct": 0, "progress_message": "Queued", "celery_task_id": "...", "formats": [], "citation_count": 0 }

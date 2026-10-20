@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { CitationLink } from '../citation';
 import { NotesPanel } from '../notes';
+import { PinQuestionButton } from '../savedSearches/PinQuestionButton';
 import { Badge, Button, Spinner } from '../primitives';
 import { useShelves } from '../../hooks/useShelves';
 import { useColors } from '../../hooks/useTheme';
@@ -121,15 +122,23 @@ export function LibraryQAExchangeCard({ qa, showScope = true }: { qa: LibraryQAE
             {qa.question}
           </p>
         </div>
-        <Button size="sm" variant="tertiary" onClick={handleCopy}>
-          {copied ? (
-            <Badge tone="success" size="sm">
-              Copied
-            </Badge>
-          ) : (
-            'Copy answer'
-          )}
-        </Button>
+        <div style={{ display: 'flex', gap: space['1'], flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {/* S-8.3.2: re-ask this question on a schedule, over the same scope. */}
+          <PinQuestionButton
+            question={qa.question}
+            answerLanguage={qa.answer_language ?? 'en'}
+            scope={qa.scope?.shelf_id ? { shelf_id: qa.scope.shelf_id } : null}
+          />
+          <Button size="sm" variant="tertiary" onClick={handleCopy}>
+            {copied ? (
+              <Badge tone="success" size="sm">
+                Copied
+              </Badge>
+            ) : (
+              'Copy answer'
+            )}
+          </Button>
+        </div>
       </div>
       <div
         className="reading"

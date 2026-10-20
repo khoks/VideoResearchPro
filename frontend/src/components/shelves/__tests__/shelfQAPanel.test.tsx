@@ -32,6 +32,7 @@ vi.mock('../../../services/shelvesApi', async (orig) => ({
 vi.mock('../../../hooks/useFeatureAvailable', () => ({ useFeatureAvailable: () => true }));
 vi.mock('../../notes', () => ({ NotesPanel: () => null }));
 vi.mock('../../citation', () => ({ CitationLink: () => null }));
+vi.mock('../../savedSearches/PinQuestionButton', () => ({ PinQuestionButton: () => null }));
 
 function exchange(id: string, question: string, scope: LibraryQAExchange['scope'] = null): LibraryQAExchange {
   return { id, question, answer: 'An answer.', references: [], created_at: '2026-10-19T00:00:00Z', scope };

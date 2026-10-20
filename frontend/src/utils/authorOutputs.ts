@@ -32,7 +32,7 @@ export const OUTPUT_KIND_META: Record<string, KindMeta> = {
   },
   deck: {
     label: 'Deck',
-    description: 'A slide deck distilled from one or more runs.',
+    description: 'A PowerPoint deck planned from one or more runs, every slide citing its sources in its notes.',
     epic: 'E-6.3',
   },
   newsletter: {

@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 USE_CASE = "author_deck_outline"
 MAX_TOKENS = 20_000
-OUTPUT_TOKENS_EST = 6_000  # measured on the S-6.3.1 trial deck; see estimate()
+OUTPUT_TOKENS_EST = 8_000  # two real two-run decks billed 4,801 and 7,553 (reasoning included)
 MIN_SLIDES, MAX_SLIDES = 3, 15
 MAX_BULLETS, BULLET_MAX_WORDS, HEADING_MAX_WORDS = 5, 30, 12
 NOTES_MAX_WORDS, QUOTE_MAX_WORDS = 180, 60
@@ -228,6 +228,8 @@ class DeckOutputter:
                     moments[n].append(moment)
             s.sources, s.moments = numbers, moments
         cited_specs = [specs[n] for n in marker_order]
+        for src in sources:  # a source's moments in time order, not citation order
+            src.moments.sort(key=lambda m: _seconds(m[0]))
         byline, disclosure = deck_render.byline(runs, model)
         deck = deck_render.Deck(
             title=_clean(raw.get("title"), 14) or output.title,
@@ -238,6 +240,16 @@ class DeckOutputter:
             disclosure=disclosure,
         )
         return deck, cited_specs, dropped
+
+
+def _seconds(clock: str) -> int:
+    """"1:02:03" / "7:57" back to seconds; an empty clock sorts last."""
+    if not clock:
+        return 10**9
+    total = 0
+    for part in clock.split(":"):
+        total = total * 60 + (int(part) if part.isdigit() else 0)
+    return total
 
 
 _VIDEO_ID = re.compile(r"(?:v=|youtu\.be/)([\w-]{11})")

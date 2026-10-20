@@ -112,6 +112,9 @@ def test_a_deck_opens_and_every_content_slide_cites_a_linked_source(db, user_and
     entries = [p.text for i in sources_at for sh in slides[i].shapes if sh.has_text_frame
                for p in sh.text_frame.paragraphs if re.match(r"^\d+\.", p.text)]
     assert len(entries) == len(documents), "one entry per source video, however many moments it gives"
+    for entry in entries:
+        clocks = [int(m) * 60 + int(s) for m, s in re.findall(r"(\d+):(\d\d)", entry)]
+        assert clocks == sorted(clocks), f"moments in time order: {entry}"
 
     # Disclosure of what was left out, on the deck and in its Markdown.
     assert "1 planned slide cited no source and was left out." in texts[-1]

@@ -26,7 +26,10 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.config import settings
+from app.connectors.base import ActivityEvent as EventIn
+from app.models.activity_event import ActivityEvent
 from app.models.audit_log import AuditLog
+from app.models.echo_connector import EchoConnectorCredential, EchoConnectorGrant, EchoConnectorOAuthState
 from app.models.job import Job
 from app.models.note import Note
 from app.models.personal_context import PersonalContext
@@ -34,7 +37,9 @@ from app.models.share import Share
 from app.models.voice_signal import VoiceSignal
 from app.models.voice_signal_input import VoiceSignalInput
 from app.services import (
+    activity_event_service,
     auth_service,
+    byok_service,
     echo_intake_service,
     echo_privacy_service,
     echo_service,
@@ -43,7 +48,7 @@ from app.services import (
     echo_vectors,
     note_service,
 )
-from app.services.echo_privacy_service import ECHO_TABLES, read_archive, row_columns
+from app.services.echo_privacy_service import ECHO_SECRET_TABLES, ECHO_TABLES, read_archive, row_columns
 
 EXPORT = "/api/v1/echo/export"
 BRAIN = "/api/v1/echo/brain"
@@ -128,7 +133,23 @@ def _seed_brain(db, chroma, user, *, marker: str) -> dict:
     echo_signal_extraction.run(db, user.id, use_llm=False)
     _vector(chroma, settings.CHROMA_SHARES_COLLECTION_NAME, echo_vectors.share_vector_id(file.id), user.id)
     _vector(chroma, settings.CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME, f"fact:{f2.id}", user.id)
-    return {"facts": [f1.id, f2.id], "shares": [link.id, text.id, file.id], "file_id": file.id, "blob": blob}
+    # S-3.2.1: a connector's event, its grant, its (encrypted) token and a
+    # connect still in flight.
+    activity_event_service.store_events(db, user.id, "github", [EventIn(
+        external_id=f"{marker}-push-1", event_type="pushed_commit",
+        occurred_at=datetime(2026, 10, 1, 12, tzinfo=timezone.utc),
+        payload={"repo": f"{marker}/repo"}, text_content=f"{marker} fix the parser",
+    )])
+    token = f"gho_{marker}_SECRET_TOKEN"
+    db.add(EchoConnectorGrant(tenant_id=user.id, connector="github", consent_version="1", account_label=marker))
+    db.add(EchoConnectorCredential(tenant_id=user.id, connector="github",
+                                   access_token_encrypted=byok_service.encrypt_secret(token)))
+    db.add(EchoConnectorOAuthState(state=f"state-{marker}", tenant_id=user.id, connector="github",
+                                   code_verifier=f"verifier-{marker}-SECRET", redirect_uri="http://x/cb",
+                                   consent_version="1", expires_at=datetime(2030, 1, 1)))
+    db.commit()
+    return {"facts": [f1.id, f2.id], "shares": [link.id, text.id, file.id], "file_id": file.id, "blob": blob,
+            "token": token, "verifier": f"verifier-{marker}-SECRET"}
 
 
 @pytest.fixture
@@ -151,6 +172,12 @@ def _direct_footprint(db, chroma, shares_dir, tenant_id: str) -> dict:
         "shares_inbox": db.query(Share).filter(Share.tenant_id == tenant_id).count(),
         "voice_signals": db.query(VoiceSignal).filter(VoiceSignal.tenant_id == tenant_id).count(),
         "voice_signal_inputs": db.query(VoiceSignalInput).filter(VoiceSignalInput.tenant_id == tenant_id).count(),
+        "activity_events": db.query(ActivityEvent).filter(ActivityEvent.tenant_id == tenant_id).count(),
+        "echo_connector_grants": db.query(EchoConnectorGrant).filter(EchoConnectorGrant.tenant_id == tenant_id).count(),
+        "echo_connector_credentials": db.query(EchoConnectorCredential)
+        .filter(EchoConnectorCredential.tenant_id == tenant_id).count(),
+        "echo_connector_oauth_states": db.query(EchoConnectorOAuthState)
+        .filter(EchoConnectorOAuthState.tenant_id == tenant_id).count(),
     }
     tenant_dir = shares_dir / tenant_id
     files = sum(1 for p in tenant_dir.rglob("*") if p.is_file()) if tenant_dir.exists() else 0
@@ -196,6 +223,24 @@ def test_export_round_trip_is_lossless(unauthenticated_client, db, brains, share
     fact = next(r for r in archive.tables["personal_context"] if r["key"] == "ALPHA-tariffs")
     assert json.loads(fact["value"]) == {"since": 2019, "depth": "deep"}
     assert fact["expires_at"] == datetime(2027, 1, 1, tzinfo=timezone.utc)
+    assert archive.tables["activity_events"][0]["text_content"] == "ALPHA fix the parser"
+
+
+def test_export_withholds_connector_secrets(unauthenticated_client, brains):
+    """Tokens and PKCE verifiers are erased with the brain but never exported,
+    in any form: the manifest counts them and says why."""
+    r = unauthenticated_client.get(EXPORT, headers=brains["ha"])
+    with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+        names = zf.namelist()
+        blob = b"".join(zf.read(n) for n in names)
+    for name, _ in ECHO_SECRET_TABLES:
+        assert f"{name}.jsonl" not in names
+    assert brains["seed_a"]["token"].encode() not in blob
+    assert brains["seed_a"]["verifier"].encode() not in blob
+    assert b"access_token_encrypted" not in blob
+    manifest = read_archive(io.BytesIO(r.content)).manifest
+    assert manifest["withheld"]["tables"] == {"echo_connector_credentials": 1, "echo_connector_oauth_states": 1}
+    assert "never leave the server" in manifest["withheld"]["reason"]
 
 
 def test_export_never_carries_another_tenant(unauthenticated_client, brains):
@@ -212,7 +257,11 @@ def test_export_is_audited_with_counts_only(unauthenticated_client, db, brains):
     row = db.query(AuditLog).filter(AuditLog.event == "echo_exported").one()
     assert row.user_id == brains["a"].id
     meta = json.loads(row.metadata_json)
-    assert meta == {"rows": {"personal_context": 2, "shares_inbox": 3, "voice_signals": 2, "voice_signal_inputs": 1}, "files": 1, "missing_files": 0}
+    assert meta == {
+        "rows": {"personal_context": 2, "shares_inbox": 3, "voice_signals": 2, "voice_signal_inputs": 1, "activity_events": 1, "echo_connector_grants": 1},
+        "files": 1,
+        "missing_files": 0,
+    }
     assert "ALPHA" not in row.metadata_json
 
 
@@ -268,7 +317,7 @@ def test_delete_brain_empties_every_store_and_spares_the_other_tenant(
     before_a = _direct_footprint(db, chroma, shares_dir, a.id)
     before_b = _direct_footprint(db, chroma, shares_dir, b.id)
     assert before_a == {
-        "rows": {"personal_context": 2, "shares_inbox": 3, "voice_signals": 2, "voice_signal_inputs": 1},
+        "rows": {"personal_context": 2, "shares_inbox": 3, "voice_signals": 2, "voice_signal_inputs": 1, "activity_events": 1, "echo_connector_grants": 1, "echo_connector_credentials": 1, "echo_connector_oauth_states": 1},
         "files": 1,
         "vectors": {settings.CHROMA_SHARES_COLLECTION_NAME: 1, settings.CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME: 1},
     }
@@ -278,14 +327,14 @@ def test_delete_brain_empties_every_store_and_spares_the_other_tenant(
     body = r.json()
     assert body["removed"] == before_a
     assert body["footprint_after"] == {
-        "rows": {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0},
+        "rows": {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0},
         "files": 0,
         "vectors": {n: 0 for n in echo_vectors.echo_collection_names()},
     }
 
     db.expire_all()
     after_a = _direct_footprint(db, chroma, shares_dir, a.id)
-    assert after_a["rows"] == {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0}
+    assert after_a["rows"] == {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0}
     assert after_a["files"] == 0 and not (shares_dir / a.id).exists()
     assert not any(after_a["vectors"].values())
     for share_id in brains["seed_a"]["shares"]:
@@ -327,7 +376,7 @@ def test_delete_brain_twice_is_harmless(unauthenticated_client, brains):
     assert unauthenticated_client.delete(BRAIN, params=CONFIRM, headers=brains["ha"]).status_code == 200
     r = unauthenticated_client.delete(BRAIN, params=CONFIRM, headers=brains["ha"])
     assert r.status_code == 200
-    assert r.json()["removed"]["rows"] == {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0}
+    assert r.json()["removed"]["rows"] == {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0}
 
 
 def test_delete_brain_leaves_notes_and_the_library_alone(unauthenticated_client, db, brains):
@@ -373,6 +422,9 @@ def test_share_text_never_reaches_dataset_or_notes_exports(unauthenticated_clien
 def test_every_echo_table_is_tenant_keyed():
     """A table added to ECHO_TABLES without `tenant_id` could be neither
     exported nor deleted per tenant."""
-    assert [name for name, _ in ECHO_TABLES] == ["personal_context", "shares_inbox", "voice_signals", "voice_signal_inputs"]
-    for _, model in ECHO_TABLES:
+    assert [name for name, _ in ECHO_TABLES] == [
+        "personal_context", "shares_inbox", "voice_signals", "voice_signal_inputs", "activity_events", "echo_connector_grants",
+    ]
+    assert [name for name, _ in ECHO_SECRET_TABLES] == ["echo_connector_credentials", "echo_connector_oauth_states"]
+    for _, model in ECHO_TABLES + ECHO_SECRET_TABLES:
         assert "tenant_id" in model.__table__.columns

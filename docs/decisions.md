@@ -3009,7 +3009,33 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Linked initiatives / PRs.** E-6.4 / S-6.4.1 (PR [#334](https://github.com/khoks/VideoResearchPro/pull/334)), D-093, D-056, D-063.
 
-## D-098 — Signal extraction: verbatim-checked examples, language-free beliefs, stylometry without a model (2026-10-19)
+---
+
+## D-098 — Echo connectors: events unique per reader, tokens in a secret store that is erased with the brain but never exported (2026-10-19)
+
+**Status:** accepted.
+
+**Context.** The connector runtime (S-3.2.1) is Echo's first store of third-party credentials and its first stream of events synced repeatedly from a provider. D-089 made the brain a registry whose archive is "every column of every row". Read literally, that would put OAuth tokens, encrypted or not, and the PKCE verifiers of connects in flight into a zip the user downloads and may share. The board also keyed event idempotency on `(connector, external_id)`, which is global across readers.
+
+**Decision.**
+- **Two registries in `echo_privacy_service`.** `ECHO_TABLES` is what the archive carries: `personal_context`, `shares_inbox`, now also `activity_events` and `echo_connector_grants` (that a connector was granted, when, under which consent version, as which account, and how syncing went). `ECHO_SECRET_TABLES` holds `echo_connector_credentials` (tokens, Fernet-encrypted with the install key, D-043) and `echo_connector_oauth_states` (CSRF state and PKCE verifier, single use, minutes long). Both registries are counted in the footprint and erased by the full delete. Only `ECHO_TABLES` is exported; the manifest's `withheld` block counts the secret rows and says why.
+- **Events are unique on `(tenant_id, connector, external_id)`.** Re-syncs, retries and overlapping backfills update in place. Two readers may connect the same third-party account without colliding.
+- **The contract lives in `app/connectors/`** (`ActivityConnector`, `ArchiveImporter`, two registries). The runtime around it (state, PKCE, tokens, storage, schedule, revoke) is not a connector's job. `echo_service`'s old names re-export it.
+- **A processed share is one `internal` / `shared_to_pratidhvani` event**: metadata only, because the words stay in the inbox under D-089's context-only rule. Deleting the share deletes the event.
+
+**Alternatives considered.**
+- *Export the tokens encrypted.* The key is the install's, so the ciphertext is useless to the user and dangerous if the server key ever leaks with the zip; reconnecting is one click.
+- *Drop the token columns from the grants table at export time.* It hides a secret store inside a brain table, and every future table would need its own exclusion list.
+- *Unique on `(connector, external_id)`.* Blocks the second reader of a shared account, and makes one reader's revoke able to take rows another reader needs.
+
+**Consequences.**
+- A new secret store registers in `ECHO_SECRET_TABLES`, never `ECHO_TABLES`, and the privacy tests list both registries exactly.
+- Importing an archive back can never restore a connection; the user reconnects.
+- A revoke deletes the grant, the credentials, any pending state and every event that connector wrote, in one request (S-3.2.1's runtime PR).
+
+**Linked initiatives / PRs.** S-3.2.1 (E-3.2), S-3.10.1 / S-3.10.2 (E-3.10), PR [#332](https://github.com/khoks/VideoResearchPro/pull/332). Extends D-089 item 2; follows D-043.
+
+## D-099 — Signal extraction: verbatim-checked examples, language-free beliefs, stylometry without a model (2026-10-19)
 
 **Status:** accepted.
 

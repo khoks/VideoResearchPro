@@ -1,3 +1,5 @@
+from app.models.activity_event import ActivityEvent
+from app.models.echo_connector import EchoConnectorCredential, EchoConnectorGrant, EchoConnectorOAuthState
 from app.models.api_quota_log import ApiQuotaLog
 from app.models.audit_log import AuditLog
 from app.models.channel import Channel
@@ -46,6 +48,10 @@ from app.models.voice_signal import VoiceSignal
 from app.models.voice_signal_input import VoiceSignalInput
 
 __all__ = [
+    "ActivityEvent",
+    "EchoConnectorCredential",
+    "EchoConnectorGrant",
+    "EchoConnectorOAuthState",
     "ApiQuotaLog",
     "AuditLog",
     "Channel",

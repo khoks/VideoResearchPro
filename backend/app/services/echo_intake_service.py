@@ -492,7 +492,7 @@ def delete_share(db: Session, tenant_id: str, share_id: str) -> ShareDeletion:
     # S-3.3.1: the share stops counting as evidence. Its examples leave the
     # signals it fed (listed in `derived_signal_ids_json`); a signal with no
     # source left is tombstoned as `source_deleted`.
-    from app.services import echo_signal_service
+    from app.services import activity_event_service, echo_signal_service
 
     echo_signal_service.withdraw_source(
         db, tenant_id, f"share:{share.id}", signal_ids=_id_list(share.derived_signal_ids_json)
@@ -503,6 +503,8 @@ def delete_share(db: Session, tenant_id: str, share_id: str) -> ShareDeletion:
     db.query(VoiceSignalInput).filter(
         VoiceSignalInput.tenant_id == tenant_id, VoiceSignalInput.source_ref == f"share:{share.id}"
     ).delete(synchronize_session=False)
+    # S-3.2.1: and its "shared to Pratidhvani" event goes with it.
+    activity_event_service.delete_share_event(db, tenant_id, share.id)
     db.delete(share)
     db.commit()
     logger.info(

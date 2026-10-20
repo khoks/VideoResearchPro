@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Added: Echo learns how you write (S-3.3.2, 2026-10-19)
 
-PR [#335](https://github.com/khoks/VideoResearchPro/pull/335). Decision [D-098](docs/decisions.md#d-098--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19); cost [measurement](docs/notes/2026-10-19-signal-extraction-cost.md).
+PR [#335](https://github.com/khoks/VideoResearchPro/pull/335). Decision [D-099](docs/decisions.md#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19); cost [measurement](docs/notes/2026-10-19-signal-extraction-cost.md).
 
 - Echo now learns style and personality signals from your own words: your
   notes, the questions you ask, and shares you marked as written by you. A
@@ -24,6 +24,18 @@ PR [#335](https://github.com/khoks/VideoResearchPro/pull/335). Decision [D-098](
   **Learn now** on the signals panel. Deleting a note or a share takes it out
   of every signal at once, and a signal you rejected is never learned again.
 - Cost on the economy model: about half a cent per hundred texts.
+### Added: Echo's activity stream storage (2026-10-19)
+
+[S-3.2.1](docs/initiatives.md#s-321--connector-runtime-and-activity_events), PR [#332](https://github.com/khoks/VideoResearchPro/pull/332), [D-098](decisions.md#d-098--echo-connectors-events-unique-per-reader-tokens-in-a-secret-store-that-is-erased-with-the-brain-but-never-exported-2026-10-19).
+
+- `activity_events`: what you did, from connectors, stored once per event
+  however often it syncs. Sharing something to Echo is now one such event
+  (metadata only; the shared words stay in the inbox).
+- Connector grants, encrypted tokens and pending sign-ins have their own
+  tables. Your Echo export carries the events and the grants; the tokens are
+  erased with your brain but never exported, and the archive says so.
+- The connector and archive-importer contracts, which GitHub (S-3.2.4) and
+  the export importers (S-3.7.5) build on.
 
 ### Newsletter issues (2026-10-19, S-6.4.1)
 

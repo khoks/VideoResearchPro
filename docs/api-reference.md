@@ -1089,6 +1089,8 @@ Signal shape: `{ id, signal_type, layer: "style"|"personality", value, weight, e
 
 **Learning (S-3.3.2).** Signals with `origin: "llm"` come from one economy-tier call per batch of the user's own texts. Each example is checked against the passage it cites and stored only if found there exactly. Signals with `origin: "stylometry"` (type `cadence`) are measured without a model and recomputed on every run. A personality signal has `language: null`; a style signal's language is that of its examples' passages ([D-099](decisions.md#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19)). Deleting a note withdraws it from every signal at once.
 
+**Retrieval (S-3.3.3).** Every live fact and signal also lives as one vector in `personal_context_global`, with `tenant_id` metadata. A rejected or source-deleted signal, or an expired or deleted fact, has none. Nothing in the API queries it yet; "speak as me" (E-3.4) and the voice-match harness (S-3.3.4) read it through `echo_personal_vectors.query_personal_context`, which fails closed without a tenant.
+
 Deleting a share withdraws it as evidence: its examples and provenance leave the signals listed in its `derived_signal_ids_json`, and a signal with no source left is suppressed as `source_deleted` (unlike a rejection, new evidence may derive it again).
 
 ### `GET /api/v1/echo/export`

@@ -237,7 +237,15 @@ def create(
     db.add(row)
     db.commit()
     db.refresh(row)
+    _sync_vectors(db, tenant_id)
     return row
+
+
+def _sync_vectors(db: Session, tenant_id: str) -> None:
+    """S-3.3.3: a signal's vector follows the row (a tombstone's is deleted)."""
+    from app.services import echo_personal_vectors
+
+    echo_personal_vectors.sync_soft(db, tenant_id)
 
 
 _UNSET: Any = object()
@@ -275,6 +283,7 @@ def update(
         row.weight = float(weight)
     db.commit()
     db.refresh(row)
+    _sync_vectors(db, tenant_id)
     return row
 
 
@@ -286,6 +295,7 @@ def suppress(db: Session, tenant_id: str, signal_id: str, reason: str = "user") 
     row.suppressed_reason = reason
     db.commit()
     db.refresh(row)
+    _sync_vectors(db, tenant_id)
     return row
 
 

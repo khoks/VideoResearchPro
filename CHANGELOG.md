@@ -24,6 +24,31 @@ PR [#341](https://github.com/khoks/VideoResearchPro/pull/341). Sizing: [docs/not
 - One bulk cascade now serves every share delete; undoing 125,000 shares
   takes about 7 s.
 
+### Evaluation: the voice-match gate passes on synthetic writers (S-3.3.4, 2026-10-19)
+
+PR [#346](https://github.com/khoks/VideoResearchPro/pull/346). Decision [D-100](docs/decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19); [pre-registration](docs/notes/2026-10-19-voice-match-preregistration.md) (#338); [result](docs/notes/2026-10-19-voice-match-result.md).
+
+- `backend/scripts/voice_match_harness.py` runs the three tiers the plan asks
+  for: an automatic style score, two model judges that may abstain, and a
+  blinded "which of these did you write?" test for the user.
+- On three invented writers, drafts that used the learned signals and five of
+  the writer's notes were judged closer to the writer in 36 of 36 verdicts,
+  without reading worse than a neutral draft. Building "speak as me" on this
+  design is unblocked; it is turned on for a person only after they pass the
+  "which did you write?" test themselves.
+
+### Added: Echo's facts and signals are searchable for retrieval (S-3.3.3, 2026-10-19)
+
+PR [#343](https://github.com/khoks/VideoResearchPro/pull/343).
+
+- Every fact and voice signal Echo keeps is now also a search vector in its
+  private `personal_context_global` collection, scoped to you. This is what
+  "speak as me" will retrieve from.
+- A signal you reject, a fact you delete or that expires, and a signal whose
+  sources you deleted all leave retrieval at once, whichever way the change
+  happened. Startup repairs anything a failed update missed.
+- Searches always filter on your account; there is no unscoped query.
+
 ### Added: the GitHub connector (2026-10-19)
 
 [S-3.2.4](docs/initiatives.md#s-324--github-connector), PR [#342](https://github.com/khoks/VideoResearchPro/pull/342).

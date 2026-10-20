@@ -573,6 +573,9 @@ def delete_shares(db: Session, tenant_id: str, share_ids: list[str]) -> ShareDel
         ).delete(synchronize_session=False)
         db.query(Share).filter(Share.id.in_(chunk)).delete(synchronize_session=False)
     db.commit()
+    from app.services import echo_personal_vectors
+
+    echo_personal_vectors.sync_soft(db, tenant_id)
     logger.info(
         "echo: tenant %s deleted %d share(s) (vectors=%d files=%d facts=%d)",
         tenant_id[:8], len(found), vectors, files, facts,

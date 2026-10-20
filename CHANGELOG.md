@@ -28,6 +28,24 @@ PR [#310](https://github.com/khoks/VideoResearchPro/pull/310). Decision [D-093](
 - `judge_pair.py` gains a `book` rubric; `book_cohesion_trial.py` builds both
   editions from a copy of a library.
 
+### Fixed: back-translated wording removed from composed reports (2026-10-19)
+
+PR [#309](https://github.com/khoks/VideoResearchPro/pull/309). Found by the R1 run-7 quote gate.
+
+- The composer wrote "Matplotlib वेरी इंपॉर्टेंट लाइब्रेरी (very important
+  library)", translating the English back into Devanagari and attributing it
+  to the speaker. After composing, every native-script passage in the report
+  is now looked up in the sources' speech with the quote gate's own rule.
+  A passage found in no source is removed together with its transliteration,
+  and the English beside it is kept. The removal is counted in
+  `processing_notes.report_quotes_removed` and disclosed in the report.
+  Titles and channel names are left alone. On R1 runs 5–7 it removes exactly
+  what the gate fails.
+- The compose prompt now says non-English wording comes only from a quote's
+  `original`, copied exactly.
+- A source typed in Latin letters is quoted in Latin letters, even when it
+  is mostly Hindi (T-1.16.2.11).
+
 ### Added: "You might ask…" suggestion cards (2026-10-19)
 
 PR [#308](https://github.com/khoks/VideoResearchPro/pull/308). S-8.4.2, plan [m4-question-suggestions](docs/plans/m4-question-suggestions.md).

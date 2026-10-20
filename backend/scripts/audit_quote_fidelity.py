@@ -45,7 +45,6 @@ import re
 import sys
 from collections import Counter
 from dataclasses import asdict, dataclass
-from html.parser import HTMLParser
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -61,13 +60,12 @@ from app.services.quote_fidelity import (  # noqa: E402,F401  (normalise, NEAR: 
     match_level as _level,
     mixed_script_words,
     normalise,
+    report_native_runs,
+    run_verdict,
 )
-
-MIN_REPORT_RUN_TOKENS = 3
 
 _HEADER = re.compile(r"^=== (.*) \((https?://\S+?)\) ===$")
 _VIDEO_ID = re.compile(r"(?:[?&]v=|youtu\.be/)([A-Za-z0-9_-]{11})")
-_NATIVE_CHAR = re.compile(r"[\u0900-\u097f\u0980-\u09ff]")
 
 
 def video_id(url: str | None) -> str:
@@ -173,67 +171,17 @@ def audit_items(intermediates: dict, corpus: dict[str, VideoText]) -> list[Quote
     ]
 
 
-class _Text(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.parts: list[str] = []
-
-    def handle_data(self, data):
-        self.parts.append(data)
-
-    def handle_starttag(self, tag, attrs):
-        if tag in ("p", "li", "br", "div", "h1", "h2", "h3", "h4", "td", "tr", "blockquote"):
-            self.parts.append("\n")
-
-
-def report_native_runs(html: str, min_tokens: int = MIN_REPORT_RUN_TOKENS) -> list[str]:
-    """Maximal runs of Devanagari/Bengali words in the report text.
-
-    A run may bridge up to two Latin tokens (code-mixed speech such as
-    "plt ডট টাইটেল") but starts and ends on a native token. Runs shorter than
-    ``min_tokens`` native words are single borrowed terms, not quotations.
-    """
-    parser = _Text()
-    parser.feed(html or "")
-    runs: list[str] = []
-    for line in "".join(parser.parts).splitlines():
-        tokens = line.split()
-        i = 0
-        while i < len(tokens):
-            if not _NATIVE_CHAR.search(tokens[i]):
-                i += 1
-                continue
-            j, last_native, gap = i, i, 0
-            while j + 1 < len(tokens) and gap <= 2:
-                j += 1
-                if _NATIVE_CHAR.search(tokens[j]):
-                    last_native, gap = j, 0
-                else:
-                    gap += 1
-            span = tokens[i:last_native + 1]
-            if sum(1 for t in span if _NATIVE_CHAR.search(t)) >= min_tokens:
-                runs.append(" ".join(span))
-            i = last_native + 1
-    return runs
-
-
 def audit_report(html: str, corpus: dict[str, VideoText]) -> list[QuoteFinding]:
-    """Each native-script run in the report, located anywhere in the corpus speech."""
+    """Each native-script run in the report, located anywhere in the corpus speech.
+
+    The run finder and verdict live in app/services/quote_fidelity.py, where
+    the report pipeline uses them to remove failing runs after composing.
+    """
     out = []
     for run in report_native_runs(html):
-        frags = fragments(run)
-        verdict, matched = "absent", None
-        for vid, v in corpus.items():
-            lvl = _level(frags, v.speech, v)
-            if lvl and (verdict == "absent" or lvl == "verbatim"):
-                verdict, matched = lvl, vid
-                if lvl == "verbatim":
-                    break
-        q_script = dominant_native_script(run)
-        v_script = corpus[matched].script if matched else None
-        out.append(QuoteFinding(verdict, run, matched or "", matched, q_script, v_script,
-                                bool(q_script and v_script and q_script != v_script),
-                                bool(mixed_script_words(run))))
+        v = run_verdict(run, corpus)
+        out.append(QuoteFinding(v["verdict"], run, v["matched"] or "", v["matched"], v["script"],
+                                v["video_script"], v["script_mismatch"], v["mixed_script"]))
     return out
 
 

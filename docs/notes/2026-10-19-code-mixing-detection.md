@@ -570,6 +570,54 @@ are now kept (trimmed to the speech) and 2 stay dropped; the 141 kept before
 are unchanged. The map prompt now also says `original` holds only the
 speaker's words, because the report adds the transliteration and translation.
 
+**Follow-up: R1 run 7, wording the composer wrote.** Run 7's quote gate
+failed on one passage the map check could never see. The map item's
+`original` was verbatim, caption errors included ("दिस इज़ अ वेरी वेरीेंट
+लाइब्रेरी"), and its English `content` said "a very important library". The
+composer wrote "Matplotlib वेरी इंपॉर्टेंट लाइब्रेरी (very important
+library)": it translated the English back into Devanagari and attributed it
+to the speaker. So the report now gets the same check after composing.
+`quote_fidelity.scrub_report` finds every native-script run in the composed
+prose (three or more native words, the gate's own run finder) and looks it up
+in every source's speech by the gate's rule (`run_verdict`). A failing run
+is removed together with its bracketed transliteration. A plain-English
+gloss in the brackets takes the run's place, and so does a quoted
+translation after a dash. Each source's title and channel name count as
+known text, so a Devanagari title in a citation stays. The statistics table
+is not checked. Removals are counted in `processing_notes`
+(`report_quotes_removed`) and disclosed in the report's processing note. The
+compose prompt now also says that non-English wording comes only from an
+`original`, copied exactly, and is never back-translated or re-scripted.
+The gate script imports the same functions, so the two cannot disagree.
+
+Measured on every saved R1 report (`data/r1_ab/run5`–`run7`, each against
+its own run's transcript), the scrub removes exactly the runs the gate
+fails, and the gate then fails none.
+
+| Report | Native runs | Gate failures before | Removed | Gate failures after |
+|---|---:|---:|---:|---:|
+| run 5, off | 14 | 2 | 2 | 0 |
+| run 5, on | 27 | 8 | 8 | 0 |
+| run 6, off / on | 26 / 21 | 0 / 0 | 0 / 0 | 0 / 0 |
+| run 7, off | 33 | 1 | 1 ("वेरी इंपॉर्टेंट लाइब्रेरी") | 0 |
+| run 7, on | 42 | 0 | 0 | 0 |
+
+The run-5 removals are the mixed-script and Bengali-for-Hindi quotes that
+#294 now stops at the map stage, so on current code the report check is the
+second line of defence. It is not the first.
+
+**Decided alongside (T-1.16.2.11): a romanised source is quoted in Roman
+script.** N-002's policy quoted a Hindi-dominant source in Devanagari. For a
+source typed in Latin letters, such as a comment thread, that means
+re-scripting the speaker's words, which is the defect this check removes.
+`quote_form` now names the Roman form for any source whose script is Latin,
+whatever its Hindi share. Native script is kept for sources whose speech is
+in that script. The other option was to transliterate a Devanagari quote
+back to Latin before matching it. That needs a Devanagari-to-Roman
+transliterator exact enough to verify a quote, which does not exist here,
+and it would still show the reader words in a script the speaker did not
+use.
+
 ## Reproduce
 
 ```bash

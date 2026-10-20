@@ -702,13 +702,14 @@ def quote_form(meta: dict[str, Any] | None) -> str:
     meta = meta or {}
     if not meta.get("code_mix_primary"):
         return ""
-    if meta.get("code_mix_quote") == NATIVE_SCRIPT:
-        # Hindi-dominant speech is shown in Hindi's script even when the
-        # source typed it in Latin letters — N-002's "dominant language keeps
-        # its script"; the romanised original becomes the transliteration.
-        script = meta.get("code_mix_script") or ""
-        target = script if script and script != "Latin" else "Devanagari"
-        return f"quote in {target} + transliteration + English translation"
+    script = meta.get("code_mix_script") or ""
+    if meta.get("code_mix_quote") == NATIVE_SCRIPT and script and script != "Latin":
+        return f"quote in {script} + transliteration + English translation"
+    # A source TYPED in Latin letters is quoted in Latin letters even when it
+    # is Hindi-dominant (T-1.16.2.11): re-scripting it into Devanagari would
+    # put words in a form the speaker never wrote, and the report-level
+    # quote-fidelity check removes any native-script text that is not a
+    # source's own words.
     # Heavy interleaving, or the occasional Hindi clause in an English-primary
     # source: Roman script throughout, the original is its own transliteration.
     return "quote in Roman script + English translation"

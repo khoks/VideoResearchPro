@@ -63,8 +63,7 @@ CODE_MIXED_QUOTE_FORMS = """QUOTE FORM PER SOURCE (code-mixed speech):
   - "quote in <script> + transliteration + English translation": the wording
     in that script, then a romanisation, then the translation —
     अहिंसा परमो धर्मः (ahiṃsā paramo dharmaḥ) — "non-violence is the highest
-    virtue". If the source wrote it in Latin letters, put it in the named
-    script and use the source's own spelling as the transliteration.
+    virtue".
   - "quote in Roman script + English translation": the wording in Latin
     letters as spoken — English words in English spelling, Hindi words
     romanised — then the translation: taaki baadme koi kasar na reh jaye —
@@ -72,6 +71,12 @@ CODE_MIXED_QUOTE_FORMS = """QUOTE FORM PER SOURCE (code-mixed speech):
     transliteration; do not write it twice.
 - Use ONE form for every quote from the same source, even where a single
   sentence leans the other way.
+- Non-English wording in the report comes ONLY from an item's `original`,
+  copied EXACTLY — its spelling, its caption errors, its script. Never
+  translate an item's English `content` back into the source's language or
+  script, and never re-script an `original`. If an item has no `original`,
+  write its point in English. Any non-English text that is not some
+  source's own words is removed from the report.
 - A source with no quote form is English: gloss any borrowed word inline
   ("bhai (brother)") instead of quoting it."""
 

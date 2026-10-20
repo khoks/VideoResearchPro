@@ -87,9 +87,10 @@ describe('small labels', () => {
     expect(requestErrorLine(new Error('offline'))).toBe('Could not reach the server.');
   });
 
-  it('reads a voice-match score either as a fraction or a percentage', () => {
-    expect(voiceMatchLine(0.824)).toBe('82% like you');
-    expect(voiceMatchLine(91)).toBe('91% like you');
+  it('reads a voice-match score on S-3.4.1’s 0 to 100 scale', () => {
+    expect(voiceMatchLine(82.4)).toBe('Sounds like you: 82%');
+    expect(voiceMatchLine(1)).toBe('Sounds like you: 1%');
+    expect(voiceMatchLine(140)).toBe('Sounds like you: 100%');
     expect(voiceMatchLine(null)).toBeNull();
   });
 
@@ -106,5 +107,38 @@ describe('the cards context for the page in view', () => {
     expect(cardContext('/knowledge/dQw4w9WgXcQ')).toBe('document:dQw4w9WgXcQ');
     expect(cardContext('/jobs')).toBe('library');
     expect(cardContext('/library/qa')).toBe('library');
+  });
+});
+
+describe('the gate from S-3.4.1 blockers', () => {
+  const ready = status({ ready: true, total_rows: 100 });
+  const NOT_READY = { code: 'not_ready', message: 'Echo needs more to go on first, in 5 of 5 areas. Facts about you: …' };
+
+  it('titles by the first blocker and shortens the not-ready wall of text', () => {
+    const view = draftGateView(
+      { enabled: false, state: 'install_off', blockers: [{ code: 'install_off', message: 'Speak as me is turned off on this install.' }, NOT_READY] },
+      null,
+      ready,
+    );
+    expect(view.title).toBe('Turned off on this install');
+    expect(view.lines).toEqual([
+      'Speak as me is turned off on this install.',
+      'Echo needs more to go on first: the line above says what is missing.',
+    ]);
+    expect(view.action?.href).toBe('/echo');
+  });
+
+  it('points to notes for the voice test, and says when today’s drafts are used', () => {
+    const test = draftGateView(
+      { enabled: false, state: 'voice_test_required', blockers: [{ code: 'voice_test_required', message: 'It needs 40 of your notes; you have 3.' }] },
+      null,
+      ready,
+    );
+    expect(test.title).toBe('Your voice test comes first');
+    expect(test.lines).toEqual(['It needs 40 of your notes; you have 3.']);
+    expect(test.action?.href).toBe('/notes');
+    const cap = draftGateView({ enabled: false, state: 'daily_cap', blockers: [{ code: 'daily_cap', message: 'You have used today’s 20 drafts.' }] }, null, ready);
+    expect(cap.title).toBe('That was today’s last draft');
+    expect(cap.action).toBeUndefined();
   });
 });

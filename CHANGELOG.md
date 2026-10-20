@@ -19,6 +19,25 @@ PR [#359](https://github.com/khoks/VideoResearchPro/pull/359). [D-104](docs/deci
 - The disclosure line ("Drafted with Echo, reviewed by you") is on by default. Untick **Add the disclosure line** to leave it off when you copy. Whether you kept it is recorded.
 - Saving a version does not use up one of the day's drafts.
 
+### Fix: the Echo panel shows a draft the way speak-as-me returns it (S-3.8.1, 2026-10-20)
+
+PR [#361](https://github.com/khoks/VideoResearchPro/pull/361).
+
+- The voice-match score reads on its 0 to 100 scale ("Sounds like you:
+  82%"). The old reading treated 1 as 100%.
+- A draft's flags are shown. Its sources carry their marker, and a source
+  at its timestamp opens in a new tab.
+
+### Fix: the Echo panel words the speak-as-me gate from its blockers (S-3.8.1 with S-3.4.1, 2026-10-20)
+
+PR [#360](https://github.com/khoks/VideoResearchPro/pull/360).
+
+- Draft as me titles the gate by S-3.4.1's first blocker ("Turned off on
+  this install", "Your voice test comes first"...). The not-ready reason
+  points at the readiness line instead of repeating every domain.
+- A message naming a private person asks first, with **Draft anyway**.
+  Refusals use the server's own words.
+
 ### Echo: anticipation cards in the panel (S-3.8.2, 2026-10-20)
 
 PR [#358](https://github.com/khoks/VideoResearchPro/pull/358).

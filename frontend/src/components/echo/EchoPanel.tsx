@@ -37,6 +37,7 @@ import { useEchoPanelStore, type AskTarget, type EchoTurn } from '../../stores/e
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, target as touch, z } from '../../theme';
 import type { LibraryQAExchange, QAHistoryExchange } from '../../types/qa';
 import { computeReadiness } from '../../utils/echoReadiness';
+import { citationLabel, draftErrorOf } from '../../utils/echoDrafts';
 import {
   CARD_KIND_LABELS,
   ECHO_SHORTCUT,
@@ -693,7 +694,7 @@ function DraftComposer() {
     try {
       updateTurn(id, { status: 'done', result: await echoApi.draft({ message }) });
     } catch (err) {
-      updateTurn(id, { status: 'error', error: requestErrorLine(err) });
+      updateTurn(id, draftFailure(err));
     } finally {
       setBusy(false);
     }
@@ -718,6 +719,14 @@ function DraftComposer() {
   );
 }
 
+/** A failed draft as a turn: S-3.4.1's own words, and the names to confirm
+ * when its private-person guard stopped it. */
+function draftFailure(err: unknown): Partial<EchoTurn> {
+  const e = draftErrorOf(err);
+  if (e.code === 'names_need_confirmation') return { status: 'error', error: e.message, confirmNames: e.names };
+  return { status: 'error', error: e.code === 'error' ? requestErrorLine(err) : e.message, confirmNames: undefined };
+}
+
 // ---------------------------------------------------------------------------
 // Turns
 // ---------------------------------------------------------------------------
@@ -737,14 +746,35 @@ function TurnView({ turn }: { turn: EchoTurn }) {
         </span>
       )}
       {turn.status === 'error' && (
-        <p role="alert" style={{ margin: 0, fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.error }}>
+        <p role="alert" style={{ margin: 0, fontFamily: fonts.ui, fontSize: fontSize.sm, color: turn.confirmNames ? c.textPrimary : c.error }}>
           {turn.error}
         </p>
       )}
+      {turn.status === 'error' && turn.confirmNames && <ConfirmNames turn={turn} />}
       {turn.status === 'done' && turn.kind === 'library' && <LibraryAnswer qa={turn.result as LibraryQAExchange} />}
       {turn.status === 'done' && turn.kind === 'history' && <HistoryAnswer qa={turn.result as QAHistoryExchange} />}
       {turn.status === 'done' && turn.kind === 'draft' && <DraftAnswer draft={turn.result as DraftResponse} />}
     </article>
+  );
+}
+
+function ConfirmNames({ turn }: { turn: EchoTurn }) {
+  const updateTurn = useEchoPanelStore((st) => st.updateTurn);
+  const confirm = async () => {
+    const names = turn.confirmNames ?? [];
+    updateTurn(turn.id, { status: 'pending', error: undefined, confirmNames: undefined });
+    try {
+      updateTurn(turn.id, { status: 'done', result: await echoApi.draft({ message: turn.text, acknowledge_names: names }) });
+    } catch (err) {
+      updateTurn(turn.id, draftFailure(err));
+    }
+  };
+  return (
+    <div>
+      <Button size="sm" variant="secondary" onClick={confirm}>
+        Draft anyway
+      </Button>
+    </div>
   );
 }
 
@@ -831,26 +861,47 @@ function DraftAnswer({ draft }: { draft: DraftResponse }) {
           {copied ? 'Copied' : 'Copy draft'}
         </Button>
       </div>
+      {(draft.flags ?? []).length > 0 && (
+        <ul data-echo-draft-flags="" style={{ margin: 0, paddingLeft: space['4'], fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.warn }}>
+          {draft.flags!.map((f, i) => (
+            <li key={i}>{f}</li>
+          ))}
+        </ul>
+      )}
       {(draft.deviation_notes ?? []).length > 0 && (
         <ul style={{ margin: 0, paddingLeft: space['4'], fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textSecondary }}>
-          {draft.deviation_notes!.map((n) => (
-            <li key={n}>{n}</li>
+          {draft.deviation_notes!.map((n, i) => (
+            <li key={i}>{n}</li>
           ))}
         </ul>
       )}
       {(draft.citations ?? []).length > 0 && (
         <SourcesList>
-          {draft.citations!.map((cit) =>
-            cit.href ? (
-              <Link key={cit.ref} to={cit.href} style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.accent }}>
-                {cit.label}
-              </Link>
-            ) : (
-              <span key={cit.ref} style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textSecondary }}>
-                {cit.label}
+          {draft.citations!.map((cit, i) => {
+            const label = `${cit.ref ? `${cit.ref} · ` : ''}${citationLabel(cit)}`;
+            const style = { fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.accent };
+            // A source at its timestamp is outside the app; anything inside it
+            // is a route.
+            if (cit.url) {
+              return (
+                <a key={i} href={cit.url} target="_blank" rel="noreferrer" style={style}>
+                  {label}
+                </a>
+              );
+            }
+            if (cit.href) {
+              return (
+                <Link key={i} to={cit.href} style={style}>
+                  {label}
+                </Link>
+              );
+            }
+            return (
+              <span key={i} style={{ ...style, color: c.textSecondary }}>
+                {label}
               </span>
-            ),
-          )}
+            );
+          })}
         </SourcesList>
       )}
     </>

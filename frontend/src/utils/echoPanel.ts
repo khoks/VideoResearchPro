@@ -88,6 +88,7 @@ export function draftGateView(gate: DraftGate | undefined, error: unknown, readi
   }
   if (!gate) return { available: false, title: 'Checking…', lines: [] };
   if (gate.enabled) return { available: true, title: 'Draft as me', lines: [] };
+  if (gate.blockers?.length) return blockersView(gate.blockers);
 
   const reasons = (gate.reasons ?? []).filter(Boolean);
   const notes =
@@ -122,6 +123,32 @@ export function draftGateView(gate: DraftGate | undefined, error: unknown, readi
   }
 }
 
+const BLOCKER_TITLE: Record<string, string> = {
+  install_off: 'Turned off on this install',
+  not_ready: 'Echo is not ready yet',
+  voice_test_required: 'Your voice test comes first',
+  voice_test_failed: 'Your voice test has not passed yet',
+  daily_cap: 'That was today’s last draft',
+};
+
+/**
+ * S-3.4.1's own blockers, first one as the title. The not-ready message
+ * repeats every unmet domain, which the readiness line above the tabs
+ * already names, so it is shortened here.
+ */
+function blockersView(blockers: Array<{ code: string; message: string }>): GateView {
+  const lines = blockers.map((b) =>
+    b.code === 'not_ready' ? 'Echo needs more to go on first: the line above says what is missing.' : b.message,
+  );
+  const codes = new Set(blockers.map((b) => b.code));
+  const action = codes.has('not_ready')
+    ? { label: 'See what is missing', href: '/echo' }
+    : codes.has('voice_test_required')
+      ? { label: 'Write a note', href: '/notes' }
+      : undefined;
+  return { available: false, title: BLOCKER_TITLE[blockers[0].code] ?? 'Not switched on for you', lines, action };
+}
+
 /** Words for a failed ask or draft. */
 export function requestErrorLine(error: unknown): string {
   const status = httpStatus(error);
@@ -146,11 +173,11 @@ export function historyRefLabel(sourceType: string): string {
   return 'Q&A history';
 }
 
-/** "82% like you", or null when the score is missing. */
+/** "Sounds like you: 82%" (S-3.4.1 scores 0 to 100, the Echo page's
+ * wording), or null when the score is missing. */
 export function voiceMatchLine(score: number | null | undefined): string | null {
   if (typeof score !== 'number' || !Number.isFinite(score)) return null;
-  const pct = Math.round((score <= 1 ? score * 100 : score));
-  return `${Math.max(0, Math.min(100, pct))}% like you`;
+  return `Sounds like you: ${Math.max(0, Math.min(100, Math.round(score)))}%`;
 }
 
 /** The suggestions context for the page in view (S-3.8.2): a run or its

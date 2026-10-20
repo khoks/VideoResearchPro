@@ -103,3 +103,7 @@ By judge, the share of non-tie verdicts favouring OFF was 55% (Claude Sonnet 5),
 - **Weight 0 behaves as exclusion, not as "last resort".** No demoted chunk reached any of the 20 weighted answers. With a 3× pool there are always enough other relevant chunks, so the 0.05 floor never lets the source surface. D-068 intended a weight of 0 to sink a source "but still surface when nothing else matches"; on this corpus it never does. The channel page now says so.
 - **The report cushions job Q&A.** Job answers also read the report, which keeps breadth the re-rank removes; library answers have nothing else, and that is where judges preferred OFF.
 - The assignment was deliberately strong (2.0 and 0 on six of the ten largest channels). Milder weights were not tested.
+
+## Related: library Q&A model-tier delta (T-5.10.2.7)
+
+The D-055 replay of library Q&A on the same ten questions and the same per-user corpus, unweighted, is in [2026-10-19-t51027-library-qa-d055-replay.md](2026-10-19-t51027-library-qa-d055-replay.md): no re-tier warranted (challenger won 2 of 10 questions; mean relevance 8.63 vs 8.97). **It also bears on clauses 3 and 4 above.** In that replay, re-judging the same answers with each source's publication date in the excerpts flipped the preference from 21–8 for production to 15–11 for the challenger and cut confirmed unsupported claims from 119/54 to 18/8. This measurement's judges saw undated excerpts too, so its relevance and faithfulness clauses may be contaminated the same way; T-7.1.2.3's re-run with dated excerpts decides it.

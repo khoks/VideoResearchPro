@@ -141,6 +141,7 @@ describe('signal helpers', () => {
     expect(evidenceSummary(FRAMING)).toBe('2 × a note, a question you asked');
     expect(sourceLabel('share:abc')).toBe('a share in your own words');
     expect(sourceLabel('user')).toBe('you said so');
+    expect(sourceLabel('event:e1')).toBe('something you wrote elsewhere');
   });
 
   it('say who a signal belongs to', () => {

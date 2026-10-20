@@ -3,6 +3,9 @@
 Plan: docs/plans/m3-saved-searches-alerts.md. A saved search is a
 ``saved_searches`` row (what to ask, over which scope) plus one
 ``scheduled_runs`` row of kind ``saved_search`` (when), written together.
+The scope is the library-question scope of S-8.1.4 (``app/schemas/qa_scope.py``),
+stored and resolved through ``qa_scope_service`` so a shelf means the same
+documents here as in its list and its own Q&A (D-083).
 The scheduler tick (S-8.3.1) dispatches ``saved_search.run`` with the saved
 search's id; ``execute`` is what that task, and "Run now", call.
 
@@ -29,11 +32,10 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models.job_video import JobVideo
 from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.saved_search import SavedSearch
 from app.models.user import User
-from app.services import scheduler_service, shelf_service, tier_service, visibility_service
+from app.services import qa_scope_service, scheduler_service, tier_service
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +67,8 @@ class CapReached(RuntimeError):
     """The tier's cap on active saved searches is reached (409)."""
 
 
-class ScopeNotFound(LookupError):
-    """The scope names a shelf the caller does not own (404)."""
+# The scope names a shelf the caller does not own, or that no longer exists (404).
+ScopeNotFound = qa_scope_service.ScopeNotFound
 
 
 def _now() -> datetime:
@@ -111,16 +113,17 @@ def _clean_question(question: str) -> str:
 
 
 def normalise_scope(db: Session, tenant_id: str, scope: dict | None) -> dict | None:
-    """``None`` (the whole library) or ``{"shelf_id": …}`` for a shelf the
-    caller owns. Anything else is a 422; someone else's shelf is a 404."""
-    if not scope:
+    """The narrowing part of a library-question scope (``None`` = the whole
+    library), checked by resolving it: a key the resolver does not know is a
+    422 (ignoring it would widen the question), someone else's shelf a 404."""
+    keys = qa_scope_service.narrowing(scope)
+    if not keys:
         return None
-    if not isinstance(scope, dict) or set(scope) != {"shelf_id"} or not isinstance(scope["shelf_id"], str):
-        raise SavedSearchError('scope must be null (the library) or {"shelf_id": "<id>"}.')
-    shelf = shelf_service.get_shelf(db, scope["shelf_id"], tenant_id)
-    if shelf is None:
-        raise ScopeNotFound("Shelf not found")
-    return {"shelf_id": shelf.id}
+    try:
+        qa_scope_service.resolve_document_ids(db, tenant_id, keys)
+    except qa_scope_service.UnknownScopeKey as e:
+        raise SavedSearchError(str(e)) from None
+    return keys
 
 
 def normalise_user_cadence(cadence: dict[str, Any]) -> dict[str, Any]:
@@ -133,13 +136,8 @@ def normalise_user_cadence(cadence: dict[str, Any]) -> dict[str, Any]:
 
 
 def _load_scope(ss: SavedSearch) -> dict | None:
-    if not ss.scope_json:
-        return None
-    try:
-        value = json.loads(ss.scope_json)
-    except ValueError:
-        return None
-    return value if isinstance(value, dict) else None
+    scope = qa_scope_service.load(ss.scope_json)
+    return qa_scope_service.narrowing(scope) or None
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +162,7 @@ def create(
         tenant_id=user.id,
         question=q,
         answer_language=(answer_language or "en")[:10],
-        scope_json=json.dumps(clean_scope) if clean_scope else None,
+        scope_json=qa_scope_service.dump(clean_scope),
         notify_email=bool(notify_email),
         enabled=True,
     )
@@ -212,8 +210,7 @@ def update(
     if answer_language is not None:
         ss.answer_language = answer_language[:10] or "en"
     if scope is not _UNSET:
-        clean = normalise_scope(db, user.id, scope)
-        ss.scope_json = json.dumps(clean) if clean else None
+        ss.scope_json = qa_scope_service.dump(normalise_scope(db, user.id, scope))
     if notify_email is not None:
         ss.notify_email = bool(notify_email)
     if enabled is True and not ss.enabled:
@@ -272,23 +269,10 @@ def _last_answer(db: Session, ss: SavedSearch) -> str | None:
 
 
 def scope_document_ids(db: Session, tenant_id: str, scope: dict | None) -> list[str]:
-    """The documents a run may cite: the tenant's visible set, narrowed to
-    the shelf's runs' approved documents when scoped. An empty shelf (or a
-    tenant with nothing ingested) yields an empty list, which retrieves
-    nothing; it never widens to the library."""
-    visible = visibility_service.visible_document_ids(db, tenant_id)
-    if not scope:
-        return [row[0] for row in visible]
-    job_ids = shelf_service.job_ids_for_shelf(db, scope["shelf_id"])
-    if not job_ids:
-        return []
-    rows = (
-        db.query(JobVideo.document_id)
-        .filter(JobVideo.job_id.in_(job_ids), JobVideo.approved.is_(True), JobVideo.document_id.in_(visible))
-        .distinct()
-        .all()
-    )
-    return [r[0] for r in rows]
+    """The documents a run may cite: the tenant's visible set, narrowed by
+    the scope (``qa_scope_service``). An empty shelf, or a tenant with nothing
+    ingested, yields ``[]``, which retrieves nothing; it never widens."""
+    return qa_scope_service.resolve_document_ids(db, tenant_id, scope)
 
 
 def reference_ids(references: list[dict]) -> list[str]:
@@ -331,7 +315,9 @@ def execute(db: Session, saved_search_id: str, *, trigger: str = "schedule", age
         return {"status": STATUS_QUOTA}
 
     scope = _load_scope(ss)
-    if scope and shelf_service.get_shelf(db, scope["shelf_id"], user.id) is None:
+    try:
+        document_ids = scope_document_ids(db, user.id, scope)
+    except (qa_scope_service.ScopeNotFound, qa_scope_service.UnknownScopeKey):
         _record(db, ss, STATUS_SCOPE_MISSING, "The shelf this search was scoped to no longer exists.")
         return {"status": STATUS_SCOPE_MISSING}
 
@@ -341,7 +327,6 @@ def execute(db: Session, saved_search_id: str, *, trigger: str = "schedule", age
         if agent is None:
             from app.agents.qa_agent import run_library_qa_agent as agent  # noqa: N813
 
-        document_ids = scope_document_ids(db, user.id, scope)
         corpus_statistics = corpus_stats_service.corpus_statistics_for_document_ids(db, document_ids)
         channel_weights = subscription_service.channel_weights(db, user.id)
         with llm_service.byok_context(user.id, db):
@@ -363,6 +348,8 @@ def execute(db: Session, saved_search_id: str, *, trigger: str = "schedule", age
             references_json=json.dumps(references),
             answer_language=ss.answer_language,
             tenant_id=user.id,
+            # S-8.1.4's shape: the narrowing scope plus where it came from.
+            scope_json=qa_scope_service.dump({**(scope or {}), "saved_search_id": ss.id}),
         )
         db.add(exchange)
         db.flush()

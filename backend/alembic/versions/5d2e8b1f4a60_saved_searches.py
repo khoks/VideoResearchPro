@@ -1,7 +1,7 @@
 """saved_searches — pinned library questions (S-8.3.2 / M3)
 
 Revision ID: 5d2e8b1f4a60
-Revises: 0b90c419b558
+Revises: cd4c5467506d
 Create Date: 2026-10-19
 
 Additive. One row per pinned question; its schedule is a ``scheduled_runs``
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "5d2e8b1f4a60"
-down_revision = "0b90c419b558"
+down_revision = "cd4c5467506d"  # re-parented onto S-8.1.4 (merged first)
 branch_labels = None
 depends_on = None
 

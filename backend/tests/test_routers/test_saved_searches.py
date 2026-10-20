@@ -197,6 +197,7 @@ def test_a_run_asks_over_the_visible_set_and_stores_the_baseline(db, pro, _no_ch
     assert len(ss.last_answer_hash) == 64
     exchange = db.get(LibraryQAExchange, out["exchange_id"])
     assert exchange.tenant_id == pro.id and exchange.answer == "Rates fell twice."
+    assert json.loads(exchange.scope_json) == {"saved_search_id": ss.id}  # S-8.1.4 provenance key
     assert db.query(QuotaUsage).filter_by(user_id=pro.id, resource="library_qa_exchanges").one().consumed == 1
     _no_chroma.assert_called_once()
 
@@ -217,6 +218,9 @@ def test_a_shelf_scope_narrows_to_that_shelfs_documents(db, pro):
     assert agent.calls[0]["visible_document_ids"] == [in_shelf.document_id]
     assert agent.calls[1]["visible_document_ids"] == []  # never widens to the library
     assert outside.document_id not in agent.calls[0]["visible_document_ids"]
+    scopes = [json.loads(e.scope_json) for e in db.query(LibraryQAExchange).all()]
+    assert {s.get("shelf_id") for s in scopes} == {shelf.id, empty.id}  # each run is stamped with its scope
+    assert all("saved_search_id" in s for s in scopes)
 
 
 def test_over_quota_skips_before_spending_and_keeps_the_baseline(db, pro):

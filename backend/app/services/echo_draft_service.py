@@ -11,6 +11,13 @@ run and gives it the user's material. Gates, in order (``status``):
    ``scripts/voice_match_harness.py user-pairs`` / ``user-score --record``.
 4. ``daily_cap``: ``echo_drafts`` per day through ``quota_metering_service``.
 
+**Feedback (S-3.4.2).** ``feedback`` stores the text the user actually used
+and whether they kept the disclosure line. The words they typed into it (not
+the draft words they kept, not the disclosure, not what they repeated from
+the incoming message) become the extraction input
+``draft_edit:<id>`` (``echo_draft_edits``), so signals learned from an edit
+cite it; deleting the draft withdraws it at once, like a deleted note.
+
 The tier feature (``echo_speak_as_me``) is the router's 403, before any of
 this. A draft is never sent; it is stored in ``echo_drafts`` (part of the
 brain, D-089) with what grounded it.
@@ -385,6 +392,12 @@ def draft(
 
 
 def to_dict(row: EchoDraft) -> dict:
+    from app.services import echo_draft_edits
+
+    edit = None
+    if row.final_text is not None:
+        diff = echo_draft_edits.edit_diff(row.draft, row.final_text, third_party=[row.input_message])
+        edit = {**diff.summary(), "written": diff.written, "removed": diff.removed, "quoted": diff.quoted}
     return {
         "id": row.id,
         "message": row.input_message,
@@ -401,6 +414,8 @@ def to_dict(row: EchoDraft) -> dict:
         "disclosure": row.disclosure,
         "final_text": row.final_text,
         "disclosure_kept": row.disclosure_kept,
+        "feedback_at": row.feedback_at,
+        "edit": edit,
         "created_at": row.created_at,
     }
 
@@ -420,5 +435,42 @@ def get_draft(db: Session, tenant_id: str, draft_id: str) -> EchoDraft:
 
 
 def delete_draft(db: Session, tenant_id: str, draft_id: str) -> None:
-    db.delete(get_draft(db, tenant_id, draft_id))
+    from app.services import echo_personal_vectors, echo_signal_extraction
+
+    row = get_draft(db, tenant_id, draft_id)
+    # S-3.4.2: the user's edit stops counting as their voice at once, as a
+    # deleted note does (D-074): out of every signal it fed, out of the ledger.
+    echo_signal_extraction.withdraw_input(db, tenant_id, f"draft_edit:{row.id}")
+    db.delete(row)
     db.commit()
+    echo_personal_vectors.sync_soft(db, tenant_id)
+
+
+def feedback(db: Session, user: User, draft_id: str, final_text: str, *, disclosure_kept: bool = True) -> EchoDraft:
+    """Record what the user did with a draft: the text they used (stored as
+    given, minus a trailing disclosure line, which is Echo's) and whether the
+    disclosure stayed on. May be sent again; the newest wins. Not counted
+    against the daily cap. Queues signal learning when enough is waiting."""
+    from app.services import audit_service, echo_draft_edits, echo_signal_extraction
+
+    row = get_draft(db, user.id, draft_id)
+    text = echo_draft_edits.strip_disclosure(final_text, row.disclosure)
+    if not text:
+        raise ValueError("final_text is empty once the disclosure line is removed")
+    row.final_text = text
+    row.disclosure_kept = bool(disclosure_kept)
+    row.feedback_at = _now()
+    # The incoming message is someone else's words: typed or not, a stretch
+    # repeated from it never becomes the user's voice (S-3.4.1's guard).
+    diff = echo_draft_edits.edit_diff(row.draft, text, third_party=[row.input_message])
+    row.written_words = diff.written_words
+    db.commit()
+    try:
+        audit_service.record(db, event="echo_draft_feedback", user_id=user.id, tenant_id=user.id, metadata={
+            "draft_id": row.id, **diff.summary(), "disclosure_kept": row.disclosure_kept,
+        })
+    except Exception:  # noqa: BLE001
+        logger.warning("echo_draft_feedback audit failed", exc_info=True)
+    echo_signal_extraction.maybe_queue(db, user.id)
+    db.refresh(row)
+    return row

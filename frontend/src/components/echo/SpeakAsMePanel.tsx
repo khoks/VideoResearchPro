@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useCreateDraft, useDeleteDraft, useDraftStatus, useRecentDrafts } from '../../hooks/useEcho';
+import { DraftEditor } from './DraftEditor';
 import { useJobStore } from '../../stores/jobStore';
 import type { CreateDraftPayload, EchoDraft } from '../../services/echoApi';
 import { Badge, Button, Card, FormField, Input, Select, Skeleton, Textarea } from '../primitives';
@@ -8,10 +9,12 @@ import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../th
 import { citationLabel, draftErrorOf } from '../../utils/echoDrafts';
 
 /**
- * "Speak as me" (S-3.4.1): drafts a reply in the user's voice. Off until
+ * "Speak as me" (S-3.4.1, S-3.4.2): drafts a reply in the user's voice. Off until
  * every gate is open, and the gates are shown in words: the install switch,
  * readiness, the user's own "which did you write?" test (D-100), the daily
- * cap. Echo drafts; it never sends.
+ * cap. Echo drafts; it never sends. The user edits the draft into their own
+ * version and may drop the disclosure line; saving it records what they
+ * typed, which is all Echo learns from.
  */
 export function SpeakAsMePanel() {
   const c = useColors();
@@ -136,7 +139,7 @@ export function SpeakAsMePanel() {
         </form>
       ) : null}
 
-      {result && <DraftView draft={result} onCopy={() => pushToast('success', 'Copied. Read it once more before you send it.')} />}
+      {result && <DraftView key={result.id} draft={result} onCopy={() => pushToast('success', 'Copied. Read it once more before you send it.')} />}
 
       {st?.enabled && (recent.data?.items.length ?? 0) > 0 && (
         <details style={{ marginTop: space['4'] }}>
@@ -163,30 +166,22 @@ export function SpeakAsMePanel() {
 function DraftView({ draft, onCopy }: { draft: EchoDraft; onCopy: () => void }) {
   const c = useColors();
   const small: React.CSSProperties = { fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted };
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(`${draft.draft}\n\n${draft.disclosure}`);
-      onCopy();
-    } catch {
-      /* clipboard refused: the text is on screen to select */
-    }
-  };
   return (
     <section data-result aria-label="Draft" style={{ marginTop: space['4'], display: 'flex', flexDirection: 'column', gap: space['2'] }}>
-      <div style={{ padding: space['3'], border: `1px solid ${c.border}`, borderRadius: radius.md, fontFamily: fonts.body, fontSize: fontSize.base, color: c.textPrimary, lineHeight: lineHeight.normal, whiteSpace: 'pre-wrap' }}>
-        {draft.draft}
-        <div data-disclosure style={{ ...small, marginTop: space['2'] }}>
-          {draft.disclosure}
-        </div>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: space['3'], flexWrap: 'wrap' }}>
-        <Button size="sm" variant="secondary" onClick={copy}>
-          Copy draft
-        </Button>
-        <span style={small}>
-          Sounds like you: {Math.round(draft.voice_match_score)}% · grounded {Math.round(draft.confidence * 100)}%
-        </span>
-      </div>
+      <DraftEditor
+        draft={draft}
+        onCopy={onCopy}
+        meta={
+          <span style={small}>
+            Sounds like you: {Math.round(draft.voice_match_score)}% · grounded {Math.round(draft.confidence * 100)}%
+          </span>
+        }
+      />
+      {draft.flags.includes('verbatim_removed') && (
+        <p data-flag="verbatim_removed" style={{ ...small, margin: 0 }}>
+          A sentence that repeated someone else's words was taken out.
+        </p>
+      )}
       {draft.citations.length > 0 && (
         <div style={small}>
           Drew on: {draft.citations.map((ct, i) => (

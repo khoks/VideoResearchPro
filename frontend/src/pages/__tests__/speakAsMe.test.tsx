@@ -1,5 +1,5 @@
 /**
- * S-3.4.1: the "Speak as me" panel. While any gate is shut it says which, in
+ * S-3.4.1 / S-3.4.2: the "Speak as me" panel. While any gate is shut it says which, in
  * the server's words, and offers no composer; once open it drafts, shows the
  * draft with its disclosure, voice score, citations and notes, handles the
  * private-person confirmation, and says when the daily cap is reached. The
@@ -11,7 +11,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DraftStatus, EchoDraft } from '../../services/echoApi';
 import { useJobStore } from '../../stores/jobStore';
-import { citationLabel, draftErrorOf } from '../../utils/echoDrafts';
+import { citationLabel, draftErrorOf, learnedLine, withDisclosure } from '../../utils/echoDrafts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -20,6 +20,7 @@ const api = {
   createDraft: vi.fn<(p: unknown) => Promise<EchoDraft>>(),
   listDrafts: vi.fn(async () => ({ items: [] as EchoDraft[] })),
   deleteDraft: vi.fn(async () => undefined),
+  draftFeedback: vi.fn<(id: string, p: unknown) => Promise<EchoDraft>>(),
 };
 vi.mock('../../services/echoApi', () => ({
   echoApi: {
@@ -27,6 +28,7 @@ vi.mock('../../services/echoApi', () => ({
     createDraft: (p: unknown) => api.createDraft(p),
     listDrafts: () => api.listDrafts(),
     deleteDraft: () => api.deleteDraft(),
+    draftFeedback: (id: string, p: unknown) => api.draftFeedback(id, p),
   },
 }));
 
@@ -56,7 +58,7 @@ const DRAFT: EchoDraft = {
   intent: 'opinion', voice_match_score: 87.5, confidence: 0.8,
   citations: [{ kind: 'source', ref: 'S1', label: 'Tariff study — Econ', url: 'https://youtube.com/watch?v=x&t=42s' }, { kind: 'fact', ref: 'F1', label: 'what Echo knows about you' }],
   deviation_notes: ['Slightly more formal than you.'], flags: [], disclosure: 'Drafted with Echo, reviewed by sam',
-  final_text: null, disclosure_kept: null, created_at: '2026-10-20T10:00:00',
+  final_text: null, disclosure_kept: null, feedback_at: null, edit: null, created_at: '2026-10-20T10:00:00',
 };
 
 let host: HTMLDivElement;
@@ -91,6 +93,7 @@ beforeEach(() => {
   root = createRoot(host);
   api.draftStatus.mockReset().mockResolvedValue(OFF);
   api.createDraft.mockReset().mockResolvedValue(DRAFT);
+  api.draftFeedback.mockReset();
   useJobStore.setState({ toasts: [] });
 });
 
@@ -104,6 +107,21 @@ describe('helpers', () => {
     expect(citationLabel({ kind: 'source', label: 'Tariff study' })).toBe('Tariff study');
     expect(citationLabel({ kind: 'note', label: 'x' })).toBe('your note');
     expect(citationLabel({ kind: 'qa', label: 'x' })).toBe('a question you asked before');
+  });
+
+  it('put the disclosure on the clipboard unless it was removed', () => {
+    expect(withDisclosure(' Mine. ', 'Drafted with Echo, reviewed by sam', true)).toBe('Mine.\n\nDrafted with Echo, reviewed by sam');
+    expect(withDisclosure(' Mine. ', 'Drafted with Echo, reviewed by sam', false)).toBe('Mine.');
+  });
+
+  it('say what Echo learns from a saved version', () => {
+    const edit = { written_words: 6, removed_words: 1, quoted_words: 0, kept_words: 5, written: ['x'], removed: ['y'], quoted: [] };
+    expect(learnedLine(edit)).toBe('Saved. Echo learns your voice from the 6 words you wrote, never from the ones it drafted.');
+    expect(learnedLine({ ...edit, written_words: 0 })).toBe('Saved. You used it as drafted, so Echo has nothing new to learn.');
+    expect(learnedLine({ ...edit, quoted_words: 9, quoted: ['their words'] })).toBe(
+      'Saved. Echo learns your voice from the 6 words you wrote, never from the ones it drafted. Words you repeated from their message are theirs, so Echo leaves them out.',
+    );
+    expect(learnedLine(null)).toBe('');
   });
 
   it('read the API error shapes', () => {
@@ -133,12 +151,31 @@ describe('SpeakAsMePanel', () => {
     await flush();
     expect(api.createDraft).toHaveBeenCalledWith({ message: 'Who pays?', audience: 'my brother' });
     const result = host.querySelector('[data-result]')!;
-    expect(result.textContent).toContain('Mostly the importer pays first.');
+    expect((result.querySelector('textarea[data-version]') as HTMLTextAreaElement).value).toBe('Mostly the importer pays first.');
     expect(result.querySelector('[data-disclosure]')?.textContent).toBe('Drafted with Echo, reviewed by sam');
     expect(result.textContent).toContain('Sounds like you: 88%');
     expect(result.querySelector('a[href="https://youtube.com/watch?v=x&t=42s"]')?.textContent).toBe('Tariff study — Econ');
     expect(result.textContent).toContain('what Echo knows about you');
     expect(result.querySelector('[data-notes]')?.textContent).toContain('Slightly more formal than you.');
+  });
+
+  it("saves the user's version without the disclosure, and says what Echo learns from", async () => {
+    api.draftStatus.mockResolvedValue(ON);
+    const edit = { written_words: 5, removed_words: 0, quoted_words: 0, kept_words: 5, written: ['and so does the buyer.'], removed: [], quoted: [] };
+    api.draftFeedback.mockResolvedValue({ ...DRAFT, final_text: 'Mostly the importer pays first, and so does the buyer.', disclosure_kept: false, feedback_at: '2026-10-20T10:05:00', edit });
+    await mount();
+    act(() => type(host.querySelector('textarea')!, 'Who pays?'));
+    await act(async () => buttons('Draft a reply')[0].click());
+    await flush();
+    const result = host.querySelector('[data-result]')!;
+    act(() => type(result.querySelector('textarea[data-version]') as HTMLTextAreaElement, 'Mostly the importer pays first, and so does the buyer. '));
+    await act(async () => (result.querySelector('[data-keep-disclosure]') as HTMLInputElement).click());
+    expect(result.querySelector('[data-disclosure]')).toBeNull();
+    await act(async () => buttons('Save my version')[0].click());
+    await flush();
+    expect(api.draftFeedback).toHaveBeenCalledWith('d1', { final_text: 'Mostly the importer pays first, and so does the buyer.', disclosure_kept: false });
+    expect(result.querySelector('[data-saved]')?.textContent).toBe('Saved. Echo learns your voice from the 5 words you wrote, never from the ones it drafted.');
+    expect(buttons('Save my version')[0].disabled).toBe(true);
   });
 
   it('asks before drafting about a private person, then sends the acknowledgement', async () => {
@@ -167,6 +204,13 @@ describe('SpeakAsMePanel', () => {
 });
 
 describe('wiring', () => {
+  it('the page card and the bubble share one edit-and-save view', () => {
+    const sources = import.meta.glob(['../../components/echo/SpeakAsMePanel.tsx', '../../components/echo/EchoPanel.tsx'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+    const src = (name: string) => Object.entries(sources).find(([k]) => k.endsWith(name))![1];
+    expect(src('SpeakAsMePanel.tsx')).toMatch(/<DraftEditor\s/);
+    expect(src('EchoPanel.tsx')).toMatch(/<DraftEditor draft=\{draft\} compact/);
+  });
+
   it('the Echo page mounts the panel for tiers with the feature', () => {
     const page = Object.values(import.meta.glob('../EchoPage.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)[0];
     expect(page).toMatch(/\{has\('echo_speak_as_me'\) && \(/);

@@ -28,6 +28,7 @@ const STATUS: EchoStatus = {
 
 const draftStatusMock = vi.fn<() => Promise<DraftGate>>();
 const draftMock = vi.fn<(p: { message: string }) => Promise<DraftResponse>>();
+const draftFeedbackMock = vi.fn<(id: string, p: unknown) => Promise<DraftResponse>>();
 const askLibraryMock = vi.fn();
 const askHistoryMock = vi.fn();
 const cardsMock = vi.fn<(context?: string) => Promise<EchoCardsResponse>>();
@@ -45,6 +46,7 @@ vi.mock('../../../services/echoApi', async (orig) => ({
     listConnectors: async () => ({ connectors: [] }),
     draftStatus: () => draftStatusMock(),
     draft: (p: { message: string }) => draftMock(p),
+    draftFeedback: (id: string, p: unknown) => draftFeedbackMock(id, p),
     cards: (context?: string) => cardsMock(context),
     dismissCard: (key: string) => dismissMock(key),
     actOnCard: (key: string) => actMock(key),
@@ -284,6 +286,27 @@ describe('draft as me', () => {
 });
 
 describe('drafting through S-3.4.1', () => {
+  it('edits and saves the draft through the same feedback call as the Echo page (S-3.4.2)', async () => {
+    draftStatusMock.mockResolvedValue({ enabled: true, state: 'enabled' });
+    draftMock.mockResolvedValue({ id: 'd-9', draft: 'Thursday works.', disclosure: 'Drafted with Echo, reviewed by you.' });
+    const edit = { written_words: 3, removed_words: 0, quoted_words: 0, kept_words: 2, written: ['see you then.'], removed: [], quoted: [] };
+    draftFeedbackMock.mockResolvedValue({ id: 'd-9', draft: 'Thursday works.', final_text: 'Thursday works, see you then.', disclosure_kept: false, edit });
+    useEchoPanelStore.setState({ open: true, mode: 'draft' });
+    mount();
+    await flush();
+    await typeInto(panel()!.querySelector('textarea')!, 'Can we meet Thursday?');
+    click(buttonNamed('Draft a reply'));
+    await flush();
+    const turn = panel()!.querySelector('[data-echo-turn="draft"]')!;
+    await typeInto(turn.querySelector('textarea[data-version]') as HTMLTextAreaElement, 'Thursday works, see you then.');
+    click(turn.querySelector('[data-keep-disclosure]'));
+    expect(turn.querySelector('[data-disclosure]')).toBeNull();
+    click(Array.from(turn.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Save my version')!);
+    await flush();
+    expect(draftFeedbackMock).toHaveBeenCalledWith('d-9', { final_text: 'Thursday works, see you then.', disclosure_kept: false });
+    expect(turn.querySelector('[data-saved]')?.textContent).toContain('the 3 words you wrote');
+  });
+
   it('asks before drafting about people the message names, then drafts on confirm', async () => {
     draftStatusMock.mockResolvedValue({ enabled: true, state: 'enabled' });
     draftMock

@@ -10,6 +10,17 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: edit a "speak as me" draft into your own version, and Echo learns from the words you typed (S-3.4.2, 2026-10-20)
+
+PR [#359](https://github.com/khoks/VideoResearchPro/pull/359). [D-104](docs/decisions.md#d-104--a-draft-edit-teaches-only-the-words-the-user-typed-2026-10-20).
+
+- A draft now opens as "Your version", which you can edit. **Save my version** records what you actually used.
+- Echo learns your voice only from the words you typed into it, never from the words it drafted that you kept. A signal learned this way quotes your own words and points back to the draft. Deleting the draft takes back what it taught, straight away.
+- Words you repeat from the message you are answering (8 or more in a row) are the sender's, so Echo leaves them out even when you typed them.
+- The Echo bubble's draft has the same "Your version", disclosure checkbox, Copy and Save.
+- The disclosure line ("Drafted with Echo, reviewed by you") is on by default. Untick **Add the disclosure line** to leave it off when you copy. Whether you kept it is recorded.
+- Saving a version does not use up one of the day's drafts.
+
 ### Fix: the Echo panel shows a draft the way speak-as-me returns it (S-3.8.1, 2026-10-20)
 
 PR [#361](https://github.com/khoks/VideoResearchPro/pull/361).

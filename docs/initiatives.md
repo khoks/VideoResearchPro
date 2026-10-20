@@ -1024,12 +1024,14 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 
 It is a ceiling, not a margin. E-3.4 may be built; it is enabled per user only after tier (iii).
 
-### E-3.4 🟡 "Speak as me" agent (Domain 4)
+### E-3.4 🟢 "Speak as me" agent (Domain 4)
 
 **Scope.** Given an incoming message, draft a response in the user's voice using their accumulated knowledge + context. Privacy: self-host local; SaaS opt-in encrypted. Will use `echo_service.is_ready(user)` as the cold-start gate before activating.
 
 **Scope-changed 2026-10-18.** Pipeline fixed as `classify_intent → retrieve_relevant_knowledge → retrieve_voice_signals → retrieve_personal_context → draft → self_critique_against_voice → finalize`; drafts only, never sends; every draft carries citations, a voice-match score, deviation notes and a disclosure footer.
 **Acceptance.** A ready user pastes an incoming message, gets a draft with citations to sources, facts and past Q&As, a voice-match score and deviation notes; editing the draft records the diff as a new signal; a not-ready user gets the readiness meter instead; the daily draft cap holds.
+
+**Shipped:** 2026-10-20 — PR [#357](https://github.com/khoks/VideoResearchPro/pull/357) (S-3.4.1) and PR [#359](https://github.com/khoks/VideoResearchPro/pull/359) (S-3.4.2). Built and switched off. It turns on per user once the install switch is on and their voice test passes (T-3.3.4.3); on 2026-10-20 that was nobody. Open follow-ups: T-3.4.1.8 (an in-app voice test) and T-3.4.1.9 (calibrating the critic).
 
 #### S-3.4.1 🟢 Agent and endpoint
 **Shipped:** 2026-10-20 — PR [#357](https://github.com/khoks/VideoResearchPro/pull/357). **Linked decision:** [D-102](decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20). Off by default for the install (`ECHO_SPEAK_AS_ME_ENABLED`) and per user until their voice test passes; the gate is shown, not hidden. Depended on S-3.3.3 and S-3.3.4, both shipped 2026-10-19. **Unblocked by [D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19):** build on Mode A as the harness ran it (the `VOICE` prompt in `scripts/voice_match_harness.py` is the starting draft prompt). It is enabled per user only after tier (iii) passes for them.
@@ -1055,11 +1057,21 @@ What shipped:
 - **Tests:** `tests/test_services/test_echo_draft.py` (18) and `tests/test_routers/test_echo_drafts.py` (7) cover the agent, the guards, every gate, the names round trip, the 429, tenant isolation and validation. The privacy round trip covers the two new tables. `speakAsMe.test.tsx` (7) covers the card.
 - **Live smoke:** run on a synthetic persona at about $0.02 to $0.05 a draft.
 
-#### S-3.4.2 🔵 Feedback loop and limits
-**PR:** TBD. Already in S-3.4.1: the quota key (`echo_drafts`, daily, Studio 20), the disclosure line on every draft, the `echo_drafted` audit event and the own-words-only exemplars.
-- [ ] T-3.4.2.1 `POST /echo/drafts/{id}/feedback {final_text}` stores the diff as a `voice_signals` candidate with `derived_from=draft_edit`
-- [ ] T-3.4.2.2 `ECHO_DRAFTS_PER_DAY` quota key through `quota_metering_service`; a visible, user-removable disclosure line ("Drafted with Echo, reviewed by <user>") on by default, the "reviewed by" clause being what the EU AI Act Art. 50(4) editorial-responsibility exception keys on if a draft is ever published; `audit_log` event per draft; the provenance guard (only the tenant's own authored text feeds a voice) enforced in code, which makes impersonating anyone else structurally impossible
-- [ ] T-3.4.2.3 Tests: quota; feedback creates a signal
+#### S-3.4.2 🟢 Feedback loop and limits
+**Shipped:** 2026-10-20 — PR [#359](https://github.com/khoks/VideoResearchPro/pull/359). **Linked decision:** [D-104](decisions.md#d-104--a-draft-edit-teaches-only-the-words-the-user-typed-2026-10-20). Already in S-3.4.1: the quota key (`echo_drafts`, daily, Studio 20), the disclosure line on every draft, the `echo_drafted` audit event and the own-words-only exemplars.
+- [x] T-3.4.2.1 `POST /echo/drafts/{id}/feedback {final_text}` stores the diff as a `voice_signals` candidate with `derived_from=draft_edit`
+- [x] T-3.4.2.2 `ECHO_DRAFTS_PER_DAY` quota key through `quota_metering_service`; a visible, user-removable disclosure line ("Drafted with Echo, reviewed by <user>") on by default, the "reviewed by" clause being what the EU AI Act Art. 50(4) editorial-responsibility exception keys on if a draft is ever published; `audit_log` event per draft; the provenance guard (only the tenant's own authored text feeds a voice) enforced in code, which makes impersonating anyone else structurally impossible
+- [x] T-3.4.2.3 Tests: quota; feedback creates a signal
+
+What shipped:
+- **Feedback.** `POST /echo/drafts/{id}/feedback {final_text, disclosure_kept}` stores the user's version and whether the disclosure stayed. It strips a trailing disclosure line and may be sent again. It is not counted against the cap and is audited as `echo_draft_feedback` with counts.
+- **Learning from the edit.** Only the words the user TYPED (`echo_draft_edits`) become the extraction input `draft_edit:<id>`; the draft words they kept never do. Nor does anything the user repeats from the incoming message: S-3.4.1's 8-word guard sets it aside as `quoted`, even when typed and even across kept draft words. An edit of fewer than 4 typed words is not an input. Edits do not feed cadence, and deleting the draft withdraws them at once.
+- **The card and the bubble.** Both use one `DraftEditor`. The draft is an editable "Your version", with an **Add the disclosure line** checkbox (on by default; Copy follows it) and **Save my version**, which says how many of the user's words Echo will learn from and that the sender's words are left out.
+- **Tests:**
+  - `test_echo_draft_feedback.py` (13) covers the diff, the incoming-message guard (including a quote across kept words and the 8-word threshold), the disclosure, storage, the audit, ownership, the input, a run that learns only from typed words and never sees the sender's, withdrawal, and the provenance guard across tenants, context-only shares and drafts.
+  - Also a router test and a column round trip.
+  - `speakAsMe.test.tsx` has 4 more, including the shared-view wiring, and `echoPanel.test.tsx` saves from the bubble.
+- **Live check:** a real draft, edited, unticked and saved. The extraction learned two signals whose only example is the clause the user typed.
 
 ### E-3.5 🟢 Cold-start readiness threshold
 

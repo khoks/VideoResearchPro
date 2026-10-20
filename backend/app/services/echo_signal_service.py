@@ -63,7 +63,7 @@ CONSENT_VERSION = "2026-10-19"
 MAX_EXAMPLES = 5
 MAX_EXAMPLE_CHARS = 400
 MAX_VALUE_CHARS = 500
-SOURCE_PREFIXES = ("note:", "share:", "qa:", "library_qa:", "history_qa:", "event:", "user")
+SOURCE_PREFIXES = ("note:", "share:", "qa:", "library_qa:", "history_qa:", "event:", "draft_edit:", "user")
 
 
 class SignalError(ValueError):

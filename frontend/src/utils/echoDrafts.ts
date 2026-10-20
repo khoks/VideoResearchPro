@@ -1,5 +1,21 @@
-/** "Speak as me" (S-3.4.1): words for citations and API errors. */
-import type { DraftCitation } from '../services/echoApi';
+/** "Speak as me" (S-3.4.1, S-3.4.2): words for citations, errors and edits. */
+import type { DraftCitation, DraftEdit } from '../services/echoApi';
+
+/** What goes on the clipboard: the user's version, and the disclosure line
+ * unless they removed it. */
+export function withDisclosure(text: string, disclosure: string, keep: boolean): string {
+  const body = text.trim();
+  return keep && disclosure ? `${body}\n\n${disclosure}` : body;
+}
+
+/** After saving: what Echo will learn from, in words. */
+export function learnedLine(edit: DraftEdit | null | undefined): string {
+  if (!edit) return '';
+  const n = edit.written_words;
+  const theirs = edit.quoted_words > 0 ? ' Words you repeated from their message are theirs, so Echo leaves them out.' : '';
+  if (n === 0) return `Saved. You used it as drafted, so Echo has nothing new to learn.${theirs}`;
+  return `Saved. Echo learns your voice from the ${n === 1 ? 'word' : `${n} words`} you wrote, never from the ones it drafted.${theirs}`;
+}
 
 export function citationLabel(c: DraftCitation): string {
   switch (c.kind) {

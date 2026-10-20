@@ -37,6 +37,14 @@ class DraftRequest(BaseModel):
     acknowledge_names: list[str] = Field(default_factory=list, max_length=20)
 
 
+class FeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: The text the user used, without the disclosure line (a trailing one is removed).
+    final_text: str = Field(min_length=1, max_length=16000)
+    disclosure_kept: bool = True
+
+
 def _blocked(code: str, message: str, status: drafts.DraftStatus) -> HTTPException:
     return HTTPException(status_code=409, detail={"code": code, "message": message, "status": status.to_dict()})
 
@@ -84,6 +92,19 @@ def get_draft(draft_id: str, db: Session = Depends(get_db), current_user: User =
         return drafts.to_dict(drafts.get_draft(db, current_user.id, draft_id))
     except drafts.DraftNotFound:
         raise HTTPException(status_code=404, detail="Draft not found")
+
+
+@router.post("/drafts/{draft_id}/feedback")
+def draft_feedback(draft_id: str, body: FeedbackRequest, db: Session = Depends(get_db), current_user: User = Depends(SPEAK)):
+    """S-3.4.2: what the user did with the draft. The words they typed into it
+    teach Echo their voice; nothing else of the draft does."""
+    try:
+        row = drafts.feedback(db, current_user, draft_id, body.final_text, disclosure_kept=body.disclosure_kept)
+    except drafts.DraftNotFound:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return drafts.to_dict(row)
 
 
 @router.delete("/drafts/{draft_id}", status_code=204)

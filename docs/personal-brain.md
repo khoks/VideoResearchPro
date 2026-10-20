@@ -432,6 +432,8 @@ The single hardest constraint in this entire roadmap. Every choice below is dura
 
   The reply is in the user's language. Drafts are never sent.
 
+  **Feedback (S-3.4.2, [D-104](decisions.md#d-104--a-draft-edit-teaches-only-the-words-the-user-typed-2026-10-20)).** The user saves their version. The words they typed into it, and nothing the model wrote, become a signal-extraction input, so the loop teaches Echo only from the user's own words. The disclosure line is the user's to keep or drop.
+
 ### SaaS (future)
 
 Per [saas-roadmap](saas-roadmap.md):

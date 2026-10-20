@@ -61,6 +61,9 @@ class EchoDraft(Base):
     final_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     disclosure_kept: Mapped[bool | None] = mapped_column(nullable=True)
     feedback_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    #: Words the user typed into the draft (echo_draft_edits); what signal
+    #: extraction's cheap counter reads.
+    written_words: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
 
 

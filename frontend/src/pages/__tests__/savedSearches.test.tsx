@@ -204,6 +204,15 @@ describe('PinQuestionButton', () => {
     expect(host.querySelector('a[href="/saved-searches"]')?.textContent).toBe('Pinned');
   });
 
+  it('pins a shelf answer with its shelf, never the whole library', async () => {
+    await mount(<PinQuestionButton question="Why?" answerLanguage="en" scope={{ shelf_id: 's1' }} />, '/shelves/s1');
+    act(() => button('Pin this question')!.click());
+    await flush();
+    await act(async () => button('Pin it')!.click());
+    await flush();
+    expect((api.create.mock.calls.at(-1)![0] as { scope: unknown }).scope).toEqual({ shelf_id: 's1' });
+  });
+
   it('is absent on tiers without saved searches', async () => {
     tier.saved = false;
     await mount(<PinQuestionButton question="Why?" answerLanguage="en" />, '/library/qa');
@@ -223,9 +232,16 @@ describe('wiring', () => {
       return undefined;
     };
     expect((find(router.routes)?.element as { type?: unknown })?.type).toBe(SavedSearchesPage);
-    const src = Object.values(
+    // S-8.1.4: the answer card is shared by the library page and the shelf
+    // page, so the pin lives on the card, which passes the exchange's scope.
+    const page = Object.values(
       import.meta.glob('../LibraryQAPage.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>,
     )[0];
-    expect(src).toMatch(/<PinQuestionButton question=\{qa\.question\}/);
+    expect(page).toMatch(/<LibraryQAExchangeCard key=\{qa\.id\} qa=\{qa\}/);
+    const card = Object.values(
+      import.meta.glob('../../components/qa/LibraryQAExchangeCard.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>,
+    )[0];
+    expect(card).toMatch(/<PinQuestionButton\s+question=\{qa\.question\}/);
+    expect(card).toMatch(/scope=\{qa\.scope\?\.shelf_id/);
   });
 });

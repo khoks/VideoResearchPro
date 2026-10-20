@@ -1126,7 +1126,7 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 **Acceptance.** The bubble is present for Studio users on every authenticated page, opens with its shortcut, shows readiness progress in words, and once ready holds a conversation whose answers cite sources, facts and past Q&As; it never covers the Q&A composer on mobile.
 
 #### S-3.8.1 🟢 Bubble, panel and shortcut
-**Shipped:** 2026-10-20 — PR [#PRB](https://github.com/khoks/VideoResearchPro/pull/PRB). Depends on the `useShortcuts` hook from S-8.2.2.
+**Shipped:** 2026-10-20 — PR [#355](https://github.com/khoks/VideoResearchPro/pull/355). Depends on the `useShortcuts` hook from S-8.2.2.
 **Calls made.**
 1. *No `/echo/chat`.* The panel asks the library and the user's past questions through `POST /library/qa` and `POST /qa-history/chat`. Quota, the Q&A library index, corpus statistics and trust weights then work as on those pages, and each answer is saved where it was asked rather than as a third kind of exchange. The user picks what to ask over (**My library** or **My past questions**) instead of a model classifying intent: one call fewer, and the choice is visible.
 2. *Ask is open below readiness.* Readiness gates answering *as* the user, not asking the library. The panel shows readiness in words above both modes.

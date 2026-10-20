@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Echo: a bubble on every page, and a panel to ask or draft from (S-3.8.1, 2026-10-20)
 
-PR [#PRB](https://github.com/khoks/VideoResearchPro/pull/PRB).
+PR [#355](https://github.com/khoks/VideoResearchPro/pull/355).
 
 - Studio users get an Echo bubble at the bottom right (in the top bar on
   phones), Mod-Shift-E from anywhere, and **Ask Echo** in the command

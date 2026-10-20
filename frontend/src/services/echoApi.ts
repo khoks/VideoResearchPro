@@ -389,8 +389,52 @@ async function downloadAuthenticated(path: string, fallbackName: string): Promis
   saveBlob(resp.data, name);
 }
 
+/**
+ * "Speak as me" (S-3.4.1, lane A) as the Echo panel reads it (S-3.8.1).
+ * The gate is per user (D-100): the panel shows it in words rather than
+ * hiding the feature. Until the endpoint exists the read is a 404, which the
+ * panel reports as "not on this install yet".
+ */
+export type DraftGateState = 'not_ready' | 'voice_test_needed' | 'voice_test_failed' | 'enabled';
+
+export interface DraftGate {
+  enabled: boolean;
+  state: DraftGateState | string;
+  /** What is missing, in plain words. */
+  reasons?: string[];
+  notes?: number;
+  notes_needed?: number;
+  pairs_judged?: number;
+  pairs_needed?: number;
+}
+
+export interface DraftCitation {
+  kind: string;
+  ref: string;
+  label: string;
+  href?: string | null;
+}
+
+export interface DraftRequest {
+  message: string;
+  audience?: string;
+  register?: string;
+}
+
+export interface DraftResponse {
+  id: string;
+  draft: string;
+  voice_match_score?: number | null;
+  confidence?: number | null;
+  citations?: DraftCitation[];
+  deviation_notes?: string[];
+  disclosure?: string | null;
+}
+
 export const echoApi = {
   status: () => api.get<EchoStatus>('/echo/status').then(r => r.data),
+  draftStatus: () => api.get<DraftGate>('/echo/draft/status').then(r => r.data),
+  draft: (payload: DraftRequest) => api.post<DraftResponse>('/echo/draft', payload).then(r => r.data),
 
   listContext: (params?: ListContextParams) =>
     api.get<PersonalContextItem[]>('/echo/context', { params }).then(r => r.data),

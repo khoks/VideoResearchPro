@@ -1125,11 +1125,19 @@ Scope-changed 2026-10-19: the notes input already exists. `GET /echo/status` rep
 **Filed 2026-10-18.** The floating bubble on every page: one click or `Ctrl-E` expands a chat panel; below readiness it shows the meter and what is missing; above it, it answers *as the user* by routing to the E-3.4 agent for drafts and to the library / history agents for questions, and surfaces anticipation cards (unread saved items, suggested questions from E-8.4).
 **Acceptance.** The bubble is present for Studio users on every authenticated page, opens with its shortcut, shows readiness progress in words, and once ready holds a conversation whose answers cite sources, facts and past Q&As; it never covers the Q&A composer on mobile.
 
-#### S-3.8.1 🔵 Bubble, panel and shortcut
-**PR:** TBD. Depends on the `useShortcuts` hook from S-8.2.2.
-- [ ] T-3.8.1.1 `EchoBubble` mounted in `AppLayout` behind `has('echo_personal_brain')`; panel with readiness state and chat, labelled as AI (EU AI Act Art. 50(1) applies to a conversational surface from 2026-08-02). Shortcut: **not** `Cmd-E` as the roadmap sketched (it is macOS's system-wide "Use Selection for Find" and clashes in Safari and Chrome); the plan proposes `Ctrl/Cmd-Shift-E` plus an "Ask Echo" entry in the `Ctrl-K` palette
-- [ ] T-3.8.1.2 `POST /echo/chat` routing by intent to draft, library Q&A or history Q&A; exchanges stored as `qa_history_exchanges` with `source=echo` so they enter the Q&A library index
-- [ ] T-3.8.1.3 Mobile placement above the docked composer (S-8.12.1)
+#### S-3.8.1 🟢 Bubble, panel and shortcut
+**Shipped:** 2026-10-20 — PR [#355](https://github.com/khoks/VideoResearchPro/pull/355). Depends on the `useShortcuts` hook from S-8.2.2.
+**Calls made.**
+1. *No `/echo/chat`.* The panel asks the library and the user's past questions through `POST /library/qa` and `POST /qa-history/chat`. Quota, the Q&A library index, corpus statistics and trust weights then work as on those pages, and each answer is saved where it was asked rather than as a third kind of exchange. The user picks what to ask over (**My library** or **My past questions**) instead of a model classifying intent: one call fewer, and the choice is visible.
+2. *Ask is open below readiness.* Readiness gates answering *as* the user, not asking the library. The panel shows readiness in words above both modes.
+3. *Draft as me shows its gate.* The panel reads the per-user gate ([D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19)) and says what is missing. Until S-3.4.1 ships it, the tab says "Not on this install yet" rather than disappearing. Contract proposed to lane A: `GET /echo/draft/status` → `{enabled, state, reasons, notes, notes_needed}`, and T-3.4.1.2's `POST /echo/draft`. The panel tolerates missing fields.
+4. *On phones the opener sits in the top bar,* so it can never cover the docked composer (S-8.12.1). The panel fills the screen there, and focus goes to its close button so the keyboard does not cover it.
+5. *Mod-Shift-E,* the plan's default. Firefox binds Ctrl-Shift-E to its Network Monitor, so **Ask Echo** in the palette is the other way in.
+
+The panel is labelled as an AI. On desktop it is non-modal and stays open beside the page; Escape closes it and focus returns to the opener.
+- [x] T-3.8.1.1 `EchoBubble` mounted in `AppLayout` behind `has('echo_personal_brain')`; panel with readiness state and chat, labelled as AI (EU AI Act Art. 50(1) applies to a conversational surface from 2026-08-02). Shortcut: **not** `Cmd-E` as the roadmap sketched (it is macOS's system-wide "Use Selection for Find" and clashes in Safari and Chrome); the plan proposes `Ctrl/Cmd-Shift-E` plus an "Ask Echo" entry in the `Ctrl-K` palette
+- [x] T-3.8.1.2 *(re-scoped: no `/echo/chat`; the existing Q&A endpoints and S-3.4.1's draft endpoint, see call 1)* `POST /echo/chat` routing by intent to draft, library Q&A or history Q&A; exchanges stored as `qa_history_exchanges` with `source=echo` so they enter the Q&A library index
+- [x] T-3.8.1.3 *(in the top bar instead, see call 4)* Mobile placement above the docked composer (S-8.12.1)
 
 #### S-3.8.2 🔵 Anticipation cards
 **PR:** TBD

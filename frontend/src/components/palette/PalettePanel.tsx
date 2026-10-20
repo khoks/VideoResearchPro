@@ -7,14 +7,16 @@ import { Command, useCommandState } from 'cmdk';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { modLabel } from '../../hooks/useShortcuts';
+import { isMacPlatform, modLabel } from '../../hooks/useShortcuts';
 import { useColors, useShadows } from '../../hooks/useTheme';
 import { useTierCapabilities } from '../../hooks/useTierCapabilities';
 import { exportsApi } from '../../services/exportsApi';
 import { searchApi, type SearchItem, type SearchType } from '../../services/searchApi';
 import { useJobStore } from '../../stores/jobStore';
+import { useEchoPanelStore } from '../../stores/echoPanelStore';
 import { usePaletteStore } from '../../stores/paletteStore';
 import { downloadUrl } from '../../utils/download';
+import { shortcutLabel } from '../../utils/echoPanel';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, z } from '../../theme';
 import {
   GROUP_LABEL,
@@ -137,7 +139,20 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
       nav('exports', 'Exports', '/exports', 'datasets download jsonl'),
     ];
     if (has('author_studio')) list.push(nav('author', 'Author Studio', '/author', 'book write output'));
-    if (has('echo_personal_brain')) list.push(nav('echo', 'Echo', '/echo', 'personal brain'));
+    if (has('echo_personal_brain')) {
+      // S-3.8.1: the panel, from anywhere; the shortcut is its other door.
+      list.push({
+        id: 'ask-echo',
+        label: 'Ask Echo',
+        keywords: 'echo ask chat draft as me speak personal assistant',
+        hint: shortcutLabel(isMacPlatform()),
+        run: () => {
+          onClose();
+          useEchoPanelStore.getState().setOpen(true);
+        },
+      });
+      list.push(nav('echo', 'Echo', '/echo', 'personal brain'));
+    }
     list.push(
       nav('ai-models', 'AI models', '/account/ai-models', 'llm settings keys byok'),
       nav('subscription', 'Subscription', '/account/subscription', 'plan tier billing'),

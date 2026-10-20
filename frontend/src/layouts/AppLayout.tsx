@@ -6,6 +6,7 @@ import { useSystemStatus } from '../hooks/useSystemStatus';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { QuickShare } from '../components/echo/QuickShare';
 import { EchoDropZone } from '../components/echo/EchoDropZone';
+import { EchoBubble, EchoHeaderButton, EchoPanelHost } from '../components/echo/EchoPanel';
 import { useShelves } from '../hooks/useShelves';
 import { ShelfDot } from '../components/shelves/ShelfDot';
 import { SystemStatusBanner } from '../components/common/SystemStatusBanner';
@@ -189,6 +190,8 @@ export function AppLayout() {
         >
           <BrandLockup compact onClick={() => handleTabChange('submit')} />
           <div style={{ display: 'flex', alignItems: 'center', gap: space['1'] }}>
+            {/* S-3.8.1: Echo opens from the top bar here, never over the docked composer. */}
+            {has('echo_personal_brain') && <EchoHeaderButton />}
             <NotificationBell align="right" />
             <SearchButton compact />
             <HamburgerButton
@@ -221,6 +224,13 @@ export function AppLayout() {
       </div>
       {/* S-8.2.2: Mod-K / Ctrl-Alt-K anywhere, `/` and the `g` chords. */}
       <CommandPalette />
+      {/* S-3.8.1: the Echo bubble, its panel and Mod-Shift-E, for tiers with Echo. */}
+      {has('echo_personal_brain') && (
+        <>
+          <EchoBubble />
+          <EchoPanelHost />
+        </>
+      )}
     </div>
   );
 }

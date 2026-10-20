@@ -451,6 +451,29 @@ Tabs: **Structured** (topics / concepts / events / facts) and **Report** (Markdo
 
 Where results land: a run → `/jobs/<id>`; a question → its page with `?exchange=<id>`, which scrolls to the exchange card, focuses it and outlines it briefly (job page, library Q&A, Q&A history; the history page also keeps its `#exchange-<id>` links); a source → `/library?document=<id>`, the library narrowed to that row with "Show all sources"; a knowledge report → `/knowledge/<id>`; a channel → its page.
 
+### Echo panel (every protected page, Studio)
+`components/echo/EchoPanel.tsx` (S-3.8.1), mounted once in `AppLayout` behind `echo_personal_brain`.
+
+**Openers.**
+- Desktop: a floating **Echo** bubble at the bottom right.
+- Under 960 px: a 44 px button in the mobile bar, so nothing floats over the docked Q&A composer.
+- Everywhere: **Mod-Shift-E**, which also works from inside a text field.
+- The palette's **Ask Echo**, which shows the shortcut.
+
+**The panel** is a dialog role. On desktop it is non-modal, sits above the bubble and stays open across pages. Under 960 px it fills the screen and closes when a link inside it leads away. Escape closes it and focus returns to the opener; Tab wraps.
+
+Top to bottom:
+- **Echo**, an **AI** badge, and "You are talking to an AI. It answers from your library, notes and past questions, and can be wrong: check what it cites."
+- Readiness in one line ("24% ready. Still needs 60 more facts, 2 more sources and a personality trait." with **What counts** linking to `/echo`).
+- Two tabs, then the conversation, then the composer.
+
+| Mode | What renders |
+|------|--------------|
+| Ask | **My library** / **My past questions**, a field (Enter asks, Shift-Enter breaks the line) and **Ask**. A library answer is Markdown with its sources (citation links) and "Saved in Library Q&A →". A past-questions answer lists the exchanges it drew on, each linking to where it was asked. Failures say why ("You have reached today’s limit for this…"). When the model for the chosen target is down, **Ask** is disabled and says so. |
+| Draft as me | The per-user gate in words, never hidden. "Not on this install yet" while S-3.4.1 has not shipped. "Echo is not ready yet" with what is missing and **See what is missing →**. "Your voice test comes first" with how many notes the test still needs and **Write a note →**. "Your voice test has not passed yet". Once on: a field for the message to answer and **Draft a reply**. The draft comes back with "82% like you", deviation notes, sources, the disclosure line and **Copy draft**. |
+
+The conversation lasts for the session: each answer is already saved where it was asked. **Clear** empties the panel. Pure logic (readiness wording, the gate in words, error wording) lives in `frontend/src/utils/echoPanel.ts`, unit-tested.
+
 ### Notification bell (every protected page)
 `components/notifications/NotificationBell.tsx` (S-8.3.3), beside **Search…** in the sidebar and before the search icon in the mobile bar. The button names its unread count ("Notifications, 2 unread") and shows it as a badge. It opens a panel (dialog role) with the latest notices, newest first, unread ones tinted: title, body, how long ago. Opening one marks it read and goes to its `href`; **Mark all read** clears the count; Escape or a click outside closes it and focus returns to the bell. Empty: "Nothing new. A saved search tells you here when its answer changes." The list polls every minute and on focus; a WebSocket channel for it is a follow-up.
 

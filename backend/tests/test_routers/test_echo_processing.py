@@ -1,4 +1,4 @@
-"""Echo share processing (S-3.7.2, part 1): text, links, text files.
+"""Echo share processing (S-3.7.2): text, links, text files, and the pipeline.
 
 External calls (the article extractor, the YouTube Data API, the paste
 connector, the task queue) are patched; Chroma is in-memory with the real
@@ -135,17 +135,14 @@ def test_youtube_link_resolves_title_and_description_without_a_library_offer(
     assert "research run" in got["processing"]["library_offer"]["reason"]
 
 
-def test_text_file_is_decoded_and_other_files_wait_for_part_two(unauthenticated_client, db, two, chroma):
+def test_text_file_is_decoded(unauthenticated_client, db, two, chroma):
     txt = unauthenticated_client.post(f"{SHARES}/upload", headers=two["ha"],
                                       files={"file": ("keep.txt", "Keep note: शब्द and words".encode(), "text/plain")}).json()
-    img = unauthenticated_client.post(f"{SHARES}/upload", headers=two["ha"],
-                                      files={"file": ("meme.png", b"\x89PNG", "image/png")}).json()
     assert _process(db, txt["id"]).state == "processed"
     assert db.get(Share, txt["id"]).extracted_text == "Keep note: शब्द and words"
-    result = _process(db, img["id"])
-    assert result.state == "pending" and "part 2" in result.reason
-    got = unauthenticated_client.get(f"{SHARES}/{img['id']}", headers=two["ha"]).json()
-    assert got["processing"]["note"] and got["processing_state"] == "pending"
+    got = unauthenticated_client.get(f"{SHARES}/{txt['id']}", headers=two["ha"]).json()
+    assert got["processing"]["extractor"] == "text_file" and got["processing"]["embedded"] is True
+    # Images, recordings and PDFs: tests/test_routers/test_echo_media.py
 
 
 # ---------------------------------------------------------------------------

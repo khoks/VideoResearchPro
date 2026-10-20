@@ -316,6 +316,11 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `ECHO_SHARE_MAX_BYTES` / `ECHO_SHARE_TEXT_MAX_CHARS` | No | `26214400` / `50000` | Caps on one quick-share file (25 MB) and one text share |
 | `ECHO_SHARE_PROCESSING` | No | `celery` | How shares are processed after intake: `celery` (the `echo.process_share` task), `inline` (in the request, single-process dev) or `off` (the test suite) |
 | `ECHO_SHARE_EMBED_MAX_CHARS` | No | `2000` | Text embedded per share in `shares_global`: annotation, title and the opening of the extracted text |
+| `ECHO_REMOTE_MEDIA` | No | `True` | Whether a shared image (vision fallback) or recording (Whisper) may go to a remote provider. Off, or a local-only tenant: images use on-device OCR only, recordings are skipped with a note |
+| `ECHO_OCR_MIN_CHARS` / `ECHO_OCR_MIN_CONFIDENCE` | No | `20` / `0.90` | When an on-device OCR reading is kept rather than sent to the vision fallback (measured: English 0.978+, Hindi and mixed 0.87 or less) |
+| `ECHO_OCR_THREADS` | No | `4` | ONNX threads for on-device OCR; the all-cores default was four times slower on a 32-thread machine |
+| `ECHO_OCR_VISION_MAX_SIDE` / `ECHO_OCR_VISION_MAX_TOKENS` | No | `2048` / `4000` | Image downscale before the vision fallback, and its completion cap |
+| `ECHO_MEDIA_DECODE_TIMEOUT_SEC` | No | `300` | ffmpeg wall-clock cap when reducing a shared recording to speech audio |
 | `KNOWLEDGE_EXTRACT_BATCH_TOKENS` | No | `8000` | Max tokens per extract batch |
 | `KNOWLEDGE_MAX_TRANSCRIPT_TOKENS` | No | `60000` | Max transcript size for knowledge extraction |
 | `LLM_USE_CASE_CONFIG` | No | (unset) | Primary per-use-case override knob — see "LLM configuration" below |
@@ -456,7 +461,7 @@ From highest to lowest:
 
 ### Registered use cases
 
-Thirty named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
+Thirty-one named call sites — full rationale, token budgets, and recommended minimum context live in the registry alongside each entry.
 
 ### Measured guidance (S-1.14.7)
 
@@ -493,6 +498,9 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 **Discussed-era extraction (`app/services/temporal_service.py`, R3):**
 - `temporal_scope_extract` — once per document on first ingest: which period the source DISCUSSES (`{era_start, era_end, era_confidence, is_retrospective}`), distinct from `published_at`. Persisted on `documents.discussed_era_json`, reused by every later job, flattened into chunk metadata. Reasoning OFF is mandatory (strict JSON under a 400-token cap). Fail-soft, so deliberately not a feature gate in `llm_smoke`
 
+**Echo share processing (`app/services/echo_media.py`, S-3.7.2):**
+- `echo_share_ocr` — **MULTIMODAL.** Copy out the text in a shared image when on-device OCR read too little or with low confidence (Devanagari always, since the default OCR models cannot read it). Original script kept: transcription, not a deliverable. Listed in `VISION_USE_CASES`. Runs only when `ECHO_REMOTE_MEDIA` is on and the tenant is not local-only, or when it resolves to a local model. Reasoning OFF, fail-soft, not a feature gate
+
 **Author Studio (`app/services/outputters/`, S-6.1.3 / S-6.3.1):**
 - `author_book_outline` — plan a book from chapter digests (order, parts, bridges, briefs, glossary terms); JSON. Opt-in per book (`cohesion=light|full`), fail-soft, not a feature gate
 - `author_book_prose` — introduction, bridges, conclusion and glossary around the unchanged chapters; marked plain-text sections. `cohesion=full` only; `none` stays the default after two blind rounds (D-093)
@@ -517,7 +525,7 @@ Every `UseCaseInfo` carries a required `guidance: UseCaseGuidance`: `status` is 
 
 ## LLM startup smoke check + fail-soft
 
-`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 30 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
+`run_startup_probes` in `app/services/llm_smoke.py` runs once from the FastAPI lifespan. It resolves the effective `UseCaseConfig` for all 31 entries, **dedupes by `(provider, model, vision)`** so each unique pair is probed exactly once, and fans a trivial one-token probe per unique config out via `asyncio.to_thread` (provider SDKs are synchronous). Results are stored on a process-global `LLMStatus` singleton.
 
 **Health endpoints:**
 - `GET /api/v1/health` — overall status plus an `llm` field with `status` (`ok` / `degraded` / `down` / `unknown`) and `unavailable_features` (a list of feature names whose required use cases failed probing).

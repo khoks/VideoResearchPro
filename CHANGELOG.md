@@ -24,6 +24,21 @@ PR [#328](https://github.com/khoks/VideoResearchPro/pull/328). S-8.3.3, plan [m3
   answers. The thresholds were [pre-registered](docs/notes/2026-10-19-saved-search-change-thresholds.md)
   before calibration; the history held too few re-asks, so its priors apply for now.
 
+### Echo: images, recordings and PDFs are read (S-3.7.2 part 2, 2026-10-19)
+
+PR [#331](https://github.com/khoks/VideoResearchPro/pull/331). Measurements: [docs/notes/2026-10-19-s372-share-ocr-measurement.md](docs/notes/2026-10-19-s372-share-ocr-measurement.md).
+
+- Shared images are read by on-device OCR (RapidOCR). A reading with too
+  little text or low confidence goes to a vision model, the new
+  `echo_share_ocr` use case. Hindi images always do: the default OCR models
+  cannot read Devanagari.
+- Voice memos and video clips are transcribed by Whisper in the speaker's
+  language; PDFs give their text layer.
+- Nothing goes to a remote provider when `ECHO_REMOTE_MEDIA` is off or the
+  tenant runs every model locally; the share is `skipped` with a note.
+- The inbox says how each file was read, shows notes in every state, and
+  offers Retry on skipped shares.
+
 ### E-7.1 re-judged with dated excerpts (2026-10-19)
 
 PR [#330](https://github.com/khoks/VideoResearchPro/pull/330). The E-7.1 answers were re-judged under the same four D-068 clauses with each source's publication date visible to judges and verifiers. Relevance clause: undated **not met**, dated met. Faithfulness clause: undated **not met**, dated met. S-7.1.2 closes as an artifact; weighting stays as shipped. Both readings are recorded side by side in D-068.

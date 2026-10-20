@@ -243,6 +243,32 @@ class Settings(BaseSettings):
     # Text embedded per share in shares_global (one vector per share, like
     # notes): the annotation, the title and the opening of the text.
     ECHO_SHARE_EMBED_MAX_CHARS: int = 2000
+    # S-3.7.2 part 2: media shares. Images go through on-device OCR
+    # (RapidOCR) first; a reading counts as confident when it has at least
+    # ECHO_OCR_MIN_CHARS non-space characters at a mean box score of at
+    # least ECHO_OCR_MIN_CONFIDENCE. Measured 2026-10-19: English text
+    # scored 0.978-0.988 and read 97.6-100% right, clean or degraded; the
+    # default models cannot read Devanagari (Hindi read nothing or noise
+    # at 0.69, mixed Hindi-English 0.82-0.87 at 42-54% accuracy), so
+    # 0.90 sends those to the vision fallback.
+    ECHO_OCR_MIN_CHARS: int = 20
+    ECHO_OCR_MIN_CONFIDENCE: float = 0.90
+    # ONNX threads for on-device OCR. onnxruntime's default (every core)
+    # oversubscribes: on a 32-thread machine a 1080x1920 screenshot took
+    # 6.0 s with the default and 1.4 s with 4 threads (2026-10-19).
+    ECHO_OCR_THREADS: int = 4
+    # Longest image side sent to the vision fallback. Providers downscale
+    # beyond about 2048 px anyway, so larger only costs upload time.
+    ECHO_OCR_VISION_MAX_SIDE: int = 2048
+    ECHO_OCR_VISION_MAX_TOKENS: int = 4000
+    # Whether Echo may send a shared image (the vision fallback) or a
+    # recording (Whisper) to a remote provider. Off: images use on-device
+    # OCR only (or a vision model the install runs locally) and audio is
+    # skipped with a note. On by default, like the rest of the install,
+    # which already sends transcripts and audio to providers.
+    ECHO_REMOTE_MEDIA: bool = True
+    # Wall-clock cap on decoding one shared recording with ffmpeg.
+    ECHO_MEDIA_DECODE_TIMEOUT_SEC: int = 300
 
     # -------------------------------------------------------------------
     # Visual understanding (R1 / E-1.18) — frame capture + description

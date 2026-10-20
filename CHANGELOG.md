@@ -10,6 +10,17 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: ask a shelf (2026-10-19)
+
+[S-8.1.4](docs/initiatives.md#s-814--shelf-scoped-qa), PRs [#313](https://github.com/khoks/VideoResearchPro/pull/313) and [#319](https://github.com/khoks/VideoResearchPro/pull/319).
+
+- **Ask this shelf** on every shelf page: answers draw only on the sources of
+  the runs on the shelf, within what you can see, and cite nothing else. An
+  empty shelf has nothing to ask; it never falls back to the whole library.
+- `POST` and `GET /api/v1/shelves/{id}/qa`. Shelf questions also appear in
+  the library Q&A history, marked "Asked on shelf …".
+- The phone device tests pass again: four newer API calls now have fixtures.
+
 ### Added: the scope of a library question (2026-10-19)
 
 [S-8.1.4](docs/initiatives.md#s-814--shelf-scoped-qa), PR [#313](https://github.com/khoks/VideoResearchPro/pull/313), [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19).

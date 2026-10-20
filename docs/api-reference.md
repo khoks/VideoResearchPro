@@ -712,6 +712,12 @@ Body `{ "name", "description"?, "color"? }`. Returns 201 `ShelfResponse`. Pro+.
 ### `GET /api/v1/shelves/{shelf_id}/documents`
 The union of the documents selected by the shelf's jobs, each once, filtered through the caller's visibility (D-063). Takes the library listing's `search`, `language`, `channel_id`, `transcript_status`, `tag`, `sort`, `limit`, `offset` and returns the same `LibraryVideoResponse[]` rows (with `job_count` / `job_titles` across all the caller's runs). **An empty shelf returns `[]`, never the whole library.** Any tier.
 
+### `POST /api/v1/shelves/{shelf_id}/qa`
+Ask the library agent over this shelf's documents only (S-8.1.4): the documents selected by the shelf's runs, within what the caller can see. Request and response are `POST /library/qa`'s; the response's `scope` is `{"shelf_id": "…"}` and the exchange joins the library Q&A history and the Q&A library index. **An empty shelf retrieves nothing**, never the whole library, and a citation outside the shelf is dropped from the answer. A shelf that is not the caller's is a **404** and runs nothing. Any tier; the library Q&A quota applies (429 when spent).
+
+### `GET /api/v1/shelves/{shelf_id}/qa`
+The caller's questions asked on this shelf (including saved-search runs scoped to it), oldest first, as `LibraryQAResponse[]`. `limit` (default 100, max 500), `offset`. 404 for a shelf that is not the caller's.
+
 ### `PUT /api/v1/shelves/{shelf_id}`
 Partial update: fields left out are untouched; `"description": null` clears it; renaming onto another shelf's name is a 409. Returns `ShelfResponse`. Pro+.
 

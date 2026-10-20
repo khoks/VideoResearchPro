@@ -648,10 +648,43 @@ def run(db: Session, tenant_id: str, *, llm: LLMCall | None = None, model: str |
 # Queueing
 
 
+def quick_new_count(db: Session, tenant_id: str) -> int:
+    """How many inputs the ledger has not seen, from row counts alone: live
+    notes, questions (less a saved search's re-asks) and own-words shares,
+    minus ledger rows. No text is read, so it is cheap on the request path
+    of every note and question. It cannot see an edit (the count does not
+    change); the run itself reconciles exactly, and "Learn now" and the
+    signals panel use the exact ``pending``."""
+    from sqlalchemy import func
+
+    from app.models.note import Note
+
+    notes = db.query(func.count(Note.id)).filter(Note.tenant_id == tenant_id, Note.deleted_at.is_(None)).scalar() or 0
+    questions = sum(
+        db.query(func.count(model.id)).filter(model.tenant_id == tenant_id).scalar() or 0
+        for model in (QAExchange, LibraryQAExchange, QAHistoryExchange)
+    )
+    reruns = (
+        db.query(func.count(func.distinct(SavedSearchRun.exchange_id)))
+        .filter(SavedSearchRun.tenant_id == tenant_id, SavedSearchRun.exchange_id.isnot(None))
+        .scalar()
+        or 0
+    )
+    shares = (
+        db.query(func.count(Share.id)).filter(Share.tenant_id == tenant_id, Share.author_is_tenant.is_(True)).scalar() or 0
+    )
+    read = db.query(func.count(VoiceSignalInput.id)).filter(VoiceSignalInput.tenant_id == tenant_id).scalar() or 0
+    return max(0, notes + questions - reruns + shares - read)
+
+
 def maybe_queue(db: Session, tenant_id: str, *, force: bool = False) -> str:
     """Queue a run when enough new input has arrived (``ECHO_SIGNALS_MIN_NEW_INPUTS``)
     or when ``force`` and anything is pending. Fail-soft: returns what
-    happened and never raises into the caller's request."""
+    happened and never raises into the caller's request.
+
+    Without ``force`` the trigger is ``quick_new_count`` (row counts only), so
+    the hooks on every note and question stay cheap however much the user
+    has written; ``force`` ("Learn now") computes the exact ``pending``."""
     try:
         mode = (settings.ECHO_SIGNAL_EXTRACTION or "off").lower()
         if mode == "off":
@@ -662,8 +695,10 @@ def maybe_queue(db: Session, tenant_id: str, *, force: bool = False) -> str:
         user = db.get(User, tenant_id)
         if user is None or not has_feature(user, "echo_personal_brain"):
             return "not_entitled"
-        state = pending(db, tenant_id)
-        if state.count == 0 or (not force and state.count < settings.ECHO_SIGNALS_MIN_NEW_INPUTS):
+        if force:
+            if pending(db, tenant_id).count == 0:
+                return "waiting"
+        elif quick_new_count(db, tenant_id) < settings.ECHO_SIGNALS_MIN_NEW_INPUTS:
             return "waiting"
         if mode == "inline":
             run(db, tenant_id)

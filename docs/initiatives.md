@@ -1775,6 +1775,7 @@ Scope-changed 2026-10-19: (1) plan open question 1 at its suggested default, cap
 - [ ] T-8.3.3.3 Email via `email_service.send_email` (already fail-soft when SMTP is unset) and an in-app `notifications` row
 - [ ] T-8.3.3.4 `notifications(id, tenant_id, kind, title, body, href, read_at, created_at)` + `GET /api/v1/notifications`, bell in the sidebar chrome
 - [ ] T-8.3.3.5 Tests: unchanged answers do not notify; a run that fails leaves the previous result intact
+- [ ] T-8.3.3.6 *(filed 2026-10-19 by S-8.1.4)* Runs share the interactive library Q&A core. `saved_search_service` calls `run_library_qa_agent` directly, so a pinned question draws none of the reader's notes (S-8.5.2) and skips the scoped citation check that `routers/library.py::answer_library_question` applies. Extract that core (scope → documents and `note_target_keys` → corpus stats → trust weights → agent → citation check) and use it for both; quota and persistence stay per caller. Tests: a shelf-scoped run passes the shelf's note keys and drops an off-shelf citation. Linked decision: [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19)
 
 ### E-8.4 🟢 Question suggestions (M4)
 
@@ -2054,6 +2055,17 @@ Scope-changed 2026-10-19: the audit found three states that said something untru
 - [ ] T-8.12.3.4 Add to Home Screen on both: the echo-mark icon, the paper splash, standalone launch at `/`, and back-gesture behaviour in standalone mode (unverified per the plan's risks)
 
 ---
+
+### E-8.13 ⚪ Library Q&A correctness follow-ups
+
+**Filed 2026-10-19** by S-8.1.4, which made library and shelf questions one path (`answer_library_question`, PR [#319](https://github.com/khoks/VideoResearchPro/pull/319)) and found what that path still gets wrong. The saved-search side of the same gap is [T-8.3.3.6](#s-833--re-run-change-detection-and-notification).
+
+#### S-8.13.1 ⚪ Clarify answers reach the agent
+**PR:** TBD
+**Found.** The library Q&A page runs a clarify step, then sends the interpretation and the reader's answers as `context` on `POST /library/qa`. `LibraryQARequest` has no `context` field and `run_library_qa_agent` takes none, so they are dropped: "Confirm & search" answers exactly like "Skip clarifications". The shelf panel asks directly for this reason.
+- [ ] T-8.13.1.1 Check how job Q&A carries clarify context (`schemas/qa.py`, `routers/qa.py`, `run_qa_agent`); if it drops it too, fix both
+- [ ] T-8.13.1.2 `context` (bounded) on `LibraryQARequest`, through `answer_library_question` (library and shelf) into `run_library_qa_agent` and its answer prompt, keeping the shared prompt contracts
+- [ ] T-8.13.1.3 Tests: the router passes `context` to the agent; the agent's answer prompt contains it
 
 ## Open questions parking lot
 

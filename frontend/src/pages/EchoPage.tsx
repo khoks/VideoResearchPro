@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { EchoDataCard } from '../components/echo/EchoDataCard';
+import { SignalsPanel } from '../components/echo/SignalsPanel';
 import {
   useDeleteContext,
   useEchoConnectors,
@@ -342,6 +343,10 @@ export function EchoPage() {
           </section>
 
           <div style={{ marginTop: space['6'] }}>
+            <SignalsPanel />
+          </div>
+
+          <div style={{ marginTop: space['6'] }}>
             <EchoDataCard />
           </div>
 
@@ -351,7 +356,7 @@ export function EchoPage() {
             </h3>
             <ul style={{ margin: `${space['2']} 0 0`, paddingLeft: space['5'], fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal }}>
               <li>Pull-mode connectors: YouTube watch history, Spotify, email, calendar (E-3.2)</li>
-              <li>Voice and style capture from your own writing (E-3.3)</li>
+              <li>Learning signals automatically from your notes and questions (E-3.3)</li>
               <li>The "speak as me" agent that drafts in your voice once readiness is met (E-3.4)</li>
             </ul>
           </Card>

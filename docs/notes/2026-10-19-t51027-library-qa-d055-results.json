@@ -1,0 +1,36 @@
+{
+  "protocol": "docs/notes/2026-10-19-t51027-library-qa-d055-replay.md",
+  "meta": {
+    "method": "D-055 exact-input replay",
+    "surface": "library",
+    "production": "anthropic:claude-sonnet-5:medium",
+    "challenger": "anthropic:claude-opus-5:high",
+    "thinking_room": 32000,
+    "threshold": 0.6,
+    "top_k": 15,
+    "promoted": {},
+    "demoted": {}
+  },
+  "questions_won": {
+    "challenger": 2,
+    "production": 7
+  },
+  "mean_relevance": {
+    "challenger": 8.633333333333333,
+    "production": 8.966666666666667
+  },
+  "mean_faithfulness": {
+    "challenger": 6.633333333333334,
+    "production": 7.766666666666667
+  },
+  "preferred": {
+    "challenger": 8,
+    "production": 21,
+    "tie": 1
+  },
+  "confirmed_unsupported": {
+    "challenger": 119,
+    "production": 54
+  },
+  "retier_warranted": false
+}

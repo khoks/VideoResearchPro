@@ -30,6 +30,37 @@ If so, a follow-up story is filed to re-tier `library_qa_formulate_answer`, with
 - One corpus, ten questions, one run per arm: direction, not effect size.
 - The challenger is one step up the same family; the 2026-07-29 run used a different challenger (Claude Fable 5 via subagents) on different questions, so its job-Q&A gaps (5.8 → 8.5 and 7.2 → 7.7) are context, not a baseline.
 
-## Results
+## Results (appended 2026-10-19; the rule above was not edited)
 
-*(appended after the run)*
+**Run.** 10 questions, both arms per question, all through the production route on fresh copies of the dev database (migrated to head) and Chroma store. Production `anthropic:claude-sonnet-5:medium`; challenger `anthropic:claude-opus-5:high` with production's budget plus 32,000 tokens of thinking room. Code: commit `57c582f` (master after S-5.10.3, with notes in retrieval, S-8.5.2). The user has no trust weights and, on the copy, no notes, so every answer took the unweighted per-user path. 30 blind verdicts, all parsed; 207 flagged claims, each checked by three lenses.
+
+| | Challenger | Production |
+|---|---|---|
+| Judge verdicts preferring (tie: 1) | 8 | 21 |
+| Questions won (≥ 2 of 3 judges) | 2 | 7 |
+| Mean relevance (1–10) | 8.63 | 8.97 |
+| Mean faithfulness (1–10) | 6.63 | 7.77 |
+| Confirmed unsupported claims | 119 | 54 |
+| Mean words per answer | 1559 | 1082 |
+
+By judge, challenger / production / tie:
+
+| Judge | Verdicts |
+|---|---|
+| claude-sonnet-5 | 4 / 5 / 1 |
+| gemini-3.5-flash | 2 / 8 / 0 |
+| gpt-5.5 | 2 / 8 / 0 |
+
+Per question (C = challenger preferred, P = production, = tie): q1: PC=, q2: PPP, q3: PPP, q4: PPC, q5: PCC, q6: PPP, q7: PPP, q8: PPC, q9: PCC, q10: PPC.
+
+**Against the rule.** Challenger won 2 of 10 questions (needs 7) and its largest mean gap is -0.33 (needs +1.0). **No re-tier warranted.** Library Q&A on the per-user corpus is not measurably under-modelled at Sonnet 5 medium; the registry stays as it is.
+
+**Deviation from the protocol.** Gemini 3.1 Pro had exhausted its daily quota (it ran out during E-7.1's verification the same day), so the Google judge and verifier lens were `gemini-3.5-flash` (medium and low reasoning) instead. Three families are still represented; the named model is not.
+
+**Length.** Challenger answers averaged 1559 words against production's 1082, under the same length guidance in the prompt. Judges are told not to reward length; more text also means more claims to be unsupported.
+
+**What the unsupported claims are.** 104 of the challenger's 119 confirmed claims, and 50 of production's 54, name a date or a year. The excerpts judges and verifiers saw carried no publication dates, while the answer prompt does (D-072), so a correctly cited date reads as invented. The protocol said this "inflates both arms equally"; it does not, because the challenger cites dates far more often. The remaining claims are mostly statements about what the sources do not cover.
+
+**Sensitivity check, outside the rule: the same answers re-judged with dated excerpts.** `judge_qa_pairs.py --dates-db` adds each source's `published <date>` to the excerpts, as the answer prompt shows it; fresh coins, same judges and verifiers. Verdicts challenger / production / tie: 15 / 11 / 4; questions won 6 / 3; mean relevance 9.03 / 9.00; faithfulness 8.80 / 8.93; confirmed unsupported claims 18 / 8. The conclusion holds with dates visible.
+
+**Caveats.** Ten questions, one run per arm. Excerpts given to judges and verifiers still carry no publication dates, which inflates unsupported-claim counts equally for both arms (the E-7.1 caveat; T-7.1.2.3 fixes the harness). Both arms are Claude, so any Claude-judge self-preference applies to both.

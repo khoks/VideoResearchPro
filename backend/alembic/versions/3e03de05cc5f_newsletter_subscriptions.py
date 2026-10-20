@@ -1,7 +1,7 @@
 """newsletter_subscriptions + newsletter_sends (S-6.4.2)
 
 Revision ID: 3e03de05cc5f
-Revises: 8e2f4a6c1d93
+Revises: e5773663cb2d
 Create Date: 2026-10-20
 
 One digest subscription per reader, and a sends ledger whose unique
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "3e03de05cc5f"
-down_revision = "8e2f4a6c1d93"  # re-parented onto master (merged first)
+down_revision = "e5773663cb2d"  # re-parented onto S-3.2.1 (merged first)
 branch_labels = None
 depends_on = None
 

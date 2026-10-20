@@ -1,0 +1,11 @@
+{
+  "protocol": "docs/notes/2026-10-19-saved-search-change-thresholds.md",
+  "exchanges": 4,
+  "pairs_unchanged": 2,
+  "pairs_unchanged_library": 0,
+  "pairs_unchanged_job": 2,
+  "pairs_negative": 2,
+  "decision": "calibration pending: fewer than 20 re-ask pairs; priors apply",
+  "jaccard_threshold": 0.5,
+  "embedding_threshold": 0.15
+}

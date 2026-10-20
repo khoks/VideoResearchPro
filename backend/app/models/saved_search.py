@@ -52,3 +52,7 @@ class SavedSearch(Base):
     last_answer_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_reference_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_answer_embedding_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: S-8.3.3: sha256 of the sorted document ids the last good run could
+    #: cite. A scheduled run whose scope still resolves to the same set is
+    #: skipped before the quota or the model (the gate).
+    last_scope_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)

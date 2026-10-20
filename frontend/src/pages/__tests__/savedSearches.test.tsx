@@ -22,6 +22,7 @@ const api = {
   update: vi.fn(async (_id: string, b: unknown) => b),
   remove: vi.fn<(id: string) => Promise<undefined>>(async () => undefined),
   runNow: vi.fn<(id: string) => Promise<{ status: "queued" }>>(async () => ({ status: "queued" })),
+  runs: vi.fn<(id: string) => Promise<unknown[]>>(async () => []),
 };
 vi.mock('../../services/savedSearchesApi', () => ({
   savedSearchesApi: {
@@ -30,6 +31,7 @@ vi.mock('../../services/savedSearchesApi', () => ({
     update: (id: string, b: unknown) => api.update(id, b),
     remove: (id: string) => api.remove(id),
     runNow: (id: string) => api.runNow(id),
+    runs: (id: string) => api.runs(id),
   },
 }));
 const tier = { saved: true, loading: false };
@@ -86,7 +88,7 @@ async function mount(node: React.ReactNode, path = '/saved-searches') {
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={[path]}>
           <Routes>
-            <Route path={path} element={node} />
+            <Route path={path.split("?")[0]} element={node} />
             <Route path="*" element={null} />
           </Routes>
           <Where />
@@ -107,6 +109,7 @@ beforeEach(() => {
   tier.saved = true;
   tier.loading = false;
   api.list.mockResolvedValue({ items: [ROW], active: 1, cap: 10 });
+  api.runs.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -188,6 +191,41 @@ describe('SavedSearchesPage', () => {
   });
 });
 
+describe('run history (S-8.3.3)', () => {
+  const RUN = {
+    trigger: 'schedule', error: null, previous_exchange_id: null, jaccard: null, embedding_distance: null,
+    decided_by: 'none', added_reference_ids: [], dropped_reference_ids: [], diff_summary: null,
+  };
+
+  it('a notification link opens the card’s history with its run outlined', async () => {
+    api.runs.mockResolvedValue([
+      { ...RUN, id: 'r3', ran_at: '2026-10-26T09:00:00', status: 'ok', exchange_id: 'ex3', previous_exchange_id: 'ex1', changed: true,
+        decided_by: 'agreed', diff_summary: 'Now cites 1 new source: “October statement”.' },
+      { ...RUN, id: 'r2', ran_at: '2026-10-25T09:00:00', status: 'no_new_sources', exchange_id: null, changed: null },
+      { ...RUN, id: 'r1', ran_at: '2026-10-19T10:01:00', status: 'ok', exchange_id: 'ex1', changed: null, trigger: 'manual' },
+    ]);
+    await mount(<SavedSearchesPage />, '/saved-searches?search=ss1&run=r3');
+    expect(api.runs).toHaveBeenCalledWith('ss1');
+    const history = host.querySelector('ol[aria-label="Run history"]')!;
+    const items = Array.from(history.querySelectorAll('li'));
+    expect(items.map((li) => li.querySelector('span')?.textContent)).toEqual(['Changed', 'Nothing new to read', 'First answer']);
+    expect(items[0].getAttribute('aria-current')).toBe('true');
+    expect(items[0].textContent).toContain('October statement');
+    expect(items[0].querySelector('a[href="/library/qa?exchange=ex3"]')).toBeTruthy();
+    expect(items[0].querySelector('a[href="/library/qa?exchange=ex1"]')?.textContent).toBe('The previous answer');
+    expect(items[2].textContent).toContain('Run now');
+  });
+
+  it('stays closed until asked, and History opens it', async () => {
+    await mount(<SavedSearchesPage />);
+    expect(host.querySelector('ol[aria-label="Run history"]')).toBeNull();
+    await act(async () => button('History')!.click());
+    await flush();
+    expect(api.runs).toHaveBeenCalledWith('ss1');
+    expect(host.textContent).toContain('No runs yet.');
+  });
+});
+
 describe('PinQuestionButton', () => {
   it('pins the question weekly at 09:00 in the reader’s zone by default', async () => {
     await mount(<PinQuestionButton question="Why did rates fall?" answerLanguage="hi" />, '/library/qa');
@@ -243,5 +281,5 @@ describe('wiring', () => {
     )[0];
     expect(card).toMatch(/<PinQuestionButton\s+question=\{qa\.question\}/);
     expect(card).toMatch(/scope=\{qa\.scope\?\.shelf_id/);
-  });
+  }, 30_000); // imports the whole route table
 });

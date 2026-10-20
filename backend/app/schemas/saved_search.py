@@ -76,3 +76,24 @@ class SavedSearchList(BaseModel):
 
 class RunNowResponse(BaseModel):
     status: Literal["queued"]
+
+
+class SavedSearchRunResponse(BaseModel):
+    """One run (S-8.3.3). ``changed`` is null on the first run and on runs
+    that did not answer; ``decided_by`` says whether the two signals agreed
+    or the judge decided."""
+
+    id: str
+    ran_at: datetime
+    trigger: str
+    status: str
+    error: str | None
+    exchange_id: str | None
+    previous_exchange_id: str | None
+    changed: bool | None
+    jaccard: float | None
+    embedding_distance: float | None
+    decided_by: str | None
+    added_reference_ids: list[str]
+    dropped_reference_ids: list[str]
+    diff_summary: str | None

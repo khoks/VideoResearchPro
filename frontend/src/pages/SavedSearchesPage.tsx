@@ -1,10 +1,11 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useColors } from '../hooks/useTheme';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import {
   useDeleteSavedSearch,
   useRunSavedSearchNow,
+  useSavedSearchRuns,
   useSavedSearches,
   useUpdateSavedSearch,
 } from '../hooks/useSavedSearches';
@@ -12,11 +13,12 @@ import { ScheduleFields } from '../components/savedSearches/ScheduleFields';
 import { Badge, Button, Card, EmptyState, Skeleton, type BadgeTone } from '../components/primitives';
 import { apiErrorMessage } from '../utils/apiError';
 import { describeCadence, parseUtc } from '../utils/cadence';
-import type { Cadence, SavedSearch, SavedSearchStatus } from '../services/savedSearchesApi';
-import { fonts, fontSize, fontWeight, lineHeight, measure, space } from '../theme';
+import type { Cadence, SavedSearch, SavedSearchRun, SavedSearchStatus } from '../services/savedSearchesApi';
+import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
 
 const STATUS: Record<SavedSearchStatus, { label: string; tone: BadgeTone }> = {
   ok: { label: 'Answered', tone: 'success' },
+  no_new_sources: { label: 'Nothing new to read', tone: 'neutral' },
   failed: { label: 'Last run failed', tone: 'error' },
   quota_exceeded: { label: 'Skipped: monthly quota', tone: 'warn' },
   feature_unavailable: { label: 'Not in your plan', tone: 'warn' },
@@ -38,6 +40,10 @@ export function SavedSearchesPage() {
   const navigate = useNavigate();
   const { has, isLoading: tierLoading } = useTierCapabilities();
   const list = useSavedSearches();
+  // A notification lands here as ?search=<id>&run=<id> (S-8.3.3).
+  const [params] = useSearchParams();
+  const focusSearch = params.get('search');
+  const focusRun = params.get('run');
 
   const header = (
     <header style={{ marginBottom: space['5'] }}>
@@ -107,7 +113,7 @@ export function SavedSearchesPage() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}>
           {items.map((s) => (
-            <SavedSearchCard key={s.id} search={s} />
+            <SavedSearchCard key={s.id} search={s} focusRun={focusSearch === s.id ? focusRun : null} />
           ))}
         </div>
       )}
@@ -115,8 +121,13 @@ export function SavedSearchesPage() {
   );
 }
 
-function SavedSearchCard({ search: s }: { search: SavedSearch }) {
+function SavedSearchCard({ search: s, focusRun }: { search: SavedSearch; focusRun: string | null }) {
   const c = useColors();
+  const [historyOpen, setHistoryOpen] = useState(!!focusRun);
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focusRun) cardRef.current?.scrollIntoView?.({ block: 'start' });
+  }, [focusRun]);
   const update = useUpdateSavedSearch();
   const remove = useDeleteSavedSearch();
   const runNow = useRunSavedSearchNow();
@@ -129,7 +140,7 @@ function SavedSearchCard({ search: s }: { search: SavedSearch }) {
   const meta = { fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textSecondary, margin: 0 } as const;
 
   return (
-    <Card>
+    <Card ref={cardRef}>
       <article aria-labelledby={`ss-${s.id}`}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: space['3'], flexWrap: 'wrap', alignItems: 'baseline' }}>
           <h2 id={`ss-${s.id}`} style={{ fontFamily: fonts.display, fontSize: fontSize.lg, fontWeight: fontWeight.semibold, color: c.textPrimary, margin: 0, flex: '1 1 320px', lineHeight: lineHeight.snug }}>
@@ -185,6 +196,8 @@ function SavedSearchCard({ search: s }: { search: SavedSearch }) {
           </p>
         )}
 
+        {historyOpen && <RunHistory searchId={s.id} focusRun={focusRun} />}
+
         {editing && draft && (
           <div style={{ marginTop: space['4'] }}>
             <ScheduleFields value={draft} onChange={setDraft} />
@@ -216,6 +229,9 @@ function SavedSearchCard({ search: s }: { search: SavedSearch }) {
             </>
           ) : (
             <>
+              <Button size="sm" variant="tertiary" aria-expanded={historyOpen} onClick={() => setHistoryOpen((o) => !o)}>
+                {historyOpen ? 'Hide history' : 'History'}
+              </Button>
               <Button size="sm" variant="tertiary" onClick={() => setEditing(true)} disabled={!s.cadence}>
                 Change schedule
               </Button>
@@ -257,5 +273,83 @@ function SavedSearchCard({ search: s }: { search: SavedSearch }) {
         </div>
       </article>
     </Card>
+  );
+}
+
+function changeLabel(r: SavedSearchRun): { text: string; tone: BadgeTone } {
+  if (r.status !== 'ok') return { text: STATUS[r.status]?.label ?? r.status, tone: STATUS[r.status]?.tone ?? 'neutral' };
+  if (r.changed === null) return { text: 'First answer', tone: 'info' };
+  return r.changed ? { text: 'Changed', tone: 'accent' } : { text: 'No change', tone: 'neutral' };
+}
+
+/**
+ * The last runs of one saved search (S-8.3.3): when, why, whether the answer
+ * changed and what changed, with links to the new and the previous answer.
+ * A run named in the URL (from a notification) is outlined.
+ */
+function RunHistory({ searchId, focusRun }: { searchId: string; focusRun: string | null }) {
+  const c = useColors();
+  const runs = useSavedSearchRuns(searchId, true);
+  const meta = { fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textSecondary, margin: 0 } as const;
+
+  if (runs.isLoading) return <Skeleton variant="card" height={80} style={{ marginTop: space['3'] }} />;
+  if (runs.isError) {
+    return (
+      <p role="alert" style={{ ...meta, color: c.error, marginTop: space['3'] }}>
+        Couldn't load the history.
+      </p>
+    );
+  }
+  const items = runs.data ?? [];
+  if (items.length === 0) return <p style={{ ...meta, marginTop: space['3'] }}>No runs yet.</p>;
+
+  return (
+    <ol aria-label="Run history" style={{ listStyle: 'none', margin: `${space['3']} 0 0`, padding: 0, display: 'flex', flexDirection: 'column', gap: space['2'] }}>
+      {items.map((r) => {
+        const label = changeLabel(r);
+        const focused = r.id === focusRun;
+        return (
+          <li
+            key={r.id}
+            aria-current={focused ? 'true' : undefined}
+            style={{
+              padding: space['3'],
+              borderRadius: radius.md,
+              border: `1px solid ${focused ? c.accent : c.border}`,
+              outline: focused ? `2px solid ${c.accent}` : 'none',
+              background: c.surfaceAlt,
+            }}
+          >
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: space['2'], alignItems: 'center' }}>
+              <Badge tone={label.tone} size="sm">
+                {label.text}
+              </Badge>
+              <span style={meta}>{when(r.ran_at)}</span>
+              <span style={{ ...meta, color: c.textMuted }}>{r.trigger === 'manual' ? 'Run now' : 'Scheduled'}</span>
+            </div>
+            {r.diff_summary && (
+              <p style={{ fontFamily: fonts.body, fontSize: fontSize.base, color: c.textPrimary, lineHeight: lineHeight.normal, margin: `${space['2']} 0 0` }}>
+                {r.diff_summary}
+              </p>
+            )}
+            {r.error && r.status !== 'ok' && <p style={{ ...meta, marginTop: space['1'] }}>{r.error}</p>}
+            {(r.exchange_id || (r.changed && r.previous_exchange_id)) && (
+              <p style={{ ...meta, marginTop: space['2'], display: 'flex', gap: space['4'], flexWrap: 'wrap' }}>
+                {r.exchange_id && (
+                  <Link to={`/library/qa?exchange=${r.exchange_id}`} style={{ color: c.accent }}>
+                    This answer
+                  </Link>
+                )}
+                {r.changed && r.previous_exchange_id && (
+                  <Link to={`/library/qa?exchange=${r.previous_exchange_id}`} style={{ color: c.accent }}>
+                    The previous answer
+                  </Link>
+                )}
+              </p>
+            )}
+          </li>
+        );
+      })}
+    </ol>
   );
 }

@@ -32,6 +32,7 @@ import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
+from html.parser import HTMLParser
 from typing import Iterable
 
 NEAR = 0.8
@@ -256,3 +257,141 @@ def keepable(original: str, own: VideoText | None) -> tuple[str | None, str, str
             if reading and problem(reading, own) is None:
                 return reading, gone, None
     return None, "", reason
+
+
+
+# --- the composed report (deliverable level) ----------------------------------------
+#
+# The map-level check keeps only originals that are the speaker's words, but
+# the composer can still write native-script text of its own. R1 run 7 did:
+# the item's `original` was verbatim (garbled ASR included) and its English
+# content said "a very important library"; the composer wrote "वेरी इंपॉर्टेंट
+# लाइब्रेरी (very important library)" — English back-translated into Devanagari,
+# put in the speaker's mouth. So every native-script run in the report is
+# checked against the corpus too, and a failing one is removed.
+
+MIN_REPORT_RUN_TOKENS = 3
+_NATIVE_CHAR = re.compile(r"[\u0900-\u097f\u0980-\u09ff]")
+_BLOCK_TAGS = ("p", "li", "br", "div", "h1", "h2", "h3", "h4", "td", "tr", "blockquote")
+
+
+class _Text(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts: list[str] = []
+
+    def handle_data(self, data):
+        self.parts.append(data)
+
+    def handle_starttag(self, tag, attrs):
+        if tag in _BLOCK_TAGS:
+            self.parts.append("\n")
+
+
+def report_native_runs(html: str, min_tokens: int = MIN_REPORT_RUN_TOKENS) -> list[str]:
+    """Maximal runs of Devanagari/Bengali words in the report text.
+
+    A run may bridge up to two Latin tokens (code-mixed speech such as
+    "plt ডট টাইটেল") but starts and ends on a native token. Runs shorter than
+    ``min_tokens`` native words are single borrowed terms, not quotations.
+    """
+    parser = _Text()
+    parser.feed(html or "")
+    runs: list[str] = []
+    for line in "".join(parser.parts).splitlines():
+        tokens = line.split()
+        i = 0
+        while i < len(tokens):
+            if not _NATIVE_CHAR.search(tokens[i]):
+                i += 1
+                continue
+            j, last_native, gap = i, i, 0
+            while j + 1 < len(tokens) and gap <= 2:
+                j += 1
+                if _NATIVE_CHAR.search(tokens[j]):
+                    last_native, gap = j, 0
+                else:
+                    gap += 1
+            span = tokens[i:last_native + 1]
+            if sum(1 for t in span if _NATIVE_CHAR.search(t)) >= min_tokens:
+                runs.append(" ".join(span))
+            i = last_native + 1
+    return runs
+
+
+def run_verdict(run: str, corpus: dict[str, VideoText]) -> dict:
+    """Where a report run comes from: ``{verdict, matched, script_mismatch, mixed_script}``.
+
+    ``verdict`` is "verbatim" / "near" against the best-matching source, or
+    "absent". A run passes only when found AND in that source's script AND no
+    word mixes two scripts.
+    """
+    frags = fragments(run)
+    verdict, matched = "absent", None
+    for vid, v in corpus.items():
+        lvl = match_level(frags, v.speech, v)
+        if lvl and (verdict == "absent" or lvl == "verbatim"):
+            verdict, matched = lvl, vid
+            if lvl == "verbatim":
+                break
+    q_script = dominant_native_script(run)
+    v_script = corpus[matched].script if matched else None
+    return {
+        "verdict": verdict,
+        "matched": matched,
+        "script": q_script,
+        "video_script": v_script,
+        "script_mismatch": bool(q_script and v_script and q_script != v_script),
+        "mixed_script": bool(mixed_script_words(run)),
+    }
+
+
+def run_fails(v: dict) -> bool:
+    return v["verdict"] == "absent" or v["script_mismatch"] or v["mixed_script"]
+
+
+_BETWEEN = r"(?:\s|&nbsp;|<[^>]+>)+"
+_PLAIN_GLOSS = re.compile(r"[A-Za-z0-9 ,.'’\-]+")
+
+
+def _run_pattern(run: str) -> re.Pattern:
+    """The run as it appears in the HTML (tags or line breaks may sit between
+    its words), with an optional following "(…)" and an optional dash
+    separator before a translation."""
+    words = _BETWEEN.join(re.escape(t) for t in run.split())
+    return re.compile(
+        words + r"(?P<paren>\s*\((?P<gloss>[^()<>]*)\))?(?P<sep>\s*[\u2014\u2013-]\s*(?=[\"“'‘]))?"
+    )
+
+
+def scrub_report(html: str, corpus: dict[str, VideoText]) -> tuple[str, list[dict]]:
+    """Remove every native-script run that does not trace back to the corpus.
+
+    What replaces it keeps the English and nothing else:
+    - ``RUN (transliteration) — "translation"`` (D-066's three-part form):
+      the run, the transliteration and the dash go, the translation stays;
+    - ``RUN (plain English gloss)``: the gloss stays, unbracketed, so the
+      sentence still says what the source said;
+    - anything else (a romanised transliteration, no bracket): the run and
+      its bracket go.
+    Returns the new HTML and one record per removed run.
+    """
+    removed: list[dict] = []
+    for run in dict.fromkeys(report_native_runs(html)):
+        v = run_verdict(run, corpus)
+        if not run_fails(v):
+            continue
+
+        def replace(m: re.Match) -> str:
+            gloss = (m.group("gloss") or "").strip()
+            if m.group("sep"):
+                return ""
+            if gloss and _PLAIN_GLOSS.fullmatch(gloss):
+                return gloss
+            return ""
+
+        html, n = _run_pattern(run).subn(replace, html)
+        if n:
+            removed.append({"run": run, "occurrences": n, **v})
+    html = re.sub(r"[ \t]{2,}", " ", html)
+    return html, removed

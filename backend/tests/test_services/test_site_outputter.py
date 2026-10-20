@@ -164,3 +164,19 @@ def test_kinds_lists_site(unauthenticated_client, db):
     body = unauthenticated_client.get("/api/v1/author/kinds", headers={"Authorization": f"Bearer {token}"}).json()
     assert "site" in body["available"]
     assert db.query(Output).count() == 0
+
+
+def test_runs_with_the_same_topic_and_id_prefix_get_distinct_pages(db, tmp_path):
+    from app.models.job import Job
+
+    user = auth_service.create_user(db, email="site-dup@x.com", password="pw" * 6)
+    runs = [_smoke_run(db, user.id, tmp_path, topic="Same topic") for _ in range(2)]
+    # The first live site's seed ids shared their first eight letters.
+    for i, run in enumerate(runs, start=1):
+        db.query(Job).filter(Job.id == run.id).update({"id": f"lanec-job-{i}"})
+    db.commit()
+    out = _site(db, user, ["job:lanec-job-1", "job:lanec-job-2"])
+    assert out.status == "completed", out.error_message
+    reports = sorted(n for n in _files(out) if n.startswith("reports/"))
+    assert len(reports) == 2 and reports[0] != reports[1]
+    _assert_self_contained(_files(out))

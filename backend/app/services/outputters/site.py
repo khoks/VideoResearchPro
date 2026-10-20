@@ -67,6 +67,25 @@ def _ascii_slug(text: str, unique: str) -> str:
     return f"{stem}-{tail}" if stem else tail
 
 
+class _PagePaths:
+    """Hands out page paths, each unique within the site. Titles repeat and
+    id prefixes can too (the first live site had two runs whose ids both
+    began "lanec-job"), so a clash gets -2, -3 rather than overwriting a
+    page in the zip."""
+
+    def __init__(self) -> None:
+        self._used: set[str] = set()
+
+    def make(self, folder: str, title: str, unique: str) -> str:
+        stem = _ascii_slug(title, unique)
+        path, n = f"{folder}/{stem}.html", 1
+        while path in self._used:
+            n += 1
+            path = f"{folder}/{stem}-{n}.html"
+        self._used.add(path)
+        return path
+
+
 def _plain(markdown: str) -> str:
     text = _LINK.sub(r"\1", markdown or "")
     text = re.sub(r"\[\^\d+\]", "", text)
@@ -146,7 +165,8 @@ class SiteOutputter:
             raise OutputError("Nothing to publish: none of the chosen shelves or runs has a report in your library.")
 
         visible = visibility_service.visible_document_ids(db, user.id)  # a subquery, composed into IN
-        reports = [_Report(job=j, path=f"reports/{_ascii_slug(j.topic or 'report', j.id)}.html") for j in jobs]
+        paths = _PagePaths()
+        reports = [_Report(job=j, path=paths.make("reports", j.topic or "report", j.id)) for j in jobs]
         documents: dict[str, Document] = {}
         for r in reports:
             for doc in (
@@ -159,7 +179,7 @@ class SiteOutputter:
         channels = {c.channel_id: c.name for c in db.query(Channel).filter(
             Channel.channel_id.in_({d.channel_id for d in documents.values() if d.channel_id})).all()}
         sources = {
-            doc_id: _Source(document=doc, path=f"sources/{_ascii_slug(doc.title, doc_id)}.html",
+            doc_id: _Source(document=doc, path=paths.make("sources", doc.title, doc_id),
                             channel=channels.get(doc.channel_id, "") if doc.channel_id else "")
             for doc_id, doc in documents.items()
         }
@@ -186,7 +206,7 @@ class SiteOutputter:
 
         report_progress(db, output, 75, "Writing the source and tag pages")
         tags = tag_service.tags_for_documents(db, user.id, list(sources))
-        files = self._render(output, reports, sources, tags, notes)
+        files = self._render(output, reports, sources, tags, notes, paths)
         report_progress(db, output, 95, "Packing the site")
         output_artifacts.write_artifact(output, "zip", _zip(files))
         output.content_text = _contents_markdown(output.title, reports, sources, notes)
@@ -207,7 +227,7 @@ class SiteOutputter:
     # ------------------------------------------------------------------
 
     def _render(self, output: Output, reports: list[_Report], sources: dict[str, _Source],
-                tags: dict[str, list[dict]], notes: list[str]) -> dict[str, bytes]:
+                tags: dict[str, list[dict]], notes: list[str], paths: _PagePaths) -> dict[str, bytes]:
         env = Environment(loader=FileSystemLoader(str(TEMPLATES)), autoescape=select_autoescape(["html"]))
         generated = f"{datetime.now(timezone.utc):%Y-%m-%d}"
         site_title = output.title
@@ -225,7 +245,9 @@ class SiteOutputter:
         tag_pages: dict[str, dict] = {}
         for doc_id, doc_tags in tags.items():
             for t in doc_tags:
-                entry = tag_pages.setdefault(t["id"], {"name": t["name"], "path": f"tags/{_ascii_slug(t['name'], t['id'])}.html", "docs": []})
+                if t["id"] not in tag_pages:
+                    tag_pages[t["id"]] = {"name": t["name"], "path": paths.make("tags", t["name"], t["id"]), "docs": []}
+                entry = tag_pages[t["id"]]
                 entry["docs"].append(doc_id)
 
         search: list[dict] = []

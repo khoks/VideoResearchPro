@@ -384,6 +384,36 @@ def test_undo_takes_the_facts_out_of_the_personal_index(unauthenticated_client, 
     assert live_at_sync and live_at_sync[-1] == 0
 
 
+def test_undo_withdraws_the_words_of_the_events_it_removes(unauthenticated_client, db, two, monkeypatch):
+    """A Letterboxd review is the user's own words (T-3.3.2.8). Undoing the
+    import withdraws it from every signal citing it at once, then syncs."""
+    import re
+
+    from app.models.voice_signal import VoiceSignal
+    from app.services import echo_personal_vectors, echo_signal_service
+    from app.services import echo_signal_extraction as ex
+
+    item = _run(unauthenticated_client, two["ha"], *letterboxd())
+    review = next(e for e in _events(db, two["a"].id, "letterboxd_export") if e.text_content)
+
+    def llm(prompt):
+        pids = [p for p, body in re.findall(r"\[(P\d+)\] \([^)]*\)\n([^\n]*)", prompt) if "about the right things" in body]
+        found = [{"signal_type": "methodology", "value": "Judges films by their subject",
+                  "examples": [{"id": p, "quote": "about the right things"} for p in pids]}] if pids else []
+        return json.dumps({"signals": found}), 10, 10
+
+    ex.run(db, two["a"].id, llm=llm, model="m")
+    sig = next(r for r in echo_signal_service.list_signals(db, two["a"].id) if r.signal_type == "methodology")
+    assert json.loads(sig.derived_from) == [f"event:{review.id}"]
+
+    synced = []
+    monkeypatch.setattr(echo_personal_vectors, "sync_soft", lambda db_, tenant_id: synced.append(tenant_id))
+    assert unauthenticated_client.delete(f"{IMPORTS}/{item['id']}", headers=two["ha"]).json()["events"] > 0
+    db.expire_all()
+    assert db.get(VoiceSignal, sig.id).suppressed_reason == "source_deleted", "no run needed: the undo withdrew it"
+    assert synced and synced[-1] == two["a"].id
+
+
 def test_imported_events_belong_to_their_tenant_and_reach_the_timeline(unauthenticated_client, db, two):
     name, data = letterboxd()
     _run(unauthenticated_client, two["ha"], name, data)

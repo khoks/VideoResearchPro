@@ -76,6 +76,10 @@ class Input:
     text: str
     at: str | None
     language: str
+    #: What the model reads instead of ``text``, when that is too much: an
+    #: import's sampled turns, each with its own ``share:<id>`` ref so an
+    #: example cites the turn the user wrote. Empty = the model reads ``text``.
+    passages: tuple["Input", ...] = ()
 
     @property
     def content_hash(self) -> str:
@@ -129,18 +133,53 @@ def gather_inputs(db: Session, tenant_id: str) -> list[Input]:
             if text:
                 out.append(Input(f"{prefix}:{ex_id}", "question", text, _iso(created), language_of(text)))
 
+    from types import SimpleNamespace
+
     from app.services.echo_processing_service import voice_eligible
 
-    for share in db.query(Share).filter(Share.tenant_id == tenant_id):
-        if not voice_eligible(share):
+    imports: dict[str, list[tuple[str, str, datetime | None]]] = {}
+    cols = (Share.id, Share.extracted_text, Share.user_annotation, Share.received_at,
+            Share.author_is_tenant, Share.import_id, Share.occurred_at)
+    for sid, extracted, annotation, received, own, import_id, occurred in db.query(*cols).filter(
+        Share.tenant_id == tenant_id
+    ).yield_per(1000):
+        if not voice_eligible(SimpleNamespace(author_is_tenant=own)):
             continue
-        parts = [share.extracted_text or "", share.user_annotation or ""]
+        parts = [extracted or "", annotation or ""]
         text = "\n\n".join(p.strip() for p in parts if p and p.strip())
-        if text:
-            out.append(Input(f"share:{share.id}", "share", text, _iso(share.received_at), language_of(text)))
+        if not text:
+            continue
+        if import_id:
+            imports.setdefault(import_id, []).append((sid, text, occurred or received))
+            continue
+        out.append(Input(f"share:{sid}", "share", text, _iso(received), language_of(text)))
+    for import_id, turns in imports.items():
+        out.append(_import_input(import_id, turns))
 
     out.sort(key=lambda i: (i.at or "", i.ref))
     return out
+
+
+def _import_input(import_id: str, turns: list[tuple[str, str, datetime | None]]) -> Input:
+    """One export import (S-3.7.5) as ONE input. Stylometry profiles every
+    own-words turn (``text``); the model reads at most
+    ``ECHO_SIGNALS_IMPORT_SAMPLE`` turns of at least
+    ``ECHO_SIGNALS_MIN_PASSAGE_WORDS`` words, the longest in each of as many
+    equal slices of the chat's timeline, so a ten-year chat is read across
+    ten years and not just its last month."""
+    turns = sorted(turns, key=lambda t: (t[2] or datetime.min, t[0]))
+    text = "\n".join(t[1] for t in turns)
+    long_enough = [t for t in turns if len(stylo.words(t[1])) >= settings.ECHO_SIGNALS_MIN_PASSAGE_WORDS]
+    k = min(settings.ECHO_SIGNALS_IMPORT_SAMPLE, len(long_enough))
+    picked = []
+    for b in range(k):
+        bucket = long_enough[b * len(long_enough) // k : (b + 1) * len(long_enough) // k]
+        if bucket:
+            picked.append(max(bucket, key=lambda t: len(t[1])))
+    passages = tuple(Input(f"share:{sid}", "share", t, _iso(at), language_of(t)) for sid, t, at in picked)
+    sample = " ".join(p.text for p in passages[:60]) or text[:4000]
+    last = turns[-1][2] if turns else None
+    return Input(f"import:{import_id}", "import", text, _iso(last), language_of(sample), passages)
 
 
 @dataclass
@@ -482,7 +521,7 @@ def sync_stylometry(db: Session, tenant_id: str, inputs: dict[str, Input], count
         mean = prof.mean_sentence_words
         for sig in found:
             examples = []
-            for i in recent:
+            for i in (p for r in recent for p in (r.passages or (r,))):
                 for s in stylo.raw_sentences(i.text):
                     if stylo.exhibits(stylo.plain(s), sig.habit, mean):
                         examples.append({"text": s[: signals.MAX_EXAMPLE_CHARS], "source": i.ref, **({"at": i.at} if i.at else {})})
@@ -600,6 +639,9 @@ def run(db: Session, tenant_id: str, *, llm: LLMCall | None = None, model: str |
     report.inputs_read = len(state.to_read)
 
     to_read = state.to_read
+    # The model reads each input's passages (an import's sampled turns) or
+    # the input itself; an input is done once every one of them was read.
+    read_ok: set[str] = set()
     if use_llm and to_read:
         if llm is None:
             llm, model = _default_llm(tenant_id, db)
@@ -609,7 +651,8 @@ def run(db: Session, tenant_id: str, *, llm: LLMCall | None = None, model: str |
             for r in signals.list_signals(db, tenant_id)
             if r.signal_type in LLM_TYPES
         ]
-        for batch in batches(to_read)[: settings.ECHO_SIGNALS_MAX_BATCHES_PER_RUN]:
+        llm_inputs = [p for i in to_read for p in (i.passages or (i,))]
+        for batch in batches(llm_inputs)[: settings.ECHO_SIGNALS_MAX_BATCHES_PER_RUN]:
             prompt, ids = build_prompt(batch, known)
             try:
                 raw, t_in, t_out = llm(prompt)
@@ -629,7 +672,9 @@ def run(db: Session, tenant_id: str, *, llm: LLMCall | None = None, model: str |
                     _record_on_shares(db, tenant_id, row)
                     if (row.signal_type, row.value) not in known:
                         known.append((row.signal_type, row.value))
-            for i in batch:
+            read_ok.update(i.ref for i in batch)
+        for i in to_read:
+            if all(p.ref in read_ok for p in (i.passages or (i,))):
                 ledger[i.ref].llm_done = True
                 ledger[i.ref].processed_at = _now()
         report.cost_usd = _cost(report.model, report.tokens_in, report.tokens_out)
@@ -670,8 +715,9 @@ def quick_new_count(db: Session, tenant_id: str) -> int:
         .scalar()
         or 0
     )
-    shares = (
-        db.query(func.count(Share.id)).filter(Share.tenant_id == tenant_id, Share.author_is_tenant.is_(True)).scalar() or 0
+    own = (Share.tenant_id == tenant_id, Share.author_is_tenant.is_(True))
+    shares = (db.query(func.count(Share.id)).filter(*own, Share.import_id.is_(None)).scalar() or 0) + (
+        db.query(func.count(func.distinct(Share.import_id))).filter(*own, Share.import_id.isnot(None)).scalar() or 0
     )
     read = db.query(func.count(VoiceSignalInput.id)).filter(VoiceSignalInput.tenant_id == tenant_id).scalar() or 0
     return max(0, notes + questions - reruns + shares - read)

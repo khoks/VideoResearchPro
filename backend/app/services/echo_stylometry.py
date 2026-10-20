@@ -86,6 +86,9 @@ class StyleProfile:
     n_chars: int = 0
     n_words: int = 0
     n_sentences: int = 0
+    #: Total words over all sentences: the mean, exact however many
+    #: sentences there are (``sentence_lengths`` is capped in the ledger).
+    sentence_words: int = 0
     sentence_lengths: list[int] = field(default_factory=list)
     lowercase_starts: int = 0
     punctuation: Counter = field(default_factory=Counter)
@@ -98,6 +101,7 @@ class StyleProfile:
         self.n_chars += other.n_chars
         self.n_words += other.n_words
         self.n_sentences += other.n_sentences
+        self.sentence_words += other.sentence_words
         self.sentence_lengths.extend(other.sentence_lengths)
         self.lowercase_starts += other.lowercase_starts
         self.punctuation.update(other.punctuation)
@@ -109,6 +113,8 @@ class StyleProfile:
 
     @property
     def mean_sentence_words(self) -> float:
+        if self.n_sentences and self.sentence_words:
+            return self.sentence_words / self.n_sentences
         return sum(self.sentence_lengths) / len(self.sentence_lengths) if self.sentence_lengths else 0.0
 
     def share_of_sentences(self, habit: str) -> float:
@@ -120,6 +126,7 @@ class StyleProfile:
             "n_chars": self.n_chars,
             "n_words": self.n_words,
             "n_sentences": self.n_sentences,
+            "sentence_words": self.sentence_words,
             "sentence_lengths": self.sentence_lengths[:400],
             "lowercase_starts": self.lowercase_starts,
             "punctuation": dict(self.punctuation),
@@ -135,6 +142,7 @@ class StyleProfile:
             n_chars=int(data.get("n_chars", 0)),
             n_words=int(data.get("n_words", 0)),
             n_sentences=int(data.get("n_sentences", 0)),
+            sentence_words=int(data.get("sentence_words", 0)),
             sentence_lengths=[int(x) for x in data.get("sentence_lengths", [])],
             lowercase_starts=int(data.get("lowercase_starts", 0)),
             punctuation=Counter(data.get("punctuation", {})),
@@ -151,6 +159,7 @@ def profile(text: str) -> StyleProfile:
     for s in sentences(body):
         ws = words(s)
         p.n_sentences += 1
+        p.sentence_words += len(ws)
         p.sentence_lengths.append(len(ws))
         first = s.lstrip("\"'“‘(")[:1]
         if first.isalpha() and first.islower():

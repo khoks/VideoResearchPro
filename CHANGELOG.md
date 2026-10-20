@@ -32,6 +32,19 @@ PR [#354](https://github.com/khoks/VideoResearchPro/pull/354). [D-101](decisions
   wrote.
 - Thresholds are settings (`ECHO_READY_*`).
 
+### Echo: a bubble on every page, and a panel to ask or draft from (S-3.8.1, 2026-10-20)
+
+PR [#355](https://github.com/khoks/VideoResearchPro/pull/355).
+
+- Studio users get an Echo bubble at the bottom right (in the top bar on
+  phones), Mod-Shift-E from anywhere, and **Ask Echo** in the command
+  palette.
+- The panel says it is an AI and shows readiness in words. It asks your
+  library or your past questions through the same endpoints as those pages,
+  so answers are saved there.
+- **Draft as me** shows its gate instead of hiding: not shipped yet, not
+  ready, or waiting on your voice test (D-100).
+
 ### Added: Echo learns from what you wrote in connected services (2026-10-20)
 
 PR [#350](https://github.com/khoks/VideoResearchPro/pull/350). T-3.3.2.8.

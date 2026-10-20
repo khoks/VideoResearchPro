@@ -45,6 +45,12 @@ Echo lives as a **floating bubble** present on every page. One click expands it 
 
 The bubble is *always* there once a user has Echo enabled. Pages with their own primary surface (Job Q&A panel, Library Q&A page) keep working — Echo is additive, not a replacement. The user picks which surface to use based on the question shape.
 
+**As built (S-3.8.1, 2026-10-20).**
+- **Shortcut:** Mod-Shift-E, not Cmd-E, which macOS reserves.
+- **Phones:** the bubble moves into the top bar, so it never covers the docked composer.
+- **Not ready:** the bubble is never hidden or dimmed. The panel always opens, shows readiness in words, and answers questions over the library and past Q&As at any readiness.
+- **Speaking as the user** waits for both readiness and the per-user voice test ([D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19)). The panel says which of the two is missing.
+
 ### Cold-start: Echo refuses before it can echo well
 
 The user's explicit framing:

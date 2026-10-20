@@ -134,6 +134,26 @@ export function useUpdateShare() {
   });
 }
 
+export function useReprocessShare() {
+  const invalidate = useInvalidateShares();
+  return useMutation({
+    mutationFn: (id: string) => echoApi.reprocessShare(id),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAddShareToLibrary() {
+  const invalidate = useInvalidateShares();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => echoApi.addShareToLibrary(id),
+    onSuccess: () => {
+      invalidate();
+      qc.invalidateQueries({ queryKey: ['library'] });
+    },
+  });
+}
+
 export function useDeleteShare() {
   const invalidate = useInvalidateShares();
   return useMutation({

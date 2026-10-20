@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useDeleteShare, useShares, useUpdateShare } from '../hooks/useEcho';
+import {
+  useAddShareToLibrary,
+  useDeleteShare,
+  useReprocessShare,
+  useShares,
+  useUpdateShare,
+} from '../hooks/useEcho';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { useJobStore } from '../stores/jobStore';
 import { echoApi, type Share, type ShareProcessingState } from '../services/echoApi';
@@ -226,6 +232,14 @@ function ShareCard({ share, onDelete }: { share: Share; onDelete: () => void }) 
           <span style={{ ...metaStyle, marginLeft: 'auto' }}>Shared {formatDate(share.received_at)}</span>
         </div>
 
+        {share.processing?.title && (
+          <div style={{ fontFamily: fonts.display, fontSize: fontSize.md, fontWeight: fontWeight.semibold, color: c.textPrimary }}>
+            {share.processing.title}
+            {share.processing.author && (
+              <span style={{ ...metaStyle, fontWeight: fontWeight.regular, marginLeft: space['2'] }}>{share.processing.author}</span>
+            )}
+          </div>
+        )}
         {share.kind === 'url' && share.url && (
           <a
             href={share.url}
@@ -267,6 +281,27 @@ function ShareCard({ share, onDelete }: { share: Share; onDelete: () => void }) 
           </div>
         )}
 
+        {share.kind !== 'text' && share.extracted_text && (
+          <p
+            style={{
+              margin: 0,
+              fontFamily: fonts.body,
+              fontSize: fontSize.sm,
+              color: c.textSecondary,
+              lineHeight: lineHeight.normal,
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
+              display: '-webkit-box',
+              WebkitLineClamp: 4,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+            }}
+          >
+            {share.extracted_text}
+          </p>
+        )}
+        <ProcessingLine share={share} />
+
         {editing ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
             <Textarea rows={2} value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={5000} aria-label="Why you shared it" />
@@ -305,5 +340,63 @@ function ShareCard({ share, onDelete }: { share: Share; onDelete: () => void }) 
         </div>
       </div>
     </Card>
+  );
+}
+
+/** S-3.7.2: why a share is waiting or failed, Retry, and the library offer. */
+function ProcessingLine({ share }: { share: Share }) {
+  const c = useColors();
+  const pushToast = useJobStore((s) => s.pushToast);
+  const reprocess = useReprocessShare();
+  const addToLibrary = useAddShareToLibrary();
+  const p = share.processing;
+  const offer = p?.library_offer;
+  const failed = share.processing_state === 'failed';
+  const waiting = share.processing_state === 'pending' && p?.note;
+  const canOffer = share.kind === 'url' && offer?.eligible && !share.linked_document_id;
+  if (!failed && !waiting && !canOffer && !share.linked_document_id) return null;
+
+  const line: React.CSSProperties = { fontFamily: fonts.ui, fontSize: fontSize.sm, lineHeight: lineHeight.snug };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: space['2'], flexWrap: 'wrap' }}>
+      {failed && (
+        <>
+          <span role="alert" style={{ ...line, color: c.error }}>{p?.error || 'Processing failed.'}</span>
+          <Button
+            size="sm"
+            variant="tertiary"
+            loading={reprocess.isPending}
+            onClick={() =>
+              reprocess.mutate(share.id, { onError: () => pushToast('error', 'Could not queue the retry.') })
+            }
+          >
+            Retry
+          </Button>
+        </>
+      )}
+      {waiting && <span style={{ ...line, color: c.textMuted }}>{p?.note}</span>}
+      {canOffer && (
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={addToLibrary.isPending}
+          onClick={() =>
+            addToLibrary.mutate(share.id, {
+              onSuccess: () => pushToast('success', 'Added to your library.'),
+              onError: (err) =>
+                pushToast('error', detailFromErrorBody((err as HttpErrorLike).response?.data) ?? 'Could not add it to the library.'),
+            })
+          }
+          title="Add this page to your research library. Only you will see it there."
+        >
+          Add to library
+        </Button>
+      )}
+      {share.linked_document_id && (
+        <Link to="/library" style={{ ...line, color: c.forest }}>
+          In your library →
+        </Link>
+      )}
+    </div>
   );
 }

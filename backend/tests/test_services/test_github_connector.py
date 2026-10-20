@@ -211,9 +211,10 @@ def test_the_backfill_keeps_what_echo_keeps_and_text_only_the_users_own(gh):
 
     assert ctx.cursor["newest_event_id"] == "300" and ctx.cursor["events_etag"] == 'W/"e1"' and ctx.cursor["login"] == LOGIN
     facts = {f.key: f for f in ctx.facts}
-    assert set(facts) == {"language:python", "language:rust"}, "a fork's language is not a skill"
-    assert facts["language:python"].confidence == 0.5 and facts["language:python"].value["repositories"] == 2
-    assert facts["language:rust"].confidence == 0.4 and all(f.kind == "skill" for f in ctx.facts)
+    assert set(facts) == {"Python (GitHub)", "Rust (GitHub)"}, "a fork's language is not a skill"
+    assert facts["Python (GitHub)"].confidence == 0.5
+    assert facts["Python (GitHub)"].value == "Main language of 2 of your public repositories"
+    assert facts["Rust (GitHub)"].confidence == 0.4 and all(f.kind == "skill" for f in ctx.facts)
 
 
 def test_text_is_never_kept_for_an_event_someone_else_did(gh):
@@ -302,7 +303,7 @@ def test_connect_sync_and_disconnect_github_end_to_end(unauthenticated_client, d
         mine = db.query(ActivityEvent).filter_by(tenant_id=user.id, external_id="commit:c1").one()
         assert mine.text_content.startswith("Fix the tokenizer")
         skills = db.query(PersonalContext).filter_by(user_id=user.id, source="connector:github").all()
-        assert {s.key for s in skills} == {"language:python", "language:rust"} and max(s.confidence for s in skills) <= 0.8
+        assert {s.key for s in skills} == {"Python (GitHub)", "Rust (GitHub)"} and max(s.confidence for s in skills) <= 0.8
 
         feed = unauthenticated_client.get("/api/v1/echo/activity", params={"connector": "github", "limit": 3}, headers=h).json()
         assert [i["event_type"] for i in feed["items"]][0] == "pushed"

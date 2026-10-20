@@ -331,10 +331,13 @@ class GitHubConnector:
         counts = Counter(r["language"] for r in repos if r.get("language") and not r.get("fork"))
         facts = []
         for language, n in counts.most_common(15):
+            # The key names its source so a sync never overwrites a skill the
+            # user wrote themselves ("Python" stays theirs; this is a guess).
             facts.append(DerivedFact(
                 kind="skill",
-                key=f"language:{language.lower()}",
-                value={"language": language, "repositories": n, "via": "github"},
+                key=f"{language} (GitHub)",
+                value=f"Main language of {n} of your public repositories" if n > 1
+                else "Main language of one of your public repositories",
                 confidence=round(min(0.8, 0.4 + 0.1 * (n - 1)), 2),
             ))
         return facts

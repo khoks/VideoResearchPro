@@ -308,6 +308,13 @@ class Settings(BaseSettings):
     # Cost bound per run: a backlog larger than this many batches is read
     # over several runs.
     ECHO_SIGNALS_MAX_BATCHES_PER_RUN: int = 20
+    # An export import (a WhatsApp chat can be 100k turns) is ONE input:
+    # stylometry reads every own-words turn, the model reads a time-spread
+    # sample of at most this many, skipping turns shorter than
+    # ECHO_SIGNALS_MIN_PASSAGE_WORDS ("ok", "haha"), which carry style but
+    # no view.
+    ECHO_SIGNALS_IMPORT_SAMPLE: int = 300
+    ECHO_SIGNALS_MIN_PASSAGE_WORDS: int = 4
     # S-3.3.3: keep personal_context_global (one vector per live fact and
     # signal) in step on every write and at startup. Off for the test suite,
     # like NOTES_INDEX_ENABLED, so no test embeds into a persistent Chroma;

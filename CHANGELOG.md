@@ -10,6 +10,17 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: Echo learns from a whole chat export without reading every message (2026-10-19)
+
+PR [#347](https://github.com/khoks/VideoResearchPro/pull/347). T-3.3.2.10.
+
+- An imported chat or notes export now counts as one piece of your writing.
+  Echo measures how you write over every message you sent, and the model
+  reads a sample of up to 300 of your messages spread over the whole
+  conversation, skipping one-word replies.
+- A ten-year WhatsApp chat is read in seconds instead of dozens of runs, and
+  undoing the import still removes it from every signal.
+
 ### Echo: import a WhatsApp chat or Google Keep notes (S-3.7.5 part 1, 2026-10-19)
 
 PR [#341](https://github.com/khoks/VideoResearchPro/pull/341). Sizing: [docs/notes/2026-10-19-s375-import-sizing.md](docs/notes/2026-10-19-s375-import-sizing.md).

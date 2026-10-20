@@ -23,6 +23,18 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
   an empty shelf, an error for another reader's shelf or a key it does not
   know. Shelf-scoped Q&A and saved searches both use it.
 
+### Slide decks from research runs (2026-10-19, S-6.3.1)
+
+PR [#314](https://github.com/khoks/VideoResearchPro/pull/314). Plan: [docs/plans/l2-author-studio.md](docs/plans/l2-author-studio.md).
+
+- **New deck** on the Author page: pick runs, get a PowerPoint file in the
+  app's paper-and-ink style. A model plans the slides from the reports.
+- **Every content slide cites its sources**: the numbers in the slide footer,
+  the exact moments and links in its notes, and a closing sources slide
+  listing each video once with its timestamps as links. A slide that cites
+  nothing is left out, and the deck says how many were.
+- Priced before it runs; a two-run deck costs about $0.30-0.40.
+
 ### Books can carry model-written framing, opt-in (2026-10-19, S-6.1.3)
 
 PR [#310](https://github.com/khoks/VideoResearchPro/pull/310). Decision [D-093](docs/decisions.md#d-093--book-cohesion-pass-ships-opt-in-none-stays-the-default-after-two-blind-rounds-2026-10-19); judging [notes](docs/notes/2026-10-19-book-cohesion-judging.md).

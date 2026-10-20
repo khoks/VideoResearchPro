@@ -10,6 +10,18 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: Echo's facts and signals are searchable for retrieval (S-3.3.3, 2026-10-19)
+
+PR [#343](https://github.com/khoks/VideoResearchPro/pull/343).
+
+- Every fact and voice signal Echo keeps is now also a search vector in its
+  private `personal_context_global` collection, scoped to you. This is what
+  "speak as me" will retrieve from.
+- A signal you reject, a fact you delete or that expires, and a signal whose
+  sources you deleted all leave retrieval at once, whichever way the change
+  happened. Startup repairs anything a failed update missed.
+- Searches always filter on your account; there is no unscoped query.
+
 ### Added: Echo learns how you write (S-3.3.2, 2026-10-19)
 
 PR [#335](https://github.com/khoks/VideoResearchPro/pull/335). Decision [D-099](docs/decisions.md#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19); cost [measurement](docs/notes/2026-10-19-signal-extraction-cost.md).

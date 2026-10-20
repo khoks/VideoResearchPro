@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Echo: shares are processed — links, text, text files (S-3.7.2 part 1, 2026-10-19)
 
-PR [#__PR__](https://github.com/khoks/VideoResearchPro/pull/__PR__). Plan: [docs/plans/l3-echo-personal-brain.md](docs/plans/l3-echo-personal-brain.md).
+PR [#324](https://github.com/khoks/VideoResearchPro/pull/324). Plan: [docs/plans/l3-echo-personal-brain.md](docs/plans/l3-echo-personal-brain.md).
 
 - Every share is queued to a new `echo.process_share` Celery task. Text is
   embedded as is; a YouTube link resolves its title, channel and description;

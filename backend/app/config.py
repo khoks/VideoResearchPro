@@ -245,6 +245,26 @@ class Settings(BaseSettings):
     # the request (self-host without a worker), `off` leaves it to the
     # scheduler tick. Scheduled syncs always go through the tick.
     ECHO_CONNECTOR_SYNC: str = "celery"
+    # S-3.5.1: Echo readiness v2, the five-domain gate (personal-brain.md
+    # minima; echo_readiness_service). A threshold of 0 disables that check.
+    ECHO_READY_FACTS_MIN: int = 30          # facts the user wrote (source manual)
+    ECHO_READY_FACT_KINDS_MIN: int = 3
+    ECHO_READY_EVENTS_MIN: int = 200        # activity events, any connector or import
+    ECHO_READY_EVENT_DAYS_MIN: int = 90     # days between the first and last event
+    ECHO_READY_SIGNALS_MIN: int = 50        # live voice and personality signals
+    ECHO_READY_SIGNAL_TYPES_MIN: int = 4
+    ECHO_READY_SHARES_MIN: int = 100
+    ECHO_READY_SHARE_TYPES_MIN: int = 4
+    # Per-script voice floor: one script needs this many pieces of the user's
+    # own writing (notes, own-words shares) OR this many words. To be tuned.
+    ECHO_READY_VOICE_PIECES_MIN: int = 30
+    ECHO_READY_VOICE_WORDS_MIN: int = 2000
+    # Centroid stability: mean cosine distance between bootstrap-resampled
+    # centroids of the note vectors and the full centroid. To be tuned.
+    ECHO_READY_VOICE_SPREAD_MAX: float = 0.05
+    ECHO_READY_VOICE_MIN_VECTORS: int = 10
+    # D-100 tier (iii): live notes needed before the user-as-judge test.
+    ECHO_VOICE_TEST_NOTES_MIN: int = 40
     # S-3.2.4: a separate GitHub OAuth app for the connector. Unset, the
     # sign-in app (OAUTH_GITHUB_CLIENT_ID/SECRET) is used; its callback URL
     # must then cover both redirects (register the frontend origin).

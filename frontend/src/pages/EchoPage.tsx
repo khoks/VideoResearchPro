@@ -6,6 +6,7 @@ import { SignalsPanel } from '../components/echo/SignalsPanel';
 import { SpeakAsMePanel } from '../components/echo/SpeakAsMePanel';
 import { ActivityTimeline } from '../components/echo/ActivityTimeline';
 import { ConnectorsPanel } from '../components/echo/ConnectorsPanel';
+import { ReadinessDomains } from '../components/echo/ReadinessDomains';
 import {
   useDeleteContext,
   useEchoConnectors,
@@ -469,6 +470,27 @@ function ErrorLine({ children, onRetry }: { children: React.ReactNode; onRetry: 
 
 function ReadinessView({ readiness }: { readiness: ReturnType<typeof computeReadiness> }) {
   const c = useColors();
+  if (readiness.domains) {
+    // S-3.5.1: the five-domain gate, each domain saying what is missing.
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: space['3'] }}>
+          <span style={{ fontFamily: fonts.display, fontSize: fontSize['3xl'], fontWeight: fontWeight.semibold, color: readiness.ready ? c.forest : c.accent, lineHeight: 1 }}>
+            {readiness.percent}%
+          </span>
+          <span style={{ fontFamily: fonts.body, fontSize: fontSize.base, color: c.textSecondary }}>
+            {readiness.ready ? 'Echo has enough of you to learn from.' : "You're on the way. Five parts, all required."}
+          </span>
+        </div>
+        <ReadinessDomains domains={readiness.domains} />
+        <p style={{ margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, fontStyle: 'italic', color: c.textMuted, lineHeight: lineHeight.normal }}>
+          {readiness.ready
+            ? 'Echo can start learning from all of this. "Speak as me" still waits for your own voice test.'
+            : 'Echo stays quiet until every part is done, and nothing speaks for you before then.'}
+        </p>
+      </div>
+    );
+  }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: space['3'] }}>

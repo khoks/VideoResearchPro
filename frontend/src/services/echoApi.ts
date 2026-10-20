@@ -12,8 +12,57 @@ export interface EchoStatus {
   /** Domain 3 feeder (S-8.5.3): live notes and their words. Reported, not a gate. */
   notes_total?: number;
   notes_words?: number;
-  /** Domain 5 feeder (S-3.7.1): items in the shares inbox. Reported, not a gate. */
+  /** Domain 5 feeder (S-3.7.1): items in the shares inbox. */
   shares_total?: number;
+  /** S-3.5.1: readiness v2. `ready` is every domain met; 0..1. */
+  progress?: number;
+  domains?: ReadinessDomain[];
+}
+
+export interface ReadinessCriterion {
+  key: string;
+  label: string;
+  current: number;
+  target: number;
+  met: boolean;
+  /** 0..1 */
+  fraction: number;
+}
+
+export interface ReadinessSource {
+  name: string;
+  label: string;
+  kind: 'connector' | 'import';
+  /** connected | not_connected | imported */
+  status: string;
+  available: boolean;
+  /** Why a source cannot be connected yet (not set up, waits on Google sign-in setup). */
+  reason: string | null;
+  events: number;
+}
+
+/** One of the five readiness domains (S-3.5.1), measured from its store. */
+export interface ReadinessDomain {
+  key: 'facts' | 'activity' | 'signals' | 'voice' | 'shares' | string;
+  /** The personal-brain.md domain number. */
+  domain: number;
+  label: string;
+  status: 'met' | 'in_progress' | 'not_started' | 'not_connected' | string;
+  met: boolean;
+  progress: number;
+  criteria: ReadinessCriterion[];
+  /** What is there, in words. */
+  summary: string;
+  /** What is missing, in words; null when met. */
+  missing: string | null;
+  details: {
+    sources?: ReadinessSource[];
+    per_script?: Record<string, { pieces: number; words: number }>;
+    best_script?: string | null;
+    stability?: { measured: boolean; spread: number | null; max: number; reason?: string; vectors?: number };
+    voice_test?: { eligible: boolean; notes: number; notes_needed: number };
+    [key: string]: unknown;
+  };
 }
 
 export interface PersonalContextItem {

@@ -68,6 +68,13 @@ Recommended initial threshold (subject to validation):
 | Personality signals (Domain 3) | ≥ 50 distinct signals across ≥ 4 signal types |
 | Constant-stream shares (Domain 5) | ≥ 100 shares spanning ≥ 4 content types |
 
+Shipped 2026-10-20 as readiness v2 (S-3.5.1, [D-101](decisions.md#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20)). These minima are settings (`ECHO_READY_*`), and there are two more voice checks:
+
+- a voice floor of 30 notes or 2,000 words in one language, counting notes plus shares the user marked as their own words;
+- centroid stability of the note vectors.
+
+Facts Echo inferred do not count toward Domain 1. A connector waiting on setup reads "not connected", not failed. The user-as-judge voice test ([D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19)) is reported beside readiness, not part of it.
+
 Below threshold: Echo shows the readiness meter and explains what's missing (*"I've learned 38 of the 100 shares I'd like before I start speaking as you."*). Crossing threshold: the bubble lights up and a one-time onboarding moment introduces the user to it.
 
 ### Why Echo is *not* just a fancier Q&A agent

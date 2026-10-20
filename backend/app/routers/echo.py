@@ -100,6 +100,29 @@ def share_intake_user(
 # ---------------------------------------------------------------------------
 
 
+class ReadinessCriterion(BaseModel):
+    key: str
+    label: str
+    current: float
+    target: float
+    met: bool
+    fraction: float
+
+
+class ReadinessDomain(BaseModel):
+    key: str  # facts | activity | signals | voice | shares
+    domain: int  # personal-brain.md domain number
+    label: str
+    status: str  # met | in_progress | not_started | not_connected
+    met: bool
+    progress: float
+    criteria: list[ReadinessCriterion]
+    # What is there, and what is missing, in words.
+    summary: str
+    missing: str | None = None
+    details: dict[str, Any] = {}
+
+
 class EchoStatusResponse(BaseModel):
     ready: bool
     total_rows: int
@@ -110,8 +133,12 @@ class EchoStatusResponse(BaseModel):
     # Domain 3 feeder: live notes and their words (S-8.5.3). Not a gate yet.
     notes_total: int = 0
     notes_words: int = 0
-    # Domain 5 feeder: items in the shares inbox (S-3.7.1). Not a gate yet.
+    # Domain 5 feeder: items in the shares inbox (S-3.7.1).
     shares_total: int = 0
+    # S-3.5.1: readiness v2. `ready` means every domain below is met; the
+    # figures above are the v1 triple, kept as reported numbers.
+    progress: float = 0.0
+    domains: list[ReadinessDomain] = []
 
 
 class PersonalContextItem(BaseModel):
@@ -164,6 +191,8 @@ def echo_status(
         notes_total=r.notes_total,
         notes_words=r.notes_words,
         shares_total=r.shares_total,
+        progress=r.progress,
+        domains=r.domains,
     )
 
 

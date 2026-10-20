@@ -326,6 +326,9 @@ def delete_note(db: Session, tenant_id: str, note_id: str) -> Note:
     echo_signal_extraction.withdraw_input(db, tenant_id, f"note:{note.id}")
     db.commit()
     db.refresh(note)
+    from app.services import echo_personal_vectors
+
+    echo_personal_vectors.sync_soft(db, tenant_id)
     return note
 
 

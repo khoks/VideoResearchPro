@@ -636,6 +636,10 @@ def run(db: Session, tenant_id: str, *, llm: LLMCall | None = None, model: str |
 
     report.stylometry_removed = sync_stylometry(db, tenant_id, by_ref, report.counts)
     db.commit()
+    # S-3.3.3: the retrieval collection follows the rows.
+    from app.services import echo_personal_vectors
+
+    echo_personal_vectors.sync_soft(db, tenant_id)
     logger.info("echo signals: tenant %s run %s", tenant_id[:8], report.to_dict())
     return report
 

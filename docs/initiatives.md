@@ -984,12 +984,14 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 
 **As built.** `echo_signal_extraction.py`: `gather_inputs` (own words only), `pending` (new, changed, deleted or retry against the `voice_signal_inputs` ledger), `run` (withdraw first, then stylometry profiles, then batched calls of about 6,000 tokens, then merge, then the cadence sync), and `maybe_queue` (fail-soft; `ECHO_SIGNAL_EXTRACTION` = celery, inline or off; queues at `ECHO_SIGNALS_MIN_NEW_INPUTS` = 10). `echo_stylometry.py` is model-free. Inputs deviated from T-3.3.2.3: a context-only share's annotation is not an input (D-089 is strict). Measured on three synthetic writers: about $0.005 per 100 inputs backlog, $0.02 per 100 incremental, no failed calls, no duplicate rows after the language fix.
 
-#### S-3.3.3 🔵 Personal retrieval collection
-**PR:** TBD
-- [ ] T-3.3.3.1 `personal_context_global` Chroma collection (same embedder) holding facts and signals with `tenant_id` metadata; `query_personal_context(tenant_id, text)` with the fail-closed tenant filter the Q&A collection uses
-- [ ] T-3.3.3.2 Upsert on write, delete on tombstone, backfill on worker start (the `backfill_qa_library` pattern)
-- [ ] T-3.3.3.3 Tests: isolation; tombstoned signals absent
-- [ ] T-3.3.3.4 Write vectors with `tenant_id` metadata only into `CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME`, which the full delete already sweeps; add a `test_echo_privacy` case that a fact's vector is gone after `DELETE /echo/brain`
+#### S-3.3.3 🟢 Personal retrieval collection
+**Shipped:** 2026-10-19 — PR [#343](https://github.com/khoks/VideoResearchPro/pull/343)
+- [x] T-3.3.3.1 `personal_context_global` Chroma collection (same embedder) holding facts and signals with `tenant_id` metadata; `query_personal_context(tenant_id, text)` with the fail-closed tenant filter the Q&A collection uses
+- [x] T-3.3.3.2 Upsert on write, delete on tombstone, backfill on worker start (the `backfill_qa_library` pattern)
+- [x] T-3.3.3.3 Tests: isolation; tombstoned signals absent
+- [x] T-3.3.3.4 Write vectors with `tenant_id` metadata only into `CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME`, which the full delete already sweeps; add a `test_echo_privacy` case that a fact's vector is gone after `DELETE /echo/brain`
+
+**As built.** `echo_personal_vectors.py`. One vector per live fact (`fact:<id>`) and per live signal (`signal:<id>`), with `tenant_id`, `kind`, `row_id` and, for signals, `signal_type`, `origin`, `weight`, `language` and `register` metadata. **A sync, not per-write bookkeeping:** `sync_tenant` compares the live rows with the stored vectors through a content hash in each vector's metadata, embeds only what is new or changed, and deletes vectors whose row is gone, expired, rejected or suppressed. Every write path calls it after its commit: fact record, delete and revoke; signal create, edit and reject; an extraction run; and a note or share delete. The startup backfill (`backfill`, the `note_index` pattern) runs it for every tenant with rows or vectors. Fail-soft at the callers. `query_personal_context(tenant_id, text, n, kinds, signal_types)` refuses an empty tenant and filters on it, with a defence-in-depth check on every hit.
 
 #### S-3.3.4 🔵 Voice-match evaluation harness
 **Pre-registered 2026-10-19:** [docs/notes/2026-10-19-voice-match-preregistration.md](notes/2026-10-19-voice-match-preregistration.md) fixes the material (three synthetic writers, 18 prompts in `backend/tests/fixtures/echo_voice/draft_prompts.json`), the two conditions, the judges (claude-sonnet-5 and gemini-3.6-flash, the latter declared as the substitute for Gemini 3.1 Pro) and the pass rule, before any draft is generated. Tier (iii), the user as judge, is fixed too and waits for 40 of the user's own notes.

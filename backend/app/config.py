@@ -299,6 +299,11 @@ class Settings(BaseSettings):
     # Cost bound per run: a backlog larger than this many batches is read
     # over several runs.
     ECHO_SIGNALS_MAX_BATCHES_PER_RUN: int = 20
+    # S-3.3.3: keep personal_context_global (one vector per live fact and
+    # signal) in step on every write and at startup. Off for the test suite,
+    # like NOTES_INDEX_ENABLED, so no test embeds into a persistent Chroma;
+    # the retrieval tests turn it on with an ephemeral client.
+    ECHO_PERSONAL_INDEX_ENABLED: bool = True
 
     # -------------------------------------------------------------------
     # Visual understanding (R1 / E-1.18) — frame capture + description

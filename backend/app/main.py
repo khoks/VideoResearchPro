@@ -108,6 +108,16 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Notes index backfill failed; continuing startup")
 
+    # S-3.3.3: Echo's personal retrieval collection. Embeds only what is
+    # missing or changed, removes vectors of rows that are gone or
+    # tombstoned; a failure never stops startup.
+    try:
+        from app.services import echo_personal_vectors
+
+        echo_personal_vectors.backfill()
+    except Exception:
+        logger.exception("Personal-context backfill failed; continuing startup")
+
     try:
         await run_startup_probes()
     except Exception:

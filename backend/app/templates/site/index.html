@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>{{ site_title }}</h1>
+<p class="lede">{{ lede }}</p>
+{% for note in notes %}<p class="note">{{ note }}</p>{% endfor %}
+<h2 id="reports">Reports</h2>
+<ul class="listing">
+{% for r in reports %}
+  <li><a href="{{ r.href }}">{{ r.title }}</a> <span class="meta">{{ r.meta }}</span></li>
+{% endfor %}
+</ul>
+{% if tags %}
+<h2 id="tags">Tags</h2>
+<p class="tags">{% for t in tags %}<a class="tag" href="{{ t.href }}">{{ t.name }} <span class="meta">{{ t.count }}</span></a> {% endfor %}</p>
+{% endif %}
+<h2 id="sources">Sources</h2>
+<ul class="listing">
+{% for s in sources %}
+  <li><a href="{{ s.href }}">{{ s.title }}</a> <span class="meta">{{ s.meta }}</span></li>
+{% endfor %}
+</ul>
+{% endblock %}

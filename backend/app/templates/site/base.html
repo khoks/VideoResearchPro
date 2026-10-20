@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ page_title }} · {{ site_title }}</title>
+<link rel="stylesheet" href="{{ root }}assets/site.css">
+</head>
+<body>
+<header class="site-header">
+  <a class="site-name" href="{{ root }}index.html">{{ site_title }}</a>
+  <nav>
+    <a href="{{ root }}index.html">Contents</a>
+    <a href="{{ root }}about.html">About</a>
+  </nav>
+  <form class="search" action="{{ root }}search.html" method="get" role="search">
+    <label class="visually-hidden" for="q">Search this site</label>
+    <input id="q" name="q" type="search" placeholder="Search this site">
+  </form>
+</header>
+<main class="page">
+{% block main %}{% endblock %}
+</main>
+<footer class="site-footer">
+  {{ site_title }} · compiled by Pratidhvani Author Studio on {{ generated }} · links to sources open the original videos
+</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>About this site</h1>
+<p>{{ site_title }} was compiled by Pratidhvani Author Studio on {{ generated }} from {{ report_count }} research report{{ "" if report_count == 1 else "s" }} and {{ source_count }} source{{ "" if source_count == 1 else "s" }} in its author's library.</p>
+<p>Each report is the run's report as it was written, with its citations. Citations link to the moment in the original video; each source has a page listing the reports that cite it. Nothing on this site is loaded from anywhere else: the only links that leave it go to the sources.</p>
+{% if notes %}<h2 id="notes">Notes</h2>{% for note in notes %}<p class="note">{{ note }}</p>{% endfor %}{% endif %}
+{% endblock %}

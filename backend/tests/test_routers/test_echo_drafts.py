@@ -147,5 +147,6 @@ def test_feedback_records_the_users_version(unauthenticated_client, db, fake, mo
     body = r.json()
     assert body["final_text"] == final and body["disclosure_kept"] is False and body["feedback_at"]
     assert body["edit"]["written"] == ["as I keep saying to everyone."] and body["edit"]["written_words"] == 6
+    assert body["edit"]["quoted"] == []
     assert unauthenticated_client.get(f"{DRAFT}/status", headers=h).json()["drafts_today"] == 1, "feedback is not a draft"
     assert unauthenticated_client.get(f"/api/v1/echo/drafts/{did}", headers=h).json()["final_text"] == final

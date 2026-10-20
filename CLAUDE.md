@@ -198,7 +198,7 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/scripts/judge_report_sections.py` | Split a report into sections and judge each in full — replaces the 180,000-char judging cap |
 | `backend/scripts/audit_report_intermediates.py` | Read a job's persisted map/reduce intermediates back: batch statuses, item counts, reduce accounting |
 | `backend/app/agents/echo_agent.py` | "Speak as me" LangGraph agent; the verbatim, citation and private-name guards live here in code (S-3.4.1) |
-| `backend/app/services/echo_draft_edits.py` | What the user changed in a draft: only the words they TYPED are theirs (the provenance guard for S-3.4.2, D-104) |
+| `backend/app/services/echo_draft_edits.py` | What the user changed in a draft: only the words they TYPED are theirs, minus 8-word stretches repeated from the incoming message (the provenance guard for S-3.4.2, D-104) |
 | `backend/scripts/echo_import.py` | Import an export into a user's Echo from the command line (`--email`, `--file`, `--preview`): the `/echo/import` flow for exports past the upload cap, such as Apple Health (S-3.7.5) |
 | `backend/app/websocket/manager.py` | Redis pub/sub → WebSocket fan-out |
 | `backend/app/services/youtube_service.py` | YouTube API + transcript fetching with language fallback + rate limiting |

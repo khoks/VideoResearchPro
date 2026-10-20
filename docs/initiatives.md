@@ -1065,9 +1065,12 @@ What shipped:
 
 What shipped:
 - **Feedback.** `POST /echo/drafts/{id}/feedback {final_text, disclosure_kept}` stores the user's version and whether the disclosure stayed. It strips a trailing disclosure line and may be sent again. It is not counted against the cap and is audited as `echo_draft_feedback` with counts.
-- **Learning from the edit.** Only the words the user TYPED (`echo_draft_edits`) become the extraction input `draft_edit:<id>`; the draft words they kept never do. An edit of fewer than 4 typed words is not an input. Edits do not feed cadence, and deleting the draft withdraws them at once.
-- **The card.** The draft is an editable "Your version", with an **Add the disclosure line** checkbox (on by default; Copy follows it) and **Save my version**, which says how many of the user's words Echo will learn from.
-- **Tests:** `test_echo_draft_feedback.py` (9) covers the diff, the disclosure, storage, the audit, ownership, the input, a run that learns only from typed words, withdrawal, and the provenance guard across tenants, context-only shares and drafts. Also a router test and a column round trip. `speakAsMe.test.tsx` has 3 more.
+- **Learning from the edit.** Only the words the user TYPED (`echo_draft_edits`) become the extraction input `draft_edit:<id>`; the draft words they kept never do. Nor does anything the user repeats from the incoming message: S-3.4.1's 8-word guard sets it aside as `quoted`, even when typed and even across kept draft words. An edit of fewer than 4 typed words is not an input. Edits do not feed cadence, and deleting the draft withdraws them at once.
+- **The card and the bubble.** Both use one `DraftEditor`. The draft is an editable "Your version", with an **Add the disclosure line** checkbox (on by default; Copy follows it) and **Save my version**, which says how many of the user's words Echo will learn from and that the sender's words are left out.
+- **Tests:**
+  - `test_echo_draft_feedback.py` (13) covers the diff, the incoming-message guard (including a quote across kept words and the 8-word threshold), the disclosure, storage, the audit, ownership, the input, a run that learns only from typed words and never sees the sender's, withdrawal, and the provenance guard across tenants, context-only shares and drafts.
+  - Also a router test and a column round trip.
+  - `speakAsMe.test.tsx` has 4 more, including the shared-view wiring, and `echoPanel.test.tsx` saves from the bubble.
 - **Live check:** a real draft, edited, unticked and saved. The extraction learned two signals whose only example is the clause the user typed.
 
 ### E-3.5 🟢 Cold-start readiness threshold

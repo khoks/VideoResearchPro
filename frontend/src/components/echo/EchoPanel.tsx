@@ -38,6 +38,7 @@ import { fonts, fontSize, fontWeight, lineHeight, radius, space, target as touch
 import type { LibraryQAExchange, QAHistoryExchange } from '../../types/qa';
 import { computeReadiness } from '../../utils/echoReadiness';
 import { citationLabel, draftErrorOf } from '../../utils/echoDrafts';
+import { DraftEditor } from './DraftEditor';
 import {
   CARD_KIND_LABELS,
   ECHO_SHORTCUT,
@@ -837,30 +838,11 @@ function HistoryAnswer({ qa }: { qa: QAHistoryExchange }) {
 
 function DraftAnswer({ draft }: { draft: DraftResponse }) {
   const c = useColors();
-  const [copied, setCopied] = useState(false);
   const match = voiceMatchLine(draft.voice_match_score);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(draft.disclosure ? `${draft.draft}\n\n${draft.disclosure}` : draft.draft);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard unavailable */
-    }
-  };
   return (
     <>
-      <div style={{ padding: space['3'], border: `1px solid ${c.border}`, borderRadius: radius.md, fontFamily: fonts.body, fontSize: fontSize.sm, lineHeight: lineHeight.loose, whiteSpace: 'pre-wrap' }}>
-        {draft.draft}
-        {draft.disclosure && <p style={{ margin: `${space['2']} 0 0`, fontSize: fontSize.xs, color: c.textMuted }}>{draft.disclosure}</p>}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: space['2'], flexWrap: 'wrap' }}>
-        {match && <Badge tone="neutral" size="sm">{match}</Badge>}
-        <span style={{ flex: 1 }} />
-        <Button size="sm" variant="tertiary" onClick={copy}>
-          {copied ? 'Copied' : 'Copy draft'}
-        </Button>
-      </div>
+      {/* S-3.4.2: the same edit-and-save view as the Echo page (one contract). */}
+      <DraftEditor draft={draft} compact meta={match && <Badge tone="neutral" size="sm">{match}</Badge>} />
       {(draft.flags ?? []).length > 0 && (
         <ul data-echo-draft-flags="" style={{ margin: 0, paddingLeft: space['4'], fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.warn }}>
           {draft.flags!.map((f, i) => (

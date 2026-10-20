@@ -13,7 +13,8 @@ run and gives it the user's material. Gates, in order (``status``):
 
 **Feedback (S-3.4.2).** ``feedback`` stores the text the user actually used
 and whether they kept the disclosure line. The words they typed into it (not
-the draft words they kept, not the disclosure) become the extraction input
+the draft words they kept, not the disclosure, not what they repeated from
+the incoming message) become the extraction input
 ``draft_edit:<id>`` (``echo_draft_edits``), so signals learned from an edit
 cite it; deleting the draft withdraws it at once, like a deleted note.
 
@@ -395,8 +396,8 @@ def to_dict(row: EchoDraft) -> dict:
 
     edit = None
     if row.final_text is not None:
-        diff = echo_draft_edits.edit_diff(row.draft, row.final_text)
-        edit = {**diff.summary(), "written": diff.written, "removed": diff.removed}
+        diff = echo_draft_edits.edit_diff(row.draft, row.final_text, third_party=[row.input_message])
+        edit = {**diff.summary(), "written": diff.written, "removed": diff.removed, "quoted": diff.quoted}
     return {
         "id": row.id,
         "message": row.input_message,
@@ -459,7 +460,9 @@ def feedback(db: Session, user: User, draft_id: str, final_text: str, *, disclos
     row.final_text = text
     row.disclosure_kept = bool(disclosure_kept)
     row.feedback_at = _now()
-    diff = echo_draft_edits.edit_diff(row.draft, text)
+    # The incoming message is someone else's words: typed or not, a stretch
+    # repeated from it never becomes the user's voice (S-3.4.1's guard).
+    diff = echo_draft_edits.edit_diff(row.draft, text, third_party=[row.input_message])
     row.written_words = diff.written_words
     db.commit()
     try:

@@ -453,13 +453,16 @@ export interface EchoDraft {
 }
 
 /** What the user changed in a draft. Only `written` (the words they typed)
- * teaches Echo their voice; the draft words they kept are the model's. */
+ * teaches Echo their voice; the draft words they kept are the model's, and
+ * `quoted` (stretches repeated from the incoming message) the sender's. */
 export interface DraftEdit {
   written_words: number;
   removed_words: number;
+  quoted_words: number;
   kept_words: number;
   written: string[];
   removed: string[];
+  quoted: string[];
 }
 
 export interface DraftFeedbackPayload {

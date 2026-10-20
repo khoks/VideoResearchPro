@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { useCreateDraft, useDeleteDraft, useDraftFeedback, useDraftStatus, useRecentDrafts } from '../../hooks/useEcho';
+import { useCreateDraft, useDeleteDraft, useDraftStatus, useRecentDrafts } from '../../hooks/useEcho';
+import { DraftEditor } from './DraftEditor';
 import { useJobStore } from '../../stores/jobStore';
 import type { CreateDraftPayload, EchoDraft } from '../../services/echoApi';
 import { Badge, Button, Card, FormField, Input, Select, Skeleton, Textarea } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
-import { citationLabel, draftErrorOf, learnedLine, withDisclosure } from '../../utils/echoDrafts';
+import { citationLabel, draftErrorOf } from '../../utils/echoDrafts';
 
 /**
  * "Speak as me" (S-3.4.1, S-3.4.2): drafts a reply in the user's voice. Off until
@@ -164,67 +165,18 @@ export function SpeakAsMePanel() {
 
 function DraftView({ draft, onCopy }: { draft: EchoDraft; onCopy: () => void }) {
   const c = useColors();
-  const feedback = useDraftFeedback();
-  const [version, setVersion] = useState(draft.final_text ?? draft.draft);
-  const [keep, setKeep] = useState(draft.disclosure_kept ?? true);
-  const [saved, setSaved] = useState<EchoDraft | null>(draft.final_text !== null ? draft : null);
   const small: React.CSSProperties = { fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted };
-  const dirty = !saved || version.trim() !== (saved.final_text ?? '') || keep !== saved.disclosure_kept;
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(withDisclosure(version, draft.disclosure, keep));
-      onCopy();
-    } catch {
-      /* clipboard refused: the text is on screen to select */
-    }
-  };
-  const save = () =>
-    feedback.mutate({ id: draft.id, final_text: version.trim(), disclosure_kept: keep }, { onSuccess: (d) => setSaved(d) });
   return (
     <section data-result aria-label="Draft" style={{ marginTop: space['4'], display: 'flex', flexDirection: 'column', gap: space['2'] }}>
-      <FormField label="Your version" helperText="Change anything. When you save it, Echo learns from the words you typed, never from its own.">
-        {(id) => (
-          <Textarea
-            id={id}
-            data-version
-            rows={6}
-            maxLength={16000}
-            value={version}
-            onChange={(e) => setVersion(e.target.value)}
-            style={{ fontFamily: fonts.body, fontSize: fontSize.base, lineHeight: lineHeight.normal }}
-          />
-        )}
-      </FormField>
-      <label style={{ display: 'inline-flex', alignItems: 'center', gap: space['2'], fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textSecondary, cursor: 'pointer' }}>
-        <input type="checkbox" data-keep-disclosure checked={keep} onChange={(e) => setKeep(e.target.checked)} style={{ accentColor: c.accent }} />
-        Add the disclosure line
-      </label>
-      {keep && (
-        <div data-disclosure style={small}>
-          {draft.disclosure}
-        </div>
-      )}
-      <div style={{ display: 'flex', alignItems: 'center', gap: space['3'], flexWrap: 'wrap' }}>
-        <Button type="button" size="sm" variant="secondary" onClick={copy} disabled={!version.trim()}>
-          Copy
-        </Button>
-        <Button type="button" size="sm" onClick={save} loading={feedback.isPending} disabled={!version.trim() || !dirty}>
-          Save my version
-        </Button>
-        <span style={small}>
-          Sounds like you: {Math.round(draft.voice_match_score)}% · grounded {Math.round(draft.confidence * 100)}%
-        </span>
-      </div>
-      {saved && !dirty && (
-        <p data-saved style={{ ...small, margin: 0 }}>
-          {learnedLine(saved.edit)}
-        </p>
-      )}
-      {feedback.isError && (
-        <p role="alert" style={{ ...small, margin: 0, color: c.error }}>
-          Couldn't save your version. Try again.
-        </p>
-      )}
+      <DraftEditor
+        draft={draft}
+        onCopy={onCopy}
+        meta={
+          <span style={small}>
+            Sounds like you: {Math.round(draft.voice_match_score)}% · grounded {Math.round(draft.confidence * 100)}%
+          </span>
+        }
+      />
       {draft.flags.includes('verbatim_removed') && (
         <p data-flag="verbatim_removed" style={{ ...small, margin: 0 }}>
           A sentence that repeated someone else's words was taken out.

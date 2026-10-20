@@ -4,7 +4,9 @@ What it must hold, with the LLM patched:
 
 - Only the words the user TYPED into a draft are theirs: not the draft words
   they kept (the model wrote those), not what they cut, not the disclosure
-  line. A change of case or punctuation is not a word they wrote.
+  line, and not a stretch they repeated from the incoming message (the
+  sender's words, S-3.4.1's 8-word guard). A change of case or punctuation
+  is not a word they wrote.
 - Feedback stores the text they used and whether the disclosure stayed;
   it may be sent again, is audited with counts only and is not a draft
   against the daily cap.
@@ -45,8 +47,13 @@ def asha(db):
     return u
 
 
-def _draft(db, user, text=DRAFT):
-    row = EchoDraft(tenant_id=user.id, user_id=user.id, input_message="Who pays?", language="en", draft=text,
+MESSAGE = "My cousin says the new tariff will bring back every factory job we lost. Is he right?"
+QUOTING = (DRAFT + " You say the new tariff will bring back every factory job we lost, "
+           "but I checked the base rates on this twice.")
+
+
+def _draft(db, user, text=DRAFT, message="Who pays?"):
+    row = EchoDraft(tenant_id=user.id, user_id=user.id, input_message=message, language="en", draft=text,
                     disclosure=echo_draft_service.disclosure_for(user))
     db.add(row)
     db.commit()
@@ -75,6 +82,24 @@ def test_a_written_run_is_sliced_as_typed():
     assert d.written == ["and  see what the data says."], "the user's own spacing, not re-joined words"
 
 
+def test_words_repeated_from_the_incoming_message_are_not_the_users():
+    d = edits.edit_diff(DRAFT, QUOTING, third_party=[MESSAGE])
+    assert d.quoted == ["the new tariff will bring back every factory job we lost,"]
+    assert d.written == ["You say", "but I checked the base rates on this twice."]
+    assert d.written_words == 11 and d.quoted_words == 11
+    assert edits.edit_diff(DRAFT, QUOTING).quoted == [], "without the message nothing is set aside"
+    seven = edits.edit_diff(DRAFT, DRAFT + " The new tariff will bring back every.", third_party=[MESSAGE])
+    assert seven.quoted == [] and seven.written_words == 7, "under 8 shared words is not a quote (S-3.4.1's rule)"
+
+
+def test_a_quote_across_kept_draft_words_is_caught():
+    draft = "Mostly the importer pays first."
+    msg = "Everyone knows the importer pays first and then the buyer pays at the till."
+    final = "Mostly the importer pays first and then the buyer pays at the till, I think."
+    d = edits.edit_diff(draft, final, third_party=[msg])
+    assert d.quoted == ["and then the buyer pays at the till,"] and d.written == ["I think."]
+
+
 def test_the_disclosure_is_never_the_users_words():
     disclosure = "Drafted with Echo, reviewed by sam"
     assert edits.strip_disclosure(f"{FINAL}\n\n— {disclosure}", disclosure) == FINAL
@@ -94,8 +119,9 @@ def test_feedback_is_stored_audited_and_not_a_draft(db):
     assert out.final_text == FINAL and out.disclosure_kept is False and out.feedback_at is not None
     assert out.written_words == 9
     d = echo_draft_service.to_dict(out)
-    assert d["edit"] == {"written_words": 9, "removed_words": 1, "kept_words": 12,
-                         "written": ["Honestly,", "I checked the base rates on this twice."], "removed": ["Mostly"]}
+    assert d["edit"] == {"written_words": 9, "removed_words": 1, "quoted_words": 0, "kept_words": 12,
+                         "written": ["Honestly,", "I checked the base rates on this twice."], "removed": ["Mostly"],
+                         "quoted": []}
     assert echo_draft_service.drafts_today(db, user) == 0, "feedback is not a draft against the cap"
 
     audit = db.query(AuditLog).filter(AuditLog.event == "echo_draft_feedback").one()
@@ -105,6 +131,14 @@ def test_feedback_is_stored_audited_and_not_a_draft(db):
 
     again = echo_draft_service.feedback(db, user, row.id, DRAFT)
     assert again.final_text == DRAFT and again.written_words == 0 and again.disclosure_kept is True
+
+
+def test_feedback_counts_only_the_users_own_words(db):
+    user = _studio(db)
+    row = _draft(db, user, message=MESSAGE)
+    out = echo_draft_service.feedback(db, user, row.id, QUOTING)
+    assert out.written_words == 11, "the repeated stretch of the message is not counted"
+    assert echo_draft_service.to_dict(out)["edit"]["quoted"] == ["the new tariff will bring back every factory job we lost,"]
 
 
 def test_feedback_is_the_owners_only(db):
@@ -138,6 +172,17 @@ def test_an_edit_is_an_input_of_the_typed_words_only(db, asha):
     assert i.kind == "draft_edit" and i.text == "Honestly,\nI checked the base rates on this twice."
     assert "importer" not in i.text and "Mostly" not in i.text and "Drafted with Echo" not in i.text
     assert ex.quick_new_count(db, asha.id) == 1, "the cheap counter sees the edit, not the small one"
+
+
+def test_the_senders_words_never_reach_the_model(db, asha):
+    row = _draft(db, asha, message=MESSAGE)
+    echo_draft_service.feedback(db, asha, row.id, QUOTING)
+    i = {i.ref: i for i in ex.gather_inputs(db, asha.id)}[f"draft_edit:{row.id}"]
+    assert i.text == "You say\nbut I checked the base rates on this twice."
+    llm = FakeLLM([(r"every factory job we lost", "trusted_conclusion", "Thinks tariffs bring jobs back")])
+    ex.run(db, asha.id, llm=llm, model="m")
+    assert "every factory job" not in "\n".join(llm.prompts)
+    assert not [r for r in echo_signal_service.list_signals(db, asha.id) if r.signal_type == "trusted_conclusion"]
 
 
 def test_a_run_learns_from_the_edit_and_never_from_the_models_words(db, asha):

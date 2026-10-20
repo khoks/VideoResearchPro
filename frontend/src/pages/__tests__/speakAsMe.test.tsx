@@ -115,9 +115,12 @@ describe('helpers', () => {
   });
 
   it('say what Echo learns from a saved version', () => {
-    const edit = { written_words: 6, removed_words: 1, kept_words: 5, written: ['x'], removed: ['y'] };
+    const edit = { written_words: 6, removed_words: 1, quoted_words: 0, kept_words: 5, written: ['x'], removed: ['y'], quoted: [] };
     expect(learnedLine(edit)).toBe('Saved. Echo learns your voice from the 6 words you wrote, never from the ones it drafted.');
     expect(learnedLine({ ...edit, written_words: 0 })).toBe('Saved. You used it as drafted, so Echo has nothing new to learn.');
+    expect(learnedLine({ ...edit, quoted_words: 9, quoted: ['their words'] })).toBe(
+      'Saved. Echo learns your voice from the 6 words you wrote, never from the ones it drafted. Words you repeated from their message are theirs, so Echo leaves them out.',
+    );
     expect(learnedLine(null)).toBe('');
   });
 
@@ -158,7 +161,7 @@ describe('SpeakAsMePanel', () => {
 
   it("saves the user's version without the disclosure, and says what Echo learns from", async () => {
     api.draftStatus.mockResolvedValue(ON);
-    const edit = { written_words: 5, removed_words: 0, kept_words: 5, written: ['and so does the buyer.'], removed: [] };
+    const edit = { written_words: 5, removed_words: 0, quoted_words: 0, kept_words: 5, written: ['and so does the buyer.'], removed: [], quoted: [] };
     api.draftFeedback.mockResolvedValue({ ...DRAFT, final_text: 'Mostly the importer pays first, and so does the buyer.', disclosure_kept: false, feedback_at: '2026-10-20T10:05:00', edit });
     await mount();
     act(() => type(host.querySelector('textarea')!, 'Who pays?'));
@@ -201,6 +204,13 @@ describe('SpeakAsMePanel', () => {
 });
 
 describe('wiring', () => {
+  it('the page card and the bubble share one edit-and-save view', () => {
+    const sources = import.meta.glob(['../../components/echo/SpeakAsMePanel.tsx', '../../components/echo/EchoPanel.tsx'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+    const src = (name: string) => Object.entries(sources).find(([k]) => k.endsWith(name))![1];
+    expect(src('SpeakAsMePanel.tsx')).toMatch(/<DraftEditor\s/);
+    expect(src('EchoPanel.tsx')).toMatch(/<DraftEditor draft=\{draft\} compact/);
+  });
+
   it('the Echo page mounts the panel for tiers with the feature', () => {
     const page = Object.values(import.meta.glob('../EchoPage.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)[0];
     expect(page).toMatch(/\{has\('echo_speak_as_me'\) && \(/);

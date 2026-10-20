@@ -187,15 +187,17 @@ def gather_inputs(db: Session, tenant_id: str) -> list[Input]:
         out.append(_events_input(connector, rows))
 
     # S-3.4.2: the words the user typed into a "speak as me" draft, never the
-    # draft words they kept (the model wrote those) nor the disclosure.
+    # draft words they kept (the model wrote those), the disclosure, or what
+    # they repeated from the incoming message (the sender's words).
     from app.models.echo_draft import EchoDraft
     from app.services.echo_draft_edits import user_written_text
 
-    for did, draft, final, fb_at, created in db.query(
-        EchoDraft.id, EchoDraft.draft, EchoDraft.final_text, EchoDraft.feedback_at, EchoDraft.created_at,
+    for did, draft, final, message, fb_at, created in db.query(
+        EchoDraft.id, EchoDraft.draft, EchoDraft.final_text, EchoDraft.input_message,
+        EchoDraft.feedback_at, EchoDraft.created_at,
     ).filter(EchoDraft.tenant_id == tenant_id, EchoDraft.final_text.isnot(None),
              EchoDraft.written_words >= _edit_floor()):
-        t = user_written_text(draft, final, min_words=_edit_floor())
+        t = user_written_text(draft, final, min_words=_edit_floor(), third_party=[message])
         if t:
             out.append(Input(f"draft_edit:{did}", "draft_edit", t, _iso(fb_at or created), language_of(t)))
 

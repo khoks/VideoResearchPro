@@ -16,6 +16,8 @@ PR [#359](https://github.com/khoks/VideoResearchPro/pull/359). [D-104](docs/deci
 
 - A draft now opens as "Your version", which you can edit. **Save my version** records what you actually used.
 - Echo learns your voice only from the words you typed into it, never from the words it drafted that you kept. A signal learned this way quotes your own words and points back to the draft. Deleting the draft takes back what it taught, straight away.
+- Words you repeat from the message you are answering (8 or more in a row) are the sender's, so Echo leaves them out even when you typed them.
+- The Echo bubble's draft has the same "Your version", disclosure checkbox, Copy and Save.
 - The disclosure line ("Drafted with Echo, reviewed by you") is on by default. Untick **Add the disclosure line** to leave it off when you copy. Whether you kept it is recorded.
 - Saving a version does not use up one of the day's drafts.
 

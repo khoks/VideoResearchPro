@@ -12,8 +12,9 @@ export function withDisclosure(text: string, disclosure: string, keep: boolean):
 export function learnedLine(edit: DraftEdit | null | undefined): string {
   if (!edit) return '';
   const n = edit.written_words;
-  if (n === 0) return 'Saved. You used it as drafted, so Echo has nothing new to learn.';
-  return `Saved. Echo learns your voice from the ${n === 1 ? 'word' : `${n} words`} you wrote, never from the ones it drafted.`;
+  const theirs = edit.quoted_words > 0 ? ' Words you repeated from their message are theirs, so Echo leaves them out.' : '';
+  if (n === 0) return `Saved. You used it as drafted, so Echo has nothing new to learn.${theirs}`;
+  return `Saved. Echo learns your voice from the ${n === 1 ? 'word' : `${n} words`} you wrote, never from the ones it drafted.${theirs}`;
 }
 
 export function citationLabel(c: DraftCitation): string {

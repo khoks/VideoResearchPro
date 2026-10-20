@@ -106,15 +106,22 @@ def ask_library_question(
     return answer_library_question(db, current_user, request, scope=None)
 
 
-def _within_scope(db: Session, references: list[dict], document_ids: list[str]) -> list[dict]:
+def _within_scope(
+    db: Session,
+    references: list[dict],
+    document_ids: list[str],
+    note_keys: list[str] | None = None,
+) -> list[dict]:
     """Drop citations of documents outside a narrowed scope (S-8.1.4).
 
     Retrieval is already restricted to ``document_ids``; this is the check on
     what the answer cites, so a scoped answer can never point outside its
-    scope even if a future context source does. References that name no
-    document (none today) are left alone.
+    scope even if a future context source does. A note citation (S-8.5.2)
+    must target something in ``note_keys``. References that name neither a
+    document nor a note are left alone.
     """
     allowed = set(document_ids)
+    allowed_notes = set(note_keys or [])
     allowed_videos = (
         {
             row[0]
@@ -128,7 +135,9 @@ def _within_scope(db: Session, references: list[dict], document_ids: list[str]) 
     for ref in references:
         doc_id = ref.get("document_id") if isinstance(ref, dict) else None
         vid = ref.get("video_id") if isinstance(ref, dict) else None
-        if doc_id is not None:
+        if isinstance(ref, dict) and ref.get("source_type") == "note":
+            ok = f"{ref.get('note_target_type', '')}:{ref.get('note_target_id', '')}" in allowed_notes
+        elif doc_id is not None:
             ok = doc_id in allowed
         elif vid is not None:
             ok = vid in allowed_videos
@@ -164,6 +173,9 @@ def answer_library_question(
     # any quota is checked.
     visible = qa_scope_service.resolve_document_ids(db, current_user.id, scope)
     narrowed = bool(qa_scope_service.narrowing(scope))
+    # S-8.5.2 x S-8.1.4: a narrowed scope draws only the notes on its own
+    # material, as job Q&A does; the whole library draws every note.
+    note_keys = qa_scope_service.note_target_keys(db, current_user.id, scope, visible)
 
     # T-5.5.5: per-user quota check BEFORE the (expensive) agent runs.
     from app.services import quota_metering_service
@@ -201,6 +213,7 @@ def answer_library_question(
             channel_weights=channel_weights,
             # S-8.5.2: every note of the asker may join retrieval.
             notes_tenant_id=current_user.id,
+            note_target_keys=note_keys,
         )
 
     # T-5.5.5: track consumption.
@@ -210,7 +223,7 @@ def answer_library_question(
     answer = result.get("answer", "")
     references = result.get("references", [])
     if narrowed:
-        references = _within_scope(db, references, visible)
+        references = _within_scope(db, references, visible, note_keys)
 
     # Per E-5.1 phase 2a, stamp tenant_id from the authenticated user.
     exchange = LibraryQAExchange(
@@ -265,16 +278,22 @@ def get_library_qa_history(
 
 
 def library_exchange_response(qa: LibraryQAExchange) -> LibraryQAResponse:
-    """One stored exchange as the API returns it (library and shelf history)."""
+    """One stored exchange as the API returns it (library and shelf history).
+
+    Citations are parsed one by one: a malformed entry is skipped (and
+    logged) instead of emptying the exchange's whole list.
+    """
     try:
-        raw_refs = json.loads(qa.references_json)
-        refs = [LibraryReference(**r) for r in raw_refs]
-    except (json.JSONDecodeError, TypeError, ValueError):
-        logger.warning(
-            "Failed to parse references_json for library_qa_exchange id=%s",
-            qa.id,
-        )
-        refs = []
+        raw_refs = json.loads(qa.references_json or "[]")
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("Failed to parse references_json for library_qa_exchange id=%s", qa.id)
+        raw_refs = []
+    refs: list[LibraryReference] = []
+    for r in raw_refs if isinstance(raw_refs, list) else []:
+        try:
+            refs.append(LibraryReference(**r))
+        except (TypeError, ValueError):
+            logger.warning("Skipped a malformed citation on library_qa_exchange id=%s", qa.id)
     return LibraryQAResponse(
         id=qa.id,
         question=qa.question,

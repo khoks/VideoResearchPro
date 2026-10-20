@@ -85,6 +85,47 @@ def narrowing(scope: QAScope | dict | None) -> dict:
     return {k: v for k, v in _as_dict(scope).items() if k not in PROVENANCE_KEYS}
 
 
+def note_target_keys(
+    db: Session, tenant_id: str, scope: QAScope | dict | None, document_ids: list[str]
+) -> list[str] | None:
+    """Which of the asker's notes a question over ``scope`` may draw (S-8.5.2
+    keys, ``"<type>:<id>"``). ``None`` for the whole library: every note.
+
+    A shelf draws what job Q&A would draw for each of its runs (notes on the
+    run, its documents in scope and their knowledge reports, its answers and
+    its channels) plus notes on answers asked on this shelf before. Call after
+    ``resolve_document_ids``, with its result.
+    """
+    keys = narrowing(scope)
+    if not keys:
+        return None
+    from app.models.job_video import JobVideo
+    from app.models.library_qa_exchange import LibraryQAExchange
+    from app.services import note_index
+
+    allowed = set(document_ids)
+    shelf = shelf_service.get_shelf(db, str(keys["shelf_id"]), tenant_id)
+    if shelf is None:
+        raise ScopeNotFound("shelf")
+    out: list[str] = []
+    for job_id in shelf_service.job_ids_for_shelf(db, shelf.id):
+        docs = [
+            row[0]
+            for row in db.query(JobVideo.document_id).filter(JobVideo.job_id == job_id)
+            if row[0] in allowed
+        ]
+        out.extend(note_index.job_target_keys(db, job_id, docs))
+    marker = f'"shelf_id":"{shelf.id}"'
+    for qa_id, raw in db.query(LibraryQAExchange.id, LibraryQAExchange.scope_json).filter(
+        LibraryQAExchange.tenant_id == tenant_id,
+        LibraryQAExchange.scope_json.like(f"%{marker}%"),
+    ):
+        scope_row = load(raw)
+        if scope_row is not None and scope_row.shelf_id == shelf.id:
+            out.append(note_index.target_key("library_qa_exchange", qa_id))
+    return list(dict.fromkeys(out))
+
+
 def resolve_document_ids(db: Session, tenant_id: str, scope: QAScope | dict | None) -> list[str]:
     """The document ids a question asked over ``scope`` may retrieve from,
     always inside the tenant's visible set. ``[]`` means nothing.

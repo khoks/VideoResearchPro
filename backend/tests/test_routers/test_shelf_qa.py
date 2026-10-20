@@ -167,3 +167,52 @@ def test_free_tier_can_ask_on_its_shelf(client, test_user, setup):
     assert test_user.tier == "free"
     resp, _, _ = _ask(client, f"/api/v1/shelves/{setup['shelf'].id}/qa", [])
     assert resp.status_code == 200, resp.text
+
+
+def _note_ref(target_type, target_id):
+    return {
+        "source_type": "note", "note_id": f"n-{target_id}", "note_target_type": target_type,
+        "note_target_id": target_id, "note_created_at": "2026-10-19", "quote": "my note",
+        "video_url": "", "video_title": "Your note", "channel_name": "you",
+        "timestamp_seconds": 0.0, "timestamp_display": "", "youtube_link": "",
+    }
+
+
+def test_notes_follow_the_scope(client, db, test_user, setup):
+    """S-8.5.2 x S-8.1.4: a shelf question draws only notes on the shelf's own
+    material (as job Q&A does); a library question draws every note."""
+    shelf = setup["shelf"]
+    on_shelf, off_shelf = _note_ref("document", setup["a"].document_id), _note_ref("document", setup["off"].document_id)
+    resp, agent, _ = _ask(client, f"/api/v1/shelves/{shelf.id}/qa", [on_shelf, off_shelf])
+    assert resp.status_code == 200, resp.text
+    kwargs = agent.call_args.kwargs
+    assert kwargs["notes_tenant_id"] == test_user.id
+    keys = set(kwargs["note_target_keys"])
+    (job_id,) = shelf_service.job_ids_for_shelf(db, shelf.id)
+    assert {f"document:{setup['a'].document_id}", f"document:{setup['b'].document_id}", f"job:{job_id}"} <= keys
+    assert f"document:{setup['off'].document_id}" not in keys
+    cited = [r.get("note_target_id") for r in resp.json()["references"]]
+    assert cited == [setup["a"].document_id], "a note on an off-shelf source is not cited"
+
+    # A later question on the shelf may also draw notes on this shelf's earlier answers.
+    _, again, _ = _ask(client, f"/api/v1/shelves/{shelf.id}/qa", [])
+    assert f"library_qa_exchange:{resp.json()['id']}" in again.call_args.kwargs["note_target_keys"]
+
+    lib, lib_agent, _ = _ask(client, "/api/v1/library/qa", [off_shelf])
+    assert lib_agent.call_args.kwargs["note_target_keys"] is None, "the whole library draws every note"
+    assert [r.get("note_target_id") for r in lib.json()["references"]] == [setup["off"].document_id]
+
+
+def test_empty_shelf_draws_no_notes_either(client, db, test_user, setup):
+    empty = shelf_service.create_shelf(db, test_user.id, "Empty too")
+    _, agent, _ = _ask(client, f"/api/v1/shelves/{empty.id}/qa", [])
+    assert agent.call_args.kwargs["note_target_keys"] == [], "[] means no notes; None would mean every note"
+
+
+def test_a_malformed_citation_is_skipped_not_the_whole_list(client, db, test_user, setup):
+    good = _ref(setup["a"])
+    db.add(LibraryQAExchange(tenant_id=test_user.id, question="Mixed refs", answer="a",
+                             references_json=json.dumps([good, {"oops": 1}, _note_ref("document", "x")])))
+    db.commit()
+    row = next(r for r in client.get("/api/v1/library/qa").json() if r["question"] == "Mixed refs")
+    assert [r.get("video_id") or r.get("note_id") for r in row["references"]] == ["shelfqa00001", "n-x"]

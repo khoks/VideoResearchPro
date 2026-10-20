@@ -19,6 +19,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
   empty shelf has nothing to ask; it never falls back to the whole library.
 - `POST` and `GET /api/v1/shelves/{id}/qa`. Shelf questions also appear in
   the library Q&A history, marked "Asked on shelf …".
+- Pinning a shelf answer as a saved search keeps the shelf as its scope.
 - The phone device tests pass again: four newer API calls now have fixtures.
 
 ### Added: saved searches (2026-10-19)

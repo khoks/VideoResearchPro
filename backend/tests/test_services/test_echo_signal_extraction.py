@@ -130,6 +130,34 @@ def test_parse_reply_drops_invented_quotes_and_unknown_types():
         ex.parse_reply("sorry, I cannot help", {"P1": inp})
 
 
+def test_a_style_signal_takes_its_passages_language_and_a_belief_takes_none():
+    hi = ex.Input("note:h", "note", "yaar pehle dekho incentive kya hai, phir baat karo", None, "hi-Latn")
+    en = ex.Input("note:e", "note", "Look at the incentive first, then talk.", None, "en")
+    hi2 = ex.Input("note:h2", "note", "bhai incentive dekho pehle, intention baad mein", None, "hi-Latn")
+    ids = {"P1": hi, "P2": en, "P3": hi2}
+    reply = json.dumps({"signals": [
+        {"signal_type": "framing", "value": "Opens with the incentive", "language": "en", "examples": [
+            {"id": "P1", "quote": "pehle dekho incentive kya hai"}, {"id": "P2", "quote": "Look at the incentive first"},
+            {"id": "P3", "quote": "incentive dekho pehle"}]},
+        {"signal_type": "trusted_conclusion", "value": "Incentives explain behaviour", "language": "hi-Latn", "examples": [
+            {"id": "P2", "quote": "Look at the incentive first"}]},
+    ]})
+    out, _ = ex.parse_reply(reply, ids)
+    assert [(c["signal_type"], c["language"]) for c in out] == [("framing", "hi-Latn"), ("trusted_conclusion", None)]
+
+
+def test_questions_do_not_count_as_prose_for_cadence(db, asha):
+    for t in PERSONAS["bharat"]["notes"]:
+        _note(db, asha, t)
+    for i, q in enumerate(PERSONAS["bharat"]["questions"] * 3):
+        db.add(LibraryQAExchange(id=f"lq-{i}", tenant_id=asha.id, question=q, answer="a"))
+    db.commit()
+    ex.run(db, asha.id, use_llm=False)
+    cadence = {r.value for r in echo_signal_service.list_signals(db, asha.id) if r.signal_type == "cadence"}
+    assert "Writes in long sentences (over 20 words on average)" in cadence
+    assert not any(v.startswith("Asks questions often") for v in cadence)
+
+
 def test_batches_respect_the_token_budget():
     inputs = [ex.Input(f"note:{i}", "note", "x" * 4000, None, "en") for i in range(7)]
     assert [len(b) for b in ex.batches(inputs, budget=3000)] == [3, 3, 1]
@@ -221,7 +249,8 @@ def test_a_run_creates_signals_with_verbatim_examples_and_reports_cost(db, asha)
     rows = {r.value: r for r in echo_signal_service.list_signals(db, asha.id)}
     assert "Loves opera" not in rows
     method = rows["Checks the base rate before believing a claim"]
-    assert method.origin == "llm" and method.language == "en"
+    assert method.origin == "llm"
+    assert method.language is None, "a personality signal is language-free"
     sources = json.loads(method.derived_from)
     assert method.weight == len(sources) == 2, "two notes mention base rates"
     texts = {n.id: n.body_md for n in notes}

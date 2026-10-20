@@ -212,7 +212,6 @@ Rules:
 - "value" is one short sentence IN ENGLISH, whatever language the passages are in, describing the person (e.g. "Distrusts claims that rest on a single source"). Never a summary of a passage.
 - Every signal needs at least one example. An example is an EXACT quote copied character for character from one passage, in the passage's own language and script, with that passage's id. Never translate, fix or shorten inside a quote. Quotes are 3 to 40 words.
 - Only what the passages show. Prefer signals with examples from two or more passages; a topic mentioned once is not an interest.
-- "language": the language the examples are in: en, hi-Deva (Hindi in Devanagari), hi-Latn (Hindi in Roman letters) or mixed.
 - "register": intimate, casual, professional or public when the passages make it clear, otherwise null.
 - When one of the known signals below fits, reuse its value word for word instead of rewording it.
 - At most {max_signals} signals. If the passages show nothing, return an empty list.
@@ -224,7 +223,7 @@ Passages:
 {passages}
 
 Reply with JSON only, no prose:
-{{"signals": [{{"signal_type": "interest", "value": "...", "language": "en", "register": null, "examples": [{{"id": "P1", "quote": "..."}}]}}]}}"""
+{{"signals": [{{"signal_type": "interest", "value": "...", "register": null, "examples": [{{"id": "P1", "quote": "..."}}]}}]}}"""
 
 
 def _tokens(text: str) -> int:
@@ -304,6 +303,20 @@ def find_verbatim(quote: str, text: str) -> str | None:
     return text[index[at] : index[at + len(q) - 1] + 1]
 
 
+def _signal_language(signal_type: str, example_languages: list[str]) -> str | None:
+    """A style signal belongs to the language its examples are in (the
+    majority of their passages, as ``language_of`` read them, never the
+    model's label, which drifts between runs on Hinglish). A personality
+    signal is what the person thinks, whatever language they say it in, so
+    it has none: otherwise one belief splits into a row per language."""
+    if signal_type not in signals.STYLE_TYPES or not example_languages:
+        return None
+    counts: dict[str, int] = {}
+    for lang in example_languages:
+        counts[lang] = counts.get(lang, 0) + 1
+    return max(counts, key=lambda k: (counts[k], -example_languages.index(k)))
+
+
 def parse_reply(raw: str, ids: dict[str, Input]) -> tuple[list[dict], int]:
     """Valid candidates and the count of examples dropped for not being
     found in their passage."""
@@ -336,9 +349,7 @@ def parse_reply(raw: str, ids: dict[str, Input]) -> tuple[list[dict], int]:
             examples.append({"text": span, "source": src.ref, **({"at": src.at} if src.at else {}), "_language": src.language})
         if not examples:
             continue
-        language = item.get("language")
-        if language not in signals.LANGUAGES:
-            language = examples[0]["_language"]
+        language = _signal_language(signal_type, [e["_language"] for e in examples])
         register = item.get("register") if item.get("register") in signals.REGISTERS else None
         out.append({
             "signal_type": signal_type,
@@ -459,7 +470,9 @@ def sync_stylometry(db: Session, tenant_id: str, inputs: dict[str, Input], count
     a rejection); the user's rejections are respected."""
     by_lang: dict[str, list[VoiceSignalInput]] = {}
     for row in db.query(VoiceSignalInput).filter(VoiceSignalInput.tenant_id == tenant_id):
-        if row.language:
+        # Prose only: a question typed into Q&A is always a question, and
+        # counting it would make everyone "ask questions often".
+        if row.language and row.kind != "question":
             by_lang.setdefault(row.language, []).append(row)
     kept_ids: set[str] = set()
     for language, rows in by_lang.items():

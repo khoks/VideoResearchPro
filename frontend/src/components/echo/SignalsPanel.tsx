@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useCreateSignal, useRejectSignal, useUpdateSignal, useVoiceSignals } from '../../hooks/useEcho';
+import { useCreateSignal, useLearnSignals, useRejectSignal, useUpdateSignal, useVoiceSignals } from '../../hooks/useEcho';
 import { useJobStore } from '../../stores/jobStore';
 import { echoApi, type VoiceSignal } from '../../services/echoApi';
 import { Badge, Button, Card, FormField, Modal, Select, Skeleton, Textarea } from '../primitives';
@@ -13,6 +13,8 @@ import {
   evidenceSummary,
   groupSignals,
   languageLabel,
+  learnToast,
+  learningSummary,
   originLabel,
   registerLabel,
   signalTypeMeta,
@@ -21,6 +23,7 @@ import {
   type SignalLayer,
 } from '../../utils/echoSignals';
 import { detailFromErrorBody, type HttpErrorLike } from '../../utils/ingestResults';
+import { formatDate } from '../../utils/formatters';
 
 interface FormState {
   mode: 'create' | 'edit';
@@ -44,11 +47,22 @@ export function SignalsPanel() {
   const create = useCreateSignal();
   const update = useUpdateSignal();
   const reject = useRejectSignal();
+  const learn = useLearnSignals();
   const [form, setForm] = useState<FormState | null>(null);
   const [rejecting, setRejecting] = useState<VoiceSignal | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const items = signals.data?.items ?? [];
+  const learning = learningSummary(signals.data?.learning, formatDate);
+
+  const learnNow = () =>
+    learn.mutate(undefined, {
+      onSuccess: (resp) => {
+        const t = learnToast(resp.status);
+        pushToast(t.tone, t.text);
+      },
+      onError: (e) => failed(e, 'Could not start learning. Try again.'),
+    });
   const groups = groupSignals(items);
   const text: React.CSSProperties = { margin: 0, fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textSecondary, lineHeight: lineHeight.normal };
 
@@ -111,6 +125,19 @@ export function SignalsPanel() {
         questions you ask, and shares you marked as written by you. Correct anything that is off. "That's not me" removes a
         signal, and Echo never learns it again.
       </p>
+      {learning && (
+        <div
+          data-learning
+          style={{ display: 'flex', alignItems: 'baseline', gap: space['3'], flexWrap: 'wrap', marginTop: space['2'], fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}
+        >
+          <span style={{ flex: '1 1 16rem' }}>{learning.text}</span>
+          {learning.canLearn && (
+            <Button size="sm" variant="tertiary" onClick={learnNow} loading={learn.isPending}>
+              Learn now
+            </Button>
+          )}
+        </div>
+      )}
 
       {signals.isLoading ? (
         <div style={{ marginTop: space['3'] }}>

@@ -10,7 +10,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VoiceSignal, VoiceSignalList } from '../../services/echoApi';
-import { SIGNAL_TYPES, evidenceSummary, groupSignals, originLabel, sourceLabel } from '../../utils/echoSignals';
+import { SIGNAL_TYPES, evidenceSummary, groupSignals, learningSummary, originLabel, sourceLabel } from '../../utils/echoSignals';
+import { useJobStore } from '../../stores/jobStore';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -20,6 +21,7 @@ const api = {
   updateSignal: vi.fn(async (_id: string, b: unknown) => b),
   rejectSignal: vi.fn(async (id: string) => ({ id })),
   exportSignals: vi.fn(async () => undefined),
+  learnSignals: vi.fn(async () => ({ status: 'queued', pending: 3 })),
 };
 vi.mock('../../services/echoApi', () => ({
   echoApi: {
@@ -28,6 +30,7 @@ vi.mock('../../services/echoApi', () => ({
     updateSignal: (id: string, b: unknown) => api.updateSignal(id, b),
     rejectSignal: (id: string) => api.rejectSignal(id),
     exportSignals: () => api.exportSignals(),
+    learnSignals: () => api.learnSignals(),
   },
 }));
 
@@ -109,6 +112,7 @@ beforeEach(() => {
   api.updateSignal.mockClear();
   api.rejectSignal.mockClear();
   api.exportSignals.mockClear();
+  api.learnSignals.mockClear();
 });
 
 afterEach(() => {
@@ -144,6 +148,30 @@ describe('signal helpers', () => {
     expect(originLabel('user', ['note:n1'])).toBe('You corrected this');
     expect(originLabel('stylometry', ['note:n1'])).toBe('Measured from your writing');
     expect(originLabel('llm', ['note:n1'])).toBe('Learned from your writing');
+  });
+});
+
+describe('learning line (S-3.3.2)', () => {
+  const base = { mode: 'celery', inputs: 12, by_language: { en: 12 }, pending: 0, threshold: 10, last_learned_at: null };
+  const fmt = () => '19 Oct 2026';
+
+  it('says what is waiting and when Echo will start on its own', () => {
+    expect(learningSummary({ ...base, pending: 3 }, fmt)).toEqual({
+      text: '3 texts are waiting to be read. Echo starts on its own once 10 are waiting.',
+      canLearn: true,
+    });
+    expect(learningSummary({ ...base, pending: 1, last_learned_at: '2026-10-19T10:00:00' }, fmt)?.text).toBe(
+      '1 text is waiting to be read. Echo last learned on 19 Oct 2026. Echo starts on its own once 10 are waiting.',
+    );
+  });
+
+  it('says when it is up to date, when there is nothing yet, and when learning is off', () => {
+    expect(learningSummary(base, fmt)).toEqual({ text: 'Up to date: Echo has read all 12 of your texts.', canLearn: false });
+    expect(learningSummary({ ...base, inputs: 0 }, fmt)?.text).toMatch(/^Echo learns from your notes/);
+    const off = learningSummary({ ...base, mode: 'off', pending: 4 }, fmt)!;
+    expect(off.canLearn).toBe(false);
+    expect(off.text).toContain('Automatic learning is off on this install.');
+    expect(learningSummary(null, fmt)).toBeNull();
   });
 });
 
@@ -219,6 +247,31 @@ describe('SignalsPanel', () => {
       language: 'hi-Latn',
       register: 'professional',
     });
+  });
+
+  it('“Learn now” queues a run and says so', async () => {
+    api.listSignals.mockResolvedValue({
+      items: [INTEREST],
+      consent_version: '2026-10-19',
+      learning: { mode: 'celery', inputs: 5, by_language: { en: 5 }, pending: 3, threshold: 10, last_learned_at: null },
+    });
+    await mount();
+    expect(host.querySelector('[data-learning]')?.textContent).toContain('3 texts are waiting to be read.');
+    await act(async () => buttons('Learn now')[0].click());
+    await flush();
+    expect(api.learnSignals).toHaveBeenCalled();
+    expect(useJobStore.getState().toasts.map((t) => t.message)).toContain('Learning started. New signals appear here in a minute or two.');
+  });
+
+  it('offers no “Learn now” when nothing is waiting', async () => {
+    api.listSignals.mockResolvedValue({
+      items: [INTEREST],
+      consent_version: '2026-10-19',
+      learning: { mode: 'celery', inputs: 5, by_language: { en: 5 }, pending: 0, threshold: 10, last_learned_at: null },
+    });
+    await mount();
+    expect(buttons('Learn now')).toHaveLength(0);
+    expect(host.textContent).toContain('Up to date: Echo has read all 5 of your texts.');
   });
 
   it('exports the voice profile', async () => {

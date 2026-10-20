@@ -1159,7 +1159,7 @@ The panel is labelled as an AI. On desktop it is non-modal and stays open beside
 - [x] T-3.8.1.3 *(in the top bar instead, see call 4)* Mobile placement above the docked composer (S-8.12.1)
 
 #### S-3.8.2 🟢 Anticipation cards
-**Shipped:** 2026-10-20 — PR [#PRC](https://github.com/khoks/VideoResearchPro/pull/PRC). **Linked decision:** [D-103](decisions.md#d-103--anticipation-cards-only-in-the-opened-panel-three-a-view-three-days-a-key-three-dismissals-turn-a-kind-off-2026-10-20). The frequency cap and dismissal rule were pre-registered before any card was built ([note](notes/2026-10-20-anticipation-cards-preregistration.md), committed first on the branch).
+**Shipped:** 2026-10-20 — PR [#358](https://github.com/khoks/VideoResearchPro/pull/358). **Linked decision:** [D-103](decisions.md#d-103--anticipation-cards-only-in-the-opened-panel-three-a-view-three-days-a-key-three-dismissals-turn-a-kind-off-2026-10-20). The frequency cap and dismissal rule were pre-registered before any card was built ([note](notes/2026-10-20-anticipation-cards-preregistration.md), committed first on the branch).
 
 **Calls made.**
 1. *Only in the opened panel,* and only while its conversation is empty. Nothing badges the bubble.

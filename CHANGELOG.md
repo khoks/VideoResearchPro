@@ -12,7 +12,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ### Echo: anticipation cards in the panel (S-3.8.2, 2026-10-20)
 
-PR [#PRC](https://github.com/khoks/VideoResearchPro/pull/PRC).
+PR [#358](https://github.com/khoks/VideoResearchPro/pull/358).
 
 - When you open the Echo panel, up to three one-line cards offer a next
   step: a saved search whose answer changed, shares read since you last

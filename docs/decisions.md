@@ -3198,4 +3198,4 @@ The D-100 user-as-judge test is **not** part of `ready`. Readiness reports wheth
 - The shares inbox reports when it opens, which resets the shares card.
 - Any change to these numbers needs a new note and a new decision entry.
 
-**Linked initiatives / PRs.** E-3.8 / S-3.8.2 (PR [#PRC](https://github.com/khoks/VideoResearchPro/pull/PRC)), D-089, S-8.3.3, S-8.4.1.
+**Linked initiatives / PRs.** E-3.8 / S-3.8.2 (PR [#358](https://github.com/khoks/VideoResearchPro/pull/358)), D-089, S-8.3.3, S-8.4.1.

@@ -1101,7 +1101,7 @@ Share shape: `{ id, received_at, updated_at, surface, content_type, kind: "url"|
 - **Images by address.** A URL share with `content_type: "image"`, or a URL ending in an image extension, is fetched by processing into the tenant's share directory, then read like an uploaded image. Hosts that resolve to private, loopback, link-local or other non-global addresses are refused, and so is every redirect into one, unless `ECHO_FETCH_ALLOW_PRIVATE` is set. Only image content types are kept, up to `ECHO_SHARE_MAX_BYTES`. A refused fetch fails the share with a reason, and Retry runs it again.
 
 ### Echo anticipation cards (S-3.8.2)
-Studio (`echo_personal_brain`). The Echo panel reads these when it opens; nothing here notifies. The cap and the dismissal rule are [D-102](decisions.md#d-102--anticipation-cards-only-in-the-opened-panel-three-a-view-three-days-a-key-three-dismissals-turn-a-kind-off-2026-10-20), pre-registered in [the note](notes/2026-10-20-anticipation-cards-preregistration.md).
+Studio (`echo_personal_brain`). The Echo panel reads these when it opens; nothing here notifies. The cap and the dismissal rule are [D-103](decisions.md#d-103--anticipation-cards-only-in-the-opened-panel-three-a-view-three-days-a-key-three-dismissals-turn-a-kind-off-2026-10-20), pre-registered in [the note](notes/2026-10-20-anticipation-cards-preregistration.md).
 - `GET /api/v1/echo/cards?context=library|job:<id>|document:<id>` → `{ cards: [{ key, kind: saved_search|shares|questions, title, body?, href?, action_label?, context? }], muted_kinds, notice?, notice_kind? }`.
   - At most three cards, one per kind, each shown on at most three distinct days.
   - Viewing counts a card once per day, except a questions card, which the panel reports itself (below).
@@ -1152,6 +1152,21 @@ Signal shape: `{ id, signal_type, layer: "style"|"personality", value, weight, e
 **Retrieval (S-3.3.3).** Every live fact and signal also lives as one vector in `personal_context_global`, with `tenant_id` metadata. A rejected or source-deleted signal, or an expired or deleted fact, has none. Nothing in the API queries it yet; "speak as me" (E-3.4) and the voice-match harness (S-3.3.4) read it through `echo_personal_vectors.query_personal_context`, which fails closed without a tenant.
 
 Deleting a share withdraws it as evidence: its examples and provenance leave the signals listed in its `derived_signal_ids_json`, and a signal with no source left is suppressed as `source_deleted` (unlike a rejection, new evidence may derive it again).
+
+### Speak as me (S-3.4.1)
+Backend: `backend/app/routers/echo_drafts.py`, service `services/echo_draft_service.py`, agent `agents/echo_agent.py` ([D-102](decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20)). Every route needs the `echo_speak_as_me` feature (Studio); other tiers get 403. A draft is never sent anywhere.
+
+- `GET /api/v1/echo/draft/status` — what stands between the caller and a draft. `{ enabled, blockers: [{code, message}], readiness, voice_gate: {status: "not_run"|"passed"|"failed", run_at, pairs, picked_own_share, notes_total, notes_needed}, drafts_today, drafts_per_day }`. Blocker codes, in order: `install_off` (`ECHO_SPEAK_AS_ME_ENABLED` is false, the default), `not_ready` (readiness v2; the message names each unmet domain), `voice_test_required` or `voice_test_failed`, `daily_cap`. The Echo bubble's summary fields ride along: `state` (`enabled`, or the first blocker's code, with `voice_test_required` reported as `voice_test_needed`), `reasons` (every blocker's message), `notes`, `notes_needed`, `pairs_judged`, `pairs_needed`.
+- `POST /api/v1/echo/draft` — body `{ message (1-8000 chars), audience? (≤200), register?: "intimate"|"casual"|"professional"|"public", language?: "en"|"hi-Deva"|"hi-Latn"|"mixed", acknowledge_names?: [string] }`; unknown fields are refused. 201 with the draft: `{ id, message, draft, language, register, audience, intent, voice_match_score (0-100), confidence (0-1), citations: [{kind: "source"|"note"|"fact"|"qa"|"share", ref, label, url?}], deviation_notes, flags, disclosure, final_text, disclosure_kept, created_at }`. `ref` is the draft's marker for the item (S1, N2, F1); `url` is a link outside the app, such as a source at its timestamp. `flags` may hold `verbatim_removed` (a sentence quoting a third party was dropped) and `ungrounded`. Errors:
+  - 409 `{code, message, status}` for a closed gate.
+  - 409 `{code: "names_need_confirmation", names, message}` when the message names a private person. Send the request again with those names in `acknowledge_names`.
+  - 429 `{code: "daily_cap"}`.
+
+  A stopped draft is not counted against the cap.
+- `GET /api/v1/echo/drafts?limit=` — the caller's drafts, newest first: `{ items }`.
+- `GET /api/v1/echo/drafts/{id}` and `DELETE /api/v1/echo/drafts/{id}` (204) — the caller's own only; another tenant's id is a 404.
+
+Each draft is metered as the daily quota resource `echo_drafts` (`echo_drafts_per_day`: Free 0, Pro 0, Studio 20) and audited as `echo_drafted` with counts only. Drafts and voice-test results (`echo_drafts`, `echo_voice_gates`) are part of the brain: exported and erased with it.
 
 ### `GET /api/v1/echo/export`
 The whole brain as one zip (S-3.10.1): `manifest.json` (format `pratidhvani-echo-archive`, version 1, export time, tenant, row counts per table, every file with size and SHA-256, any missing file), `personal_context.jsonl`, `shares_inbox.jsonl`, `voice_signals.jsonl` and `voice_signal_inputs.jsonl` (every column; datetimes ISO-8601 with offset), and `files/<stored path>`. Lossless: `services/echo_privacy_service.py::read_archive` is the exact inverse. Built in a temporary file and removed after sending. Audited (`echo_exported`, counts only). Notes and the library are not part of Echo; notes export at `/exports/notes.*`.

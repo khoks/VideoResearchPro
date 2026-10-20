@@ -139,6 +139,10 @@ UseCase = Literal[
     "echo_share_ocr",
     # Echo voice and personality signals (S-3.3.2) — app/services/echo_signal_extraction.py
     "echo_extract_signals",
+    # "Speak as me" (S-3.4.1) — app/agents/echo_agent.py
+    "echo_classify_intent",
+    "echo_draft",
+    "echo_critique",
 ]
 
 # Use cases whose prompts carry IMAGES, not just text.
@@ -1263,6 +1267,85 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         ),
     ),
     # --- Echo voice and personality signals (S-3.3.2) -----------------
+    # --- "Speak as me" (S-3.4.1 / D-100) ------------------------------
+    "echo_classify_intent": UseCaseInfo(
+        default_route="fast",
+        default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
+        summary=(
+            "What an incoming message asks of the reply (question, opinion, "
+            "recommendation, request, social), its topic and language, and "
+            "every person it names with whether they are a public figure, so "
+            "a private person is confirmed before anything is drafted. JSON."
+        ),
+        typical_input_tokens=400,
+        p95_input_tokens=1_800,
+        typical_output_tokens=80,
+        min_context_recommended=8_192,
+        rationale=(
+            "A short structured read of one message: the volume tier with "
+            "reasoning OFF (D-057), which is also a correctness rule under a "
+            "600-token cap. Fail-soft: a failed call drafts without intent "
+            "and with the language detected locally."
+        ),
+        guidance=_unmeasured(
+            "Not graded. The private-person flag is the safety-relevant output; "
+            "a miss is caught only by the user's own review of the draft.",
+            related=("D-057",),
+        ),
+    ),
+    "echo_draft": UseCaseInfo(
+        default_route="primary",
+        default_config=UseCaseConfig("openai", "gpt-5.5", "low"),
+        summary=(
+            "The reply in the user's voice: trait card, five of their own "
+            "texts for style, the facts and library passages it may use with "
+            "[S#] markers, the incoming message. Also writes revisions after "
+            "the critique and the paraphrase when a source was quoted."
+        ),
+        typical_input_tokens=5_000,
+        p95_input_tokens=9_000,
+        typical_output_tokens=350,
+        min_context_recommended=32_768,
+        rationale=(
+            "The user-facing output, on the model and reasoning level the "
+            "S-3.3.4 harness ran (D-100: voice preferred 36 of 36 on "
+            "synthetic writers, quality guard passed). Changing it voids that "
+            "evidence until the harness is re-run. Not fail-soft: no draft "
+            "without it."
+        ),
+        guidance=_unmeasured(
+            "The harness measured this prompt shape on gpt-5.5 low with "
+            "synthetic writers only (D-100); the real gate is each user's own "
+            "tier (iii) test.",
+            related=("D-100",),
+        ),
+    ),
+    "echo_critique": UseCaseInfo(
+        default_route="fast",
+        default_config=UseCaseConfig("openai", "gpt-5.4-mini", "low"),
+        summary=(
+            "Scores a draft against the user's trait card and texts (tone, "
+            "vocabulary, structure, topicality, groundedness, 1 to 5) and "
+            "lists deviations; the agent revises below the target and keeps "
+            "the best of up to ECHO_DRAFT_CRITIQUE_ROUNDS. JSON."
+        ),
+        typical_input_tokens=4_000,
+        p95_input_tokens=8_000,
+        typical_output_tokens=200,
+        min_context_recommended=16_384,
+        rationale=(
+            "A judgment, not a deliverable: the mid tier with reasoning low. "
+            "Its mean voice score is the in-UI voice-match number, which the "
+            "plan says is never the product gate. Fail-soft: the draft ships "
+            "with a note that the check did not run."
+        ),
+        guidance=_unmeasured(
+            "Agreement with the user's own judgement has not been measured; "
+            "an LLM judge of personal voice agrees poorly with people unless "
+            "it may abstain (plan, S-3.3.4), so the number is advisory.",
+            related=("D-100",),
+        ),
+    ),
     "echo_extract_signals": UseCaseInfo(
         default_route="fast",
         default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),

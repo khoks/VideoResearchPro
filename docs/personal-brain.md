@@ -50,7 +50,7 @@ The bubble is *always* there once a user has Echo enabled. Pages with their own 
 - **Phones:** the bubble moves into the top bar, so it never covers the docked composer.
 - **Not ready:** the bubble is never hidden or dimmed. The panel always opens, shows readiness in words, and answers questions over the library and past Q&As at any readiness.
 - **Speaking as the user** waits for both readiness and the per-user voice test ([D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19)). The panel says which of the two is missing.
-- **Anticipation (S-3.8.2)** is pull, not push. Cards about changed saved searches, newly read shares and questions for the page appear only inside the opened panel, under a pre-registered cap and dismissal rule ([D-102](decisions.md#d-102--anticipation-cards-only-in-the-opened-panel-three-a-view-three-days-a-key-three-dismissals-turn-a-kind-off-2026-10-20)).
+- **Anticipation (S-3.8.2)** is pull, not push. Cards about changed saved searches, newly read shares and questions for the page appear only inside the opened panel, under a pre-registered cap and dismissal rule ([D-103](decisions.md#d-103--anticipation-cards-only-in-the-opened-panel-three-a-view-three-days-a-key-three-dismissals-turn-a-kind-off-2026-10-20)).
 
 ### Cold-start: Echo refuses before it can echo well
 
@@ -425,6 +425,12 @@ The single hardest constraint in this entire roadmap. Every choice below is dura
 - **No telemetry on personal-brain features.** General app telemetry stays opt-in and never sees personal-brain content.
 - **Local LLM is supported.** Per-use-case LLM config already supports `provider=local`. A user can run the entire brain off a local model with zero outbound LLM calls.
 - **Export and delete, as built (S-3.10.1 / S-3.10.2, 2026-10-19).** *The brain* is every table in `echo_privacy_service.ECHO_TABLES` (today `personal_context`, `shares_inbox`, `voice_signals` and `voice_signal_inputs`), the tenant's directory under `ECHO_SHARES_DIR`, and the tenant's vectors in every Echo Chroma collection (`shares_global`, `personal_context_global`). `GET /echo/export` returns one zip: `manifest.json`, one JSON Lines file per table with every column, and the files byte for byte with SHA-256 in the manifest; it round-trips losslessly. `DELETE /echo/brain` removes vectors, then files, then rows, re-counts every store and fails rather than report success with anything left; it takes effect immediately on self-host. Both are audited with counts only. Not the brain, and untouched by both: the research library, notes (exported at `/exports/notes.*`), the account and BYOK keys.
+- **Speak as me, as built (S-3.4.1, 2026-10-20).** [D-102](decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20). `POST /echo/draft` runs `classify_intent → retrieve_relevant_knowledge → retrieve_voice_signals → retrieve_personal_context → draft → self_critique_against_voice → finalize`, with at most two revise rounds. The voice is a trait card plus five style-diverse exemplars of the user's own notes and own-words shares (Mode A, D-100). The knowledge is library sources, notes, facts, past answers and shares, each with a marker the draft cites. Two switches: the install (`ECHO_SPEAK_AS_ME_ENABLED`, off by default) and the user's own voice test (`echo_voice_gates`). Readiness and the daily cap gate it too. In code:
+  - a third party's 8-word run is paraphrased or its sentence dropped;
+  - private names are confirmed first;
+  - citations are what the draft used.
+
+  The reply is in the user's language. Drafts are never sent.
 
 ### SaaS (future)
 

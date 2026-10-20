@@ -33,6 +33,7 @@ from app.routers import (
     echo_cards,
     echo_connectors,
     echo_signals,
+    echo_drafts,
     qa,
     qa_history,
     reports,
@@ -162,6 +163,7 @@ app.include_router(saved_searches.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(echo_connectors.router, prefix="/api/v1")
 app.include_router(echo_signals.router, prefix="/api/v1")
+app.include_router(echo_drafts.router, prefix="/api/v1")
 app.include_router(echo_cards.router, prefix="/api/v1")
 app.include_router(echo.router, prefix="/api/v1")
 app.include_router(author.router, prefix="/api/v1")

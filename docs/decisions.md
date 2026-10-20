@@ -3136,7 +3136,46 @@ The D-100 user-as-judge test is **not** part of `ready`. Readiness reports wheth
 
 **Linked initiatives / PRs.** E-3.5 / S-3.5.1 (PR [#354](https://github.com/khoks/VideoResearchPro/pull/354)), [D-049](#d-049--echo-cold-start-readiness-threshold-shipped-triple-is-v1-personal-brainmd-sub-table-is-forward-looking-spec-resolves-oq-6-2026-05-06) (superseded), [D-069](#d-069--shipped-backend-surfaces-ingest-as-a-library-tab-author-studio-as-one-page-readiness-as-a-gate-mean-2026-10-19), [D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) item 4, [D-100](#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19).
 
-## D-102 — Anticipation cards: only in the opened panel, three a view, three days a key, three dismissals turn a kind off (2026-10-20)
+## D-102 — Speak as me: two switches, guards in code, the reply in the user's language (2026-10-20)
+
+**Status:** accepted.
+
+**Context.** [D-100](#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19) let E-3.4 be built on Mode A but switched on per user only after their user-as-judge test. [D-089](#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) says a context-only share never becomes the user's voice and is never quoted. S-3.4.1 had to make both hold in a feature that writes in the user's name. The Echo bubble (S-3.8.1, lane D) hosts the same endpoint.
+
+**Decision.**
+- **Two switches.** `ECHO_SPEAK_AS_ME_ENABLED` turns the feature on for the install and is off by default. Each user also needs a passed voice test, stored in `echo_voice_gates`. The pass rule is D-100's: at least 20 pairs, own text picked in at most 80%. The tier and readiness ([D-101](#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20)) gate it too, and so does the daily cap. `GET /echo/draft/status` names every closed gate in words, in a fixed order. The page and the bubble show the gate rather than hiding the feature.
+- **The voice test result is recorded by the harness for now.** `scripts/voice_match_harness.py user-score --record <db> --tenant <id>` writes it. There is no in-app test yet.
+- **The user-as-judge result stays its own gate, beside readiness.** It does not join `ready`, which answers D-101's open question. Readiness says whether Echo knows enough. The test says whether the drafts pass for the user's writing. Each blocker's text says what to do next.
+- **Guards are code, not prompt.**
+  - Any run of 8 words shared with a third-party item (a library source, a context-only share, a past answer) is paraphrased once. If it survives, its sentence is dropped and the draft is flagged `verbatim_removed`.
+  - The exemplars and the trait card come only from the user's own notes and own-words shares.
+  - A message naming a person the classifier calls private stops with `names_need_confirmation` until the caller acknowledges the names. A relationship ("my uncle") is not a name.
+  - Citations are the markers the draft actually used, mapped back to the items it was given. Markers that match nothing are dropped, and the delivered text carries none.
+  - A question, opinion or recommendation that cites nothing is flagged `ungrounded`.
+- **The reply is in the user's language.** That means the message's language, or the one the caller picks: `en`, `hi-Deva`, `hi-Latn` or `mixed`. This is not D-066's English. D-066 governs reports and answers about sources; a draft is the user speaking.
+- **The critic is advisory.** Up to `ECHO_DRAFT_CRITIQUE_ROUNDS` (2) rounds score tone, vocabulary, structure and topicality from 1 to 5, and the best draft is kept. `voice_match_score` is their mean as a percentage. `confidence` is the share of up to 5 cited items. Neither blocks a draft.
+- **Drafts are capped, metered and audited.** The cap is a daily quota resource, `echo_drafts`: Studio 20 a day, 0 on lower tiers. A stopped draft (a gate, names to confirm) is not counted. Each draft is audited as `echo_drafted` with counts only. A draft is never sent.
+- **The bubble's shape.** The status carries the bubble's summary fields (`state`, `reasons`, the voice test's counts) beside the blocker list, so one endpoint serves both surfaces.
+
+**Alternatives considered.**
+- *Gate on readiness alone.* D-100 says the synthetic pass is a ceiling. Only the user's own test shows that a draft passes for their writing.
+- *Put the voice test in `ready`.* Readiness would then fall whenever a test failed, and its five domains would stop saying what to collect.
+- *Tell the model not to quote.* That cannot be tested. A prompt-only rule fails silently, and D-089 is a promise.
+- *Draft in English (D-066).* A reply to a Hindi message in English is not the user's voice.
+- *A separate endpoint for the bubble.* Two contracts for one feature would drift. The bubble's fields cost five keys.
+
+**Consequences.**
+- Nobody can draft until an operator turns the install switch on and the user's test is recorded. On 2026-10-20 the install held no notes, so no user could take the test yet.
+- Each draft costs about $0.02 to $0.05 on the defaults (live smoke on a synthetic persona).
+- Follow-ups:
+  - an in-app voice test, so the user does not need the harness;
+  - S-3.4.2, which turns the user's edit into a signal and makes the disclosure removable;
+  - a calibration of the critic's score against the user's own judgements.
+- New stores: `echo_drafts` and `echo_voice_gates`, registered in `ECHO_TABLES`, so they are exported and erased with the brain.
+
+**Linked initiatives / PRs.** E-3.4 / S-3.4.1 (PR [#357](https://github.com/khoks/VideoResearchPro/pull/357)), E-3.8 / S-3.8.1 (PR [#355](https://github.com/khoks/VideoResearchPro/pull/355)), [D-100](#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19), [D-101](#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20), [D-089](#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 1, D-066.
+
+## D-103 — Anticipation cards: only in the opened panel, three a view, three days a key, three dismissals turn a kind off (2026-10-20)
 
 **Status:** accepted. Pre-registered in [the note](notes/2026-10-20-anticipation-cards-preregistration.md) before any card was built.
 

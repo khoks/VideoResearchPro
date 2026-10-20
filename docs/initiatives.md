@@ -1024,24 +1024,40 @@ The planner's `temporal_profile` and the per-candidate `Era:` line are reasoned 
 
 It is a ceiling, not a margin. E-3.4 may be built; it is enabled per user only after tier (iii).
 
-### E-3.4 🔵 "Speak as me" agent (Domain 4)
+### E-3.4 🟡 "Speak as me" agent (Domain 4)
 
 **Scope.** Given an incoming message, draft a response in the user's voice using their accumulated knowledge + context. Privacy: self-host local; SaaS opt-in encrypted. Will use `echo_service.is_ready(user)` as the cold-start gate before activating.
 
 **Scope-changed 2026-10-18.** Pipeline fixed as `classify_intent → retrieve_relevant_knowledge → retrieve_voice_signals → retrieve_personal_context → draft → self_critique_against_voice → finalize`; drafts only, never sends; every draft carries citations, a voice-match score, deviation notes and a disclosure footer.
 **Acceptance.** A ready user pastes an incoming message, gets a draft with citations to sources, facts and past Q&As, a voice-match score and deviation notes; editing the draft records the diff as a new signal; a not-ready user gets the readiness meter instead; the daily draft cap holds.
 
-#### S-3.4.1 🔵 Agent and endpoint
-**PR:** TBD. Depended on S-3.3.3 and S-3.3.4, both shipped 2026-10-19. **Unblocked by [D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19):** build on Mode A as the harness ran it (the `VOICE` prompt in `scripts/voice_match_harness.py` is the starting draft prompt). It is enabled per user only after tier (iii) passes for them.
-- [ ] T-3.4.1.1 `echo_agent.py` LangGraph graph with the seven nodes; `echo_classify_intent`, `echo_draft`, `echo_critique` use cases registered (`echo_draft` on the synthesis tier). Retrieval picks about five exemplars chosen for *style diversity within the target language and register*, not topical similarity (topical matching measurably hurt attribution in the literature); the critic scores tone, vocabulary, sentence structure and topicality against the trait card for two to three rounds with knockout
-- [ ] T-3.4.1.2 `POST /echo/draft {message, audience?, register?}` → `{draft, confidence, voice_match_score, citations, deviation_notes}`; 409 with readiness diagnostics when not ready; gated on `echo_speak_as_me`
-- [ ] T-3.4.1.3 Guardrails from `personal-brain.md`: no claims outside ingested sources and facts; names of non-public people flagged before drafting
-- [ ] T-3.4.1.4 Tests with the LLM patched; readiness gate; citation grounding
-- [ ] T-3.4.1.5 Context-only shares may ground a draft but are never quoted verbatim in it ([D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 1); `echo_drafts` is registered for export and erasure; test both
+#### S-3.4.1 🟢 Agent and endpoint
+**Shipped:** 2026-10-20 — PR [#357](https://github.com/khoks/VideoResearchPro/pull/357). **Linked decision:** [D-102](decisions.md#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20). Off by default for the install (`ECHO_SPEAK_AS_ME_ENABLED`) and per user until their voice test passes; the gate is shown, not hidden. Depended on S-3.3.3 and S-3.3.4, both shipped 2026-10-19. **Unblocked by [D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19):** build on Mode A as the harness ran it (the `VOICE` prompt in `scripts/voice_match_harness.py` is the starting draft prompt). It is enabled per user only after tier (iii) passes for them.
+- [x] T-3.4.1.1 `echo_agent.py` LangGraph graph with the seven nodes; `echo_classify_intent`, `echo_draft`, `echo_critique` use cases registered (`echo_draft` on the synthesis tier). Retrieval picks about five exemplars chosen for *style diversity within the target language and register*, not topical similarity (topical matching measurably hurt attribution in the literature); the critic scores tone, vocabulary, sentence structure and topicality against the trait card for two to three rounds with knockout
+- [x] T-3.4.1.2 `POST /echo/draft {message, audience?, register?}` → `{draft, confidence, voice_match_score, citations, deviation_notes}`; 409 with readiness diagnostics when not ready; gated on `echo_speak_as_me`
+- [x] T-3.4.1.3 Guardrails from `personal-brain.md`: no claims outside ingested sources and facts; names of non-public people flagged before drafting
+- [x] T-3.4.1.4 Tests with the LLM patched; readiness gate; citation grounding
+- [x] T-3.4.1.5 Context-only shares may ground a draft but are never quoted verbatim in it ([D-089](decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 1); `echo_drafts` is registered for export and erasure; test both
+- [x] T-3.4.1.6 Per-user voice gate: `echo_voice_gates` holds each user's tier-(iii) result, written by `scripts/voice_match_harness.py user-score --record`; the pre-registered rule (at least 20 pairs, own text picked in at most 80%) is applied in code
+- [x] T-3.4.1.7 "Speak as me" card on `/echo` (`SpeakAsMePanel`): every closed gate in words, the composer, the names confirmation, the draft with disclosure, scores, citations and notes, recent drafts. One contract with the bubble (S-3.8.1)
+- [ ] T-3.4.1.8 ⚪ An in-app voice test: show the user blinded pairs and record their picks, so the switch needs no operator. The harness's `user-pairs` / `user-score` is the reference
+- [ ] T-3.4.1.9 ⚪ Calibrate the critic's voice score against the user's own picks once tier (iii) has run for someone; until then it is advisory
+
+What shipped:
+- **Gates, in this order, each in words:** the install switch, readiness v2 ([D-101](decisions.md#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20)), the voice test (not run or failed), the daily cap. A Studio tier is needed before any of them.
+- **Guards in code:**
+  - Third-party runs of 8 words are paraphrased, then dropped.
+  - Exemplars come from own words only.
+  - Private names stop the draft until the user acknowledges them.
+  - Citations are the markers the draft used.
+  - Grounding is flagged when a question, opinion or recommendation cites nothing.
+- **Language:** the draft is in the reply's language, not D-066 English.
+- **Tests:** `tests/test_services/test_echo_draft.py` (18) and `tests/test_routers/test_echo_drafts.py` (7) cover the agent, the guards, every gate, the names round trip, the 429, tenant isolation and validation. The privacy round trip covers the two new tables. `speakAsMe.test.tsx` (7) covers the card.
+- **Live smoke:** run on a synthetic persona at about $0.02 to $0.05 a draft.
 
 #### S-3.4.2 🔵 Feedback loop and limits
-**PR:** TBD
-- [ ] T-3.4.2.1 `POST /echo/draft/{id}/feedback {final_text}` stores the diff as a `voice_signals` candidate with `derived_from=draft_edit`
+**PR:** TBD. Already in S-3.4.1: the quota key (`echo_drafts`, daily, Studio 20), the disclosure line on every draft, the `echo_drafted` audit event and the own-words-only exemplars.
+- [ ] T-3.4.2.1 `POST /echo/drafts/{id}/feedback {final_text}` stores the diff as a `voice_signals` candidate with `derived_from=draft_edit`
 - [ ] T-3.4.2.2 `ECHO_DRAFTS_PER_DAY` quota key through `quota_metering_service`; a visible, user-removable disclosure line ("Drafted with Echo, reviewed by <user>") on by default, the "reviewed by" clause being what the EU AI Act Art. 50(4) editorial-responsibility exception keys on if a draft is ever published; `audit_log` event per draft; the provenance guard (only the tenant's own authored text feeds a voice) enforced in code, which makes impersonating anyone else structurally impossible
 - [ ] T-3.4.2.3 Tests: quota; feedback creates a signal
 
@@ -1143,7 +1159,7 @@ The panel is labelled as an AI. On desktop it is non-modal and stays open beside
 - [x] T-3.8.1.3 *(in the top bar instead, see call 4)* Mobile placement above the docked composer (S-8.12.1)
 
 #### S-3.8.2 🟢 Anticipation cards
-**Shipped:** 2026-10-20 — PR [#PRC](https://github.com/khoks/VideoResearchPro/pull/PRC). **Linked decision:** [D-102](decisions.md#d-102--anticipation-cards-only-in-the-opened-panel-three-a-view-three-days-a-key-three-dismissals-turn-a-kind-off-2026-10-20). The frequency cap and dismissal rule were pre-registered before any card was built ([note](notes/2026-10-20-anticipation-cards-preregistration.md), committed first on the branch).
+**Shipped:** 2026-10-20 — PR [#PRC](https://github.com/khoks/VideoResearchPro/pull/PRC). **Linked decision:** [D-103](decisions.md#d-103--anticipation-cards-only-in-the-opened-panel-three-a-view-three-days-a-key-three-dismissals-turn-a-kind-off-2026-10-20). The frequency cap and dismissal rule were pre-registered before any card was built ([note](notes/2026-10-20-anticipation-cards-preregistration.md), committed first on the branch).
 
 **Calls made.**
 1. *Only in the opened panel,* and only while its conversation is empty. Nothing badges the bubble.

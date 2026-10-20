@@ -136,6 +136,6 @@ def test_card_state_table_round_trips(migrated):
     assert _exec(eng, "SELECT shown_days FROM echo_card_state") == [(0,)]
     with pytest.raises(IntegrityError):
         _exec(eng, row, id="c-2")
-    command.downgrade(cfg, "d3bc5b91fcce")
+    command.downgrade(cfg, "b7e2c4a9d1f6")
     assert "echo_card_state" not in inspect(eng).get_table_names()
     command.upgrade(cfg, "head")

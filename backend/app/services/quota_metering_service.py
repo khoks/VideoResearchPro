@@ -103,6 +103,10 @@ _RESOURCES: dict[str, _Resource] = {
     "youtube_units": _Resource(
         "youtube_units", "daily", "youtube_units_per_day"
     ),
+    # S-3.4.1: "speak as me" drafts, capped per day.
+    "echo_drafts": _Resource(
+        "echo_drafts", "daily", "echo_drafts_per_day"
+    ),
 }
 
 

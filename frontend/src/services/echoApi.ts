@@ -386,6 +386,77 @@ export interface UpdateSignalPayload {
   weight?: number;
 }
 
+/** S-3.4.1 "speak as me". Contract agreed with the Echo bubble (S-3.8.1). */
+export interface DraftBlocker {
+  code: 'install_off' | 'not_ready' | 'voice_test_required' | 'voice_test_failed' | 'daily_cap' | string;
+  /** Written for the user; show it as is. */
+  message: string;
+}
+
+export interface VoiceGate {
+  status: 'not_run' | 'passed' | 'failed';
+  run_at: string | null;
+  pairs: number;
+  picked_own_share: number | null;
+  notes_total: number;
+  notes_needed: number;
+}
+
+export interface DraftStatus {
+  enabled: boolean;
+  blockers: DraftBlocker[];
+  readiness: Record<string, unknown>;
+  voice_gate: VoiceGate;
+  drafts_today: number;
+  drafts_per_day: number;
+  /** Summary fields for the bubble: the first blocker as a state, every
+   * blocker's message, and the voice test's counts. */
+  state: DraftGateState | string;
+  reasons: string[];
+  notes: number;
+  notes_needed: number;
+  pairs_judged: number;
+  pairs_needed: number;
+}
+
+export interface DraftCitation {
+  kind: 'source' | 'fact' | 'note' | 'qa' | 'share' | string;
+  /** The draft's marker for it (S1, F2), unique within one draft. */
+  ref?: string;
+  label: string;
+  /** A link outside the app (a source at its timestamp). */
+  url?: string;
+  /** A link inside the app, when there is one. */
+  href?: string | null;
+}
+
+export interface EchoDraft {
+  id: string;
+  message: string;
+  draft: string;
+  language: string;
+  register: string | null;
+  audience: string | null;
+  intent: string | null;
+  voice_match_score: number;
+  confidence: number;
+  citations: DraftCitation[];
+  deviation_notes: string[];
+  flags: string[];
+  disclosure: string;
+  final_text: string | null;
+  disclosure_kept: boolean | null;
+  created_at: string;
+}
+
+export interface CreateDraftPayload {
+  message: string;
+  audience?: string;
+  register?: 'intimate' | 'casual' | 'professional' | 'public';
+  language?: 'en' | 'hi-Deva' | 'hi-Latn' | 'mixed';
+  acknowledge_names?: string[];
+}
+
 export interface BrainDeleteResponse {
   deleted: boolean;
   removed: EchoFootprint;
@@ -446,39 +517,14 @@ async function downloadAuthenticated(path: string, fallbackName: string): Promis
  */
 export type DraftGateState = 'not_ready' | 'voice_test_needed' | 'voice_test_failed' | 'enabled';
 
-export interface DraftGate {
-  enabled: boolean;
-  state: DraftGateState | string;
-  /** What is missing, in plain words. */
-  reasons?: string[];
-  notes?: number;
-  notes_needed?: number;
-  pairs_judged?: number;
-  pairs_needed?: number;
-}
+/** The bubble's view of ``GET /echo/draft/status``: the summary fields it
+ * reads, all present on the server's ``DraftStatus``. */
+export type DraftGate = Partial<DraftStatus> & { enabled: boolean; state: DraftGateState | string };
 
-export interface DraftCitation {
-  kind: string;
-  ref: string;
-  label: string;
-  href?: string | null;
-}
+export type DraftRequest = CreateDraftPayload;
 
-export interface DraftRequest {
-  message: string;
-  audience?: string;
-  register?: string;
-}
-
-export interface DraftResponse {
-  id: string;
-  draft: string;
-  voice_match_score?: number | null;
-  confidence?: number | null;
-  citations?: DraftCitation[];
-  deviation_notes?: string[];
-  disclosure?: string | null;
-}
+/** The bubble's view of a draft: the fields it renders, all on ``EchoDraft``. */
+export type DraftResponse = Pick<EchoDraft, 'id' | 'draft'> & Partial<EchoDraft>;
 
 /** An anticipation card in the Echo panel (S-3.8.2). */
 export type CardKind = 'saved_search' | 'shares' | 'questions';
@@ -513,7 +559,7 @@ export const echoApi = {
     api.put<{ kinds: Record<string, boolean> }>('/echo/cards/settings', { kinds }).then(r => r.data),
   sharesSeen: () => api.post('/echo/cards/seen/shares').then(() => undefined),
   status: () => api.get<EchoStatus>('/echo/status').then(r => r.data),
-  draftStatus: () => api.get<DraftGate>('/echo/draft/status').then(r => r.data),
+  draftStatus: () => api.get<DraftStatus>('/echo/draft/status').then(r => r.data),
   draft: (payload: DraftRequest) => api.post<DraftResponse>('/echo/draft', payload).then(r => r.data),
 
   listContext: (params?: ListContextParams) =>
@@ -664,6 +710,12 @@ export const echoApi = {
 
   /** S-3.3.2 "Learn now": queue a run for whatever is waiting. */
   learnSignals: () => api.post<LearnResponse>('/echo/signals/learn').then(r => r.data),
+
+  createDraft: (payload: CreateDraftPayload) => api.post<EchoDraft>('/echo/draft', payload).then(r => r.data),
+
+  listDrafts: (limit = 5) => api.get<{ items: EchoDraft[] }>('/echo/drafts', { params: { limit } }).then(r => r.data),
+
+  deleteDraft: (id: string) => api.delete(`/echo/drafts/${encodeURIComponent(id)}`).then(() => undefined),
 
   footprint: () => api.get<EchoFootprint>('/echo/brain/footprint').then(r => r.data),
 

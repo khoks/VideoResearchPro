@@ -1,7 +1,7 @@
 """echo_card_state — the Echo panel's anticipation cards (S-3.8.2)
 
 Revision ID: 5029fce5d1ac
-Revises: d3bc5b91fcce
+Revises: b7e2c4a9d1f6
 Create Date: 2026-10-20
 
 What each card has shown and what the user did with it, per tenant and key,
@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "5029fce5d1ac"
-down_revision = "d3bc5b91fcce"
+down_revision = "b7e2c4a9d1f6"
 branch_labels = None
 depends_on = None
 

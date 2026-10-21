@@ -3233,3 +3233,23 @@ The D-100 user-as-judge test is **not** part of `ready`. Readiness reports wheth
 
 **Linked initiatives / PRs.** E-3.4 / S-3.4.2 (PR [#359](https://github.com/khoks/VideoResearchPro/pull/359)), [D-102](#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20), [D-099](#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19), [D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19).
 
+## D-105 — Visual analysis hidden in the UI until a deterministic attribution guard removes the residual error (2026-10-20)
+
+**Status:** accepted (the user's decision, 2026-10-20). Answers the question D-096's run-8 addendum left open.
+
+**Context.** Eight blind-judged R1 runs ([notes/2026-10-18-r1-visual-measurement.md](notes/2026-10-18-r1-visual-measurement.md), "Eight runs, summarised"):
+- Annotations never made fabrication worse (0 vs 2 to 5 where the arms differed), and judges scored visual use higher.
+- About one report sentence per run credits the speaker with something only shown on screen. Prompt rules (S-1.18.6) and said/shown labels (S-1.18.8) cut it from two to about one; they did not remove it.
+- Run 8 failed its pre-registered attribution rule on exactly that shape. The pre-registration sent the UI decision to the user.
+
+**Decision.** Hide everything in the UI that STARTS visual analysis (the per-run opt-in and on-demand frame capture) behind `frontend/src/config/features.ts` `featureFlags.visualAnalysis = false`, until a **deterministic** attribution guard (S-1.18.9) removes the residual error. The backend stays as built: the API still accepts `visual_analysis`, the frame routes and the worker task stay. Stills of frames that already exist still show on citation cards and in the video drawer, because a real frame cannot misattribute anything.
+
+**Consequences.**
+- A run duplicated from, or a template saved with, visual analysis on runs without it while the switch is hidden, and the form says so ("paused in this version"). Templates keep their stored setting, so it returns intact.
+- The template list labels such a template "visual analysis (paused)".
+- Unhiding is one line, plus whatever S-1.18.9's own acceptance requires.
+- R1 follow-ups that only make sense while R1 is surfaced wait: S-1.18.4 (beyond YouTube), the R1 UI follow-ups (T-1.18.2.5) and the remaining S-1.18.5 tasks.
+
+**Alternatives considered.** *Keep it opt-in with a caveat* (the state from #340 to this change): rejected by the user. A known, measured attribution slip in roughly every report is not acceptable even with disclosure. *Remove the backend*: rejected; the measurement corpus, frames and pipeline are what the guard will be built and tested on.
+
+**Linked initiatives / PRs.** E-1.18, S-1.18.2, S-1.18.9; D-067, D-071, D-075, D-096.

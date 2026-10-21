@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VideoFramesPanel } from '../VideoFramesPanel';
 import type { FramesResponse } from '../../../utils/frames';
+import { featureFlags } from '../../../config/features';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -51,6 +52,7 @@ beforeEach(() => {
   document.body.appendChild(host);
   root = createRoot(host);
   modelsOk = true;
+  featureFlags.visualAnalysis = true;   // capture shown; the hidden state has its own block
   listMock.mockReset();
   extractMock.mockClear();
   URL.createObjectURL = vi.fn(() => 'blob:frame');
@@ -109,5 +111,24 @@ describe('VideoFramesPanel', () => {
     act(() => captureButton()!.click());
     await flush();
     expect(host.textContent).toContain("this month's frame captures");
+  });
+});
+
+describe('VideoFramesPanel with visual analysis hidden (D-105)', () => {
+  beforeEach(() => {
+    featureFlags.visualAnalysis = false;
+  });
+
+  it('still shows existing stills but offers no capture', async () => {
+    listMock.mockResolvedValue({ document_id: 'd1', video_id: 'vid1', visual_enabled: true, in_progress: false, frames: [frame(12)] });
+    await mount();
+    expect(host.querySelectorAll('img')).toHaveLength(1);
+    expect(captureButton()).toBeUndefined();
+  });
+
+  it('renders nothing when there are no frames', async () => {
+    listMock.mockResolvedValue({ document_id: 'd1', video_id: 'vid1', visual_enabled: true, in_progress: false, frames: [] });
+    await mount();
+    expect(host.querySelector('[data-testid="video-frames-panel"]')).toBeNull();
   });
 });

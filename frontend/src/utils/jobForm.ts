@@ -5,6 +5,7 @@
  * once hard-coded `outputLength: 'auto'` and had no visual-analysis field,
  * so a duplicated deep, visual run came back shallow and blind (T-8.6.1.0).
  */
+import { featureFlags } from '../config/features';
 import type { Job, JobCreate, JobType, OutputLength } from '../types/job';
 import type { TemplateParameters } from '../services/jobTemplatesApi';
 
@@ -168,7 +169,8 @@ export function formToJobCreate(
 ): FormResult {
   const data: JobCreate = { job_type: form.jobType };
   if (form.outputLength !== 'auto') data.output_length = form.outputLength;
-  if (form.visualAnalysis) data.visual_analysis = true;
+  // D-105: while the option is hidden a carried-over flag never starts a run.
+  if (form.visualAnalysis && featureFlags.visualAnalysis) data.visual_analysis = true;
 
   if (form.jobType === 'topic') {
     if (requireTopic && !form.topic.trim()) return { ok: false, error: 'Topic is required.' };
@@ -223,7 +225,9 @@ export function formToTemplateParameters(form: JobFormState): { ok: true; params
       channel_type_filters: rest.channel_type_filters ?? null,
       preferred_channels: rest.preferred_channels ?? null,
       output_length: rest.output_length ?? null,
-      visual_analysis: rest.visual_analysis ?? false,
+      // The form's own value, not the run payload: a template keeps its
+      // stored setting while D-105 hides the option, so it returns intact.
+      visual_analysis: form.visualAnalysis,
       channel_list: rest.channel_list ?? null,
       videos_per_channel: rest.job_type === 'channel' ? rest.videos_per_channel ?? 10 : null,
     },

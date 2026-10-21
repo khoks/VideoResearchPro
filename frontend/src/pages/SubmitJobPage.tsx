@@ -4,6 +4,7 @@ import { useCreateJob } from '../hooks/useJobs';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { useCapability } from '../hooks/useCapability';
 import { VisualAnalysisOption } from '../components/jobs/VisualAnalysisOption';
+import { featureFlags } from '../config/features';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { useCreateTemplate, useJobTemplates, useUpdateTemplate } from '../hooks/useJobTemplates';
 import { SaveTemplateModal, TemplatePicker } from '../components/templates';
@@ -672,12 +673,25 @@ export function SubmitJobPage() {
 
           {/* S-1.18.2: the R1 opt-in, measured before it was built (runs 1-8,
               docs/notes/2026-10-18-r1-visual-measurement.md). */}
-          <VisualAnalysisOption
-            checked={form.visualAnalysis}
-            onChange={(next) => update('visualAnalysis', next)}
-            installEnabled={visualInstallEnabled}
-            modelsAvailable={visualModelsAvailable}
-          />
+          {featureFlags.visualAnalysis ? (
+            <VisualAnalysisOption
+              checked={form.visualAnalysis}
+              onChange={(next) => update('visualAnalysis', next)}
+              installEnabled={visualInstallEnabled}
+              modelsAvailable={visualModelsAvailable}
+            />
+          ) : (
+            form.visualAnalysis && (
+              // D-105: hidden until the attribution guard lands; a run or
+              // template that carried it over runs without it, and says so.
+              <p
+                data-testid="visual-analysis-paused"
+                style={{ margin: 0, fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textSecondary }}
+              >
+                Visual analysis is paused in this version, so this run will go without frames.
+              </p>
+            )
+          )}
 
           <div
             style={{

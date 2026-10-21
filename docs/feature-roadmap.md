@@ -256,7 +256,9 @@ The remaining I-5 epics (**E-5.3 Stripe**, **E-5.7 Data residency**, **E-5.8 Hos
 
 **Schema impact.** New `visual_frames` table (document, timestamp, image path, selection reason, description, informative, status). New `jobs.visual_analysis` opt-in column. New chunk metadata `visual_frame_count` / `visual_timestamps`.
 
-**API impact.** `POST /api/v1/jobs` accepts `visual_analysis: bool`. Frame-serving and on-demand per-document extraction endpoints are not built yet.
+**API impact.** `POST /api/v1/jobs` accepts `visual_analysis: bool`. Frames are served by `GET /videos/{id}/frames` and `/frames/{frame_id}/image`, and captured on demand by `POST /videos/{id}/extract-frames` (S-1.18.2, D-096).
+
+**Status 2026-10-20.** Built, measured over eight blind-judged runs, and **hidden in the UI** by the user's decision ([D-105](decisions.md#d-105--visual-analysis-hidden-in-the-ui-until-a-deterministic-attribution-guard-removes-the-residual-error-2026-10-20)). Annotations never made fabrication worse and improve visual detail, but about one sentence per report credits a speaker with something only shown on screen. The UI returns when a deterministic attribution guard ([S-1.18.9](initiatives.md)) removes that error. Existing frames still show on citation cards.
 
 **Open questions.**
 

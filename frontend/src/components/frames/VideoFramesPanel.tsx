@@ -5,6 +5,7 @@ import { useFeatureAvailable } from '../../hooks/useFeatureAvailable';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
 import { usableFrames } from '../../utils/frames';
+import { featureFlags } from '../../config/features';
 
 interface Props {
   videoId: string;
@@ -44,10 +45,13 @@ export function VideoFramesPanel({ videoId }: Props) {
         ? 'A capture is already running.'
         : undefined;
   const ytId = data?.video_id ?? null;
+  // D-105: capture starts visual analysis, so it hides with the opt-in; the
+  // stills of frames that already exist still show.
+  const captureShown = featureFlags.visualAnalysis;
 
   if (isLoading) return null;
   if (!data) return null;
-  if (!frames.length && !data.visual_enabled && !running) return null; // nothing to show, nothing to do
+  if (!frames.length && (!captureShown || (!data.visual_enabled && !running))) return null; // nothing to show, nothing to do
 
   return (
     <section
@@ -59,7 +63,7 @@ export function VideoFramesPanel({ videoId }: Props) {
         <h3 style={{ margin: 0, fontSize: fontSize.md, fontWeight: fontWeight.semibold, color: c.textPrimary, flex: 1 }}>
           On screen {frames.length ? <span style={{ color: c.textSecondary, fontWeight: fontWeight.regular }}>· {frames.length}</span> : null}
         </h3>
-        <Button
+        {captureShown && (<Button
           size="sm"
           variant="secondary"
           disabled={!canCapture}
@@ -67,20 +71,20 @@ export function VideoFramesPanel({ videoId }: Props) {
           onClick={() => extract.mutate(frames.length > 0)}
         >
           {frames.length ? 'Recapture frames' : 'Capture key frames'}
-        </Button>
+        </Button>)}
       </div>
 
-      {running && (
+      {captureShown && running && (
         <div style={{ display: 'flex', alignItems: 'center', gap: space['2'], color: c.textSecondary, fontSize: fontSize.sm, marginBottom: space['3'] }}>
           <Spinner size={14} /> Capturing frames. This downloads the video once and takes a few minutes.
         </div>
       )}
-      {extract.isError && (
+      {captureShown && extract.isError && (
         <div role="alert" style={{ color: c.error, fontSize: fontSize.sm, marginBottom: space['3'] }}>
           {errorText(extract.error)}
         </div>
       )}
-      {!frames.length && !running && (
+      {captureShown && !frames.length && !running && (
         <p style={{ margin: 0, color: c.textSecondary, fontSize: fontSize.sm, lineHeight: lineHeight.snug }}>
           No frames yet. Capturing picks the moments where the transcript suggests something is being shown and
           describes each still, so reports can say what was on screen and when.

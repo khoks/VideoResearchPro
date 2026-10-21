@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { featureFlags } from '../../config/features';
+
+// The flag is module state shared by every test in this file; start each hidden.
+afterEach(() => {
+  featureFlags.visualAnalysis = false;
+});
 import {
   DEFAULT_FORM,
   formToJobCreate,
@@ -47,6 +53,7 @@ describe('Duplicate (T-8.6.1.0)', () => {
   });
 
   it('round-trips a run into the same JobCreate', () => {
+    featureFlags.visualAnalysis = true;   // the option shown (before or after D-105)
     const result = formToJobCreate(jobToFormState(DEEP_VISUAL_JOB));
     expect(result).toEqual({
       ok: true,
@@ -124,5 +131,33 @@ describe('drafts', () => {
 
   it('falls back to the default on garbage', () => {
     expect(parseDraft('{not json')).toEqual(DEFAULT_FORM);
+  });
+});
+
+describe('visual analysis hidden (D-105)', () => {
+  afterEach(() => {
+    featureFlags.visualAnalysis = false;
+  });
+
+  it('is hidden by default', () => {
+    expect(featureFlags.visualAnalysis).toBe(false);
+  });
+
+  it('never sends a carried-over flag while hidden', () => {
+    featureFlags.visualAnalysis = false;
+    const result = formToJobCreate(jobToFormState(DEEP_VISUAL_JOB));
+    expect(result.ok && 'visual_analysis' in result.data).toBe(false);
+  });
+
+  it('keeps the stored setting of a template so it returns intact', () => {
+    featureFlags.visualAnalysis = false;
+    const result = formToTemplateParameters({ ...jobToFormState(DEEP_VISUAL_JOB) });
+    expect(result.ok && result.params.visual_analysis).toBe(true);
+  });
+
+  it('sends the flag again once the option is shown', () => {
+    featureFlags.visualAnalysis = true;
+    const result = formToJobCreate(jobToFormState(DEEP_VISUAL_JOB));
+    expect(result.ok && result.data.visual_analysis).toBe(true);
   });
 });

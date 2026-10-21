@@ -10,6 +10,10 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: visual analysis hidden for now (2026-10-20)
+
+[D-105](docs/decisions.md). The visual-analysis opt-in on New research and **Capture key frames** in the video drawer are hidden until a deterministic attribution guard (S-1.18.9) removes a measured error: about one report sentence per run credited a speaker with something only shown on screen. The backend is unchanged. Frames that already exist still show on citation cards and in the drawer. A duplicated run or a template that had it on runs without it and says so; templates keep their setting.
+
 ### Added: edit a "speak as me" draft into your own version, and Echo learns from the words you typed (S-3.4.2, 2026-10-20)
 
 PR [#359](https://github.com/khoks/VideoResearchPro/pull/359). [D-104](docs/decisions.md#d-104--a-draft-edit-teaches-only-the-words-the-user-typed-2026-10-20).

@@ -1,3 +1,4 @@
+import { featureFlags } from '../config/features';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -153,7 +154,7 @@ export function summariseParameters(p: TemplateParameters): string {
     parts.push(`${p.min_duration_minutes ?? 0}–${p.max_duration_minutes ?? '∞'} min`);
   }
   if (p.channel_type_filters?.length) parts.push(p.channel_type_filters.join(', '));
-  if (p.visual_analysis) parts.push('visual analysis');
+  if (p.visual_analysis) parts.push(featureFlags.visualAnalysis ? 'visual analysis' : 'visual analysis (paused)');
   return parts.join(' · ');
 }
 

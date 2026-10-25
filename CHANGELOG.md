@@ -10,12 +10,21 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: the attribution guard never claims a detail went unsaid (T-1.18.9.11, 2026-10-25)
+
+[D-108](docs/decisions.md#d-108--the-attribution-guard-never-infers-that-a-detail-went-unsaid-it-checks-only-english-speech-in-latin-script-2026-10-25).
+
+- A mark now says only where a detail was shown, for example "(on screen at 18:24)". "Not spoken" is gone: in R1 run 10, every time the guard read a missing word as unsaid, it was wrong.
+- "Also visible on screen" keeps its "also".
+- Sources in Hindi, Bengali or romanised Hinglish are left as written, and the processing note says how many were not checked.
+- Visual analysis stays hidden.
+
 ### Changed: the attribution guard catches run 9's slip and words its note accurately (S-1.18.9 follow-ups, 2026-10-25)
 
 - A lone figure from the screen inside a speaker's list of examples is now marked, when the speaker said the other figures in the list ("his examples are 10 (on screen at 17:14), 15,000, 0 and 1"). "His examples" now counts as crediting the speaker.
 - A mark never lands inside the romanised transliteration of a quote.
 - The processing note no longer says marked details were found "only" on screen. Where the speech is Hindi or Bengali, or the captions garble a word, the check cannot tell.
-- "Also visible on screen" loses its "also" when the speaker did not say the detail around that moment.
+- "Also visible on screen" loses its "also" when the speaker did not say the detail around that moment. *Reverted the same day (T-1.18.9.11, above).*
 - Visual analysis stays hidden. The first run of the new pre-registered pair (run 10, 2026-10-25) failed, so the second was not run ([D-107](docs/decisions.md#d-107--r1s-substance-rule-a-tie-passes-any-loss-fails-attribution-stays-zero-error-2026-10-25); protocol note, "Run 10: results").
 
 ### Added: an attribution guard for reports with on-screen evidence; visual analysis stays hidden (S-1.18.9, 2026-10-24)

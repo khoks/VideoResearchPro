@@ -86,30 +86,38 @@ def _compose(items: list[dict], chunks: list[dict], section: str = SECTION, summ
 def test_compose_marks_run8_in_the_sections_and_the_summary_and_discloses_it():
     out, prompts = _compose([_item(WEEKDAY_ITEM, "shown")], _chunks())
     html = out["final_html"]
-    marked = ("sales day (on screen at 18:24, not spoken: Monday 17,363.10; Tuesday 18,158.38; Wednesday "
+    marked = ("sales day (on screen at 18:24: Monday 17,363.10; Tuesday 18,158.38; Wednesday "
               "15,750.46; Thursday 16,091.40; Friday 16,802.66; Saturday 14,733.52; Sunday 13,336.06)")
     assert html.count(marked) == 2                      # the section and the executive summary
     # The summary was written from the guarded section, not from the error.
-    assert "on screen at 18:24, not spoken" in prompts[1]
+    assert "on screen at 18:24: Monday" in prompts[1] and "not spoken" not in html
     notes = out["processing_notes"]
     assert notes["report_attribution_marked"] == 2
     assert notes["report_attribution_speech_marked"] == 0 and notes["report_screen_claims_removed"] == 0
     assert len(notes["report_attribution_rewrites"]) == 2
     assert ("2 detail(s) in sentences crediting a speaker appear in a description of the screen near the "
             "cited moment but could not be matched to the speech there") in html
-    assert "only on screen" not in html and notes["report_screen_also_dropped"] == 0
+    assert "only on screen" not in html and notes["report_attribution_unchecked_sources"] == 0
+    assert "not checked" not in html
 
 
-def test_compose_drops_an_unsupported_also_and_discloses_it():
-    """R1 run 9: "also visible on screen" said the speaker gave a figure only the frame has."""
-    section = (f'<h2>Key Facts</h2><p>Tuesday is the strongest sales day, with Monday at 17,363.10 '
-               f'(<a href="{URL}&t=1039" target="_blank">17:19</a>); 17,363.10 is also visible on screen.</p>')
-    out, _ = _compose([_item(WEEKDAY_ITEM, "shown")], _chunks(), section=section,
-                      summary="<h2>Executive Summary</h2><p>Plain.</p>")
+def _bengali_chunks() -> list[dict]:
+    segments = annotate_segments(
+        [{"text": "এখানে অনেক ডেটাসেট আছে, আমরা এগুলো ব্যবহার করতে পারি।", "start": 596.0, "duration": 10.0}],
+        [_Frame(613.0, "Output of sns.get_dataset_names(): ['dowjones', 'fmri', 'geyser'].")])
+    return chunk_transcript(segments, chunk_size=256, chunk_overlap=32, video_metadata={
+        "video_id": "5AuuOZ4vuxI", "title": "01. Seaborn in Python", "channel_name": "CodeWithMunnaX",
+        "url": "https://www.youtube.com/watch?v=5AuuOZ4vuxI",
+    })
+
+
+def test_compose_discloses_the_sources_it_cannot_read():
+    """T-1.18.9.11: a Bengali source with frames is left as written, and the note says so."""
+    out, _ = _compose([_item(WEEKDAY_ITEM, "shown")], _chunks() + _bengali_chunks())
     html = out["final_html"]
-    assert "17,363.10 is visible on screen." in html
-    assert out["processing_notes"]["report_screen_also_dropped"] == 1
-    assert 'the word "also" was removed from 1 phrase(s) like "also visible on screen"' in html
+    assert out["processing_notes"]["report_attribution_unchecked_sources"] == 1
+    assert ("on-screen details credited to a speaker were not checked in 1 source(s) whose speech is not "
+            "English in Latin script, which the check cannot read") in html
 
 
 def test_without_the_guard_the_same_output_keeps_run8s_error():
@@ -147,15 +155,16 @@ def _map(chunks: list[dict], items: list[dict]):
         return report_agent.map_chunks({"job_type": "topic", "topic": "seaborn", "transcript_chunks": chunks})
 
 
-def test_map_relabels_the_run8_weekday_item_shown_and_records_it():
+def test_map_lists_the_run8_weekday_totals_and_records_them():
     out = _map(_chunks(), [_item(WEEKDAY_ITEM, "both")])
     fact = out["chunk_summaries"][0]["facts"][0]
-    assert fact["modality"] == "shown" and fact["modality_before_guard"] == "both"
-    assert out["processing_notes"]["map_attribution_guard"] == {"relabelled_shown": 1}
-    # The S-1.14.6 audit record shows the corrected label and the one it replaced.
+    totals = ["17,363.10", "18,158.38", "15,750.46", "16,091.40", "16,802.66", "14,733.52", "13,336.06"]
+    # Never relabelled `shown`: that would say the totals went unsaid (T-1.18.9.11).
+    assert fact["modality"] == "both" and fact["screen_only"] == totals
+    assert out["processing_notes"]["map_attribution_guard"] == {"listed": 1}
+    # The S-1.14.6 audit record keeps what the guard listed.
     record = json.loads(out["map_batch_records"][0]["payload_json"])
-    assert record["facts"][0]["modality"] == "shown"
-    assert record["facts"][0]["modality_before_guard"] == "both"
+    assert record["facts"][0]["screen_only"] == totals
 
 
 def test_map_leaves_a_corpus_without_spans_alone():

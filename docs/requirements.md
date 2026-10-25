@@ -1,6 +1,6 @@
 # Pratidhvani — Requirements
 
-**Status:** current as of 2026-04-24; NFR-4 amended 2026-10-19; FR-19 amended 2026-10-24. Functional requirements describe what the running system does; non-functional requirements describe the quality bars it must meet. Forward-looking requirements (multi-source, Author Studio, Personal Brain, SaaS) live in their owning docs and are not duplicated here — see [feature-roadmap.md](feature-roadmap.md).
+**Status:** current as of 2026-04-24; NFR-4 amended 2026-10-19; FR-19 amended 2026-10-25. Functional requirements describe what the running system does; non-functional requirements describe the quality bars it must meet. Forward-looking requirements (multi-source, Author Studio, Personal Brain, SaaS) live in their owning docs and are not duplicated here — see [feature-roadmap.md](feature-roadmap.md).
 
 ---
 
@@ -281,6 +281,6 @@ A job may request visual analysis at submission (`visual_analysis: true`). When 
 - Frames are keyed on the document and reused by every job referencing it, like transcripts and embeddings.
 - Per-video and per-job frame caps bound cost; unused allowance returns to the job pool, and reused frames cost nothing.
 - Annotations are marked in chunk text so they survive chunking, and every prompt reading transcript text is instructed to treat them as on-screen evidence rather than speech.
-- A report does not leave a detail found only in an annotation inside a sentence credited to a speaker. The attribution guard marks it in place as "on screen at mm:ss", corrects speech presented as on screen, and discloses each change in the processing note. It never deletes a detail ([D-106](decisions.md#d-106--the-deterministic-attribution-guard-ships-in-the-report-pipeline-r1-stays-hidden-after-run-9-2026-10-24)).
+- For a source whose speech is English in Latin script, a report does not leave a detail found only in an annotation inside a sentence credited to a speaker. The attribution guard marks it in place as "on screen at mm:ss" and corrects speech presented as on screen. It never claims a detail went unsaid. It discloses each change in the processing note, and names how many sources it could not check. It never deletes a detail ([D-106](decisions.md#d-106--the-deterministic-attribution-guard-ships-in-the-report-pipeline-r1-stays-hidden-after-run-9-2026-10-24), [D-108](decisions.md#d-108--the-attribution-guard-never-infers-that-a-detail-went-unsaid-it-checks-only-english-speech-in-latin-script-2026-10-25)).
 - Failure is isolated: a blocked download, an unusable selection, or a failed description never prevents a job from completing.
 - Off by default. See [D-067](decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31).

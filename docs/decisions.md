@@ -3315,3 +3315,32 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 - The decision changes the quality bar, not the attribution bar. One confirmed attribution error in either run still fails it.
 
 **Linked initiatives / PRs.** E-1.18, S-1.18.9 (T-1.18.9.8, T-1.18.9.9); D-105, D-106.
+
+## D-108 — The attribution guard never infers that a detail went unsaid; it checks only English speech in Latin script (2026-10-25)
+
+**Status:** accepted (the user's decision, 2026-10-25, T-1.18.9.11). It narrows the guard that D-106 shipped. D-105 stands: visual analysis stays hidden, and no new R1 runs were made.
+
+**Context.** R1 run 10 failed the pre-registered bar ([protocol note](notes/2026-10-18-r1-visual-measurement.md), "Run 10: results"). Four of the guard's eleven changes were confirmed attribution errors, and each one took a detail the guard could not find in the transcript as not said:
+- The captions wrote "one to one" for "121", which the guard marked "not spoken".
+- The speaker said "get started"; the guard marked "getting started" "not spoken".
+- "seaborn" and "NumPy" were spoken in Bengali. One got an on-screen mark that read as screen-only; the other lost its "also".
+
+**Decision.** The user chose T-1.18.9.11: no "not spoken" verdict, no removal of "also", and no mark on a source whose speech the guard cannot read. In code:
+- A mark says only where a detail was shown: "(on screen at mm:ss)".
+- At the map stage, an item's screen-only details are named in its compose tag. The item is never relabelled `shown` or split.
+- A source is examined only when its speech is English in Latin script: a Latin share of at least 0.6 and no R5 code-mix profile. Devanagari, Bengali and romanised Hinglish sources are left as written, and the processing note says how many were not checked.
+- What rests on positive evidence stays. Speech presented as screen is still marked as said, when the figure is found in the speech (Bengali digits included). An "also visible on screen" with no frame behind it is still removed.
+
+**Alternatives considered.**
+- *Keep "not spoken" and read numbers better* ("one to one" as 121, inflected forms). Each fix closes one misreading, and captions have more. The claim stays unprovable from a transcript.
+- *Read Hindi and Bengali speech through a transliteration or the R5 English rendering.* Possible later. An LLM rendering is not evidence a guard can trust by construction.
+- *Keep marks on unreadable sources for figures and name lists only.* That is where the old guard caught real errors, but it is the same inference that failed in run 10.
+
+**Consequences.**
+- Offline, on the stored reports of runs 1 to 10 (in-sample), the guard catches 6 of 11 confirmed errors, down from 9. All three it no longer catches are real errors in Hindi or Bengali sources: CodeWithMunnaX's dataset-name lists (runs 2 and 4) and DeepLoop Circle's "10" (run 9).
+- Its report changes fall from 93 to 43, and it makes none the old guard did not make.
+- None of run 10's four guard errors recurs. "121" and "getting started" are marked only "(on screen at mm:ss)", which is true, and the two Bengali sentences are left alone.
+- Screen-only details in Hindi, Bengali or code-mixed sources are now unguarded, and the processing note discloses it.
+- Whether R1 gets another pair of runs remains the user's call.
+
+**Linked initiatives / PRs.** E-1.18, S-1.18.9 (T-1.18.9.10, T-1.18.9.11); D-105, D-106, D-107; [N-003](inventions.md#n-003--true-by-construction-modality-marks-for-reports-written-from-speech-plus-machine-described-screens-2026-10-24).

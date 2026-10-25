@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const JWT = 'header.payload.signature';
-const getMock = vi.fn(async (_path: string, _config?: unknown) => ({ data: new Blob(['{}\n']) }));
+const getMock = vi.fn<(path: string, config?: unknown) => Promise<{ data: Blob }>>(async () => ({ data: new Blob(['{}\n']) }));
 vi.mock('../../services/api', () => ({
   default: {
     get: (path: string, config?: unknown) => getMock(path, config),

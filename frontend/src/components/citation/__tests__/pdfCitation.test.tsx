@@ -13,7 +13,7 @@ import type { Reference } from '../../../types/qa';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const getMock = vi.fn(async (_path: string, _config?: unknown) => ({ data: new Blob(['%PDF-1.7'], { type: 'application/pdf' }) }));
+const getMock = vi.fn<(path: string, config?: unknown) => Promise<{ data: Blob }>>(async () => ({ data: new Blob(['%PDF-1.7'], { type: 'application/pdf' }) }));
 vi.mock('../../../services/api', () => ({
   default: {
     get: (path: string, config?: unknown) => getMock(path, config),

@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const getMock = vi.fn(async (_path: string, _config?: unknown) => ({ data: new Blob(['bytes'], { type: 'application/pdf' }) }));
+const getMock = vi.fn<(path: string, config?: unknown) => Promise<{ data: Blob }>>(async () => ({ data: new Blob(['bytes'], { type: 'application/pdf' }) }));
 vi.mock('../api', () => ({
   default: {
     get: (path: string, config?: unknown) => getMock(path, config),

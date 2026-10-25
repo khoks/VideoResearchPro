@@ -36,7 +36,7 @@ export interface ReadinessSource {
   /** connected | not_connected | imported */
   status: string;
   available: boolean;
-  /** Why a source cannot be connected yet (not set up, waits on Google sign-in setup). */
+  /** Why a source cannot be connected yet (not set up, waits on the Google connector OAuth client). */
   reason: string | null;
   events: number;
 }

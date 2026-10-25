@@ -5,6 +5,12 @@
  * in-app subscription manager (`SubscriptionPage`). Adjust labels here;
  * the actual capabilities are enforced by `backend/app/services/tier_service.py`
  * and mirrored on the frontend by `useTierCapabilities.ts`.
+ *
+ * T-5.2.9 / D-111: the page lists only what the product does. A feature a
+ * tier is meant to get but that is not built yet is `planned` (and not
+ * `included`); a limit nothing enforces is not listed. The daily LLM-token
+ * allowance was dropped for that reason (`llm_tokens_per_day` is never
+ * checked). The document caps stay: a later E-5.2 item enforces them.
  */
 
 import type { Tier } from '../hooks/useMe';
@@ -51,13 +57,13 @@ export const TIER_DESCRIPTORS: TierDescriptor[] = [
     oneLiner: 'Author Studio + 10× quotas. Generate books and curated collections from your sources.',
     features: [
       { label: 'Everything in Free', included: true },
-      { label: 'Author Studio — books, sites, decks, reels', included: true, detail: 'Generate long-form output from your library' },
+      { label: 'Author Studio — books, sites, decks', included: true, detail: 'Generate long-form output from your library' },
+      { label: 'Reels', included: false, planned: true },
       { label: 'Shelves — group jobs into projects', included: true },
       { label: 'Saved searches with alerts', included: true },
-      { label: 'Public report sharing (signed URLs)', included: true },
+      { label: 'Public report sharing (signed URLs)', included: false, planned: true },
       { label: 'Up to 5,000 documents', included: true },
       { label: 'Up to 1,000 Q&A exchanges / month', included: true },
-      { label: '2M LLM tokens / day', included: true },
       { label: 'BYOK — bring your own LLM provider', included: false },
       { label: 'Echo personal-brain agent', included: false },
     ],
@@ -72,11 +78,10 @@ export const TIER_DESCRIPTORS: TierDescriptor[] = [
       { label: 'Everything in Pro', included: true },
       { label: 'Echo — personal-brain agent (Studio-only)', included: true, detail: 'Learns your voice and speaks as you' },
       { label: 'BYOK — use your own OpenAI / Anthropic / Google keys', included: true },
-      { label: 'Team workspaces', included: true },
-      { label: 'Data residency selection', included: true },
+      { label: 'Team workspaces', included: false, planned: true },
+      { label: 'Data residency selection', included: false, planned: true },
       { label: 'Unlimited documents', included: true },
       { label: 'Unlimited Q&A exchanges', included: true },
-      { label: '10M LLM tokens / day', included: true },
       { label: 'Priority support', included: true },
       { label: 'Early access to new connectors', included: true },
     ],

@@ -3493,6 +3493,7 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Consequences.**
 - A multi-user install should name its operators in `ADMIN_EMAILS`. Without it, the first account created on the install is the operator.
+- An address in `ADMIN_EMAILS` makes whoever holds that account an operator, and `POST /auth/register` verifies no email. So the operator registers the account before listing it: password registration refuses a listed address (403), OAuth creates or links one only when the provider verified it (Google's `email_verified`; GitHub's public email, which GitHub only allows to be a verified address), and startup logs a warning for every listed address with no account (review of the T-5.2.8 PR).
 - The Subscription page needs to know whether the reader is an operator, so it can say why the switch is unavailable instead of failing on submit.
 - D-050's Stripe swap stands, and so does its rule that a SaaS deployment before Stripe turns the switch off. The flag is rejected only as the gate for a multi-user self-host install.
 - Enforcing the document caps is its own task (T-5.2.10).

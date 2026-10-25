@@ -3253,3 +3253,39 @@ The D-100 user-as-judge test is **not** part of `ready`. Readiness reports wheth
 **Alternatives considered.** *Keep it opt-in with a caveat* (the state from #340 to this change): rejected by the user. A known, measured attribution slip in roughly every report is not acceptable even with disclosure. *Remove the backend*: rejected; the measurement corpus, frames and pipeline are what the guard will be built and tested on.
 
 **Linked initiatives / PRs.** E-1.18, S-1.18.2, S-1.18.9; D-067, D-071, D-075, D-096.
+
+## D-106 — The deterministic attribution guard ships in the report pipeline; R1 stays hidden after run 9 (2026-10-24)
+
+**Status:** accepted (2026-10-24, S-1.18.9). D-105 stands: its condition is not met.
+
+**Context.** D-105 hid R1's UI until a deterministic guard removes the residual attribution error: about one report sentence per run that credits a speaker with something only shown on screen. S-1.18.9 built the guard and measured it under a rule fixed before any run ([protocol note](notes/2026-10-18-r1-visual-measurement.md), "Runs 9 and 10").
+
+**Decision.**
+1. The guard (`backend/app/services/attribution_guard.py`) runs in every report, on by default (`REPORT_ATTRIBUTION_GUARD_ENABLED`). It is pure code and a no-op when no source has a visual span, which is every report started from the UI while R1 is hidden.
+2. How it works:
+   - It acts only on a specific detail (a number, an identifier, a quoted string, a visual descriptor pair, or three or more listed names) that it finds in a span. So every mark it writes is true by construction.
+   - It marks the detail in place, "(on screen at mm:ss)", with the span's own timestamp. It never deletes a detail.
+   - Screen-only is decided against the speech around the cited moment, not the whole video.
+   - "Not spoken" is added only for figures and multi-word quotes absent from the whole of a Latin-script speech.
+   - Map items are relabelled, split or listed before compose sees them.
+   - Speech presented as screen is corrected, and an unsupported "also visible on screen" is removed.
+   - Sections are guarded before the executive summary reads them, and the summary is guarded after.
+   - It is fail-soft and disclosed in the report's processing note.
+3. Visual analysis stays hidden. Run 9 failed rule 2 and rule 3, so run 10 was not run (as pre-registered):
+   - Rule 2: one confirmed attribution error, a lone two-digit figure from the screen inside a speaker's examples in a Hindi video, below the guard's action threshold.
+   - Rule 3: a substance tie.
+
+**Alternatives considered.**
+- *Rewrite or delete the offending clause.* Rewriting prose by rule breaks grammar and loses substance. A mark in place keeps every detail and is true whenever the detail is in the span.
+- *"Not spoken" for every screen-only detail.* This is false whenever captions mangle the word ("carrot" for carat, "15 000" for 15,000) or the speech is in Devanagari or Bengali. A wrong "not spoken" is itself an attribution error: run 4 confirmed "This was not spoken" about a word read aloud in Bengali.
+- *Decide screen-only against the whole video's speech.* This misses run 6's error: the presenter said "light grid lines" at 9:00, and the sentence about 22:28 took "light grid" from the 22:33 frame.
+- *Act on a lone two-digit figure.* This would have caught run 9's error. But "10" appears in many spans (`10%`, `figsize=(10, 6)`, axis ticks), so a mark could cite the wrong thing, which is a new error. It is left to a measured follow-up.
+- *Keep the guard off until it passes.* It changes only reports with visual spans, all seven of its run-9 changes held up under verification, and the follow-up builds on it.
+- *Show R1 anyway, since rule 3 failed by a tie.* That is the user's call, not this decision's. D-105 is theirs, and the pre-registration does not allow it.
+
+**Consequences.**
+- R1 stays hidden, and `featureFlags.visualAnalysis` stays `false`.
+- Follow-ups on S-1.18.9: lone figures in speaker credits, quote transliterations treated as quotation, an accurate processing note, then two new consecutive runs under the same rule.
+- Rule 3 failed by a tie (8.67 against 8.67), which no attribution guard can change. Whether a tie should keep R1 hidden is a question for the user.
+
+**Linked initiatives / PRs.** E-1.18, S-1.18.9; D-067, D-071, D-075, D-105.

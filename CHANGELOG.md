@@ -10,6 +10,15 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: an attribution guard for reports with on-screen evidence; visual analysis stays hidden (S-1.18.9, 2026-10-24)
+
+[D-106](docs/decisions.md#d-106--the-deterministic-attribution-guard-ships-in-the-report-pipeline-r1-stays-hidden-after-run-9-2026-10-24).
+
+- A report built with visual analysis checks, in code, that a sentence crediting a speaker does not carry a detail found only on screen. Such a detail is marked where it stands, for example "(on screen at 18:24)". A figure the speaker never said is marked "not spoken", but only where the speech is in a script the check can read.
+- The opposite slip is corrected too. A spoken figure the report places on screen is marked "said", and an "also visible on screen" with no matching frame is removed.
+- Each change is counted in the report's processing note. Reports without visual evidence are unchanged.
+- Visual analysis stays hidden. The first pre-registered run still had one sentence crediting a speaker with an on-screen "10", and its two reports tied on substance (protocol note, "Run 9: results").
+
 ### Changed: visual analysis hidden for now (2026-10-20)
 
 [D-105](docs/decisions.md). The visual-analysis opt-in on New research and **Capture key frames** in the video drawer are hidden until a deterministic attribution guard (S-1.18.9) removes a measured error: about one report sentence per run credited a speaker with something only shown on screen. The backend is unchanged. Frames that already exist still show on citation cards and in the drawer. A duplicated run or a template that had it on runs without it and says so; templates keep their setting.

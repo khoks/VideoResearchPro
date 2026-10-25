@@ -13,6 +13,10 @@ Usage (from backend/, inside the venv):
 
 Writes on.html / off.html, their statistics, the annotated transcript the
 judges verify against, and a manifest with frame + chunk counts.
+
+``--env-file`` names the .env whose API keys and LLM_* / VISUAL_* / CHUNK_*
+settings to use (default backend/.env beside this script) — a worktree has
+none of its own. Like judge_pair.py, it is read before the app is imported.
 """
 from __future__ import annotations
 
@@ -30,7 +34,18 @@ sys.path.insert(0, str(BACKEND))
 # pydantic-settings precedence (found 2026-07-29). Load .env first and let it win.
 from dotenv import dotenv_values  # noqa: E402
 
-for _k, _v in (dotenv_values(BACKEND / ".env") or {}).items():
+
+def _env_file_from_argv(argv: list[str]) -> Path:
+    """``--env-file`` read before the app is imported: settings are built at import time."""
+    for i, arg in enumerate(argv):
+        if arg == "--env-file" and i + 1 < len(argv):
+            return Path(argv[i + 1])
+        if arg.startswith("--env-file="):
+            return Path(arg.split("=", 1)[1])
+    return BACKEND / ".env"
+
+
+for _k, _v in (dotenv_values(_env_file_from_argv(sys.argv)) or {}).items():
     if _v is not None and (_k.endswith("_API_KEY") or _k.startswith(("LLM_", "VISUAL_", "CHUNK_"))):
         os.environ[_k] = _v
 
@@ -166,6 +181,7 @@ def main() -> int:
     ap.add_argument("--arms", default="on,off", help="comma list of arms to generate (on,off)")
     ap.add_argument("--topic", default=None, help="override the job's topic string")
     ap.add_argument("--descriptions", default=None, help="retier_vision.py JSON whose descriptions replace the stored ones in the ON arm")
+    ap.add_argument("--env-file", default=str(BACKEND / ".env"), help="read before import; see the module docstring")
     args = ap.parse_args()
     descriptions = load_descriptions(args.descriptions) if args.descriptions else None
 

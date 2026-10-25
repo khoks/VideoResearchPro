@@ -233,6 +233,11 @@ MODALITY_TAGS_NOTE = """EVIDENCE TAGS — WHERE EACH ITEM CAME FROM:
                   credited to a speaker.
     [SAID+SHOWN]  the speaker said it and the screen showed it. Credit the
                   speaker; you may add that it was also on screen.
+    [SAID+SHOWN; shown on screen: X | Y]
+                  the speaker said the item, but the details X and Y were
+                  found only on screen near that moment, not in the speech.
+                  Credit the speaker without them, and give X and Y in a
+                  separate clause marked as shown ("on screen at mm:ss, ...").
     [UNLABELLED]  provenance unknown; apply the on-screen annotation rules.
 - Attribute from the tag, not from how the content reads: a [SAID] item that
   sounds like screen text was spoken; a [SHOWN] item that sounds like speech

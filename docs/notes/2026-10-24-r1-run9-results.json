@@ -1,0 +1,498 @@
+{
+ "run": "run9",
+ "commit": "05e0fd8",
+ "manifest": {
+  "job_id": "419e691d-6370-4042-a22f-7169490ff736",
+  "video_count": 11,
+  "frames_informative": 119,
+  "chunks_on": 517,
+  "chunks_off": 410,
+  "chunks_with_visual": 119,
+  "descriptions_from": "D:/DEV/ClaudeProjects/VideoSearchDB/backend/data/r1_ab/retier/baseline_describe.json",
+  "on_seconds": 867.1,
+  "off_seconds": 852.9,
+  "on_html_chars": 124016,
+  "off_html_chars": 112123
+ },
+ "map": {
+  "map_batches": 2,
+  "map_batching": "packed",
+  "map_sources_remapped": 1,
+  "map_remap_calls": 2,
+  "map_modality": {
+   "both": 112,
+   "said": 253,
+   "shown": 14
+  },
+  "map_attribution_guard": {
+   "listed": 30,
+   "relabelled_shown": 2,
+   "split": 1
+  },
+  "map_originals_kept": 84,
+  "map_originals_dropped": 25
+ },
+ "guard_rewrites_on": [
+  {
+   "kind": "speech_as_screen_marked",
+   "sentence": "The CodeWithMunnaX presenter states the displayed Seaborn version is 0.13.2 and that other installed versions are also acceptable: এটাকে রান করবেন, আপনার আউটপুট স্ক্রিনে এভাবে আসবে: ০.১৩.২। আপনার ক্ষেত্রে অন্য ভার্সনও আসতে পারে, তাতে কোনো সমস্যা নেই। (eṭāke run karben, āpnār output screen-e ebhābe āsbe: 0.13.2. āpnār kṣetre anya version-o āste pāre, tāte kono samasyā nei.) — \"Run this and your out",
+   "tokens": [
+    "0.13.2"
+   ],
+   "source": "CodeWithMunnaX",
+   "seconds": 190.432,
+   "verified": false
+  },
+  {
+   "kind": "speech_as_screen_marked",
+   "sentence": "The CodeWithMunnaX presenter states the displayed Seaborn version is 0.13.2 and that other installed versions are also acceptable: এটাকে রান করবেন, আপনার আউটপুট স্ক্রিনে এভাবে আসবে: ০.১৩.২। আপনার ক্ষেত্রে অন্য ভার্সনও আসতে পারে, তাতে কোনো সমস্যা নেই। (eṭāke run karben, āpnār output screen-e ebhābe āsbe: 0.13.2. āpnār kṣetre anya version-o āste pāre, tāte kono samasyā nei.) — \"Run this and your out",
+   "tokens": [
+    "0.13.2"
+   ],
+   "source": "CodeWithMunnaX",
+   "seconds": 190.432,
+   "verified": false
+  },
+  {
+   "kind": "screen_detail_marked",
+   "sentence": "matplotlib.pyplot is imported as plt and used to create charts — Academind (0:49).",
+   "tokens": [
+    "matplotlib.pyplot"
+   ],
+   "source": "Academind",
+   "seconds": 198.0,
+   "verified": false
+  },
+  {
+   "kind": "screen_detail_marked",
+   "sentence": "sns.lineplot(x=x, y=y) creates a line graph, and Matplotlib's plt.show() can display it — CodeWithMunnaX (12:20).",
+   "tokens": [
+    "sns.lineplot"
+   ],
+   "source": "CodeWithMunnaX",
+   "seconds": 817.0,
+   "verified": false
+  },
+  {
+   "kind": "screen_detail_marked",
+   "sentence": "sns.histplot(data) represents a dataset as a histogram, with Matplotlib setting figure size, title, labels, colours, font size and grid — CodeWithMunnaX (13:53).",
+   "tokens": [
+    "sns.histplot"
+   ],
+   "source": "CodeWithMunnaX",
+   "seconds": 950.0,
+   "verified": false
+  },
+  {
+   "kind": "screen_detail_marked",
+   "sentence": "A regression plot shows two numerical variables, a fitted regression line and a confidence band, helping assess linear relationships — Onur Baltaci (10:21); the confidence band is also visible on screen.",
+   "tokens": [
+    "confidence band"
+   ],
+   "source": "Onur Baltaci",
+   "seconds": 674.0,
+   "verified": false
+  },
+  {
+   "kind": "screen_detail_marked",
+   "sentence": "The closest thing to a dissent is Academind's insistence that Matplotlib is powerful and can be explored much more deeply in later videos — Python - Matplotlib Tutorial for Beginners — Academind (26:45) — and his attention to figure architecture, where he argues that using named variables for individual charts makes the figure structure easier to remember (17:18) while also conceding that the one-",
+   "tokens": [
+    "plt.subplots()"
+   ],
+   "source": "Academind",
+   "seconds": 1604.0,
+   "verified": false
+  }
+ ],
+ "guard_rewrites_off": [],
+ "quote_fidelity": [
+  "[on]  items: 84 quotes, 0 failing {'verbatim': 63, 'near': 21} script_mismatch=0 mixed_script=0  report: 41 quotes, 0 failing {'verbatim': 37, 'near': 4} script_mismatch=0 mixed_script=0",
+  "[off]  items: 218 quotes, 0 failing {'verbatim': 193, 'near': 25} script_mismatch=0 mixed_script=0  report: 60 quotes, 0 failing {'verbatim': 58, 'near': 2} script_mismatch=0 mixed_script=0",
+  "audit exit 0"
+ ],
+ "judge_summary": {
+  "rubric": "report",
+  "judges_ok": 3,
+  "judges_total": 3,
+  "preferred_on_substance": {
+   "on": 1,
+   "off": 0,
+   "tie": 2
+  },
+  "totals": {
+   "attribution_errors": {
+    "on": 0,
+    "off": 1
+   },
+   "fabrications": {
+    "on": 14,
+    "off": 14
+   }
+  },
+  "means": {
+   "substance": {
+    "on": 8.67,
+    "off": 8.67
+   },
+   "visual_use": {
+    "on": 8.67,
+    "off": 7.33
+   }
+  },
+  "attribution_errors_total": {
+   "on": 0,
+   "off": 1
+  },
+  "fabrications_total": {
+   "on": 14,
+   "off": 14
+  },
+  "mean_substance": {
+   "on": 8.67,
+   "off": 8.67
+  },
+  "inputs": {
+   "x": "D:/DEV/ClaudeProjects/VideoSearchDB/backend/data/r1_ab/run9/on.html",
+   "y": "D:/DEV/ClaudeProjects/VideoSearchDB/backend/data/r1_ab/run9/off.html",
+   "labels": [
+    "on",
+    "off"
+   ],
+   "chars": 506055
+  }
+ },
+ "judges": [
+  {
+   "judge": "anthropic:claude-sonnet-5:medium",
+   "mapping": {
+    "A": "on",
+    "B": "off"
+   },
+   "seconds": 129.4,
+   "preferred_on_substance": "tie",
+   "substance": {
+    "on": 9,
+    "off": 9
+   },
+   "visual_use": {
+    "on": 9,
+    "off": 8
+   },
+   "attribution_errors": {
+    "on": [],
+    "off": [
+     "\"Pivotalstats (0:00) uses Apple stock data from Yahoo Finance covering the previous seven days relative to its publication date of 29 August 2023.\" (treats an inferred date drawn from on-screen chart tick-labels as a confirmed 'publication date' never stated as such in speech or shown as a publish date on screen)"
+    ]
+   },
+   "fabrications": {
+    "on": [
+     "\"The CodeWithMunnaX instructor creates x values 1, 2, 3, 4, 5 and y values including 10, 50, 80, 1985 and 325 (12:01).\" (transcript gives y = 10, 50, 80, 19, 85 — '1985' is a mis-merge of '19' and '85', and 325 belongs to an unrelated later example)",
+     "\"Values far outside the 25%–75% range — his examples are 10, 15,000, 0 and 1 — count as outliers (16:04).\" (transcript says 1,024, not 10)"
+    ],
+    "off": [
+     "\"...relative to its publication date of 29 August 2023\" / \"it dates from the 29 August 2023 publication noted above\" (specific publication date not stated anywhere in transcript or visuals; inferred from on-screen stock-chart dates and presented as fact)",
+     "\"...labels a possible holiday spike at 17 February 2012 with a y-value of 54,601.10 (19:27)\" (neither the spoken figure ~54,60.10 nor the on-screen code value 54000.10 matches 54,601.10)"
+    ]
+   },
+   "rationale": "Both reports are exceptionally dense, well-cited, and structurally identical, correctly using [VISUAL] evidence with explicit 'on screen' framing in the large majority of cases. Each contains a small number of numeric transcription errors (A mangles two CodeWithMunnaX datapoints; B invents a precise publication date from inference and garbles one annotation value). Coverage of plot taxonomy, library-comparison themes, and worked datasets is comparably thorough and verifiable in both. Given the near-identical density of checkable claims per 100 words and roughly equivalent, offsetting error rates, neither report offers a clear per-minute learning advantage over the other."
+  },
+  {
+   "judge": "google:gemini-3.1-pro-preview:medium",
+   "mapping": {
+    "A": "off",
+    "B": "on"
+   },
+   "seconds": 17.8,
+   "preferred_on_substance": "tie",
+   "substance": {
+    "off": 9,
+    "on": 9
+   },
+   "visual_use": {
+    "off": 9,
+    "on": 9
+   },
+   "attribution_errors": {
+    "off": [],
+    "on": []
+   },
+   "fabrications": {
+    "off": [
+     "42,999 transcript words, 226 minutes of instruction",
+     "published between 22 November 2018 and 28 September 2026, with a median publication date of 13 April 2025"
+    ],
+    "on": [
+     "55,443 transcript words, 226 minutes in total",
+     "published between 22 November 2018 and 28 September 2026, with a median publication date of 13 April 2025"
+    ]
+   },
+   "rationale": "Both reports provide exceptionally detailed, highly specific analyses with frequent timestamps, direct quotes, and concrete tool references. Both also make excellent use of the visual spans. However, both reports hallucinate exact corpus statistics (word counts, total minutes, and exact publication dates) that do not exist in the provided transcript. They tie on substance due to their equal density of verified facts."
+  },
+  {
+   "judge": "openai:gpt-5.5:medium",
+   "mapping": {
+    "A": "off",
+    "B": "on"
+   },
+   "seconds": 68.4,
+   "preferred_on_substance": "on",
+   "substance": {
+    "off": 8,
+    "on": 8
+   },
+   "visual_use": {
+    "off": 5,
+    "on": 8
+   },
+   "attribution_errors": {
+    "off": [],
+    "on": []
+   },
+   "fabrications": {
+    "off": [
+     "This report examines 11 videos from 10 channels — 42,999 transcript words, 226 minutes of instruction — published between 22 November 2018 and 28 September 2026, with a median publication date of 13 April 2025.",
+     "This section records the factual claims made across the corpus of 11 videos from 10 channels (42,999 transcript words, 226 minutes of material, published between 22 November 2018 and 28 September 2026, median 13 April 2025).",
+     "Across the 11 videos and 10 channels in this corpus — 42,999 transcript words and 226 minutes of material published between 22 November 2018 and 28 September 2026 — the instructional content is largely uncontroversial.",
+     "This section separates two things that are easy to blur. First, the conclusions the eleven videos in this corpus (ten channels, 42,999 transcript words, 226 minutes, published between 22 November 2018 and 28 September 2026, median 13 April 2025) reach on their own terms — the summary each instructor delivers at the end of a lesson or a segment.",
+     "Apple stock. Pivotalstats (0:00) uses Apple stock data from Yahoo Finance covering the previous seven days relative to its publication date of 29 August 2023.",
+     "This is the only source in the corpus to cover a third library alongside Matplotlib and Seaborn, and it dates from the 29 August 2023 publication noted above.",
+     "Annotations place text and arrows at specified data coordinates; the example labels a possible holiday spike at 17 February 2012 with a y-value of 54,601.10 (19:27).",
+     "How to Visualize Data in Python Using Seaborn | Seaborn Tutorial. — Absent Data (0:00) enumerates Titanic, exercise, passenger, diamonds and tips.",
+     "The video's own title dates the offering to 2026; the corpus as a whole spans publication dates from 2018-11-22 to 2026-09-28, so the names in that curriculum should be read as the product lineup as of that late-period source and not assumed stable across the earlier videos.",
+     "And the consensus is language-independent: the Hindi and Bengali sources reach substantively the same conclusions as the English ones, with the Bengali source supplying the sharpest statement of the capability-versus-orientation distinction."
+    ],
+    "on": [
+     "This report examines 11 videos from 10 channels (55,443 transcript words, 226 minutes in total), published between 22 November 2018 and 28 September 2026, with a median publication date of 13 April 2025; all 11 carry a publish date.",
+     "This section records the factual claims made across the corpus of 11 videos from 10 channels (55,443 transcript words, 226 minutes in total, published between 22 November 2018 and 28 September 2026, median 13 April 2025; all 11 videos carry a publish date).",
+     "Across the 11 videos (10 channels, 55,443 transcript words, 226 minutes, published between 22 November 2018 and 28 September 2026), the instructional content is largely uncontested — the same plotting calls recur.",
+     "The second group are conclusions that only emerge from reading all 11 videos (10 channels, 55,443 transcript words, 226 minutes, published between 22 November 2018 and 28 September 2026, median 13 April 2025) side by side; no single source states them.",
+     "Only one time-sensitive career claim appears: DeepLoop Circle's Vivek argues that LLMs have \"now arrived\" as the more important industry skill and require little coding because one uses agents (28:10).",
+     "The CodeWithMunnaX instructor creates x values 1, 2, 3, 4, 5 and y values including 10, 50, 80, 1985 and 325 (12:01).",
+     "Values far outside the 25%–75% range — his examples are 10, 15,000, 0 and 1 — count as outliers (16:04); outliers may be removed, but removal is not always ideal because training or testing may sometimes require them (16:32).",
+     "The Gate Smashers presenter concludes that both libraries can create the same kinds of visualisation, but that Seaborn simplifies statistical operations while Matplotlib permits more arbitrary customisation — Easiest Way to Plot 📈using Matplotlib in Python 🐍 — Gate Smashers (07:44).",
+     "Across the 11 videos and 10 channels in this corpus (55,443 transcript words, 226 minutes, published between 22 November 2018 and 28 September 2026), only two presenters are identified by personal name.",
+     "Onur Baltaci presents under his own name and builds his Seaborn course around a small demonstration dataframe rather than a packaged dataset — Seaborn Course: Learn Data Visualization in Python — Onur Baltaci (0:00)."
+    ]
+   },
+   "rationale": "Both reports are dense and mostly grounded, but both import unsupported publication-date metadata. A is reliable on spoken tutorial content but uses almost no screen-only evidence and contains some wrong specifics, notably the annotation value. B has more mistakes and overclaims, yet it extracts many additional concrete, checkable details from the visual spans—dataset previews, chart axes, counts, plotted values, code cells, and error text—and usually labels them as on-screen. Per minute of reading, B provides slightly more verified factual detail, especially for visual evidence."
+  }
+ ],
+ "verification": {
+  "summary": {
+   "on_attribution_errors_confirmed_from_claims": 0,
+   "on_attribution_errors_confirmed_from_sweep": 1,
+   "guard_rewrites": 7,
+   "guard_rewrites_confirmed_attribution": 0,
+   "guard_rewrites_fabrication_upheld": 0,
+   "sweep_candidates": 1,
+   "votes_missing": [],
+   "fabrication_claims": "not verified: run 9 had already failed rules 2 and 3, so rule 4 could not change the outcome; raw judge claims ON 14, OFF 14 (judge files kept with the run)",
+   "judge_attribution_claims": {
+    "on": 0,
+    "off": 1
+   }
+  },
+  "claims": [],
+  "guard": [
+   {
+    "kind": "speech_as_screen_marked",
+    "tokens": [
+     "0.13.2"
+    ],
+    "sentence": "The CodeWithMunnaX presenter states the displayed Seaborn version is 0.13.2 and that other installed versions are also acceptable: এটাকে রান করবেন, আপনার আউটপুট স্ক্রিনে এভাবে আসবে: ০.১৩.২। আপনার ক্ষেত্রে অন্য ভার্সনও আসতে পারে, তাতে কোনো সমস্যা নেই। (eṭāke run karben, āpnār output screen-e ebhābe ā",
+    "attribution": {
+     "upheld_votes": 0,
+     "total_votes": 3,
+     "confirmed": false,
+     "categories": {
+      "speech": 3
+     },
+     "reasons": [
+      "The version number and the any-version-is-fine remark are spoken Bengali speech, and the sentence presents them as what the presenter states/said; the guard's inserted '(said at 3:10; no captured frame shows it)' is correct, since neither nearby frame (2:38 Module Loaded output, 4:27 dir(sns) list) ",
+      "0.13.2 and the remark that other versions are fine were spoken by the CodeWithMunnaX presenter (Bengali speech, lines 4639-4649, said again at 4697), and no frame of that video shows the number, so the inserted '(said at 3:10; no captured frame shows it)' is correct; its 3:10 matches the estimated t",
+      "The sentence presents 0.13.2 as something the presenter SAID, which the Bengali speech confirms (lines 4639-4649, repeated at 4695-4697); the frames around that moment (2:38 import and 'Module Loaded !!!' cell, 4:27 dir(sns) list) do not show the version, so the guard's '(said at 3:10; no captured f"
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "Every claim is supported. The presenter says in Bengali that printing seaborn.__version__ shows 0.13.2 and that another version is fine, the Bengali quote is verbatim (lines 4640-4649), and the guard's inserted '(said at 3:10; no captured frame shows it)' is correct because the number is spoken at a"
+    }
+   },
+   {
+    "kind": "speech_as_screen_marked",
+    "tokens": [
+     "0.13.2"
+    ],
+    "sentence": "The CodeWithMunnaX presenter states the displayed Seaborn version is 0.13.2 and that other installed versions are also acceptable: এটাকে রান করবেন, আপনার আউটপুট স্ক্রিনে এভাবে আসবে: ০.১৩.২। আপনার ক্ষেত্রে অন্য ভার্সনও আসতে পারে, তাতে কোনো সমস্যা নেই। (eṭāke run karben, āpnār output screen-e ebhābe ā",
+    "attribution": {
+     "upheld_votes": 0,
+     "total_votes": 3,
+     "confirmed": false,
+     "categories": {
+      "speech": 3
+     },
+     "reasons": [
+      "The version number and the any-version-is-fine remark are spoken Bengali speech, and the sentence presents them as what the presenter states/said; the guard's inserted '(said at 3:10; no captured frame shows it)' is correct, since neither nearby frame (2:38 Module Loaded output, 4:27 dir(sns) list) ",
+      "0.13.2 and the remark that other versions are fine were spoken by the CodeWithMunnaX presenter (Bengali speech, lines 4639-4649, said again at 4697), and no frame of that video shows the number, so the inserted '(said at 3:10; no captured frame shows it)' is correct; its 3:10 matches the estimated t",
+      "The sentence presents 0.13.2 as something the presenter SAID, which the Bengali speech confirms (lines 4639-4649, repeated at 4695-4697); the frames around that moment (2:38 import and 'Module Loaded !!!' cell, 4:27 dir(sns) list) do not show the version, so the guard's '(said at 3:10; no captured f"
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "Every claim is supported. The presenter says in Bengali that printing seaborn.__version__ shows 0.13.2 and that another version is fine, the Bengali quote is verbatim (lines 4640-4649), and the guard's inserted '(said at 3:10; no captured frame shows it)' is correct because the number is spoken at a"
+    }
+   },
+   {
+    "kind": "screen_detail_marked",
+    "tokens": [
+     "matplotlib.pyplot"
+    ],
+    "sentence": "matplotlib.pyplot is imported as plt and used to create charts — Academind (0:49).",
+    "attribution": {
+     "upheld_votes": 0,
+     "total_votes": 3,
+     "confirmed": false,
+     "categories": {
+      "speech": 2,
+      "visual_span": 1
+     },
+     "reasons": [
+      "Every claim in the sentence was spoken at the cited moment (just after the 0:49 frame, which shows an empty cell with no code, the speaker says he imports 'mat plot lip ... dot PI plot' as 'PLT' because it lets us 'conveniently create charts'), and the inserted '(on screen at 3:18)' is accurate beca",
+      "Everything the sentence credits to the Academind speaker at 0:49 (matplotlib.pyplot imported as plt and used to create charts) was spoken (ASR 'mat plot lip ... dot PI plot ... import PI plot as PLT ... create charts'), so no screen-only content is credited to the speaker. The guard's inserted '(on ",
+      "The inserted '(on screen at 3:18)' is accurate (the VISUAL @ 3:18 span describes a cell importing `matplotlib.pyplot as plt`) and does not claim the detail went unspoken; the rest of the sentence (imported as plt, used to create charts), cited at 0:49, is what the speaker says right after 0:49, so n"
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "The guard's inserted claim holds: matplotlib.pyplot (imported as plt) is in the cited video's [VISUAL @ 3:18] span, and the parenthetical does not say it went unspoken. The original claims (pyplot imported as plt, a sub-module that creates charts) are spoken at 0:49-0:56, and the Academind attributi"
+    }
+   },
+   {
+    "kind": "screen_detail_marked",
+    "tokens": [
+     "sns.lineplot"
+    ],
+    "sentence": "sns.lineplot(x=x, y=y) creates a line graph, and Matplotlib's plt.show() can display it — CodeWithMunnaX (12:20).",
+    "attribution": {
+     "upheld_votes": 0,
+     "total_votes": 3,
+     "confirmed": false,
+     "categories": {
+      "speech": 2,
+      "visual_span": 1
+     },
+     "reasons": [
+      "The inserted '(on screen at 13:37)' is accurate: the 13:37 frame shows the code cell reading sns.lineplot(x=x,y=y), and the parenthetical does not claim the code went unspoken (it was also dictated in Bengali). The rest of the sentence (an sns line plot with x=x, y=y makes a line graph; plt.show, pl",
+      "Everything the sentence credits to the speaker at 12:20 was spoken in Bengali: sns.lineplot with x = x and y = y making a line graph, then plt.show from Matplotlib's plt. No content that only a screen span holds is credited to the speaker. The inserted '(on screen at 13:37)' is accurate, since the 1",
+      "The inserted '(on screen at 13:37)' is accurate: the VISUAL @ 13:37 span shows the code cell reading sns.lineplot(x=x,y=y) (and plt.show()), and the parenthetical does not deny that the code was also spoken. The remaining claims (it creates a line graph, plt.show() displays it) are what the Bengali "
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "The guard's inserted '(on screen at 13:37)' is correct: the VISUAL @ 13:37 span of the cited CodeWithMunnaX video shows the cell sns.lineplot(x=x,y=y) with plt.show(), and the guard made no 'not spoken' claim (the call was also spoken in Bengali). Every original claim (lineplot makes a line graph, p"
+    }
+   },
+   {
+    "kind": "screen_detail_marked",
+    "tokens": [
+     "sns.histplot"
+    ],
+    "sentence": "sns.histplot(data) represents a dataset as a histogram, with Matplotlib setting figure size, title, labels, colours, font size and grid — CodeWithMunnaX (13:53).",
+    "attribution": {
+     "upheld_votes": 0,
+     "total_votes": 3,
+     "confirmed": false,
+     "categories": {
+      "speech": 2,
+      "visual_span": 1
+     },
+     "reasons": [
+      "The guard's inserted '(on screen at 15:50)' is correct: the 15:50 visual span lists `sns.histplot(data)` in the visible code, and the parenthetical does not claim the code went unspoken (it was also said, as 'sns ... hist plot'). The explanatory body is Bengali speech correctly credited to the speak",
+      "Every element the sentence credits to the speaker (histplot showing the data as a histogram; plt figure size, title, x/y labels, colour, font size, grid) is in the Bengali speech between the 13:37 and 15:50 frames, including labels and font size, which no visual span shows, so nothing screen-only is",
+      "The guard's insertion '(on screen at 15:50)' qualifies only the code token and does not say 'not spoken'; the VISUAL @ 15:50 span shows exactly `sns.histplot(data)` at that time, so the timestamp and the screen claim are correct. Every functional claim (histogram of the data; Matplotlib figure size,"
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "The guard's inserted '(on screen at 15:50)' is correct: sns.histplot(data) is in the [VISUAL @ 15:50] span of the cited CodeWithMunnaX video (5AuuOZ4vuxI), and the guard added no 'not spoken' claim (the call is in fact also spoken). Every original claim (histplot representing the data as a histogram"
+    }
+   },
+   {
+    "kind": "screen_detail_marked",
+    "tokens": [
+     "confidence band"
+    ],
+    "sentence": "A regression plot shows two numerical variables, a fitted regression line and a confidence band, helping assess linear relationships — Onur Baltaci (10:21); the confidence band is also visible on screen.",
+    "attribution": {
+     "upheld_votes": 1,
+     "total_votes": 3,
+     "confirmed": false,
+     "categories": {
+      "visual_span": 2,
+      "attribution_error": 1
+     },
+     "reasons": [
+      "The only screen-only detail, the confidence band, is now explicitly labelled '(on screen at 11:14)', which matches the VISUAL @ 11:14 span (correct detail, correct time, never spoken); the spoken details (two numerical variables, best-fit line, linear relationship) stay with the speaker and are also",
+      "The speaker said two numerical variables, a best-fit regression line and whether a linear relationship exists, but never mentioned a confidence band, which appears only in the 11:14 VISUAL span; the inserted '(on screen at 11:14)' is accurate but does not say 'not spoken', and the sentence still cre",
+      "The inserted '(on screen at 11:14)' correctly marks the confidence band, which exists only in the VISUAL @ 11:14 span and is never spoken, as screen content at the right timestamp; the two numerical variables, best-fit line and linear-relationship purpose are spoken (and also visible at 11:14), so n"
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "Every claim is supported: the two numerical variables, the fitted regression line and the linear-relationship purpose are spoken in Onur Baltaci's regression section, and the confidence band is in the cited video's [VISUAL @ 11:14] span at exactly the inserted timestamp (and never spoken), so both t"
+    }
+   },
+   {
+    "kind": "screen_detail_marked",
+    "tokens": [
+     "plt.subplots()"
+    ],
+    "sentence": "The closest thing to a dissent is Academind's insistence that Matplotlib is powerful and can be explored much more deeply in later videos — Python - Matplotlib Tutorial for Beginners — Academind (26:45) — and his attention to figure architecture, where he argues that using named variables for indivi",
+    "attribution": {
+     "upheld_votes": 0,
+     "total_votes": 3,
+     "confirmed": false,
+     "categories": {
+      "visual_span": 2,
+      "speech": 1
+     },
+     "reasons": [
+      "The sentence is in the ON report. The insistence, the argument and the concession were all spoken and are presented as speech, and the guard's inserted '(on screen at 26:44)' is correct because VISUAL @ 26:44 shows plt.subplots(2,2, figsize=(20,5)). The function was also spoken ('PLT dot sub plot as",
+      "Everything the sentence credits to Academind is in his speech, including 'PLT dot sub plot as subplots', 'one single line of code' and 'a lot more convenient', so nothing that only appears on screen is presented as said. The guard's inserted '(on screen at 26:44)' is accurate (the VISUAL @ 26:44 spa",
+      "The inserted '(on screen at 26:44)' is accurate (the 26:44 span shows the one-line plt.subplots(2,2, figsize=(20,5)) call) and does not say 'not spoken'; the concession it sits in, which the speaker did voice ('PLT dot sub plot as subplots ... one single line of code which is a lot more convenient')"
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "The guard's inserted claim holds: the cited Academind video's [VISUAL @ 26:44] span shows the one-line plt.subplots(2,2, figsize=(20,5)) call on screen, and the parenthetical does not claim 'not spoken' (the call is also spoken). Every original claim (Matplotlib is powerful and worth exploring more "
+    }
+   }
+  ],
+  "sweep": [
+   {
+    "sentence": "Values far outside the 25%–75% range — his examples are 10, 15,000, 0 and 1 — count as outliers (16:04); outliers may be removed, but removal is not always ideal because training or testing may sometimes require them (16:32).",
+    "why": "The sentence credits Vivek (DeepLoop Circle) with four spoken outlier examples. His speech gives 1024, 15,000, 0 and 1. No standalone 10 is spoken anywhere in the box-plot passage; 10 appears only in the on-screen OneNote notes (‘outliers -> 25 - 75 | 10% | 15%’) in the [VISUAL @ 17:14] span. The OF",
+    "upheld_votes": 3,
+    "total_votes": 3,
+    "confirmed": true,
+    "categories": {
+     "attribution_error": 3
+    },
+    "reasons": [
+     "The sentence is in the ON report, and its 15,000 / 0 / 1 examples and the removal caveat are spoken, but the speaker says 1024, not 10 (no other spoken 10 or दस appears as an outlier example); the only 10 is the on-screen handwriting 'outliers -> 25 - 75 | 10% | 15%' (VISUAL @ 17:14). The sentence f",
+     "The speaker said 1024, 15,000, 0 and one; 10 is never spoken in this passage and appears only in the on-screen note 'outliers -> 25 - 75 | 10% | 15%' (VISUAL @ 17:14), yet the report lists it among 'his examples' at the speech timestamp 16:04 (the OFF report, from the same speech without annotations",
+     "Most of the sentence is spoken (the 25-75 range, 15,000, 0, 1, and the remove-but-needed-for-training/testing caveat), and nothing spoken is presented as shown; but the speaker's first example is 1024, and the only '10' at this moment is the handwritten '10%' in the 17:14 screen span. The report put"
+    ]
+   }
+  ]
+ },
+ "outcome": {
+  "rule1_quote_fidelity": "pass",
+  "rule2_attribution": "FAIL (1 confirmed, sweep candidate, 3 of 3)",
+  "rule3_substance": "FAIL (ON 1, OFF 0, tie 2; mean 8.67 vs 8.67)",
+  "rule4_fabrication": "not verified",
+  "rule5_guard_sentences": "pass (0 confirmed among 6 distinct sentences)",
+  "rule6_substance_loss": "pass (no detail deleted; ON mean 8.67 >= 7.67)",
+  "decision": "fails the pre-registered rule; run 10 not run; visual analysis stays hidden"
+ }
+}

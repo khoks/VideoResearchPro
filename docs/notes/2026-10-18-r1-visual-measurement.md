@@ -265,3 +265,59 @@ What the eight runs show:
 - **Substance preference** swings with whatever pipeline defect a run exposed.
 - **Attribution** settles at roughly one confirmed error per report: speaker-credited sentences that absorb a screen-only detail. Prompt rules and said/shown labels reduced it from two to about one; they did not remove it. A deterministic guard (`modality_check.py`) caught only 2 of 5 at its best setting, so nothing yet removes it.
 
+## Runs 9 and 10: the deterministic attribution guard, pre-registered (2026-10-24, before either run exists)
+
+D-105 hid R1's UI until a deterministic guard removes the residual attribution error. S-1.18.9 builds that guard (`backend/app/services/attribution_guard.py`), at two points:
+
+- **Map items.** A detail of an item (a number, an identifier, a quoted string, a visual descriptor pair such as "confidence band", or three or more listed names) that sits in a span of the item's own source near its moment, and not in the speech around that moment, is screen-only. An item whose details are all screen-only becomes `shown`; screen-only clauses are split into a `shown` item; otherwise the details are listed in the compose tag (`[SAID+SHOWN; shown on screen: ...]`). Run 8's weekday totals reached the composer as `[SAID+SHOWN]`, and the tag note told it to credit the speaker.
+- **The composed report.** A screen-only detail in a part of a sentence credited to a speaker is marked in place, "(on screen at 18:24)", with the span's own timestamp. "Not spoken" is added only for figures and multi-word quotes absent from the source's whole speech, and only in Latin-script speech. An "also visible on screen" with no span of the cited source behind it is removed; "the video displays X", where only the speech has X, is marked as said. The sections are guarded before the executive summary reads them, then the summary is guarded. Every change is counted and disclosed in the report's processing note, and listed in the run's `on.intermediates.json` (`attribution_guard`).
+
+**Offline check (in-sample, not evidence for the rule).** On the stored ON reports of runs 1 to 8 the guard catches 8 of the 10 confirmed attribution errors (`modality_check.py`: 2 of 5). The two misses are a frame-specific reading of a file explorer (run 3) and a sentence with no checkable detail, "This was not spoken" (run 4). The guard was designed against these same labels, so this shows coverage, not generalisation; the two runs below are the test. Every "not spoken" it wrote was checked against the transcripts by hand.
+
+**Setup.** Job `419e691d`, both arms regenerated on the commit that adds this section, with `--descriptions data/r1_ab/retier/baseline_describe.json` (gpt-5.5, D-081) and the models in `backend/.env`, exactly as run 8. Run 9, then run 10, with no code change in between. Judges: `judge_pair.py` with GPT-5.5, Sonnet 5 and Gemini 3.1 Pro (all medium). No substitutes: a run waits for the Gemini quota.
+
+**Verification, unchanged from runs 1 to 8.** Every claim from every judge, Gemini 3.1 Pro's included, gets three lenses, and the majority decides. Then three independent sweeps of ON (every visual reference, every speaker credit, the densest sections), with three refuters per candidate. The D-075 multilingual rule applies throughout. **New:** every sentence the guard changed is also a candidate, checked by the three attribution lenses and by the fabrication lens.
+
+**Pass rule.** Both runs must pass every item:
+1. Quote fidelity: `audit_quote_fidelity.py --check` exits 0 (unchanged).
+2. Attribution: zero confirmed attribution errors in ON, in either direction, counting every judge's claims and the sweep (unchanged). A wrong guard mark counts here.
+3. Substance: at least two of the three families prefer ON (unchanged).
+4. Fabrication: ON has no more confirmed fabrications than OFF (unchanged).
+5. No rise in fabrication from the guard: zero confirmed errors of either kind among the sentences the guard changed.
+6. No substance loss beyond noise. (a) Mechanically, every detail named in a guard record still appears in the ON report: the guard moves details, it never deletes them. A removed "also visible on screen" deletes a claim about the screen, not a detail. (b) ON's mean substance across the three judges is at least **7.67**, which is run 8's 8.33 minus 0.67. The 0.67 is the largest change in one arm's mean substance between consecutive comparable runs (OFF, run 5 to run 6). Judge noise on an identical pair of reports was 0.33 (runs 2 to 4).
+
+**Outcomes, fixed now.**
+- Both runs pass: set `featureFlags.visualAnalysis = true`, record a decision that supersedes D-105, and update S-1.18.2, the L6 status and the CHANGELOG.
+- Rule 1 fails: that run is invalid. The defect is fixed in its own change and the run is repeated; it does not count toward the two.
+- Anything else fails in either run: the guard does not meet D-105's bar, the feature stays hidden, and the failing case is recorded. If run 9 fails, run 10 is not run.
+
+## Run 9: results (2026-10-24; the rule above was not edited)
+
+Commit `05e0fd8`, the commit that added the pre-registration. ON 124,016 chars (867 s), OFF 112,123 chars (853 s); 517 and 410 chunks; 1 starved source re-mapped. Compact record: [2026-10-24-r1-run9-results.json](2026-10-24-r1-run9-results.json); artifacts in `backend/data/r1_ab/run9/` (gitignored).
+
+**What the guard did.**
+- *Map items* (ON): 30 listed with their screen-only details, 2 relabelled `shown`, 1 split.
+- *Report* (ON): 7 changes in 6 sentences. Five details in speaker-credited sentences were marked "(on screen at mm:ss)": `matplotlib.pyplot`, `sns.lineplot`, `sns.histplot`, `plt.subplots()`, and Onur Baltaci's "confidence band". In one sentence, CodeWithMunnaX's "0.13.2" was marked "(said at 3:10; no captured frame shows it)" twice, and the second copy landed inside the quote's romanised transliteration (a defect; see below).
+- *OFF*: no changes, as designed.
+
+| Rule | Result | Evidence |
+|---|---|---|
+| 1. Quote fidelity | pass | ON 41 report quotes, OFF 60, none failing |
+| 2. Attribution | **fail** | 1 confirmed ON error, 3 votes of 3. The judges claimed none in ON. Sweeps checked 262, 193 and 78 sentences; one candidate, confirmed: "Values far outside the 25%–75% range — his examples are 10, 15,000, 0 and 1 — count as outliers (16:04)". DeepLoop Circle says "1024 या फिर है 15,000 … 0 या फिर वन"; the only "10" is the handwritten "10%" in the `[VISUAL @ 17:14]` span. The OFF report, from the same speech, has "1,024, 15,000, 0 and 1" |
+| 3. Substance | **fail** | ON 1 (GPT-5.5, 8 vs 8), OFF 0, tie 2 (Sonnet 5 9 vs 9; Gemini 3.1 Pro 9 vs 9). Mean substance 8.67 vs 8.67; visual use 8.67 vs 7.33 |
+| 4. Fabrication | not verified | Run 9 had already failed rules 2 and 3, so rule 4 could not change the outcome. Raw judge claims: ON 14, OFF 14 (judge files kept with the run) |
+| 5. Guard sentences | pass | 6 distinct sentences, 3 attribution lenses and the fabrication lens each: 1 attribution vote upheld of 18 (the confidence-band sentence, whose composer-written "is also visible on screen" still implies speech; 2 of 3 refuted), no fabrication upheld |
+| 6. Substance loss | pass | (a) every detail in the guard records is still in the report; (b) ON mean 8.67 ≥ 7.67 |
+
+**Outcome, as pre-registered:** run 9 fails rules 2 and 3. The guard does not meet D-105's bar, so run 10 is not run and visual analysis stays hidden ([D-106](../decisions.md#d-106--the-deterministic-attribution-guard-ships-in-the-report-pipeline-r1-stays-hidden-after-run-9-2026-10-24)).
+
+**Why the error got through.** The map stage wrote "such as 10, 15,000, 0, or 1 in the speaker's examples", labelled `said`. The guard found the "10" in the 17:14 span and not in the speech, and correctly classed it as screen-only. It acts on one strong detail or two weak ones, though, and a lone two-digit figure is weak by design, because "10" occurs in so many spans (`10%`, `figsize=(10, 6)`, axis ticks) that a mark would often cite the wrong thing. Below that threshold the error passed unmarked. The shape is the familiar one, a screen detail inside a speaker credit, now in its smallest form, and again in a non-English video.
+
+**Also found** (none confirmed as attribution errors):
+- A guard mark landed inside the romanised transliteration of a Bengali quote. Four verifiers called it a formatting defect, not a misattribution.
+- The processing note says marked details were "found only on screen". Where the speech is Bengali, or the captions garble the word ("dot PI plot" for `.pyplot`), the detail was also spoken, and the guard simply could not read it. The marks themselves are true; the note overclaims.
+- Four of the five "on screen" marks sit on code the speaker also said. They are redundant rather than wrong, and every verifier refuted them as errors.
+- Outside attribution, sweep 1 reported two fabrication-class slips: DeepLoop's "सिक्स" read as "six" where the speaker means "sex", and a Seaborn conclusion credited to Gate Smashers that belongs to CodeWithMunnaX. Rule 4 was not verified, so these are not counted.
+
+**What run 9 shows.** The guard did what it was built to do: every one of its own changes held up under verification, the note on the spoken version number included. But the run still carried one confirmed error, the same count as run 8 without the guard. The substance tie means R1's quality claim (rule 3) failed for a reason the guard cannot touch: on this run the judges found the annotated report exactly as substantive as the plain one.
+

@@ -36,7 +36,7 @@ from app.agents.prompts.shared import (
 )
 from app.agents.state import ReportAgentState
 from app.config import settings
-from app.services import code_mixing_service, language_service, quote_fidelity
+from app.services import attribution_guard, code_mixing_service, language_service, quote_fidelity
 from app.services.visual_service import strip_annotations
 from app.services.llm_service import get_llm_for, response_text
 from app.services.llm_routing import (
@@ -443,6 +443,9 @@ def map_chunks(state: ReportAgentState) -> dict:
     # N-002: every source's own text, so kept `original` wording can be
     # checked against the transcript it claims to come from.
     source_texts = _source_texts_for_verification(chunks)
+    # S-1.18.9: each source's speech and spans, so an item's details found
+    # only on screen are labelled from evidence, not from how they read.
+    guard_evidence = _guard_evidence(chunks)
 
     # Group chunks into batches. `batch_metas` runs parallel to `batches` so
     # the S-1.14.6 audit record can say which videos a batch covered.
@@ -508,7 +511,7 @@ def map_chunks(state: ReportAgentState) -> dict:
         batch_tokens.append(current_item_tokens)
 
     def _invoke_batch(batch_items: list[str], item_tokens: list[int],
-                      modality_counts: dict, original_counts: dict) -> dict:
+                      modality_counts: dict, original_counts: dict, guard_counts: dict) -> dict:
         """One map call. Returns the parsed summary; raises on invocation
         failure, on a response cut off at the completion budget, and on a
         response that is not a JSON object (S-1.14.19), so the caller's
@@ -539,6 +542,14 @@ def map_chunks(state: ReportAgentState) -> dict:
         # S-1.18.8: fix the label at the stage that read the speech.
         batch_has_visual = any(VISUAL_MARKER_OPEN in t for t in batch_items)
         _label_modality(parsed, visual_sources, batch_has_visual, modality_counts)
+        # S-1.18.9: then correct the label from the item's own details. A guard
+        # failure must never fail the batch: that would bisect and drop content.
+        if guard_evidence is not None:
+            try:
+                attribution_guard.label_items(parsed, guard_evidence, guard_counts)
+            except Exception:  # noqa: BLE001 - counted and logged; the labels stand as mapped
+                logger.exception("map_chunks: attribution guard failed on one batch; its labels stand")
+                guard_counts["failed"] = guard_counts.get("failed", 0) + 1
         # N-002: "copied EXACTLY" enforced in code, before the audit record.
         _verify_originals(parsed, source_texts, original_counts)
         return parsed
@@ -552,7 +563,7 @@ def map_chunks(state: ReportAgentState) -> dict:
         and merged in batch order afterwards, so concurrent batches never
         share a counter. Bisected pieces are numbered 0, 1, ... in order."""
         out = {"pairs": [], "failed": 0, "dropped": 0,
-               "modality": {}, "originals": {"kept": 0, "dropped": 0}}
+               "modality": {}, "originals": {"kept": 0, "dropped": 0}, "guard": {}}
         leaf = [0]
 
         def _sub(depth: int) -> int | None:
@@ -564,7 +575,7 @@ def map_chunks(state: ReportAgentState) -> dict:
 
         def _attempt(items: list[str], metas: list[dict], toks: list[int], depth: int) -> None:
             try:
-                summary = _invoke_batch(items, toks, out["modality"], out["originals"])
+                summary = _invoke_batch(items, toks, out["modality"], out["originals"], out["guard"])
             except Exception as e:  # noqa: BLE001 - every failure is bisected or recorded
                 limit = _MAP_MAX_BISECT_DEPTH if isinstance(e, MapOutputError) else 1
                 if len(items) >= 2 and depth < limit:
@@ -649,6 +660,7 @@ def map_chunks(state: ReportAgentState) -> dict:
     records: list[dict] = []
     modality_counts: dict[str, int] = {}
     original_counts: dict = {"kept": 0, "dropped": 0}
+    guard_counts: dict[str, int] = {}
     failed_batches = 0
     dropped_chunk_groups = 0
     for res in results:
@@ -660,6 +672,8 @@ def map_chunks(state: ReportAgentState) -> dict:
         dropped_chunk_groups += res["dropped"]
         for k, v in res["modality"].items():
             modality_counts[k] = modality_counts.get(k, 0) + v
+        for k, v in res["guard"].items():
+            guard_counts[k] = guard_counts.get(k, 0) + v
         original_counts["kept"] += res["originals"]["kept"]
         original_counts["dropped"] += res["originals"]["dropped"]
         original_counts["trimmed"] = original_counts.get("trimmed", 0) + res["originals"].get("trimmed", 0)
@@ -679,6 +693,9 @@ def map_chunks(state: ReportAgentState) -> dict:
             "map_chunks_dropped": dropped_chunk_groups,
             "map_chunks_total": len(chunks),
             "map_modality": dict(sorted(modality_counts.items())),
+            # S-1.18.9: items whose details were found only on screen —
+            # relabelled shown, split, or listed for compose.
+            "map_attribution_guard": dict(sorted(guard_counts.items())),
             "map_originals_kept": original_counts["kept"],
             "map_originals_dropped": original_counts["dropped"],
             # Kept after the speaker's words were separated from a
@@ -917,18 +934,20 @@ def _uses_modality_tags(consolidated: dict) -> bool:
 
 _PIPELINE_ONLY_KEYS = (
     "modality", "modality_model", "original_rejected", "original_rejected_reason",
-    "original_stripped",
+    "original_stripped", "screen_only", "modality_before_guard", "split_by_guard",
 )
 
 
 def _render_items_for_compose(items: list, tagged: bool) -> list:
     """Copies of ``items`` as the composer should read them.
 
-    With tags: content is prefixed with the evidence tag. Either way the
-    pipeline-only ``modality`` / ``modality_model`` / ``original_rejected``
-    keys are dropped — the tag carries the label, a rejected original must
-    never reach the composer, and the persisted records keep the raw fields.
-    Never mutates the consolidated items.
+    With tags: content is prefixed with the evidence tag. An item whose
+    details were found only on screen (S-1.18.9, `screen_only`) names them in
+    the tag — "[SAID+SHOWN; shown on screen: 17,363.10 | 18,158.38]" — so the
+    composer knows exactly what it may not credit to the speaker. Either way
+    the pipeline-only keys are dropped — the tag carries the label, a
+    rejected original must never reach the composer, and the persisted
+    records keep the raw fields. Never mutates the consolidated items.
     """
     rendered: list = []
     for item in items:
@@ -938,9 +957,36 @@ def _render_items_for_compose(items: list, tagged: bool) -> list:
         copy = {k: v for k, v in item.items() if k not in _PIPELINE_ONLY_KEYS}
         if tagged:
             tag = _MODALITY_TAG.get(item.get("modality"), _MODALITY_TAG[MODALITY_UNKNOWN])
+            listed = [str(d) for d in item.get("screen_only") or [] if str(d).strip()]
+            if listed and item.get("modality") != MODALITY_SHOWN:
+                tag = f"[SAID+SHOWN; shown on screen: {' | '.join(dict.fromkeys(listed))}]"
             copy["content"] = f"{tag} {copy.get('content', '')}"
         rendered.append(copy)
     return rendered
+
+
+# Speaker fields that name a role, not a person: no use for telling who a sentence credits.
+_GENERIC_SPEAKERS = {"", "presenter", "speaker", "instructor", "host", "narrator", "unknown", "teacher",
+                     "tutor", "creator", "author", "the presenter", "the instructor", "the speaker"}
+
+
+def _guard_evidence(chunks: list[dict], items: dict | None = None) -> "attribution_guard.Evidence | None":
+    """S-1.18.9 evidence for ``chunks``, or None when the guard is off or no source has a span.
+
+    ``items`` (the consolidated map items) contributes speakers' names, so
+    "Vivek says ..." is read as a credit.
+    """
+    if not settings.REPORT_ATTRIBUTION_GUARD_ENABLED or not chunks:
+        return None
+    names = {
+        str(item.get("speaker") or "").strip()
+        for group in (items or {}).values() for item in group or []
+        if isinstance(item, dict)
+    }
+    evidence = attribution_guard.build_evidence(
+        chunks, [n for n in names if n.lower() not in _GENERIC_SPEAKERS]
+    )
+    return evidence if evidence.has_visual else None
 
 
 def _count_items(summary: object) -> int:
@@ -1467,6 +1513,28 @@ def compose_report(state: ReportAgentState) -> dict:
     if not parts:
         return {"final_html": "<p>Report generation failed: no sections could be composed.</p>"}
 
+    # S-1.18.9: a detail found only on screen that a section still credits to
+    # a speaker is marked where it stands. The sections are guarded BEFORE the
+    # summary reads them (R1 run 8's error was the summary condensing a body
+    # passage into "X reads ..."), and the summary is guarded after.
+    guard_evidence = _guard_evidence(state.get("transcript_chunks") or [], consolidated)
+    guard_rewrites: list = []
+    guard_failures = 0
+
+    def _guard(html: str) -> str:
+        nonlocal guard_failures
+        try:
+            html, rewrites = attribution_guard.guard_report(html, guard_evidence)
+        except Exception:  # noqa: BLE001 - disclosed below; the text stays as composed
+            logger.exception("compose_report: attribution guard failed on one passage; left unguarded")
+            guard_failures += 1
+            return html
+        guard_rewrites.extend(rewrites)
+        return html
+
+    if guard_evidence is not None:
+        parts = [_guard(part) for part in parts]
+
     # Executive summary LAST, so it summarizes what was actually written —
     # and it now reads the written text, not a digest of item counts
     # (S-1.14.15). `digest` stays for the log line below.
@@ -1490,6 +1558,13 @@ def compose_report(state: ReportAgentState) -> dict:
         )
     except Exception as e:
         logger.error("compose_report: executive summary failed (%s)", e)
+    if guard_evidence is not None and summary_html:
+        summary_html = _guard(summary_html)
+    if guard_rewrites:
+        logger.warning(
+            "compose_report: attribution guard changed %d place(s): %s", len(guard_rewrites),
+            "; ".join(f"{r.kind} {r.tokens[:3]}" for r in guard_rewrites[:20]),
+        )
     logger.info("compose_report: sections written — %s", "; ".join(digest))
 
     # Statistics are arithmetic, not judgement — render them deterministically
@@ -1547,6 +1622,30 @@ def compose_report(state: ReportAgentState) -> dict:
             "in the report did not match any source's speech and were removed "
             "(the English beside them was kept)"
         )
+    guard_counts = {
+        kind: sum(1 for r in guard_rewrites if r.kind == kind)
+        for kind in ("screen_detail_marked", "speech_as_screen_marked", "screen_claim_removed")
+    }
+    if guard_counts["screen_detail_marked"]:
+        disclosures.append(
+            f"{guard_counts['screen_detail_marked']} detail(s) in sentences crediting a speaker were "
+            "found only on screen in the source and are marked \"on screen\" where they appear"
+        )
+    if guard_counts["speech_as_screen_marked"]:
+        disclosures.append(
+            f"{guard_counts['speech_as_screen_marked']} detail(s) described as shown on screen were "
+            "found only in the speech and are marked as said"
+        )
+    if guard_counts["screen_claim_removed"]:
+        disclosures.append(
+            f"{guard_counts['screen_claim_removed']} claim(s) that a spoken detail was also on screen "
+            "matched no captured frame of that source and were removed"
+        )
+    if guard_failures:
+        disclosures.append(
+            f"the check that keeps on-screen details from being credited to speakers failed on "
+            f"{guard_failures} passage(s), which are shown as written"
+        )
     if sections_failed:
         disclosures.append(f"{sections_failed} report section(s) failed to compose")
     if disclosures:
@@ -1557,6 +1656,11 @@ def compose_report(state: ReportAgentState) -> dict:
         )
     out_notes = dict(notes)
     out_notes["report_quotes_removed"] = sum(r["occurrences"] for r in scrubbed)
+    out_notes["report_attribution_marked"] = guard_counts["screen_detail_marked"]
+    out_notes["report_attribution_speech_marked"] = guard_counts["speech_as_screen_marked"]
+    out_notes["report_screen_claims_removed"] = guard_counts["screen_claim_removed"]
+    out_notes["report_attribution_guard_failures"] = guard_failures
+    out_notes["report_attribution_rewrites"] = [r.as_dict() for r in guard_rewrites]
     return {"final_html": html, "processing_notes": out_notes}
 
 
@@ -1876,7 +1980,8 @@ def run_report_agent(
     emitted and what reduce handed to compose — for the caller to persist
     (`job_tasks._persist_report_intermediates`). Same shape as the
     ``candidates_out`` hook on the search agent. Channel jobs have no
-    map/reduce stage and produce none.
+    map/reduce stage and produce none. When the S-1.18.9 attribution guard
+    changed the prose, ``"attribution_guard"`` lists each change.
     """
     graph = build_report_graph()
     result = graph.invoke({
@@ -1896,4 +2001,8 @@ def run_report_agent(
     if intermediates_out is not None:
         intermediates_out["map"] = list(result.get("map_batch_records") or [])
         intermediates_out["reduce"] = result.get("reduce_record") or None
+        # S-1.18.9: every place the attribution guard changed the prose, when it did.
+        rewrites = (result.get("processing_notes") or {}).get("report_attribution_rewrites")
+        if rewrites:
+            intermediates_out["attribution_guard"] = list(rewrites)
     return result.get("statistics", {}), result.get("final_html", "")

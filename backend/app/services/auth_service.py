@@ -8,6 +8,7 @@ from typing import Any
 import jwt
 from jwt import PyJWTError as JWTError  # T-5.4.9: PyJWT replaced python-jose (unfixed CVE)
 from passlib.context import CryptContext
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -67,9 +68,68 @@ def is_operator(db: Session, user: User) -> bool:
     """
     allowed = operator_emails()
     if allowed:
-        return (user.email or "").strip().lower() in allowed
+        return is_operator_email(user.email)
     first = db.query(User.id).order_by(User.created_at.asc(), User.id.asc()).first()
     return first is not None and first[0] == user.id
+
+
+def is_operator_email(email: str | None) -> bool:
+    """Whether ``email`` is listed in ``ADMIN_EMAILS`` (case-insensitive)."""
+    return (email or "").strip().lower() in operator_emails()
+
+
+# D-111 review: an address in ADMIN_EMAILS makes whoever holds the account an
+# operator, and password registration verifies no email. So a listed address
+# that has no account yet is not open to registration: anyone could claim it.
+REGISTER_OPERATOR_EMAIL_REFUSED = (
+    "This address is listed in ADMIN_EMAILS, so it cannot be registered with "
+    "a password. Register the account before listing it: take the address "
+    "out of ADMIN_EMAILS, register, then add it back. Signing in with Google "
+    "or GitHub with this address, verified by the provider, also works."
+)
+
+
+def unregistered_operator_emails(db: Session) -> list[str]:
+    """The ``ADMIN_EMAILS`` entries no account holds, sorted."""
+    allowed = operator_emails()
+    if not allowed:
+        return []
+    held = {
+        (email or "").strip().lower()
+        for (email,) in db.query(User.email).filter(func.lower(User.email).in_(allowed))
+    }
+    return sorted(allowed - held)
+
+
+def warn_unregistered_operators(session_factory=None) -> list[str]:
+    """Startup check (D-111 review): log a warning for every ``ADMIN_EMAILS``
+    entry that has no account, and return them.
+
+    Such an entry names nobody yet. Password registration refuses it
+    (``REGISTER_OPERATOR_EMAIL_REFUSED``), so the operator either registers
+    first and lists the address afterwards, or signs in with a provider that
+    has verified it. Reads nothing when the list is empty.
+    """
+    if not operator_emails():
+        return []
+    if session_factory is None:
+        from app.database import SessionLocal
+
+        session_factory = SessionLocal
+    db = session_factory()
+    try:
+        missing = unregistered_operator_emails(db)
+    finally:
+        db.close()
+    for email in missing:
+        logger.warning(
+            "ADMIN_EMAILS lists %s, but no account has that address. Password "
+            "registration refuses a listed address: register the account "
+            "before listing it, or sign in with Google or GitHub with that "
+            "address verified by the provider.",
+            email,
+        )
+    return missing
 
 
 def create_user(db: Session, email: str, password: str) -> User:

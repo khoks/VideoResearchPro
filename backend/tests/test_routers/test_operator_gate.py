@@ -2,20 +2,26 @@
 
 Checked at the production callers: ``PUT /auth/me/tier``, ``POST
 /admin/restart`` and ``GET /auth/me`` (which tells the Subscription page
-whether to offer the switch). The rule itself is in
+whether to offer the switch); since the review, also ``POST /auth/register``,
+the OAuth callback and the app's startup, which keep a listed address from
+being claimed by whoever registers it first. The rule itself is in
 ``test_services/test_auth_service.py``.
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
+from app.main import app
 from app.models.audit_log import AuditLog
-from app.services import auth_service
+from app.models.oauth import OAuthIdentity, OAuthState
+from app.services import auth_service, oauth_service
 
 
 @pytest.fixture(autouse=True)
@@ -122,3 +128,142 @@ def test_a_listed_operator_can_restart_and_the_first_account_cannot(client, memb
 def test_the_restart_still_needs_a_sign_in(unauthenticated_client, no_restart):
     assert unauthenticated_client.post("/api/v1/admin/restart").status_code == 401
     no_restart.assert_not_called()
+
+
+# ------------------------------------------------------------------ claiming a listed address
+#
+# D-111 review: a listed address makes whoever holds the account an operator,
+# and POST /auth/register verifies no email. An address listed before anyone
+# registered it must not be open to sign-up, or anyone could claim it.
+
+def _oauth_configured(monkeypatch):
+    monkeypatch.setattr(settings, "OAUTH_GOOGLE_CLIENT_ID", "google-client-id")
+    monkeypatch.setattr(settings, "OAUTH_GOOGLE_CLIENT_SECRET", "google-secret")
+    monkeypatch.setattr(settings, "OAUTH_GITHUB_CLIENT_ID", "github-client-id")
+    monkeypatch.setattr(settings, "OAUTH_GITHUB_CLIENT_SECRET", "github-secret")
+
+
+def _oauth_sign_in(client, db, monkeypatch, provider: str, userinfo: dict):
+    """Run the OAuth callback with the provider's HTTP calls stubbed."""
+    client.get(f"/api/v1/auth/oauth/{provider}/start?redirect_uri=https://app.example.com/oauth/callback")
+    state = db.query(OAuthState).first().state
+    token_resp = MagicMock()
+    token_resp.json.return_value = {"access_token": "provider-token"}
+    info_resp = MagicMock()
+    info_resp.json.return_value = userinfo
+    monkeypatch.setattr(oauth_service, "_default_http_post", MagicMock(return_value=token_resp))
+    monkeypatch.setattr(oauth_service, "_default_http_get", MagicMock(return_value=info_resp))
+    return client.get(f"/api/v1/auth/oauth/{provider}/callback?code=c&state={state}")
+
+
+def test_registering_a_listed_address_is_refused(unauthenticated_client, db, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "ops@company.com")
+    r = unauthenticated_client.post(
+        "/api/v1/auth/register", json={"email": "OPS@company.com", "password": "attacker-pw"}
+    )
+    assert r.status_code == 403
+    assert r.json()["detail"] == auth_service.REGISTER_OPERATOR_EMAIL_REFUSED
+    assert "Register the account before listing it" in r.json()["detail"]
+    assert auth_service.get_user_by_email(db, "ops@company.com") is None, "no account was created"
+
+
+def test_an_unlisted_address_still_registers_while_a_list_is_set(unauthenticated_client, db, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "ops@company.com")
+    r = unauthenticated_client.post(
+        "/api/v1/auth/register", json={"email": "someone@company.com", "password": "pw" * 6}
+    )
+    assert r.status_code == 201
+    assert not auth_service.is_operator(db, auth_service.get_user_by_email(db, "someone@company.com"))
+
+
+def test_an_account_registered_before_it_was_listed_is_the_operator(client, test_user, member, monkeypatch, no_restart):
+    """The documented order: register, then list. Listing an existing
+    account makes it the operator, and registering it again stays a 409."""
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "test@example.com")
+    assert client.get("/api/v1/auth/me").json()["is_operator"] is True
+    assert client.put("/api/v1/auth/me/tier", json={"tier": "pro"}).status_code == 200
+    assert client.post("/api/v1/admin/restart").status_code == 202
+    again = client.post("/api/v1/auth/register", json={"email": "test@example.com", "password": "pw" * 6})
+    assert again.status_code == 409
+
+
+def test_oauth_with_a_verified_listed_address_creates_the_operator(unauthenticated_client, db, monkeypatch):
+    _oauth_configured(monkeypatch)
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "ops@company.com")
+    r = _oauth_sign_in(
+        unauthenticated_client, db, monkeypatch, "google",
+        {"sub": "g-ops", "email": "ops@company.com", "email_verified": True},
+    )
+    assert r.status_code == 200, r.text
+    me = unauthenticated_client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {r.json()['access_token']}"}
+    )
+    assert me.json()["email"] == "ops@company.com"
+    assert me.json()["is_operator"] is True
+
+
+def test_oauth_with_a_listed_github_public_email_creates_the_operator(unauthenticated_client, db, monkeypatch):
+    """GitHub's /user email is the profile's public email, which GitHub
+    only allows to be one of the account's verified addresses."""
+    _oauth_configured(monkeypatch)
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "ops@company.com")
+    r = _oauth_sign_in(unauthenticated_client, db, monkeypatch, "github", {"id": 4242, "email": "ops@company.com"})
+    assert r.status_code == 200, r.text
+    assert auth_service.is_operator(db, auth_service.get_user_by_email(db, "ops@company.com"))
+
+
+def test_oauth_with_an_unverified_listed_address_creates_nothing(unauthenticated_client, db, monkeypatch):
+    _oauth_configured(monkeypatch)
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "ops@company.com")
+    r = _oauth_sign_in(
+        unauthenticated_client, db, monkeypatch, "google",
+        {"sub": "g-attacker", "email": "ops@company.com", "email_verified": False},
+    )
+    assert r.status_code == 401
+    assert auth_service.get_user_by_email(db, "ops@company.com") is None
+    assert db.query(OAuthIdentity).count() == 0
+
+
+def test_oauth_with_an_unverified_listed_address_is_not_linked_to_the_operator(unauthenticated_client, db, test_user, monkeypatch):
+    _oauth_configured(monkeypatch)
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "test@example.com")
+    r = _oauth_sign_in(
+        unauthenticated_client, db, monkeypatch, "google",
+        {"sub": "g-attacker", "email": "test@example.com"},
+    )
+    assert r.status_code == 401
+    assert db.query(OAuthIdentity).count() == 0, "the operator's account gained no sign-in"
+
+
+def test_oauth_with_an_unverified_unlisted_address_signs_in_as_before(unauthenticated_client, db, monkeypatch):
+    """The gate is for listed addresses only; other sign-ins are unchanged."""
+    _oauth_configured(monkeypatch)
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "ops@company.com")
+    r = _oauth_sign_in(
+        unauthenticated_client, db, monkeypatch, "google", {"sub": "g-member", "email": "member@company.com"}
+    )
+    assert r.status_code == 200
+    assert auth_service.get_user_by_email(db, "member@company.com") is not None
+
+
+# ------------------------------------------------------------------ startup warning
+
+def test_startup_warns_about_each_listed_address_with_no_account(db, test_user, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "test@example.com, Ops@Company.com,later@company.com")
+    monkeypatch.setattr("app.database.SessionLocal", sessionmaker(bind=db.get_bind()))
+    with patch("app.services.auth_service.logger") as log:
+        with TestClient(app):
+            pass
+    warned = [c.args[1] for c in log.warning.call_args_list]
+    assert warned == ["later@company.com", "ops@company.com"], "one per unregistered entry, none for test@example.com"
+    assert "register the account before listing it" in log.warning.call_args_list[0].args[0]
+
+
+def test_startup_reads_nothing_without_a_list(monkeypatch):
+    factory = MagicMock()
+    monkeypatch.setattr("app.database.SessionLocal", factory)
+    with patch("app.services.auth_service.logger") as log:
+        with TestClient(app):
+            pass
+    factory.assert_not_called()
+    log.warning.assert_not_called()

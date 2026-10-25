@@ -42,6 +42,15 @@ def register(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered",
         )
+    # D-111 review: a listed address makes its holder an operator, and this
+    # route verifies no email, so an unregistered listed address is not open
+    # to sign-up. OAuth with a provider-verified address still creates it.
+    if auth_service.is_operator_email(payload.email):
+        logger.warning("Refused a password registration for an address listed in ADMIN_EMAILS")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=auth_service.REGISTER_OPERATOR_EMAIL_REFUSED,
+        )
     try:
         user = auth_service.create_user(db, email=payload.email, password=payload.password)
     except IntegrityError:

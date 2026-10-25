@@ -20,6 +20,8 @@ Create a new user. **Public.** Returns 201 + `UserResponse`.
 { "id": "...", "email": "...", "created_at": "..." }
 ```
 
+409 when the address already has an account. 403 when the address is listed in `ADMIN_EMAILS` ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): a listed address makes its holder an operator and this route verifies no email, so the detail tells the operator to register the account before listing it. Google or GitHub sign-in with that address, verified by the provider, still creates it (`GET /auth/oauth/{provider}/callback`), and an unverified one is refused there with the usual 401.
+
 ### `POST /api/v1/auth/login`
 Issue a JWT. **Public.** Returns 200 + `TokenResponse`.
 

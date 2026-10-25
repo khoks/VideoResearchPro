@@ -74,3 +74,24 @@ def test_a_list_of_only_separators_counts_as_unset(db, monkeypatch):
     monkeypatch.setattr(settings, "ADMIN_EMAILS", " , ")
     assert auth_service.operator_emails() == frozenset()
     assert auth_service.is_operator(db, first)
+
+
+# D-111 review: the listed addresses no account holds yet. Registration
+# refuses them (test_routers/test_operator_gate.py) and startup warns.
+
+def test_unregistered_operator_emails_lists_entries_no_account_holds(db, monkeypatch):
+    held = _user(db, "boss@example.com", datetime(2026, 5, 1))
+    held.email = "Boss@Example.com"  # an older row stored with capitals still counts as held
+    db.commit()
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "boss@example.com, Ops@Example.com, new@example.com")
+    assert auth_service.unregistered_operator_emails(db) == ["new@example.com", "ops@example.com"]
+    assert auth_service.is_operator_email(" OPS@example.com ")
+    assert not auth_service.is_operator_email("other@example.com")
+    assert not auth_service.is_operator_email(None)
+
+
+def test_without_a_list_no_address_is_an_operator_address(db, no_allow_list):
+    _user(db, "first@example.com", datetime(2026, 5, 1))
+    assert auth_service.unregistered_operator_emails(db) == []
+    assert not auth_service.is_operator_email("first@example.com"), "the earliest-account rule is not an address rule"
+    assert auth_service.warn_unregistered_operators(session_factory=lambda: pytest.fail("read the database")) == []

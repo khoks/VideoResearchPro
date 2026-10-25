@@ -12,6 +12,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LibraryQARequest } from '../../types/qa';
+import { CLARIFY_ANSWER_MAX_CHARS, CLARIFY_CONTEXT_MAX_CHARS } from '../../utils/clarifyContext';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -128,6 +129,23 @@ describe('LibraryQAPage clarify step', () => {
       answer_language: 'en',
       context: 'My interpretation: You want the rate moves since 2024.\n\nWhich central bank?\nThe RBI',
     });
+  });
+
+  it('never sends more context than the server accepts, and keeps the answer whole', async () => {
+    // The interpretation is model output with no length bound; over the
+    // server's 4,000 characters the ask was a 422 and no answer came back.
+    clarifyMock.mockResolvedValue({ interpretation: 'x'.repeat(6000), clarifications: ['Which central bank?'] });
+    await mountAndClarify();
+    expect(answerFields()[0].maxLength).toBe(CLARIFY_ANSWER_MAX_CHARS);
+    typeInto(answerFields()[0], 'The RBI');
+
+    act(() => button('Confirm & search').click());
+    await flush();
+
+    expect(askMock).toHaveBeenCalledTimes(1);
+    const context = askMock.mock.calls[0][0].context!;
+    expect(context.length).toBeLessThanOrEqual(CLARIFY_CONTEXT_MAX_CHARS);
+    expect(context.endsWith('\n\nWhich central bank?\nThe RBI')).toBe(true);
   });
 
   it('"Skip clarifications" sends the bare question with no context', async () => {

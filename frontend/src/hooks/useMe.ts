@@ -11,6 +11,12 @@ export interface MeResponse {
   tier: Tier;
   /** S-8.10.1: set when the first-run wizard is finished. */
   onboarded_at?: string | null;
+  /**
+   * T-5.2.8 / D-111: whether this account operates the install (named in
+   * ADMIN_EMAILS, or the first account registered when that is unset).
+   * Only operators may switch tiers.
+   */
+  is_operator?: boolean;
 }
 
 const ME_QUERY_KEY = ['auth', 'me'] as const;

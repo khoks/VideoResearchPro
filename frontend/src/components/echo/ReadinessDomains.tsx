@@ -2,8 +2,9 @@
  * The five readiness domains (S-3.5.1), each with its progress and what is
  * missing in words. The words come from the server, which measures every
  * domain from its store; this only lays them out. A connector that cannot be
- * connected yet (not set up on this install, or waiting on Google sign-in
- * setup) reads "not connected" with the reason, never as a failure.
+ * connected yet (not set up on this install, or waiting on the Google
+ * connector OAuth client) reads "not connected" with the reason, never as a
+ * failure.
  */
 import { Link } from 'react-router-dom';
 import { Badge } from '../primitives';

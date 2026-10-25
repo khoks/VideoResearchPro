@@ -43,7 +43,7 @@ from app.routers import (
     tags,
     ws,
 )
-from app.services import chroma_service, note_index, search_service
+from app.services import auth_service, chroma_service, note_index, search_service
 from app.services.llm_smoke import run_startup_probes
 from app.services.schema_init_service import ensure_schema_at_head
 
@@ -119,6 +119,14 @@ async def lifespan(app: FastAPI):
         echo_personal_vectors.backfill()
     except Exception:
         logger.exception("Personal-context backfill failed; continuing startup")
+
+    # D-111 review: an ADMIN_EMAILS entry with no account names nobody, and
+    # password registration refuses it. Say so at startup, so the operator
+    # registers before listing. A failure here never stops startup.
+    try:
+        auth_service.warn_unregistered_operators()
+    except Exception:
+        logger.exception("ADMIN_EMAILS check failed; continuing startup")
 
     try:
         await run_startup_probes()

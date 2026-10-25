@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import urllib.parse
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
 
 import pytest
+from cryptography.fernet import Fernet
 
 from app.config import settings
 from app.connectors import registry
@@ -221,6 +223,83 @@ def test_a_provider_failure_is_recorded_not_raised(unauthenticated_client, db, i
     fake.fail = None
     r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
     assert r.json()["connector"]["grant"]["status"] == "idle" and r.json()["connector"]["grant"]["last_error"] is None
+
+
+def _foreign_ciphertext(plaintext: str = "tok-abc") -> str:
+    """What a token stored under another BYOK_ENCRYPTION_KEY looks like to
+    this install: valid Fernet, a key it does not hold."""
+    return Fernet(Fernet.generate_key()).encrypt(plaintext.encode()).decode("ascii")
+
+
+def _break_stored_token(db, tenant_id: str, ciphertext: str) -> None:
+    cred = db.query(EchoConnectorCredential).filter_by(tenant_id=tenant_id, connector="fake").one()
+    cred.access_token_encrypted = ciphertext
+    db.commit()
+
+
+def test_a_token_this_install_cannot_decrypt_asks_to_reconnect(unauthenticated_client, db, inline_db, fake, two, monkeypatch):
+    _connect(unauthenticated_client, two["ha"])
+    foreign = _foreign_ciphertext()
+    _break_stored_token(db, two["a"].id, foreign)
+    log = MagicMock()
+    monkeypatch.setattr(echo_connector_service, "logger", log)
+
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    assert r.status_code == 200, r.text
+    grant = r.json()["connector"]["grant"]
+    assert grant["status"] == "error"
+    assert grant["last_error"].startswith(echo_connector_service.RECONNECT_PREFIX), "the panel shows Reconnect"
+    assert grant["events"] == 3, "what was stored stays"
+    assert [c[0] for c in fake.calls].count("incremental") == 0, "the provider was never called"
+
+    logged = " ".join(str(a) for call in log.mock_calls for a in call.args)
+    assert "could not be decrypted" in logged
+    assert foreign not in logged and "tok-abc" not in logged, "neither the ciphertext nor the secret is logged"
+
+    # Reconnecting stores a token this key reads and clears the state.
+    r, _ = _connect(unauthenticated_client, two["ha"], code="fresh")
+    assert r.json()["grant"]["status"] == "idle" and r.json()["grant"]["last_error"] is None
+
+
+def test_a_corrupted_token_row_asks_to_reconnect(unauthenticated_client, db, inline_db, fake, two):
+    _connect(unauthenticated_client, two["ha"])
+    _break_stored_token(db, two["a"].id, "gAAAAé-not-ascii")
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    grant = r.json()["connector"]["grant"]
+    assert grant["status"] == "error" and grant["last_error"].startswith("Reconnect to sync")
+
+
+def test_the_worker_task_records_an_undecryptable_token_instead_of_crashing(db, inline_db, fake, two, monkeypatch):
+    """The scheduled path: ``echo.sync_connector`` in Celery, where the
+    exception used to escape and leave the grant looking healthy."""
+    import app.tasks.echo_connector_tasks as tasks
+
+    a = two["a"].id
+    echo_connector_service._store_tokens(db, a, "fake", ConnectorTokens(access_token="tok-abc"))
+    grant = EchoConnectorGrant(tenant_id=a, connector="fake", consent_version=FakeConnector.consent_version)
+    db.add(grant)
+    db.commit()
+    _break_stored_token(db, a, _foreign_ciphertext())
+    monkeypatch.setattr(tasks, "SessionLocal", lambda: db)
+
+    assert tasks.sync_echo_connector(grant.id) == "auth_error"
+    db.refresh(grant)
+    assert grant.status == "error" and grant.last_error.startswith("Reconnect to sync")
+
+
+def test_a_malformed_install_key_is_an_operator_error_not_a_reconnect(unauthenticated_client, db, inline_db, fake, two, monkeypatch):
+    _connect(unauthenticated_client, two["ha"])
+    try:
+        with monkeypatch.context() as m:
+            m.setattr(settings, "BYOK_ENCRYPTION_KEY", "not-a-fernet-key")
+            byok_service._get_fernet.cache_clear()
+            r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    finally:
+        byok_service._get_fernet.cache_clear()
+    grant = r.json()["connector"]["grant"]
+    assert grant["status"] == "error"
+    assert not grant["last_error"].startswith("Reconnect"), "a new token could not be stored either"
+    assert "encryption key" in grant["last_error"]
 
 
 def test_sync_needs_a_connection(unauthenticated_client, fake, two):

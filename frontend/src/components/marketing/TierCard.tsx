@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { useColors, useShadows } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
+import { Badge } from '../primitives';
 import type { Tier } from '../../hooks/useMe';
 
 export interface TierFeature {
@@ -8,6 +9,12 @@ export interface TierFeature {
   included: boolean;
   /** When provided, shown in a tooltip on hover. */
   detail?: string;
+  /**
+   * T-5.2.9 / D-111: meant for this tier but not built yet. The row says
+   * "Planned" instead of a check, and `included` stays false, so nothing
+   * (the downgrade list included) counts it as something the tier has.
+   */
+  planned?: boolean;
 }
 
 export interface TierCardProps {
@@ -184,6 +191,35 @@ export function TierCard({
 
 function FeatureRow({ feature }: { feature: TierFeature }) {
   const c = useColors();
+  if (feature.planned) {
+    return (
+      <li
+        title={feature.detail}
+        data-planned
+        style={{
+          display: 'flex',
+          gap: space['2'],
+          alignItems: 'flex-start',
+          fontFamily: fonts.ui,
+          fontSize: fontSize.sm,
+          color: c.textSecondary,
+        }}
+      >
+        <span
+          aria-hidden
+          style={{ width: 16, flexShrink: 0, color: c.textMuted, fontWeight: fontWeight.semibold, lineHeight: lineHeight.normal }}
+        >
+          ○
+        </span>
+        <span style={{ lineHeight: lineHeight.normal }}>
+          {feature.label}{' '}
+          <Badge tone="neutral" size="sm">
+            Planned
+          </Badge>
+        </span>
+      </li>
+    );
+  }
   return (
     <li
       title={feature.detail}

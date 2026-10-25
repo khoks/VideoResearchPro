@@ -74,13 +74,13 @@ def setup(db, test_user, other):
     return {"a": a, "b": b, "off": off_shelf, "theirs": theirs, "shelf": shelf, "their_shelf": their_shelf}
 
 
-def _ask(client, path, refs, headers=None):
+def _ask(client, path, refs, headers=None, body=None):
     with (
         patch("app.agents.qa_agent.run_library_qa_agent",
               return_value={"answer": "An answer.", "references": refs}) as agent,
         patch("app.routers.library.chroma_service.upsert_qa_exchange", return_value=True) as index,
     ):
-        resp = client.post(path, json={"question": "What about rates?"}, headers=headers)
+        resp = client.post(path, json=body or {"question": "What about rates?"}, headers=headers)
     return resp, agent, index
 
 
@@ -104,6 +104,30 @@ def test_shelf_question_retrieves_and_cites_only_the_shelf(client, db, setup):
     library = {r["id"]: r for r in client.get("/api/v1/library/qa").json()}
     assert library[body["id"]]["scope"]["shelf_id"] == shelf.id
     assert [r["id"] for r in client.get(f"/api/v1/shelves/{shelf.id}/qa").json()] == [body["id"]]
+
+
+def test_shelf_question_carries_the_clarify_answers(client, db, setup):
+    """S-8.13.1: a shelf question takes the clarify step's ``context`` the way
+    a library question does (one path, ``answer_library_question``): it
+    reaches the agent inside the question, retrieval stays on the shelf, and
+    the stored exchange keeps the typed question. Fails if the fold-in is
+    removed."""
+    shelf = setup["shelf"]
+    context = "My interpretation: Rate moves since 2024.\n\nWhich central bank?\nThe RBI"
+    resp, agent, _ = _ask(
+        client, f"/api/v1/shelves/{shelf.id}/qa", [],
+        body={"question": "What about rates?", "context": context},
+    )
+    assert resp.status_code == 200, resp.text
+    kwargs = agent.call_args.kwargs
+    assert kwargs["question"] == "What about rates?\n\nAdditional context from user:\n" + context
+    assert set(kwargs["visible_document_ids"]) == {setup["a"].document_id, setup["b"].document_id}
+    assert db.get(LibraryQAExchange, resp.json()["id"]).question == "What about rates?"
+
+    # Without context (asked directly, or "Skip clarifications") the agent
+    # sees the bare question.
+    _, bare, _ = _ask(client, f"/api/v1/shelves/{shelf.id}/qa", [])
+    assert bare.call_args.kwargs["question"] == "What about rates?"
 
 
 def test_library_question_is_unscoped_and_stays_off_the_shelf(client, db, setup):

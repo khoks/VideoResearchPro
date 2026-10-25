@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.agents.prompts.qa_prompts import with_clarification
 from app.dependencies import get_current_user, get_db, get_user_from_query_or_header
 from app.models.qa_exchange import QAExchange
 from app.schemas.qa import ClarifyRequest, ClarifyResponse, QARequest, QAResponse, Reference
@@ -132,10 +133,10 @@ def _run_qa_and_persist(
     # legacy `video_id` is NULL for them.
     approved_document_ids = corpus_stats_service.approved_document_ids_for_job(db, job.id)
 
-    # Build enriched question when the user provided clarification context
-    enriched_question = request.question
-    if request.context:
-        enriched_question = f"{request.question}\n\nAdditional context from user:\n{request.context}"
+    # Build enriched question when the user provided clarification context.
+    # One helper for job, library and shelf Q&A (S-8.13.1), so they fold it
+    # the same way.
+    enriched_question = with_clarification(request.question, request.context)
 
     # Run Q&A agent. T-5.6.4: enter BYOK context so any get_llm_for call
     # inside the agent uses the user's BYOK credential when available.

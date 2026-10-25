@@ -17,6 +17,7 @@ from app.models.channel import Channel
 from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.models.document import Document
+from app.models.library_qa_exchange import LibraryQAExchange
 
 
 def test_get_library_qa_initially_empty(client):
@@ -98,6 +99,59 @@ def test_post_library_qa_clarify_returns_interpretation_and_clarifications(clien
     assert data["interpretation"] == "User wants a DNS primer."
     assert len(data["clarifications"]) == 3
     assert "What level?" in data["clarifications"]
+
+
+# ---------------------------------------------------------------------------
+# S-8.13.1: "Confirm & search" sends the clarify answers as `context`
+# ---------------------------------------------------------------------------
+
+# What LibraryQAPage sends after the clarify step: the interpretation the
+# reader confirmed, then each clarifying question they answered with the answer.
+CLARIFY_CONTEXT = "My interpretation: User wants a DNS primer.\n\nWhich record types?\nMX and CNAME"
+
+
+def _ask_library(client, body):
+    with (
+        patch(
+            "app.agents.qa_agent.run_library_qa_agent",
+            return_value={"answer": "Answer.", "references": []},
+        ) as agent,
+        patch("app.routers.library.chroma_service.upsert_qa_exchange", return_value=True),
+    ):
+        response = client.post("/api/v1/library/qa", json=body)
+    return response, agent
+
+
+def test_library_qa_clarify_answers_reach_the_agent(client, db):
+    """The confirmed interpretation and the reader's answers reach the agent
+    inside its question, exactly as job Q&A folds them; the stored exchange
+    keeps the question as typed. Fails if the fold-in in
+    ``answer_library_question`` is removed or the schema drops ``context``
+    again (Pydantic ignored the unknown field, so "Confirm & search" answered
+    exactly like "Skip clarifications")."""
+    response, agent = _ask_library(client, {"question": "What is DNS?", "context": CLARIFY_CONTEXT})
+
+    assert response.status_code == 200, response.text
+    assert agent.call_args.kwargs["question"] == (
+        "What is DNS?\n\nAdditional context from user:\n" + CLARIFY_CONTEXT
+    )
+    assert response.json()["question"] == "What is DNS?"
+    row = db.get(LibraryQAExchange, response.json()["id"])
+    assert row.question == "What is DNS?", "history shows the typed question, not the folded one"
+
+
+def test_library_qa_skip_asks_the_bare_question(client):
+    for body in ({"question": "What is DNS?"}, {"question": "What is DNS?", "context": "  \n "}):
+        response, agent = _ask_library(client, body)
+        assert response.status_code == 200, response.text
+        assert agent.call_args.kwargs["question"] == "What is DNS?"
+
+
+def test_library_qa_clarify_context_is_bounded(client):
+    """Bounded like job Q&A's ``context`` (4,000 characters)."""
+    response, agent = _ask_library(client, {"question": "What is DNS?", "context": "x" * 4001})
+    assert response.status_code == 422
+    agent.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

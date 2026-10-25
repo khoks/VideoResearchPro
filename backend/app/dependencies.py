@@ -78,6 +78,20 @@ def get_current_user(
     return _resolve_user(token, db)
 
 
+def require_operator(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """T-5.2.8 / D-111: the caller, if they operate this install; 403
+    otherwise. The rule is ``auth_service.is_operator``."""
+    if not auth_service.is_operator(db, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only this install's operator can do this.",
+        )
+    return current_user
+
+
 def get_current_jti(
     token: str | None = Depends(oauth2_scheme),
 ) -> str | None:

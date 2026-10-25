@@ -20,6 +20,8 @@ Create a new user. **Public.** Returns 201 + `UserResponse`.
 { "id": "...", "email": "...", "created_at": "..." }
 ```
 
+409 when the address already has an account. 403 when the address is listed in `ADMIN_EMAILS` ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): a listed address makes its holder an operator and this route verifies no email, so the detail tells the operator to register the account before listing it. Google or GitHub sign-in with that address, verified by the provider, still creates it (`GET /auth/oauth/{provider}/callback`), and an unverified one is refused there with the usual 401.
+
 ### `POST /api/v1/auth/login`
 Issue a JWT. **Public.** Returns 200 + `TokenResponse`.
 
@@ -35,10 +37,13 @@ Return the current user. Requires bearer token.
 
 ```json
 // response
-{ "id": "...", "email": "...", "created_at": "...", "tier": "free", "onboarded_at": null }
+{ "id": "...", "email": "...", "created_at": "...", "tier": "free", "onboarded_at": null, "is_operator": true }
 ```
 
-`onboarded_at` (S-8.10.1) is set when the first-run wizard is finished.
+`onboarded_at` (S-8.10.1) is set when the first-run wizard is finished. `is_operator` (T-5.2.8, [D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)) says whether the caller operates this install: their email is in `ADMIN_EMAILS` (comma-separated, case-insensitive), or, when that is empty, theirs is the earliest-registered account. The Subscription page offers the tier switch only when it is true.
+
+### `PUT /api/v1/auth/me/tier`
+Switch the caller's tier (mock payment, [D-050](decisions.md#d-050--self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15)). **Operator only** since T-5.2.8 ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): any other account gets 403 `Only this install's operator can do this.` and nothing changes. Body `{ "tier": "free" | "pro" | "studio", "mock_payment"?: {...} }` (`mock_payment` is accepted and ignored); 422 for another tier. Returns `{ "tier", "message", "mock_payment_mode": true }` and writes a `tier_changed` audit event.
 
 ### `GET /api/v1/auth/me/onboarding`
 The first-run wizard's state for the caller (S-8.10.1). `state` is the default when the wizard was never touched. Milestones are derived on read: `jobs` counts the caller's runs, `first_job` is the run the wizard started (else the oldest), `report_opened` is whether a `first_report_opened` audit event exists. `should_onboard` is what `/` uses: false once `onboarded_at` is set or the wizard was skipped; true once it was started; otherwise true only for an account with no runs.
@@ -1027,7 +1032,7 @@ Cold-start readiness, v2 since S-3.5.1 ([D-101](decisions.md#d-101--echo-readine
   - `not_connected`, used only by activity, when there are no events and nothing is connected. It is not a failure.
 - **`missing`** is null once the domain is met.
 - **`details`** depends on the domain:
-  - activity has `first_at`, `last_at` and `sources`. Each source has `name`, `label`, `kind` (`connector` | `import`), `status` (`connected` | `not_connected` | `imported`), `available`, `reason` and `events`. A connector this install cannot offer yet reads `not_connected` with its reason; YouTube likes and Google Calendar are listed this way until the install's Google sign-in setup exists.
+  - activity has `first_at`, `last_at` and `sources`. Each source has `name`, `label`, `kind` (`connector` | `import`), `status` (`connected` | `not_connected` | `imported`), `available`, `reason` and `events`. A connector this install cannot offer yet reads `not_connected` with its reason; YouTube likes and Google Calendar are listed this way until the install has a Google connector OAuth client (`OAUTH_GOOGLE_CONNECTOR_CLIENT_ID`).
   - voice has `per_script` (pieces and words per script), `best_script`, `stability` (`measured`, `spread`, `max`, `vectors`, `reason`) and `voice_test` (`eligible`, `notes`, `notes_needed`). The voice test is D-100's user-as-judge test, reported and not gated.
   - facts has `self_authored` and `inferred`; the facts Echo inferred are kept but not counted.
   - signals has `types`; shares has `content_types` (count per type).
@@ -1231,7 +1236,7 @@ Query params:
 
 Returns 202 + `{ "status": "accepted", "message": "...", "skip_frontend": bool }`.
 
-Returns 501 on non-Windows hosts (the trampoline is Windows-only today). Requires bearer token.
+Returns 501 on non-Windows hosts (the trampoline is Windows-only today). **Operator only** (T-5.2.8, [D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): the bearer token must belong to an account `GET /auth/me` reports as `is_operator`; any other account gets 403 before anything is spawned.
 
 ---
 

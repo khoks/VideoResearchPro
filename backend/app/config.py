@@ -467,6 +467,14 @@ class Settings(BaseSettings):
     # kept in batch order, so the report never depends on completion order.
     REPORT_MAP_CONCURRENCY: int = 4
 
+    # S-1.18.9: the deterministic attribution guard for visual annotations
+    # (`services/attribution_guard.py`). A map item's details found only in an
+    # on-screen span are relabelled or listed for compose, and a composed
+    # sentence that credits a speaker with one gets it marked "(on screen at
+    # mm:ss)". Pure code, no model calls, and a no-op for a corpus with no
+    # visual span (every report of a job without visual analysis).
+    REPORT_ATTRIBUTION_GUARD_ENABLED: bool = True
+
     # R5 / S-1.16.2 (invention N-002): how a code-mixed span is QUOTED,
     # decided from its measured Hindi share and matrix (grammar) language.
     # - Hindi grammar and Hindi share >= DOMINANT -> the whole quote in

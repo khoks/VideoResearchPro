@@ -265,3 +265,29 @@ What the eight runs show:
 - **Substance preference** swings with whatever pipeline defect a run exposed.
 - **Attribution** settles at roughly one confirmed error per report: speaker-credited sentences that absorb a screen-only detail. Prompt rules and said/shown labels reduced it from two to about one; they did not remove it. A deterministic guard (`modality_check.py`) caught only 2 of 5 at its best setting, so nothing yet removes it.
 
+## Runs 9 and 10: the deterministic attribution guard, pre-registered (2026-10-24, before either run exists)
+
+D-105 hid R1's UI until a deterministic guard removes the residual attribution error. S-1.18.9 builds that guard (`backend/app/services/attribution_guard.py`), at two points:
+
+- **Map items.** A detail of an item (a number, an identifier, a quoted string, a visual descriptor pair such as "confidence band", or three or more listed names) that sits in a span of the item's own source near its moment, and not in the speech around that moment, is screen-only. An item whose details are all screen-only becomes `shown`; screen-only clauses are split into a `shown` item; otherwise the details are listed in the compose tag (`[SAID+SHOWN; shown on screen: ...]`). Run 8's weekday totals reached the composer as `[SAID+SHOWN]`, and the tag note told it to credit the speaker.
+- **The composed report.** A screen-only detail in a part of a sentence credited to a speaker is marked in place, "(on screen at 18:24)", with the span's own timestamp. "Not spoken" is added only for figures and multi-word quotes absent from the source's whole speech, and only in Latin-script speech. An "also visible on screen" with no span of the cited source behind it is removed; "the video displays X", where only the speech has X, is marked as said. The sections are guarded before the executive summary reads them, then the summary is guarded. Every change is counted and disclosed in the report's processing note, and listed in the run's `on.intermediates.json` (`attribution_guard`).
+
+**Offline check (in-sample, not evidence for the rule).** On the stored ON reports of runs 1 to 8 the guard catches 8 of the 10 confirmed attribution errors (`modality_check.py`: 2 of 5). The two misses are a frame-specific reading of a file explorer (run 3) and a sentence with no checkable detail, "This was not spoken" (run 4). The guard was designed against these same labels, so this shows coverage, not generalisation; the two runs below are the test. Every "not spoken" it wrote was checked against the transcripts by hand.
+
+**Setup.** Job `419e691d`, both arms regenerated on the commit that adds this section, with `--descriptions data/r1_ab/retier/baseline_describe.json` (gpt-5.5, D-081) and the models in `backend/.env`, exactly as run 8. Run 9, then run 10, with no code change in between. Judges: `judge_pair.py` with GPT-5.5, Sonnet 5 and Gemini 3.1 Pro (all medium). No substitutes: a run waits for the Gemini quota.
+
+**Verification, unchanged from runs 1 to 8.** Every claim from every judge, Gemini 3.1 Pro's included, gets three lenses, and the majority decides. Then three independent sweeps of ON (every visual reference, every speaker credit, the densest sections), with three refuters per candidate. The D-075 multilingual rule applies throughout. **New:** every sentence the guard changed is also a candidate, checked by the three attribution lenses and by the fabrication lens.
+
+**Pass rule.** Both runs must pass every item:
+1. Quote fidelity: `audit_quote_fidelity.py --check` exits 0 (unchanged).
+2. Attribution: zero confirmed attribution errors in ON, in either direction, counting every judge's claims and the sweep (unchanged). A wrong guard mark counts here.
+3. Substance: at least two of the three families prefer ON (unchanged).
+4. Fabrication: ON has no more confirmed fabrications than OFF (unchanged).
+5. No rise in fabrication from the guard: zero confirmed errors of either kind among the sentences the guard changed.
+6. No substance loss beyond noise. (a) Mechanically, every detail named in a guard record still appears in the ON report: the guard moves details, it never deletes them. A removed "also visible on screen" deletes a claim about the screen, not a detail. (b) ON's mean substance across the three judges is at least **7.67**, which is run 8's 8.33 minus 0.67. The 0.67 is the largest change in one arm's mean substance between consecutive comparable runs (OFF, run 5 to run 6). Judge noise on an identical pair of reports was 0.33 (runs 2 to 4).
+
+**Outcomes, fixed now.**
+- Both runs pass: set `featureFlags.visualAnalysis = true`, record a decision that supersedes D-105, and update S-1.18.2, the L6 status and the CHANGELOG.
+- Rule 1 fails: that run is invalid. The defect is fixed in its own change and the run is repeated; it does not count toward the two.
+- Anything else fails in either run: the guard does not meet D-105's bar, the feature stays hidden, and the failing case is recorded. If run 9 fails, run 10 is not run.
+

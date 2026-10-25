@@ -95,7 +95,21 @@ def test_compose_marks_run8_in_the_sections_and_the_summary_and_discloses_it():
     assert notes["report_attribution_marked"] == 2
     assert notes["report_attribution_speech_marked"] == 0 and notes["report_screen_claims_removed"] == 0
     assert len(notes["report_attribution_rewrites"]) == 2
-    assert "2 detail(s) in sentences crediting a speaker were found only on screen" in html
+    assert ("2 detail(s) in sentences crediting a speaker appear in a description of the screen near the "
+            "cited moment but could not be matched to the speech there") in html
+    assert "only on screen" not in html and notes["report_screen_also_dropped"] == 0
+
+
+def test_compose_drops_an_unsupported_also_and_discloses_it():
+    """R1 run 9: "also visible on screen" said the speaker gave a figure only the frame has."""
+    section = (f'<h2>Key Facts</h2><p>Tuesday is the strongest sales day, with Monday at 17,363.10 '
+               f'(<a href="{URL}&t=1039" target="_blank">17:19</a>); 17,363.10 is also visible on screen.</p>')
+    out, _ = _compose([_item(WEEKDAY_ITEM, "shown")], _chunks(), section=section,
+                      summary="<h2>Executive Summary</h2><p>Plain.</p>")
+    html = out["final_html"]
+    assert "17,363.10 is visible on screen." in html
+    assert out["processing_notes"]["report_screen_also_dropped"] == 1
+    assert 'the word "also" was removed from 1 phrase(s) like "also visible on screen"' in html
 
 
 def test_without_the_guard_the_same_output_keeps_run8s_error():

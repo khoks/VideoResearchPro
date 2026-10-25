@@ -443,8 +443,9 @@ def map_chunks(state: ReportAgentState) -> dict:
     # N-002: every source's own text, so kept `original` wording can be
     # checked against the transcript it claims to come from.
     source_texts = _source_texts_for_verification(chunks)
-    # S-1.18.9: each source's speech and spans, so an item's details found
-    # only on screen are labelled from evidence, not from how they read.
+    # S-1.18.9: each source's speech and spans, so an item's details shown on
+    # screen and not spoken around its moment are labelled from evidence, not
+    # from how they read.
     guard_evidence = _guard_evidence(chunks)
 
     # Group chunks into batches. `batch_metas` runs parallel to `batches` so
@@ -693,8 +694,8 @@ def map_chunks(state: ReportAgentState) -> dict:
             "map_chunks_dropped": dropped_chunk_groups,
             "map_chunks_total": len(chunks),
             "map_modality": dict(sorted(modality_counts.items())),
-            # S-1.18.9: items whose details were found only on screen —
-            # relabelled shown, split, or listed for compose.
+            # S-1.18.9: items whose details were screen-only around their
+            # moment — relabelled shown, split, or listed for compose.
             "map_attribution_guard": dict(sorted(guard_counts.items())),
             "map_originals_kept": original_counts["kept"],
             "map_originals_dropped": original_counts["dropped"],
@@ -942,7 +943,7 @@ def _render_items_for_compose(items: list, tagged: bool) -> list:
     """Copies of ``items`` as the composer should read them.
 
     With tags: content is prefixed with the evidence tag. An item whose
-    details were found only on screen (S-1.18.9, `screen_only`) names them in
+    details were screen-only around its moment (S-1.18.9, `screen_only`) names them in
     the tag — "[SAID+SHOWN; shown on screen: 17,363.10 | 18,158.38]" — so the
     composer knows exactly what it may not credit to the speaker. Either way
     the pipeline-only keys are dropped — the tag carries the label, a
@@ -1513,8 +1514,8 @@ def compose_report(state: ReportAgentState) -> dict:
     if not parts:
         return {"final_html": "<p>Report generation failed: no sections could be composed.</p>"}
 
-    # S-1.18.9: a detail found only on screen that a section still credits to
-    # a speaker is marked where it stands. The sections are guarded BEFORE the
+    # S-1.18.9: a screen-only detail that a section still credits to a
+    # speaker is marked where it stands. The sections are guarded BEFORE the
     # summary reads them (R1 run 8's error was the summary condensing a body
     # passage into "X reads ..."), and the summary is guarded after.
     guard_evidence = _guard_evidence(state.get("transcript_chunks") or [], consolidated)
@@ -1624,22 +1625,33 @@ def compose_report(state: ReportAgentState) -> dict:
         )
     guard_counts = {
         kind: sum(1 for r in guard_rewrites if r.kind == kind)
-        for kind in ("screen_detail_marked", "speech_as_screen_marked", "screen_claim_removed")
+        for kind in ("screen_detail_marked", "speech_as_screen_marked", "screen_claim_removed",
+                     "screen_also_dropped")
     }
+    # The guard reads Latin script only, so a detail said in Devanagari, or
+    # garbled by the captions, is unmatched rather than unsaid (T-1.18.9.7):
+    # the note says what was matched, never "only".
     if guard_counts["screen_detail_marked"]:
         disclosures.append(
-            f"{guard_counts['screen_detail_marked']} detail(s) in sentences crediting a speaker were "
-            "found only on screen in the source and are marked \"on screen\" where they appear"
+            f"{guard_counts['screen_detail_marked']} detail(s) in sentences crediting a speaker appear "
+            "in a description of the screen near the cited moment but could not be matched to the "
+            "speech there, and are marked \"on screen\" where they appear"
         )
     if guard_counts["speech_as_screen_marked"]:
         disclosures.append(
-            f"{guard_counts['speech_as_screen_marked']} detail(s) described as shown on screen were "
-            "found only in the speech and are marked as said"
+            f"{guard_counts['speech_as_screen_marked']} detail(s) described as shown on screen matched "
+            "the speech but no captured frame of that source, and are marked as said"
         )
     if guard_counts["screen_claim_removed"]:
         disclosures.append(
             f"{guard_counts['screen_claim_removed']} claim(s) that a spoken detail was also on screen "
             "matched no captured frame of that source and were removed"
+        )
+    if guard_counts["screen_also_dropped"]:
+        disclosures.append(
+            f"the word \"also\" was removed from {guard_counts['screen_also_dropped']} phrase(s) like "
+            "\"also visible on screen\", because the detail could not be matched to the speech near the "
+            "cited moment"
         )
     if guard_failures:
         disclosures.append(
@@ -1659,6 +1671,7 @@ def compose_report(state: ReportAgentState) -> dict:
     out_notes["report_attribution_marked"] = guard_counts["screen_detail_marked"]
     out_notes["report_attribution_speech_marked"] = guard_counts["speech_as_screen_marked"]
     out_notes["report_screen_claims_removed"] = guard_counts["screen_claim_removed"]
+    out_notes["report_screen_also_dropped"] = guard_counts["screen_also_dropped"]
     out_notes["report_attribution_guard_failures"] = guard_failures
     out_notes["report_attribution_rewrites"] = [r.as_dict() for r in guard_rewrites]
     return {"final_html": html, "processing_notes": out_notes}

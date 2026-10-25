@@ -366,3 +366,38 @@ The old guard (master before the follow-ups) against the new one, on the stored 
 - "Also" removed: 7 (4 in run 1, 3 in run 9), each leaving a true "visible on screen".
 - Run 9's mark inside the transliteration is gone. Runs 2 to 6 and 8 are unchanged. At the map stage, the one new listed item is run 9's "10".
 
+## Run 10: results (2026-10-25; the rule above was not edited)
+
+Commit `cc388de` (PR #367), the merge of the follow-ups. ON 107,243 chars (798 s), OFF 136,015 chars (1,000 s); 517 and 410 chunks; 1 starved source re-mapped. Unlike run 9, the plain report is the longer one. Compact record: [2026-10-25-r1-run10-results.json](2026-10-25-r1-run10-results.json); artifacts in `backend/data/r1_ab/run10/` (gitignored). Every judge claim was verified, as pre-registered: 17 claims at three lenses each, 11 guard sentences at four, three sweeps (193, 257 and 45 sentences checked) and three refuters for each of 4 distinct candidates, 110 verdicts in all.
+
+**What the guard did.**
+- *Map items* (ON): 26 listed with their screen-only details, 2 relabelled `shown`.
+- *Report* (ON): 11 changes. Nine "(on screen at mm:ss)" marks, two of them with "not spoken" (`121`, "getting started"), and two removals of "also" (NumPy, FiveThirtyEight).
+- *OFF*: no changes, as designed.
+
+| Rule | Result | Evidence |
+|---|---|---|
+| 1. Quote fidelity | pass | ON 33 report quotes, OFF 52, none failing |
+| 2. Attribution | **fail** | 4 confirmed ON errors, all in sentences the guard changed (below). The judges claimed none in ON. None of the sweeps' 4 distinct candidates was confirmed (0, 1, 0 and 1 votes of 3); two of them are guard sentences the guard lenses confirmed |
+| 3. Substance | **fail** | Mean substance ON 8.0, OFF 8.33, a loss on measure (a). Preferences: ON 1 (Sonnet 5, 8 vs 8), OFF 1 (GPT-5.5, 7 vs 8), tie 1 (Gemini 3.1 Pro, 9 vs 9), so (b) holds. Visual use 8.67 vs 5.67 |
+| 4. Fabrication | **fail** | ON 3 confirmed sentences (4 judge claims, each 3 votes of 3), OFF 0 of 7 claims. All three are the composer's own synthesis: tutorials "consistently defer to the official Seaborn and Matplotlib documentation rather than to further videos"; "Only Academind (2018) and Gate Smashers teach Matplotlib's figure/axes model in depth"; "The pedagogical centre of gravity has shifted from plot syntax to analytic reasoning, and the shift tracks publication dates" |
+| 5. Guard sentences | **fail** | 4 of 11 confirmed attribution errors. The fabrication lens upheld 3: two guard insertions, and one sentence where the guard only removed "also" but the composer had written "a visual-journalism tradition" that no source states |
+| 6. Substance loss | pass | (a) every detail in the guard records is still in the report; (b) ON mean 8.0 ≥ 7.67 |
+
+**Outcome, as pre-registered:** run 10 fails rules 2, 3, 4 and 5. Run 11 is not run, and visual analysis stays hidden ([D-107](../decisions.md#d-107--r1s-substance-rule-a-tie-passes-any-loss-fails-attribution-stays-zero-error-2026-10-25), [D-105](../decisions.md#d-105--visual-analysis-hidden-in-the-ui-until-a-deterministic-attribution-guard-removes-the-residual-error-2026-10-20)).
+
+**Why the guard erred.** All four confirmed errors come from one inference: a detail the guard could not find in the transcript was taken as not said.
+- "121 (on screen at 15:27, not spoken)", 3 votes of 3. Academind says it, but the captions write "let's just add one to one", with "to" for "two". The guard reads "one two two" as 122 and misses "one to one".
+- '"getting started" (on screen at 26:44, not spoken)', 3 of 3. The speaker says "get started" five times, including in the closing line the sentence paraphrases. Only the notebook title has the -ing form.
+- '"seaborn" (on screen at 4:27)', 2 of 3. CodeWithMunnaX says it in Bengali (সিজর্ন). The mark is literally true, since the notebook title is on screen, but with the processing note's "could not be matched to the speech" it reads as screen-only.
+- "NumPy is visible on screen at that moment", 2 of 3. The guard dropped "also" (T-1.18.9.10), but NumPy is spoken in Bengali (নামপাই), and the nearest frame showing it is 58 s after the cited moment.
+
+Two of the four come from the original "not spoken" verdict (T-1.18.9.2), one from the new "also" removal, and one from an "on screen" mark on a Bengali source. Run 9's error shapes did not recur. The lone-figure rule (T-1.18.9.5) and the transliteration rule (T-1.18.9.6) had nothing to act on in a sentence crediting a speaker. The closest case was "using examples such as 1, 15, 1,024 and 15,000", where the "15" exists only in the handwritten "15%"; it credits no speaker, and its refuters rejected it 2 votes to 1.
+
+**Also found** (not counted):
+- The guard lenses and the sweep refuters split on the same two sentences ("121", "getting started"). The guard lenses read them under the guard note, which counts a wrong inserted claim as an error, and upheld both 3 of 3. The refuters read them under the plain definition and upheld them 0 and 1 of 3. Rule 2 counts the guard's own changes, so the guard verdicts stand.
+- In DeepLoop's video "सिक्स" means `sex`. The ON report contrasts "recommends species as hue" with the on-screen `hue="sex"`, and the OFF report reads it as "six". This is a fidelity slip, refuted as an attribution error 0 of 3.
+- The ON word count (55,443) includes the merged span text. OFF gives 42,999 for the same videos, yet the ON report calls them "transcript words".
+
+**What run 10 shows.** The guard's remaining errors are now its own, and they share one cause: it treats "not found in the transcript" as "not said". That is unsafe for captions that garble a word, for inflected forms, and for Hindi or Bengali speech. Independently of the guard, rule 3 failed again: across runs 9 and 10 the annotated report has not shown more substance than the plain one, and this time it lost on the mean. Rule 4 was verified in full for the first time since the guard, and it failed. The three fabricated sentences are composer synthesis, not visual details, and one run cannot separate them from run-to-run variance.
+

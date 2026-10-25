@@ -321,3 +321,39 @@ Commit `05e0fd8`, the commit that added the pre-registration. ON 124,016 chars (
 
 **What run 9 shows.** The guard did what it was built to do: every one of its own changes held up under verification, the note on the spoken version number included. But the run still carried one confirmed error, the same count as run 8 without the guard. The substance tie means R1's quality claim (rule 3) failed for a reason the guard cannot touch: on this run the judges found the annotated report exactly as substantive as the plain one.
 
+## Runs 10 and 11: pre-registered (2026-10-25, before either run exists)
+
+The user decided rule 3 for this pair ([D-107](../decisions.md#d-107--r1s-substance-rule-a-tie-passes-any-loss-fails-attribution-stays-zero-error-2026-10-25)): *"For the next pre-registered pair of R1 runs, count a substance tie (no loss) as passing rule 3. Attribution stays zero-error."* Everything else is carried over from runs 9 and 10 unchanged.
+
+**Code.** Both arms of both runs are regenerated on one commit: master after the guard follow-ups T-1.18.9.5 to .7 merge. The results name that commit, and nothing changes between run 10 and run 11.
+- T-1.18.9.5: lone figures in speaker credits.
+- T-1.18.9.6: quote transliterations treated as quotation.
+- T-1.18.9.7: an accurate processing note.
+
+**Setup, as for run 9.**
+- Job `419e691d`, with `--descriptions data/r1_ab/retier/baseline_describe.json` (gpt-5.5, D-081) and the models in `backend/.env`.
+- Judges: GPT-5.5, Sonnet 5 and Gemini 3.1 Pro, all medium. No substitutes: a run waits for the Gemini quota, through a background waiter.
+
+**Verification.**
+- Three lenses for every claim from every judge, in both arms and of both kinds. Unlike run 9, every judge claim is verified.
+- Three independent sweeps of ON, with three refuters per distinct candidate.
+- Three attribution lenses and the fabrication lens for every sentence the guard changed.
+- The majority decides. The D-075 multilingual rule applies.
+
+**Pass rule.** Both runs must pass every item:
+1. Quote fidelity: `audit_quote_fidelity.py --check` exits 0 (unchanged).
+2. Attribution: zero confirmed attribution errors in ON, in either direction, counting every judge's claims, the sweep and the guard's own changes (unchanged).
+3. **Substance (amended, D-107):** ON's substance is equal to or higher than OFF's, on both measures, with no margin:
+   - (a) ON's mean substance across the three families ≥ OFF's;
+   - (b) at least as many families prefer ON as prefer OFF (a tie counts for neither).
+
+   A loss on either measure fails.
+4. Fabrication: ON has no more confirmed fabrications than OFF, with every judge claim verified (unchanged).
+5. No rise in fabrication from the guard: zero confirmed errors of either kind among the sentences it changed (unchanged).
+6. No substance loss beyond noise: every detail in a guard record is still in the report, and ON's mean substance is ≥ 7.67 (unchanged).
+
+**Outcomes, fixed now.**
+- Both runs pass: set `featureFlags.visualAnalysis = true`, record a decision that supersedes D-105, and update S-1.18.2, the L6 status and the CHANGELOG.
+- Rule 1 fails: the run is invalid. The defect is fixed in its own change and the run is repeated; it does not count toward the two.
+- Anything else fails in either run: the result is recorded and the flag stays off. If run 10 fails, run 11 is not run.
+

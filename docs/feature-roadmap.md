@@ -1,6 +1,6 @@
 # Pratidhvani — Feature Roadmap
 
-**Status:** approved (2026-04-24). Living document; status of each item updates as work lands. Last reconciled against the code 2026-10-19.
+**Status:** approved (2026-04-24). Living document; status of each item updates as work lands. Last reconciled against the code 2026-10-19; the owner's rulings of 2026-10-25 recorded ([D-109](decisions.md#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25) to [D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)).
 
 This is the canonical roadmap. Each entry has: motivation, sketch, schema/API impact, open questions, and status. The high-level phases live in [vision.md](vision.md).
 
@@ -97,6 +97,8 @@ Targeted Phase 2 (2026 Q3) for non-foundation source types. Detailed design in [
 
 Reels wait on the TTS decision. Site publishing (S-6.2.2) is design only.
 
+**Status 2026-10-25** ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)). Sites are download only, with no one-click publishing, so the site kind is shipped and S-6.2.2 will not be built. Reels are deferred; when built they use hosted TTS by default with local TTS as opt-in, pass a Hindi listening test, and use no B-roll. Book template variants and a hosted site preview are deferred.
+
 **Motivation.** The accumulated library is rich enough to produce **derivative artifacts** — books, websites, decks, newsletters, reels — not just answers. The user explicitly asked for this. Output generation closes the loop: ingest → understand → produce.
 
 **Sketch.** A new top-level surface "Author" with five sub-surfaces:
@@ -122,7 +124,7 @@ Reels wait on the TTS decision. Site publishing (S-6.2.2) is design only.
 **Open questions.**
 
 - Books: do we ship templates (academic, casual, journalistic) or a single editorial template? Recommend single + customization later.
-- Sites: hosted preview vs download-only? Recommend download-only initially; hosted preview as a SaaS-tier feature. *v1 (S-6.2.1, 2026-10-19) is download-only; hosted preview and publishing (S-6.2.2) remain open.*
+- Sites: hosted preview vs download-only? Recommend download-only initially; hosted preview as a SaaS-tier feature. *v1 (S-6.2.1, 2026-10-19) is download-only; hosted preview and publishing (S-6.2.2) remain open.* *Ruled 2026-10-25 (D-112): download only; publishing will not be built, and a hosted preview is deferred.*
 - TTS provider: local-first (Coqui) for self-host, paid (ElevenLabs) for SaaS Pro.
 - Reels: vertical 9:16 vs flexible aspect? Recommend vertical-only for v1.
 
@@ -141,6 +143,8 @@ Reels wait on the TTS decision. Site publishing (S-6.2.2) is design only.
 - its feedback loop (S-3.4.2, [#359](https://github.com/khoks/VideoResearchPro/pull/359), [D-104](decisions.md#d-104--a-draft-edit-teaches-only-the-words-the-user-typed-2026-10-20)): the words the user types into a draft teach their voice, and nothing else of it does.
 
 Its pre-registered gate passed on synthetic writers ([D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19)), so "speak as me" may be built; it is enabled per user only after the user-as-judge test.
+
+**Ruled 2026-10-25** ([D-110](decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25)). Echo only sees what the user hands it: nothing captures browsing in the background, so history capture in the extension and a browser-history connector will not be built. A fact the user deleted stays deleted (tombstones, accepted). No private GitHub scope, no Spotify live tail, and no Gmail on SaaS before revenue (self-hosters use the IMAP inbox). Mode B stays parked until the owner's own voice test has run, and private-by-key encryption waits until SaaS.
 
 **Motivation.** The widest ring of the vision (see [vision.md](vision.md) Ring 3). Pratidhvani learns enough about the user — through opt-in life connectors *and* constant-stream sharing of liked videos / reels / memes / WhatsApp threads / Keep notes / quotes — that it can suggest questions before they ask, anticipate their needs, capture their personality, and eventually speak on their behalf.
 
@@ -213,7 +217,7 @@ Below threshold: bubble dimmed, banner explains what's missing. Crossing thresho
 - How does weighting interact with subscriptions (auto-pulled content)? Recommend channel weight applies; user can override per-document.
 - **Shape of v1: resolved 2026-10-18 by [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18).** Weighted retrieval first (re-rank by `distance / weight` after the raw relevance threshold, weights resolved per tenant at query time); perspective banding deferred to E-7.2 until weights exist and the re-rank is measured.
 
-**Status.** 🟡 in progress. Trust-weighted retrieval v1 shipped 2026-10-19 (S-7.1.1, PR [#287](https://github.com/khoks/VideoResearchPro/pull/287)): a per-tenant weight per channel, set on the channel page, re-ranks job and library Q&A as `distance / weight` after the relevance threshold ([D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18)). Measured and re-judged with dated excerpts (PR [#330](https://github.com/khoks/VideoResearchPro/pull/330)): all four pre-registered clauses met, so the formula stays as shipped; strong weights do narrow library answers, which is recorded and shown on the channel page. Perspective banding (E-7.2) is next. Tracked as [I-7](initiatives.md#i-7--curated-source-ranking-l4).
+**Status.** 🟡 in progress. Trust-weighted retrieval v1 shipped 2026-10-19 (S-7.1.1, PR [#287](https://github.com/khoks/VideoResearchPro/pull/287)): a per-tenant weight per channel, set on the channel page, re-ranks job and library Q&A as `distance / weight` after the relevance threshold ([D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18)). Measured and re-judged with dated excerpts (PR [#330](https://github.com/khoks/VideoResearchPro/pull/330)): all four pre-registered clauses met, so the formula stays as shipped; strong weights do narrow library answers, which is recorded and shown on the channel page. Perspective banding (E-7.2) is next. *2026-10-25 ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): banding waits until the owner has weighted channels for real; a weight near 0 keeps today's behaviour, and the slider text that promised otherwise is corrected.* Tracked as [I-7](initiatives.md#i-7--curated-source-ranking-l4).
 
 ---
 
@@ -241,9 +245,11 @@ Below threshold: bubble dimmed, banner explains what's missing. Crossing thresho
 
 The remaining I-5 epics (**E-5.3 Stripe**, **E-5.7 Data residency**, **E-5.8 Hosting**, **E-5.9 Hosted UX**) are **design-complete and code-deferred to SaaS launch** — none has meaningful code work for a self-host install. Full design lives in [`saas-roadmap.md`](saas-roadmap.md).
 
+**2026-10-25** ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): the tier switch becomes operator-only (the accounts in `ADMIN_EMAILS`, else the earliest-registered account), amending D-050. The pricing page marks unbuilt features (reels, public sharing, team workspaces, data residency) as planned and drops the daily-token line nothing enforces; the document caps stay advertised and get enforced later.
+
 ---
 
-### L6 — Visual understanding 🟡
+### L6 — Visual understanding 🔴
 
 **Motivation.** A transcript is a lossy recording of a video. When a speaker says "as you can see here, revenue nearly tripled", the sentence is *complete only with the picture*. Everything the app does downstream — reports, Q&A, knowledge extraction — reasons over text that silently drops the half of the source that was shown rather than said. On technical and educational content, which is most of the corpus, that half is often where the substance is: the code on the slide, the axis labels, the UI being demonstrated.
 
@@ -264,6 +270,8 @@ The remaining I-5 epics (**E-5.3 Stripe**, **E-5.7 Data residency**, **E-5.8 Hos
 
 **Status 2026-10-25.** The follow-ups shipped and a second pre-registered pair began under the user's tie rule ([D-107](decisions.md#d-107--r1s-substance-rule-a-tie-passes-any-loss-fails-attribution-stays-zero-error-2026-10-25)). Run 10 failed, so run 11 was not run and R1 stays hidden. The guard's four confirmed errors all came from treating a detail it could not find in the transcript as not said. Independently, the judges again found the annotated report no more substantive than the plain one (8.0 against 8.33). The user then chose T-1.18.9.11: the guard no longer infers that a detail went unsaid, and it checks only English speech in Latin script ([D-108](decisions.md#d-108--the-attribution-guard-never-infers-that-a-detail-went-unsaid-it-checks-only-english-speech-in-latin-script-2026-10-25)). No new runs were made.
 
+**Status 2026-10-25 (II).** 🔴 Parked by the owner ([D-109](decisions.md#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25)): visual analysis stays hidden and R1 measurement stops. The backend, the frames and the attribution guard stay in the code. There are two ways back, only if the owner asks: annotate only sources whose speech is English in Latin script, with a pair pre-registered on an English-only corpus, or the post-compose LLM audit D-075 deferred, checked offline on runs 1 to 10 first. Either needs a new pre-registered pair under the D-107 rules.
+
 **Open questions.**
 
 - **Does it actually improve output?** Measured 2026-10-19 ([D-071](decisions.md#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19)): on an 11-video charting corpus, three blind judges from three model families all preferred the annotated report on substance (8.33 vs 7.00), and it had zero confirmed fabrications against five in the unannotated one. But an adversarial sweep found two sentences that credited a speaker with a screen-only detail, and the vision spend was $0.20 per video against a $0.10 ceiling. Two re-runs after the contract fix ([D-075](decisions.md#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19)) showed the gain holds with gpt-5.5 descriptions (3/3 at matched length) but not with Flash-Lite (1/3), and that the prompt rule moved attribution errors rather than removing them. The next step is said/shown provenance on every extracted fact (S-1.18.8); the UI waits for a clean run.
@@ -272,7 +280,7 @@ The remaining I-5 epics (**E-5.3 Stripe**, **E-5.7 Data residency**, **E-5.8 Hos
 - **Beyond YouTube.** PDFs already have page images available with no download at all, and articles carry figures. Both are cheaper than video and neither is built.
 - **Sequencing (raised 2026-10-18, undecided).** Should we measure (S-1.18.3) before surfacing (S-1.18.2)? A small job run with visual analysis on and again with it off, judged blind with the E-1.14 harness, settles whether the feature earns its cost. If it doesn't, building the UI first wastes that work.
 
-**Status.** 🟡 in-progress. Backend pipeline shipped 2026-07-31 (E-1.18 / [D-067](decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31)); nothing surfaces frames in the UI, and the value question above is open.
+**Status.** 🟡 in-progress. Backend pipeline shipped 2026-07-31 (E-1.18 / [D-067](decisions.md#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31)); nothing surfaces frames in the UI, and the value question above is open. *🔴 Parked 2026-10-25 ([D-109](decisions.md#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25)).*
 
 ---
 
@@ -306,7 +314,7 @@ Command palette → search jobs, documents, channels, Q&As, knowledge artifacts 
 
 **UI:** Cmd-K (Ctrl-K on Windows) opens a modal with fuzzy-search input and grouped results.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.2](initiatives.md#e-82--command-palette-and-global-search-m2); plan [`plans/m2-command-palette.md`](plans/m2-command-palette.md). Audit: no `/search` endpoint and no shortcut hook exist (the `useShortcuts` hook `ui-design.md` describes was never written). Keyword search first; semantic results as a labelled second group.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.2](initiatives.md#e-82--command-palette-and-global-search-m2); plan [`plans/m2-command-palette.md`](plans/m2-command-palette.md). Audit: no `/search` endpoint and no shortcut hook exist (the `useShortcuts` hook `ui-design.md` describes was never written). Keyword search first; semantic results as a labelled second group. *2026-10-25 ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): the semantic results group (S-8.2.3) stays parked.*
 
 ---
 
@@ -320,7 +328,7 @@ Save a Q&A query → re-run on a schedule → notify when new library content ma
 
 **UI:** "Pin this question" button on Q&A answer cards.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.3](initiatives.md#e-83--saved-searches-and-alerts-m3); plan [`plans/m3-saved-searches-alerts.md`](plans/m3-saved-searches-alerts.md). Audit: Celery has no beat scheduler; E-8.3 builds the project's first one and the newsletter (E-6.4) reuses it. Schedules are human presets, not cron. Foundation for "research monitoring" / digest features. **🟡 2026-10-19:** pinned searches shipped (S-8.3.2, PR [#320](https://github.com/khoks/VideoResearchPro/pull/320)): pin on library Q&A answers, `/saved-searches`, scheduled runs through the S-8.3.1 tick, quota before every run. **🟢 2026-10-19:** change detection and alerts shipped (S-8.3.3, PR [#328](https://github.com/khoks/VideoResearchPro/pull/328)): a gate on the scope's document set, cited-set and answer-embedding signals with pre-registered thresholds (calibration pending: too few re-asks in the history), a judge only when they disagree, run history, an in-app bell and email.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.3](initiatives.md#e-83--saved-searches-and-alerts-m3); plan [`plans/m3-saved-searches-alerts.md`](plans/m3-saved-searches-alerts.md). Audit: Celery has no beat scheduler; E-8.3 builds the project's first one and the newsletter (E-6.4) reuses it. Schedules are human presets, not cron. Foundation for "research monitoring" / digest features. **🟡 2026-10-19:** pinned searches shipped (S-8.3.2, PR [#320](https://github.com/khoks/VideoResearchPro/pull/320)): pin on library Q&A answers, `/saved-searches`, scheduled runs through the S-8.3.1 tick, quota before every run. **🟢 2026-10-19:** change detection and alerts shipped (S-8.3.3, PR [#328](https://github.com/khoks/VideoResearchPro/pull/328)): a gate on the scope's document set, cited-set and answer-embedding signals with pre-registered thresholds (calibration pending: too few re-asks in the history), a judge only when they disagree, run history, an in-app bell and email. *2026-10-25 ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): the caps (Free 0, Pro 10, Studio 50) and the library-and-shelf scopes are ratified.*
 
 ---
 
@@ -362,7 +370,7 @@ Save a job's parameters as a template; one-click instantiate with fresh date ran
 
 **UI:** "Save as template" on submit page; "From template" picker.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.6](initiatives.md#e-86--job-templates-m6); plan [`plans/m6-job-templates.md`](plans/m6-job-templates.md). Today's "Duplicate / re-run" already covers most of this; M6 generalizes from "duplicate one job" to "named reusable template" and seeds the starter templates M10 uses. **🟡 2026-10-19:** templates (versions, provenance, Save as template, picker, `/templates`) and five starters shipped (PRs #263, #265), with Duplicate fixed to keep depth and the visual flag. Not yet: the relative publish window (needs the search prompt), the podcast-digest and mixed-source starters (need `source_types` on job creation), and the wizard's starter step. See [D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19).
+**Status.** 🔵 accepted 2026-10-18 as [E-8.6](initiatives.md#e-86--job-templates-m6); plan [`plans/m6-job-templates.md`](plans/m6-job-templates.md). Today's "Duplicate / re-run" already covers most of this; M6 generalizes from "duplicate one job" to "named reusable template" and seeds the starter templates M10 uses. **🟡 2026-10-19:** templates (versions, provenance, Save as template, picker, `/templates`) and five starters shipped (PRs #263, #265), with Duplicate fixed to keep depth and the visual flag. Not yet: the relative publish window (needs the search prompt), the podcast-digest and mixed-source starters (need `source_types` on job creation), and the wizard's starter step. See [D-082](decisions.md#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19). *2026-10-25 ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): the relative publish window is accepted as a ranking preference, built after source types on job creation (S-1.5.13), which also got its go-ahead.*
 
 ---
 
@@ -376,7 +384,7 @@ Per-channel analytics: word-cloud, recurring topics, evolving stance over time, 
 
 **UI:** New tab on the channel detail page.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.7](initiatives.md#e-87--channel-intelligence-m7); plan [`plans/m7-channel-intelligence.md`](plans/m7-channel-intelligence.md). Audit: there is no channel detail page to put a tab on (E-8.7 creates one), and stance / sentiment exist only for social sources, so "evolving stance over time" has no data for YouTube channels and is scoped accordingly. **🟡 2026-10-19:** the channel detail page shipped (`/library/channels/:id`, PR #237) with a read-only trust-weight slot for E-7.1; the intelligence endpoint and tab (S-8.7.2, S-8.7.3) are Phase 4. **🟢 2026-10-19:** shipped. `GET /channels/{id}/intelligence` (PR [#280](https://github.com/khoks/VideoResearchPro/pull/280)) computes cadence, durations, topics and concepts, a TF-IDF keyword cloud, stance where classified, and the reader's own questions, cached per reader behind an input fingerprint; the Intelligence tab (PR [#285](https://github.com/khoks/VideoResearchPro/pull/285)) charts them and runs knowledge extraction for the uncovered documents; citation chips link to the channel page (PR [#291](https://github.com/khoks/VideoResearchPro/pull/291)); the concept map is the library map scoped to the channel (PR [#301](https://github.com/khoks/VideoResearchPro/pull/301)). See [D-091](decisions.md#d-091--channel-intelligence-aggregates-computed-on-read-and-cached-per-reader-behind-an-input-fingerprint-derived-links-resolved-at-read-time-2026-10-19). Topic clusters by embedding fold into the gated S-8.9.3.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.7](initiatives.md#e-87--channel-intelligence-m7); plan [`plans/m7-channel-intelligence.md`](plans/m7-channel-intelligence.md). Audit: there is no channel detail page to put a tab on (E-8.7 creates one), and stance / sentiment exist only for social sources, so "evolving stance over time" has no data for YouTube channels and is scoped accordingly. **🟡 2026-10-19:** the channel detail page shipped (`/library/channels/:id`, PR #237) with a read-only trust-weight slot for E-7.1; the intelligence endpoint and tab (S-8.7.2, S-8.7.3) are Phase 4. **🟢 2026-10-19:** shipped. `GET /channels/{id}/intelligence` (PR [#280](https://github.com/khoks/VideoResearchPro/pull/280)) computes cadence, durations, topics and concepts, a TF-IDF keyword cloud, stance where classified, and the reader's own questions, cached per reader behind an input fingerprint; the Intelligence tab (PR [#285](https://github.com/khoks/VideoResearchPro/pull/285)) charts them and runs knowledge extraction for the uncovered documents; citation chips link to the channel page (PR [#291](https://github.com/khoks/VideoResearchPro/pull/291)); the concept map is the library map scoped to the channel (PR [#301](https://github.com/khoks/VideoResearchPro/pull/301)). See [D-091](decisions.md#d-091--channel-intelligence-aggregates-computed-on-read-and-cached-per-reader-behind-an-input-fingerprint-derived-links-resolved-at-read-time-2026-10-19). Topic clusters by embedding fold into the gated S-8.9.3. *2026-10-25 ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): no stance classification for YouTube videos.*
 
 ---
 
@@ -404,7 +412,7 @@ Visualize how Q&As cite documents, how documents relate to topics, how topics cl
 
 **UI:** Force-directed graph (d3 / cytoscape); zoom, pan, click-to-detail.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.9](initiatives.md#e-89--citation-graph-and-knowledge-map-m9); plan [`plans/m9-citation-graph.md`](plans/m9-citation-graph.md). Tenant-scoped nodes from documents, channels, Q&A references and knowledge topics; focused local-graph mode by default so it is not a hairball. **🟡 2026-10-19:** the endpoint (PR [#297](https://github.com/khoks/VideoResearchPro/pull/297)) and the library map at `/library/graph` (PR [#301](https://github.com/khoks/VideoResearchPro/pull/301)) shipped: sigma 4 + graphology as a lazy chunk, three group colours, a keyboard model and a table view; the whole-library view ships capped at 300 nodes with single-link nodes hidden. See [D-092](decisions.md#d-092--library-graph-computed-per-request-sigma-used-directly-as-a-lazy-chunk-three-group-colours-the-accessibility-layer-inside-the-story-2026-10-19). Remaining: S-8.9.3 topic clusters, gated on topic edges proving too sparse on a real library.
+**Status.** 🔵 accepted 2026-10-18 as [E-8.9](initiatives.md#e-89--citation-graph-and-knowledge-map-m9); plan [`plans/m9-citation-graph.md`](plans/m9-citation-graph.md). Tenant-scoped nodes from documents, channels, Q&A references and knowledge topics; focused local-graph mode by default so it is not a hairball. **🟡 2026-10-19:** the endpoint (PR [#297](https://github.com/khoks/VideoResearchPro/pull/297)) and the library map at `/library/graph` (PR [#301](https://github.com/khoks/VideoResearchPro/pull/301)) shipped: sigma 4 + graphology as a lazy chunk, three group colours, a keyboard model and a table view; the whole-library view ships capped at 300 nodes with single-link nodes hidden. See [D-092](decisions.md#d-092--library-graph-computed-per-request-sigma-used-directly-as-a-lazy-chunk-three-group-colours-the-accessibility-layer-inside-the-story-2026-10-19). Remaining: S-8.9.3 topic clusters, gated on topic edges proving too sparse on a real library. *2026-10-25 ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): D-092 is ratified, and S-8.9.3 stays parked.*
 
 ---
 
@@ -422,7 +430,7 @@ First-run flow: pick 3-5 channels, run a first job, see the result. Today there'
 
 ---
 
-### M11 — Public report sharing ⚪
+### M11 — Public report sharing 🔴
 
 Signed URL for a single report → share with friends. Paves the way for SaaS sharing later.
 
@@ -432,11 +440,11 @@ Signed URL for a single report → share with friends. Paves the way for SaaS sh
 
 **UI:** "Share" button on report viewer.
 
-**Status.** ⚪ proposed; design complete as [E-8.11](initiatives.md#e-811--public-report-sharing-m11); plan [`plans/m11-public-report-sharing.md`](plans/m11-public-report-sharing.md). Not accepted: whether sharing launches before billing and the takedown workflow (T-5.5.6) exist is the user's call, recorded as the plan's first open question. Opaque hashed tokens, `noindex`, sandboxing CSP and per-IP rate limiting are in the design regardless.
+**Status.** ⚪ proposed; design complete as [E-8.11](initiatives.md#e-811--public-report-sharing-m11); plan [`plans/m11-public-report-sharing.md`](plans/m11-public-report-sharing.md). Not accepted: whether sharing launches before billing and the takedown workflow (T-5.5.6) exist is the user's call, recorded as the plan's first open question. Opaque hashed tokens, `noindex`, sandboxing CSP and per-IP rate limiting are in the design regardless. **🔴 Deferred 2026-10-25** ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): the static site zip covers sharing meanwhile (a site can be built from one run, `job:<id>`). If sharing is ever built, the takedown and revoke hooks go inside S-8.11.2.
 
 ---
 
-### M12 — Mobile reading mode 🟢
+### M12 — Mobile reading mode 🟡
 
 Today the layout collapses to stacked column at 640px. Improve specifically the *reading* experience (reports, Q&A answers, knowledge artifacts) for mobile — appropriate type sizes, tap targets, sticky controls.
 
@@ -446,7 +454,7 @@ Today the layout collapses to stacked column at 640px. Improve specifically the 
 
 **UI:** Responsive refinements across reading-heavy pages.
 
-**Status.** 🟢 shipped 2026-10-19 as [E-8.12](initiatives.md#e-812--mobile-reading-mode-m12) (PRs [#269](https://github.com/khoks/VideoResearchPro/pull/269), [#272](https://github.com/khoks/VideoResearchPro/pull/272)); plan [`plans/m12-mobile-reading.md`](plans/m12-mobile-reading.md). A bottom reading toolbar below 1200 px, the Q&A composer docked above the keyboard, 44 px controls, safe areas, 16 px fields, device-emulated screenshot tests (iPhone / Pixel / 320 px, light and dark), and an installable web-app manifest (see [D-087](decisions.md#d-087--mobile-reading-and-install-a-reading-toolbar-below-1200-px-a-docked-composer-lifted-by-visualviewport-hermetic-device-tests-a-manifest-without-a-service-worker-2026-10-19)). Not done: a pass on a real phone, which the plan leaves to the user. Originally accepted 2026-10-18.
+**Status.** 🟢 shipped 2026-10-19 as [E-8.12](initiatives.md#e-812--mobile-reading-mode-m12) (PRs [#269](https://github.com/khoks/VideoResearchPro/pull/269), [#272](https://github.com/khoks/VideoResearchPro/pull/272)); plan [`plans/m12-mobile-reading.md`](plans/m12-mobile-reading.md). A bottom reading toolbar below 1200 px, the Q&A composer docked above the keyboard, 44 px controls, safe areas, 16 px fields, device-emulated screenshot tests (iPhone / Pixel / 320 px, light and dark), and an installable web-app manifest (see [D-087](decisions.md#d-087--mobile-reading-and-install-a-reading-toolbar-below-1200-px-a-docked-composer-lifted-by-visualviewport-hermetic-device-tests-a-manifest-without-a-service-worker-2026-10-19)). Not done: a pass on a real phone, which the plan leaves to the user. Originally accepted 2026-10-18. **🟡 2026-10-25** ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): a real-phone pass is part of M12's acceptance, so S-8.12.3 is accepted and M12 stays open until it is done.
 
 ---
 
@@ -464,7 +472,7 @@ Tracked separately because it's identity-system work, not a feature.
 | Primitives library (`frontend/src/components/primitives/*`) | 🟢 shipped (E-2.2; Tooltip / Tabs / IconButton still open) |
 | Sidebar layout migration (top-tabs → sidebar) | 🟢 shipped (E-2.4) |
 | Per-page warm-editorial restyle | 🟢 shipped (E-2.3) |
-| Logo SVG + favicon | 🔵 accepted. `frontend/public/favicon.svg` is still Vite's default purple bolt from the initial commit (verified 2026-10-18) |
+| Logo SVG + favicon | 🟡 The interim echo mark ships as `logo-mark.svg`, the app favicon and the app icons (S-8.12.2, 2026-10-19). Since 2026-10-25 it is the identity ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): the full logo and the marketing logo set are made from it next (E-2.8), and `og.png` when M11 is scheduled |
 | Landing page (`marketing/`) | 🟢 shipped (E-2.5, PR #136) |
 | Brand-name swap across all user-facing copy | 🟢 shipped (E-2.6, PR #97) |
 
@@ -478,3 +486,6 @@ For traceability — things considered and explicitly not pursued.
 - **Auto-ingest the user's whole YouTube subscription list.** Rejected: violates the "user explicitly approves what enters the library" principle. Channel subscriptions are explicit per-channel.
 - **Cross-user library sharing.** Deferred to SaaS phase; explicit signed-URL sharing only (M11).
 - **Real-time collaborative research.** Deferred indefinitely; out of scope for personal-brain framing.
+- **Passive browsing capture for Echo.** Won't do ([D-110](decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25)): Echo only sees what the user hands it.
+- **Spotify live tail.** Won't do ([D-110](decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25)): the streaming-history export import covers the history.
+- **One-click site publishing (GitHub Pages, Netlify).** Won't do ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): sites are download only.

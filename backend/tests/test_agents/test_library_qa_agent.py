@@ -85,6 +85,52 @@ def test_library_qa_runs_end_to_end_with_citations():
     assert "vDNS" in vid_refs
 
 
+def _prompt_text(llm: MagicMock) -> str:
+    messages = llm.invoke.call_args.args[0]
+    return "\n".join(m.content for m in messages)
+
+
+def test_library_qa_clarify_answers_reach_every_prompt():
+    """S-8.13.1 / T-8.13.1.3: a question carrying the reader's clarify answers,
+    as ``answer_library_question`` builds it, reaches sub-query expansion,
+    the refine prompt and the answer prompt."""
+    from app.agents.prompts.qa_prompts import with_clarification
+
+    question = with_clarification(
+        "What is DNS?",
+        "My interpretation: A DNS primer.\n\nWhich record types?\nMX and CNAME",
+    )
+    fake_llms = [
+        _fake_llm(""),  # sub-queries
+        _fake_llm("DNS maps names to IPs."),  # refine_context
+        _fake_llm(
+            'DNS resolves names to IPs. [Source: "How DNS Works" by NetTeach at 0:30]'
+        ),  # formulate_answer
+    ]
+    with patch.object(
+        qa_agent.chroma_service,
+        "query_collection",
+        return_value=[_rag_chunk("vDNS", "How DNS Works", "NetTeach", ts=30.0)],
+    ), patch.object(qa_agent, "get_llm_for", side_effect=fake_llms):
+        qa_agent.run_library_qa_agent(question=question, visible_document_ids=["d-dns"])
+
+    sub_queries, refine, answer = (_prompt_text(llm) for llm in fake_llms)
+    for stage, prompt in (("sub-query", sub_queries), ("refine", refine), ("answer", answer)):
+        assert "MX and CNAME" in prompt, f"the {stage} prompt lost the reader's clarify answer"
+        assert "My interpretation: A DNS primer." in prompt, stage
+
+
+def test_with_clarification_leaves_a_bare_question_alone():
+    from app.agents.prompts.qa_prompts import with_clarification
+
+    assert with_clarification("What is DNS?", None) == "What is DNS?"
+    assert with_clarification("What is DNS?", "") == "What is DNS?"
+    assert with_clarification("What is DNS?", " \n\t") == "What is DNS?"
+    assert with_clarification("What is DNS?", "  MX  \n") == (
+        "What is DNS?\n\nAdditional context from user:\nMX"
+    )
+
+
 def test_library_qa_returns_empty_references_when_rag_empty():
     with patch.object(qa_agent.chroma_service, "query_collection", return_value=[]), \
          patch.object(qa_agent, "get_llm_for", side_effect=[

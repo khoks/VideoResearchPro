@@ -37,6 +37,7 @@ import {
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
 import { formatDuration, formatDate, statusTone } from '../utils/formatters';
+import { buildClarifyContext, CLARIFY_ANSWER_MAX_CHARS } from '../utils/clarifyContext';
 import { useJobStore } from '../stores/jobStore';
 import { wsClient } from '../services/wsClient';
 import { ReportPeekModal } from '../components/jobs/ReportPeekModal';
@@ -868,11 +869,8 @@ function QASection({ jobId }: { jobId: string }) {
 
   const handleConfirmSearch = async () => {
     if (!qaAvailable) return;
-    const answeredParts = clarifications
-      .map((q, i) => (clarificationAnswers[i]?.trim() ? `${q}\n${clarificationAnswers[i].trim()}` : null))
-      .filter(Boolean) as string[];
-
-    const context = [`My interpretation: ${interpretation}`, ...answeredParts].join('\n\n');
+    // Kept under the server's 4,000-character bound, or the ask is a 422.
+    const context = buildClarifyContext(interpretation, clarifications, clarificationAnswers);
 
     const ok = await submitQuestion({ question, context });
     if (!ok) return;
@@ -1050,6 +1048,7 @@ function QASection({ jobId }: { jobId: string }) {
                           setClarificationAnswers(next);
                         }}
                         placeholder="Your answer (optional)"
+                        maxLength={CLARIFY_ANSWER_MAX_CHARS}
                         disabled={answering}
                       />
                     )}

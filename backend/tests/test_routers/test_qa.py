@@ -220,6 +220,31 @@ def test_qa_stream_emits_stage_and_complete_events(client, db, test_user):
     assert row.completion_tokens == 75
 
 
+def test_qa_clarify_context_reaches_the_agent(client, db, test_user):
+    """T-8.13.1.1: job Q&A folds the clarify answers into the question its
+    agent sees (the pattern library and shelf Q&A now share,
+    ``with_clarification``) and stores the question as typed. Without
+    ``context`` the agent sees the bare question."""
+    job = _make_completed_job(db, report_path=None, tenant_id=test_user.id)
+    context = "My interpretation: The user wants the timeline.\n\nWhich era?\nThe 1990s"
+    with (
+        patch("app.agents.qa_agent.run_qa_agent", return_value=("Answer.", [])) as agent,
+        patch("app.routers.qa.chroma_service.upsert_qa_exchange", return_value=True),
+    ):
+        confirmed = client.post(
+            f"/api/v1/jobs/{job.id}/qa", json={"question": "tell me", "context": context}
+        )
+        asked_confirmed = agent.call_args.kwargs["question"]
+        skipped = client.post(f"/api/v1/jobs/{job.id}/qa", json={"question": "tell me"})
+        asked_skipped = agent.call_args.kwargs["question"]
+
+    assert confirmed.status_code == 200, confirmed.text
+    assert skipped.status_code == 200, skipped.text
+    assert asked_confirmed == "tell me\n\nAdditional context from user:\n" + context
+    assert asked_skipped == "tell me"
+    assert db.get(QAExchange, confirmed.json()["id"]).question == "tell me"
+
+
 def test_qa_stream_requires_auth(unauthenticated_client, db):
     job = _make_completed_job(db)
     response = unauthenticated_client.post(

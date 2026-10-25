@@ -119,6 +119,21 @@ Write a thorough, well-structured answer with citations to the allowed sources. 
 """
 
 
+def with_clarification(question: str, context: str | None) -> str:
+    """The question the agent sees, with what the reader told the clarify step.
+
+    "Confirm & search" sends the interpretation the reader accepted and their
+    answers to the clarifying questions as ``context``. It rides inside the
+    question, so sub-query expansion, context refinement and the answer
+    prompt all read it. Job Q&A has always done this; library and shelf Q&A
+    dropped it until S-8.13.1. Callers store the question the reader typed,
+    never this one. No context (or only whitespace) leaves the question as is.
+    """
+    if not context or not context.strip():
+        return question
+    return f"{question}\n\nAdditional context from user:\n{context.strip()}"
+
+
 # ---------------------------------------------------------------------------
 # Library-wide Q&A prompts (Unit 6). These address the global library rather
 # than a single job's RAG + report, and they add language-handling rules.

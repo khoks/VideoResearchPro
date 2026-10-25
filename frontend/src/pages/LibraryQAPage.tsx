@@ -30,6 +30,7 @@ import {
   space,
 } from '../theme';
 import type { AnswerLanguage } from '../types/qa';
+import { buildClarifyContext, CLARIFY_ANSWER_MAX_CHARS } from '../utils/clarifyContext';
 
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
@@ -83,14 +84,8 @@ export function LibraryQAPage() {
 
   const handleConfirmSearch = async () => {
     if (!libraryQAAvailable) return;
-    const answeredParts = clarifications
-      .map((q, i) => (clarificationAnswers[i]?.trim() ? `${q}\n${clarificationAnswers[i].trim()}` : null))
-      .filter(Boolean) as string[];
-
-    const context = [
-      `My interpretation: ${interpretation}`,
-      ...answeredParts,
-    ].join('\n\n');
+    // Kept under the server's 4,000-character bound, or the ask is a 422.
+    const context = buildClarifyContext(interpretation, clarifications, clarificationAnswers);
 
     await askQuestion.mutateAsync({ question, answer_language: language, context });
     setQuestion('');
@@ -392,6 +387,7 @@ export function LibraryQAPage() {
                             setClarificationAnswers(next);
                           }}
                           placeholder="Your answer (optional)"
+                          maxLength={CLARIFY_ANSWER_MAX_CHARS}
                           disabled={askQuestion.isPending}
                         />
                       )}

@@ -76,6 +76,10 @@ class OAuthUserInfo:
 
     provider_user_id: str
     email: str | None
+    # Whether the provider vouches that the account holder owns ``email``.
+    # Required to create or link an account for an ADMIN_EMAILS address
+    # (D-111 review); other addresses are linked as before.
+    email_verified: bool = False
 
 
 class OAuthProvider(Protocol):
@@ -249,6 +253,8 @@ def _google_user_info(payload: dict) -> OAuthUserInfo:
     return OAuthUserInfo(
         provider_user_id=str(sub),
         email=str(payload.get("email")) if payload.get("email") else None,
+        # OpenID Connect's claim; Google sends a boolean.
+        email_verified=payload.get("email_verified") in (True, "true"),
     )
 
 
@@ -259,9 +265,13 @@ def _github_user_info(payload: dict) -> OAuthUserInfo:
     # GitHub's /user only returns email if it's set to public; private
     # email requires a second call to /user/emails. Out of scope for v1
     # — we accept None and leave email-linking to the caller.
+    email = str(payload.get("email")) if payload.get("email") else None
     return OAuthUserInfo(
         provider_user_id=str(uid),
-        email=str(payload.get("email")) if payload.get("email") else None,
+        email=email,
+        # /user's ``email`` is the profile's public email, which GitHub only
+        # lets an account set to one of its verified addresses.
+        email_verified=email is not None,
     )
 
 
@@ -427,6 +437,14 @@ def _link_or_create_user(
         raise OAuthError(
             f"Provider '{provider_name}' did not return an email address. "
             f"Cannot link or create the account without one."
+        )
+
+    # D-111 review: an ADMIN_EMAILS address makes its holder an operator, so
+    # it is created or linked only when the provider vouches for it.
+    if auth_service.is_operator_email(info.email) and not info.email_verified:
+        raise OAuthError(
+            f"Provider '{provider_name}' did not verify an address listed in "
+            f"ADMIN_EMAILS; refusing to create or link an operator account."
         )
 
     user = auth_service.get_user_by_email(db, info.email)

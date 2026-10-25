@@ -27,7 +27,7 @@ const DOMAINS: ReadinessDomain[] = [
     details: { sources: [
       { name: 'github', label: 'GitHub', kind: 'connector', status: 'connected', available: true, reason: null, events: 412 },
       { name: 'youtube_likes', label: 'YouTube likes', kind: 'connector', status: 'not_connected', available: false,
-        reason: "Waits on this install's Google sign-in setup (S-3.2.2).", events: 0 },
+        reason: "Waits on this install's Google connector OAuth client (S-3.2.2).", events: 0 },
     ] } },
   { key: 'voice', domain: 3, label: 'How you write', status: 'met', met: true, progress: 1,
     criteria: [crit('floor', 1, 1)], summary: '31 pieces of your own writing in Latin script (2,410 words).', missing: null,
@@ -59,7 +59,7 @@ describe('ReadinessDomains', () => {
     expect(activity.textContent).toContain('Not connected');
     expect(activity.querySelector('[data-source="github"]')!.textContent).toContain('GitHub · connected · 412 events');
     expect(activity.querySelector('[data-source="youtube_likes"]')!.textContent).toContain(
-      "YouTube likes · not connected — Waits on this install's Google sign-in setup",
+      "YouTube likes · not connected — Waits on this install's Google connector OAuth client",
     );
     const voice = host.querySelector('[data-domain="voice"]')!;
     expect(voice.textContent).toContain('Done');

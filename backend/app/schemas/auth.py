@@ -40,6 +40,14 @@ class UserResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class MeResponse(UserResponse):
+    """``GET /auth/me``: the caller, plus whether they operate this install
+    (T-5.2.8 / D-111), so the Subscription page can say why the tier switch
+    is unavailable instead of failing on submit."""
+
+    is_operator: bool = False
+
+
 # E-5.2.X self-service tier flip with mock payment (D-050)
 class ChangeTierRequest(BaseModel):
     """Body for ``PUT /auth/me/tier``.

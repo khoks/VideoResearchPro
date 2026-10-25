@@ -1,6 +1,6 @@
 # Pratidhvani — Inventions / Novel-Idea Log
 
-**Status:** living doc (last refreshed 2026-07-29). Owner: [`/knowledge-curator`](../.claude/skills/knowledge-curator/SKILL.md) skill.
+**Status:** living doc (last refreshed 2026-10-24). Owner: [`/knowledge-curator`](../.claude/skills/knowledge-curator/SKILL.md) skill.
 
 This is the chronological record of **novel mechanisms, non-obvious combinations, and potentially-patentable concepts** surfaced in conversations between the user and Claude. The skill flags candidates and preserves the chronology + authorship. **The skill does not make legal patentability assessments** — that's a follow-up the user does, possibly with counsel.
 
@@ -166,3 +166,43 @@ against the sources' speech in code, and any that fails is removed.
 **Linked decisions / initiatives / PRs.** [D-066](decisions.md#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31), E-1.16 (R5), S-1.16.2 (implementation of this mechanism).
 
 **Verbatim source.** [docs/notes/2026-07-31-novel-code-mixing-rendering.md](notes/2026-07-31-novel-code-mixing-rendering.md)
+
+### N-003 — True-by-construction modality marks for reports written from speech plus machine-described screens (2026-10-24)
+
+**Status:** captured. Implemented and measured as S-1.18.9 ([PR #363](https://github.com/khoks/VideoResearchPro/pull/363), [D-106](decisions.md#d-106--the-deterministic-attribution-guard-ships-in-the-report-pipeline-r1-stays-hidden-after-run-9-2026-10-24)). Its first pre-registered run did not clear the product's bar; see [the protocol note](notes/2026-10-18-r1-visual-measurement.md), "Run 9: results".
+
+**Source.** Claude, 2026-10-24, designing S-1.18.9 to the user's requirement in D-105: show visual analysis again only when a deterministic guard removes the residual error. The parent session's brief specified a guard at the item level and a rewrite after compose. The mechanism below is what came out of building and measuring it.
+
+**Summary.** A report written by a language model from video transcripts with interleaved machine descriptions of what was on screen must keep two evidence channels apart: what a speaker *said* and what the screen *showed*. Prompt rules and model-assigned labels moved this error around rather than removing it. The mechanism removes it in code, in a way that cannot introduce a false statement of its own. It only ever writes a claim it has verified by construction, and it writes the stronger claim only where its own evidence can support that claim.
+
+**Mechanism.**
+
+1. **Evidence per source and moment.** From the report's own chunks, build each source's speech with the screen descriptions removed (chunk-level time ranges), and its screen descriptions with their timestamps.
+2. **Specific details, not prose.** Extract checkable tokens from a sentence: numbers (native digits normalised), code identifiers, quoted strings, visual descriptor pairs, and lists of names. Mask the citation apparatus first (titles, channel names, timestamp links).
+3. **Screen-only relative to the cited moment.** A detail counts as screen-only when it is found in a screen description of the cited source near the moment the sentence cites (the nearest following link first). It must also be absent from the speech *around that moment*, not just absent from the whole video. That is how it catches a detail the speaker said elsewhere but that this sentence took from the screen.
+4. **Speaker credit at sentence scope, screen exemption at clause scope.** A detail counts as credited when the nearest marker before it is a speech verb with a speaker before it, or when its clause ends in "— Name (mm:ss)". It is exempt when the nearest marker before it is an explicit on-screen phrase. "Also visible on screen" never exempts, because it implies the detail was said.
+5. **Asymmetric claims.** The mark "(on screen at mm:ss)" uses the matching description's own timestamp, so it is true whenever it is written. The stronger "not spoken" is added only when absence is trustworthy: figures and multi-word quotes, Latin-script speech, absent from the whole speech, with caption habits read as numbers ("15 000", "one two two", "point nine two"). Identifiers and descriptor pairs never get it, because captions misspell them ("carrot" for carat).
+6. **Move, never delete.** The detail stays where it is; only provenance is added. A parenthetical holding only screen-only figures becomes "(on screen at mm:ss, not spoken: …)". Substance is preserved by construction.
+7. **The converse, under the same discipline.** "Also visible on screen" with no description of the cited source behind it is removed. "The video displays X", where only the speech has X, is marked "(said at mm:ss; no captured frame shows it)".
+8. **Upstream first.** The same test runs on the extraction stage's items before composition. An item whose details are all screen-only is relabelled; mixed items name their screen-only details in the tag the composer attributes from. The output-level pass catches what still gets through, including summaries condensed from already-written sections.
+
+**Why this is potentially novel.**
+- **Modality attribution, not source attribution.** Attribution and factual-consistency work asks whether a claim is supported by *some* evidence. Here every detail *is* supported. The defect is crediting it to the wrong channel of the same source, speech versus screen, at the right moment.
+- **Edits that cannot be wrong.** Post-hoc revision systems rewrite text with a model, and the rewrite can itself be wrong. This mechanism writes only claims that are true by construction, and gates the one stronger claim on whether its evidence is readable (script and token type). A false "not spoken" is itself the error class being prevented: run 4 confirmed one.
+- **Moment-locality as the decisive test.** Whole-document presence checks miss the case where a speaker said a detail at minute 9 and the sentence about minute 22 took it from the screen.
+
+**Prior-art notes.** Adjacent work already known:
+- Factual-consistency checkers for summarisation (SummaC, QAGS, FactCC). They score support against a source; they do not separate channels within a source.
+- Attribution evaluation (AIS, ALCE) and model-based post-hoc revision (RARR). They attribute to retrieved documents and revise with a model rather than deterministically.
+- Multimodal grounding and video captioning research, which grounds text in frames but does not police speaker credit in prose.
+- This project's own quote scrub (#309) and S-1.18.8 labels, of which this is the deterministic successor.
+
+**A proper prior-art search has NOT been done.** This entry is captured on the inclusive-capture principle.
+
+**Commercial / strategic implications.** Any product that writes from video, meetings or lectures, with screen shares, slides or code on screen, faces the same said-versus-shown boundary. In legal, compliance and research settings, crediting a person with words they never spoke is a correctness failure, not a style issue. A guard that never writes a false statement is a trust feature that can be disclosed openly. Whether to publish, keep internal, or pursue protection is the user's call with counsel.
+
+**Measured so far.** On the stored reports of eight earlier runs it catches 8 of 10 confirmed errors, against 2 of 5 for a token checker. This is in-sample. In its first pre-registered run (run 9), all 7 of its own changes held up under three-lens verification. One error still got through: a lone two-digit figure, below its action threshold.
+
+**Linked decisions / initiatives / PRs.** [D-075](decisions.md#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19), [D-105](decisions.md#d-105--visual-analysis-hidden-in-the-ui-until-a-deterministic-attribution-guard-removes-the-residual-error-2026-10-20), [D-106](decisions.md#d-106--the-deterministic-attribution-guard-ships-in-the-report-pipeline-r1-stays-hidden-after-run-9-2026-10-24); E-1.18, S-1.18.8, S-1.18.9; PR [#363](https://github.com/khoks/VideoResearchPro/pull/363).
+
+**Verbatim source.** —

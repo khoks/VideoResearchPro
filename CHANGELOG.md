@@ -16,7 +16,7 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 - A mark never lands inside the romanised transliteration of a quote.
 - The processing note no longer says marked details were found "only" on screen. Where the speech is Hindi or Bengali, or the captions garble a word, the check cannot tell.
 - "Also visible on screen" loses its "also" when the speaker did not say the detail around that moment.
-- Visual analysis stays hidden until two new pre-registered runs pass ([D-107](docs/decisions.md#d-107--r1s-substance-rule-a-tie-passes-any-loss-fails-attribution-stays-zero-error-2026-10-25)).
+- Visual analysis stays hidden. The first run of the new pre-registered pair (run 10, 2026-10-25) failed, so the second was not run ([D-107](docs/decisions.md#d-107--r1s-substance-rule-a-tie-passes-any-loss-fails-attribution-stays-zero-error-2026-10-25); protocol note, "Run 10: results").
 
 ### Added: an attribution guard for reports with on-screen evidence; visual analysis stays hidden (S-1.18.9, 2026-10-24)
 

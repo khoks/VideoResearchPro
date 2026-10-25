@@ -1,0 +1,965 @@
+{
+ "run": "run10",
+ "commit": "cc388de",
+ "manifest": {
+  "job_id": "419e691d-6370-4042-a22f-7169490ff736",
+  "video_count": 11,
+  "frames_informative": 119,
+  "chunks_on": 517,
+  "chunks_off": 410,
+  "chunks_with_visual": 119,
+  "descriptions_from": "D:/DEV/ClaudeProjects/VideoSearchDB/backend/data/r1_ab/retier/baseline_describe.json",
+  "on_seconds": 797.8,
+  "off_seconds": 999.8,
+  "on_html_chars": 107243,
+  "off_html_chars": 136015
+ },
+ "map": {
+  "map_batches": 2,
+  "map_batching": "packed",
+  "map_sources_remapped": 1,
+  "map_remap_calls": 2,
+  "map_modality": {
+   "both": 122,
+   "said": 233,
+   "shown": 4
+  },
+  "map_attribution_guard": {
+   "listed": 26,
+   "relabelled_shown": 2
+  },
+  "map_originals_kept": 85,
+  "map_originals_dropped": 3
+ },
+ "guard_rewrites_on": [
+  {
+   "kind": "screen_also_dropped",
+   "sentence": "The installation command for Seaborn is pip install seaborn — DeepLoop Circle (1:36) and CodeWithMunnaX, which demonstrates the install alongside importing pandas, Matplotlib and Seaborn and checking the Seaborn version; NumPy is also visible on screen at that moment (1:40).",
+   "tokens": [
+    "NumPy"
+   ],
+   "source": "DeepLoop Circle",
+   "seconds": null,
+   "verified": false
+  },
+  {
+   "kind": "screen_detail_marked",
+   "sentence": "sns is used as an alias so that \"seaborn\" need not be written repeatedly — CodeWithMunnaX (3:22); DeepLoop Circle imports Seaborn as sns and pandas as pd (2:19).",
+   "tokens": [
+    "seaborn"
+   ],
+   "source": "CodeWithMunnaX",
+   "seconds": 267.0,
+   "verified": false
+  },
+  {
+   "kind": "screen_detail_marked",
+   "sentence": "matplotlib.pyplot is a submodule commonly imported as plt, and %matplotlib inline displays charts inside the notebook rather than a separate window — Academind (0:49).",
+   "tokens": [
+    "matplotlib.pyplot"
+   ],
+   "source": "Academind",
+   "seconds": 198.0,
+   "verified": false
+  },
+  {
+   "kind": "screen_detail_marked",
+   "sentence": "When plt.plot receives a single list, that list supplies the y-values and the x-values default to 0, 1, 2, 3 and so on — Gate Smashers (4:04).",
+   "tokens": [
+    "plt.plot"
+   ],
+   "source": "Gate Smashers",
+   "seconds": 244.0,
+   "verified": false
+  },
+  {
+   "kind": "screen_detail_marked",
+   "sentence": "Subplots are added with fig.add_subplot(), with codes such as 121 and 122 specifying a one-row, two-column grid and the position within it — Academind (14:25); such a grid divides the figure width equally between the two subplots (15:27).",
+   "tokens": [
+    "121"
+   ],
+   "source": "Academind",
+   "seconds": 927.0,
+   "verified": true
+  },
+  {
+   "kind": "screen_detail_marked",
+   "sentence": "Figure size for Seaborn plots can be set with Matplotlib's plt.figure(figsize=(10,5)) or similar — CodeWithMunnaX (14:29).",
+   "tokens": [
+    "plt.figure"
+   ],
+   "source": "CodeWithMunnaX",
+   "seconds": 950.0,
+   "verified": false
+  },
+  {
+   "kind": "screen_detail_marked",
+   "sentence": "Matplotlib functions such as plt.show(), plt.title(), plt.xlabel() and plt.ylabel() work with Seaborn plots — CodeWithMunnaX (12:33); more broadly, Matplotlib plotting features including color changes, larger fonts, grids and modified tick values apply to Seaborn graphs (15:12).",
+   "tokens": [
+    "plt.xlabel()",
+    "plt.ylabel()"
+   ],
+   "source": "CodeWithMunnaX",
+   "seconds": 817.0,
+   "verified": false
+  },
+  {
+   "kind": "screen_detail_marked",
+   "sentence": "A Seaborn line plot is created with sns.lineplot(x=x, y=y) — CodeWithMunnaX (12:20); on screen at 13:35 the example uses the labels \"X Values\" and \"Y Values\" and the title \"Line Graph\".",
+   "tokens": [
+    "sns.lineplot"
+   ],
+   "source": "CodeWithMunnaX",
+   "seconds": 817.0,
+   "verified": false
+  },
+  {
+   "kind": "screen_detail_marked",
+   "sentence": "A Seaborn scatter plot is written with sns.scatterplot, taking a DataFrame as the data argument plus columns for x and y, with additional parameters hue, palette and size — DeepLoop Circle (7:12); the DataFrame must not be passed as a string, which produces an error (7:36).",
+   "tokens": [
+    "sns.scatterplot",
+    "data"
+   ],
+   "source": "DeepLoop Circle",
+   "seconds": 546.0,
+   "verified": false
+  },
+  {
+   "kind": "screen_detail_marked",
+   "sentence": "A \"getting started\" scope with an explicit admission of depth left unexplored: the tutorial provides what is needed to get started while Matplotlib remains powerful and supports much deeper exploration, and it has demonstrated that Matplotlib is easy to use initially and can create and customise charts, figures and subplots — Python - Matplotlib Tutorial for Beginners — Academind (26:45).",
+   "tokens": [
+    "getting started"
+   ],
+   "source": "Academind",
+   "seconds": 1604.0,
+   "verified": true
+  },
+  {
+   "kind": "screen_also_dropped",
+   "sentence": "The one reference to a visual-journalism tradition rather than a software artefact is Matplotlib's fivethirtyeight style sheet, which Data Analytics Lab presents as named after the FiveThirtyEight visual style; the name FiveThirtyEight is also shown on screen at that moment — Matplotlib Tutorial for Beginners: Line Charts, Scatter Plots & BoxPlots | Python Data Visualization — Data Analytics Lab (",
+   "tokens": [
+    "FiveThirtyEight"
+   ],
+   "source": "Data Analytics Lab",
+   "seconds": null,
+   "verified": false
+  }
+ ],
+ "guard_rewrites_off": [],
+ "quote_fidelity": [
+  "[on]  items: 85 quotes, 0 failing {'verbatim': 77, 'near': 8} script_mismatch=0 mixed_script=0  report: 33 quotes, 0 failing {'verbatim': 32, 'near': 1} script_mismatch=0 mixed_script=0",
+  "[off]  items: 226 quotes, 0 failing {'verbatim': 202, 'near': 24} script_mismatch=0 mixed_script=0  report: 52 quotes, 0 failing {'verbatim': 48, 'near': 4} script_mismatch=0 mixed_script=0",
+  "audit exit 0"
+ ],
+ "judge_summary": {
+  "rubric": "report",
+  "judges_ok": 3,
+  "judges_total": 3,
+  "preferred_on_substance": {
+   "on": 1,
+   "off": 1,
+   "tie": 1
+  },
+  "totals": {
+   "attribution_errors": {
+    "on": 0,
+    "off": 1
+   },
+   "fabrications": {
+    "on": 9,
+    "off": 7
+   }
+  },
+  "means": {
+   "substance": {
+    "on": 8.0,
+    "off": 8.33
+   },
+   "visual_use": {
+    "on": 8.67,
+    "off": 5.67
+   }
+  },
+  "attribution_errors_total": {
+   "on": 0,
+   "off": 1
+  },
+  "fabrications_total": {
+   "on": 9,
+   "off": 7
+  },
+  "mean_substance": {
+   "on": 8.0,
+   "off": 8.33
+  },
+  "inputs": {
+   "x": "D:/DEV/ClaudeProjects/VideoSearchDB/backend/data/r1_ab/run10/on.html",
+   "y": "D:/DEV/ClaudeProjects/VideoSearchDB/backend/data/r1_ab/run10/off.html",
+   "labels": [
+    "on",
+    "off"
+   ],
+   "chars": 513174
+  }
+ },
+ "judges": [
+  {
+   "judge": "anthropic:claude-sonnet-5:medium",
+   "mapping": {
+    "A": "off",
+    "B": "on"
+   },
+   "seconds": 169.1,
+   "preferred_on_substance": "on",
+   "substance": {
+    "off": 8,
+    "on": 8
+   },
+   "visual_use": {
+    "off": 5,
+    "on": 8
+   },
+   "attribution_errors": {
+    "off": [
+     "\"print(dir(sns)) lists Seaborn's available functions or methods; the presenter states the displayed count is 100\" — the count of 100 is a spoken estimate, not something shown on screen (the visual only shows a list of names, no total), so calling it 'displayed' blurs speech and screen."
+    ],
+    "on": []
+   },
+   "fabrications": {
+    "off": [
+     "\"the overall script mix is roughly Devanagari 36%, Latin 35%, Bengali 29%\" — this contradicts the report's own word-count table (Hindi channels ~18%, Bengali ~10%, English ~72%) and is not supported by any cited data."
+    ],
+    "on": [
+     "\"Readers should note that where tutorials stop, they consistently defer to the official Seaborn and Matplotlib documentation rather than to further videos.\" — contradicted by the report's own later discussion of CodeWithMunnaX and DeepLoop Circle deferring to their next videos, not documentation.",
+     "\"Only Academind (2018) and Gate Smashers teach Matplotlib's figure/axes model in depth\" — Gate Smashers never discusses figures, axes, or subplots in the transcript; it only covers a single customized line chart."
+    ]
+   },
+   "rationale": "Both reports are exceptionally dense, well-cited, and closely track the transcript, with similar structure and near-identical statistical framing. Report B makes more disciplined and extensive use of VISUAL spans, explicitly flagging on-screen-only details (species counts, code snippets, color-bar ranges) and catching a genuine internal contradiction in DeepLoop Circle's self-correlation claim (zero vs. one) that Report A misses entirely. Report A contains a clear fabricated statistic (script-percentage breakdown contradicting its own data), while Report B has a couple of overreaching, partly unsupported generalizations and a late truncation. On balance B offers marginally more verified, screen-grounded facts per minute of reading."
+  },
+  {
+   "judge": "google:gemini-3.1-pro-preview:medium",
+   "mapping": {
+    "A": "off",
+    "B": "on"
+   },
+   "seconds": 21.2,
+   "preferred_on_substance": "tie",
+   "substance": {
+    "off": 9,
+    "on": 9
+   },
+   "visual_use": {
+    "off": 6,
+    "on": 10
+   },
+   "attribution_errors": {
+    "off": [],
+    "on": []
+   },
+   "fabrications": {
+    "off": [],
+    "on": []
+   },
+   "rationale": "Both reports provide an exceptional density of specific, verifiable details from the transcript, synthesizing the cross-lingual tutorials with high accuracy. Report B distinguishes itself with frequent, explicit, and accurate use of visual spans, properly attributing them to the screen, whereas Report A relies almost exclusively on the spoken text."
+  },
+  {
+   "judge": "openai:gpt-5.5:medium",
+   "mapping": {
+    "A": "off",
+    "B": "on"
+   },
+   "seconds": 56.6,
+   "preferred_on_substance": "off",
+   "substance": {
+    "off": 8,
+    "on": 7
+   },
+   "visual_use": {
+    "off": 6,
+    "on": 8
+   },
+   "attribution_errors": {
+    "off": [],
+    "on": []
+   },
+   "fabrications": {
+    "off": [
+     "This report examines 11 videos from 10 channels — 42,999 transcript words across 226 minutes of instruction — published between 22 November 2018 and 28 September 2026, with a median publication date of 13 April 2025 (3 videos from 2026, 3 from 2025, 2 from 2023, 2 from 2022, 1 from 2018; all 11 carry a publication date).",
+     "This section collates the factual claims made across the corpus of 11 videos drawn from 10 channels (42,999 transcript words, 226 minutes of running time, published between 22 November 2018 and 28 September 2026, median publication 13 April 2025).",
+     "The Hindi-language <em>The Only Seaborn Video You'll Ever Need | Full Python Data Visualization Guide</em> — DeepLoop Circle (published 22 March 2026) presents Seaborn as an advanced Python library and an extended, advanced version of Matplotlib (<a href=\"https://www.youtube.com/watch?v=6lgc8xPTDS0&t=0\" target=\"_blank\">0:00</a>).",
+     "<strong>Apple stock (Yahoo Finance).</strong> The Pivotalstats Matplotlib examples use Apple stock data for the previous seven days as of the video's publication date, 29 August 2023, with date, open, high, low, close, adjusted close and volume columns — <em>Comprehensive Guide on MATPLOTLIB, SEABORN &amp; PLOTLY</em> (<a href=\"https://www.youtube.com/watch?v=UZDP9IPMqcs&t=0\" target=\"_blank\">0:00</a>, <a href=\"https://www.youtube.com/watch?v=UZDP9IPMqcs&t=80\" target=\"_blank\">1:20</a>).</li>",
+     "The corpus is multilingual, and the teaching conclusions do not vary by language.</strong> Three of the eleven videos are not plain English — two predominantly Devanagari (DeepLoop Circle, Gate Smashers), one Bengali (CodeWithMunnaX) — and the overall script mix is roughly Devanagari 36%, Latin 35%, Bengali 29%.",
+     "NeuralNine independently concedes the same point: the saving is in effort, not capability."
+    ],
+    "on": [
+     "This report examines 11 tutorial videos from 10 channels on Matplotlib and Seaborn data visualization in Python, comprising 55,443 transcript words across 226 minutes, published between 22 November 2018 and 28 September 2026 (median 13 April 2025; 3 from 2026, 3 from 2025, 2 from 2023, 2 from 2022, 1 from 2018).",
+     "<p class=\"scope-note\">The corpus comprises 11 videos from 10 channels, 55,443 transcript words across 226 minutes, published between 22 November 2018 and 28 September 2026 (median 13 April 2025; by year: 3 in 2026, 3 in 2025, 2 in 2023, 2 in 2022, 1 in 2018).",
+     "Simplilearn and Onur Baltaci nominate the pair plot (Iris's four numerical features yielding a 4×4 grid of 16 charts, KDE on the diagonal); NeuralNine prefers heat maps, calling them among his favourite plots when exploring data for prediction.",
+     "Only Academind (2018) and Gate Smashers teach Matplotlib's figure/axes model in depth; the later Seaborn-centred sources assume it and reach back to Matplotlib mainly for cosmetics.",
+     "Readers should note that where tutorials stop, they consistently defer to the official Seaborn and Matplotlib documentation rather than to further videos.",
+     "The pedagogical centre of gravity has shifted from plot syntax to analytic reasoning, and the shift tracks publication dates.",
+     "The source mix for this section is roughly half Latin script, with Devanagari and Bengali making up the remainder; two sources are code-mixed Hindi–English and one is code-mixed Bengali–English."
+    ]
+   },
+   "rationale": "Report A is overlong and repetitive, but its added material is usually specific and traceable to speech or visuals. Its main unsupported material is metadata/publication-date/statistical framing outside the transcript. Report B uses screen evidence much more explicitly and often well, but it contains more unsupported synthesis, a wrong word count, some source overclaims, and at least one false curricular claim about Gate Smashers teaching the figure/axes model. B is denser in visual detail, but A gives a researcher more verified facts overall with fewer substantive distortions."
+  }
+ ],
+ "verification": {
+  "summary": {
+   "on": {
+    "confirmed_fabrications": 4,
+    "metadata_leaks": 0,
+    "refuted": 5
+   },
+   "off": {
+    "confirmed_fabrications": 0,
+    "metadata_leaks": 0,
+    "refuted": 8
+   },
+   "on_attribution_errors_confirmed_from_claims": 0,
+   "on_attribution_errors_confirmed_from_sweep": 0,
+   "guard_rewrites": 11,
+   "guard_rewrites_confirmed_attribution": 4,
+   "guard_rewrites_fabrication_upheld": 3,
+   "sweep_candidates": 4,
+   "votes_missing": []
+  },
+  "claims": [
+   {
+    "judge": "anthropic:claude-sonnet-5:medium",
+    "kind": "attribution_errors",
+    "arm": "off",
+    "claim": "\"print(dir(sns)) lists Seaborn's available functions or methods; the presenter states the displayed count is 100\" — the count of 100 is a spoken estimate, not something shown on screen (the visual only shows a list of names, no total), so calling it 'displayed' blurs speech and screen.",
+    "upheld_votes": 1,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "speech": 2,
+     "attribution_error": 1
+    },
+    "reasons": [
+     "The sentence attributes the 100 to what the presenter states, which matches the Bengali speech, where he sets up a len(dir(sns)) check and reads out the result with no hedge, so 'displayed count' paraphrases his own narration of the code output rather than relabelling speech as screen content. The j",
+     "The 100 is spoken (line 4765, given as the result of the presenter's own length check on dir(sns), with no hedge such as 'about'), and the report credits it to the presenter ('the presenter states'), not to the screen; 'displayed' paraphrases the presenter's narration of output he ran ('this will te",
+     "The only span at that moment (4:27) shows a list of Seaborn names with no count, the next span (6:21) is a line chart, and the 100 exists only in speech, where the presenter states it without saying it appeared on screen. Calling it 'the displayed count' presents a spoken figure as screen content, w"
+    ]
+   },
+   {
+    "judge": "anthropic:claude-sonnet-5:medium",
+    "kind": "fabrications",
+    "arm": "on",
+    "claim": "\"Readers should note that where tutorials stop, they consistently defer to the official Seaborn and Matplotlib documentation rather than to further videos.\" — contradicted by the report's own later discussion of CodeWithMunnaX and DeepLoop Circle deferring to their next videos, not documentation.",
+    "upheld_votes": 3,
+    "total_votes": 3,
+    "confirmed": true,
+    "categories": {
+     "unsupported": 3
+    },
+    "reasons": [
+     "The sentence is in the ON report, but its load-bearing claim, a consistent hand-off to official documentation instead of to further videos, appears in no speech, visual span or statistic, and the speech contradicts it: only NeuralNine points to the documentation where it stops, while Data Analytics ",
+     "No visual span shows any official documentation, and the speech supports only that three of eleven videos point to the docs. Where the tutorials stop, most of them defer to a next or earlier video of their own, so 'consistently ... rather than to further videos' is supported nowhere and the speech c",
+     "The sentence is in the ON report but restates no computed statistic or pipeline metadata, and its claim of a consistent hand-off to official documentation instead of further videos is in no speech or span: only three of ten channels mention documentation, while Data Analytics Lab, Academind, CodeWit"
+    ]
+   },
+   {
+    "judge": "anthropic:claude-sonnet-5:medium",
+    "kind": "fabrications",
+    "arm": "on",
+    "claim": "\"Only Academind (2018) and Gate Smashers teach Matplotlib's figure/axes model in depth\" — Gate Smashers never discusses figures, axes, or subplots in the transcript; it only covers a single customized line chart.",
+    "upheld_votes": 3,
+    "total_votes": 3,
+    "confirmed": true,
+    "categories": {
+     "unsupported": 3
+    },
+    "reasons": [
+     "Gate Smashers' Hindi speech builds one pyplot line chart (plt.plot, title, axis labels, grid, savefig), uses 'axis' only for the chart's x and y coordinate axes, and calls itself a simple, very initial-level first graph; no figure object, Axes object or subplot appears in its speech, its visual span",
+     "Gate Smashers' five visual spans show only pyplot calls on one line chart (plt.plot, title, xlabel/ylabel, grid, savefig, show), and its Hindi speech only says a single list maps to the y-axis with default x-values before cosmetic 'makeup'; there is no plt.figure, Figure/Axes object or subplot anywh",
+     "The sentence is in the ON report, and its challenged part restates no computed statistic or pipeline metadata (only Academind's 2018 date is publication metadata). Gate Smashers' translated Hindi speech and its five spans cover one line chart with x/y-axis defaults, cosmetic styling and savefig, whi"
+    ]
+   },
+   {
+    "judge": "anthropic:claude-sonnet-5:medium",
+    "kind": "fabrications",
+    "arm": "off",
+    "claim": "\"the overall script mix is roughly Devanagari 36%, Latin 35%, Bengali 29%\" — this contradicts the report's own word-count table (Hindi channels ~18%, Bengali ~10%, English ~72%) and is not supported by any cited data.",
+    "upheld_votes": 0,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "computed_stat": 3
+    },
+    "reasons": [
+     "The percentages are the OFF statistic language_profile.scripts (0.3626, 0.3485, 0.2888) rounded to 36, 35 and 29, so the claim is in the supplied statistics and is not a fabrication; as expected for a computed figure, no speaker says it. The judge compared it with channel word shares, a different me",
+     "The figures are the supplied computed statistic off.statistics.json language_profile.scripts (Devanagari 0.3626, Latin 0.3485, Bengali 0.2888), correctly rounded to 36/35/29%, so under the fixed definition this is not a fabrication even though no visual span or speech line supports it. The gap from ",
+     "The sentence is in the OFF report and is a rounding of the language_profile.scripts shares in the supplied statistics (0.3626 / 0.3485 / 0.2888 -> 36% / 35% / 29%), so it is grounded in computed data, not fabricated. Those script shares use a different basis from the per-channel word-share table, wh"
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "kind": "fabrications",
+    "arm": "on",
+    "claim": "This report examines 11 tutorial videos from 10 channels on Matplotlib and Seaborn data visualization in Python, comprising 55,443 transcript words across 226 minutes, published between 22 November 2018 and 28 September 2026 (median 13 April 2025; 3 from 2026, 3 from 2025, 2 from 2023, 2 from 2022, ",
+    "upheld_votes": 0,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "computed_stat": 3
+    },
+    "reasons": [
+     "The sentence is in the ON report, and every figure in it (11 videos, 10 channels, 55,443 words, 226 minutes, the date range, the median and the per-year counts) matches on.statistics.json exactly, while the topic and the 'tutorial' framing are supported by the titles and the speech. Not a fabricatio",
+     "Every figure in the sentence (11 videos, 10 channels, 55,443 words, 226 minutes, date range, median, per-year counts) matches the supplied ON statistics exactly, and the topic is borne out by the 11 video titles and the Matplotlib/Seaborn notebook visual spans, so under the fixed definition it is no",
+     "The sentence appears verbatim in the ON report, and every figure in it (11 videos, 10 channels, 55,443 words, 226 minutes, 2018-11-22 to 2026-09-28, median 2025-04-13, per-year 3/3/2/2/1) restates on.statistics.json exactly; the Matplotlib/Seaborn tutorial framing matches the corpus video titles. It"
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "kind": "fabrications",
+    "arm": "on",
+    "claim": "<p class=\"scope-note\">The corpus comprises 11 videos from 10 channels, 55,443 transcript words across 226 minutes, published between 22 November 2018 and 28 September 2026 (median 13 April 2025; by year: 3 in 2026, 3 in 2025, 2 in 2023, 2 in 2022, 1 in 2018).",
+    "upheld_votes": 0,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "computed_stat": 3
+    },
+    "reasons": [
+     "Every figure in the sentence matches the supplied ON corpus statistics exactly (11 videos, 10 channels, 55,443 words, 226 minutes, 2018-11-22 to 2026-09-28, median 2025-04-13, per-year 3/3/2/2/1), so it is not a fabrication even though no speech line states these facts. Minor caveat: the ON word tot",
+     "Every figure in the sentence matches the corpus statistics supplied to the ON composer (on.statistics.json) exactly, so under the fixed definition it is not a fabrication, even though no visual span or speech carries these figures. Caveat: the 55,443 total counts the merged visual-annotation text (t",
+     "Every figure in the sentence (11 videos, 10 channels, 55,443 words, 226 minutes, earliest/latest/median publication dates and the per-year breakdown) restates on.statistics.json exactly, so it is supplied corpus statistics, not a fabrication. The only nuance is labeling: the ON word count exceeds OF"
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "kind": "fabrications",
+    "arm": "on",
+    "claim": "Simplilearn and Onur Baltaci nominate the pair plot (Iris's four numerical features yielding a 4×4 grid of 16 charts, KDE on the diagonal); NeuralNine prefers heat maps, calling them among his favourite plots when exploring data for prediction.",
+    "upheld_votes": 0,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "speech": 3
+    },
+    "reasons": [
+     "Every substantive claim is in the spoken transcript: Simplilearn calls the pair plot one of the first things run on a new dataset and gives the Iris four-feature 4x4 = 16-chart example, Onur Baltaci says the pair-plot diagonal shows kernel density plots and recommends it for a quick exploratory over",
+     "Every element is in the corpus: Simplilearn says the pair plot is one of the first things run on a new dataset and gives the Iris 4-into-4 grid of 16 charts (its 10:42 span shows density curves on the diagonal), Onur Baltaci says the diagonal shows kernel density plots (code diag_kind=\"kde\") and cal",
+     "The sentence is in the ON report and restates neither the computed statistics nor pipeline metadata, but every element (Simplilearn's pair plot as a first step on a new dataset with Iris's 4×4 grid of 16 charts, Onur Baltaci's KDE diagonal and EDA usefulness, NeuralNine's heat map as a favourite plo"
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "kind": "fabrications",
+    "arm": "on",
+    "claim": "Only Academind (2018) and Gate Smashers teach Matplotlib's figure/axes model in depth; the later Seaborn-centred sources assume it and reach back to Matplotlib mainly for cosmetics.",
+    "upheld_votes": 3,
+    "total_votes": 3,
+    "confirmed": true,
+    "categories": {
+     "unsupported": 3
+    },
+    "reasons": [
+     "Academind's in-depth figure/axes teaching is in the speech, but Gate Smashers' 9-minute Hindi video teaches one pyplot line chart plus styling it calls 'makeup' and never mentions a figure or Axes object, so naming it as an in-depth teacher has no support in speech, visual spans or statistics. The e",
+     "Only the Academind half is grounded. Gate Smashers' 9-minute video never touches Matplotlib's figure/axes object model in any speech line or visual span: it plots one list and then applies what the speaker calls 'makeup' (linewidth, marker, colour, title, labels, grid, savefig). The 'only' claim and",
+     "The sentence is in the ON report but restates neither the computed statistics (counts and dates only; the '(2018)' is incidental) nor pipeline metadata, and its claim is grounded nowhere else: Gate Smashers' Hindi speech and spans cover only plt.plot defaults and cosmetic 'makeup' with no figure/Axe"
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "kind": "fabrications",
+    "arm": "on",
+    "claim": "Readers should note that where tutorials stop, they consistently defer to the official Seaborn and Matplotlib documentation rather than to further videos.",
+    "upheld_votes": 1,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "unsupported": 1,
+     "speech": 2
+    },
+    "reasons": [
+     "The sentence is in the ON report, but only its kernel is in the speech (NeuralNine, CodeWithMunnaX and, mid-video, Academind point to the docs or the Seaborn website); its substantive generalization that tutorials consistently defer to documentation rather than to further videos is found nowhere and",
+     "The hand-off to documentation is spoken in three videos (NeuralNine and CodeWithMunnaX to Seaborn's documentation or website, Academind to the Matplotlib documentation), so the sentence is grounded in speech rather than invented, though no visual span supports it. Its 'consistently ... rather than t",
+     "The sentence restates no statistic or pipeline metadata, and its core is spoken: three tutorials send viewers to the official documentation where their coverage stops (NeuralNine and CodeWithMunnaX, in Bengali, for Seaborn; Academind for Matplotlib). 'Consistently ... rather than to further videos' "
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "kind": "fabrications",
+    "arm": "on",
+    "claim": "The pedagogical centre of gravity has shifted from plot syntax to analytic reasoning, and the shift tracks publication dates.",
+    "upheld_votes": 3,
+    "total_votes": 3,
+    "confirmed": true,
+    "categories": {
+     "unsupported": 3
+    },
+    "reasons": [
+     "No speech line describes a change over time in how visualization is taught, and the supplied statistics carry only aggregate dates (earliest/latest/median/per-year) with no per-video dates, so nothing ties any source's emphasis to its publication date; the one source datable from the files as recent",
+     "No [VISUAL @] span and no speech line states or shows a change in teaching focus over time. Spans carry only dataset dates, never publication dates; the report's narrow syntax examples (Gate Smashers, Data Analytics Lab) are undated in the corpus; and the spans of the 2026 DeepLoop Circle video are ",
+     "The sentence is in the ON report but restates neither the computed statistics, which hold only the aggregate span and per-year counts with no per-video mapping and nothing on teaching focus, nor pipeline metadata. No speech, span or supplied date shows a move from syntax to analysis that follows pub"
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "kind": "fabrications",
+    "arm": "on",
+    "claim": "The source mix for this section is roughly half Latin script, with Devanagari and Bengali making up the remainder; two sources are code-mixed Hindi–English and one is code-mixed Bengali–English.",
+    "upheld_votes": 0,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "computed_stat": 3
+    },
+    "reasons": [
+     "The sentence is in the ON report. Its script split (about half Latin, the rest Devanagari plus Bengali) restates the supplied on.statistics.json language_profile (0.4861 / 0.285 / 0.2289), and the speech confirms exactly two code-mixed Hindi–English sources (Gate Smashers, DeepLoop Circle) and one c",
+     "No visual span supports the sentence, but none is needed: the script shares are the ON statistics' language_profile (Latin 0.4861, Devanagari 0.285, Bengali 0.2289), and the speech shows exactly two Hindi–English and one Bengali–English code-mixed videos. 'For this section' loosely scopes a corpus-l",
+     "The sentence is in the ON report, and its script split restates the supplied language_profile exactly (Latin 0.4861 is roughly half; Devanagari 0.285 + Bengali 0.2289 = non_latin_share 0.5139; code_mixed true), while the per-source split (two Hindi–English, one Bengali–English) matches the speech of"
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "kind": "fabrications",
+    "arm": "off",
+    "claim": "This report examines 11 videos from 10 channels — 42,999 transcript words across 226 minutes of instruction — published between 22 November 2018 and 28 September 2026, with a median publication date of 13 April 2025 (3 videos from 2026, 3 from 2025, 2 from 2023, 2 from 2022, 1 from 2018; all 11 carr",
+    "upheld_votes": 0,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "computed_stat": 3
+    },
+    "reasons": [
+     "Every figure in the sentence (11 videos, 10 channels, 42,999 words, 226 minutes, 22 Nov 2018 to 28 Sep 2026, median 13 Apr 2025, per-year counts 3/3/2/2/1, all 11 dated) matches the supplied off.statistics.json exactly. The speech does not state these corpus aggregates, but the supplied statistics c",
+     "Every figure in the sentence matches the OFF statistics supplied to the composer exactly: 11 videos, 10 channels, 42,999 words, 226 minutes, the date range, the median, the per-year counts and 11 dated videos. Neither the visual spans nor the speech state these corpus totals, but the fixed definitio",
+     "Every figure in the sentence restates off.statistics.json exactly, including the OFF-specific word count 42,999 (the ON file has 55,443 because annotations add words), so it is a computed statistic supplied to the composer, not a fabrication. The only non-numeric word, 'instruction', is supported by"
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "kind": "fabrications",
+    "arm": "off",
+    "claim": "This section collates the factual claims made across the corpus of 11 videos drawn from 10 channels (42,999 transcript words, 226 minutes of running time, published between 22 November 2018 and 28 September 2026, median publication 13 April 2025).",
+    "upheld_votes": 0,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "computed_stat": 3
+    },
+    "reasons": [
+     "Every figure in the sentence matches the OFF statistics file supplied to the composer exactly, including the OFF-specific 42,999-word count (ON is 55,443). Speech does not state these corpus figures, as expected for metadata, but a correctly used computed statistic is not a fabrication.",
+     "Every figure in the sentence (11 videos, 10 channels, 42,999 words, 226 minutes, 2018-11-22 to 2026-09-28, median 2025-04-13) exactly matches the OFF computed statistics supplied to the composer, so under the fixed definition it is not a fabrication. Neither the visual spans nor speech state these f",
+     "The sentence is in the OFF report, and every figure in it (11 videos, 10 channels, 42,999 words, 226 minutes, 2018-11-22 to 2026-09-28, median 2025-04-13) matches the OFF statistics file supplied to the composer exactly (the ON file's 55,443 words differs, consistent with OFF using its own inputs). "
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "kind": "fabrications",
+    "arm": "off",
+    "claim": "The Hindi-language <em>The Only Seaborn Video You'll Ever Need | Full Python Data Visualization Guide</em> — DeepLoop Circle (published 22 March 2026) presents Seaborn as an advanced Python library and an extended, advanced version of Matplotlib (<a href=\"https://www.youtube.com/watch?v=6lgc8xPTDS0&",
+    "upheld_votes": 0,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "speech": 3
+    },
+    "reasons": [
+     "The sentence is in the OFF report, and its substantive claim is spoken almost word for word in Hindi in the first lines of the DeepLoop Circle video: Seaborn is an advanced Python library and an extended, advanced version of Matplotlib. The language, title, channel and 2026 date are backed by the Hi",
+     "The sentence is in the OFF report, and its core claim is a close translation of the Hindi speech at the video's opening (lines 3040-3043: Seaborn is an advanced Python library and an extended, advanced version of Matplotlib, transcribed as मैटिली); no visual span supports it, but the speech does, so",
+     "The sentence is in the OFF report, and its substantive claim is a near-literal translation of the Hindi speech at the very start of the video (Seaborn is an advanced Python library, an extended and advanced version of Matplotlib). The framing details are supplied data, not invention: the channel is "
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "kind": "fabrications",
+    "arm": "off",
+    "claim": "<strong>Apple stock (Yahoo Finance).</strong> The Pivotalstats Matplotlib examples use Apple stock data for the previous seven days as of the video's publication date, 29 August 2023, with date, open, high, low, close, adjusted close and volume columns — <em>Comprehensive Guide on MATPLOTLIB, SEABOR",
+    "upheld_votes": 0,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "speech": 2,
+     "computed_stat": 1
+    },
+    "reasons": [
+     "Every substantive claim is spoken: Yahoo Finance Apple data for the 'last seven days', used for the Matplotlib charts, with date, open, high, low, close, adjusted close and volume columns; the channel name is in the statistics. The 29 August 2023 date is not spoken and not in the statistics file, bu",
+     "Every content claim is spoken in the Pivotalstats video (Apple stock data from Yahoo Finance for the last seven days, with date, open, high, low, close, adjusted close and volume columns), and the visual spans corroborate the dataset (AAPL.csv, PIVOTALSTATS.COM banner) and its late-August-2023 windo",
+     "Nothing in the sentence is invented. Yahoo Finance, Apple stock, 'last seven days' and the seven columns are speech; Pivotalstats is a channel in the supplied statistics; and 29 August 2023 is the source's publication date given to the composer (the statistics count 2 videos in 2023 and all 11 dated"
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "kind": "fabrications",
+    "arm": "off",
+    "claim": "The corpus is multilingual, and the teaching conclusions do not vary by language.</strong> Three of the eleven videos are not plain English — two predominantly Devanagari (DeepLoop Circle, Gate Smashers), one Bengali (CodeWithMunnaX) — and the overall script mix is roughly Devanagari 36%, Latin 35%,",
+    "upheld_votes": 0,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "computed_stat": 3
+    },
+    "reasons": [
+     "The sentence is in the OFF report, and its figures come straight from the supplied off.statistics.json (11 videos; Devanagari 0.3626 / Latin 0.3485 / Bengali 0.2888, i.e. 36/35/29). The speech confirms exactly three non-English videos, two Devanagari (one self-identifying as Gate Smashers) and one B",
+     "The figures (eleven videos; Devanagari 36%, Latin 35%, Bengali 29%) are the supplied off.statistics.json language_profile rounded, the three channel names come from its channel breakdown, and the three non-English videos and their scripts are plainly in the speech (Gate Smashers names itself). The v",
+     "The sentence is in the OFF report, and its figures restate the supplied OFF statistics exactly: 11 videos, code_mixed true, and script shares 0.3626/0.3485/0.2888 rounded to 36/35/29% (the ON file's different shares show these were read from the OFF file, not invented). The per-video split (two Deva"
+    ]
+   },
+   {
+    "judge": "openai:gpt-5.5:medium",
+    "kind": "fabrications",
+    "arm": "off",
+    "claim": "NeuralNine independently concedes the same point: the saving is in effort, not capability.",
+    "upheld_votes": 0,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "speech": 3
+    },
+    "reasons": [
+     "NeuralNine's own speech at ~13:00 says everything done with Seaborn can be done in Matplotlib and that the emphasis is how easy it is, which is exactly 'the saving is in effort, not capability'; CodeWithMunnaX states the same parity in both directions (the report quotes the first half, NeuralNine ma",
+     "The sentence is in the OFF report, and the NeuralNine speaker says it outright: everything done in Seaborn can be done in Matplotlib, and the point is how easy it is. That is the effort-not-capability concession, and it matches CodeWithMunnaX's spoken Bengali statement that the two libraries' capabi",
+     "The sentence is in the OFF report and restates no computed statistic or pipeline metadata, but it is grounded in NeuralNine's own speech at about 13:00, which says everything done with Seaborn can be done in Matplotlib and that the emphasis is how easy it is, i.e. effort, not capability. CodeWithMun"
+    ]
+   }
+  ],
+  "guard": [
+   {
+    "kind": "screen_also_dropped",
+    "tokens": [
+     "NumPy"
+    ],
+    "sentence": "The installation command for Seaborn is pip install seaborn — DeepLoop Circle (1:36) and CodeWithMunnaX, which demonstrates the install alongside importing pandas, Matplotlib and Seaborn and checking the Seaborn version; NumPy is also visible on screen at that moment (1:40).",
+    "attribution": {
+     "upheld_votes": 2,
+     "total_votes": 3,
+     "confirmed": true,
+     "categories": {
+      "attribution_error": 2,
+      "visual_span": 1
+     },
+     "reasons": [
+      "As edited, the clause presents NumPy as a screen-only detail at 1:40, but no captured frame exists at 1:40 (NumPy is on screen only at 2:38), while the speaker says 'import numpy as np' in Bengali (ইম্পোর্ট নামপাই অ্যাজ এনপি) in the cited passage. The guard dropped 'also' because, per the report's o",
+      "Everything credited to the speakers (pip install seaborn, importing pandas/Matplotlib/Seaborn, the version check giving 0.13.2) is in their Hindi/Bengali speech, and the only on-screen claim, NumPy, is described by the [VISUAL @ 2:38] frame of that same import demonstration (it was also spoken, but ",
+      "NumPy was spoken in the cited passage ('ইম্পোর্ট নামপাই অ্যাজ এনপি' = 'import numpy as np'), yet the sentence leaves it out of what the presenter demonstrates and, with 'also' dropped, presents it purely as screen content at 1:40, where the video has no captured frame; the only frame showing NumPy i"
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "Every claim checks out. Both videos say pip install seaborn aloud, and CodeWithMunnaX's Bengali speech covers the install, the pandas/NumPy/Matplotlib/Seaborn imports and the version check (0.13.2). The clause the guard edited, 'NumPy is visible on screen at that moment (1:40)', matches the same vid"
+    }
+   },
+   {
+    "kind": "screen_detail_marked",
+    "tokens": [
+     "seaborn"
+    ],
+    "sentence": "sns is used as an alias so that \"seaborn\" need not be written repeatedly — CodeWithMunnaX (3:22); DeepLoop Circle imports Seaborn as sns and pandas as pd (2:19).",
+    "attribution": {
+     "upheld_votes": 2,
+     "total_votes": 3,
+     "confirmed": true,
+     "categories": {
+      "speech": 1,
+      "attribution_error": 2
+     },
+     "reasons": [
+      "Both substantive claims are speech and are attributed neutrally to the creators (CodeWithMunnaX explains the sns alias in Bengali around the cited 3:22; DeepLoop Circle says import seaborn as sns and pandas as pd in Hindi), not presented as screen content. The guard's inserted '(on screen at 4:27)' ",
+      "The CodeWithMunnaX speaker himself says, at the cited moment and in Bengali, that sns is the alias used wherever you would otherwise write seaborn (সিজর্ন), so the inserted '(on screen at 4:27)' relabels a spoken detail as screen content; the 4:27 frame shows 'Seaborn' only in the notebook file name",
+      "The guard's inserted '(on screen at 4:27)' credits to the screen a detail that was spoken at the cited moment: the Bengali speech near 3:22 says wherever you use seaborn (সিজর্ন) you write 'sns' instead, while the 4:27 frame shows only the dir() name listing in a notebook whose filename contains 'Se"
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "Every claim is supported: the inserted '(on screen at 4:27)' is true because the 4:27 span of the cited CodeWithMunnaX video shows the notebook title “Seaborn 01.ipynb” (the parenthetical does not deny the word was spoken), the alias explanation is in the Bengali speech just before that span, and De"
+    }
+   },
+   {
+    "kind": "screen_detail_marked",
+    "tokens": [
+     "matplotlib.pyplot"
+    ],
+    "sentence": "matplotlib.pyplot is a submodule commonly imported as plt, and %matplotlib inline displays charts inside the notebook rather than a separate window — Academind (0:49).",
+    "attribution": {
+     "upheld_votes": 0,
+     "total_votes": 3,
+     "confirmed": false,
+     "categories": {
+      "visual_span": 2,
+      "speech": 1
+     },
+     "reasons": [
+      "The inserted '(on screen at 3:18)' is correct: the VISUAL @ 3:18 span in the same Academind video shows `matplotlib.pyplot as plt` in the first cell, and the parenthetical does not claim the identifier went unspoken. The explanatory clauses (submodule, the usual 'as plt' import, %matplotlib inline s",
+      "Everything credited to Academind (0:49) is in the speech that starts at 0:49 (import matplotlib dot pyplot, pyplot is a submodule, imported as plt as the most common way, percent-sign matplotlib inline so charts display in the notebook and not in a separate window), so the speaker is not credited wi",
+      "The inserted parenthetical is accurate: the [VISUAL @ 3:18] span shows the first cell importing `matplotlib.pyplot as plt` (the 0:49 frame is still an empty cell), and it does not claim the term was unspoken, which it was not (spoken as 'mat plot lip ... dot PI plot'). The explanatory claims (submod"
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "The guard's inserted '(on screen at 3:18)' is exact: the cited video's 3:18 span shows `matplotlib.pyplot as plt` (the 0:49 frame is still an empty cell), and the guard added no 'not spoken' claim to test. Every original claim (pyplot is a submodule, plt is the most common alias, %matplotlib inline "
+    }
+   },
+   {
+    "kind": "screen_detail_marked",
+    "tokens": [
+     "plt.plot"
+    ],
+    "sentence": "When plt.plot receives a single list, that list supplies the y-values and the x-values default to 0, 1, 2, 3 and so on — Gate Smashers (4:04).",
+    "attribution": {
+     "upheld_votes": 0,
+     "total_votes": 3,
+     "confirmed": false,
+     "categories": {
+      "speech": 2,
+      "visual_span": 1
+     },
+     "reasons": [
+      "The inserted tag is accurate: the 4:04 visual span shows plt.plot(squares) on screen, and the tag does not say the call went unspoken (the speaker also says plt dot plot). The single-list behaviour (y-values from the list, x defaulting to 0, 1, 2, 3) is Hindi speech that starts right after 4:04, and",
+      "Everything credited to Gate Smashers (a single list becomes the y-values, x defaults to 0, 1, 2, 3 and so on) was spoken in Hindi immediately around 4:04, and plt.plot itself was both spoken and shown; the guard's inserted '(on screen at 4:04)' attaches only to plt.plot, which the 4:04 span shows as",
+      "The inserted '(on screen at 4:04)' is correct: the 4:04 visual span shows the code cell calling `plt.plot(squares)` on the single list `squares`, and the mark makes no 'not spoken' claim, so it stays accurate even though the presenter also said 'पीएलटी डॉट प्लॉट'. The y-values/default-x explanation "
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "The sentence is in the ON report and every claim holds: the guard's inserted '(on screen at 4:04)' matches the [VISUAL @ 4:04] span of the cited Gate Smashers video, which shows plt.plot(squares), and the single-list-to-y-values, x-defaults-to-0-1-2-3 behaviour is spoken in Hindi immediately after 4"
+    }
+   },
+   {
+    "kind": "screen_detail_marked",
+    "tokens": [
+     "121"
+    ],
+    "sentence": "Subplots are added with fig.add_subplot(), with codes such as 121 and 122 specifying a one-row, two-column grid and the position within it — Academind (14:25); such a grid divides the figure width equally between the two subplots (15:27).",
+    "attribution": {
+     "upheld_votes": 3,
+     "total_votes": 3,
+     "confirmed": true,
+     "categories": {
+      "attribution_error": 3
+     },
+     "reasons": [
+      "The inserted parenthetical is half right: 121 is on screen at 15:27, but the speaker also said it. He announced \"three numbers\" and then said \"one to one\", the auto-caption's rendering of \"one two one\", and for the second chart he said \"one two two\" and called it \"a slight difference\". Marking 121 \"",
+      "The speaker did say 121 aloud: after announcing 'three numbers' he says 'let's just add one to one' (the auto-caption of 'one two one', confirmed by 'I'll enter one two two' and 'a slight difference' for chart two), so the guard's inserted '(on screen at 15:27, not spoken)' presents a spoken detail ",
+      "The 15:27 frame does show add_subplot(121), but the inserted 'not spoken' is false: just before that frame the speaker dictated the code as three numbers, 'one to one' (the caption's rendering of one-two-one, set against 'one two two ... a slight difference'), so a spoken detail is presented as scre"
+     ]
+    },
+    "fabrication": {
+     "verdict": "upheld",
+     "reason": "The guard's inserted '(on screen at 15:27, not spoken)' is half wrong: 121 is in the 15:27 visual span, but it was spoken, since 'we'll add three numbers ... let's just add one to one' is the caption of 'one two one' (followed by 'I'll enter one two two ... a slight difference'), and the speaker lat"
+    }
+   },
+   {
+    "kind": "screen_detail_marked",
+    "tokens": [
+     "plt.figure"
+    ],
+    "sentence": "Figure size for Seaborn plots can be set with Matplotlib's plt.figure(figsize=(10,5)) or similar — CodeWithMunnaX (14:29).",
+    "attribution": {
+     "upheld_votes": 0,
+     "total_votes": 3,
+     "confirmed": false,
+     "categories": {
+      "visual_span": 2,
+      "speech": 1
+     },
+     "reasons": [
+      "The sentence is in the ON report (line 81). The inserted '(on screen at 15:50)' is correct in content and timestamp, because the VISUAL @ 15:50 span shows exactly plt.figure(figsize=(10,5)), and it makes no 'not spoken' claim. The credit to CodeWithMunnaX at 14:29 is also correct, since the Bengali ",
+      "The speaker did say it at about 14:29: in Bengali he says the figure size can be set through plt dot figure, fig size, '10 5' for the sns histplot (later changing it to 6 5, which supports 'or similar'), so crediting CodeWithMunnaX at 14:29 credits speech, not screen-only content. The guard's insert",
+      "The inserted '(on screen at 15:50)' is accurate: the 15:50 frame shows exactly plt.figure(figsize=(10,5)), and the guard did not add 'not spoken'. The same figsize (10,5) was also spoken in Bengali around 14:22-14:34, matching the 14:29 citation, so the sentence presents neither speech as screen-onl"
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "Every claim is supported: the Bengali speech around 14:29 says plt's figure size (fig size 10 5) can be set for the sns histplot and later changes it to 6 5, and the guard's inserted '(on screen at 15:50)' matches the VISUAL @ 15:50 span of the same video showing plt.figure(figsize=(10,5)) with sns."
+    }
+   },
+   {
+    "kind": "screen_detail_marked",
+    "tokens": [
+     "plt.xlabel()",
+     "plt.ylabel()"
+    ],
+    "sentence": "Matplotlib functions such as plt.show(), plt.title(), plt.xlabel() and plt.ylabel() work with Seaborn plots — CodeWithMunnaX (12:33); more broadly, Matplotlib plotting features including color changes, larger fonts, grids and modified tick values apply to Seaborn graphs (15:12).",
+    "attribution": {
+     "upheld_votes": 0,
+     "total_votes": 3,
+     "confirmed": false,
+     "categories": {
+      "speech": 2,
+      "visual_span": 1
+     },
+     "reasons": [
+      "The sentence is in the ON report, and the inserted '(on screen at 13:37)' is accurate: the [VISUAL @ 13:37] span shows plt.xlabel, plt.ylabel, plt.title and plt.show in the code cell, and the insertion does not claim they went unspoken. The claims that these functions work with Seaborn plots (cited ",
+      "The speaker himself named plt.show, plt.title, the plt x label and plt.y label while building the Seaborn line plot, said everything doable in Matplotlib can be done in Seaborn, and spoke the color, font-size, grid and x-tick changes, so the sentence credits him only with what he said. The inserted ",
+      "The inserted '(on screen at 13:37)' is accurate: the VISUAL @ 13:37 span shows plt.xlabel, plt.ylabel, plt.title and plt.show in the code cell, and the parenthetical does not claim they were unspoken. The substantive claims stay cited as speech (12:33, 15:12) and the Bengali speech supports every on"
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "The sentence is in the ON report with only '(on screen at 13:37)' inserted, and the VISUAL @ 13:37 span of the cited video shows exactly plt.xlabel, plt.ylabel, plt.title and plt.show; every original claim (the four functions used on an sns.lineplot, Matplotlib features working in Seaborn, color cha"
+    }
+   },
+   {
+    "kind": "screen_detail_marked",
+    "tokens": [
+     "sns.lineplot"
+    ],
+    "sentence": "A Seaborn line plot is created with sns.lineplot(x=x, y=y) — CodeWithMunnaX (12:20); on screen at 13:35 the example uses the labels \"X Values\" and \"Y Values\" and the title \"Line Graph\".",
+    "attribution": {
+     "upheld_votes": 0,
+     "total_votes": 3,
+     "confirmed": false,
+     "categories": {
+      "visual_span": 2,
+      "speech": 1
+     },
+     "reasons": [
+      "Every screen claim is backed by the 13:37 VISUAL span: the captured code cell shows sns.lineplot(x=x,y=y), both axis labels and the title. So the guard's '(on screen at 13:37)' is correct use, and the 12:20 citation matches the Bengali speech dictating 'sns dot line plot' with x = x, y = y. Nothing ",
+      "The speaker dictated sns.lineplot with x = x, y = y in Bengali at the point the 12:20 credit links to, and the OFF report pulled the same call from speech alone, so nothing credited to the speaker exists only in a [VISUAL @] span. The guard's '(on screen at 13:37)' and the labels and title marked as",
+      "The inserted '(on screen at 13:37)' matches the [VISUAL @ 13:37] span exactly and does not deny that the code was spoken; the code and the labels and title were both dictated in the Bengali speech (which the 12:20 citation points to) and shown in the 13:37 frame, so nothing is presented as shown wit"
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "The guard's inserted '(on screen at 13:37)' is exactly supported by the 13:37 visual span showing sns.lineplot(x=x,y=y), and the original '13:35' labels/title claim matches that same span 2 s away; the line-plot creation with x=x, y=y is also spoken in Bengali around the cited 12:20 and the channel "
+    }
+   },
+   {
+    "kind": "screen_detail_marked",
+    "tokens": [
+     "sns.scatterplot",
+     "data"
+    ],
+    "sentence": "A Seaborn scatter plot is written with sns.scatterplot, taking a DataFrame as the data argument plus columns for x and y, with additional parameters hue, palette and size — DeepLoop Circle (7:12); the DataFrame must not be passed as a string, which produces an error (7:36).",
+    "attribution": {
+     "upheld_votes": 0,
+     "total_votes": 3,
+     "confirmed": false,
+     "categories": {
+      "speech": 2,
+      "visual_span": 1
+     },
+     "reasons": [
+      "Every claim in the sentence is spoken in Hindi by the DeepLoop Circle presenter (sns.scatterplot, data takes the DataFrame, x and y columns, hue, palette, size, and the warning that a string gives an error) and is credited to the speaker; the guard's inserted '(on screen at 9:06)' only says data is ",
+      "Everything the sentence credits to DeepLoop Circle (sns.scatterplot, the DataFrame passed as data, x and y columns, hue, palette, size, and the string error) is in the Hindi speech, so the speaker is not credited with anything only a visual span contains. The inserted '(on screen at 9:06)' is also a",
+      "The inserted '(on screen at 9:06)' is accurate: the 9:06 frame of the same video shows sns.scatterplot(data=penguin, ...), and the parenthetical does not claim the detail went unspoken (it was also said in Hindi). Every other detail (x/y columns, hue, palette, size, the string error) is spoken and c"
+     ]
+    },
+    "fabrication": {
+     "verdict": "refuted",
+     "reason": "The guard's inserted '(on screen at 9:06)' is correct: the cited video's [VISUAL @ 9:06] span shows data=penguin in the sns.scatterplot call, and no 'not spoken' claim was added. Every original claim (sns.scatterplot, DataFrame as data, x/y columns, hue/palette/size, string error) is in the Hindi sp"
+    }
+   },
+   {
+    "kind": "screen_detail_marked",
+    "tokens": [
+     "getting started"
+    ],
+    "sentence": "A \"getting started\" scope with an explicit admission of depth left unexplored: the tutorial provides what is needed to get started while Matplotlib remains powerful and supports much deeper exploration, and it has demonstrated that Matplotlib is easy to use initially and can create and customise cha",
+    "attribution": {
+     "upheld_votes": 3,
+     "total_votes": 3,
+     "confirmed": true,
+     "categories": {
+      "attribution_error": 3
+     },
+     "reasons": [
+      "The inserted '(on screen at 26:44, not spoken)' labels the tutorial's closing scope claim as screen-only, but the presenter said it aloud seconds after 26:44 ('this is everything you need to get started'), and the sentence's own colon clause restates that speech; what was on screen was only the note",
+      "The 'getting started' scope in this bullet is the speaker's own closing claim ('this is everything you need to get started', said seconds after 26:44, and 'get started with matplotlib' said several times), so the guard's inserted 'not spoken' presents speech as screen-only content. Only the gerund f",
+      "The 'getting started' scope the sentence describes is the speaker's own spoken framing in the cited closing ('this is everything you need to get started', with 'get started' said five times in the video), while the 26:44 frame shows only the notebook title 'Getting Started with matplotlib'. The 'on "
+     ]
+    },
+    "fabrication": {
+     "verdict": "upheld",
+     "reason": "The guard's 'on screen at 26:44' is correct (it is the notebook title), but 'not spoken' is wrong: the speaker sets the tutorial's scope in speech as 'everything you need to get started' just after 26:44 and says 'get started' four more times. Only the -ing form is missing, so the guard labels a spo"
+    }
+   },
+   {
+    "kind": "screen_also_dropped",
+    "tokens": [
+     "FiveThirtyEight"
+    ],
+    "sentence": "The one reference to a visual-journalism tradition rather than a software artefact is Matplotlib's fivethirtyeight style sheet, which Data Analytics Lab presents as named after the FiveThirtyEight visual style; the name FiveThirtyEight is also shown on screen at that moment — Matplotlib Tutorial for",
+    "attribution": {
+     "upheld_votes": 0,
+     "total_votes": 3,
+     "confirmed": false,
+     "categories": {
+      "visual_span": 2,
+      "speech": 1
+     },
+     "reasons": [
+      "The style is attributed to the speaker, who did say '538 style' twice, and the name is attributed to the screen, where the 23:08 frame shows plt.style.use('fivethirtyeight'); removing 'also' leaves both modalities correct, so there is no speech/screen inversion. The only looseness is timing ('at tha",
+      "The speaker said the name aloud ('538', 'I like the 538 style', 'This is the 538 style of Map Plot Lib'), so crediting Data Analytics Lab with presenting the fivethirtyeight style gives the speaker nothing that only a [VISUAL @] span holds, and the on-screen clause is backed by the 23:08 span's plt.",
+      "The name really is on screen: the 23:08 frame shows the plt.style.use('fivethirtyeight') cell, and that frame sits inside the passage cited at 21:44 (the same citation the report uses for the style, savefig and bbox_inches tips). The speaker also says '538' aloud, so calling the name shown is correc"
+     ]
+    },
+    "fabrication": {
+     "verdict": "upheld",
+     "reason": "The on-screen claim holds loosely (the 23:08 frame shows plt.style.use('fivethirtyeight'), 84 s after the cited 21:44), and dropping 'also' adds no false claim. But calling fivethirtyeight 'a visual-journalism tradition rather than a software artefact' that the speaker 'presents as named after the F"
+    }
+   }
+  ],
+  "sweep": [
+   {
+    "sentence": "Subplots are added with fig.add_subplot(), with codes such as 121 (on screen at 15:27, not spoken) and 122 specifying a one-row, two-column grid and the position within it — Academind (14:25); such a grid divides the figure width equally between the two subplots (15:27).",
+    "why": "Speech presented as screen-only. The report says outright that the code 121 was 'not spoken', but the instructor says it while typing it. The ASR renders 'one two one' as 'one to one', and he follows it straight away with 'one two two' for 122, which the report itself treats as spoken. He then expla",
+    "upheld_votes": 0,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "speech": 2,
+     "visual_span": 1
+    },
+    "reasons": [
+     "Every modality claim is supported: 121 is marked as on screen at 15:27 and the VISUAL @ 15:27 span shows add_subplot(121), while add_subplot, 122, the one-row/two-column meaning and the equal width split are all spoken and carry plain speech citations. The 'not spoken' tag on 121 at most understates",
+     "Everything the sentence credits to the speaker is in speech: add subplot, 'one two two' (122), the one-row two-column grid and position meaning (said about 17:20, so the 14:25 stamp is early), and the equal width split (said right after 15:27). The only item credited to the screen, 121, is in the VI",
+     "The sentence is in the ON report, and its only screen attribution, 121 on screen at 15:27, matches [VISUAL @ 15:27], which shows chart_1 = fig_1.add_subplot(121): correct use of a span (the not-spoken gloss is at most debatable, since the ASR line reads only 'one to one' after 'three numbers'). Ever"
+    ]
+   },
+   {
+    "sentence": "A \"getting started\" (on screen at 26:44, not spoken) scope with an explicit admission of depth left unexplored: the tutorial provides what is needed to get started while Matplotlib remains powerful and supports much deeper exploration, and it has demonstrated that Matplotlib is easy to use initially",
+    "why": "Speech presented as screen-only. The marker says the 'getting started' framing was not spoken and comes only from the notebook title on screen. In fact the instructor says it in his closing words at the cited moment ('this is everything you need to get started') and twice earlier ('this is how we ca",
+    "upheld_votes": 1,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "visual_span": 2,
+     "attribution_error": 1
+    },
+    "reasons": [
+     "The sentence's only screen attribution, the quoted label \"getting started\" at 26:44, matches the VISUAL @ 26:44 span (notebook title “Getting Started with matplotlib”), and that exact wording is never spoken; everything after the colon is cited to 26:45 as speech and matches the closing speech plus ",
+     "At the cited moment the speaker himself states the getting-started scope ('this is everything you need to get started', and earlier 'this is how we can basically get started with matplotlib'), so tagging \"getting started\" as 'on screen at 26:44, not spoken' presents speech as screen-only content; th",
+     "The only thing the sentence marks as on screen is the quoted phrase \"getting started\". The 26:44 VISUAL span describes it as the notebook title, so that is correct screen use, and the spoken closing remarks (easy to use, powerful, dive deeper, enough to get started) carry no screen marker: no speech"
+    ]
+   },
+   {
+    "sentence": "Because every x is related to every y, explicit x and y definitions are unnecessary (26:59); the instructor recommends species as hue (27:11) — though on screen at 27:27 the visible code cell reads sns.pairplot(data = penguin, hue=\"sex\"), and the displayed pair plot carries labels bill_length_mm, bi",
+    "why": "Speech presented as screen-only (the D-075 multilingual case). The report sets the speech against the screen: the speaker recommends species, but the code shows hue=\"sex\". The Hindi speech already contains the switch. Right after 'in hue you put species' he says 'मैं सजेस्ट करूंगा सिक्स डाल दो' ('I'",
+    "upheld_votes": 0,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "visual_span": 2,
+     "speech": 1
+    },
+    "reasons": [
+     "Every clause sits in the channel it is attributed to: the x/y rationale and species-as-hue are spoken (lines 3726-3729) and framed as the instructor's words, while hue=\"sex\" and the axis labels are framed as on-screen and match [VISUAL @ 27:27], which the fixed rules call correct use. The speaker do",
+     "Everything the sentence credits to the speaker was spoken (no x/y needed because every x is plotted against every y; 'in hue you have to put species'), no VISUAL span near 26:59-27:11 contains species, and the hue=\"sex\" code cell and axis labels are credited to the screen, where the 27:27 span descr",
+     "Each clause sits in its true modality: the x/y and 'species as hue' claims are credited to the instructor and are in the Hindi speech, while the 'on screen at 27:27' code cell and pair-plot labels are exactly what the [VISUAL @ 27:27] span describes (body_mass_g completes its truncated label, spelle"
+    ]
+   },
+   {
+    "sentence": "Quartiles are associated with the 25%, 50% and 75% positions, with outliers described as values far outside the main range, using examples such as 1, 15, 1,024 and 15,000 (15:38); outliers are elements outside a defined range, and removing them is not always ideal because they may be needed for trai",
+    "why": "The example '15' is presented, with no 'on screen' marker, as one of the outlier examples the DeepLoop Circle speaker gives. No standalone 15 is spoken anywhere in that video. At this moment the speaker says 1024, 15,000, 0 and 'one' (वन). The only 15 near the cited moment is the handwritten '15%' o",
+    "upheld_votes": 1,
+    "total_votes": 3,
+    "confirmed": false,
+    "categories": {
+     "speech": 2,
+     "attribution_error": 1
+    },
+    "reasons": [
+     "The sentence's substance is all in the presenter's Hindi speech at the cited moments (quartile = its 25%/75%/50%; a value like 1024 or 15,000, or 0/one, far outside the 25-75 range; outliers as elements outside a defined range; removing them not ideal because training or testing sometimes needs them",
+     "Almost all of the sentence is the speaker's: quartile = 25/75/50%, values far outside the range, the examples one (वन), 1024 and 15,000, elements outside a defined range, and removal not being ideal because outliers are needed for training or testing. The example '15' is never spoken; its only sourc",
+     "The sentence makes no on-screen claim, and everything it gives as the presenter's description was spoken in Hindi at 15:38-16:17: quartiles at 25/75/50%, outliers far outside the range with 1024, 15,000 and one as examples, elements outside a defined range, and removal not being ideal because outlie"
+    ]
+   }
+  ]
+ }
+}

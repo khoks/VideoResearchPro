@@ -32,6 +32,7 @@ backend/tests/
 ├── test_tasks/                 # Celery task body tests (subscription_task, upsert_dedup)
 ├── test_models/                # SQLAlchemy model tests
 ├── test_utils/                 # pure-function tests (chunking, youtube_helpers)
+├── test_ci/                    # reads .github/workflows/ci.yml: what a green run cannot show (§5.4)
 └── test_smoke/                 # cross-feature integration smoke (added 2026-05-05)
 ```
 
@@ -241,11 +242,11 @@ Coverage is informational — there is no enforced floor. Prefer adding tests wh
 
 ### 5.4. CI
 
-GitHub Actions runs [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) on every pull request and every push to `master` (T-8.8.4.3; before it, no workflow had ever existed and nothing ran on a PR). Five jobs, none of which needs a secret:
+GitHub Actions runs [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) on every pull request and every push to `master` (T-8.8.4.3; before it, no workflow had ever existed and nothing ran on a PR). Five jobs, none of which needs a secret. A new push to a pull request cancels that pull request's run in progress; every push to `master` runs in a concurrency group of its own, so each merge commit gets a full result even when merges land minutes apart. `backend/tests/test_ci/test_ci_workflow.py` reads the workflow file and pins both that and the model-cache rule below, since a green run shows neither.
 
 | Job | Runner | What it runs |
 |-----|--------|--------------|
-| Backend tests (pytest) | ubuntu-latest, Python 3.12 | `pip install -r requirements.txt -r requirements-dev.txt` (pip cache; PyTorch from the CPU wheel index first, so the CUDA libraries never download), then `python -m pytest tests/ -q -rs` from `backend/` (`-rs` lists each skip with its reason). The multilingual embedder and Chroma's ONNX model are cached between runs (`~/.cache/huggingface`, `~/.cache/chroma`) and saved even when the run fails |
+| Backend tests (pytest) | ubuntu-latest, Python 3.12 | `pip install -r requirements.txt -r requirements-dev.txt` (pip cache; PyTorch from the CPU wheel index first, so the CUDA libraries never download), then `python -m pytest tests/ -q -rs` from `backend/` (`-rs` lists each skip with its reason). The multilingual embedder and Chroma's ONNX model are cached between runs (`~/.cache/huggingface`, `~/.cache/chroma`): one step downloads both on a cache miss, and the cache is saved right after that step succeeds, before the tests, so a red test run still keeps it and a cancelled or failed download never does (a key is never overwritten, so a partial copy would stay for good; bump `MODEL_CACHE_KEY` to discard a bad entry) |
 | Backend lint (ruff) | ubuntu-latest | `ruff check backend --select E9,F63,F7,F82` with the `ruff` pinned in `requirements-dev.txt`: syntax errors, undefined names, invalid comparisons and statements. The repository has no ruff config, and ruff's default set reports 57 existing findings (mostly unused imports), so the default set is not gated; widening the rules means fixing those first, in a change of its own |
 | Frontend build and unit tests | ubuntu-latest, Node 22 | `npm ci`, `npm run build` (type check plus Vite build), `npx vitest run` from `frontend/` |
 | Browser extension tests | ubuntu-latest, Node 22 | `npm test` from `extension/` (`node --test`, no install) |

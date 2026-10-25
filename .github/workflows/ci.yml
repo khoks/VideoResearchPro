@@ -19,9 +19,15 @@ on:
 permissions:
   contents: read
 
+# A pull request's runs share a group, so a new push cancels the run it
+# supersedes. Every other run (a push to master, a manual dispatch) gets a
+# group of its own, so each merge commit gets a full result even when merges
+# land minutes apart. Turning cancel-in-progress off for a shared master group
+# would not be enough: a third run in a group replaces the second's pending
+# run. backend/tests/test_ci/test_ci_workflow.py pins both.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -35,6 +41,10 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    env:
+      # Bump the suffix to discard a bad cache entry: a key is never
+      # overwritten. v2: the download step also fetches Chroma's ONNX model.
+      MODEL_CACHE_KEY: models-paraphrase-multilingual-MiniLM-L12-v2-v2
     steps:
       - uses: actions/checkout@v7
 
@@ -56,9 +66,14 @@ jobs:
         run: pip install -r requirements.txt -r requirements-dev.txt
 
       # The multilingual embedder (EMBEDDING_MODEL_NAME) is about 470 MB from
-      # the Hugging Face hub; Chroma keeps its own default ONNX model beside
-      # it. Restored before the tests and saved even when they fail, so a red
-      # run does not download them again.
+      # the Hugging Face hub; Chroma keeps its own default ONNX model
+      # (all-MiniLM-L6-v2, about 80 MB) for collections created without an
+      # embedding function, which some tests do. One step downloads both, and
+      # the cache is saved right after it succeeds, before the tests: a cache
+      # key is immutable, so a save after a cancelled or failed download would
+      # pin a partial copy, and every later run would restore it, skip this
+      # step and fetch the missing models at test time. What the tests do
+      # never changes what is saved, and a red test run still keeps the cache.
       - name: Restore model caches
         id: models
         uses: actions/cache/restore@v6
@@ -66,25 +81,28 @@ jobs:
           path: |
             ~/.cache/huggingface
             ~/.cache/chroma
-          key: models-paraphrase-multilingual-MiniLM-L12-v2-v1
+          key: ${{ env.MODEL_CACHE_KEY }}
 
-      - name: Download the embedding model
+      - name: Download the embedding models
+        id: download
         if: steps.models.outputs.cache-hit != 'true'
-        run: python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
-
-      # -rs prints each skipped test's reason, so a reviewer can see what the
-      # runner did not exercise (ffmpeg, an FTS5 trigram SQLite, a PDF engine).
-      - name: Run pytest
-        run: python -m pytest tests/ -q -rs
+        run: |
+          python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
+          python -c "from chromadb.utils.embedding_functions import DefaultEmbeddingFunction; DefaultEmbeddingFunction()(['warm up'])"
 
       - name: Save model caches
-        if: always() && steps.models.outputs.cache-hit != 'true'
+        if: steps.download.outcome == 'success'
         uses: actions/cache/save@v6
         with:
           path: |
             ~/.cache/huggingface
             ~/.cache/chroma
-          key: models-paraphrase-multilingual-MiniLM-L12-v2-v1
+          key: ${{ env.MODEL_CACHE_KEY }}
+
+      # -rs prints each skipped test's reason, so a reviewer can see what the
+      # runner did not exercise (ffmpeg, an FTS5 trigram SQLite, a PDF engine).
+      - name: Run pytest
+        run: python -m pytest tests/ -q -rs
 
   lint:
     name: Backend lint (ruff)

@@ -13,6 +13,16 @@ from app.services import rate_limit_service
 from app.services.rate_limit_service import RateLimit, check_and_consume
 
 
+@pytest.fixture(autouse=True)
+def _frozen_clock(monkeypatch):
+    """Requests in one test land in one bucket. The limiter buckets by
+    clock minute (``now // 60``), so a test whose requests straddle a
+    minute boundary saw its count reset and the expected 429 arrive as
+    the endpoint's own status (a CI flake, 2026-10-19). Tests that need
+    time to move pass ``now=`` explicitly."""
+    monkeypatch.setattr(rate_limit_service, "_now", lambda: 1_000_020)
+
+
 # ---------------------------------------------------------------------------
 # RateLimit dataclass
 # ---------------------------------------------------------------------------

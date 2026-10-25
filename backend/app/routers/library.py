@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.agents.prompts.qa_prompts import with_clarification
 from app.config import settings
 from app.dependencies import get_current_user, get_db
 from pydantic import BaseModel
@@ -141,7 +142,9 @@ def answer_library_question(
         db,
         current_user.id,
         prepared,
-        question=request.question,
+        # S-8.13.1: the reader's clarify answers reach the agent inside the
+        # question, as in job Q&A; the exchange below stores what they typed.
+        question=with_clarification(request.question, request.context),
         answer_language=request.answer_language,
         output_length=request.output_length,
     )

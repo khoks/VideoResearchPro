@@ -39,6 +39,10 @@ class LibraryClarifyResponse(BaseModel):
 class LibraryQARequest(BaseModel):
     question: str = Field(min_length=3, max_length=2000)
     answer_language: str = Field(default="en", min_length=2, max_length=10)
+    # S-8.13.1: what the reader told the clarify step ("Confirm & search"),
+    # bounded like job Q&A's. Without the field Pydantic dropped it silently,
+    # so a confirmed search answered exactly like a skipped one.
+    context: str | None = Field(default=None, max_length=4000)
     # S-1.15.2 / T-1.15.2.3: per-request depth override; None lets the
     # visible corpus's size bracket decide (D-064). Never a cap.
     output_length: Literal["auto", "brief", "standard", "deep"] | None = None

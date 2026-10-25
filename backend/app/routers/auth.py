@@ -5,13 +5,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, require_operator
 from app.models.user import User
 from app.schemas.auth import (
     AuditLogEntry,
     ChangeTierRequest,
     ChangeTierResponse,
     LoginRequest,
+    MeResponse,
     MfaRequiredResponse,
     PasswordResetConfirmPayload,
     PasswordResetConfirmResponse,
@@ -40,6 +41,15 @@ def register(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered",
+        )
+    # D-111 review: a listed address makes its holder an operator, and this
+    # route verifies no email, so an unregistered listed address is not open
+    # to sign-up. OAuth with a provider-verified address still creates it.
+    if auth_service.is_operator_email(payload.email):
+        logger.warning("Refused a password registration for an address listed in ADMIN_EMAILS")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=auth_service.REGISTER_OPERATOR_EMAIL_REFUSED,
         )
     try:
         user = auth_service.create_user(db, email=payload.email, password=payload.password)
@@ -227,20 +237,31 @@ def password_reset_confirm(
     return PasswordResetConfirmResponse()
 
 
-@router.get("/me", response_model=UserResponse)
-def me(current_user: User = Depends(get_current_user)) -> UserResponse:
-    return UserResponse.model_validate(current_user)
+@router.get("/me", response_model=MeResponse)
+def me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MeResponse:
+    out = MeResponse.model_validate(current_user)
+    out.is_operator = auth_service.is_operator(db, current_user)
+    return out
 
 
-# E-5.2.X self-service tier flip with mock payment (D-050)
+# E-5.2.X self-service tier flip with mock payment (D-050), operator-only
+# since T-5.2.8 (D-111)
 @router.put("/me/tier", response_model=ChangeTierResponse)
 def change_tier(
     payload: ChangeTierRequest,
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ) -> ChangeTierResponse:
-    """Self-service tier flip for the calling user.
+    """Tier flip for the calling user, if they operate this install.
+
+    T-5.2.8 / D-111: only operators (``ADMIN_EMAILS``, else the
+    earliest-registered account) may switch; every other account gets 403
+    before anything changes. On a shared install the paid tiers spend the
+    operator's provider keys, so a sign-in alone is not enough.
 
     Mock-payment mode: until E-5.3 (Stripe) ships, this endpoint trusts
     the request body and flips ``users.tier`` immediately. The
@@ -248,8 +269,8 @@ def change_tier(
     frontend / API contract doesn't change when E-5.3 lands and the
     implementation switches to "verify Stripe webhook payload".
 
-    No payment is processed. Self-host operators can use this freely to
-    evaluate Pro / Studio features before the real billing wiring lands.
+    No payment is processed. Operators can use this freely to evaluate
+    Pro / Studio features before the real billing wiring lands.
 
     Tier reads are looked up fresh from the DB on every request via
     ``get_current_user``; no JWT refresh is needed for the new tier to

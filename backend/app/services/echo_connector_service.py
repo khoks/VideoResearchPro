@@ -16,8 +16,8 @@ module owns the rest, per tenant:
 3. **Sync.** ``run_sync`` backfills once, then syncs incrementally from the
    last success, storing events idempotently and derived facts below 1.0
    confidence (source ``connector:<name>``). Fail-soft: a provider error marks
-   the grant ``error`` with the reason; an auth error asks the user to
-   reconnect.
+   the grant ``error`` with the reason; an auth error, or a stored token
+   this install can no longer decrypt, asks the user to reconnect.
 4. **Revoke.** One request deletes the grant, tokens, pending states, every
    event and every derived fact of that connector, and its schedule. Revoking
    at the provider is best effort; local data goes regardless.
@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from cryptography.fernet import InvalidToken
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -55,11 +56,14 @@ KIND = "echo_sync"
 # Connectors the roadmap names that this build cannot offer yet, with why.
 # Readiness lists them as "not connected" rather than missing (S-3.5.1).
 PLANNED_CONNECTORS: tuple[tuple[str, str, str], ...] = (
-    ("youtube_likes", "YouTube likes", "Waits on this install's Google sign-in setup (S-3.2.2)."),
-    ("google_calendar", "Google Calendar", "Waits on this install's Google sign-in setup (S-3.2.5)."),
+    ("youtube_likes", "YouTube likes", "Waits on this install's Google connector OAuth client (S-3.2.2)."),
+    ("google_calendar", "Google Calendar", "Waits on this install's Google connector OAuth client (S-3.2.5)."),
 )
 STATE_TTL = timedelta(minutes=10)
 MAX_FACT_CONFIDENCE = 0.9
+# A grant whose ``last_error`` starts with this needs the user to connect
+# again; the connectors panel shows "Reconnect" for it.
+RECONNECT_PREFIX = "Reconnect to sync: "
 
 
 class ConnectorNotFound(LookupError):
@@ -319,9 +323,33 @@ def run_sync(db: Session, grant_id: str) -> SyncOutcome:
         grant.status, grant.last_error = "error", "This connector is not available on this install."
         db.commit()
         return SyncOutcome("error", error=grant.last_error)
-    tokens = load_tokens(db, grant.tenant_id, grant.connector)
+    try:
+        tokens = load_tokens(db, grant.tenant_id, grant.connector)
+    except (InvalidToken, UnicodeError):
+        # The stored ciphertext no longer opens: BYOK_ENCRYPTION_KEY was
+        # rotated (or never set, so each process had its own key), or the
+        # row is corrupted. Only a fresh connect can mint a token this key
+        # reads, so ask for one rather than crash the worker task. The
+        # ciphertext and the secret stay out of the log.
+        logger.warning(
+            "echo: stored %s token for %s could not be decrypted; the grant needs a reconnect",
+            grant.connector, grant.tenant_id[:8],
+        )
+        grant.status = "error"
+        grant.last_error = RECONNECT_PREFIX + "the stored access token can no longer be read on this install."
+        db.commit()
+        return SyncOutcome("auth_error", error=grant.last_error)
+    except byok_service.EncryptionConfigurationError:
+        # BYOK_ENCRYPTION_KEY itself is malformed. Reconnecting cannot help
+        # (storing the new token would fail the same way): the operator must
+        # fix the key.
+        logger.error("echo: %s sync for %s skipped: BYOK_ENCRYPTION_KEY is not a valid key", grant.connector, grant.tenant_id[:8])
+        grant.status = "error"
+        grant.last_error = "Sync failed: this install's encryption key is not valid. Ask the operator to fix it."
+        db.commit()
+        return SyncOutcome("error", error=grant.last_error)
     if tokens is None:
-        grant.status, grant.last_error = "error", "Reconnect to sync: the access token is missing."
+        grant.status, grant.last_error = "error", RECONNECT_PREFIX + "the access token is missing."
         db.commit()
         return SyncOutcome("auth_error", error=grant.last_error)
 
@@ -342,7 +370,7 @@ def run_sync(db: Session, grant_id: str) -> SyncOutcome:
         db.rollback()
         grant = db.get(EchoConnectorGrant, grant_id)
         grant.status = "error"
-        grant.last_error = ("Reconnect to sync: " if e.auth else "") + str(e)[:500]
+        grant.last_error = (RECONNECT_PREFIX if e.auth else "") + str(e)[:500]
         db.commit()
         logger.warning("echo: %s sync for %s failed: %s", grant.connector, grant.tenant_id[:8], e)
         return SyncOutcome("auth_error" if e.auth else "error", error=grant.last_error)

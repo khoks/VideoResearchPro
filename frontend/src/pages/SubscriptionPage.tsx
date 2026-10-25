@@ -8,6 +8,7 @@ import { useJobStore } from '../stores/jobStore';
 import { TIER_DESCRIPTORS, getTierDescriptor } from '../data/tiers';
 import { TierCard } from '../components/marketing/TierCard';
 import { MockPaymentModal } from '../components/marketing/MockPaymentModal';
+import { apiErrorMessage } from '../utils/apiError';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../theme';
 
 /**
@@ -22,6 +23,10 @@ import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../theme
  * D-050: no real payment is processed. When E-5.3 (Stripe) ships, the
  * `confirm` handler swaps the direct backend call for a Stripe Checkout
  * redirect; the rest of the UI is unchanged.
+ *
+ * T-5.2.8 / D-111: only the install's operator may switch tiers. Anyone
+ * else sees the plans without action buttons and a note saying who can
+ * change their plan, instead of a switch that fails on submit.
  */
 export function SubscriptionPage() {
   const c = useColors();
@@ -34,12 +39,15 @@ export function SubscriptionPage() {
 
   const currentTier: Tier = me?.tier ?? 'free';
   const currentDescriptor = getTierDescriptor(currentTier);
+  // Unknown until /auth/me answers: no switch is offered before then.
+  const canSwitch = me?.is_operator === true;
 
   // ?upgrade=<tier> deep-link from /pricing → open the right modal.
   useEffect(() => {
+    if (!me) return;
     const intent = searchParams.get('upgrade');
     if (intent && (intent === 'free' || intent === 'pro' || intent === 'studio')) {
-      if (intent !== currentTier) {
+      if (canSwitch && intent !== currentTier) {
         const isUpgrade = tierRank(intent) > tierRank(currentTier);
         if (isUpgrade) setTargetTier(intent);
         else setConfirmingDowngrade(intent);
@@ -47,7 +55,7 @@ export function SubscriptionPage() {
       searchParams.delete('upgrade');
       setSearchParams(searchParams, { replace: true });
     }
-  }, [searchParams, currentTier, setSearchParams]);
+  }, [me, canSwitch, searchParams, currentTier, setSearchParams]);
 
   const changeTier = useMutation({
     mutationFn: async (newTier: Tier) => {
@@ -67,10 +75,15 @@ export function SubscriptionPage() {
         `You're now on the ${data.tier.charAt(0).toUpperCase() + data.tier.slice(1)} plan. New features are active immediately.`,
       );
     },
+    onError: (err) => {
+      setTargetTier(null);
+      setConfirmingDowngrade(null);
+      pushToast('error', apiErrorMessage(err, 'Could not change your plan. Try again.'));
+    },
   });
 
   const handleAction = (tier: Tier) => {
-    if (tier === currentTier) return;
+    if (!canSwitch || tier === currentTier) return;
     const isUpgrade = tierRank(tier) > tierRank(currentTier);
     if (isUpgrade) {
       setTargetTier(tier);
@@ -106,24 +119,47 @@ export function SubscriptionPage() {
         </p>
       </header>
 
-      {/* Demo-mode banner */}
-      <div
-        style={{
-          background: c.warnSubtle,
-          color: c.warn,
-          border: `1px solid ${c.warn}`,
-          borderRadius: radius.md,
-          padding: `${space['3']} ${space['4']}`,
-          fontFamily: fonts.ui,
-          fontSize: fontSize.sm,
-          lineHeight: lineHeight.normal,
-          marginBottom: space['6'],
-        }}
-      >
-        <strong>Demo mode.</strong> No real payment is processed — tier upgrades are instant. When the
-        SaaS launches the same flow plugs into Stripe (E-5.3). Use this to evaluate Pro / Studio features
-        on your self-host today.
-      </div>
+      {canSwitch ? (
+        /* Demo-mode banner */
+        <div
+          style={{
+            background: c.warnSubtle,
+            color: c.warn,
+            border: `1px solid ${c.warn}`,
+            borderRadius: radius.md,
+            padding: `${space['3']} ${space['4']}`,
+            fontFamily: fonts.ui,
+            fontSize: fontSize.sm,
+            lineHeight: lineHeight.normal,
+            marginBottom: space['6'],
+          }}
+        >
+          <strong>Demo mode.</strong> No real payment is processed — tier upgrades are instant. When the
+          SaaS launches the same flow plugs into Stripe (E-5.3). Use this to evaluate Pro / Studio features
+          on your self-host today.
+        </div>
+      ) : me ? (
+        <div
+          role="note"
+          data-operator-only
+          style={{
+            background: c.surfaceAlt,
+            color: c.textSecondary,
+            border: `1px solid ${c.border}`,
+            borderRadius: radius.md,
+            padding: `${space['3']} ${space['4']}`,
+            fontFamily: fonts.ui,
+            fontSize: fontSize.sm,
+            lineHeight: lineHeight.normal,
+            marginBottom: space['6'],
+          }}
+        >
+          <strong>Only this install's operator can change plans.</strong> The plans below are for
+          reference. Your plan is set by whoever runs this install: the accounts named in{' '}
+          <code>ADMIN_EMAILS</code>, or the first account registered here when that is not set. Ask them
+          to change yours.
+        </div>
+      ) : null}
 
       {/* Tier grid */}
       <div
@@ -137,7 +173,7 @@ export function SubscriptionPage() {
         {TIER_DESCRIPTORS.map((td) => {
           const isCurrent = td.tier === currentTier;
           const isRecommended = !isCurrent && td.tier === 'pro' && currentTier !== 'studio';
-          const actionLabel = isCurrent
+          const actionLabel = isCurrent || !canSwitch
             ? undefined
             : tierRank(td.tier) > tierRank(currentTier)
             ? `Upgrade to ${td.name}`
@@ -153,7 +189,7 @@ export function SubscriptionPage() {
               features={td.features}
               current={isCurrent}
               recommended={isRecommended}
-              onAction={isCurrent ? undefined : () => handleAction(td.tier)}
+              onAction={isCurrent || !canSwitch ? undefined : () => handleAction(td.tier)}
               actionLabel={actionLabel}
               actionLoading={changeTier.isPending && targetTier === td.tier}
               actionVariant={isRecommended || tierRank(td.tier) > tierRank(currentTier) ? 'primary' : 'secondary'}
@@ -163,7 +199,7 @@ export function SubscriptionPage() {
       </div>
 
       {/* Upgrade flow → mock payment modal */}
-      {targetTier && (
+      {canSwitch && targetTier && (
         <MockPaymentModal
           open
           targetTier={targetTier}
@@ -178,7 +214,7 @@ export function SubscriptionPage() {
       )}
 
       {/* Downgrade confirmation modal — no payment step */}
-      {confirmingDowngrade && (
+      {canSwitch && confirmingDowngrade && (
         <DowngradeConfirmModal
           fromTier={currentTier}
           toTier={confirmingDowngrade}

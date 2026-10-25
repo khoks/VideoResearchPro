@@ -156,6 +156,17 @@ def test_compute_statistics_counts_words_once_per_document_not_per_chunk():
     assert breakdown == {f"chan-{vid}": n for vid, n in _SPOKEN.items()}
 
 
+def test_compute_statistics_does_not_count_the_overlap_twice():
+    """The overlap alone, on a run with no frames: the summing code says more
+    words than the transcripts hold."""
+    chunks = _real_chunks(with_frames=False)
+    assert sum(c["metadata"]["word_count"] for c in chunks) > sum(_SPOKEN.values())
+    assert not any("[VISUAL @" in c["text"] for c in chunks)
+
+    stats = report_agent.compute_statistics({"transcript_chunks": chunks})["statistics"]
+    assert stats["total_words"] == sum(_SPOKEN.values())
+
+
 def test_compute_statistics_rebuilds_a_document_from_unstamped_chunks():
     """Chunks from before `document_word_count`: the document is put back
     together in order without its overlap, and the descriptions dropped."""

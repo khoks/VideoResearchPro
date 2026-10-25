@@ -1,4 +1,4 @@
-"""Admin-only endpoints: service control.
+"""Operator-only endpoints: service control.
 
 Currently exposes a single action — ``POST /admin/restart`` — that kicks
 off a full restart of Redis (if stopped), the backend, the Celery worker,
@@ -30,7 +30,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.dependencies import get_current_user
+from app.dependencies import require_operator
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,9 @@ RESTART_SCRIPT = REPO_ROOT / "scripts" / "restart_services.ps1"
 router = APIRouter(
     prefix="/admin",
     tags=["admin"],
-    dependencies=[Depends(get_current_user)],
+    # T-5.2.8 / D-111: restarting every service on the machine is the
+    # operator's call, not any signed-in account's.
+    dependencies=[Depends(require_operator)],
 )
 
 
@@ -115,7 +117,8 @@ def restart_services(skip_frontend: bool = False, delay: int = 2) -> dict:
 
     Authentication
     --------------
-    Requires a valid bearer token (standard app auth).
+    Requires a valid bearer token from an operator account
+    (``auth_service.is_operator``); any other account gets 403.
     """
     if not RESTART_SCRIPT.exists():
         raise HTTPException(

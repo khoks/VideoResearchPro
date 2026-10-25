@@ -173,6 +173,7 @@
 
 - **FR-18.1.** `POST /admin/restart` (Windows-only today) restarts the running services via a detached PowerShell trampoline. Returns 202; the actual restart happens out of band.
 - **FR-18.2.** Optional `skip_frontend` query param leaves Vite alone if only backend code changed.
+- **FR-18.3.** The restart and the tier switch (`PUT /auth/me/tier`) are operator-only (T-5.2.8, D-111): the accounts in `ADMIN_EMAILS`, or the earliest-registered account when it is empty. Any other account gets 403.
 
 ---
 

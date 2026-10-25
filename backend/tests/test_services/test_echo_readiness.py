@@ -93,7 +93,7 @@ def test_an_empty_account_says_what_is_missing_and_is_not_ready(db, user):
     sources = {s["name"]: s for s in d["activity"].details["sources"]}
     assert sources["github"]["status"] == "not_connected" and sources["github"]["reason"]  # no OAuth app in tests
     for planned in ("youtube_likes", "google_calendar"):
-        assert sources[planned]["status"] == "not_connected" and "Google sign-in setup" in sources[planned]["reason"]
+        assert sources[planned]["status"] == "not_connected" and "Google connector OAuth client" in sources[planned]["reason"]
 
 
 # ------------------------------------------------------------------ per domain

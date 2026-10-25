@@ -396,6 +396,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `LOCKOUT_DURATION_MIN` | No | `15` | How long an account stays locked (minutes). |
 | `PASSWORD_RESET_TOKEN_TTL_MIN` | No | `30` | Password-reset token validity window (minutes). Single-use. |
 | `MFA_ISSUER_NAME` | No | `Pratidhvani` | Issuer label shown by the user's authenticator app. |
+| `ADMIN_EMAILS` | No | (empty) | The install's operators, comma-separated and case-insensitive (T-5.2.8 / D-111). Only operators may switch tiers (`PUT /auth/me/tier`) or restart the services (`POST /admin/restart`); anyone else gets 403. Empty: the earliest-registered account is the operator, so a single-user install needs nothing. A multi-user install should name its operators |
 | `SMTP_HOST` | No | (unset) | SMTP server for password-reset emails. When unset, the secret is returned in the API response + logged so self-host operators can hand it off out-of-band (per T-5.4.8). |
 | `SMTP_PORT` | No | `587` | SMTP port. |
 | `SMTP_USERNAME` / `SMTP_PASSWORD` | No | (unset) | SMTP auth. Both required, or both unset for anonymous relays. |

@@ -50,6 +50,28 @@ def get_user_by_id(db: Session, user_id: str) -> User | None:
     return db.query(User).filter(User.id == user_id).first()
 
 
+def operator_emails() -> frozenset[str]:
+    """``ADMIN_EMAILS`` as a set of lower-cased addresses (empty when unset)."""
+    raw = settings.ADMIN_EMAILS or ""
+    return frozenset(e.strip().lower() for e in raw.split(",") if e.strip())
+
+
+def is_operator(db: Session, user: User) -> bool:
+    """T-5.2.8 / D-111: whether ``user`` operates this install.
+
+    Operators are the accounts named in ``ADMIN_EMAILS`` (case-insensitive).
+    When it is empty, the earliest-registered account is the operator
+    (lowest ``created_at``, then ``id``), so a single-user install keeps
+    its tier switch with no new configuration. The allow-list, when set,
+    is the whole rule: the first account is not an operator unless listed.
+    """
+    allowed = operator_emails()
+    if allowed:
+        return (user.email or "").strip().lower() in allowed
+    first = db.query(User.id).order_by(User.created_at.asc(), User.id.asc()).first()
+    return first is not None and first[0] == user.id
+
+
 def create_user(db: Session, email: str, password: str) -> User:
     user = User(email=email.lower(), password_hash=hash_password(password))
     db.add(user)

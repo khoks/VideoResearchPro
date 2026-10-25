@@ -748,6 +748,12 @@ class Settings(BaseSettings):
     PASSWORD_RESET_TOKEN_TTL_MIN: int = 30
     # T-5.4.6 MFA — issuer name shown by the user's authenticator app.
     MFA_ISSUER_NAME: str = "Pratidhvani"
+    # T-5.2.8 / D-111: the install's operators, comma-separated and
+    # case-insensitive. Only operators may switch tiers (PUT /auth/me/tier)
+    # or restart the services (POST /admin/restart). Empty: the
+    # earliest-registered account is the operator, so a single-user install
+    # needs no configuration. See auth_service.is_operator.
+    ADMIN_EMAILS: str = ""
 
     # T-5.4.5 OAuth — Google + GitHub PKCE. Each provider needs both a
     # client_id and a client_secret. When unset, the corresponding

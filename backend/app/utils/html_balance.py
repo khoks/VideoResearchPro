@@ -16,7 +16,9 @@ leaks into the next section. Neither is an HTML5 conformance checker:
   closed implicitly where a parser would close them (``<li>a<li>b</ul>`` is
   balanced), but one still open when the fragment ENDS counts as open: a
   section cut mid-paragraph is exactly the truncation being looked for.
-- Void elements never open, and ``<x/>`` is treated as self-contained.
+- Void elements never open, and ``<x/>`` is treated as self-contained. The
+  ``/`` that ends an unquoted attribute value is part of the value, as in
+  the HTML tokenizer: ``<a href=/docs/>`` opens an ``a``.
 - A stray end tag is ignored, as browsers ignore it.
 """
 
@@ -92,31 +94,43 @@ class Balance:
         return "; ".join(parts)
 
 
-def _end_of_tag(html: str, pos: int) -> tuple[int | None, bool]:
-    """Index of the ``>`` ending the tag whose name ends at ``pos``.
+def _end_of_tag(html: str, pos: int) -> tuple[int | None, bool, bool]:
+    """Where the tag whose name ends at ``pos`` ends, and how.
 
-    ``(None, in_attribute)`` when the text runs out first. A quote only opens
-    an attribute value right after ``=`` (as in the HTML tokenizer), so a
-    stray apostrophe elsewhere in a tag cannot swallow the rest of the text.
+    Returns ``(index of its ">", in_attribute, self_closing)``, the index
+    ``None`` when the text runs out first. A quote only opens an attribute
+    value right after ``=`` (as in the HTML tokenizer), so a stray apostrophe
+    elsewhere in a tag cannot swallow the rest of the text. An unquoted value
+    runs to whitespace or ``>`` and a ``/`` in it is part of the value, so
+    ``<a href=/docs/>`` opens an ``a``: only a ``/`` outside every value,
+    directly before the ``>``, makes the tag self-closing.
     """
     n = len(html)
     j = pos
+    slash = False   # the last character read was a "/" outside any value
     while j < n:
         ch = html[j]
         if ch == ">":
-            return j, False
+            return j, False, slash
         if ch == "=":
+            slash = False
             j += 1
             while j < n and html[j] in _WHITESPACE:
                 j += 1
             if j < n and html[j] in "\"'":
                 close = html.find(html[j], j + 1)
                 if close == -1:
-                    return None, True
+                    return None, True, False
                 j = close + 1
+            elif j < n and html[j] != ">":
+                while j < n and html[j] not in _WHITESPACE and html[j] != ">":
+                    j += 1
+                if j == n:
+                    return None, True, False
             continue
+        slash = ch == "/"
         j += 1
-    return None, False
+    return None, False, False
 
 
 def _open(stack: list[str], name: str) -> None:
@@ -159,7 +173,7 @@ def check(html: str) -> Balance:
                 return Balance(truncated_tag=True, tail_start=lt, open_tags=tuple(stack))
             i = lt + 1
             continue
-        end, in_attribute = _end_of_tag(text, m.end())
+        end, in_attribute, self_closing = _end_of_tag(text, m.end())
         if end is None:
             return Balance(
                 truncated_tag=True, in_attribute=in_attribute, tail_start=lt, open_tags=tuple(stack),
@@ -171,7 +185,7 @@ def check(html: str) -> Balance:
                 while stack.pop() != name:
                     pass
             continue
-        if name in VOID_ELEMENTS or text[end - 1] == "/":
+        if name in VOID_ELEMENTS or self_closing:
             continue
         _open(stack, name)
         if name in _RAW_TEXT_ELEMENTS:

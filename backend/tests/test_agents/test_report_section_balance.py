@@ -10,6 +10,8 @@ import re
 from html.parser import HTMLParser
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.agents import report_agent as ra
 from app.utils import html_balance
 
@@ -159,6 +161,12 @@ def test_a_section_cut_twice_is_closed_and_named_in_the_processing_note():
     assert out["processing_notes"]["report_sections_repaired"] == ["Key Facts"]
 
 
+def _note(html: str) -> str:
+    found = re.search(r'<p class="processing-note"[^>]*>(.*?)</p>', html, re.S)
+    assert found, "the repair must be disclosed in the processing note"
+    return found.group(1)
+
+
 def test_a_failed_retry_keeps_the_first_attempt_closed():
     composer = _Composer(
         {"Key Facts": [_CUT, RuntimeError("bad request")], "Conclusions": [_CONCLUSIONS]}
@@ -170,6 +178,39 @@ def test_a_failed_retry_keeps_the_first_attempt_closed():
     assert out["processing_notes"]["report_sections_repaired"] == ["Key Facts"]
     # The section exists, so it is repaired, not failed.
     assert "failed to compose" not in html
+    # The retry wrote nothing: the note must not claim a second cut-off attempt.
+    note = _note(html)
+    assert '"Key Facts" section was cut off mid-markup and could not be composed again' in note
+    assert "both attempts" not in note
+
+
+@pytest.mark.parametrize("empty", ["", "  \n"])
+def test_an_empty_retry_keeps_the_first_attempt_closed(empty):
+    """An empty answer is balanced, but it is not the section: keeping it
+    would drop the section's text without a word."""
+    composer = _Composer({"Key Facts": [_CUT, empty], "Conclusions": [_CONCLUSIONS]})
+    out = _compose(composer)
+    html = out["final_html"]
+    assert len(composer.tokens_for("Key Facts")) == 2
+    assert "As the plot list shows (" in html
+    assert html_balance.check(html).balanced
+    assert out["processing_notes"]["report_sections_repaired"] == ["Key Facts"]
+    note = _note(html)
+    assert '"Key Facts" section was cut off mid-markup and could not be composed again' in note
+    assert "both attempts" not in note
+
+
+def test_cut_twice_and_cut_once_are_disclosed_apart():
+    cut_conclusions = "<h2>Conclusions</h2><p>Cut <a"
+    composer = _Composer({
+        "Key Facts": [_CUT, _CUT_LONGER],
+        "Conclusions": [cut_conclusions, RuntimeError("bad request")],
+    })
+    out = _compose(composer)
+    note = _note(out["final_html"])
+    assert '"Key Facts" section was cut off mid-markup on both attempts' in note
+    assert '"Conclusions" section was cut off mid-markup and could not be composed again' in note
+    assert out["processing_notes"]["report_sections_repaired"] == ["Key Facts", "Conclusions"]
 
 
 def test_the_executive_summary_is_checked_too():
@@ -206,8 +247,9 @@ def test_section_titles_are_escaped_in_the_note():
 
 # --- at the production caller ----------------------------------------------
 
-def test_run_report_agent_discloses_a_repaired_section_in_the_report_body():
-    """The job's entry point: map, reduce and compose with a mocked model."""
+def run_topic_report_cut_twice() -> tuple[dict, str, _Composer]:
+    """``run_report_agent`` on one topic chunk, its "Key Facts" section cut
+    off on both attempts. Shared with the body-route test (T-8.8.4.4)."""
     chunk = {
         "text": "Seaborn makes statistical plots with minimal code.",
         "metadata": {
@@ -226,10 +268,123 @@ def test_run_report_agent_discloses_a_repaired_section_in_the_report_body():
         stats, body = ra.run_report_agent(
             job_type="topic", topic="plotting", transcript_chunks=[chunk],
         )
+    return stats, body, composer
+
+
+def test_run_report_agent_discloses_a_repaired_section_in_the_report_body():
+    """The job's entry point: map, reduce and compose with a mocked model."""
+    stats, body, composer = run_topic_report_cut_twice()
     assert stats["video_count"] == 1
     assert len(composer.tokens_for("Key Facts")) == 2
     assert html_balance.check(body).balanced
     assert re.search(
         r'<p class="processing-note"[^>]*><strong>Processing note:</strong>[^<]*'
         r'"Key Facts" section was cut off mid-markup', body,
+    )
+
+
+# --- channel jobs -----------------------------------------------------------
+# A channel job's report is one narrative call, and the template's closing
+# tags follow it: unfinished, it swallows them with nothing to tell the user.
+
+_CHANNEL_CUT = (
+    "<h2>Channel Overview</h2><p>Both channels teach plotting (see "
+    "<a href=\"https://www.youtube.com/watch?v=x"
+)
+_CHANNEL_CUT_LONGER = (
+    "<h2>Channel Overview</h2><p>Both channels teach plotting.</p><p>The longer attempt "
+    "<a href=\"https://www.youtube.com/watch?v=x"
+)
+_CHANNEL_FINISHED = "<h2>Channel Overview</h2><p>Both channels teach plotting.</p>"
+
+
+def _channel_chunk() -> dict:
+    return {
+        "text": "Seaborn makes statistical plots with minimal code.",
+        "metadata": {
+            "video_id": "abcdefghijk", "video_title": "Seaborn basics", "channel_name": "Chan",
+            "timestamp_start": 0.0, "timestamp_end": 30.0, "chunk_index": 0, "document_id": "doc-1",
+        },
+    }
+
+
+class _ChannelComposer:
+    """A fake ``get_llm_for`` for channel jobs: map calls get a summary, and
+    narrative calls are answered from ``answers`` in order (the last repeats)."""
+
+    def __init__(self, answers: list):
+        self.answers = list(answers)
+        self.budgets: list[int] = []
+
+    def __call__(self, use_case, **kw):
+        llm = MagicMock()
+
+        def invoke(messages):
+            if use_case == "report_channel":
+                return MagicMock(content='{"channel_name": "Chan", "themes": ["plots"], "highlights": []}')
+            assert use_case == "report_compose_channel_section"
+            self.budgets.append(kw.get("max_tokens"))
+            answer = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
+            if isinstance(answer, Exception):
+                raise answer
+            return MagicMock(content=answer)
+
+        llm.invoke.side_effect = invoke
+        return llm
+
+
+def _compose_channel(composer: _ChannelComposer) -> dict:
+    with patch.object(ra, "get_llm_for", side_effect=composer):
+        return ra.compose_channel_report(
+            {"job_type": "channel", "transcript_chunks": [_channel_chunk()], "statistics": {}}
+        )
+
+
+def test_a_finished_channel_narrative_is_composed_once():
+    composer = _ChannelComposer([_CHANNEL_FINISHED])
+    out = _compose_channel(composer)
+    assert out["final_html"] == _CHANNEL_FINISHED
+    assert len(composer.budgets) == 1
+    assert out["processing_notes"]["report_sections_retried"] == 0
+
+
+def test_a_cut_channel_narrative_is_composed_again():
+    composer = _ChannelComposer([_CHANNEL_CUT, _CHANNEL_FINISHED])
+    out = _compose_channel(composer)
+    first, retry = composer.budgets
+    ceiling = ra.max_output_for(ra.resolve_config("report_compose_channel_section").model)
+    assert retry == min(first * 2, ceiling)
+    assert out["final_html"] == _CHANNEL_FINISHED
+    assert out["processing_notes"] == {"report_sections_retried": 1, "report_sections_repaired": []}
+
+
+def test_a_channel_narrative_cut_twice_is_closed_and_disclosed():
+    composer = _ChannelComposer([_CHANNEL_CUT, _CHANNEL_CUT_LONGER])
+    out = _compose_channel(composer)
+    html = out["final_html"]
+    assert "The longer attempt" in html and "watch?v=x" not in html
+    assert html_balance.check(html).balanced
+    assert '"Channel narrative" section was cut off mid-markup on both attempts' in _note(html)
+    assert out["processing_notes"]["report_sections_repaired"] == ["Channel narrative"]
+
+
+def test_a_channel_narrative_whose_first_call_fails_still_says_so():
+    composer = _ChannelComposer([RuntimeError("bad request")])
+    out = _compose_channel(composer)
+    assert out["final_html"].startswith("<p>Channel narrative generation failed:")
+
+
+def test_run_report_agent_closes_a_cut_channel_narrative_in_the_body():
+    """The channel job's entry point, through the graph's channel route."""
+    composer = _ChannelComposer([_CHANNEL_CUT, RuntimeError("bad request")])
+    with patch.object(ra, "get_llm_for", side_effect=composer):
+        stats, body = ra.run_report_agent(
+            job_type="channel", topic="channels", transcript_chunks=[_channel_chunk()],
+        )
+    assert stats["video_count"] == 1
+    assert html_balance.check(body).balanced
+    assert "Both channels teach plotting (see" in body
+    assert re.search(
+        r'<p class="processing-note"[^>]*><strong>Processing note:</strong>[^<]*'
+        r'"Channel narrative" section was cut off mid-markup and could not be composed again', body,
     )

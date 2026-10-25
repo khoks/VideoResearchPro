@@ -98,6 +98,27 @@ def test_void_and_self_closing_tags_open_nothing():
     assert hb.check("<div><span class=\"dot\"/></div>").balanced
 
 
+def test_a_slash_ending_an_unquoted_value_does_not_self_close_the_tag():
+    """The tokenizer keeps that slash in the value: ``<a href=/x/>`` is an
+    open ``a``, and a section cut inside its text leaves the link open across
+    every heading after it."""
+    found = hb.check("<h2>T</h2><a href=/x/>0:05")
+    assert not found.balanced
+    assert found.open_tags == ("a",)
+    assert hb.check("<p><a href=/x/>cut").open_tags == ("p", "a")
+    assert hb.repair("<p><a href=/x/>cut") == "<p><a href=/x/>cut</a></p>"
+    # Finished, it is balanced; a slash outside every value still self-closes.
+    assert hb.check("<p><a href=/x/>docs</a></p>").balanced
+    assert hb.check("<p><span class=dot /><span class=\"dot\"/></p>").balanced
+    assert hb.check("<p><a href=/x/ title=t>docs</a></p>").balanced
+
+
+def test_text_ending_inside_an_unquoted_value_is_inside_an_attribute():
+    found = hb.check("<p>See <a href=https://www.youtube.com/watch?v=5")
+    assert found.truncated_tag and found.in_attribute
+    assert found.open_tags == ("p",)
+
+
 def test_a_stray_end_tag_is_ignored_as_browsers_ignore_it():
     assert hb.check("<p>a</b></p></section>").balanced
 

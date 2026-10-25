@@ -28,7 +28,8 @@ Chunk IDs are ``"{storage_key}:{chunk_index}"`` — see ``_chunk_storage_key``
 — and inserts use ``collection.upsert`` so repeated extraction of the same
 document is idempotent: re-running overwrites existing chunks in place rather
 than creating duplicates. Chunks written before D-070 carry no
-``document_id``; ``backfill_chunk_document_ids`` stamps it at startup.
+``document_id``; ``backfill_chunk_document_ids`` stamps it when the API or a
+worker starts.
 
 Q&A library collection
 ----------------------
@@ -682,10 +683,12 @@ def backfill_chunk_document_ids(session_factory=None, page_size: int = 2000) -> 
 
     Retrieval filters on the ``document_id`` metadata field. Chunks written
     before 2026-10-19 carry only ``video_id`` and would be unretrievable
-    after the filter change, so this runs on every API startup, next to
-    ``backfill_qa_library``: page through the global collection, resolve each
-    un-stamped chunk through the ``documents`` table — by ``video_id``, then
-    by ``(source_type, source_id)`` — and ``update`` its metadata in place.
+    after the filter change, so this runs on every API startup and every
+    Celery worker start (``celery_app.run_startup_backfills``, S-5.10.5),
+    next to ``backfill_qa_library``: page through the global collection,
+    resolve each un-stamped chunk through the ``documents`` table — by
+    ``video_id``, then by ``(source_type, source_id)`` — and ``update`` its
+    metadata in place.
     Chroma keeps the stored embedding on a metadata-only update, so nothing
     is re-embedded; the cost is one metadata scan of the collection, which is
     why D-072's "no backfill" reasoning (re-embedding the library for a

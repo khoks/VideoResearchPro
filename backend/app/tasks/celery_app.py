@@ -1,6 +1,11 @@
+import logging
+
 from celery import Celery
+from celery.signals import worker_ready
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 celery_app = Celery(
     "videoresearchpro",
@@ -78,3 +83,36 @@ celery_app.autodiscover_tasks(["app.tasks"], related_name="echo_tasks")
 celery_app.autodiscover_tasks(["app.tasks"], related_name="echo_connector_tasks")
 # S-1.18.2: on-demand frame capture for one document.
 celery_app.autodiscover_tasks(["app.tasks"], related_name="visual_tasks")
+
+
+@worker_ready.connect
+def run_startup_backfills(**_kwargs) -> None:
+    """The API lifespan's Chroma backfills, on worker start too (S-5.10.5).
+
+    The worker retrieves and writes as well: a saved-search run is a library
+    Q&A over the global collection and upserts its exchange into the Q&A
+    library. While the backfills ran only in the API lifespan, an upgrade
+    that started the worker alone left chunks embedded before 2026-10-19
+    without the ``document_id`` that retrieval filters on (D-070), so they
+    were unretrievable until the API booted once.
+
+    Same order and contract as ``app/main.py``: both are idempotent (upsert
+    on fixed ids; stamped chunks are skipped), so the API and the worker
+    both running them is safe, and a failure is logged and never stops the
+    worker. Synchronous on purpose: Celery sends ``worker_ready`` just before
+    the consumer loop starts, so no task runs against un-stamped chunks.
+    Beat and the API import this module but never send the signal.
+    """
+    # Imported at call time so importing the Celery configuration never
+    # loads chromadb by itself (autodiscovery above is lazy too).
+    from app.services import chroma_service
+
+    try:
+        chroma_service.backfill_qa_library()
+    except Exception:
+        logger.exception("Q&A library backfill failed; worker continues")
+
+    try:
+        chroma_service.backfill_chunk_document_ids()
+    except Exception:
+        logger.exception("Chunk document_id backfill failed; worker continues")

@@ -1,9 +1,10 @@
 """Dataset export helpers for fine-tune JSONL files.
 
 Provides row iterators over the Q&A-family tables and the knowledge-enriched
-videos table, plus both-format serializers (OpenAI chat `messages` and plain
-`{system, user, assistant}` tuple). All generators yield one JSON-serialized
-line at a time so the HTTP layer can stream with constant memory.
+documents the tenant can see, plus both-format serializers (OpenAI chat
+`messages` and plain `{system, user, assistant}` tuple). All generators yield
+one JSON-serialized line at a time so the HTTP layer can stream with constant
+memory.
 """
 from __future__ import annotations
 
@@ -19,8 +20,7 @@ from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.qa_exchange import QAExchange
 from app.models.qa_history_exchange import QAHistoryExchange
 from app.models.document import Document
-from app.models.job import Job
-from app.models.job_video import JobVideo
+from app.services import visibility_service
 
 logger = logging.getLogger(__name__)
 
@@ -89,45 +89,61 @@ def iter_qa_rows(db: Session, tenant_id: str) -> Iterator[tuple[str, str]]:
 def iter_knowledge_rows(
     db: Session, tenant_id: str
 ) -> Iterator[tuple[list[str], list[str], list[str], str]]:
-    """Yield ``(topics, concepts, events, knowledge_report_md)`` for the videos
-    THIS tenant ingested.
+    """Yield ``(topics, concepts, events, knowledge_report_md)`` for the
+    documents THIS tenant can see.
 
     S-5.7.1: `documents` is the shared global cache and carries no tenant of
-    its own, so ownership is derived from the jobs that selected the document
-    (shared cache, private catalogue). Without this the export shipped every
-    user's knowledge artifacts to anyone who asked.
+    its own. Without a tenant filter the export shipped every user's
+    knowledge artifacts to anyone who asked.
+
+    S-5.10.5: the filter is the tenant's visibility grants, keyed on
+    ``document_id`` (D-063, D-070) — the same set the library lists and
+    library Q&A retrieves from. It used to derive ownership from the jobs
+    that selected the document, joined on the legacy ``video_id``, so a
+    document with no job (a pasted URL, an uploaded PDF), one whose job the
+    user deleted (deleting a job keeps its documents in the library), and
+    every non-video document (``video_id`` is NULL) never exported.
+
+    Selects the three columns it needs, not ``Document`` entities, and sets
+    ``Query.yield_per``. The entity query raised as soon as one row matched:
+    the legacy ``Query`` uniquifies the rows of any entity query unless
+    ``Query.yield_per()`` set its load option, ``execution_options(yield_per=
+    ...)`` sets only the execution option, and SQLAlchemy refuses
+    ``yield_per`` with ``unique()`` (2.0 and 2.1 alike), so the stream broke
+    on its first record. Either change alone fixes
+    it; the column select also skips the eager ``Document.channel`` join and
+    the unused columns. Every test before S-5.10.5 either stubbed this
+    function or matched no row.
     """
-    owned = (
-        db.query(JobVideo.video_id)
-        .join(Job, Job.id == JobVideo.job_id)
-        .filter(Job.tenant_id == tenant_id)
-        .subquery()
-    )
     q = (
-        db.query(Document)
+        db.query(
+            Document.document_id,
+            Document.extracted_knowledge_json,
+            Document.knowledge_report_md,
+        )
         .filter(
             Document.knowledge_report_md.isnot(None),
-            Document.video_id.in_(db.query(owned.c.video_id)),
+            Document.document_id.in_(visibility_service.visible_document_ids(db, tenant_id)),
         )
         .order_by(Document.created_at.asc())
-        .execution_options(yield_per=_YIELD_PER)
+        .yield_per(_YIELD_PER)
     )
-    for video in q:
+    for document_id, knowledge_json, report_md in q:
         topics: list[str] = []
         concepts: list[str] = []
         events: list[str] = []
-        if video.extracted_knowledge_json:
+        if knowledge_json:
             try:
-                data = json.loads(video.extracted_knowledge_json)
+                data = json.loads(knowledge_json)
                 topics = list(data.get("topics") or [])
                 concepts = list(data.get("concepts") or [])
                 events = list(data.get("events") or [])
             except (json.JSONDecodeError, TypeError, ValueError):
                 logger.warning(
-                    "Failed to parse extracted_knowledge_json for video_id=%s",
-                    video.video_id,
+                    "Failed to parse extracted_knowledge_json for document_id=%s",
+                    document_id,
                 )
-        yield topics, concepts, events, video.knowledge_report_md or ""
+        yield topics, concepts, events, report_md or ""
 
 
 # ---------------------------------------------------------------------------

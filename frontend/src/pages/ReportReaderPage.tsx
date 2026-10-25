@@ -5,6 +5,7 @@
  * URL), sanitises the HTML, parses it into React with heading ids, an outline
  * and citation chips, and renders through `ReaderShell`. The iframe modal on
  * the job page survives as a quick peek and still owns "Open in new tab".
+ * The report's processing note is shown above the body (T-8.8.4.4).
  */
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -15,6 +16,7 @@ import { Button, EmptyState, Spinner } from '../components/primitives';
 import {
   CitationCardProvider,
   Endnotes,
+  ProcessingNote,
   ReaderCitation,
   ReaderShell,
   StatTiles,
@@ -112,17 +114,21 @@ export function ReportReaderPage() {
         }
         outline={parsed.outline}
         before={
-          body.statistics ? (
-            <StatTiles
-              label="Corpus statistics"
-              tiles={[
-                { label: 'Sources', value: body.statistics.video_count },
-                { label: 'Transcripts', value: body.statistics.transcript_count },
-                { label: 'Words', value: body.statistics.total_words },
-                { label: 'Minutes', value: body.statistics.total_minutes },
-              ]}
-            />
-          ) : null
+          <>
+            {body.statistics ? (
+              <StatTiles
+                label="Corpus statistics"
+                tiles={[
+                  { label: 'Sources', value: body.statistics.video_count },
+                  { label: 'Transcripts', value: body.statistics.transcript_count },
+                  { label: 'Words', value: body.statistics.total_words },
+                  { label: 'Minutes', value: body.statistics.total_minutes },
+                ]}
+              />
+            ) : null}
+            {/* T-8.8.4.4: what the pipeline dropped or repaired, before the text it qualifies. */}
+            <ProcessingNote notes={parsed.processingNotes} />
+          </>
         }
         after={citationIndex ? <Endnotes endnotes={citationIndex.endnotes} /> : null}
       >

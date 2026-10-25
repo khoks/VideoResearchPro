@@ -159,6 +159,7 @@ What the reader does to the report's own markup:
 | `<a href="…&t=SECONDS">` | Citation chip (mono, pill) opening the source at the timestamp. Pre-S-1.14.9 reports carry bare `href="&t=123"` anchors with no video URL; those render as a non-link timestamp chip rather than a dead link. An anchor the browser repaired out of a truncated tag is never linked. |
 | `<table>` | Wrapped in a horizontal scroll region (WCAG 1.4.10). |
 | First substantial paragraph | Drop cap: `::first-letter` float everywhere, `initial-letter` where supported. |
+| The processing note (`<p class="processing-note">`, or a paragraph opening `<strong>Processing note:</strong>` in older reports) | Lifted out of the body and shown under the statistics tiles as a labelled note (`role="note"`), before the text it qualifies (T-8.8.4.4). It says what the pipeline dropped, trimmed or repaired, including a section closed after being cut off mid-markup (S-1.14.17). |
 | `<style>`, `<script>`, event handlers, `style=` attributes, embeds, forms, SVG, MathML | Removed by the sanitiser. |
 
 Layout: 75ch serif measure, `text-wrap: pretty` on prose and `balance` on headings, statistics tiles under the title, a sticky `<nav aria-label="Outline">` on the right with `aria-current` tracking scroll (one IntersectionObserver), and a floating "Reading · n%" pill (decorative; the figure is repeated in the outline). The outline hides under 960px (the M12 pass refines the rest).

@@ -1,3 +1,4 @@
+import html as html_lib
 import json
 import logging
 import re
@@ -46,6 +47,7 @@ from app.services.llm_routing import (
 )
 from app.services import output_length as output_length_policy
 from app.services import temporal_service
+from app.utils import html_balance
 from app.utils.youtube_helpers import format_timestamp
 
 logger = logging.getLogger(__name__)
@@ -157,9 +159,17 @@ def compute_statistics(state: ReportAgentState) -> dict:
         }
         return {"statistics": statistics}
 
-    total_words = 0
     channel_agg: dict[str, dict] = {}
     unique_videos: set[str] = set()
+    # Words are counted once per DOCUMENT, never summed over chunks: chunks
+    # overlap by CHUNK_OVERLAP, and on a visual run they carry the
+    # `[VISUAL @ ...]` descriptions. The 200-video reference job reported
+    # 1,057,331 words where its transcripts held 947,239 (the overlap), and R1
+    # run 10's annotated arm 55,443 where speech was 42,999 (the descriptions).
+    doc_words: dict[str, int] = {}
+    doc_channel: dict[str, str] = {}
+    unstamped: dict[str, list[tuple[int, float, str]]] = {}
+    loose_words: dict[str, int] = {}
     last_ends: dict[str, float] = {}
     # R3 / D-066: publish dates per video. The corpus spans time, and a claim
     # made in 2024 is not the same claim made in 2026 — but no prompt has ever
@@ -175,7 +185,6 @@ def compute_statistics(state: ReportAgentState) -> dict:
         meta = chunk.get("metadata", {})
         vid = meta.get("video_id", "")
         channel = meta.get("channel_name", "Unknown")
-        words = meta.get("word_count", len(chunk.get("text", "").split()))
         ts_end = meta.get("timestamp_end", 0) or 0
         pub = meta.get("published_at") or ""
         if vid and pub and vid not in published_by_video:
@@ -186,14 +195,27 @@ def compute_statistics(state: ReportAgentState) -> dict:
                 era_by_video[vid] = era
         texts_for_language.append({"text": chunk.get("text", "")})
 
-        total_words += words
+        doc = _source_identity(meta)
+        if not doc:
+            # No identity to de-duplicate on: the chunk is all we know.
+            words = len(strip_annotations(chunk.get("text", "")).split())
+            loose_words[channel] = loose_words.get(channel, 0) + words
+        else:
+            doc_channel.setdefault(doc, channel)
+            stamped = meta.get("document_word_count")
+            if stamped is not None:
+                doc_words.setdefault(doc, int(stamped))
+            else:
+                unstamped.setdefault(doc, []).append((
+                    int(meta.get("chunk_index") or 0), float(meta.get("timestamp_start") or 0),
+                    strip_annotations(chunk.get("text", "")),
+                ))
 
         agg = channel_agg.get(channel)
         if agg is None:
             agg = {"videos": set(), "words": 0, "last_ends": {}}
             channel_agg[channel] = agg
 
-        agg["words"] += words
         if vid:
             agg["videos"].add(vid)
             unique_videos.add(vid)
@@ -203,6 +225,19 @@ def compute_statistics(state: ReportAgentState) -> dict:
                 last_ends[vid] = ts_end
 
     total_minutes = round(sum(last_ends.values()) / 60) if last_ends else 0
+
+    # Chunks built before `chunk_transcript` stamped `document_word_count`:
+    # put the document back together in order without its overlap (the same
+    # merge the quote check uses) and count that.
+    for doc, pieces in unstamped.items():
+        if doc not in doc_words:
+            merged = quote_fidelity.merge_chunk_texts(text for _, _, text in sorted(pieces))
+            doc_words[doc] = len(merged.split())
+    for doc, words in doc_words.items():
+        channel_agg[doc_channel[doc]]["words"] += words
+    for channel, words in loose_words.items():
+        channel_agg[channel]["words"] += words
+    total_words = sum(doc_words.values()) + sum(loose_words.values())
 
     channel_breakdown = [
         {
@@ -1450,6 +1485,10 @@ def compose_report(state: ReportAgentState) -> dict:
     parts: list[str] = []
     digest: list[str] = []
     sections_failed = 0
+    # S-1.14.17: sections whose HTML came back unfinished and were composed
+    # again, and the names of those still unfinished after the retry.
+    sections_retried = 0
+    sections_repaired: list[str] = []
 
     for spec in REPORT_SECTIONS:
         items = consolidated.get(spec["key"]) or []
@@ -1499,12 +1538,16 @@ def compose_report(state: ReportAgentState) -> dict:
                 language_note=language_note,
             )
             try:
-                html = _invoke_with_retry(
-                    "report_compose", prompt, max_tokens=max_tokens, temperature=0.2,
+                html, outcome = _compose_checked(
+                    prompt, max_tokens=max_tokens, ceiling=ceiling,
                     label=f"compose_report[{spec['title']}{part_note}]",
                 )
                 parts.append(html)
                 digest.append(f"{spec['title']}{part_note}: {len(group)} items")
+                if outcome != _COMPOSED_CLEAN:
+                    sections_retried += 1
+                if outcome == _COMPOSED_REPAIRED:
+                    sections_repaired.append(f"{spec['title']}{part_note}")
             except Exception as e:
                 sections_failed += 1
                 logger.error(
@@ -1541,8 +1584,9 @@ def compose_report(state: ReportAgentState) -> dict:
     # (S-1.14.15). `digest` stays for the log line below.
     summary_html = ""
     try:
-        summary_html = _invoke_with_retry(
-            "report_compose",
+        # S-1.14.17: checked like the sections. It is placed FIRST, so an
+        # unfinished summary would swallow every section after it.
+        summary_html, outcome = _compose_checked(
             COMPOSE_SUMMARY_PROMPT.format(
                 english_contract=ENGLISH_OUTPUT_CONTRACT,
                 temporal=TEMPORAL_AWARENESS,
@@ -1554,9 +1598,13 @@ def compose_report(state: ReportAgentState) -> dict:
                 ),
                 language_note=language_note,
             ),
-            max_tokens=min(4_000, ceiling), temperature=0.2,
+            max_tokens=min(4_000, ceiling), ceiling=ceiling,
             label="compose_report[executive summary]",
         )
+        if outcome != _COMPOSED_CLEAN:
+            sections_retried += 1
+        if outcome == _COMPOSED_REPAIRED:
+            sections_repaired.insert(0, "Executive Summary")
     except Exception as e:
         logger.error("compose_report: executive summary failed (%s)", e)
     if guard_evidence is not None and summary_html:
@@ -1661,13 +1709,26 @@ def compose_report(state: ReportAgentState) -> dict:
         )
     if sections_failed:
         disclosures.append(f"{sections_failed} report section(s) failed to compose")
+    if sections_repaired:
+        names = ", ".join(f"\"{html_lib.escape(name, quote=False)}\"" for name in sections_repaired)
+        disclosures.append(
+            f"the {names} section was cut off mid-markup on both attempts to write it and was "
+            "closed where it stopped, so it may end abruptly"
+            if len(sections_repaired) == 1 else
+            f"{len(sections_repaired)} sections ({names}) were cut off mid-markup on both attempts "
+            "to write them and were closed where they stopped, so they may end abruptly"
+        )
     if disclosures:
+        # `processing-note` is how the reading room finds this paragraph
+        # (T-8.8.4.4): it sanitises `style` away and shows the note itself.
         html += (
-            "\n<p style=\"color:#8a6d3b;border:1px solid #c9ba9b;padding:8px 12px;"
-            "border-radius:4px;margin-top:24px\"><strong>Processing note:</strong> "
+            "\n<p class=\"processing-note\" style=\"color:#8a6d3b;border:1px solid #c9ba9b;"
+            "padding:8px 12px;border-radius:4px;margin-top:24px\"><strong>Processing note:</strong> "
             + "; ".join(disclosures) + ".</p>"
         )
     out_notes = dict(notes)
+    out_notes["report_sections_retried"] = sections_retried
+    out_notes["report_sections_repaired"] = list(sections_repaired)
     out_notes["report_quotes_removed"] = sum(r["occurrences"] for r in scrubbed)
     out_notes["report_attribution_marked"] = guard_counts["screen_detail_marked"]
     out_notes["report_attribution_speech_marked"] = guard_counts["speech_as_screen_marked"]
@@ -1768,6 +1829,53 @@ def _invoke_with_retry(use_case: str, prompt: str, *, max_tokens: int, temperatu
             )
             time.sleep(wait)
     raise last if last else RuntimeError("unreachable")
+
+
+# S-1.14.17: what `_compose_checked` had to do to get finished HTML.
+_COMPOSED_CLEAN = "clean"        # the first answer was finished
+_COMPOSED_RETRIED = "retried"    # unfinished; the retry was finished
+_COMPOSED_REPAIRED = "repaired"  # unfinished twice; closed where it stopped
+
+
+def _compose_checked(prompt: str, *, max_tokens: int, ceiling: int, label: str) -> tuple[str, str]:
+    """One compose call whose HTML must be finished before it is kept.
+
+    Sections are concatenated, so a section that stops inside a tag or
+    attribute value folds the next section's headings into it (S-1.14.17;
+    job ``419e691d``). An unfinished answer is composed once more with twice
+    the completion budget (still clamped to the model's ceiling: the likely
+    cause is the budget, and a ceiling is not a charge). If that answer is
+    unfinished too, or the retry call fails, the longer attempt is cut before
+    its unfinished tag and its open elements are closed, and the caller
+    discloses it. A failure of the FIRST call propagates as before.
+
+    Returns ``(html, outcome)``, ``outcome`` one of the ``_COMPOSED_*`` values.
+    """
+    html = _invoke_with_retry(
+        "report_compose", prompt, max_tokens=max_tokens, temperature=0.2, label=label,
+    )
+    found = html_balance.check(html)
+    if found.balanced:
+        return html, _COMPOSED_CLEAN
+    logger.warning("%s: the HTML %s; composing it once more", label, found.describe())
+    retry = ""
+    try:
+        retry = _invoke_with_retry(
+            "report_compose", prompt, max_tokens=min(max_tokens * 2, ceiling),
+            temperature=0.2, label=f"{label} retry",
+        )
+    except Exception as e:  # noqa: BLE001 - the first attempt is closed and kept instead
+        logger.error("%s: the retry failed (%s); closing the first attempt", label, e)
+    if retry:
+        found = html_balance.check(retry)
+        if found.balanced:
+            return retry, _COMPOSED_RETRIED
+    keep = retry if len(retry) >= len(html) else html
+    logger.warning(
+        "%s: still unfinished after one retry (%s); closed where it stopped",
+        label, html_balance.check(keep).describe(),
+    )
+    return html_balance.repair(keep), _COMPOSED_REPAIRED
 
 
 def _split_items_to_budget(items: list, budget: int) -> list[list]:

@@ -84,6 +84,25 @@ def test_body_route_404_when_file_missing(client, db, test_user):
     assert response.json()["detail"] == "Report file not found"
 
 
+def test_body_route_serves_the_processing_note_the_reader_shows(client, db, test_user):
+    """T-8.8.4.4: the reader finds the note by its class; the body route must
+    hand it over with the class intact (it strips only the template chrome)."""
+    note = (
+        '<p class="processing-note" style="color:#8a6d3b"><strong>Processing note:</strong> '
+        'the "Key Facts" section was cut off mid-markup on both attempts to write it and was '
+        "closed where it stopped, so it may end abruptly.</p>"
+    )
+    document = build_report_html(
+        title="Research Report: body route", job_type="topic", statistics=_STATS,
+        report_body=_BODY + "\n" + note,
+    )
+    job = _make_job(db, test_user.id)
+    with patch("app.routers.reports.report_service.get_report_html", return_value=document):
+        response = client.get(f"/api/v1/jobs/{job.id}/report/body")
+    assert response.status_code == 200, response.text
+    assert response.json()["html"].endswith(note)
+
+
 def test_body_route_hides_other_tenants_jobs(client, db):
     job = _make_job(db, tenant_id="someone-else")
     with patch("app.routers.reports.report_service.get_report_html", return_value=_document()):

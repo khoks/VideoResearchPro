@@ -182,6 +182,14 @@ def chunk_transcript(
     # Prefer sentence boundaries over raw segment boundaries.
     segments = _expand_segments_to_sentences(segments)
 
+    # The document's own word count, once, from its full text. Summing the
+    # chunks' `word_count` counts every CHUNK_OVERLAP region twice and, on a
+    # visual run, the `[VISUAL @ ...]` descriptions too; the report's
+    # statistics read this instead. Speech only: an annotation is our text.
+    from app.services.visual_service import strip_annotations
+
+    document_word_count = len(strip_annotations(" ".join(seg[0] for seg in segments)).split())
+
     chunks: list[dict] = []
     current_items: list[_Seg] = []
     current_tokens = 0
@@ -398,6 +406,9 @@ def chunk_transcript(
                 "language": metadata.get("language", "unknown"),
                 "transcription_source": transcription_source,
                 "word_count": chunk["word_count"],
+                # Words SAID in the whole document (no overlap, no visual
+                # annotations), the same on every chunk; see above.
+                "document_word_count": document_word_count,
                 # Polymorphic per-document fields per S-1.5.5 follow-up.
                 # The Q&A agent's `_chunk_to_reference` dispatches on
                 # `source_type` and reads the matching set of fields.

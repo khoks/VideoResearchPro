@@ -59,9 +59,9 @@ passlib[bcrypt]>=1.7.4
 # Every chromadb since 1.0.7 needs bcrypt>=4.0.1, so the old <4.0.0 cap made
 # this file unresolvable on a fresh install (found by the first CI run,
 # T-8.8.4.3). bcrypt 5.0 raises on any password over 72 bytes, which breaks the
-# self-test passlib 1.7.4 runs when it loads, so it stays below 5. On 4.x passlib logs "(trapped) error reading
-# bcrypt version" once (bcrypt dropped `__about__`); harmless. Hashes written
-# under 3.2 still verify.
+# self-test passlib 1.7.4 runs when it loads, so it stays below 5. On 4.x
+# passlib logs "(trapped) error reading bcrypt version" once (bcrypt dropped
+# `__about__`); harmless. Hashes written under 3.2 still verify.
 bcrypt>=4.0.1,<5.0.0
 email-validator>=2.0.0
 # T-5.4.6 MFA / TOTP — RFC 6238 generator + verifier + provisioning URI.

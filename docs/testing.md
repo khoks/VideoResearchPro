@@ -245,7 +245,7 @@ GitHub Actions runs [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) on
 
 | Job | Runner | What it runs |
 |-----|--------|--------------|
-| Backend tests (pytest) | ubuntu-latest, Python 3.12 | `pip install -r requirements.txt -r requirements-dev.txt` (pip cache; PyTorch from the CPU wheel index first, so the CUDA libraries never download), then `python -m pytest tests/ -q` from `backend/`. The multilingual embedder and Chroma's ONNX model are cached between runs (`~/.cache/huggingface`, `~/.cache/chroma`) and saved even when the run fails |
+| Backend tests (pytest) | ubuntu-latest, Python 3.12 | `pip install -r requirements.txt -r requirements-dev.txt` (pip cache; PyTorch from the CPU wheel index first, so the CUDA libraries never download), then `python -m pytest tests/ -q -rs` from `backend/` (`-rs` lists each skip with its reason). The multilingual embedder and Chroma's ONNX model are cached between runs (`~/.cache/huggingface`, `~/.cache/chroma`) and saved even when the run fails |
 | Backend lint (ruff) | ubuntu-latest | `ruff check backend --select E9,F63,F7,F82` with the `ruff` pinned in `requirements-dev.txt`: syntax errors, undefined names, invalid comparisons and statements. The repository has no ruff config, and ruff's default set reports 57 existing findings (mostly unused imports), so the default set is not gated; widening the rules means fixing those first, in a change of its own |
 | Frontend build and unit tests | ubuntu-latest, Node 22 | `npm ci`, `npm run build` (type check plus Vite build), `npx vitest run` from `frontend/` |
 | Browser extension tests | ubuntu-latest, Node 22 | `npm test` from `extension/` (`node --test`, no install) |

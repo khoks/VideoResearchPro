@@ -72,8 +72,10 @@ jobs:
         if: steps.models.outputs.cache-hit != 'true'
         run: python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
 
+      # -rs prints each skipped test's reason, so a reviewer can see what the
+      # runner did not exercise (ffmpeg, an FTS5 trigram SQLite, a PDF engine).
       - name: Run pytest
-        run: python -m pytest tests/ -q
+        run: python -m pytest tests/ -q -rs
 
       - name: Save model caches
         if: always() && steps.models.outputs.cache-hit != 'true'

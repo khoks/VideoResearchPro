@@ -3289,3 +3289,29 @@ The D-100 user-as-judge test is **not** part of `ready`. Readiness reports wheth
 - Rule 3 failed by a tie (8.67 against 8.67), which no attribution guard can change. Whether a tie should keep R1 hidden is a question for the user.
 
 **Linked initiatives / PRs.** E-1.18, S-1.18.9; D-067, D-071, D-075, D-105.
+
+## D-107 — R1's substance rule: a tie passes, any loss fails; attribution stays zero-error (2026-10-25)
+
+**Status:** accepted (the user's decision, 2026-10-25). It amends rule 3 of the R1 protocol for the next pre-registered pair of runs (runs 10 and 11). D-105 and D-106 stand until that pair passes.
+
+**Context.** Run 9 failed two rules ([protocol note](notes/2026-10-18-r1-visual-measurement.md), "Run 9: results"). Rule 2 failed on one confirmed attribution error. Rule 3 failed on a tie: one family preferred the annotated report, two called it a tie, none preferred the plain one, and mean substance was 8.67 against 8.67. Rule 3, unchanged since run 6, asked visual analysis to *beat* the plain report. A tie measured no loss, and no attribution guard can change one (D-106 left the question to the user).
+
+**Decision.** The user, verbatim: *"For the next pre-registered pair of R1 runs, count a substance tie (no loss) as passing rule 3. Attribution stays zero-error."* For runs 10 and 11, rule 3 passes when ON's substance is equal to or higher than OFF's. Any loss fails, and there is no margin in either direction. The protocol measures substance two ways, and both must show no loss:
+- (a) the mean substance score across the three families: ON ≥ OFF;
+- (b) the families' substance preferences: at least as many prefer ON as prefer OFF (a tie counts for neither).
+
+Rule 2 stays at zero confirmed ON attribution errors. Rules 1 and 4 are unchanged, and so are the guard rules 5 and 6 pre-registered for runs 9 and 10.
+
+**Alternatives considered.**
+- *Keep "at least two of three families prefer ON".* Rejected by the user: a tie is no loss.
+- *Count ties toward ON in the old majority rule ("two of three prefer ON or tie").* This would pass one OFF preference and two ties, which is a loss, and the user's "(no loss)" excludes that.
+- *A noise margin, such as passing an ON mean within 0.33 or 0.67 of OFF.* Rejected. The rule is read literally: equal passes, lower fails.
+- *Only one of the two measures.* With one measure, a loss on the other would pass unseen. Requiring no loss on both is the literal reading of "any loss fails".
+
+For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule. Run 8's (two of three preferred ON, but mean 8.33 vs 9.0) fails it on (a).
+
+**Consequences.**
+- The next pair, runs 10 and 11, is pre-registered under this rule before either run exists, on the code after T-1.18.9.5 to .7.
+- The decision changes the quality bar, not the attribution bar. One confirmed attribution error in either run still fails it.
+
+**Linked initiatives / PRs.** E-1.18, S-1.18.9 (T-1.18.9.8, T-1.18.9.9); D-105, D-106.

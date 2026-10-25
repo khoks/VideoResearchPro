@@ -25,7 +25,7 @@ Echo is the Ring 3 north star: an app that learns the user's facts, consumption,
 
 1. **E-3.7 Constant-stream intake (Domain 5)** — manual quick-share, drag-drop, export-file importers, then extension, email-in, share target.
 2. **E-3.3 Voice and personality capture (Domain 3)** — signals as rows, cheap stylometry, batched LLM traits, a personal retrieval collection, an evaluation harness.
-3. **E-3.2 Activity connectors (Domain 2)** — the connector runtime, then GitHub, YouTube likes plus Calendar, Spotify live tail for self-host.
+3. **E-3.2 Activity connectors (Domain 2)** — the connector runtime, then GitHub, YouTube likes plus Calendar, Spotify live tail for self-host (the live tail is won't-do since 2026-10-25, [D-110](../decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25)).
 4. **E-3.4 Speak-as-me + E-3.8 the bubble (Domain 4)** — retrieval plus critique, gated by five-domain readiness (S-3.5.1).
 5. **E-3.9 Mode B fine-tuning** — deferred, provider-agnostic.
 6. **E-3.10 Privacy** — export and delete ship alongside the first new table; zero-knowledge stays a design.
@@ -39,6 +39,8 @@ One `shares_inbox` table (schema in `personal-brain.md`, plus `author_is_tenant`
 Surfaces: a sidebar quick-share and drop zone on every page; a Manifest V3 extension using `contextMenus` plus `activeTab` (no `history` permission, so no install warning and a lighter store review; Chrome Web Store's tightened Limited Use rule is enforced from 2026-08-01); a Web Share Target in the manifest for Android (installed PWA; iOS Safari still cannot be a share target, so ship an iOS Shortcut that POSTs to the intake endpoint); email-in as IMAP polling for self-host (IMAPClient, BSD-3-Clause) and an inbound-webhook provider for SaaS (Mailgun's free route or Cloudflare Email Routing plus a Worker are $0 entry points; Postmark needs Pro).
 
 **Passive browsing capture: deferred (2026-10-19).** S-3.7.3 closed without T-3.7.3.3. Whether Echo watches browsing in the background at all, even opt-in per site, is a question about Echo's privacy promise, and that promise is still the user's to make ([D-089](../decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) left it open; open question 7 below). Explicit capture through the extension covers the need meanwhile. **Preferred approach if the user opts in:** per-domain optional host permissions (Chrome asks for each site as the user adds it, so no `history` permission and no install warning); URL, title and time only, never page content; `incognito: not_allowed` in the manifest; domains grouped into categories the user can pause; visits posted with the share token to a write-only route that refuses without an active `browser_history` grant, which needs a third, "push" connector kind in S-3.2.1's runtime (consent screen, no OAuth, disconnect deletes the events). This keeps the reason the `history` permission was rejected (the install warning and the store's Limited Use review of that permission) out of the picture, because the extension never holds it.
+
+**Answered 2026-10-25** by [D-110](../decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25): no passive capture. Echo only sees what the user hands it, so T-3.7.3.3 is won't-do and so is the background-capture part of T-3.2.5. The preferred approach above stays here for the record.
 
 ### Domain 2 — connectors (E-3.2)
 
@@ -54,7 +56,7 @@ What the research found changes the roadmap's list:
 | Strava | API policy effective 2026-06-01 §5.3 forbids use "in connection with the development, training, evaluation, or operation of any AI Application", including "ingestion into a context window"; Standard tier needs a paid subscription. | Bulk-export importer only (user-owned data outside the API agreement; confirm with counsel). |
 | Goodreads / Letterboxd | Goodreads API closed December 2020; Letterboxd's beta refuses "LLM or GPT-related use" and "private or personal projects". | CSV importers. |
 | Apple Health | No web API; HealthKit is on-device. | `export.xml` importer. |
-| Browser history | Chrome `history` permission shows "Read and change your browsing history on all signed-in devices"; Firefox desktop only. | Deferred; the extension's explicit capture covers the useful case. |
+| Browser history | Chrome `history` permission shows "Read and change your browsing history on all signed-in devices"; Firefox desktop only. | Deferred; the extension's explicit capture covers the useful case. *Won't do 2026-10-25 ([D-110](../decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25)): Echo only sees what the user hands it.* |
 
 The `EchoConnector` contract widens to the `personal-brain.md` shape (`privacy_weight`, `consent_disclosure`, `initial_backfill`, `incremental_sync`, `event_types`), connectors live under `backend/app/connectors/<name>/`, tokens go through the Fernet credential store, syncs run on the M3 scheduler tick, and a consent screen shows the disclosure before any redirect. `activity_events` is a new table; derived facts (`interest` from top channels, `skill` from languages, `daily_routine` from calendar) are written with sub-1.0 confidence.
 
@@ -98,7 +100,7 @@ Export (one archive, JSONL per table plus files) and full delete (cascading acro
 | Fine-tuning first (Mode B before Mode A) | Provider shutdowns above; quality collapse in the one head-to-head; five exemplars already deliver most of the gain. |
 | LLM-as-judge as the readiness or quality gate | Low and inconsistent agreement with humans unless it abstains. |
 | `Cmd-E` for the bubble | macOS system shortcut; clashes in Safari and Chrome. |
-| Browser history connector now | Heavy install warning, tightened store policy, desktop-only on Firefox; explicit capture via the extension covers the need. |
+| Browser history connector now | Heavy install warning, tightened store policy, desktop-only on Firefox; explicit capture via the extension covers the need. *Since 2026-10-25 not built at any point ([D-110](../decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25)).* |
 | True zero-knowledge mode | Incompatible with server-side embeddings and the Q&A pipeline without a rewrite. |
 
 ## Schema deltas
@@ -144,12 +146,18 @@ Export (one archive, JSONL per table plus files) and full delete (cascading acro
 ## Open questions (the user's call)
 
 1. **Private-by-key or nothing for SaaS.** True zero-knowledge is incompatible with the pipeline; is server-readable, tenant-key-encrypted at rest an acceptable promise if labelled honestly?
+   **Deferred 2026-10-25** by [D-110](../decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25): private-by-key encryption waits until SaaS (S-3.10.3).
 2. **Third-party content default.** Context-only (retrievable, never quoted, never exported) is the recommendation; should the user be able to override it for a specific thread? **Default taken in S-3.7.1** (no override built), and "never exported" read as dataset and derived exports, not the user's own whole-brain archive; see [D-089](../decisions.md#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19). The archive reading awaits the user's confirmation.
+   **Answered 2026-10-25** by [D-110](../decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25): no per-thread override, and the archive reading is confirmed as shipped in #286 (D-089 item 3).
 3. **The bubble's shortcut.** `Ctrl/Cmd-Shift-E` is proposed; the roadmap said `Cmd-E`, which conflicts.
 4. **Spotify live tail.** Worth building at all given it is self-host-only, or export import only?
+   **Answered 2026-10-25** by [D-110](../decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25): export import only; the live tail (S-3.2.3) is won't-do.
 5. **When Gmail.** Only with revenue to fund the annual assessment, or never, with IMAP plus app password as the self-host answer?
+   **Answered 2026-10-25** by [D-110](../decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25): never on SaaS before revenue (T-3.2.3); self-hosters use the IMAP inbox (S-3.7.4).
 6. **Mode B at all.** Given the provider shutdowns and the quality trade-off, is local LoRA worth pursuing, or does retrieval plus critique remain the product?
+   **Answered 2026-10-25** by [D-110](../decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25): Mode B (E-3.9) stays parked until the owner's own voice test, the user-as-judge run (T-3.3.4.3), has run.
 7. **Passive browsing capture.** Does Echo's promise extend to recording browsing in the background, opt-in per site and per category, or does Echo only ever see what the user hands it? T-3.7.3.3 waits on this; the preferred design, should the answer be yes, is under Domain 5.
+   **Answered 2026-10-25** by [D-110](../decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25): Echo only sees what the user hands it. Nothing records browsing in the background, so T-3.7.3.3 is won't-do, and the design under Domain 5 stays for the record.
 
 ## Sources (fetched 2026-10-19)
 

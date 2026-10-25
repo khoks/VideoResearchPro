@@ -103,7 +103,9 @@ The scheduler alone: `scheduled_runs`, the beat entry, the tick task with claimi
 ## Open questions
 
 1. Per-tier caps on active saved searches: suggested Pro 10, Studio 50, Free 0 (the gate already excludes Free). Agree?
+   **Answered 2026-10-25** by [D-112](../decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25): ratified as built in S-8.3.2, Free 0, Pro 10, Studio 50.
 2. Should a saved search be able to target a *job* scope (re-ask on a finished job as new Q&A land) or only library and shelf scopes?
+   **Answered 2026-10-25** by [D-112](../decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25): library and shelf scopes only, ratified as built.
 
 ## Sources (fetched 2026-10-19)
 

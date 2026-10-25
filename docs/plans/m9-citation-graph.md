@@ -69,6 +69,8 @@ The graph endpoint and service with isolation and cap tests, returning nodes, ed
 
 Taken at their defaults in S-8.9.2 (2026-10-19), both still the user's to revisit: **sigma** (used directly, without `@react-sigma/core`); the **global view ships**, capped at 300 nodes with single-link nodes hidden, and the local view opens from any node, channel or run.
 
+**Answered 2026-10-25** by [D-112](../decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25): both defaults are ratified with [D-092](../decisions.md#d-092--library-graph-computed-per-request-sigma-used-directly-as-a-lazy-chunk-three-group-colours-the-accessibility-layer-inside-the-story-2026-10-19). Sigma stays, and so does the capped whole-library view.
+
 ## Sources (fetched 2026-10-19)
 
 npm and Bundlephobia for `d3-force`, `react-force-graph-2d`, `sigma`, `graphology`, `@react-sigma/core`, `graphology-layout-forceatlas2`, `graphology-communities-louvain`, `cytoscape`, `react-cytoscapejs`, `vis-network`, `reagraph`, `@antv/g6`; cytoscape 3.31 WebGL preview post; graphology layout docs; Obsidian graph view help and forum; KeyLines and Oracle accessibility guidance; Vite build options; WCAG 2.2. Full URLs with per-claim verification tags are in the raw research notes under [`research/`](research/) (`l2-author-studio.md`, `l3-echo-connectors.md`, `l3-echo-personality.md`, `m1-m6.md`, `m7-m12.md`).

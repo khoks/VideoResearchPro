@@ -120,9 +120,13 @@ With the picker already shipped (PR #224), the first new PR is the shared enable
 ## Open questions (the user's call)
 
 1. **Self-host TTS default.** Local Chatterbox (MIT, Hindi pack, needs a GPU-class machine for speed) or hosted OpenAI by default with local as opt-in?
+   **Answered 2026-10-25** by [D-112](../decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25): reels (E-6.5) are deferred; when built, hosted TTS is the default, local TTS is opt-in, and a Hindi listening test is part of the work.
 2. **B-roll.** The plan drops third-party footage from v1 for the Terms-of-Service and copyright reasons above. Should an explicit, per-render opt-in with the risk shown ever exist?
+   **Answered 2026-10-25** by [D-112](../decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25): no B-roll.
 3. **Book templates.** The roadmap asked single editorial template first; agreed. Academic and journalistic variants later?
+   **Deferred 2026-10-25** by [D-112](../decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25): academic and journalistic book template variants are deferred.
 4. **Hosted site preview.** Download-only first (as the roadmap recommends); mounting under the app's own origin is cheap but makes the app a public host once M11 exists.
+   **Deferred 2026-10-25** by [D-112](../decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25): sites stay download only, a hosted preview under the app's origin waits, and one-click publishing (S-6.2.2) will not be built.
 
 ## Sources (fetched 2026-10-19)
 

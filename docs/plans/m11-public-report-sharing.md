@@ -74,6 +74,7 @@ Table, service, owner and public routes, headers, kill switch, cap, tests, and t
 ## Open questions (the user's call)
 
 1. **Launch before billing and abuse prevention?** For: reads are cheap, it is the single highest-leverage growth surface, self-hosters want it regardless, the reader already exists. Against: a public unauthenticated route on the app's domain hosting arbitrary LLM-written content, copyright exposure made public, no abuse signals, no takedown process, free tier plus public hosting invites spam. Cheap mitigations if early: opt-in per report, default off, default expiry, per-tenant cap, `noindex`, per-IP limit, kill switch, "report this page", revoke-all on account lock.
+   **Answered 2026-10-25** by [D-112](../decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25): no; public sharing (E-8.11) is deferred. The static site zip covers sharing meanwhile (S-6.2.1 accepts `job:<id>`). If sharing is ever built, the takedown and revoke hooks go inside S-8.11.2.
 2. **Separate origin for shares** (`share.<domain>`) from the start, or only at SaaS launch?
 3. **Quote limits** in public reports: cap quoted transcript length, or publish as is with attribution?
 

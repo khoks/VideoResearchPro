@@ -198,7 +198,7 @@ Order chosen by: ease of ingestion → privacy weight → leverage. Cheapest sig
 | 4 | **Calendar** | Where time goes. Critical for routine inference. | medium — work info | Google Calendar / iCal read-only |
 | 5 | **Apple Health / Strava** | Sleep, runs, activity. Tells us when the user is in flow vs. fatigued, when to expect them online. | medium — biometric | Apple Health export, Strava OAuth |
 | 6 | **GitHub** | If user codes, what they push tells us their current focus and expertise areas. | low — public anyway | OAuth `read:user`, `repo` for private |
-| 7 | **Browser history** | Extremely rich, extremely sensitive. Probably opt-in *per category* (work vs. personal) via browser extension. | high | Custom browser extension; never ingest incognito |
+| 7 | **Browser history** | Extremely rich, extremely sensitive. Probably opt-in *per category* (work vs. personal) via browser extension. | high | Custom browser extension; never ingest incognito. Won't do 2026-10-25 ([D-110](decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25)): Echo only sees what the user hands it. |
 | 8 | **Journal entries** | User-authored. The richest signal we have for "voice." | high — but self-authored | Plain markdown files in a folder, or in-app editor |
 | 9 | **Email (read-only)** | The single largest unstructured personal corpus. Last because of privacy load and the volume problem (a typical inbox is 100K+ messages). | very high | Gmail/IMAP read-only; user picks which labels to ingest |
 
@@ -222,7 +222,7 @@ The vocabulary is intentionally per-connector. We don't try to unify "watched a 
 - **Live location streams.** We ingest *places visited* (city, neighborhood) at calendar-event granularity, never live GPS.
 - **Financial transactions.** Out of scope.
 - **Private messages from other people.** We can ingest *the user's outgoing messages* for voice capture, but we don't index the other party's content beyond what's needed to understand context.
-- **Anything from a connector the user didn't explicitly enable for that data type.** Browser history connector enabled ≠ work-domain browser history ingested unless work-domain is enabled.
+- **Anything from a connector the user didn't explicitly enable for that data type.** Browser history connector enabled ≠ work-domain browser history ingested unless work-domain is enabled. *(The browser-history example is moot since 2026-10-25: no connector captures browsing ([D-110](decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25)). The rule holds for every connector.)*
 
 ---
 

@@ -63,7 +63,9 @@ The viewport meta, fluid tokens, target sizes, safe areas, `dvh`, 16 px inputs, 
 ## Open questions
 
 1. Is a real-device pass (one iPhone, one Android) part of acceptance, or are emulated screenshots enough for now?
+   **Answered 2026-10-25** by [D-112](../decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25): yes, a real-phone pass is part of M12's acceptance (S-8.12.3).
 2. Which icon, given the logo is still Vite's default bolt?
+   **Answered 2026-10-25** by [D-112](../decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25): the interim echo mark that S-8.12.2 rendered is the identity (E-2.8).
 
 ## Sources (fetched 2026-10-19)
 

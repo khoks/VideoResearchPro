@@ -74,6 +74,7 @@ The Duplicate fix, the table and seeds, the service and routes, provenance colum
 ## Open questions
 
 1. Is `published_after_days` wanted now (it changes the ranking prompt), or should templates ship without a time window first?
+   **Answered 2026-10-25** by [D-112](../decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25): yes, as a ranking preference and never a filter (D-059, D-072), built after S-1.5.13 as S-8.6.3.
 2. Which five starter templates? The names above are proposals.
 
 ## Sources (fetched 2026-10-19)

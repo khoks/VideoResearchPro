@@ -69,6 +69,7 @@ The channel page itself with header, subscribe, documents list and links, plus t
 ## Open questions
 
 1. Should stance classification be extended to YouTube documents (a per-document LLM call at ingest) so the timeline exists for the dominant source type? Cost scales with ingest; it is a separate decision.
+   **Answered 2026-10-25** by [D-112](../decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25): no stance classification for YouTube videos.
 2. Cache invalidation: on channel sync and on new knowledge artifacts (recommended), or only on demand?
 
 ## Sources (fetched 2026-10-19)

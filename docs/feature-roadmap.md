@@ -144,7 +144,7 @@ Reels wait on the TTS decision. Site publishing (S-6.2.2) is design only.
 
 Its pre-registered gate passed on synthetic writers ([D-100](decisions.md#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19)), so "speak as me" may be built; it is enabled per user only after the user-as-judge test.
 
-**Ruled 2026-10-25** ([D-110](decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25)). Echo only sees what the user hands it: nothing captures browsing in the background, so history capture in the extension and a browser-history connector will not be built. A fact the user deleted stays deleted (tombstones, accepted). No private GitHub scope, no Spotify live tail, and no Gmail on SaaS before revenue (self-hosters use the IMAP inbox). Mode B stays parked until the owner's own voice test has run, and private-by-key encryption waits until SaaS.
+**Ruled 2026-10-25** ([D-110](decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25)). Echo only sees what the user hands it: nothing captures browsing in the background, so history capture in the extension will not be built, and no connector collects browsing in the background. A fact the user deleted stays deleted (tombstones, accepted). No private GitHub scope, no Spotify live tail, and no Gmail on SaaS before revenue (self-hosters use the IMAP inbox). Mode B stays parked until the owner's own voice test has run, and private-by-key encryption waits until SaaS.
 
 **Motivation.** The widest ring of the vision (see [vision.md](vision.md) Ring 3). Pratidhvani learns enough about the user — through opt-in life connectors *and* constant-stream sharing of liked videos / reels / memes / WhatsApp threads / Keep notes / quotes — that it can suggest questions before they ask, anticipate their needs, capture their personality, and eventually speak on their behalf.
 
@@ -217,7 +217,7 @@ Below threshold: bubble dimmed, banner explains what's missing. Crossing thresho
 - How does weighting interact with subscriptions (auto-pulled content)? Recommend channel weight applies; user can override per-document.
 - **Shape of v1: resolved 2026-10-18 by [D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18).** Weighted retrieval first (re-rank by `distance / weight` after the raw relevance threshold, weights resolved per tenant at query time); perspective banding deferred to E-7.2 until weights exist and the re-rank is measured.
 
-**Status.** 🟡 in progress. Trust-weighted retrieval v1 shipped 2026-10-19 (S-7.1.1, PR [#287](https://github.com/khoks/VideoResearchPro/pull/287)): a per-tenant weight per channel, set on the channel page, re-ranks job and library Q&A as `distance / weight` after the relevance threshold ([D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18)). Measured and re-judged with dated excerpts (PR [#330](https://github.com/khoks/VideoResearchPro/pull/330)): all four pre-registered clauses met, so the formula stays as shipped; strong weights do narrow library answers, which is recorded and shown on the channel page. Perspective banding (E-7.2) is next. *2026-10-25 ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): banding waits until the owner has weighted channels for real; a weight near 0 keeps today's behaviour, and the slider text that promised otherwise is corrected.* Tracked as [I-7](initiatives.md#i-7--curated-source-ranking-l4).
+**Status.** 🟡 in progress. Trust-weighted retrieval v1 shipped 2026-10-19 (S-7.1.1, PR [#287](https://github.com/khoks/VideoResearchPro/pull/287)): a per-tenant weight per channel, set on the channel page, re-ranks job and library Q&A as `distance / weight` after the relevance threshold ([D-068](decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18)). Measured and re-judged with dated excerpts (PR [#330](https://github.com/khoks/VideoResearchPro/pull/330)): all four pre-registered clauses met, so the formula stays as shipped; strong weights do narrow library answers, which is recorded and shown on the channel page. Perspective banding (E-7.2) waits until the owner has weighted channels for real (D-112). *2026-10-25 ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): banding waits until the owner has weighted channels for real; a weight near 0 keeps today's behaviour, and the slider text that promised otherwise is corrected.* Tracked as [I-7](initiatives.md#i-7--curated-source-ranking-l4).
 
 ---
 
@@ -304,7 +304,7 @@ Group jobs into named projects. A job can belong to multiple shelves. Tag docume
 
 ---
 
-### M2 — Cmd-K global search 🔵
+### M2 — Cmd-K global search 🟢
 
 Command palette → search jobs, documents, channels, Q&As, knowledge artifacts in one. Powered by existing ChromaDB collections.
 
@@ -314,7 +314,7 @@ Command palette → search jobs, documents, channels, Q&As, knowledge artifacts 
 
 **UI:** Cmd-K (Ctrl-K on Windows) opens a modal with fuzzy-search input and grouped results.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.2](initiatives.md#e-82--command-palette-and-global-search-m2); plan [`plans/m2-command-palette.md`](plans/m2-command-palette.md). Audit: no `/search` endpoint and no shortcut hook exist (the `useShortcuts` hook `ui-design.md` describes was never written). Keyword search first; semantic results as a labelled second group. *2026-10-25 ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): the semantic results group (S-8.2.3) stays parked.*
+**Status.** 🔵 accepted 2026-10-18 as [E-8.2](initiatives.md#e-82--command-palette-and-global-search-m2); plan [`plans/m2-command-palette.md`](plans/m2-command-palette.md). Audit: no `/search` endpoint and no shortcut hook exist (the `useShortcuts` hook `ui-design.md` describes was never written). Keyword search first; semantic results as a labelled second group. *2026-10-25 ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): the semantic results group (S-8.2.3) stays parked.* **🟢 2026-10-25:** the search endpoint (S-8.2.1, PR [#245](https://github.com/khoks/VideoResearchPro/pull/245)) and the palette (S-8.2.2, PR [#282](https://github.com/khoks/VideoResearchPro/pull/282)) shipped on 2026-10-19. With only the parked S-8.2.3 left, E-8.2 is marked shipped on the board.
 
 ---
 
@@ -402,7 +402,7 @@ Replace iframe-modal HTML report with a native MDX-rendered reading view: typogr
 
 ---
 
-### M9 — Citation graph / knowledge map 🟡
+### M9 — Citation graph / knowledge map 🟢
 
 Visualize how Q&As cite documents, how documents relate to topics, how topics cluster. New library-overview page.
 
@@ -412,7 +412,7 @@ Visualize how Q&As cite documents, how documents relate to topics, how topics cl
 
 **UI:** Force-directed graph (d3 / cytoscape); zoom, pan, click-to-detail.
 
-**Status.** 🔵 accepted 2026-10-18 as [E-8.9](initiatives.md#e-89--citation-graph-and-knowledge-map-m9); plan [`plans/m9-citation-graph.md`](plans/m9-citation-graph.md). Tenant-scoped nodes from documents, channels, Q&A references and knowledge topics; focused local-graph mode by default so it is not a hairball. **🟡 2026-10-19:** the endpoint (PR [#297](https://github.com/khoks/VideoResearchPro/pull/297)) and the library map at `/library/graph` (PR [#301](https://github.com/khoks/VideoResearchPro/pull/301)) shipped: sigma 4 + graphology as a lazy chunk, three group colours, a keyboard model and a table view; the whole-library view ships capped at 300 nodes with single-link nodes hidden. See [D-092](decisions.md#d-092--library-graph-computed-per-request-sigma-used-directly-as-a-lazy-chunk-three-group-colours-the-accessibility-layer-inside-the-story-2026-10-19). Remaining: S-8.9.3 topic clusters, gated on topic edges proving too sparse on a real library. *2026-10-25 ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): D-092 is ratified, and S-8.9.3 stays parked.*
+**Status.** 🔵 accepted 2026-10-18 as [E-8.9](initiatives.md#e-89--citation-graph-and-knowledge-map-m9); plan [`plans/m9-citation-graph.md`](plans/m9-citation-graph.md). Tenant-scoped nodes from documents, channels, Q&A references and knowledge topics; focused local-graph mode by default so it is not a hairball. **🟡 2026-10-19:** the endpoint (PR [#297](https://github.com/khoks/VideoResearchPro/pull/297)) and the library map at `/library/graph` (PR [#301](https://github.com/khoks/VideoResearchPro/pull/301)) shipped: sigma 4 + graphology as a lazy chunk, three group colours, a keyboard model and a table view; the whole-library view ships capped at 300 nodes with single-link nodes hidden. See [D-092](decisions.md#d-092--library-graph-computed-per-request-sigma-used-directly-as-a-lazy-chunk-three-group-colours-the-accessibility-layer-inside-the-story-2026-10-19). Remaining: S-8.9.3 topic clusters, gated on topic edges proving too sparse on a real library. *2026-10-25 ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): D-092 is ratified, and S-8.9.3 stays parked.* **🟢 2026-10-25:** with only the parked S-8.9.3 left, E-8.9 is marked shipped on the board.
 
 ---
 
@@ -440,7 +440,7 @@ Signed URL for a single report → share with friends. Paves the way for SaaS sh
 
 **UI:** "Share" button on report viewer.
 
-**Status.** ⚪ proposed; design complete as [E-8.11](initiatives.md#e-811--public-report-sharing-m11); plan [`plans/m11-public-report-sharing.md`](plans/m11-public-report-sharing.md). Not accepted: whether sharing launches before billing and the takedown workflow (T-5.5.6) exist is the user's call, recorded as the plan's first open question. Opaque hashed tokens, `noindex`, sandboxing CSP and per-IP rate limiting are in the design regardless. **🔴 Deferred 2026-10-25** ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): the static site zip covers sharing meanwhile (a site can be built from one run, `job:<id>`). If sharing is ever built, the takedown and revoke hooks go inside S-8.11.2.
+**Status.** 🔴 deferred (was ⚪ proposed); design complete as [E-8.11](initiatives.md#e-811--public-report-sharing-m11); plan [`plans/m11-public-report-sharing.md`](plans/m11-public-report-sharing.md). Not accepted: whether sharing launches before billing and the takedown workflow (T-5.5.6) exist is the user's call, recorded as the plan's first open question. Opaque hashed tokens, `noindex`, sandboxing CSP and per-IP rate limiting are in the design regardless. **🔴 Deferred 2026-10-25** ([D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)): the static site zip covers sharing meanwhile (a site can be built from one run, `job:<id>`). If sharing is ever built, the takedown and revoke hooks go inside S-8.11.2.
 
 ---
 

@@ -7,7 +7,7 @@
 1. **Existing commitments first, regardless.** They are in flight in other sessions and several later items depend on them.
 2. **Enablers before the things they enable**, measured by what each item unlocks (the reader unlocks sharing, mobile and the book viewer; the scheduler unlocks saved searches, the newsletter and Echo syncs; shelves unlock the site picker and graph filters; templates unlock onboarding; notes unlock Echo's voice).
 3. **Retrieval-touching work waits for `qa_agent.py` to settle.** The R3/R4 batch is rewriting it and E-7.1 lands the `distance / weight` re-rank that notes and shelf scopes reuse ([D-068](../decisions.md#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18)).
-4. **Cheap, high-value, low-risk before expensive or decision-gated.** Public sharing and reels wait on the user's answers; Echo's heavier connectors wait on verification and revenue.
+4. **Cheap, high-value, low-risk before expensive or decision-gated.** Public sharing and reels wait on the user's answers; Echo's heavier connectors wait on verification and revenue. *2026-10-25: the user answered, and public sharing (E-8.11) and reels (E-6.5) are now deferred ([D-112](../decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)).*
 5. **Parallel lanes only where files are disjoint.** The shared hot spots are listed at the end.
 
 ## Phase 0 — commitments already made (in other sessions)

@@ -209,6 +209,8 @@ Run 10 (2026-10-25) contradicts the "edits that cannot be wrong" claim for every
 
 What holds by construction is narrower than claimed: the bare "(on screen at mm:ss)" presence claim. T-1.18.9.11 proposes dropping every absence inference. See the protocol note, "Run 10: results".
 
+Changed 2026-10-25 ([D-108](decisions.md#d-108--the-attribution-guard-never-infers-that-a-detail-went-unsaid-it-checks-only-english-speech-in-latin-script-2026-10-25), T-1.18.9.11). The mechanism no longer writes "not spoken" (the stronger claim in point 5). It never removes "also", and never relabels or splits a map item. It examines only sources whose speech is English in Latin script, so what it writes is only the presence claim. Offline on runs 1 to 10, it catches 6 of 11 confirmed errors (was 9). The three it gives up are real errors in Hindi or Bengali sources, which it can no longer read for absence.
+
 **Linked decisions / initiatives / PRs.** [D-075](decisions.md#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19), [D-105](decisions.md#d-105--visual-analysis-hidden-in-the-ui-until-a-deterministic-attribution-guard-removes-the-residual-error-2026-10-20), [D-106](decisions.md#d-106--the-deterministic-attribution-guard-ships-in-the-report-pipeline-r1-stays-hidden-after-run-9-2026-10-24); E-1.18, S-1.18.8, S-1.18.9; PR [#363](https://github.com/khoks/VideoResearchPro/pull/363).
 
 **Verbatim source.** —

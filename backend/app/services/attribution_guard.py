@@ -10,12 +10,9 @@ module removes it in code, at the two points where it enters:
 
 - **Map items** (`label_items`). A detail of an item that appears in a span
   of the item's OWN source near its moment, and not in the speech around
-  that moment, is screen-only. An item whose details are all screen-only
-  becomes ``shown``; an item whose screen-only details fill clauses of their
-  own is split into a ``shown`` item and the rest; otherwise the item lists
-  them (``screen_only``) and compose names them in its tag. Run 8's weekday
-  totals reached the composer tagged [SAID+SHOWN], and the tag note told it
-  to credit the speaker.
+  that moment, is screen-only. The item lists it (``screen_only``) and
+  compose names it in its tag. Run 8's weekday totals reached the composer
+  tagged [SAID+SHOWN], and the tag note told it to credit the speaker.
 - **The composed report** (`guard_report`). A detail that still sits in a
   part of a sentence credited to a speaker is marked in place, "(on screen
   at 18:24)", with the span's own timestamp. The opposite error — "also
@@ -26,8 +23,7 @@ module removes it in code, at the two points where it enters:
 **Near the moment, not anywhere.** Whether a detail is screen-only is
 decided against the speech around the cited moment: in run 6 the presenter
 said "light grid lines" at 9 minutes, and the sentence about 22:28 still took
-"light grid" from the 22:33 frame. The stronger words "not spoken" need the
-detail to be absent from the source's whole speech.
+"light grid" from the 22:33 frame.
 
 **Specific details** are what a reader can check and what the past errors
 carried: numbers (native digits normalised), code identifiers, quoted
@@ -36,13 +32,15 @@ of three or more listed names (dataset names read off a screen). The guard
 acts only on a detail it FINDS in a span, so what it writes ("on screen at
 mm:ss") is true by construction; a detail found nowhere is left alone.
 
-**What it never claims.** "Not spoken" is added only for a figure or a
-multi-word quotation, only where the source's speech is in Latin script, and
-only when the whole speech states it nowhere — reading "15 000", "fifteen
-thousand" and "one two two" as numbers. Identifiers, pairs and names never
-get it: captions write "carat" as "carrot". In Devanagari or Bengali speech
-an absence proves nothing (S-1.18.7), so the mark says only where the detail
-was shown. A rewrite never deletes a detail: substance moves, it is not lost.
+**What it never claims.** It never says a detail was not said, and it
+never removes words that say it was (T-1.18.9.11). Not finding a detail in a
+transcript is not evidence that it went unsaid: in R1 run 10 the captions
+wrote "one to one" for "121", the speaker said "get started" where the title
+read "Getting Started", and "seaborn" and "NumPy" were spoken in Bengali.
+Every inferred "not said" in that run was wrong. So the guard examines only
+sources whose speech it can read, English in Latin script (`Source.readable`);
+a Devanagari, Bengali or code-mixed source is left as written. A rewrite
+never deletes a detail: substance moves, it is not lost.
 """
 from __future__ import annotations
 
@@ -282,11 +280,6 @@ def _structured(raw: str) -> bool:
     return len(_compact(raw)) >= 4 and bool(re.search(r"[._(]|[a-z][A-Z]", raw))
 
 
-def verifiable(tok: Token) -> bool:
-    """Kinds whose absence from Latin-script speech is trusted: figures and multi-word quotes."""
-    return (tok.kind == "number" and tok.strong) or (tok.kind == "quoted" and len(tok.key.split()) >= 2)
-
-
 def acts(found: list[Token]) -> bool:
     """Enough to act on: one strong detail, two weak ones, or three listed names."""
     if all(t.kind == "name" for t in found):
@@ -371,7 +364,7 @@ class Source:
     video_id: str
     speech: Speech
     segments: list[tuple[float, float, str]]   # (start, end, speech text) per chunk, in order
-    latin: bool
+    readable: bool    # English speech in Latin script: the only speech an absence can be read from
     spans: list[Span]
     _near: dict = field(default_factory=dict, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
@@ -495,7 +488,9 @@ def build_evidence(chunks: list[dict], speaker_names: Iterable[str] = ()) -> Evi
         sources[sid] = Source(
             sid=sid, title=str(meta.get("video_title") or ""), channel=str(meta.get("channel_name") or ""),
             video_id=str(meta.get("video_id") or ""), speech=Speech.of(speech_raw), segments=segments,
-            latin=_latin_share(speech_raw) >= 0.6, spans=sorted(spans.values(), key=lambda s: s.seconds),
+            # A code-mix profile (R5) marks Hindi, Bengali or Hinglish speech, in any script.
+            readable=_latin_share(speech_raw) >= 0.6 and not meta.get("code_mix_primary"),
+            spans=sorted(spans.values(), key=lambda s: s.seconds),
         )
     return Evidence(sources, keys, speaker_names)
 
@@ -556,7 +551,6 @@ def spoken(tok: Token, speech: Speech) -> bool:
 class ScreenOnly:
     source: Source
     seconds: float
-    verified: bool   # Latin speech, a trusted kind, and absent from the whole of it
 
 
 # Speech counted as "around" a span window: the chunks a little before and after it.
@@ -569,9 +563,12 @@ def screen_only(tok: Token, scope: list[tuple[Source, float, float]]) -> ScreenO
 
     ``scope`` is (source, from, to) in seconds, the first entry the most
     likely one. None when the detail is in no span there (not screen
-    content) or any scoped source says it around that window.
+    content), any scoped source says it around that window, or the source
+    showing it has speech the guard cannot read (`Source.readable`).
     """
     for src, lo, hi in scope:
+        if not src.readable:
+            continue
         best: Span | None = None
         for span in src.spans:
             if lo <= span.seconds <= hi and in_span(tok, span):
@@ -587,9 +584,7 @@ def screen_only(tok: Token, scope: list[tuple[Source, float, float]]) -> ScreenO
             spoken(tok, s.near(a - NEAR_SPEECH_BEFORE, b + NEAR_SPEECH_AFTER)) for s, a, b in scope if s is not src
         ):
             return None
-        verified = (src.latin and verifiable(tok)
-                    and not any(spoken(tok, s.speech) for s in {x for x, _, _ in scope}))
-        return ScreenOnly(src, best.seconds, verified)
+        return ScreenOnly(src, best.seconds)
     return None
 
 
@@ -621,34 +616,19 @@ def _item_window(item: dict) -> tuple[float, float] | None:
     return None
 
 
-def _item_clauses(text: str) -> list[tuple[int, int]]:
-    """Where an item's content can be split: sentence ends and semicolons."""
-    bounds, start = [], 0
-    for m in re.finditer(r";\s+|(?<=[.!?])\s+(?=[A-Z0-9\"“])", text):
-        bounds.append((start, m.start()))
-        start = m.end()
-    bounds.append((start, len(text)))
-    return [(a, b) for a, b in bounds if text[a:b].strip()]
-
-
 def label_items(summary: object, evidence: Evidence, counts: dict | None = None) -> None:
     """Fix each item's modality from its details, in place (after `report_agent._label_modality`).
 
     Items from a source with no span, and items already ``shown``, are left
     alone. For the rest, a detail found in a span of the item's own source
-    near its moment and not in the speech around it is screen-only.
+    near its moment and not in the speech around it is screen-only. The item
+    then carries ``screen_only`` (raised from ``said`` or ``unknown`` to
+    ``both``, the label before kept in ``modality_before_guard``) and compose
+    names those details in its tag.
 
-    - Every detail screen-only, all of them trusted (`verifiable`, Latin
-      speech, absent from the whole speech), no ``original`` quote: the item
-      becomes ``shown``.
-    - Trusted screen-only details that fill clauses of their own: those
-      clauses become a new ``shown`` item right after this one.
-    - Otherwise the item carries ``screen_only`` (raised from ``said`` or
-      ``unknown`` to ``both``) and compose names those details in its tag.
-
-    The label before is kept in ``modality_before_guard``. Devanagari or
-    Bengali speech is never relabelled — the map model read it, and an absence
-    of digits there proves nothing — so its details are listed only.
+    An item is never relabelled ``shown`` or split: that would say its details
+    went unsaid, which a transcript cannot show (T-1.18.9.11). Items from a
+    source whose speech the guard cannot read are left alone.
     """
     if not isinstance(summary, dict) or not evidence.has_visual:
         return
@@ -674,29 +654,7 @@ def label_items(summary: object, evidence: Evidence, counts: dict | None = None)
                 len(found) == 1 and lone_figure_in_spoken_list(content, found[0], src, lo, hi)
             )):
                 continue
-            others = [t for t in tokens if not hits[t]]
-            trusted = all(hits[t].verified for t in found) and not item.get("original")
             before = item.get("modality") or MODALITY_UNKNOWN
-            if trusted and not others:
-                item["modality_before_guard"] = before
-                item["modality"] = MODALITY_SHOWN
-                _count(counts, "relabelled_shown")
-                continue
-            if trusted:
-                shown_parts, kept_parts = [], []
-                for a, b in _item_clauses(content):
-                    inside = [t for t in tokens if a <= t.start < b]
-                    (shown_parts if inside and all(hits[t] for t in inside) else kept_parts).append(
-                        content[a:b].strip().rstrip(";"))
-                if shown_parts and kept_parts:
-                    item["content"] = "; ".join(kept_parts)
-                    item["modality_before_guard"] = before
-                    split = {k: v for k, v in item.items()
-                             if k not in ("original", "quote_form", "speaker", "modality_before_guard")}
-                    split.update(content="; ".join(shown_parts), modality=MODALITY_SHOWN, split_by_guard=True)
-                    out.append(split)
-                    _count(counts, "split")
-                    continue
             item["screen_only"] = [t.text for t in found]
             if before in (MODALITY_SAID, MODALITY_UNKNOWN):
                 item["modality_before_guard"] = before
@@ -897,16 +855,15 @@ CITE_AFTER_SECONDS = 150.0
 
 @dataclass
 class Rewrite:
-    kind: str           # screen_detail_marked | speech_as_screen_marked | screen_claim_removed | screen_also_dropped
+    kind: str           # screen_detail_marked | speech_as_screen_marked | screen_claim_removed
     sentence: str
     tokens: list[str]
     source: str
     seconds: float | None
-    verified: bool = False
 
     def as_dict(self) -> dict:
         return {"kind": self.kind, "sentence": self.sentence[:400], "tokens": self.tokens,
-                "source": self.source, "seconds": self.seconds, "verified": self.verified}
+                "source": self.source, "seconds": self.seconds}
 
 
 # A "(" right after Devanagari or Bengali text, across the danda and closing punctuation.
@@ -1317,8 +1274,6 @@ def guard_report(html: str, evidence: Evidence) -> tuple[str, list[Rewrite]]:
             times = [format_timestamp(t) for t in sorted({h.seconds for h in hits})]
             where = times[0] if len(times) == 1 else ", ".join(times[:-1]) + " and " + times[-1]
             named = "" if hit.source.sid in cited else f" in {hit.source.label()}'s video"
-            verdict = (", not spoken" if all(h.verified for h in hits) and all(verifiable(t) for t in toks)
-                       else "")
             ins, ine, _, _ = _clause_of(s, toks[0].start)
             # A prose parenthetical holding only these details: "(Monday 17,363.10; ...)".
             # Never a call's arguments.
@@ -1328,15 +1283,15 @@ def guard_report(html: str, evidence: Evidence) -> tuple[str, list[Rewrite]]:
                      and not [t for t in tokens if ins <= t.start < ine and t not in toks])
             if alone:
                 h = doc.html_after(s_start + ins)            # just inside "("
-                mark = f"on screen{named} at {where}{verdict}: "
+                mark = f"on screen{named} at {where}: "
             else:
                 h = doc.html_after(s_start + _insert_at(s, toks[-1]))
-                mark = f" (on screen{named} at {where}{verdict})"
+                mark = f" (on screen{named} at {where})"
             if h is None:
                 continue
             inserts.append((h, mark))
             rewrites.append(Rewrite("screen_detail_marked", s.strip(), [t.text for t in toks],
-                                    hit.source.label(), min(x.seconds for x in hits), bool(verdict)))
+                                    hit.source.label(), min(x.seconds for x in hits)))
 
         # 2. Speech presented as screen: a figure or identifier the sentence
         # explicitly puts on screen ("on screen at 03:10", "the video displays")
@@ -1371,19 +1326,7 @@ def guard_report(html: str, evidence: Evidence) -> tuple[str, list[Rewrite]]:
             if not referents or not scope:
                 continue
             if any(in_span(t, sp) for t in referents for src, _, _ in scope for sp in src.spans):
-                # On screen, so the claim stands; but "also" says the speaker said
-                # it too. When the detail is screen-only around the cited moment,
-                # the word goes (T-1.18.9.10, R1 run 9's confidence band).
-                also = re.search(r"\balso\s+", m.group("phrase"), re.I)
-                near = own_scope if own_scope and scope is whole_cited else scope
-                if also and near and all(screen_only(t, near) for t in referents):
-                    a = m.start("phrase") + also.start()
-                    rng = doc.html_range(s_start + a, s_start + a + len(also.group(0)))
-                    if rng is not None:
-                        deletes.append(rng)
-                        rewrites.append(Rewrite("screen_also_dropped", s.strip(), [t.text for t in referents[:4]],
-                                                near[0][0].label(), None))
-                continue
+                continue                    # on screen, so the claim stands
             said = [t for t in referents if any(spoken(t, src.speech) for src, _, _ in scope)]
             if not said:
                 continue

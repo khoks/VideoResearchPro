@@ -444,8 +444,8 @@ def map_chunks(state: ReportAgentState) -> dict:
     # checked against the transcript it claims to come from.
     source_texts = _source_texts_for_verification(chunks)
     # S-1.18.9: each source's speech and spans, so an item's details shown on
-    # screen and not spoken around its moment are labelled from evidence, not
-    # from how they read.
+    # screen and not found in the speech around its moment are named from
+    # evidence, not from how they read.
     guard_evidence = _guard_evidence(chunks)
 
     # Group chunks into batches. `batch_metas` runs parallel to `batches` so
@@ -695,7 +695,7 @@ def map_chunks(state: ReportAgentState) -> dict:
             "map_chunks_total": len(chunks),
             "map_modality": dict(sorted(modality_counts.items())),
             # S-1.18.9: items whose details were screen-only around their
-            # moment — relabelled shown, split, or listed for compose.
+            # moment, listed for compose (never relabelled, T-1.18.9.11).
             "map_attribution_guard": dict(sorted(guard_counts.items())),
             "map_originals_kept": original_counts["kept"],
             "map_originals_dropped": original_counts["dropped"],
@@ -935,7 +935,7 @@ def _uses_modality_tags(consolidated: dict) -> bool:
 
 _PIPELINE_ONLY_KEYS = (
     "modality", "modality_model", "original_rejected", "original_rejected_reason",
-    "original_stripped", "screen_only", "modality_before_guard", "split_by_guard",
+    "original_stripped", "screen_only", "modality_before_guard",
 )
 
 
@@ -1625,12 +1625,11 @@ def compose_report(state: ReportAgentState) -> dict:
         )
     guard_counts = {
         kind: sum(1 for r in guard_rewrites if r.kind == kind)
-        for kind in ("screen_detail_marked", "speech_as_screen_marked", "screen_claim_removed",
-                     "screen_also_dropped")
+        for kind in ("screen_detail_marked", "speech_as_screen_marked", "screen_claim_removed")
     }
-    # The guard reads Latin script only, so a detail said in Devanagari, or
-    # garbled by the captions, is unmatched rather than unsaid (T-1.18.9.7):
-    # the note says what was matched, never "only".
+    # A detail the guard cannot find in the transcript is unmatched, not unsaid
+    # (T-1.18.9.7, .11): the note says what was matched, never "only", and names
+    # the sources it could not read.
     if guard_counts["screen_detail_marked"]:
         disclosures.append(
             f"{guard_counts['screen_detail_marked']} detail(s) in sentences crediting a speaker appear "
@@ -1647,11 +1646,13 @@ def compose_report(state: ReportAgentState) -> dict:
             f"{guard_counts['screen_claim_removed']} claim(s) that a spoken detail was also on screen "
             "matched no captured frame of that source and were removed"
         )
-    if guard_counts["screen_also_dropped"]:
+    unchecked = 0
+    if guard_evidence is not None:
+        unchecked = sum(1 for src in guard_evidence.sources.values() if src.spans and not src.readable)
+    if unchecked:
         disclosures.append(
-            f"the word \"also\" was removed from {guard_counts['screen_also_dropped']} phrase(s) like "
-            "\"also visible on screen\", because the detail could not be matched to the speech near the "
-            "cited moment"
+            f"on-screen details credited to a speaker were not checked in {unchecked} source(s) whose "
+            "speech is not English in Latin script, which the check cannot read"
         )
     if guard_failures:
         disclosures.append(
@@ -1671,7 +1672,7 @@ def compose_report(state: ReportAgentState) -> dict:
     out_notes["report_attribution_marked"] = guard_counts["screen_detail_marked"]
     out_notes["report_attribution_speech_marked"] = guard_counts["speech_as_screen_marked"]
     out_notes["report_screen_claims_removed"] = guard_counts["screen_claim_removed"]
-    out_notes["report_screen_also_dropped"] = guard_counts["screen_also_dropped"]
+    out_notes["report_attribution_unchecked_sources"] = unchecked
     out_notes["report_attribution_guard_failures"] = guard_failures
     out_notes["report_attribution_rewrites"] = [r.as_dict() for r in guard_rewrites]
     return {"final_html": html, "processing_notes": out_notes}

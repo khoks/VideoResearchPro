@@ -329,6 +329,7 @@ The user decided rule 3 for this pair ([D-107](../decisions.md#d-107--r1s-substa
 - T-1.18.9.5: lone figures in speaker credits.
 - T-1.18.9.6: quote transliterations treated as quotation.
 - T-1.18.9.7: an accurate processing note.
+- T-1.18.9.10 (added 2026-10-25, before either run): the "also" in "also visible on screen" is removed when the detail is screen-only around the cited moment. This was run 9's one upheld guard-sentence vote. No rule changes.
 
 **Setup, as for run 9.**
 - Job `419e691d`, with `--descriptions data/r1_ab/retier/baseline_describe.json` (gpt-5.5, D-081) and the models in `backend/.env`.
@@ -356,4 +357,12 @@ The user decided rule 3 for this pair ([D-107](../decisions.md#d-107--r1s-substa
 - Both runs pass: set `featureFlags.visualAnalysis = true`, record a decision that supersedes D-105, and update S-1.18.2, the L6 status and the CHANGELOG.
 - Rule 1 fails: the run is invalid. The defect is fixed in its own change and the run is repeated; it does not count toward the two.
 - Anything else fails in either run: the result is recorded and the flag stays off. If run 10 fails, run 11 is not run.
+
+## Guard follow-ups: offline check before run 10 (2026-10-25)
+
+The old guard (master before the follow-ups) against the new one, on the stored ON reports of runs 1 to 9 and the persisted map items of runs 5 to 9. Run 9's report was guarded in production, so its seven marks were stripped first. This is in-sample: the follow-ups were written from these runs, and it is no substitute for runs 10 and 11.
+- Confirmed errors caught: 9 of 11, up from 8 of 11. The new catch is run 9's "his examples are 10 (on screen at 17:14), 15,000, 0 and 1".
+- New marks from the possessive credit, besides run 9's: 4 (2 in run 7, 2 in run 9), all on DeepLoop Circle's code identifiers (`flipper_length_mm`, `body_mass_g`), each shown in a frame within the cited window. These are the same class as run 9's redundant marks on code, which every verifier refuted as errors.
+- "Also" removed: 7 (4 in run 1, 3 in run 9), each leaving a true "visible on screen".
+- Run 9's mark inside the transliteration is gone. Runs 2 to 6 and 8 are unchanged. At the map stage, the one new listed item is run 9's "10".
 

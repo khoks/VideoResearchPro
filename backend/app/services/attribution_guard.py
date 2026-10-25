@@ -294,6 +294,44 @@ def acts(found: list[Token]) -> bool:
     return any(t.strong for t in found) or len(found) >= 2
 
 
+# A run of three or more figures: "10, 15,000, 0 and 1".
+_FIGURE = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
+_FIGURE_LIST = re.compile(
+    rf"(?<![\w.,])(?:{_FIGURE})%?(?:\s*,\s*(?:(?:and|or)\s+)?(?:{_FIGURE})%?)+(?:,?\s+(?:and|or)\s+(?:{_FIGURE})%?)?(?![\w.])"
+)
+
+
+def lone_figure_in_spoken_list(text: str, tok: Token, src: "Source", lo: float, hi: float) -> bool:
+    """Whether a lone weak figure may be acted on after all (T-1.18.9.5).
+
+    A two-digit figure alone is too common to act on (`acts`): "10" turns up in
+    `10%`, `figsize=(10, 6)` and axis ticks, so a mark could cite the wrong
+    thing. Inside a list of three or more figures, at least one other of which
+    (two digits or more) the source says around that moment, it is one of the
+    speaker's examples, and the one from the screen. R1 run 9: "his examples
+    are 10, 15,000, 0 and 1", where the speaker said 1024 and the 10 was a
+    handwritten "10%".
+    """
+    if tok.kind != "number":
+        return False
+    for m in _FIGURE_LIST.finditer(text):
+        if not m.start() <= tok.start < m.end():
+            continue
+        figures = list(re.finditer(_FIGURE, m.group(0)))
+        if len(figures) < 3:
+            return False
+        speech = src.near(lo - NEAR_SPEECH_BEFORE, hi + NEAR_SPEECH_AFTER)
+        for f in figures:
+            a, b = m.start() + f.start(), m.start() + f.end()
+            if a < tok.end and tok.start < b:
+                continue                                    # the figure itself
+            key = _canonical_number(_norm(f.group(0)))
+            if len(re.sub(r"\D", "", key)) >= 2 and key in speech.numbers:
+                return True
+        return False
+    return False
+
+
 # --- evidence -----------------------------------------------------------------
 
 @dataclass
@@ -372,6 +410,10 @@ def _identity(meta: dict) -> str:
     )
 
 
+_CREDITED_NOUNS = (r"(?:examples?|figures?|numbers?|values?|estimates?|counts?|totals?|list|words|advice|"
+                   r"recommendations?|definition|explanation|claims?)")
+
+
 def _title_variants(title: str) -> set[str]:
     """A title and the shortened forms a composer cites it by."""
     out = {re.sub(r"\s+", " ", title).strip()}
@@ -405,6 +447,11 @@ class Evidence:
                     r"creators?|authors?|youtubers?|he|she|they|his|her|their|video|tutorial|course|lecture|"
                     r"session|channel|walkthrough|source")
         self.speaker_ref = re.compile(r"\b(?:" + "|".join(refs) + r")\b", re.I)
+        # "his examples are ...", "Vivek's figures": what a speaker gave, so a credit.
+        self.speaker_possessive = re.compile(
+            r"\b(?:(?:his|her|their)|(?:" + "|".join(refs) + r")['’]s)\s+(?:own\s+)?" + _CREDITED_NOUNS + r"\b",
+            re.I,
+        )
 
     def resolve(self, *, video_id: str = "", url: str = "", title: str = "") -> Source | None:
         for key in (video_id, _url_key(url), f"title:{title}" if title else ""):
@@ -623,7 +670,9 @@ def label_items(summary: object, evidence: Evidence, counts: dict | None = None)
             tokens = specific_tokens(content, _alias_ranges(content, evidence))
             hits = {t: screen_only(t, [(src, lo, hi)]) for t in tokens}
             found = [t for t in tokens if hits[t]]
-            if not found or not acts(found):
+            if not found or not (acts(found) or (
+                len(found) == 1 and lone_figure_in_spoken_list(content, found[0], src, lo, hi)
+            )):
                 continue
             others = [t for t in tokens if not hits[t]]
             trusted = all(hits[t].verified for t in found) and not item.get("original")
@@ -848,7 +897,7 @@ CITE_AFTER_SECONDS = 150.0
 
 @dataclass
 class Rewrite:
-    kind: str           # screen_detail_marked | screen_claim_removed | speech_as_screen_marked
+    kind: str           # screen_detail_marked | speech_as_screen_marked | screen_claim_removed | screen_also_dropped
     sentence: str
     tokens: list[str]
     source: str
@@ -860,10 +909,37 @@ class Rewrite:
                 "source": self.source, "seconds": self.seconds, "verified": self.verified}
 
 
+# A "(" right after Devanagari or Bengali text, across the danda and closing punctuation.
+_AFTER_NATIVE = re.compile(r"[ऀ-৿][\s।॥.,;:!?\"'”’]*\(")
+
+
+def _matching_paren(s: str, i: int) -> int | None:
+    """Offset of the ")" closing the "(" at ``i``."""
+    depth = 0
+    for j in range(i, len(s)):
+        if s[j] == "(":
+            depth += 1
+        elif s[j] == ")":
+            depth -= 1
+            if depth == 0:
+                return j
+    return None
+
+
 def _quoted_ranges(s: str) -> list[tuple[int, int]]:
-    """Quotations: what a speaker said (or its translation), never markers."""
+    """Quotations: what a speaker said, its transliteration and its translation, never markers.
+
+    D-066's three-part form puts the romanised transliteration in brackets right
+    after the original ("আসবে: ০.১৩.২ (āsbe: 0.13.2) — "it will show: 0.13.2"").
+    It is quotation as much as the original: R1 run 9 put a mark inside one
+    (T-1.18.9.6).
+    """
     out = [m.span() for rx in _QUOTED for m in rx.finditer(s)]
     out += [m.span() for m in re.finditer(r"[ऀ-৿][^()\n]*?[ऀ-৿।]", s)]
+    for m in _AFTER_NATIVE.finditer(s):
+        close = _matching_paren(s, m.end() - 1)
+        if close is not None:
+            out.append((m.end() - 1, close + 1))
     return out
 
 
@@ -1011,6 +1087,9 @@ def _events(s: str, skip: list[tuple[int, int]], evidence: Evidence) -> list[tup
     for m in list(_PARTICIPLE_BY.finditer(s)) + list(re.finditer(r"\baccording to\s+", s, re.I)):
         agent = re.sub(r"^(?:the|a)\s+", "", s[m.end():m.end() + 80], flags=re.I)
         if not _overlaps(m.span(), skip) and evidence.speaker_ref.match(agent):
+            ev.append((m.start(), "speech"))
+    for m in evidence.speaker_possessive.finditer(s):
+        if not _overlaps(m.span(), skip):
             ev.append((m.start(), "speech"))
     ev.sort()
     return ev
@@ -1207,6 +1286,7 @@ def guard_report(html: str, evidence: Evidence) -> tuple[str, list[Rewrite]]:
 
         # 1. Screen-only details in parts credited to a speaker.
         groups: list[tuple[list[Token], ScreenOnly, list[ScreenOnly]]] = []
+        windows: dict[int, tuple[float, float]] = {}
         screen_marked: list[Token] = []
         for tok in tokens:
             if tok.kind != "quoted" and _overlaps((tok.start, tok.end), quoted):
@@ -1218,16 +1298,21 @@ def guard_report(html: str, evidence: Evidence) -> tuple[str, list[Rewrite]]:
                     screen_marked.append(tok)
             if not credit:
                 continue
-            hit = screen_only(tok, _scope(s, s_start, s_end, doc, evidence, tok.start, fallback))
+            sc = _scope(s, s_start, s_end, doc, evidence, tok.start, fallback)
+            hit = screen_only(tok, sc)
             if hit is None:
                 continue
+            windows[id(tok)] = next(((lo, hi) for src, lo, hi in sc
+                                     if src is hit.source and lo <= hit.seconds <= hi), (-INF, INF))
             if groups and _same_group(s, groups[-1][0][-1], tok, groups[-1][1], hit):
                 groups[-1][0].append(tok)
                 groups[-1][2].append(hit)
             else:
                 groups.append(([tok], hit, [hit]))
         for toks, hit, hits in groups:
-            if not acts(toks):
+            if not acts(toks) and not (
+                len(toks) == 1 and lone_figure_in_spoken_list(s, toks[0], hit.source, *windows[id(toks[0])])
+            ):
                 continue
             times = [format_timestamp(t) for t in sorted({h.seconds for h in hits})]
             where = times[0] if len(times) == 1 else ", ".join(times[:-1]) + " and " + times[-1]
@@ -1286,6 +1371,18 @@ def guard_report(html: str, evidence: Evidence) -> tuple[str, list[Rewrite]]:
             if not referents or not scope:
                 continue
             if any(in_span(t, sp) for t in referents for src, _, _ in scope for sp in src.spans):
+                # On screen, so the claim stands; but "also" says the speaker said
+                # it too. When the detail is screen-only around the cited moment,
+                # the word goes (T-1.18.9.10, R1 run 9's confidence band).
+                also = re.search(r"\balso\s+", m.group("phrase"), re.I)
+                near = own_scope if own_scope and scope is whole_cited else scope
+                if also and near and all(screen_only(t, near) for t in referents):
+                    a = m.start("phrase") + also.start()
+                    rng = doc.html_range(s_start + a, s_start + a + len(also.group(0)))
+                    if rng is not None:
+                        deletes.append(rng)
+                        rewrites.append(Rewrite("screen_also_dropped", s.strip(), [t.text for t in referents[:4]],
+                                                near[0][0].label(), None))
                 continue
             said = [t for t in referents if any(spoken(t, src.speech) for src, _, _ in scope)]
             if not said:

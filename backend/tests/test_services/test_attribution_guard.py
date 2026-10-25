@@ -13,6 +13,11 @@ on synthetic transcripts that go through the production span format
   screen" whose frame belongs to another video (run 6);
 - leave alone what is already right: spoken figures, sentences that put the
   detail on screen themselves, neutral statements, code arguments.
+
+Run 9's follow-ups: a lone screen figure among the speaker's spoken examples
+("his examples are 10, 15,000, 0 and 1"), a quote's transliteration read as
+quotation, and the "also" in "also visible on screen" dropped when the speaker
+did not say the detail.
 """
 from __future__ import annotations
 
@@ -109,16 +114,19 @@ def test_a_neutral_statement_is_left_alone():
     assert ag.guard_report(html, _evidence(_coffee())) == (html, [])
 
 
-def test_a_clause_ending_in_a_name_credits_that_speaker_run1():
-    onur = _source("I1Hsa9TSO5U", "Seaborn Course: Learn Data Visualization", "Onur Baltaci",
+def _onur() -> list[dict]:
+    return _source("I1Hsa9TSO5U", "Seaborn Course: Learn Data Visualization", "Onur Baltaci",
                    [(621.0, "A regression plot shows the relationship between two numerical variables "
                             "with a fitted line."), (660.0, "Let's run it.")],
                    [(674.0, "The regression plot uses Value1 on the x-axis and Value2 on the y-axis, "
                             "an upward-sloping fitted line with a light-blue confidence band.")])
+
+
+def test_a_clause_ending_in_a_name_credits_that_speaker_run1():
     html = ("<li>A regression plot displays two numerical variables, a fitted regression line, and a "
             "confidence band to help assess a linear relationship — Onur Baltaci "
             f"({_link('I1Hsa9TSO5U', 621, '10:21')}).</li>")
-    out, rewrites = ag.guard_report(html, _evidence(onur))
+    out, rewrites = ag.guard_report(html, _evidence(_onur()))
     assert "a confidence band (on screen at 11:14) to help assess" in out
     # A descriptor pair is never "not spoken": its absence from speech is weak evidence.
     assert "not spoken" not in out and not rewrites[0].verified
@@ -170,6 +178,58 @@ def test_spoken_numbers_read_words_and_caption_habits():
     assert {"15000", "122", "0.92", "17363.1", "0.4"} <= found
 
 
+DEEPLOOP_SPEECH = [
+    (964.0, "और एक ही ऐसी वैल्यू है जो है 1024 या फिर है 15,000। ठीक है? तो यह बहुत ही ज्यादा रेंज के "
+            "बाहर आ गया। या फिर एक ऐसी वैल्यू है जो है 0 या फिर वन।"),
+    (1028.0, "लोअर आउटलाइन ये हमारा है यहां पे 50% ये 25% ये 75% ठीक है?"),
+    (1040.0, "मीडियन यहां पे ये हमारा बॉक्स प्लॉट।"),
+]
+DEEPLOOP_FRAME = (1034.0, "A OneNote page titled “Seaborn” shows handwritten notes under “Box Plot”: "
+                          "“median,” “Quartely -> 25%, 75%, 50%” and “outliers -> 25 - 75 | 10% | 15%”.")
+RUN9_SENTENCE = ("<li>Values far outside the 25%–75% range — his examples are 10, 15,000, 0 and 1 — count as "
+                 f"outliers ({_link('6lgc8xPTDS0', 964, '16:04')}).</li>")
+
+
+def _deeploop(speech=DEEPLOOP_SPEECH) -> list[dict]:
+    return _source("6lgc8xPTDS0", "Seaborn Tutorial in Hindi", "DeepLoop Circle", speech, [DEEPLOOP_FRAME])
+
+
+def test_a_lone_screen_figure_among_spoken_examples_is_marked_run9():
+    """Run 9's error: the speaker said 1024, 15,000, 0 and 1; the 10 is the handwritten "10%".
+
+    "His examples" credits the speaker without a speech verb. A lone two-digit
+    figure is acted on only inside a list whose other figures the speaker said.
+    """
+    out, rewrites = ag.guard_report(RUN9_SENTENCE, _evidence(_deeploop(), speakers=["Vivek"]))
+    assert "his examples are 10 (on screen at 17:14), 15,000, 0 and 1 — count" in out
+    assert [r.tokens for r in rewrites] == [["10"]]
+    assert "not spoken" not in out and not rewrites[0].verified      # Devanagari speech proves nothing
+
+
+def test_a_lone_figure_without_a_spoken_list_keeps_the_threshold():
+    # The other figures in words the guard cannot read: nothing anchors the list.
+    words = [(964.0, "और एक ही ऐसी वैल्यू है जो है एक हजार चौबीस या फिर है पंद्रह हजार। या फिर एक ऐसी "
+                     "वैल्यू है जो है 0 या फिर वन।"), *DEEPLOOP_SPEECH[1:]]
+    assert ag.guard_report(RUN9_SENTENCE, _evidence(_deeploop(words))) == (RUN9_SENTENCE, [])
+    alone = f"<li>His example of an outlier is 10 ({_link('6lgc8xPTDS0', 964, '16:04')}).</li>"
+    assert ag.guard_report(alone, _evidence(_deeploop())) == (alone, [])
+    # A spoken list elsewhere in the sentence does not vouch for a figure outside it.
+    apart = (f"<li>His examples are 1024, 15,000, 0 and 1, and he puts the cut-off at 10 "
+             f"({_link('6lgc8xPTDS0', 964, '16:04')}).</li>")
+    assert ag.guard_report(apart, _evidence(_deeploop())) == (apart, [])
+
+
+def test_the_run9_map_item_lists_its_lone_screen_figure():
+    """The map stage wrote run 9's error first, labelled `said`."""
+    item = {"content": "Values far outside the quartile range count as outliers, such as 10, 15,000, 0, or 1 "
+                       "in the speaker's examples.", "video_title": "Seaborn Tutorial in Hindi",
+            "channel_name": "DeepLoop Circle", "timestamp_display": "16:04–16:19", "timestamp_seconds": 964,
+            "video_url": "https://www.youtube.com/watch?v=6lgc8xPTDS0&t=964", "modality": MODALITY_SAID}
+    summary = {"facts": [item]}
+    ag.label_items(summary, _evidence(_deeploop()))
+    assert item["modality"] == MODALITY_BOTH and item["screen_only"] == ["10"]
+
+
 # ---------- the converse: speech presented as screen ---------------------------
 
 def _munna_version() -> list[dict]:
@@ -201,11 +261,43 @@ def test_the_video_displays_a_figure_only_spoken_is_marked_as_said_run3():
     assert [r.kind for r in rewrites] == ["speech_as_screen_marked"]
 
 
-def test_also_visible_is_kept_when_a_frame_of_that_source_shows_it():
+def test_a_quotes_transliteration_is_quotation_run9():
+    """Run 9 put a second "(said at ...)" inside the romanised transliteration of a Bengali quote."""
+    quote = ("আপনার আউটপুট স্ক্রিনে এভাবে আসবে: ০.১৩.২। (āpnār output screen-e ebhābe āsbe: 0.13.2.) — "
+             '"your output will show like this: 0.13.2"')
+    html = (f"<p>The CodeWithMunnaX presenter states the displayed Seaborn version is 0.13.2: {quote} "
+            f"({_link('5AuuOZ4vuxI', 177, '2:57')}).</p>")
+    out, rewrites = ag.guard_report(html, _evidence(_munna_version(), _simplilearn_version()))
+    assert "version is 0.13.2 (said at 2:57; no captured frame shows it): " + quote in out
+    assert [r.kind for r in rewrites] == ["speech_as_screen_marked"]
+
+
+def test_a_frame_backed_claim_stays_and_loses_also_when_the_figure_was_not_said():
     html = (f"<p>The Simplilearn presenter checks the installed version, 0.13.2, also visible on screen "
             f"({_link('Fnn7rCrN_88', 160, '2:40')}).</p>")
-    out, _ = ag.guard_report(html, _evidence(_simplilearn_version()))
-    assert "also visible on screen" in out
+    out, rewrites = ag.guard_report(html, _evidence(_simplilearn_version()))
+    assert "the installed version, 0.13.2, visible on screen (" in out
+    assert [r.kind for r in rewrites] == ["screen_also_dropped"]
+
+
+def test_also_visible_stays_when_the_speaker_said_it_too():
+    said = _source("Fnn7rCrN_88", "Seaborn Tutorial For Beginners", "Simplilearn",
+                   [(160.0, "let's check which version we have installed. It says 0.13.2.")],
+                   [(174.0, "The notebook prints the seaborn version 0.13.2 below the import cell.")])
+    html = (f"<p>The Simplilearn presenter checks the installed version, 0.13.2, also visible on screen "
+            f"({_link('Fnn7rCrN_88', 160, '2:40')}).</p>")
+    assert ag.guard_report(html, _evidence(said)) == (html, [])
+
+
+def test_also_goes_after_a_marked_screen_only_detail_run9():
+    """Run 9: after the guard's mark, the composer's "is also visible on screen" still implied speech."""
+    html = ("<li>A regression plot shows two numerical variables, a fitted regression line and a confidence "
+            f"band, helping assess linear relationships — Onur Baltaci ({_link('I1Hsa9TSO5U', 621, '10:21')}); "
+            "the confidence band is also visible on screen.</li>")
+    out, rewrites = ag.guard_report(html, _evidence(_onur()))
+    assert "and a confidence band (on screen at 11:14), helping" in out
+    assert "the confidence band is visible on screen.</li>" in out
+    assert [r.kind for r in rewrites] == ["screen_detail_marked", "screen_also_dropped"]
 
 
 # ---------- what is never touched --------------------------------------------

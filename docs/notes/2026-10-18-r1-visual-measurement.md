@@ -401,3 +401,6 @@ Two of the four come from the original "not spoken" verdict (T-1.18.9.2), one fr
 
 **What run 10 shows.** The guard's remaining errors are now its own, and they share one cause: it treats "not found in the transcript" as "not said". That is unsafe for captions that garble a word, for inflected forms, and for Hindi or Bengali speech. Independently of the guard, rule 3 failed again: across runs 9 and 10 the annotated report has not shown more substance than the plain one, and this time it lost on the mean. Rule 4 was verified in full for the first time since the guard, and it failed. The three fabricated sentences are composer synthesis, not visual details, and one run cannot separate them from run-to-run variance.
 
+## R1 parked (2026-10-25)
+
+The owner parked R1 ([D-109](../decisions.md#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25)): visual analysis stays hidden and these measurements stop, so run 11 is not run. The way back, only if the owner asks, is either (c) annotating only sources whose speech is English in Latin script, with a pair pre-registered on an English-only corpus, or (e) the post-compose LLM audit D-075 deferred, checked offline on the stored reports of runs 1 to 10 first. Either needs a new pre-registered pair under the D-107 rules.

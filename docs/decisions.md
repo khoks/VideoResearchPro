@@ -1,6 +1,6 @@
 # Pratidhvani — Decision Log
 
-**Status:** living doc (last refreshed 2026-10-19). Owner: [`/knowledge-curator`](../.claude/skills/knowledge-curator/SKILL.md) skill.
+**Status:** living doc (last refreshed 2026-10-25). Owner: [`/knowledge-curator`](../.claude/skills/knowledge-curator/SKILL.md) skill.
 
 This is the chronological record of every product / engineering decision made on this project that is **not** trivially recoverable from `git log`. Use it to recall *why* a path was chosen and what alternatives were rejected, so future-you doesn't relitigate settled questions.
 
@@ -1457,6 +1457,8 @@ When E-5.3 (Stripe) ships, the same endpoint stays — its implementation flips 
 
 **Linked initiatives / PRs.** I-5 / E-5.2 / E-5.3 (deferred). PR TBD (this commit).
 
+**Status-changed 2026-10-25:** amended by [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25) — the tier switch (and `POST /admin/restart`) is operator-only: the accounts in `ADMIN_EMAILS`, else the earliest-registered account.
+
 ---
 
 ## D-051 — Transcript-pipeline resilience bundle: circuit breaker + segmented Whisper + yt-dlp client fallback (2026-07-22)
@@ -2079,6 +2081,8 @@ Q&A had a fixed 4,500-token budget and no idea whether it was answering from 3 v
 
 **Linked initiatives / PRs.** I-7 / E-7.1 / S-7.1.1 (PR [#287](https://github.com/khoks/VideoResearchPro/pull/287)), S-7.1.2. Follows D-059, D-063, D-065.
 
+**Status-changed 2026-10-25:** kept by [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) — a weight near 0 keeps today's behaviour (the channel drops out on a broad corpus), and the slider text that promised otherwise is corrected (T-7.1.2.2, T-7.1.1.6); perspective banding (E-7.2) waits until the owner has weighted channels for real.
+
 **Amended 2026-10-19: measured, and it costs relevance at strong weights.** The formula above shipped unchanged in PR [#287](https://github.com/khoks/VideoResearchPro/pull/287) and was measured with the protocol pre-registered in [notes/2026-10-19-e71-trust-weighting-measurement.md](notes/2026-10-19-e71-trust-weighting-measurement.md): 10 questions, job and library Q&A, weights 2.0 on three channels and 0 on three others of the reference job's ten largest, three blind judges, three-lens claim verification.
 
 - **The mechanism works as specified.** Promoted channels went from 23% to 57% of the retrieved context, demoted ones from 10% to 0%, and no weighted chunk failed the raw threshold.
@@ -2224,6 +2228,8 @@ Verdicts ON / OFF / tie: undated 22 / 34 / 4, dated 24 / 35 / 1. By surface (dat
 
 **Linked initiatives / PRs.** E-1.17 (R3, closed), E-1.15 (R4, closed), S-1.15.2, S-1.14.15, T-1.16.1.6, T-1.16.1.8. Follows D-059, D-064, D-066. PR [#227](https://github.com/khoks/VideoResearchPro/pull/227).
 
+**Status-changed 2026-10-25:** kept by [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) — the `dominant` wording stays until S-1.17.4 measures it (OQ-9), and S-1.17.3 may reverse the no-backfill rule with its own amendment.
+
 ## D-073 — Frame description moves to gemini-3.1-flash-lite on image-grounded grading; selection stays on gpt-5.5 (2026-10-19)
 
 **Status:** accepted. Follows the cost branch of [D-071](#d-071--r1-verdict-annotations-win-on-substance-fail-on-attribution-and-cost-ui-deferred-2026-10-19).
@@ -2271,6 +2277,8 @@ Verdicts ON / OFF / tie: undated 22 / 34 / 4, dated 24 / 35 / 1. By surface (dat
 **Consequences.** S-8.5.2 must exclude withdrawn notes from the `notes_global` collection, and a document note must reach every job that contains the document, not only the one it was written from. Inline panels fetch one list per target type per page, capped at 2,000 rows, so a heavy user sees only the newest 2,000 of a type inline while the `/notes` page and the export see everything. A purge endpoint is owed before SaaS (see [saas-roadmap.md](saas-roadmap.md)).
 
 **Linked initiatives / PRs.** [S-8.5.1](initiatives.md#s-851--notes-schema-rest-and-inline-ui) (PR [#243](https://github.com/khoks/VideoResearchPro/pull/243)), [S-8.5.3](initiatives.md#s-853--your-notes-view-search-and-export) (PR [#246](https://github.com/khoks/VideoResearchPro/pull/246)), S-8.5.2, S-3.5.1, [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).
+
+**Status-changed 2026-10-25:** ratified by [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) — the owner adopted these defaults, item 1 included.
 
 ## D-075 — R1 after three runs: the modality boundary needs provenance, not prompt rules (2026-10-19)
 
@@ -2340,6 +2348,8 @@ Verdicts ON / OFF / tie: undated 22 / 34 / 4, dated 24 / 35 / 1. By surface (dat
 
 **Linked initiatives / PRs.** [S-1.14.7](initiatives.md#e-114--model-tier-quality-evaluation-harness), PR [#251](https://github.com/khoks/VideoResearchPro/pull/251). Follows D-052, D-055, D-056, D-057, D-062, D-072, D-073.
 
+**Status-changed 2026-10-25:** kept by [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) — item 3 stands: a model measured `unacceptable` is warned about, not refused (OQ-16), since the verdicts rest on n=2.
+
 ## D-077 — Scheduler: one static beat entry over table rows; beat is its own process with no pidfile (2026-10-19)
 
 **Status:** accepted.
@@ -2405,6 +2415,8 @@ Verdicts ON / OFF / tie: undated 22 / 34 / 4, dated 24 / 35 / 1. By surface (dat
 **Consequences.** New dependencies `markdownify` (backend) and `remark-gfm` (frontend, so the Author reader renders the manuscript's tables). Any future link that opens a report file in a new tab must fetch with the header first. The cache is a second file per report; `delete_report` removes both.
 
 **Linked initiatives / PRs.** [S-6.1.2](initiatives.md#s-612--markdown-source-for-reports), [S-6.1.1](initiatives.md#s-611--source-picker-and-a-working-author-page) (PR [#255](https://github.com/khoks/VideoResearchPro/pull/255)), S-8.8.1, T-8.8.1.5, S-6.1.4.
+
+**Status-changed 2026-10-25:** ratified by [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) — both items, the header-bearer-only deviation from the S-6.1.2 story text included.
 
 ## D-080 — Code-mixing detection: a lexicon tagger, not an LLM pass (2026-10-19)
 
@@ -2550,6 +2562,8 @@ note](notes/2026-10-19-code-mixing-detection.md#12-regression-invented-original-
 
 **Linked initiatives / PRs.** S-1.16.2 (T-1.16.2.1 to T-1.16.2.6, T-1.16.2.10 to T-1.16.2.13), E-1.16, N-002, T-1.18.8.4.
 
+**Status-changed 2026-10-25:** kept by [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) — the dominant threshold stays at 0.6 until the native-reader spot check (T-1.16.2.7), since the 0.912 against 0.824 figures rest on Claude's labels.
+
 ## D-081 — Frame describer default: spend against report-level quality (2026-10-19)
 
 **Status:** accepted 2026-10-19 — **the user chose option 2, gpt-5.5**, "for the strongest report-level result", accepting about $0.20 per video for the visual pass. Supersedes D-073's describer choice; D-073's selection tier (gpt-5.5 at low reasoning) stands. Claude had recommended option 1; the recommendation is kept below for the record.
@@ -2620,6 +2634,8 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 **Consequences.** S-8.1.4 shelf-scoped Q&A resolves its set through `query_library_documents(..., job_ids=)` and inherits the empty-set rule (an empty shelf retrieves nothing). E-7.1 replaces the read-only weight slot with its control. If shelves move to read-and-write for all, or tags and templates become paid, it is one `require_feature` change per route plus the frontend mirror.
 
 **Linked initiatives / PRs.** E-8.1 / E-8.6 / E-8.7, the PRs above. Follows D-063, D-065, D-068.
+
+**Status-changed 2026-10-25:** ratified by [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) — every item stands except 6, which D-068's control replaced when S-7.1.1 shipped the weight slider.
 
 ## D-084 — Code-mixed retrieval: embed an English rendering, keep the original as the stored text (2026-10-19)
 
@@ -2729,6 +2745,8 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Linked initiatives / PRs.** [S-8.12.1](initiatives.md#s-8121--reading-pages-responsive-pass) (PR [#269](https://github.com/khoks/VideoResearchPro/pull/269)), [S-8.12.2](initiatives.md#s-8122--web-app-manifest) (PR [#272](https://github.com/khoks/VideoResearchPro/pull/272)), T-3.7.6.1.
 
+**Status-changed 2026-10-25:** amended by [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) — a real-phone pass is part of M12's acceptance (S-8.12.3), which answers the plan's open question 1.
+
 ## D-088 — Report intermediates: persisted per run, on by default, frozen at the stage that produced them (2026-10-19)
 
 **Status:** accepted (taken without the user; open to revision).
@@ -2752,6 +2770,8 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 **Consequences.** `scripts/audit_report_intermediates.py` reads a run back: map calls by status, items by category (and by modality once S-1.18.8 lands), dropped chunks, and the reduce accounting identity (items in − exact duplicates − trimmed = items out). There is no retention policy; rows go when the job is deleted (FK cascade). Channel jobs have no map/reduce stage and write nothing.
 
 **Linked initiatives / PRs.** S-1.14.6, E-1.14, S-1.18.8, PR [#273](https://github.com/khoks/VideoResearchPro/pull/273). Follows D-055, D-056, D-075.
+
+**Status-changed 2026-10-25:** ratified by [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) — on by default, as taken without the owner.
 
 
 ## D-089 — Echo's privacy contract: context-only by default, the brain is a registry, the archive is the user's whole copy, delete in a fixed order (2026-10-19)
@@ -2795,6 +2815,8 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 - Zero-knowledge mode (S-3.10.3) is untouched.
 
 **Linked initiatives / PRs.** [S-3.7.1](initiatives.md#s-371--shares_inbox-quick-share-and-the-inbox-page), [S-3.10.1](initiatives.md#s-3101--full-export), [S-3.10.2](initiatives.md#s-3102--full-delete) (PR [#286](https://github.com/khoks/VideoResearchPro/pull/286)), S-3.7.2, E-3.3, E-3.2, [D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19) (the same feeder-not-gate choice for shares).
+
+**Status-changed 2026-10-25:** ratified by [D-110](#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25) — item 3 is confirmed as shipped in #286, and no per-thread override will be built.
 
 ## D-090 — Map batches never mix sources: `source` batching at a 30K cap, a truncated map response is a failure, and map calls run concurrently (2026-10-19)
 
@@ -2886,6 +2908,8 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Linked initiatives / PRs.** E-8.9 (S-8.9.1 #297, S-8.9.2 #301), M9 plan, D-063, D-070.
 
+**Status-changed 2026-10-25:** ratified by [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) — sigma and the capped whole-library view stand; S-8.9.3 stays parked.
+
 ## D-093 — Book cohesion pass ships opt-in; `none` stays the default after two blind rounds (2026-10-19)
 
 **Status:** accepted.
@@ -2930,6 +2954,8 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 **Consequences.** Reports keep roughly today's length and gain coverage for starved sources at the cost of a second map phase (about 200 s map-only, against 55 to 95 s). Within-source under-coverage above the 0.2 floor remains. A report-level comparison of packed + re-map against `source` is the natural next measurement if the user wants one.
 
 **Linked initiatives / PRs.** S-1.14.19, S-1.14.20 (E-1.14), D-090, R1 run 7 (E-1.18).
+
+**Status-changed 2026-10-25:** kept by [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) — `packed` plus the re-map stays the default; the report-level comparison against `source` runs later, under a rule pre-registered first.
 
 ---
 
@@ -2986,6 +3012,8 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 **Linked initiatives / PRs.** S-1.18.2 (E-1.18), D-067, D-081, D-085, D-079; R1 runs 1-8.
 
 *Addendum, 2026-10-19 (run 8 final).* Gemini 3.1 Pro's late vote passed rule 3, but its attribution claim was confirmed 3 of 3, so **rule 2 failed**. The UI had shipped on the premise that rules 2 and 4 passed. It stays opt-in with no quality claim, and its copy now discloses the measured risk. Keeping, hiding or flagging R1 is the user's decision, as the pre-registration requires (protocol note, "Eight runs, summarised").
+
+**Status-changed 2026-10-25:** kept by [D-109](#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25) — the capture caps stay defaults, decided when R1 returns or Stripe pricing starts ([D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)).
 
 ## D-097 — Newsletter: featured section ships opt-in; the rest of an issue is listed from the database (2026-10-19)
 
@@ -3254,6 +3282,8 @@ The D-100 user-as-judge test is **not** part of `ready`. Readiness reports wheth
 
 **Linked initiatives / PRs.** E-1.18, S-1.18.2, S-1.18.9; D-067, D-071, D-075, D-096.
 
+**Status-changed 2026-10-25:** kept by [D-109](#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25) — visual analysis stays hidden and R1 measurement stops, so no run is pending that could unhide it.
+
 ## D-106 — The deterministic attribution guard ships in the report pipeline; R1 stays hidden after run 9 (2026-10-24)
 
 **Status:** accepted (2026-10-24, S-1.18.9). D-105 stands: its condition is not met.
@@ -3290,6 +3320,8 @@ The D-100 user-as-judge test is **not** part of `ready`. Readiness reports wheth
 
 **Linked initiatives / PRs.** E-1.18, S-1.18.9; D-067, D-071, D-075, D-105.
 
+**Status-changed 2026-10-25:** kept by [D-109](#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25) — the guard stays in the report pipeline, on by default, while R1 is parked.
+
 ## D-107 — R1's substance rule: a tie passes, any loss fails; attribution stays zero-error (2026-10-25)
 
 **Status:** accepted (the user's decision, 2026-10-25). It amends rule 3 of the R1 protocol for the next pre-registered pair of runs (runs 10 and 11). D-105 and D-106 stand until that pair passes.
@@ -3315,6 +3347,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 - The decision changes the quality bar, not the attribution bar. One confirmed attribution error in either run still fails it.
 
 **Linked initiatives / PRs.** E-1.18, S-1.18.9 (T-1.18.9.8, T-1.18.9.9); D-105, D-106.
+
+**Status-changed 2026-10-25:** kept by [D-109](#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25) — run 11 is not run, and any pair that reopens R1 is pre-registered under these rules.
 
 ## D-108 — The attribution guard never infers that a detail went unsaid; it checks only English speech in Latin script (2026-10-25)
 
@@ -3344,3 +3378,163 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 - Whether R1 gets another pair of runs remains the user's call.
 
 **Linked initiatives / PRs.** E-1.18, S-1.18.9 (T-1.18.9.10, T-1.18.9.11); D-105, D-106, D-107; [N-003](inventions.md#n-003--true-by-construction-modality-marks-for-reports-written-from-speech-plus-machine-described-screens-2026-10-24).
+
+**Status-changed 2026-10-25:** kept by [D-109](#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25) — the narrowed guard stays as shipped while R1 is parked; way back (c) builds on its English-only reading.
+
+## D-109 — R1 is parked: visual analysis stays hidden, its measurement stops, the code stays (2026-10-25)
+
+**Status:** accepted (the owner's decision, 2026-10-25). It keeps [D-105](#d-105--visual-analysis-hidden-in-the-ui-until-a-deterministic-attribution-guard-removes-the-residual-error-2026-10-20) in force and stops the run series that [D-106](#d-106--the-deterministic-attribution-guard-ships-in-the-report-pipeline-r1-stays-hidden-after-run-9-2026-10-24) and [D-107](#d-107--r1s-substance-rule-a-tie-passes-any-loss-fails-attribution-stays-zero-error-2026-10-25) set up. The guard as [D-108](#d-108--the-attribution-guard-never-infers-that-a-detail-went-unsaid-it-checks-only-english-speech-in-latin-script-2026-10-25) narrowed it stays in the code.
+
+**Context.** R1 has had ten blind-judged runs ([protocol note](notes/2026-10-18-r1-visual-measurement.md)). Annotations never made fabrication worse, but no run met the whole pre-registered bar:
+- *Attribution.* About one report sentence per run credits a speaker with a detail shown only on screen. Prompt rules (S-1.18.6), said/shown labels (S-1.18.8) and the deterministic guard (S-1.18.9) each cut it; none removed it. In run 10 the guard's own inference caused four confirmed errors, and D-108 removed that inference by narrowing the guard to English speech in Latin script. Screen-only details in Hindi, Bengali and code-mixed sources are now unguarded, and that is where four of the five confirmed errors after S-1.18.6 were found.
+- *Substance.* Runs 9 and 10 showed no gain over the plain report: 8.67 against 8.67, then 8.0 against 8.33. Rule 3 measures the annotations themselves, so no attribution guard can change it.
+- *Cost of continuing.* Every pair spends Gemini 3.1 Pro judge quota that the report-level measurements batched in [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) also need.
+
+**Decision.** The owner: *"park R1"*. The recommendation, adopted in full:
+1. Visual analysis stays hidden (`featureFlags.visualAnalysis = false`) and R1 measurement stops. Run 11 is not run, and no new pair is pre-registered.
+2. The backend, the captured frames and the attribution guard stay in the code. The guard stays on by default. It does nothing on a report without visual spans, which is every report started from the UI.
+3. Deferred with R1: T-1.18.9.4 (unhide on a pass) and T-1.18.9.9 (the pair of runs), and the follow-ups T-1.18.1.10, T-1.18.1.11, T-1.18.2.5, T-1.18.5.5, T-1.14.18.6, T-1.14.19.6 and S-1.18.4.
+4. Two ways back, taken only if the owner asks:
+   - **(c)** annotate only sources whose speech is English in Latin script, the only speech the guard can check, and pre-register a pair on an English-only corpus;
+   - **(e)** the post-compose LLM audit that [D-075](#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19) deferred, checked offline on the stored reports of runs 1 to 10 before any new run.
+
+   Either needs a new pre-registered pair under the [D-107](#d-107--r1s-substance-rule-a-tie-passes-any-loss-fails-attribution-stays-zero-error-2026-10-25) rules: a substance tie passes, any loss fails, and attribution stays zero-error.
+5. The [D-096](#d-096--r1-frames-reach-the-user-opt-in-per-run-lazy-stills-and-a-visual_extractions-quota-2026-10-19) capture caps (`visual_extractions`: free 2, Pro 30, Studio 300) stay undecided until R1 returns. [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25) adds Stripe pricing as the other point at which they are decided.
+
+**Alternatives considered.**
+- *Run 11, or a new pair now.* Rule 3 failed in runs 9 and 10 for reasons the guard does not touch, so another pair would most likely spend the quota and fail again.
+- *Unhide with a disclosure.* The owner rejected that in D-105.
+- *Remove the backend.* Either way back is built and tested on the frames, the pipeline and the stored reports of ten runs. Keeping them costs little, since the guard is a no-op without visual spans.
+- *Keep the follow-ups open.* They pay off only while R1 is surfaced (D-105), so they wait with it.
+
+**Consequences.**
+- E-1.18 is deferred (🔴) on the board, together with S-1.18.4, S-1.18.5, S-1.18.8, S-1.18.9 and the tasks above. Shipped stories keep their status.
+- R1 spends nothing more, and the judge quota goes to the measurements D-112 batches.
+- The guard's tests stay in the suite, so the parked code is still checked.
+- Reopening R1 starts with a pre-registration, not a run.
+
+**Linked initiatives / PRs.** E-1.18 (S-1.18.2, S-1.18.4, S-1.18.5, S-1.18.8, S-1.18.9: T-1.18.9.4, T-1.18.9.9), S-1.14.18, S-1.14.19; [D-075](#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19), [D-096](#d-096--r1-frames-reach-the-user-opt-in-per-run-lazy-stills-and-a-visual_extractions-quota-2026-10-19), [D-105](#d-105--visual-analysis-hidden-in-the-ui-until-a-deterministic-attribution-guard-removes-the-residual-error-2026-10-20), [D-106](#d-106--the-deterministic-attribution-guard-ships-in-the-report-pipeline-r1-stays-hidden-after-run-9-2026-10-24), [D-107](#d-107--r1s-substance-rule-a-tie-passes-any-loss-fails-attribution-stays-zero-error-2026-10-25), [D-108](#d-108--the-attribution-guard-never-infers-that-a-detail-went-unsaid-it-checks-only-english-speech-in-latin-script-2026-10-25).
+
+## D-110 — Echo only sees what the user hands it: no background capture, and the Echo scope rulings (2026-10-25)
+
+**Status:** accepted (the owner's decision, 2026-10-25). It answers the [L3 plan](plans/l3-echo-personal-brain.md#open-questions-the-users-call)'s open questions 2, 4, 5, 6 and 7, sends question 1 to SaaS launch, and confirms [D-089](#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 3.
+
+**Context.** Echo's plan and board had left these calls to the owner:
+- The privacy promise (plan question 7): may Echo record browsing in the background, opt-in per site, or does it see only what the user hands it? T-3.7.3.3 (history capture in the extension) was deferred until this was decided, and the browser-history connector (T-3.2.5) with it.
+- Whether a fact the user deleted may come back (T-3.2.4.4). Today it can: the GitHub sync upserts derived facts by kind and key, so a forgotten "Python (GitHub)" returns with the next nightly sync.
+- Private GitHub activity (T-3.2.4.3), which needs the `repo` scope, full read-write access to code.
+- D-089 item 3, the whole-brain archive carrying other people's words the user shared, which shipped in #286 as an interpretation awaiting confirmation; and a per-thread override for quoting other people (plan question 2).
+- The Spotify live tail (S-3.2.3, question 4), when Gmail (T-3.2.3, question 5), Mode B fine-tuning (E-3.9, question 6), and private-by-key encryption for SaaS (question 1).
+
+**Decision.** The owner: *"Echo sees only what I hand it"*, with the Echo calls adopted as recommended.
+1. **Echo only sees what you hand it.** Every input is something the user did: a share, an import, a note, a fact, or a connector they consented to. Nothing records browsing in the background.
+   - T-3.7.3.3 and the background-capture part of T-3.2.5 are won't-do. The design the plan preferred, had the answer been yes, stays in the [L3 plan](plans/l3-echo-personal-brain.md#domain-5--shares-inbox-e-37) for the record.
+   - The extension keeps what S-3.7.3 shipped: it sends a page, link, selection or image when the user asks.
+   - Private-by-key encryption (question 1) waits until SaaS (S-3.10.3).
+2. **Deleted facts stay deleted (T-3.2.4.4): accepted to build.** A delete records a tombstone per (source, kind, key), and syncs skip tombstoned keys. It covers every connector's derived facts, not only GitHub's.
+3. **No private-repository scope (T-3.2.4.3): won't-do.** The GitHub connector stays public-only, on `read:user`.
+4. **The archive keeps the other people's words the user shared (D-089 item 3): confirmed as shipped in #286.** "Never exported" means dataset and derived exports, not the user's own copy.
+5. **No per-thread override for quoting other people** (question 2). Context-only content is retrievable and never quoted verbatim. Marking one's own words stays authorship, not an override.
+6. **No Spotify live tail (S-3.2.3): won't-do** (question 4). The extended streaming-history import (S-3.7.5) covers the history.
+7. **Gmail (T-3.2.3): never on SaaS before revenue** (question 5). Its restricted scope needs a yearly security assessment. Self-hosters use the IMAP inbox (S-3.7.4), where mail sent to a dedicated mailbox becomes a share.
+8. **Mode B fine-tuning (E-3.9) stays parked** (question 6) until the owner's own voice test, the user-as-judge run (T-3.3.4.3), has run.
+
+**Alternatives considered.**
+- *Opt-in browsing capture per site and category,* the plan's design had the answer been yes: per-domain host permissions, URL, title and time only, never incognito. Not adopted. It still records in the background, and explicit sharing covers the need. "Only what you hand it" is a promise a user can check against their own actions.
+- *Tombstones for GitHub only.* Every connector that derives facts upserts by kind and key, so each would bring a deleted fact back.
+- *Private repositories behind a second consent.* GitHub OAuth apps have no read-only scope for private repositories; `repo` includes write access to code.
+- *A flagged archive section for other people's words.* D-089's fallback, not needed now that the shipped reading is confirmed.
+- *Gmail on SaaS now.* The yearly assessment is a cost before there is revenue to pay for it.
+
+**Consequences.**
+- On the board: T-3.7.3.3, T-3.2.5, T-3.2.4.3 and S-3.2.3 are won't-do (✖); T-3.2.4.4 is accepted (🔵); T-3.2.3, E-3.9 and S-3.10.3 are deferred (🔴); E-3.10's open question is closed.
+- A new connector that derives facts goes through the tombstone check once T-3.2.4.4 lands.
+- `personal-brain.md` and the L3 plan still describe browser-history capture as an option; this decision answers it.
+
+**Linked initiatives / PRs.** E-3.2 (T-3.2.3, T-3.2.5, S-3.2.3, S-3.2.4: T-3.2.4.3, T-3.2.4.4), E-3.7 (S-3.7.3: T-3.7.3.3, S-3.7.4, S-3.7.5), E-3.9, T-3.3.4.3, E-3.10 (S-3.10.3); [D-089](#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19), [D-098](#d-098--echo-connectors-events-unique-per-reader-tokens-in-a-secret-store-that-is-erased-with-the-brain-but-never-exported-2026-10-19); PR [#286](https://github.com/khoks/VideoResearchPro/pull/286).
+
+## D-111 — Operator-only tier switching and an honest pricing page (2026-10-25)
+
+**Status:** accepted (the owner's decision, 2026-10-25). It amends [D-050](#d-050--self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15): the tier switch becomes operator-only. Mock payment, the endpoint's shape and the Stripe swap D-050 planned (T-5.3.1) are unchanged.
+
+**Context.**
+- D-050 made `PUT /auth/me/tier` self-service, gated on sign-in only, because on self-host "the operator and the user are the same person 99% of the time". Since then an install can hold several isolated users ([D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)), and the paid tiers unlock work the operator pays for (Author Studio, Echo, saved searches). Any signed-in account can still make itself Studio. `POST /admin/restart`, which restarts every service on the machine, has the same sign-in-only gate.
+- The pricing page (`frontend/src/data/tiers.ts`) lists features that do not exist (reels, public report sharing, team workspaces, data-residency selection) and a daily LLM-token allowance (2M on Pro, 10M on Studio) that nothing enforces. In `TIER_CAPABILITIES`, `llm_tokens_per_day` and `document_count_cap` are defined but never checked.
+
+**Decision.** The owner: *"operator-only tier switch, honest pricing page"*.
+1. **Operator-only tier switching.** `PUT /auth/me/tier` and `POST /admin/restart` are restricted to operator accounts; every other account is refused.
+   - Operators are the accounts listed in a new `ADMIN_EMAILS` setting (comma-separated, case-insensitive).
+   - When `ADMIN_EMAILS` is unset, the earliest-registered account is the operator, so a single-user install behaves the same and needs no new configuration.
+   - Mock payment, the request and response shapes and the `tier_changed` audit event stay as D-050 set them.
+2. **An honest pricing page (E-5.2, `frontend/src/data/tiers.ts`).**
+   - Reels, public sharing, team workspaces and data residency are marked as planned.
+   - The daily-token lines are dropped, since nothing enforces them.
+   - The document caps (500, 5,000, unlimited) stay advertised, and a later E-5.2 item enforces them.
+   - The [D-096](#d-096--r1-frames-reach-the-user-opt-in-per-run-lazy-stills-and-a-visual_extractions-quota-2026-10-19) capture caps are decided when R1 returns or Stripe pricing starts ([D-109](#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25)).
+
+**Alternatives considered.**
+- *Keep D-050's sign-in-only gate.* On a shared install any account can give itself Studio and spend the operator's provider keys.
+- *An `is_admin` column.* Setting it needs SQL or a script, the friction D-050 removed. A setting is one line in `.env`.
+- *D-050's `ENABLE_SELF_SERVICE_TIER_FLIP` flag.* All or nothing: either every account can switch, or the operator cannot either.
+- *No operator when `ADMIN_EMAILS` is unset.* Every existing single-user install would lose its tier switch on upgrade.
+- *Drop the unbuilt features from the page.* Marked as planned, they still say what each tier is for; listing them as included is the defect.
+- *Enforce the daily token allowance instead of dropping it.* Tokens are metered only on the Q&A path (T-5.2.7), so the line would stay untrue until metering covers reports and the other call sites.
+
+**Consequences.**
+- A multi-user install should name its operators in `ADMIN_EMAILS`. Without it, the first account created on the install is the operator.
+- The Subscription page needs to know whether the reader is an operator, so it can say why the switch is unavailable instead of failing on submit.
+- D-050's re-evaluation hooks (the Stripe swap, the flag for SaaS) stand.
+- Enforcing the document caps is its own task (T-5.2.10).
+
+**Linked initiatives / PRs.** E-5.2 (T-5.2.6, T-5.2.8, T-5.2.9, T-5.2.10), E-5.3 (T-5.3.1), E-5.10; [D-045](#d-045--quota-metering-enforce-before-record-after-success-2026-05-05), [D-050](#d-050--self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15), [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-096](#d-096--r1-frames-reach-the-user-opt-in-per-run-lazy-stills-and-a-visual_extractions-quota-2026-10-19), [D-109](#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25).
+
+## D-112 — The remaining rulings of 2026-10-25: map batching, public sharing, the code-mixing threshold and the quick calls (2026-10-25)
+
+**Status:** accepted (the owner's decisions, 2026-10-25). One bullet per ruling. [D-109](#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25), [D-110](#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25) and [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25) carry the larger rulings of the same day.
+
+**Context.** Questions left to the owner had collected across the log, the board and the plans: a default restored by a pre-registered rule against other evidence (D-094), designs waiting for a go-ahead, a threshold resting on Claude's own labels (D-080), plan defaults taken without the owner, and items marked "the user's call". The owner adopted every recommendation, among them *"keep packed batching and run the comparison later"*, *"defer public sharing"* and *"Hindi spot check before changing the threshold"*.
+
+**Decision.**
+
+*Measurement and thresholds*
+- **Map batching stays `packed` plus the starved-source re-map ([D-094](#d-094--map-batching-packed-restored-by-run-7s-pre-registered-rule-starved-sources-re-mapped-alone-the-switch-to-source-is-the-users-call-2026-10-19); T-1.14.20.4, S-1.14.18, S-1.17.4).** `source` batching failed run 7's pre-registered substance gate, so switching without a measurement would override that rule. The report-level comparison (the second half of T-1.14.20.4) runs later. Its pass rule is pre-registered first, in the [D-107](#d-107--r1s-substance-rule-a-tie-passes-any-loss-fails-attribution-stays-zero-error-2026-10-25) style (a tie passes, any loss fails), with an explicit fabrication count. It is batched with S-1.14.18 and S-1.17.4, because all three spend the shared Gemini 3.1 Pro judge quota.
+- **The code-mixing dominant threshold stays at 0.6 ([D-080](#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19) open question 3; T-1.16.2.7).** It changes only after the native-reader spot check, because the 0.912 against 0.824 agreement figures that favour 0.5 rest on labels Claude made.
+- **OQ-9 (E-1.17): S-1.17.4 runs first and decides it.** Today's `dominant` wording stays meanwhile ([D-072](#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19)).
+- **OQ-16 (E-1.14): a model measured `unacceptable` is not refused.** The warning stays, because the verdicts rest on n=2 ([D-076](#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19)).
+- **OQ-7 (E-1.14): the model-quality harness is run by hand whenever a registry default changes,** not on a schedule.
+- **S-1.17.3 may reverse D-072's no-backfill rule,** with an amendment to D-072 in the same PR.
+
+*Sharing and output*
+- **Public report sharing is deferred (E-8.11, M11).** The static site zip covers sharing meanwhile: S-6.2.1 accepts `job:<id>`, so one report can be handed over as a site. If sharing is ever built, the takedown and revoke hooks go inside S-8.11.2. That breaks the circle in which T-5.5.6 (takedown) waited for M11 and M11 waited for T-5.5.6.
+- **S-6.2.2: download only, no one-click publishing (won't-do).** E-6.2 is shipped.
+- **E-6.5 (reels) is deferred.** When built: hosted TTS by default, local TTS as opt-in, a Hindi listening test, and no B-roll (L2 plan questions 1 and 2).
+- **L2 plan questions 3 and 4 are deferred:** book template variants, and a hosted site preview under the app's own origin.
+- **E-2.8 (brand assets): the interim echo mark is the identity.** The full logo (T-2.8.2) and the marketing logos (T-2.8.4) are made from it now, which also gives the marketing site the favicon its layout links to. `og.png` (T-2.8.3) is made when M11 is scheduled. A newly designed glyph (T-2.8.1) is not pursued.
+
+*Ranking and the workbench*
+- **S-1.5.13 (source types on job creation): go-ahead.**
+- **S-8.6.3 (a relative publish window in templates): yes,** as a ranking preference, never a filter ([D-059](#d-059--selection-quotas-preferred-channel-guarantee--concentration-cap-2026-07-30), [D-072](#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19)), built after S-1.5.13.
+- **E-7.2 (perspective banding) waits until the owner has weighted channels for real.** If it starts sooner, it starts with a researched plan and a pre-registered rule.
+- **T-7.1.2.2: a weight near 0 keeps today's behaviour** (on a broad corpus the channel drops out of answers). The channel page's slider text, which promises the opposite ("near 0 they appear only when little else matches"), is corrected ([D-068](#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18)).
+- **S-8.2.3 (the semantic palette group) and S-8.9.3 (topic clusters) stay parked.**
+- **M7 open question 1: no stance classification for YouTube videos.**
+
+*Settled defaults and housekeeping*
+- **Ratified:** [D-083](#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19) (its item 6, the read-only weight slot, is replaced by D-068's control, which S-7.1.1 shipped), [D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19), [D-079](#d-079--report-markdown-source-on-markdownify-new-report-routes-are-header-bearer-only-2026-10-19), [D-088](#d-088--report-intermediates-persisted-per-run-on-by-default-frozen-at-the-stage-that-produced-them-2026-10-19), [D-092](#d-092--library-graph-computed-per-request-sigma-used-directly-as-a-lazy-chunk-three-group-colours-the-accessibility-layer-inside-the-story-2026-10-19), and the M3 saved-search caps (Free 0, Pro 10, Studio 50; library and shelf scopes only; S-8.3.2). D-085 is amended in the PR that takes sign-in tokens out of URLs, not here.
+- **`/health/quota` showing an install-wide total without sign-in is by design,** and T-5.10.2.5 is closed. The YouTube Data API quota it reports belongs to the install, not to a user.
+- **The root `.env.example` is canonical.** `JWT_SECRET`, `ANTHROPIC_API_KEY` and `GOOGLE_API_KEY` are merged into it, `BYOK_ENCRYPTION_KEY` is added with its generate command, and then `backend/.env.example` is deleted.
+- **A real-phone pass is part of M12's acceptance (S-8.12.3, [D-087](#d-087--mobile-reading-and-install-a-reading-toolbar-below-1200-px-a-docked-composer-lifted-by-visualviewport-hermetic-device-tests-a-manifest-without-a-service-worker-2026-10-19)).**
+
+**Alternatives considered.**
+- *Switch the default to `source` on its fabrication evidence (0 confirmed against 6).* That overrides a rule written before the data. The comparison can decide it under a rule written before it runs.
+- *Move the dominant threshold to 0.5 now.* The figures that favour it rest on Claude's labels, so a native reader's check comes first.
+- *Launch public sharing with the plan's cheap mitigations.* A public, unauthenticated route that hosts model-written content needs takedown tooling and abuse signals the app does not have, and the site zip already lets the owner hand a report over.
+- *Refuse `unacceptable` models.* Two samples are too few to take a setting away from the user.
+- *One-click site publishing.* It needs a stored provider token for something a downloaded zip already does.
+
+**Consequences.**
+- On the board: S-1.5.13, S-1.14.18, S-1.17.4, T-1.14.20.4, T-1.16.2.7, S-8.6.3, S-8.12.3, T-2.8.2, T-2.8.4 and two new tasks (T-5.6.7, the `.env.example` merge; T-7.1.1.6, the slider text) are accepted (🔵). E-8.11, E-6.5, E-7.2, S-8.2.3, S-8.9.3 and T-2.8.3 are deferred (🔴). S-6.2.2, T-7.1.2.2 and T-2.8.1 are won't-do (✖). E-6.2 is shipped (🟢), T-5.10.2.5 is closed, and E-8.12 reopens to 🟡 until the real-phone pass is done.
+- The three Gemini 3.1 Pro measurements (T-1.14.20.4's comparison, S-1.14.18, S-1.17.4) are pre-registered before any of them runs.
+- OQ-7, OQ-9 and OQ-16 on the board are answered; D-080's question 3 stays open with its condition.
+
+**Linked initiatives / PRs.** E-1.14 (S-1.14.18, S-1.14.20: T-1.14.20.4), E-1.16 (T-1.16.2.3, T-1.16.2.7), E-1.17 (S-1.17.3, S-1.17.4), S-1.5.13, E-2.8, E-5.5 (T-5.5.6), E-5.6 (T-5.6.7), E-5.10 (T-5.10.2.5), E-6.1, E-6.2 (S-6.2.1, S-6.2.2), E-6.5, E-7.1 (T-7.1.1.6, T-7.1.2.2), E-7.2, E-8.1, E-8.2 (S-8.2.3), E-8.3 (S-8.3.2), E-8.6 (S-8.6.3), E-8.7, E-8.9 (S-8.9.3), E-8.11 (S-8.11.2), E-8.12 (S-8.12.3); [D-059](#d-059--selection-quotas-preferred-channel-guarantee--concentration-cap-2026-07-30), [D-068](#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18), [D-072](#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19), [D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19), [D-076](#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19), [D-079](#d-079--report-markdown-source-on-markdownify-new-report-routes-are-header-bearer-only-2026-10-19), [D-080](#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19), [D-083](#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19), [D-085](#d-085--reading-room-reports-stay-html-sanitised-and-parsed-in-the-browser-one-shared-citation-card-fed-by-the-runs-documents-2026-10-19), [D-087](#d-087--mobile-reading-and-install-a-reading-toolbar-below-1200-px-a-docked-composer-lifted-by-visualviewport-hermetic-device-tests-a-manifest-without-a-service-worker-2026-10-19), [D-088](#d-088--report-intermediates-persisted-per-run-on-by-default-frozen-at-the-stage-that-produced-them-2026-10-19), [D-092](#d-092--library-graph-computed-per-request-sigma-used-directly-as-a-lazy-chunk-three-group-colours-the-accessibility-layer-inside-the-story-2026-10-19), [D-094](#d-094--map-batching-packed-restored-by-run-7s-pre-registered-rule-starved-sources-re-mapped-alone-the-switch-to-source-is-the-users-call-2026-10-19), [D-107](#d-107--r1s-substance-rule-a-tie-passes-any-loss-fails-attribution-stays-zero-error-2026-10-25).

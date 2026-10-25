@@ -54,6 +54,8 @@ _IMPLIED_END = {
     "tbody": frozenset({"thead", "tbody", "tfoot", "tr", "td", "th"}),
     "tfoot": frozenset({"thead", "tbody", "tfoot", "tr", "td", "th"}),
     "option": frozenset({"option"}),
+    # A heading start tag ends a heading that is the current node.
+    **{h: frozenset({"h1", "h2", "h3", "h4", "h5", "h6"}) for h in ("h1", "h2", "h3", "h4", "h5", "h6")},
 }
 
 _TAG_OPEN = re.compile(r"<(/?)([A-Za-z][A-Za-z0-9-]*)")

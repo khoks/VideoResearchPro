@@ -88,6 +88,7 @@ def test_optional_end_tags_are_closed_where_a_parser_closes_them():
     assert hb.check("<p>a<ul><li>b</ul>").balanced
     assert hb.check("<table><tr><td>a<td>b<tr><td>c</table>").balanced
     assert hb.check("<dl><dt>a<dd>b<dt>c<dd>d</dl>").balanced
+    assert hb.check("<h2>Title<h3>Sub</h3><p>x</p>").balanced
 
 
 def test_void_and_self_closing_tags_open_nothing():

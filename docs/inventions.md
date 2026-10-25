@@ -203,6 +203,12 @@ against the sources' speech in code, and any that fails is removed.
 
 **Measured so far.** On the stored reports of eight earlier runs it catches 8 of 10 confirmed errors, against 2 of 5 for a token checker. This is in-sample. In its first pre-registered run (run 9), all 7 of its own changes held up under three-lens verification. One error still got through: a lone two-digit figure, below its action threshold.
 
+Run 10 (2026-10-25) contradicts the "edits that cannot be wrong" claim for every mark that implies a detail was not said. Four of the guard's eleven changes were confirmed attribution errors, and each one inferred absence from a transcript the guard could not fully read:
+- The "not spoken" gate misfired twice: on a caption homophone ("one to one" for `121`) and on an inflected form ("get started" was spoken; "getting started" was marked "not spoken").
+- Two words were spoken in Bengali. One got an on-screen mark that verifiers read as screen-only, given the processing note's "could not be matched to the speech"; the other lost an "also".
+
+What holds by construction is narrower than claimed: the bare "(on screen at mm:ss)" presence claim. T-1.18.9.11 proposes dropping every absence inference. See the protocol note, "Run 10: results".
+
 **Linked decisions / initiatives / PRs.** [D-075](decisions.md#d-075--r1-after-three-runs-the-modality-boundary-needs-provenance-not-prompt-rules-2026-10-19), [D-105](decisions.md#d-105--visual-analysis-hidden-in-the-ui-until-a-deterministic-attribution-guard-removes-the-residual-error-2026-10-20), [D-106](decisions.md#d-106--the-deterministic-attribution-guard-ships-in-the-report-pipeline-r1-stays-hidden-after-run-9-2026-10-24); E-1.18, S-1.18.8, S-1.18.9; PR [#363](https://github.com/khoks/VideoResearchPro/pull/363).
 
 **Verbatim source.** —

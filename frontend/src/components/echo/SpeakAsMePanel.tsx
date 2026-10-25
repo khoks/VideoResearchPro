@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { useCreateDraft, useDeleteDraft, useDraftStatus, useRecentDrafts } from '../../hooks/useEcho';
 import { DraftEditor } from './DraftEditor';
 import { useJobStore } from '../../stores/jobStore';
+import { openApiLink } from '../../services/apiFiles';
 import type { CreateDraftPayload, EchoDraft } from '../../services/echoApi';
+import { citedFileFailed } from '../citation/citedFile';
 import { Badge, Button, Card, FormField, Input, Select, Skeleton, Textarea } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
@@ -188,7 +190,15 @@ function DraftView({ draft, onCopy }: { draft: EchoDraft; onCopy: () => void }) 
             <span key={i}>
               {i > 0 && ' · '}
               {ct.url ? (
-                <a href={ct.url} target="_blank" rel="noreferrer" style={{ color: c.textSecondary }}>
+                <a
+                  href={ct.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  // An uploaded PDF is served behind the bearer header: opened as a blob URL (T-8.8.1.5).
+                  onClick={(e) => openApiLink(e, ct.url, citedFileFailed)}
+                  onAuxClick={(e) => openApiLink(e, ct.url, citedFileFailed)}
+                  style={{ color: c.textSecondary }}
+                >
                   {citationLabel(ct)}
                 </a>
               ) : (

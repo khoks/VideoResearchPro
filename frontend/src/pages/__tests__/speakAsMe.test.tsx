@@ -33,6 +33,7 @@ vi.mock('../../services/echoApi', () => ({
 }));
 
 import { SpeakAsMePanel } from '../../components/echo/SpeakAsMePanel';
+import http from '../../services/api';
 
 const GATE = { status: 'not_run' as const, run_at: null, pairs: 0, picked_own_share: null, notes_total: 3, notes_needed: 40 };
 const OFF: DraftStatus = {
@@ -157,6 +158,43 @@ describe('SpeakAsMePanel', () => {
     expect(result.querySelector('a[href="https://youtube.com/watch?v=x&t=42s"]')?.textContent).toBe('Tariff study — Econ');
     expect(result.textContent).toContain('what Echo knows about you');
     expect(result.querySelector('[data-notes]')?.textContent).toContain('Slightly more formal than you.');
+  });
+
+  it('opens an uploaded PDF it drew on as a blob fetched with the header, not the route that 401s (T-8.8.1.5)', async () => {
+    api.draftStatus.mockResolvedValue(ON);
+    api.createDraft.mockResolvedValue({
+      ...DRAFT,
+      citations: [{ kind: 'source', ref: 'S1', label: 'Annual report', url: '/api/v1/library/pdf/abc.pdf' }],
+    });
+    const get = vi.spyOn(http, 'get').mockResolvedValue({ data: new Blob(['%PDF']) } as never);
+    const createObjectURL = URL.createObjectURL;
+    const revokeObjectURL = URL.revokeObjectURL;
+    const windowOpen = window.open;
+    URL.createObjectURL = vi.fn(() => 'blob:http://localhost:5173/p1');
+    URL.revokeObjectURL = vi.fn();
+    const open = vi.fn(() => null);
+    window.open = open as unknown as typeof window.open;
+    try {
+      await mount();
+      act(() => type(host.querySelector('textarea')!, 'What does the report say?'));
+      await act(async () => buttons('Draft a reply')[0].click());
+      await flush();
+      const link = host.querySelector('[data-result] a[href="/api/v1/library/pdf/abc.pdf"]')!;
+      expect(link.textContent).toBe('Annual report');
+      const e = new MouseEvent('click', { bubbles: true, cancelable: true });
+      act(() => {
+        link.dispatchEvent(e);
+      });
+      expect(e.defaultPrevented).toBe(true);
+      await flush();
+      expect(get).toHaveBeenCalledWith('/library/pdf/abc.pdf', { responseType: 'blob' });
+      expect(open).toHaveBeenCalledWith('blob:http://localhost:5173/p1', '_blank', 'noopener');
+    } finally {
+      get.mockRestore();
+      URL.createObjectURL = createObjectURL;
+      URL.revokeObjectURL = revokeObjectURL;
+      window.open = windowOpen;
+    }
   });
 
   it("saves the user's version without the disclosure, and says what Echo learns from", async () => {

@@ -17,10 +17,12 @@
  * existing Q&A history) render as YouTube — that was the only shape
  * before this PR.
  */
-import type { CSSProperties } from 'react';
+import type { CSSProperties, MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useColors } from '../../hooks/useTheme';
 import { useVideoChannel } from '../../hooks/useVideoChannel';
+import { openApiLink } from '../../services/apiFiles';
+import { citedFileFailed } from './citedFile';
 import { fonts, fontSize } from '../../theme';
 import type { Reference } from '../../types/qa';
 import { noteTargetHref, type NoteTargetType } from '../../services/notesApi';
@@ -208,6 +210,13 @@ function renderCitation(ref: Reference): RenderedCitation {
 export function CitationLink({ reference, newTab = true, style }: CitationLinkProps) {
   const c = useColors();
   const { href, label } = renderCitation(reference);
+  // E-1.8 / T-8.8.1.5: a PDF's permalink is the API's serve route, which
+  // takes the bearer header only, so following it 401s in the new tab. Fetch
+  // the bytes and open them as a blob URL, keeping `#page=<N>`.
+  const apiFile = {
+    onClick: (e: MouseEvent<HTMLAnchorElement>) => void openApiLink(e, href, citedFileFailed),
+    onAuxClick: (e: MouseEvent<HTMLAnchorElement>) => void openApiLink(e, href, citedFileFailed),
+  };
   // S-8.7.4: a YouTube citation names its channel as a link to the channel
   // page, when the reader can see the cited video (resolved at read time,
   // batched across every chip on screen; no change to stored references).
@@ -272,6 +281,7 @@ export function CitationLink({ reference, newTab = true, style }: CitationLinkPr
       href={href}
       target={newTab ? '_blank' : undefined}
       rel={newTab ? 'noopener noreferrer' : undefined}
+      {...apiFile}
       style={{
         color: c.accent,
         textDecoration: 'none',

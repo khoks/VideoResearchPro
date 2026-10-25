@@ -5,9 +5,9 @@
 // lets us suggest a filename to the browser even when the server doesn't
 // set a Content-Disposition header.
 //
-// The URL is expected to already carry any required auth (e.g. a ?token=
-// query param appended by the caller) since <a> navigations can't set the
-// Authorization header.
+// An <a> navigation cannot send the Authorization header, so an API file is
+// fetched first and this is given its blob: URL (services/apiFiles.ts). Never
+// pass a URL carrying the JWT: no HTTP route accepts `?token=` (T-8.8.1.5).
 export function downloadUrl(url: string, filename: string): void {
   const a = document.createElement('a');
   a.href = url;

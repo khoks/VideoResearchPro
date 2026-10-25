@@ -6,7 +6,6 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { Command, useCommandState } from 'cmdk';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
 import { isMacPlatform, modLabel } from '../../hooks/useShortcuts';
 import { useColors, useShadows } from '../../hooks/useTheme';
 import { useTierCapabilities } from '../../hooks/useTierCapabilities';
@@ -15,7 +14,6 @@ import { searchApi, type SearchItem, type SearchType } from '../../services/sear
 import { useJobStore } from '../../stores/jobStore';
 import { useEchoPanelStore } from '../../stores/echoPanelStore';
 import { usePaletteStore } from '../../stores/paletteStore';
-import { downloadUrl } from '../../utils/download';
 import { shortcutLabel } from '../../utils/echoPanel';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, z } from '../../theme';
 import {
@@ -43,8 +41,8 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
   const c = useColors();
   const s = useShadows();
   const navigate = useNavigate();
-  const { token } = useAuth();
   const { has } = useTierCapabilities();
+  const pushToast = useJobStore((st) => st.pushToast);
   const theme = useJobStore((st) => st.theme);
   const toggleTheme = useJobStore((st) => st.toggleTheme);
   const singleKey = usePaletteStore((st) => st.singleKeyShortcuts);
@@ -98,6 +96,10 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
   };
 
   const actions: PaletteAction[] = useMemo(() => {
+    // T-8.8.1.5: fetched with the header and saved from a blob: URL.
+    const exportNotes = (file: 'notesMarkdown' | 'notesJsonld') => {
+      exportsApi.download(file).catch(() => pushToast('error', 'Could not fetch your notes for export.'));
+    };
     const nav = (id: string, label: string, href: string, keywords = ''): PaletteAction => ({
       id,
       label,
@@ -124,7 +126,7 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
         keywords: 'download notes md',
         run: () => {
           onClose();
-          downloadUrl(exportsApi.getNotesMarkdownUrl(token), 'notes.md');
+          exportNotes('notesMarkdown');
         },
       },
       {
@@ -133,7 +135,7 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
         keywords: 'download notes json annotation',
         run: () => {
           onClose();
-          downloadUrl(exportsApi.getNotesJsonldUrl(token), 'notes.jsonl');
+          exportNotes('notesJsonld');
         },
       },
       nav('exports', 'Exports', '/exports', 'datasets download jsonl'),
@@ -171,7 +173,7 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
       },
     );
     return list;
-  }, [has, navigate, onClose, setSingleKey, singleKey, theme, toggleTheme, token]);
+  }, [has, navigate, onClose, pushToast, setSingleKey, singleKey, theme, toggleTheme]);
 
   const shownActions = query.trim() ? actions.filter((a) => matchesQuery(a, query)) : actions;
   const groups = q && search.data ? search.data.groups.filter((g) => g.items.length > 0) : [];

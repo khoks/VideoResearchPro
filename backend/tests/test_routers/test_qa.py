@@ -27,14 +27,17 @@ def _make_completed_job(
     return job
 
 
-def test_report_accepts_query_token(unauthenticated_client, db, auth_token, test_user):
+def test_report_rejects_a_valid_query_token(unauthenticated_client, db, auth_token, test_user):
+    # T-8.8.1.5: the quick peek fetches the HTML with the header and frames a
+    # blob: URL, so a JWT in the URL no longer authenticates this route — even
+    # a valid one for the job's owner.
     job = _make_completed_job(db, tenant_id=test_user.id)
     with patch("app.routers.qa.report_service.get_report_html", return_value="<html>ok</html>"):
         response = unauthenticated_client.get(
             f"/api/v1/jobs/{job.id}/report?token={auth_token}"
         )
-    assert response.status_code == 200
-    assert response.text == "<html>ok</html>"
+    assert response.status_code == 401
+    assert "<html>" not in response.text
 
 
 def test_report_still_accepts_header_token(client, db, test_user):
@@ -42,6 +45,7 @@ def test_report_still_accepts_header_token(client, db, test_user):
     with patch("app.routers.qa.report_service.get_report_html", return_value="<html>ok</html>"):
         response = client.get(f"/api/v1/jobs/{job.id}/report")
     assert response.status_code == 200
+    assert response.text == "<html>ok</html>"
 
 
 def test_report_rejects_when_no_token(unauthenticated_client, db):
@@ -59,8 +63,8 @@ def test_report_rejects_bad_query_token(unauthenticated_client, db):
 
 
 def test_qa_history_does_not_accept_query_token(unauthenticated_client, db, auth_token):
-    # The scoped query-token fallback must not leak to other QA routes —
-    # /qa and /qa/clarify still require the Authorization header.
+    # No route in this router takes a query token — /qa and /qa/clarify
+    # require the Authorization header, like /report since T-8.8.1.5.
     job = _make_completed_job(db)
     response = unauthenticated_client.get(
         f"/api/v1/jobs/{job.id}/qa?token={auth_token}"

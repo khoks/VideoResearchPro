@@ -2,8 +2,8 @@
 
 Lives in its own router rather than ``routers/qa.py`` so the reader can land
 without touching the Q&A router, which the retrieval work serialises on. The
-legacy HTML route (``GET /jobs/{id}/report``, query-token fallback for the
-iframe) stays in ``routers/qa.py`` until T-8.8.1.5 retires it.
+legacy HTML route (``GET /jobs/{id}/report``) stays in ``routers/qa.py`` for
+the quick peek; since T-8.8.1.5 it is header-only too.
 """
 
 from fastapi import APIRouter, Depends, HTTPException

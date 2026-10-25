@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_current_user, get_db, get_user_from_query_or_header
+from app.dependencies import get_current_user, get_db
 from app.models.qa_exchange import QAExchange
 from app.schemas.qa import ClarifyRequest, ClarifyResponse, QARequest, QAResponse, Reference
 from app.services import (
@@ -21,9 +21,9 @@ from app.services.llm_service import get_llm_for
 
 logger = logging.getLogger(__name__)
 
-# Per-route auth because /report accepts a query-string token fallback
-# (iframes can't set Authorization headers) while the rest of this router
-# requires a header-bearer JWT.
+# Every route here takes the header-bearer JWT. /report accepted a `?token=`
+# fallback for the quick-peek iframe until T-8.8.1.5 (2026-10-25); the modal
+# now fetches the HTML with the header and frames it as a blob: URL.
 router = APIRouter(
     prefix="/jobs/{job_id}",
     tags=["qa"],
@@ -37,7 +37,7 @@ router = APIRouter(
 def get_report(
     job_id: str,
     db: Session = Depends(get_db),
-    current_user=Depends(get_user_from_query_or_header),
+    current_user=Depends(get_current_user),
 ):
     job = job_service.get_job(db, job_id, tenant_id=current_user.id)
     if not job:

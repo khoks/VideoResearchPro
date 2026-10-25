@@ -68,7 +68,7 @@
 - **FR-6.3.** **Subscription jobs** generate **no report**.
 - **FR-6.4.** Reports include: key facts, perspectives, conclusions, references with `&t=` timestamp links, speaker attribution where identifiable, statistics (video count, total duration, word count, channel breakdown).
 - **FR-6.5.** Reports are saved as standalone HTML files under `data/reports/` and served via `GET /jobs/{id}/report`.
-- **FR-6.6.** The report endpoint accepts a `?token=` query string in addition to the bearer header (iframe-friendly). Kept only for the job page's quick-peek modal until T-8.8.1.5 retires it.
+- **FR-6.6.** The report endpoint takes the bearer header only. The job page's quick-peek modal fetches the HTML with the header and frames it from a blob: URL; the `?token=` query-string fallback it used was retired by T-8.8.1.5 (2026-10-25), on this route and on the `/exports/*` downloads.
 - **FR-6.7.** Reports are read natively at `/reports/:jobId` from `GET /jobs/{id}/report/body` (header-bearer only), sanitised and parsed in the browser, with an outline, citation cards, endnotes and a print stylesheet; knowledge reports and Author Studio books read in the same shell ([D-085](decisions.md#d-085--reading-room-reports-stay-html-sanitised-and-parsed-in-the-browser-one-shared-citation-card-fed-by-the-runs-documents-2026-10-19), [D-086](decisions.md#d-086--markdown-readers-react-markdowns-own-pipeline-run-once-with-a-tree-transform-the-outline-is-the-two-shallowest-structural-heading-levels-2026-10-19)).
 
 ### FR-7 — Per-job Q&A

@@ -16,10 +16,11 @@ user's words leaving the system in a form they can keep:
   GET /api/v1/exports/notes.jsonl   W3C Web Annotation JSON-LD, lossless
   GET /api/v1/exports/notes.md      readable, grouped by target
 
-Auth: header-bearer JWT is preferred. ?token= query fallback is also
-accepted because browser-initiated downloads (``window.location.href = url``,
-``<a download>``) cannot set an Authorization header — same pattern used for
-the HTML report download in ``routers/qa.py``.
+Auth: header-bearer JWT only. Until T-8.8.1.5 (2026-10-25) these routes also
+took ``?token=`` because a plain ``<a download>`` cannot set an Authorization
+header; a token in a URL leaks into history, logs and Referer headers, so the
+frontend now fetches the file with the header and saves it from a blob: URL
+(``services/apiFiles.ts``, D-085 addendum).
 """
 import logging
 
@@ -27,7 +28,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_db, get_user_from_query_or_header
+from app.dependencies import get_current_user, get_db
 from app.services import dataset_service, note_export_service
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ def _attachment(filename: str) -> dict[str, str]:
 @router.get("/qa-dataset/openai.jsonl")
 def export_qa_openai(
     db: Session = Depends(get_db),
-    current_user=Depends(get_user_from_query_or_header),
+    current_user=Depends(get_current_user),
 ) -> StreamingResponse:
     return StreamingResponse(
         dataset_service.stream_qa_openai(db, current_user.id),
@@ -64,7 +65,7 @@ def export_qa_openai(
 @router.get("/qa-dataset/tuple.jsonl")
 def export_qa_tuple(
     db: Session = Depends(get_db),
-    current_user=Depends(get_user_from_query_or_header),
+    current_user=Depends(get_current_user),
 ) -> StreamingResponse:
     return StreamingResponse(
         dataset_service.stream_qa_tuple(db, current_user.id),
@@ -76,7 +77,7 @@ def export_qa_tuple(
 @router.get("/knowledge-dataset/openai.jsonl")
 def export_knowledge_openai(
     db: Session = Depends(get_db),
-    current_user=Depends(get_user_from_query_or_header),
+    current_user=Depends(get_current_user),
 ) -> StreamingResponse:
     return StreamingResponse(
         dataset_service.stream_knowledge_openai(db, current_user.id),
@@ -88,7 +89,7 @@ def export_knowledge_openai(
 @router.get("/knowledge-dataset/tuple.jsonl")
 def export_knowledge_tuple(
     db: Session = Depends(get_db),
-    current_user=Depends(get_user_from_query_or_header),
+    current_user=Depends(get_current_user),
 ) -> StreamingResponse:
     return StreamingResponse(
         dataset_service.stream_knowledge_tuple(db, current_user.id),
@@ -103,7 +104,7 @@ def export_notes_jsonld(
         True, description="Withdrawn notes too, with their `deleted` timestamp."
     ),
     db: Session = Depends(get_db),
-    current_user=Depends(get_user_from_query_or_header),
+    current_user=Depends(get_current_user),
 ) -> StreamingResponse:
     """Every note as a W3C Web Annotation, one JSON-LD object per line,
     oldest first. Lossless: `note_export_service.parse_note_jsonld` is the
@@ -121,7 +122,7 @@ def export_notes_jsonld(
 def export_notes_markdown(
     include_deleted: bool = Query(True),
     db: Session = Depends(get_db),
-    current_user=Depends(get_user_from_query_or_header),
+    current_user=Depends(get_current_user),
 ) -> StreamingResponse:
     """The same notes as a Markdown document grouped by target type and
     target, every note dated."""

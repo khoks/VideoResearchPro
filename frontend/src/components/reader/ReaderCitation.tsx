@@ -12,7 +12,9 @@
  */
 import { useRef, type CSSProperties, type FocusEvent, type MouseEvent, type PointerEvent } from 'react';
 import { useColors } from '../../hooks/useTheme';
+import { openApiLink } from '../../services/apiFiles';
 import { fonts, fontSize, radius, space } from '../../theme';
+import { citedFileFailed } from '../citation/citedFile';
 import { useCitationUi } from './CitationContext';
 import type { ReportCitation } from './parseReport';
 
@@ -76,16 +78,18 @@ export function ReaderCitation({ citation }: { citation: ReportCitation }) {
         aria-label={`${citation.label}${describe ? `, ${describe}` : ''}, opens in a new tab`}
         style={{ ...base, color: c.accent, background: c.accentSubtle }}
         {...handlers}
-        onClick={
-          ui
-            ? (e) => {
-                if (!touchPreview.current) return;
-                touchPreview.current = false;
-                e.preventDefault();
-                ui.show(citation.index, e.currentTarget, true);
-              }
-            : undefined
-        }
+        onClick={(e) => {
+          if (ui && touchPreview.current) {
+            touchPreview.current = false;
+            e.preventDefault();
+            ui.show(citation.index, e.currentTarget, true);
+            return;
+          }
+          // A source served by the API (an uploaded PDF) takes the bearer
+          // header only; open it as a blob URL rather than a link that 401s.
+          openApiLink(e, href, citedFileFailed);
+        }}
+        onAuxClick={(e) => openApiLink(e, href, citedFileFailed)}
       >
         {citation.label}
         {fn}

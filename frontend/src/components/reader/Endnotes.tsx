@@ -8,7 +8,9 @@
  */
 import { useEffect, useState } from 'react';
 import { useColors } from '../../hooks/useTheme';
+import { openApiLink } from '../../services/apiFiles';
 import { formatDuration } from '../../utils/formatters';
+import { citedFileFailed } from '../citation/citedFile';
 import { fonts, fontSize, fontWeight, lineHeight, measure, space } from '../../theme';
 import type { Endnote } from './citations';
 import { describeSource } from './sourceLabels';
@@ -75,7 +77,14 @@ export function Endnotes({ endnotes }: { endnotes: Endnote[] }) {
             return (
               <li key={n.footnote} id={`reader-fn-${n.footnote}`} value={n.footnote} style={{ marginBottom: space['2'] }}>
                 {n.href ? (
-                  <a href={n.href} target="_blank" rel="noopener noreferrer" style={{ color: c.accent }}>
+                  <a
+                    href={n.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => openApiLink(e, n.href, citedFileFailed)}
+                    onAuxClick={(e) => openApiLink(e, n.href, citedFileFailed)}
+                    style={{ color: c.accent }}
+                  >
                     {title}
                   </a>
                 ) : (

@@ -719,8 +719,9 @@ def _record_caption_track(video: Document, extracted) -> None:
     ``scripts/refetch_dubbed_transcripts.py`` can skip documents already
     fetched by the spoken-language rule. Absent for cache hits and Whisper.
     """
-    track = (getattr(extracted, "extra", None) or {}).get("caption_track")
-    if not track:
+    extra = getattr(extracted, "extra", None)
+    track = extra.get("caption_track") if isinstance(extra, dict) else None
+    if not isinstance(track, dict) or not track:
         return
     try:
         meta = json.loads(video.source_metadata_json) if video.source_metadata_json else {}

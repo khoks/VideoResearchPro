@@ -46,31 +46,73 @@ def _query_param_names(dependant) -> set[str]:
     return names
 
 
-def _routes_by_path():
-    return {route.path: route for route in app.routes if isinstance(route, (APIRoute, APIWebSocketRoute))}
+def _served_routes() -> list[tuple[str, object, object]]:
+    """Every route the app serves, as (full path, route, effective dependant).
+
+    A list, not a dict by path: a GET and a POST on one path are two routes
+    with two dependency trees, and both are checked.
+
+    FastAPI up to at least 0.135 copies an included router's routes into
+    ``app.routes`` with the prefix and the router-level dependencies applied.
+    Later releases (0.162, what CI's fresh install gets) keep each inclusion
+    as one ``_IncludedRouter`` entry and resolve the prefixed path and the
+    dependant per inclusion, through ``fastapi.routing.iter_route_contexts``.
+    Walking ``app.routes`` alone there finds no APIRoute at all, and a check
+    over it passes having looked at nothing.
+    """
+    try:
+        from fastapi.routing import iter_route_contexts
+    except ImportError:  # the flat route table
+        return [
+            (route.path, route, route.dependant)
+            for route in app.routes
+            if isinstance(route, (APIRoute, APIWebSocketRoute))
+        ]
+    served = []
+    for ctx in iter_route_contexts(app.routes):
+        route = ctx.original_route
+        if isinstance(route, (APIRoute, APIWebSocketRoute)):
+            served.append((ctx.path, route, ctx.dependant))
+    return served
+
+
+def _served_paths() -> set[str]:
+    return {path for path, _route, _dependant in _served_routes()}
+
+
+def test_the_route_walk_sees_the_whole_app():
+    # The checks below are only as good as this walk: it must reach the
+    # routes behind include_router (all of them) on whichever FastAPI is
+    # installed.
+    served = _served_routes()
+    paths = {path for path, _route, _dependant in served}
+    assert set(_RETIRED) <= paths
+    assert "/ws/jobs" in paths
+    assert len(served) > 100
 
 
 def test_no_http_route_reads_a_credential_from_the_query_string():
+    http = [(path, route, dependant) for path, route, dependant in _served_routes() if isinstance(route, APIRoute)]
+    assert set(_RETIRED) <= {path for path, _route, _dependant in http}  # never passes having seen nothing
     offenders = {
-        route.path: sorted(_query_param_names(route.dependant) & _CREDENTIAL_NAMES)
-        for route in app.routes
-        if isinstance(route, APIRoute)
+        f"{sorted(route.methods)} {path}": names
+        for path, route, dependant in http
+        if (names := sorted(_query_param_names(dependant) & _CREDENTIAL_NAMES))
     }
-    offenders = {path: names for path, names in offenders.items() if names}
     assert offenders == {}, f"HTTP routes reading a credential from the URL: {offenders}"
 
 
 def test_the_websocket_is_the_one_route_that_still_does():
     # Also the check above's proof that the walk sees a query-string token.
-    ws = _routes_by_path()["/ws/jobs"]
+    [(ws, dependant)] = [(route, dep) for path, route, dep in _served_routes() if path == "/ws/jobs"]
     assert isinstance(ws, APIWebSocketRoute)
-    assert "token" in _query_param_names(ws.dependant)
+    assert "token" in _query_param_names(dependant)
 
 
 def test_every_retired_route_still_exists():
     # Keeps the list honest: a route that moved would otherwise drop out of
     # the per-route checks below without anyone noticing.
-    routes = _routes_by_path()
+    routes = _served_paths()
     assert [p for p in _RETIRED if p not in routes] == []
 
 

@@ -710,6 +710,28 @@ def _ensure_era(db, video: Document, segments: list[dict], job_id: str) -> None:
         )
 
 
+def _record_caption_track(video: Document, extracted) -> None:
+    """Keep which caption track a transcript came from on the document.
+
+    S-1.11.11: ``fetch_text`` reports the track it chose (language, manual or
+    ASR, spoken-language match or a fallback, auto-dubs it skipped) in
+    ``extra["caption_track"]``. Stored under ``source_metadata_json`` so
+    ``scripts/refetch_dubbed_transcripts.py`` can skip documents already
+    fetched by the spoken-language rule. Absent for cache hits and Whisper.
+    """
+    track = (getattr(extracted, "extra", None) or {}).get("caption_track")
+    if not track:
+        return
+    try:
+        meta = json.loads(video.source_metadata_json) if video.source_metadata_json else {}
+    except (TypeError, ValueError):
+        meta = {}
+    if not isinstance(meta, dict):
+        meta = {}
+    meta["caption_track"] = track
+    video.source_metadata_json = json.dumps(meta)
+
+
 def _load_cached_segments(video_id: str) -> tuple[list[dict], str] | None:
     """Load cached transcript segments for ``video_id`` from TranscriptCache.
 
@@ -1293,6 +1315,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                         video.transcripted_at = datetime.now(timezone.utc)
                     if hasattr(video, "transcript_source"):
                         video.transcript_source = extracted.text_source
+                    _record_caption_track(video, extracted)
 
                     _ensure_era(db, video, transcript, job_id)
                     chunks = chunk_transcript(
@@ -1616,6 +1639,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
                     video.transcripted_at = datetime.now(timezone.utc)
                 if hasattr(video, "transcript_source"):
                     video.transcript_source = extracted.text_source
+                _record_caption_track(video, extracted)
 
                 _ensure_era(db, video, transcript, job_id)
                 chunks = chunk_transcript(

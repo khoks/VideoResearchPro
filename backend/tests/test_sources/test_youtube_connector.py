@@ -333,6 +333,24 @@ def test_fetch_text_returns_extracted_text_on_success(yt):
     assert out.word_count == 5
 
 
+def test_fetch_text_carries_the_chosen_caption_track(yt):
+    """S-1.11.11: the track the service chose rides on ``extra`` so the job
+    can record it on the document."""
+    from app.services.youtube_service import TranscriptResult
+
+    track = {"language": "hi", "kind": "asr", "match": "spoken"}
+    segments = [{"text": "namaste", "start": 0.0, "duration": 1.0}]
+    with patch.object(
+        yt_connector_mod.youtube_service,
+        "fetch_transcript",
+        return_value=TranscriptResult(segments, "hi", "youtube", track),
+    ):
+        out = yt.fetch_text(_candidate())
+
+    assert out.language == "hi"
+    assert out.extra == {"caption_track": track}
+
+
 def test_fetch_text_handles_segments_without_text(yt):
     """Defensive: a malformed segment dict shouldn't crash word_count."""
     segments = [

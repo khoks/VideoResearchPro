@@ -7,11 +7,13 @@ import subprocess
 import tempfile
 import threading
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any, NamedTuple
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api import TranscriptList, YouTubeTranscriptApi
 
 from app.config import settings
 from app.database import SessionLocal
@@ -286,6 +288,40 @@ def get_video_details(video_ids: list[str], job_id: str = "") -> dict[str, dict]
 
     logger.info(f"{tag} get_video_details: resolved {len(details)}/{total} video(s)")
     return details
+
+
+def get_default_audio_languages(video_ids: list[str], job_id: str = "") -> dict[str, str | None]:
+    """``snippet.defaultAudioLanguage`` per video — the language the uploader
+    says the video is spoken in (S-1.11.11).
+
+    1 quota unit per 50 ids (``videos.list``). Never ``captions.list``, which
+    costs 50 units per video. ``snippet.defaultLanguage`` is deliberately not
+    used: it is the language of the title and description, and on
+    ``v6CuYULP3tM`` it reads ``en`` for a Hindi-spoken video. Ids the API does
+    not return, and videos without the field, map to None.
+    """
+    tag = f"[job:{job_id}]" if job_id else ""
+    out: dict[str, str | None] = {vid: None for vid in video_ids}
+    if not video_ids:
+        return out
+    youtube = get_youtube_client()
+    for i in range(0, len(video_ids), 50):
+        batch = video_ids[i:i + 50]
+        response = _execute_youtube_request(
+            youtube.videos().list(
+                part="snippet",
+                id=",".join(batch),
+                fields="items(id,snippet(defaultAudioLanguage))",
+            ),
+            "videos",
+        )
+        for item in response.get("items", []):
+            out[item["id"]] = (item.get("snippet") or {}).get("defaultAudioLanguage") or None
+    logger.info(
+        f"{tag} get_default_audio_languages: {sum(1 for v in out.values() if v)}"
+        f"/{len(video_ids)} video(s) declare an audio language"
+    )
+    return out
 
 
 def _safe_int(value) -> int | None:
@@ -575,28 +611,324 @@ def resolve_channel_id(channel_input: str, job_id: str = "") -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Caption-track choice (S-1.11.11)
+#
+# Before this, `_fetch_transcript_once` asked for `en` / `en-auto` and then
+# took the FIRST listed track. On videos YouTube has auto-dubbed, the list
+# carries one ASR track per dubbed audio track, so a Hindi lecture arrived as
+# its Bengali dub (`1v3_AQ26jZ0`, `5AuuOZ4vuxI`) or its English one
+# (`v6CuYULP3tM`): fluent text no detector downstream can flag, and every
+# quote from it words the speaker never said. Measured on 37 Hindi, Hinglish
+# and Kannada library videos in docs/notes/2026-10-25-caption-track-choice.md.
+# ---------------------------------------------------------------------------
+
+# Sentinel: the caller did not look the default audio language up.
+AUDIO_LANGUAGE_UNSET: Any = object()
+
+# The player response names each audio track "<language>.<n>". On all 12
+# multi-audio videos measured, exactly one track ended ".4" — always the
+# default track — and every other one ".10" (the auto-dubs).
+_ORIGINAL_AUDIO_TRACK_SUFFIX = "4"
+
+# YouTube still serves a few retired ISO 639 codes (`iw` for Hebrew).
+_LANGUAGE_ALIASES = {"iw": "he", "in": "id", "ji": "yi", "jw": "jv"}
+
+
+def primary_language(code: str | None) -> str | None:
+    """The primary subtag of a BCP-47 code, lower-cased: ``en-US`` -> ``en``."""
+    if not code:
+        return None
+    primary = str(code).strip().replace("_", "-").split("-")[0].lower()
+    return _LANGUAGE_ALIASES.get(primary, primary) or None
+
+
+@dataclass(frozen=True)
+class AudioTracks:
+    """A multi-audio video's audio tracks, read from the player response."""
+
+    original: str  # language code of the original audio, e.g. "hi"
+    # Exact, lower-cased codes of the other (dubbed) audio tracks: "en-us".
+    dubbed: frozenset[str] = field(default_factory=frozenset)
+
+
+def audio_tracks_from_captions(captions_json: dict) -> AudioTracks | None:
+    """The original and dubbed audio languages, or None for a video with a
+    single audio track (nothing dubbed) or one whose original is unclear."""
+    entries = [
+        (i, (t or {}).get("audioTrackId"))
+        for i, t in enumerate(captions_json.get("audioTracks") or [])
+    ]
+    ids = [(i, tid) for i, tid in entries if tid]
+    if len(ids) < 2:
+        return None
+    originals = [tid for _, tid in ids if tid.rsplit(".", 1)[-1] == _ORIGINAL_AUDIO_TRACK_SUFFIX]
+    original = originals[0] if len(originals) == 1 else None
+    if original is None:
+        default_index = captions_json.get("defaultAudioTrackIndex")
+        original = next((tid for i, tid in ids if i == default_index), None)
+    if original is None:
+        return None
+    original_lang = original.rsplit(".", 1)[0]
+    # A dub's ASR caption track carries the dub's code EXACTLY (`en-US.10`
+    # -> `en-US`, `bn.10` -> `bn`, all 20 dubs of `8Hdx8IGL1sc`), while the
+    # original audio's ASR track carries the language the recogniser heard,
+    # usually bare (`en-US.4` -> `en`). Matching on the primary subtag would
+    # drop `IcVYyF3EEbk`'s only real track (`en`) because of its `en-US` dub.
+    dubbed = frozenset(
+        code
+        for _, tid in ids
+        if tid != original
+        and (code := tid.rsplit(".", 1)[0].lower())
+        and code != original_lang.lower()
+    )
+    return AudioTracks(original=original_lang, dubbed=dubbed)
+
+
+def _is_dub_track(track, dubbed: frozenset[str]) -> bool:
+    """An ASR caption track in exactly a dubbed audio track's language."""
+    return bool(track.is_generated) and (track.language_code or "").lower() in dubbed
+
+
+def _best_track(tracks: list, language: str | None):
+    """Manual before ASR; then the exact code, the bare code, a regional one."""
+    wanted = (language or "").lower()
+
+    def rank(item):
+        index, t = item
+        code = (t.language_code or "").lower()
+        closeness = 0 if code == wanted else 1 if "-" not in code else 2
+        return (1 if t.is_generated else 0, closeness, index)
+
+    return min(enumerate(tracks), key=rank)[1]
+
+
+def choose_caption_track(
+    tracks: list,
+    *,
+    spoken_language: str | None,
+    dubbed: frozenset[str] = frozenset(),
+    preferred_language: str = "en",
+) -> tuple[Any, str, tuple[str, ...]]:
+    """Pick the caption track to ingest. Pure: no network.
+
+    1. Drop auto-dubbed tracks: an ASR track in a language the video was
+       dubbed into is the dub's transcript, never the speaker's words.
+    2. A track in the spoken language: manual first, then the ASR track.
+    3. Only when the spoken language is unknown or has no track, the old
+       English-first fallback (``preferred_language``, then ``en``), then the
+       remaining ASR track (the original audio's), then whatever is left.
+
+    Translated tracks (``tlang``) are never requested, so never chosen.
+
+    Returns ``(track, match, skipped_dubbed)``; ``track`` is None with match
+    ``only_dubbed`` when every track is a dub and ``none`` when there are no
+    tracks at all.
+    """
+    usable, skipped = [], []
+    for t in tracks:
+        (skipped if _is_dub_track(t, dubbed) else usable).append(t)
+    skipped_codes = tuple(t.language_code for t in skipped)
+    if not usable:
+        return None, ("only_dubbed" if skipped else "none"), skipped_codes
+
+    spoken = primary_language(spoken_language)
+    if spoken:
+        pool = [t for t in usable if primary_language(t.language_code) == spoken]
+        if pool:
+            return _best_track(pool, spoken_language), "spoken", skipped_codes
+
+    for lang in dict.fromkeys([preferred_language, "en"]):
+        pool = [t for t in usable if primary_language(t.language_code) == primary_language(lang)]
+        if pool:
+            return _best_track(pool, lang), "fallback_english_first", skipped_codes
+    asr = [t for t in usable if t.is_generated]
+    if asr:
+        return asr[0], "fallback_original_asr", skipped_codes
+    return usable[0], "fallback_first_listed", skipped_codes
+
+
+@dataclass
+class TrackChoice:
+    """The outcome of ``plan_caption_track``: the track and why."""
+
+    track: Any  # youtube_transcript_api Transcript, or None
+    match: str
+    spoken_language: str | None
+    spoken_language_source: str | None  # "data_api" | "player"
+    skipped_dubbed: tuple[str, ...] = ()
+    available: tuple[str, ...] = ()
+
+    @property
+    def language(self) -> str | None:
+        return getattr(self.track, "language_code", None)
+
+    @property
+    def kind(self) -> str | None:
+        if self.track is None:
+            return None
+        return "asr" if self.track.is_generated else "manual"
+
+    def as_metadata(self) -> dict:
+        meta = {
+            "language": self.language,
+            "kind": self.kind,
+            "match": self.match,
+            "spoken_language": self.spoken_language,
+            "spoken_language_source": self.spoken_language_source,
+        }
+        if self.skipped_dubbed:
+            meta["skipped_dubbed"] = list(self.skipped_dubbed)
+        return meta
+
+
+class _NoSpokenTrackError(RuntimeError):
+    """Every caption track is an auto-dub: definitive, so not retried."""
+
+
+def _list_caption_tracks(ytt_api, video_id: str) -> tuple[Any, AudioTracks | None]:
+    """The transcript list plus the player's audio tracks.
+
+    ``youtube-transcript-api`` parses the player response but keeps only the
+    caption tracks; the audio tracks that tell an original from a dub are in
+    the same JSON. Read it through the library's fetcher and build the list
+    with its public ``TranscriptList.build`` — the same request ``list()``
+    makes, so no extra traffic. If a future release moves those internals,
+    fall back to ``list()`` without audio tracks (pinned by a test).
+    """
+    fetcher = getattr(ytt_api, "_fetcher", None)
+    fetch_json = getattr(fetcher, "_fetch_captions_json", None)
+    http_client = getattr(fetcher, "_http_client", None)
+    if callable(fetch_json) and http_client is not None:
+        captions_json = fetch_json(video_id)
+        return (
+            TranscriptList.build(http_client, video_id, captions_json),
+            audio_tracks_from_captions(captions_json),
+        )
+    logger.warning(
+        "youtube-transcript-api internals changed; caption-track choice runs "
+        "without audio tracks, so auto-dubs cannot be told apart (S-1.11.11)"
+    )
+    return ytt_api.list(video_id), None
+
+
+def _lookup_default_audio_language(video_id: str, tag: str) -> str | None:
+    """Fail-soft single-video ``defaultAudioLanguage`` (1 quota unit)."""
+    try:
+        return get_default_audio_languages([video_id]).get(video_id)
+    except Exception as exc:  # noqa: BLE001 — quota, key or network: fall back
+        logger.warning(
+            f"{tag} defaultAudioLanguage lookup failed for {video_id} "
+            f"({type(exc).__name__}); choosing the caption track without it"
+        )
+        return None
+
+
+def plan_caption_track(
+    ytt_api,
+    video_id: str,
+    *,
+    language: str = "en",
+    audio_language: Any = AUDIO_LANGUAGE_UNSET,
+    tag: str = "",
+) -> TrackChoice:
+    """List a video's caption tracks and choose the one to ingest.
+
+    Dubs are recognised from the player's audio tracks (free; the only
+    source that has them). The spoken language is, in order:
+
+    1. ``defaultAudioLanguage`` — passed by a caller that looked it up in a
+       batch, or looked up here (1 unit), but only when the non-dub tracks
+       span more than one language: with one language the choice cannot
+       change, so the unit would be wasted (35 of 37 measured videos);
+    2. the player's original audio track, on a multi-audio video (present
+       even when the uploader declared nothing — ``v6CuYULP3tM``).
+
+    Network errors propagate (the caller classifies IP blocks).
+    """
+    transcript_list, audio = _list_caption_tracks(ytt_api, video_id)
+    tracks = list(transcript_list)
+    dubbed = audio.dubbed if audio is not None else frozenset()
+
+    spoken, source = None, None
+    if audio_language is not AUDIO_LANGUAGE_UNSET:
+        spoken = audio_language or None
+    else:
+        offered = {
+            primary_language(t.language_code) for t in tracks if not _is_dub_track(t, dubbed)
+        }
+        if len(offered) > 1:
+            spoken = _lookup_default_audio_language(video_id, tag)
+    if spoken:
+        source = "data_api"
+    elif audio is not None:
+        spoken, source = audio.original, "player"
+
+    track, match, skipped = choose_caption_track(
+        tracks, spoken_language=spoken, dubbed=dubbed, preferred_language=language
+    )
+    return TrackChoice(
+        track=track,
+        match=match,
+        spoken_language=spoken,
+        spoken_language_source=source,
+        skipped_dubbed=skipped,
+        available=tuple(
+            f"{t.language_code}({'auto' if t.is_generated else 'manual'})" for t in tracks
+        ),
+    )
+
+
+class TranscriptResult(NamedTuple):
+    """What ``fetch_transcript`` returns.
+
+    The first three fields keep the historical ``(segments, language,
+    source)`` order. ``track`` (S-1.11.11) describes the caption track that
+    was chosen — ``TrackChoice.as_metadata()`` — and is None for cache hits
+    and Whisper transcriptions, which carry no track.
+    """
+
+    segments: list[dict]
+    language: str
+    source: str
+    track: dict | None = None
+
+
 def fetch_transcript(
     video_id: str,
     language: str = "en",
     job_id: str = "",
     allow_whisper: bool = True,
-) -> tuple[list[dict], str, str] | None:
+    audio_language: Any = AUDIO_LANGUAGE_UNSET,
+) -> TranscriptResult | None:
     """
     Fetch transcript with caching, retry, circuit breaker, and Whisper fallback.
 
     Lookup order:
     1. transcript_cache DB table — cache hit returns immediately.
     2. YouTube Transcript API up to 3 times with exponential backoff (2s, 4s, 8s),
-       gated by the shared IP-block circuit breaker (S-1.11.1 / D-051).
+       gated by the shared IP-block circuit breaker (S-1.11.1 / D-051). The
+       caption track is the one in the video's SPOKEN language, never an
+       auto-dub (S-1.11.11, ``plan_caption_track``).
     3. Download audio via yt-dlp and transcribe via OpenAI Whisper API
        (segmented when >25 MB — S-1.11.2), unless ``allow_whisper`` is False
        (per-job Whisper budget exhausted — S-1.11.7).
 
+    Args:
+        language: the fallback language (English-first) used only when the
+            spoken language is unknown or has no caption track.
+        audio_language: the video's ``defaultAudioLanguage`` when the caller
+            already looked it up (batched, 1 unit per 50 ids); None means it
+            looked and the video declares none. Omitted, it is looked up
+            here, and only when the caption tracks span more than one
+            language (1 unit).
+
     Returns:
-        Tuple of (segments, actual_language, source) on success, or None.
-        `segments` is a list of {text, start, duration} dicts.
-        `actual_language` is the BCP-47 code, or "unknown" for Whisper.
-        `source` is "youtube" or "whisper" (S-1.11.4 provenance).
+        ``TranscriptResult(segments, actual_language, source, track)`` on
+        success, or None. `segments` is a list of {text, start, duration}
+        dicts. `actual_language` is the BCP-47 code, or "unknown" for
+        Whisper. `source` is "youtube" or "whisper" (S-1.11.4 provenance).
+        `track` is the chosen caption track's metadata (YouTube fetches only).
     """
     retry_delays = [2, 4, 8]
     tag = f"[job:{job_id}]" if job_id else ""
@@ -604,13 +936,16 @@ def fetch_transcript(
 
     cached = _load_from_cache(video_id, tag)
     if cached is not None:
-        return cached
+        return TranscriptResult(*cached)
 
     ip_blocked = False
+    only_dubbed = False
     if transcript_breaker.wait_if_open(tag):
         for attempt, delay in enumerate(retry_delays, start=1):
             try:
-                result = _fetch_transcript_once(video_id, language, job_id=job_id)
+                result = _fetch_transcript_once(
+                    video_id, language, job_id=job_id, audio_language=audio_language
+                )
             except _IpBlockedError as e:
                 # YouTube is actively blocking us — no point retrying in 2-8s.
                 logger.warning(
@@ -619,14 +954,23 @@ def fetch_transcript(
                 transcript_breaker.record_block()
                 ip_blocked = True
                 break
+            except _NoSpokenTrackError as e:
+                # Only auto-dubbed tracks: definitive, so no retry. Whisper
+                # transcribes the original audio (yt-dlp prefers the track
+                # marked original), so it is still worth trying.
+                logger.warning(f"{tag} {e}")
+                transcript_breaker.record_success()
+                only_dubbed = True
+                break
             if result:
                 logger.info(
                     f"{tag} YouTube transcript succeeded for {video_id} "
                     f"on attempt {attempt}/{len(retry_delays)}"
                 )
                 transcript_breaker.record_success()
-                _save_to_cache(video_id, result[0], result[1], "youtube", tag)
-                return result[0], result[1], "youtube"
+                segments, actual_lang, track = result
+                _save_to_cache(video_id, segments, actual_lang, "youtube", tag)
+                return TranscriptResult(segments, actual_lang, "youtube", track)
             if attempt < len(retry_delays):
                 logger.info(
                     f"{tag} Transcript attempt {attempt}/{len(retry_delays)} failed for {video_id}, "
@@ -643,7 +987,9 @@ def fetch_transcript(
         )
         return None
 
-    if not ip_blocked:
+    if only_dubbed:
+        logger.warning(f"{tag} Starting Whisper API fallback for {video_id} (original audio)...")
+    elif not ip_blocked:
         logger.warning(
             f"{tag} All {len(retry_delays)} YouTube transcript attempts failed for {video_id}. "
             "Starting Whisper API fallback..."
@@ -651,7 +997,7 @@ def fetch_transcript(
     whisper_result = _transcribe_with_whisper(video_id, job_id=job_id)
     if whisper_result is not None:
         _save_to_cache(video_id, whisper_result[0], whisper_result[1], "whisper", tag)
-        return whisper_result[0], whisper_result[1], "whisper"
+        return TranscriptResult(whisper_result[0], whisper_result[1], "whisper")
     return None
 
 
@@ -732,50 +1078,54 @@ def _build_transcript_api() -> YouTubeTranscriptApi:
 
 
 def _fetch_transcript_once(
-    video_id: str, language: str = "en", job_id: str = ""
-) -> tuple[list[dict], str] | None:
+    video_id: str,
+    language: str = "en",
+    job_id: str = "",
+    audio_language: Any = AUDIO_LANGUAGE_UNSET,
+) -> tuple[list[dict], str, dict] | None:
     """Single attempt to fetch transcript via YouTube Transcript API.
 
-    Returns a (segments, actual_language) tuple, or None on failure.
+    Lists the caption tracks once, chooses the spoken-language track
+    (``plan_caption_track``, S-1.11.11) and fetches only that one.
+
+    Returns a (segments, actual_language, track_metadata) tuple, or None on
+    failure. Raises ``_IpBlockedError`` when YouTube is blocking us and
+    ``_NoSpokenTrackError`` when every track is an auto-dub.
     """
     tag = f"[job:{job_id}]" if job_id else ""
     transcript_limiter.wait()
     ytt_api = _build_transcript_api()
-
-    # Preferred language order
-    preferred = [language, f"{language}-auto", "en", "en-auto"]
-    logger.info(f"{tag} _fetch_transcript_once: video_id={video_id}, trying languages={preferred}")
+    logger.info(f"{tag} _fetch_transcript_once: video_id={video_id}, fallback language={language}")
 
     try:
-        transcript = ytt_api.fetch(video_id, languages=preferred)
+        choice = plan_caption_track(
+            ytt_api, video_id, language=language, audio_language=audio_language, tag=tag
+        )
+        if choice.track is None:
+            if choice.match == "only_dubbed":
+                raise _NoSpokenTrackError(
+                    f"Every caption track of {video_id} is an auto-dub "
+                    f"(skipped {list(choice.skipped_dubbed)}); refusing to ingest a dub"
+                )
+            logger.warning(f"{tag} No caption tracks listed for {video_id}")
+            return None
+        logger.info(
+            f"{tag} Caption track for {video_id}: {choice.language} ({choice.kind}, "
+            f"{choice.match}; spoken={choice.spoken_language} via "
+            f"{choice.spoken_language_source}; available={list(choice.available)}"
+            + (f"; skipped dubs={list(choice.skipped_dubbed)}" if choice.skipped_dubbed else "")
+            + ")"
+        )
+        transcript = choice.track.fetch()
         result = _transcript_to_list(transcript)
-        actual_lang = getattr(transcript, "language_code", None) or language
+        actual_lang = getattr(transcript, "language_code", None) or choice.language or language
         logger.info(
             f"{tag} YouTube transcript fetched for {video_id}: "
             f"{len(result)} segments (language={actual_lang})"
         )
-        return result, actual_lang
-    except Exception:
-        pass
-
-    # Fallback: try any available transcript
-    try:
-        transcript_list = ytt_api.list(video_id)
-        available = [t.language_code for t in transcript_list]
-        if available:
-            fallback_lang = available[0]
-            logger.info(
-                f"{tag} Preferred languages unavailable for {video_id}, "
-                f"falling back to '{fallback_lang}' (available: {available})"
-            )
-            transcript = ytt_api.fetch(video_id, languages=[fallback_lang])
-            result = _transcript_to_list(transcript)
-            actual_lang = getattr(transcript, "language_code", None) or fallback_lang
-            logger.info(
-                f"{tag} Fallback transcript fetched for {video_id} in '{actual_lang}': "
-                f"{len(result)} segments"
-            )
-            return result, actual_lang
+        return result, actual_lang, choice.as_metadata()
+    except _NoSpokenTrackError:
+        raise
     except Exception as e:
         logger.warning(f"{tag} Transcript unavailable for {video_id}: {e}")
         # Propagate a sentinel so callers can distinguish IP-blocking (where

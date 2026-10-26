@@ -12,6 +12,10 @@ Since S-1.11.4 (D-051), `fetch_text` propagates real transcript
 provenance: `text_source` is `"youtube"` for caption fetches and
 `"whisper"` for Whisper transcriptions, as reported by
 `youtube_service.fetch_transcript`.
+
+Since S-1.11.11 the caption track is the one in the video's spoken language,
+never an auto-dub, and `fetch_text` carries the chosen track's metadata in
+`ExtractedText.extra["caption_track"]` (language, manual or ASR, why).
 """
 from __future__ import annotations
 
@@ -194,13 +198,17 @@ class YouTubeConnector(BaseConnector):
         )
         if not result:
             return None
-        segments, language, source = result
+        segments, language, source = result[0], result[1], result[2]
         word_count = sum(len(seg.get("text", "").split()) for seg in segments)
+        # S-1.11.11: which caption track was ingested and why (spoken-language
+        # match, fallback, skipped auto-dubs). None for cache hits / Whisper.
+        track = getattr(result, "track", None)
         return ExtractedText(
             segments=segments,
             language=language,
             text_source=source,
             word_count=word_count,
+            extra={"caption_track": track} if track else {},
         )
 
 

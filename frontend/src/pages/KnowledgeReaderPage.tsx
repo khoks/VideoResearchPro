@@ -13,7 +13,7 @@ import { useKnowledge } from '../hooks/useKnowledge';
 import { Button, EmptyState, Spinner } from '../components/primitives';
 import { ReaderShell, StatTiles, describeSource, formatPublished, parseMarkdownDoc } from '../components/reader';
 import { citedFileFailed } from '../components/citation/citedFile';
-import { isApiUrl, openApiFile } from '../services/apiFiles';
+import { openApiFile, openableApiFile } from '../services/apiFiles';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, space } from '../theme';
 
@@ -110,7 +110,7 @@ export function KnowledgeReaderPage() {
               onClick={() =>
                 // An uploaded PDF's url is the API's serve route, which takes the
                 // bearer header only: fetched and opened as a blob URL (T-8.8.1.5).
-                isApiUrl(data.url)
+                openableApiFile(data.url)
                   ? openApiFile(data.url!).catch(citedFileFailed)
                   : window.open(data.url!, '_blank', 'noopener,noreferrer')
               }

@@ -9,6 +9,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import http from '../../services/api';
+import { stubNewTabs, type FakeTab } from '../../services/__tests__/newTab';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -37,6 +38,7 @@ let host: HTMLDivElement;
 let root: Root;
 let get: ReturnType<typeof vi.spyOn>;
 let open: ReturnType<typeof vi.fn>;
+let tabs: FakeTab[];
 const saved = { create: URL.createObjectURL, revoke: URL.revokeObjectURL, open: window.open };
 
 function mount() {
@@ -61,8 +63,7 @@ beforeEach(() => {
   get = vi.spyOn(http, 'get').mockResolvedValue({ data: new Blob(['%PDF']) } as never);
   URL.createObjectURL = vi.fn(() => 'blob:http://localhost:5173/k1');
   URL.revokeObjectURL = vi.fn();
-  open = vi.fn(() => null);
-  window.open = open as unknown as typeof window.open;
+  ({ open, tabs } = stubNewTabs());
 });
 
 afterEach(() => {
@@ -84,7 +85,8 @@ describe('KnowledgeReaderPage: Open the source', () => {
     });
     expect(get).toHaveBeenCalledWith('/library/pdf/abc.pdf', { responseType: 'blob' });
     expect(open).toHaveBeenCalledTimes(1);
-    expect(open).toHaveBeenCalledWith('blob:http://localhost:5173/k1', '_blank', 'noopener');
+    expect(open).toHaveBeenCalledWith('', '_blank');
+    expect(tabs[0].location.href).toBe('blob:http://localhost:5173/k1');
   });
 
   it('opens a source on the open web as itself', async () => {

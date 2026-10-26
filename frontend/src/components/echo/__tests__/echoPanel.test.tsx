@@ -13,6 +13,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EchoBubble, EchoPanelHost } from '../EchoPanel';
 import http from '../../../services/api';
+import { stubNewTabs } from '../../../services/__tests__/newTab';
 import { useEchoPanelStore } from '../../../stores/echoPanelStore';
 import type { DraftGate, DraftResponse, EchoCardsResponse, EchoStatus } from '../../../services/echoApi';
 
@@ -299,8 +300,7 @@ describe('draft as me', () => {
     const windowOpen = window.open;
     URL.createObjectURL = vi.fn(() => 'blob:http://localhost:5173/p1');
     URL.revokeObjectURL = vi.fn();
-    const open = vi.fn(() => null);
-    window.open = open as unknown as typeof window.open;
+    const { open, tabs } = stubNewTabs();
     try {
       useEchoPanelStore.setState({ open: true, mode: 'draft' });
       mount();
@@ -314,9 +314,10 @@ describe('draft as me', () => {
         link.dispatchEvent(e);
       });
       expect(e.defaultPrevented).toBe(true);
+      expect(open).toHaveBeenCalledWith('', '_blank'); // inside the click, before the download
       await flush();
       expect(get).toHaveBeenCalledWith('/library/pdf/abc.pdf', { responseType: 'blob' });
-      expect(open).toHaveBeenCalledWith('blob:http://localhost:5173/p1', '_blank', 'noopener');
+      expect(tabs[0].location.href).toBe('blob:http://localhost:5173/p1');
     } finally {
       get.mockRestore();
       URL.createObjectURL = createObjectURL;

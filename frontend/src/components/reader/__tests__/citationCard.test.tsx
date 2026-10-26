@@ -7,6 +7,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import http from '../../../services/api';
+import { stubNewTabs, type FakeTab } from '../../../services/__tests__/newTab';
 import { CitationCardProvider, CITATION_CARD_ID } from '../CitationContext';
 import { Endnotes } from '../Endnotes';
 import { ReaderCitation } from '../ReaderCitation';
@@ -259,14 +260,14 @@ describe('a cited uploaded PDF (E-1.8, T-8.8.1.5)', () => {
   };
   let get: ReturnType<typeof vi.spyOn>;
   let open: ReturnType<typeof vi.fn>;
+  let tabs: FakeTab[];
   const saved = { create: URL.createObjectURL, revoke: URL.revokeObjectURL, open: window.open };
 
   beforeEach(() => {
     get = vi.spyOn(http, 'get').mockResolvedValue({ data: new Blob(['%PDF']) } as never);
     URL.createObjectURL = vi.fn(() => 'blob:http://localhost:5173/p1');
     URL.revokeObjectURL = vi.fn();
-    open = vi.fn(() => null);
-    window.open = open as unknown as typeof window.open;
+    ({ open, tabs } = stubNewTabs());
   });
 
   afterEach(() => {
@@ -313,9 +314,10 @@ describe('a cited uploaded PDF (E-1.8, T-8.8.1.5)', () => {
     const chip = host.querySelector<HTMLAnchorElement>('a.reader-citation')!;
     expect(chip.getAttribute('href')).toBe('/api/v1/library/pdf/abc.pdf');
     expect(clickAndOpen(chip)).toBe(true);
+    expect(open).toHaveBeenCalledWith('', '_blank'); // inside the click, before the download
     await settle();
     expect(get).toHaveBeenCalledWith('/library/pdf/abc.pdf', { responseType: 'blob' });
-    expect(open).toHaveBeenCalledWith('blob:http://localhost:5173/p1', '_blank', 'noopener');
+    expect(tabs[0].location.href).toBe('blob:http://localhost:5173/p1');
   });
 
   it('the card link', async () => {
@@ -324,7 +326,8 @@ describe('a cited uploaded PDF (E-1.8, T-8.8.1.5)', () => {
     const link = card().querySelector<HTMLAnchorElement>('a[href="/api/v1/library/pdf/abc.pdf"]')!;
     expect(clickAndOpen(link)).toBe(true);
     await settle();
-    expect(open).toHaveBeenCalledWith('blob:http://localhost:5173/p1', '_blank', 'noopener');
+    expect(open).toHaveBeenCalledWith('', '_blank');
+    expect(tabs[0].location.href).toBe('blob:http://localhost:5173/p1');
   });
 
   it('the endnote', async () => {
@@ -332,6 +335,35 @@ describe('a cited uploaded PDF (E-1.8, T-8.8.1.5)', () => {
     const note = host.querySelector<HTMLAnchorElement>('.reader-endnotes a[href="/api/v1/library/pdf/abc.pdf"]')!;
     expect(clickAndOpen(note)).toBe(true);
     await settle();
-    expect(open).toHaveBeenCalledWith('blob:http://localhost:5173/p1', '_blank', 'noopener');
+    expect(open).toHaveBeenCalledWith('', '_blank');
+    expect(tabs[0].location.href).toBe('blob:http://localhost:5173/p1');
+  });
+
+  it('a chip the report wrote to any other API route stays a plain link', async () => {
+    // The chip's own href wins over its source's, and the model writes it. A
+    // generic fetch-and-open would GET the route with the header and show
+    // the body top-level on the app's origin; only the PDF route opens.
+    const href = `${window.location.origin}/api/v1/jobs/x/report?t=1`;
+    const parsed = parseReportHtml(`<p>See <a href="${href}">this</a>.</p>`, {
+      renderCitation: (c) => <ReaderCitation key={c.index} citation={c} />,
+    });
+    const index = resolveCitations(parsed.citations, [PDF]);
+    act(() => {
+      root.render(
+        <CitationCardProvider index={index}>
+          <div>{parsed.content}</div>
+          <Endnotes endnotes={index.endnotes} />
+        </CitationCardProvider>,
+      );
+    });
+    const chip = host.querySelector<HTMLAnchorElement>('a.reader-citation')!;
+    expect(chip.getAttribute('href')).toBe(href);
+    const note = host.querySelector<HTMLAnchorElement>(`.reader-endnotes a[href="${href}"]`)!;
+    expect(clickAndOpen(chip)).toBe(false);
+    expect(clickAndOpen(note)).toBe(false);
+    await settle();
+    expect(get).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,9 @@
 /**
  * T-8.8.1.5: API files reach the browser as blob: URLs fetched with the
  * bearer header, never as links carrying the JWT. The helpers create each
- * URL, hand it over, and revoke it.
+ * URL, hand it over, and revoke it. Only the routes listed as openable are
+ * fetched for a tab, re-wrapped in their own type, and the tab is opened
+ * inside the click so the browser does not block it after the download.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,18 +17,22 @@ vi.mock('../api', () => ({
 
 import {
   BLOB_URL_TTL_MS,
+  TabBlockedError,
   downloadApiFile,
   isApiUrl,
   openApiFile,
   openApiLink,
   openBlobInNewTab,
+  openableApiFile,
   saveBlob,
   splitApiUrl,
 } from '../apiFiles';
 import { EXPORT_FILES, exportsApi, type ExportFile } from '../exportsApi';
 import { libraryApi } from '../libraryApi';
+import { stubNewTabs } from './newTab';
 
 let created: string[];
+let wrapped: Blob[];
 let openSpy: ReturnType<typeof vi.fn>;
 let clicked: Array<{ href: string; download: string }>;
 
@@ -37,8 +43,10 @@ async function settle() {
 beforeEach(() => {
   vi.useFakeTimers();
   created = [];
+  wrapped = [];
   let n = 0;
-  URL.createObjectURL = vi.fn(() => {
+  URL.createObjectURL = vi.fn((b: Blob | MediaSource) => {
+    wrapped.push(b as Blob);
     const url = `blob:http://localhost:5173/u${++n}`;
     created.push(url);
     return url;
@@ -81,6 +89,32 @@ describe('isApiUrl', () => {
   });
 });
 
+describe('openableApiFile', () => {
+  it('names an uploaded PDF, wherever its URL is written', () => {
+    expect(openableApiFile('/api/v1/library/pdf/abc.pdf#page=3')).toEqual({
+      path: '/library/pdf/abc.pdf',
+      fragment: '#page=3',
+      type: 'application/pdf',
+    });
+    expect(openableApiFile('http://localhost:8000/api/v1/library/pdf/abc.pdf?x=1')).toEqual({
+      path: '/library/pdf/abc.pdf?x=1',
+      fragment: '',
+      type: 'application/pdf',
+    });
+  });
+
+  it('refuses every other API route, dot segments resolved first', () => {
+    expect(openableApiFile('/api/v1/jobs/x/report')).toBeNull();
+    expect(openableApiFile('/api/v1/exports/notes.md')).toBeNull();
+    expect(openableApiFile('/api/v1/videos/v1/frames/f1/image')).toBeNull();
+    expect(openableApiFile('/api/v1/library/pdf/../../jobs/x/report')).toBeNull();
+    expect(openableApiFile('/api/v1/library/pdf/%2e%2e/%2E%2E/jobs/x/report')).toBeNull();
+    expect(openableApiFile('/api/v1/library/pdf/..\\..\\jobs/x/report')).toBeNull();
+    expect(openableApiFile('https://evil.example/api/v1/library/pdf/abc.pdf')).toBeNull();
+    expect(openableApiFile(undefined)).toBeNull();
+  });
+});
+
 describe('blob URL lifecycle', () => {
   it('opens bytes in a new tab with the fragment, then revokes the URL', () => {
     openBlobInNewTab(new Blob(['x']), '#page=4');
@@ -101,15 +135,20 @@ describe('blob URL lifecycle', () => {
 
 describe('fetching with the header', () => {
   it('a PDF citation fetches the bytes as a blob and opens them on their page', async () => {
+    const { tabs } = stubNewTabs();
     await openApiFile('/api/v1/library/pdf/abc.pdf#page=3');
     expect(getMock).toHaveBeenCalledWith('/library/pdf/abc.pdf', { responseType: 'blob' });
-    expect(openSpy).toHaveBeenCalledWith(`${created[0]}#page=3`, '_blank', 'noopener');
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0].location.href).toBe(`${created[0]}#page=3`);
+    vi.advanceTimersByTime(BLOB_URL_TTL_MS);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(created[0]);
   });
 
   it('the Library row’s PDF button goes through the same path', async () => {
+    const { tabs } = stubNewTabs();
     await libraryApi.openPdf('/api/v1/library/pdf/abc.pdf');
     expect(getMock).toHaveBeenCalledWith('/library/pdf/abc.pdf', { responseType: 'blob' });
-    expect(openSpy).toHaveBeenCalledWith(created[0], '_blank', 'noopener');
+    expect(tabs[0].location.href).toBe(created[0]);
   });
 
   it('downloads save under the given name', async () => {
@@ -140,18 +179,87 @@ describe('fetching with the header', () => {
   });
 });
 
+describe('the tab opens inside the click', () => {
+  it('before the download resolves, with the opener cut', async () => {
+    const { open, tabs } = stubNewTabs();
+    let deliver!: (r: { data: Blob }) => void;
+    getMock.mockImplementationOnce(() => new Promise((r) => (deliver = r)));
+    const pending = openApiFile('/api/v1/library/pdf/abc.pdf#page=7');
+    // Synchronously, in the click's own task: a later window.open is blocked
+    // once the user activation lapses, and with 'noopener' it returns null.
+    expect(open).toHaveBeenCalledWith('', '_blank');
+    expect(tabs[0].opener).toBeNull();
+    expect(tabs[0].location.href).toBe('about:blank');
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    deliver({ data: new Blob(['%PDF-1.7'], { type: 'application/pdf' }) });
+    await pending;
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(tabs[0].location.href).toBe(`${created[0]}#page=7`);
+  });
+
+  it('a blocked tab is reported, and nothing is fetched', async () => {
+    window.open = vi.fn(() => null) as unknown as typeof window.open;
+    await expect(openApiFile('/api/v1/library/pdf/abc.pdf')).rejects.toBeInstanceOf(TabBlockedError);
+    expect(getMock).not.toHaveBeenCalled();
+
+    const onError = vi.fn();
+    expect(openApiLink({ button: 0, preventDefault: vi.fn() }, '/api/v1/library/pdf/abc.pdf', onError)).toBe(true);
+    await settle();
+    expect(onError).toHaveBeenCalledWith(expect.any(TabBlockedError));
+  });
+
+  it('a failed download closes the tab it opened', async () => {
+    const { tabs } = stubNewTabs();
+    getMock.mockRejectedValueOnce(new Error('404'));
+    await expect(openApiFile('/api/v1/library/pdf/gone.pdf')).rejects.toThrow('404');
+    expect(tabs[0].closed).toBe(true);
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('a tab the reader closed while waiting gets nothing', async () => {
+    const { tabs } = stubNewTabs();
+    let deliver!: (r: { data: Blob }) => void;
+    getMock.mockImplementationOnce(() => new Promise((r) => (deliver = r)));
+    const pending = openApiFile('/api/v1/library/pdf/abc.pdf');
+    tabs[0].close();
+    deliver({ data: new Blob(['%PDF-1.7'], { type: 'application/pdf' }) });
+    await pending;
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+});
+
+describe('only openable files, as their own type', () => {
+  it('a PDF route that answers with HTML still opens as a PDF', async () => {
+    stubNewTabs();
+    getMock.mockResolvedValueOnce({ data: new Blob(['<script>steal()</script>'], { type: 'text/html' }) });
+    await openApiFile('/api/v1/library/pdf/abc.pdf');
+    expect(wrapped).toHaveLength(1);
+    expect(wrapped[0].type).toBe('application/pdf');
+  });
+
+  it('openApiFile refuses any other API route without fetching it', async () => {
+    const { open } = stubNewTabs();
+    await expect(openApiFile('/api/v1/jobs/x/report')).rejects.toThrow();
+    await expect(openApiFile('/api/v1/library/pdf/../../jobs/x/report')).rejects.toThrow();
+    expect(open).not.toHaveBeenCalled();
+    expect(getMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('openApiLink', () => {
   const event = (button = 0) => ({ button, preventDefault: vi.fn() });
 
   it('takes a click on an API file and opens it as a blob', async () => {
+    const { tabs } = stubNewTabs();
     const e = event();
     expect(openApiLink(e, '/api/v1/library/pdf/abc.pdf#page=2')).toBe(true);
     expect(e.preventDefault).toHaveBeenCalled();
     await settle();
-    expect(openSpy).toHaveBeenCalledWith(`${created[0]}#page=2`, '_blank', 'noopener');
+    expect(tabs[0].location.href).toBe(`${created[0]}#page=2`);
   });
 
   it('takes a middle click too, but leaves a right click and the open web alone', () => {
+    stubNewTabs();
     expect(openApiLink(event(1), '/api/v1/library/pdf/abc.pdf')).toBe(true);
     const right = event(2);
     expect(openApiLink(right, '/api/v1/library/pdf/abc.pdf')).toBe(false);
@@ -161,12 +269,30 @@ describe('openApiLink', () => {
     expect(web.preventDefault).not.toHaveBeenCalled();
   });
 
+  it('leaves a model-written link to any other API route to the browser', async () => {
+    const { open } = stubNewTabs();
+    for (const href of [
+      '/api/v1/jobs/x/report',
+      `${window.location.origin}/api/v1/jobs/x/report`,
+      '/api/v1/library/pdf/../../jobs/x/report',
+    ]) {
+      const e = event();
+      expect(openApiLink(e, href)).toBe(false);
+      expect(e.preventDefault).not.toHaveBeenCalled();
+    }
+    await settle();
+    expect(getMock).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
   it('reports a failed fetch', async () => {
+    const { tabs } = stubNewTabs();
     getMock.mockRejectedValueOnce(new Error('404'));
     const onError = vi.fn();
     openApiLink(event(), '/api/v1/library/pdf/gone.pdf', onError);
     await settle();
     expect(onError).toHaveBeenCalled();
-    expect(openSpy).not.toHaveBeenCalled();
+    expect(tabs[0].closed).toBe(true);
   });
 });

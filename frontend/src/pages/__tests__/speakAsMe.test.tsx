@@ -34,6 +34,7 @@ vi.mock('../../services/echoApi', () => ({
 
 import { SpeakAsMePanel } from '../../components/echo/SpeakAsMePanel';
 import http from '../../services/api';
+import { stubNewTabs } from '../../services/__tests__/newTab';
 
 const GATE = { status: 'not_run' as const, run_at: null, pairs: 0, picked_own_share: null, notes_total: 3, notes_needed: 40 };
 const OFF: DraftStatus = {
@@ -172,8 +173,7 @@ describe('SpeakAsMePanel', () => {
     const windowOpen = window.open;
     URL.createObjectURL = vi.fn(() => 'blob:http://localhost:5173/p1');
     URL.revokeObjectURL = vi.fn();
-    const open = vi.fn(() => null);
-    window.open = open as unknown as typeof window.open;
+    const { open, tabs } = stubNewTabs();
     try {
       await mount();
       act(() => type(host.querySelector('textarea')!, 'What does the report say?'));
@@ -186,9 +186,10 @@ describe('SpeakAsMePanel', () => {
         link.dispatchEvent(e);
       });
       expect(e.defaultPrevented).toBe(true);
+      expect(open).toHaveBeenCalledWith('', '_blank'); // inside the click, before the download
       await flush();
       expect(get).toHaveBeenCalledWith('/library/pdf/abc.pdf', { responseType: 'blob' });
-      expect(open).toHaveBeenCalledWith('blob:http://localhost:5173/p1', '_blank', 'noopener');
+      expect(tabs[0].location.href).toBe('blob:http://localhost:5173/p1');
     } finally {
       get.mockRestore();
       URL.createObjectURL = createObjectURL;

@@ -23,6 +23,7 @@ vi.mock('../../../services/api', () => ({
 
 import { CitationLink } from '../CitationLink';
 import { useJobStore } from '../../../stores/jobStore';
+import { stubNewTabs, type FakeTab } from '../../../services/__tests__/newTab';
 
 const pdf = {
   source_type: 'pdf',
@@ -42,6 +43,7 @@ const article = {
 let host: HTMLDivElement;
 let root: Root;
 let openSpy: ReturnType<typeof vi.fn>;
+let tabs: FakeTab[];
 
 async function flush() {
   for (let i = 0; i < 4; i++) {
@@ -79,8 +81,7 @@ beforeEach(() => {
   root = createRoot(host);
   URL.createObjectURL = vi.fn(() => 'blob:http://localhost:5173/pdf1');
   URL.revokeObjectURL = vi.fn();
-  openSpy = vi.fn(() => null);
-  window.open = openSpy as unknown as typeof window.open;
+  ({ open: openSpy, tabs } = stubNewTabs());
   getMock.mockClear();
 });
 
@@ -95,24 +96,37 @@ describe('a PDF citation', () => {
     expect(a.textContent).toBe('Annual report · p. 3');
     const e = click(a);
     expect(e.defaultPrevented).toBe(true); // the 401-ing navigation never happens
+    // The tab opens inside the click: after the download's await the browser
+    // may block it, and nothing would say so.
+    expect(openSpy).toHaveBeenCalledWith('', '_blank');
+    expect(tabs[0].opener).toBeNull();
     await flush();
     expect(getMock).toHaveBeenCalledWith('/library/pdf/abc123.pdf', { responseType: 'blob' });
-    expect(openSpy).toHaveBeenCalledWith('blob:http://localhost:5173/pdf1#page=3', '_blank', 'noopener');
+    expect(tabs[0].location.href).toBe('blob:http://localhost:5173/pdf1#page=3');
   });
 
   it('handles a middle click the same way', async () => {
     const e = click(render(pdf), { button: 1 });
     expect(e.defaultPrevented).toBe(true);
     await flush();
-    expect(openSpy).toHaveBeenCalledWith('blob:http://localhost:5173/pdf1#page=3', '_blank', 'noopener');
+    expect(tabs[0].location.href).toBe('blob:http://localhost:5173/pdf1#page=3');
   });
 
   it('says so when the PDF is gone', async () => {
     getMock.mockRejectedValueOnce(Object.assign(new Error('Not found'), { response: { status: 404 } }));
     click(render(pdf));
     await flush();
-    expect(openSpy).not.toHaveBeenCalled();
+    expect(tabs[0].closed).toBe(true); // the tab opened for it does not linger
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
     expect(useJobStore.getState().toasts.some((t) => /could not fetch the cited file/i.test(t.message))).toBe(true);
+  });
+
+  it('says so when the browser blocks the tab, instead of doing nothing', async () => {
+    window.open = vi.fn(() => null) as unknown as typeof window.open;
+    click(render(pdf));
+    await flush();
+    expect(getMock).not.toHaveBeenCalled();
+    expect(useJobStore.getState().toasts.some((t) => /blocked the new tab/i.test(t.message))).toBe(true);
   });
 });
 

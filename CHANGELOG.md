@@ -10,6 +10,82 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: sign-in tokens stay out of URLs (T-8.8.1.5, 2026-10-25)
+
+PR [#380](https://github.com/khoks/VideoResearchPro/pull/380). Amends [D-085](docs/decisions.md#d-085--reading-room-reports-stay-html-sanitised-and-parsed-in-the-browser-one-shared-citation-card-fed-by-the-runs-documents-2026-10-19).
+
+- No HTTP route takes the sign-in token from the URL any more. The report route and the six dataset exports read it from the Authorization header only, and a `?token=` request gets a 401. A token in a URL leaks into browser history, server and proxy logs, and Referer headers.
+- The report quick peek, the export downloads (Exports page, Notes page, command palette) and PDF citations fetch the file with the header and open it from a `blob:` URL. PDF citations keep their `#page=`. The tab opens inside the click, so the browser does not block it, and a blocked tab says so.
+- PDF citations in Echo drafts and the knowledge reader's "Open the source" now open. Before, the new tab failed with a 401.
+- The quick peek shows the report in a sandboxed frame with scripts off, and "Open in new tab" carries the same no-scripts policy.
+- An export is now held in memory before the save dialog opens. The server still streams it.
+- The progress WebSocket (`/ws/jobs`) still takes `?token=`, because a browser cannot send headers on a WebSocket handshake.
+
+### Fix: knowledge exports include PDFs and pasted pages; the worker runs the startup backfills (S-5.10.5, 2026-10-25)
+
+PR [#378](https://github.com/khoks/VideoResearchPro/pull/378). [D-070](docs/decisions.md#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).
+
+- The knowledge dataset exports had never streamed a row: the query failed on its first match. They work now.
+- They export every document in your library, the set library Q&A searches: pasted URLs, uploaded PDFs, documents whose job was deleted, and every non-video source. A document linked to your job but never granted to you no longer exports.
+- The Celery worker runs the chunk `document_id` backfill when it starts, before it takes a task, then queues the Q&A library backfill as a task. A worker started without the API no longer leaves older chunks unretrievable. It closes the Chroma client afterwards, so a forked child starts clean.
+
+### Fix: report sections are never cut off mid-markup, and the word count counts each document once (S-1.14.17, T-8.8.4.4, 2026-10-25)
+
+PR [#379](https://github.com/khoks/VideoResearchPro/pull/379).
+
+- A report section that ends inside a tag or an attribute is written once more with twice the budget. If it is still unfinished, it is closed where it stopped and the processing note names it. Before, a cut-off link swallowed the next section's headings. This covers every section of a topic report, the executive summary and channel narratives.
+- The reading room shows the processing note under the statistics, older reports included. Before, it sat unstyled after them.
+- The word count no longer counts the overlap between chunks twice, or descriptions of the screen as spoken words. The 200-video reference job read 1,057,331 words; its transcripts hold 947,239.
+- Reports already stored are not rewritten.
+
+### Added: continuous integration (T-8.8.4.3, 2026-10-25)
+
+PR [#375](https://github.com/khoks/VideoResearchPro/pull/375).
+
+- Every pull request and every push to `master` runs five jobs on GitHub Actions: the backend tests, a ruff check for syntax errors and undefined names, the frontend build and unit tests, the browser extension's tests, and the device tests (Playwright, on Windows). None needs a secret. No workflow existed before, although `docs/testing.md` said one did.
+- `pip install -r requirements.txt` works on a clean machine again: `bcrypt` moves to `>=4.0.1,<5.0.0`, because chromadb needs 4 and bcrypt 5 breaks passlib. Existing installs upgrade bcrypt on the next install, and stored password hashes still verify.
+- Knowledge exports work on SQLAlchemy 2.1, which a fresh install gets.
+- The device tests, red since saved-search alerts shipped, pass again.
+- Requiring these checks before a merge is a repository setting the owner turns on.
+
+### Changed: only the operator switches tiers or restarts the install, and the pricing page lists only what exists (T-5.2.8, T-5.2.9, 2026-10-25)
+
+PR [#377](https://github.com/khoks/VideoResearchPro/pull/377). [D-111](docs/decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25), amending D-050.
+
+- Switching tier (`PUT /auth/me/tier`) and restarting the services (`POST /admin/restart`) are for the install's operator only. Operators are the accounts in the new `ADMIN_EMAILS` setting or, with none set, the first account registered, so a single-user install behaves as before.
+- Register an account before listing its email. Registering a listed address is refused, OAuth signs one in only when the provider verified it, and startup warns about every listed address with no account.
+- The Subscription page shows everyone else the plans without the switch, and says who can change them. A refused switch shows the server's reason.
+- The pricing page marks reels, public report sharing, team workspaces and data residency as "Planned", and drops the daily token allowance, which nothing enforced. The document caps stay.
+- An Echo connector whose stored token can no longer be decrypted, for example after the encryption key changed, shows **Reconnect** instead of failing silently in the background.
+- YouTube likes and Calendar say they wait on the install's Google connector OAuth client, not on Google sign-in.
+
+### Fix: "Confirm & search" uses your clarify answers on library and shelf questions (S-8.13.1, 2026-10-25)
+
+PR [#376](https://github.com/khoks/VideoResearchPro/pull/376).
+
+- Library Q&A dropped the interpretation and the answers from the clarify step, so "Confirm & search" answered exactly like "Skip clarifications". They now reach the answer, as they always did on job Q&A. Shelf questions accept them too.
+- Your history keeps the question as you typed it.
+- What "Confirm & search" sends stays under the server's 4,000-character limit, on job and library Q&A alike, so a long interpretation no longer makes it fail. Each answer box takes up to 1,000 characters.
+
+### Decisions: corrections to the 2026-10-25 rulings (2026-10-25)
+
+PR [#374](https://github.com/khoks/VideoResearchPro/pull/374). Docs only.
+
+- D-112 pre-registers a pass rule only for the T-1.14.20.4 comparison. Pre-registering S-1.14.18 and S-1.17.4 is a recommendation; they are scheduled with it because all three use the same judge quota.
+- D-110 makes only background browsing capture won't-do. A browser-history export the user hands over has not been ruled on.
+- D-111 rejects the self-service flag only as the gate for a multi-user self-host install. D-050's Stripe plan stands.
+- Every plan question the rulings settle links to its decision, and the board, the roadmap and `personal-brain.md` agree with them.
+
+### Decisions: the owner's rulings of 2026-10-25 (D-109 to D-112)
+
+PR [#373](https://github.com/khoks/VideoResearchPro/pull/373). Docs only.
+
+- [D-109](docs/decisions.md#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25): R1 is parked. Visual analysis stays hidden and its measurement stops; the code, the frames and the attribution guard stay.
+- [D-110](docs/decisions.md#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25): Echo sees only what you hand it. Nothing captures browsing in the background, a fact you delete is to stay deleted (accepted, not built yet), the GitHub connector stays public-only, there is no Spotify live tail, and Gmail waits for revenue (self-hosters get an IMAP inbox).
+- [D-111](docs/decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25): tier switching becomes operator-only and the pricing page honest. Shipped in #377.
+- [D-112](docs/decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25): the rest, one line each. Packed map batching stays and the comparison runs later; public sharing is deferred; the 0.6 code-mixing threshold waits for a native reader's spot check; plus the quick calls.
+- The board gains T-5.2.8, T-5.2.9, T-5.2.10, T-5.6.7 and T-7.1.1.6.
+
 ### Changed: the attribution guard never claims a detail went unsaid (T-1.18.9.11, 2026-10-25)
 
 [D-108](docs/decisions.md#d-108--the-attribution-guard-never-infers-that-a-detail-went-unsaid-it-checks-only-english-speech-in-latin-script-2026-10-25).

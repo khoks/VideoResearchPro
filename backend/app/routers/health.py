@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.dependencies import get_db
 from app.schemas.quota import QuotaStatus
-from app.services import quota_service, scheduler_service, search_service
+from app.services import job_source_types, quota_service, scheduler_service, search_service
 from app.services.llm_smoke import _STATUS
 
 router = APIRouter()
@@ -21,16 +21,21 @@ def _capabilities() -> dict[str, bool]:
       (Topic-search-with-Twitter source-type checkbox lights up).
     - ``article_search_enabled``: ``BRAVE_SEARCH_API_KEY`` is set
       (article search via Brave is available).
+    - ``reddit_search_enabled``: ``REDDIT_CLIENT_ID`` and
+      ``REDDIT_CLIENT_SECRET`` are set (S-1.5.13).
     - ``playwright_fallback_enabled``: ``ARTICLE_PLAYWRIGHT_ENABLED``
       is True (FB / IG SPA-shell paste-mode works; operator has
       installed ``pratidhvani[spa]`` extras + ``playwright install
       chromium``).
     - ``whisper_transcribe_enabled``: ``OPENAI_API_KEY`` is set
       (podcast / YouTube fallback transcription works).
+
+    The three source-search flags come from ``job_source_types``, the
+    same check that refuses an unconfigured type on ``POST /jobs``, so the
+    submit form never offers what the API would reject.
     """
     return {
-        "twitter_search_enabled": bool(settings.TWITTER_BEARER_TOKEN),
-        "article_search_enabled": bool(settings.BRAVE_SEARCH_API_KEY),
+        **job_source_types.capabilities(),
         "playwright_fallback_enabled": bool(settings.ARTICLE_PLAYWRIGHT_ENABLED),
         "whisper_transcribe_enabled": bool(settings.OPENAI_API_KEY),
         # S-1.18.2: the install-wide R1 switch. Off means the job toggle and

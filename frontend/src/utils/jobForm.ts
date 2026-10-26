@@ -20,6 +20,79 @@ export const CHANNEL_TYPE_OPTIONS = [
 
 export type ChannelTypeOption = (typeof CHANNEL_TYPE_OPTIONS)[number];
 
+/**
+ * S-1.5.13: what a topic run can search, in the server's canonical order
+ * (`backend/app/services/job_source_types.py`, SEARCHABLE_SOURCE_TYPES).
+ * `capability` names the `/health` flag a credential-gated type needs; the
+ * form offers that type only when the flag is true, and the server refuses
+ * it with a 422 otherwise. Tweet search is the BYOK case (T-1.5.9.3).
+ */
+export const SOURCE_TYPE_OPTIONS = [
+  { value: 'video', label: 'YouTube' },
+  { value: 'reddit_post', label: 'Reddit', capability: 'reddit_search_enabled' },
+  { value: 'hn_story', label: 'Hacker News' },
+  { value: 'mastodon_post', label: 'Mastodon' },
+  { value: 'bluesky_post', label: 'Bluesky' },
+  { value: 'podcast_episode', label: 'Podcasts' },
+  { value: 'article', label: 'Web articles', capability: 'article_search_enabled' },
+  { value: 'tweet', label: 'X / Twitter', capability: 'twitter_search_enabled' },
+] as const satisfies readonly { value: string; label: string; capability?: string }[];
+
+export type SourceType = (typeof SOURCE_TYPE_OPTIONS)[number]['value'];
+export type SourceTypeOption = (typeof SOURCE_TYPE_OPTIONS)[number];
+
+export const DEFAULT_SOURCE_TYPES: readonly SourceType[] = ['video'];
+
+const SOURCE_TYPE_ORDER: readonly SourceType[] = SOURCE_TYPE_OPTIONS.map((o) => o.value);
+
+/** Known types only, de-duplicated, in canonical order (may be empty). */
+function canonicalSourceTypes(list: readonly string[]): SourceType[] {
+  return SOURCE_TYPE_ORDER.filter((v) => list.includes(v));
+}
+
+/** A stored or received list as form state: YouTube alone when nothing usable is left. */
+function sourceTypesOf(list: readonly string[] | null | undefined): SourceType[] {
+  const known = canonicalSourceTypes(list ?? []);
+  return known.length > 0 ? known : [...DEFAULT_SOURCE_TYPES];
+}
+
+export function isDefaultSourceTypes(list: readonly string[]): boolean {
+  return list.length === DEFAULT_SOURCE_TYPES.length && DEFAULT_SOURCE_TYPES.every((v) => list.includes(v));
+}
+
+export function sourceTypeLabel(value: string): string {
+  return SOURCE_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value.replace(/_/g, ' ');
+}
+
+/**
+ * The options this install can search, from `/health` capabilities. Until
+ * the first poll answers (null) only the ungated types are offered.
+ */
+export function offeredSourceTypes(capabilities: Record<string, boolean> | null): SourceTypeOption[] {
+  return SOURCE_TYPE_OPTIONS.filter((o) => !('capability' in o) || capabilities?.[o.capability] === true);
+}
+
+/**
+ * Selected types the install cannot search (a run or template saved while a
+ * source was set up). Empty until capabilities are known, so a slow first
+ * poll never flags anything.
+ */
+export function unavailableSourceTypes(
+  selected: readonly string[],
+  capabilities: Record<string, boolean> | null,
+): SourceType[] {
+  if (capabilities === null) return [];
+  const offered: readonly string[] = offeredSourceTypes(capabilities).map((o) => o.value);
+  return canonicalSourceTypes(selected).filter((v) => !offered.includes(v));
+}
+
+/** Toggle one type, keeping canonical order. The result may be empty. */
+export function toggleSourceType(selected: readonly SourceType[], value: SourceType): SourceType[] {
+  return selected.includes(value)
+    ? selected.filter((v) => v !== value)
+    : canonicalSourceTypes([...selected, value]);
+}
+
 export interface JobFormState {
   jobType: JobType;
   topic: string;
@@ -38,6 +111,8 @@ export interface JobFormState {
    * opt-in: the job-creation toggle is S-1.18.2, deferred by D-071 / D-075.
    */
   visualAnalysis: boolean;
+  /** S-1.5.13: what a topic run searches; `['video']` is the default. */
+  sourceTypes: SourceType[];
 }
 
 export const DEFAULT_FORM: JobFormState = {
@@ -54,6 +129,7 @@ export const DEFAULT_FORM: JobFormState = {
   videosPerChannel: 10,
   subscriptionChannels: '',
   visualAnalysis: false,
+  sourceTypes: [...DEFAULT_SOURCE_TYPES],
 };
 
 const OUTPUT_LENGTHS: readonly OutputLength[] = ['auto', 'brief', 'standard', 'deep'];
@@ -85,6 +161,7 @@ export function parseDraft(raw: string | null): JobFormState {
       outputLength: outputLengthOf(parsed.outputLength),
       visualAnalysis: parsed.visualAnalysis === true,
       channelFilters: Array.isArray(parsed.channelFilters) ? validFilters(parsed.channelFilters) : [],
+      sourceTypes: sourceTypesOf(Array.isArray(parsed.sourceTypes) ? parsed.sourceTypes : null),
     };
   } catch {
     return DEFAULT_FORM;
@@ -96,7 +173,7 @@ export function templateNeedsChannels(params: TemplateParameters): boolean {
   return params.job_type !== 'topic' && !(params.channel_list && params.channel_list.length > 0);
 }
 
-/** "Duplicate": every parameter of the run, including depth and the visual flag. */
+/** "Duplicate": every parameter of the run, including depth, the visual flag and its sources. */
 export function jobToFormState(job: Job): JobFormState {
   return {
     jobType: job.job_type,
@@ -105,6 +182,7 @@ export function jobToFormState(job: Job): JobFormState {
     numVideos: job.num_videos ?? 10,
     outputLength: outputLengthOf(job.output_length),
     visualAnalysis: job.visual_analysis === true,
+    sourceTypes: job.job_type === 'topic' ? sourceTypesOf(job.source_types) : [...DEFAULT_SOURCE_TYPES],
     minDuration: job.min_duration_minutes != null ? String(job.min_duration_minutes) : '',
     maxDuration: job.max_duration_minutes != null ? String(job.max_duration_minutes) : '',
     channelFilters: validFilters(job.channel_type_filters),
@@ -128,6 +206,7 @@ export function templateToFormState(params: TemplateParameters, keepTopic = ''):
     numVideos: params.num_videos ?? 10,
     outputLength: outputLengthOf(params.output_length),
     visualAnalysis: params.visual_analysis === true,
+    sourceTypes: params.job_type === 'topic' ? sourceTypesOf(params.source_types) : [...DEFAULT_SOURCE_TYPES],
     minDuration: params.min_duration_minutes != null ? String(params.min_duration_minutes) : '',
     maxDuration: params.max_duration_minutes != null ? String(params.max_duration_minutes) : '',
     channelFilters: validFilters(params.channel_type_filters),
@@ -174,6 +253,11 @@ export function formToJobCreate(
 
   if (form.jobType === 'topic') {
     if (requireTopic && !form.topic.trim()) return { ok: false, error: 'Topic is required.' };
+    const sources = canonicalSourceTypes(form.sourceTypes);
+    if (sources.length === 0) return { ok: false, error: 'Choose at least one source to search.' };
+    // S-1.5.13: YouTube alone is the server's default, so it is left out and
+    // the request is the one every run sent before the choice existed.
+    if (!isDefaultSourceTypes(sources)) data.source_types = sources;
     if (form.topic.trim()) data.topic = form.topic.trim();
     data.num_videos = form.numVideos;
     data.search_instructions = form.searchInstructions || undefined;
@@ -228,6 +312,7 @@ export function formToTemplateParameters(form: JobFormState): { ok: true; params
       // The form's own value, not the run payload: a template keeps its
       // stored setting while D-105 hides the option, so it returns intact.
       visual_analysis: form.visualAnalysis,
+      source_types: rest.source_types ?? null,
       channel_list: rest.channel_list ?? null,
       videos_per_channel: rest.job_type === 'channel' ? rest.videos_per_channel ?? 10 : null,
     },

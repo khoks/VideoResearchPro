@@ -358,21 +358,13 @@ def _upsert_candidate_and_link(
 def _resolve_source_types(job: Job) -> list[str]:
     """Decode ``Job.source_types_json`` into a Python list, defaulting
     to ``["video"]`` for back-compat with jobs created before the
-    column existed (pre-2026-05-02)."""
-    if not job.source_types_json:
-        return ["video"]
-    try:
-        parsed = json.loads(job.source_types_json)
-    except (TypeError, ValueError):
-        logger.warning(
-            "Job %s has malformed source_types_json %r; defaulting to ['video']",
-            job.id,
-            job.source_types_json,
-        )
-        return ["video"]
-    if not isinstance(parsed, list) or not parsed:
-        return ["video"]
-    return [str(st) for st in parsed if str(st)]
+    column existed (pre-2026-05-02) and for every run that left the
+    choice out. ``POST /api/v1/jobs`` writes the column (S-1.5.13); the
+    decoding lives in ``job_source_types`` so the API response says the
+    same thing the worker does."""
+    from app.services import job_source_types
+
+    return job_source_types.from_column(job.source_types_json, job_id=job.id)
 
 
 def _dispatch_and_store_non_video_sources(
@@ -966,6 +958,10 @@ def execute_topic_job(self, job_id: str) -> None:
             source_types=source_types,
             limit_per_type=job.num_videos or 10,
         )
+        if non_video_count:
+            # D-063: the video branch grants its candidates above; the
+            # dispatched ones (text already fetched) need the same grant.
+            _grant_job_document_visibility(db, job)
 
         total_candidates = len(curated_videos) + non_video_count
         logger.info(

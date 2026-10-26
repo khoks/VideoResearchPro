@@ -4,6 +4,8 @@ import { useCreateJob } from '../hooks/useJobs';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { useCapability } from '../hooks/useCapability';
 import { VisualAnalysisOption } from '../components/jobs/VisualAnalysisOption';
+import { SourceTypePicker } from '../components/jobs/SourceTypePicker';
+import { useSystemStatusStore } from '../stores/systemStatusStore';
 import { featureFlags } from '../config/features';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { useCreateTemplate, useJobTemplates, useUpdateTemplate } from '../hooks/useJobTemplates';
@@ -17,8 +19,10 @@ import {
   jobToFormState,
   parseChannelList,
   parseDraft,
+  sourceTypeLabel,
   templateNeedsChannels,
   templateToFormState,
+  unavailableSourceTypes,
   validateChannels,
   type ChannelTypeOption,
   type JobFormState,
@@ -78,6 +82,8 @@ export function SubmitJobPage() {
   const topicJobAvailable = useFeatureAvailable('topic_job');
   const visualModelsAvailable = useFeatureAvailable('visual_analysis');
   const visualInstallEnabled = useCapability('visual_analysis_enabled');
+  // S-1.5.13: which credential-gated sources this install can search.
+  const capabilities = useSystemStatusStore((s) => s.capabilities);
   const { tier, numVideosCap } = useTierCapabilities();
 
   const routeState = location.state as { cloneFrom?: Job; fromTemplateId?: string } | null;
@@ -182,6 +188,8 @@ export function SubmitJobPage() {
 
   const quotaEstimate = useMemo(() => {
     if (form.jobType === 'topic') {
+      // S-1.5.13: only the YouTube source spends YouTube quota.
+      if (!form.sourceTypes.includes('video')) return 0;
       const broadSearches = 100 * 5;
       const details = Math.max(0, form.numVideos) * 1;
       const preferredLines = parseChannelList(form.preferredChannels);
@@ -199,6 +207,7 @@ export function SubmitJobPage() {
     return channels + playlistCalls + details;
   }, [
     form.jobType,
+    form.sourceTypes,
     form.numVideos,
     form.channelList,
     form.videosPerChannel,
@@ -229,6 +238,17 @@ export function SubmitJobPage() {
     const result = formToJobCreate(form);
     if (!result.ok) {
       setValidationError(result.error);
+      return;
+    }
+    const unavailable =
+      form.jobType === 'topic' ? unavailableSourceTypes(form.sourceTypes, capabilities) : [];
+    if (unavailable.length > 0) {
+      const one = unavailable.length === 1;
+      setValidationError(
+        `${unavailable.map(sourceTypeLabel).join(', ')} ${one ? 'is' : 'are'} not set up on this install; remove ${
+          one ? 'it' : 'them'
+        } from the sources to submit.`,
+      );
       return;
     }
     const data = result.data;
@@ -404,6 +424,15 @@ export function SubmitJobPage() {
                     onChange={(e) => update('topic', e.target.value)}
                     placeholder="e.g. Quantum Computing breakthroughs 2025"
                     required
+                  />
+                )}
+              </FormField>
+              <FormField label="Sources to search">
+                {() => (
+                  <SourceTypePicker
+                    selected={form.sourceTypes}
+                    onChange={(next) => update('sourceTypes', next)}
+                    capabilities={capabilities}
                   />
                 )}
               </FormField>

@@ -31,6 +31,11 @@ export interface Job {
   output_length: OutputLength | null;
   /** R1 opt-in, carried through Duplicate and templates. */
   visual_analysis: boolean;
+  /**
+   * S-1.5.13: what the run searches, resolved (`['video']` by default).
+   * Optional for responses from a server older than the field.
+   */
+  source_types?: string[];
   /** E-8.6: the template version this run started from, if any. */
   template_id: string | null;
   template_version: number | null;
@@ -59,6 +64,8 @@ export interface JobCreate {
   output_length?: OutputLength;
   /** R1 opt-in; only ever carried from a run or template (S-1.18.2 deferred). */
   visual_analysis?: boolean;
+  /** S-1.5.13: topic runs only; omitted means YouTube only. */
+  source_types?: string[];
 }
 
 /** E-8.6: which template version a submission started from. */

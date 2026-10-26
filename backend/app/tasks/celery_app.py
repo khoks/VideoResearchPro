@@ -1,6 +1,12 @@
+import logging
+import sys
+
 from celery import Celery
+from celery.signals import worker_process_init, worker_ready
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 celery_app = Celery(
     "videoresearchpro",
@@ -78,3 +84,75 @@ celery_app.autodiscover_tasks(["app.tasks"], related_name="echo_tasks")
 celery_app.autodiscover_tasks(["app.tasks"], related_name="echo_connector_tasks")
 # S-1.18.2: on-demand frame capture for one document.
 celery_app.autodiscover_tasks(["app.tasks"], related_name="visual_tasks")
+
+
+@celery_app.task(name="chroma.backfill_qa_library", ignore_result=True)
+def backfill_qa_library_task() -> int:
+    """The Q&A library backfill as a task, queued by ``run_startup_backfills``.
+
+    Defined here rather than in an autodiscovered module so every process
+    that loads the Celery app, a prefork child included, knows the task.
+    """
+    from app.services import chroma_service
+
+    return chroma_service.backfill_qa_library()
+
+
+@worker_ready.connect
+def run_startup_backfills(**_kwargs) -> None:
+    """The API lifespan's Chroma backfills, on worker start too (S-5.10.5).
+
+    The worker retrieves and writes as well: a saved-search run is a library
+    Q&A over the global collection and upserts its exchange into the Q&A
+    library. While the backfills ran only in the API lifespan, an upgrade
+    that started the worker alone left chunks embedded before 2026-10-19
+    without the ``document_id`` that retrieval filters on (D-070), so they
+    were unretrievable until the API booted once.
+
+    The chunk backfill runs here, synchronously: Celery sends
+    ``worker_ready`` just before the consumer loop starts, so no task
+    retrieves from un-stamped chunks. It is a metadata scan, nothing is
+    re-embedded. The Q&A library backfill re-embeds every exchange on every
+    run and nothing waits on it, so it is queued as a task instead: it no
+    longer holds the consumer loop for a time that grows with the history,
+    and on a prefork pool it runs in a child, not here.
+
+    Then the Chroma client and the model the chunk backfill opened are
+    closed, because this is the process a prefork pool forks its
+    replacement children from (after a revoke with ``terminate``, a crash,
+    an OOM kill), and neither survives a fork. On the solo pool the first
+    task that needs them opens them again.
+
+    Both backfills are idempotent (upsert on fixed ids; stamped chunks are
+    skipped), so the API and every worker running them is safe, and a
+    failure is logged and never stops the worker. Beat and the API import
+    this module but never send the signal.
+    """
+    # Imported at call time so importing the Celery configuration never
+    # loads chromadb by itself (autodiscovery above is lazy too).
+    from app.services import chroma_service
+
+    try:
+        chroma_service.backfill_chunk_document_ids()
+    except Exception:
+        logger.exception("Chunk document_id backfill failed; worker continues")
+    finally:
+        chroma_service.close_client()
+
+    try:
+        backfill_qa_library_task.delay()
+    except Exception:
+        logger.exception("Could not queue the Q&A library backfill; worker continues")
+
+
+@worker_process_init.connect
+def forget_inherited_chroma(**_kwargs) -> None:
+    """A prefork child never uses the Chroma client or model of the process
+    it was forked from (S-5.10.5): see ``chroma_service.forget_inherited_client``.
+
+    Nothing to forget unless this process has the module loaded, so a child
+    never imports chromadb just to start.
+    """
+    chroma_service = sys.modules.get("app.services.chroma_service")
+    if chroma_service is not None:
+        chroma_service.forget_inherited_client()

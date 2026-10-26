@@ -423,9 +423,9 @@ def known_eras_for(db: Any, video_ids: Iterable[str]) -> dict[str, dict]:
     no ``video_id``) never gets an era, since only job chunking extracts
     one, so nothing is missed by not matching on ``document_id``.
 
-    Deliberately not filtered by tenant: a discussed era is a fact about the
-    public source, computed once and shared like its transcript (D-063's
-    shared cache), and it is used only to inform ranking.
+    Not filtered by tenant: an era can come from a document only another
+    tenant ingested. No decision records whether that is acceptable, so this
+    note is not an exemption from D-063.
     """
     from app.models.document import Document
 

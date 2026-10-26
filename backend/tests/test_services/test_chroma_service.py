@@ -261,3 +261,33 @@ def test_migrate_legacy_per_job_collections_is_idempotent():
     global_coll = chroma_service.get_global_collection()
     merged = global_coll.get(where={"video_id": "vidA"}, include=[])
     assert set(merged["ids"]) == {"vidA:0", "vidA:1"}
+
+
+# --- Closing the client before a fork (S-5.10.5) ------------------------------
+
+def test_close_client_stops_the_persistent_client_and_a_fresh_one_works(tmp_path, monkeypatch):
+    """The worker's start hook closes the client its backfill opened, so the
+    main process a prefork pool forks from holds no live Chroma System. A
+    later caller in the same process (the solo pool) opens a working one."""
+    from chromadb.api.shared_system_client import SharedSystemClient
+
+    monkeypatch.setattr(chroma_service, "_client", None)
+    monkeypatch.setattr(chroma_service, "_owner_pid", None)
+    monkeypatch.setattr(chroma_service.settings, "CHROMA_PERSIST_DIR", str(tmp_path))
+
+    first = chroma_service.get_chroma_client()
+    first.get_or_create_collection("s5105-close", embedding_function=None).upsert(
+        ids=["a"], embeddings=[[0.1, 0.2, 0.3]]
+    )
+    assert str(tmp_path) in SharedSystemClient._identifier_to_system
+
+    chroma_service.close_client()
+
+    assert chroma_service._client is None
+    # Stopped and released, not only forgotten by this module.
+    assert str(tmp_path) not in SharedSystemClient._identifier_to_system
+
+    second = chroma_service.get_chroma_client()
+    assert second is not first
+    assert second.get_collection("s5105-close", embedding_function=None).count() == 1
+    chroma_service.close_client()

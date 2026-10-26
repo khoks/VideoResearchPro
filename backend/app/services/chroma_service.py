@@ -58,12 +58,18 @@ worker processes sharing this persist directory, will fail with "An
 instance of Chroma already exists" or SQLite lock errors. Switch to
 ``HttpClient`` against a dedicated chroma-server if concurrency > 1 is
 required.
+
+A client must also never cross a fork. The worker's start hook opens the
+client in the main process for its backfill, so it closes it again with
+``close_client`` before the pool can fork a child from that process, and a
+prefork child calls ``forget_inherited_client`` on start (S-5.10.5).
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import warnings
 from typing import Any, Literal
 
@@ -81,14 +87,24 @@ _client: chromadb.ClientAPI | None = None
 # get_or_create_collection / get_collection call.
 _embedding_function: embedding_functions.SentenceTransformerEmbeddingFunction | None = None
 
+# The pid that opened ``_client`` / ``_embedding_function``. A forked child
+# still sees its parent's pid here, which is how ``forget_inherited_client``
+# tells inherited objects from its own (S-5.10.5).
+_owner_pid: int | None = None
+
+# What a forked child inherited and must never use. Kept referenced on
+# purpose: see ``forget_inherited_client``.
+_inherited: list[tuple[Any, ...]] = []
+
 _BATCH_SIZE = 100
 
 
 def get_chroma_client() -> chromadb.ClientAPI:
     """Return the process-level singleton ChromaDB client."""
-    global _client
+    global _client, _owner_pid
     if _client is None:
         _client = chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIR)
+        _owner_pid = os.getpid()
     return _client
 
 
@@ -98,12 +114,79 @@ def _get_embedding_function() -> embedding_functions.SentenceTransformerEmbeddin
     Uses ``settings.EMBEDDING_MODEL_NAME`` (multilingual by default so
     non-English transcripts embed meaningfully).
     """
-    global _embedding_function
+    global _embedding_function, _owner_pid
     if _embedding_function is None:
         _embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=settings.EMBEDDING_MODEL_NAME,
         )
+        _owner_pid = os.getpid()
     return _embedding_function
+
+
+def close_client() -> None:
+    """Close this process's Chroma client and drop its embedding model.
+
+    The Celery worker's start hook calls this after its chunk backfill
+    (S-5.10.5). A prefork pool forks every replacement child from the
+    worker's main process, and Chroma's client (a Rust core with its own
+    runtime threads and an open SQLite handle) and the loaded model are not
+    fork-safe, so that process must hold neither once the pool runs. The
+    next caller in this process opens fresh ones. Never raises.
+    """
+    global _client, _embedding_function, _owner_pid
+    client, _client = _client, None
+    embedder, _embedding_function = _embedding_function, None
+    _owner_pid = None
+    if client is not None:
+        try:
+            # Releases the shared System and stops it once no client uses it.
+            client.close()
+        except Exception:
+            logger.exception("close_client: closing the Chroma client failed")
+    if embedder is not None:
+        # chromadb caches the loaded model on the class, keyed by name, so
+        # dropping our instance alone would keep the model in memory.
+        embedding_functions.SentenceTransformerEmbeddingFunction.models.pop(
+            getattr(embedder, "model_name", None), None
+        )
+
+
+def forget_inherited_client() -> bool:
+    """In a forked child, stop using the client and model the parent held.
+
+    Called from a prefork child's ``worker_process_init`` (S-5.10.5). The
+    worker's main process closes its client after the start-up backfill,
+    so normally nothing is inherited; this is the guard for when something
+    is. It clears our singletons and chromadb's two process-level caches
+    (the System per persist directory, the model per name), so the child's
+    first call builds its own client and model rather than reusing the
+    parent's through those caches.
+
+    The inherited objects are kept referenced, never closed and never
+    collected: their teardown would stop runtime threads that exist only in
+    the parent and close a SQLite handle the parent still uses. Does nothing
+    in the process that opened them (the solo pool sends the same signal in
+    the worker's own process). Returns whether anything was inherited.
+    """
+    global _client, _embedding_function, _owner_pid
+    if _owner_pid is None or _owner_pid == os.getpid():
+        return False
+    from chromadb.api.shared_system_client import SharedSystemClient
+
+    model_cache = embedding_functions.SentenceTransformerEmbeddingFunction
+    _inherited.append((
+        _client,
+        _embedding_function,
+        SharedSystemClient._identifier_to_system,
+        getattr(SharedSystemClient, "_identifier_to_refcount", None),
+        model_cache.models,
+    ))
+    _client = None
+    _embedding_function = None
+    _owner_pid = None
+    SharedSystemClient.clear_system_cache()
+    model_cache.models = {}
+    return True
 
 
 def get_global_collection() -> chromadb.Collection:
@@ -633,7 +716,10 @@ def backfill_qa_library() -> int:
     ``QAHistoryExchange`` row into the Q&A library collection.
 
     Idempotent: upsert on the fixed ``qa:{id}`` chunk ID means re-running
-    only overwrites in place. Safe to call on every process startup.
+    only overwrites in place. Safe to call on every process startup. Every
+    run re-embeds every row, so the API lifespan runs it inline but a
+    Celery worker queues it as the ``chroma.backfill_qa_library`` task when
+    it starts (S-5.10.5) rather than delaying its consumer loop.
 
     T-5.6.6 update: now also covers ``QAHistoryExchange`` rows (previously
     omitted), and propagates ``tenant_id`` from each row's column into
@@ -683,12 +769,12 @@ def backfill_chunk_document_ids(session_factory=None, page_size: int = 2000) -> 
 
     Retrieval filters on the ``document_id`` metadata field. Chunks written
     before 2026-10-19 carry only ``video_id`` and would be unretrievable
-    after the filter change, so this runs on every API startup and every
-    Celery worker start (``celery_app.run_startup_backfills``, S-5.10.5),
-    next to ``backfill_qa_library``: page through the global collection,
-    resolve each un-stamped chunk through the ``documents`` table — by
-    ``video_id``, then by ``(source_type, source_id)`` — and ``update`` its
-    metadata in place.
+    after the filter change, so this runs on every API startup, next to
+    ``backfill_qa_library``, and before every Celery worker starts consuming
+    (``celery_app.run_startup_backfills``, S-5.10.5): page through the
+    global collection, resolve each un-stamped chunk through the
+    ``documents`` table — by ``video_id``, then by ``(source_type,
+    source_id)`` — and ``update`` its metadata in place.
     Chroma keeps the stored embedding on a metadata-only update, so nothing
     is re-embedded; the cost is one metadata scan of the collection, which is
     why D-072's "no backfill" reasoning (re-embedding the library for a

@@ -1,3 +1,6 @@
+from unittest.mock import MagicMock, patch
+
+
 def test_create_topic_job(client):
     response = client.post("/api/v1/jobs", json={
         "job_type": "topic",
@@ -68,9 +71,15 @@ def test_cancel_job(client):
     create_resp = client.post("/api/v1/jobs", json={"job_type": "topic", "topic": "test"})
     job_id = create_resp.json()["id"]
 
-    response = client.post(f"/api/v1/jobs/{job_id}/cancel")
+    # The revoke goes to the Celery broker. Unpatched, this test passed only
+    # on a machine with Redis on :6379 (and broadcast a revoke to it); CI has
+    # none (T-8.8.4.3).
+    fake_celery = MagicMock()
+    with patch("app.tasks.celery_app.celery_app", fake_celery):
+        response = client.post(f"/api/v1/jobs/{job_id}/cancel")
     assert response.status_code == 200
     assert response.json()["status"] == "cancelled"
+    fake_celery.control.revoke.assert_called_once_with("mock-topic-task-id", terminate=True)
 
 
 def test_cancel_completed_job_fails(client, db, test_user):

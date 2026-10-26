@@ -12,6 +12,11 @@
  *   - Other absolute links open in a new tab with `rel="noopener noreferrer"`.
  *   - Tables are wrapped in a horizontal scroll region (WCAG 1.4.10).
  *   - The first substantial paragraph is tagged for the drop cap.
+ *   - The compose step's processing note (what the pipeline dropped or
+ *     repaired, S-1.14.17) is lifted out of the body into `processingNotes`
+ *     so the page can show it where a reader sees it (T-8.8.4.4). It is found
+ *     by its `processing-note` class, or, in reports written before the class,
+ *     by its leading "Processing note:" label.
  *
  * MUST be fed `sanitizeReportHtml` output. The parser does not sanitise.
  */
@@ -61,6 +66,8 @@ export interface ParsedReport {
   content: ReactNode;
   outline: OutlineEntry[];
   citations: ReportCitation[];
+  /** Each processing note's text, its "Processing note:" label removed. */
+  processingNotes: ReactNode[];
 }
 
 const CITATION_HREF = /(?:^|[?&#])t=(\d+)/;
@@ -80,6 +87,8 @@ const CONTEXT_STOP = new Set(['section', 'article', 'div', 'table', 'ul', 'ol', 
 const CONTEXT_MAX_CHARS = 800;
 const DROP_CAP_MIN_CHARS = 120;
 const NO_DROP_CAP_PARENTS = new Set(['li', 'td', 'th', 'blockquote', 'figcaption']);
+const PROCESSING_NOTE_CLASS = 'processing-note';
+const PROCESSING_NOTE_LABEL = /^\s*processing note\s*:?\s*$/i;
 
 function textOf(node: DOMNode): string {
   if (node instanceof Text) return node.data;
@@ -89,6 +98,24 @@ function textOf(node: DOMNode): string {
 
 function normalise(text: string): string {
   return text.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * The body of a processing-note paragraph without its label, or null when
+ * `node` is not one. A note written before the `processing-note` class is
+ * recognised by a first child `<strong>Processing note:</strong>`.
+ */
+function processingNoteBody(node: Element): DOMNode[] | null {
+  const children = (node.children as DOMNode[]).filter(
+    (n) => !(n instanceof Text && n.data.trim() === ''),
+  );
+  const first = children[0];
+  const labelled =
+    first instanceof Element && first.name === 'strong' && PROCESSING_NOTE_LABEL.test(textOf(first));
+  const classed = (node.attribs.class ?? '').split(/\s+/).includes(PROCESSING_NOTE_CLASS);
+  if (!classed && !labelled) return null;
+  const all = node.children as DOMNode[];
+  return labelled ? all.slice(all.indexOf(first) + 1) : all;
 }
 
 function contextsOf(node: Element): string[] {
@@ -127,6 +154,7 @@ export function parseCitationHref(
 export function parseReportHtml(cleanHtml: string, opts: ParseReportOptions = {}): ParsedReport {
   const outline: OutlineEntry[] = [];
   const citations: ReportCitation[] = [];
+  const processingNotes: ReactNode[] = [];
   const slug = makeSlugger();
   const title = opts.title ? normalise(opts.title) : null;
   const renderCitation =
@@ -209,6 +237,14 @@ export function parseReportHtml(cleanHtml: string, opts: ParseReportOptions = {}
         );
       }
 
+      if (name === 'p') {
+        const note = processingNoteBody(domNode);
+        if (note) {
+          processingNotes.push(domToReact(note, options));
+          return <></>;
+        }
+      }
+
       if (name === 'p' && !dropCapDone) {
         const parent = domNode.parent;
         const parentName = parent instanceof Element ? parent.name : '';
@@ -230,5 +266,5 @@ export function parseReportHtml(cleanHtml: string, opts: ParseReportOptions = {}
   };
 
   const content = parse(cleanHtml, options);
-  return { content, outline, citations };
+  return { content, outline, citations, processingNotes };
 }

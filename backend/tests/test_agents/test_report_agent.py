@@ -19,19 +19,73 @@ def _fake_llm_returning(payload: str) -> MagicMock:
 
 def _chunk(video_id: str, channel: str, ts_start: float, ts_end: float,
            text: str = "some transcript text here", word_count: int | None = None,
-           video_title: str = "A Video") -> dict:
-    return {
-        "text": text,
-        "metadata": {
-            "video_id": video_id,
-            "video_title": video_title,
-            "channel_name": channel,
-            "channel_id": f"UC_{channel}",
-            "timestamp_start": ts_start,
-            "timestamp_end": ts_end,
-            "word_count": word_count if word_count is not None else len(text.split()),
-        },
+           video_title: str = "A Video", document_words: int | None = None) -> dict:
+    meta = {
+        "video_id": video_id,
+        "video_title": video_title,
+        "channel_name": channel,
+        "channel_id": f"UC_{channel}",
+        "timestamp_start": ts_start,
+        "timestamp_end": ts_end,
+        "word_count": word_count if word_count is not None else len(text.split()),
     }
+    if document_words is not None:
+        meta["document_word_count"] = document_words
+    return {"text": text, "metadata": meta}
+
+
+# Two documents of real sentences, short enough that chunk_size=40 /
+# chunk_overlap=16 packs several per chunk and repeats one at each boundary.
+_SPEECH = {
+    "vidA": [
+        "Seaborn wraps Matplotlib.",
+        "It adds statistical defaults.",
+        "A box plot shows the median.",
+        "It also shows the quartiles.",
+        "Violin plots add the density.",
+        "Swarm plots show every point.",
+        "Pair plots compare many columns.",
+        "Heat maps show correlations.",
+    ],
+    "vidB": [
+        "Matplotlib controls the figure.",
+        "Subplots share one axis.",
+        "Tick labels can be rotated.",
+        "Legends can sit outside the axes.",
+        "Styles change every default.",
+        "Savefig writes the image.",
+    ],
+}
+
+
+def _real_chunks(with_frames: bool) -> list[dict]:
+    """Chunks built the way the job builds them: `chunk_transcript` over the
+    transcript, with `[VISUAL @ ...]` annotations merged first on a visual run."""
+    from types import SimpleNamespace
+
+    from app.services.visual_service import annotate_segments
+    from app.utils.chunking import chunk_transcript
+
+    chunks: list[dict] = []
+    for vid, sentences in _SPEECH.items():
+        segments = [{"text": s, "start": i * 5.0, "duration": 5.0} for i, s in enumerate(sentences)]
+        if with_frames:
+            frames = [
+                SimpleNamespace(
+                    timestamp_seconds=t, informative=True, status="described",
+                    description=f"A notebook cell at {t:.0f} seconds plots tips by day and by time.",
+                )
+                for t in (6.0, 16.0)
+            ]
+            segments = annotate_segments(segments, frames)
+        chunks.extend(chunk_transcript(
+            segments, chunk_size=40, chunk_overlap=16,
+            video_metadata={"video_id": vid, "channel_name": f"chan-{vid}", "title": vid},
+        ))
+    return chunks
+
+
+_SPOKEN = {vid: sum(len(s.split()) for s in sentences) for vid, sentences in _SPEECH.items()}
 
 
 # ---------- compute_statistics ----------
@@ -47,24 +101,26 @@ def test_compute_statistics_empty_chunks():
 
 
 def test_compute_statistics_counts_unique_videos_and_words():
+    # Each document's own count is read once, however many chunks carry it
+    # (summing the chunks' `word_count` would give 380).
     chunks = [
-        _chunk("v1", "ChA", 0.0, 60.0, word_count=100),
-        _chunk("v1", "ChA", 60.0, 120.0, word_count=80),
-        _chunk("v2", "ChB", 0.0, 300.0, word_count=200),
+        _chunk("v1", "ChA", 0.0, 60.0, word_count=100, document_words=170),
+        _chunk("v1", "ChA", 60.0, 120.0, word_count=80, document_words=170),
+        _chunk("v2", "ChB", 0.0, 300.0, word_count=200, document_words=200),
     ]
     result = report_agent.compute_statistics({"transcript_chunks": chunks})
     stats = result["statistics"]
 
     assert stats["video_count"] == 2
     assert stats["transcript_count"] == 2
-    assert stats["total_words"] == 380
+    assert stats["total_words"] == 370
 
 
 def test_compute_statistics_builds_channel_breakdown():
     chunks = [
-        _chunk("v1", "ChA", 0.0, 60.0, word_count=100),
-        _chunk("v2", "ChA", 0.0, 120.0, word_count=50),
-        _chunk("v3", "ChB", 0.0, 600.0, word_count=200),
+        _chunk("v1", "ChA", 0.0, 60.0, document_words=100),
+        _chunk("v2", "ChA", 0.0, 120.0, document_words=50),
+        _chunk("v3", "ChB", 0.0, 600.0, document_words=200),
     ]
     result = report_agent.compute_statistics({"transcript_chunks": chunks})
     breakdown = {ch["channel_name"]: ch for ch in result["statistics"]["channel_breakdown"]}
@@ -73,9 +129,70 @@ def test_compute_statistics_builds_channel_breakdown():
     assert "ChB" in breakdown
     assert breakdown["ChA"]["video_count"] == 2
     assert breakdown["ChB"]["video_count"] == 1
-    # Words summed across chunks per channel
+    # Each channel's words are its documents' words.
     assert breakdown["ChA"]["word_count"] == 150
     assert breakdown["ChB"]["word_count"] == 200
+
+
+def test_compute_statistics_counts_words_once_per_document_not_per_chunk():
+    """Overlapping chunks and `[VISUAL @ ...]` spans must not inflate the count.
+
+    The old code summed each chunk's `word_count`: every overlap region twice
+    (the 200-video reference job said 1,057,331 words for 947,239) and, on a
+    visual run, the descriptions as well (R1 run 10: 55,443 for 42,999).
+    """
+    chunks = _real_chunks(with_frames=True)
+    # The fixture exercises both defects, so the summing code fails here:
+    # the plain run's chunks over-count by the overlap, the visual run's by
+    # the descriptions on top.
+    plain_sum = sum(c["metadata"]["word_count"] for c in _real_chunks(with_frames=False))
+    assert plain_sum > sum(_SPOKEN.values())
+    assert sum(c["metadata"]["word_count"] for c in chunks) > plain_sum
+    assert any("[VISUAL @" in c["text"] for c in chunks)
+
+    stats = report_agent.compute_statistics({"transcript_chunks": chunks})["statistics"]
+    assert stats["total_words"] == sum(_SPOKEN.values())
+    breakdown = {row["channel_name"]: row["word_count"] for row in stats["channel_breakdown"]}
+    assert breakdown == {f"chan-{vid}": n for vid, n in _SPOKEN.items()}
+
+
+def test_compute_statistics_does_not_count_the_overlap_twice():
+    """The overlap alone, on a run with no frames: the summing code says more
+    words than the transcripts hold."""
+    chunks = _real_chunks(with_frames=False)
+    assert sum(c["metadata"]["word_count"] for c in chunks) > sum(_SPOKEN.values())
+    assert not any("[VISUAL @" in c["text"] for c in chunks)
+
+    stats = report_agent.compute_statistics({"transcript_chunks": chunks})["statistics"]
+    assert stats["total_words"] == sum(_SPOKEN.values())
+
+
+def test_compute_statistics_rebuilds_a_document_from_unstamped_chunks():
+    """Chunks from before `document_word_count`: the document is put back
+    together in order without its overlap, and the descriptions dropped."""
+    chunks = _real_chunks(with_frames=True)
+    for chunk in chunks:
+        del chunk["metadata"]["document_word_count"]
+    chunks.reverse()   # order comes from chunk_index, not list position
+
+    stats = report_agent.compute_statistics({"transcript_chunks": chunks})["statistics"]
+    assert stats["total_words"] == sum(_SPOKEN.values())
+
+
+def test_run_report_agent_reports_the_spoken_word_count():
+    """At the production caller: the statistics the job stores and renders."""
+    chunks = _real_chunks(with_frames=True)
+    fake_llms = [
+        _fake_llm_returning('{"channel_name": "chan-vidA", "themes": ["t"], "highlights": []}'),
+        _fake_llm_returning('{"channel_name": "chan-vidB", "themes": ["t"], "highlights": []}'),
+        _fake_llm_returning("<section>Channel narrative</section>"),
+    ]
+    with patch.object(report_agent, "get_llm_for", side_effect=fake_llms):
+        stats, _ = report_agent.run_report_agent(
+            job_type="channel", topic="", transcript_chunks=chunks
+        )
+    assert stats["total_words"] == sum(_SPOKEN.values())
+    assert f"Total words: {sum(_SPOKEN.values()):,}" in report_agent._render_statistics_html(stats)
 
 
 def test_compute_statistics_handles_missing_channel_name():

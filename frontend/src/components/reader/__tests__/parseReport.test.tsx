@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { parseCitationHref, parseReportHtml, type ReportCitation } from '../parseReport';
@@ -167,6 +168,46 @@ describe('parseReportHtml', () => {
   it('does not emit script or style even if handed some', () => {
     const { markup } = render('<p>a</p><script>x()</script><style>p{}</style>');
     expect(markup).toBe('<p>a</p>');
+  });
+});
+
+describe('parseReportHtml processing notes (T-8.8.4.4)', () => {
+  const note =
+    'the "Key Facts" section was cut off mid-markup on both attempts to write it and was closed ' +
+    'where it stopped, so it may end abruptly.';
+  const noteMarkup = (p: { processingNotes: ReactNode[] }) => renderToStaticMarkup(<>{p.processingNotes}</>);
+
+  it('lifts the classed note out of the body, without its label', () => {
+    const long = 'x'.repeat(130);
+    const html = sanitizeReportHtml(
+      `<h2>Key Facts</h2><p>${long}</p>` +
+        `<p class="processing-note" style="color:#8a6d3b"><strong>Processing note:</strong> ${note}</p>`,
+    );
+    const parsed = render(html);
+    expect(parsed.processingNotes).toHaveLength(1);
+    expect(noteMarkup(parsed).trim()).toBe(note.replace(/"/g, '&quot;'));
+    expect(parsed.markup).not.toContain('Processing note');
+    expect(parsed.markup).not.toContain('cut off mid-markup');
+    // The body's own paragraph still gets the drop cap.
+    expect(parsed.markup).toContain(`<p class="reader-dropcap">${long}</p>`);
+  });
+
+  it('finds a note written before the class by its label', () => {
+    // What a stored report looks like after the sanitiser drops `style`.
+    const parsed = render(
+      sanitizeReportHtml(
+        '<p>Body.</p><p style="color:#8a6d3b"><strong>Processing note:</strong> 3 segments could not be analyzed.</p>',
+      ),
+    );
+    expect(parsed.processingNotes).toHaveLength(1);
+    expect(noteMarkup(parsed).trim()).toBe('3 segments could not be analyzed.');
+    expect(parsed.markup).toBe('<p>Body.</p>');
+  });
+
+  it('leaves a report without a note alone', () => {
+    const parsed = render('<p><strong>Note:</strong> a body paragraph that starts in bold.</p>');
+    expect(parsed.processingNotes).toEqual([]);
+    expect(parsed.markup).toContain('a body paragraph that starts in bold.');
   });
 });
 

@@ -110,7 +110,11 @@ def iter_knowledge_rows(
             Document.video_id.in_(db.query(owned.c.video_id)),
         )
         .order_by(Document.created_at.asc())
-        .execution_options(yield_per=_YIELD_PER)
+        # Query.yield_per, not execution_options(yield_per=...): only the
+        # former tells the legacy Query to skip its automatic unique(), and
+        # SQLAlchemy 2.1 refuses unique() with yield_per, so the other form
+        # failed every knowledge export on a fresh install (T-8.8.4.3).
+        .yield_per(_YIELD_PER)
     )
     for video in q:
         topics: list[str] = []

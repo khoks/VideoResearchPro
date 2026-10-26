@@ -1,0 +1,210 @@
+# Continuous integration (T-8.8.4.3). Every pull request and every push to
+# master runs the suites below; docs/testing.md section 5.4 describes them.
+#
+# No job needs a secret: the backend suite stubs every LLM, Celery, Redis and
+# the startup probes (backend/tests/conftest.py), the device tests answer every
+# /api/v1 call from frontend/tests/fixtures/api, and the only downloads are
+# public packages, the public embedding model and Playwright's browsers.
+#
+# Requiring these checks before a merge is a branch-protection setting on
+# GitHub, which the repository owner turns on; this file does not change it.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A pull request's runs share a group, so a new push cancels the run it
+# supersedes. Every other run (a push to master, a manual dispatch) gets a
+# group of its own, so each merge commit gets a full result even when merges
+# land minutes apart. Turning cancel-in-progress off for a shared master group
+# would not be enough: a third run in a group replaces the second's pending
+# run. backend/tests/test_ci/test_ci_workflow.py pins both.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+
+jobs:
+  backend:
+    name: Backend tests (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # Bump the suffix to discard a bad cache entry: a key is never
+      # overwritten. v2: the download step also fetches Chroma's ONNX model.
+      MODEL_CACHE_KEY: models-paraphrase-multilingual-MiniLM-L12-v2-v2
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      # sentence-transformers pulls in PyTorch, and the default Linux wheel
+      # brings several GB of CUDA libraries the suite never uses. The CPU
+      # wheel satisfies the same requirement.
+      - name: Install CPU-only PyTorch
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      # The multilingual embedder (EMBEDDING_MODEL_NAME) is about 470 MB from
+      # the Hugging Face hub; Chroma keeps its own default ONNX model
+      # (all-MiniLM-L6-v2, about 80 MB) for collections created without an
+      # embedding function, which some tests do. One step downloads both, and
+      # the cache is saved right after it succeeds, before the tests: a cache
+      # key is immutable, so a save after a cancelled or failed download would
+      # pin a partial copy, and every later run would restore it, skip this
+      # step and fetch the missing models at test time. What the tests do
+      # never changes what is saved, and a red test run still keeps the cache.
+      - name: Restore model caches
+        id: models
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cache/huggingface
+            ~/.cache/chroma
+          key: ${{ env.MODEL_CACHE_KEY }}
+
+      - name: Download the embedding models
+        id: download
+        if: steps.models.outputs.cache-hit != 'true'
+        run: |
+          python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
+          python -c "from chromadb.utils.embedding_functions import DefaultEmbeddingFunction; DefaultEmbeddingFunction()(['warm up'])"
+
+      - name: Save model caches
+        if: steps.download.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cache/huggingface
+            ~/.cache/chroma
+          key: ${{ env.MODEL_CACHE_KEY }}
+
+      # -rs prints each skipped test's reason, so a reviewer can see what the
+      # runner did not exercise (ffmpeg, an FTS5 trigram SQLite, a PDF engine).
+      - name: Run pytest
+        run: python -m pytest tests/ -q -rs
+
+  lint:
+    name: Backend lint (ruff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # The ruff version pinned in requirements-dev.txt, without the rest of
+      # the backend's dependencies.
+      - name: Install ruff
+        run: pip install "$(grep -E '^ruff==' backend/requirements-dev.txt)"
+
+      # A minimal ruleset the codebase passes today: syntax errors, undefined
+      # names and invalid comparisons or statements (the checks that find bugs,
+      # not style). Ruff's default set reports 57 existing findings (unused
+      # imports, one-line statements); widening the rules means fixing those
+      # first, in its own change.
+      - name: Run ruff
+        run: ruff check backend --select E9,F63,F7,F82 --output-format=github
+
+  frontend:
+    name: Frontend build and unit tests (vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Type check and build
+        run: npm run build
+
+      - name: Run vitest
+        run: npx vitest run
+
+  extension:
+    name: Browser extension tests (node --test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - run: npm test
+
+  device:
+    name: Device tests (Playwright)
+    # The screenshot baselines in frontend/tests/__screenshots__ are Windows
+    # renders with no OS suffix: the pages set Georgia and Segoe UI, which a
+    # Linux runner does not have, so an ubuntu run differs on every page.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~\AppData\Local\ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium webkit
+
+      - name: Run the device tests
+        run: npm run test:mobile
+
+      - name: Upload screenshots and traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-test-results
+          path: frontend/test-results
+          retention-days: 7

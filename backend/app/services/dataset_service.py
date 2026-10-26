@@ -126,6 +126,11 @@ def iter_knowledge_rows(
             Document.document_id.in_(visibility_service.visible_document_ids(db, tenant_id)),
         )
         .order_by(Document.created_at.asc())
+        # Query.yield_per, not execution_options(yield_per=...): only the
+        # former tells the legacy Query to skip its automatic unique(), and
+        # SQLAlchemy refuses unique() with yield_per (2.1, and 2.0.48 too
+        # once a row matches), so the other form failed every knowledge
+        # export on a fresh install (T-8.8.4.3).
         .yield_per(_YIELD_PER)
     )
     for document_id, knowledge_json, report_md in q:

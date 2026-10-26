@@ -32,6 +32,7 @@ backend/tests/
 ├── test_tasks/                 # Celery task body tests (subscription_task, upsert_dedup)
 ├── test_models/                # SQLAlchemy model tests
 ├── test_utils/                 # pure-function tests (chunking, youtube_helpers)
+├── test_ci/                    # reads .github/workflows/ci.yml: what a green run cannot show (§5.4)
 └── test_smoke/                 # cross-feature integration smoke (added 2026-05-05)
 ```
 
@@ -241,7 +242,21 @@ Coverage is informational — there is no enforced floor. Prefer adding tests wh
 
 ### 5.4. CI
 
-CI runs the same `pytest tests/ -v` plus `ruff check .` and the frontend build. PRs that fail any of these are blocked.
+GitHub Actions runs [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) on every pull request and every push to `master` (T-8.8.4.3; before it, no workflow had ever existed and nothing ran on a PR). Five jobs, none of which needs a secret. A new push to a pull request cancels that pull request's run in progress; every push to `master` runs in a concurrency group of its own, so each merge commit gets a full result even when merges land minutes apart. `backend/tests/test_ci/test_ci_workflow.py` reads the workflow file and pins both that and the model-cache rule below, since a green run shows neither.
+
+| Job | Runner | What it runs |
+|-----|--------|--------------|
+| Backend tests (pytest) | ubuntu-latest, Python 3.12 | `pip install -r requirements.txt -r requirements-dev.txt` (pip cache; PyTorch from the CPU wheel index first, so the CUDA libraries never download), then `python -m pytest tests/ -q -rs` from `backend/` (`-rs` lists each skip with its reason). The multilingual embedder and Chroma's ONNX model are cached between runs (`~/.cache/huggingface`, `~/.cache/chroma`): one step downloads both on a cache miss, and the cache is saved right after that step succeeds, before the tests, so a red test run still keeps it and a cancelled or failed download never does (a key is never overwritten, so a partial copy would stay for good; bump `MODEL_CACHE_KEY` to discard a bad entry) |
+| Backend lint (ruff) | ubuntu-latest | `ruff check backend --select E9,F63,F7,F82` with the `ruff` pinned in `requirements-dev.txt`: syntax errors, undefined names, invalid comparisons and statements. The repository has no ruff config, and ruff's default set reports 57 existing findings (mostly unused imports), so the default set is not gated; widening the rules means fixing those first, in a change of its own |
+| Frontend build and unit tests | ubuntu-latest, Node 22 | `npm ci`, `npm run build` (type check plus Vite build), `npx vitest run` from `frontend/` |
+| Browser extension tests | ubuntu-latest, Node 22 | `npm test` from `extension/` (`node --test`, no install) |
+| Device tests (Playwright) | windows-latest, Node 22 | `npx playwright install chromium webkit`, then `npm run test:mobile` (all projects in `playwright.config.ts`, [§5.6](#56-frontend-suites)). On Windows because the screenshot baselines are Windows renders with no OS suffix: the pages ask for Georgia and Segoe UI, which a Linux runner lacks. A failed run uploads `frontend/test-results` (actual, expected and diff images, traces) as the `playwright-test-results` artifact |
+
+A test that would reach a real key, a paid provider, a local service (Redis on `:6379` is the usual one on a dev machine) or a Windows-only path is a bug in the test: fix it (or skip it with a reason off Windows) rather than adding a secret or a service to the workflow.
+
+CI installs the newest versions `requirements.txt` allows (the file uses `>=`), so it can fail where a long-lived dev venv passes. That is the point: it is what a fresh install gets. The first runs on 2026-10-25 found two such breaks: the `bcrypt<4.0.0` cap made `requirements.txt` unresolvable (every chromadb since 1.0.7 needs `bcrypt>=4.0.1`), and the knowledge export failed on SQLAlchemy 2.1 (`execution_options(yield_per=...)` on a legacy `Query`; use `Query.yield_per()`). They also found `test_cancel_job` sending a real revoke to the Celery broker, which passed only where Redis was running.
+
+**What CI does not do.** It does not block a merge on its own: requiring these checks before merging is a branch-protection setting on GitHub that the repository owner turns on, and until then a red run is a signal, not a gate. It does not run the migration round-trip, parity and boot checks of [§5.5](#55-pre-merge-sanity-checks-manual) as separate steps (the suite's own `test_migrations_round_trip.py` covers the first), the real-LLM smoke probes ([§7](#7-open-work)), or anything that needs Redis, a Celery worker or a provider key. Tests that need an optional tool (ffmpeg, an FTS5 trigram SQLite, a PDF engine) skip themselves where it is missing.
 
 ### 5.6. Frontend suites
 
@@ -450,7 +465,7 @@ For prompt-quality regression, the right tool is a small fixture suite under `te
 
 These gaps are tracked but not blocking day-to-day development:
 
-- **Frontend test harness.** Vitest and Playwright exist since 2026-10-19 ([§5.6](#56-frontend-suites)) but cover the reading room and the mobile pass only. Still open: page-level tests for the Q&A ask flow and the approval flow, and running the frontend suites in CI.
+- **Frontend test harness.** Vitest and Playwright exist since 2026-10-19 ([§5.6](#56-frontend-suites)) and run in CI ([§5.4](#54-ci)), but cover the reading room and the mobile pass only. Still open: page-level tests for the Q&A ask flow and the approval flow.
 - **Property-based tests.** Chunking (`app/utils/chunking.py`) and timestamp-mapping logic would benefit from Hypothesis. Currently example-based.
 - **End-to-end with real Redis + Celery.** The `--pool=solo` Windows constraint complicates this; revisit once SaaS infra moves to Linux containers.
 - **Real-LLM smoke runs in CI.** Today the `run_startup_probes` logic is unit-tested with mocks. A nightly job that probes the real configured providers (with a tiny budget) would catch credential rotation and SDK breakage early. Tracked in [docs/saas-roadmap.md](saas-roadmap.md).

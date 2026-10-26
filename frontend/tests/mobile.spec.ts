@@ -52,7 +52,23 @@ const EMPTY: Record<string, unknown> = {
   'GET /api/v1/library/videos': [],
   'GET /api/v1/suggestions': { context: 'library', cached: false, generated: false, suggestions: [] },
   'GET /api/v1/library/video-channels': {},
+  // The notification bell (S-8.3.3) polls this on every signed-in page.
+  'GET /api/v1/notifications': { items: [], unread: 0 },
 };
+
+// The reader asks for each cited video's R1 frames (S-1.18.2). The run's
+// videos have none captured, which is what the baselines show: no stills on
+// the citation cards. A video outside the run still counts as unmatched.
+const RUN_DOCUMENTS = new Map(
+  (fixture('job-videos') as { video_id: string; document_id: string }[]).map((v) => [v.video_id, v.document_id]),
+);
+
+function noFrames(pathname: string): unknown {
+  const videoId = /^\/api\/v1\/videos\/([^/]+)\/frames$/.exec(pathname)?.[1];
+  const documentId = videoId ? RUN_DOCUMENTS.get(decodeURIComponent(videoId)) : undefined;
+  if (!videoId || !documentId) return undefined;
+  return { document_id: documentId, video_id: decodeURIComponent(videoId), visual_enabled: false, in_progress: false, frames: [] };
+}
 
 async function boot(page: Page, scheme: 'light' | 'dark'): Promise<string[]> {
   const unmatched: string[] = [];
@@ -67,6 +83,8 @@ async function boot(page: Page, scheme: 'light' | 'dark'): Promise<string[]> {
     const key = `${route.request().method()} ${url.pathname}`;
     if (ROUTES[key]) return route.fulfill({ json: fixture(ROUTES[key]) });
     if (key in EMPTY) return route.fulfill({ json: EMPTY[key] });
+    const frames = route.request().method() === 'GET' ? noFrames(url.pathname) : undefined;
+    if (frames) return route.fulfill({ json: frames });
     unmatched.push(key + url.search);
     return route.fulfill({ status: 404, json: { detail: 'no fixture' } });
   });

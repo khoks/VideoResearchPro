@@ -279,7 +279,7 @@ class SyncBudget:
                 )
             )
         kept: list[str] = []
-        for vid in video_ids:
+        for vid in dict.fromkeys(video_ids):  # a repeated id is one document
             if vid in visible:
                 kept.append(vid)
             elif self.remaining > 0:

@@ -119,6 +119,96 @@ def test_strip_overlap_respects_its_bound():
     assert dts.strip_overlap(prev, cur, max_words=200) == "tail"
 
 
+# ---------------------------------------------------------------------------
+# A shorter re-ingest leaves the earlier ingest's tail in the store
+# ---------------------------------------------------------------------------
+
+
+def _hand_chunk(index: int, total: int, text: str, *, doc_id: str = "d") -> dict:
+    return {
+        "id": f"{doc_id}:{index}",
+        "text": text,
+        "metadata": {"chunk_index": index, "total_chunks": total},
+    }
+
+
+def test_a_shorter_reingest_reads_only_the_chunks_it_wrote():
+    """Six chunks, then indexes 0-3 rewritten by a four-chunk ingest: upsert
+    never deletes, so :4 and :5 are still stored. Only the four are read."""
+    first = [_hand_chunk(i, 6, f"Old chunk {i} says thing {i}.") for i in range(6)]
+    second = [_hand_chunk(i, 4, f"New chunk {i} says thing {i}.") for i in range(4)]
+    store = {c["id"]: c for c in first}
+    store.update({c["id"]: c for c in second})  # what an upsert leaves
+    assert len(store) == 6
+
+    rebuilt = dts.reassemble_chunks(list(store.values()))
+
+    assert rebuilt.split("\n\n") == [f"New chunk {i} says thing {i}." for i in range(4)]
+    assert "Old chunk" not in rebuilt
+
+
+def test_a_shorter_reingest_against_the_real_chunker():
+    """A thread re-fetched after its lowest-scored comments fell out of the
+    top N: the same text, shorter. The earlier ingest's last chunks hold
+    sentences the latest one no longer has; none of them may come back."""
+    longer = _chunks(48, 16)
+    shorter_sentences = SENTENCES[:14]
+    segments = [{"text": s, "start": float(i), "duration": 1.0} for i, s in enumerate(shorter_sentences)]
+    shorter = [
+        {"id": f"doc-1:{c['metadata']['chunk_index']}", "text": c["text"], "metadata": c["metadata"]}
+        for c in chunk_transcript(
+            segments,
+            chunk_size=48,
+            chunk_overlap=16,
+            video_metadata={"document_id": "doc-1", "source_type": "reddit_post"},
+            transcription_source="reddit",
+        )
+    ]
+    assert len(shorter) < len(longer)
+    store = {c["id"]: c for c in longer}
+    store.update({c["id"]: c for c in shorter})
+
+    rebuilt = dts.reassemble_chunks(list(store.values()))
+
+    assert _normalised(rebuilt) == " ".join(shorter_sentences)
+    assert not any(s in rebuilt for s in SENTENCES[14:])
+
+
+def test_a_chunk_carrying_another_ingests_count_is_dropped():
+    """Below the latest count but from a different ingest (a partial upsert):
+    its count does not match chunk 0's, so it is not the latest text."""
+    chunks = [
+        _hand_chunk(0, 3, "Zero."),
+        _hand_chunk(1, 5, "Stale one."),
+        _hand_chunk(2, 3, "Two."),
+    ]
+    assert _normalised(dts.reassemble_chunks(chunks)) == "Zero. Two."
+
+
+def test_without_a_count_on_chunk_zero_every_chunk_is_kept():
+    """Nothing to tell ingests apart by: read everything, as before."""
+    chunks = [
+        {"id": "d:0", "text": "Zero.", "metadata": {"chunk_index": 0}},
+        _hand_chunk(1, 2, "One."),
+        _hand_chunk(2, 2, "Two."),
+    ]
+    assert _normalised(dts.reassemble_chunks(chunks)) == "Zero. One. Two."
+    assert dts.current_chunks(chunks) == chunks
+
+
+def test_full_text_counts_only_the_current_chunks(db):
+    doc = _pdf(db)
+    first = [_hand_chunk(i, 6, f"Old {i}.", doc_id=doc.document_id) for i in range(6)]
+    second = [_hand_chunk(i, 4, f"New {i}.", doc_id=doc.document_id) for i in range(4)]
+    store = {c["id"]: c for c in first}
+    store.update({c["id"]: c for c in second})
+    with patch("app.services.chroma_service.get_document_chunks", return_value=list(store.values())):
+        got = dts.full_text(db, doc)
+    assert got.origin == dts.ORIGIN_CHUNKS
+    assert got.chunk_count == 4
+    assert _normalised(got.text) == "New 0. New 1. New 2. New 3."
+
+
 def test_a_chunk_entirely_inside_the_previous_one_adds_nothing():
     chunks = [
         {"id": "d:0", "text": "One. Two. Three.", "metadata": {"chunk_index": 0}},

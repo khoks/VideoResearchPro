@@ -66,8 +66,10 @@ def full_text(db: Session, document: Any) -> DocumentText:
 
     from app.services import chroma_service
 
-    chunks = chroma_service.get_document_chunks(
-        document.document_id, getattr(document, "video_id", None) or None
+    chunks = current_chunks(
+        chroma_service.get_document_chunks(
+            document.document_id, getattr(document, "video_id", None) or None
+        )
     )
     text = reassemble_chunks(chunks)
     if text.strip():
@@ -173,19 +175,71 @@ def strip_overlap(previous: str, current: str, max_words: int | None = None) -> 
     return current
 
 
+def _total_chunks(chunk: dict) -> int | None:
+    """``metadata.total_chunks`` as an int, or ``None`` when absent or garbled."""
+    raw = (chunk.get("metadata") or {}).get("total_chunks")
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def current_chunks(chunks: list[dict]) -> list[dict]:
+    """The chunks the latest ingest wrote, without an earlier ingest's tail.
+
+    ``insert_chunks`` upserts by ``{key}:{chunk_index}`` and never deletes, so
+    when a document is chunked again into FEWER chunks — a thread re-fetched
+    after comments were removed or re-ranked, a podcast transcribed again —
+    the earlier ingest's higher-index chunks stay in the store. Read back,
+    they would be appended to the text whole: comments twice over, and
+    comments their authors have since deleted. Connector sources are
+    re-fetched and re-chunked every time an approved job selects them, so
+    this is the ordinary case for them, not an edge case.
+
+    Every chunk carries ``total_chunks`` (``chunk_transcript`` writes it) and
+    the chunk at index 0 is rewritten by every ingest, so its count is the
+    latest one. A chunk at or past that index, or carrying a different count,
+    belongs to an earlier ingest and is dropped. Without a usable count on
+    chunk 0 (no chunk 0, or a chunk written without the field) nothing can be
+    told apart and every chunk is kept.
+    """
+    head = next((c for c in chunks if _chunk_index(c) == 0), None)
+    total = _total_chunks(head) if head is not None else None
+    if total is None:
+        return list(chunks)
+    kept: list[dict] = []
+    dropped: list[int | None] = []
+    for chunk in chunks:
+        index = _chunk_index(chunk)
+        if index is not None and (index >= total or _total_chunks(chunk) != total):
+            dropped.append(index)
+            continue
+        kept.append(chunk)
+    if dropped:
+        logger.warning(
+            "Reassembly dropped %d stale chunk(s) of an earlier, longer ingest "
+            "(latest ingest wrote %d; stale indexes %s)",
+            len(dropped), total, sorted(i for i in dropped if i is not None),
+        )
+    return kept
+
+
 def reassemble_chunks(chunks: list[dict]) -> str:
     """One document's text rebuilt from its stored chunks.
 
-    Chunks are put in ``chunk_index`` order (numeric: Chroma ids sort ``:10``
-    before ``:2``), a repeated index is read once, and each chunk loses the
-    overlap it shares with the one before it. Each chunk becomes a paragraph:
-    chunks end on sentence boundaries, which gives the knowledge splitter the
-    same kind of boundary the transcript path gives it. Chunks with no index
-    cannot be placed and are skipped.
+    Stale chunks an earlier, longer ingest left behind are dropped first
+    (``current_chunks``). Chunks are put in ``chunk_index`` order (numeric:
+    Chroma ids sort ``:10`` before ``:2``), a repeated index is read once, and
+    each chunk loses the overlap it shares with the one before it. Each chunk
+    becomes a paragraph: chunks end on sentence boundaries, which gives the
+    knowledge splitter the same kind of boundary the transcript path gives
+    it. Chunks with no index cannot be placed and are skipped.
     """
     indexed: dict[int, str] = {}
     skipped = 0
-    for chunk in chunks:
+    for chunk in current_chunks(chunks):
         index = _chunk_index(chunk)
         if index is None:
             skipped += 1

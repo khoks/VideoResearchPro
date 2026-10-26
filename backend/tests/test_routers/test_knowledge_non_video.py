@@ -260,6 +260,43 @@ def test_with_only_the_transcript_cache_read_a_pdf_422s(
     assert not agent.called
 
 
+def test_a_shorter_reingest_does_not_hand_the_agent_the_earlier_tail(
+    client, db, ephemeral_chroma, small_chunks
+):
+    """``insert_chunks`` upserts and never deletes. A source chunked again into
+    fewer chunks (a thread re-fetched once comments dropped out of its top N,
+    a podcast transcribed again) keeps the earlier ingest's higher-index
+    chunks in the store. The agent must get the latest text only: without
+    ``current_chunks`` the stale tail's sentences are appended after it."""
+    from app.tasks.job_tasks import _build_video_metadata
+    from app.utils.chunking import chunk_transcript
+
+    doc_id = _paste(client)
+    before = ephemeral_chroma.get_document_chunks(doc_id)
+
+    kept = SENTENCES[:10]
+    doc = db.get(Document, doc_id)
+    again = chunk_transcript(
+        [{"text": s, "start": 0.0, "duration": 0.0} for s in kept],
+        chunk_size=settings.CHUNK_SIZE,
+        chunk_overlap=settings.CHUNK_OVERLAP,
+        video_metadata=_build_video_metadata(doc, language="en"),
+        transcription_source="trafilatura",
+    )
+    ephemeral_chroma.insert_chunks(again)
+    stored = ephemeral_chroma.get_document_chunks(doc_id)
+    assert len(again) < len(before) == len(stored), "the fixture must leave a stale tail"
+
+    resp, agent = _extract(client, doc_id)
+
+    assert resp.status_code == 200, resp.text
+    (_, text), _ = agent.call_args
+    for sentence in kept:
+        assert text.count(sentence) == 1, sentence
+    stale = [s for s in SENTENCES[10:] if s in text]
+    assert not stale, f"sentences from the earlier ingest's tail reached the agent: {stale}"
+
+
 # ---------------------------------------------------------------------------
 # Pasted page
 # ---------------------------------------------------------------------------

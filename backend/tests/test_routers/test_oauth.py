@@ -1,12 +1,16 @@
-"""Tests for T-5.4.5 — OAuth (Google + GitHub PKCE)."""
+"""Tests for T-5.4.5 — OAuth (Google + GitHub PKCE), and T-5.4.10 — a first
+sign-in needs an email the provider verified."""
 from __future__ import annotations
 
+import json
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.config import settings
+from app.models.audit_log import AuditLog
 from app.models.oauth import OAuthIdentity, OAuthState
 from app.models.user import User
 from app.services import auth_service, oauth_service
@@ -113,7 +117,7 @@ def test_callback_creates_user_and_identity_on_first_login(
     fake_post = MagicMock(return_value=_mock_response({"access_token": "oauth-tok"}))
     fake_get = MagicMock(
         return_value=_mock_response(
-            {"sub": "google-user-1234", "email": "newuser@example.com"}
+            {"sub": "google-user-1234", "email": "newuser@example.com", "email_verified": True}
         )
     )
     monkeypatch.setattr(oauth_service, "_default_http_post", fake_post)
@@ -157,7 +161,7 @@ def test_callback_links_identity_to_existing_email_user(
     fake_post = MagicMock(return_value=_mock_response({"access_token": "tok"}))
     fake_get = MagicMock(
         return_value=_mock_response(
-            {"sub": "google-9999", "email": "existing@example.com"}
+            {"sub": "google-9999", "email": "existing@example.com", "email_verified": True}
         )
     )
     monkeypatch.setattr(oauth_service, "_default_http_post", fake_post)
@@ -187,7 +191,7 @@ def test_callback_returns_existing_user_on_repeat_oauth_login(
     fake_post = MagicMock(return_value=_mock_response({"access_token": "tok1"}))
     fake_get = MagicMock(
         return_value=_mock_response(
-            {"sub": "g-recurring", "email": "rec@example.com"}
+            {"sub": "g-recurring", "email": "rec@example.com", "email_verified": True}
         )
     )
     monkeypatch.setattr(oauth_service, "_default_http_post", fake_post)
@@ -276,7 +280,7 @@ def test_state_is_single_use(unauthenticated_client, db, monkeypatch):
     fake_post = MagicMock(return_value=_mock_response({"access_token": "tok"}))
     fake_get = MagicMock(
         return_value=_mock_response(
-            {"sub": "g-once", "email": "once@example.com"}
+            {"sub": "g-once", "email": "once@example.com", "email_verified": True}
         )
     )
     monkeypatch.setattr(oauth_service, "_default_http_post", fake_post)
@@ -316,7 +320,7 @@ def test_token_exchange_includes_code_verifier(
 
     fake_get = MagicMock(
         return_value=_mock_response(
-            {"sub": "g-pkce", "email": "pkce@example.com"}
+            {"sub": "g-pkce", "email": "pkce@example.com", "email_verified": True}
         )
     )
     monkeypatch.setattr(oauth_service, "_default_http_post", capturing_post)
@@ -328,3 +332,217 @@ def test_token_exchange_includes_code_verifier(
     assert captured["data"]["code_verifier"] == persisted_verifier
     assert captured["data"]["grant_type"] == "authorization_code"
     assert captured["url"] == "https://oauth2.googleapis.com/token"
+
+
+# ---------------------------------------------------------------------------
+# Verified email (T-5.4.10, amends D-042)
+#
+# A first OAuth sign-in links an existing account by email, or creates one,
+# only when the provider verified the address. Google: the OIDC
+# ``email_verified`` claim. GitHub: the primary address in /user/emails and
+# its ``verified`` flag; /user's public email is never trusted. Unverified is
+# refused with 403 and one message whether or not an account exists, and
+# nothing is linked or created. Each refusal test below fails if the gate in
+# ``oauth_service._link_or_create_user`` is removed.
+# ---------------------------------------------------------------------------
+
+GITHUB_USER = "https://api.github.com/user"
+GITHUB_EMAILS = "https://api.github.com/user/emails"
+
+
+def _routed_get(responses: dict[str, object]) -> MagicMock:
+    """A fake GET answering each URL with its own payload, recording calls."""
+
+    def get(url, *, headers=None):
+        return _mock_response(responses[url])
+
+    return MagicMock(side_effect=get)
+
+
+def _sign_in(client, db, monkeypatch, provider: str, get: MagicMock):
+    state = _start_and_grab_state(client, db, provider)
+    monkeypatch.setattr(
+        oauth_service, "_default_http_post",
+        MagicMock(return_value=_mock_response({"access_token": "provider-tok"})),
+    )
+    monkeypatch.setattr(oauth_service, "_default_http_get", get)
+    return client.get(f"/api/v1/auth/oauth/{provider}/callback?code=c&state={state}")
+
+
+def _refusal_audited(db, provider: str) -> bool:
+    rows = db.query(AuditLog).filter(AuditLog.event == "login_failure").all()
+    return any(
+        json.loads(r.metadata_json or "{}") == {"reason": "oauth_email_unverified", "provider": provider}
+        for r in rows
+    )
+
+
+def test_google_unverified_email_with_an_existing_account_is_refused(
+    unauthenticated_client, db, monkeypatch
+):
+    existing = auth_service.create_user(db, email="victim@example.com", password="pw" * 6)
+    get = MagicMock(return_value=_mock_response(
+        {"sub": "g-attacker", "email": "victim@example.com", "email_verified": False}
+    ))
+    r = _sign_in(unauthenticated_client, db, monkeypatch, "google", get)
+
+    assert r.status_code == 403
+    assert r.json()["detail"] == oauth_service.unverified_email_message("google")
+    assert "sign in with your email and password" in r.json()["detail"]
+    assert db.query(OAuthIdentity).count() == 0, "the existing account gained no sign-in"
+    assert db.query(User).count() == 1
+    assert auth_service.get_user_by_email(db, "victim@example.com").id == existing.id
+    assert _refusal_audited(db, "google")
+
+
+def test_google_without_the_email_verified_claim_is_refused(
+    unauthenticated_client, db, monkeypatch
+):
+    """A missing claim is not a verified address."""
+    auth_service.create_user(db, email="victim@example.com", password="pw" * 6)
+    get = MagicMock(return_value=_mock_response({"sub": "g-x", "email": "victim@example.com"}))
+    r = _sign_in(unauthenticated_client, db, monkeypatch, "google", get)
+    assert r.status_code == 403
+    assert db.query(OAuthIdentity).count() == 0
+
+
+def test_google_unverified_new_address_creates_nothing_and_reads_the_same(
+    unauthenticated_client, db, monkeypatch
+):
+    """No account exists: still refused, with the very same message, so the
+    refusal does not tell anyone which addresses are registered."""
+    get = MagicMock(return_value=_mock_response(
+        {"sub": "g-new", "email": "nobody@example.com", "email_verified": False}
+    ))
+    r = _sign_in(unauthenticated_client, db, monkeypatch, "google", get)
+    assert r.status_code == 403
+    assert r.json()["detail"] == oauth_service.unverified_email_message("google")
+    assert auth_service.get_user_by_email(db, "nobody@example.com") is None
+    assert db.query(OAuthIdentity).count() == 0
+
+
+def test_github_verified_primary_links_the_existing_account(
+    unauthenticated_client, db, monkeypatch
+):
+    """A private profile email (/user says null) still signs in: the primary
+    verified address comes from /user/emails."""
+    existing = auth_service.create_user(db, email="dev@example.com", password="pw" * 6)
+    get = _routed_get({
+        GITHUB_USER: {"id": 7001, "email": None},
+        GITHUB_EMAILS: [
+            {"email": "old@example.com", "primary": False, "verified": False, "visibility": None},
+            {"email": "dev@example.com", "primary": True, "verified": True, "visibility": "private"},
+        ],
+    })
+    r = _sign_in(unauthenticated_client, db, monkeypatch, "github", get)
+
+    assert r.status_code == 200, r.text
+    identity = db.query(OAuthIdentity).one()
+    assert identity.user_id == existing.id
+    assert identity.provider_user_id == "7001"
+    assert identity.provider_email == "dev@example.com"
+    assert db.query(User).count() == 1
+    emails_calls = [c for c in get.call_args_list if c.args[0] == GITHUB_EMAILS]
+    assert len(emails_calls) == 1
+    assert emails_calls[0].kwargs["headers"]["Authorization"] == "Bearer provider-tok"
+
+
+def test_github_unverified_public_email_is_refused(
+    unauthenticated_client, db, monkeypatch
+):
+    auth_service.create_user(db, email="victim@example.com", password="pw" * 6)
+    get = _routed_get({
+        GITHUB_USER: {"id": 7002, "email": "victim@example.com"},
+        GITHUB_EMAILS: [
+            {"email": "victim@example.com", "primary": True, "verified": False, "visibility": "public"},
+        ],
+    })
+    r = _sign_in(unauthenticated_client, db, monkeypatch, "github", get)
+
+    assert r.status_code == 403
+    assert r.json()["detail"] == oauth_service.unverified_email_message("github")
+    assert "GitHub has not verified" in r.json()["detail"]
+    assert db.query(OAuthIdentity).count() == 0
+    assert db.query(User).count() == 1
+    assert _refusal_audited(db, "github")
+
+
+def test_github_public_email_alone_is_not_trusted(
+    unauthenticated_client, db, monkeypatch
+):
+    """/user/emails did not answer (here, as for a token without
+    ``user:email``): /user's public email no longer counts as verified."""
+    auth_service.create_user(db, email="victim@example.com", password="pw" * 6)
+    get = _routed_get({
+        GITHUB_USER: {"id": 7003, "email": "victim@example.com"},
+        GITHUB_EMAILS: {"message": "Not Found", "documentation_url": "https://docs.github.com"},
+    })
+    r = _sign_in(unauthenticated_client, db, monkeypatch, "github", get)
+    assert r.status_code == 403
+    assert db.query(OAuthIdentity).count() == 0
+
+
+def test_github_uses_the_primary_address_not_the_public_one(
+    unauthenticated_client, db, monkeypatch
+):
+    existing = auth_service.create_user(db, email="public@example.com", password="pw" * 6)
+    get = _routed_get({
+        GITHUB_USER: {"id": 7004, "email": "public@example.com"},
+        GITHUB_EMAILS: [
+            {"email": "public@example.com", "primary": False, "verified": True, "visibility": "public"},
+            {"email": "primary@example.com", "primary": True, "verified": True, "visibility": None},
+        ],
+    })
+    r = _sign_in(unauthenticated_client, db, monkeypatch, "github", get)
+    assert r.status_code == 200, r.text
+    created = auth_service.get_user_by_email(db, "primary@example.com")
+    assert created is not None and created.id != existing.id
+    assert db.query(OAuthIdentity).one().user_id == created.id
+
+
+def test_github_new_verified_user_is_created(unauthenticated_client, db, monkeypatch):
+    get = _routed_get({
+        GITHUB_USER: {"id": 7005, "email": None},
+        GITHUB_EMAILS: [{"email": "Fresh@Example.com", "primary": True, "verified": True}],
+    })
+    r = _sign_in(unauthenticated_client, db, monkeypatch, "github", get)
+    assert r.status_code == 200, r.text
+    user = auth_service.get_user_by_email(db, "fresh@example.com")
+    assert user is not None
+    identity = db.query(OAuthIdentity).one()
+    assert identity.user_id == user.id and identity.provider == "github"
+
+
+def test_a_linked_identity_signs_in_whatever_the_email_says(
+    unauthenticated_client, db, monkeypatch
+):
+    """The gate is for a first link. A returning user is found by provider id,
+    so a later failed /user/emails lookup does not lock them out."""
+    first = _routed_get({
+        GITHUB_USER: {"id": 7006, "email": None},
+        GITHUB_EMAILS: [{"email": "back@example.com", "primary": True, "verified": True}],
+    })
+    assert _sign_in(unauthenticated_client, db, monkeypatch, "github", first).status_code == 200
+    user = auth_service.get_user_by_email(db, "back@example.com")
+
+    again = _routed_get({
+        GITHUB_USER: {"id": 7006, "email": None},
+        GITHUB_EMAILS: {"message": "Bad credentials"},
+    })
+    r = _sign_in(unauthenticated_client, db, monkeypatch, "github", again)
+    assert r.status_code == 200, r.text
+    me = unauthenticated_client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {r.json()['access_token']}"}
+    )
+    assert me.json()["id"] == user.id
+    assert db.query(OAuthIdentity).count() == 1
+
+
+def test_github_authorize_url_requests_the_user_email_scope(unauthenticated_client, db):
+    """/user/emails answers only with ``user:email``; without it every GitHub
+    first sign-in would be refused."""
+    r = unauthenticated_client.get(
+        "/api/v1/auth/oauth/github/start?redirect_uri=https://app.example.com/oauth/callback"
+    )
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(r.json()["authorize_url"]).query)
+    assert "user:email" in query["scope"][0].split()

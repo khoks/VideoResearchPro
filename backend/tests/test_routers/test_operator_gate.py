@@ -143,16 +143,27 @@ def _oauth_configured(monkeypatch):
     monkeypatch.setattr(settings, "OAUTH_GITHUB_CLIENT_SECRET", "github-secret")
 
 
-def _oauth_sign_in(client, db, monkeypatch, provider: str, userinfo: dict):
-    """Run the OAuth callback with the provider's HTTP calls stubbed."""
+def _oauth_sign_in(client, db, monkeypatch, provider: str, userinfo: dict, emails: list | None = None):
+    """Run the OAuth callback with the provider's HTTP calls stubbed.
+
+    ``emails`` is GitHub's /user/emails answer; without it that lookup gets
+    an error object, as GitHub returns when it refuses.
+    """
     client.get(f"/api/v1/auth/oauth/{provider}/start?redirect_uri=https://app.example.com/oauth/callback")
     state = db.query(OAuthState).first().state
     token_resp = MagicMock()
     token_resp.json.return_value = {"access_token": "provider-token"}
-    info_resp = MagicMock()
-    info_resp.json.return_value = userinfo
+
+    def get(url, *, headers=None):
+        resp = MagicMock()
+        if url.endswith("/user/emails"):
+            resp.json.return_value = emails if emails is not None else {"message": "Not Found"}
+        else:
+            resp.json.return_value = userinfo
+        return resp
+
     monkeypatch.setattr(oauth_service, "_default_http_post", MagicMock(return_value=token_resp))
-    monkeypatch.setattr(oauth_service, "_default_http_get", MagicMock(return_value=info_resp))
+    monkeypatch.setattr(oauth_service, "_default_http_get", get)
     return client.get(f"/api/v1/auth/oauth/{provider}/callback?code=c&state={state}")
 
 
@@ -202,14 +213,27 @@ def test_oauth_with_a_verified_listed_address_creates_the_operator(unauthenticat
     assert me.json()["is_operator"] is True
 
 
-def test_oauth_with_a_listed_github_public_email_creates_the_operator(unauthenticated_client, db, monkeypatch):
-    """GitHub's /user email is the profile's public email, which GitHub
-    only allows to be one of the account's verified addresses."""
+def test_oauth_with_a_listed_github_verified_primary_creates_the_operator(unauthenticated_client, db, monkeypatch):
+    """GitHub's verification comes from /user/emails (T-5.4.10): the primary
+    address, verified."""
+    _oauth_configured(monkeypatch)
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "ops@company.com")
+    r = _oauth_sign_in(
+        unauthenticated_client, db, monkeypatch, "github", {"id": 4242, "email": None},
+        emails=[{"email": "ops@company.com", "primary": True, "verified": True}],
+    )
+    assert r.status_code == 200, r.text
+    assert auth_service.is_operator(db, auth_service.get_user_by_email(db, "ops@company.com"))
+
+
+def test_oauth_with_a_listed_github_public_email_alone_creates_nothing(unauthenticated_client, db, monkeypatch):
+    """Before T-5.4.10 /user's public email counted as verified; now only
+    /user/emails can vouch for it."""
     _oauth_configured(monkeypatch)
     monkeypatch.setattr(settings, "ADMIN_EMAILS", "ops@company.com")
     r = _oauth_sign_in(unauthenticated_client, db, monkeypatch, "github", {"id": 4242, "email": "ops@company.com"})
-    assert r.status_code == 200, r.text
-    assert auth_service.is_operator(db, auth_service.get_user_by_email(db, "ops@company.com"))
+    assert r.status_code == 403
+    assert auth_service.get_user_by_email(db, "ops@company.com") is None
 
 
 def test_oauth_with_an_unverified_listed_address_creates_nothing(unauthenticated_client, db, monkeypatch):
@@ -219,7 +243,8 @@ def test_oauth_with_an_unverified_listed_address_creates_nothing(unauthenticated
         unauthenticated_client, db, monkeypatch, "google",
         {"sub": "g-attacker", "email": "ops@company.com", "email_verified": False},
     )
-    assert r.status_code == 401
+    assert r.status_code == 403
+    assert r.json()["detail"] == oauth_service.unverified_email_message("google")
     assert auth_service.get_user_by_email(db, "ops@company.com") is None
     assert db.query(OAuthIdentity).count() == 0
 
@@ -231,19 +256,30 @@ def test_oauth_with_an_unverified_listed_address_is_not_linked_to_the_operator(u
         unauthenticated_client, db, monkeypatch, "google",
         {"sub": "g-attacker", "email": "test@example.com"},
     )
-    assert r.status_code == 401
+    assert r.status_code == 403
     assert db.query(OAuthIdentity).count() == 0, "the operator's account gained no sign-in"
 
 
-def test_oauth_with_an_unverified_unlisted_address_signs_in_as_before(unauthenticated_client, db, monkeypatch):
-    """The gate is for listed addresses only; other sign-ins are unchanged."""
+def test_oauth_with_an_unverified_unlisted_address_is_refused_too(unauthenticated_client, db, monkeypatch):
+    """T-5.4.10 extends the gate from listed addresses to every first sign-in."""
     _oauth_configured(monkeypatch)
     monkeypatch.setattr(settings, "ADMIN_EMAILS", "ops@company.com")
     r = _oauth_sign_in(
         unauthenticated_client, db, monkeypatch, "google", {"sub": "g-member", "email": "member@company.com"}
     )
-    assert r.status_code == 200
-    assert auth_service.get_user_by_email(db, "member@company.com") is not None
+    assert r.status_code == 403
+    assert auth_service.get_user_by_email(db, "member@company.com") is None
+
+
+def test_oauth_with_a_verified_unlisted_address_signs_in_as_a_member(unauthenticated_client, db, test_user, monkeypatch):
+    _oauth_configured(monkeypatch)
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "ops@company.com")
+    r = _oauth_sign_in(
+        unauthenticated_client, db, monkeypatch, "google",
+        {"sub": "g-member", "email": "member@company.com", "email_verified": True},
+    )
+    assert r.status_code == 200, r.text
+    assert not auth_service.is_operator(db, auth_service.get_user_by_email(db, "member@company.com"))
 
 
 # ------------------------------------------------------------------ startup warning

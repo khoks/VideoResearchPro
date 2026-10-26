@@ -20,7 +20,7 @@ Create a new user. **Public.** Returns 201 + `UserResponse`.
 { "id": "...", "email": "...", "created_at": "..." }
 ```
 
-409 when the address already has an account. 403 when the address is listed in `ADMIN_EMAILS` ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): a listed address makes its holder an operator and this route verifies no email, so the detail tells the operator to register the account before listing it. Google or GitHub sign-in with that address, verified by the provider, still creates it (`GET /auth/oauth/{provider}/callback`), and an unverified one is refused there with the usual 401.
+409 when the address already has an account. 403 when the address is listed in `ADMIN_EMAILS` ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): a listed address makes its holder an operator and this route verifies no email, so the detail tells the operator to register the account before listing it. Google or GitHub sign-in with that address, verified by the provider, still creates it (`GET /auth/oauth/{provider}/callback`), and an unverified one is refused there with 403, as every unverified first sign-in is since T-5.4.10.
 
 ### `POST /api/v1/auth/login`
 Issue a JWT. **Public.** Returns 200 + `TokenResponse`.
@@ -74,6 +74,18 @@ Merge a change into the caller's state; returns the same shape as `GET`. Every f
 // request
 { "step": 3, "first_job_id": "..." }
 ```
+
+### `GET /api/v1/auth/oauth/providers`
+**Public.** `{ "providers": ["google", "github"] }`: the providers whose client id and secret are both set (`OAUTH_GOOGLE_CLIENT_*`, `OAUTH_GITHUB_CLIENT_*`), so a client knows which sign-in buttons to offer.
+
+### `GET /api/v1/auth/oauth/{provider}/start?redirect_uri=…`
+**Public.** Returns `{ "authorize_url": "…" }` for the browser to open. Records a single-use OAuth state (PKCE S256, ten minutes) bound to `redirect_uri`. Scopes: Google `openid email profile`; GitHub `read:user user:email`. 400 for an unknown provider, 503 when the provider is not configured.
+
+### `GET /api/v1/auth/oauth/{provider}/callback?code=…&state=…`
+**Public.** Consumes the provider's redirect and returns a `TokenResponse`, as `POST /auth/login` does. A returning user is found by the provider's account id. A first sign-in links an existing account with the same email ([D-042](decisions.md#d-042--oauth-first-login-links-to-existing-user-by-email-2026-05-05)) or creates one, and since T-5.4.10 only when the provider verified the address: Google's OIDC `email_verified` claim, or for GitHub the account's primary address in `GET /user/emails` with `verified: true` (the public email on `/user` is not trusted).
+
+- **403** when the provider did not verify the address. Nothing is linked or created, and a `login_failure` audit event records `reason: oauth_email_unverified`. The detail is the same whether or not an account has the address, so it does not reveal which addresses are registered: `"GitHub has not verified the email address on your account, so it cannot be used to sign in here. If you already have an account, sign in with your email and password. Otherwise verify the address with GitHub and try again. Nothing was linked or created."` (with `Google` for Google). This also covers `ADMIN_EMAILS` addresses ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)).
+- **401** `OAuth authentication failed` for every other failure (unknown, expired or reused state, a failed token exchange, no email from the provider), without saying which step failed ([D-040](decisions.md#d-040--failed-logins-for-unknown-emails-do-not-create-user-rows-lock-arbitrary-account-defence-2026-05-04)).
 
 ---
 

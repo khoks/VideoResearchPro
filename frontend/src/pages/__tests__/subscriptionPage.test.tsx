@@ -22,8 +22,21 @@ vi.mock('../../hooks/useMe', () => ({
   useInvalidateMe: () => async () => undefined,
 }));
 const put = vi.fn(async (_url: string, body: { tier: string }) => ({ data: { tier: body.tier, message: 'ok' } }));
+// T-5.2.10: `GET /auth/quota` feeds the library-usage line.
+const documentsUsage: { current: { consumed: number; limit: number } | null } = { current: null };
+const get = vi.fn(async (_url: string) => ({
+  data: {
+    tier: 'free',
+    resources: documentsUsage.current
+      ? [{ resource: 'documents', period_kind: 'lifetime', period_start: '', period_end: null, over_limit: false, ...documentsUsage.current }]
+      : [],
+  },
+}));
 vi.mock('../../services/api', () => ({
-  default: { put: (url: string, body: { tier: string }) => put(url, body) },
+  default: {
+    put: (url: string, body: { tier: string }) => put(url, body),
+    get: (url: string) => get(url),
+  },
 }));
 
 import { SubscriptionPage } from '../SubscriptionPage';
@@ -82,6 +95,7 @@ beforeEach(() => {
   document.body.appendChild(host);
   root = createRoot(host);
   me.current = account();
+  documentsUsage.current = null;
   useJobStore.setState({ toasts: [] });
 });
 
@@ -165,5 +179,21 @@ describe('SubscriptionPage for any other account', () => {
     expect(buttons().filter((b) => /^(Upgrade|Downgrade) to /.test(b))).toEqual([]);
     expect(host.querySelector('[data-operator-only]')).toBeNull();
     expect(dialog()).toBeNull();
+  });
+});
+
+describe('SubscriptionPage library usage (T-5.2.10)', () => {
+  it('shows how full the library is against the plan cap', async () => {
+    documentsUsage.current = { consumed: 312, limit: 500 };
+    await mount();
+    expect(get).toHaveBeenCalledWith('/auth/quota');
+    expect(host.querySelector('[data-document-usage]')?.textContent).toBe(
+      'Your library holds 312 documents of the 500 this plan allows.',
+    );
+  });
+
+  it('shows nothing when the quota does not report documents', async () => {
+    await mount();
+    expect(host.querySelector('[data-document-usage]')).toBeNull();
   });
 });

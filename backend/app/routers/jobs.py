@@ -9,7 +9,7 @@ from app.schemas.job import JobCreate, JobResponse, VideoApproval
 from app.schemas.shelf import ShelfResponse
 from app.schemas.job_template import JobTemplateResponse, SaveAsTemplate
 from app.schemas.video import VideoResponse
-from app.services import chroma_service, job_service, report_service, shelf_service
+from app.services import chroma_service, document_cap_service, job_service, report_service, shelf_service
 from app.services import job_template_service
 from app.services.tier_service import get_user_tier, quota_limit
 from app.tasks.job_tasks import (
@@ -66,6 +66,10 @@ def create_job(
                     f"Upgrade to raise the limit."
                 ),
             )
+    # T-5.2.10: a subscription job ingests without an approval step, so a
+    # full library is refused here; one with room stops at the cap in the task.
+    if job_data.job_type == "subscription":
+        document_cap_service.refuse_if_full(db, current_user)
 
     try:
         # Per E-5.1 phase 2a, stamp the new row with the creating
@@ -161,11 +165,24 @@ def approve_job(
     # and match against both columns on each JobVideo row. Approval
     # state lives on the JobVideo join row, not the shared Document.
     approved_set = set(approval.approved_video_ids)
-    for jv in job.job_videos:
-        jv.approved = (
-            (jv.video_id is not None and jv.video_id in approved_set)
-            or jv.document_id in approved_set
+
+    def _is_approved(jv) -> bool:
+        return (jv.video_id is not None and jv.video_id in approved_set) or (
+            jv.document_id in approved_set
         )
+
+    # T-5.2.10: the document cap, checked before anything changes. Only the
+    # approved documents this tenant cannot already see count; an approval
+    # that does not fit is refused whole (429) so the user picks what to drop.
+    document_cap_service.enforce(
+        db,
+        current_user,
+        action=document_cap_service.ACTION_APPROVE,
+        document_ids=[jv.document_id for jv in job.job_videos if _is_approved(jv)],
+    )
+
+    for jv in job.job_videos:
+        jv.approved = _is_approved(jv)
 
     # Clear the phase-1 task id so a racing cancel cannot revoke a task that
     # has already completed. The new task id is stored below after .delay().

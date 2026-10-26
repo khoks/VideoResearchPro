@@ -489,6 +489,10 @@ def _grant_job_document_visibility(db, job) -> None:
     carry no tenant of their own, so the ingesting tenant needs an explicit
     grant or the job's own results become invisible to them.
 
+    Only APPROVED links are granted (T-5.2.10): a candidate the user
+    deselected was never ingested, and granting it would count against the
+    document cap that the approval check just measured without it.
+
     Deliberately grants over the WHOLE current link set rather than at each
     JobVideo insertion point: there are two such sites today and more will be
     added per source type, and a missed one silently hides results. Idempotent,
@@ -506,7 +510,9 @@ def _grant_job_document_visibility(db, job) -> None:
         ids = [
             row[0]
             for row in db.query(JobVideo.document_id).filter(
-                JobVideo.job_id == job.id, JobVideo.document_id.isnot(None)
+                JobVideo.job_id == job.id,
+                JobVideo.document_id.isnot(None),
+                JobVideo.approved.is_(True),
             )
         ]
         visibility_service.grant(db, ids, tenant_id, visibility_service.SOURCE_JOB)
@@ -1739,7 +1745,7 @@ def execute_subscription_job(self, job_id: str) -> None:
     (D-065). All uploads are ingested as approved videos so the existing
     extraction pipeline runs untouched.
     """
-    from app.services import subscription_service
+    from app.services import document_cap_service, subscription_service
 
     db = SessionLocal()
     try:
@@ -1856,6 +1862,10 @@ def execute_subscription_job(self, job_id: str) -> None:
             jv.video_id for jv in db.query(JobVideo.video_id).filter(JobVideo.job_id == job_id).all()
         }
         total_ingested = 0
+        # T-5.2.10: a sync has no request to refuse (a scheduled one has no
+        # user at all), so it stops at the tenant's document cap: uploads the
+        # tenant already sees always pass, new ones until the cap is reached.
+        cap_budget = document_cap_service.sync_budget(db, job.tenant_id)
 
         for i, entry in enumerate(resolved_channels):
             if _is_cancelled(db, job_id):
@@ -1880,7 +1890,9 @@ def execute_subscription_job(self, job_id: str) -> None:
                 job_id=job_id,
                 uploads_playlist_id=entry.get("uploads_playlist_id"),
             )
-            unlinked_ids = [vid for vid in video_ids if vid not in linked_video_ids]
+            unlinked_ids = cap_budget.admit(
+                db, [vid for vid in video_ids if vid not in linked_video_ids]
+            )
             logger.info(
                 f"[job:{job_id}] Channel {channel_id}: {len(video_ids)} videos "
                 f"({len(unlinked_ids)} to link to this job)"
@@ -1938,7 +1950,7 @@ def execute_subscription_job(self, job_id: str) -> None:
 
         db.refresh(job)
         if not job.videos:
-            msg = "No videos were found in any subscribed channel."
+            msg = cap_budget.note() or "No videos were found in any subscribed channel."
             logger.warning(f"[job:{job_id}] {msg}")
             _handle_failure(db, job_id, msg)
             return
@@ -1951,16 +1963,22 @@ def execute_subscription_job(self, job_id: str) -> None:
             return
 
         # Skip generating_report — subscription jobs produce no report.
+        cap_note = cap_budget.note()
+        done_message = (
+            f"Subscription sync completed. {cap_note}"
+            if cap_note
+            else "Subscription sync completed successfully!"
+        )
         _update_job(
             db, job,
             status="completed",
             progress_pct=100,
-            progress_message="Subscription sync completed successfully!",
+            progress_message=done_message,
             report_path=None,
             completed_at=datetime.now(timezone.utc),
         )
         progress_service.publish_status_change(
-            job_id, "building_rag", "completed", "Subscription sync completed successfully!"
+            job_id, "building_rag", "completed", done_message
         )
         logger.info(f"[job:{job_id}] Subscription job COMPLETED")
 

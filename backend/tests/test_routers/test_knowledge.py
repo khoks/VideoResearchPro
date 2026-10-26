@@ -65,7 +65,11 @@ def test_extract_knowledge_404_if_video_missing(client):
 
 
 def test_extract_knowledge_422_if_no_transcript(client, db, test_user):
-    """Video exists but TranscriptCache row is missing → 422."""
+    """Video exists but has neither a TranscriptCache row nor chunks → 422.
+
+    The chunks are the second store consulted (by document_id, with the
+    YouTube id as the fallback key); patched here so the test never opens a
+    persistent Chroma collection."""
     video = Document(
         video_id="vidNoTrans",
         title="No transcript",
@@ -78,8 +82,14 @@ def test_extract_knowledge_422_if_no_transcript(client, db, test_user):
     db.commit()
     visibility_service.grant(db, [video.document_id], test_user.id)
 
-    response = client.post("/api/v1/videos/vidNoTrans/extract-knowledge")
+    with (
+        patch("app.services.chroma_service.get_document_chunks", return_value=[]) as chunks,
+        patch("app.agents.knowledge_agent.run_knowledge_extract_agent") as agent,
+    ):
+        response = client.post("/api/v1/videos/vidNoTrans/extract-knowledge")
     assert response.status_code == 422
+    chunks.assert_called_once_with(video.document_id, "vidNoTrans")
+    assert not agent.called
 
 
 def test_extract_knowledge_runs_agent_and_persists(client, seeded_video_with_transcript, db):

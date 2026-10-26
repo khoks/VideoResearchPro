@@ -52,14 +52,19 @@ class ReportAgentState(TypedDict):
 
 class KnowledgeAgentState(TypedDict):
     messages: Annotated[list, add_messages]
+    # The YouTube id for a video, else the document_id (logging only).
     video_id: str
+    # `documents.source_type`: picks how the prompts name the source
+    # (`knowledge_prompts.source_profile`). Absent reads as "video".
+    source_type: str
     video_title: str
     channel_name: str
     # R3: `YYYY-MM-DD` publish date ("" when unknown) that relative time is
     # anchored to, and the prompt-ready discussed-era clause ("" when unknown).
     published_at: str
     discussed_era: str
-    # Full transcript text reconstructed from transcript_cache.segments_json.
+    # The document's full text: its transcript_cache row, or its Chroma chunks
+    # reassembled (`document_text_service.full_text`).
     full_transcript_text: str
     # Token-budgeted slices of `full_transcript_text` fed to the map pass.
     transcript_batches: list[str]

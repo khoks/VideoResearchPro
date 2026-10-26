@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { inferSourceType, libraryApi, type LibraryVideoResponse } from '../../services/libraryApi';
 import { TabBlockedError } from '../../services/apiFiles';
@@ -6,11 +7,15 @@ import { TAB_BLOCKED_MESSAGE } from '../citation/citedFile';
 import { formatDate, formatDuration } from '../../utils/formatters';
 import { sourceTypeLabel } from '../../utils/ingestResults';
 import { useJobStore } from '../../stores/jobStore';
-import { Badge, Card, type BadgeTone } from '../primitives';
+import { Badge, Button, Card, type BadgeTone } from '../primitives';
 import { NotesPanel } from '../notes';
 import { DocumentTags } from '../tags/DocumentTags';
+import { VideoKnowledgeDrawer } from '../../pages/VideoKnowledgePage';
+import { useFeatureAvailable } from '../../hooks/useFeatureAvailable';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, radius, space } from '../../theme';
+
+const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
 interface Props {
   video: LibraryVideoResponse;
@@ -39,14 +44,21 @@ function transcriptBadgeTone(status: string): BadgeTone {
  * One shelf row. Built for YouTube videos; tolerant of PDFs and pasted
  * pages, which have no channel, duration or thumbnail (see D-063 and the
  * Add sources tab).
+ *
+ * Any row whose text has been read offers its knowledge report, whatever the
+ * source type: the backend reads a video's transcript or a PDF's, a pasted
+ * page's or a thread's chunks by `document_id` (`video.id`).
  */
 export function VideoRow({ video, channelLink = true }: Props) {
   const c = useColors();
   const pushToast = useJobStore((s) => s.pushToast);
   const [opening, setOpening] = useState(false);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const knowledgeAvailable = useFeatureAvailable('knowledge_extraction');
   const tone = transcriptBadgeTone(video.transcript_status);
   const sourceType = inferSourceType(video);
   const isVideo = sourceType === 'video';
+  const hasText = video.transcript_status === 'fetched';
   const hasChannel = !!video.channel_id && !!video.channel_name;
   const jobTitlesTooltip =
     video.job_titles && video.job_titles.length > 0
@@ -242,21 +254,38 @@ export function VideoRow({ video, channelLink = true }: Props) {
               Referenced in {video.job_count}{' '}
               {video.job_count === 1 ? 'run' : 'runs'}
             </span>
-            {sourceType === 'pdf' ? (
-              <button type="button" onClick={openPdf} disabled={opening} style={{ ...linkStyle, opacity: opening ? 0.6 : 1 }}>
-                {opening ? 'Opening…' : 'Open PDF →'}
-              </button>
-            ) : (
-              <a
-                href={video.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                style={linkStyle}
-              >
-                {isVideo ? 'YouTube →' : 'Open →'}
-              </a>
-            )}
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: space['3'] }}>
+              {hasText && (
+                <Button
+                  size="sm"
+                  variant="tertiary"
+                  onClick={() => setKnowledgeOpen(true)}
+                  disabled={!knowledgeAvailable}
+                  title={
+                    knowledgeAvailable
+                      ? 'Generate or view the AI knowledge report for this source.'
+                      : FEATURE_UNAVAILABLE_MSG
+                  }
+                >
+                  Knowledge report
+                </Button>
+              )}
+              {sourceType === 'pdf' ? (
+                <button type="button" onClick={openPdf} disabled={opening} style={{ ...linkStyle, opacity: opening ? 0.6 : 1 }}>
+                  {opening ? 'Opening…' : 'Open PDF →'}
+                </button>
+              ) : (
+                <a
+                  href={video.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  style={linkStyle}
+                >
+                  {isVideo ? 'YouTube →' : 'Open →'}
+                </a>
+              )}
+            </div>
           </div>
           <DocumentTags documentId={video.id} tags={video.tags ?? []} />
           <NotesPanel
@@ -266,6 +295,18 @@ export function VideoRow({ video, channelLink = true }: Props) {
           />
         </div>
       </div>
+      {/* Portalled: the Card sets a transform, which would make the drawer's
+          `position: fixed` relative to this row instead of the viewport. */}
+      {knowledgeOpen &&
+        createPortal(
+          <VideoKnowledgeDrawer
+            videoId={video.id}
+            videoTitle={video.title}
+            sourceType={sourceType}
+            onClose={() => setKnowledgeOpen(false)}
+          />,
+          document.body,
+        )}
     </Card>
   );
 }

@@ -1862,6 +1862,10 @@ def execute_subscription_job(self, job_id: str) -> None:
             jv.video_id for jv in db.query(JobVideo.video_id).filter(JobVideo.job_id == job_id).all()
         }
         total_ingested = 0
+        # T-5.2.10: links a previous run of this job made (a redelivery after a
+        # crash; tasks ack late) are granted before the budget is read, so they
+        # count against it instead of riding on top of a fresh full budget.
+        _grant_job_document_visibility(db, job)
         # T-5.2.10: a sync has no request to refuse (a scheduled one has no
         # user at all), so it stops at the tenant's document cap: uploads the
         # tenant already sees always pass, new ones until the cap is reached.
@@ -1930,6 +1934,11 @@ def execute_subscription_job(self, job_id: str) -> None:
                     linked_video_ids.add(vid)
                     total_ingested += 1
                 db.commit()
+                # T-5.2.10: grant what this channel admitted now, not at
+                # extraction start, so the cap sees it at once: the next
+                # channel's budget, and any approval, paste or upload made
+                # while this job is still walking or extracting.
+                _grant_job_document_visibility(db, job)
 
             # The tenant's sync time, once all the channel's uploads are staged.
             # Until 2026-10-19 this wrote the global `channels.last_synced_at`,

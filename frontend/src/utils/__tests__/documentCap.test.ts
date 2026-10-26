@@ -5,7 +5,7 @@
  */
 import { AxiosError, AxiosHeaders } from 'axios';
 import { describe, expect, it } from 'vitest';
-import { apiErrorMessage } from '../apiError';
+import { apiErrorMessage, globalErrorToastMessage, isDocumentCapRefusal } from '../apiError';
 import { describeUploadError, detailFromErrorBody } from '../ingestResults';
 import { documentUsageLine } from '../documentCap';
 import type { QuotaResponse } from '../../services/quotaApi';
@@ -95,5 +95,49 @@ describe('documentUsageLine', () => {
 
   it('says there is no cap on an unlimited plan', () => {
     expect(documentUsageLine(quota(12000, -1))).toBe('Your library holds 12,000 documents. This plan has no document cap.');
+  });
+});
+
+function axiosStatus(status: number, data: unknown): AxiosError {
+  const headers = new AxiosHeaders();
+  return new AxiosError(`Request failed with status code ${status}`, 'ERR_BAD_REQUEST', undefined, undefined, {
+    status,
+    statusText: '',
+    headers,
+    config: { headers },
+    data,
+  });
+}
+
+describe('isDocumentCapRefusal', () => {
+  it('is true only for a 429 about documents', () => {
+    expect(isDocumentCapRefusal(axios429(quotaBody()))).toBe(true);
+    expect(isDocumentCapRefusal(axios429({ detail: { error: 'quota_exceeded', resource: 'qa_exchanges' } }))).toBe(false);
+    expect(isDocumentCapRefusal(axios429({ detail: 'Too many requests' }))).toBe(false);
+    expect(isDocumentCapRefusal(axiosStatus(403, quotaBody()))).toBe(false);
+    expect(isDocumentCapRefusal(new Error('boom'))).toBe(false);
+    expect(isDocumentCapRefusal(undefined)).toBe(false);
+  });
+});
+
+describe('globalErrorToastMessage', () => {
+  it('stays quiet for a document-cap refusal, which its page shows inline', () => {
+    expect(globalErrorToastMessage(axios429(quotaBody()))).toBeNull();
+  });
+
+  it("shows the server's message instead of axios's status line", () => {
+    expect(globalErrorToastMessage(axiosStatus(403, { detail: 'Topic runs need the Pro plan.' }))).toBe(
+      'Topic runs need the Pro plan.',
+    );
+    expect(
+      globalErrorToastMessage(axios429({ detail: { resource: 'qa_exchanges', message: 'Monthly questions used up.' } })),
+    ).toBe('Monthly questions used up.');
+  });
+
+  it("falls back to the error's own text", () => {
+    expect(globalErrorToastMessage(axiosStatus(500, {}))).toBe('Request failed with status code 500');
+    expect(globalErrorToastMessage(new Error('Network Error'))).toBe('Network Error');
+    expect(globalErrorToastMessage('plain')).toBe('plain');
+    expect(globalErrorToastMessage(null)).toBe('An unexpected error occurred.');
   });
 });

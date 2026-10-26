@@ -22,6 +22,13 @@ never throws away finished work:
   where a sync with no request behind it (a scheduled one) meets the cap:
   it stops at the cap instead of refusing (``SyncBudget``).
 
+**What is admitted counts at once.** The cap counts visibility grants, so
+every path grants at the moment it admits: an approval grants its approved
+set in the request (the resume task can wait behind other work for hours),
+and a sync grants each channel's admitted uploads as soon as they are
+linked. Two requests racing within the same instant can still both pass;
+under the solo worker two syncs never run at once.
+
 **The rule.** A request that names what it adds (an approval, a paste batch,
 an upload) is all or nothing: when it does not fit, nothing is added and the
 refusal says how much room is left, so the user chooses what to drop. A sync
@@ -256,6 +263,12 @@ class SyncBudget:
     tenant). ``admit`` is called once per channel with that channel's
     unlinked uploads, in playlist order; it keeps every upload the tenant
     already sees, then new ones while room remains, and counts the rest.
+
+    The task grants each channel's admitted uploads right after linking
+    them, so ``admit`` re-reads the tenant's visible count each time and
+    keeps the smaller of that and its own running figure: anything another
+    ingest added since the budget was read (an approval, a paste, another
+    sync) is charged before this channel takes its share.
     """
 
     tenant_id: str | None
@@ -267,6 +280,9 @@ class SyncBudget:
     def admit(self, db: Session, video_ids: list[str]) -> list[str]:
         if self.remaining is None or not video_ids or not self.tenant_id:
             return list(video_ids)
+        self.remaining = min(
+            self.remaining, max(0, self.limit - visible_count(db, self.tenant_id))
+        )
         visible: set[str] = set()
         for chunk in _chunks(list(dict.fromkeys(video_ids))):
             visible.update(

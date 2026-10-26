@@ -7,10 +7,15 @@ order (newest first) until the cap, and the job says how many it left out.
 There is no scheduled channel sync today; any future one runs through this
 task, so these tests are its behaviour.
 
-Mutation check (run by hand when this shipped): replacing
+Mutation checks (run by hand when this shipped): replacing
 ``cap_budget.admit(db, ...)`` with the plain list made
 ``test_sync_stops_at_the_cap_and_says_so`` and
-``test_sync_at_the_cap_ingests_nothing_new`` fail.
+``test_sync_at_the_cap_ingests_nothing_new`` fail. Deleting the grant before
+the uploads walk failed ``test_redelivered_sync_counts_the_links_its_earlier_run_made``;
+deleting the per-channel grant after linking failed
+``test_sync_grants_each_channel_as_soon_as_it_is_linked``; and deleting the
+visible-count re-read in ``SyncBudget.admit`` failed
+``test_sync_charges_ingests_that_landed_after_its_budget_was_read``.
 """
 from unittest.mock import MagicMock, patch
 
@@ -69,7 +74,8 @@ def _run(job_id: str, uploads: list[str]) -> None:
     with patch.object(job_tasks, "youtube_service") as yt, \
          patch.object(yt_connector, "youtube_service", yt), \
          patch.object(job_tasks, "chroma_service") as chroma, \
-         patch.object(job_tasks, "progress_service"):
+         patch.object(job_tasks, "progress_service"), \
+         patch.object(job_tasks.temporal_service, "ensure_discussed_era", return_value=None):
         yt.resolve_channel_id = MagicMock(return_value=CHANNEL)
         yt.get_channel_metadata = MagicMock(return_value={
             "channel_id": CHANNEL, "name": "Cap", "uploads_playlist_id": "UUcapSync",
@@ -164,3 +170,78 @@ def test_sync_under_the_cap_is_unchanged(patch_session_local, db, test_user):
     assert _linked(db, job.id) == ["b1", "b2"]
     db.expire_all()
     assert db.get(Job, job.id).progress_message == "Subscription sync completed successfully!"
+
+
+def _link(db, job_id: str, video_ids: list[str]) -> None:
+    """Links a previous run of the job made before it died (no grants yet)."""
+    for vid in video_ids:
+        doc = Document(video_id=vid, title=vid, url=f"https://www.youtube.com/watch?v={vid}")
+        db.add(doc)
+        db.commit()
+        db.add(JobVideo(job_id=job_id, document_id=doc.document_id, video_id=vid, approved=True))
+        db.commit()
+
+
+def test_redelivered_sync_counts_the_links_its_earlier_run_made(
+    patch_session_local, db, test_user, monkeypatch
+):
+    """Tasks ack late, so a worker that dies mid-walk gets the job redelivered.
+    The first run's links (granted only at extraction start before this fix)
+    must count against the cap, not ride on top of a fresh full budget: cap 4,
+    three earlier links, so one more upload fits and two are left out."""
+    monkeypatch.setitem(TIER_CAPABILITIES[Tier.FREE], "document_count_cap", 4)
+    job = _job(db, test_user.id)
+    _link(db, job.id, ["p1", "p2", "p3"])
+
+    _run(job.id, ["p1", "p2", "p3", "n1", "n2", "n3"])
+
+    assert _linked(db, job.id) == ["n1", "p1", "p2", "p3"]
+    assert _visible(db, test_user.id) == 4
+    db.expire_all()
+    assert "2 new uploads were left out" in db.get(Job, job.id).progress_message
+
+
+def test_sync_grants_each_channel_as_soon_as_it_is_linked(
+    patch_session_local, db, test_user, monkeypatch
+):
+    """The admitted uploads are in the library (and on the cap's count) before
+    extraction starts, which can take hours behind a solo worker; an approval
+    or paste made meanwhile is measured against them."""
+    monkeypatch.setitem(TIER_CAPABILITIES[Tier.FREE], "document_count_cap", 10)
+    _seen(db, test_user.id, ["old0"])
+    job = _job(db, test_user.id)
+    at_extraction: list[int] = []
+
+    def _extraction(_self, db_, _job):
+        at_extraction.append(_visible(db_, test_user.id))
+
+    with patch.object(job_tasks, "_run_extraction_and_rag", side_effect=_extraction):
+        _run(job.id, ["g1", "g2", "g3"])
+
+    assert at_extraction == [4]
+
+
+def test_sync_charges_ingests_that_landed_after_its_budget_was_read(
+    patch_session_local, db, test_user, monkeypatch
+):
+    """The budget is read before the uploads walk; documents granted after
+    that (another ingest landing while the playlist was listed) are charged
+    before this channel takes its share. Cap 4, one seen, two granted after
+    the budget was read: one new upload fits, not three."""
+    from app.services import document_cap_service
+
+    monkeypatch.setitem(TIER_CAPABILITIES[Tier.FREE], "document_count_cap", 4)
+    _seen(db, test_user.id, ["old0"])
+    job = _job(db, test_user.id)
+    real_budget = document_cap_service.sync_budget
+
+    def _budget_then_another_ingest(db_, tenant_id):
+        budget = real_budget(db_, tenant_id)
+        _seen(db, test_user.id, ["mid1", "mid2"])
+        return budget
+
+    with patch.object(document_cap_service, "sync_budget", side_effect=_budget_then_another_ingest):
+        _run(job.id, ["c1", "c2", "c3"])
+
+    assert _linked(db, job.id) == ["c1"]
+    assert _visible(db, test_user.id) == 4

@@ -17,9 +17,13 @@ any ``refuse_if_full`` call in the channels router or ``create_job``
 (``test_subscribe_and_sync_at_the_cap_are_refused``,
 ``test_subscription_job_creation_at_the_cap_is_refused``); counting dedup
 hits (``test_approval_of_documents_already_visible_is_not_counted``); ``<``
-for ``<=`` (``test_approval_at_exactly_the_cap_boundary``); granting every
-candidate again (``test_job_grants_only_approved_documents``); and reading
-``documents`` usage from the counter table
+for ``<=`` (``test_approval_at_exactly_the_cap_boundary``); dropping the
+approved filter from the resume task's grant
+(``test_approve_then_resume_grants_only_the_approved_documents``); deleting
+the grant in ``approve_job``, so an approval counted only once its resume ran
+(``test_second_approval_before_the_first_resume_runs_is_refused``, the paste
+and upload variants, and ``test_approval_grants_only_the_approved_documents``);
+and reading ``documents`` usage from the counter table
 (``test_quota_endpoint_reports_visible_documents``).
 """
 from unittest.mock import MagicMock, patch
@@ -249,35 +253,112 @@ def test_pro_cap_is_5000(db, test_user):
 
 
 # ---------------------------------------------------------------------------
-# Resume grants only what was approved
+# An approval counts the moment it is accepted, not when its resume runs
 # ---------------------------------------------------------------------------
 
 
-def test_job_grants_only_approved_documents(db, test_user):
-    """The resume path grants the approved set, not every candidate. Before
-    T-5.2.10 deselected candidates were granted too, which would charge the
-    cap for documents the user rejected."""
-    from app.tasks.job_tasks import _grant_job_document_visibility
-
-    kept, dropped = _doc(db, "keptOne"), _doc(db, "droppedOne")
-    job = Job(job_type="topic", topic="t", status="extracting", tenant_id=test_user.id)
-    db.add(job)
-    db.commit()
-    db.add_all(
-        [
-            JobVideo(job_id=job.id, document_id=kept.document_id, video_id=kept.video_id, approved=True),
-            JobVideo(job_id=job.id, document_id=dropped.document_id, video_id=dropped.video_id, approved=False),
-        ]
-    )
-    db.commit()
-    _grant_job_document_visibility(db, job)
-    granted = {
+def _granted(db, tenant_id: str) -> set[str]:
+    return {
         r[0]
         for r in db.query(DocumentVisibility.document_id).filter(
-            DocumentVisibility.tenant_id == test_user.id
+            DocumentVisibility.tenant_id == tenant_id
         )
     }
-    assert granted == {kept.document_id}
+
+
+def test_second_approval_before_the_first_resume_runs_is_refused(client, db, test_user, free_cap):
+    """Two runs waiting for approval while the (solo) worker is busy: approving
+    the first must use up its room even though its resume task has not run,
+    or the second approval is measured against a stale count and both pass.
+    The ``client`` fixture mocks the resume task, so it never runs here."""
+    free_cap(5)
+    run_a = [_doc(db, f"runA{i}") for i in range(3)]
+    run_b = [_doc(db, f"runB{i}") for i in range(3)]
+    job_a = _awaiting_job(db, test_user.id, run_a)
+    job_b = _awaiting_job(db, test_user.id, run_b)
+
+    assert _approve(client, job_a, run_a).status_code == 200
+    assert _granted(db, test_user.id) == {d.document_id for d in run_a}
+
+    detail = _assert_cap_refusal(_approve(client, job_b, run_b), consumed=3, limit=5, requested=3)
+    assert "room for 2 more" in detail["message"]
+    assert _visible(db, test_user.id) == 3
+
+
+def test_paste_after_an_approval_whose_resume_has_not_run_is_refused(client, db, test_user, free_cap):
+    free_cap(3)
+    run = [_doc(db, f"pend{i}") for i in range(2)]
+    job = _awaiting_job(db, test_user.id, run)
+    assert _approve(client, job, run).status_code == 200
+
+    resp, connector = _paste(client, ["https://example.com/after-1", "https://example.com/after-2"])
+    _assert_cap_refusal(resp, consumed=2, limit=3, requested=2)
+    assert not connector.calls
+
+
+def test_upload_after_an_approval_whose_resume_has_not_run_is_refused(
+    client, db, test_user, free_cap, upload_dir
+):
+    free_cap(1)
+    run = [_doc(db, "pendUpload")]
+    job = _awaiting_job(db, test_user.id, run)
+    assert _approve(client, job, run).status_code == 200
+
+    resp, connector = _upload(client)
+    _assert_cap_refusal(resp, consumed=1, limit=1, requested=1)
+    assert not connector.calls
+
+
+def test_approval_grants_only_the_approved_documents(client, db, test_user):
+    """The grant written at approval covers the approved set; a deselected
+    candidate stays out of the library and off the count."""
+    kept, dropped = _doc(db, "apprKept"), _doc(db, "apprDropped")
+    job = _awaiting_job(db, test_user.id, [kept, dropped])
+    assert _approve(client, job, [kept]).status_code == 200
+    assert _granted(db, test_user.id) == {kept.document_id}
+
+
+def _run_resume(job_id: str) -> None:
+    """Run the real resume task (the approval's production follow-up) with
+    the network, Chroma and the report LLM mocked."""
+    from tests import conftest as _conftest
+
+    from app.sources.video import connector as yt_connector
+    from app.tasks import job_tasks
+
+    with patch.object(job_tasks, "SessionLocal", _conftest.TestingSessionLocal), \
+         patch.object(job_tasks, "youtube_service") as yt, \
+         patch.object(yt_connector, "youtube_service", yt), \
+         patch.object(job_tasks, "chroma_service") as chroma, \
+         patch.object(job_tasks, "progress_service"), \
+         patch.object(job_tasks.temporal_service, "ensure_discussed_era", return_value=None), \
+         patch("app.agents.report_agent.run_report_agent", return_value=({}, "Body.")), \
+         patch.object(job_tasks, "build_report_html", return_value="<html></html>"), \
+         patch.object(job_tasks, "save_report", return_value="report.html"):
+        yt.fetch_transcript = MagicMock(
+            return_value=([{"text": "words", "start": 0.0, "duration": 1.0}], "en", "youtube")
+        )
+        chroma.insert_chunks = MagicMock(return_value=1)
+        chroma.delete_video_chunks = MagicMock(return_value=None)
+        job_tasks.resume_job_after_approval.run(job_id)
+
+
+def test_approve_then_resume_grants_only_the_approved_documents(client, db, test_user):
+    """Approval through the router, then the real resume task: the whole path
+    leaves exactly the approved documents in the library. Before T-5.2.10 the
+    resume granted every candidate, deselected ones included, which would
+    charge the cap for documents the user rejected. Fails if the resume's
+    grant goes back to the whole link set."""
+    kept = [_doc(db, f"resKept{i}") for i in range(2)]
+    dropped = [_doc(db, f"resDrop{i}") for i in range(2)]
+    job = _awaiting_job(db, test_user.id, kept + dropped)
+
+    assert _approve(client, job, kept).status_code == 200
+    _run_resume(job.id)
+
+    db.expire_all()
+    assert db.get(Job, job.id).status == "completed"
+    assert _granted(db, test_user.id) == {d.document_id for d in kept}
 
 
 # ---------------------------------------------------------------------------

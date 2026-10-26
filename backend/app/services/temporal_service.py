@@ -410,6 +410,22 @@ def known_eras_for(db: Any, video_ids: Iterable[str]) -> dict[str, dict]:
     Used by search ranking: a candidate the library has seen before carries
     its discussed era into the ranking prompt; unseen candidates carry none
     and the model works from title and description alone.
+
+    Keyed on the legacy YouTube ``video_id`` by design, not on
+    ``document_id`` (D-070), so later audits of ``video_id`` readers need not
+    re-flag it (T-5.10.5.3). The only caller is the topic search agent
+    (``search_agent._lookup_known_eras``), whose candidates are YouTube
+    search results (``connector_for("video")``), known only by their
+    YouTube id until a job selects them: whether the library already holds
+    a row for one is exactly what this lookup asks, so there is no
+    ``document_id`` to ask with. A non-video document cannot be a candidate,
+    and a YouTube link pasted into the library (a paste-mode document with
+    no ``video_id``) never gets an era, since only job chunking extracts
+    one, so nothing is missed by not matching on ``document_id``.
+
+    Not filtered by tenant: an era can come from a document only another
+    tenant ingested. No decision records whether that is acceptable, so this
+    note is not an exemption from D-063.
     """
     from app.models.document import Document
 

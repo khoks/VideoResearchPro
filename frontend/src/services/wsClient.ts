@@ -41,6 +41,9 @@ export class WSClient {
 
     const baseUrl = resolveWsUrl();
     const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    // The one URL that still carries the JWT (T-8.8.1.5): the WebSocket API
+    // cannot set an Authorization header on the handshake. Every HTTP file is
+    // fetched with the header instead (services/apiFiles.ts).
     const url = token
       ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
       : baseUrl;

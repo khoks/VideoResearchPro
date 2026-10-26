@@ -188,10 +188,10 @@ def test_notes_exports_require_auth(unauthenticated_client):
     assert unauthenticated_client.get(MD).status_code == 401
 
 
-def test_notes_exports_accept_query_token(unauthenticated_client, auth_token, db, test_user, notes_world):
+def test_notes_exports_reject_a_query_token(unauthenticated_client, auth_token, db, test_user, notes_world):
+    # T-8.8.1.5: header only; the frontend saves the file from a blob: URL.
     r = unauthenticated_client.get(JSONL, params={"token": auth_token})
-    assert r.status_code == 200
-    assert len(_lines(r.text)) == 3
+    assert r.status_code == 401
     r = unauthenticated_client.get(MD, params={"token": auth_token})
-    assert r.status_code == 200
-    assert "First thought" in r.text
+    assert r.status_code == 401
+    assert "First thought" not in r.text

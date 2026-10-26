@@ -69,6 +69,9 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
     Auth:
         Requires a valid JWT passed as ?token=... query parameter.
         Connection is closed with code 1008 (policy violation) if missing/invalid.
+        This is the one route that still reads a token from the URL (T-8.8.1.5,
+        D-085 addendum): the browser WebSocket API cannot set an Authorization
+        header on the handshake. Every HTTP route is header-only.
 
     Client messages:
         {"action": "subscribe", "job_id": "abc-123"}

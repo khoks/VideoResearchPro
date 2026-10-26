@@ -5,7 +5,9 @@
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import http from '../../../services/api';
+import { stubNewTabs, type FakeTab } from '../../../services/__tests__/newTab';
 import { CitationCardProvider, CITATION_CARD_ID } from '../CitationContext';
 import { Endnotes } from '../Endnotes';
 import { ReaderCitation } from '../ReaderCitation';
@@ -236,5 +238,132 @@ describe('citation card', () => {
     const img = card().querySelector('img')!;
     expect(img.getAttribute('src')).toBe('/frames/x.jpg');
     expect(img.getAttribute('alt')).toBe('A still at 0:42');
+  });
+});
+
+describe('a cited uploaded PDF (E-1.8, T-8.8.1.5)', () => {
+  // The serve route takes the bearer header only, so followed as a link the
+  // permalink 401s in the new tab. Chip, card link and endnote each fetch
+  // the PDF with the header and open its blob: URL instead.
+  const PDF: CitationSource = {
+    document_id: 'doc-pdf',
+    video_id: null,
+    source_type: 'pdf',
+    title: 'Annual report',
+    channel_name: '',
+    url: '/api/v1/library/pdf/abc.pdf',
+    source_url: null,
+    duration_seconds: null,
+    published_at: null,
+    thumbnail_url: null,
+    source_metadata: {},
+  };
+  let get: ReturnType<typeof vi.spyOn>;
+  let open: ReturnType<typeof vi.fn>;
+  let tabs: FakeTab[];
+  const saved = { create: URL.createObjectURL, revoke: URL.revokeObjectURL, open: window.open };
+
+  beforeEach(() => {
+    get = vi.spyOn(http, 'get').mockResolvedValue({ data: new Blob(['%PDF']) } as never);
+    URL.createObjectURL = vi.fn(() => 'blob:http://localhost:5173/p1');
+    URL.revokeObjectURL = vi.fn();
+    ({ open, tabs } = stubNewTabs());
+  });
+
+  afterEach(() => {
+    get.mockRestore();
+    URL.createObjectURL = saved.create;
+    URL.revokeObjectURL = saved.revoke;
+    window.open = saved.open;
+  });
+
+  async function settle() {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+
+  function mountPdf() {
+    // A report cites with `&t=` anchors; a bare one is matched to its source
+    // by title, and a PDF source resolves to its stored url, the serve route.
+    const parsed = parseReportHtml('<p>Revenue rose <a href="&t=0">p. 3</a>.</p>', {
+      renderCitation: (c) => <ReaderCitation key={c.index} citation={c} />,
+    });
+    parsed.citations[0].contexts = ['Annual report — revenue rose'];
+    const index = resolveCitations(parsed.citations, [PDF]);
+    act(() => {
+      root.render(
+        <CitationCardProvider index={index}>
+          <div>{parsed.content}</div>
+          <Endnotes endnotes={index.endnotes} />
+        </CitationCardProvider>,
+      );
+    });
+  }
+
+  function clickAndOpen(el: Element): boolean {
+    const ev = new MouseEvent('click', { bubbles: true, cancelable: true });
+    act(() => {
+      el.dispatchEvent(ev);
+    });
+    return ev.defaultPrevented;
+  }
+
+  it('the chip', async () => {
+    mountPdf();
+    const chip = host.querySelector<HTMLAnchorElement>('a.reader-citation')!;
+    expect(chip.getAttribute('href')).toBe('/api/v1/library/pdf/abc.pdf');
+    expect(clickAndOpen(chip)).toBe(true);
+    expect(open).toHaveBeenCalledWith('', '_blank'); // inside the click, before the download
+    await settle();
+    expect(get).toHaveBeenCalledWith('/library/pdf/abc.pdf', { responseType: 'blob' });
+    expect(tabs[0].location.href).toBe('blob:http://localhost:5173/p1');
+  });
+
+  it('the card link', async () => {
+    mountPdf();
+    act(() => host.querySelector<HTMLAnchorElement>('a.reader-citation')!.focus());
+    const link = card().querySelector<HTMLAnchorElement>('a[href="/api/v1/library/pdf/abc.pdf"]')!;
+    expect(clickAndOpen(link)).toBe(true);
+    await settle();
+    expect(open).toHaveBeenCalledWith('', '_blank');
+    expect(tabs[0].location.href).toBe('blob:http://localhost:5173/p1');
+  });
+
+  it('the endnote', async () => {
+    mountPdf();
+    const note = host.querySelector<HTMLAnchorElement>('.reader-endnotes a[href="/api/v1/library/pdf/abc.pdf"]')!;
+    expect(clickAndOpen(note)).toBe(true);
+    await settle();
+    expect(open).toHaveBeenCalledWith('', '_blank');
+    expect(tabs[0].location.href).toBe('blob:http://localhost:5173/p1');
+  });
+
+  it('a chip the report wrote to any other API route stays a plain link', async () => {
+    // The chip's own href wins over its source's, and the model writes it. A
+    // generic fetch-and-open would GET the route with the header and show
+    // the body top-level on the app's origin; only the PDF route opens.
+    const href = `${window.location.origin}/api/v1/jobs/x/report?t=1`;
+    const parsed = parseReportHtml(`<p>See <a href="${href}">this</a>.</p>`, {
+      renderCitation: (c) => <ReaderCitation key={c.index} citation={c} />,
+    });
+    const index = resolveCitations(parsed.citations, [PDF]);
+    act(() => {
+      root.render(
+        <CitationCardProvider index={index}>
+          <div>{parsed.content}</div>
+          <Endnotes endnotes={index.endnotes} />
+        </CitationCardProvider>,
+      );
+    });
+    const chip = host.querySelector<HTMLAnchorElement>('a.reader-citation')!;
+    expect(chip.getAttribute('href')).toBe(href);
+    const note = host.querySelector<HTMLAnchorElement>(`.reader-endnotes a[href="${href}"]`)!;
+    expect(clickAndOpen(chip)).toBe(false);
+    expect(clickAndOpen(note)).toBe(false);
+    await settle();
+    expect(get).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
   });
 });

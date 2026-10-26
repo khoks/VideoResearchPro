@@ -34,13 +34,13 @@ import {
   Spinner,
   StatusPill,
 } from '../components/primitives';
-import { useColors, useShadows } from '../hooks/useTheme';
-import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space, z } from '../theme';
+import { useColors } from '../hooks/useTheme';
+import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
 import { formatDuration, formatDate, statusTone } from '../utils/formatters';
 import { buildClarifyContext, CLARIFY_ANSWER_MAX_CHARS } from '../utils/clarifyContext';
 import { useJobStore } from '../stores/jobStore';
-import { useAuth } from '../contexts/AuthContext';
 import { wsClient } from '../services/wsClient';
+import { ReportPeekModal } from '../components/jobs/ReportPeekModal';
 import { VideoKnowledgeDrawer } from './VideoKnowledgePage';
 import { videoToApprovalProps, type Video } from '../types/video';
 import type { QAExchange } from '../types/qa';
@@ -321,7 +321,7 @@ export function JobDetailPage() {
       )}
 
       {isReportModalOpen && showReportButton && (
-        <ReportModal jobId={job.id} onClose={closeReportModal} />
+        <ReportPeekModal jobId={job.id} onClose={closeReportModal} />
       )}
 
       {job.status === 'completed' && <QASection jobId={job.id} />}
@@ -799,87 +799,6 @@ function VideoApprovalSection({
         </Button>
       </div>
     </Card>
-  );
-}
-
-function ReportModal({ jobId, onClose }: { jobId: string; onClose: () => void }) {
-  // The /report endpoint is protected by JWT. An <iframe src> (and window.open
-  // via target="_blank") is a plain browser navigation that cannot carry the
-  // Authorization header our axios interceptor adds, so we thread the token
-  // through a scoped ?token= query param that the backend accepts only on this
-  // single read-only route.
-  const { token } = useAuth();
-  const c = useColors();
-  const s = useShadows();
-  const reportUrl = token
-    ? `/api/v1/jobs/${jobId}/report?token=${encodeURIComponent(token)}`
-    : `/api/v1/jobs/${jobId}/report`;
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(20, 17, 14, 0.55)',
-        zIndex: z.modal,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          width: '92vw',
-          height: '92vh',
-          background: c.surface,
-          borderRadius: radius.lg,
-          border: `1px solid ${c.border}`,
-          boxShadow: s.floating,
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: `${space['3']} ${space['4']}`,
-            borderBottom: `1px solid ${c.border}`,
-            gap: space['3'],
-            background: c.surfaceAlt,
-          }}
-        >
-          <h3
-            style={{
-              margin: 0,
-              fontFamily: fonts.display,
-              fontSize: fontSize.md,
-              fontWeight: fontWeight.semibold,
-              color: c.textPrimary,
-            }}
-          >
-            Research report
-          </h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: space['2'] }}>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => window.open(reportUrl, '_blank', 'noopener,noreferrer')}
-            >
-              Open in new tab
-            </Button>
-            <Button size="sm" variant="tertiary" onClick={onClose}>
-              Close
-            </Button>
-          </div>
-        </div>
-        <iframe src={reportUrl} style={{ width: '100%', flex: 1, border: 'none' }} title="Research Report" />
-      </div>
-    </div>
   );
 }
 

@@ -1,8 +1,8 @@
 """S-8.8.1: ``GET /jobs/{id}/report/body`` — the reader's JSON route.
 
-Header auth only: the legacy HTML route accepts ``?token=`` because an
-iframe cannot send a header; this one must never, because a token in a URL
-leaks through logs and Referer headers.
+Header auth only: a token in a URL leaks through logs and Referer headers.
+The legacy HTML route took ``?token=`` for its iframe until T-8.8.1.5; this
+one never did.
 """
 
 import re

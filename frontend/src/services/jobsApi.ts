@@ -19,7 +19,9 @@ export const jobsApi = {
   cancel: (id: string) => api.post<Job>(`/jobs/${id}/cancel`).then(r => r.data),
   delete: (id: string) => api.delete(`/jobs/${id}`),
   getVideos: (id: string) => api.get<Video[]>(`/jobs/${id}/videos`).then(r => r.data),
-  getReport: (id: string) => api.get<string>(`/jobs/${id}/report`).then(r => r.data),
+  /** The stored HTML report, header auth only (T-8.8.1.5); the quick peek frames it as a blob. */
+  getReport: (id: string) =>
+    api.get<string>(`/jobs/${id}/report`, { responseType: 'text' }).then(r => r.data),
   /** S-8.8.1: reader payload `{title, html, statistics}` under header auth only. */
   getReportBody: (id: string) => api.get<ReportBody>(`/jobs/${id}/report/body`).then(r => r.data),
 };

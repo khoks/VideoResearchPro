@@ -12,6 +12,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EchoBubble, EchoPanelHost } from '../EchoPanel';
+import http from '../../../services/api';
+import { stubNewTabs } from '../../../services/__tests__/newTab';
 import { useEchoPanelStore } from '../../../stores/echoPanelStore';
 import type { DraftGate, DraftResponse, EchoCardsResponse, EchoStatus } from '../../../services/echoApi';
 
@@ -282,6 +284,46 @@ describe('draft as me', () => {
     const source = Array.from(turn.querySelectorAll('a')).find((a) => a.textContent === 'S1 · Tariffs explained')!;
     expect(source.getAttribute('href')).toBe('https://www.youtube.com/watch?v=v1&t=30');
     expect(source.getAttribute('target')).toBe('_blank');
+  });
+
+  it('opens a cited uploaded PDF as a blob fetched with the header, not the route that 401s (T-8.8.1.5)', async () => {
+    draftStatusMock.mockResolvedValue({ enabled: true, state: 'enabled' });
+    draftMock.mockResolvedValue({
+      id: 'd-2',
+      draft: 'The report says so.',
+      citations: [{ kind: 'source', ref: 'S1', label: 'Annual report', url: '/api/v1/library/pdf/abc.pdf' }],
+      disclosure: 'Drafted with Echo, reviewed by you.',
+    });
+    const get = vi.spyOn(http, 'get').mockResolvedValue({ data: new Blob(['%PDF']) } as never);
+    const createObjectURL = URL.createObjectURL;
+    const revokeObjectURL = URL.revokeObjectURL;
+    const windowOpen = window.open;
+    URL.createObjectURL = vi.fn(() => 'blob:http://localhost:5173/p1');
+    URL.revokeObjectURL = vi.fn();
+    const { open, tabs } = stubNewTabs();
+    try {
+      useEchoPanelStore.setState({ open: true, mode: 'draft' });
+      mount();
+      await flush();
+      await typeInto(panel()!.querySelector('textarea')!, 'What does the report say?');
+      click(buttonNamed('Draft a reply'));
+      await flush();
+      const link = panel()!.querySelector('[data-echo-turn="draft"] a[href="/api/v1/library/pdf/abc.pdf"]')!;
+      const e = new MouseEvent('click', { bubbles: true, cancelable: true });
+      act(() => {
+        link.dispatchEvent(e);
+      });
+      expect(e.defaultPrevented).toBe(true);
+      expect(open).toHaveBeenCalledWith('', '_blank'); // inside the click, before the download
+      await flush();
+      expect(get).toHaveBeenCalledWith('/library/pdf/abc.pdf', { responseType: 'blob' });
+      expect(tabs[0].location.href).toBe('blob:http://localhost:5173/p1');
+    } finally {
+      get.mockRestore();
+      URL.createObjectURL = createObjectURL;
+      URL.revokeObjectURL = revokeObjectURL;
+      window.open = windowOpen;
+    }
   });
 });
 

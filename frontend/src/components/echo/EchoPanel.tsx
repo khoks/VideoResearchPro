@@ -24,6 +24,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CitationLink } from '../citation';
+import { citedFileFailed } from '../citation/citedFile';
 import { Badge, Button, Spinner, Textarea } from '../primitives';
 import { useAskLibraryQA } from '../../hooks/useLibraryQA';
 import { useAskQAHistoryChat } from '../../hooks/useQAHistoryChat';
@@ -31,6 +32,7 @@ import { useEchoConnectors, useEchoStatus } from '../../hooks/useEcho';
 import { useFeatureAvailable } from '../../hooks/useFeatureAvailable';
 import { isMacPlatform, useShortcuts } from '../../hooks/useShortcuts';
 import { useColors, useShadows } from '../../hooks/useTheme';
+import { openApiLink } from '../../services/apiFiles';
 import { echoApi, type DraftResponse, type EchoCard } from '../../services/echoApi';
 import { suggestionsApi, type SuggestionContext } from '../../services/suggestionsApi';
 import { useEchoPanelStore, type AskTarget, type EchoTurn } from '../../stores/echoPanelStore';
@@ -863,10 +865,19 @@ function DraftAnswer({ draft }: { draft: DraftResponse }) {
             const label = `${cit.ref ? `${cit.ref} · ` : ''}${citationLabel(cit)}`;
             const style = { fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.accent };
             // A source at its timestamp is outside the app; anything inside it
-            // is a route.
+            // is a route. An uploaded PDF's url is the API's serve route, which
+            // takes the bearer header only: opened as a blob URL (T-8.8.1.5).
             if (cit.url) {
               return (
-                <a key={i} href={cit.url} target="_blank" rel="noreferrer" style={style}>
+                <a
+                  key={i}
+                  href={cit.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => openApiLink(e, cit.url, citedFileFailed)}
+                  onAuxClick={(e) => openApiLink(e, cit.url, citedFileFailed)}
+                  style={style}
+                >
                   {label}
                 </a>
               );

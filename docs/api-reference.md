@@ -2,7 +2,7 @@
 
 **Status:** canonical (2026-04-24, last refreshed 2026-10-19). This is the **single source of truth** for the REST and WebSocket API. All other docs link here rather than duplicating endpoint lists.
 
-The API is mounted under `/api/v1/` (except the WebSocket, which is mounted at the root). All HTTP responses are JSON (content-type `application/json`) unless explicitly noted otherwise (HTML for reports, NDJSON for dataset exports). Authentication is via `Authorization: Bearer <jwt>` for everything except `/auth/register`, `/auth/login`, and `/health` family endpoints. The HTML report endpoint additionally accepts a `?token=` query string fallback (because iframes can't set `Authorization` headers).
+The API is mounted under `/api/v1/` (except the WebSocket, which is mounted at the root). All HTTP responses are JSON (content-type `application/json`) unless explicitly noted otherwise (HTML for reports, NDJSON for dataset exports). Authentication is via `Authorization: Bearer <jwt>` for everything except `/auth/register`, `/auth/login`, and `/health` family endpoints. No HTTP route accepts the JWT as a `?token=` query string (retired 2026-10-25, T-8.8.1.5, [D-085 addendum](decisions.md#d-085--reading-room-reports-stay-html-sanitised-and-parsed-in-the-browser-one-shared-citation-card-fed-by-the-runs-documents-2026-10-19)): a browser fetches files with the header and opens or saves them from a blob: URL. The `/ws/jobs` WebSocket is the one exception, since a WebSocket handshake cannot carry headers.
 
 Every error follows FastAPI's default `{ "detail": "..." }` shape unless otherwise noted.
 
@@ -311,7 +311,7 @@ List the documents selected for this job. Returns `list[VideoResponse]`. Each ro
 ## Per-job Q&A and reports
 
 ### `GET /api/v1/jobs/{job_id}/report`
-Serve the generated HTML report. Content-type `text/html`. Returns 404 if no report has been generated yet (channel jobs always have a stats-only report; subscription jobs never have one). Auth: bearer header **or** `?token=` query string (iframe-friendly). Kept for the job page's quick-peek modal and "Open in new tab"; the reader uses the body route below. The query-token fallback is slated for removal (T-8.8.1.5) once the modal no longer needs it.
+Serve the generated HTML report. Content-type `text/html`. Returns 404 if no report has been generated yet (channel jobs always have a stats-only report; subscription jobs never have one). Auth: bearer header **only**. Kept for the job page's quick-peek modal and its "Open in new tab", which fetch it with the header and show it from a blob: URL (sandboxed iframe, scripts blocked by a CSP meta tag); the reader uses the body route below. Until T-8.8.1.5 (2026-10-25) it also took `?token=` for the iframe; a query token now gets 401.
 
 ### `GET /api/v1/jobs/{job_id}/report/body`
 The native reader's payload (S-8.8.1). Splits the stored report back into its parts so the frontend renders the chrome itself and only the written sections go through the sanitiser:
@@ -506,7 +506,7 @@ Body `{ "urls": ["https://…", …] }`, 1–100 entries. Each URL is resolved t
 400 when `urls` is missing, empty or longer than 100. `invalid_url` rows carry no `source_type`; `extraction_failed` rows carry no `document_id`.
 
 ### `GET /api/v1/library/pdf/{digest}.pdf`
-Serves the uploaded bytes (`application/pdf`) for the document whose `source_id` is `pdf:<digest>`; 404 if the document or the file is missing. Citations deep-link here with `#page=N`. The route sits under the router-level bearer-auth dependency and does **not** accept `?token=`, so a plain link or a new tab 401s; the frontend fetches the bytes with the header and opens a blob URL. Adopting the `?token=` fallback the export routes use is an open follow-up.
+Serves the uploaded bytes (`application/pdf`) for the document whose `source_id` is `pdf:<digest>`; 404 if the document or the file is missing. Citations deep-link here with `#page=N`. The route sits under the router-level bearer-auth dependency and does **not** accept `?token=`, so a plain link or a new tab 401s; the frontend fetches the bytes with the header and opens a blob URL, keeping the `#page=N` fragment — from the Library row and, since T-8.8.1.5, from every PDF citation.
 
 ---
 
@@ -910,7 +910,7 @@ Queues select → capture → describe → persist for one document on the worke
 
 ## Dataset exports
 
-All `/exports` endpoints require auth. Each returns `application/x-ndjson` (one JSON object per line) via `StreamingResponse`. Memory stays constant for arbitrarily large exports.
+All `/exports` endpoints require auth, bearer header only: until T-8.8.1.5 (2026-10-25) they also took `?token=` for plain download links; a query token now gets 401, and the frontend fetches each file with the header and saves it from a blob: URL. Each returns `application/x-ndjson` (one JSON object per line) via `StreamingResponse`. Memory stays constant on the server for arbitrarily large exports.
 
 ### `GET /api/v1/exports/qa-dataset/openai.jsonl`
 Q&A dataset in OpenAI chat-format. Unions `qa_exchanges` + `library_qa_exchanges` + `qa_history_exchanges` ordered by `created_at`.
@@ -935,7 +935,7 @@ Knowledge artifacts in tuple shape.
 System prompts are baked into `services/dataset_service.py` as module constants — see [finetune_design.md](finetune_design.md) for prompt content.
 
 ### `GET /api/v1/exports/notes.jsonl`
-The caller's notes as W3C Web Annotations, one JSON-LD object per line under the `http://www.w3.org/ns/anno.jsonld` context, oldest first (S-8.5.3). Withdrawn notes are included with their `deleted` timestamp; `?include_deleted=false` leaves them out. Lossless: `services/note_export_service.py::parse_note_jsonld` is the exact inverse. `?token=` accepted like the other exports.
+The caller's notes as W3C Web Annotations, one JSON-LD object per line under the `http://www.w3.org/ns/anno.jsonld` context, oldest first (S-8.5.3). Withdrawn notes are included with their `deleted` timestamp; `?include_deleted=false` leaves them out. Lossless: `services/note_export_service.py::parse_note_jsonld` is the exact inverse. Bearer header only, like the other exports.
 
 ```json
 {"@context":"http://www.w3.org/ns/anno.jsonld","id":"urn:uuid:…","type":"Annotation","motivation":"highlighting",
@@ -946,7 +946,7 @@ The caller's notes as W3C Web Annotations, one JSON-LD object per line under the
 ```
 
 ### `GET /api/v1/exports/notes.md`
-The same notes as a Markdown document (`text/markdown`): `## <target type>` → `### <target label>` with the raw `type:id` key → `#### <date>` per note, body verbatim, every column in an HTML comment, withdrawn notes marked in the heading. Same `include_deleted` and `?token=` handling.
+The same notes as a Markdown document (`text/markdown`): `## <target type>` → `### <target label>` with the raw `type:id` key → `#### <date>` per note, body verbatim, every column in an HTML comment, withdrawn notes marked in the heading. Same `include_deleted` handling and header-only auth.
 
 ---
 
@@ -1268,7 +1268,7 @@ The server publishes progress events for any subscribed job:
 }
 ```
 
-Heartbeats every 30 seconds (server pings, client pongs). Auth is enforced via the `?token=` query string at WS handshake (browsers cannot set `Authorization` headers on WebSocket connections).
+Heartbeats every 30 seconds (server pings, client pongs). Auth is enforced via the `?token=` query string at WS handshake (browsers cannot set `Authorization` headers on WebSocket connections). Since T-8.8.1.5 this is the only route that reads a token from the URL.
 
 ---
 

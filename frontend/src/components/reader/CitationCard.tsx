@@ -11,7 +11,9 @@
  */
 import { useLayoutEffect, useRef } from 'react';
 import { useColors, useShadows } from '../../hooks/useTheme';
+import { openApiLink } from '../../services/apiFiles';
 import { formatDuration } from '../../utils/formatters';
+import { citedFileFailed } from '../citation/citedFile';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, z } from '../../theme';
 import type { ResolvedCitation } from './citations';
 import { placeCard } from './placeCard';
@@ -182,6 +184,8 @@ export function CitationCard({
                   href={citation.resolvedHref}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={(e) => openApiLink(e, citation.resolvedHref, citedFileFailed)}
+                  onAuxClick={(e) => openApiLink(e, citation.resolvedHref, citedFileFailed)}
                   tabIndex={-1}
                   style={{ color: c.accent, fontWeight: fontWeight.medium }}
                 >

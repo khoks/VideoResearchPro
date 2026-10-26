@@ -1,7 +1,7 @@
 from collections.abc import Generator
 
 import redis
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -107,12 +107,11 @@ def get_current_jti(
     return jti if isinstance(jti, str) else None
 
 
-def get_user_from_query_or_header(
-    header_token: str | None = Depends(oauth2_scheme),
-    query_token: str | None = Query(None, alias="token"),
-    db: Session = Depends(get_db),
-) -> User:
-    # Scoped fallback for requests that can't set an Authorization header
-    # (e.g. <iframe src>, window.open). Only apply to read-only endpoints —
-    # query-string tokens leak via server logs and Referer headers.
-    return _resolve_user(header_token or query_token, db)
+# There is deliberately no query-string variant of get_current_user. Until
+# T-8.8.1.5 (2026-10-25) `get_user_from_query_or_header` let the legacy HTML
+# report route and the six /exports downloads take the JWT as `?token=`, which
+# leaks it into browser history, server and proxy logs and Referer headers.
+# The browser now fetches those files with the Authorization header and hands
+# them over as blob: URLs (D-085 addendum). The only route that still reads a
+# token from the URL is the /ws/jobs WebSocket (routers/ws.py), because a
+# browser cannot send headers on a WebSocket handshake.

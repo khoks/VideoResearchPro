@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { inferSourceType, libraryApi, type LibraryVideoResponse } from '../../services/libraryApi';
+import { TabBlockedError } from '../../services/apiFiles';
+import { TAB_BLOCKED_MESSAGE } from '../citation/citedFile';
 import { formatDate, formatDuration } from '../../utils/formatters';
 import { sourceTypeLabel } from '../../utils/ingestResults';
 import { useJobStore } from '../../stores/jobStore';
@@ -69,8 +71,13 @@ export function VideoRow({ video, channelLink = true }: Props) {
     setOpening(true);
     try {
       await libraryApi.openPdf(video.url);
-    } catch {
-      pushToast('error', 'Could not fetch the PDF. It may have been removed from the upload directory.');
+    } catch (err) {
+      pushToast(
+        'error',
+        err instanceof TabBlockedError
+          ? TAB_BLOCKED_MESSAGE
+          : 'Could not fetch the PDF. It may have been removed from the upload directory.',
+      );
     } finally {
       setOpening(false);
     }

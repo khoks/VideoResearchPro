@@ -11,7 +11,6 @@ import {
   type NoteTargetType,
 } from '../services/notesApi';
 import { exportsApi } from '../services/exportsApi';
-import { downloadUrl } from '../utils/download';
 import { formatDate } from '../utils/formatters';
 import { NoteCard, NoteEditor } from '../components/notes';
 import { Button, Card, EmptyState, Input, Spinner } from '../components/primitives';
@@ -92,8 +91,10 @@ export function NotesPage() {
       pushToast('error', 'You must be signed in to export notes.');
       return;
     }
-    if (kind === 'md') downloadUrl(exportsApi.getNotesMarkdownUrl(token), 'notes.md');
-    else downloadUrl(exportsApi.getNotesJsonldUrl(token), 'notes.jsonl');
+    // Fetched with the header, saved from a blob: URL (T-8.8.1.5).
+    exportsApi
+      .download(kind === 'md' ? 'notesMarkdown' : 'notesJsonld')
+      .catch(() => pushToast('error', 'Could not fetch your notes for export.'));
   };
 
   const chipStyle = (active: boolean): React.CSSProperties => ({

@@ -1,5 +1,6 @@
 import type { AxiosProgressEvent } from 'axios';
 import api from './api';
+import { openApiFile } from './apiFiles';
 import type { TagSummary } from './tagsApi';
 
 export type TranscriptStatus = 'fetched' | 'pending' | 'unavailable';
@@ -94,8 +95,6 @@ export function pdfServePath(sourceId: string): string {
   return `/library/pdf/${digest}.pdf`;
 }
 
-const API_PREFIX = '/api/v1';
-
 /** Best-effort source type for a library row until the backend sends one. */
 export function inferSourceType(row: Pick<LibraryVideoResponse, 'source_type' | 'url'>): string {
   if (row.source_type) return row.source_type;
@@ -113,15 +112,10 @@ export const libraryApi = {
    * Open an uploaded PDF in a new tab. The serve route sits behind the
    * router-level auth dependency, so a plain link 401s; fetch the bytes
    * with the bearer header and hand the browser a blob URL instead.
-   * `url` is the document's stored URL (`/api/v1/library/pdf/<digest>.pdf`).
+   * `url` is the document's stored URL (`/api/v1/library/pdf/<digest>.pdf`),
+   * or a citation's permalink with its `#page=<N>` fragment, which is kept.
    */
-  openPdf: async (url: string) => {
-    const path = url.startsWith(API_PREFIX) ? url.slice(API_PREFIX.length) : url;
-    const { data } = await api.get<Blob>(path, { responseType: 'blob' });
-    const blobUrl = URL.createObjectURL(data);
-    window.open(blobUrl, '_blank', 'noopener');
-    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
-  },
+  openPdf: (url: string) => openApiFile(url),
 
   /**
    * Upload one PDF. The axios instance defaults to `application/json`, and

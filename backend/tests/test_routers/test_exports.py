@@ -217,12 +217,25 @@ def test_exports_require_auth(unauthenticated_client):
         assert resp.status_code == 401, f"expected 401 on {path}, got {resp.status_code}"
 
 
-def test_exports_accept_query_token_fallback(unauthenticated_client, auth_token, db, test_user):
-    # Browser downloads can't set Authorization — same pattern as the report route.
+def test_exports_reject_a_query_token(unauthenticated_client, auth_token, db, test_user):
+    # T-8.8.1.5: the browser fetches exports with the Authorization header and
+    # saves them from a blob: URL, so a JWT in the URL — a log and Referer leak —
+    # no longer authenticates any of them, even a valid one.
     _seed_qa_rows(db, test_user.id)
-    response = unauthenticated_client.get(
-        f"/api/v1/exports/qa-dataset/openai.jsonl?token={auth_token}"
-    )
+    for path in [
+        "/api/v1/exports/qa-dataset/openai.jsonl",
+        "/api/v1/exports/qa-dataset/tuple.jsonl",
+        "/api/v1/exports/knowledge-dataset/openai.jsonl",
+        "/api/v1/exports/knowledge-dataset/tuple.jsonl",
+    ]:
+        resp = unauthenticated_client.get(path, params={"token": auth_token})
+        assert resp.status_code == 401, f"a ?token= authenticated {path}"
+
+
+def test_exports_stream_with_the_header_token(client, db, test_user):
+    # The path the frontend now takes (services/apiFiles.ts): header, no URL token.
+    _seed_qa_rows(db, test_user.id)
+    response = client.get("/api/v1/exports/qa-dataset/openai.jsonl")
     assert response.status_code == 200
     assert len(_parse_jsonl(response.text)) == 3
 

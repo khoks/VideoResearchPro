@@ -74,13 +74,11 @@ def _user_id_from_jwt(request: Request) -> str | None:
     bucket key for rate-limiting."""
     auth = request.headers.get("authorization") or ""
     if not auth.lower().startswith("bearer "):
-        # Some routes accept ?token=... in the query string (the
-        # report-token shortcut from PR #X). Honour that too.
-        token = request.query_params.get("token")
-        if token is None:
-            return None
-    else:
-        token = auth.split(None, 1)[1].strip()
+        # A `?token=` is not a credential on any HTTP route since T-8.8.1.5
+        # (only the /ws/jobs socket reads one, and this middleware skips it),
+        # so it must not pick the bucket either: such a request is anonymous.
+        return None
+    token = auth.split(None, 1)[1].strip()
     try:
         payload = jwt.decode(
             token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM]

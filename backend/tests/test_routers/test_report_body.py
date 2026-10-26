@@ -5,6 +5,7 @@ The legacy HTML route took ``?token=`` for its iframe until T-8.8.1.5; this
 one never did.
 """
 
+import re
 from unittest.mock import patch
 
 from app.models.job import Job
@@ -82,6 +83,33 @@ def test_body_route_404_when_file_missing(client, db, test_user):
     response = client.get(f"/api/v1/jobs/{job.id}/report/body")
     assert response.status_code == 404
     assert response.json()["detail"] == "Report file not found"
+
+
+def test_body_route_serves_the_processing_note_compose_wrote(client, db, test_user, tmp_path):
+    """T-8.8.4.4 down the job's own chain: compose closes a section cut off
+    twice and discloses it in a paragraph classed ``processing-note``; the
+    report the job saves is served by this route with that paragraph intact,
+    which is how the reader finds it."""
+    from tests.test_agents.test_report_section_balance import run_topic_report_cut_twice
+
+    statistics, body, _ = run_topic_report_cut_twice()
+    path = tmp_path / "report.html"
+    path.write_text(
+        build_report_html(
+            title="Research Report: plotting", job_type="topic", statistics=statistics,
+            report_body=body,
+        ),
+        encoding="utf-8",
+    )
+    job = _make_job(db, test_user.id, report_path=str(path))
+    response = client.get(f"/api/v1/jobs/{job.id}/report/body")
+    assert response.status_code == 200, response.text
+    note = re.search(
+        r'<p class="processing-note"[^>]*><strong>Processing note:</strong>(.*?)</p>',
+        response.json()["html"], re.S,
+    )
+    assert note, "the served body must carry the classed note the reader lifts out"
+    assert '"Key Facts" section was cut off mid-markup on both attempts' in note.group(1)
 
 
 def test_body_route_hides_other_tenants_jobs(client, db):

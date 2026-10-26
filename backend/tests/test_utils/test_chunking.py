@@ -522,3 +522,30 @@ def test_document_id_is_carried_on_every_chunk_when_supplied():
     without = chunk_transcript(segs, chunk_size=60, chunk_overlap=0, video_metadata={"video_id": "yt1"})
     assert all("document_id" not in c["metadata"] for c in without)
     assert all(c["metadata"]["video_id"] == "yt1" for c in without)
+
+
+def test_every_chunk_carries_the_documents_own_word_count():
+    """The report's statistics count words once per document from this, not
+    by summing chunks: those overlap and carry the visual annotations."""
+    from types import SimpleNamespace
+
+    from app.services.visual_service import annotate_segments
+
+    segs = _make_segments(20, words_per_seg=4)   # small segments, so chunks overlap
+    frame = SimpleNamespace(
+        timestamp_seconds=25.0, description="A slide lists five plot types.",
+        informative=True, status="described",
+    )
+    plain = chunk_transcript(segs, chunk_size=60, chunk_overlap=20, video_metadata={"video_id": "yt1"})
+    annotated = chunk_transcript(
+        annotate_segments(segs, [frame]), chunk_size=60, chunk_overlap=20,
+        video_metadata={"video_id": "yt1"},
+    )
+    for chunks in (plain, annotated):
+        assert len(chunks) > 1
+        assert {c["metadata"]["document_word_count"] for c in chunks} == {20 * 4}
+    # What the stamp replaces: the chunks' own counts add up to more, by the
+    # overlap alone, and by the description on top on the annotated run.
+    plain_sum = sum(c["metadata"]["word_count"] for c in plain)
+    assert plain_sum > 20 * 4
+    assert sum(c["metadata"]["word_count"] for c in annotated) > plain_sum

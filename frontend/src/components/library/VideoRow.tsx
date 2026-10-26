@@ -254,7 +254,17 @@ export function VideoRow({ video, channelLink = true }: Props) {
               Referenced in {video.job_count}{' '}
               {video.job_count === 1 ? 'run' : 'runs'}
             </span>
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: space['3'] }}>
+            <div
+              style={{
+                marginLeft: 'auto',
+                display: 'flex',
+                flexWrap: 'wrap',
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                gap: space['3'],
+                minWidth: 0,
+              }}
+            >
               {hasText && (
                 <Button
                   size="sm"
@@ -267,7 +277,8 @@ export function VideoRow({ video, channelLink = true }: Props) {
                       : FEATURE_UNAVAILABLE_MSG
                   }
                 >
-                  Knowledge report
+                  {/* Same short label as the job page's button, so it fits a phone-width row. */}
+                  Knowledge
                 </Button>
               )}
               {sourceType === 'pdf' ? (

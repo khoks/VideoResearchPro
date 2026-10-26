@@ -87,7 +87,7 @@ function mount(video: LibraryVideoResponse) {
 }
 
 const knowledgeButton = () =>
-  Array.from(host.querySelectorAll('button')).find((b) => /knowledge report/i.test(b.textContent ?? '')) as
+  Array.from(host.querySelectorAll('button')).find((b) => (b.textContent ?? '').trim() === 'Knowledge') as
     | HTMLButtonElement
     | undefined;
 

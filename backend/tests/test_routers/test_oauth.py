@@ -7,6 +7,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 from app.config import settings
@@ -343,7 +344,8 @@ def test_token_exchange_includes_code_verifier(
 # its ``verified`` flag; /user's public email is never trusted. Unverified is
 # refused with 403 and one message whether or not an account exists, and
 # nothing is linked or created. Each refusal test below fails if the gate in
-# ``oauth_service._link_or_create_user`` is removed.
+# ``oauth_service._link_or_create_user`` is removed. A /user/emails lookup
+# that fails is not "unverified" but unknown: the generic, retryable 401.
 # ---------------------------------------------------------------------------
 
 GITHUB_USER = "https://api.github.com/user"
@@ -467,19 +469,77 @@ def test_github_unverified_public_email_is_refused(
     assert _refusal_audited(db, "github")
 
 
-def test_github_public_email_alone_is_not_trusted(
-    unauthenticated_client, db, monkeypatch
+def _audited(db, reason: str, provider: str) -> bool:
+    rows = db.query(AuditLog).filter(AuditLog.event == "login_failure").all()
+    return any(
+        json.loads(r.metadata_json or "{}") == {"reason": reason, "provider": provider}
+        for r in rows
+    )
+
+
+def _github_get_with_failing_emails(failure: str, profile_email: str | None) -> MagicMock:
+    """/user answers; /user/emails fails the way ``failure`` names."""
+
+    def get(url, *, headers=None):
+        if url == GITHUB_USER:
+            return _mock_response({"id": 7003, "email": profile_email})
+        if failure == "timeout":
+            raise httpx.ReadTimeout("timed out")
+        resp = MagicMock()
+        resp.text = ""
+        if failure == "bad_gateway":
+            resp.json.side_effect = ValueError("not JSON")
+            resp.text = "<html><body>502 Bad Gateway</body></html>"
+        elif failure == "rate_limited":
+            resp.json.return_value = {
+                "message": "API rate limit exceeded for user ID 7003.",
+                "documentation_url": "https://docs.github.com/rest/overview/rate-limits-for-the-rest-api",
+            }
+        elif failure == "not_found":  # as for a token without ``user:email``
+            resp.json.return_value = {"message": "Not Found", "documentation_url": "https://docs.github.com"}
+        elif failure == "no_primary":
+            resp.json.return_value = []
+        return resp
+
+    return MagicMock(side_effect=get)
+
+
+@pytest.mark.parametrize("profile_email", ["victim@example.com", None], ids=["public-email", "private-email"])
+@pytest.mark.parametrize("failure", ["rate_limited", "bad_gateway", "timeout", "not_found", "no_primary"])
+def test_github_failed_email_lookup_is_the_generic_retryable_failure(
+    unauthenticated_client, db, monkeypatch, failure, profile_email
 ):
-    """/user/emails did not answer (here, as for a token without
-    ``user:email``): /user's public email no longer counts as verified."""
+    """A failed /user/emails says nothing about verification (review of #384).
+    A first sign-in gets the generic 401, audited as ``oauth_failure``, not
+    the 403 telling a user whose address may well be verified to go and
+    verify it, and the same whether or not the profile email is public. The
+    public email alone still links or creates nothing."""
     auth_service.create_user(db, email="victim@example.com", password="pw" * 6)
-    get = _routed_get({
-        GITHUB_USER: {"id": 7003, "email": "victim@example.com"},
-        GITHUB_EMAILS: {"message": "Not Found", "documentation_url": "https://docs.github.com"},
-    })
+    get = _github_get_with_failing_emails(failure, profile_email)
     r = _sign_in(unauthenticated_client, db, monkeypatch, "github", get)
-    assert r.status_code == 403
+
+    assert r.status_code == 401, r.text
+    assert r.json()["detail"] == "OAuth authentication failed"
     assert db.query(OAuthIdentity).count() == 0
+    assert db.query(User).count() == 1
+    assert _audited(db, "oauth_failure", "github")
+    assert not _refusal_audited(db, "github"), "an outage is not recorded as a policy refusal"
+
+
+def test_a_new_link_records_when_the_provider_vouched(unauthenticated_client, db, monkeypatch):
+    """D-042 option (B'): the identity row keeps the verification, so links
+    made under T-5.4.10 are told apart from older ones (NULL)."""
+    auth_service.create_user(db, email="dev@example.com", password="pw" * 6)
+    before = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=1)
+    get = _routed_get({
+        GITHUB_USER: {"id": 7010, "email": None},
+        GITHUB_EMAILS: [{"email": "dev@example.com", "primary": True, "verified": True}],
+    })
+    assert _sign_in(unauthenticated_client, db, monkeypatch, "github", get).status_code == 200
+
+    verified_at = db.query(OAuthIdentity).one().email_verified_at
+    assert verified_at is not None
+    assert verified_at.replace(tzinfo=None) >= before
 
 
 def test_github_uses_the_primary_address_not_the_public_one(

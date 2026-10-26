@@ -27,7 +27,8 @@ Flow:
      finds-or-creates the ``User`` (matched by email) and writes the
      identity row. A first link or a new account needs an email the
      provider verified (T-5.4.10); an unverified one is refused with
-     ``OAuthUnverifiedEmailError`` and nothing is written.
+     ``OAuthUnverifiedEmailError`` and nothing is written. The identity
+     row records when the provider vouched (``email_verified_at``).
    - returns the resolved ``User``.
 
 Tests inject a mock ``http_get`` / ``http_post`` so the flow can be
@@ -40,7 +41,7 @@ import hashlib
 import logging
 import secrets
 import urllib.parse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Protocol
 
@@ -112,6 +113,11 @@ class OAuthUserInfo:
     # Required to create an account or link one by email on a first OAuth
     # sign-in (T-5.4.10; first for ADMIN_EMAILS addresses, D-111 review).
     email_verified: bool = False
+    # The provider's email answer could not be read (GitHub's /user/emails
+    # failed: an outage, a rate limit, a timeout). That says nothing about
+    # whether the address is verified, so a first sign-in gets the generic,
+    # retryable failure rather than the verify-your-address refusal.
+    email_lookup_failed: bool = False
 
 
 class OAuthProvider(Protocol):
@@ -250,9 +256,9 @@ class _GitHubOAuthProvider(_GenericOAuthProvider):
     verification flag, so it is never trusted (T-5.4.10). ``/user/emails``
     (scope ``user:email``) lists every address with ``primary`` and
     ``verified``; the account's primary address is used, verified only when
-    GitHub says so. If the lookup fails, the email counts as unverified:
-    a returning user (identity already linked) still signs in, a first
-    sign-in is refused.
+    GitHub says so. If the lookup fails, nothing is known about the email
+    (``email_lookup_failed``): a returning user (identity already linked)
+    still signs in, a first sign-in gets the generic failure and can retry.
     """
 
     emails_endpoint: str = "https://api.github.com/user/emails"
@@ -341,19 +347,20 @@ def _github_primary_email(info: OAuthUserInfo, emails: Any) -> OAuthUserInfo:
 
     ``emails`` is a list of ``{email, primary, verified, visibility}``. The
     primary address is used, verified only when ``verified`` is ``true``.
-    Anything else (an error object, no primary entry) leaves ``info``
-    unverified.
+    Anything else (``None`` for a failed request, an error object such as a
+    rate limit or a 5xx page, a list with no primary entry) is no answer:
+    ``info`` stays unverified and is marked ``email_lookup_failed``, so a
+    GitHub outage is not reported to the user as an unverified address.
     """
-    if not isinstance(emails, list):
-        return info
-    for entry in emails:
-        if isinstance(entry, dict) and entry.get("primary") is True and entry.get("email"):
-            return OAuthUserInfo(
-                provider_user_id=info.provider_user_id,
-                email=str(entry["email"]),
-                email_verified=entry.get("verified") is True,
-            )
-    return info
+    if isinstance(emails, list):
+        for entry in emails:
+            if isinstance(entry, dict) and entry.get("primary") is True and entry.get("email"):
+                return OAuthUserInfo(
+                    provider_user_id=info.provider_user_id,
+                    email=str(entry["email"]),
+                    email_verified=entry.get("verified") is True,
+                )
+    return replace(info, email_verified=False, email_lookup_failed=True)
 
 
 _GOOGLE = _GenericOAuthProvider(
@@ -493,6 +500,8 @@ def _link_or_create_user(
     db: Session, provider_name: str, info: OAuthUserInfo
 ) -> User:
     """Find existing OAuth identity or (on first OAuth login):
+    - fail with the generic ``OAuthError`` when the provider's email answer
+      could not be read (``email_lookup_failed``): unknown, so retryable;
     - refuse when the provider did not verify the email (T-5.4.10):
       ``OAuthUnverifiedEmailError``, and nothing is linked or created;
     - if the email is already a Pratidhvani user, link the identity to
@@ -517,6 +526,17 @@ def _link_or_create_user(
             db.commit()
         else:
             return user
+
+    if info.email_lookup_failed:
+        # T-5.4.10 review: the provider's email answer could not be read, so
+        # whether the address is verified is unknown, not "no". A retryable
+        # failure: the generic 401 (audited as oauth_failure), never the
+        # verify-your-address 403, which would send a user whose address is
+        # verified to check it with the provider during an outage.
+        raise OAuthError(
+            f"Provider '{provider_name}' email lookup failed. "
+            f"Cannot link or create the account without it; retry later."
+        )
 
     if info.email is None:
         raise OAuthError(
@@ -553,6 +573,9 @@ def _link_or_create_user(
         provider=provider_name,
         provider_user_id=info.provider_user_id,
         provider_email=info.email,
+        # D-042 (B'): record that the provider vouched for the address, so
+        # links made under T-5.4.10 are told apart from older ones (NULL).
+        email_verified_at=datetime.now(timezone.utc),
     )
     db.add(identity)
     db.commit()

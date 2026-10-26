@@ -123,6 +123,21 @@ def test_echo_draft_written_words_round_trip(tmp_path):
     assert "written_words" in _columns(url, "echo_drafts")
 
 
+def test_oauth_identity_email_verified_at_round_trip(tmp_path):
+    """T-5.4.10 adds a column, not a table, so it gets its own check."""
+    url = "sqlite:///" + (tmp_path / "round_trip.db").as_posix()
+    cfg = _alembic_config()
+    cfg.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(cfg, "head")
+    assert "email_verified_at" in _columns(url, "oauth_identities")
+    below = ScriptDirectory.from_config(cfg).get_revision("066d3f4b4d4d").down_revision
+    command.downgrade(cfg, below)
+    assert "email_verified_at" not in _columns(url, "oauth_identities")
+    command.upgrade(cfg, "head")
+    assert "email_verified_at" in _columns(url, "oauth_identities")
+
+
 def test_library_qa_scope_column_round_trip(tmp_path):
     """S-8.1.4 adds a column, not a table, so it gets its own check."""
     url = "sqlite:///" + (tmp_path / "round_trip.db").as_posix()

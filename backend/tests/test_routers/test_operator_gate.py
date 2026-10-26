@@ -228,11 +228,25 @@ def test_oauth_with_a_listed_github_verified_primary_creates_the_operator(unauth
 
 def test_oauth_with_a_listed_github_public_email_alone_creates_nothing(unauthenticated_client, db, monkeypatch):
     """Before T-5.4.10 /user's public email counted as verified; now only
-    /user/emails can vouch for it."""
+    /user/emails can vouch for it. That lookup failing here is the generic,
+    retryable 401 (unknown, not unverified), and nothing is created."""
     _oauth_configured(monkeypatch)
     monkeypatch.setattr(settings, "ADMIN_EMAILS", "ops@company.com")
     r = _oauth_sign_in(unauthenticated_client, db, monkeypatch, "github", {"id": 4242, "email": "ops@company.com"})
+    assert r.status_code == 401
+    assert auth_service.get_user_by_email(db, "ops@company.com") is None
+    assert db.query(OAuthIdentity).count() == 0
+
+
+def test_oauth_with_a_listed_github_unverified_primary_creates_nothing(unauthenticated_client, db, monkeypatch):
+    _oauth_configured(monkeypatch)
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "ops@company.com")
+    r = _oauth_sign_in(
+        unauthenticated_client, db, monkeypatch, "github", {"id": 4242, "email": "ops@company.com"},
+        emails=[{"email": "ops@company.com", "primary": True, "verified": False}],
+    )
     assert r.status_code == 403
+    assert r.json()["detail"] == oauth_service.unverified_email_message("github")
     assert auth_service.get_user_by_email(db, "ops@company.com") is None
 
 

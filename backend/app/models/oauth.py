@@ -62,6 +62,13 @@ class OAuthIdentity(Base):
     provider_email: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )
+    # When the provider vouched for ``provider_email``, recorded at link time
+    # (T-5.4.10, D-042 option B'). Every identity linked since carries it,
+    # because a first link needs a verified address. NULL means the identity
+    # was linked before T-5.4.10, when nothing checked.
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),

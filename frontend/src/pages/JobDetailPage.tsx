@@ -292,7 +292,7 @@ export function JobDetailPage() {
                     disabled={!knowledgeExtractionAvailable}
                     title={
                       knowledgeExtractionAvailable
-                        ? 'Generate or view the AI knowledge report for this video.'
+                        ? 'Generate or view the AI knowledge report for this source.'
                         : FEATURE_UNAVAILABLE_MSG
                     }
                   >
@@ -327,10 +327,13 @@ export function JobDetailPage() {
 
       {job.status === 'completed' && <QASection jobId={job.id} />}
 
-      {knowledgeVideo && knowledgeVideo.video_id && (
+      {/* Keyed on document_id (D-070): a PDF or a thread has no video_id,
+          and gating on it opened nothing for every non-video row. */}
+      {knowledgeVideo && (knowledgeVideo.document_id || knowledgeVideo.video_id) && (
         <VideoKnowledgeDrawer
-          videoId={knowledgeVideo.video_id}
+          videoId={knowledgeVideo.document_id || knowledgeVideo.video_id || ''}
           videoTitle={knowledgeVideo.title}
+          sourceType={knowledgeVideo.source_type}
           onClose={() => setKnowledgeVideo(null)}
         />
       )}

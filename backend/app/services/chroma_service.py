@@ -471,6 +471,48 @@ def delete_video_chunks(video_id: str) -> bool:
     return True
 
 
+def get_document_chunks(document_id: str, video_id: str | None = None) -> list[dict]:
+    """Every stored chunk of one document, as ``[{"id", "text", "metadata"}]``.
+
+    Read by ``document_id`` metadata (D-070): every source type carries it,
+    and ``backfill_chunk_document_ids`` stamps chunks written before it was
+    added. ``video_id`` is a fallback for a YouTube document whose chunks the
+    backfill has not reached yet. The order is whatever Chroma returns; the
+    caller sorts on ``chunk_index``. The stored text is the ORIGINAL wording
+    (a code-mixed chunk's English rendering lives in ``text_en`` metadata and
+    only shapes its vector, D-084).
+
+    Fail-soft: a Chroma error is logged and reads as "no chunks", so a
+    caller that needs the text answers "nothing to read" instead of a 500.
+    """
+    if not document_id:
+        return []
+    try:
+        collection = get_global_collection()
+        got = collection.get(
+            where={"document_id": document_id}, include=["documents", "metadatas"]
+        )
+        if not (got.get("ids") or []) and video_id:
+            got = collection.get(
+                where={"video_id": video_id}, include=["documents", "metadatas"]
+            )
+    except Exception:
+        logger.exception(f"ChromaDB read failed for document_id={document_id}")
+        return []
+
+    ids = got.get("ids") or []
+    docs = got.get("documents") or []
+    metas = got.get("metadatas") or []
+    chunks: list[dict] = []
+    for i, chunk_id in enumerate(ids):
+        chunks.append({
+            "id": chunk_id,
+            "text": (docs[i] if i < len(docs) else "") or "",
+            "metadata": dict((metas[i] if i < len(metas) else None) or {}),
+        })
+    return chunks
+
+
 def delete_collection(job_id: str) -> bool:
     """Deprecated no-op kept for backward compatibility.
 

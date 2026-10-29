@@ -541,6 +541,36 @@ def test_fetch_text_falls_through_to_whisper_when_no_transcript(podcast, fake_cl
     mock_whisper.assert_called_once()
 
 
+def test_fetch_text_never_whispers_when_whisper_is_not_allowed(podcast, fake_client):
+    """S-1.5.13: a topic run's search phase passes allow_whisper=False, so an
+    episode without an in-feed transcript is left for extraction (where the
+    job's WHISPER_MAX_PER_JOB applies) instead of being transcribed before
+    the reader approves anything."""
+    fake_client.fetch_feed.return_value = {
+        "feed": {"title": "The Test Show"},
+        "entries": [
+            {
+                "id": "https://testshow.example.com/ep1",
+                "title": "Episode 1: Hello",
+                "link": "https://testshow.example.com/ep1",
+                "enclosures": [{"href": "https://cdn.testshow.example.com/ep1.mp3"}],
+            }
+        ],
+    }
+    with (
+        patch.object(
+            podcast_connector_mod.podcast_client, "get_client", return_value=fake_client
+        ),
+        patch.object(podcast_connector_mod.settings, "OPENAI_API_KEY", "sk-fake"),
+        patch.object(podcast_connector_mod, "_whisper_transcribe_audio") as mock_whisper,
+    ):
+        out = podcast.fetch_text(_candidate_for_ep1(), job_id="j1", allow_whisper=False)
+
+    assert out is None
+    mock_whisper.assert_not_called()
+    fake_client.fetch_audio.assert_not_called()
+
+
 def test_fetch_text_returns_none_when_openai_key_unset_and_no_transcript(
     podcast, fake_client
 ):

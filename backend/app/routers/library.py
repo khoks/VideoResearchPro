@@ -29,6 +29,7 @@ from app.schemas.graph import GraphResponse
 from app.schemas.tag import TagSummary
 from app.services import library_qa_service
 from app.services import chroma_service
+from app.services import document_cap_service
 from app.services import graph_service, library_query_service, qa_scope_service, tag_service, visibility_service
 from app.services.llm_service import get_llm_for
 from app.sources.pdf.connector import (
@@ -614,6 +615,15 @@ async def upload_pdf(
         .filter(Document.source_type == "pdf", Document.source_id == source_id)
         .one_or_none()
     )
+    # T-5.2.10: the document cap, before the bytes are written. Re-uploading
+    # a PDF this tenant already sees adds nothing and is never refused.
+    document_cap_service.enforce(
+        db,
+        current_user,
+        action=document_cap_service.ACTION_UPLOAD,
+        document_ids=[existing.document_id] if existing is not None else (),
+        unseen=0 if existing is not None else 1,
+    )
     if existing is not None:
         # Dedup hit: the bytes are already cached, but this tenant may never
         # have seen them. Grant, then return (S-5.7.1).
@@ -779,11 +789,50 @@ def paste_urls(
             detail="Maximum 100 URLs per paste batch",
         )
 
+    _enforce_paste_cap(urls, db, current_user)
+
     results: list[dict] = []
     for raw in urls:
         result = _ingest_single_paste_url(raw, db, current_user)
         results.append(result)
     return {"results": results}
+
+
+def _enforce_paste_cap(urls: list, db: Session, current_user) -> None:
+    """T-5.2.10: refuse the whole batch (429) when the documents it would add
+    do not fit under the caller's cap, before any page is fetched.
+
+    Counted the way ``_ingest_single_paste_url`` resolves each entry: the
+    same source id twice is one document, an existing document the caller
+    already sees is a dedup hit and does not count, and an entry with no
+    document yet counts even though its extraction may still fail (the
+    estimate errs towards refusing, never past the cap).
+    """
+    if document_cap_service.cap_for(current_user) < 0:
+        return
+    source_ids: dict[tuple[str, str], None] = {}
+    for raw in urls:
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        url = raw.strip()
+        source_type = resolve_source_type(url)
+        source_ids[(source_type, f"{source_type}:{hash_url(url)}")] = None
+    if not source_ids:
+        return
+    existing = {
+        (row.source_type, row.source_id): row.document_id
+        for row in db.query(Document.source_type, Document.source_id, Document.document_id).filter(
+            Document.source_id.in_([sid for _, sid in source_ids])
+        )
+    }
+    known = [existing[k] for k in source_ids if k in existing]
+    document_cap_service.enforce(
+        db,
+        current_user,
+        action=document_cap_service.ACTION_PASTE,
+        document_ids=known,
+        unseen=len(source_ids) - len(known),
+    )
 
 
 def _ingest_single_paste_url(url: str, db: Session, current_user) -> dict:

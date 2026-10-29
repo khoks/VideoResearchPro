@@ -14,7 +14,8 @@ Resource keys (must match the tier capability table):
 - ``knowledge_extractions`` — count, monthly.
 - ``visual_extractions`` — count, monthly (S-1.18.2 on-demand frame capture).
 - ``documents`` — count, lifetime (period_kind=``lifetime`` so the cap
-  applies to the user's library size, not "per month").
+  applies to the user's library size, not "per month"). Derived from the
+  tenant's ``document_visibility`` rows, never recorded (T-5.2.10).
 - ``llm_tokens_in`` / ``llm_tokens_out`` — count, daily. Sum tracked
   via instrumented LLM client.
 - ``youtube_units`` — count, daily. Already tracked process-wide in
@@ -250,6 +251,9 @@ def record_usage(
     """
     if amount <= 0:
         return 0
+    if resource == "documents":
+        # Derived from visibility grants (T-5.2.10); a row would be ignored.
+        return get_usage(db, user_id, resource)
     try:
         res = _resolve_resource(resource)
         row = _row_for(db, user_id, res)
@@ -271,10 +275,23 @@ def record_usage(
         return 0
 
 
+def _visible_document_count(db: Session, user_id: str) -> int:
+    """T-5.2.10: the ``documents`` cap counts what the tenant can see
+    (``document_visibility``, D-063), not a counter. ``documents`` is a shared
+    cache, so a counter would charge dedup hits and miss grants written
+    before metering existed. ``document_cap_service`` enforces the cap."""
+    from app.services.document_cap_service import visible_count
+
+    return visible_count(db, user_id)
+
+
 def get_usage(db: Session, user_id: str, resource: str) -> int:
     """Return the user's current-period consumption of ``resource``.
-    Returns 0 if no row exists yet."""
+    Returns 0 if no row exists yet. ``documents`` is derived from the
+    tenant's visibility grants instead of a ``quota_usage`` row."""
     res = _resolve_resource(resource)
+    if res.name == "documents":
+        return _visible_document_count(db, user_id)
     now = datetime.now(timezone.utc)
     period_start = _period_start(now, res.period_kind)
     row = (

@@ -30,6 +30,7 @@ import {
   type JobFormState,
 } from '../utils/jobForm';
 import { useJobStore } from '../stores/jobStore';
+import { apiErrorMessage, isDocumentCapRefusal } from '../utils/apiError';
 import {
   Button,
   Card,
@@ -270,8 +271,15 @@ export function SubmitJobPage() {
       }
       pushToast('success', 'Research submitted.');
       navigate(`/jobs/${job.id}`);
-    } catch {
-      // Global error toast is emitted by the MutationCache; nothing to do here.
+    } catch (err) {
+      // A full library refuses a subscription run (429, T-5.2.10): say why in
+      // the form, where the run was started. Every other failure is toasted
+      // by the MutationCache.
+      if (isDocumentCapRefusal(err)) {
+        setValidationError(
+          apiErrorMessage(err, "Your library is at your plan's document cap, so this run was not started."),
+        );
+      }
     }
   };
 

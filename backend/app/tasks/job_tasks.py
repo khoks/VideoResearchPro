@@ -927,7 +927,11 @@ def execute_topic_job(self, job_id: str) -> None:
                 f"({len(unresolved_channels)} unresolved channel hints)"
             )
             _persist_search_candidates(db, job_id, candidate_pool, curated_videos)
-            _grant_job_document_visibility(db, job)
+            # No visibility grant here (T-5.2.10). Candidates are not approved
+            # yet, but their links default to approved=True, so a grant at this
+            # point (on a redelivered run whose earlier attempt linked them)
+            # made them visible before the approval's cap check, which then
+            # counted them as already seen. approve_job grants the approved set.
 
             if queries_used:
                 job.search_queries_used = json.dumps(queries_used)

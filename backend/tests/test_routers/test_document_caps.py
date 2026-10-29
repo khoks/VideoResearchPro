@@ -23,6 +23,8 @@ approved filter from the resume task's grant
 the grant in ``approve_job``, so an approval counted only once its resume ran
 (``test_second_approval_before_the_first_resume_runs_is_refused``, the paste
 and upload variants, and ``test_approval_grants_only_the_approved_documents``);
+restoring the search-phase grant in ``execute_topic_job``
+(``test_redelivered_topic_search_grants_nothing_before_approval``);
 and reading ``documents`` usage from the counter table
 (``test_quota_endpoint_reports_visible_documents``).
 """
@@ -359,6 +361,41 @@ def test_approve_then_resume_grants_only_the_approved_documents(client, db, test
     db.expire_all()
     assert db.get(Job, job.id).status == "completed"
     assert _granted(db, test_user.id) == {d.document_id for d in kept}
+
+
+def test_redelivered_topic_search_grants_nothing_before_approval(
+    client, db, test_user, free_cap
+):
+    """Tasks ack late, so a worker that dies after the search linked its
+    candidates gets the search redelivered. Its links default to
+    approved=True; a grant in the search phase made them visible before the
+    approval, whose cap check then counted them as already seen and let them
+    through. Runs the real ``execute_topic_job`` (search agent mocked) on a job
+    an earlier attempt had already linked, then approves at a cap of 2."""
+    from tests import conftest as _conftest
+
+    from app.tasks import job_tasks
+
+    free_cap(2)
+    docs = [_doc(db, f"redeliv{i}") for i in range(3)]
+    job = _awaiting_job(db, test_user.id, docs)
+    job.status = "pending"
+    db.commit()
+    curated = [
+        {"video_id": d.video_id, "title": d.title, "url": d.url, "channel_id": None}
+        for d in docs
+    ]
+
+    with patch.object(job_tasks, "SessionLocal", _conftest.TestingSessionLocal), \
+         patch.object(job_tasks, "progress_service"), \
+         patch("app.agents.search_agent.run_search_agent", return_value=(curated, ["q"], [])):
+        job_tasks.execute_topic_job.run(job.id)
+
+    db.expire_all()
+    assert db.get(Job, job.id).status == "awaiting_approval"
+    assert _visible(db, test_user.id) == 0
+
+    _assert_cap_refusal(_approve(client, job, docs), consumed=0, limit=2, requested=3)
 
 
 # ---------------------------------------------------------------------------

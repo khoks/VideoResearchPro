@@ -10,9 +10,13 @@ import type { SourceType } from '../../../utils/jobForm';
 let host: HTMLDivElement;
 let root: Root;
 
-function mount(selected: SourceType[], capabilities: Record<string, boolean> | null) {
+function mount(selected: SourceType[], capabilities: Record<string, boolean> | null, numVideos = 10) {
   const onChange = vi.fn();
-  act(() => root.render(<SourceTypePicker selected={selected} onChange={onChange} capabilities={capabilities} />));
+  act(() =>
+    root.render(
+      <SourceTypePicker selected={selected} onChange={onChange} capabilities={capabilities} numVideos={numVideos} />,
+    ),
+  );
   const chips = Array.from(host.querySelectorAll<HTMLButtonElement>('button[data-source-type]'));
   const chip = (value: string) => chips.find((b) => b.dataset.sourceType === value);
   return { onChange, chips, chip };
@@ -72,5 +76,19 @@ describe('SourceTypePicker', () => {
     expect(host.textContent).toContain('Choose at least one source');
     mount(['hn_story'], {});
     expect(host.textContent).toContain('do not apply');
+  });
+
+  it('says how the results split across several sources', () => {
+    mount(['video', 'hn_story', 'podcast_episode'], {}, 10);
+    const note = host.querySelector('[data-testid="source-type-note"]')!;
+    expect(note.textContent).toContain('The 10 results you set below are shared across these sources: YouTube 4, Hacker News 3, Podcasts 3.');
+    expect(note.getAttribute('role')).toBeNull();
+  });
+
+  it('flags fewer results than sources', () => {
+    mount(['video', 'hn_story', 'podcast_episode'], {}, 2);
+    const note = host.querySelector('[data-testid="source-type-note"]')!;
+    expect(note.textContent).toContain('at least 3 results');
+    expect(note.getAttribute('role')).toBe('alert');
   });
 });

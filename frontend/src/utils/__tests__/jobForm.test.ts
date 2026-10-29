@@ -12,6 +12,7 @@ import {
   jobToFormState,
   offeredSourceTypes,
   parseDraft,
+  sourceTypeShares,
   templateNeedsChannels,
   templateToFormState,
   toggleSourceType,
@@ -157,6 +158,28 @@ describe('source types (S-1.5.13)', () => {
   it('refuses an empty choice', () => {
     const result = formToJobCreate({ ...DEFAULT_FORM, topic: 'x', sourceTypes: [] });
     expect(result).toEqual({ ok: false, error: 'Choose at least one source to search.' });
+  });
+
+  it('shares the results of a run across its sources, as the server does', () => {
+    // num_videos is the whole run's budget (the plan cap bounds it), so five
+    // sources never collect five times the cap.
+    expect(sourceTypeShares(100, ['video', 'reddit_post', 'hn_story', 'mastodon_post', 'bluesky_post'])).toEqual({
+      video: 20,
+      reddit_post: 20,
+      hn_story: 20,
+      mastodon_post: 20,
+      bluesky_post: 20,
+    });
+    // The remainder goes to the earlier sources in canonical order.
+    expect(sourceTypeShares(5, ['hn_story', 'video', 'reddit_post'])).toEqual({ video: 2, reddit_post: 2, hn_story: 1 });
+    expect(sourceTypeShares(10, ['video'])).toEqual({ video: 10 });
+  });
+
+  it('refuses fewer results than sources', () => {
+    const result = formToJobCreate({ ...DEFAULT_FORM, topic: 'x', numVideos: 2, sourceTypes: ['video', 'hn_story', 'podcast_episode'] });
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).toContain('at least 3 results');
+    expect(formToJobCreate({ ...DEFAULT_FORM, topic: 'x', numVideos: 3, sourceTypes: ['video', 'hn_story', 'podcast_episode'] }).ok).toBe(true);
   });
 
   it('templates store null for the default and the list otherwise', () => {

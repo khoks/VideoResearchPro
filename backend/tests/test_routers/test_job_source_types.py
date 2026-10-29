@@ -381,3 +381,261 @@ def test_a_version_saved_before_source_types_existed_is_not_re_versioned(client,
     assert r.status_code == 200 and r.json()["version"] == 1
     r = client.put(f"/api/v1/job-templates/{t['id']}", json={"parameters": {**params, "source_types": ["video", "hn_story"]}})
     assert r.json()["version"] == 2
+
+
+# ---------------------------------------------------------------------------
+# The run as a whole: budget, Whisper, BYOK, one fetch per document
+# ---------------------------------------------------------------------------
+
+class _RecordingConnector(_FakeConnector):
+    """A fake that ignores ``limit`` (so the worker must cut), and records each
+    fetch_text call: its kwargs, the candidate, and the BYOK tenant active
+    while it ran."""
+
+    def __init__(self, source_type: str, ids: list[str], *, whisper_only: bool = False):
+        super().__init__(source_type, ids)
+        self.whisper_only = whisper_only
+        self.fetches: list[dict] = []
+
+    def search(self, query: str, instructions: str = "", limit: int = 10):
+        self.searched.append(query)
+        return [
+            Candidate(
+                source_type=self.source_type,
+                source_id=f"{self.source_type}:{i}",
+                title=f"{self.source_type} {i}",
+                source_url=f"https://example.com/{self.source_type}/{i}",
+                creator_external_id=f"https://feeds.example.com/{self.source_type}.xml",
+            )
+            for i in self._ids
+        ]
+
+    def fetch_text(self, candidate, *, job_id: str = "", query: str = "", **kwargs):
+        from app.services import llm_service
+
+        self.fetches.append({
+            "source_id": candidate.source_id,
+            "creator_external_id": candidate.creator_external_id,
+            "kwargs": dict(kwargs),
+            "byok_tenant": llm_service._byok_context.get()[0],
+        })
+        if self.whisper_only:
+            # A podcast episode with no in-feed transcript: text only by Whisper.
+            if not kwargs.get("allow_whisper", True):
+                return None
+            source = "podcast_whisper"
+        else:
+            source = self.source_type
+        return ExtractedText(
+            segments=[{"text": f"body of {candidate.source_id}", "start": 0.0, "duration": 1.0}],
+            language="en",
+            text_source=source,
+            word_count=3,
+        )
+
+
+class _Unclosable:
+    """The test session, minus ``close``: the worker closes its session (and
+    ``_load_cached_segments`` opens and closes one) mid-run, which would
+    detach every row the extraction loop holds."""
+
+    def __init__(self, session):
+        self._session = session
+
+    def close(self):
+        pass
+
+    def __getattr__(self, name):
+        return getattr(self._session, name)
+
+
+@pytest.fixture
+def recording_sources():
+    snapshot = registry.all_connectors()
+    registry._reset_for_tests()
+    fakes = {
+        "reddit_post": _RecordingConnector("reddit_post", [f"r{i}" for i in range(6)]),
+        "hn_story": _RecordingConnector("hn_story", [f"h{i}" for i in range(6)]),
+        "podcast_episode": _RecordingConnector("podcast_episode", ["p1", "p2"], whisper_only=True),
+    }
+    for fake in fakes.values():
+        registry.register(fake)
+    yield fakes
+    registry._reset_for_tests()
+    for c in snapshot.values():
+        registry.register(c)
+
+
+@pytest.fixture
+def whole_run(db, monkeypatch):
+    """Search phase, approval through the API, then the real extraction task.
+    The search agent returns as many videos as it is asked for; Chroma, the
+    report agent and the era call are stubbed (no provider is reachable)."""
+    from app.config import settings
+    from app.services import progress_service
+
+    seen: dict[str, list] = {"search_agent_num_videos": [], "inserted": []}
+
+    def _search_agent(**kwargs):
+        seen["search_agent_num_videos"].append(kwargs["num_videos"])
+        videos = [
+            {**_YOUTUBE_VIDEO, "video_id": f"yt{i:09d}", "url": f"https://www.youtube.com/watch?v=yt{i:09d}"}
+            for i in range(kwargs["num_videos"])
+        ]
+        return videos, ["q1"], []
+
+    session = _Unclosable(db)
+    monkeypatch.setattr(job_tasks, "SessionLocal", lambda: session)
+    monkeypatch.setattr("app.agents.search_agent.run_search_agent", _search_agent)
+    for name in ("publish_progress", "publish_status_change", "publish_error"):
+        monkeypatch.setattr(progress_service, name, lambda *a, **kw: None)
+    monkeypatch.setattr(settings, "TEMPORAL_SCOPE_ENABLED", False)
+    monkeypatch.setattr(settings, "REPORT_INTERMEDIATES_ENABLED", False)
+    monkeypatch.setattr(job_tasks.chroma_service, "insert_chunks", lambda chunks: seen["inserted"].extend(chunks))
+    monkeypatch.setattr(
+        "app.agents.report_agent.run_report_agent",
+        lambda **kwargs: ({"total_videos": len(kwargs["transcript_chunks"])}, "<p>report</p>"),
+    )
+    monkeypatch.setattr(job_tasks, "build_report_html", lambda **kwargs: "<html></html>")
+    monkeypatch.setattr(job_tasks, "save_report", lambda job_id, html: f"reports/{job_id}.html")
+
+    def _search(job_id: str) -> None:
+        job_tasks.execute_topic_job.run(job_id)
+
+    def _extract(job_id: str) -> None:
+        job_tasks.resume_job_after_approval.run(job_id)
+
+    return seen, _search, _extract
+
+
+def _linked(db, job_id: str) -> list[Document]:
+    from app.models.job_video import JobVideo
+
+    return (
+        db.query(Document)
+        .join(JobVideo, JobVideo.document_id == Document.document_id)
+        .filter(JobVideo.job_id == job_id)
+        .all()
+    )
+
+
+def test_fewer_results_than_sources_is_422(client, db):
+    r = client.post("/api/v1/jobs", json=_topic(num_videos=2, source_types=["video", "hn_story", "podcast_episode"]))
+    assert r.status_code == 422
+    assert "at least 3" in _detail(r)
+    assert db.query(Job).count() == 0
+
+
+def test_the_run_shares_num_videos_across_its_sources(client, db, reddit_configured, recording_sources, whole_run):
+    """num_videos is the run's whole budget (the tier cap is checked against
+    it): three sources share it instead of each collecting it, even when a
+    connector returns more than it was asked for."""
+    seen, search, _ = whole_run
+    r = client.post("/api/v1/jobs", json=_topic(num_videos=4, source_types=["video", "reddit_post", "hn_story"]))
+    assert r.status_code == 201, r.text
+    job_id = r.json()["id"]
+
+    search(job_id)
+
+    assert db.query(Job).filter(Job.id == job_id).one().status == "awaiting_approval"
+    # 4 = 2 + 1 + 1, the remainder to the first source in canonical order.
+    assert seen["search_agent_num_videos"] == [2]
+    by_type: dict[str, int] = {}
+    for doc in _linked(db, job_id):
+        by_type[doc.source_type] = by_type.get(doc.source_type, 0) + 1
+    assert by_type == {"video": 2, "reddit_post": 1, "hn_story": 1}
+    assert sum(by_type.values()) <= 4
+    # Only the documents kept were fetched (and, for social sources, classified).
+    assert len(recording_sources["reddit_post"].fetches) == 1
+    assert len(recording_sources["hn_story"].fetches) == 1
+
+
+def test_a_podcast_run_spends_no_whisper_before_approval_and_the_budget_after(
+    client, db, test_user, recording_sources, whole_run, monkeypatch
+):
+    from app.config import settings
+
+    user_id = test_user.id
+    seen, search, extract = whole_run
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 1)
+    podcasts = recording_sources["podcast_episode"]
+
+    r = client.post("/api/v1/jobs", json=_topic(num_videos=2, source_types=["podcast_episode"]))
+    assert r.status_code == 201, r.text
+    job_id = r.json()["id"]
+    search(job_id)
+
+    # Search: each episode asked for its in-feed transcript only, no Whisper.
+    assert [f["kwargs"] for f in podcasts.fetches] == [{"allow_whisper": False}] * 2
+    docs = _linked(db, job_id)
+    assert sorted(d.transcript_status for d in docs) == ["pending", "pending"]
+    assert db.query(Job).filter(Job.id == job_id).one().status == "awaiting_approval"
+
+    podcasts.fetches.clear()
+    r = client.put(f"/api/v1/jobs/{job_id}/approve", json={"approved_video_ids": [d.document_id for d in docs]})
+    assert r.status_code == 200, r.text
+    extract(job_id)
+
+    # Extraction: WHISPER_MAX_PER_JOB=1 lets the first episode use Whisper and
+    # refuses the second; the feed URL reaches the connector, which re-reads it.
+    assert [f["kwargs"] for f in podcasts.fetches] == [{"allow_whisper": True}, {"allow_whisper": False}]
+    assert {f["creator_external_id"] for f in podcasts.fetches} == {"https://feeds.example.com/podcast_episode.xml"}
+    assert all(f["byok_tenant"] == user_id for f in podcasts.fetches)
+    statuses = sorted(d.transcript_status for d in _linked(db, job_id))
+    assert statuses == ["fetched", "unavailable"]
+    assert db.query(Job).filter(Job.id == job_id).one().status == "completed"
+
+
+def test_dispatched_documents_are_fetched_once_classified_under_byok_and_embedded(
+    client, db, test_user, reddit_configured, recording_sources, whole_run
+):
+    """The approved Reddit posts reach extraction (they were dropped there by
+    a join on the NULL video_id), are embedded from the text the search phase
+    fetched instead of being fetched again, and every fetch ran in the
+    submitter's BYOK context."""
+    from app.models.transcript_cache import TranscriptCache
+
+    user_id = test_user.id
+    seen, search, extract = whole_run
+    reddit = recording_sources["reddit_post"]
+
+    r = client.post("/api/v1/jobs", json=_topic(num_videos=3, source_types=["reddit_post"]))
+    assert r.status_code == 201, r.text
+    job_id = r.json()["id"]
+    search(job_id)
+
+    docs = _linked(db, job_id)
+    assert len(docs) == 3 and {d.transcript_status for d in docs} == {"fetched"}
+    doc_ids = {d.document_id for d in docs}
+    assert {row.document_id for row in db.query(TranscriptCache)} == doc_ids
+    assert all(f["byok_tenant"] == user_id for f in reddit.fetches)
+
+    r = client.put(f"/api/v1/jobs/{job_id}/approve", json={"approved_video_ids": sorted(doc_ids)})
+    assert r.status_code == 200, r.text
+    extract(job_id)
+
+    job = db.query(Job).filter(Job.id == job_id).one()
+    assert job.status == "completed", job.error_message
+    fetched = [f["source_id"] for f in reddit.fetches]
+    assert sorted(fetched) == sorted(set(fetched)) and len(fetched) == 3  # once each
+    assert {c["metadata"]["document_id"] for c in seen["inserted"]} == doc_ids
+    assert all(d.embedded_in_chroma for d in _linked(db, job_id))
+
+
+def test_a_template_stores_source_types_normalised(client, db):
+    """Order, repeats and whitespace are one recipe, and YouTube alone is the
+    default (None), exactly as a submission stores them."""
+    params = {"job_type": "topic", "num_videos": 10, "source_types": ["hn_story", "video"]}
+    t = client.post("/api/v1/job-templates", json={"name": "Forums", "parameters": params}).json()
+    assert t["parameters"]["source_types"] == ["video", "hn_story"]
+
+    swapped = {**params, "source_types": ["video", " hn_story ", "hn_story"]}
+    r = client.put(f"/api/v1/job-templates/{t['id']}", json={"parameters": swapped})
+    assert r.status_code == 200 and r.json()["version"] == 1
+
+    plain = {"job_type": "topic", "num_videos": 10, "source_types": [" video "]}
+    t = client.post("/api/v1/job-templates", json={"name": "Plain", "parameters": plain}).json()
+    assert t["parameters"]["source_types"] is None
+    assert t["problems"] == []
+    stored = db.query(JobTemplateVersion).filter_by(template_id=t["id"], version=1).one()
+    assert json.loads(stored.parameters_json)["source_types"] is None

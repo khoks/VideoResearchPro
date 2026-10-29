@@ -61,20 +61,28 @@ def needs_channels(params: TemplateParameters) -> bool:
     return params.job_type in ("channel", "subscription") and not params.channel_list
 
 
-def validate_parameters(params: TemplateParameters) -> None:
+def validate_parameters(params: TemplateParameters) -> TemplateParameters:
     """Raise ``InvalidParameters`` unless the parameters plus the run-time
     fields (a topic; channels when the recipe leaves them open) make a valid
-    ``JobCreate`` — the same validation a submission goes through."""
+    ``JobCreate`` — the same validation a submission goes through.
+
+    Returns the parameters as they are stored: ``source_types`` normalised
+    the way ``JobCreate`` normalises it (trimmed, de-duplicated, canonical
+    order) and None for the YouTube-only default or a non-topic recipe, so a
+    recipe sent with its sources in another order is the same version
+    (S-1.5.13)."""
     payload = params.model_dump()
     if params.job_type == "topic":
         payload["topic"] = "placeholder topic"
     if needs_channels(params):
         payload["channel_list"] = ["@placeholder"]
     try:
-        JobCreate(**payload)
+        job = JobCreate(**payload)
     except ValidationError as exc:
         first = exc.errors()[0]
         raise InvalidParameters(str(first.get("msg", "invalid parameters")).replace("Value error, ", ""))
+    source_types = None if job_source_types.is_default(job.source_types) else job.source_types
+    return params.model_copy(update={"source_types": source_types})
 
 
 def problems_for(params: TemplateParameters, user: User) -> list[str]:
@@ -211,7 +219,7 @@ def create_template(
     params: TemplateParameters,
     description: str | None = None,
 ) -> JobTemplate:
-    validate_parameters(params)
+    params = validate_parameters(params)
     if _name_taken(db, tenant_id, name):
         raise TemplateNameTaken(name)
     template = JobTemplate(
@@ -246,7 +254,7 @@ def update_template(
         raise BuiltinReadOnly(template.id)
     if params is not _UNSET:
         assert isinstance(params, TemplateParameters)
-        validate_parameters(params)
+        params = validate_parameters(params)
         if params.job_type != template.job_type:
             raise InvalidParameters("A template cannot change its research type.")
     if name is not _UNSET:

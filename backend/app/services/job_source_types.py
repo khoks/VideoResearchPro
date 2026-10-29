@@ -133,6 +133,25 @@ def is_default(values: Iterable[str] | None) -> bool:
     return values is None or list(values) == list(DEFAULT_SOURCE_TYPES)
 
 
+def share_limits(total: int, source_types: Iterable[str]) -> dict[str, int]:
+    """Split a run's ``num_videos`` across the types it searches.
+
+    ``num_videos`` is the run's whole document budget, the figure the tier
+    cap (``num_videos_cap``) is checked against, so a run that searches
+    several sources must not collect ``num_videos`` from each. The split is
+    as even as it can be; the remainder goes to the earlier types in the
+    given (canonical) order. ``JobCreate`` refuses fewer documents than
+    types, so every type normally gets at least one; a type left with zero
+    (a row written some other way) is simply not searched.
+    """
+    types = list(dict.fromkeys(source_types))
+    if not types:
+        return {}
+    budget = max(0, int(total))
+    base, remainder = divmod(budget, len(types))
+    return {st: base + (1 if i < remainder else 0) for i, st in enumerate(types)}
+
+
 def to_column(values: Iterable[str] | None) -> str | None:
     """What ``jobs.source_types_json`` stores: NULL for the default."""
     if values is None:

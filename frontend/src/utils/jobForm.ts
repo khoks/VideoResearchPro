@@ -86,6 +86,22 @@ export function unavailableSourceTypes(
   return canonicalSourceTypes(selected).filter((v) => !offered.includes(v));
 }
 
+/**
+ * How a run shares its `num_videos` across the sources it searches, mirroring
+ * the server's `job_source_types.share_limits`: as even as it can be, the
+ * remainder to the earlier sources in canonical order. `num_videos` is the
+ * run's whole budget (the plan cap is checked against it), never a per-source
+ * figure.
+ */
+export function sourceTypeShares(total: number, sourceTypes: readonly SourceType[]): Record<string, number> {
+  const types = canonicalSourceTypes(sourceTypes);
+  if (types.length === 0) return {};
+  const budget = Math.max(0, Math.floor(total));
+  const base = Math.floor(budget / types.length);
+  const remainder = budget % types.length;
+  return Object.fromEntries(types.map((v, i) => [v, base + (i < remainder ? 1 : 0)]));
+}
+
 /** Toggle one type, keeping canonical order. The result may be empty. */
 export function toggleSourceType(selected: readonly SourceType[], value: SourceType): SourceType[] {
   return selected.includes(value)
@@ -255,6 +271,12 @@ export function formToJobCreate(
     if (requireTopic && !form.topic.trim()) return { ok: false, error: 'Topic is required.' };
     const sources = canonicalSourceTypes(form.sourceTypes);
     if (sources.length === 0) return { ok: false, error: 'Choose at least one source to search.' };
+    if (form.numVideos < sources.length) {
+      return {
+        ok: false,
+        error: `Ask for at least ${sources.length} results, one per source: the number is shared across the sources you search.`,
+      };
+    }
     // S-1.5.13: YouTube alone is the server's default, so it is left out and
     // the request is the one every run sent before the choice existed.
     if (!isDefaultSourceTypes(sources)) data.source_types = sources;

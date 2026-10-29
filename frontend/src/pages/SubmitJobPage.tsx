@@ -19,7 +19,9 @@ import {
   jobToFormState,
   parseChannelList,
   parseDraft,
+  isDefaultSourceTypes,
   sourceTypeLabel,
+  sourceTypeShares,
   templateNeedsChannels,
   templateToFormState,
   unavailableSourceTypes,
@@ -188,10 +190,11 @@ export function SubmitJobPage() {
 
   const quotaEstimate = useMemo(() => {
     if (form.jobType === 'topic') {
-      // S-1.5.13: only the YouTube source spends YouTube quota.
+      // S-1.5.13: only the YouTube source spends YouTube quota, and only
+      // on its share of the run's results.
       if (!form.sourceTypes.includes('video')) return 0;
       const broadSearches = 100 * 5;
-      const details = Math.max(0, form.numVideos) * 1;
+      const details = Math.max(0, sourceTypeShares(form.numVideos, form.sourceTypes).video ?? 0) * 1;
       const preferredLines = parseChannelList(form.preferredChannels);
       const preferredCost = preferredLines.length * (100 + 1 + 1);
       return broadSearches + details + preferredCost;
@@ -433,6 +436,7 @@ export function SubmitJobPage() {
                     selected={form.sourceTypes}
                     onChange={(next) => update('sourceTypes', next)}
                     capabilities={capabilities}
+                    numVideos={form.numVideos}
                   />
                 )}
               </FormField>
@@ -481,8 +485,10 @@ export function SubmitJobPage() {
                 )}
               </FormField>
               <FormField
-                label="Number of videos"
-                helperText={`Your ${tier} plan allows up to ${numVideosCap} videos per research run.`}
+                label={isDefaultSourceTypes(form.sourceTypes) ? 'Number of videos' : 'Number of results'}
+                helperText={`Your ${tier} plan allows up to ${numVideosCap} ${
+                  isDefaultSourceTypes(form.sourceTypes) ? 'videos' : 'results, across all sources,'
+                } per research run.`}
               >
                 {(id) => (
                   <Input

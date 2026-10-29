@@ -367,12 +367,65 @@ def _resolve_source_types(job: Job) -> list[str]:
     return job_source_types.from_column(job.source_types_json, job_id=job.id)
 
 
+# Source types whose connector can fall back to OpenAI Whisper, and the
+# ``text_source`` values that mean it did. Their ``fetch_text`` takes
+# ``allow_whisper``; WHISPER_MAX_PER_JOB bounds every one of them, not only
+# YouTube (S-1.5.13: podcast search became reachable from the API).
+_WHISPER_FALLBACK_SOURCE_TYPES = frozenset({"video", "podcast_episode"})
+_WHISPER_TEXT_SOURCES = frozenset({"whisper", "podcast_whisper"})
+
+
+def _cache_document_text(db, document: Document, extracted) -> None:
+    """Keep a non-video document's fetched segments in ``transcript_cache``.
+
+    Keyed on ``document_id`` (D-070): ``video_id`` is NULL for these rows.
+    The search phase fetches a dispatched candidate's text (the connector
+    classifies it for the approval card, D-023); without this the segments
+    were thrown away and extraction fetched every approved document a
+    second time. YouTube transcripts are cached by ``youtube_service``.
+
+    Once the document is embedded its cached text is what its chunks were
+    built from, so a later run's fresher fetch does not replace it.
+    """
+    if document.source_type == "video" or extracted is None:
+        return
+    # A row staged earlier in this batch is not in the identity map yet
+    # (the same candidate twice in one search), so look in db.new as well.
+    row = db.get(TranscriptCache, document.document_id) or next(
+        (
+            obj
+            for obj in db.new
+            if isinstance(obj, TranscriptCache) and obj.document_id == document.document_id
+        ),
+        None,
+    )
+    if row is not None and bool(getattr(document, "embedded_in_chroma", False)):
+        return
+    payload = json.dumps(extracted.segments)
+    if row is None:
+        db.add(
+            TranscriptCache(
+                document_id=document.document_id,
+                video_id=None,
+                segments_json=payload,
+                language=extracted.language,
+                source=extracted.text_source,
+            )
+        )
+    else:
+        row.segments_json = payload
+        row.language = extracted.language
+        row.source = extracted.text_source
+        row.fetched_at = datetime.now(timezone.utc)
+
+
 def _dispatch_and_store_non_video_sources(
     db,
     job: Job,
     *,
     source_types: list[str],
     limit_per_type: int = 10,
+    limits: dict[str, int] | None = None,
 ) -> int:
     """For every non-video source_type on the job, run the dispatcher,
     fetch text inline (the connector classifies during fetch_text per
@@ -384,6 +437,18 @@ def _dispatch_and_store_non_video_sources(
     search-agent count for the user-visible "found N candidates"
     message.
 
+    ``limits`` is the per-type share of the run's ``num_videos``
+    (``job_source_types.share_limits``); a type missing from it gets
+    ``limit_per_type``. Each type's candidates are cut to its limit here
+    too, so a connector that returns more than it was asked for cannot
+    push the run past its cap.
+
+    No Whisper before approval: connectors that can fall back to it are
+    called with ``allow_whisper=False``, and a candidate without text stays
+    ``pending`` for extraction, where the job's Whisper budget applies.
+    The fetched segments are cached (``_cache_document_text``) so
+    extraction does not fetch the same document again.
+
     "Video" source_type is *not* handled here — the existing search
     agent (LangGraph) owns that path and produces a richer ranked
     output than `connector.search()` alone. This helper handles only
@@ -392,7 +457,10 @@ def _dispatch_and_store_non_video_sources(
     """
     from app.services.connector_dispatch import dispatch_search
 
-    non_video = [st for st in source_types if st != "video"]
+    def _limit(st: str) -> int:
+        return max(0, (limits or {}).get(st, limit_per_type))
+
+    non_video = [st for st in source_types if st != "video" and _limit(st) > 0]
     if not non_video:
         return 0
 
@@ -406,7 +474,7 @@ def _dispatch_and_store_non_video_sources(
         non_video,
         query=job.topic or "",
         instructions=job.search_instructions or "",
-        limit_per_type=limit_per_type,
+        limit_per_type=max(_limit(st) for st in non_video),
         job_id=job.id,
     )
 
@@ -426,14 +494,15 @@ def _dispatch_and_store_non_video_sources(
 
     stored = 0
     for st, candidates in result.candidates_by_source_type.items():
+        if not candidates:
+            continue
         connector = connector_for(st)
-        for cand in candidates:
+        fetch_kwargs: dict = {"job_id": job.id, "query": job.topic or ""}
+        if st in _WHISPER_FALLBACK_SOURCE_TYPES:
+            fetch_kwargs["allow_whisper"] = False
+        for cand in candidates[: _limit(st)]:
             try:
-                extracted = connector.fetch_text(
-                    cand,
-                    job_id=job.id,
-                    query=job.topic or "",
-                )
+                extracted = connector.fetch_text(cand, **fetch_kwargs)
             except Exception:
                 logger.exception(
                     "[job:%s] fetch_text failed for %s/%s",
@@ -448,13 +517,15 @@ def _dispatch_and_store_non_video_sources(
                 classification = extracted.extra["classification"]
 
             try:
-                _upsert_candidate_and_link(
+                document = _upsert_candidate_and_link(
                     db,
                     job.id,
                     cand,
                     classification=classification,
                     extracted_text=extracted,
                 )
+                if document is not None:
+                    _cache_document_text(db, document, extracted)
                 stored += 1
             except Exception:
                 logger.exception(
@@ -702,14 +773,23 @@ def _ensure_era(db, video: Document, segments: list[dict], job_id: str) -> None:
         )
 
 
-def _load_cached_segments(video_id: str) -> tuple[list[dict], str] | None:
-    """Load cached transcript segments for ``video_id`` from TranscriptCache.
+def _load_cached_segments(
+    video_id: str | None, document_id: str | None = None
+) -> tuple[list[dict], str] | None:
+    """Load cached transcript segments from TranscriptCache.
+
+    Looks up ``document_id`` first (the table's key, D-070, and the only key
+    a non-video document has), then the legacy ``video_id``.
 
     Returns (segments, language) on hit, or None on miss / corrupt row.
     """
     db = SessionLocal()
     try:
-        row = db.query(TranscriptCache).filter(TranscriptCache.video_id == video_id).first()
+        row = None
+        if document_id:
+            row = db.get(TranscriptCache, document_id)
+        if row is None and video_id:
+            row = db.query(TranscriptCache).filter(TranscriptCache.video_id == video_id).first()
         if row is None:
             return None
         try:
@@ -862,6 +942,12 @@ def execute_topic_job(self, job_id: str) -> None:
         # (richer ranking); non-video uses the connector_dispatch path.
         source_types = _resolve_source_types(job)
         wants_video = "video" in source_types
+        # S-1.5.13: num_videos is the run's whole budget (the tier cap is
+        # checked against it), shared across the sources it searches. A
+        # YouTube-only run keeps all of it, exactly as before.
+        from app.services import job_source_types
+
+        limits = job_source_types.share_limits(job.num_videos or 10, source_types)
 
         curated_videos: list[dict] = []
         queries_used: list[str] = []
@@ -890,7 +976,7 @@ def execute_topic_job(self, job_id: str) -> None:
             with llm_service.byok_context(job.tenant_id, db):
                 curated_videos, queries_used, unresolved_channels = run_search_agent(
                     topic=job.topic,
-                    num_videos=job.num_videos,
+                    num_videos=limits.get("video", job.num_videos),
                     search_instructions=job.search_instructions or "",
                     min_duration=job.min_duration_minutes,
                     max_duration=job.max_duration_minutes,
@@ -951,13 +1037,19 @@ def execute_topic_job(self, job_id: str) -> None:
 
         # Non-video path: dispatch the configured social/etc connectors,
         # fetch text inline (which classifies per D-023), persist via
-        # the source-type-agnostic helper.
-        non_video_count = _dispatch_and_store_non_video_sources(
-            db,
-            job,
-            source_types=source_types,
-            limit_per_type=job.num_videos or 10,
-        )
+        # the source-type-agnostic helper. Inside the submitter's BYOK
+        # context, like the search agent above: the inline
+        # social_classify_stance calls use their keys and E-1.13 overrides.
+        from app.services import llm_service
+
+        with llm_service.byok_context(job.tenant_id, db):
+            non_video_count = _dispatch_and_store_non_video_sources(
+                db,
+                job,
+                source_types=source_types,
+                limit_per_type=job.num_videos or 10,
+                limits=limits,
+            )
         if non_video_count:
             # D-063: the video branch grants its candidates above; the
             # dispatched ones (text already fetched) need the same grant.
@@ -1133,9 +1225,12 @@ def resume_job_after_approval(self, job_id: str) -> None:
 
         # PHASE: EXTRACTING
         # `approved` now lives on the JobVideo link row, not on Document.
+        # Joined on document_id (D-070): a Reddit / HN / podcast document has
+        # NULL video_id, and joining on it dropped every approved non-video
+        # document from extraction (S-1.5.13).
         approved_rows = (
             db.query(Document)
-            .join(JobVideo, JobVideo.video_id == Document.video_id)
+            .join(JobVideo, JobVideo.document_id == Document.document_id)
             .filter(JobVideo.job_id == job_id, JobVideo.approved.is_(True))
             .all()
         )
@@ -1172,6 +1267,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
             settings, "CHROMA_GLOBAL_COLLECTION_NAME", "pratidhvani_global"
         )
         visual_budget = VisualBudget(settings.VISUAL_MAX_FRAMES_PER_JOB)
+        from app.services import llm_service
 
         for i, video in enumerate(approved_videos):
             if _is_cancelled(db, job_id):
@@ -1186,7 +1282,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
             # agent still sees this video's content, but skip fetch + Chroma
             # insert. JobVideo link is assumed to already exist.
             if already_fetched and already_embedded:
-                cached = _load_cached_segments(video.video_id)
+                cached = _load_cached_segments(video.video_id, video.document_id)
                 if cached is not None:
                     segments, cached_language = cached
                     _ensure_era(db, video, segments, job_id)
@@ -1215,9 +1311,10 @@ def resume_job_after_approval(self, job_id: str) -> None:
                     already_embedded = False
 
             # Previously fetched but never embedded (e.g. subscription ingest
-            # saved the transcript without building the RAG). Embed it now.
+            # saved the transcript without building the RAG, or a topic run's
+            # search phase fetched a dispatched candidate). Embed it now.
             if already_fetched and not already_embedded:
-                cached = _load_cached_segments(video.video_id)
+                cached = _load_cached_segments(video.video_id, video.document_id)
                 if cached is not None:
                     segments, cached_language = cached
                     _ensure_era(db, video, segments, job_id)
@@ -1253,7 +1350,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 )
                 connector = connector_for(video.source_type)
                 fetch_kwargs: dict = {"job_id": job_id, "query": job.topic or ""}
-                if video.source_type == "video":
+                if video.source_type in _WHISPER_FALLBACK_SOURCE_TYPES:
                     whisper_allowed = whisper_used < whisper_budget
                     fetch_kwargs["allow_whisper"] = whisper_allowed
                     if not whisper_allowed and not whisper_budget_announced:
@@ -1263,19 +1360,26 @@ def resume_job_after_approval(self, job_id: str) -> None:
                             f"({whisper_used}/{whisper_budget}); remaining videos "
                             "use caption-fetch only (WHISPER_MAX_PER_JOB)"
                         )
-                extracted = connector.fetch_text(
-                    Candidate(
-                        source_type=video.source_type,
-                        source_id=video.source_id,
-                        title=video.title,
-                        source_url=video.source_url or video.url,
-                    ),
-                    **fetch_kwargs,
-                )
-                if extracted is not None and extracted.text_source == "whisper":
+                # The submitter's BYOK context, as for the search agent and
+                # the report: a social connector classifies inline (D-023).
+                with llm_service.byok_context(job.tenant_id, db):
+                    extracted = connector.fetch_text(
+                        Candidate(
+                            source_type=video.source_type,
+                            source_id=video.source_id,
+                            title=video.title,
+                            source_url=video.source_url or video.url,
+                            # A podcast's feed URL, which its fetch_text
+                            # re-reads; other connectors ignore it.
+                            creator_external_id=video.channel_id,
+                        ),
+                        **fetch_kwargs,
+                    )
+                if extracted is not None and extracted.text_source in _WHISPER_TEXT_SOURCES:
                     whisper_used += 1
 
                 if extracted:
+                    _cache_document_text(db, video, extracted)
                     transcript = extracted.segments
                     actual_language = extracted.language
                     word_count = extracted.word_count

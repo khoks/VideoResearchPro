@@ -41,7 +41,8 @@ class JobCreate(BaseModel):
     # YouTube only, exactly as before. Validated against what this install
     # can search (an unknown, library-only or unconfigured type is a 422)
     # and put in canonical order; `video` runs the search agent, the rest
-    # go through `connector_dispatch`.
+    # go through `connector_dispatch`. `num_videos` is shared across them
+    # (`job_source_types.share_limits`), so the tier cap bounds the run.
     source_types: list[str] | None = Field(default=None, max_length=32)
 
     # Channel fields
@@ -75,6 +76,17 @@ class JobCreate(BaseModel):
                     "subscription runs read YouTube channels"
                 )
             self.source_types = None
+        if (
+            self.job_type == "topic"
+            and self.source_types is not None
+            and self.num_videos < len(self.source_types)
+        ):
+            # The run shares num_videos across its sources (the tier cap
+            # bounds the whole run, not each source), so each needs one.
+            raise ValueError(
+                f"num_videos must be at least {len(self.source_types)}, one per "
+                "source type: a run shares num_videos across the sources it searches"
+            )
         return self
 
 

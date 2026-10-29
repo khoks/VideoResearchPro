@@ -4,6 +4,7 @@ import {
   isDefaultSourceTypes,
   offeredSourceTypes,
   sourceTypeLabel,
+  sourceTypeShares,
   toggleSourceType,
   unavailableSourceTypes,
   type SourceType,
@@ -14,6 +15,8 @@ export interface SourceTypePickerProps {
   onChange: (next: SourceType[]) => void;
   /** `/health` capabilities; null until the first poll answers. */
   capabilities: Record<string, boolean> | null;
+  /** The run's `num_videos`, shared across the chosen sources. */
+  numVideos: number;
 }
 
 /**
@@ -21,14 +24,16 @@ export interface SourceTypePickerProps {
  * this install can search: Reddit, web articles and X / Twitter need an
  * operator credential and appear when `/health` reports it (T-1.5.9.3). A run
  * or template that carried a source the install no longer has shows it struck
- * through, to be removed before submitting, never silently dropped.
+ * through, to be removed before submitting, never silently dropped. The run's
+ * `num_videos` is shared across the chosen sources (the plan cap bounds the
+ * whole run), and the note says how it splits.
  */
-export function SourceTypePicker({ selected, onChange, capabilities }: SourceTypePickerProps) {
+export function SourceTypePicker({ selected, onChange, capabilities, numVideos }: SourceTypePickerProps) {
   const c = useColors();
   const offered = offeredSourceTypes(capabilities);
   const unavailable = unavailableSourceTypes(selected, capabilities);
   const youtube = selected.includes('video');
-  const others = selected.some((v) => v !== 'video');
+  const tooFew = selected.length > 1 && numVideos < selected.length;
 
   const chip = (value: SourceType, label: string, on: boolean, broken = false) => (
     <button
@@ -63,11 +68,24 @@ export function SourceTypePicker({ selected, onChange, capabilities }: SourceTyp
     } not set up on this install. Remove ${unavailable.length === 1 ? 'it' : 'them'} to submit.`;
   } else if (selected.length === 0) {
     note = 'Choose at least one source to search.';
-  } else if (!youtube) {
-    note = 'Without YouTube, the duration, preferred-channel and channel-type settings below do not apply.';
-  } else if (others) {
-    note = 'Each other source returns up to the number of videos you set below.';
+  } else if (tooFew) {
+    note = `Ask for at least ${selected.length} results below, one per source.`;
+  } else {
+    const parts: string[] = [];
+    if (selected.length > 1) {
+      const shares = sourceTypeShares(numVideos, selected);
+      parts.push(
+        `The ${numVideos} results you set below are shared across these sources: ${selected
+          .map((v) => `${sourceTypeLabel(v)} ${shares[v] ?? 0}`)
+          .join(', ')}.`,
+      );
+    }
+    if (!youtube) {
+      parts.push('Without YouTube, the duration, preferred-channel and channel-type settings below do not apply.');
+    }
+    note = parts.length > 0 ? parts.join(' ') : null;
   }
+  const alert = unavailable.length > 0 || selected.length === 0 || tooFew;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
@@ -91,13 +109,13 @@ export function SourceTypePicker({ selected, onChange, capabilities }: SourceTyp
       {note && !isDefaultSourceTypes(selected) && (
         <p
           data-testid="source-type-note"
-          role={unavailable.length > 0 || selected.length === 0 ? 'alert' : undefined}
+          role={alert ? 'alert' : undefined}
           style={{
             margin: 0,
             fontFamily: fonts.ui,
             fontSize: fontSize.sm,
             lineHeight: lineHeight.snug,
-            color: unavailable.length > 0 || selected.length === 0 ? c.error : c.textSecondary,
+            color: alert ? c.error : c.textSecondary,
           }}
         >
           {note}

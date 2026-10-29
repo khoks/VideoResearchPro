@@ -45,7 +45,7 @@ from app.models.job_video import JobVideo  # noqa: E402
 from app.services import chroma_service  # noqa: E402
 from app.sources import connector_for  # noqa: E402
 from app.sources.types import Candidate  # noqa: E402
-from app.tasks.job_tasks import _build_video_metadata  # noqa: E402
+from app.tasks.job_tasks import _build_video_metadata, _record_caption_track  # noqa: E402
 from app.utils.chunking import chunk_transcript  # noqa: E402
 
 
@@ -121,6 +121,7 @@ def main(argv: list[str] | None = None) -> int:
                 doc.transcripted_at = datetime.now(timezone.utc)
             if hasattr(doc, "transcript_source"):
                 doc.transcript_source = extracted.text_source
+            _record_caption_track(doc, extracted)
 
             chunks = chunk_transcript(
                 extracted.segments,

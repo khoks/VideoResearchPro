@@ -1,0 +1,3948 @@
+{
+ "story": "S-1.11.11",
+ "measured_at": "2026-10-26T04:13:08+00:00",
+ "method": "scripts/measure_caption_tracks.py, read-only; caption tracks from the player response youtube-transcript-api parses, snippet.defaultAudioLanguage from videos.list (1 unit for all 37 ids); listings paced at 4.0 s; no IP-block signal",
+ "choices": [
+  {
+   "video_id": "17tGxiPatPg",
+   "declared_audio_language": "hi",
+   "stored_language": null,
+   "error": "ChunkedEncodingError"
+  },
+  {
+   "video_id": "1v3_AQ26jZ0",
+   "declared_audio_language": "hi",
+   "stored_language": "bn",
+   "player_original_audio": "hi",
+   "tracks": [
+    "bn(auto)",
+    "en-US(auto)",
+    "hi(auto)"
+   ],
+   "old_choice": "bn(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "player",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": [
+    "bn",
+    "en-US"
+   ]
+  },
+  {
+   "video_id": "81ymPYEtFOw",
+   "declared_audio_language": "hi",
+   "stored_language": null,
+   "player_original_audio": "hi",
+   "tracks": [
+    "bn(auto)",
+    "hi(auto)"
+   ],
+   "old_choice": "bn(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "player",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": [
+    "bn"
+   ]
+  },
+  {
+   "video_id": "C6YtPJxNULA",
+   "declared_audio_language": "hi",
+   "stored_language": null,
+   "player_original_audio": null,
+   "tracks": [
+    "en(manual)",
+    "hi(auto)"
+   ],
+   "old_choice": "en(manual)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "data_api",
+   "data_api_lookup_needed": true,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "J-HV7gNVdd0",
+   "declared_audio_language": "hi",
+   "stored_language": null,
+   "player_original_audio": null,
+   "tracks": [
+    "hi(auto)"
+   ],
+   "old_choice": "hi(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "Y4qO9unerGs",
+   "declared_audio_language": null,
+   "stored_language": "hi",
+   "player_original_audio": "hi",
+   "tracks": [
+    "hi(auto)"
+   ],
+   "old_choice": "hi(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "player",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "cE-Ej1ycXtk",
+   "declared_audio_language": "hi",
+   "stored_language": "hi",
+   "player_original_audio": null,
+   "tracks": [
+    "hi(auto)"
+   ],
+   "old_choice": "hi(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "eIicc0UTd4M",
+   "declared_audio_language": null,
+   "stored_language": null,
+   "error": "TranscriptsDisabled"
+  },
+  {
+   "video_id": "lsf060bLH_Y",
+   "declared_audio_language": "hi",
+   "stored_language": "hi",
+   "player_original_audio": null,
+   "tracks": [
+    "hi(auto)"
+   ],
+   "old_choice": "hi(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "ltr-znVaqgc",
+   "declared_audio_language": "hi",
+   "stored_language": null,
+   "player_original_audio": "hi",
+   "tracks": [
+    "en-US(auto)",
+    "hi(auto)"
+   ],
+   "old_choice": "en-US(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "player",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": [
+    "en-US"
+   ]
+  },
+  {
+   "video_id": "24S3sZfCxLQ",
+   "declared_audio_language": null,
+   "stored_language": "en",
+   "player_original_audio": null,
+   "tracks": [
+    "en(auto)"
+   ],
+   "old_choice": "en(auto)",
+   "new_choice": "en(auto)",
+   "match": "spoken",
+   "spoken_language": "en",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "8Hdx8IGL1sc",
+   "declared_audio_language": "en-IN",
+   "stored_language": null,
+   "player_original_audio": "en-US",
+   "tracks": [
+    "ar(auto)",
+    "bn(auto)",
+    "nl-NL(auto)",
+    "en(auto)",
+    "fr-FR(auto)",
+    "de-DE(auto)",
+    "iw(auto)",
+    "hi(auto)",
+    "id(auto)",
+    "it(auto)",
+    "ja(auto)",
+    "ko(auto)",
+    "ml(auto)",
+    "pl(auto)",
+    "pt-BR(auto)",
+    "pa(auto)",
+    "ru(auto)",
+    "es-US(auto)",
+    "ta(auto)",
+    "te(auto)",
+    "uk(auto)"
+   ],
+   "old_choice": "en(auto)",
+   "new_choice": "en(auto)",
+   "match": "spoken",
+   "spoken_language": "en-US",
+   "spoken_language_source": "player",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": [
+    "ar",
+    "bn",
+    "nl-NL",
+    "fr-FR",
+    "de-DE",
+    "iw",
+    "hi",
+    "id",
+    "it",
+    "ja",
+    "ko",
+    "ml",
+    "pl",
+    "pt-BR",
+    "pa",
+    "ru",
+    "es-US",
+    "ta",
+    "te",
+    "uk"
+   ]
+  },
+  {
+   "video_id": "9tigHWH-UD8",
+   "declared_audio_language": "en",
+   "stored_language": null,
+   "player_original_audio": null,
+   "tracks": [
+    "en(manual)",
+    "hi(auto)"
+   ],
+   "old_choice": "en(manual)",
+   "new_choice": "en(manual)",
+   "match": "spoken",
+   "spoken_language": "en",
+   "spoken_language_source": "data_api",
+   "data_api_lookup_needed": true,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "HVkSGvZi-WY",
+   "declared_audio_language": "en-IN",
+   "stored_language": null,
+   "player_original_audio": null,
+   "tracks": [
+    "hi(auto)"
+   ],
+   "old_choice": "hi(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "IcVYyF3EEbk",
+   "declared_audio_language": "en-IN",
+   "stored_language": null,
+   "player_original_audio": "hi",
+   "tracks": [
+    "en(auto)"
+   ],
+   "old_choice": "en(auto)",
+   "new_choice": "en(auto)",
+   "match": "fallback_english_first",
+   "spoken_language": null,
+   "spoken_language_source": null,
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "KYo_oVmW91w",
+   "declared_audio_language": "en-GB",
+   "stored_language": "en",
+   "player_original_audio": "en-US",
+   "tracks": [
+    "en(auto)"
+   ],
+   "old_choice": "en(auto)",
+   "new_choice": "en(auto)",
+   "match": "spoken",
+   "spoken_language": "en-US",
+   "spoken_language_source": "player",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "O0jiCtwO-Ig",
+   "declared_audio_language": "hi",
+   "stored_language": "hi",
+   "player_original_audio": null,
+   "tracks": [
+    "hi(auto)"
+   ],
+   "old_choice": "hi(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "P24WbUcIwSk",
+   "declared_audio_language": "en-IN",
+   "stored_language": "en",
+   "player_original_audio": null,
+   "tracks": [
+    "en(auto)"
+   ],
+   "old_choice": "en(auto)",
+   "new_choice": "en(auto)",
+   "match": "spoken",
+   "spoken_language": "en",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "aYqgXabUWWs",
+   "declared_audio_language": "en-GB",
+   "stored_language": null,
+   "player_original_audio": null,
+   "tracks": [
+    "en(auto)"
+   ],
+   "old_choice": "en(auto)",
+   "new_choice": "en(auto)",
+   "match": "spoken",
+   "spoken_language": "en",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "cpg78ouK54I",
+   "declared_audio_language": "en-IN",
+   "stored_language": null,
+   "player_original_audio": null,
+   "tracks": [
+    "en(auto)"
+   ],
+   "old_choice": "en(auto)",
+   "new_choice": "en(auto)",
+   "match": "spoken",
+   "spoken_language": "en",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "8RCOFdilri4",
+   "declared_audio_language": "en-IN",
+   "stored_language": null,
+   "player_original_audio": null,
+   "tracks": [
+    "hi(auto)"
+   ],
+   "old_choice": "hi(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "Fi_kMc6hLxI",
+   "declared_audio_language": "en-IN",
+   "stored_language": "en",
+   "player_original_audio": "en-US",
+   "tracks": [
+    "en(auto)",
+    "en-IN(manual)"
+   ],
+   "old_choice": "en(auto)",
+   "new_choice": "en-IN(manual)",
+   "match": "spoken",
+   "spoken_language": "en-US",
+   "spoken_language_source": "player",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "GSA8jvzIjjQ",
+   "declared_audio_language": "hi",
+   "stored_language": "hi",
+   "player_original_audio": null,
+   "tracks": [
+    "hi(auto)"
+   ],
+   "old_choice": "hi(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "IbcYNtZ8HZY",
+   "declared_audio_language": "en",
+   "stored_language": null,
+   "player_original_audio": "en-US",
+   "tracks": [
+    "hi(auto)",
+    "ja(auto)",
+    "ta(auto)",
+    "uk(auto)"
+   ],
+   "old_choice": "hi(auto)",
+   "new_choice": "hi(auto)",
+   "match": "fallback_original_asr",
+   "spoken_language": null,
+   "spoken_language_source": null,
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": [
+    "ja",
+    "ta",
+    "uk"
+   ]
+  },
+  {
+   "video_id": "PCgfIPFZhgs",
+   "declared_audio_language": "en-IN",
+   "stored_language": "en",
+   "player_original_audio": null,
+   "tracks": [
+    "en(auto)"
+   ],
+   "old_choice": "en(auto)",
+   "new_choice": "en(auto)",
+   "match": "spoken",
+   "spoken_language": "en",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "QSlta0EnGJo",
+   "declared_audio_language": "hi",
+   "stored_language": "hi",
+   "player_original_audio": null,
+   "tracks": [
+    "hi(auto)"
+   ],
+   "old_choice": "hi(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "YSux7rtMo9k",
+   "declared_audio_language": "en-IN",
+   "stored_language": null,
+   "player_original_audio": null,
+   "tracks": [
+    "en(auto)"
+   ],
+   "old_choice": "en(auto)",
+   "new_choice": "en(auto)",
+   "match": "spoken",
+   "spoken_language": "en",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "dLe8AMGN00g",
+   "declared_audio_language": "hi",
+   "stored_language": null,
+   "player_original_audio": null,
+   "tracks": [
+    "hi(auto)"
+   ],
+   "old_choice": "hi(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "v684N5MLajA",
+   "declared_audio_language": null,
+   "stored_language": null,
+   "player_original_audio": null,
+   "tracks": [
+    "en(auto)"
+   ],
+   "old_choice": "en(auto)",
+   "new_choice": "en(auto)",
+   "match": "spoken",
+   "spoken_language": "en",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "v6CuYULP3tM",
+   "declared_audio_language": null,
+   "stored_language": "en-US",
+   "player_original_audio": "hi",
+   "tracks": [
+    "en-US(auto)",
+    "hi(auto)"
+   ],
+   "old_choice": "en-US(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "player",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": [
+    "en-US"
+   ]
+  },
+  {
+   "video_id": "-QFHIoCo-Ko",
+   "declared_audio_language": "en-US",
+   "stored_language": "welsh",
+   "player_original_audio": "en-US",
+   "tracks": [
+    "en(auto)"
+   ],
+   "old_choice": "en(auto)",
+   "new_choice": "en(auto)",
+   "match": "spoken",
+   "spoken_language": "en-US",
+   "spoken_language_source": "player",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "0sk72TEs3zc",
+   "declared_audio_language": "hi",
+   "stored_language": "hi",
+   "player_original_audio": null,
+   "tracks": [
+    "hi(auto)"
+   ],
+   "old_choice": "hi(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "5AuuOZ4vuxI",
+   "declared_audio_language": "hi",
+   "stored_language": "bn",
+   "player_original_audio": "hi",
+   "tracks": [
+    "bn(auto)",
+    "en-US(auto)",
+    "hi(auto)"
+   ],
+   "old_choice": "bn(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "player",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": [
+    "bn",
+    "en-US"
+   ]
+  },
+  {
+   "video_id": "6lgc8xPTDS0",
+   "declared_audio_language": "hi",
+   "stored_language": "hi",
+   "player_original_audio": null,
+   "tracks": [
+    "hi(auto)"
+   ],
+   "old_choice": "hi(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "HlzQFTOQ5c4",
+   "declared_audio_language": "kn",
+   "stored_language": "kn",
+   "player_original_audio": null,
+   "tracks": [
+    "kn(auto)"
+   ],
+   "old_choice": "kn(auto)",
+   "new_choice": "kn(auto)",
+   "match": "spoken",
+   "spoken_language": "kn",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "VbMKPDQK5Tw",
+   "declared_audio_language": null,
+   "stored_language": "hi",
+   "player_original_audio": null,
+   "tracks": [
+    "hi(auto)"
+   ],
+   "old_choice": "hi(auto)",
+   "new_choice": "hi(auto)",
+   "match": "spoken",
+   "spoken_language": "hi",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  },
+  {
+   "video_id": "zMyy0y03tB0",
+   "declared_audio_language": "kn",
+   "stored_language": "kn",
+   "player_original_audio": null,
+   "tracks": [
+    "kn(auto)"
+   ],
+   "old_choice": "kn(auto)",
+   "new_choice": "kn(auto)",
+   "match": "spoken",
+   "spoken_language": "kn",
+   "spoken_language_source": "asr_track",
+   "data_api_lookup_needed": false,
+   "skipped_dubbed": []
+  }
+ ],
+ "refetch_dry_run": {
+  "ran_at": "2026-10-29T09:15:48+00:00",
+  "skipped": {
+   "whisper": 134,
+   "already_checked": 0
+  },
+  "candidates": 93,
+  "listed": 93,
+  "counts": {
+   "ok": 90,
+   "refetch": 3
+  },
+  "interval_seconds": 4.0,
+  "stopped": null,
+  "owner_decisions": [],
+  "rows": [
+   {
+    "video_id": "0sk72TEs3zc",
+    "status": "ok",
+    "cached_language": "hi",
+    "declared_audio_language": "hi",
+    "chosen_language": "hi",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "hi",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "1L509JK8p1I",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": null,
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "player",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "1v3_AQ26jZ0",
+    "status": "refetch",
+    "cached_language": "bn",
+    "declared_audio_language": "hi",
+    "chosen_language": "hi",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "hi",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": [
+     "bn",
+     "en-US"
+    ]
+   },
+   {
+    "video_id": "24S3sZfCxLQ",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": null,
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "asr_track",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "3GAxd90fEE4",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "3lb_4OEOykc",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "4_2j5wgt_ds",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": [
+     "bn",
+     "nl-NL",
+     "fr-FR",
+     "de-DE",
+     "iw",
+     "hi",
+     "id",
+     "it",
+     "ja",
+     "ko",
+     "ml",
+     "pl",
+     "pt-BR",
+     "ru",
+     "es-US",
+     "uk"
+    ]
+   },
+   {
+    "video_id": "4e3lK7OhuOg",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "4nZl32FwU-o",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "4wMRXmLpdA8",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "4xPQkatjsbg",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": null,
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "asr_track",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "50SGBO3Psqk",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": null,
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "asr_track",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "5AuuOZ4vuxI",
+    "status": "refetch",
+    "cached_language": "bn",
+    "declared_audio_language": "hi",
+    "chosen_language": "hi",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "hi",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": [
+     "bn",
+     "en-US"
+    ]
+   },
+   {
+    "video_id": "5fhcklZe-qE",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "6W_-YWHKwZ4",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": null,
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "player",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "6lgc8xPTDS0",
+    "status": "ok",
+    "cached_language": "hi",
+    "declared_audio_language": "hi",
+    "chosen_language": "hi",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "hi",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "96jN2OCOfLs",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": null,
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "player",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "9GWOksNjFpY",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "AJpK3YTTKZ4",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "AfAmwIP2ntY",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en-US",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "Aw7iQjKAX2k",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "CP2CqpXXTdA",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "DT49U06FWhY",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en-US",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "ElYxdpYi4U0",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "EsTrWCV0Ph4",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "Fi_kMc6hLxI",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en-IN",
+    "chosen_language": "en-IN",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en-IN",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "Fnn7rCrN_88",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "FqPwHHrN1bg",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "GSA8jvzIjjQ",
+    "status": "ok",
+    "cached_language": "hi",
+    "declared_audio_language": "hi",
+    "chosen_language": "hi",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "hi",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "HRw-vP0j8OM",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "HlzQFTOQ5c4",
+    "status": "ok",
+    "cached_language": "kn",
+    "declared_audio_language": "kn",
+    "chosen_language": "kn",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "kn",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "I1Hsa9TSO5U",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": [
+     "ar",
+     "bn",
+     "nl-NL",
+     "fr-FR",
+     "de-DE",
+     "iw",
+     "hi",
+     "id",
+     "it",
+     "pt-BR",
+     "pa",
+     "es-US",
+     "te"
+    ]
+   },
+   {
+    "video_id": "JREYGaJG5Mo",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "KYo_oVmW91w",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en-GB",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-GB",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "Kf5-HWJPTIE",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "LnGz20B3nTU",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": null,
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "asr_track",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "Lsut4TCfygw",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": [
+     "ar",
+     "bn",
+     "nl-NL",
+     "fr-FR",
+     "de-DE",
+     "iw",
+     "hi",
+     "it",
+     "ja",
+     "ko",
+     "ml",
+     "pl",
+     "pt-BR",
+     "pa",
+     "ru",
+     "es-US",
+     "ta",
+     "te",
+     "uk"
+    ]
+   },
+   {
+    "video_id": "M30gp1315Y4",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "Ncv5TYdY7Tg",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": [
+     "ar",
+     "bn",
+     "nl-NL",
+     "fr-FR",
+     "de-DE",
+     "iw",
+     "hi",
+     "id",
+     "it",
+     "ja",
+     "ko",
+     "ml",
+     "pl",
+     "pt-BR",
+     "pa",
+     "ru",
+     "es-US",
+     "ta",
+     "uk"
+    ]
+   },
+   {
+    "video_id": "O0jiCtwO-Ig",
+    "status": "ok",
+    "cached_language": "hi",
+    "declared_audio_language": "hi",
+    "chosen_language": "hi",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "hi",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "OEWAgzYv2mE",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": null,
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "asr_track",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "OIKTsVjTVJE",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "P24WbUcIwSk",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en-IN",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-IN",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "PCgfIPFZhgs",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en-IN",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-IN",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "PLyCki2K0Lg",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "PjrXaC5UsIw",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "QSlta0EnGJo",
+    "status": "ok",
+    "cached_language": "hi",
+    "declared_audio_language": "hi",
+    "chosen_language": "hi",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "hi",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "QqtW2q9ftu0",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": null,
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "player",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "R-5_2nsF_ZM",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": [
+     "ar",
+     "bn",
+     "nl-NL",
+     "fr-FR",
+     "de-DE",
+     "iw",
+     "hi",
+     "id",
+     "it",
+     "ja",
+     "ko",
+     "ml",
+     "pl",
+     "pt-BR",
+     "ru",
+     "es-US",
+     "ta",
+     "te",
+     "uk"
+    ]
+   },
+   {
+    "video_id": "UZDP9IPMqcs",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en-IN",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-IN",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "UngVdAsQEiU",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en-US",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "UtSSMs6ObqY",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en-CA",
+    "chosen_language": "en-CA",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en-CA",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "V80QfRa7t_c",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "VbMKPDQK5Tw",
+    "status": "ok",
+    "cached_language": "hi",
+    "declared_audio_language": null,
+    "chosen_language": "hi",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "hi",
+    "spoken_language_source": "asr_track",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "X2ciJedw2vU",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "XojxD7hfaD4",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "Y4qO9unerGs",
+    "status": "ok",
+    "cached_language": "hi",
+    "declared_audio_language": null,
+    "chosen_language": "hi",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "hi",
+    "spoken_language_source": "player",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "Y68FF_nUSWE",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "YVq28OTPCKw",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "_lfpEy_9vf0",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": null,
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "player",
+    "skipped_dubbed": [
+     "ar",
+     "bn",
+     "nl-NL",
+     "fr-FR",
+     "de-DE",
+     "iw",
+     "hi",
+     "id",
+     "it",
+     "ja",
+     "ko",
+     "ml",
+     "pl",
+     "pt-BR",
+     "pa",
+     "ru",
+     "es-US",
+     "ta",
+     "uk"
+    ]
+   },
+   {
+    "video_id": "_pEEJu-2KKM",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "aA9KP7QIQvM",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "cE-Ej1ycXtk",
+    "status": "ok",
+    "cached_language": "hi",
+    "declared_audio_language": "hi",
+    "chosen_language": "hi",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "hi",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "cHOqJIa1P4k",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "crBBgWEggkQ",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "dutyOc_cAEU",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en-US",
+    "chosen_language": "en-US",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "e2zIr_2JMbE",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": null,
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "player",
+    "skipped_dubbed": [
+     "fr-FR",
+     "de-DE",
+     "hi",
+     "id",
+     "ko",
+     "ml",
+     "pt-BR",
+     "uk"
+    ]
+   },
+   {
+    "video_id": "fCHe_fOqlYA",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "ghPb2T0ygSE",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "goOZSXmrYQ4",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "hfba9dAT6xE",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en-CA",
+    "chosen_language": "en-CA",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en-CA",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "hpC4qjWu_aY",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en-US",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "jzhANqD_VhM",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": null,
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "player",
+    "skipped_dubbed": [
+     "ar",
+     "bn",
+     "nl-NL",
+     "iw",
+     "ko",
+     "ml",
+     "pl",
+     "pa",
+     "ru",
+     "ta",
+     "te",
+     "uk"
+    ]
+   },
+   {
+    "video_id": "lsf060bLH_Y",
+    "status": "ok",
+    "cached_language": "hi",
+    "declared_audio_language": "hi",
+    "chosen_language": "hi",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "hi",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "mViFYTwWvcM",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "nGhsgdQplHw",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "nKSk_TiR8YA",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": null,
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "player",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "nQwJVHCtDDY",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "nfOVgz_omlU",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": null,
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "player",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "o6oYc9-X9Iw",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "oG0jmaIlL1w",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "oV6mC8Rt1kY",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "ooqXQ37XHMM",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "p0mrXfwAbCg",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "qErBw-R2Ybk",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "qyB52HIiou8",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en-US",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "tcZ3W8QYirQ",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "trfUBIDeI1Y",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "v6CuYULP3tM",
+    "status": "refetch",
+    "cached_language": "en-US",
+    "declared_audio_language": null,
+    "chosen_language": "hi",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "hi",
+    "spoken_language_source": "player",
+    "skipped_dubbed": [
+     "en-US"
+    ]
+   },
+   {
+    "video_id": "zMyy0y03tB0",
+    "status": "ok",
+    "cached_language": "kn",
+    "declared_audio_language": "kn",
+    "chosen_language": "kn",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "kn",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "zYGDpG-pTho",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "manual",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "zbmuiaPuiNM",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   },
+   {
+    "video_id": "zgxorh9LhiE",
+    "status": "ok",
+    "cached_language": "en",
+    "declared_audio_language": "en-US",
+    "chosen_language": "en",
+    "chosen_kind": "asr",
+    "match": "spoken",
+    "spoken_language": "en-US",
+    "spoken_language_source": "data_api",
+    "skipped_dubbed": []
+   }
+  ]
+ },
+ "raw": [
+  {
+   "video_id": "17tGxiPatPg",
+   "stored_language": null,
+   "title": "Machine learning For Beginners in Hindi",
+   "default_audio_language": "hi",
+   "default_language": "en",
+   "error": "ChunkedEncodingError"
+  },
+  {
+   "video_id": "1v3_AQ26jZ0",
+   "stored_language": "bn",
+   "title": "AI Vs ML Vs DL for Beginners in Hindi",
+   "default_audio_language": "hi",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "bn",
+     "name": "Bangla (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.bn",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "en-US",
+     "name": "English (United States) (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en-US",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      2,
+      0,
+      1
+     ],
+     "audioTrackId": "en-US.10"
+    },
+    {
+     "captionTrackIndices": [
+      2,
+      0,
+      1
+     ],
+     "audioTrackId": "bn.10"
+    },
+    {
+     "captionTrackIndices": [
+      2,
+      0,
+      1
+     ],
+     "audioTrackId": "hi.4"
+    }
+   ],
+   "default_audio_track_index": 2,
+   "translation_language_count": 16
+  },
+  {
+   "video_id": "81ymPYEtFOw",
+   "stored_language": null,
+   "title": "Types of Machine Learning for Beginners | Types of Machine learning in Hindi | Types of ML in Depth",
+   "default_audio_language": "hi",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "bn",
+     "name": "Bangla (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.bn",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "bn.10"
+    },
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "hi.4"
+    }
+   ],
+   "default_audio_track_index": 1,
+   "translation_language_count": 0
+  },
+  {
+   "video_id": "C6YtPJxNULA",
+   "stored_language": null,
+   "title": "All About Machine Learning & Deep Learning in 2025 🔥",
+   "default_audio_language": "hi",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en",
+     "name": "English",
+     "kind": "manual",
+     "vss_id": ".en",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0,
+      1
+     ],
+     "defaultCaptionTrackIndex": 0,
+     "hasDefaultTrack": true
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 17
+  },
+  {
+   "video_id": "J-HV7gNVdd0",
+   "stored_language": null,
+   "title": "Complete Machine Learning Algorithms | All ML Algorithms in Hindi [Easy!] [Explained With Examples]",
+   "default_audio_language": "hi",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 0
+  },
+  {
+   "video_id": "Y4qO9unerGs",
+   "stored_language": "hi",
+   "title": "Introduction To Machine Learning ll Machine Learning Course Explained With RealLife Examples (Hindi)",
+   "default_audio_language": null,
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "hi.4"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "en-US.10"
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 0
+  },
+  {
+   "video_id": "cE-Ej1ycXtk",
+   "stored_language": "hi",
+   "title": "What is Machine Learning With Full Information? – [Hindi] – Quick Support",
+   "default_audio_language": "hi",
+   "default_language": "hi",
+   "tracks": [
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 0
+  },
+  {
+   "video_id": "eIicc0UTd4M",
+   "stored_language": null,
+   "title": "Machine Learning Lectures | Introduction to Machine Learning in Hindi | ML #1",
+   "default_audio_language": null,
+   "default_language": "en",
+   "error": "TranscriptsDisabled"
+  },
+  {
+   "video_id": "lsf060bLH_Y",
+   "stored_language": "hi",
+   "title": "What is Machine Learning?",
+   "default_audio_language": "hi",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 156
+  },
+  {
+   "video_id": "ltr-znVaqgc",
+   "stored_language": null,
+   "title": "Machine Learning Explained in Hindi | What is ML & How It Works | Types & Applications of ML 2025",
+   "default_audio_language": "hi",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en-US",
+     "name": "English (United States) (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en-US",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "en-US.10"
+    },
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "hi.4"
+    }
+   ],
+   "default_audio_track_index": 1,
+   "translation_language_count": 16
+  },
+  {
+   "video_id": "24S3sZfCxLQ",
+   "stored_language": "en",
+   "title": "21 Year Old Unicorn Founder Reveals Quick Commerce Business Secrets",
+   "default_audio_language": null,
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en",
+     "name": "English (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 16
+  },
+  {
+   "video_id": "8Hdx8IGL1sc",
+   "stored_language": null,
+   "title": "How Founders Should Think About Product, Brand & Scale | The Founder's Meet: Pune Edition",
+   "default_audio_language": "en-IN",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "ar",
+     "name": "Arabic (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.ar",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "bn",
+     "name": "Bangla (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.bn",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "nl-NL",
+     "name": "Dutch (Netherlands) (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.nl-NL",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "en",
+     "name": "English (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "fr-FR",
+     "name": "French (France) (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.fr-FR",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "de-DE",
+     "name": "German (Germany) (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.de-DE",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "iw",
+     "name": "Hebrew (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.iw",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "id",
+     "name": "Indonesian (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.id",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "it",
+     "name": "Italian (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.it",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "ja",
+     "name": "Japanese (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.ja",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "ko",
+     "name": "Korean (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.ko",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "ml",
+     "name": "Malayalam (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.ml",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "pl",
+     "name": "Polish (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.pl",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "pt-BR",
+     "name": "Portuguese (Brazil) (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.pt-BR",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "pa",
+     "name": "Punjabi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.pa",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "ru",
+     "name": "Russian (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.ru",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "es-US",
+     "name": "Spanish (United States) (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.es-US",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "ta",
+     "name": "Tamil (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.ta",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "te",
+     "name": "Telugu (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.te",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "uk",
+     "name": "Ukrainian (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.uk",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "fr-FR.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "ar.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "bn.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "pl.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "ta.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "es-US.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "iw.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "en-US.4"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "pt-BR.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "pa.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "it.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "ml.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "ru.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "de-DE.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "hi.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "id.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "ja.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "ko.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "nl-NL.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "uk.10"
+    },
+    {
+     "captionTrackIndices": [
+      3,
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "audioTrackId": "te.10"
+    }
+   ],
+   "default_audio_track_index": 7,
+   "translation_language_count": 17
+  },
+  {
+   "video_id": "9tigHWH-UD8",
+   "stored_language": null,
+   "title": "Meet the Viral Indian Girl who Built 100Cr AI Startup at 16! Ft. Pranjali Awasthi!",
+   "default_audio_language": "en",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en",
+     "name": "English",
+     "kind": "manual",
+     "vss_id": ".en",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0,
+      1
+     ],
+     "defaultCaptionTrackIndex": 0,
+     "hasDefaultTrack": true
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 17
+  },
+  {
+   "video_id": "HVkSGvZi-WY",
+   "stored_language": null,
+   "title": "Dark Side Of Startups, VC Funding, Investors Vs Founders - Vinayak Burman | FO 152 Raj Shamani",
+   "default_audio_language": "en-IN",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 0
+  },
+  {
+   "video_id": "IcVYyF3EEbk",
+   "stored_language": null,
+   "title": "Noise Founder On Building A Bootstrapped Startup, IPO & Future Of Technology | FO 150 | Raj Shamani",
+   "default_audio_language": "en-IN",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en",
+     "name": "English (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "en-US.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "hi.4"
+    }
+   ],
+   "default_audio_track_index": 1,
+   "translation_language_count": 16
+  },
+  {
+   "video_id": "KYo_oVmW91w",
+   "stored_language": "en",
+   "title": "Y Combinator Selection Tips For Indian Startups - S12 Batch Plivo Founder Reveals",
+   "default_audio_language": "en-GB",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en",
+     "name": "English (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "pl.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "fr-FR.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "ja.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "nl-NL.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "pt-BR.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "hi.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "en-US.4"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "id.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "de-DE.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "es-US.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "uk.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "it.10"
+    }
+   ],
+   "default_audio_track_index": 6,
+   "translation_language_count": 16
+  },
+  {
+   "video_id": "O0jiCtwO-Ig",
+   "stored_language": "hi",
+   "title": "The Brutal Truth About Indian Startups Exposed | Basesh Gala X Soch Matters",
+   "default_audio_language": "hi",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 0
+  },
+  {
+   "video_id": "P24WbUcIwSk",
+   "stored_language": "en",
+   "title": "Why You Should Not Startup In Your 20s | Startup Founder Story",
+   "default_audio_language": "en-IN",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en",
+     "name": "English (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 16
+  },
+  {
+   "video_id": "aYqgXabUWWs",
+   "stored_language": null,
+   "title": "35-Minute Masterclass on Building a Multi-Billion Dollar Startup in India | INDmoney Founder",
+   "default_audio_language": "en-GB",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en",
+     "name": "English (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 16
+  },
+  {
+   "video_id": "cpg78ouK54I",
+   "stored_language": null,
+   "title": "Dropout To Billionaire - Zerodha's Founder Nikhil Kamath's Journey To SUCCESS - FO5| Raj Shamani",
+   "default_audio_language": "en-IN",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en",
+     "name": "English (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 16
+  },
+  {
+   "video_id": "8RCOFdilri4",
+   "stored_language": null,
+   "title": "Is ₹1 Crore Enough for Financial Independence? | Full Excel Calculation",
+   "default_audio_language": "en-IN",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 0
+  },
+  {
+   "video_id": "Fi_kMc6hLxI",
+   "stored_language": "en",
+   "title": "Become wealthy and invest in 'assets' | Learn Personal Finance",
+   "default_audio_language": "en-IN",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en",
+     "name": "English (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "en-IN",
+     "name": "English (India)",
+     "kind": "manual",
+     "vss_id": ".en-IN",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "pl.10"
+    },
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "hi.10"
+    },
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "fr-FR.10"
+    },
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "de-DE.10"
+    },
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "es-US.10"
+    },
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "id.10"
+    },
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "it.10"
+    },
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "ja.10"
+    },
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "en-US.4"
+    },
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "pt-BR.10"
+    }
+   ],
+   "default_audio_track_index": 8,
+   "translation_language_count": 17
+  },
+  {
+   "video_id": "GSA8jvzIjjQ",
+   "stored_language": "hi",
+   "title": "THESE Personal Finance Rules DON'T Work in India! | Ankur Warikoo Hindi",
+   "default_audio_language": "hi",
+   "default_language": "en-IN",
+   "tracks": [
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 0
+  },
+  {
+   "video_id": "IbcYNtZ8HZY",
+   "stored_language": null,
+   "title": "The Ultimate Financial Planning Guide For Every Girl Confused By Money Talk 💰",
+   "default_audio_language": "en",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "ja",
+     "name": "Japanese (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.ja",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "ta",
+     "name": "Tamil (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.ta",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "uk",
+     "name": "Ukrainian (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.uk",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0,
+      1,
+      2,
+      3
+     ],
+     "audioTrackId": "en-US.4"
+    },
+    {
+     "captionTrackIndices": [
+      0,
+      1,
+      2,
+      3
+     ],
+     "audioTrackId": "ta.10"
+    },
+    {
+     "captionTrackIndices": [
+      0,
+      1,
+      2,
+      3
+     ],
+     "audioTrackId": "ja.10"
+    },
+    {
+     "captionTrackIndices": [
+      0,
+      1,
+      2,
+      3
+     ],
+     "audioTrackId": "uk.10"
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 1
+  },
+  {
+   "video_id": "PCgfIPFZhgs",
+   "stored_language": "en",
+   "title": "My Net Worth is ₹5 Crores. Started with ₹10,000 Salary in IT",
+   "default_audio_language": "en-IN",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en",
+     "name": "English (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 16
+  },
+  {
+   "video_id": "QSlta0EnGJo",
+   "stored_language": "hi",
+   "title": "How To Create Your Financial Plan Easily ?",
+   "default_audio_language": "hi",
+   "default_language": "en-IN",
+   "tracks": [
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 0
+  },
+  {
+   "video_id": "YSux7rtMo9k",
+   "stored_language": null,
+   "title": "This 1 Strategy Made Me Financially Free",
+   "default_audio_language": "en-IN",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en",
+     "name": "English (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 16
+  },
+  {
+   "video_id": "dLe8AMGN00g",
+   "stored_language": null,
+   "title": "Not Just Another Personal Finance Video.",
+   "default_audio_language": "hi",
+   "default_language": "en-IN",
+   "tracks": [
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 0
+  },
+  {
+   "video_id": "v684N5MLajA",
+   "stored_language": null,
+   "title": "How Much Money Do You Need to Retire in India? | Upasana Koul",
+   "default_audio_language": null,
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en",
+     "name": "English (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 16
+  },
+  {
+   "video_id": "v6CuYULP3tM",
+   "stored_language": "en-US",
+   "title": "The Harsh Reality of Building Wealth | Ft. Gajendra Kothari",
+   "default_audio_language": null,
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en-US",
+     "name": "English (United States) (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en-US",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "hi.4"
+    },
+    {
+     "captionTrackIndices": [
+      1,
+      0
+     ],
+     "audioTrackId": "en-US.10"
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 16
+  },
+  {
+   "video_id": "-QFHIoCo-Ko",
+   "stored_language": "welsh",
+   "title": "Full Walkthrough: Workflow for AI Coding — Matt Pocock",
+   "default_audio_language": "en-US",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "en",
+     "name": "English (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "es-US.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "de-DE.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "it.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "hi.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "en-US.4"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "id.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "fr-FR.10"
+    },
+    {
+     "captionTrackIndices": [
+      0
+     ],
+     "audioTrackId": "pt-BR.10"
+    }
+   ],
+   "default_audio_track_index": 4,
+   "translation_language_count": 16
+  },
+  {
+   "video_id": "0sk72TEs3zc",
+   "stored_language": "hi",
+   "title": "Easiest Way to Plot 📈using Matplotlib in Python 🐍",
+   "default_audio_language": "hi",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 0
+  },
+  {
+   "video_id": "5AuuOZ4vuxI",
+   "stored_language": "bn",
+   "title": "01. Seaborn in Python  | Introduction to Seaborn | Data Visualization Tutorial for Beginners",
+   "default_audio_language": "hi",
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "bn",
+     "name": "Bangla (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.bn",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "en-US",
+     "name": "English (United States) (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.en-US",
+     "is_translatable": true,
+     "track_name": ""
+    },
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      2,
+      0,
+      1
+     ],
+     "audioTrackId": "en-US.10"
+    },
+    {
+     "captionTrackIndices": [
+      2,
+      0,
+      1
+     ],
+     "audioTrackId": "bn.10"
+    },
+    {
+     "captionTrackIndices": [
+      2,
+      0,
+      1
+     ],
+     "audioTrackId": "hi.4"
+    }
+   ],
+   "default_audio_track_index": 2,
+   "translation_language_count": 16
+  },
+  {
+   "video_id": "6lgc8xPTDS0",
+   "stored_language": "hi",
+   "title": "The Only Seaborn Video You'll Ever Need | Full Python Data Visualization Guide",
+   "default_audio_language": "hi",
+   "default_language": "en-IN",
+   "tracks": [
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 0
+  },
+  {
+   "video_id": "HlzQFTOQ5c4",
+   "stored_language": "kn",
+   "title": "Health Care: ಬಿಪಿ ಮಾತ್ರೆ ನಿಲ್ಲಿಸಿದರೆ ಏನಾಗಬಹುದು?#bloodpressure #BP #DRRaju #alcoholic",
+   "default_audio_language": "kn",
+   "default_language": "kn",
+   "tracks": [
+    {
+     "language_code": "kn",
+     "name": "Kannada (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.kn",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 0
+  },
+  {
+   "video_id": "VbMKPDQK5Tw",
+   "stored_language": "hi",
+   "title": "Smoking: The Leading Cause of Lung Cancer | Medicover Nellore",
+   "default_audio_language": null,
+   "default_language": "en",
+   "tracks": [
+    {
+     "language_code": "hi",
+     "name": "Hindi (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.hi",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 0
+  },
+  {
+   "video_id": "zMyy0y03tB0",
+   "stored_language": "kn",
+   "title": "ಸಕ್ಕರೆ ಕಾಯಿಲೆ ಇರೋರು ಸ್ಮೋಕ್​ ಮಾಡಿದ್ರೆ ಏನಾಗುತ್ತೆ? | #DrBhanuprakashHM #Sugar #diabities #heartattack",
+   "default_audio_language": "kn",
+   "default_language": "kn",
+   "tracks": [
+    {
+     "language_code": "kn",
+     "name": "Kannada (auto-generated)",
+     "kind": "asr",
+     "vss_id": "a.kn",
+     "is_translatable": true,
+     "track_name": ""
+    }
+   ],
+   "audio_tracks": [
+    {
+     "captionTrackIndices": [
+      0
+     ]
+    }
+   ],
+   "default_audio_track_index": 0,
+   "translation_language_count": 0
+  }
+ ]
+}

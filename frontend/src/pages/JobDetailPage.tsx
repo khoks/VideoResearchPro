@@ -38,6 +38,7 @@ import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
 import { formatDuration, formatDate, statusTone } from '../utils/formatters';
 import { buildClarifyContext, CLARIFY_ANSWER_MAX_CHARS } from '../utils/clarifyContext';
+import { apiErrorMessage } from '../utils/apiError';
 import { useJobStore } from '../stores/jobStore';
 import { wsClient } from '../services/wsClient';
 import { ReportPeekModal } from '../components/jobs/ReportPeekModal';
@@ -571,7 +572,8 @@ function SubscriptionSyncCard({ counts }: { counts: SyncCounts }) {
 
 type VideoSortKey = 'channel' | 'duration' | 'title';
 
-function VideoApprovalSection({
+// Exported for its test (the document-cap refusal, T-5.2.10).
+export function VideoApprovalSection({
   videos,
   jobId,
   onApprove,
@@ -647,8 +649,20 @@ function VideoApprovalSection({
     setSelected(new Set(filteredVideos.map(approvalKey)));
   const deselectAll = () => setSelected(new Set());
 
-  const handleApprove = () => {
-    onApprove({ id: jobId, data: { approved_video_ids: Array.from(selected) } });
+  // A refused approval (the document cap, T-5.2.10) changes nothing on the
+  // server; say why here, where the user can deselect and try again.
+  const [approveError, setApproveError] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
+  const handleApprove = async () => {
+    setApproveError(null);
+    setApproving(true);
+    try {
+      await onApprove({ id: jobId, data: { approved_video_ids: Array.from(selected) } });
+    } catch (err) {
+      setApproveError(apiErrorMessage(err, 'The approval did not go through. Try again.'));
+    } finally {
+      setApproving(false);
+    }
   };
 
   const hiddenCount = videos.length - filteredVideos.length;
@@ -796,8 +810,27 @@ function VideoApprovalSection({
         })}
       </div>
 
+      {approveError && (
+        <div
+          role="alert"
+          style={{
+            marginTop: space['4'],
+            fontFamily: fonts.ui,
+            fontSize: fontSize.sm,
+            lineHeight: lineHeight.normal,
+            color: c.error,
+            background: c.errorSubtle,
+            border: `1px solid ${c.error}`,
+            borderRadius: radius.md,
+            padding: `${space['2']} ${space['3']}`,
+          }}
+        >
+          {approveError}
+        </div>
+      )}
+
       <div style={{ marginTop: space['4'] }}>
-        <Button onClick={handleApprove} leadingIcon={<span aria-hidden>✓</span>}>
+        <Button onClick={handleApprove} loading={approving} leadingIcon={<span aria-hidden>✓</span>}>
           Approve &amp; continue ({selected.size} candidates)
         </Button>
       </div>

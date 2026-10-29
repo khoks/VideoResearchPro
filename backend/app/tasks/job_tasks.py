@@ -1060,10 +1060,11 @@ def execute_topic_job(self, job_id: str) -> None:
                 limit_per_type=job.num_videos or 10,
                 limits=limits,
             )
-        if non_video_count:
-            # D-063: the video branch grants its candidates above; the
-            # dispatched ones (text already fetched) need the same grant.
-            _grant_job_document_visibility(db, job)
+        # No visibility grant here either (T-5.2.10), for dispatched or video
+        # candidates: a grant before approval counts as "already seen" in the
+        # approval's document-cap check, so every candidate would pass it, and
+        # deselected ones would stay in the library. Like the video branch,
+        # dispatched documents are granted when approve_job accepts them.
 
         total_candidates = len(curated_videos) + non_video_count
         logger.info(

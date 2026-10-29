@@ -13,6 +13,8 @@ export interface TemplateParameters {
   preferred_channels: string[] | null;
   output_length: OutputLength | null;
   visual_analysis: boolean;
+  /** S-1.5.13: null is the default (YouTube only). */
+  source_types: string[] | null;
   channel_list: string[] | null;
   videos_per_channel: number | null;
 }

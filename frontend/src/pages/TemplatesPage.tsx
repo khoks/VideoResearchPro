@@ -13,6 +13,7 @@ import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, space } from '../theme';
 import { formatDate } from '../utils/formatters';
 import { apiErrorMessage } from '../utils/apiError';
+import { isDefaultSourceTypes, sourceTypeLabel } from '../utils/jobForm';
 import type { JobTemplate, TemplateParameters } from '../services/jobTemplatesApi';
 
 /**
@@ -145,6 +146,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export function summariseParameters(p: TemplateParameters): string {
   const parts: string[] = [];
   if (p.job_type === 'topic') parts.push(`${p.num_videos} videos`);
+  if (p.job_type === 'topic' && p.source_types?.length && !isDefaultSourceTypes(p.source_types)) {
+    parts.push(p.source_types.map(sourceTypeLabel).join(' + '));
+  }
   if (p.channel_list?.length) parts.push(`${p.channel_list.length} channel${p.channel_list.length === 1 ? '' : 's'}`);
   else if (p.job_type !== 'topic') parts.push('you add the channels');
   if (p.job_type === 'channel' && p.videos_per_channel) parts.push(`${p.videos_per_channel} per channel`);

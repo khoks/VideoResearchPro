@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.services import job_source_types
 
 
 class JobCreate(BaseModel):
@@ -35,9 +37,24 @@ class JobCreate(BaseModel):
     # AND-ed with the install-wide VISUAL_ENABLED setting.
     visual_analysis: bool = False
 
+    # S-1.5.13: which source types a topic run searches. Omitted means
+    # YouTube only, exactly as before. Validated against what this install
+    # can search (an unknown, library-only or unconfigured type is a 422)
+    # and put in canonical order; `video` runs the search agent, the rest
+    # go through `connector_dispatch`. `num_videos` is shared across them
+    # (`job_source_types.share_limits`), so the tier cap bounds the run.
+    source_types: list[str] | None = Field(default=None, max_length=32)
+
     # Channel fields
     channel_list: list[str] | None = None
     videos_per_channel: int | None = Field(default=10, ge=1, le=50)
+
+    @field_validator("source_types")
+    @classmethod
+    def validate_source_types(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        return job_source_types.normalise(value)
 
     @model_validator(mode="after")
     def validate_job_type_fields(self) -> Self:
@@ -50,6 +67,26 @@ class JobCreate(BaseModel):
         if self.min_duration_minutes and self.max_duration_minutes:
             if self.min_duration_minutes > self.max_duration_minutes:
                 raise ValueError("min_duration_minutes must be <= max_duration_minutes")
+        if self.job_type != "topic" and self.source_types is not None:
+            # Channel and subscription runs read YouTube channels; YouTube
+            # alone is accepted and dropped, anything else is a mistake.
+            if not job_source_types.is_default(self.source_types):
+                raise ValueError(
+                    "source_types applies to topic research only; channel and "
+                    "subscription runs read YouTube channels"
+                )
+            self.source_types = None
+        if (
+            self.job_type == "topic"
+            and self.source_types is not None
+            and self.num_videos < len(self.source_types)
+        ):
+            # The run shares num_videos across its sources (the tier cap
+            # bounds the whole run, not each source), so each needs one.
+            raise ValueError(
+                f"num_videos must be at least {len(self.source_types)}, one per "
+                "source type: a run shares num_videos across the sources it searches"
+            )
         return self
 
 
@@ -71,6 +108,8 @@ class JobResponse(BaseModel):
     videos_per_channel: int | None = None
     output_length: str | None = None
     visual_analysis: bool = False
+    # S-1.5.13: what the run searches, resolved (["video"] by default).
+    source_types: list[str] = Field(default_factory=lambda: ["video"])
     # E-8.6: the template version this run started from, if any.
     template_id: str | None = None
     template_version: int | None = None

@@ -10,9 +10,13 @@ import {
   formToJobCreate,
   formToTemplateParameters,
   jobToFormState,
+  offeredSourceTypes,
   parseDraft,
+  sourceTypeShares,
   templateNeedsChannels,
   templateToFormState,
+  toggleSourceType,
+  unavailableSourceTypes,
 } from '../jobForm';
 import type { Job } from '../../types/job';
 import type { TemplateParameters } from '../../services/jobTemplatesApi';
@@ -91,6 +95,7 @@ describe('templates (S-8.6.1)', () => {
     preferred_channels: null,
     output_length: 'brief',
     visual_analysis: false,
+    source_types: ['video', 'hn_story'],
     channel_list: null,
     videos_per_channel: null,
   };
@@ -102,6 +107,7 @@ describe('templates (S-8.6.1)', () => {
     expect(form.outputLength).toBe('brief');
     expect(form.maxDuration).toBe('90');
     expect(form.channelFilters).toEqual(['news']);
+    expect(form.sourceTypes).toEqual(['video', 'hn_story']);
   });
 
   it('turns the form back into the same parameters (no topic)', () => {
@@ -118,6 +124,96 @@ describe('templates (S-8.6.1)', () => {
   it('still requires channels to submit a channel run', () => {
     const result = formToJobCreate({ ...DEFAULT_FORM, jobType: 'channel' });
     expect(result.ok).toBe(false);
+  });
+});
+
+describe('source types (S-1.5.13)', () => {
+  const MIXED_JOB: Job = { ...DEEP_VISUAL_JOB, source_types: ['video', 'reddit_post'] };
+
+  it('Duplicate carries the run\'s sources into the request', () => {
+    const form = jobToFormState(MIXED_JOB);
+    expect(form.sourceTypes).toEqual(['video', 'reddit_post']);
+    const result = formToJobCreate(form);
+    expect(result.ok && result.data.source_types).toEqual(['video', 'reddit_post']);
+  });
+
+  it('leaves YouTube alone out of the request, so a default run is unchanged', () => {
+    const result = formToJobCreate({ ...DEFAULT_FORM, topic: 'x' });
+    expect(result).toEqual({ ok: true, data: { job_type: 'topic', topic: 'x', num_videos: 10 } });
+    // A run from before the field (no source_types in the response) duplicates as YouTube only.
+    const { source_types: _omit, ...older } = MIXED_JOB;
+    void _omit;
+    expect(jobToFormState(older).sourceTypes).toEqual(['video']);
+  });
+
+  it('sends a non-YouTube-only choice in canonical order', () => {
+    const form = { ...DEFAULT_FORM, topic: 'x', sourceTypes: toggleSourceType(toggleSourceType(['video'], 'tweet'), 'video') };
+    expect(form.sourceTypes).toEqual(['tweet']);
+    const both = toggleSourceType(['tweet'], 'hn_story');
+    expect(both).toEqual(['hn_story', 'tweet']);
+    const result = formToJobCreate({ ...form, sourceTypes: both });
+    expect(result.ok && result.data.source_types).toEqual(['hn_story', 'tweet']);
+  });
+
+  it('refuses an empty choice', () => {
+    const result = formToJobCreate({ ...DEFAULT_FORM, topic: 'x', sourceTypes: [] });
+    expect(result).toEqual({ ok: false, error: 'Choose at least one source to search.' });
+  });
+
+  it('shares the results of a run across its sources, as the server does', () => {
+    // num_videos is the whole run's budget (the plan cap bounds it), so five
+    // sources never collect five times the cap.
+    expect(sourceTypeShares(100, ['video', 'reddit_post', 'hn_story', 'mastodon_post', 'bluesky_post'])).toEqual({
+      video: 20,
+      reddit_post: 20,
+      hn_story: 20,
+      mastodon_post: 20,
+      bluesky_post: 20,
+    });
+    // The remainder goes to the earlier sources in canonical order.
+    expect(sourceTypeShares(5, ['hn_story', 'video', 'reddit_post'])).toEqual({ video: 2, reddit_post: 2, hn_story: 1 });
+    expect(sourceTypeShares(10, ['video'])).toEqual({ video: 10 });
+  });
+
+  it('refuses fewer results than sources', () => {
+    const result = formToJobCreate({ ...DEFAULT_FORM, topic: 'x', numVideos: 2, sourceTypes: ['video', 'hn_story', 'podcast_episode'] });
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).toContain('at least 3 results');
+    expect(formToJobCreate({ ...DEFAULT_FORM, topic: 'x', numVideos: 3, sourceTypes: ['video', 'hn_story', 'podcast_episode'] }).ok).toBe(true);
+  });
+
+  it('templates store null for the default and the list otherwise', () => {
+    const plain = formToTemplateParameters({ ...DEFAULT_FORM, topic: 'x' });
+    expect(plain.ok && plain.params.source_types).toBe(null);
+    const mixed = formToTemplateParameters(jobToFormState(MIXED_JOB));
+    expect(mixed.ok && mixed.params.source_types).toEqual(['video', 'reddit_post']);
+  });
+
+  it('never sends sources for a channel run', () => {
+    const form = { ...DEFAULT_FORM, jobType: 'channel' as const, channelList: '@veritasium', sourceTypes: ['hn_story' as const] };
+    const result = formToJobCreate(form);
+    expect(result.ok && 'source_types' in result.data).toBe(false);
+  });
+
+  it('offers X / Twitter only when /health reports tweet search on (T-1.5.9.3)', () => {
+    const values = (caps: Record<string, boolean> | null) => offeredSourceTypes(caps).map((o) => o.value);
+    expect(values(null)).not.toContain('tweet');
+    expect(values({ twitter_search_enabled: false })).not.toContain('tweet');
+    expect(values({ twitter_search_enabled: true })).toContain('tweet');
+    expect(values({})).toEqual(['video', 'hn_story', 'mastodon_post', 'bluesky_post', 'podcast_episode']);
+    expect(values({ reddit_search_enabled: true, article_search_enabled: true })).toContain('reddit_post');
+  });
+
+  it('flags a carried source the install no longer has, once capabilities are known', () => {
+    expect(unavailableSourceTypes(['video', 'tweet'], null)).toEqual([]);
+    expect(unavailableSourceTypes(['video', 'tweet'], { twitter_search_enabled: false })).toEqual(['tweet']);
+    expect(unavailableSourceTypes(['video', 'tweet'], { twitter_search_enabled: true })).toEqual([]);
+  });
+
+  it('drafts restore the sources, tolerating junk and older drafts', () => {
+    expect(parseDraft(JSON.stringify({ sourceTypes: ['hn_story', 'nope'] })).sourceTypes).toEqual(['hn_story']);
+    expect(parseDraft(JSON.stringify({ sourceTypes: 'video' })).sourceTypes).toEqual(['video']);
+    expect(parseDraft(JSON.stringify({ topic: 'x' })).sourceTypes).toEqual(['video']);
   });
 });
 

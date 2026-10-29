@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.job import Job
 from app.schemas.job import JobCreate
+from app.services import job_source_types
 
 
 def create_job(
@@ -56,6 +57,13 @@ def create_job(
         # extraction time, so a job can record the user's intent even on an
         # install where the feature is currently switched off.
         visual_analysis=bool(getattr(job_data, "visual_analysis", False)),
+        # S-1.5.13: what the run searches; NULL is the default (YouTube only),
+        # which `job_tasks._resolve_source_types` reads back as ["video"].
+        source_types_json=(
+            job_source_types.to_column(getattr(job_data, "source_types", None))
+            if job_data.job_type == "topic"
+            else None
+        ),
         template_id=template_id,
         template_version=template_version if template_id else None,
         tenant_id=tenant_id,
@@ -161,6 +169,7 @@ def job_to_response_dict(job: Job) -> dict:
         # as visual_analysis=False / output_length=None (found 2026-10-19).
         "output_length": job.output_length,
         "visual_analysis": bool(job.visual_analysis),
+        "source_types": job_source_types.from_column(job.source_types_json, job_id=job.id),
         "template_id": job.template_id,
         "template_version": job.template_version,
         "search_queries_used": json.loads(job.search_queries_used) if job.search_queries_used else None,

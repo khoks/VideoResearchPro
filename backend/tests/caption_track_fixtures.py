@@ -96,10 +96,10 @@ SHAPES = {
     ),
     # J-HV7gNVdd0: one ASR track and nothing else to choose from.
     "asr_only": Shape("J-HV7gNVdd0", (("hi", "asr"),), None, "hi", ("hi", "asr"), "hi"),
-    # Spoken language unknown (no declaration, one audio track): the
-    # English-first fallback is kept.
+    # Spoken language unknown: nothing declared, one audio track and no ASR
+    # track to read the recogniser's language from. English-first is kept.
     "unknown_audio_language": Shape(
-        "unknownLang1", (("en", "manual"), ("hi", "asr")), None, None, ("en", "manual"), "en",
+        "unknownLang1", (("en", "manual"), ("hi", "manual")), None, None, ("en", "manual"), "en",
     ),
     # 8Hdx8IGL1sc (reduced): English original, dubbed into many languages.
     "english_audio": Shape(
@@ -111,6 +111,29 @@ SHAPES = {
     # first. The old rule ingested the translation.
     "hindi_audio_english_translation": Shape(
         "C6YtPJxNULA", (("en", "manual"), ("hi", "asr")), None, "hi", ("hi", "asr"), "en",
+    ),
+    # C6YtPJxNULA's tracks with nothing declared (or the 1-unit lookup
+    # failed): on a single-audio video the ASR track is the recogniser run on
+    # the only audio, so its `hi` is the spoken language — not English-first.
+    "hindi_audio_english_translation_undeclared": Shape(
+        "undeclaredC6", (("en", "manual"), ("hi", "asr")), None, None, ("hi", "asr"), "en",
+    ),
+    # Declared `ur`, but no track is in Urdu: the original audio (`hi.4`)
+    # decides, not English-first and the creator's English translation.
+    "declared_language_without_track": Shape(
+        "declaredUr01", (("en", "manual"), ("hi", "asr"), ("ja", "asr")),
+        ("hi.4", "ja.10"), "ur", ("hi", "asr"), "en",
+    ),
+    # The same on a single-audio video: the ASR track's language decides.
+    "declared_language_without_track_single_audio": Shape(
+        "declaredUr02", (("en", "manual"), ("hi", "asr")), None, "ur", ("hi", "asr"), "en",
+    ),
+    # v6CuYULP3tM's shape with a wrong declaration (`en-IN`, the channel
+    # default on several Hinglish podcasts): the cached `en-US` dub shares the
+    # declared primary subtag, yet it is still the dub.
+    "mislabelled_declaration_hides_dub": Shape(
+        "enINdub0001", (("en-US", "asr"), ("hi", "asr")), ("hi.4", "en-US.10"),
+        "en-IN", ("hi", "asr"), "en-US",
     ),
     # IcVYyF3EEbk: original audio `hi.4`, an `en-US.10` dub, and one ASR
     # track `en` — the original's (a dub's track carries the dub's exact code).

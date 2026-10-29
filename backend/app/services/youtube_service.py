@@ -7,8 +7,10 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from functools import cache
 from typing import Any, NamedTuple
 
 from googleapiclient.discovery import build
@@ -748,6 +750,57 @@ def choose_caption_track(
     return usable[0], "fallback_first_listed", skipped_codes
 
 
+def _offers(usable: list, language: str | None) -> bool:
+    """Whether some usable (non-dub) track is in ``language``."""
+    wanted = primary_language(language)
+    return bool(wanted) and any(primary_language(t.language_code) == wanted for t in usable)
+
+
+def _recogniser_language(usable: list) -> str | None:
+    """The language of a single-audio video's ASR track.
+
+    With one audio track there is nothing to dub, so the ASR track is
+    YouTube's recogniser run on the only audio: its language is a free,
+    strong reading of the spoken language (on ``IbcYNtZ8HZY`` it heard Hindi
+    where the uploader declared English). None when the ASR tracks disagree
+    or there are none.
+    """
+    asr = [t for t in usable if t.is_generated]
+    if len({primary_language(t.language_code) for t in asr}) != 1:
+        return None
+    return asr[0].language_code
+
+
+def resolve_spoken_language(
+    usable: list,
+    *,
+    declared: str | None,
+    audio: AudioTracks | None,
+) -> tuple[str | None, str | None]:
+    """The spoken language and where it came from, or ``(None, None)``.
+
+    The first of these that some usable track is in:
+
+    1. the uploader's ``defaultAudioLanguage`` (``data_api``);
+    2. the player's original audio track, on a multi-audio video (``player``);
+    3. on a single-audio video, the language of its ASR track (``asr_track``).
+
+    A source with no track in its language is passed over rather than
+    ending the search: a declared ``ur`` with no ``ur`` track must not hand
+    the choice to English-first while the original audio's ``hi`` track is
+    there. English-first runs only when all three come up empty.
+    """
+    candidates = [(declared, "data_api")]
+    if audio is not None:
+        candidates.append((audio.original, "player"))
+    else:
+        candidates.append((_recogniser_language(usable), "asr_track"))
+    for lang, source in candidates:
+        if _offers(usable, lang):
+            return lang, source
+    return None, None
+
+
 @dataclass
 class TrackChoice:
     """The outcome of ``plan_caption_track``: the track and why."""
@@ -755,9 +808,12 @@ class TrackChoice:
     track: Any  # youtube_transcript_api Transcript, or None
     match: str
     spoken_language: str | None
-    spoken_language_source: str | None  # "data_api" | "player"
+    spoken_language_source: str | None  # "data_api" | "player" | "asr_track"
     skipped_dubbed: tuple[str, ...] = ()
     available: tuple[str, ...] = ()
+    # The Data API's ``defaultAudioLanguage`` when it was looked up or passed
+    # in and the video declares one (even when no track is in it).
+    declared_audio_language: str | None = None
 
     @property
     def language(self) -> str | None:
@@ -777,6 +833,8 @@ class TrackChoice:
             "spoken_language": self.spoken_language,
             "spoken_language_source": self.spoken_language_source,
         }
+        if self.declared_audio_language:
+            meta["declared_audio_language"] = self.declared_audio_language
         if self.skipped_dubbed:
             meta["skipped_dubbed"] = list(self.skipped_dubbed)
         return meta
@@ -830,39 +888,39 @@ def plan_caption_track(
     *,
     language: str = "en",
     audio_language: Any = AUDIO_LANGUAGE_UNSET,
+    lookup_audio_language: Callable[[], str | None] | None = None,
     tag: str = "",
 ) -> TrackChoice:
     """List a video's caption tracks and choose the one to ingest.
 
     Dubs are recognised from the player's audio tracks (free; the only
-    source that has them). The spoken language is, in order:
+    source that has them). The spoken language is the first of these that
+    a non-dub track is in (``resolve_spoken_language``):
 
     1. ``defaultAudioLanguage`` — passed by a caller that looked it up in a
-       batch, or looked up here (1 unit), but only when the non-dub tracks
-       span more than one language: with one language the choice cannot
-       change, so the unit would be wasted (35 of 37 measured videos);
+       batch, or looked up here (1 unit, through ``lookup_audio_language``
+       when given, so ``fetch_transcript`` asks once across its retries),
+       but only when the non-dub tracks span more than one language: with
+       one language the choice cannot change, so the unit would be wasted
+       (35 of 37 measured videos);
     2. the player's original audio track, on a multi-audio video (present
-       even when the uploader declared nothing — ``v6CuYULP3tM``).
+       even when the uploader declared nothing — ``v6CuYULP3tM``);
+    3. on a single-audio video, the language of its ASR track.
 
     Network errors propagate (the caller classifies IP blocks).
     """
     transcript_list, audio = _list_caption_tracks(ytt_api, video_id)
     tracks = list(transcript_list)
     dubbed = audio.dubbed if audio is not None else frozenset()
+    usable = [t for t in tracks if not _is_dub_track(t, dubbed)]
 
-    spoken, source = None, None
+    declared = None
     if audio_language is not AUDIO_LANGUAGE_UNSET:
-        spoken = audio_language or None
-    else:
-        offered = {
-            primary_language(t.language_code) for t in tracks if not _is_dub_track(t, dubbed)
-        }
-        if len(offered) > 1:
-            spoken = _lookup_default_audio_language(video_id, tag)
-    if spoken:
-        source = "data_api"
-    elif audio is not None:
-        spoken, source = audio.original, "player"
+        declared = audio_language or None
+    elif len({primary_language(t.language_code) for t in usable}) > 1:
+        lookup = lookup_audio_language or (lambda: _lookup_default_audio_language(video_id, tag))
+        declared = lookup() or None
+    spoken, source = resolve_spoken_language(usable, declared=declared, audio=audio)
 
     track, match, skipped = choose_caption_track(
         tracks, spoken_language=spoken, dubbed=dubbed, preferred_language=language
@@ -876,6 +934,7 @@ def plan_caption_track(
         available=tuple(
             f"{t.language_code}({'auto' if t.is_generated else 'manual'})" for t in tracks
         ),
+        declared_audio_language=declared,
     )
 
 
@@ -920,8 +979,8 @@ def fetch_transcript(
         audio_language: the video's ``defaultAudioLanguage`` when the caller
             already looked it up (batched, 1 unit per 50 ids); None means it
             looked and the video declares none. Omitted, it is looked up
-            here, and only when the caption tracks span more than one
-            language (1 unit).
+            here, only when the caption tracks span more than one language,
+            and at most once per call however many attempts run (1 unit).
 
     Returns:
         ``TranscriptResult(segments, actual_language, source, track)`` on
@@ -938,13 +997,25 @@ def fetch_transcript(
     if cached is not None:
         return TranscriptResult(*cached)
 
+    # Each attempt re-lists the tracks, but the declared audio language does
+    # not change between attempts: look it up (1 quota unit) at most once.
+    lookup_audio_language = (
+        cache(lambda: _lookup_default_audio_language(video_id, tag))
+        if audio_language is AUDIO_LANGUAGE_UNSET
+        else None
+    )
+
     ip_blocked = False
     only_dubbed = False
     if transcript_breaker.wait_if_open(tag):
         for attempt, delay in enumerate(retry_delays, start=1):
             try:
                 result = _fetch_transcript_once(
-                    video_id, language, job_id=job_id, audio_language=audio_language
+                    video_id,
+                    language,
+                    job_id=job_id,
+                    audio_language=audio_language,
+                    lookup_audio_language=lookup_audio_language,
                 )
             except _IpBlockedError as e:
                 # YouTube is actively blocking us — no point retrying in 2-8s.
@@ -1082,6 +1153,7 @@ def _fetch_transcript_once(
     language: str = "en",
     job_id: str = "",
     audio_language: Any = AUDIO_LANGUAGE_UNSET,
+    lookup_audio_language: Callable[[], str | None] | None = None,
 ) -> tuple[list[dict], str, dict] | None:
     """Single attempt to fetch transcript via YouTube Transcript API.
 
@@ -1099,7 +1171,12 @@ def _fetch_transcript_once(
 
     try:
         choice = plan_caption_track(
-            ytt_api, video_id, language=language, audio_language=audio_language, tag=tag
+            ytt_api,
+            video_id,
+            language=language,
+            audio_language=audio_language,
+            lookup_audio_language=lookup_audio_language,
+            tag=tag,
         )
         if choice.track is None:
             if choice.match == "only_dubbed":

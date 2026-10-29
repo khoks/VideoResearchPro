@@ -16,6 +16,7 @@ import pytest
 
 from app.models.document import Document
 from app.models.job import Job
+from app.models.job_video import JobVideo
 from app.models.transcript_cache import TranscriptCache
 from app.services import youtube_service
 from app.tasks import job_tasks
@@ -132,3 +133,97 @@ def test_mutation_the_old_rule_would_have_ingested_the_dub(caller, db, monkeypat
 
     doc = db.query(Document).filter(Document.video_id == SHAPE.video_id).one()
     assert doc.transcript_language == "bn"
+
+
+# --- resume_job_after_approval: the topic and channel job path --------------
+
+
+@pytest.fixture
+def approved_job(caller, db):
+    """A channel job whose user approved the dubbed lecture, ready for
+    `resume_job_after_approval` (the path every topic and channel job takes)."""
+    doc = Document(
+        video_id=SHAPE.video_id, source_id=SHAPE.video_id,
+        title="AI Vs ML Vs DL for Beginners in Hindi",
+        url=f"https://www.youtube.com/watch?v={SHAPE.video_id}",
+    )
+    job = Job(job_type="channel", topic=None, num_videos=1, status="awaiting_approval",
+              channel_list=f'["{CHANNEL}"]', tenant_id="tenant-caption")
+    db.add_all([doc, job])
+    db.flush()
+    db.add(JobVideo(job_id=job.id, video_id=SHAPE.video_id, document_id=doc.document_id, approved=True))
+    db.commit()
+    return job
+
+
+def _resume(job_id: str) -> MagicMock:
+    with (
+        patch.object(job_tasks, "chroma_service") as chroma,
+        patch.object(job_tasks, "progress_service"),
+        patch("app.agents.report_agent.run_report_agent", return_value=({}, "<p>report</p>")),
+        patch.object(job_tasks, "build_report_html", return_value="<html></html>"),
+        patch.object(job_tasks, "save_report", return_value="report.html"),
+    ):
+        chroma.insert_chunks = MagicMock(return_value=1)
+        job_tasks.resume_job_after_approval.run(job_id)
+    return chroma
+
+
+def test_approved_job_ingests_and_records_the_spoken_track(approved_job, caller, db):
+    chroma = _resume(approved_job.id)
+
+    db.expire_all()
+    assert db.get(Job, approved_job.id).status == "completed"
+    doc = db.query(Document).filter(Document.video_id == SHAPE.video_id).one()
+    assert (doc.transcript_status, doc.transcript_language) == ("fetched", "hi")
+    track = json.loads(doc.source_metadata_json)["caption_track"]
+    assert (track["language"], track["kind"], track["match"]) == ("hi", "asr", "spoken")
+    assert track["skipped_dubbed"] == ["bn", "en-US"]
+
+    chunks = chroma.insert_chunks.call_args[0][0]
+    text = " ".join(c["text"] for c in chunks)
+    assert TRACK_TEXT["hi"] in text and TRACK_TEXT["bn"] not in text
+    assert caller["api"].fetched == ["hi"]
+
+
+def test_mutation_approval_path_without_recording_the_track(approved_job, db, monkeypatch):
+    """Mutation check: drop the `_record_caption_track` call from the
+    approval loop and the provenance is gone — the test above catches it."""
+    monkeypatch.setattr(job_tasks, "_record_caption_track", lambda video, extracted: None)
+    _resume(approved_job.id)
+
+    db.expire_all()
+    doc = db.query(Document).filter(Document.video_id == SHAPE.video_id).one()
+    assert doc.transcript_language == "hi"
+    assert doc.source_metadata_json is None
+
+
+# --- scripts/retry_unavailable_transcripts.py ------------------------------
+
+
+def test_retry_script_records_the_caption_track(approved_job, caller, db, monkeypatch):
+    import sys
+    from pathlib import Path
+
+    from tests import conftest as _conftest
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    import retry_unavailable_transcripts as retry
+
+    doc = db.query(Document).filter(Document.video_id == SHAPE.video_id).one()
+    doc.transcript_status = "unavailable"
+    db.commit()
+    monkeypatch.setattr(retry, "SessionLocal", _conftest.TestingSessionLocal)
+    chroma = MagicMock()
+    chroma.insert_chunks = MagicMock(return_value=1)
+    monkeypatch.setattr(retry, "chroma_service", chroma)
+
+    assert retry.main(["--job", approved_job.id]) == 0
+
+    db.expire_all()
+    doc = db.query(Document).filter(Document.video_id == SHAPE.video_id).one()
+    assert (doc.transcript_status, doc.transcript_language) == ("fetched", "hi")
+    track = json.loads(doc.source_metadata_json)["caption_track"]
+    assert (track["language"], track["match"]) == ("hi", "spoken")
+    text = " ".join(c["text"] for c in chroma.insert_chunks.call_args[0][0])
+    assert TRACK_TEXT["hi"] in text

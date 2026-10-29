@@ -73,10 +73,18 @@ listed track. New rule (`youtube_service.plan_caption_track` and
 `choose_caption_track`):
 
 1. Drop every ASR track whose code exactly matches a dubbed audio track.
-2. Find the spoken language. Use `defaultAudioLanguage` when known; it is
-   looked up only when the remaining tracks span more than one language,
-   since otherwise the choice cannot change. Otherwise use the player's
-   original audio track.
+2. Find the spoken language: the first of these that some remaining track
+   is in (`resolve_spoken_language`). A signal with no track in its language
+   is passed over, not taken as the answer.
+   1. `defaultAudioLanguage`. It is looked up only when the remaining
+      tracks span more than one language, since otherwise the choice cannot
+      change, and at most once per fetch, however many attempts run.
+   2. The player's original audio track, on a multi-audio video.
+   3. On a single-audio video, the language of its ASR track. With one
+      audio track there is nothing to dub, so the ASR track is the
+      recogniser run on the only audio. This is what keeps a failed lookup
+      (quota spent, key or network error) or a missing declaration from
+      handing `C6YtPJxNULA` to its creator's English translation.
 3. Take a track in the spoken language: a manual track first, then the ASR
    track.
 4. Only when the spoken language is unknown or has no track, fall back to
@@ -105,34 +113,57 @@ Choices the new rule keeps, deliberately:
 
 - **`9tigHWH-UD8`** declares `en` and has a manual `en` track plus a `hi`
   ASR track. The manual English track is chosen because it matches the
-  declaration. If the speech is mostly Hindi, that track is a translation. No
-  free signal can tell, so the declaration decides.
+  declaration. If the speech is mostly Hindi, that track is a translation.
+  The recogniser heard `hi`, but on Hinglish speech the two signals are
+  equally plausible, so the declaration comes first while a track is in it.
+  If the lookup fails or the video declares nothing, the ASR track's `hi`
+  decides.
 - **The English-first fallback when the spoken language is unknown** (the
-  brief). It only applies when no declaration is available and the video has
-  a single audio track.
+  brief). It only applies when no declaration with a track is available, the
+  video has a single audio track, and that track has no ASR track (or ASR
+  tracks in more than one language).
 
 ## 4. The re-fetch dry run (T-1.11.11.3)
 
 `backend/scripts/refetch_dubbed_transcripts.py` was run against the whole
-library in dry-run mode (2026-10-25). It skips Whisper transcripts and reads
-declarations for the rest (2 units, not logged). It lists caption tracks only
-where a dub is possible: no declaration, or a cached language that differs
-from the declared one.
+library in dry-run mode. It skips Whisper transcripts, reads declarations for
+the rest (2 units, not logged) and lists the caption tracks of every
+remaining row.
+
+The first run (2026-10-25) listed only where a dub seemed possible: no
+declaration, or a cached language that differed from the declared one. That
+skipped 75 rows as "cached in the declared language". But a declaration is
+no proof: 4 of the 37 measured Hindi videos declare English, and an `en-US`
+dub cached under an `en-IN` declaration shares its primary subtag. So the
+skip was removed, and the run was repeated on 2026-10-29 with every
+candidate listed:
 
 | | Count |
 |---|---|
 | Cached transcripts skipped as Whisper (`source='whisper'`, or a language name such as `english` on pre-provenance rows) | 134 |
-| YouTube-caption candidates | 93 |
-| Cached in the declared language (no listing needed) | 75 |
-| Listed (paced 4.0 s, no IP-block signal) | 18 |
-| Listed and already in the spoken language | 15 |
+| YouTube-caption candidates, all listed (paced 4.0 s, about 6 minutes, no IP-block signal, no listing failure) | 93 |
+| ...of which the first run had skipped as cached in the declared language | 74 (all confirmed in the spoken language) |
+| Already in the spoken language | 90 |
+| Every track a dub (owner decision: no caption track can replace them) | 0 |
 | **Would be re-fetched** | **3**: `1v3_AQ26jZ0` (bn → hi), `5AuuOZ4vuxI` (bn → hi), `v6CuYULP3tM` (en-US → hi) |
 
+The spoken language came from the declaration on 76 rows, the player's
+original audio on 11, and the ASR track of a single-audio video on 6. All 93
+matched a track in the spoken language.
+
 None of the three has a knowledge report. The write mode (`--write`) is the
-owner's step. It re-fetches the three, overwrites their `transcript_cache`
-rows, updates the documents, and replaces their chunks in the global
-collection. Re-embedding Hindi chunks runs `code_mixing_render_english` (an
-LLM call, D-084) while `CODE_MIX_ENGLISH_RENDERING_ENABLED` is on.
+owner's step. It re-fetches the three, then, for each:
+
+1. chunks the new text before writing anything;
+2. deletes the old chunks, and stops (writing nothing) if Chroma reports the
+   delete failed;
+3. writes the `transcript_cache` row and the document in one transaction;
+4. inserts the new chunks.
+
+A failure at any step leaves a state the next run lists again, or the next
+job re-embeds from the cache. The pass stops at the first IP-block signal.
+Re-embedding Hindi chunks runs `code_mixing_render_english` (an LLM call,
+D-084) while `CODE_MIX_ENGLISH_RENDERING_ENABLED` is on.
 
 ## 5. What this does not cover
 

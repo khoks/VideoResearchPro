@@ -86,6 +86,10 @@ def test_fetch_transcript_ingests_the_spoken_language_track(harness, name):
         "hindi_audio_bengali_and_english_dubs",
         "manual_hindi_track",
         "hindi_audio_english_translation",
+        "hindi_audio_english_translation_undeclared",
+        "declared_language_without_track",
+        "declared_language_without_track_single_audio",
+        "mislabelled_declaration_hides_dub",
         "only_dubs",
     ],
 )
@@ -129,10 +133,14 @@ def test_a_caller_supplied_audio_language_skips_the_lookup(harness):
     assert result.language == "hi"
 
 
-def test_a_caller_that_found_no_declaration_gets_the_english_first_fallback(harness):
+def test_a_caller_that_found_no_declaration_still_gets_the_spoken_track(harness):
+    """No declaration on a single-audio video: the ASR track's language is
+    the recogniser's reading of the only audio, so the creator's English
+    translation is not taken."""
     result = harness["run"](SHAPES["hindi_audio_english_translation"], audio_language=None)
     assert harness["lookups"] == []
-    assert (result.language, result.track["match"]) == ("en", "fallback_english_first")
+    assert (result.language, result.track["match"]) == ("hi", "spoken")
+    assert result.track["spoken_language_source"] == "asr_track"
 
 
 def test_unknown_spoken_language_keeps_english_first(harness):
@@ -140,9 +148,13 @@ def test_unknown_spoken_language_keeps_english_first(harness):
     assert harness["lookups"] == [["unknownLang1"]]
     assert result.track["spoken_language"] is None
     assert result.track["match"] == "fallback_english_first"
+    assert "declared_audio_language" not in result.track
 
 
-def test_failed_lookup_falls_back_instead_of_failing(harness, monkeypatch):
+def test_failed_lookup_falls_back_to_the_free_signals(harness, monkeypatch):
+    """The Data API quota is spent (or the key or network fails): the lookup
+    yields nothing, and the spoken language still comes from the ASR track
+    of the single audio, never from English-first over a translation."""
     shape = SHAPES["hindi_audio_english_translation"]
     api = FakeTranscriptApi(shape.captions())
     monkeypatch.setattr(youtube_service, "_build_transcript_api", lambda: api)
@@ -152,7 +164,77 @@ def test_failed_lookup_falls_back_instead_of_failing(harness, monkeypatch):
 
     monkeypatch.setattr(youtube_service, "get_default_audio_languages", boom)
     result = youtube_service.fetch_transcript(shape.video_id, allow_whisper=False)
-    assert result is not None and result.language == "en"
+    assert result is not None
+    assert (result.language, result.track["kind"]) == ("hi", "asr")
+    assert result.track["spoken_language_source"] == "asr_track"
+    assert api.fetched == ["hi"]
+
+
+@pytest.mark.parametrize(
+    ("name", "source"),
+    [
+        ("declared_language_without_track", "player"),
+        ("declared_language_without_track_single_audio", "asr_track"),
+    ],
+)
+def test_a_declared_language_with_no_track_passes_to_the_next_signal(harness, name, source):
+    """Declared `ur`, no Urdu track: the search goes on to the original
+    audio (multi-audio) or the ASR track (single audio). Ending it at the
+    declaration would hand the choice to English-first and the creator's
+    English translation (the mutation below)."""
+    result = harness["run"](SHAPES[name])
+    assert harness["lookups"] == [[SHAPES[name].video_id]]
+    assert (result.language, result.track["match"]) == ("hi", "spoken")
+    assert result.track["spoken_language_source"] == source
+    assert result.track["declared_audio_language"] == "ur"
+
+
+def test_mutation_stopping_at_a_declared_language_without_a_track(harness, monkeypatch):
+    """Mutation check: resolve the spoken language the way the first cut
+    did (the declaration wins even with no track in it) and the creator's
+    English translation is ingested — the test above catches that."""
+
+    def declared_wins(usable, *, declared, audio):
+        if declared:
+            return declared, "data_api"
+        if audio is not None:
+            return audio.original, "player"
+        return None, None
+
+    monkeypatch.setattr(youtube_service, "resolve_spoken_language", declared_wins)
+    result = harness["run"](SHAPES["declared_language_without_track"])
+    assert result.language == "en"
+    result = harness["run"](SHAPES["hindi_audio_english_translation_undeclared"])
+    assert result.language == "en"
+
+
+def test_the_lookup_runs_once_across_retries(harness, monkeypatch):
+    """`fetch_transcript` retries a failed track download up to 3 times and
+    re-lists each time; the declared language costs 1 unit once, not once
+    per attempt."""
+    shape = SHAPES["hindi_audio_english_translation"]
+    api = FakeTranscriptApi(shape.captions())
+    http = api._fetcher._http_client
+    real_get = http.get
+    failures = {"left": 2}
+
+    def flaky_get(url):
+        if failures["left"]:
+            failures["left"] -= 1
+            raise ConnectionError("transient")
+        return real_get(url)
+
+    http.get = flaky_get
+    lookups = []
+    monkeypatch.setattr(youtube_service, "_build_transcript_api", lambda: api)
+    monkeypatch.setattr(
+        youtube_service, "get_default_audio_languages",
+        lambda ids, job_id="": lookups.append(list(ids)) or {vid: shape.declared for vid in ids},
+    )
+    result = youtube_service.fetch_transcript(shape.video_id, allow_whisper=False)
+    assert result is not None and result.language == "hi"
+    assert api.listed == 3
+    assert lookups == [[shape.video_id]]
 
 
 def test_only_dubs_is_refused_without_retrying(harness):

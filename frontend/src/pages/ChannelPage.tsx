@@ -16,6 +16,7 @@ import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
 import { formatDate } from '../utils/formatters';
 import type { Channel } from '../services/channelsApi';
+import { apiErrorMessage } from '../utils/apiError';
 
 const CHANNELS_TAB_HREF = '/library?tab=channels';
 
@@ -85,6 +86,13 @@ export function ChannelPage() {
 
   const subscribeBusy = subscribeMut.isPending || unsubscribeMut.isPending;
   const syncBusy = syncMut.isPending || !!syncJobId;
+  // A refused subscribe or sync (a full library, T-5.2.10) is said where it
+  // was started; the next attempt clears it.
+  const actionError = subscribeMut.isError
+    ? apiErrorMessage(subscribeMut.error, 'Could not subscribe. Try again.')
+    : syncMut.isError
+      ? apiErrorMessage(syncMut.error, 'Could not start a sync. Try again.')
+      : null;
 
   return (
     <div style={{ maxWidth: measure.grid, margin: '0 auto' }}>
@@ -131,6 +139,7 @@ export function ChannelPage() {
             channel={channel}
             subscribeBusy={subscribeBusy}
             syncBusy={syncBusy}
+            actionError={actionError}
             onToggleSubscribe={() => handleToggleSubscribe(channel)}
             onSync={() => handleSync(channel)}
           />
@@ -149,12 +158,14 @@ function ChannelHeader({
   channel,
   subscribeBusy,
   syncBusy,
+  actionError = null,
   onToggleSubscribe,
   onSync,
 }: {
   channel: Channel;
   subscribeBusy: boolean;
   syncBusy: boolean;
+  actionError?: string | null;
   onToggleSubscribe: () => void;
   onSync: () => void;
 }) {
@@ -281,6 +292,24 @@ function ChannelHeader({
           )}
         </div>
       </div>
+      {actionError && (
+        <div
+          role="alert"
+          style={{
+            marginTop: space['3'],
+            fontFamily: fonts.ui,
+            fontSize: fontSize.sm,
+            lineHeight: lineHeight.normal,
+            color: c.error,
+            background: c.errorSubtle,
+            border: `1px solid ${c.error}`,
+            borderRadius: radius.md,
+            padding: `${space['2']} ${space['3']}`,
+          }}
+        >
+          {actionError}
+        </div>
+      )}
     </header>
   );
 }

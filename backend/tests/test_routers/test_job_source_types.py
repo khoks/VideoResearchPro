@@ -176,15 +176,55 @@ def test_post_persists_source_types_and_the_run_dispatches_them(
     }
     assert by_type == {"video": 1, "reddit_post": 2, "hn_story": 0}
 
-    # D-063: the dispatched documents are granted to the submitter at search
-    # time, as the search agent's candidates are.
-    visible = {row[0] for row in visibility_service.visible_document_ids(db, user_id)}
+    # T-5.2.10: nothing is granted before approval, dispatched candidates
+    # included (as the search agent's are not). The document cap counts
+    # grants, so a search-time grant let every candidate through the
+    # approval's cap check as "already seen".
+    def _visible() -> set[str]:
+        return {row[0] for row in visibility_service.visible_document_ids(db, user_id)}
+
     reddit_ids = {d.document_id for d in db.query(Document).filter(Document.source_type == "reddit_post")}
-    assert reddit_ids and reddit_ids <= visible
+    assert reddit_ids and not (reddit_ids & _visible())
 
     # The approval list carries both kinds.
     videos = client.get(f"/api/v1/jobs/{job_id}/videos").json()
     assert sorted(v["source_type"] for v in videos) == ["reddit_post", "reddit_post", "video"]
+
+    # D-063: approving grants the approved set, dispatched documents included.
+    r = client.put(
+        f"/api/v1/jobs/{job_id}/approve",
+        json={"approved_video_ids": [v["video_id"] or v["document_id"] for v in videos]},
+    )
+    assert r.status_code == 200, r.text
+    assert reddit_ids <= _visible()
+
+
+def test_dispatched_candidates_count_against_the_document_cap_at_approval(
+    client, db, test_user, reddit_configured, fake_sources, run_worker, monkeypatch
+):
+    """T-5.2.10 at the S-1.5.13 caller: a run with YouTube and Reddit
+    candidates (three documents the submitter has never seen) meets a cap of
+    2 at approval and is refused whole. A grant at search time would have
+    made all three "already seen" and let the approval through."""
+    from app.services.tier_service import TIER_CAPABILITIES, Tier
+
+    monkeypatch.setitem(TIER_CAPABILITIES[Tier.FREE], "document_count_cap", 2)
+    user_id = test_user.id
+    r = client.post("/api/v1/jobs", json=_topic(source_types=["video", "reddit_post"]))
+    assert r.status_code == 201, r.text
+    job_id = r.json()["id"]
+    run_worker(job_id)
+
+    videos = client.get(f"/api/v1/jobs/{job_id}/videos").json()
+    assert len(videos) == 3
+    r = client.put(
+        f"/api/v1/jobs/{job_id}/approve",
+        json={"approved_video_ids": [v["video_id"] or v["document_id"] for v in videos]},
+    )
+    assert r.status_code == 429, r.text
+    detail = r.json()["detail"]
+    assert (detail["resource"], detail["consumed"], detail["requested"]) == ("documents", 0, 3)
+    assert visibility_service.visible_document_ids(db, user_id).count() == 0
 
 
 def test_non_video_only_run_skips_the_search_agent(client, db, fake_sources, run_worker):

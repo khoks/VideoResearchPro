@@ -12,7 +12,12 @@ from app.models.document import Document
 from app.schemas.channel import ChannelResponse, ChannelWeightRequest, SubscribeResponse
 from app.schemas.channel_intelligence import ChannelIntelligenceResponse
 from app.schemas.video import VideoResponse
-from app.services import channel_intelligence_service, subscription_service, visibility_service
+from app.services import (
+    channel_intelligence_service,
+    document_cap_service,
+    subscription_service,
+    visibility_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +117,9 @@ def subscribe_channel(
     channel = db.query(Channel).filter(Channel.channel_id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
+    # T-5.2.10: subscribing starts a sync; a full library is refused before
+    # anything changes (429). A library with room stops at the cap in the task.
+    document_cap_service.refuse_if_full(db, current_user)
 
     subscription_service.set_subscribed(db, channel.channel_id, current_user.id, True)
 
@@ -164,6 +172,7 @@ def sync_channel(
     channel = db.query(Channel).filter(Channel.channel_id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
+    document_cap_service.refuse_if_full(db, current_user)  # T-5.2.10
 
     job_id = _dispatch_subscription_sync(db, channel, tenant_id=current_user.id)
     return SubscribeResponse(channel_id=channel.channel_id, job_id=job_id)

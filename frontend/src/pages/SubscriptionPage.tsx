@@ -9,6 +9,8 @@ import { TIER_DESCRIPTORS, getTierDescriptor } from '../data/tiers';
 import { TierCard } from '../components/marketing/TierCard';
 import { MockPaymentModal } from '../components/marketing/MockPaymentModal';
 import { apiErrorMessage } from '../utils/apiError';
+import { useQuota } from '../hooks/useChannelIntelligence';
+import { documentUsageLine } from '../utils/documentCap';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../theme';
 
 /**
@@ -41,6 +43,9 @@ export function SubscriptionPage() {
   const currentDescriptor = getTierDescriptor(currentTier);
   // Unknown until /auth/me answers: no switch is offered before then.
   const canSwitch = me?.is_operator === true;
+  // T-5.2.10: how full the library is against this plan's document cap.
+  const { data: quota } = useQuota();
+  const usageLine = documentUsageLine(quota);
 
   // ?upgrade=<tier> deep-link from /pricing → open the right modal.
   useEffect(() => {
@@ -117,6 +122,20 @@ export function SubscriptionPage() {
         >
           You're on the <strong>{currentDescriptor.name}</strong> plan. {currentDescriptor.tagline}
         </p>
+        {usageLine && (
+          <p
+            data-document-usage
+            style={{
+              margin: `${space['2']} 0 0`,
+              fontFamily: fonts.ui,
+              fontSize: fontSize.sm,
+              color: c.textSecondary,
+              lineHeight: lineHeight.normal,
+            }}
+          >
+            {usageLine}
+          </p>
+        )}
       </header>
 
       {canSwitch ? (

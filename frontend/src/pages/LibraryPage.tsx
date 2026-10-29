@@ -33,6 +33,7 @@ import {
 } from '../theme';
 import type { LibrarySort, LibraryVideoResponse } from '../services/libraryApi';
 import type { Channel } from '../services/channelsApi';
+import { apiErrorMessage } from '../utils/apiError';
 
 type TabKey = 'videos' | 'channels' | 'ingest';
 
@@ -185,6 +186,14 @@ export function LibraryPage() {
     });
   };
 
+  // A refused subscribe or sync (a full library, T-5.2.10) is said above the
+  // channel list, where it was started; the next attempt clears it.
+  const channelActionError = subscribeMut.isError
+    ? apiErrorMessage(subscribeMut.error, 'Could not subscribe. Try again.')
+    : syncMut.isError
+      ? apiErrorMessage(syncMut.error, 'Could not start a sync. Try again.')
+      : null;
+
   const handleSyncFinished = useCallback((channelId: string) => {
     setSyncingChannels((prev) => {
       if (!(channelId in prev)) return prev;
@@ -311,6 +320,25 @@ export function LibraryPage() {
         />
         </>
       ) : (
+        <>
+        {channelActionError && (
+          <div
+            role="alert"
+            style={{
+              marginBottom: space['4'],
+              fontFamily: fonts.ui,
+              fontSize: fontSize.sm,
+              lineHeight: lineHeight.normal,
+              color: c.error,
+              background: c.errorSubtle,
+              border: `1px solid ${c.error}`,
+              borderRadius: radius.md,
+              padding: `${space['2']} ${space['3']}`,
+            }}
+          >
+            {channelActionError}
+          </div>
+        )}
         <ChannelsTab
           channels={channelsQuery.data ?? []}
           isLoading={channelsQuery.isLoading}
@@ -330,6 +358,7 @@ export function LibraryPage() {
           syncingChannels={syncingChannels}
           onSyncFinished={handleSyncFinished}
         />
+        </>
       )}
     </div>
   );

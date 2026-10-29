@@ -57,10 +57,16 @@ export interface HttpErrorLike {
   message?: string;
 }
 
+/** The body's `detail` when it is a string, or the `message` of an object
+ * detail (quota refusals such as the document cap, T-5.2.10). */
 export function detailFromErrorBody(data: unknown): string | null {
   if (data && typeof data === 'object' && 'detail' in data) {
     const d = (data as { detail?: unknown }).detail;
     if (typeof d === 'string' && d.trim()) return d;
+    if (d && typeof d === 'object') {
+      const m = (d as { message?: unknown }).message;
+      if (typeof m === 'string' && m.trim()) return m;
+    }
   }
   return null;
 }
@@ -68,7 +74,8 @@ export function detailFromErrorBody(data: unknown): string | null {
 /**
  * Map the upload endpoint's documented failure modes to editorial copy.
  * 400 = not a .pdf or empty, 413 = over PDF_MAX_BYTES, 422 = uploaded but
- * no text (image-only or corrupt), anything else = generic.
+ * no text (image-only or corrupt), 429 = the document cap (T-5.2.10),
+ * anything else = generic.
  */
 export function describeUploadError(err: HttpErrorLike | null | undefined): string {
   const status = err?.response?.status;
@@ -87,6 +94,8 @@ export function describeUploadError(err: HttpErrorLike | null | undefined): stri
       return 'Your session expired. Sign in again and retry.';
     case 403:
       return detail ?? 'Your plan does not allow this upload.';
+    case 429:
+      return detail ?? "Your library is at your plan's document cap, so this PDF was not added.";
     default:
       return detail ?? err?.message ?? 'Upload failed. Try again.';
   }

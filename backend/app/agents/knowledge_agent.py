@@ -1,4 +1,9 @@
-"""Per-video knowledge extraction LangGraph agent (Unit 4).
+"""Per-document knowledge extraction LangGraph agent (Unit 4).
+
+Serves every source type: a YouTube transcript, a PDF, a pasted page, a
+thread. The router hands it the document's full text
+(`document_text_service.full_text`); the prompts name the source by its type
+(`knowledge_prompts.source_profile`).
 
 Flow:
   split_transcript  — token-budget batches of the full transcript (no cap)
@@ -24,6 +29,8 @@ from app.agents.prompts.shared import VISUAL_ANNOTATION_CONTRACT
 from app.agents.prompts.knowledge_prompts import (
     EXTRACT_BATCH_PROMPT,
     SYNTHESIZE_REPORT_PROMPT,
+    source_header,
+    source_profile,
 )
 from app.agents.state import KnowledgeAgentState
 from app.config import settings
@@ -105,6 +112,23 @@ def _temporal_note(published_at: str, discussed_era: str) -> str:
     if discussed_era:
         line += f"\nThis source {discussed_era} (dated by its content, distinct from the publish date)."
     return line
+
+
+def _metadata_author(document: Any) -> str:
+    """The author a pasted page's extractor recorded, or "" (fail-soft).
+
+    Pasted pages and PDFs have no channel; the paste path keeps the
+    extractor's byline in ``source_metadata_json["author"]``.
+    """
+    raw = getattr(document, "source_metadata_json", None)
+    if not raw:
+        return ""
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return ""
+    author = data.get("author") if isinstance(data, dict) else None
+    return str(author).strip() if isinstance(author, str) else ""
 
 
 def split_transcript(state: KnowledgeAgentState) -> dict:
@@ -215,8 +239,12 @@ def extract_per_batch(state: KnowledgeAgentState) -> dict:
         temperature=0.0,
         max_tokens=EXTRACT_BATCH_MAX_COMPLETION_TOKENS,
     )
-    video_title = state.get("video_title", "") or "Unknown"
-    channel_name = state.get("channel_name", "") or "Unknown"
+    # How the prompt names the source: a video, a PDF, a thread (one source
+    # type's words; the rules around them are the same for every type).
+    profile = source_profile(state.get("source_type"))
+    header = source_header(
+        profile, state.get("video_title", "") or "", state.get("channel_name", "") or ""
+    )
     temporal_note = _temporal_note(
         state.get("published_at") or "", state.get("discussed_era") or ""
     )
@@ -227,8 +255,10 @@ def extract_per_batch(state: KnowledgeAgentState) -> dict:
     extractions: list[dict] = []
     for i, batch_text in enumerate(batches):
         prompt = EXTRACT_BATCH_PROMPT.format(
-            video_title=video_title,
-            channel_name=channel_name,
+            source_subject=profile.subject,
+            source_header=header,
+            source_voice=profile.voice,
+            text_label=profile.text_label,
             temporal_note=temporal_note,
             language_note=language_note,
             batch_text=batch_text,
@@ -335,9 +365,14 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
         "synthesize_report: extraction %d tokens -> completion budget %d (model %s)",
         _count_tokens(merged_json), synth_max_tokens, _synth_cfg.model,
     )
+    profile = source_profile(state.get("source_type"))
     prompt = SYNTHESIZE_REPORT_PROMPT.format(
-        video_title=state.get("video_title", "") or "Unknown",
-        channel_name=state.get("channel_name", "") or "Unknown",
+        source_noun=profile.noun,
+        source_short=profile.short,
+        source_header=source_header(
+            profile, state.get("video_title", "") or "", state.get("channel_name", "") or ""
+        ),
+        text_label=profile.text_label,
         temporal_note=_temporal_note(
             state.get("published_at") or "", state.get("discussed_era") or ""
         ),
@@ -405,14 +440,17 @@ def run_knowledge_extract_agent(video: Any, full_transcript_text: str) -> dict:
           },
         }
     """
-    video_id = getattr(video, "video_id", "") or ""
+    video_id = getattr(video, "video_id", "") or getattr(video, "document_id", "") or ""
     video_title = getattr(video, "title", "") or ""
+    source_type = getattr(video, "source_type", "") or "video"
     # `video.channel_name` is a property that joins through `channel` and may
     # raise if the relationship isn't loaded; fall back to "" on any error.
     try:
         channel_name = getattr(video, "channel_name", "") or ""
     except Exception:
         channel_name = ""
+    if not channel_name and source_type != "video":
+        channel_name = _metadata_author(video)
 
     text = full_transcript_text or ""
     processing: dict | None = None
@@ -440,6 +478,7 @@ def run_knowledge_extract_agent(video: Any, full_transcript_text: str) -> dict:
     result = graph.invoke({
         "messages": [],
         "video_id": video_id,
+        "source_type": source_type,
         "video_title": video_title,
         "channel_name": channel_name,
         "published_at": published_at,

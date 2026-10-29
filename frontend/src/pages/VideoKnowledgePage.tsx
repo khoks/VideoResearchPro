@@ -22,17 +22,24 @@ import type { KnowledgeArtifact } from '../services/knowledgeApi';
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
 interface Props {
+  /** The document's id: its `document_id`, or a video's legacy YouTube id. */
   videoId: string;
   videoTitle: string;
+  /**
+   * `documents.source_type`. Frames exist only for YouTube videos, so the
+   * "On screen" panel is left out for any other type. Omitted means video.
+   */
+  sourceType?: string;
   onClose: () => void;
 }
 
 /**
  * Right-side slide-in drawer showing the extracted knowledge artifact for a
- * single video. Auto-kicks extraction if no cached artifact exists so the first
- * click "just works" with a spinner.
+ * single document — a video, a PDF, a pasted page, a thread. Auto-kicks
+ * extraction if no cached artifact exists so the first click "just works"
+ * with a spinner.
  */
-export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
+export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, onClose }: Props) {
   const c = useColors();
   const s = useShadows();
   const navigate = useNavigate();
@@ -228,8 +235,9 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, onClose }: Props) {
           )}
 
           {displayed && <KnowledgeBody artifact={displayed} />}
-          {/* S-1.18.2: frames are independent of the knowledge report. */}
-          <VideoFramesPanel videoId={videoId} />
+          {/* S-1.18.2: frames are independent of the knowledge report, and
+              only a YouTube video has any. */}
+          {(!sourceType || sourceType === 'video') && <VideoFramesPanel videoId={videoId} />}
           {displayed && (
             // S-8.4.2: no per-source Q&A exists, so a suggestion goes to
             // the library Q&A page (filled, or asked on Shift-click).

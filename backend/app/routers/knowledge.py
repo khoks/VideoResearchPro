@@ -1,8 +1,14 @@
-"""Per-video knowledge extraction endpoints (Unit 4).
+"""Per-document knowledge extraction endpoints (Unit 4).
 
 Runs the knowledge agent synchronously for the first pass (Celery migration can
 come later if the wall-clock becomes an issue). Persists the structured
 extraction + Markdown report on the `Document` row.
+
+Every source type can be extracted: the text comes from
+`document_text_service.full_text` — the transcript cache for a YouTube video,
+the document's reassembled Chroma chunks for a PDF, a pasted page, a thread or
+a podcast episode. The path keeps its `/videos/` prefix (and accepts the
+legacy YouTube id) for back-compat; any `document_id` works.
 """
 from __future__ import annotations
 
@@ -14,10 +20,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db
-from app.models.transcript_cache import TranscriptCache
 from app.models.document import Document
 from app.schemas.knowledge import KnowledgeExtractResponse
-from app.services import visibility_service
+from app.services import document_text_service, visibility_service
 
 logger = logging.getLogger(__name__)
 
@@ -29,43 +34,6 @@ router = APIRouter(
 
 
 _KNOWLEDGE_KEYS = ("topics", "concepts", "events", "facts")
-
-
-def _reconstruct_transcript_text(db: Session, video_id: str) -> str:
-    """Build a single transcript string from `transcript_cache.segments_json`.
-
-    Each segment is expected to have a `text` field (as returned by
-    youtube-transcript-api). Segments are joined with spaces and paragraph
-    breaks introduced every few segments so the splitter has natural
-    boundaries to work with.
-    """
-    row = db.query(TranscriptCache).filter(TranscriptCache.video_id == video_id).first()
-    if row is None:
-        return ""
-    try:
-        segments = json.loads(row.segments_json)
-    except (ValueError, TypeError):
-        logger.exception("Corrupt transcript cache for %s", video_id)
-        return ""
-
-    if not isinstance(segments, list):
-        return ""
-
-    parts: list[str] = []
-    for seg in segments:
-        if not isinstance(seg, dict):
-            continue
-        text = str(seg.get("text", "") or "").strip()
-        if text:
-            parts.append(text)
-
-    # Group into rough paragraphs so the splitter has semantic boundaries.
-    group_size = 20
-    paragraphs = [
-        " ".join(parts[i:i + group_size])
-        for i in range(0, len(parts), group_size)
-    ]
-    return "\n\n".join(paragraphs)
 
 
 def _load_merged_from_video(video: Document) -> dict[str, list[str]]:
@@ -115,12 +83,13 @@ def extract_knowledge(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> KnowledgeExtractResponse:
-    """Run the knowledge agent on this video and persist the artifact.
+    """Run the knowledge agent on this document and persist the artifact.
 
-    Returns 409 if the video already has an extraction unless `?force=true`.
-    Returns 404 if the video doesn't exist OR this tenant cannot see it
-    (D-063 — indistinguishable on purpose). Returns 422 if no transcript is
-    cached for the video (nothing to extract from).
+    Returns 409 if the document already has an extraction unless `?force=true`.
+    Returns 404 if the document doesn't exist OR this tenant cannot see it
+    (D-063 — indistinguishable on purpose). Returns 422 if neither the
+    transcript cache nor the document's chunks hold any text (nothing to
+    extract from).
     """
     # The path parameter may be the YouTube `video_id` (back-compat) or the
     # `document_id`. Before 2026-10-19 this looked the row up with no tenant
@@ -139,13 +108,18 @@ def extract_knowledge(
             detail="Knowledge already extracted. Pass ?force=true to re-run.",
         )
 
-    transcript_text = _reconstruct_transcript_text(db, video.video_id or video_id)
+    # Keyed on the row's document_id (D-070), never on the path parameter:
+    # before 2026-10-25 this read `transcript_cache` by `video_id`, which is
+    # NULL for every non-video source, so a PDF, a pasted page or a thread
+    # always 422'd here.
+    source_text = document_text_service.full_text(db, video)
+    transcript_text = source_text.text
     if not transcript_text.strip():
-        # 422 = unprocessable content: the video exists but has no transcript
-        # to extract from yet (user must wait for transcript fetch to complete).
+        # 422 = unprocessable content: the document exists but has no text to
+        # extract from yet (its transcript fetch or ingest has not finished).
         raise HTTPException(
             status_code=422,
-            detail="No transcript available for this video",
+            detail="No transcript or text available for this document yet",
         )
 
     # T-5.5.5: per-user quota check BEFORE the (expensive) agent runs.
@@ -184,8 +158,11 @@ def extract_knowledge(
     db.refresh(video)
 
     logger.info(
-        "Knowledge extracted for video %s: %d topics, %d concepts, %d events, %d facts",
-        video_id,
+        "Knowledge extracted for document %s (%s, text from %s): "
+        "%d topics, %d concepts, %d events, %d facts",
+        video.document_id,
+        video.source_type or "video",
+        source_text.origin,
         len(merged["topics"]),
         len(merged["concepts"]),
         len(merged["events"]),

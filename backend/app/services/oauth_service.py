@@ -20,11 +20,15 @@ Flow:
    - looks up + deletes the ``oauth_states`` row (single-use).
    - exchanges ``code`` for an access token via the provider's token
      endpoint, including the PKCE code_verifier as proof.
-   - fetches user info (email + provider_user_id) via the userinfo
-     endpoint.
+   - fetches user info (email + provider_user_id + whether the provider
+     verified the email) via the userinfo endpoint (GitHub: plus
+     ``/user/emails`` for the primary address and its verification).
    - finds an existing ``OAuthIdentity`` row OR (on first link)
      finds-or-creates the ``User`` (matched by email) and writes the
-     identity row.
+     identity row. A first link or a new account needs an email the
+     provider verified (T-5.4.10); an unverified one is refused with
+     ``OAuthUnverifiedEmailError`` and nothing is written. The identity
+     row records when the provider vouched (``email_verified_at``).
    - returns the resolved ``User``.
 
 Tests inject a mock ``http_get`` / ``http_post`` so the flow can be
@@ -37,7 +41,7 @@ import hashlib
 import logging
 import secrets
 import urllib.parse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Protocol
 
@@ -65,6 +69,35 @@ class OAuthProviderUnconfiguredError(OAuthError):
     pass
 
 
+class OAuthUnverifiedEmailError(OAuthError):
+    """The provider authenticated the user but did not verify the email.
+
+    A policy refusal, not a protocol failure, so the router shows its
+    message (``str(exc)``) instead of the generic 401. The message is the
+    same whether or not an account has the address, so it reveals nothing
+    about which addresses are registered.
+    """
+
+
+# T-5.4.10: why a first OAuth sign-in with an unverified address is refused.
+# One message for both cases (an account has the address, or none does), so
+# the refusal cannot be used to learn which addresses are registered.
+UNVERIFIED_EMAIL_REFUSED = (
+    "{provider} has not verified the email address on your account, so it "
+    "cannot be used to sign in here. If you already have an account, sign in "
+    "with your email and password. Otherwise verify the address with "
+    "{provider} and try again. Nothing was linked or created."
+)
+
+_PROVIDER_LABELS = {"google": "Google", "github": "GitHub"}
+
+
+def unverified_email_message(provider_name: str) -> str:
+    """The refusal shown for an unverified first sign-in with ``provider_name``."""
+    label = _PROVIDER_LABELS.get(provider_name, provider_name)
+    return UNVERIFIED_EMAIL_REFUSED.format(provider=label)
+
+
 # ---------------------------------------------------------------------------
 # Provider abstraction
 # ---------------------------------------------------------------------------
@@ -77,9 +110,14 @@ class OAuthUserInfo:
     provider_user_id: str
     email: str | None
     # Whether the provider vouches that the account holder owns ``email``.
-    # Required to create or link an account for an ADMIN_EMAILS address
-    # (D-111 review); other addresses are linked as before.
+    # Required to create an account or link one by email on a first OAuth
+    # sign-in (T-5.4.10; first for ADMIN_EMAILS addresses, D-111 review).
     email_verified: bool = False
+    # The provider's email answer could not be read (GitHub's /user/emails
+    # failed: an outage, a rate limit, a timeout). That says nothing about
+    # whether the address is verified, so a first sign-in gets the generic,
+    # retryable failure rather than the verify-your-address refusal.
+    email_lookup_failed: bool = False
 
 
 class OAuthProvider(Protocol):
@@ -201,19 +239,53 @@ class _GenericOAuthProvider:
         http_get: Callable[..., Any] | None = None,
     ) -> OAuthUserInfo:
         get = http_get or _default_http_get
-        resp = get(
-            self.userinfo_endpoint,
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/json",
-            },
-        )
+        resp = get(self.userinfo_endpoint, headers=_bearer_headers(access_token))
         payload = _safe_json(resp)
         if not isinstance(payload, dict):
             raise OAuthError(
                 f"Userinfo response from '{self.name}' was not a JSON object"
             )
         return self.parse_user_info(payload)
+
+
+@dataclass(frozen=True)
+class _GitHubOAuthProvider(_GenericOAuthProvider):
+    """GitHub: ``/user`` for the id, then ``/user/emails`` for the email.
+
+    ``/user``'s ``email`` is the profile's public address and carries no
+    verification flag, so it is never trusted (T-5.4.10). ``/user/emails``
+    (scope ``user:email``) lists every address with ``primary`` and
+    ``verified``; the account's primary address is used, verified only when
+    GitHub says so. If the lookup fails, nothing is known about the email
+    (``email_lookup_failed``): a returning user (identity already linked)
+    still signs in, a first sign-in gets the generic failure and can retry.
+    """
+
+    emails_endpoint: str = "https://api.github.com/user/emails"
+
+    def fetch_user_info(
+        self,
+        access_token: str,
+        *,
+        http_get: Callable[..., Any] | None = None,
+    ) -> OAuthUserInfo:
+        info = super().fetch_user_info(access_token, http_get=http_get)
+        get = http_get or _default_http_get
+        try:
+            payload = _safe_json(
+                get(self.emails_endpoint, headers=_bearer_headers(access_token))
+            )
+        except httpx.HTTPError as e:
+            logger.info("GitHub /user/emails lookup failed: %s", e)
+            payload = None
+        return _github_primary_email(info, payload)
+
+
+def _bearer_headers(access_token: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json",
+    }
 
 
 def _safe_json(resp: Any) -> Any:
@@ -262,17 +334,33 @@ def _github_user_info(payload: dict) -> OAuthUserInfo:
     uid = payload.get("id")
     if not uid:
         raise OAuthError("GitHub userinfo missing 'id'")
-    # GitHub's /user only returns email if it's set to public; private
-    # email requires a second call to /user/emails. Out of scope for v1
-    # — we accept None and leave email-linking to the caller.
+    # /user's ``email`` is the profile's public address (None when private)
+    # and says nothing about verification, so it is never counted as
+    # verified (T-5.4.10). ``_github_primary_email`` replaces it with the
+    # primary address from /user/emails when that lookup works.
     email = str(payload.get("email")) if payload.get("email") else None
-    return OAuthUserInfo(
-        provider_user_id=str(uid),
-        email=email,
-        # /user's ``email`` is the profile's public email, which GitHub only
-        # lets an account set to one of its verified addresses.
-        email_verified=email is not None,
-    )
+    return OAuthUserInfo(provider_user_id=str(uid), email=email, email_verified=False)
+
+
+def _github_primary_email(info: OAuthUserInfo, emails: Any) -> OAuthUserInfo:
+    """Apply GitHub's ``/user/emails`` answer to ``info``.
+
+    ``emails`` is a list of ``{email, primary, verified, visibility}``. The
+    primary address is used, verified only when ``verified`` is ``true``.
+    Anything else (``None`` for a failed request, an error object such as a
+    rate limit or a 5xx page, a list with no primary entry) is no answer:
+    ``info`` stays unverified and is marked ``email_lookup_failed``, so a
+    GitHub outage is not reported to the user as an unverified address.
+    """
+    if isinstance(emails, list):
+        for entry in emails:
+            if isinstance(entry, dict) and entry.get("primary") is True and entry.get("email"):
+                return OAuthUserInfo(
+                    provider_user_id=info.provider_user_id,
+                    email=str(entry["email"]),
+                    email_verified=entry.get("verified") is True,
+                )
+    return replace(info, email_verified=False, email_lookup_failed=True)
 
 
 _GOOGLE = _GenericOAuthProvider(
@@ -286,13 +374,15 @@ _GOOGLE = _GenericOAuthProvider(
     parse_user_info=_google_user_info,
 )
 
-_GITHUB = _GenericOAuthProvider(
+_GITHUB = _GitHubOAuthProvider(
     name="github",
     client_id_attr="OAUTH_GITHUB_CLIENT_ID",
     client_secret_attr="OAUTH_GITHUB_CLIENT_SECRET",
     auth_endpoint="https://github.com/login/oauth/authorize",
     token_endpoint="https://github.com/login/oauth/access_token",
     userinfo_endpoint="https://api.github.com/user",
+    # ``user:email`` is what lets /user/emails answer; it has been in the
+    # scope since T-5.4.5, so existing sign-ins need no fresh consent.
     scope="read:user user:email",
     parse_user_info=_github_user_info,
 )
@@ -410,6 +500,10 @@ def _link_or_create_user(
     db: Session, provider_name: str, info: OAuthUserInfo
 ) -> User:
     """Find existing OAuth identity or (on first OAuth login):
+    - fail with the generic ``OAuthError`` when the provider's email answer
+      could not be read (``email_lookup_failed``): unknown, so retryable;
+    - refuse when the provider did not verify the email (T-5.4.10):
+      ``OAuthUnverifiedEmailError``, and nothing is linked or created;
     - if the email is already a Pratidhvani user, link the identity to
       that user (so users can switch from password to OAuth without
       losing data);
@@ -433,19 +527,37 @@ def _link_or_create_user(
         else:
             return user
 
+    if info.email_lookup_failed:
+        # T-5.4.10 review: the provider's email answer could not be read, so
+        # whether the address is verified is unknown, not "no". A retryable
+        # failure: the generic 401 (audited as oauth_failure), never the
+        # verify-your-address 403, which would send a user whose address is
+        # verified to check it with the provider during an outage.
+        raise OAuthError(
+            f"Provider '{provider_name}' email lookup failed. "
+            f"Cannot link or create the account without it; retry later."
+        )
+
     if info.email is None:
         raise OAuthError(
             f"Provider '{provider_name}' did not return an email address. "
             f"Cannot link or create the account without one."
         )
 
-    # D-111 review: an ADMIN_EMAILS address makes its holder an operator, so
-    # it is created or linked only when the provider vouches for it.
-    if auth_service.is_operator_email(info.email) and not info.email_verified:
-        raise OAuthError(
-            f"Provider '{provider_name}' did not verify an address listed in "
-            f"ADMIN_EMAILS; refusing to create or link an operator account."
+    # T-5.4.10 (amends D-042): linking by email trusts that the address is
+    # the signer's, and a new account takes the address as its identity, so
+    # both need the provider to vouch for it. Decided before any lookup, so
+    # the refusal is the same whether or not an account has the address.
+    # This also covers the D-111 review's rule for ADMIN_EMAILS addresses
+    # (an operator account is created or linked only from a verified one).
+    if not info.email_verified:
+        logger.info(
+            "OAuth first sign-in refused: provider=%s did not verify the "
+            "email (listed in ADMIN_EMAILS: %s)",
+            provider_name,
+            auth_service.is_operator_email(info.email),
         )
+        raise OAuthUnverifiedEmailError(unverified_email_message(provider_name))
 
     user = auth_service.get_user_by_email(db, info.email)
     if user is None:
@@ -461,6 +573,9 @@ def _link_or_create_user(
         provider=provider_name,
         provider_user_id=info.provider_user_id,
         provider_email=info.email,
+        # D-042 (B'): record that the provider vouched for the address, so
+        # links made under T-5.4.10 are told apart from older ones (NULL).
+        email_verified_at=datetime.now(timezone.utc),
     )
     db.add(identity)
     db.commit()

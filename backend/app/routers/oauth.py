@@ -15,7 +15,10 @@ Endpoints:
 
 Per [D-040](../decisions.md#d-040-...), failures return a generic 401
 without leaking which step (state validation / token exchange / userinfo
-fetch / linking) actually failed.
+fetch / linking) actually failed. One exception (T-5.4.10): a first
+sign-in whose email the provider did not verify is refused with 403 and
+a message saying what to do, since that is a policy refusal after the
+provider authenticated the user.
 """
 from __future__ import annotations
 
@@ -32,6 +35,7 @@ from app.services.audit_service import Event
 from app.services.oauth_service import (
     OAuthError,
     OAuthProviderUnconfiguredError,
+    OAuthUnverifiedEmailError,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,6 +85,18 @@ def callback(
 ) -> TokenResponse:
     try:
         user = oauth_service.complete_flow(db, provider, state, code)
+    except OAuthUnverifiedEmailError as e:
+        # T-5.4.10: a policy refusal, not a protocol failure. The provider
+        # authenticated the user, so the step is no secret, and the user
+        # needs to know what to do. The message is the same whether or not
+        # an account has the address.
+        audit_service.record(
+            db,
+            event=Event.LOGIN_FAILURE,
+            request=request,
+            metadata={"reason": "oauth_email_unverified", "provider": provider},
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except OAuthError as e:
         # Audit but never leak the specific failure mode.
         audit_service.record(

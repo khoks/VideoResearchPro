@@ -568,6 +568,7 @@ class PodcastConnector(BaseConnector):
         *,
         job_id: str = "",
         query: str = "",
+        allow_whisper: bool = True,
     ) -> ExtractedText | None:
         """Return episode segments via in-feed transcript or Whisper.
 
@@ -577,7 +578,11 @@ class PodcastConnector(BaseConnector):
         2. Find the entry matching the candidate's GUID.
         3. Try the in-feed `<podcast:transcript>` first; if SRT/VTT,
            parse directly.
-        4. Else download the audio enclosure and Whisper-transcribe.
+        4. Else download the audio enclosure and Whisper-transcribe,
+           unless ``allow_whisper`` is False (as for the YouTube
+           connector): a topic run's search phase reads in-feed
+           transcripts only, and extraction passes the job's remaining
+           ``WHISPER_MAX_PER_JOB`` budget (S-1.5.13).
         5. Attach episode-level `extra` (author, comment_url with
            ``#t=`` time fragment) to every segment so per-segment
            reply-anchor citations get a deep-linkable timestamp.
@@ -635,6 +640,14 @@ class PodcastConnector(BaseConnector):
         text_source = "podcast_transcript"
 
         # 2. Whisper fallback.
+        if not segments and not allow_whisper:
+            logger.info(
+                "podcast fetch_text: no in-feed transcript for %s and Whisper "
+                "not allowed here; text unavailable for now",
+                candidate.source_id,
+                extra={"job_id": job_id},
+            )
+            return None
         if not segments:
             audio_url = _enclosure_url(entry)
             segments = _whisper_transcribe_audio(audio_url, candidate.source_id, job_id)

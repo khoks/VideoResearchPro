@@ -24,6 +24,9 @@ class TemplateParameters(BaseModel):
     preferred_channels: list[str] | None = None
     output_length: Literal["auto", "brief", "standard", "deep"] | None = None
     visual_analysis: bool = False
+    # S-1.5.13: None is the default (YouTube only); validated like a
+    # submission by `validate_parameters`.
+    source_types: list[str] | None = None
     channel_list: list[str] | None = None
     videos_per_channel: int | None = Field(default=10, ge=1, le=50)
 

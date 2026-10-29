@@ -761,7 +761,7 @@ def _recogniser_language(usable: list) -> str | None:
 
     With one audio track there is nothing to dub, so the ASR track is
     YouTube's recogniser run on the only audio: its language is a free,
-    strong reading of the spoken language (on ``IbcYNtZ8HZY`` it heard Hindi
+    strong reading of the spoken language (on ``HVkSGvZi-WY`` it heard Hindi
     where the uploader declared English). None when the ASR tracks disagree
     or there are none.
     """

@@ -31,7 +31,8 @@ async function boot(page: Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem('videoresearchpro.authToken', 'fixture-token');
     window.localStorage.setItem('vrp:theme', 'light');
-    // Every value the canvas's layout state takes, from the first render.
+    // Every change of the canvas's layout state. The value it mounts with is
+    // an insertion, not an attribute change, so it is not recorded.
     const seen: string[] = [];
     (window as unknown as { __layoutSeen: string[] }).__layoutSeen = seen;
     new MutationObserver(records => {
@@ -134,10 +135,14 @@ test('reduced motion lays the map out before the first frame', async ({ page }) 
 test('without reduced motion the layout animates, then freezes', async ({ page }) => {
   await boot(page);
   await page.goto('/library/graph');
+  // The canvas mounts as 'settled' and its effect starts the animation just
+  // after, so waiting on the attribute can return before anything ran. Wait
+  // on what the observer recorded: 'running', then 'settled'.
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __layoutSeen: string[] }).__layoutSeen), FIRST_RENDER)
+    .toEqual(expect.arrayContaining(['running', 'settled']));
   const map = page.getByRole('application', { name: 'Library map' });
-  await expect(map).toHaveAttribute('data-layout', 'settled', FIRST_RENDER);
-  const seen = await page.evaluate(() => (window as unknown as { __layoutSeen: string[] }).__layoutSeen);
-  expect(seen).toEqual(expect.arrayContaining(['running', 'settled']));
+  await expect(map).toHaveAttribute('data-layout', 'settled');
 });
 
 test('a narrow screen opens on the table', async ({ page }) => {

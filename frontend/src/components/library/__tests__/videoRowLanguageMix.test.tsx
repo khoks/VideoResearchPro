@@ -76,6 +76,16 @@ const SPANISH_ABSTAINED = mix({
   primary_language: 'other', native_script: 'Latin', hi_share: 0.742, matrix_hi_share: 1,
   quote_mode: 'native_script', code_mixed: true,
 });
+// A bilingual source: English frames most of it, Spanish the rest.
+const ENGLISH_AND_SPANISH = mix({
+  primary_language: 'other', native_script: 'Latin', hi_share: 0.2875, named_share: 0,
+  matrix_hi_share: 0.3589, quote_mode: 'roman', code_mixed: true,
+});
+// An English talk with a verse passage the tagger cannot name.
+const ENGLISH_WITH_VERSE = mix({
+  primary_language: 'en', native_script: 'Latin', hi_share: 0.1, named_share: 0,
+  matrix_hi_share: 0.1, quote_mode: 'plain_english', code_mixed: true,
+});
 const ARABIC = mix({
   primary_language: 'hi', native_script: 'Arabic', hi_share: 1, matrix_hi_share: 1,
   quote_mode: 'native_script', code_mixed: true,
@@ -201,6 +211,24 @@ describe('languageMixBadge names Hindi only where something supports it', () => 
     expect(languageMixBadge(SPANISH_ABSTAINED, 'en', 'video')?.description).toContain('Nothing says which language');
     // A hi label is still evidence the tagger does not have.
     expect(languageMixBadge(SPANISH_ABSTAINED, 'hi', 'video')?.label).toContain('Hindi (romanised)');
+  });
+
+  it('keeps the English of a bilingual source the tagger abstained on', () => {
+    expect(languageMixBadge(ENGLISH_AND_SPANISH, 'en', 'video')?.label).toBe('Other language + English');
+    expect(languageMixBadge(ENGLISH_AND_SPANISH, null, 'pdf')?.label).toBe('Other language + English');
+    expect(languageMixBadge({ ...ENGLISH_AND_SPANISH, matrix_hi_share: 0.5 }, 'en', 'video')?.label)
+      .toBe('Other language');
+  });
+
+  it('does not call an unnamed passage in an English video Hindi', () => {
+    expect(languageMixBadge(ENGLISH_WITH_VERSE, 'en', 'video')?.label).toBe('English + other words');
+    // Named Hindi at the same shares, and a profile stored before `named_share`.
+    expect(languageMixBadge({ ...ENGLISH_WITH_VERSE, named_share: 0.9 }, 'en', 'video')?.label)
+      .toBe('English + Hindi (romanised)');
+    expect(languageMixBadge({ ...ENGLISH_WITH_VERSE, named_share: null }, 'en', 'video')?.label)
+      .toBe('English + Hindi (romanised)');
+    expect(languageMixBadge({ ...ENGLISH_WITH_VERSE, named_share: undefined }, 'en', 'video')?.label)
+      .toBe('English + Hindi (romanised)');
   });
 
   // T-1.16.1.10: an ISO 639-2 label names the same language as its two-letter

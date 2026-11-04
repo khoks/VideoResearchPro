@@ -32,6 +32,9 @@ export interface LanguageMix {
   native_script: string | null;
   /** Non-English words over all language-bearing words, 0–1. */
   hi_share: number;
+  /** Of those words, the share the tagger could name; the rest it abstained
+   * on. Null or absent on a profile stored before T-1.16.2.15. */
+  named_share?: number | null;
   /** Share of speech framed by non-English grammar, 0–1. */
   matrix_hi_share: number;
   /** `plain_english`, `roman` or `native_script`. */

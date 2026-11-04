@@ -139,12 +139,53 @@ def test_lexicon_detector_on_held_out_romanised_text():
     pred = {u["id"]: [t for _, t in cm.tag_tokens(u["text"])] for u in units}
     s = ev.score(units, pred)["latin"]
     # Measured 2026-10-19: token P 0.929 R 0.890; unit P 0.875 R 0.933.
-    # With abstention, read once on 2026-11-04 (PR #403): token P 0.938 R 0.874;
-    # unit P 0.931 R 0.900. Three tokens and one unit lost, two false ones gone.
+    # With abstention (PR #403, 2026-11-04), called Hindi BY NAME: token P 0.938
+    # R 0.874; unit P 0.931 R 0.900. Those three tokens and that one unit are not
+    # lost to the pipeline: they are `OTHER`, and the shares count `OTHER`. The
+    # production row reads exactly what it read before abstention.
     assert s["token_hindi"]["precision"] >= 0.90
     assert s["token_hindi"]["recall"] >= 0.86
     assert s["unit_contains_hindi"]["recall"] >= 0.90
-    assert s["hindi_share_mae"] <= 0.03
+    production = s["production"]
+    assert production["token_non_english"]["precision"] >= 0.90
+    assert production["token_non_english"]["recall"] >= 0.86
+    assert production["unit_non_english"]["recall"] >= 0.90
+    assert production["hindi_share_mae"] <= 0.03
+
+
+def test_the_production_row_reads_other_the_way_shares_does():
+    """The review of PR #403: the scorer counted only "hi", so `OTHER` scored as
+    zero share while `shares` counted it, and the MAE floor measured nothing
+    the pipeline reads."""
+    unit = {"id": "u", "text": "the dog runs fast", "annotation": "=", "base": "en",
+            "matrix": "en", "split": "dev"}
+    tags = ["en", cm.OTHER, cm.OTHER, "en"]
+    s = ev.score([unit], {"u": tags})["latin"]
+
+    assert s["token_hindi"]["fp"] == 0
+    assert s["unit_contains_hindi"]["fp"] == 0
+    assert s["production"]["token_non_english"]["fp"] == 2
+    assert s["production"]["unit_non_english"]["fp"] == 1
+    assert s["production"]["hindi_share_mae"] == cm.shares(tags)["hi_share"] == 0.5
+
+
+def test_mutation_other_inflated_on_english_text_moves_the_share_floor(monkeypatch):
+    """An abstention that swallowed English words would have passed the old
+    floor: every word `OTHER`, every Hindi share still looked right."""
+    real = cm._abstain
+
+    def swallow(tokens, tags, lex):
+        real(tokens, tags, lex)
+        for i, tag in enumerate(tags):
+            if tag == "en":
+                tags[i] = cm.OTHER
+
+    units = [u for u in ev.load_units() if u["split"] == "dev"]
+    monkeypatch.setattr(cm, "_abstain", swallow)
+    s = ev.score(units, {u["id"]: [t for _, t in cm.tag_tokens(u["text"])] for u in units})["latin"]
+
+    assert s["token_hindi"]["fp"] <= 2  # the row that sees nothing
+    assert s["production"]["hindi_share_mae"] > 0.5
 
 
 def test_lexicon_detector_on_english_content_words_in_devanagari():
@@ -161,7 +202,7 @@ def test_lexicon_detector_on_english_content_words_in_devanagari():
     s = ev.score(units, pred)["devanagari"]
     assert s["token_hindi"]["recall"] >= 0.97
     assert 0.90 <= s["token_hindi"]["precision"] < 1.0
-    assert s["hindi_share_mae"] <= 0.08
+    assert s["production"]["hindi_share_mae"] <= 0.08
 
 
 def test_english_words_in_devanagari_are_english_and_hindi_homographs_are_not():
@@ -483,8 +524,10 @@ def test_frozen_detector_on_80_unseen_comments():
     18 Hindi-bearing comments caught — the miss is one borrowed word
     ("rupye") in an English comment, which renders as plain English anyway;
     no English comment flagged except one misspelling ("mauch"). With
-    abstention, read once on 2026-11-04 (PR #403): token P 0.993 R 0.837, still
-    17 of 18, and "mauch" no longer flagged."""
+    abstention (PR #403, 2026-11-04), called Hindi BY NAME: token P 0.993 R 0.837,
+    still 17 of 18, and "mauch" no longer called Hindi. It is `OTHER`, which the
+    shares still count, so the production row reads what it read before: token
+    P 0.986 R 0.849, "mauch" flagged, share MAE 0.024."""
     from pathlib import Path
 
     units = ev.load_units(Path(ev.FIXTURE).parent / "heldout_units.json")
@@ -495,3 +538,5 @@ def test_frozen_detector_on_80_unseen_comments():
     assert s["token_hindi"]["recall"] >= 0.82
     assert s["unit_contains_hindi"]["recall"] >= 0.9
     assert s["unit_contains_hindi"]["fp"] <= 2
+    assert s["production"]["unit_non_english"]["recall"] >= 0.9
+    assert s["production"]["unit_non_english"]["fp"] <= 2

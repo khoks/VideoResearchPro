@@ -8,6 +8,9 @@ words read as Hindi, English content words included.
 
 The floors here restate the acceptance rule in PR #403, on the DEV split and
 the foreign sample only; the held-out figures stay in test_code_mixing_service.
+Two rows, kept apart since the review of that PR: `token_hindi` says what a word
+is CALLED, and `production` says what the shares read, where `OTHER` is
+non-English. Abstention moves the first and not the second.
 The sample is hand-written: `tuning` languages set the parameters, `unseen`
 ones set nothing, `romanised_control` is Hindi that must stay Hindi.
 """
@@ -165,9 +168,107 @@ def test_a_language_close_to_english_is_not_called_english_or_hindi():
 
     assert profile["matrix_hi_share"] < 0.5  # the case this test is for
     assert profile["primary_language"] == "other"
-    assert "Hindi" not in cm.source_note(cm.chunk_metadata_from_profile(profile)).replace(
-        "not English or Hindi", ""
-    )
+    note = cm.source_note(cm.chunk_metadata_from_profile(profile))
+    assert "(not Hindi)" in note
+    assert "Hindi" not in note.replace("(not Hindi)", "")
+
+
+ENGLISH_FRAME = (
+    "the committee reviewed the budget and decided that the new schools would open next "
+    "spring after the council had finished its final report on the funding plan"
+)
+SPANISH = (
+    "el perro de mi hermana come en la cocina todos los dias porque tiene mucha hambre y "
+    "siempre quiere salir"
+)
+VERSE = (
+    "dharmakshetre kurukshetre samaveta yuyutsavah mamakah pandavashchaiva kimakurvata "
+    "sanjaya drishtva tu pandavanikam vyudham duryodhanastada acharyamupasangamya raja "
+    "vachanamabravit"
+)
+SCATTERED_NAMES = (
+    "Vyuha told the council that Dronacharya and Kuntiputra would review the budget with "
+    "Yudhishthira after the spring, and the funding plan went to Dhrishtadyumna on Monday"
+)
+
+
+def _mixed(*parts: tuple[str, int]) -> list[dict]:
+    segments = []
+    for text, count in parts:
+        segments.extend({"text": text} for _ in range(count))
+    return [
+        {**s, "start": float(i * 5), "duration": 5.0} for i, s in enumerate(segments)
+    ]
+
+
+def _chunk(segments: list[dict]) -> list[dict]:
+    return [c["metadata"] for c in chunk_transcript(segments, video_metadata={
+        "video_id": "v", "document_id": "d", "title": "t", "channel_name": "c",
+        "url": "https://www.youtube.com/watch?v=v",
+    })]
+
+
+@pytest.mark.parametrize("passage", [VERSE, SPANISH], ids=["verse", "spanish"])
+def test_an_english_source_keeps_its_fields_for_a_passage_the_tagger_cannot_name(passage):
+    """The review of PR #403: the floor counted named words only, so a real
+    passage in another language lost every field, the note and the rendering
+    with them. This is the invariant that says `OTHER` is non-English."""
+    segments = _mixed((ENGLISH_FRAME, 90), (passage, 10))
+    profile = cm.profile_transcript(segments)
+
+    assert profile["primary_language"] == "en" and profile["named_share"] == 0.0
+    assert profile["hi_share"] >= 0.03 and profile["quote_mode"] == cm.PLAIN_ENGLISH
+
+    metas = _chunk(segments)
+    assert all(m["code_mix_primary"] == "en" and m["code_mix_named_share"] == 0.0 for m in metas)
+    rendered = [m for m in metas if cm.needs_english_rendering(m)]
+    assert rendered and len(rendered) < len(metas)  # D-084, on the passage alone
+
+    note = cm.source_note(metas[0])
+    assert note.startswith("speech: mostly English, partly a language the tagger cannot name")
+    assert "Hindi (romanised)" not in note
+
+
+def test_stray_names_are_not_a_passage():
+    """The other side of the same floor, on real text and not on a built
+    profile: as many unplaced words, scattered, leave the source plain."""
+    segments = _mixed((SCATTERED_NAMES, 40))
+    profile = cm.profile_transcript(segments)
+
+    assert profile["primary_language"] == "en"
+    assert profile["hi_share"] >= 0.03 > profile["matrix_hi_share"]
+    assert not any(k.startswith("code_mix") for m in _chunk(segments) for k in m)
+
+
+def test_a_little_named_hindi_stays_under_the_floor_as_it_always_did():
+    """A few Hindi windows do not lift a source past the 3% rule: both the
+    share and the grammar have to clear it."""
+    profile = {"primary_language": "en", "native_script": "Latin", "hi_share": 0.02,
+               "named_share": 1.0, "matrix_hi_share": 0.04, "quote_mode": cm.PLAIN_ENGLISH}
+    assert cm.chunk_metadata_from_profile(profile) == {}
+
+
+def test_a_bilingual_source_is_not_told_to_the_models_as_not_english():
+    """The review of PR #403: mostly English with one unnamed language read
+    "not English or Hindi". `primary` stays `other`, which Dutch needs, and the
+    grammar share says how much English frames it."""
+    segments = _mixed((ENGLISH_FRAME, 60), (SPANISH, 40))
+    profile = cm.profile_transcript(segments)
+    assert profile["primary_language"] == "other" and profile["matrix_hi_share"] < 0.5
+
+    note = cm.source_note(_chunk(segments)[0])
+    assert note.startswith("speech: partly English, partly a language the tagger cannot name (not Hindi)")
+    assert "not English or Hindi" not in note
+
+    prompt = cm.describe_source_for_prompt(segments)
+    assert "Read each passage in its own language" in prompt
+    assert "Hindi written in Latin letters is Hindi" not in prompt
+
+
+def test_a_whole_foreign_source_still_reads_as_neither():
+    meta = cm.chunk_metadata_for_transcript(_by("es-speech")["text"])
+    assert meta["code_mix_matrix_share"] >= 0.5
+    assert cm.source_note(meta).startswith("speech: not English or Hindi, language unknown")
 
 
 def test_english_with_unplaced_names_is_plain_english():
@@ -252,6 +353,12 @@ def test_rule_a_on_the_tuning_split():
     assert latin["token_hindi"]["fp"] <= 2
     assert (latin["unit_contains_hindi"]["tp"], latin["unit_contains_hindi"]["fn"]) == (12, 0)
     assert latin["unit_contains_hindi"]["fp"] == 0
+    # What the shares read: the same, and the same as before the pass.
+    production = latin["production"]
+    assert production["token_non_english"]["recall"] >= 0.943
+    assert production["token_non_english"]["fp"] <= 2
+    assert production["unit_non_english"]["fp"] == 0
+    assert production["hindi_share_mae"] <= 0.004
 
     units = _dev()
     matrix = ev.matrix_accuracy(units, {u["id"]: cm.matrix_language(cm.tag_tokens(u["text"])) for u in units})
@@ -296,6 +403,7 @@ def test_a_vowel_sign_only_english_uses_marks_the_word_english():
 
 @pytest.mark.parametrize("word", [
     "काम", "बात", "लोग", "समय", "बस", "पास", "पर", "मन", "कम", "आई", "दे", "इन", "है", "नहीं", "मेरा",
+    "मच", "टेक", "बीन", "पीपल", "होम",
 ])
 def test_hindi_words_that_look_like_english_ones_stay_hindi(word):
     assert _hindi(word) == [word]
@@ -331,12 +439,12 @@ def test_the_share_of_devanagari_hinglish_falls_to_what_it_is():
 
 def test_rule_b_on_the_tuning_split():
     """B1 to B5 of the rule in PR #403. Before: P 0.808, R 1.000, MAE 0.195.
-    Base list alone, before any DEV-derived entry: P 0.921, MAE 0.066."""
+    Base list alone, before any DEV-derived entry: P 0.925, MAE 0.063."""
     s = _dev_scores()
     deva = s["devanagari"]
     assert deva["token_hindi"]["precision"] >= 0.87
     assert deva["token_hindi"]["recall"] >= 0.971
-    assert deva["hindi_share_mae"] <= 0.13
+    assert deva["production"]["hindi_share_mae"] <= 0.13
     assert ev.policy_agreement(_dev())["agreement"]["devanagari"] >= 0.9375
     # B5: the Latin figures are the ones rule A pins.
     assert s["latin"]["token_hindi"]["tp"] == 102

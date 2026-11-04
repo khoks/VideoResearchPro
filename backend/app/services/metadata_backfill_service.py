@@ -469,8 +469,10 @@ class LanguageFieldsReport:
     chunks_unprofiled: int = 0
     chunks_unresolved: int = 0
     # Plain-English chunks still carrying `code_mix_*`: a refreshed profile
-    # no longer agrees with them. The pass removes nothing, so they stay.
+    # no longer agrees with them. They stay until `clear_stale` removes them:
+    # no normal path re-chunks an embedded document, so they never self-heal.
     chunks_stale: int = 0
+    chunks_cleared: int = 0
     chunks_already_current: int = 0
     chunks_to_update: int = 0
     chunks_updated: int = 0
@@ -493,7 +495,7 @@ class LanguageFieldsReport:
 # fields are not document-level and are left to chunking.
 LANGUAGE_FIELDS = (
     "code_mix_primary", "code_mix_script", "code_mix_share",
-    "code_mix_matrix_share", "code_mix_quote",
+    "code_mix_matrix_share", "code_mix_quote", "code_mix_named_share",
 )
 
 
@@ -516,6 +518,7 @@ def backfill_chunk_language_fields(
     page_size: int = 1000,
     document_ids: Iterable[str] | None = None,
     collection: Any = None,
+    clear_stale: bool = False,
 ) -> LanguageFieldsReport:
     """Stamp each chunk of a code-mixed document from ``documents.language_mix``.
 
@@ -523,9 +526,14 @@ def backfill_chunk_language_fields(
     LLM runs, so a chunk written before D-084 keeps the vector of its
     original text (``chunks_embedded_as_original`` counts them). A chunk
     holding a different value is brought up to the stored profile, which is
-    how a refreshed profile reaches its chunks. Nothing is removed: a
-    document now profiled as plain English keeps what its chunks carry, and
-    ``chunks_stale`` reports it.
+    how a refreshed profile reaches its chunks.
+
+    A document now profiled as plain English keeps what its chunks carry, and
+    ``chunks_stale`` reports it. No normal path re-chunks an embedded document,
+    so those fields never leave on their own. ``clear_stale`` removes every
+    ``code_mix_*`` key from such chunks, with ``write`` (Chroma drops a key
+    updated to None). ``text_en`` stays: it is what the chunk's vector was
+    embedded from.
     """
     report = LanguageFieldsReport(write=write)
     if collection is None:
@@ -553,6 +561,7 @@ def backfill_chunk_language_fields(
     report.documents_code_mixed = len(targets)
 
     pending: list[tuple[str, dict[str, Any]]] = []
+    stale: list[tuple[str, dict[str, Any]]] = []
 
     def visit(chunk_id: str, meta: dict[str, Any]) -> None:
         report.chunks_scanned += 1
@@ -561,7 +570,9 @@ def backfill_chunk_language_fields(
         if fields is None:
             if document_id in profiled:
                 report.chunks_plain_english += 1
-                report.chunks_stale += 1 if meta.get("code_mix_primary") else 0
+                carried = {name: None for name in meta if name.startswith("code_mix_")}
+                if carried:
+                    stale.append((chunk_id, carried))
             elif document_id in index.known:
                 report.chunks_unprofiled += 1
             else:
@@ -579,12 +590,17 @@ def backfill_chunk_language_fields(
 
     report.stopped = _scan_chunks(collection, page_size, visit, "backfill_chunk_language_fields")
     report.chunks_to_update = len(pending)
+    report.chunks_stale = len(stale)
     if report.stopped:
         return report
 
     if write:
         report.chunks_updated, report.stopped = _write_pending(
             collection, pending, page_size, "backfill_chunk_language_fields"
+        )
+    if write and clear_stale and not report.stopped:
+        report.chunks_cleared, report.stopped = _write_pending(
+            collection, stale, page_size, "backfill_chunk_language_fields"
         )
 
     logger.info("backfill_chunk_language_fields: %s", report.as_dict())

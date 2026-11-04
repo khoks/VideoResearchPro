@@ -408,7 +408,7 @@ Also since 2026-10-19, a non-English source's chunks carry its measured language
 [D-080](decisions.md#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)). Every chunking path
 profiles the whole transcript once (`language_mix_service.ensure`, a free per-word tagger, T-1.16.1.7), stores the profile on
 `documents.language_mix` and hands it to `chunk_transcript`, which writes
-`code_mix_primary` / `_script` / `_share` / `_matrix_share` / `_quote` on every chunk, plus per-chunk
+`code_mix_primary` / `_script` / `_share` / `_matrix_share` / `_quote` / `_named_share` on every chunk, plus per-chunk
 `code_mix_chunk_share` / `_chunk_matrix`. Sources under 3% non-English words get none of these fields, so English
 chunks are unchanged. Prompts read the fields through `code_mixing_service.source_note` as a `speech: … — quote in …`
 fragment on each source header.

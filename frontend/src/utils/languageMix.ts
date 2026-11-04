@@ -6,8 +6,9 @@
 // one that can say "Hindi + English". Until T-1.16.2.15 the tagger knew two
 // classes, and conversational Spanish or Turkish measured `primary_language:
 // hi`. It now abstains on Latin text with no Hindi evidence and reports
-// `other`, which this file trusts. A profile stored before that still says
-// `hi`, so on Latin-script text `hi` alone proves "not English", never "Hindi".
+// `other`, which this file trusts, as it does a low `named_share` on an English
+// source. A profile stored before that still says `hi`, so on Latin-script text
+// `hi` alone proves "not English", never "Hindi".
 //
 // So the badge names Hindi only where something else supports it:
 // - a label naming a third language (`es`, `kn`, Whisper's `spanish`) wins;
@@ -27,6 +28,14 @@ export const SOLE_LANGUAGE_SHARE = 0.95;
  * proper names (Krishna, Aamir Khan), measured on 219 cached transcripts on
  * 2026-11-04. */
 export const HINDI_GRAMMAR_FLOOR = 0.05;
+
+/** Below this share of its non-English words named, the tagger abstained on the
+ * source (`NAMED_MIN_SHARE` in `code_mixing_service`). */
+export const NAMED_MIN_SHARE = 0.5;
+
+/** Non-English grammar below this means English frames most of the speech
+ * (`ENGLISH_FRAMED_BELOW`, the same cut `source_note` uses). */
+export const ENGLISH_FRAMED_BELOW = 0.5;
 
 /** Labels that name no language. */
 const NOT_A_LANGUAGE = new Set(['unknown', 'und', 'mul', 'mis', 'zxx']);
@@ -77,9 +86,10 @@ function nameFromWords(
     return labelledHindi ? { name: 'Urdu/Hindi', evidence: 'hindi' } : { name: 'Arabic script', evidence: 'other' };
   }
   if (script === 'Latin') {
-    // `other` is the tagger abstaining: an `en` label cannot make that Hindi.
-    const hinglishCaptions = mix.primary_language !== 'other'
-      && sourceType === 'video' && code === 'en' && matrix >= HINDI_GRAMMAR_FLOOR;
+    // The tagger abstaining: an `en` label cannot make that Hindi.
+    const abstained = mix.primary_language === 'other' || (mix.named_share ?? 1) < NAMED_MIN_SHARE;
+    const hinglishCaptions = !abstained && sourceType === 'video' && code === 'en'
+      && matrix >= HINDI_GRAMMAR_FLOOR;
     if (labelledHindi || hinglishCaptions) return { name: 'Hindi (romanised)', evidence: 'hindi' };
     return { name: mix.primary_language === 'en' ? 'other words' : 'Other language', evidence: 'unnamed' };
   }
@@ -129,12 +139,13 @@ export function languageMixBadge(
     : nameFromWords(mix, matrix, code, sourceType);
 
   // An abstained source's "English" words are homographs of its own (`a`,
-  // `no`), so the measure says nothing about a mix with English.
-  const abstained = primary === 'other' && evidence === 'unnamed';
+  // `no`), so the measure says nothing about a mix with English, unless
+  // English frames most of the speech: then it is a bilingual source.
+  const noEnglish = primary === 'other' && evidence === 'unnamed' && matrix >= ENGLISH_FRAMED_BELOW;
 
   let label: string;
   if (primary === 'en') label = `English + ${name}`;
-  else if (share >= SOLE_LANGUAGE_SHARE || abstained) label = name;
+  else if (share >= SOLE_LANGUAGE_SHARE || noEnglish) label = name;
   else label = `${name} + English`;
 
   const short = name.split(' (')[0];

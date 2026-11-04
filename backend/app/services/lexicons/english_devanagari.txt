@@ -10,7 +10,8 @@
 # and folds nasal spellings (कॉन्सेप्ट, कॉंसेप्ट), so one entry covers those.
 #
 # NOT here, on purpose: English words that are also ordinary Hindi words.
-# आई, दे, इन, कम, बस, मन, पर, पास, बार, सन, वन, नाम, सी, ही, हर, लो, सर, मैं.
+# आई, दे, इन, कम, बस, मन, पर, पास, बार, सन, वन, नाम, सी, ही, हर, लो, सर, मैं,
+# मच (मचना), टेक (टेकना), बीन (बीनना, the instrument), पीपल (the tree), होम (ritual fire).
 # A wrong "English" costs more than a miss: it hides Hindi from the share that
 # decides how a source is quoted.
 
@@ -306,7 +307,6 @@
 वेरी
 क्वाइट
 रादर
-मच
 मेनी
 मोस्ट
 लेस
@@ -372,7 +372,6 @@
 # --- verbs ---
 हैज
 हैड
-बीन
 बीइंग
 डज
 डिड
@@ -393,7 +392,6 @@
 मेक
 मेकिंग
 मेड
-टेक
 टेकिंग
 गेट
 गेटिंग
@@ -604,7 +602,6 @@
 वर्ल्ड
 कंट्री
 सिटी
-पीपल
 पर्सन
 मैन
 वुमन
@@ -1056,4 +1053,3 @@
 काइट
 ऐड
 ऐज
-होम

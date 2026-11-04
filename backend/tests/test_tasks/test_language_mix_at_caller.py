@@ -110,7 +110,7 @@ def _doc(db) -> Document:
 def _chunk_code_mix(chunks: list[dict]) -> dict:
     """The document-level code_mix_* fields every chunk carries."""
     keys = ("code_mix_primary", "code_mix_script", "code_mix_share",
-            "code_mix_matrix_share", "code_mix_quote")
+            "code_mix_matrix_share", "code_mix_quote", "code_mix_named_share")
     fields = {tuple(sorted((k, c["metadata"].get(k)) for k in keys)) for c in chunks}
     assert len(fields) == 1, "chunks of one document disagree on its profile"
     return dict(fields.pop())

@@ -74,10 +74,13 @@ ENGLISH_START_BIAS = 0.25    # all-ambiguous text defaults to English
 # (T-1.16.2.15). It reads as "not English, language unknown": the tagger knows
 # two languages, so before this tag a Spanish source measured as Hindi.
 OTHER = "xx"
+# Every tag that counts as non-English in a share or a rendering decision.
+NON_ENGLISH_TAGS = ("hi", OTHER)
 EVIDENCE_MIN_SHARE = 0.3     # Hindi-lexicon words over Hindi-lexicon + unplaced words
 UNPLACED_MIN_SHARE = 0.5     # words in neither lexicon, over Latin words: another language
 UNPLACED_MIN_WORDS = 8       # ...measured on at least this many: a short span proves nothing
 NAMED_MIN_SHARE = 0.5        # a source's non-English words the tagger could name
+ENGLISH_FRAMED_BELOW = 0.5   # non-English grammar under this: English frames most speech
 
 
 @dataclass(frozen=True)
@@ -406,7 +409,7 @@ def tag_tokens(text: str) -> list[tuple[Token, str]]:
 def shares(tags: Iterable[str]) -> dict[str, Any]:
     """Token counts and the Hindi share among language-bearing tokens."""
     c = Counter(tags)
-    en, hi = c.get("en", 0), c.get("hi", 0) + c.get(OTHER, 0)
+    en, hi = c.get("en", 0), sum(c.get(tag, 0) for tag in NON_ENGLISH_TAGS)
     lang = en + hi
     return {
         "en_tokens": en,
@@ -512,7 +515,7 @@ def morpheme_votes(tagged: list[tuple[Token, str]]) -> dict[str, float]:
     votes = {"en": 0.0, "hi": 0.0}
     for tok, tag in tagged:
         w = tok.norm
-        if tag in ("hi", OTHER):
+        if tag in NON_ENGLISH_TAGS:
             if w in HINDI_VERBAL_MORPHEMES:
                 votes["hi"] += VERBAL_MORPHEME_WEIGHT
             elif w in HINDI_FUNCTION_MORPHEMES:
@@ -695,7 +698,8 @@ def profile_transcript(
       there are no non-English words. Below `NAMED_MIN_SHARE`, with more
       non-English words than borrowing explains, a Latin-script source is no
       language the tagger knows and `primary_language` is "other". English
-      with stray unplaced words stays "en".
+      with stray unplaced words, or with a short passage it cannot name,
+      stays "en" (`chunk_metadata_from_profile` tells those two apart).
     - ``matrix_hi_share``: share of language-bearing words in windows whose
       GRAMMAR is Hindi. The primary language is the one framing at least
       half the speech — so a Hindi talk dense with English terms is still
@@ -716,7 +720,7 @@ def profile_transcript(
     scripts: Counter[str] = Counter()
     for w in windows:
         tagged = tag_tokens(w)
-        scripts.update(tok.script for tok, tag in tagged if tag in ("hi", OTHER))
+        scripts.update(tok.script for tok, tag in tagged if tag in NON_ENGLISH_TAGS)
         other += sum(1 for _, tag in tagged if tag == OTHER)
         a = shares(tag for _, tag in tagged)
         a["matrix"] = matrix_language(tagged)
@@ -820,22 +824,30 @@ def chunk_metadata_from_profile(p: dict[str, Any] | None) -> dict[str, Any]:
         return {}
     # English with stray words the tagger cannot place is plain English: the
     # floor counts the non-English words it can name. A profile stored before
-    # `named_share` existed counts them all, as it did.
-    named = p.get("named_share")
-    present = p["hi_share"] if named is None else p["hi_share"] * named
+    # `named_share` existed counts them all, as it did. A PASSAGE it cannot name
+    # is another matter: stray names are scattered, but a passage's words sit
+    # together, so its windows read as a non-English grammar. Such a source
+    # keeps its fields, and with them the note and the D-084 rendering.
+    share, named = p["hi_share"], p.get("named_share")
+    present = share if named is None else share * named
+    passage = min(share, p.get("matrix_hi_share") or 0.0) >= DOCUMENT_PRESENCE_SHARE
     if (
         p["primary_language"] in ("en", "none")
         and p["quote_mode"] == PLAIN_ENGLISH
         and present < DOCUMENT_PRESENCE_SHARE
+        and not passage
     ):
         return {}
-    return {
+    fields = {
         "code_mix_primary": p["primary_language"],
         "code_mix_script": p.get("native_script") or "",
-        "code_mix_share": p["hi_share"],
+        "code_mix_share": share,
         "code_mix_matrix_share": p.get("matrix_hi_share") or 0.0,
         "code_mix_quote": p["quote_mode"],
     }
+    if named is not None:
+        fields["code_mix_named_share"] = named
+    return fields
 
 
 def chunk_fields(text: str) -> dict[str, Any]:
@@ -869,6 +881,32 @@ def quote_form(meta: dict[str, Any] | None) -> str:
     return "quote in Roman script + English translation"
 
 
+def _unnamed_speech(meta: dict[str, Any]) -> str:
+    """What a note says about Latin text the tagger abstained on; "" for the rest.
+
+    The tagger cannot say what such a source is. Its grammar share says how
+    much of it English frames, and that much it will not deny: Dutch and a
+    bilingual English and Spanish interview read alike here, so the words are
+    hedged rather than guessed. A chunk with no `code_mix_named_share`
+    (written before it existed) cannot tell, and reads as it did.
+    """
+    if meta.get("code_mix_script") != "Latin":
+        return ""
+    primary = meta.get("code_mix_primary")
+    if primary == "other":
+        if (meta.get("code_mix_matrix_share") or 0.0) < ENGLISH_FRAMED_BELOW:
+            return "partly English, partly a language the tagger cannot name (not Hindi)"
+        return "not English or Hindi, language unknown"
+    named = meta.get("code_mix_named_share")
+    if primary == "en" and named is not None and named < NAMED_MIN_SHARE:
+        share = meta.get("code_mix_share") or 0.0
+        return (
+            f"mostly English, partly a language the tagger cannot name "
+            f"(not Hindi, {share:.0%} of words)"
+        )
+    return ""
+
+
 def source_note(meta: dict[str, Any] | None) -> str:
     """One header fragment naming a source's language and quote form.
 
@@ -883,10 +921,9 @@ def source_note(meta: dict[str, Any] | None) -> str:
     script = meta.get("code_mix_script") or ""
     share = meta.get("code_mix_share") or 0.0
     form = quote_form(meta)
-    if primary == "other" and script == "Latin":
-        # The tagger abstained (T-1.16.2.15). It cannot say what this is, or
-        # how much English is in it: its English words may be homographs.
-        return f"speech: not English or Hindi, language unknown — {form}"
+    unnamed = _unnamed_speech(meta)
+    if unnamed:
+        return f"speech: {unnamed} — {form}"
     if primary == "other":
         lang = f"a {script}-script language" if script else "a non-English language"
     else:
@@ -913,11 +950,11 @@ def describe_source_for_prompt(segments_or_text: Any) -> str:
     note = source_note(meta)
     if not note:
         return ""
-    if meta.get("code_mix_primary") == "other" and meta.get("code_mix_script") == "Latin":
+    if _unnamed_speech(meta):
         return (
-            f"SOURCE LANGUAGE (measured from this transcript) — {note}. Read it "
-            f"in its own language and translate its meaning. Where you keep a "
-            f"speaker's exact wording, show it in the quote form named here."
+            f"SOURCE LANGUAGE (measured from this transcript) — {note}. Read each "
+            f"passage in its own language and translate its meaning. Where you keep "
+            f"a speaker's exact wording, show it in the quote form named here."
         )
     return (
         f"SOURCE LANGUAGE (measured from this transcript) — {note}. Hindi "

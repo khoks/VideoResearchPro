@@ -27,6 +27,9 @@ class LanguageMixView(BaseModel):
     - ``native_script``: the script the non-English words are written in
       (``Devanagari``, ``Bengali``...; ``Latin`` when romanised), or null.
     - ``hi_share``: non-English words over all language-bearing words.
+    - ``named_share``: of those words, the share the tagger could name; the
+      rest it abstained on. Null when there are none, or on a profile stored
+      before T-1.16.2.15.
     - ``matrix_hi_share``: share of speech framed by non-English grammar.
     - ``quote_mode``: ``plain_english`` / ``roman`` / ``native_script``.
     - ``code_mixed``: whether the measured TEXT is not plain English by the
@@ -40,6 +43,7 @@ class LanguageMixView(BaseModel):
     primary_language: str
     native_script: str | None = None
     hi_share: float = 0.0
+    named_share: float | None = None
     matrix_hi_share: float = 0.0
     quote_mode: str | None = None
     code_mixed: bool = Field(False, description=CODE_MIXED_DESCRIPTION)

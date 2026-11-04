@@ -6,7 +6,7 @@ them. This script brings every chunk of a document with a stored
 ``documents.language_mix`` up to the fields ``chunk_transcript`` writes today:
 
     code_mix_primary, code_mix_script, code_mix_share,
-    code_mix_matrix_share, code_mix_quote
+    code_mix_matrix_share, code_mix_quote, code_mix_named_share
 
 It reads the stored profile and computes nothing, so run
 ``scripts/backfill_language_mix.py --write`` first: a document with no profile
@@ -20,18 +20,25 @@ not document-level and stay as they are.
 every later prompt what language a chunk is in; it does not change what a
 question retrieves, and the report says how many chunks that applies to.
 
-Nothing is removed and nothing is re-embedded: the update is metadata only,
-each batch's stored metadata is re-read and sent back whole with the new
-fields, and no LLM runs. Dry run is the default and writes nothing. ``--write``
-is the owner's step. Idempotent (a second run finds nothing to change) and
-resumable (a pass stopped by a failed batch is finished by running it again).
-Run it when no job is ingesting: the worker writes the same collection.
+Nothing is re-embedded: the update is metadata only, each batch's stored
+metadata is re-read and sent back whole with the new fields, and no LLM runs.
+Dry run is the default and writes nothing. ``--write`` is the owner's step.
+Idempotent (a second run finds nothing to change) and resumable (a pass stopped
+by a failed batch is finished by running it again). Run it when no job is
+ingesting: the worker writes the same collection.
+
+A chunk of a document now profiled as plain English keeps the ``code_mix_*``
+fields it was written with, and every prompt that retrieves it goes on saying
+so: no normal path re-chunks an embedded document, so those fields never leave
+on their own. ``--clear-stale`` with ``--write`` removes them, ``code_mix_chunk_*``
+included. It is opt-in because it is the only thing here that removes data.
 
 Usage (from backend/):
     ./venv/Scripts/python scripts/backfill_chunk_language_fields.py
     ./venv/Scripts/python scripts/backfill_chunk_language_fields.py --document-ids <id>,<id>
     ./venv/Scripts/python scripts/backfill_chunk_language_fields.py --json out.json
     ./venv/Scripts/python scripts/backfill_chunk_language_fields.py --write   # owner step
+    ./venv/Scripts/python scripts/backfill_chunk_language_fields.py --write --clear-stale
 """
 from __future__ import annotations
 
@@ -53,6 +60,10 @@ from app.services.metadata_backfill_service import LANGUAGE_FIELDS  # noqa: E402
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--write", action="store_true", help="update the chunks (owner step)")
+    parser.add_argument(
+        "--clear-stale", action="store_true",
+        help="with --write, remove code_mix_* from chunks of documents now plain English",
+    )
     parser.add_argument("--document-ids", default="", help="comma-separated document ids")
     parser.add_argument("--page-size", type=int, default=1000, help="chunks per read and update")
     parser.add_argument("--json", dest="json_path", default=None, help="write the report here")
@@ -72,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
             write=args.write,
             page_size=max(1, args.page_size),
             document_ids=document_ids or None,
+            clear_stale=args.clear_stale,
         )
     finally:
         db.close()
@@ -99,10 +111,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     if data["chunks_unprofiled"]:
         print("Unprofiled documents are skipped: run backfill_language_mix.py --write first.")
-    if data["chunks_stale"]:
+    if data["chunks_cleared"]:
+        print(f"{data['chunks_cleared']} stale chunk(s) cleared of code_mix_* fields.")
+    elif data["chunks_stale"]:
         print(
             f"{data['chunks_stale']} chunk(s) of documents now profiled as plain English still "
-            f"carry code_mix_* fields. Nothing is removed, so they read as they did."
+            f"carry code_mix_* fields, and no normal path re-chunks them, so they never self-heal. "
+            f"--write --clear-stale removes those fields."
         )
     if data["stopped"]:
         print(f"STOPPED: {data['stopped']}")

@@ -214,8 +214,70 @@ def test_a_document_now_plain_english_keeps_its_fields_and_is_reported(db, libra
 
     rows = _rows(_snapshot(ephemeral_chroma), "vidHINDI001")
     assert report["chunks_stale"] == len(rows)
+    assert report["chunks_cleared"] == 0
     assert report["chunks_updated"] == 0
     assert all(r["meta"]["code_mix_primary"] == "hi" for r in rows)
+
+
+def _now_plain_english(db, library, tmp_path):
+    """Chunks written with today's fields, per-chunk ones too, of a document
+    whose refreshed profile reads plain English."""
+    _run(tmp_path, "--write")
+    document = library["hindi"]
+    language_mix_service.record(document, code_mixing_service.profile_transcript(_segments(ENGLISH, 6)))
+    db.commit()
+    return document
+
+
+def test_clear_stale_removes_the_fields_a_plain_english_document_carries(db, library, ephemeral_chroma, tmp_path):
+    """The review of PR #403: no normal path re-chunks an embedded document, so
+    without this the false claim stays on stored chunks for good."""
+    document = _now_plain_english(db, library, tmp_path)
+    ids = [cid for cid, row in _snapshot(ephemeral_chroma).items()
+           if row["meta"].get("video_id") == "vidHINDI001"]
+    ephemeral_chroma.get_global_collection().update(ids=ids, metadatas=[
+        {"code_mix_chunk_share": 0.9, "code_mix_chunk_matrix": "hi", "text_en": "rendered"} for _ in ids
+    ])
+    before = _snapshot(ephemeral_chroma)
+
+    _, report = _run(tmp_path, "--write", "--clear-stale", "--document-ids", document.document_id)
+
+    after = _snapshot(ephemeral_chroma)
+    assert report["chunks_stale"] == report["chunks_cleared"] == len(ids) > 0
+    for cid in ids:
+        old, new = before[cid], after[cid]
+        assert new["meta"] == {k: v for k, v in old["meta"].items() if not k.startswith("code_mix_")}
+        assert new["meta"]["text_en"] == "rendered"  # the vector's own source stays
+        assert new["text"] == old["text"]
+        assert new["embedding"] == old["embedding"]
+
+    _, again = _run(tmp_path, "--write", "--clear-stale", "--document-ids", document.document_id)
+    assert again["chunks_stale"] == again["chunks_cleared"] == 0
+
+
+def test_clear_stale_is_a_no_op_without_write(db, library, ephemeral_chroma, tmp_path):
+    document = _now_plain_english(db, library, tmp_path)
+    before = _snapshot(ephemeral_chroma)
+
+    _, report = _run(tmp_path, "--clear-stale", "--document-ids", document.document_id)
+
+    assert report["chunks_stale"] > 0 and report["chunks_cleared"] == 0
+    assert _snapshot(ephemeral_chroma) == before
+
+
+def test_clear_stale_leaves_every_other_document_alone(db, library, ephemeral_chroma, tmp_path):
+    _now_plain_english(db, library, tmp_path)
+    before = _rows(_snapshot(ephemeral_chroma), "vidLEGACY01")
+
+    _run(tmp_path, "--write", "--clear-stale")
+
+    assert _rows(_snapshot(ephemeral_chroma), "vidLEGACY01") == before
+
+
+def test_the_chunks_gain_the_named_share_the_note_depends_on(library, ephemeral_chroma, tmp_path):
+    _run(tmp_path, "--write")
+    rows = _rows(_snapshot(ephemeral_chroma), "vidHINDI001")
+    assert rows and all(r["meta"]["code_mix_named_share"] == 1.0 for r in rows)
 
 
 def test_document_ids_limit_the_pass(library, ephemeral_chroma, tmp_path):

@@ -284,7 +284,7 @@ DATABASE_URL="sqlite:///<absolute scratch dir>/test.db" \
 
 Every `TestClient` startup also runs the real LLM smoke probes (one short call per unique provider/model, a few seconds and a few cents), so batch reruns rather than iterating one test at a time.
 
-**The embedding model.** The first run downloads `paraphrase-multilingual-MiniLM-L12-v2` from huggingface.co. From then on `tests/hf_offline.py` sets `HF_HUB_OFFLINE=1` before anything imports the hub, so a model load makes no network call and a DNS drop cannot fail a test (T-8.8.4.7). It stays online only while the model is missing or partly downloaded. Set `HF_HUB_OFFLINE=0` to force a hub check.
+**The embedding model.** The first run downloads `paraphrase-multilingual-MiniLM-L12-v2` from huggingface.co. From then on `tests/hf_offline.py` sets `HF_HUB_OFFLINE=1` before anything imports the hub, so a model load makes no network call and a DNS drop cannot fail a test (T-8.8.4.7). It stays online only while the model is missing or partly downloaded. Set `HF_HUB_OFFLINE=0` to force a hub check; the test that loads the model with the hub unreachable then skips, because a load asks the hub on that run by design.
 
 ### 5.5. Pre-merge sanity checks (manual)
 

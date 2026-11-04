@@ -27,6 +27,7 @@ from pathlib import Path
 # missing file is an error, online it is a download.
 _REQUIRED = ("modules.json", "config.json", "tokenizer.json", "1_Pooling/config.json")
 _WEIGHTS = ("model.safetensors", "pytorch_model.bin")
+_TRUE = ("1", "ON", "YES", "TRUE")
 
 
 def hub_cache() -> Path:
@@ -52,9 +53,20 @@ def model_is_cached(name: str) -> bool:
     return all((snapshot / f).is_file() for f in _REQUIRED) and any((snapshot / f).is_file() for f in _WEIGHTS)
 
 
+def _offline() -> bool:
+    return os.environ.get("HF_HUB_OFFLINE", "").strip().upper() in _TRUE
+
+
+def online_by_choice() -> bool:
+    """Whether ``HF_HUB_OFFLINE`` was set to a value that keeps the hub on.
+    Not the same as being online: a cached model with no value at all means
+    ``stay_off_the_hub`` never ran, which is a bug, not a choice."""
+    return "HF_HUB_OFFLINE" in os.environ and not _offline()
+
+
 def stay_off_the_hub(model_name: str) -> bool:
     """Set ``HF_HUB_OFFLINE=1`` when ``model_name`` is cached and nothing has
     chosen a value. Returns whether the suite is offline."""
     if "HF_HUB_OFFLINE" not in os.environ and model_is_cached(model_name):
         os.environ["HF_HUB_OFFLINE"] = "1"
-    return os.environ.get("HF_HUB_OFFLINE", "").strip().upper() in ("1", "ON", "YES", "TRUE")
+    return _offline()

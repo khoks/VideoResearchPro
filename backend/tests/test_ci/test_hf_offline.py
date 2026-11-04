@@ -23,6 +23,7 @@ COMMIT = "abc123"
 # Read at collection, before any test can download the model: a first run
 # starts online and stays online, however early a test fills the cache.
 CACHED_AT_START = hf_offline.model_is_cached(MODEL)
+CHOSE_ONLINE = hf_offline.online_by_choice()
 
 
 def _cache(root: Path, repo: str, files=FILES, ref: str | None = COMMIT) -> None:
@@ -48,9 +49,21 @@ def hub(tmp_path, monkeypatch):
     return tmp_path
 
 
+def _why_it_cannot_run(*, cached: bool, chose_online: bool) -> str | None:
+    """Why the next test has nothing to judge on this run. Being online is no
+    reason by itself: a cached model and an online suite that nobody asked for
+    is the very bug the test is there for."""
+    if not cached:
+        return "first run here: the model was not cached at the start, so the suite is online"
+    if chose_online:
+        return "HF_HUB_OFFLINE asks for a hub check on this run, so a load asks the hub"
+    return None
+
+
 def test_the_embedder_loads_with_the_hub_unreachable(monkeypatch) -> None:
-    if not CACHED_AT_START:
-        pytest.skip("first run here: the model was not cached at the start, so the suite is online")
+    reason = _why_it_cannot_run(cached=CACHED_AT_START, chose_online=CHOSE_ONLINE)
+    if reason:
+        pytest.skip(reason)
 
     asked: list[str] = []
     resolve = socket.getaddrinfo
@@ -68,6 +81,25 @@ def test_the_embedder_loads_with_the_hub_unreachable(monkeypatch) -> None:
 
     assert len(vectors) == 1 and len(vectors[0]) == 384
     assert asked == [], "loading a cached model asked the hub for something"
+
+
+@pytest.mark.parametrize(
+    ("cached", "chose_online", "runs"),
+    [(True, False, True), (True, True, False), (False, False, False), (False, True, False)],
+)
+def test_the_embedder_test_sits_out_only_what_it_cannot_judge(cached, chose_online, runs) -> None:
+    assert (_why_it_cannot_run(cached=cached, chose_online=chose_online) is None) is runs
+
+
+@pytest.mark.parametrize(("value", "chosen"), [("0", True), ("false", True), ("", True), ("1", False), ("true", False)])
+def test_an_online_choice_is_a_value_that_keeps_the_hub_on(hub, monkeypatch, value, chosen) -> None:
+    monkeypatch.setenv("HF_HUB_OFFLINE", value)
+    assert hf_offline.online_by_choice() is chosen
+
+
+def test_no_value_is_not_a_choice(hub) -> None:
+    """The case that must keep failing the embedder test: conftest never ran."""
+    assert hf_offline.online_by_choice() is False
 
 
 def test_a_cached_model_goes_offline(hub) -> None:

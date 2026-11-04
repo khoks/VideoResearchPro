@@ -11,11 +11,9 @@ from app.models.job import Job
 from app.models.document import Document
 from app.schemas.channel import ChannelResponse, ChannelWeightRequest, SubscribeResponse
 from app.schemas.channel_intelligence import ChannelIntelligenceResponse
-from app.schemas.video import VideoResponse
 from app.services import (
     channel_intelligence_service,
     document_cap_service,
-    language_mix_service,
     subscription_service,
     visibility_service,
 )
@@ -177,58 +175,6 @@ def sync_channel(
 
     job_id = _dispatch_subscription_sync(db, channel, tenant_id=current_user.id)
     return SubscribeResponse(channel_id=channel.channel_id, job_id=job_id)
-
-
-@router.get("/{channel_id}/videos", response_model=list[VideoResponse])
-def list_channel_videos(
-    channel_id: str,
-    limit: int = 50,
-    offset: int = 0,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    channel = db.query(Channel).filter(Channel.channel_id == channel_id).first()
-    if not channel:
-        raise HTTPException(status_code=404, detail="Channel not found")
-
-    videos = (
-        db.query(Document)
-        .filter(
-            Document.channel_id == channel_id,
-            # D-063: only what this tenant ingested.
-            Document.document_id.in_(
-                visibility_service.visible_document_ids(db, current_user.id)
-            ),
-        )
-        .order_by(Document.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-    # VideoResponse requires both `id` and `video_id`; stitch the former from
-    # the primary key so the response shape matches other endpoints.
-    return [
-        {
-            "id": v.video_id,
-            "video_id": v.video_id,
-            "title": v.title,
-            "channel_name": v.channel_name,
-            "channel_id": v.channel_id,
-            "url": v.url,
-            "duration_seconds": v.duration_seconds,
-            "published_at": v.published_at,
-            "thumbnail_url": v.thumbnail_url,
-            "description": v.description,
-            "approved": True,
-            "transcript_status": v.transcript_status,
-            "transcript_word_count": v.transcript_word_count,
-            "transcript_language": v.transcript_language,
-            "transcript_source": v.transcript_source,
-            "language_mix": language_mix_service.public_view(v),
-            "embedded_in_chroma": v.embedded_in_chroma,
-        }
-        for v in videos
-    ]
 
 
 @router.get("/{channel_id}/intelligence", response_model=ChannelIntelligenceResponse)

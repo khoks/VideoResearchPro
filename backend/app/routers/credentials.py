@@ -35,8 +35,17 @@ class CredentialMetadata(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# Longest key accepted. Checked in the handler, not as a pydantic
+# constraint: FastAPI's 422 body carries the rejected value as ``input``,
+# so a constraint on ``secret`` would send an over-long key straight back
+# in the response.
+SECRET_MAX_CHARS = 2048
+
+
 class CredentialUpsertPayload(BaseModel):
-    secret: str = Field(min_length=1, max_length=2048)
+    # No length constraint here (see SECRET_MAX_CHARS). A non-string value
+    # still fails type validation, and is not a key.
+    secret: str
     label: str | None = Field(default=None, max_length=128)
 
 
@@ -62,7 +71,12 @@ def set_credential(
 ) -> CredentialMetadata:
     """Upsert the credential for the given provider. The secret is
     encrypted at rest; the response carries metadata only — never the
-    plaintext."""
+    plaintext. Refusals never quote the submitted key."""
+    if len(payload.secret) > SECRET_MAX_CHARS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Key is too long (at most {SECRET_MAX_CHARS} characters).",
+        )
     try:
         row = byok_service.set_credential(
             db,

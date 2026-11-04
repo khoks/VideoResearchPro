@@ -157,6 +157,7 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
     }
     list.push(
       nav('ai-models', 'AI models', '/account/ai-models', 'llm settings keys byok'),
+      nav('system', 'System status', '/account/system', 'health probe scheduler quota restart operator'),
       nav('subscription', 'Subscription', '/account/subscription', 'plan tier billing'),
       {
         id: 'theme',

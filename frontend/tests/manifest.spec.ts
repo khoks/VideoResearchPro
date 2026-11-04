@@ -178,14 +178,27 @@ async function workerActive(page: Page) {
     const registration = await navigator.serviceWorker.getRegistration('/echo/share-target');
     return registration?.active?.state === 'activated';
   });
-  // Chromium can still be storing a brand-new registration as it reports
-  // "activated", and a navigation in that window goes to the network (2 in
-  // about 180 runs). A person cannot share that soon after installing.
   await page.waitForTimeout(250);
 }
 
+// Chromium can still be storing a brand-new registration as it reports
+// "activated", and a navigation in that window goes to the network (3 in about
+// 250 runs). A person cannot share that soon after installing. So a test that
+// needs the worker to have taken a post checks that it did, and posts again if
+// not. A post the worker missed adds nothing.
+const WORKER_TOOK_IT = { timeout: 8_000 };
+const POST_AGAIN = { timeout: 40_000 };
+
 /** What the share sheet does: a form POST that navigates to the action. */
 async function shareFromAndroid(page: Page, fields: Record<string, string>, file?: { name: string; mimeType: string; buffer: Buffer }) {
+  const before = await pendingCount(page);
+  await expect(async () => {
+    await postShareForm(page, fields, file);
+    await expect.poll(() => pendingCount(page).catch(() => before), WORKER_TOOK_IT).toBeGreaterThan(before);
+  }).toPass(POST_AGAIN);
+}
+
+async function postShareForm(page: Page, fields: Record<string, string>, file?: { name: string; mimeType: string; buffer: Buffer }) {
   await page.evaluate(
     ({ action, fields, withFile }) => {
       const form = document.createElement('form');
@@ -301,7 +314,10 @@ test.describe('share target', () => {
           </form><script>document.getElementById('f').submit()</script>`,
         }),
       );
-      await page.goto('http://evil.example/');
+      await expect(async () => {
+        await page.goto('http://evil.example/');
+        await page.waitForURL(/\/echo\/incoming$/, WORKER_TOOK_IT);
+      }).toPass(POST_AGAIN);
 
       await expect(addButton(page)).toBeVisible(LOAD);
       await expect(page.getByText(metadata)).toBeVisible();

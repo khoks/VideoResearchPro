@@ -39,7 +39,8 @@ function fakeCaches(entries: Entry[]) {
           ...(entry.storedAt ? { 'x-stored-at': entry.storedAt } : {}),
           ...(entry.sent ? { 'x-sent-parts': entry.sent } : {}),
         }),
-        blob: async () => new Blob(['kept']),
+        // A fetch Blob, as the real one is: jsdom's is not a body in every Node.
+        blob: async () => new Response('kept').blob(),
         formData: async () => {
           if (!entry.form) throw new TypeError('not a form');
           return entry.form;

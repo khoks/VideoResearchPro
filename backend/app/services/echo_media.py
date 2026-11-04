@@ -269,6 +269,7 @@ def transcribe(path: Path, *, tenant_id: str, db: Any, label: str) -> Transcript
 
     from openai import OpenAI
 
+    from app.services import usage_service
     from app.services.youtube_service import (
         WHISPER_MAX_FILE_BYTES,
         _whisper_response_to_segments,
@@ -285,9 +286,10 @@ def transcribe(path: Path, *, tenant_id: str, db: Any, label: str) -> Transcript
             )
         client = OpenAI(api_key=api_key)
         try:
-            response = _whisper_transcribe_with_retry(
-                client, str(audio), label, "[echo]", size / (1024 * 1024)
-            )
+            with usage_service.metered(db, tenant_id, feature="echo_shares"):
+                response = _whisper_transcribe_with_retry(
+                    client, str(audio), label, "[echo]", size / (1024 * 1024)
+                )
         except Exception as e:
             raise MediaError(f"Transcription failed: {type(e).__name__}.") from e
     if response is None:

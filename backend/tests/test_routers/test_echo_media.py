@@ -25,6 +25,7 @@ from app.models.user_llm_override import UserLLMOverride
 from app.services import auth_service, echo_media, echo_processing_service, echo_vectors
 from app.services.echo_media import MediaError, OcrResult, Transcript
 from app.services.llm_routing import USE_CASE_REGISTRY
+from tests.usage_helpers import tenants_with_usage, usage_rows, whisper_api  # noqa: F401
 
 SHARES = "/api/v1/echo/shares"
 HAS_FFMPEG = shutil.which("ffmpeg") is not None
@@ -366,6 +367,29 @@ def test_recordings_need_an_openai_key(unauthenticated_client, db, two, chroma, 
     s = _upload(unauthenticated_client, two["ha"], "memo.mp3", b"audio", "audio/mpeg")
     result = _process(db, s["id"])
     assert result.state == "skipped" and "OpenAI API key" in result.reason
+
+
+def test_a_transcribed_recording_is_charged_to_its_sharer_as_an_echo_share(
+    unauthenticated_client, db, two, chroma, remote_on, whisper_api, monkeypatch
+):
+    """T-5.2.12, at the production caller: ``process_share`` down to the real
+    ``_whisper_transcribe_with_retry``, with only the OpenAI client replaced."""
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test")
+    whisper_api.seconds = 12.5
+    s = _upload(unauthenticated_client, two["ha"], "memo.wav", _wav(1.0), "audio/wav")
+    assert _process(db, s["id"]).state == "processed"
+    assert whisper_api.sent == 1
+    assert usage_rows(db, two["a"].id) == {("echo_shares", "whisper_seconds"): 12}
+    assert tenants_with_usage(db) == {two["a"].id}
+
+
+def test_recording_that_stays_on_device_records_no_audio(unauthenticated_client, db, two, chroma, remote_on, whisper_api, monkeypatch):
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test")
+    _make_local_only(db, two["a"].id)
+    s = _upload(unauthenticated_client, two["ha"], "memo.wav", _wav(1.0), "audio/wav")
+    assert _process(db, s["id"]).state == "skipped"
+    assert whisper_api.sent == 0
+    assert tenants_with_usage(db) == set()
 
 
 def _whisper_reply(*texts):

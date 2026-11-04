@@ -1,6 +1,6 @@
 # Pratidhvani — Decision Log
 
-**Status:** living doc (last refreshed 2026-11-03). Owner: [`/knowledge-curator`](../.claude/skills/knowledge-curator/SKILL.md) skill.
+**Status:** living doc (last refreshed 2026-11-04). Owner: [`/knowledge-curator`](../.claude/skills/knowledge-curator/SKILL.md) skill.
 
 This is the chronological record of every product / engineering decision made on this project that is **not** trivially recoverable from `git log`. Use it to recall *why* a path was chosen and what alternatives were rejected, so future-you doesn't relitigate settled questions.
 
@@ -1183,6 +1183,8 @@ Path B has a security implication: it trusts that the OAuth provider has verifie
 
 **Status-changed 2026-10-29:** amended by [D-116](#d-116--oauth-links-or-creates-an-account-only-from-a-provider-verified-email-and-the-link-records-it-2026-10-29) (T-5.4.10, PR [#384](https://github.com/khoks/VideoResearchPro/pull/384)), which adopts option (B'). A first OAuth link or a new OAuth account now needs a provider-verified email (Google's `email_verified` claim; GitHub's primary address in `/user/emails` with `verified: true`, since the `/user` public email carries no verification we can check), and `oauth_identities.email_verified_at` records it. Path B stands for verified addresses.
 
+**Status-changed 2026-11-04:** an OAuth sign-in to an account with two-step verification on now stops at the second factor, like a password sign-in ([D-121](#d-121--reset-codes-never-appear-in-a-response-two-step-verification-guards-every-sign-in-and-tokens-say-what-they-are-2026-11-04), S-5.4.1, PR [#389](https://github.com/khoks/VideoResearchPro/pull/389)). Before, the callback issued a full session, so whoever controlled the linked provider account skipped the TOTP the user had turned on.
+
 ---
 
 ## D-043 — Single shared Fernet key for all encrypted-at-rest credentials (2026-05-05)
@@ -2231,6 +2233,8 @@ Verdicts ON / OFF / tie: undated 22 / 34 / 4, dated 24 / 35 / 1. By surface (dat
 **Linked initiatives / PRs.** E-1.17 (R3, closed), E-1.15 (R4, closed), S-1.15.2, S-1.14.15, T-1.16.1.6, T-1.16.1.8. Follows D-059, D-064, D-066. PR [#227](https://github.com/khoks/VideoResearchPro/pull/227).
 
 **Status-changed 2026-10-25:** kept by [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) — the `dominant` wording stays until S-1.17.4 measures it (OQ-9), and S-1.17.3 may reverse the no-backfill rule with its own amendment.
+
+**Status-changed 2026-11-04:** point 2's "no backfill" is amended by [D-120](#d-120--older-chunks-gain-their-era-and-publish-fields-by-a-metadata-only-pass-amends-d-072-the-language-profile-is-stored-on-the-document-2026-11-04) (S-1.17.3, PR [#390](https://github.com/khoks/VideoResearchPro/pull/390)). An owner-run, metadata-only pass brings older chunks up to the era and publish fields the chunker writes today, still omitting unknown fields. The alternative below, *Backfill the existing Chroma collection*, was rejected for the cost of re-embedding, which a metadata update does not incur.
 
 ## D-073 — Frame description moves to gemini-3.1-flash-lite on image-grounded grading; selection stays on gpt-5.5 (2026-10-19)
 
@@ -3466,6 +3470,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Linked initiatives / PRs.** E-3.2 (T-3.2.3, T-3.2.5, S-3.2.3, S-3.2.4: T-3.2.4.3, T-3.2.4.4), E-3.7 (S-3.7.3: T-3.7.3.3, S-3.7.4, S-3.7.5), E-3.9, T-3.3.4.3, E-3.10 (S-3.10.3); [D-089](#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19), [D-098](#d-098--echo-connectors-events-unique-per-reader-tokens-in-a-secret-store-that-is-erased-with-the-brain-but-never-exported-2026-10-19); PR [#286](https://github.com/khoks/VideoResearchPro/pull/286).
 
+**Status-changed 2026-11-04:** item 2 is built ([D-122](#d-122--a-deleted-derived-fact-stays-deleted-per-connector-only-a-refused-refresh-asks-for-a-reconnect-restore-re-checks-the-evidence-2026-11-04), T-3.2.4.4, PR [#392](https://github.com/khoks/VideoResearchPro/pull/392)). Tombstones are keyed on the connector or importer name rather than the fact's source string, so a re-import of the same kind of export is covered as well as a re-sync.
+
 ## D-111 — Operator-only tier switching and an honest pricing page (2026-10-25)
 
 **Status:** accepted (the owner's decision, 2026-10-25). It amends [D-050](#d-050--self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15): the tier switch becomes operator-only. Mock payment, the endpoint's shape and the Stripe swap D-050 planned (T-5.3.1) are unchanged.
@@ -3726,3 +3732,173 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 - Passing `get_video_details`' `defaultAudioLanguage` through to `fetch_transcript` would save the lazy lookup (T-1.11.11.4, proposed).
 
 **Linked initiatives / PRs.** E-1.11 (S-1.11.11), E-1.16 (S-1.16.2, T-1.16.2.6); PR [#386](https://github.com/khoks/VideoResearchPro/pull/386); [D-051](#d-051--transcript-pipeline-resilience-bundle-circuit-breaker--segmented-whisper--yt-dlp-client-fallback-2026-07-22), [D-066](#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31), [D-080](#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19), [D-084](#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19).
+
+## D-118 — A provider key is stored only for a provider a call reads it for; the settings report the encryption key's state, never the key (2026-11-04)
+
+**Status:** accepted (2026-11-04). Made while building the BYOK keys panel and the system status page (S-5.6.1, PR [#388](https://github.com/khoks/VideoResearchPro/pull/388)) and its review fixes, not ruled by the owner.
+
+**Context.**
+- E-5.6 shipped per-user provider keys in May 2026 with no UI. `byok_service.SUPPORTED_PROVIDERS` listed `openai`, `anthropic`, `google` and `local`, but `llm_service` reads a stored key only for the first three: the local endpoint is install-wide (`LLM_LOCAL_BASE_URL` / `LLM_LOCAL_API_KEY`). A panel built on `SUPPORTED_PROVIDERS` would have offered a key no call reads.
+- `PUT /auth/credentials/{provider}` checked the key's length with a pydantic `max_length`. FastAPI's 422 body carries the rejected value as `input` (confirmed on the pinned version), so an over-long key was sent straight back.
+- Without `BYOK_ENCRYPTION_KEY`, each process makes its own temporary Fernet key ([D-043](#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05)). A key saved through the API cannot be read by the Celery worker, so search and report runs quietly use the install's key, and every saved key is lost at the next restart. A malformed key turned every save into a bare 500.
+- The health endpoints (`/health/llm`, `/health/scheduler`, `/health/quota`) are public and had no viewer in the app. The restart endpoint is operator-only ([D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)).
+
+**Decision.**
+1. **A stored key is accepted only for a provider a call reads it for.** `byok_service.RESOLVED_PROVIDERS` (openai, anthropic, google) is the one list. `llm_service._resolve_byok_api_key` reads it, `GET /settings/llm` reports it as `byok.providers`, `GET /auth/credentials/providers` returns it, and `PUT` refuses any other provider with a 400. `local` stays in `SUPPORTED_PROVIDERS` for `DELETE` only, so an old row can still be removed; the panel shows such a row as "Not used".
+2. **The settings report the encryption key's state as two booleans, never the key or any part of it:** `byok.keys_persist` (true only for a valid Fernet key) and `byok.key_invalid` (set but malformed), from `byok_service.encryption_key_state()`. Unset: saves work until a restart, and the worker cannot read them. Malformed: no save works, and `PUT` answers 503 with a detail that names the cause and quotes neither key. The panel says which, and turns saving off while the key is malformed; Remove still works.
+3. **A credential secret is length-checked in the handler, never by a pydantic constraint,** because FastAPI's 422 echoes the rejected `input`. An over-long key gets a 400 that does not quote it.
+4. **The browser sends a secret with a direct call, not a React Query mutation, and empties the field at submit,** so the key never sits in the mutation cache, a toast or the console. The key field is `autocomplete="one-time-code"` and sits in no `<form>`, so browser password managers do not offer to save it.
+5. **The system status page is open to every signed-in user,** since the health endpoints it reads are already public. The restart control renders only for operators (`is_operator`), and `require_operator` on the server stays the enforcement.
+
+**Alternatives considered.**
+- *Store a `local` key and ignore it.* A silently ignored key is exactly the drift a shared constant exists to prevent.
+- *Report the key's state as one flag.* "Keys do not persist" would read the same for an unset and a malformed key, which need different fixes.
+- *`autocomplete="new-password"`,* the review's suggestion. It is the sign-up signal: Chromium offers its password generator on focus and is more eager to offer saving.
+- *A "verify key" button.* The API has no verify call, and one would make a paid provider request with the user's key (T-5.6.8, proposed).
+- *Restrict the health endpoints in the same change.* Outside this item; asked of the owner as OQ-21.
+
+**Consequences.**
+- A Studio user can add, replace and remove their keys on `/account/ai-models`. Free and Pro see what the plan adds and never call `/auth/credentials`.
+- Until the owner sets `BYOK_ENCRYPTION_KEY` (T-5.6.7), the panel warns that saved keys do not last and that background work cannot read them.
+- Other paths that encrypt with the same shared key, MFA enrolment among them, may still answer a malformed key with a bare 500 (T-5.6.9, proposed). The Echo connector sync already handles it (T-3.2.1.10).
+- Headless tests cannot see a browser's "Save password?" prompt; the owner checks it once by hand.
+
+**Linked initiatives / PRs.** E-5.6 (S-5.6.1, T-5.6.7 to T-5.6.9), E-5.2 (T-5.2.8); PR [#388](https://github.com/khoks/VideoResearchPro/pull/388); [D-041](#d-041--contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05), [D-043](#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05), [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25).
+
+## D-119 — Usage is metered at a scope that names the tenant, and written in a session of its own (2026-11-04)
+
+**Status:** accepted (2026-11-04). Made while building per-user usage recording (S-5.2.1, PR [#391](https://github.com/khoks/VideoResearchPro/pull/391)) and its review fixes, not ruled by the owner. It records usage and enforces nothing new, as [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25) ruled when it dropped the daily-token line from the pricing page.
+
+**Context.**
+- Tokens were recorded per user only on the job Q&A path (T-5.2.7) and in suggestions, each by hand. YouTube Data API units were recorded install-wide only (`api_quota_log`). Every other feature spent without a record.
+- Every LLM call goes through `llm_service.get_llm_for` for a named use case, and every YouTube request through `quota_service.record`. Many entry points share use cases: library Q&A calls the job-Q&A sub-query and reference use cases.
+- The meter runs inside the work it measures: routers, services and Celery tasks with their own sessions and transactions, some of which flush and later roll back.
+- `report_agent.map_chunks` runs batches on a thread pool (S-1.14.19). A pool thread starts with an empty context, so the ContextVars of [D-041](#d-041--contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05) did not reach those batches.
+
+**Decision.**
+1. **Usage is metered at a scope that names the tenant, not at each call site.** `usage_service.metered(db, tenant_id, feature=None)` opens one, and `llm_service.byok_context` opens one too, so every path that already set the BYOK context is metered with no extra line. `get_llm_for` attaches a LangChain callback to each client it builds, which adds the call's reported tokens and one call to the open scope; `quota_service.record` adds each YouTube request's units. Nested scopes for the same tenant share one ledger.
+2. **A call is charged to its use case's feature** (`USE_CASE_FEATURES`, which covers the whole registry; a test enforces it), **unless an entry point that shares use cases names one, and then the outermost named feature wins.** Library Q&A names `library_qa`; a saved-search run names `saved_search`.
+3. **YouTube units are grouped by the kind of call:** `youtube_search` ("Searches (YouTube)") for every `search.list`, `video_metadata` and `channel_sync`. `search.list` is kept apart from the `search` feature (the topic planner's and curator's model calls), because channel jobs and subscription syncs also call it to resolve a channel typed by name.
+4. **The meter writes through a session of its own and never commits or rolls back the caller's.** When the caller's open transaction has already written (seen by session events, and on SQLite by the connection's own transaction state, which also catches bulk and raw-connection writes), the write waits until that transaction ends by commit, rollback or close. Usage spent on work that is then rolled back is still recorded, because it was spent. Metering never raises into the work it measures.
+5. **Daily totals go to both tables:** one row per (tenant, UTC day, feature, metric) in `usage_records` (migration `6cf03630d943`), and the matching `quota_usage` totals, so `GET /auth/quota` and `record_usage` keep their meaning and now count every feature. The hand-written token recording in the job Q&A router and `suggestion_service` is removed, so nothing is counted twice.
+6. **Concurrent report map batches run in a copy of the caller's context** (`_map_in_context`). Since S-1.14.19 they had ignored the user's BYOK key and model overrides.
+
+**Alternatives considered.**
+- *A tally threaded through every agent,* the job-Q&A pattern. It covers only the paths someone remembered, and double-counts when a second path is added.
+- *Charge YouTube units to the action that made them.* A channel resolve inside a subscription sync would read as a topic search.
+- *Write on the caller's commit (`before_commit`) inside a SAVEPOINT.* Usage is lost whenever the caller ends without another commit, as a Celery task that raised and closed its session does, and a savepoint still writes inside the caller's transaction.
+- *Commit the caller's session when it has nothing pending,* the first draft. Review showed it could commit or roll back part of the caller's work.
+- *Derive the daily totals from `usage_records`.* It would change `/auth/quota`'s semantics and its tests for no gain.
+
+**Consequences.**
+- `GET /api/v1/usage` returns the caller's own usage, today and over the last 30 UTC days, by feature. The Subscription page shows it with a note that nothing there is limited, and says when recording started while that date is inside the window.
+- Not recorded: Whisper audio minutes (billed per minute, outside LangChain; T-5.2.12, proposed), embeddings (local), startup probes and operator scripts, and tokens from local models that report none (their calls are counted). Per-job spend stays T-5.2.7's deferred item.
+- A task's usage is written when the task ends, so a worker that dies mid-run loses that run's usage (T-5.2.13, proposed).
+- On a database other than SQLite, writes made around the session (bulk saves, the raw connection) are not seen by the session events. On Postgres that risks a lock wait, never committing the caller's work, since the meter has its own connection. A ledger deferred on a session that closes without ever starting a transaction is lost; this is rare.
+- The job and library clarify endpoints are now metered but never open `byok_context`, so they still use the install's key (T-5.6.10, proposed).
+
+**Linked initiatives / PRs.** E-5.2 (S-5.2.1, T-5.2.7, T-5.2.12, T-5.2.13), E-5.6 (T-5.6.4, T-5.6.10), S-1.14.19; PR [#391](https://github.com/khoks/VideoResearchPro/pull/391); [D-041](#d-041--contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05), [D-045](#d-045--quota-metering-enforce-before-record-after-success-2026-05-05), [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25).
+
+## D-120 — Older chunks gain their era and publish fields by a metadata-only pass (amends D-072); the language profile is stored on the document (2026-11-04)
+
+**Status:** accepted (2026-11-04). Made while building T-1.16.1.7 and S-1.17.3 (PR [#390](https://github.com/khoks/VideoResearchPro/pull/390)) and its review fixes, not ruled by the owner. Point 1 amends [D-072](#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19) point 2's "no backfill", as [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) allowed S-1.17.3 to do.
+
+**Context.**
+- D-072 left chunks embedded before R3 (2026-10-19) without `era_*`, `published_ts` and `published_year`, so they read as unknown. It rejected a backfill because it "would re-embed the whole library for a metadata field". A document gains its era the next time a job re-chunks it, but its old chunks in Chroma do not.
+- Chroma updates metadata without re-embedding. `backfill_chunk_document_ids` ([D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)) already does exactly that at every startup.
+- Measured on a read-only snapshot of the live library: 5,549 of 8,567 chunks lack the publish fields and 5,111 lack the era.
+- The per-document language profile (`code_mixing_service.profile_transcript`, S-1.16.2) lived only on chunks, as `code_mix_*`. Documents chunked before S-1.16.2 had it nowhere, and a page could show only the caption-track label, which reads `en` for romanised Hinglish.
+
+**Decision.**
+1. **Chunks no longer stay unknown for good.** An owner-run, metadata-only pass (`scripts/backfill_chunk_temporal_fields.py`) brings existing chunks up to the era and publish fields the chunker writes today, through the chunker's own functions (`temporal_service.era_metadata`, `chunking.published_numeric_fields`, `chunking.published_at_field`). Unknown fields are still omitted, never sentinels. Nothing is removed and nothing is re-embedded.
+2. **The pass sends each chunk's whole metadata back,** re-read just before the update, so `document_id`, `code_mix_*`, `text_en` and the timestamps survive whether the store merges (Chroma 1.5.5 does, probed) or replaces.
+3. **A chunk's `published_at` display string moves with its numeric twins** (a review fix). Whenever the pass writes `published_ts` / `published_year` it writes the matching `published_at`, compared as an instant, so the date the prompts show and the one a range filter reads never disagree.
+4. **It stays owner-run, a dry run by default, idempotent and resumable,** not a startup hook. A failed batch stops the pass and a re-run resumes.
+5. **`documents.language_mix` holds the full `profile_transcript` result as JSON text** (migration `0253eef57358`, the `discussed_era_json` convention). It is recomputed from the speech segments at every chunking and written only when it changes, so it follows a re-fetched transcript. The chunk `code_mix_*` fields are derived from the same profile (`chunk_transcript(language_profile=...)`), which keeps visual annotations out of it. `scripts/backfill_language_mix.py` profiles older documents from `transcript_cache`, else from their chunks put back together ([D-113](#d-113--knowledge-text-for-any-source-the-transcript-cache-else-the-documents-chunks-put-back-together-2026-10-29)), with no LLM.
+6. **The API's `language_mix.code_mixed` describes the measured text, not the stored chunks** (a review clarification). A document chunked before S-1.16.2 and profiled since can read true while its chunks carry no `code_mix_*` until it is re-chunked. The OpenAPI description says so.
+
+**Alternatives considered.**
+- *Keep D-072's no-backfill rule.* Its reason was the cost of re-embedding, which a metadata update does not incur, and two thirds of the library's chunks would never range-filter by date.
+- *Send only the new fields and rely on Chroma merging.* Correct on 1.5.5, but a store that replaces would lose `code_mix_*` and `text_en`; a test runs against one.
+- *A startup hook, like the `document_id` backfill.* The pass reads every chunk's metadata and should run while no job is ingesting, so the owner runs it.
+- *Compute the profile once per document and reuse it.* It would keep describing a dub after the transcript was re-fetched (S-1.11.11).
+- *Rename `code_mixed`.* The name is right for the words, and nothing renders it yet.
+
+**Consequences.**
+- Owner steps: apply migration `0253eef57358` (a restart does), then, with no job ingesting, run each script's dry run and then `--write`. The snapshot counts above were taken before the `published_at` fix, so the owner's dry run will print one more field.
+- On an R1 visual run (parked, [D-109](#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25)), chunk `code_mix_*` now comes from the speech alone. Every other run's chunks are byte-identical, which a test pins.
+- `language_mix` is a read-only field on the library, job and channel video listings; nothing renders it yet (T-1.16.1.9, proposed).
+- A job that reuses an embedded document and extracts its era for the first time does not stamp the old chunks; they wait for the next run of the script (T-1.17.3.3, proposed).
+- Stamping the document-level `code_mix_*` onto chunks written before S-1.16.2 is a separate decision, since those chunks would still be embedded as their original text ([D-084](#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19)) (T-1.16.2.14, proposed).
+
+**Linked initiatives / PRs.** E-1.16 (T-1.16.1.7, T-1.16.1.9, T-1.16.2.14), E-1.17 (S-1.17.3, T-1.17.3.3, OQ-20), S-1.11.11; PR [#390](https://github.com/khoks/VideoResearchPro/pull/390); [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19), [D-072](#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19), [D-080](#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19), [D-084](#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19), [D-109](#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25), [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25), [D-113](#d-113--knowledge-text-for-any-source-the-transcript-cache-else-the-documents-chunks-put-back-together-2026-10-29).
+
+## D-121 — Reset codes never appear in a response, two-step verification guards every sign-in, and tokens say what they are (2026-11-04)
+
+**Status:** accepted (2026-11-04). Made while building the account security page (S-5.4.1, PR [#389](https://github.com/khoks/VideoResearchPro/pull/389)) and its review fixes, not ruled by the owner. Point 1 supersedes T-5.4.8's self-host `debug_secret` handoff.
+
+**Context.**
+- E-5.4's backend (audit log, password reset, OAuth, TOTP, sessions) shipped in May 2026 with no UI. Building the UI made several older server paths reachable from the app for the first time.
+- `POST /auth/password-reset/request` returned the reset secret as `debug_secret` whenever SMTP was unset (T-5.4.8). The route needs no sign-in, so on any install without SMTP anyone who knew an address could reset that account's password, and the field's presence revealed which addresses had accounts.
+- The OAuth callback issued a full session even when the account had two-step verification on.
+- The second-factor ticket from `/auth/login` (T-5.4.6) was signed with the access-token key, and `_resolve_user` took any token `decode_token` accepted. For its five minutes the ticket worked as an access token, so two-step verification could be skipped by never sending the code. Found in review.
+- `audit_log` holds account events and product analytics (suggestion impressions and clicks, onboarding milestones, Echo drafts), and the analytics are written far more often.
+- Session rows are never deleted, so `GET /auth/sessions` listed every sign-in since the account was made as if it were live.
+
+**Decision.**
+1. **A password-reset secret never appears in an API response.** The response is the same message with or without SMTP, and for known and unknown addresses. With SMTP unset, the operator reads the code from the server log, where `email_service`'s log fallback already wrote it. The email names the bare `{APP_BASE_URL}/reset-password` page; the code is in no URL.
+2. **Two-step verification guards every sign-in path, OAuth included.** A provider sign-in to an account with TOTP on gets the same five-minute ticket and second step as a password sign-in.
+3. **Tokens say what they are.** Access tokens carry `typ: "access"` and the ticket `typ: "mfa_step"`. Every bearer check (`_resolve_user`, `get_current_jti`, the `/ws/jobs` handshake) decodes through `auth_service.decode_access_token`, which refuses a token with `mfa_step` set or any other `typ`. The ticket authenticates nothing but `/auth/login/mfa`. A token with no `typ` is still accepted when it has no `mfa_step`, so the deploy signs no one out.
+4. **The account view of the audit log reads an inclusion list** (`audit_service.ACCOUNT_EVENTS`, behind `GET /auth/audit-log?scope=account`), so an event added later stays out of the security view until someone classifies it. The default `scope=all` is unchanged.
+5. **A session is active when it is neither revoked nor expired.** `GET /auth/sessions` returns `active` and `expires_at` (`created_at + JWT_EXPIRY_HOURS`, which is how tokens are issued), and the page lists only active sessions.
+
+**Alternatives considered.**
+- *Return the secret only on a single-account install.* The route is still unauthenticated, so anyone who knows or guesses the one address could take the account, and the field would still reveal that the address exists.
+- *A separate signing key or audience for the ticket.* Two places to check; one decoding helper is one.
+- *Require `typ` on every token at once.* It would sign out every session issued before the deploy.
+- *An exclusion list of analytics events.* Every new analytics event would show in the security view until someone excluded it.
+
+**Consequences.**
+- `/account/security` lists active sessions and signs out one or all the others, sets up and turns off two-step verification, links to the reset flow and pages through account activity. Sign-in asks for the second factor or a recovery code, and shows OAuth buttons only for providers the install has set up. There is no QR code: no QR library is a dependency, so setup shows the key and the `otpauth://` link to copy.
+- Owner steps: restart the backend; set `APP_BASE_URL` to the frontend's public origin so the reset email's link is right; on an install without SMTP, a reset code is only in `.uvicorn.*.log` ("Password reset request"); the OAuth buttons need `OAUTH_GOOGLE_*` / `OAUTH_GITHUB_*` and the redirect URI `<frontend origin>/login/oauth/<provider>/callback` registered with each provider.
+- Left open, all proposed: a reset leaves the account's other sessions alive (T-5.4.12); `/auth/login/mfa` has no per-ticket attempt cap (T-5.4.13); there is no password change while signed in (T-5.4.14); the `/ws/jobs` handshake refuses the ticket but does not check whether an access token's session was revoked, a gap older than this PR (T-5.4.15). Email verification stays deferred with T-5.4.11.
+
+**Linked initiatives / PRs.** E-5.4 (S-5.4.1, T-5.4.3, T-5.4.5 to T-5.4.8, T-5.4.11 to T-5.4.15); PR [#389](https://github.com/khoks/VideoResearchPro/pull/389); [D-040](#d-040--failed-logins-for-unknown-emails-do-not-create-user-rows-lock-arbitrary-account-defence-2026-05-04), [D-042](#d-042--oauth-first-login-links-to-existing-user-by-email-2026-05-05), [D-043](#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05), [D-116](#d-116--oauth-links-or-creates-an-account-only-from-a-provider-verified-email-and-the-link-records-it-2026-10-29).
+
+## D-122 — A deleted derived fact stays deleted per connector; only a refused refresh asks for a reconnect; restore re-checks the evidence (2026-11-04)
+
+**Status:** accepted (2026-11-04). Made while building T-3.2.4.4, T-3.2.2.5 and T-3.3.1.6 (PR [#392](https://github.com/khoks/VideoResearchPro/pull/392)) and its review fixes, not ruled by the owner. Point 1 carries out [D-110](#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25) item 2.
+
+**Context.**
+- D-110 ruled that a fact the user deleted stays deleted, for every connector. The nightly GitHub sync upserted derived facts by kind and key, so a forgotten "Python (GitHub)" came back, and re-importing an export did the same.
+- Google's access tokens last an hour. The runtime stored `refresh_token` and `expires_at` but had no refresh step, so the Google connectors (S-3.2.2, S-3.2.5, still blocked on the owner's OAuth client) could not sync past the first hour. GitHub's tokens do not expire.
+- "That's not me" on a voice signal could not be undone: re-adding the signal was refused with a 422, and extraction dropped it.
+- `withdraw_source`, `withdraw_sources` and `withdraw_missing_events` skipped rejected signals, so a rejected signal kept the exact words of a share or event the user had since deleted. The delete paths drop the ledger row at once, so nothing cleaned them later.
+
+**Decision.**
+1. **Tombstones (`echo_fact_tombstones`, migration `a68953e57c63`) are keyed on the connector or importer name, the kind and the key,** not on the fact's source string, so they cover a re-import of the same kind of export as well as a re-sync.
+   - They are recorded only when the user deletes a derived fact: one at a time (`echo_service.delete_context`) or a whole source (`revoke_source`, through `DELETE /echo/sources/{source}`). A fact the user typed gets none.
+   - They are not recorded on disconnect, import undo or share delete, which remove what a source brought in rather than saying a fact is wrong.
+   - They survive a disconnect and reconnect, and the deleted value is not kept.
+   - The connector sync (`_store_facts`) and the export importer skip tombstoned keys. The user clears one with "Allow again".
+   - The table is in `ECHO_TABLES`, so the brain export carries it and the full delete erases it ([D-089](#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19)).
+2. **Token refresh is an optional protocol beside `ActivityConnector`** (`RefreshableConnector.refresh_tokens`), so a connector whose tokens never expire still meets the contract. `run_sync` renews a token that has expired or expires within 60 s, before calling the provider. The new token is stored encrypted, and the stored refresh token is kept when the provider returns none.
+3. **Only a refusal asks the user to reconnect.** `invalid_grant` (`ConnectorError(auth=True)`), a missing refresh token, or a connector that cannot refresh marks the grant with `RECONNECT_PREFIX`. A transient refresh failure is an ordinary error that the next sync retries. Nothing raises inside the Celery task, and no token is logged.
+4. **Withdrawing a source cleans rejected signals too; they stay rejected.**
+5. **Restore re-checks the evidence against the live inputs** (`echo_signal_extraction.live_evidence_texts`, `gather_inputs`' rules without sampling) rather than trusting what the rejected row kept. It drops every ref that is no longer a live input and every example its source no longer contains. A learned signal with no evidence left comes back as `source_deleted` (re-derivable, out of the profile), not live.
+6. **Restoring one rejection lifts every rejection of the same (type, wording, language),** merging their checked evidence and recording the restored row on their shares. If an equal live signal exists, every tombstone row is dropped and the live one kept. The Rejected list sends no examples.
+
+**Alternatives considered.**
+- *Key tombstones on the fact's source string* (`import:<id>`). A second import of the same export gets a new id and would bring the fact back.
+- *Tombstone on disconnect too.* Disconnecting says "stop reading this account", not "this fact is wrong"; reconnecting should bring the facts back.
+- *Ask for a reconnect on any failed refresh,* as the computed task said. A brief provider outage would send the user through OAuth again; the board entry named `invalid_grant`.
+- *Make refresh a required connector method.* GitHub would need a stub that does nothing.
+- *Trust the rejected row's examples on restore.* Rejections made before this change can still hold the words of a deleted source.
+
+**Consequences.**
+- The Echo page shows "Kept deleted (N)" with "Allow again", and the delete and revoke dialogs say a derived fact stays deleted. The signals panel shows "Rejected (N)" with "Restore". New endpoints: `GET` and `DELETE /echo/fact-tombstones[/{id}]`, `GET /echo/signals/rejected` and `POST /echo/signals/{id}/restore`. An import's counts report `facts_kept_deleted`.
+- S-3.2.2 and S-3.2.5 stay blocked on the owner's Google OAuth client. The refresh step is tested with a fake connector, and each Google connector still has to implement `refresh_tokens`.
+- Left out: no retry after a 401 mid-sync, and two concurrent refreshes against a provider that rotates refresh tokens could ask for a spurious reconnect (T-3.2.1.12, proposed); a sync still overwrites a connector-derived fact the user edited (T-3.2.1.11, proposed); there is no "clear all" for tombstones; rejections that went stale before this change keep their examples at rest, though restore and the Rejected list never show them (T-3.3.1.7, proposed).
+- Owner step: apply migration `a68953e57c63` (a restart does) and restart the API and the worker.
+
+**Linked initiatives / PRs.** E-3.2 (S-3.2.1: T-3.2.1.11, T-3.2.1.12; S-3.2.2: T-3.2.2.5; S-3.2.4: T-3.2.4.4; S-3.2.5), E-3.3 (S-3.3.1: T-3.3.1.6, T-3.3.1.7), E-3.10; PR [#392](https://github.com/khoks/VideoResearchPro/pull/392); [D-089](#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19), [D-098](#d-098--echo-connectors-events-unique-per-reader-tokens-in-a-secret-store-that-is-erased-with-the-brain-but-never-exported-2026-10-19), [D-099](#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19), [D-110](#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25).

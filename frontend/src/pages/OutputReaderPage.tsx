@@ -181,7 +181,7 @@ export function OutputReaderPage() {
           ]}
         />
       }
-      after={cited ? <OutputSources citations={citations.data} isError={citations.isError} /> : null}
+      after={cited ? <OutputSources citations={citations.data} kind={item.kind} isError={citations.isError} /> : null}
     >
       {parsed.content}
     </ReaderShell>

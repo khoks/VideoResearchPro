@@ -3,7 +3,9 @@
  * (`documents.language_mix`, T-1.16.1.7) as a badge beside the caption
  * track's `transcript_language`, which calls romanised Hinglish `en`.
  * Only a source that is not plain English gets one; the profile's
- * `code_mixed` (the chunker's 3% rule) says which.
+ * `code_mixed` (the chunker's 3% rule) says which. The profile cannot say
+ * what a Latin-script source IS: the tagger counts every word outside its
+ * English lexicon as `hi`, so Hindi is named only where something supports it.
  *
  * Rendered through `DocumentsBrowser`, the list the channel and shelf pages
  * use, fed rows shaped like `GET /library/videos`.
@@ -15,7 +17,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LibraryVideoResponse } from '../../../services/libraryApi';
 import type { LanguageMix } from '../../../types/video';
-import { languageMixBadge } from '../../../utils/languageMix';
+import { HINDI_GRAMMAR_FLOOR, languageMixBadge } from '../../../utils/languageMix';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -59,15 +61,39 @@ const BENGALI = mix({
   primary_language: 'other', native_script: 'Bengali', hi_share: 0.7, matrix_hi_share: 0.9,
   quote_mode: 'native_script', code_mixed: true,
 });
+// As `code_mixing_service.profile_transcript` measures these texts.
+const SPANISH_ESSAY = mix({
+  primary_language: 'en', native_script: 'Latin', hi_share: 0.2264, matrix_hi_share: 0,
+  quote_mode: 'roman', code_mixed: true,
+});
+const SPANISH_SPEECH = mix({
+  primary_language: 'hi', native_script: 'Latin', hi_share: 0.5494, matrix_hi_share: 0.598,
+  quote_mode: 'roman', code_mixed: true,
+});
+const ARABIC = mix({
+  primary_language: 'hi', native_script: 'Arabic', hi_share: 1, matrix_hi_share: 1,
+  quote_mode: 'native_script', code_mixed: true,
+});
+const KANNADA = mix({
+  primary_language: 'other', native_script: 'Kannada', hi_share: 1, matrix_hi_share: 1,
+  quote_mode: 'native_script', code_mixed: true,
+});
+// A real English talk from the library: 3% unseen names.
+const ENGLISH_WITH_NAMES = mix({
+  primary_language: 'en', native_script: 'Latin', hi_share: 0.0333, matrix_hi_share: 0.0037,
+  quote_mode: 'plain_english', code_mixed: true,
+});
 
 describe('languageMixBadge', () => {
   it('names the mix the way the backend names it for prompts', () => {
-    expect(languageMixBadge(ROMANISED)?.label).toBe('Hindi (romanised) + English');
-    expect(languageMixBadge(DEVANAGARI)?.label).toBe('Hindi + English');
-    expect(languageMixBadge(ALL_HINDI)?.label).toBe('Hindi');
-    expect(languageMixBadge(MOSTLY_ENGLISH)?.label).toBe('English + Hindi');
+    expect(languageMixBadge(ROMANISED, 'en', 'video')?.label).toBe('Hindi (romanised) + English');
+    expect(languageMixBadge(DEVANAGARI, 'hi', 'video')?.label).toBe('Hindi + English');
+    expect(languageMixBadge(ALL_HINDI, 'hi', 'video')?.label).toBe('Hindi');
+    expect(languageMixBadge(MOSTLY_ENGLISH, 'en', 'video')?.label).toBe('English + Hindi');
     expect(languageMixBadge(BENGALI)?.label).toBe('Bengali script + English');
-    expect(languageMixBadge(mix({ ...DEVANAGARI, native_script: 'Arabic' }))?.label).toBe('Urdu/Hindi + English');
+    expect(languageMixBadge(mix({ ...DEVANAGARI, native_script: 'Arabic' }), 'ur', 'video')?.label).toBe(
+      'Urdu/Hindi + English',
+    );
   });
 
   it('gives plain English, an unprofiled document and a wordless one no badge', () => {
@@ -79,16 +105,86 @@ describe('languageMixBadge', () => {
 
   it('follows code_mixed, not the shares, to decide (the chunker’s rule lives on the server)', () => {
     // A small share the server still calls mixed (its quote mode is not plain English).
-    expect(languageMixBadge(mix({ native_script: 'Latin', hi_share: 0.01, quote_mode: 'roman', code_mixed: true }))?.label)
-      .toBe('English + Hindi (romanised)');
+    expect(languageMixBadge(mix({ native_script: 'Devanagari', hi_share: 0.01, quote_mode: 'roman', code_mixed: true }))?.label)
+      .toBe('English + Hindi');
     // A share above 3% the server did not flag is left alone.
-    expect(languageMixBadge(mix({ native_script: 'Latin', hi_share: 0.05, code_mixed: false }))).toBeNull();
+    expect(languageMixBadge(mix({ native_script: 'Latin', hi_share: 0.05, code_mixed: false }), 'hi', 'video')).toBeNull();
   });
 
   it('describes the measured shares for the tooltip', () => {
-    expect(languageMixBadge(ROMANISED)?.description).toBe(
+    expect(languageMixBadge(ROMANISED, 'en', 'video')?.description).toBe(
       'Measured from the words: 62% Hindi, Hindi grammar in 81% of the speech.',
     );
+    expect(languageMixBadge(BENGALI)?.description).toBe('Measured from the words: 70% Bengali script.');
+  });
+});
+
+describe('languageMixBadge names Hindi only where something supports it', () => {
+  it('shows the third language a label names, with no shares for it', () => {
+    expect(languageMixBadge(SPANISH_ESSAY, 'es', 'video')?.label).toBe('Spanish');
+    expect(languageMixBadge(SPANISH_SPEECH, 'es-419', 'video')?.label).toBe('Spanish');
+    // Whisper writes the language's name, not its code.
+    expect(languageMixBadge(SPANISH_SPEECH, 'spanish', 'video')?.label).toBe('Spanish');
+    expect(languageMixBadge(SPANISH_ESSAY, 'welsh', 'video')?.label).toBe('Welsh');
+
+    const description = languageMixBadge(SPANISH_SPEECH, 'es', 'video')!.description;
+    expect(description).toBe('Labelled Spanish. The word measure only tells English from Hindi, so it has no shares for this source.');
+    expect(description).not.toMatch(/\d+%/);
+  });
+
+  it('keeps the measured shares under the labelled name in a script of its own', () => {
+    expect(languageMixBadge(KANNADA, 'kn', 'video')?.label).toBe('Kannada');
+    const tamil = mix({ ...BENGALI, native_script: 'Tamil' });
+    expect(languageMixBadge(tamil, 'ta', 'video')?.label).toBe('Tamil + English');
+    expect(languageMixBadge(DEVANAGARI, 'mr', 'video')?.label).toBe('Marathi + English');
+    expect(languageMixBadge(tamil, 'ta', 'video')?.description).toBe('Measured from the words: 70% Tamil.');
+  });
+
+  it('calls Arabic script Urdu/Hindi only when the label does', () => {
+    expect(languageMixBadge(ARABIC, 'ar', 'video')?.label).toBe('Arabic');
+    expect(languageMixBadge(ARABIC, 'fa', 'video')?.label).toBe('Persian');
+    expect(languageMixBadge(ARABIC, null, 'article')?.label).toBe('Arabic script');
+    expect(languageMixBadge(ARABIC, 'en', 'pdf')?.label).toBe('Arabic script');
+    expect(languageMixBadge(ARABIC, 'ur', 'video')?.label).toBe('Urdu/Hindi');
+    expect(languageMixBadge(ARABIC, 'urdu', 'video')?.label).toBe('Urdu/Hindi');
+    expect(languageMixBadge(ARABIC, 'hi', 'video')?.label).toBe('Urdu/Hindi');
+  });
+
+  it('reads an `en` label as evidence only on a video', () => {
+    // The case the badge exists for: captions labelled `en`, words that are not.
+    expect(languageMixBadge(ROMANISED, 'en', 'video')?.label).toBe('Hindi (romanised) + English');
+    expect(languageMixBadge(ROMANISED, 'en-IN', 'video')?.label).toBe('Hindi (romanised) + English');
+    expect(languageMixBadge(ROMANISED, 'english', 'video')?.label).toBe('Hindi (romanised) + English');
+    // A PDF, a Reddit thread and an HN post are `en` by assumption, and
+    // conversational Spanish measures Hindi grammar in 60% of its speech.
+    expect(languageMixBadge(SPANISH_SPEECH, 'en', 'pdf')?.label).toBe('Other language + English');
+    expect(languageMixBadge(SPANISH_SPEECH, 'en', 'reddit_thread')?.label).toBe('Other language + English');
+    expect(languageMixBadge(mix({ ...SPANISH_SPEECH, hi_share: 0.96 }), 'en', 'pdf')?.label).toBe('Other language');
+  });
+
+  it('takes a hi or ur label over the source type', () => {
+    expect(languageMixBadge(ROMANISED, 'hi', 'reddit_thread')?.label).toBe('Hindi (romanised) + English');
+    expect(languageMixBadge(ENGLISH_WITH_NAMES, 'hi', 'video')?.label).toBe('English + Hindi (romanised)');
+  });
+
+  it('does not call unseen names in an English talk Hindi', () => {
+    expect(languageMixBadge(ENGLISH_WITH_NAMES, 'en-US', 'video')?.label).toBe('English + other words');
+    expect(languageMixBadge(SPANISH_ESSAY, 'en', 'video')?.label).toBe('English + other words');
+    const atFloor = mix({ ...ENGLISH_WITH_NAMES, matrix_hi_share: HINDI_GRAMMAR_FLOOR });
+    expect(languageMixBadge(atFloor, 'en', 'video')?.label).toBe('English + Hindi (romanised)');
+    const below = mix({ ...ENGLISH_WITH_NAMES, matrix_hi_share: HINDI_GRAMMAR_FLOOR - 0.001 });
+    expect(languageMixBadge(below, 'en', 'video')?.label).toBe('English + other words');
+  });
+
+  it('claims no language in the tooltip of a neutral badge', () => {
+    expect(languageMixBadge(ENGLISH_WITH_NAMES, 'en-US', 'video')?.description).toBe(
+      'Measured from the words: 3% are outside the English word list. Nothing says which language they are.',
+    );
+  });
+
+  it.each(['unknown', 'und', 'a.en', '', null, undefined])('falls back on the words for the label %s', (label) => {
+    expect(languageMixBadge(DEVANAGARI, label, 'video')?.label).toBe('Hindi + English');
+    expect(languageMixBadge(ROMANISED, label, 'video')?.label).toBe('Other language + English');
   });
 });
 
@@ -168,18 +264,22 @@ describe('VideoRow language badge', () => {
       row('english-page', { language_mix: PLAIN_ENGLISH }),
       row('unprofiled-page', { language_mix: null }),
       row('older-response', {}),
+      row('spanish-talk', { source_type: 'video', video_id: 'esp000abcXY', transcript_language: 'es', language_mix: SPANISH_SPEECH }),
+      row('spanish-pdf', { source_type: 'pdf', language_mix: SPANISH_SPEECH }),
     ]);
 
     expect(badgesOf('hinglish-talk')).toEqual(['Hindi (romanised) + English']);
+    expect(badgesOf('spanish-talk')).toEqual(['Spanish']);
+    expect(badgesOf('spanish-pdf')).toEqual(['Other language + English']);
     expect(badgesOf('english-page')).toEqual([]);
     expect(badgesOf('unprofiled-page')).toEqual([]);
     expect(badgesOf('older-response')).toEqual([]);
 
-    const wrapper = host.querySelector('[data-testid="language-mix"]')!;
+    const wrapper = host.querySelectorAll('[data-testid="language-mix"]')[0];
     expect(wrapper.getAttribute('title')).toBe('Measured from the words: 62% Hindi, Hindi grammar in 81% of the speech.');
     // Beside the caption label: the badge right after it.
     const caption = wrapper.previousElementSibling;
     expect(caption?.textContent).toBe('en');
-    expect(host.querySelectorAll('[data-testid="language-mix"]')).toHaveLength(1);
+    expect(host.querySelectorAll('[data-testid="language-mix"]')).toHaveLength(3);
   });
 });

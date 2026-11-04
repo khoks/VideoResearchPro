@@ -3,8 +3,12 @@
  *
  * `GET /author/outputs/{id}/citations` had no UI. The reader now lists every
  * cited source under the manuscript, in first-cited order, with the
- * timestamp links the API recorded; a citation nothing matched is shown
- * without a link. An output with no recorded citations asks for none.
+ * timestamp links the API recorded. A citation nothing matched comes last,
+ * and only a bare anchor has no link. An output with no recorded citations
+ * asks for none.
+ *
+ * All four output kinds record citations, but only a book numbers them in its
+ * text, so what the list says about endnotes and print depends on the kind.
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -162,9 +166,68 @@ describe('OutputReaderPage Sources list', () => {
       ['the primer', 'https://example.com/primer'],
     ]);
 
-    // Unmatched: the API gives no URL, so none is invented.
+    // An unmatched bare anchor: the API gives no URL, so none is invented.
     expect(items[2].querySelectorAll('a')).toHaveLength(0);
     expect(squash(items[2].textContent)).toContain('2:10');
+  });
+
+  it('keeps the link of an unmatched citation whose absolute URL the API kept', async () => {
+    state.output = output({ citation_count: 2 });
+    state.citations = [
+      cite(1, { label: 'an old talk', url: 'https://www.youtube.com/watch?v=bbbbbbbbbbb&t=9', seconds: 9 }),
+      cite(2, { label: 'a bare anchor' }),
+    ];
+    await mount();
+    const items = [...sources()!.querySelectorAll('ol > li')];
+    expect(items).toHaveLength(1);
+    expect(squash(items[0].firstElementChild?.textContent)).toBe('Not matched to a source in your library');
+    expect([...items[0].querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
+      ['0:09', 'https://www.youtube.com/watch?v=bbbbbbbbbbb&t=9'],
+    ]);
+    expect(squash(items[0].textContent)).toContain('a bare anchor');
+  });
+
+  // A deck's footnotes number documents and the API has a row per cited
+  // moment, so `position` 7 is no footnote of a three-source deck.
+  it.each(['deck', 'site', 'newsletter'])('names no endnote on a %s, which has no such numbering', async (kind) => {
+    state.output = output({ kind, citation_count: 7 });
+    state.citations = Array.from({ length: 7 }, (_, i) =>
+      cite(i + 1, { ...TALK, seconds: 60 * i, url: `https://www.youtube.com/watch?v=aaaaaaaaaaa&t=${60 * i}` }),
+    ).concat(cite(8, { label: 'no link' }));
+    await mount();
+    const section = sources()!;
+    const chips = [...section.querySelectorAll('[role="group"] a, [role="group"] span')];
+    expect(chips.length).toBeGreaterThan(7);
+    for (const chip of chips) {
+      expect(chip.getAttribute('title') ?? '').not.toMatch(/endnote/i);
+      expect(chip.getAttribute('aria-label') ?? '').not.toMatch(/endnote/i);
+    }
+  });
+
+  it('gives a book the endnote number on every chip', async () => {
+    state.output = output({ citation_count: 2 });
+    state.citations = [
+      cite(1, { ...TALK, seconds: 42, url: 'https://www.youtube.com/watch?v=aaaaaaaaaaa&t=42' }),
+      cite(2, { ...TALK, label: 'no link' }),
+    ];
+    await mount();
+    const group = sources()!.querySelector('[role="group"]')!;
+    expect(group.querySelector('a')?.getAttribute('title')).toBe('Endnote 1');
+    expect(group.querySelector('span')?.getAttribute('title')).toBe('Endnote 2');
+  });
+
+  // Goes by what the text itself carries: a book's endnotes and a deck's
+  // sources list every moment, a site's contents only documents.
+  it.each([
+    ['book', false],
+    ['deck', false],
+    ['site', true],
+    ['newsletter', true],
+  ])('on a %s, prints the list: %s', async (kind, printed) => {
+    state.output = output({ kind, citation_count: 1 });
+    state.citations = [cite(1, { ...TALK, seconds: 42, url: 'https://www.youtube.com/watch?v=aaaaaaaaaaa&t=42' })];
+    await mount();
+    expect(sources()!.classList.contains('reader-no-print')).toBe(!printed);
   });
 
   it('never makes a link of a URL that is not a web or API address', async () => {
@@ -192,5 +255,15 @@ describe('OutputReaderPage Sources list', () => {
     expect(host.querySelector('.reader-body')).not.toBeNull();
     const failed = host.querySelector('section[aria-label="Sources"]');
     expect(squash(failed?.textContent)).toMatch(/could not be loaded/);
+    expect(squash(failed?.textContent)).toMatch(/endnotes in the text still name them/);
+  });
+
+  it.each(['deck', 'site', 'newsletter'])('promises no endnotes when the list fails on a %s', async (kind) => {
+    state.output = output({ kind });
+    state.citations = 'fail';
+    await mount();
+    const failed = host.querySelector('section[aria-label="Sources"]');
+    expect(squash(failed?.textContent)).toBe('The list of sources could not be loaded.');
+    expect(failed?.classList.contains('reader-no-print')).toBe(true);
   });
 });

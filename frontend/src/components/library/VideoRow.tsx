@@ -61,7 +61,7 @@ export function VideoRow({ video, channelLink = true }: Props) {
   const isVideo = sourceType === 'video';
   const hasText = video.transcript_status === 'fetched';
   const hasChannel = !!video.channel_id && !!video.channel_name;
-  const mixBadge = languageMixBadge(video.language_mix);
+  const mixBadge = languageMixBadge(video.language_mix, video.transcript_language, sourceType);
   const jobTitlesTooltip =
     video.job_titles && video.job_titles.length > 0
       ? video.job_titles.join('\n')
@@ -245,7 +245,8 @@ export function VideoRow({ video, channelLink = true }: Props) {
             )}
             {/* T-1.16.1.9: the language measured from the words, which the
                 caption label above cannot see (it calls romanised Hinglish
-                `en`). Only sources that are not plain English get one. */}
+                `en`). Only sources that are not plain English get one, and
+                the label decides what it may be called (utils/languageMix). */}
             {mixBadge && (
               <span title={mixBadge.description} data-testid="language-mix" style={{ display: 'inline-flex' }}>
                 <Badge tone="accent" size="sm">

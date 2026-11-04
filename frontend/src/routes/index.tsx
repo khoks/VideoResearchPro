@@ -33,6 +33,7 @@ import { AuthorPage } from '../pages/AuthorPage';
 import { WelcomePage } from '../pages/WelcomePage';
 import { SavedSearchesPage } from '../pages/SavedSearchesPage';
 import { OnboardingGate } from '../components/onboarding/OnboardingGate';
+import { RouteLoadError } from '../components/common/RouteLoadError';
 import { useAuth } from '../contexts/AuthContext';
 import { Spinner } from '../components/primitives';
 // Direct, not through `components/reader/index`: the barrel would pull the
@@ -57,8 +58,17 @@ const OutputReaderPage = lazy(() =>
   import('../pages/OutputReaderPage').then((m) => ({ default: m.OutputReaderPage })),
 );
 
+// A lazy route's chunk can fail to load where an eager page cannot, so each
+// one carries its own error screen, inside the app layout.
+function lazyRoute(page: ReactNode, fallback: ReactNode) {
+  return {
+    element: <Suspense fallback={fallback}>{page}</Suspense>,
+    errorElement: <RouteLoadError />,
+  };
+}
+
 function reader(page: ReactNode, loading: string) {
-  return <Suspense fallback={<ReaderLoading label={loading} />}>{page}</Suspense>;
+  return lazyRoute(page, <ReaderLoading label={loading} />);
 }
 
 function ProtectedRoute() {
@@ -117,19 +127,12 @@ export const router = createBrowserRouter([
           { path: 'submit', element: <SubmitJobPage /> },
           { path: 'jobs', element: <JobsListPage /> },
           { path: 'jobs/:jobId', element: <JobDetailPage /> },
-          { path: 'reports/:jobId', element: reader(<ReportReaderPage />, 'Opening the report…') },
-          { path: 'knowledge/:videoId', element: reader(<KnowledgeReaderPage />, 'Opening the knowledge report…') },
-          { path: 'author/outputs/:outputId', element: reader(<OutputReaderPage />, 'Opening the manuscript…') },
+          { path: 'reports/:jobId', ...reader(<ReportReaderPage />, 'Opening the report…') },
+          { path: 'knowledge/:videoId', ...reader(<KnowledgeReaderPage />, 'Opening the knowledge report…') },
+          { path: 'author/outputs/:outputId', ...reader(<OutputReaderPage />, 'Opening the manuscript…') },
           { path: 'library', element: <LibraryPage /> },
           { path: 'library/qa', element: <LibraryQAPage /> },
-          {
-            path: 'library/graph',
-            element: (
-              <Suspense fallback={<Spinner label="Loading the library map" />}>
-                <GraphPage />
-              </Suspense>
-            ),
-          },
+          { path: 'library/graph', ...lazyRoute(<GraphPage />, <Spinner label="Loading the library map" />) },
           { path: 'library/channels/:channelId', element: <ChannelPage /> },
           { path: 'shelves', element: <ShelvesPage /> },
           { path: 'shelves/:shelfId', element: <ShelfPage /> },

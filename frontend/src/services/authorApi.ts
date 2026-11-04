@@ -34,8 +34,11 @@ export interface OutputItem {
 
 /**
  * S-6.7.3: one place an output cites, from `GET /author/outputs/{id}/citations`,
- * in output order. `position` is the book's endnote number. A citation no
- * library document matched has `resolved_by`, `document_id` and `url` null.
+ * in output order. `position` is the endnote number in a book only: a deck's
+ * footnotes number documents, and a site's contents or a newsletter have none.
+ * A citation no library document matched has `resolved_by` and `document_id`
+ * null. An unmatched absolute link keeps its `url`; an unmatched bare anchor
+ * has none.
  */
 export interface OutputCitation {
   position: number;

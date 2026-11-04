@@ -13,7 +13,7 @@ It is:
 
 The long-term aspiration is a **personal brain** — a system that learns your voice, your opinions, your interests, and your life so it can speak on your behalf. See [docs/vision.md](docs/vision.md) and [docs/personal-brain.md](docs/personal-brain.md).
 
-> **Historical note.** This project was previously named *VideoResearchPro*. The legacy name survives in grandfathered environment-variable names (e.g. `CHROMA_GLOBAL_COLLECTION_NAME=videoresearchpro_global`) for back-compat, but all user-facing and documentation references are now Pratidhvani.
+> **Historical note.** This project was previously named *VideoResearchPro*. The legacy name survives in the default database file, the browser's `localStorage` keys, the Celery app's internal name and the repository's URL ([list](docs/migration-code-identifiers.md)). The Chroma collection defaults to `pratidhvani_global`. All user-facing and documentation references are now Pratidhvani.
 
 ---
 
@@ -229,11 +229,11 @@ Pratidhvani/
 │   │   ├── models/              # SQLAlchemy ORM
 │   │   ├── schemas/             # Pydantic request/response models
 │   │   ├── services/            # Business logic (youtube, chroma, llm_routing, ...)
-│   │   ├── agents/              # LangGraph agents (search, report, qa, knowledge, qa_history)
+│   │   ├── agents/              # 7 agents (search, report, qa, knowledge, echo, qa_history, visual)
 │   │   ├── tasks/               # Celery task definitions
 │   │   ├── websocket/           # WebSocket connection manager
 │   │   └── utils/               # Chunking, HTML builder, YouTube helpers
-│   ├── tests/                   # 168 pytest tests
+│   ├── tests/                   # 3,700+ pytest tests
 │   ├── alembic/                 # Migrations
 │   ├── scripts/                 # stress_test_llm, etc.
 │   └── requirements*.txt

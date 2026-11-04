@@ -127,7 +127,7 @@ The MVP-acceptable failure mode is option 3: existing self-host data gets attrib
 
 ## Cross-references
 
-- [I-5 SaaS readiness](initiatives.md#i-5--saas-readiness-long-horizon) — parent initiative.
+- [I-5 SaaS readiness](initiatives.md#i-5--saas-readiness-long-horizon--code-shippable-work-fully-closed-2026-05-05) — parent initiative.
 - [D-032 — Operator-coordinated runbook for data-bearing identifier renames](decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03) — the precedent for two-phase risky migrations.
 - [`docs/saas-roadmap.md`](saas-roadmap.md) — the broader SaaS-tier shape.
 - [`docs/migration-channels-to-creators.md`](migration-channels-to-creators.md) — sibling runbook (E-1.9).

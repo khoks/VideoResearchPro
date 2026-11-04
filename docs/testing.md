@@ -32,7 +32,7 @@ backend/tests/
 ├── test_tasks/                 # Celery task body tests (subscription_task, upsert_dedup)
 ├── test_models/                # SQLAlchemy model tests
 ├── test_utils/                 # pure-function tests (chunking, youtube_helpers)
-├── test_ci/                    # reads .github/workflows/ci.yml: what a green run cannot show (§5.4)
+├── test_ci/                    # reads ci.yml (what a green run cannot show, §5.4), and the docs that restate the code
 └── test_smoke/                 # cross-feature integration smoke (added 2026-05-05)
 ```
 
@@ -247,7 +247,7 @@ GitHub Actions runs [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) on
 | Job | Runner | What it runs |
 |-----|--------|--------------|
 | Backend tests (pytest) | ubuntu-latest, Python 3.12 | `pip install -r requirements.txt -r requirements-dev.txt` (pip cache; PyTorch from the CPU wheel index first, so the CUDA libraries never download), then `python -m pytest tests/ -q -rs` from `backend/` (`-rs` lists each skip with its reason). The multilingual embedder and Chroma's ONNX model are cached between runs (`~/.cache/huggingface`, `~/.cache/chroma`): one step downloads both on a cache miss, and the cache is saved right after that step succeeds, before the tests, so a red test run still keeps it and a cancelled or failed download never does (a key is never overwritten, so a partial copy would stay for good; bump `MODEL_CACHE_KEY` to discard a bad entry) |
-| Backend lint (ruff) | ubuntu-latest | `ruff check backend --select E9,F63,F7,F82` with the `ruff` pinned in `requirements-dev.txt`: syntax errors, undefined names, invalid comparisons and statements. The repository has no ruff config, and ruff's default set reports 57 existing findings (mostly unused imports), so the default set is not gated; widening the rules means fixing those first, in a change of its own |
+| Backend lint (ruff) | ubuntu-latest | `backend/scripts/fix_anchor_links.py --check`, which fails on any Markdown anchor link that does not resolve (T-4.8.5), and `ruff check backend --select E9,F63,F7,F82` with the `ruff` pinned in `requirements-dev.txt`: syntax errors, undefined names, invalid comparisons and statements. The repository has no ruff config, and ruff's default set reports 57 existing findings (mostly unused imports), so the default set is not gated; widening the rules means fixing those first, in a change of its own |
 | Frontend build and unit tests | ubuntu-latest, Node 22 | `npm ci`, `npm run build` (type check plus Vite build), `npx vitest run` from `frontend/` |
 | Browser extension tests | ubuntu-latest, Node 22 | `npm test` from `extension/` (`node --test`, no install) |
 | Device tests (Playwright) | windows-latest, Node 22 | `npx playwright install chromium webkit`, then `npm run test:mobile` (all projects in `playwright.config.ts`, [§5.6](#56-frontend-suites)). On Windows because the screenshot baselines are Windows renders with no OS suffix: the pages ask for Georgia and Segoe UI, which a Linux runner lacks. A failed run uploads `frontend/test-results` (actual, expected and diff images, traces) as the `playwright-test-results` artifact |

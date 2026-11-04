@@ -180,12 +180,12 @@ Every PR ticks these before review.
 - [ ] `npm run build` green (frontend) — this includes `tsc -b`
 - [ ] `npm run lint` green (frontend)
 - [ ] Alembic migration added if any model changed; both `upgrade()` and `downgrade()` implemented
-- [ ] `.env.example` updated if any new env var was introduced
+- [ ] Root `.env.example` and CLAUDE.md's env table updated if any new setting was introduced (a backend test fails otherwise)
 
 ### 5.2. Substance
 
 - [ ] **Forward-compat audit.** New tables / columns include `tenant_id` (or a tracked TODO). New endpoints scope by `current_user`. New LLM call sites are registered as a use case in `app/services/llm_routing.py::USE_CASE_REGISTRY`. See [docs/saas-roadmap.md §PR-checklist](saas-roadmap.md).
-- [ ] **Brand coherence.** No new mention of `VideoResearchPro` user-facing — that's a legacy name. Use `Pratidhvani` / `प्रतिध्वनि` per [docs/branding.md](branding.md). Internal env var names like `CHROMA_GLOBAL_COLLECTION_NAME=videoresearchpro_global` are grandfathered.
+- [ ] **Brand coherence.** No new mention of `VideoResearchPro` user-facing — that's a legacy name. Use `Pratidhvani` / `प्रतिध्वनि` per [docs/branding.md](branding.md). The default SQLite file `data/videoresearchpro.db` is grandfathered ([D-032](decisions.md#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03)).
 - [ ] **Doc updates landed in the same PR.** If you changed an endpoint, update [docs/api-reference.md](api-reference.md). If you added a page, update [docs/ui-pages.md](ui-pages.md). If you introduced a major feature, update [docs/feature-roadmap.md](feature-roadmap.md) status.
 - [ ] **No new features behind silent flags.** Either it's user-facing or it's not in the PR.
 - [ ] **No drive-by refactors.** A bug-fix PR doesn't reformat unrelated files.

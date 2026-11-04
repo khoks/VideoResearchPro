@@ -882,7 +882,7 @@ USE_CASE_REGISTRY: dict[UseCase, UseCaseInfo] = {
         default_config=UseCaseConfig("openai", "gpt-5.6-luna", "off"),
         summary=(
             "Map phase: extract key facts from each batch of transcript "
-            "chunks. Batches are token-budgeted up to LLM_MAX_CONTEXT_TOKENS."
+            "chunks. Batches are budgeted from the resolved model's context window."
         ),
         typical_input_tokens=110_000,
         p95_input_tokens=120_000,

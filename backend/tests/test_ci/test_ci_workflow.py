@@ -171,3 +171,13 @@ def test_restore_and_save_use_the_same_key_and_paths(workflow) -> None:
     _, save = _step(steps, "actions/cache/save@")
     assert _resolved(restore["with"]["key"], env) == _resolved(save["with"]["key"], env)
     assert restore["with"]["path"] == save["with"]["path"]
+
+
+# ── anchor links ─────────────────────────────────────────────────────────
+
+
+def test_the_lint_job_checks_markdown_anchor_links(workflow) -> None:
+    """T-4.8.5: `--check` is the mode that exits non-zero. The default is a
+    dry run, which would pass whatever it found."""
+    runs = [" ".join(str(s.get("run", "")).split()) for s in workflow["jobs"]["lint"]["steps"]]
+    assert any("backend/scripts/fix_anchor_links.py --check" in run for run in runs)

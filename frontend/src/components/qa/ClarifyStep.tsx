@@ -164,7 +164,7 @@ export function ClarifyStep({
 
       {pending && <InfoStripe text={pendingText} />}
 
-      <div style={{ display: 'flex', gap: space['2'], marginTop: space['3'] }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: space['2'], marginTop: space['3'] }}>
         <Button
           variant="primary"
           onClick={onConfirm}

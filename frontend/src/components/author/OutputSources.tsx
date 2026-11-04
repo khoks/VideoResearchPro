@@ -59,7 +59,7 @@ export function OutputSources({
   const total = citations?.length ?? 0;
 
   return (
-    <section className="reader-no-print output-sources" aria-labelledby="output-sources-title" style={frame}>
+    <section className="reader-no-print" aria-labelledby="output-sources-title" style={frame}>
       <h2
         style={{
           margin: `0 0 ${space['3']}`,
@@ -81,14 +81,18 @@ export function OutputSources({
               {g.title}
             </span>
             {g.channel && <span> — {g.channel}</span>}
-            <span
+            <div
+              role="group"
+              aria-label={`Places cited: ${g.title}`}
               style={{ display: 'flex', flexWrap: 'wrap', gap: space['1'], marginTop: space['1'] }}
-              aria-label={`Places cited in ${g.title}`}
             >
               {g.citations.map((cite) => {
                 const href = followableHref(cite.url);
                 const text = placeLabel(cite);
                 const chip = {
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  minHeight: 24,
                   fontFamily: fonts.mono,
                   fontSize: fontSize.xs,
                   padding: `1px ${space['2']}`,
@@ -116,7 +120,7 @@ export function OutputSources({
                   </span>
                 );
               })}
-            </span>
+            </div>
           </li>
         ))}
       </ol>

@@ -32,5 +32,9 @@ class KnowledgeExtractResponse(BaseModel):
     # or deep); None when no preference was expressed, and for every report
     # written before the preference existed.
     output_length: str | None = None
+    # T-1.15.3.8: the report stopped at its token budget, so its end is
+    # missing. False for a report that fitted, and for every report written
+    # before this was recorded.
+    report_cut_off: bool = False
 
     model_config = {"from_attributes": True}

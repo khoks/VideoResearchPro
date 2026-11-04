@@ -69,6 +69,9 @@ class KnowledgeAgentState(TypedDict):
     # S-1.15.3: the reader's depth preference (D-064 values) for the
     # synthesis step only. None or 'auto' means none was expressed.
     output_length: str | None
+    # T-1.15.3.8: synthesis stopped at its token budget, so the report's end
+    # is missing. Set by `synthesize_report` only.
+    knowledge_report_cut_off: bool
     # Token-budgeted slices of `full_transcript_text` fed to the map pass.
     transcript_batches: list[str]
     # One structured extraction per batch: {topics, concepts, events, facts}.

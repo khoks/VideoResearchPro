@@ -3,6 +3,15 @@
 The library Q&A agent is a fake, the embedder a bag-of-words stand-in and
 the judge is patched at ``get_llm_for``, so no provider is called. The
 thresholds are the pre-registered priors (J < 0.50, D > 0.15).
+
+T-8.3.3.10 mutation checks, run by hand on 2026-11-04:
+- keying ``cited_key`` on ``video_id`` again fails
+  ``test_a_pdf_only_citation_counts``;
+- skipping ``with_document_ids`` on the baseline fails
+  ``test_a_baseline_from_before_document_ids_does_not_read_as_changed``;
+- removing the ``comparable`` check fails the ``unresolvable`` tests;
+- resolving outside the visible set fails
+  ``test_an_old_key_resolves_only_inside_the_tenants_visible_set``.
 """
 from __future__ import annotations
 
@@ -14,7 +23,9 @@ from unittest.mock import patch
 import pytest
 from langchain_core.messages import AIMessage
 
+from app.agents import qa_agent
 from app.models.document import Document
+from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.notification import Notification
 from app.models.quota_usage import QuotaUsage
 from app.models.saved_search_run import SavedSearchRun
@@ -266,6 +277,187 @@ def test_a_failed_judge_lets_the_citation_signal_decide(db, pro):
         out = saved_search_service.execute(db, ss.id, trigger="manual", agent=Agent(refs=(("v7", "Other"),)))
     run = db.get(SavedSearchRun, out["run_id"])
     assert run.decided_by == "judge_failed" and run.changed is True  # the cited set did change
+
+
+# ---------------------------------------------------------------- document_id keys
+#
+# T-8.3.3.10: the cited set is keyed on document_id (D-070). `video_id` is empty
+# on every non-YouTube citation, so before this a PDF was not counted at all.
+
+
+class RefAgent:
+    """Answers with whole reference dicts, shaped as the agent shapes them."""
+
+    def __init__(self, refs, answer="Rates fell twice this year."):
+        self.refs, self.answer = refs, answer
+
+    def __call__(self, **_kwargs):
+        return {"answer": self.answer, "references": self.refs}
+
+
+def _source(db, tenant_id, title, source_type="pdf"):
+    doc = Document(
+        source_type=source_type, source_id=f"{source_type}-{title}", title=title,
+        url="https://example.com/paper", transcript_status="completed",
+    )
+    db.add(doc)
+    db.commit()
+    visibility_service.grant(db, [doc.document_id], tenant_id, "pdf_upload")
+    return doc
+
+
+def _library_ref(doc):
+    """The reference the library agent stores: `_chunk_to_reference`, then
+    `video_id` from the url, which is "" for everything but YouTube."""
+    meta = {
+        "source_type": doc.source_type, "source_id": doc.source_id, "document_id": doc.document_id,
+        "video_title": doc.title, "video_url": doc.url, "video_id": doc.video_id or "",
+    }
+    _, ref = qa_agent._chunk_to_reference({"text": "Text.", "metadata": meta})
+    return {**ref, "video_id": doc.video_id or ""}
+
+
+def _before_397(ref):
+    """That reference as an exchange stored before #397 holds it."""
+    return {k: v for k, v in ref.items() if k != "document_id"}
+
+
+def _old_baseline(db, ss, refs):
+    """Rewrites the last exchange to what a row from before #397 holds."""
+    db.refresh(ss)
+    db.get(LibraryQAExchange, ss.last_exchange_id).references_json = json.dumps(refs)
+    db.commit()
+
+
+def test_a_pdf_only_citation_counts(db, pro):
+    first, second = _source(db, pro.id, "Q3 report"), _source(db, pro.id, "Q4 report")
+    ss = _search(db, pro)
+    saved_search_service.execute(db, ss.id, agent=RefAgent([_library_ref(first)]))
+    db.refresh(ss)
+    assert json.loads(ss.last_reference_ids_json) == [first.document_id]
+
+    changed = RefAgent([_library_ref(second)], answer="A third cut arrived in October after weak hiring data.")
+    with patch.object(saved_search_change_service, "get_llm_for") as judge:
+        out = saved_search_service.execute(db, ss.id, trigger="manual", agent=changed)
+    judge.assert_not_called()  # both signals agreed: the citation one saw the PDFs
+    run = db.get(SavedSearchRun, out["run_id"])
+    assert run.changed is True and run.decided_by == "agreed" and run.jaccard == 0.0
+    assert json.loads(run.added_reference_ids_json) == [second.document_id]
+    assert json.loads(run.dropped_reference_ids_json) == [first.document_id]
+    assert "Q4 report" in run.diff_summary and "Q3 report" in run.diff_summary
+
+
+def test_a_pdf_citation_that_stays_is_not_a_change(db, pro):
+    paper = _source(db, pro.id, "Q3 report")
+    ss = _search(db, pro)
+    saved_search_service.execute(db, ss.id, agent=RefAgent([_library_ref(paper)]))
+    with patch.object(saved_search_change_service, "get_llm_for") as judge:
+        out = saved_search_service.execute(db, ss.id, trigger="manual", agent=RefAgent([_library_ref(paper)]))
+    judge.assert_not_called()
+    run = db.get(SavedSearchRun, out["run_id"])
+    assert run.changed is False and run.jaccard == 1.0 and run.decided_by == "agreed"
+
+
+def test_a_baseline_from_before_document_ids_does_not_read_as_changed(db, pro):
+    """The stored exchange names its videos by YouTube id alone. The same
+    videos cited today carry both ids, and that must not look like a change."""
+    videos = [_doc(db, pro.id, title) for title in ("Fed minutes", "Bank note")]
+    ss = saved_search_service.create(db, pro, question="What do my sources say about rate cuts?", cadence=WEEKLY)
+    stored = [{"video_id": v.video_id, "video_title": v.title} for v in videos]
+    saved_search_service.execute(db, ss.id, agent=RefAgent(stored))
+    _old_baseline(db, ss, stored)
+
+    cited = [{"video_id": v.video_id, "document_id": v.document_id, "video_title": v.title} for v in videos]
+    with patch.object(saved_search_change_service, "get_llm_for") as judge:
+        out = saved_search_service.execute(db, ss.id, trigger="manual", agent=RefAgent(cited))
+    judge.assert_not_called()
+    run = db.get(SavedSearchRun, out["run_id"])
+    assert run.changed is False and run.jaccard == 1.0 and run.decided_by == "agreed"
+    assert json.loads(run.added_reference_ids_json) == [] and json.loads(run.dropped_reference_ids_json) == []
+    assert _notes(db, pro) == []
+    db.refresh(ss)
+    assert json.loads(ss.last_reference_ids_json) == sorted(v.document_id for v in videos)
+
+
+def test_an_unresolvable_old_citation_skips_the_citation_vote_once(db, pro):
+    """A non-YouTube citation from before #397 has no id to map, so the sets
+    cannot be compared. Comparing them anyway reports the PDF as a new source."""
+    paper = _source(db, pro.id, "Q3 report")
+    ref = _library_ref(paper)
+    ss = _search(db, pro)
+    saved_search_service.execute(db, ss.id, agent=RefAgent([ref]))
+    _old_baseline(db, ss, [_before_397(ref)])
+
+    with patch.object(saved_search_change_service, "get_llm_for") as judge:
+        out = saved_search_service.execute(db, ss.id, trigger="manual", agent=RefAgent([ref]))
+    judge.assert_not_called()
+    run = db.get(SavedSearchRun, out["run_id"])
+    assert run.changed is False and run.decided_by == "embedding_only" and run.jaccard is None
+    assert run.embedding_distance == 0.0
+    assert json.loads(run.added_reference_ids_json) == [] and json.loads(run.dropped_reference_ids_json) == []
+    assert _notes(db, pro) == []
+
+    # Once: this run's answer is the baseline now, and it carries the id.
+    other = _source(db, pro.id, "Q4 report")
+    moved = RefAgent([_library_ref(other)], answer="A third cut arrived in October after weak hiring data.")
+    out = saved_search_service.execute(db, ss.id, trigger="manual", agent=moved)
+    run = db.get(SavedSearchRun, out["run_id"])
+    assert run.changed is True and run.decided_by == "agreed" and run.jaccard == 0.0
+
+
+def test_an_unresolvable_old_citation_leaves_the_judge_to_decide_a_moved_answer(db, pro):
+    paper = _source(db, pro.id, "Q3 report")
+    ref = _library_ref(paper)
+    ss = _search(db, pro)
+    saved_search_service.execute(db, ss.id, agent=RefAgent([ref]))
+    _old_baseline(db, ss, [_before_397(ref)])
+
+    fake = _judge_returning({"changed": True, "what_changed": "The October statement now backs a third cut."})
+    moved = RefAgent([ref], answer="A third cut arrived in October after weak hiring data.")
+    with patch.object(saved_search_change_service, "get_llm_for", return_value=fake):
+        out = saved_search_service.execute(db, ss.id, trigger="manual", agent=moved)
+    run = db.get(SavedSearchRun, out["run_id"])
+    assert run.changed is True and run.decided_by == "judged" and run.jaccard is None
+    assert run.diff_summary == "The October statement now backs a third cut."
+
+
+def test_an_unresolvable_old_citation_with_a_failed_judge_stays_quiet(db, pro):
+    paper = _source(db, pro.id, "Q3 report")
+    ref = _library_ref(paper)
+    ss = _search(db, pro)
+    saved_search_service.execute(db, ss.id, agent=RefAgent([ref]))
+    _old_baseline(db, ss, [_before_397(ref)])
+
+    moved = RefAgent([ref], answer="A third cut arrived in October after weak hiring data.")
+    with patch.object(saved_search_change_service, "get_llm_for", return_value=_judge_returning(fail=True)):
+        out = saved_search_service.execute(db, ss.id, trigger="manual", agent=moved)
+    run = db.get(SavedSearchRun, out["run_id"])
+    assert run.changed is False and run.decided_by == "judge_failed"
+    assert _notes(db, pro) == []
+
+
+def test_an_old_key_resolves_only_inside_the_tenants_visible_set(db, pro):
+    other = auth_service.create_user(db, email="other@example.com", password="otherpass123")
+    mine, theirs = _doc(db, pro.id, "Mine"), _doc(db, other.id, "Theirs")
+    refs = [{"video_id": mine.video_id}, {"video_id": theirs.video_id}]
+    out = saved_search_change_service.with_document_ids(db, pro.id, refs)
+    assert out[0]["document_id"] == mine.document_id
+    assert "document_id" not in out[1]
+    assert saved_search_change_service.cited_keys(out) == {mine.document_id, theirs.video_id}
+
+
+def test_a_note_citation_stays_out_of_the_cited_set_and_keeps_the_vote(db, pro):
+    """A note is not a document: it has no id to key on, and that must not
+    read as a citation that could not be resolved."""
+    paper = _source(db, pro.id, "Q3 report")
+    note = {"source_type": "note", "note_id": "n1", "video_id": "", "video_title": "Your note"}
+    ss = _search(db, pro)
+    saved_search_service.execute(db, ss.id, agent=RefAgent([_library_ref(paper), note]))
+    with patch.object(saved_search_change_service, "get_llm_for") as judge:
+        out = saved_search_service.execute(db, ss.id, trigger="manual", agent=RefAgent([_library_ref(paper), note]))
+    judge.assert_not_called()
+    run = db.get(SavedSearchRun, out["run_id"])
+    assert run.jaccard == 1.0 and run.decided_by == "agreed" and run.changed is False
 
 
 def test_thresholds_come_from_settings(monkeypatch):

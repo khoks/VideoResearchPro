@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.agents import knowledge_agent, qa_agent, report_agent, search_agent
-from app.services.llm_routing import max_output_for, resolve_config
+from app.services.llm_routing import UseCaseConfig, max_output_for, resolve_config
 
 # Captured before the autouse fixture below replaces it for the search tests.
 _ORIGINAL_LOOKUP = search_agent._lookup_known_eras
@@ -70,8 +70,12 @@ def test_answer_policy_empty_statistics_is_the_defect_shape():
 
 
 def test_answer_policy_user_override_scales():
-    brief, _, g1 = qa_agent._answer_policy(XLARGE, "brief", "qa_formulate_answer")
-    deep, _, g2 = qa_agent._answer_policy(XLARGE, "deep", "qa_formulate_answer")
+    # Reasoning off, so the multiplier is all that moves the budget; with it
+    # on, brief keeps room for thinking (tests/test_routers/test_qa_thinking_budget.py).
+    plain = UseCaseConfig("anthropic", "claude-sonnet-5", "off")
+    with patch.object(qa_agent, "resolve_config", return_value=plain):
+        brief, _, g1 = qa_agent._answer_policy(XLARGE, "brief", "qa_formulate_answer")
+        deep, _, g2 = qa_agent._answer_policy(XLARGE, "deep", "qa_formulate_answer")
     assert brief == int(4_500 * 0.45) and "tight" in g1
     assert deep == int(4_500 * 1.6) and "depth" in g2
 
@@ -105,8 +109,10 @@ def test_refine_context_headers_carry_date_and_era():
 def test_library_qa_applies_the_policy_and_dates_sources():
     rag = [_chunk(vid="vDNS", title="How DNS Works", channel="NetTeach")]
     llms = [_fake_llm(""), _fake_llm("ctx"), _fake_llm('[Source: "How DNS Works" by NetTeach at 0:42]')]
+    plain = UseCaseConfig("anthropic", "claude-sonnet-5", "off")  # thinking spends nothing
     with patch.object(qa_agent.chroma_service, "query_collection", return_value=rag), \
-         patch.object(qa_agent, "get_llm_for", side_effect=llms) as get_llm:
+         patch.object(qa_agent, "get_llm_for", side_effect=llms) as get_llm, \
+         patch.object(qa_agent, "resolve_config", return_value=plain):
         qa_agent.run_library_qa_agent(
             question="What is DNS?", visible_document_ids=["vDNS"],
             corpus_statistics=XLARGE, output_length="brief",

@@ -11,11 +11,11 @@ value was computed. Three stages, cheapest first:
    a shelf gaining a run whose documents were already visible, and on
    Windows a grant and a run can share a ~15 ms clock tick.
 2. **Deterministic signals** (``compare``): the Jaccard overlap of the cited
-   document sets (``J``) and the cosine distance between the two answers'
-   embeddings (``D``), on the library's own MiniLM embedder. ``J`` below
-   ``SAVED_SEARCH_JACCARD_THRESHOLD`` or ``D`` above
-   ``SAVED_SEARCH_EMBEDDING_THRESHOLD`` is a vote for "changed". An answer
-   hash cannot do this: the answering model is not deterministic.
+   document sets (``J``, keyed on ``document_id``, D-070) and the cosine
+   distance between the two answers' embeddings (``D``), on the library's own
+   MiniLM embedder. ``J`` below ``SAVED_SEARCH_JACCARD_THRESHOLD`` or ``D``
+   above ``SAVED_SEARCH_EMBEDDING_THRESHOLD`` is a vote for "changed". An
+   answer hash cannot do this: the answering model is not deterministic.
 3. **Judge only on disagreement**: when exactly one signal votes, one
    volume-tier call (``saved_search_judge``, reasoning off) decides and
    writes the sentence the notification shows. If the judge fails, the
@@ -41,6 +41,8 @@ from sqlalchemy.orm import Session
 
 from app.agents.prompts.shared import ENGLISH_OUTPUT_CONTRACT
 from app.config import settings
+from app.models.document import Document
+from app.services import visibility_service
 from app.services.llm_service import get_llm_for, response_text
 
 logger = logging.getLogger(__name__)
@@ -77,7 +79,8 @@ class Verdict:
     changed: bool | None
     jaccard: float | None = None
     distance: float | None = None
-    #: none (first run, nothing to compare) | agreed | judged | judge_failed
+    #: none (first run, nothing to compare) | agreed | judged | judge_failed |
+    #: embedding_only (the cited sets could not be compared, ``jaccard`` is None)
     decided_by: str = "none"
     added: list[str] = field(default_factory=list)
     dropped: list[str] = field(default_factory=list)
@@ -110,10 +113,58 @@ def cosine_distance(u: list[float], v: list[float]) -> float:
     return 1.0 - (dot / (nu * nv) if nu and nv else 0.0)
 
 
+def cited_key(ref: dict) -> str:
+    """The document a reference cites, or "" when it does not say.
+
+    ``document_id`` is the one id every source type has (D-070); ``video_id``
+    is empty on a PDF, a pasted page, a thread or a podcast, so keying on it
+    left those out of the cited set. It stands in here only for a reference
+    ``with_document_ids`` could not resolve.
+    """
+    return str(ref.get("document_id") or ref.get("video_id") or "")
+
+
+def cited_keys(refs: list[dict]) -> set[str]:
+    return {k for k in map(cited_key, refs) if k}
+
+
+def with_document_ids(db: Session, tenant_id: str, refs: list[dict]) -> list[dict]:
+    """``refs`` with the ``document_id`` of each reference that names only a video.
+
+    T-8.3.3.10: references carry ``document_id`` since #397, so a baseline
+    stored before that names a video by its YouTube id alone, and the same
+    video cited today carries both. Keyed as they stand the two read as
+    different sources, and the first run after the keys changed would vote
+    "changed" for that reason alone. Resolved inside the tenant's visible set.
+    """
+    legacy = {r["video_id"] for r in refs if r.get("video_id") and not r.get("document_id")}
+    if not legacy:
+        return refs
+    by_video = dict(
+        db.query(Document.video_id, Document.document_id).filter(
+            Document.video_id.in_(legacy),
+            Document.document_id.in_(visibility_service.visible_document_ids(db, tenant_id)),
+        )
+    )
+    return [
+        {**r, "document_id": by_video[r["video_id"]]}
+        if not r.get("document_id") and r.get("video_id") in by_video
+        else r
+        for r in refs
+    ]
+
+
+def _names_no_document(ref: dict) -> bool:
+    """A source citation with no id at all. A note is not a document, so it
+    is never in the cited set and never counts here. On a stored baseline
+    this is a non-YouTube citation from before #397: it has no id to resolve."""
+    return ref.get("source_type") != "note" and not cited_key(ref)
+
+
 def _titles(refs: list[dict], keys: list[str]) -> list[str]:
     by_key: dict[str, str] = {}
     for r in refs:
-        k = str(r.get("video_id") or "")
+        k = cited_key(r)
         if k and k not in by_key:
             by_key[k] = str(r.get("video_title") or k)
     return [by_key.get(k, k) for k in keys]
@@ -185,25 +236,40 @@ def compare(
     tenant_id: str | None = None,
     db: Session | None = None,
 ) -> Verdict:
-    """Stages 2 and 3. With no previous answer the run is the baseline."""
+    """Stages 2 and 3. With no previous answer the run is the baseline.
+
+    A citation that names no document cannot be placed in a set, so comparing
+    the sets would report it as a source gained or lost when nothing moved.
+    The citation signal then casts no vote: the embedding alone decides
+    whether to ask the judge, and the failed-judge fallback stays quiet. On a
+    baseline from before #397 that happens once, because this run's answer
+    becomes the next baseline.
+    """
     if previous_answer is None or previous_embedding is None:
         return Verdict(changed=None, decided_by="none")
 
-    prev_keys = {str(r.get("video_id")) for r in previous_refs if r.get("video_id")}
-    cur_keys = {str(r.get("video_id")) for r in current_refs if r.get("video_id")}
-    added = sorted(cur_keys - prev_keys)
-    dropped = sorted(prev_keys - cur_keys)
-    j = jaccard(prev_keys, cur_keys)
+    prev_keys = cited_keys(previous_refs)
+    cur_keys = cited_keys(current_refs)
+    comparable = not any(map(_names_no_document, [*previous_refs, *current_refs]))
+    added = sorted(cur_keys - prev_keys) if comparable else []
+    dropped = sorted(prev_keys - cur_keys) if comparable else []
+    j = jaccard(prev_keys, cur_keys) if comparable else None
     d = cosine_distance(previous_embedding, current_embedding)
-    j_vote = j < settings.SAVED_SEARCH_JACCARD_THRESHOLD
+    j_vote = j is not None and j < settings.SAVED_SEARCH_JACCARD_THRESHOLD
     d_vote = d > settings.SAVED_SEARCH_EMBEDDING_THRESHOLD
     added_titles = _titles(current_refs, added)
     dropped_titles = _titles(previous_refs, dropped)
 
-    v = Verdict(changed=None, jaccard=round(j, 4), distance=round(d, 4), added=added, dropped=dropped)
+    v = Verdict(
+        changed=None,
+        jaccard=None if j is None else round(j, 4),
+        distance=round(d, 4),
+        added=added,
+        dropped=dropped,
+    )
     if j_vote == d_vote:
         v.changed = j_vote
-        v.decided_by = "agreed"
+        v.decided_by = "agreed" if comparable else "embedding_only"
         v.summary = _cited_summary(added_titles, dropped_titles) if j_vote else None
         return v
 

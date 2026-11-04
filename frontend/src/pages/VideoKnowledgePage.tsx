@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
+import { Markdown } from '../components/common/Markdown';
 import { useKnowledge, useExtractKnowledge } from '../hooks/useKnowledge';
 import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { Badge, Button, Spinner, type BadgeTone } from '../components/primitives';
@@ -380,7 +380,7 @@ function KnowledgeBody({ artifact }: { artifact: KnowledgeArtifact }) {
               lineHeight: lineHeight.loose,
             }}
           >
-            <ReactMarkdown>{artifact.knowledge_report_md}</ReactMarkdown>
+            <Markdown>{artifact.knowledge_report_md}</Markdown>
           </div>
         </div>
       )}

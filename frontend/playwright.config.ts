@@ -11,6 +11,7 @@ import { defineConfig, devices } from '@playwright/test';
 // Emulation is not a device: no real keyboard, no Safari chrome, host CPU.
 // A pass on one real phone is still part of calling a mobile change done.
 const PORT = 5181;
+const DESKTOP_ONLY = /(palette|graph|server)\.spec\.ts/;
 
 export default defineConfig({
   testDir: './tests',
@@ -27,7 +28,11 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: `npm run dev -- --port ${PORT} --strictPort`,
+    // `--host ::` is dual-stack: `localhost` is two addresses, and the browser
+    // falls back to the second when a connect to the first fails, which Windows
+    // does now and then. On one family that fallback is refused, the module is
+    // lost and the page stays blank (T-8.8.4.6, tests/server.spec.ts).
+    command: `npm run dev -- --port ${PORT} --strictPort --host ::`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: false,
     timeout: 120_000,
@@ -38,14 +43,15 @@ export default defineConfig({
   },
   projects: [
     // Phone projects: the reading pages and the manifest (S-8.12.x).
-    { name: 'iphone-13', testIgnore: /(palette|graph)\.spec\.ts/, use: { ...devices['iPhone 13'] } },
-    { name: 'pixel-7', testIgnore: /(palette|graph)\.spec\.ts/, use: { ...devices['Pixel 7'] } },
-    // Desktop: the keyboard-driven command palette (S-8.2.2) and the library
-    // map's keyboard model (S-8.9.2), which sets its own narrow viewport.
-    { name: 'desktop-chromium', testMatch: /(palette|graph)\.spec\.ts/, use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },
+    { name: 'iphone-13', testIgnore: DESKTOP_ONLY, use: { ...devices['iPhone 13'] } },
+    { name: 'pixel-7', testIgnore: DESKTOP_ONLY, use: { ...devices['Pixel 7'] } },
+    // Desktop: the keyboard-driven command palette (S-8.2.2), the library
+    // map's keyboard model (S-8.9.2), which sets its own narrow viewport, and
+    // the dev server itself, which one project is enough to check.
+    { name: 'desktop-chromium', testMatch: DESKTOP_ONLY, use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },
     {
       name: 'narrow-320',
-      testIgnore: /(palette|graph)\.spec\.ts/,
+      testIgnore: DESKTOP_ONLY,
       use: {
         browserName: 'chromium',
         viewport: { width: 320, height: 640 },

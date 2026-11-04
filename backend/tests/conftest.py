@@ -8,6 +8,12 @@ from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
+from tests.hf_offline import stay_off_the_hub
+
+# T-8.8.4.7: before the imports below, because huggingface_hub reads this once,
+# when it is imported. A DNS drop during a model load cannot fail a test.
+stay_off_the_hub(settings.EMBEDDING_MODEL_NAME)
+
 from app.database import Base
 from app.dependencies import get_db
 from app.main import app

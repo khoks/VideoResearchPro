@@ -6,7 +6,7 @@
  */
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
+import { Markdown } from '../common/Markdown';
 import { CitationLink } from '../citation';
 import { NotesPanel } from '../notes';
 import { PinQuestionButton } from '../savedSearches/PinQuestionButton';
@@ -166,7 +166,7 @@ export function LibraryQAExchangeCard({ qa, showScope = true }: { qa: LibraryQAE
           lineHeight: lineHeight.loose,
         }}
       >
-        <ReactMarkdown>{qa.answer}</ReactMarkdown>
+        <Markdown>{qa.answer}</Markdown>
       </div>
       {qa.references.length > 0 && (
         <div

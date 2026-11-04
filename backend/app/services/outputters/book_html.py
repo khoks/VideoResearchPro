@@ -9,8 +9,9 @@ One HTML rendering of a book feeds both downloads: the EPUB writer
   Markdown is **disabled**, so a report can never inject markup into a
   file the user opens in another program.
 - Heading ids are the reading room's (`heading_slug`, duplicates `-2`,
-  `-3`, as `slug.ts`), so the table of contents the book outputter writes
-  (`#1-first-topic`) resolves here exactly as it does in the reader.
+  `-3`, as `slug.ts`). The book outputter reads its table of contents back
+  from `Heading.line` here, so `#1-first-topic` is the id this renders, and
+  the reader, running the same slug over the same headings, agrees.
 - Endnotes are the GFM footnotes S-6.1.4 writes. Their references and the
   list get ARIA roles (`doc-noteref`, `doc-endnotes`, `doc-backlink`) and
   `data-epub-type` markers the EPUB writer turns into `epub:type`.
@@ -34,6 +35,10 @@ from app.services.output_citation_service import heading_slug
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
+# Carries a heading's source line from the Markdown parser to the id pass, and
+# no further: it is removed before the HTML leaves this module.
+_LINE_ATTR = "data-source-line"
+
 # Section headings the book outputter writes; the EPUB writer replaces the
 # first with its navigation document and gives the second endnote semantics.
 TOC_HEADING = "Table of Contents"
@@ -50,6 +55,8 @@ class Heading:
     level: int
     id: str
     text: str
+    # 0-based line of the Markdown this heading starts on.
+    line: int
 
 
 @dataclass(frozen=True)
@@ -99,14 +106,21 @@ def _normalise_space(text: str) -> str:
 def render_book_html(markdown: str, *, title: str) -> BookHtml:
     """Render a book manuscript. Pure function of its inputs."""
     source = _XML_INVALID.sub("", markdown or "")
-    root = lxml_html.fragment_fromstring(_parser().render(source) or "<p></p>", create_parent="div")
+    parser = _parser()
+    env: dict = {}
+    tokens = parser.parse(source, env)
+    for token in tokens:
+        if token.type == "heading_open" and token.map:
+            token.attrSet(_LINE_ATTR, str(token.map[0]))
+    root = lxml_html.fragment_fromstring(parser.renderer.render(tokens, parser.options, env) or "<p></p>", create_parent="div")
 
     slug = slugger()
     headings: list[Heading] = []
     for el in root.iter("h1", "h2", "h3", "h4", "h5", "h6"):
         text = _normalise_space(el.text_content())
         el.set("id", slug(text))
-        headings.append(Heading(level=int(el.tag[1]), id=el.get("id"), text=text))
+        line = int(el.attrib.pop(_LINE_ATTR, -1))
+        headings.append(Heading(level=int(el.tag[1]), id=el.get("id"), text=text, line=line))
 
     for sup in root.xpath('//sup[contains(concat(" ", @class, " "), " footnote-ref ")]'):
         for a in sup.iter("a"):

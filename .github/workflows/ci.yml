@@ -101,7 +101,13 @@ jobs:
 
       # -rs prints each skipped test's reason, so a reviewer can see what the
       # runner did not exercise (ffmpeg, an FTS5 trigram SQLite, a PDF engine).
+      # HF_HUB_OFFLINE: the models are on disk by now, from the cache or the
+      # step above, so a load need not ask the hub, and a DNS drop cannot fail
+      # a test (T-8.8.4.7). Here only: the download step needs the hub. A bad
+      # cache fails these tests loudly instead of downloading at test time.
       - name: Run pytest
+        env:
+          HF_HUB_OFFLINE: "1"
         run: python -m pytest tests/ -q -rs
 
   lint:

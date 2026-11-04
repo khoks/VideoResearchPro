@@ -626,6 +626,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys. The repository 
 - **ChromaDB tests**: Use `EphemeralClient` monkeypatch instead of `PersistentClient`
 - **Frontend inline styles**: Components use inline `style={{}}` objects rather than CSS modules or styled-components
 - **State management split**: Server state in React Query, UI state in Zustand
+- **Markdown on a page goes through `components/common/Markdown`** (T-8.8.4.5), never `react-markdown` directly: the renderer and the unified stack are their own chunk, the text shows first in the same elements, and a static import anywhere puts them back in the main chunk (`Markdown.test.tsx` fails on one). The 170 kB main-chunk budget is met by this and by lazy routes for occasional pages (`routes/index.tsx`)
 - **Celery autodiscover**: `celery_app.py` makes one `autodiscover_tasks(..., related_name=...)` call per module in `app/tasks/`, since tasks live in `job_tasks.py` and its siblings, not `tasks.py`
 - **Celery on Windows**: Must use `--pool=solo` flag
 - **Transcript caption track**: `fetch_transcript()` takes the track in the language the video is spoken in, never an auto-dub; English-first is only the fallback when nothing says what is spoken ([D-117](docs/decisions.md#d-117--the-caption-track-is-the-one-in-the-spoken-language-auto-dubs-are-read-from-the-players-audio-tracks-2026-10-29))

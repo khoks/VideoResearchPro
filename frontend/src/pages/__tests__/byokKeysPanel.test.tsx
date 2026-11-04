@@ -175,7 +175,8 @@ function everywhere(): string {
   ].join('\n');
 }
 
-let consoleSpies: Array<ReturnType<typeof vi.spyOn>> = [];
+type ConsoleSpy = { mock: { calls: unknown[][] }; mockRestore: () => void };
+let consoleSpies: ConsoleSpy[] = [];
 
 beforeEach(() => {
   host = document.createElement('div');
@@ -206,7 +207,7 @@ afterEach(() => {
 });
 
 function consoleSawPlaceholder(): boolean {
-  return consoleSpies.some((s) => s.mock.calls.some((args) => JSON.stringify(args).includes(PLACEHOLDER)));
+  return consoleSpies.some((s) => s.mock.calls.some((args: unknown[]) => JSON.stringify(args).includes(PLACEHOLDER)));
 }
 
 describe('keys panel for a Studio account', () => {
@@ -237,7 +238,7 @@ describe('keys panel for a Studio account', () => {
 
   it('sends a new key once in the PUT body and empties the field the moment it submits', async () => {
     let release: () => void = () => undefined;
-    put.mockImplementationOnce(async (url, body) => {
+    put.mockImplementationOnce(async (_url, body) => {
       await new Promise<void>((r) => {
         release = r;
       });

@@ -58,7 +58,38 @@ class UnsupportedProviderError(ValueError):
 
 class EncryptionConfigurationError(RuntimeError):
     """Raised when ``BYOK_ENCRYPTION_KEY`` is set to an invalid
-    Fernet key (not 32 url-safe base64-encoded bytes)."""
+    Fernet key (not 32 url-safe base64-encoded bytes).
+
+    Every encryption and decryption with the shared key (D-043) goes
+    through ``_get_fernet``, so this reaches every caller of
+    ``encrypt_secret`` / ``decrypt_secret``: provider keys
+    (``/auth/credentials``), two-step verification secrets
+    (``mfa_service``), and Echo connector tokens
+    (``echo_connector_service``). T-5.6.9: an HTTP request that meets it
+    answers 503 with ``invalid_key_detail``, never a bare 500. The routes
+    that can meet it say what failed in their own words; the exception
+    handler in ``app.main`` is the net for any other."""
+
+
+def invalid_key_detail(what: str) -> str:
+    """The 503 ``detail`` for a request refused because
+    ``BYOK_ENCRYPTION_KEY`` is malformed: what could not be done, the cause,
+    and who can fix it. Names the setting, never its value."""
+    return (
+        f"{what}: this install's BYOK_ENCRYPTION_KEY is set but is not a valid "
+        "key. Ask the operator to fix it."
+    )
+
+
+def require_valid_key() -> None:
+    """Raise ``EncryptionConfigurationError`` now when the key is malformed,
+    for a flow that would otherwise find out only after work it cannot undo
+    (an OAuth round trip whose tokens could not then be stored). An unset
+    key passes: ``_get_fernet`` generates one for the process."""
+    if encryption_key_state() == "invalid":
+        raise EncryptionConfigurationError(
+            "BYOK_ENCRYPTION_KEY is not a valid Fernet key"
+        )
 
 
 @lru_cache(maxsize=1)

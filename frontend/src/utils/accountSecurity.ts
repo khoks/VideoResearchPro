@@ -61,6 +61,9 @@ export function describeUserAgent(ua: string | null | undefined): string | null 
   return browser ?? os;
 }
 
+/** The shortest new password the reset and change forms accept. */
+export const MIN_PASSWORD = 8;
+
 /** A TOTP key in fours, the way authenticator apps show one to type. */
 export function groupKey(secret: string): string {
   return secret.replace(/\s+/g, '').replace(/(.{4})(?=.)/g, '$1 ');
@@ -135,11 +138,17 @@ export function describeAuditEvent(entry: AuditEntryLike): string {
       return 'Password reset with an invalid code';
     case 'password_changed':
       return 'Password changed';
+    case 'password_change_failed':
+      return meta.reason === 'locked_out'
+        ? 'Password change refused while the account was locked'
+        : 'Password change refused: wrong current password';
     case 'logout':
       return 'Signed out';
     case 'session_revoked':
       return 'Signed out a session';
     case 'sessions_revoked_all':
+      if (meta.reason === 'password_reset') return 'Signed out everywhere after the password reset';
+      if (meta.reason === 'password_change') return 'Signed out everywhere else after the password change';
       return meta.keep_current ? 'Signed out everywhere else' : 'Signed out everywhere';
     case 'mfa_enrolled':
       return 'Two-step verification setup started';
@@ -150,7 +159,10 @@ export function describeAuditEvent(entry: AuditEntryLike): string {
     case 'mfa_login_success':
       return 'Two-step code accepted';
     case 'mfa_login_failure':
-      return meta.reason === 'invalid_mfa_token' ? 'Two-step sign-in expired' : 'Wrong two-step code entered';
+      if (meta.reason === 'invalid_mfa_token') return 'Two-step sign-in expired';
+      if (meta.reason === 'too_many_attempts') return 'Two-step sign-in stopped after too many wrong codes';
+      if (meta.reason === 'ticket_used') return 'Two-step sign-in repeated after it had finished';
+      return 'Wrong two-step code entered';
     case 'mfa_recovery_code_used':
       return 'Recovery code used';
     case 'tier_changed':
@@ -168,5 +180,12 @@ export function describeAuditEvent(entry: AuditEntryLike): string {
 
 /** Failed or refused sign-ins, shown with a warning tone. */
 export function isWarningEvent(event: string): boolean {
-  return ['login_failure', 'login_locked_out', 'account_locked', 'mfa_login_failure', 'password_reset_invalid_token'].includes(event);
+  return [
+    'login_failure',
+    'login_locked_out',
+    'account_locked',
+    'mfa_login_failure',
+    'password_reset_invalid_token',
+    'password_change_failed',
+  ].includes(event);
 }

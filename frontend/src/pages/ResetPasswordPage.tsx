@@ -6,9 +6,8 @@ import { Button, FormField, Input } from '../components/primitives';
 import { accountSecurityApi } from '../services/accountSecurityApi';
 import { useColors } from '../hooks/useTheme';
 import { apiErrorMessage } from '../utils/apiError';
+import { MIN_PASSWORD } from '../utils/accountSecurity';
 import { fonts, fontSize, fontWeight, lineHeight, space } from '../theme';
-
-const MIN_PASSWORD = 8;
 
 /**
  * `/reset-password` (T-5.4.3): the code from the email (or the server log)
@@ -61,8 +60,8 @@ export function ResetPasswordPage() {
       <AuthShell title="Password updated">
         <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: space['4'], textAlign: 'center' }}>
           <p style={{ margin: 0, fontFamily: fonts.body, fontSize: fontSize.base, color: c.textSecondary, lineHeight: lineHeight.normal }}>
-            Your new password works now. If you did not ask for this, sign in and check where your account is signed in from
-            under Account, Security.
+            Your new password works now. Every session on the account has been signed out, so sign in again. If you did not
+            ask for this, check the recent activity under Account, Security.
           </p>
           <Link to="/login" style={linkStyle}>
             Sign in

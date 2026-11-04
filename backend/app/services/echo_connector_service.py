@@ -204,6 +204,9 @@ def start_connect(db: Session, tenant_id: str, name: str, consent_version: str) 
         raise ConnectorUnavailable(name)
     if consent_version != conn.consent_version:
         raise ConsentMismatch(name)
+    # T-5.6.9: the tokens are stored encrypted. With a malformed key that
+    # fails only after the user has signed in at the provider, so refuse now.
+    byok_service.require_valid_key()
     now = _now()
     # One pending connect per tenant and connector; expired ones go too.
     db.query(EchoConnectorOAuthState).filter(

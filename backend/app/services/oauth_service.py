@@ -566,6 +566,9 @@ def _link_or_create_user(
             db,
             email=info.email,
             password=secrets.token_urlsafe(32),  # random; user resets later
+            # Nobody knows that password, so "change password" sends the
+            # user to the reset flow instead of asking for it (T-5.4.14).
+            has_password=False,
         )
 
     identity = OAuthIdentity(

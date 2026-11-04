@@ -14,13 +14,15 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
 from app.models.user import User
-from app.services import activity_event_service, echo_connector_service, echo_fact_tombstones
+from app.services import activity_event_service, byok_service, echo_connector_service, echo_fact_tombstones
 from app.services.echo_connector_service import (
     ConnectError,
     ConnectorNotFound,
@@ -30,8 +32,23 @@ from app.services.echo_connector_service import (
 from app.services.echo_service import SUPPORTED_KINDS
 from app.services.tier_service import require_feature
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/echo", tags=["echo"])
 ECHO = require_feature("echo_personal_brain")
+
+
+def _key_unavailable(what: str) -> HTTPException:
+    """T-5.6.9: connector tokens are encrypted with the install's shared key
+    (D-043); a malformed ``BYOK_ENCRYPTION_KEY`` answers 503 with the cause,
+    never a bare 500. Neither the response nor the log carries the key."""
+    logger.error(
+        "echo connectors: %s: BYOK_ENCRYPTION_KEY is set but is not a valid Fernet key", what
+    )
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=byok_service.invalid_key_detail(what),
+    )
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -178,6 +195,10 @@ def authorize(
         raise HTTPException(status_code=503, detail="This connector is not configured on this install.")
     except ConsentMismatch:
         raise HTTPException(status_code=409, detail="The connector's disclosure changed; review it again.")
+    except byok_service.EncryptionConfigurationError:
+        # T-5.6.9: the tokens could not be stored, so refuse before the
+        # round trip to the provider rather than after it.
+        raise _key_unavailable("Connectors cannot be connected")
     return AuthorizeResponse(authorize_url=url)
 
 
@@ -196,6 +217,11 @@ def callback(
     except ConnectError:
         # Never say which step failed (D-040's posture for OAuth).
         raise HTTPException(status_code=400, detail="Connecting failed. Start again from the Echo page.")
+    except byok_service.EncryptionConfigurationError:
+        # T-5.6.9: the provider's tokens could not be encrypted for storage.
+        # Not a protocol failure, and the user cannot fix it: say what can.
+        db.rollback()
+        raise _key_unavailable("The connector's access could not be stored")
     return _item(db, current_user.id, name)
 
 

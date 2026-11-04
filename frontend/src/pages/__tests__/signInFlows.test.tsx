@@ -206,6 +206,38 @@ describe('LoginPage', () => {
     expect(host.textContent).toContain('Welcome back to your library.');
   });
 
+  it('sends the reader back to the first step when the ticket has taken too many codes', async () => {
+    http.post.mockImplementation(async (url) => {
+      if (url === '/auth/login') return { data: { requires_mfa: true, mfa_token: 'ticket-5' } };
+      throw axiosError(401, 'Too many codes tried for this sign-in. Start over and sign in again.');
+    });
+    mount('/login');
+    await flush();
+    await signInWithPassword();
+    await type(inputs()[0], '123456');
+    await submit(host.querySelector('form'));
+    expect(host.textContent).toContain('Too many codes tried. Start over and enter your password again.');
+    expect(inputs()[0].disabled, 'the dead ticket takes no more codes').toBe(true);
+    expect(hasButton('Verify and sign in')).toBe(false);
+    await act(async () => button('Start over').click());
+    expect(host.textContent).toContain('Welcome back to your library.');
+  });
+
+  it('shows the cause when the code cannot be checked at all', async () => {
+    const detail = "The authenticator code cannot be checked (a recovery code still works): this install's BYOK_ENCRYPTION_KEY is set but is not a valid key. Ask the operator to fix it.";
+    http.post.mockImplementation(async (url) => {
+      if (url === '/auth/login') return { data: { requires_mfa: true, mfa_token: 'ticket-6' } };
+      throw axiosError(503, detail);
+    });
+    mount('/login');
+    await flush();
+    await signInWithPassword();
+    await type(inputs()[0], '123456');
+    await submit(host.querySelector('form'));
+    expect(host.textContent).toContain(detail);
+    expect(hasButton('Verify and sign in'), 'a recovery code still works, so the step stays open').toBe(true);
+  });
+
   it('shows OAuth buttons only for the providers the server names', async () => {
     mount('/login');
     await flush();

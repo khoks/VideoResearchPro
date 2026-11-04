@@ -72,6 +72,13 @@ class PersonalContext(Base):
     value: Mapped[str] = mapped_column(Text, nullable=False)
     # Where this row came from. Connectors register their own source.
     source: Mapped[str] = mapped_column(String(64), nullable=False)
+    # On a manual row: the connector or importer that wants this key, because
+    # the user edited the row it derived or because this row turned its write
+    # away. The source says `manual`, so nothing else records that a connector
+    # can write the key again, and deleting the row must still leave a
+    # tombstone (T-3.2.1.11, T-3.2.4.4). The name, as on a tombstone: an
+    # `import:<id>` source would not outlive undoing that import.
+    wanted_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     confidence: Mapped[float] = mapped_column(
         Float, nullable=False, default=1.0, server_default="1.0"
     )

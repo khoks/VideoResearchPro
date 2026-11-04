@@ -611,6 +611,177 @@ def test_a_deleted_derived_fact_stays_deleted_until_the_user_clears_it(unauthent
     assert unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"] == []
 
 
+# ------------------------------------------------------------------ T-3.2.1.11: a fact the user edited stays theirs
+
+MINE = "Only for scripts; I would not call it a skill."
+
+
+def _edit_python(client, headers, expires_at=None):
+    body = {"kind": "skill", "key": "python", "value": MINE}
+    if expires_at is not None:
+        body["expires_at"] = expires_at.isoformat()
+    r = client.post("/api/v1/echo/context", json=body, headers=headers)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_a_fact_the_user_edited_survives_the_next_sync(unauthenticated_client, db, inline_db, fake, two):
+    _connect(unauthenticated_client, two["ha"])
+    _facts_every_sync(fake)
+    a = two["a"].id
+    assert _edit_python(unauthenticated_client, two["ha"])["source"] == "manual"
+
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+
+    grant = r.json()["connector"]["grant"]
+    assert grant["last_counts"]["facts"] == 0
+    assert grant["last_counts"]["facts_kept_manual"] == 1, "the run summary says so"
+    fact = _python(db, a)
+    assert (fact.value, fact.source, fact.confidence) == (MINE, "manual", 1.0)
+
+
+def test_the_scheduled_sync_keeps_an_edited_fact_too(db, inline_db, unauthenticated_client, fake, two, monkeypatch):
+    import app.tasks.echo_connector_tasks as tasks
+
+    _connect(unauthenticated_client, two["ha"])
+    _facts_every_sync(fake)
+    _edit_python(unauthenticated_client, two["ha"])
+    monkeypatch.setattr(tasks, "SessionLocal", lambda: db)
+    grant = db.query(EchoConnectorGrant).filter_by(tenant_id=two["a"].id).one()
+
+    assert tasks.sync_echo_connector(grant.id) == "ok"
+    assert _python(db, two["a"].id).value == MINE
+
+
+def test_a_fact_nobody_edited_still_follows_the_connector(unauthenticated_client, db, inline_db, fake, two):
+    """The skip is for the user's rows, not for every row that exists."""
+    _connect(unauthenticated_client, two["ha"])
+    _facts_every_sync(fake)
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    counts = r.json()["connector"]["grant"]["last_counts"]
+    assert counts["facts"] == 1 and "facts_kept_manual" not in counts
+    fact = _python(db, two["a"].id)
+    assert fact.value == '{"repos": 4}' and fact.source == "connector:fake" and fact.confidence == 0.8
+
+
+def test_a_fact_the_user_typed_first_is_not_taken_over(unauthenticated_client, db, inline_db, fake, two):
+    _edit_python(unauthenticated_client, two["ha"])
+    r, _ = _connect(unauthenticated_client, two["ha"])
+    assert r.json()["grant"]["last_counts"] == {"added": 3, "updated": 0, "facts": 0, "facts_kept_manual": 1}
+    assert _python(db, two["a"].id).value == MINE
+
+
+def test_an_edit_made_during_a_sync_is_not_written_over(unauthenticated_client, db, inline_db, fake, two):
+    """A sync can run for minutes, so the check is per fact at write time."""
+    _connect(unauthenticated_client, two["ha"])
+    original = fake.incremental_sync
+
+    def edited_while_fetching(ctx, since):
+        ctx.facts.append(DerivedFact(kind="skill", key="python", value={"repos": 4}, confidence=0.8))
+        yield from original(ctx, since)
+        _edit_python(unauthenticated_client, two["ha"])
+
+    fake.incremental_sync = edited_while_fetching
+    unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    assert _python(db, two["a"].id).value == MINE
+
+
+def test_an_edited_fact_the_user_then_deletes_stays_deleted(unauthenticated_client, db, inline_db, fake, two):
+    """Editing makes the row manual, and a manual row gets no tombstone by
+    itself: without ``wanted_by`` the next sync would bring it back."""
+    _connect(unauthenticated_client, two["ha"])
+    _facts_every_sync(fake)
+    a = two["a"].id
+    _edit_python(unauthenticated_client, two["ha"])
+    _edit_python(unauthenticated_client, two["ha"])  # a second edit keeps the origin
+    assert _python(db, a).wanted_by == "fake"
+
+    assert unauthenticated_client.delete("/api/v1/echo/context/skill/python", headers=two["ha"]).status_code == 200
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+
+    assert _python(db, a) is None, "the deleted fact stayed deleted"
+    assert "facts_kept_manual" not in r.json()["connector"]["grant"]["last_counts"]
+    listed = unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"]
+    assert [(t["connector"], t["key"]) for t in listed] == [("fake", "python")]
+
+
+def test_a_fact_typed_first_stays_deleted_once_a_sync_was_turned_away(unauthenticated_client, db, inline_db, fake, two):
+    """Typed before any connector derived the key, so nothing was edited. The
+    sync it turned away is what says a connector can write this key, and a
+    delete must keep it deleted (T-3.2.4.4). A sync used to overwrite the row,
+    which made the delete tombstone it."""
+    _edit_python(unauthenticated_client, two["ha"])
+    r, _ = _connect(unauthenticated_client, two["ha"])
+    assert r.json()["grant"]["last_counts"]["facts_kept_manual"] == 1
+    _facts_every_sync(fake)
+
+    assert unauthenticated_client.delete("/api/v1/echo/context/skill/python", headers=two["ha"]).status_code == 200
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+
+    assert _python(db, two["a"].id) is None, "the deleted fact stayed deleted"
+    assert "facts_kept_manual" not in r.json()["connector"]["grant"]["last_counts"]
+    listed = unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"]
+    assert [(t["connector"], t["key"]) for t in listed] == [("fake", "python")]
+
+
+def test_a_typed_fact_no_sync_wanted_gets_no_tombstone(unauthenticated_client, db, inline_db, fake, two):
+    """The mark comes from a sync turned away, not from being connected."""
+    _connect(unauthenticated_client, two["ha"])
+    _facts_every_sync(fake)
+    unauthenticated_client.post(
+        "/api/v1/echo/context", json={"kind": "hobby", "key": "chess", "value": "weekends"}, headers=two["ha"]
+    )
+    unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    assert unauthenticated_client.delete("/api/v1/echo/context/hobby/chess", headers=two["ha"]).status_code == 200
+    assert unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"] == []
+
+
+def test_an_expired_fact_no_longer_holds_its_key(unauthenticated_client, db, inline_db, fake, two):
+    """Past its date the row is gone from the list and from retrieval, and the
+    user has no way to see what is blocking the connector, so the connector
+    takes the key back."""
+    _connect(unauthenticated_client, two["ha"])
+    _facts_every_sync(fake)
+    _edit_python(unauthenticated_client, two["ha"], expires_at=datetime.now(timezone.utc) - timedelta(days=1))
+    listed = unauthenticated_client.get("/api/v1/echo/context", headers=two["ha"]).json()
+    assert "python" not in [row["key"] for row in listed]
+
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+
+    counts = r.json()["connector"]["grant"]["last_counts"]
+    assert counts["facts"] == 1 and "facts_kept_manual" not in counts
+    fact = _python(db, two["a"].id)
+    assert (fact.value, fact.source, fact.expires_at) == ('{"repos": 4}', "connector:fake", None)
+    assert fact.wanted_by is None, "only a manual row carries it: the source now says who wrote this"
+
+
+def test_a_fact_with_a_date_ahead_still_holds_its_key(unauthenticated_client, db, inline_db, fake, two):
+    _connect(unauthenticated_client, two["ha"])
+    _facts_every_sync(fake)
+    _edit_python(unauthenticated_client, two["ha"], expires_at=datetime.now(timezone.utc) + timedelta(days=1))
+
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+
+    assert r.json()["connector"]["grant"]["last_counts"]["facts_kept_manual"] == 1
+    assert _python(db, two["a"].id).value == MINE
+
+
+def test_an_edited_fact_is_the_users_when_the_connector_goes(unauthenticated_client, db, inline_db, fake, two):
+    _connect(unauthenticated_client, two["ha"])
+    _edit_python(unauthenticated_client, two["ha"])
+    assert unauthenticated_client.delete(f"{BASE}/fake", headers=two["ha"]).json()["facts"] == 0
+    assert _python(db, two["a"].id).value == MINE
+
+
+def test_one_readers_edit_does_not_stop_anothers_sync(unauthenticated_client, db, inline_db, fake, two):
+    _connect(unauthenticated_client, two["ha"], code="aaa")
+    _connect(unauthenticated_client, two["hb"], code="bbb")
+    _facts_every_sync(fake)
+    _edit_python(unauthenticated_client, two["ha"])
+    unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["hb"])
+    assert _python(db, two["b"].id).source == "connector:fake"
+
+
 def test_tombstones_are_the_callers_own(unauthenticated_client, db, inline_db, fake, two):
     _connect(unauthenticated_client, two["ha"], code="aaa")
     _connect(unauthenticated_client, two["hb"], code="bbb")

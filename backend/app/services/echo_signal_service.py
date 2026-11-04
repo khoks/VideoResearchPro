@@ -436,6 +436,59 @@ def _still_evidence(db: Session, tenant_id: str, sources: list[str], examples: l
     return kept_sources, kept_examples
 
 
+@dataclass
+class RejectedSweep:
+    """What ``sweep_rejected_evidence`` found: rejections read, how many held
+    stale evidence, and the examples and refs that do not stand."""
+
+    rejected: int = 0
+    stale: int = 0
+    examples: int = 0
+    refs: int = 0
+
+    def add(self, other: "RejectedSweep") -> None:
+        self.rejected += other.rejected
+        self.stale += other.stale
+        self.examples += other.examples
+        self.refs += other.refs
+
+
+def stale_rejected_evidence(db: Session, tenant_id: str) -> dict[str, tuple[list[str], list[dict]]]:
+    """By signal id, each of the tenant's rejections whose stored evidence no
+    longer all stands, with the refs and examples that do. Read-only. Rows the
+    withdrawal has kept clean are not in it."""
+    out: dict[str, tuple[list[str], list[dict]]] = {}
+    for row in list_rejected(db, tenant_id):
+        sources, examples = _json_list(row.derived_from), _json_list(row.examples_json)
+        kept = _still_evidence(db, tenant_id, sources, examples)
+        if kept != (sources, examples):
+            out[row.id] = kept
+    return out
+
+
+def sweep_rejected_evidence(db: Session, tenant_id: str, *, write: bool) -> RejectedSweep:
+    """T-3.3.1.7: clear from the tenant's rejections what ``restore`` would
+    drop, at rest. A rejection stays one, whatever is left; its weight drops
+    by the refs it lost, as a withdrawal counts it, so a later restore comes
+    to the same signal. Commits only with ``write``. Idempotent."""
+    rows = {r.id: r for r in list_rejected(db, tenant_id)}
+    stale = stale_rejected_evidence(db, tenant_id)
+    found = RejectedSweep(rejected=len(rows), stale=len(stale))
+    for signal_id, (sources, examples) in stale.items():
+        row = rows[signal_id]
+        lost = len(_json_list(row.derived_from)) - len(sources)
+        found.refs += lost
+        found.examples += len(_json_list(row.examples_json)) - len(examples)
+        if write:
+            row.derived_from = json.dumps(sources)
+            row.examples_json = json.dumps(examples, ensure_ascii=False)
+            if lost:
+                row.weight = max(0.0, float(row.weight) - lost) or 0.5
+    if write and stale:
+        db.commit()
+    return found
+
+
 @dataclass(frozen=True)
 class SourceWithdrawal:
     updated: int

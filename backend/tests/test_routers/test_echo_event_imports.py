@@ -505,3 +505,65 @@ def test_a_fact_deleted_from_an_import_stays_deleted_when_the_export_is_imported
     # Cleared, the next import writes it again.
     unauthenticated_client.delete(f"/api/v1/echo/fact-tombstones/{tomb.id}", headers=two["ha"])
     assert _run(unauthenticated_client, two["ha"], *apple_health())["counts"]["facts"] == 3
+
+
+def test_a_fact_the_user_edited_survives_importing_the_export_again(unauthenticated_client, db, two):
+    """T-3.2.1.11 for importers: the same upsert, so the same rule. And an
+    edited fact the user then deletes stays deleted (T-3.2.4.4)."""
+    from app.models.echo_fact_tombstone import EchoFactTombstone
+
+    _run(unauthenticated_client, two["ha"], *apple_health())
+    r = unauthenticated_client.post(
+        "/api/v1/echo/context", json={"kind": "daily_routine", "key": "steps", "value": "I walk to work."}, headers=two["ha"]
+    )
+    assert r.status_code == 200, r.text
+
+    again = _run(unauthenticated_client, two["ha"], *apple_health())
+
+    assert again["counts"]["facts"] == 2 and again["counts"]["facts_kept_manual"] == 1
+    row = db.query(PersonalContext).filter_by(tenant_id=two["a"].id, key="steps").one()
+    assert (row.value, row.source) == ("I walk to work.", "manual")
+
+    assert unauthenticated_client.delete("/api/v1/echo/context/daily_routine/steps", headers=two["ha"]).status_code == 200
+    assert db.query(EchoFactTombstone).filter_by(tenant_id=two["a"].id, key="steps").count() == 1
+    last = _run(unauthenticated_client, two["ha"], *apple_health())
+    assert last["counts"]["facts_kept_deleted"] == 1 and "facts_kept_manual" not in last["counts"]
+
+
+@pytest.mark.parametrize("undone", [False, True], ids=["import kept", "import undone"])
+@pytest.mark.parametrize("first", ["edited", "typed"])
+def test_a_fact_the_user_wrote_stays_deleted_from_every_later_import(unauthenticated_client, db, two, first, undone):
+    """Apple Health's keys are plain (``daily_routine/steps``), so a row the
+    user typed first really does collide. And an edited fact outlives undoing
+    the import it came from, whose record ``import:<id>`` would have pointed
+    at, so what the row keeps is the importer's name."""
+    from app.models.echo_fact_tombstone import EchoFactTombstone
+
+    def write_steps():
+        r = unauthenticated_client.post(
+            "/api/v1/echo/context", json={"kind": "daily_routine", "key": "steps", "value": "I walk to work."}, headers=two["ha"]
+        )
+        assert r.status_code == 200, r.text
+
+    def steps():
+        db.expire_all()
+        return db.query(PersonalContext).filter_by(tenant_id=two["a"].id, key="steps").first()
+
+    if first == "typed":
+        write_steps()
+        imported = _run(unauthenticated_client, two["ha"], *apple_health())
+        assert imported["counts"]["facts_kept_manual"] == 1
+    else:
+        imported = _run(unauthenticated_client, two["ha"], *apple_health())
+        write_steps()
+    if undone:
+        assert unauthenticated_client.delete(f"{IMPORTS}/{imported['id']}", headers=two["ha"]).status_code == 200
+    assert (steps().value, steps().source) == ("I walk to work.", "manual")
+
+    assert unauthenticated_client.delete("/api/v1/echo/context/daily_routine/steps", headers=two["ha"]).status_code == 200
+    tomb = db.query(EchoFactTombstone).filter_by(tenant_id=two["a"].id, key="steps").one()
+    assert tomb.connector == "apple_health_export"
+
+    last = _run(unauthenticated_client, two["ha"], *apple_health())
+    assert last["counts"]["facts_kept_deleted"] == 1
+    assert steps() is None, "the deleted fact stayed deleted"

@@ -1,7 +1,7 @@
 """echo_email_messages: the mail the IMAP inbox has already taken (T-3.7.4.1)
 
 Revision ID: c62da1d081c6
-Revises: 6d5b3d5aa6fa
+Revises: 5f8caf39b5b1
 Create Date: 2026-11-04
 
 One additive table, so a re-poll of a mailbox adds nothing and a share the
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "c62da1d081c6"
-down_revision = "6d5b3d5aa6fa"
+down_revision = "5f8caf39b5b1"
 branch_labels = None
 depends_on = None
 

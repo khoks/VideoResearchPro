@@ -7,9 +7,11 @@ import type { DocumentRef } from '../../services/channelIntelligenceApi';
 import { useQuota, intelligenceKey } from '../../hooks/useChannelIntelligence';
 import { useFeatureAvailable } from '../../hooks/useFeatureAvailable';
 import { planBatch, runBatch, type BatchProgress } from '../../utils/batchExtract';
+import { DepthSelect } from '../common/DepthSelect';
 import { Button } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, radius, space } from '../../theme';
+import type { Depth } from '../../utils/depth';
 
 const RESOURCE = 'knowledge_extractions';
 
@@ -20,6 +22,9 @@ const RESOURCE = 'knowledge_extractions';
  * this month, stopping at the first quota refusal, and refreshing the
  * channel's aggregate when it ends. Runs in this tab: leaving the page stops
  * it after the current document.
+ *
+ * T-1.15.3.7: one depth for the whole batch, chosen where it is confirmed.
+ * Auto sends none, so each request is the one the page sent before.
  */
 export function BatchExtract({ channelId, extractable }: { channelId: string; extractable: DocumentRef[] }) {
   const c = useColors();
@@ -29,6 +34,7 @@ export function BatchExtract({ channelId, extractable }: { channelId: string; ex
   const [confirming, setConfirming] = useState(false);
   const [progress, setProgress] = useState<BatchProgress | null>(null);
   const [running, setRunning] = useState(false);
+  const [depth, setDepth] = useState<Depth | null>(null);
   const stopRef = useRef(false);
 
   useEffect(() => () => {
@@ -42,7 +48,7 @@ export function BatchExtract({ channelId, extractable }: { channelId: string; ex
     setConfirming(false);
     setRunning(true);
     stopRef.current = false;
-    await runBatch(plan, (id) => knowledgeApi.extract(id), {
+    await runBatch(plan, (id) => knowledgeApi.extract(id, false, depth), {
       shouldStop: () => stopRef.current,
       onProgress: setProgress,
       statusOf: (err) => (isAxiosError(err) ? err.response?.status : undefined),
@@ -89,7 +95,17 @@ export function BatchExtract({ channelId, extractable }: { channelId: string; ex
             {plan.length} of your knowledge extractions ({remainingText}). Keep this page open; leaving it
             stops the run after the current document.
           </p>
-          <div style={{ display: 'flex', gap: space['2'] }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: space['2'] }}>
+            <label style={{ ...text, display: 'flex', alignItems: 'center', gap: space['2'] }}>
+              Report depth
+              <DepthSelect
+                value={depth}
+                onChange={setDepth}
+                unsetLabel="Auto"
+                aria-label="Report depth"
+                title="Auto sizes each report to how much its source yields."
+              />
+            </label>
             <Button size="sm" onClick={() => void start()}>
               Start
             </Button>

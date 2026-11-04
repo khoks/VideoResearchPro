@@ -157,8 +157,13 @@ class _FakeManager:
 
 
 def test_websocket_still_authenticates_with_a_query_token(unauthenticated_client, auth_token, monkeypatch):
+    from tests.conftest import TestingSessionLocal
+
     fake = _FakeManager()
     monkeypatch.setattr("app.routers.ws.manager", fake)
+    # T-5.4.15: the handshake checks the token's session and user in a
+    # session of its own, from app.database.SessionLocal.
+    monkeypatch.setattr("app.database.SessionLocal", TestingSessionLocal)
     with unauthenticated_client.websocket_connect(f"/ws/jobs?token={auth_token}") as ws:
         ws.send_text("ping")
         assert ws.receive_text() == "pong"

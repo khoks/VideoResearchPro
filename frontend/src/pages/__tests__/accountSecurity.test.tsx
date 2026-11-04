@@ -2,8 +2,9 @@
  * `/account/security` at the page the router mounts, over a mocked HTTP
  * client: active sessions (this one marked, others revocable, sign out
  * everywhere else), two-step verification (set up with the key and setup
- * link, confirm, recovery codes once; turn off with a code), and recent
- * account activity (the account scope, paged). The menu links here.
+ * link, confirm, recovery codes once; turn off with a code), changing the
+ * password (with "Forgot it?" for the reset), and recent account activity
+ * (the account scope, paged). The menu links here.
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -342,6 +343,108 @@ describe('two-step verification', () => {
     await submit(form);
     expect(http.delete).toHaveBeenCalledWith('/auth/mfa', { data: { code: 'AAAA111111' } });
     expect(button('Set up two-step verification')).toBeTruthy();
+  });
+});
+
+describe('password', () => {
+  const form = () => host.querySelector('form[aria-label="Change your password"]') as HTMLFormElement;
+  const fields = () => Array.from(form().querySelectorAll('input'));
+  const alert = () => form().querySelector('[role="alert"]')?.textContent;
+  const status = () => form().querySelector('[role="status"]')?.textContent;
+  const refused = (code: number, detail: string) =>
+    Object.assign(new Error(String(code)), { isAxiosError: true, response: { status: code, data: { detail } } });
+
+  async function fill(current: string, next: string, again = next) {
+    const [a, b, c] = fields();
+    await type(a, current);
+    await type(b, next);
+    await type(c, again);
+  }
+
+  it('changes the password, reports the sessions it signed out, and clears the fields', async () => {
+    http.post.mockResolvedValue({ data: { message: 'ok', sessions_revoked: 2 } });
+    await mount();
+    await fill('old-password', 'brand-new-password');
+    await submit(form());
+
+    expect(http.post).toHaveBeenCalledWith('/auth/password/change', {
+      current_password: 'old-password',
+      new_password: 'brand-new-password',
+    });
+    expect(status()).toBe('Password changed. Signed out 2 other sessions; this one stays signed in.');
+    expect(fields().map((i) => i.value)).toEqual(['', '', '']);
+    expect(JSON.stringify({ ...localStorage })).not.toContain('brand-new-password');
+  });
+
+  it('says so when no other session was signed in', async () => {
+    http.post.mockResolvedValue({ data: { message: 'ok', sessions_revoked: 0 } });
+    await mount();
+    await fill('old-password', 'brand-new-password');
+    await submit(form());
+    expect(status()).toBe('Password changed.');
+  });
+
+  it('re-reads the sessions after a change', async () => {
+    http.post.mockResolvedValue({ data: { message: 'ok', sessions_revoked: 1 } });
+    await mount();
+    const before = http.get.mock.calls.filter((c) => c[0] === '/auth/sessions').length;
+    await fill('old-password', 'brand-new-password');
+    await submit(form());
+    expect(http.get.mock.calls.filter((c) => c[0] === '/auth/sessions').length).toBeGreaterThan(before);
+  });
+
+  it('checks the new password here before sending', async () => {
+    await mount();
+    await fill('old-password', 'brand-new-password', 'something-else');
+    await submit(form());
+    expect(alert()).toContain('do not match');
+    await fill('old-password', 'short');
+    await submit(form());
+    expect(alert()).toContain('at least 8 characters');
+    expect(http.post).not.toHaveBeenCalled();
+  });
+
+  it('shows the refusal where the reader typed, and keeps what they typed', async () => {
+    http.post.mockRejectedValue(refused(400, 'The current password is not right.'));
+    await mount();
+    await fill('wrong-password', 'brand-new-password');
+    await submit(form());
+    expect(alert()).toBe('The current password is not right.');
+    expect(fields()[0].value).toBe('wrong-password');
+    expect(status()).toBeUndefined();
+  });
+
+  it('passes on the pointer to the reset for an account with no password', async () => {
+    const detail = 'This account has no password yet: it was made by signing in with Google or GitHub. To set one, use "Forgot it?" to get a reset code.';
+    http.post.mockRejectedValue(refused(400, detail));
+    await mount();
+    await fill('anything-at-all', 'brand-new-password');
+    await submit(form());
+    expect(alert()).toBe(detail);
+  });
+
+  it('shows the lockout and rate-limit answers', async () => {
+    http.post.mockRejectedValue(refused(429, 'Too many wrong passwords: password sign-in is locked for a while.'));
+    await mount();
+    await fill('old-password', 'brand-new-password');
+    await submit(form());
+    expect(alert()).toContain('Too many wrong passwords');
+  });
+
+  it('keeps the reset as "Forgot it?", in place of the old link', async () => {
+    await mount();
+    const forgot = Array.from(form().querySelectorAll('a')).find((a) => a.textContent === 'Forgot it?');
+    expect(forgot?.getAttribute('href')).toBe('/forgot-password');
+    expect(host.textContent).not.toContain('Reset your password');
+  });
+
+  it('uses the browser password fields, so a manager can fill and update them', async () => {
+    await mount();
+    expect(fields().map((i) => [i.type, i.autocomplete])).toEqual([
+      ['password', 'current-password'],
+      ['password', 'new-password'],
+      ['password', 'new-password'],
+    ]);
   });
 });
 

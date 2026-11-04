@@ -20,6 +20,9 @@ Login flow:
 - User submits the TOTP code (or a recovery code) plus the
   ``mfa_token`` to ``/auth/login/mfa``; on success the real access
   token is issued and a session row is written.
+- T-5.4.13: one ticket takes at most ``MFA_TICKET_MAX_ATTEMPTS`` codes,
+  counted on its ``jti`` (``mfa_step_tickets``), and buys one session.
+  A dead ticket means signing in again from the first step.
 """
 from __future__ import annotations
 
@@ -27,16 +30,20 @@ import hashlib
 import json
 import logging
 import secrets
+import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pyotp
 import jwt
 from jwt import PyJWTError as JWTError  # T-5.4.9: PyJWT replaced python-jose (unfixed CVE)
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.mfa_secret import MfaSecret
+from app.models.mfa_step_ticket import MfaStepTicket
 from app.models.user import User
 from app.services import byok_service
 
@@ -189,9 +196,18 @@ def is_enabled(db: Session, user_id: str) -> bool:
 
 def _verify_totp_against_row(row: MfaSecret, code: str) -> bool:
     """True iff ``code`` is a valid TOTP for the row's secret. Allows
-    a ±1 window (~30 seconds drift) to handle clock skew."""
+    a ±1 window (~30 seconds drift) to handle clock skew.
+
+    Raises ``byok_service.EncryptionConfigurationError`` when
+    ``BYOK_ENCRYPTION_KEY`` is malformed (T-5.6.9): no code can be checked,
+    and answering "invalid code" would send the user hunting for a clock
+    problem instead of the operator fixing the key. Any other decrypt
+    failure (the key was rotated, the row is corrupt) still reads as a code
+    that does not match, as before."""
     try:
         secret = byok_service.decrypt_secret(row.secret_encrypted)
+    except byok_service.EncryptionConfigurationError:
+        raise
     except Exception:
         logger.exception(
             "MFA decrypt failed for user_id=%s — likely BYOK key rotation",
@@ -232,14 +248,24 @@ def verify_at_login(db: Session, user_id: str, code: str) -> bool:
     - no MFA row for the user
     - row is not yet enabled
     - the code matches neither a current TOTP nor a recovery code
+
+    Raises ``byok_service.EncryptionConfigurationError`` when
+    ``BYOK_ENCRYPTION_KEY`` is malformed and the code is not a recovery
+    code. Recovery codes are stored hashed, not encrypted, so they still
+    work with a broken key: they are the way in until the operator fixes it.
     """
     row = (
         db.query(MfaSecret).filter(MfaSecret.user_id == user_id).first()
     )
     if row is None or not row.enabled:
         return False
-    if _verify_totp_against_row(row, code):
-        return True
+    try:
+        if _verify_totp_against_row(row, code):
+            return True
+    except byok_service.EncryptionConfigurationError:
+        if _consume_recovery_code_against_row(db, row, code):
+            return True
+        raise
     return _consume_recovery_code_against_row(db, row, code)
 
 
@@ -261,12 +287,14 @@ def issue_mfa_step_token(user_id: str) -> str:
     completed the password step but still owes the second factor.
 
     It is a ticket for ``/auth/login/mfa`` only, never a credential: see
-    ``auth_service.decode_access_token``."""
+    ``auth_service.decode_access_token``. Its ``jti`` names it for the
+    attempt count (T-5.4.13, ``count_ticket_attempt``)."""
     now = datetime.now(timezone.utc)
     payload: dict[str, Any] = {
         "sub": user_id,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=MFA_TOKEN_TTL_MIN)).timestamp()),
+        "jti": str(uuid.uuid4()),
         "mfa_step": True,
         "typ": MFA_STEP_TOKEN_TYPE,
     }
@@ -275,9 +303,23 @@ def issue_mfa_step_token(user_id: str) -> str:
     )
 
 
-def decode_mfa_step_token(token: str) -> str | None:
-    """Return the user_id encoded in the MFA-step token, or None if the
-    token is invalid / expired / not an MFA-step token."""
+@dataclass(frozen=True)
+class MfaTicket:
+    """A decoded second-factor ticket: whose it is, its ``jti``, and its
+    ``exp`` (naive UTC, as the database stores it)."""
+
+    user_id: str
+    jti: str
+    expires_at: datetime
+
+
+def decode_mfa_step_ticket(token: str) -> MfaTicket | None:
+    """The ticket ``token`` carries, or None if it is invalid, expired, not
+    a second-factor ticket, or has no ``jti``.
+
+    A ticket without a ``jti`` was issued before T-5.4.13 and cannot be
+    counted, so it is refused: tickets live five minutes, so this only asks
+    someone mid-sign-in at the deploy to start over."""
     try:
         payload = jwt.decode(
             token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM]
@@ -286,5 +328,88 @@ def decode_mfa_step_token(token: str) -> str | None:
         return None
     if not payload.get("mfa_step"):
         return None
-    sub = payload.get("sub")
-    return sub if isinstance(sub, str) else None
+    sub, jti, exp = payload.get("sub"), payload.get("jti"), payload.get("exp")
+    if not isinstance(sub, str) or not isinstance(jti, str) or not jti:
+        return None
+    if not isinstance(exp, (int, float)):
+        return None
+    expires_at = datetime.fromtimestamp(exp, tz=timezone.utc).replace(tzinfo=None)
+    return MfaTicket(user_id=sub, jti=jti, expires_at=expires_at)
+
+
+# T-5.4.13: codes one ticket may try. The per-IP sign-in rate limit was the
+# only bound before, so one five-minute ticket could be tried from many
+# addresses. Five leaves room for a mistyped code and a clock that is off by
+# a step; a sixth try needs the password (or the provider) again.
+MFA_TICKET_MAX_ATTEMPTS = 5
+
+
+class TicketClosedError(MfaError):
+    """The ticket takes no more codes. ``reason`` is ``"used"`` (a code was
+    accepted with it) or ``"too_many_attempts"``."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def count_ticket_attempt(db: Session, ticket: MfaTicket) -> int:
+    """Count one code attempt against ``ticket`` before the code is checked.
+
+    Returns the attempts made with it so far, this one included. Raises
+    ``TicketClosedError`` when the ticket is dead: a code was already
+    accepted with it, or it has had its ``MFA_TICKET_MAX_ATTEMPTS``. Keyed on
+    the ticket's ``jti``, never on the caller's address. The increment is one
+    conditional UPDATE, so two attempts racing on the same ticket cannot both
+    take the last try. Rows of expired tickets are swept here.
+    """
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.query(MfaStepTicket).filter(MfaStepTicket.expires_at < now).delete(
+        synchronize_session=False
+    )
+    db.commit()
+    if db.get(MfaStepTicket, ticket.jti) is None:
+        db.add(
+            MfaStepTicket(
+                jti=ticket.jti,
+                user_id=ticket.user_id,
+                attempts=0,
+                expires_at=ticket.expires_at,
+            )
+        )
+        try:
+            db.commit()
+        except IntegrityError:
+            # A concurrent first attempt wrote it; count against that row.
+            db.rollback()
+    counted = (
+        db.query(MfaStepTicket)
+        .filter(
+            MfaStepTicket.jti == ticket.jti,
+            MfaStepTicket.used_at.is_(None),
+            MfaStepTicket.attempts < MFA_TICKET_MAX_ATTEMPTS,
+        )
+        .update(
+            {MfaStepTicket.attempts: MfaStepTicket.attempts + 1},
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+    row = db.get(MfaStepTicket, ticket.jti)
+    db.refresh(row)
+    if counted == 0:
+        raise TicketClosedError("used" if row.used_at is not None else "too_many_attempts")
+    return row.attempts
+
+
+def use_ticket(db: Session, ticket: MfaTicket) -> bool:
+    """Mark ``ticket`` used once its code was accepted, so it buys one
+    session. False when another request used it first."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    used = (
+        db.query(MfaStepTicket)
+        .filter(MfaStepTicket.jti == ticket.jti, MfaStepTicket.used_at.is_(None))
+        .update({MfaStepTicket.used_at: now}, synchronize_session=False)
+    )
+    db.commit()
+    return used == 1

@@ -360,7 +360,19 @@ def run_generation(db: Session, user: User, output: Output) -> Output:
     `POST /author/outputs?sync=true`. A row cancelled before it starts is
     left alone; a cancel during generation ends it as `cancelled` with no
     content.
+
+    E-5.2: the whole run is metered against ``user`` (feature author), from
+    the task, the inline route and a newsletter issue alike. The scope closes
+    after the rollback a failed or cancelled run does, so a cancel never has
+    half its content committed by the meter.
     """
+    from app.services import usage_service
+
+    with usage_service.metered(db, user.id, feature="author"):
+        return _run_generation(db, user, output)
+
+
+def _run_generation(db: Session, user: User, output: Output) -> Output:
     outputter = get_outputter(output.kind)
     if outputter is None:
         raise NoOutputterError(

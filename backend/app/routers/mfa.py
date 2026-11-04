@@ -10,9 +10,18 @@
 - ``POST /auth/login/mfa`` — second-step login; consumes the
   ``mfa_token`` from the first-step ``/auth/login`` response and
   validates a TOTP / recovery code. On success issues the real access
-  token + writes a session row.
+  token + writes a session row. One ticket takes at most
+  ``mfa_service.MFA_TICKET_MAX_ATTEMPTS`` codes and buys one session
+  (T-5.4.13).
+
+The TOTP secret is encrypted with the install's shared key (D-043). When
+``BYOK_ENCRYPTION_KEY`` is malformed, every route here that encrypts or
+decrypts it answers 503 with the cause (T-5.6.9); a recovery code still
+works, since those are stored hashed.
 """
 from __future__ import annotations
+
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -21,15 +30,40 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.auth import TokenResponse
-from app.services import audit_service, auth_service, mfa_service
+from app.services import audit_service, auth_service, byok_service, mfa_service
 from app.services.audit_service import Event
+from app.services.byok_service import EncryptionConfigurationError
 from app.services.mfa_service import (
     MfaAlreadyEnabledError,
     MfaError,
     MfaNotEnrolledError,
+    TicketClosedError,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# What /auth/login/mfa says when the ticket is no good, so the sign-in page
+# can send the reader back to the first step. The frontend matches on these
+# strings (components/auth/MfaCodeStep.tsx).
+TICKET_EXPIRED_DETAIL = "Invalid or expired MFA session"
+TICKET_EXHAUSTED_DETAIL = "Too many codes tried for this sign-in. Start over and sign in again."
+
+
+def _key_unavailable(what: str) -> HTTPException:
+    """T-5.6.9: the 503 for a malformed ``BYOK_ENCRYPTION_KEY``. The user
+    cannot fix it, so say so; the operator gets a log line. Neither carries
+    the key."""
+    logger.error(
+        "two-step verification: %s refused: BYOK_ENCRYPTION_KEY is set but is "
+        "not a valid Fernet key",
+        what,
+    )
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=byok_service.invalid_key_detail(what),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +117,9 @@ def enroll(
         secret, uri = mfa_service.enroll(db, current_user)
     except MfaAlreadyEnabledError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except EncryptionConfigurationError:
+        db.rollback()
+        raise _key_unavailable("Two-step verification cannot be set up")
     audit_service.record(
         db,
         event=Event.MFA_ENROLLED,
@@ -109,6 +146,8 @@ def verify_enrollment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except MfaError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except EncryptionConfigurationError:
+        raise _key_unavailable("Two-step verification cannot be turned on")
     audit_service.record(
         db,
         event=Event.MFA_ENABLED,
@@ -142,7 +181,13 @@ def disable(
     if not mfa_service.is_enabled(db, current_user.id):
         # Already disabled — idempotent.
         return MfaDisableResponse(disabled=True)
-    if not mfa_service.verify_at_login(db, current_user.id, payload.code):
+    try:
+        ok = mfa_service.verify_at_login(db, current_user.id, payload.code)
+    except EncryptionConfigurationError:
+        raise _key_unavailable(
+            "The code cannot be checked (a recovery code still works)"
+        )
+    if not ok:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid TOTP / recovery code",
@@ -170,9 +215,15 @@ def login_mfa(
 ) -> TokenResponse:
     """Second-step login: validate the TOTP / recovery code and issue
     the real access token. Caller must pass the ``mfa_token`` from
-    the first-step ``/auth/login`` response (5 minute TTL)."""
-    user_id = mfa_service.decode_mfa_step_token(payload.mfa_token)
-    if user_id is None:
+    the first-step ``/auth/login`` response (5 minute TTL).
+
+    T-5.4.13: every code checked counts against the ticket, keyed on its
+    ``jti`` (not on the caller's address, which an attacker can change).
+    The attempt that uses up ``MFA_TICKET_MAX_ATTEMPTS`` and every one after
+    it answer ``TICKET_EXHAUSTED_DETAIL``: the ticket is dead, even for the
+    right code, and sign-in starts over. A ticket buys one session."""
+    ticket = mfa_service.decode_mfa_step_ticket(payload.mfa_token)
+    if ticket is None:
         # Audit the attempt with no user_id — same shape as a regular
         # bad-token failure.
         audit_service.record(
@@ -183,20 +234,59 @@ def login_mfa(
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired MFA session",
+            detail=TICKET_EXPIRED_DETAIL,
         )
+    user_id = ticket.user_id
 
-    if not mfa_service.verify_at_login(db, user_id, payload.code):
+    # Counted before the code is checked, so a check that fails for any
+    # reason (the 503 below among them, which still tries recovery codes)
+    # spends an attempt.
+    try:
+        attempts = mfa_service.count_ticket_attempt(db, ticket)
+    except TicketClosedError as closed:
+        exhausted = closed.reason == "too_many_attempts"
         audit_service.record(
             db,
             event=Event.MFA_LOGIN_FAILURE,
             user_id=user_id,
             request=request,
-            metadata={"reason": "invalid_code"},
+            metadata={"reason": "too_many_attempts" if exhausted else "ticket_used"},
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid TOTP or recovery code",
+            detail=TICKET_EXHAUSTED_DETAIL if exhausted else TICKET_EXPIRED_DETAIL,
+        )
+
+    try:
+        ok = mfa_service.verify_at_login(db, user_id, payload.code)
+    except EncryptionConfigurationError:
+        raise _key_unavailable(
+            "The authenticator code cannot be checked (a recovery code still works)"
+        )
+    if not ok:
+        exhausted = attempts >= mfa_service.MFA_TICKET_MAX_ATTEMPTS
+        audit_service.record(
+            db,
+            event=Event.MFA_LOGIN_FAILURE,
+            user_id=user_id,
+            request=request,
+            metadata={
+                "reason": "too_many_attempts" if exhausted else "invalid_code",
+                "attempt": attempts,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=TICKET_EXHAUSTED_DETAIL if exhausted else "Invalid TOTP or recovery code",
+        )
+
+    # The code was right: spend the ticket, so it buys one session even if
+    # it was seen in transit. Losing that race means another request with
+    # this ticket just signed in.
+    if not mfa_service.use_ticket(db, ticket):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=TICKET_EXPIRED_DETAIL,
         )
 
     # Success — issue the real token + session row.

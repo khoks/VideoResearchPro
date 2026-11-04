@@ -1,16 +1,15 @@
-import { Link } from 'react-router-dom';
-import { Card } from '../components/primitives';
 import { SessionsCard } from '../components/security/SessionsCard';
 import { TwoStepCard } from '../components/security/TwoStepCard';
+import { PasswordCard } from '../components/security/PasswordCard';
 import { ActivityCard } from '../components/security/ActivityCard';
-import { SectionTitle } from '../components/security/SectionTitle';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, space } from '../theme';
 
 /**
  * `/account/security`: E-5.4's backend made visible. Where the account is
- * signed in (T-5.4.7), two-step verification (T-5.4.6), the password reset
- * (T-5.4.3) and recent account activity (T-5.4.4).
+ * signed in (T-5.4.7), two-step verification (T-5.4.6), changing the
+ * password (T-5.4.14; the reset flow, T-5.4.3, is its "Forgot it?") and
+ * recent account activity (T-5.4.4).
  */
 export function AccountSecurityPage() {
   const c = useColors();
@@ -28,16 +27,7 @@ export function AccountSecurityPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: space['5'] }}>
         <SessionsCard />
         <TwoStepCard />
-        <Card>
-          <SectionTitle>Password</SectionTitle>
-          <p style={text}>
-            To set a new password, request a reset code: it goes to your email, or on a self-hosted install without email set up,
-            to the server log.{' '}
-            <Link to="/forgot-password" style={{ color: c.accent, fontWeight: fontWeight.semibold, textDecoration: 'none' }}>
-              Reset your password
-            </Link>
-          </p>
-        </Card>
+        <PasswordCard />
         <ActivityCard />
       </div>
     </div>

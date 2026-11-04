@@ -2,8 +2,9 @@ import api from './api';
 
 /**
  * E-5.4's account endpoints: sessions (T-5.4.7), two-step verification
- * (T-5.4.6), the audit log (T-5.4.4), password reset (T-5.4.3) and OAuth
- * (T-5.4.5). The sign-in calls themselves live in AuthContext.
+ * (T-5.4.6), the audit log (T-5.4.4), password change (T-5.4.14) and reset
+ * (T-5.4.3), and OAuth (T-5.4.5). The sign-in calls themselves live in
+ * AuthContext.
  */
 
 /** `GET /auth/sessions` row. */
@@ -73,6 +74,18 @@ export const accountSecurityApi = {
       .post<{ enabled: boolean; recovery_codes: string[] }>('/auth/mfa/verify-enrollment', { code })
       .then((r) => r.data),
   mfaDisable: (code: string) => api.delete<{ disabled: boolean }>('/auth/mfa', { data: { code } }).then((r) => r.data),
+
+  /**
+   * T-5.4.14: the server signs out every other session and keeps this one.
+   * A refusal is a 400 or 429 whose `detail` says why, never a 401.
+   */
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api
+      .post<{ message: string; sessions_revoked: number }>('/auth/password/change', {
+        current_password: currentPassword,
+        new_password: newPassword,
+      })
+      .then((r) => r.data),
 
   /** Always the same generic answer; the code goes by email or the server log. */
   requestPasswordReset: (email: string) => api.post('/auth/password-reset/request', { email }).then(() => undefined),

@@ -40,34 +40,19 @@ def _resolve_user(token: str | None, db: Session) -> User:
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    if not token:
+    # The same check the /ws/jobs handshake makes (T-5.4.15): an access
+    # token, not the second-factor ticket (signed with the same key, with a
+    # `jti` but no session row, so it would pass the session check, and only
+    # decode_access_token's refusal stops it skipping two-step verification);
+    # a session that is not revoked (T-5.4.7; a token with no `jti` predates
+    # sessions); a user that still exists.
+    resolved = auth_service.authenticate_access_token(db, token)
+    if resolved is None:
         raise credentials_exc
-
-    # decode_access_token, not decode_token: the second-factor ticket is
-    # signed with the same key and has no `jti`, so it would pass every check
-    # below and skip two-step verification.
-    payload = auth_service.decode_access_token(token)
-    if not payload:
-        raise credentials_exc
-
-    user_id = payload.get("sub")
-    if not isinstance(user_id, str):
-        raise credentials_exc
-
-    # T-5.4.7: enforce session revocation. If the JWT carries a `jti`
-    # claim and the session row is revoked, reject the request even
-    # though the JWT signature is valid. Tokens without `jti` (issued
-    # before T-5.4.7) skip this check via is_session_active's "missing
-    # row → assume active" semantics for back-compat.
-    jti = payload.get("jti")
-    if isinstance(jti, str) and not auth_service.is_session_active(db, jti):
-        raise credentials_exc
-
-    user = auth_service.get_user_by_id(db, user_id)
-    if not user:
-        raise credentials_exc
+    user, payload = resolved
 
     # Best-effort: bump last_used_at so the session-list UI sorts right.
+    jti = payload.get("jti")
     if isinstance(jti, str):
         auth_service.touch_session(db, jti)
 

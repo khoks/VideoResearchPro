@@ -278,11 +278,11 @@ describe('JobDetailPage Q&A: answer depth', () => {
 
   it('shows a picked depth in the docked composer, and drops it from there', () => {
     mount();
-    expect(composer()!.textContent).not.toContain('Answer depth for this ask');
+    expect(composer()!.textContent).not.toContain('Answer depth:');
     pick('brief');
-    expect(composer()!.textContent).toContain('Answer depth for this ask: Brief');
+    expect(composer()!.textContent).toContain('Answer depth: Brief');
     act(() => buttonLabelled('Clear').click());
     expect(depthSelect()!.value).toBe('');
-    expect(composer()!.textContent).not.toContain('Answer depth for this ask');
+    expect(composer()!.textContent).not.toContain('Answer depth:');
   });
 });

@@ -24,7 +24,10 @@ assertion rejects that mutant. Run by hand on 2026-11-04:
 - the agent ignoring the multiplier fails the same tests for brief and deep;
 - the brief never reaching the prompt fails all three preference cases;
 - bracketing one document (`resolve_scale(None, pref)`) fails
-  `test_unset_is_the_call_s_1_14_8_shipped`: 1.25x, not 1.0.
+  `test_unset_is_the_call_s_1_14_8_shipped`: 1.25x, not 1.0;
+- dropping the thinking reserve, or the cap at the unset budget, fails the
+  `reasoning` tests;
+- dropping the router's empty-report guard fails the `failed` tests.
 """
 from __future__ import annotations
 

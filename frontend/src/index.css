@@ -753,7 +753,7 @@ button.reader-citation {
     display: flex;
   }
   .qa-composer-depth button {
-    min-height: 44px;
+    min-height: 44px !important;
   }
 }
 

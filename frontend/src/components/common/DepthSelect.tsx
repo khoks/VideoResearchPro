@@ -66,7 +66,7 @@ export function ComposerDepthNote({ depth, onClear }: { depth: Depth | null; onC
         color: c.textSecondary,
       }}
     >
-      <span>Answer depth for this ask: {depthLabel(depth)}</span>
+      <span>Answer depth: {depthLabel(depth)}</span>
       <Button size="sm" variant="tertiary" onClick={onClear}>
         Clear
       </Button>

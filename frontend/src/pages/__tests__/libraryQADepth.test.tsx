@@ -211,11 +211,11 @@ describe('LibraryQAPage: answer depth', () => {
 
   it('shows a picked depth in the docked composer, and drops it from there', async () => {
     await mount();
-    expect(composer()!.textContent).not.toContain('Answer depth for this ask');
+    expect(composer()!.textContent).not.toContain('Answer depth:');
     pick('standard');
-    expect(composer()!.textContent).toContain('Answer depth for this ask: Standard');
+    expect(composer()!.textContent).toContain('Answer depth: Standard');
     act(() => button('Clear').click());
     expect(depthSelect()!.value).toBe('');
-    expect(composer()!.textContent).not.toContain('Answer depth for this ask');
+    expect(composer()!.textContent).not.toContain('Answer depth:');
   });
 });

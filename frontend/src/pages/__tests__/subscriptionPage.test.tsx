@@ -244,6 +244,7 @@ describe('SubscriptionPage usage (E-5.2)', () => {
     const search = panel.querySelector('[data-usage-feature="search"]')!;
     expect(search.querySelectorAll('td')[0].textContent).toBe('1.2K in · 300 out2 model calls200 YouTube units');
     expect(panel.querySelector('[data-usage-total]')!.textContent).toContain('413.5K in · 51.3K out');
+    expect(panel.querySelector('[data-usage-since]')!.textContent).toContain('Recording started on 2026-10-20');
   });
 
   it('says nothing is recorded yet instead of showing an empty table', async () => {
@@ -251,5 +252,6 @@ describe('SubscriptionPage usage (E-5.2)', () => {
     const panel = host.querySelector('[data-usage-summary]')!;
     expect(panel.querySelector('[data-usage-empty]')).not.toBeNull();
     expect(panel.querySelector('table')).toBeNull();
+    expect(panel.querySelector('[data-usage-since]')).toBeNull();
   });
 });

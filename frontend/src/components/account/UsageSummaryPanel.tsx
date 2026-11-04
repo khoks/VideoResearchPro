@@ -129,6 +129,11 @@ export function UsageSummaryPanel() {
           </tbody>
         </table>
       )}
+      {data && data.metered_since && data.metered_since > data.window_start && (
+        <p data-usage-since style={{ ...muted, marginTop: space['3'], fontSize: fontSize.xs }}>
+          Recording started on {data.metered_since}, so the 30-day figures cover less than 30 days.
+        </p>
+      )}
     </section>
   );
 }

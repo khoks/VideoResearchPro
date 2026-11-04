@@ -9,8 +9,6 @@ import { Button, Card, FormField, Select, Textarea } from '../primitives';
 import { InfoStripe, LibraryQAExchangeCard } from '../qa/LibraryQAExchangeCard';
 import { useAskShelf, useShelfHasSources, useShelfQuestions } from '../../hooks/useShelves';
 import { useFeatureAvailable } from '../../hooks/useFeatureAvailable';
-import { DepthSelect } from '../common/DepthSelect';
-import { withDepth, type Depth } from '../../utils/depth';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, space } from '../../theme';
 import type { AnswerLanguage } from '../../types/qa';
@@ -30,8 +28,6 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
   const available = useFeatureAvailable('library_qa');
   const [question, setQuestion] = useState('');
   const [language, setLanguage] = useState<AnswerLanguage>('en');
-  // R4: this ask's depth; null sends none and the shelf's size decides.
-  const [depth, setDepth] = useState<Depth | null>(null);
 
   const empty = hasSources.isSuccess && !hasSources.data;
   const disabled = !available || empty || ask.isPending;
@@ -41,7 +37,7 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
     const q = question.trim();
     if (!q || disabled) return;
     try {
-      await ask.mutateAsync(withDepth({ question: q, answer_language: language }, depth));
+      await ask.mutateAsync({ question: q, answer_language: language });
       setQuestion('');
     } catch {
       // the global mutation cache already toasted; keep the question to retry
@@ -120,18 +116,6 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
                       </option>
                     ))}
                   </Select>
-                )}
-              </FormField>
-              <FormField label="Depth">
-                {(controlId) => (
-                  <DepthSelect
-                    id={controlId}
-                    value={depth}
-                    onChange={setDepth}
-                    unsetLabel="Default"
-                    title="Default: sized to how much the shelf's sources hold."
-                    disabled={ask.isPending}
-                  />
                 )}
               </FormField>
               <Button

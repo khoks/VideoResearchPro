@@ -4,7 +4,9 @@
  * the other per-ask option (the answer language), starts on Default, and the
  * ask carries `output_length` only when a depth was picked, on every path:
  * "Skip clarifications", "Confirm & search" and a Shift-clicked suggestion.
- * The real hooks run; only the HTTP layer is replaced.
+ * A pick is for that one ask: it clears when the answer lands, and until then
+ * it shows in the docked composer. The real hooks run; only the HTTP layer is
+ * replaced.
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -65,6 +67,7 @@ function typeInto(input: HTMLInputElement, value: string) {
 const button = (label: string) =>
   Array.from(host.querySelectorAll('button')).find((b) => b.textContent?.trim() === label) as HTMLButtonElement;
 const depthSelect = () => host.querySelector<HTMLSelectElement>('select[aria-label="Answer depth"]');
+const composer = () => host.querySelector('.qa-composer');
 
 function pick(depth: string) {
   const select = depthSelect()!;
@@ -90,12 +93,17 @@ async function mount() {
   await flush();
 }
 
-async function askThroughClarify(finish: 'Skip clarifications' | 'Confirm & search') {
-  typeInto(host.querySelector<HTMLInputElement>('input[aria-label="Question"]')!, 'What changed in rates?');
+/** Type the question and press Ask, which opens the clarify step. */
+async function startAsk(question: string) {
+  typeInto(host.querySelector<HTMLInputElement>('input[aria-label="Question"]')!, question);
   act(() => {
     host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   });
   await flush();
+}
+
+async function askThroughClarify(finish: 'Skip clarifications' | 'Confirm & search') {
+  await startAsk('What changed in rates?');
   act(() => button(finish).click());
   await flush();
 }
@@ -163,5 +171,51 @@ describe('LibraryQAPage: answer depth', () => {
     await flush();
     expect(clarifyMock).not.toHaveBeenCalled();
     expect(askMock).toHaveBeenCalledWith({ question: SUGGESTED, answer_language: 'en', output_length: 'deep' });
+  });
+
+  it.each(['Skip clarifications', 'Confirm & search'] as const)(
+    'applies to that one ask: after "%s" the next request omits it',
+    async (finish) => {
+      await mount();
+      pick('brief');
+      await askThroughClarify(finish);
+      expect(askMock.mock.calls[0][0].output_length).toBe('brief');
+      expect(depthSelect()!.value).toBe('');
+
+      await askThroughClarify('Skip clarifications');
+      expect(askMock).toHaveBeenCalledTimes(2);
+      expect('output_length' in askMock.mock.calls[1][0]).toBe(false);
+    },
+  );
+
+  it('stays for the retry when the ask fails', async () => {
+    askMock.mockRejectedValueOnce(new Error('boom'));
+    await mount();
+    pick('deep');
+    const suggestion = Array.from(host.querySelectorAll('button')).find((b) => b.textContent?.includes(SUGGESTED))!;
+    await act(async () => {
+      suggestion.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
+    });
+    await flush();
+    expect(askMock).toHaveBeenCalledTimes(1);
+    expect(depthSelect()!.value).toBe('deep');
+  });
+
+  it('stays through "Edit", which is still the same ask', async () => {
+    await mount();
+    pick('brief');
+    await startAsk('What changed in rates?');
+    act(() => button('← Edit').click());
+    expect(depthSelect()!.value).toBe('brief');
+  });
+
+  it('shows a picked depth in the docked composer, and drops it from there', async () => {
+    await mount();
+    expect(composer()!.textContent).not.toContain('Answer depth for this ask');
+    pick('standard');
+    expect(composer()!.textContent).toContain('Answer depth for this ask: Standard');
+    act(() => button('Clear').click());
+    expect(depthSelect()!.value).toBe('');
+    expect(composer()!.textContent).not.toContain('Answer depth for this ask');
   });
 });

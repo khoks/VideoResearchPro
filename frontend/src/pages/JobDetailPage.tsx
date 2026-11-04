@@ -17,7 +17,7 @@ import { ProgressBar } from '../components/common/ProgressBar';
 import { CitationLink } from '../components/citation';
 import { DockedComposer, QADock, QAThread } from '../components/qa/Composer';
 import { SuggestionCard } from '../components/qa/SuggestionCard';
-import { DepthSelect } from '../components/common/DepthSelect';
+import { ComposerDepthNote, DepthSelect } from '../components/common/DepthSelect';
 import { useExchangeFocus } from '../hooks/useExchangeFocus';
 import { NotesPanel } from '../components/notes';
 import { JobShelfChips, ShelfPicker } from '../components/shelves';
@@ -856,8 +856,9 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
   const [interpretation, setInterpretation] = useState('');
   const [clarifications, setClarifications] = useState<string[]>([]);
   const [clarificationAnswers, setClarificationAnswers] = useState<string[]>([]);
-  // R4: this ask's depth. Null sends none, so the run's own depth applies and,
-  // with none set there, the corpus size decides (the router's precedence).
+  // R4: the next ask's depth, and that ask's only: it clears once the answer
+  // lands. Null sends none, so the run's own depth applies and, with none set
+  // there, the corpus size decides (the router's precedence).
   const [depth, setDepth] = useState<Depth | null>(null);
   const runDepth = depthOf(jobDepth);
 
@@ -877,6 +878,14 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
     setInterpretation('');
     setClarifications([]);
     setClarificationAnswers([]);
+  };
+
+  // An answer landed. "Edit question" uses resetToAsk alone: that is still
+  // the same ask, so it keeps the depth; a failed ask keeps it for the retry.
+  const finishAsk = () => {
+    setQuestion('');
+    setDepth(null);
+    resetToAsk();
   };
 
   // Streaming-first ask. Falls back to the classic non-streaming mutation
@@ -919,16 +928,14 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
 
     const ok = await submitQuestion({ question, context });
     if (!ok) return;
-    setQuestion('');
-    resetToAsk();
+    finishAsk();
   };
 
   const handleSkipAndAsk = async () => {
     if (!qaAvailable) return;
     const ok = await submitQuestion({ question });
     if (!ok) return;
-    setQuestion('');
-    resetToAsk();
+    finishAsk();
   };
 
   // S-8.4.2: Shift-click on a suggestion asks it at once, skipping the
@@ -938,8 +945,7 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
     setQuestion(q);
     const ok = await submitQuestion({ question: q });
     if (!ok) return;
-    setQuestion('');
-    resetToAsk();
+    finishAsk();
   };
 
   // `?exchange=<id>` from the palette lands on that card (S-8.2.2).
@@ -959,7 +965,8 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
       >
         <SectionHeader title="Ask questions" description="Citation-grounded answers drawn from this job's transcripts and report." />
         {/* R4: a per-ask override, out of the composer's way. The docked phone
-            composer has no width to spare beside Ask (S-8.12.1). */}
+            composer has no width to spare beside Ask (S-8.12.1), so a picked
+            depth shows there as a note instead. */}
         <label
           style={{
             display: 'flex',
@@ -1002,6 +1009,7 @@ function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | nul
             </p>
           )}
           <DockedComposer>
+          <ComposerDepthNote depth={depth} onClear={() => setDepth(null)} />
           <form onSubmit={handleAsk} style={{ display: 'flex', gap: space['2'], marginBottom: space['3'] }}>
             <div style={{ flex: 1 }}>
               <Input

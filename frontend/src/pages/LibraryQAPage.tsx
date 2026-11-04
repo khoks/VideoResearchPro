@@ -11,7 +11,7 @@ import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { DockedComposer, QADock, QAThread } from '../components/qa/Composer';
 import { InfoStripe, LibraryQAExchangeCard } from '../components/qa/LibraryQAExchangeCard';
 import { useExchangeFocus } from '../hooks/useExchangeFocus';
-import { DepthSelect } from '../components/common/DepthSelect';
+import { ComposerDepthNote, DepthSelect } from '../components/common/DepthSelect';
 import {
   Button,
   Card,
@@ -58,7 +58,8 @@ export function LibraryQAPage() {
 
   const [question, setQuestion] = useState('');
   const [language, setLanguage] = useState<AnswerLanguage>('en');
-  // R4: this ask's depth; null sends none and the corpus size decides.
+  // R4: the next ask's depth, and that ask's only: it clears once the answer
+  // lands. Null sends none and the corpus size decides.
   const [depth, setDepth] = useState<Depth | null>(null);
   const [step, setStep] = useState<'ask' | 'clarify'>('ask');
   const [interpretation, setInterpretation] = useState('');
@@ -74,6 +75,14 @@ export function LibraryQAPage() {
     setInterpretation('');
     setClarifications([]);
     setClarificationAnswers([]);
+  };
+
+  // An answer landed. "Edit" uses resetToAsk alone: that is still the same
+  // ask, so it keeps the depth; a failed ask keeps it for the retry.
+  const finishAsk = () => {
+    setQuestion('');
+    setDepth(null);
+    resetToAsk();
   };
 
   const handleAsk = async (e: React.FormEvent) => {
@@ -92,15 +101,13 @@ export function LibraryQAPage() {
     const context = buildClarifyContext(interpretation, clarifications, clarificationAnswers);
 
     await askQuestion.mutateAsync(withDepth({ question, answer_language: language, context }, depth));
-    setQuestion('');
-    resetToAsk();
+    finishAsk();
   };
 
   const handleSkipAndAsk = async () => {
     if (!libraryQAAvailable) return;
     await askQuestion.mutateAsync(withDepth({ question, answer_language: language }, depth));
-    setQuestion('');
-    resetToAsk();
+    finishAsk();
   };
 
   // S-8.4.2: Shift-click on a suggestion asks at once (no clarify step).
@@ -112,8 +119,7 @@ export function LibraryQAPage() {
     } catch {
       return; // the global mutation cache already toasted
     }
-    setQuestion('');
-    resetToAsk();
+    finishAsk();
   };
 
   // A suggestion picked in the knowledge drawer arrives as route state:
@@ -260,6 +266,7 @@ export function LibraryQAPage() {
               </div>
             )}
             <DockedComposer>
+            <ComposerDepthNote depth={depth} onClear={() => setDepth(null)} />
             <form
               onSubmit={handleAsk}
               style={{

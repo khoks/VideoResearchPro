@@ -4,7 +4,9 @@
  * own) but the page never sent one. The control starts on Default, which
  * names the run's own depth when it has one; the ask carries
  * `output_length` only when a depth was picked, on the streaming path, its
- * non-streaming fallback and a Shift-clicked suggestion alike.
+ * non-streaming fallback and a Shift-clicked suggestion alike. A pick is for
+ * that one ask: it clears when the answer lands, and until then it shows in the
+ * docked composer, where a phone reader has lost sight of the select.
  */
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -79,7 +81,7 @@ vi.mock('../../components/qa/SuggestionCard', () => ({
 vi.mock('../../components/qa/Composer', () => ({
   QADock: ({ children }: { children: ReactNode }) => <>{children}</>,
   QAThread: ({ children }: { children: ReactNode }) => <>{children}</>,
-  DockedComposer: ({ children }: { children: ReactNode }) => <>{children}</>,
+  DockedComposer: ({ children }: { children: ReactNode }) => <div data-testid="composer">{children}</div>,
 }));
 
 import { JobDetailPage } from '../JobDetailPage';
@@ -148,7 +150,12 @@ function pick(depth: string) {
   });
 }
 
-async function ask(question: string) {
+const composer = () => host.querySelector('[data-testid="composer"]');
+const buttonLabelled = (label: string) =>
+  Array.from(host.querySelectorAll('button')).find((b) => b.textContent?.trim() === label) as HTMLButtonElement;
+
+/** Type the question and press Ask, which opens the clarify step. */
+async function startAsk(question: string) {
   const input = host.querySelector<HTMLInputElement>('input[placeholder="Ask a question about the research…"]')!;
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
   act(() => {
@@ -159,10 +166,11 @@ async function ask(question: string) {
     input.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   });
   await flush();
-  const skip = Array.from(host.querySelectorAll('button')).find(
-    (b) => b.textContent?.trim() === 'Skip clarifications',
-  ) as HTMLButtonElement;
-  await act(async () => skip.click());
+}
+
+async function ask(question: string) {
+  await startAsk(question);
+  await act(async () => buttonLabelled('Skip clarifications').click());
   await flush();
 }
 
@@ -226,5 +234,55 @@ describe('JobDetailPage Q&A: answer depth', () => {
     await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="suggestion"]')!.click());
     await flush();
     expect(streamed).toEqual([{ question: 'What does a lagoon cost?', output_length: 'deep' }]);
+  });
+
+  it('applies to that one ask: the next request omits it and the control is back on Default', async () => {
+    job = { ...JOB, output_length: 'deep' };
+    mount();
+    pick('brief');
+    await ask('What does a lagoon cost?');
+    expect(streamed[0].output_length).toBe('brief');
+    expect(depthSelect()!.value).toBe('');
+
+    await ask('How long does one last?');
+    expect(streamed).toHaveLength(2);
+    expect('output_length' in streamed[1]).toBe(false);
+  });
+
+  it('clears after a suggestion is answered too', async () => {
+    mount();
+    pick('deep');
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="suggestion"]')!.click());
+    await flush();
+    expect(depthSelect()!.value).toBe('');
+  });
+
+  it('stays for the retry when the ask fails', async () => {
+    streamStatus = 500;
+    mount();
+    pick('brief');
+    await ask('What does a lagoon cost?');
+    expect(depthSelect()!.value).toBe('brief');
+  });
+
+  it('stays through "Edit question", which is still the same ask', async () => {
+    mount();
+    pick('brief');
+    await startAsk('What does a lagoon cost?');
+    const edit = Array.from(host.querySelectorAll('button')).find((b) => b.textContent?.includes('Edit question'))!;
+    act(() => edit.click());
+    expect(depthSelect()!.value).toBe('brief');
+    await ask('What does a tidal lagoon cost?');
+    expect(streamed).toEqual([{ question: 'What does a tidal lagoon cost?', output_length: 'brief' }]);
+  });
+
+  it('shows a picked depth in the docked composer, and drops it from there', () => {
+    mount();
+    expect(composer()!.textContent).not.toContain('Answer depth for this ask');
+    pick('brief');
+    expect(composer()!.textContent).toContain('Answer depth for this ask: Brief');
+    act(() => buttonLabelled('Clear').click());
+    expect(depthSelect()!.value).toBe('');
+    expect(composer()!.textContent).not.toContain('Answer depth for this ask');
   });
 });

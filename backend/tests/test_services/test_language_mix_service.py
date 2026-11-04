@@ -46,6 +46,24 @@ def test_chunks_built_from_the_stored_profile_equal_chunks_that_profile_themselv
     )
 
 
+def test_the_handed_profile_is_what_the_chunks_carry():
+    """The chunker uses the profile it is handed rather than re-profiling the
+    segments it chunks, which on a visual run include our English
+    annotations; the job loops hand it the profile of the speech alone."""
+    speech = _segments(HINDI, n=4)
+    annotated = [*speech, {"text": format_annotation(9.0, "A slide reads Quarterly Revenue Growth " * 6),
+                           "start": 9.0, "duration": 0.01, "extra": {"atomic": True, "kind": "visual"}}]
+    profile = language_mix_service.compute(speech)
+
+    chunks = chunk_transcript(annotated, video_metadata={"document_id": "d"}, language_profile=profile)
+
+    expected = code_mixing_service.chunk_metadata_from_profile(profile)
+    assert all({k: c["metadata"][k] for k in expected} == expected for c in chunks)
+    assert expected["code_mix_share"] == 1.0
+    # Re-profiled with the annotation, the share would have moved.
+    assert code_mixing_service.chunk_metadata_for_transcript(annotated)["code_mix_share"] < 1.0
+
+
 def test_record_writes_once_and_compares_parsed_profiles():
     doc = SimpleNamespace(language_mix=None, document_id="d1")
     profile = language_mix_service.compute(_segments(HINGLISH))

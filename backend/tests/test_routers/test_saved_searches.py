@@ -352,4 +352,5 @@ def test_a_shelf_run_shares_the_routes_core_and_drops_off_shelf_citations(db, pr
     kept = [r["video_id"] for r in json.loads(db.get(LibraryQAExchange, out["exchange_id"]).references_json)]
     assert kept == [in_shelf.video_id]
     db.refresh(ss)
-    assert json.loads(ss.last_reference_ids_json) == [in_shelf.video_id]
+    # T-8.3.3.10: the cited set is keyed on document_id, whatever the reference named.
+    assert json.loads(ss.last_reference_ids_json) == [in_shelf.document_id]

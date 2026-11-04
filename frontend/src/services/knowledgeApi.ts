@@ -18,6 +18,8 @@ export interface KnowledgeArtifact {
   published_at?: string | null;
   /** S-1.15.3: the depth the report was written at; null when none was asked for. */
   output_length?: Depth | null;
+  /** T-1.15.3.8: the report stopped at its token budget. False or absent otherwise. */
+  report_cut_off?: boolean;
 }
 
 export const knowledgeApi = {

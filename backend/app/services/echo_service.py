@@ -189,10 +189,16 @@ def delete_context(
     db: Session, user_id: str, kind: str, key: str
 ) -> bool:
     """Delete a single personal-context row. Returns True iff a row
-    was deleted."""
+    was deleted.
+
+    T-3.2.4.4: a fact a connector or importer derived is tombstoned in the
+    same commit, so the next sync or re-import does not write it again."""
+    from app.services import echo_fact_tombstones
+
     row = get_context(db, user_id, kind, key)
     if row is None:
         return False
+    echo_fact_tombstones.record_for_fact(db, row)
     db.delete(row)
     db.commit()
     _sync_vectors(db, user_id)
@@ -202,7 +208,13 @@ def delete_context(
 def revoke_source(db: Session, user_id: str, source: str) -> int:
     """Delete every row attributed to ``source`` for the user. Used
     when the user revokes a connector (e.g. unlinks Spotify). Returns
-    the number of rows deleted."""
+    the number of rows deleted.
+
+    T-3.2.4.4: this deletes facts without disconnecting anything, so each
+    derived one is tombstoned like a single delete: a still-connected
+    connector's next sync must not bring them all back."""
+    from app.services import echo_fact_tombstones
+
     rows = (
         db.query(PersonalContext)
         .filter(
@@ -212,6 +224,7 @@ def revoke_source(db: Session, user_id: str, source: str) -> int:
         .all()
     )
     for r in rows:
+        echo_fact_tombstones.record_for_fact(db, r)
         db.delete(r)
     if rows:
         db.commit()

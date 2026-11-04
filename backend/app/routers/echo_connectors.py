@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
 from app.models.user import User
-from app.services import activity_event_service, echo_connector_service
+from app.services import activity_event_service, echo_connector_service, echo_fact_tombstones
 from app.services.echo_connector_service import (
     ConnectError,
     ConnectorNotFound,
@@ -112,6 +112,24 @@ class ActivityResponse(BaseModel):
     items: list[ActivityItem]
     # Pass as `before` for the next page; null on the last page.
     next_before: datetime | None
+
+
+class FactTombstoneItem(BaseModel):
+    id: str
+    # The connector or importer name, and how the page names it.
+    connector: str
+    connector_display_name: str
+    kind: str
+    key: str
+    created_at: datetime
+
+
+class FactTombstoneList(BaseModel):
+    items: list[FactTombstoneItem]
+
+
+class FactTombstoneCleared(BaseModel):
+    cleared: bool
 
 
 def _item(db: Session, tenant_id: str, name: str) -> ConnectorItem:
@@ -237,3 +255,46 @@ def activity(
     return ActivityResponse(
         items=items, next_before=items[-1].occurred_at if len(items) == limit else None
     )
+
+
+# T-3.2.4.4: derived facts the user deleted, which syncs and re-imports skip.
+# A separate path, not under /echo/context/{kind}/{key}, which would swallow
+# a DELETE /echo/context/tombstones/{id}.
+
+
+@router.get("/fact-tombstones", response_model=FactTombstoneList)
+def list_fact_tombstones(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(ECHO),
+) -> FactTombstoneList:
+    """The caller's deleted derived facts, newest first: the keys their
+    connectors and importers will not write again."""
+    labels: dict[str, str] = {}
+    items = []
+    for row in echo_fact_tombstones.list_for_tenant(db, current_user.id):
+        if row.connector not in labels:
+            labels[row.connector] = echo_fact_tombstones.connector_label(row.connector)
+        items.append(
+            FactTombstoneItem(
+                id=row.id,
+                connector=row.connector,
+                connector_display_name=labels[row.connector],
+                kind=row.kind,
+                key=row.key,
+                created_at=_aware(row.created_at),
+            )
+        )
+    return FactTombstoneList(items=items)
+
+
+@router.delete("/fact-tombstones/{tombstone_id}", response_model=FactTombstoneCleared)
+def clear_fact_tombstone(
+    tombstone_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(ECHO),
+) -> FactTombstoneCleared:
+    """Let the connector write this fact again. Nothing is re-created now:
+    the next sync (or re-import) brings it back if the source still shows it."""
+    if not echo_fact_tombstones.clear(db, current_user.id, tombstone_id):
+        raise HTTPException(status_code=404, detail="Not found")
+    return FactTombstoneCleared(cleared=True)

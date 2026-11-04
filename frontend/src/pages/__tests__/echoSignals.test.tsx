@@ -9,8 +9,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { VoiceSignal, VoiceSignalList } from '../../services/echoApi';
-import { SIGNAL_TYPES, evidenceSummary, groupSignals, learningSummary, originLabel, sourceLabel } from '../../utils/echoSignals';
+import type { RejectedSignal, VoiceSignal, VoiceSignalList } from '../../services/echoApi';
+import { SIGNAL_TYPES, evidenceSummary, groupSignals, learningSummary, originLabel, restoreToast, sourceLabel } from '../../utils/echoSignals';
 import { useJobStore } from '../../stores/jobStore';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -22,6 +22,8 @@ const api = {
   rejectSignal: vi.fn(async (id: string) => ({ id })),
   exportSignals: vi.fn(async () => undefined),
   learnSignals: vi.fn(async () => ({ status: 'queued', pending: 3 })),
+  listRejectedSignals: vi.fn<() => Promise<{ items: RejectedSignal[] }>>(),
+  restoreSignal: vi.fn(async (id: string) => ({ signal: { id }, live: true })),
 };
 vi.mock('../../services/echoApi', () => ({
   echoApi: {
@@ -31,6 +33,8 @@ vi.mock('../../services/echoApi', () => ({
     rejectSignal: (id: string) => api.rejectSignal(id),
     exportSignals: () => api.exportSignals(),
     learnSignals: () => api.learnSignals(),
+    listRejectedSignals: () => api.listRejectedSignals(),
+    restoreSignal: (id: string) => api.restoreSignal(id),
   },
 }));
 
@@ -113,6 +117,8 @@ beforeEach(() => {
   api.rejectSignal.mockClear();
   api.exportSignals.mockClear();
   api.learnSignals.mockClear();
+  api.listRejectedSignals.mockReset().mockResolvedValue({ items: [] });
+  api.restoreSignal.mockReset().mockImplementation(async (id: string) => ({ signal: { id }, live: true }));
 });
 
 afterEach(() => {
@@ -280,6 +286,54 @@ describe('SignalsPanel', () => {
     await mount();
     await act(async () => buttons('Export voice profile')[0].click());
     expect(api.exportSignals).toHaveBeenCalled();
+  });
+});
+
+describe('Rejected (T-3.3.1.6)', () => {
+  const CRICKET: RejectedSignal = { ...signal({ id: 'sig-cricket', value: 'Cricket', language: 'en' }), rejected_at: '2026-10-20T10:00:00Z' };
+
+  it('is not shown while nothing is rejected', async () => {
+    await mount();
+    expect(host.querySelector('[data-rejected]')).toBeNull();
+    expect(buttons('Restore')).toHaveLength(0);
+  });
+
+  it('lists the rejections with their kind, and Restore calls the API', async () => {
+    api.listRejectedSignals.mockResolvedValue({ items: [CRICKET] });
+    await mount();
+    const section = host.querySelector('[data-rejected]')!;
+    expect(section.querySelector('summary')?.textContent).toBe('Rejected (1)');
+    const row = section.querySelector('[data-rejected-signal="sig-cricket"]')!;
+    expect(row.textContent).toContain('Cricket');
+    expect(row.textContent).toContain('English');
+    expect(row.textContent).toContain('rejected');
+    const before = api.listRejectedSignals.mock.calls.length;
+    await act(async () => (Array.from(row.querySelectorAll('button')).find((b) => b.textContent === 'Restore')!).click());
+    await flush();
+    expect(api.restoreSignal).toHaveBeenCalledWith('sig-cricket');
+    expect(api.listRejectedSignals.mock.calls.length).toBeGreaterThan(before);
+    expect(api.listSignals.mock.calls.length).toBeGreaterThan(1);
+    expect(useJobStore.getState().toasts.map((t) => t.message)).toContain(restoreToast(true));
+  });
+
+  it('says when a restored signal has no evidence left to show', async () => {
+    api.listRejectedSignals.mockResolvedValue({ items: [CRICKET] });
+    api.restoreSignal.mockResolvedValue({ signal: { id: 'sig-cricket' }, live: false });
+    await mount();
+    await act(async () => buttons('Restore')[0].click());
+    await flush();
+    expect(useJobStore.getState().toasts.map((t) => t.message)).toContain(restoreToast(false));
+    expect(restoreToast(false)).toContain('stays out of the list');
+  });
+
+  it('“That’s not me” refreshes the rejected list', async () => {
+    await mount();
+    const before = api.listRejectedSignals.mock.calls.length;
+    const row = host.querySelector('[data-signal="sig-framing"]')!;
+    act(() => (Array.from(row.querySelectorAll('button')).find((b) => b.textContent === "That's not me")!).click());
+    await act(async () => buttons("That's not me").find((b) => !host.contains(b))!.click());
+    await flush();
+    expect(api.listRejectedSignals.mock.calls.length).toBeGreaterThan(before);
   });
 });
 

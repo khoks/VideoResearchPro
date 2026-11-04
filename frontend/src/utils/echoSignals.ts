@@ -141,6 +141,14 @@ export function learnToast(status: LearnResponse['status']): { tone: 'success' |
   }
 }
 
+/** T-3.3.1.6: what "Restore" did. `live` is false when nothing the user
+ * wrote still shows the signal, so it stays out of the profile for now. */
+export function restoreToast(live: boolean): string {
+  return live
+    ? 'Restored. It is back in how you sound, and Echo may learn it again.'
+    : 'Restored. Echo may learn it again, but nothing you wrote still shows it, so it stays out of the list until something does.';
+}
+
 export interface SignalGroup {
   meta: SignalTypeMeta;
   items: VoiceSignal[];

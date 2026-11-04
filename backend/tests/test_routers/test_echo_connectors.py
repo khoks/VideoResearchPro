@@ -357,3 +357,322 @@ def test_the_sync_kind_is_registered_for_the_scheduler():
     from app.services import scheduler_service
 
     assert "echo_sync" in scheduler_service.registered_kinds()
+
+
+# ------------------------------------------------------------------ T-3.2.2.5: token refresh
+
+PAST = datetime(2020, 1, 1)
+
+
+class RefreshingConnector(FakeConnector):
+    """A provider whose access tokens expire (Google's last an hour)."""
+
+    name = "fake"
+
+    def __init__(self):
+        super().__init__()
+        self.refresh_error: Exception | None = None
+        self.rotate = False
+        self.minted = 0
+
+    def handle_callback(self, *, code, redirect_uri, code_verifier):
+        self.calls.append(("callback", code, redirect_uri, bool(code_verifier)))
+        return ConnectorTokens(
+            access_token=f"tok-{code}", refresh_token=f"refresh-{code}",
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1), scopes="read", account_label="me-on-fake",
+        )
+
+    def refresh_tokens(self, tokens):
+        self.calls.append(("refresh", tokens.refresh_token))
+        if self.refresh_error:
+            raise self.refresh_error
+        self.minted += 1
+        return ConnectorTokens(
+            access_token=f"fresh-{self.minted}",
+            refresh_token=f"refresh-rotated-{self.minted}" if self.rotate else None,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+
+    def incremental_sync(self, ctx, since):
+        self.calls.append(("incremental-token", ctx.tokens.access_token))
+        yield from super().incremental_sync(ctx, since)
+
+
+@pytest.fixture
+def refreshing(monkeypatch):
+    conn = RefreshingConnector()
+    registry.register_connector(conn)
+    monkeypatch.setattr(settings, "ECHO_CONNECTOR_SYNC", "inline")
+    monkeypatch.setattr(settings, "APP_BASE_URL", "https://app.example")
+    yield conn
+    registry.unregister_connector("fake")
+
+
+def _cred(db, tenant_id):
+    db.expire_all()
+    return db.query(EchoConnectorCredential).filter_by(tenant_id=tenant_id, connector="fake").one()
+
+
+def _expire(db, tenant_id, when=PAST):
+    cred = _cred(db, tenant_id)
+    cred.expires_at = when
+    db.commit()
+
+
+def test_an_expired_token_is_renewed_before_the_sync_and_stored_encrypted(
+    unauthenticated_client, db, inline_db, refreshing, two, monkeypatch
+):
+    _connect(unauthenticated_client, two["ha"], code="abc")
+    a = two["a"].id
+    _expire(db, a)
+    log = MagicMock()
+    monkeypatch.setattr(echo_connector_service, "logger", log)
+
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    assert r.status_code == 200, r.text
+    assert r.json()["connector"]["grant"]["status"] == "idle"
+    assert ("refresh", "refresh-abc") in refreshing.calls
+    # Mutation-style: the provider saw the renewed token, not the expired one.
+    assert ("incremental-token", "fresh-1") in refreshing.calls
+    assert ("incremental-token", "tok-abc") not in refreshing.calls
+
+    cred = _cred(db, a)
+    assert "fresh-1" not in cred.access_token_encrypted, "stored encrypted"
+    assert byok_service.decrypt_secret(cred.access_token_encrypted) == "fresh-1"
+    assert byok_service.decrypt_secret(cred.refresh_token_encrypted) == "refresh-abc", "an unrotated refresh token is kept"
+    assert cred.expires_at > datetime.now(timezone.utc).replace(tzinfo=None)
+
+    logged = " ".join(str(x) for call in log.mock_calls for x in call.args)
+    assert "renewed" in logged
+    assert not any(t in logged for t in ("fresh-1", "refresh-abc", "tok-abc")), "no token is logged"
+
+    # Not expired any more: the next sync does not refresh again.
+    unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    assert [c[0] for c in refreshing.calls].count("refresh") == 1
+
+
+def test_a_rotated_refresh_token_replaces_the_stored_one(unauthenticated_client, db, inline_db, refreshing, two):
+    _connect(unauthenticated_client, two["ha"], code="abc")
+    refreshing.rotate = True
+    _expire(db, two["a"].id)
+    unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    assert byok_service.decrypt_secret(_cred(db, two["a"].id).refresh_token_encrypted) == "refresh-rotated-1"
+
+
+def test_a_token_that_has_not_expired_or_never_expires_is_not_renewed(unauthenticated_client, db, inline_db, refreshing, two):
+    _connect(unauthenticated_client, two["ha"], code="abc")
+    unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    _expire(db, two["a"].id, when=None)  # GitHub's tokens carry no expiry
+    unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    assert "refresh" not in [c[0] for c in refreshing.calls]
+    assert [c[1] for c in refreshing.calls if c[0] == "incremental-token"] == ["tok-abc", "tok-abc"]
+
+
+def test_a_token_about_to_expire_is_renewed_early():
+    soon = ConnectorTokens(access_token="x", expires_at=datetime.now(timezone.utc) + timedelta(seconds=30))
+    later = ConnectorTokens(access_token="x", expires_at=datetime.now(timezone.utc) + timedelta(minutes=10))
+    assert echo_connector_service.needs_refresh(soon)
+    assert not echo_connector_service.needs_refresh(later)
+    assert not echo_connector_service.needs_refresh(ConnectorTokens(access_token="x"))
+
+
+def test_a_refused_refresh_asks_to_reconnect_and_never_calls_the_provider(
+    unauthenticated_client, db, inline_db, refreshing, two
+):
+    _connect(unauthenticated_client, two["ha"], code="abc")
+    a = two["a"].id
+    _expire(db, a)
+    refreshing.refresh_error = ConnectorError("invalid_grant", auth=True)
+
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    assert r.status_code == 200, r.text
+    grant = r.json()["connector"]["grant"]
+    assert grant["status"] == "error"
+    assert grant["last_error"].startswith(echo_connector_service.RECONNECT_PREFIX), "the panel shows Reconnect"
+    assert grant["events"] == 3, "what was stored stays"
+    assert "incremental-token" not in [c[0] for c in refreshing.calls], "the provider was never called"
+    assert byok_service.decrypt_secret(_cred(db, a).access_token_encrypted) == "tok-abc", "nothing overwritten"
+
+    # Reconnecting stores fresh tokens and clears the state.
+    refreshing.refresh_error = None
+    r, _ = _connect(unauthenticated_client, two["ha"], code="again")
+    assert r.json()["grant"]["status"] == "idle" and r.json()["grant"]["last_error"] is None
+
+
+def test_an_expired_token_with_no_way_to_renew_it_asks_to_reconnect(unauthenticated_client, db, inline_db, fake, two):
+    """No refresh token stored, or a connector without ``refresh_tokens``."""
+    _connect(unauthenticated_client, two["ha"])
+    a = two["a"].id
+    _expire(db, a)
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    grant = r.json()["connector"]["grant"]
+    assert grant["status"] == "error" and grant["last_error"].startswith(echo_connector_service.RECONNECT_PREFIX)
+    assert "no refresh token" in grant["last_error"]
+    assert [c[0] for c in fake.calls].count("incremental") == 0
+
+    cred = _cred(db, a)
+    cred.refresh_token_encrypted = byok_service.encrypt_secret("refresh-x")
+    db.commit()
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    grant = r.json()["connector"]["grant"]
+    assert grant["last_error"].startswith(echo_connector_service.RECONNECT_PREFIX)
+    assert "cannot renew" in grant["last_error"]
+
+
+def test_a_transient_refresh_failure_is_retried_not_a_reconnect(unauthenticated_client, db, inline_db, refreshing, two):
+    _connect(unauthenticated_client, two["ha"], code="abc")
+    _expire(db, two["a"].id)
+    refreshing.refresh_error = ConnectorError("token endpoint returned 503")
+    grant = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"]).json()["connector"]["grant"]
+    assert grant["status"] == "error"
+    assert not grant["last_error"].startswith("Reconnect"), "the refresh token may still be good"
+    assert "next sync tries again" in grant["last_error"]
+
+    refreshing.refresh_error = RuntimeError("connection reset")
+    grant = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"]).json()["connector"]["grant"]
+    assert grant["status"] == "error" and "RuntimeError" in grant["last_error"]
+
+    refreshing.refresh_error = None
+    grant = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"]).json()["connector"]["grant"]
+    assert grant["status"] == "idle" and grant["last_error"] is None
+
+
+def test_the_worker_task_renews_or_records_a_refused_refresh(db, inline_db, refreshing, two, monkeypatch):
+    """The scheduled path: ``echo.sync_connector`` in Celery never raises."""
+    import app.tasks.echo_connector_tasks as tasks
+
+    a = two["a"].id
+    echo_connector_service._store_tokens(
+        db, a, "fake", ConnectorTokens(access_token="tok-old", refresh_token="refresh-old", expires_at=PAST)
+    )
+    grant = EchoConnectorGrant(tenant_id=a, connector="fake", consent_version=FakeConnector.consent_version)
+    db.add(grant)
+    db.commit()
+    monkeypatch.setattr(tasks, "SessionLocal", lambda: db)
+
+    refreshing.refresh_error = ConnectorError("invalid_grant", auth=True)
+    assert tasks.sync_echo_connector(grant.id) == "auth_error"
+    db.refresh(grant)
+    assert grant.status == "error" and grant.last_error.startswith("Reconnect to sync")
+
+    refreshing.refresh_error = None
+    assert tasks.sync_echo_connector(grant.id) == "ok"
+    assert byok_service.decrypt_secret(_cred(db, a).access_token_encrypted) == "fresh-1"
+    assert ("backfill", "fresh-1") in refreshing.calls, "the backfill used the renewed token"
+
+
+# ------------------------------------------------------------------ T-3.2.4.4: deleted derived facts stay deleted
+
+TOMBSTONES = "/api/v1/echo/fact-tombstones"
+
+
+def _facts_every_sync(fake):
+    """Make every incremental sync re-derive the backfill's fact, like
+    GitHub's nightly language facts."""
+    original = fake.incremental_sync
+
+    def incremental(ctx, since):
+        ctx.facts.append(DerivedFact(kind="skill", key="python", value={"repos": 4}, confidence=0.8))
+        yield from original(ctx, since)
+
+    fake.incremental_sync = incremental
+
+
+def _python(db, tenant_id):
+    db.expire_all()
+    return db.query(PersonalContext).filter_by(user_id=tenant_id, kind="skill", key="python").first()
+
+
+def test_a_deleted_derived_fact_stays_deleted_until_the_user_clears_it(unauthenticated_client, db, inline_db, fake, two):
+    _connect(unauthenticated_client, two["ha"])
+    _facts_every_sync(fake)
+    a = two["a"].id
+    assert _python(db, a) is not None
+
+    r = unauthenticated_client.delete("/api/v1/echo/context/skill/python", headers=two["ha"])
+    assert r.status_code == 200, r.text
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    assert r.json()["connector"]["grant"]["last_counts"]["facts"] == 0
+    assert _python(db, a) is None, "the nightly sync did not bring it back"
+
+    listed = unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"]
+    assert [(t["connector"], t["connector_display_name"], t["kind"], t["key"]) for t in listed] == [
+        ("fake", "Fake service", "skill", "python")
+    ]
+    assert listed[0]["created_at"].endswith(("Z", "+00:00"))
+
+    # Mutation-style: clearing the tombstone is all it takes for the same
+    # sync to write the fact again, so the skip above was the tombstone's.
+    assert unauthenticated_client.delete(f"{TOMBSTONES}/{listed[0]['id']}", headers=two["ha"]).json() == {"cleared": True}
+    assert _python(db, a) is None, "clearing re-creates nothing by itself"
+    r = unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    assert r.json()["connector"]["grant"]["last_counts"]["facts"] == 1
+    assert _python(db, a).source == "connector:fake"
+    assert unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"] == []
+
+
+def test_tombstones_are_the_callers_own(unauthenticated_client, db, inline_db, fake, two):
+    _connect(unauthenticated_client, two["ha"], code="aaa")
+    _connect(unauthenticated_client, two["hb"], code="bbb")
+    _facts_every_sync(fake)
+    unauthenticated_client.delete("/api/v1/echo/context/skill/python", headers=two["ha"])
+    tid = unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"][0]["id"]
+
+    assert unauthenticated_client.get(TOMBSTONES, headers=two["hb"]).json()["items"] == []
+    assert unauthenticated_client.delete(f"{TOMBSTONES}/{tid}", headers=two["hb"]).status_code == 404
+    assert len(unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"]) == 1
+    # A's tombstone does not stop B's sync.
+    unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["hb"])
+    assert _python(db, two["b"].id) is not None
+
+
+def test_only_derived_facts_are_tombstoned(unauthenticated_client, db, inline_db, fake, two):
+    unauthenticated_client.post(
+        "/api/v1/echo/context", json={"kind": "hobby", "key": "chess", "value": "weekends"}, headers=two["ha"]
+    )
+    assert unauthenticated_client.delete("/api/v1/echo/context/hobby/chess", headers=two["ha"]).status_code == 200
+    assert unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"] == []
+
+
+def test_deleting_a_whole_source_keeps_every_fact_deleted(unauthenticated_client, db, inline_db, fake, two):
+    """``DELETE /echo/sources/connector:fake`` deletes facts but leaves the
+    connection, so its next sync must not bring them back."""
+    _connect(unauthenticated_client, two["ha"])
+    _facts_every_sync(fake)
+    r = unauthenticated_client.delete("/api/v1/echo/sources/connector:fake", headers=two["ha"])
+    assert r.json()["deleted_count"] == 1
+    unauthenticated_client.post(f"{BASE}/fake/sync", headers=two["ha"])
+    assert _python(db, two["a"].id) is None
+    assert [t["key"] for t in unauthenticated_client.get(TOMBSTONES, headers=two["ha"]).json()["items"]] == ["python"]
+
+
+def test_disconnecting_records_no_tombstone_and_keeps_the_users(unauthenticated_client, db, inline_db, fake, two):
+    from app.models.echo_fact_tombstone import EchoFactTombstone
+
+    _connect(unauthenticated_client, two["ha"])
+    echo_connector_service.echo_fact_tombstones.record(db, two["a"].id, "fake", "skill", "rust")
+    db.commit()
+    unauthenticated_client.delete(f"{BASE}/fake", headers=two["ha"])
+    assert [t.key for t in db.query(EchoFactTombstone).filter_by(tenant_id=two["a"].id)] == ["rust"]
+
+
+def test_the_full_delete_erases_tombstones(unauthenticated_client, db, inline_db, fake, two):
+    from app.models.echo_fact_tombstone import EchoFactTombstone
+
+    _connect(unauthenticated_client, two["ha"], code="aaa")
+    _connect(unauthenticated_client, two["hb"], code="bbb")
+    for headers in (two["ha"], two["hb"]):
+        unauthenticated_client.delete("/api/v1/echo/context/skill/python", headers=headers)
+    r = unauthenticated_client.delete("/api/v1/echo/brain", params={"confirm": "delete-everything"}, headers=two["ha"])
+    assert r.status_code == 200, r.text
+    assert r.json()["removed"]["rows"]["echo_fact_tombstones"] == 1
+    assert db.query(EchoFactTombstone).filter_by(tenant_id=two["a"].id).count() == 0
+    assert db.query(EchoFactTombstone).filter_by(tenant_id=two["b"].id).count() == 1, "B keeps theirs"
+
+
+def test_tombstones_are_gated_like_the_rest_of_echo(unauthenticated_client, db):
+    user = auth_service.create_user(db, email="tomb-free@example.com", password="pw" * 6)
+    token, _ = auth_service.create_access_token(user.id)
+    h = {"Authorization": f"Bearer {token}"}
+    assert unauthenticated_client.get(TOMBSTONES, headers=h).status_code == 403
+    assert unauthenticated_client.delete(f"{TOMBSTONES}/x", headers=h).status_code == 403

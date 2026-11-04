@@ -44,6 +44,23 @@ class VoiceSignalItem(BaseModel):
     updated_at: datetime
 
 
+class RejectedSignalItem(VoiceSignalItem):
+    """A signal the user marked "That's not me" (T-3.3.1.6)."""
+
+    rejected_at: datetime
+
+
+class RejectedSignalList(BaseModel):
+    items: list[RejectedSignalItem]
+
+
+class RestoreResponse(BaseModel):
+    signal: VoiceSignalItem
+    #: False when nothing the user wrote still shows the signal: re-learning
+    #: it is allowed again, but it stays out of the profile until then.
+    live: bool
+
+
 class LearningState(BaseModel):
     """What extraction has read and what is waiting (S-3.3.2)."""
 

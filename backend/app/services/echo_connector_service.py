@@ -15,9 +15,13 @@ module owns the rest, per tenant:
    backfill.
 3. **Sync.** ``run_sync`` backfills once, then syncs incrementally from the
    last success, storing events idempotently and derived facts below 1.0
-   confidence (source ``connector:<name>``). Fail-soft: a provider error marks
-   the grant ``error`` with the reason; an auth error, or a stored token
-   this install can no longer decrypt, asks the user to reconnect.
+   confidence (source ``connector:<name>``), except the keys the user deleted
+   (T-3.2.4.4, ``echo_fact_tombstones``). An access token past its
+   ``expires_at`` is renewed first through the connector's
+   ``refresh_tokens`` and stored encrypted (T-3.2.2.5). Fail-soft: a provider
+   error marks the grant ``error`` with the reason; an auth error, a refused
+   or impossible refresh, or a stored token this install can no longer
+   decrypt, asks the user to reconnect.
 4. **Revoke.** One request deletes the grant, tokens, pending states, every
    event and every derived fact of that connector, and its schedule. Revoking
    at the provider is best effort; local data goes regardless.
@@ -41,14 +45,26 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.connectors import registry
-from app.connectors.base import ActivityConnector, ConnectorError, ConnectorTokens, SyncContext
+from app.connectors.base import (
+    ActivityConnector,
+    ConnectorError,
+    ConnectorTokens,
+    RefreshableConnector,
+    SyncContext,
+)
 from app.models.echo_connector import (
     EchoConnectorCredential,
     EchoConnectorGrant,
     EchoConnectorOAuthState,
 )
 from app.models.personal_context import PersonalContext
-from app.services import activity_event_service, byok_service, echo_service, scheduler_service
+from app.services import (
+    activity_event_service,
+    byok_service,
+    echo_fact_tombstones,
+    echo_service,
+    scheduler_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +80,9 @@ MAX_FACT_CONFIDENCE = 0.9
 # A grant whose ``last_error`` starts with this needs the user to connect
 # again; the connectors panel shows "Reconnect" for it.
 RECONNECT_PREFIX = "Reconnect to sync: "
+# An access token this close to its expiry is renewed before the sync, so
+# it cannot lapse between the check and the provider call.
+REFRESH_SKEW = timedelta(seconds=60)
 
 
 class ConnectorNotFound(LookupError):
@@ -352,6 +371,11 @@ def run_sync(db: Session, grant_id: str) -> SyncOutcome:
         grant.status, grant.last_error = "error", RECONNECT_PREFIX + "the access token is missing."
         db.commit()
         return SyncOutcome("auth_error", error=grant.last_error)
+    if needs_refresh(tokens):
+        renewed = _refresh_tokens(db, grant, conn, tokens)
+        if isinstance(renewed, SyncOutcome):
+            return renewed
+        tokens = renewed
 
     started = _now()
     grant.status = "syncing"
@@ -393,12 +417,98 @@ def run_sync(db: Session, grant_id: str) -> SyncOutcome:
     return SyncOutcome("ok", added=counts["added"], updated=counts["updated"], facts=facts)
 
 
+def needs_refresh(tokens: ConnectorTokens, now: datetime | None = None) -> bool:
+    """Whether the access token has expired (or will within ``REFRESH_SKEW``).
+    A token with no ``expires_at`` (GitHub's) never needs one."""
+    expires_at = _naive(tokens.expires_at)
+    if expires_at is None:
+        return False
+    return expires_at <= _naive((now or _now()) + REFRESH_SKEW)
+
+
+def _refresh_tokens(
+    db: Session, grant: EchoConnectorGrant, conn, tokens: ConnectorTokens
+) -> ConnectorTokens | SyncOutcome:
+    """T-3.2.2.5: renew an expired access token before the sync calls the
+    provider, and store the new one encrypted like the first (D-043).
+
+    Returns the renewed tokens, or the outcome the grant now records. Never
+    raises (this runs inside the ``echo.sync_connector`` Celery task): a
+    refresh the provider refuses, a missing refresh token, or a connector
+    that cannot refresh asks the user to reconnect (``RECONNECT_PREFIX``);
+    any other failure is an ordinary error the next sync retries, since the
+    refresh token may still be good. Neither token is ever logged."""
+
+    def reconnect(why: str) -> SyncOutcome:
+        grant.status = "error"
+        grant.last_error = RECONNECT_PREFIX + why
+        db.commit()
+        return SyncOutcome("auth_error", error=grant.last_error)
+
+    def failed(why: str) -> SyncOutcome:
+        grant.status = "error"
+        grant.last_error = f"Sync failed: could not renew the access token ({why}). The next sync tries again."
+        db.commit()
+        return SyncOutcome("error", error=grant.last_error)
+
+    who = (grant.connector, grant.tenant_id[:8])
+    if not tokens.refresh_token:
+        logger.info("echo: the %s access token for %s expired with no refresh token; reconnect needed", *who)
+        return reconnect("the access token expired and there is no refresh token to renew it.")
+    if not isinstance(conn, RefreshableConnector):
+        logger.warning("echo: the %s access token for %s expired and the connector cannot refresh it", *who)
+        return reconnect("the access token expired and this connector cannot renew it.")
+    try:
+        fresh = conn.refresh_tokens(tokens)
+    except ConnectorError as e:
+        db.rollback()
+        if e.auth:
+            logger.warning("echo: %s refused to renew the access token for %s; reconnect needed", *who)
+            return reconnect("the provider no longer accepts this connection.")
+        logger.warning("echo: renewing the %s access token for %s failed: %s", *who, e)
+        return failed(str(e)[:300])
+    except Exception as e:  # a connector bug or a transport error: fail-soft
+        db.rollback()
+        logger.error("echo: renewing the %s access token for %s crashed: %s", *who, type(e).__name__)
+        return failed(type(e).__name__)
+    if fresh is None or not getattr(fresh, "access_token", None):
+        logger.error("echo: the %s connector returned no access token on refresh for %s", *who)
+        return failed("the provider returned no access token")
+
+    renewed = ConnectorTokens(
+        access_token=fresh.access_token,
+        # Most providers do not rotate the refresh token: keep the stored one.
+        refresh_token=fresh.refresh_token or tokens.refresh_token,
+        expires_at=fresh.expires_at,
+        scopes=fresh.scopes or tokens.scopes,
+        account_label=tokens.account_label,
+    )
+    try:
+        _store_tokens(db, grant.tenant_id, grant.connector, renewed)
+    except byok_service.EncryptionConfigurationError:
+        db.rollback()
+        logger.error("echo: %s sync for %s skipped: BYOK_ENCRYPTION_KEY is not a valid key", *who)
+        grant.status = "error"
+        grant.last_error = "Sync failed: this install's encryption key is not valid. Ask the operator to fix it."
+        db.commit()
+        return SyncOutcome("error", error=grant.last_error)
+    logger.info("echo: renewed the %s access token for %s", *who)
+    return renewed
+
+
 def fact_source(name: str) -> str:
     return f"connector:{name}"
 
 
 def _store_facts(db: Session, grant: EchoConnectorGrant, ctx: SyncContext) -> int:
+    """Upsert the sync's derived facts, skipping every key the user deleted
+    (T-3.2.4.4). Returns how many were written."""
+    blocked = echo_fact_tombstones.blocked_keys(db, grant.tenant_id, grant.connector)
+    stored = 0
     for fact in ctx.facts:
+        if (fact.kind, fact.key) in blocked:
+            continue
+        stored += 1
         echo_service.record_context(
             db,
             user_id=grant.tenant_id,
@@ -408,7 +518,7 @@ def _store_facts(db: Session, grant: EchoConnectorGrant, ctx: SyncContext) -> in
             source=fact_source(grant.connector),
             confidence=min(float(fact.confidence), MAX_FACT_CONFIDENCE),
         )
-    return len(ctx.facts)
+    return stored
 
 
 # --------------------------------------------------------------------------- revoke

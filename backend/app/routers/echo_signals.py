@@ -5,7 +5,8 @@ Every route acts on the caller's own signals and needs the
 router so the signals work does not collide with the intake and connector
 work in ``routers/echo.py``. DELETE is a tombstone, not a delete: the row
 stays so extraction can see the user rejected it (the brain delete,
-``DELETE /echo/brain``, removes it for good).
+``DELETE /echo/brain``, removes it for good). ``GET /rejected`` lists the
+rejections and ``POST /{id}/restore`` lifts one (T-3.3.1.6).
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -18,6 +19,9 @@ from app.config import settings
 from app.schemas.voice_signal import (
     LearningState,
     LearnResponse,
+    RejectedSignalItem,
+    RejectedSignalList,
+    RestoreResponse,
     VoiceSignalCreate,
     VoiceSignalItem,
     VoiceSignalList,
@@ -86,6 +90,30 @@ def export_signals(db: Session = Depends(get_db), current_user: User = Depends(E
         jsonable_encoder(signals.export_profile(db, current_user.id)),
         headers={"Content-Disposition": 'attachment; filename="echo-voice-profile.json"'},
     )
+
+
+@router.get("/rejected", response_model=RejectedSignalList)
+def list_rejected(db: Session = Depends(get_db), current_user: User = Depends(ECHO)):
+    """What the user marked "That's not me", most recent first (T-3.3.1.6).
+    Listed by name, without examples: a rejection made before T-3.3.1.6 may
+    still quote a source deleted while it was rejected (nothing cleaned
+    rejections then), and only restore re-checks them."""
+    items = []
+    for row in signals.list_rejected(db, current_user.id):
+        d = _item(row).model_dump(by_alias=True)
+        d["examples"] = []
+        items.append(RejectedSignalItem(**d, rejected_at=_utc(row.suppressed_at)))
+    return RejectedSignalList(items=items)
+
+
+@router.post("/{signal_id}/restore", response_model=RestoreResponse)
+def restore_signal(signal_id: str, db: Session = Depends(get_db), current_user: User = Depends(ECHO)):
+    """Undo "That's not me": the signal may be added and learned again."""
+    try:
+        result = signals.restore(db, current_user.id, signal_id)
+    except signals.SignalNotFound:
+        raise HTTPException(status_code=404, detail="Signal not found")
+    return RestoreResponse(signal=_item(result.signal), live=result.live)
 
 
 @router.post("", response_model=VoiceSignalItem, status_code=201)

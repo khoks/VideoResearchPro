@@ -13,5 +13,6 @@ from app.connectors.base import (  # noqa: F401
     DerivedFact,
     ImportedItem,
     ImportedShare,
+    RefreshableConnector,
     SyncContext,
 )

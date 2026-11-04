@@ -233,7 +233,7 @@ Use Markdown headings. Suggested sections (include only those that apply):
 5. `## Events` — chronological bulleted list when dates or sequence exist.
 6. `## Facts and Claims` — bulleted list; mark speculation explicitly.
 7. `## References` — optional; list named sources the {source_short} cites.
-
+{length_note}
 Return ONLY the Markdown document body. No code fences, no preamble, no
 closing remarks.
 """

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { useKnowledge, useExtractKnowledge } from '../hooks/useKnowledge';
@@ -7,6 +7,7 @@ import { Badge, Button, Spinner, type BadgeTone } from '../components/primitives
 import { NotesPanel } from '../components/notes';
 import { SuggestionCard } from '../components/qa/SuggestionCard';
 import { VideoFramesPanel } from '../components/frames/VideoFramesPanel';
+import { DepthSelect } from '../components/common/DepthSelect';
 import { useColors, useShadows } from '../hooks/useTheme';
 import {
   fonts,
@@ -18,6 +19,7 @@ import {
   z,
 } from '../theme';
 import type { KnowledgeArtifact } from '../services/knowledgeApi';
+import { depthLabel, depthOf, type Depth } from '../utils/depth';
 
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
@@ -30,16 +32,26 @@ interface Props {
    * "On screen" panel is left out for any other type. Omitted means video.
    */
   sourceType?: string;
+  /**
+   * S-1.15.3: the depth the report control starts on — the preference the
+   * surface already uses (a run's `output_length` on the job page). Omitted
+   * or 'auto' starts on Auto, which sends no preference.
+   */
+  defaultDepth?: string | null;
   onClose: () => void;
 }
 
 /**
  * Right-side slide-in drawer showing the extracted knowledge artifact for a
- * single document — a video, a PDF, a pasted page, a thread. Auto-kicks
- * extraction if no cached artifact exists so the first click "just works"
- * with a spinner.
+ * single document — a video, a PDF, a pasted page, a thread.
+ *
+ * S-1.15.3: when nothing has been extracted yet the drawer offers the report
+ * with a depth choice instead of starting it on open. A report is a metered,
+ * minute-long run, and starting at the default made a reader who wanted
+ * another depth pay for two. The choice starts on the surface's preference,
+ * so accepting it is one click; Regenerate uses the same choice.
  */
-export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, onClose }: Props) {
+export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, defaultDepth, onClose }: Props) {
   const c = useColors();
   const s = useShadows();
   const navigate = useNavigate();
@@ -47,14 +59,7 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, onClose 
   const extract = useExtractKnowledge(videoId);
   const knowledgeExtractionAvailable = useFeatureAvailable('knowledge_extraction');
   const libraryQAAvailable = useFeatureAvailable('library_qa');
-
-  useEffect(() => {
-    if (isLoadingCached) return;
-    if (artifact) return;
-    if (!knowledgeExtractionAvailable) return;
-    if (extract.isPending || extract.isSuccess || extract.isError) return;
-    extract.mutate(undefined);
-  }, [artifact, isLoadingCached, extract, knowledgeExtractionAvailable]);
+  const [depth, setDepth] = useState<Depth | null>(() => depthOf(defaultDepth));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -68,7 +73,9 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, onClose 
   const isBusy = isLoadingCached || extract.isPending;
   const showUnavailableEmptyState =
     !knowledgeExtractionAvailable && !displayed && !isBusy;
-  const regenDisabled = extract.isPending || !knowledgeExtractionAvailable;
+  const showRunBar = knowledgeExtractionAvailable && !isLoadingCached;
+  const writtenAt = depthOf(displayed?.output_length);
+  const run = () => extract.mutate({ force: !!displayed, depth });
 
   return (
     <div
@@ -149,21 +156,6 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, onClose 
                 Open in reader
               </Button>
             )}
-            {displayed && !isBusy && (
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => extract.mutate({ force: true })}
-                disabled={regenDisabled}
-                title={
-                  knowledgeExtractionAvailable
-                    ? 'Re-run extraction; overwrites the stored report.'
-                    : FEATURE_UNAVAILABLE_MSG
-                }
-              >
-                Regenerate
-              </Button>
-            )}
             <Button size="sm" variant="tertiary" onClick={onClose}>
               Close
             </Button>
@@ -213,7 +205,7 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, onClose 
                 marginBottom: space['4'],
               }}
             >
-              Couldn't load the knowledge report. Click Regenerate to try again.
+              Couldn't load the knowledge report. Try generating it again.
             </div>
           )}
 
@@ -231,6 +223,73 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, onClose 
               }}
             >
               {FEATURE_UNAVAILABLE_MSG}. Knowledge extraction will resume once the LLM service recovers — try again in a moment.
+            </div>
+          )}
+
+          {showRunBar && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: space['3'],
+                marginBottom: space['4'],
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: fonts.ui,
+                  fontSize: fontSize.sm,
+                  color: displayed ? c.textMuted : c.textSecondary,
+                }}
+              >
+                {!displayed
+                  ? isError
+                    ? null
+                    : 'No knowledge report for this source yet.'
+                  : writtenAt
+                    ? `Written at ${depthLabel(writtenAt).toLowerCase()} depth.`
+                    : null}
+              </span>
+              <div
+                style={{
+                  marginLeft: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: space['2'],
+                }}
+              >
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: space['2'],
+                    fontFamily: fonts.ui,
+                    fontSize: fontSize.sm,
+                    color: c.textSecondary,
+                  }}
+                >
+                  Report depth
+                  <DepthSelect
+                    value={depth}
+                    onChange={setDepth}
+                    unsetLabel="Auto"
+                    aria-label="Report depth"
+                    title="Auto sizes the report to how much this source yields."
+                    disabled={extract.isPending}
+                  />
+                </label>
+                <Button
+                  size="sm"
+                  variant={displayed ? 'secondary' : 'primary'}
+                  onClick={run}
+                  loading={extract.isPending}
+                  title={displayed ? 'Re-run extraction; overwrites the stored report.' : undefined}
+                >
+                  {displayed ? 'Regenerate' : 'Generate report'}
+                </Button>
+              </div>
             </div>
           )}
 

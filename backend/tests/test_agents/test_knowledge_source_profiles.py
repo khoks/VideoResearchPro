@@ -132,6 +132,6 @@ def test_every_profile_fills_both_prompts():
         kp.SYNTHESIZE_REPORT_PROMPT.format(
             source_noun=profile.noun, source_short=profile.short, source_header=header,
             text_label=profile.text_label, temporal_note="", language_note="",
-            merged_extraction_json="{}", full_transcript_text="t",
+            merged_extraction_json="{}", full_transcript_text="t", length_note="",
         )
         assert profile.subject and profile.noun and profile.short, source_type

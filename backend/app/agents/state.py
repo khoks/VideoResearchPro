@@ -66,6 +66,9 @@ class KnowledgeAgentState(TypedDict):
     # The document's full text: its transcript_cache row, or its Chroma chunks
     # reassembled (`document_text_service.full_text`).
     full_transcript_text: str
+    # S-1.15.3: the reader's depth preference (D-064 values) for the
+    # synthesis step only. None or 'auto' means none was expressed.
+    output_length: str | None
     # Token-budgeted slices of `full_transcript_text` fed to the map pass.
     transcript_batches: list[str]
     # One structured extraction per batch: {topics, concepts, events, facts}.

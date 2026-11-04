@@ -1,4 +1,5 @@
 import api from './api';
+import type { Depth } from '../utils/depth';
 
 export interface KnowledgeArtifact {
   topics: string[];
@@ -15,6 +16,8 @@ export interface KnowledgeArtifact {
   channel_name?: string | null;
   url?: string | null;
   published_at?: string | null;
+  /** S-1.15.3: the depth the report was written at; null when none was asked for. */
+  output_length?: Depth | null;
 }
 
 export const knowledgeApi = {
@@ -23,12 +26,18 @@ export const knowledgeApi = {
   // rather than a generic error toast.
   get: (videoId: string) =>
     api.get<KnowledgeArtifact>(`/videos/${videoId}/knowledge`).then(r => r.data),
-  extract: (videoId: string, force = false) =>
-    api
+  // S-1.15.3: `depth` goes as `output_length` only when one was chosen, so a
+  // report with no preference is the same request as before.
+  extract: (videoId: string, force = false, depth: Depth | null = null) => {
+    const params: Record<string, string | boolean> = {};
+    if (force) params.force = true;
+    if (depth) params.output_length = depth;
+    return api
       .post<KnowledgeArtifact>(
         `/videos/${videoId}/extract-knowledge`,
         null,
-        { params: force ? { force: true } : undefined },
+        { params: Object.keys(params).length > 0 ? params : undefined },
       )
-      .then(r => r.data),
+      .then(r => r.data);
+  },
 };

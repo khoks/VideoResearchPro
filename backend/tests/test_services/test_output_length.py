@@ -124,3 +124,24 @@ def test_compose_without_a_preference_still_works() -> None:
             "topic": "t",
         })
     assert "Key Facts" in out["final_html"]
+
+
+# --- a surface with no corpus to bracket (S-1.15.3, knowledge reports) ------
+def test_an_override_without_a_bracket_is_the_user_multiplier() -> None:
+    """One document's knowledge report: the explicit preference applies as on
+    every other surface, and nothing else moves the budget."""
+    assert ol.override_scale("brief") == ol.resolve_scale(XL, "brief")
+    assert ol.override_scale("standard") == 1.0
+    assert ol.override_scale("deep") == ol.resolve_scale(XL, "deep")
+    assert ol.override_guidance("deep") == ol.guidance(XL, "deep")
+
+
+def test_no_preference_without_a_bracket_changes_nothing() -> None:
+    """Unlike `resolve_scale`, which would call one document a small corpus
+    (1.25x plus a nudge), no preference is exactly today's call."""
+    for pref in (None, "", "auto", "AUTO", "enormous"):
+        assert ol.override_scale(pref) == 1.0
+        assert ol.override_guidance(pref) == ""
+        assert ol.explicit_preference(pref) is None
+    assert ol.resolve_scale(None, None) != 1.0  # the trap this avoids
+    assert ol.explicit_preference("Deep") == "deep"

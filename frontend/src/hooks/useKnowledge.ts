@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { knowledgeApi, type KnowledgeArtifact } from '../services/knowledgeApi';
+import type { Depth } from '../utils/depth';
 
 // 404 from GET /videos/{id}/knowledge is the documented "not yet extracted"
 // signal — treat it as a null artifact rather than a query error so the UI
@@ -26,7 +27,8 @@ export function useKnowledge(videoId: string | null, enabled = true) {
 export function useExtractKnowledge(videoId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (opts?: { force?: boolean }) => knowledgeApi.extract(videoId, opts?.force),
+    mutationFn: (opts?: { force?: boolean; depth?: Depth | null }) =>
+      knowledgeApi.extract(videoId, opts?.force, opts?.depth ?? null),
     onSuccess: (data) => {
       queryClient.setQueryData(['knowledge', videoId], data);
     },

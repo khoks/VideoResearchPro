@@ -188,3 +188,39 @@ test('library Q&A docks its composer too', async ({ page }) => {
   await expectNoHorizontalScroll(page);
   expect(unmatched).toEqual([]);
 });
+
+// R4: the answer depth select sits above the thread, so on a phone it scrolls
+// away from the composer. A picked depth stays in view where the reader asks.
+for (const [surface, path] of [
+  ['job', `/jobs/${JOB}`],
+  ['library', '/library/qa'],
+] as const) {
+  test(`${surface} Q&A keeps a picked depth in view at the composer`, async ({ page }) => {
+    const unmatched = await boot(page, 'light');
+    await page.goto(path);
+    const note = page.locator('.qa-composer-depth');
+    await expect(page.locator('.qa-thread')).toBeVisible();
+    await expect(note).toHaveCount(0);
+
+    await page.locator('select[aria-label="Answer depth"]').selectOption('standard');
+    await page.locator('.qa-composer').scrollIntoViewIfNeeded();
+    await expect(note).toBeInViewport();
+    await expect(note).toContainText('Answer depth: Standard');
+    await expectTargets(page, '.qa-composer-depth button');
+    await expectNoHorizontalScroll(page);
+
+    // One line at 320 px: the label and Clear share the row.
+    const [label, clear] = await Promise.all([note.locator('span').boundingBox(), note.locator('button').boundingBox()]);
+    expect(label!.x + label!.width).toBeLessThanOrEqual(clear!.x);
+
+    await note.locator('button').click();
+    await expect(note).toHaveCount(0);
+    await expect(page.locator('select[aria-label="Answer depth"]')).toHaveValue('');
+
+    // Wider than the dock, the select is right above the composer.
+    await page.locator('select[aria-label="Answer depth"]').selectOption('brief');
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await expect(note).toBeHidden();
+    expect(unmatched).toEqual([]);
+  });
+}

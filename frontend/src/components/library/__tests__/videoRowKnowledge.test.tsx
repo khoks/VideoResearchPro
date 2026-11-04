@@ -92,6 +92,11 @@ const knowledgeButton = () =>
     | undefined;
 
 const drawer = () => document.body.querySelector('[role="dialog"][aria-label^="Knowledge report for"]');
+const buttonIn = (el: Element | null, label: string) =>
+  Array.from(el?.querySelectorAll('button') ?? []).find((b) => (b.textContent ?? '').trim() === label) as
+    | HTMLButtonElement
+    | undefined;
+const depthSelect = () => drawer()?.querySelector<HTMLSelectElement>('select[aria-label="Report depth"]');
 
 beforeEach(() => {
   featureOn = true;
@@ -126,8 +131,14 @@ describe('VideoRow: knowledge report', () => {
     expect(drawer()?.getAttribute('aria-label')).toBe(`Knowledge report for ${video.title}`);
     expect(knowledgeIds).toContain(video.id);
     expect(extractIds).toContain(video.id);
-    // Nothing extracted yet: the drawer generates the report on open.
+    // Nothing extracted yet: the drawer offers the report (S-1.15.3), on
+    // Auto here (the library has no run to take a depth from), and spends
+    // nothing until asked.
+    expect(mutate).not.toHaveBeenCalled();
+    expect(depthSelect()?.value).toBe('');
+    act(() => buttonIn(drawer(), 'Generate report')!.click());
     expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate).toHaveBeenCalledWith({ force: false, depth: null });
     // A document with no video stream has no frames panel.
     expect(document.body.querySelector('[data-testid="frames"]')).toBeNull();
   });
@@ -138,6 +149,15 @@ describe('VideoRow: knowledge report', () => {
     act(() => knowledgeButton()!.click());
     expect(drawer()).not.toBeNull();
     expect(mutate).not.toHaveBeenCalled(); // already extracted: shown, not regenerated
+    expect(buttonIn(drawer(), 'Generate report')).toBeUndefined();
+    // Regenerate overwrites, at the depth chosen beside it.
+    const select = depthSelect()!;
+    act(() => {
+      select.value = 'deep';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    act(() => buttonIn(drawer(), 'Regenerate')!.click());
+    expect(mutate).toHaveBeenCalledWith({ force: true, depth: 'deep' });
     expect(document.body.querySelector('[data-testid="frames"]')?.getAttribute('data-video')).toBe('doc-video-1');
   });
 

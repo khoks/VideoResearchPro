@@ -105,7 +105,7 @@ class Document(Base):
 
     # R5 / T-1.16.1.7: the source's measured language mix, as JSON — the
     # profile `code_mixing_service.profile_transcript` computes from the
-    # whole text: {primary_language, native_script, hi_share,
+    # whole text: {primary_language, native_script, hi_share, named_share,
     # matrix_hi_share, quote_mode, windows, window_modes,
     # flicker_unresolved}. Written by every chunking path from the segments
     # it chunks (`language_mix_service.ensure`), so it always describes the

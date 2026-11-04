@@ -4,8 +4,9 @@
  * track's `transcript_language`, which calls romanised Hinglish `en`.
  * Only a source that is not plain English gets one; the profile's
  * `code_mixed` (the chunker's 3% rule) says which. The profile cannot say
- * what a Latin-script source IS: the tagger counts every word outside its
- * English lexicon as `hi`, so Hindi is named only where something supports it.
+ * what a Latin-script source IS: since T-1.16.2.15 the tagger abstains (`other`)
+ * where it finds no Hindi, and a profile stored before that says `hi` for any
+ * language, so Hindi is named only where something supports it.
  *
  * Rendered through `DocumentsBrowser`, the list the channel and shelf pages
  * use, fed rows shaped like `GET /library/videos`.
@@ -69,6 +70,21 @@ const SPANISH_ESSAY = mix({
 const SPANISH_SPEECH = mix({
   primary_language: 'hi', native_script: 'Latin', hi_share: 0.5494, matrix_hi_share: 0.598,
   quote_mode: 'roman', code_mixed: true,
+});
+// The same language after T-1.16.2.15: the tagger abstains.
+const SPANISH_ABSTAINED = mix({
+  primary_language: 'other', native_script: 'Latin', hi_share: 0.742, matrix_hi_share: 1,
+  quote_mode: 'native_script', code_mixed: true,
+});
+// A bilingual source: English frames most of it, Spanish the rest.
+const ENGLISH_AND_SPANISH = mix({
+  primary_language: 'other', native_script: 'Latin', hi_share: 0.2875, named_share: 0,
+  matrix_hi_share: 0.3589, quote_mode: 'roman', code_mixed: true,
+});
+// An English talk with a verse passage the tagger cannot name.
+const ENGLISH_WITH_VERSE = mix({
+  primary_language: 'en', native_script: 'Latin', hi_share: 0.1, named_share: 0,
+  matrix_hi_share: 0.1, quote_mode: 'plain_english', code_mixed: true,
 });
 const ARABIC = mix({
   primary_language: 'hi', native_script: 'Arabic', hi_share: 1, matrix_hi_share: 1,
@@ -185,6 +201,51 @@ describe('languageMixBadge names Hindi only where something supports it', () => 
   it.each(['unknown', 'und', 'a.en', '', null, undefined])('falls back on the words for the label %s', (label) => {
     expect(languageMixBadge(DEVANAGARI, label, 'video')?.label).toBe('Hindi + English');
     expect(languageMixBadge(ROMANISED, label, 'video')?.label).toBe('Other language + English');
+  });
+
+  it('never calls a source the tagger abstained on Hindi, whatever its label says', () => {
+    expect(languageMixBadge(SPANISH_ABSTAINED, 'es', 'video')?.label).toBe('Spanish');
+    // The accepted gap of #396: a Spanish video really labelled `en`.
+    expect(languageMixBadge(SPANISH_ABSTAINED, 'en', 'video')?.label).toBe('Other language');
+    expect(languageMixBadge(SPANISH_ABSTAINED, null, 'pdf')?.label).toBe('Other language');
+    expect(languageMixBadge(SPANISH_ABSTAINED, 'en', 'video')?.description).toContain('Nothing says which language');
+    // A hi label is still evidence the tagger does not have.
+    expect(languageMixBadge(SPANISH_ABSTAINED, 'hi', 'video')?.label).toContain('Hindi (romanised)');
+  });
+
+  it('keeps the English of a bilingual source the tagger abstained on', () => {
+    expect(languageMixBadge(ENGLISH_AND_SPANISH, 'en', 'video')?.label).toBe('Other language + English');
+    expect(languageMixBadge(ENGLISH_AND_SPANISH, null, 'pdf')?.label).toBe('Other language + English');
+    expect(languageMixBadge({ ...ENGLISH_AND_SPANISH, matrix_hi_share: 0.5 }, 'en', 'video')?.label)
+      .toBe('Other language');
+  });
+
+  it('does not call an unnamed passage in an English video Hindi', () => {
+    expect(languageMixBadge(ENGLISH_WITH_VERSE, 'en', 'video')?.label).toBe('English + other words');
+    // Named Hindi at the same shares, and a profile stored before `named_share`.
+    expect(languageMixBadge({ ...ENGLISH_WITH_VERSE, named_share: 0.9 }, 'en', 'video')?.label)
+      .toBe('English + Hindi (romanised)');
+    expect(languageMixBadge({ ...ENGLISH_WITH_VERSE, named_share: null }, 'en', 'video')?.label)
+      .toBe('English + Hindi (romanised)');
+    expect(languageMixBadge({ ...ENGLISH_WITH_VERSE, named_share: undefined }, 'en', 'video')?.label)
+      .toBe('English + Hindi (romanised)');
+  });
+
+  // T-1.16.1.10: an ISO 639-2 label names the same language as its two-letter
+  // code. Unmapped, `eng` reads as a third language, and Intl then calls it
+  // "English" with no shares at all.
+  it.each([
+    ['eng', 'en'], ['ENG', 'en'], ['hin', 'hi'], ['urd', 'ur'], ['hin-IN', 'hi'],
+  ])('reads the ISO 639-2 label %s as %s', (label, code) => {
+    for (const profile of [DEVANAGARI, ROMANISED, MOSTLY_ENGLISH, ARABIC]) {
+      expect(languageMixBadge(profile, label, 'video')).toEqual(languageMixBadge(profile, code, 'video'));
+    }
+  });
+
+  it('calls a mixed source labelled eng what it measures, not "English"', () => {
+    expect(languageMixBadge(ROMANISED, 'eng', 'video')?.label).toBe('Hindi (romanised) + English');
+    expect(languageMixBadge(ROMANISED, 'hin', 'pdf')?.label).toBe('Hindi (romanised) + English');
+    expect(languageMixBadge(ARABIC, 'urd', 'video')?.label).toBe('Urdu/Hindi');
   });
 });
 

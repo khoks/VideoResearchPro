@@ -75,9 +75,11 @@ FORMS = SCRIPT.parents[1] / "tests" / "fixtures" / "anchors" / "heading_forms.md
 def test_heading_forms_match_what_github_rendered():
     """The expected ids are GitHub's, read from the rendered file (contents API,
     `html` media type): re-read them when the fixture changes. Numbering runs in
-    document order across every form, so a form this missed would shift `repeat-…`."""
+    document order across every form, so a form this missed would shift `repeat-…`.
+    GitHub also rendered `raw-heading`, `heading-in-a-list` and
+    `heading-in-an-ordered-list`, the two forms the script says it does not read."""
     expected = {
-        "atx-one", "setext-one", "setext-two", "two-lines-of-setext",
+        "atx-one", "setext-one", "setext-two", "two-linesof-setext",
         "quoted-atx", "quoted-setext", "nested-quote", "quote-with-no-space",
         "repeat", "repeat-1", "repeat-2", "repeat-3",
         "atx-then-a-rule", "spaces-after-the-underline", "inline-code-here", "between-two-rules",
@@ -91,7 +93,7 @@ def test_heading_forms_match_what_github_rendered():
         ("Title\n=====\n", {"title"}),
         ("Title\n-----\n", {"title"}),
         ("Title\n-\n", {"title"}),
-        ("One\ntwo\n---\n", {"one-two"}),
+        ("One\ntwo\n---\n", {"onetwo"}),  # GitHub drops the break: no hyphen
         ("Title\r\n---\r\n", {"title"}),
     ],
 )

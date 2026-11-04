@@ -183,7 +183,7 @@ def _heading_texts(masked: str) -> Iterator[str]:
                 paragraph = []
                 yield m.group(1)
             elif paragraph and SETEXT_RE.match(line):
-                yield " ".join(paragraph)
+                yield "\n".join(paragraph)  # GitHub drops the break: no hyphen
                 paragraph = []
             elif RULE_RE.match(line):
                 paragraph, closed = [], False

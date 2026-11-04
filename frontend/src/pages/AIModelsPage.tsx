@@ -14,6 +14,7 @@ import {
   type LLMUseCase,
 } from '../hooks/useLLMSettings';
 import { Badge, Button, Card, EmptyState, Select, Skeleton, Spinner } from '../components/primitives';
+import { ByokKeysPanel } from '../components/account/ByokKeysPanel';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../theme';
 
 /**
@@ -30,6 +31,10 @@ import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../theme
  * weaker, or cannot take images on a vision function, and shows what the
  * choice costs on the benchmark job against the default. Warnings advise;
  * nothing blocks a choice.
+ *
+ * E-5.6: the keys panel at the top manages the caller's own provider keys
+ * (Studio tier), with `byok` from the same settings response saying which
+ * providers take a key and whether stored keys outlive a restart.
  */
 export function AIModelsPage() {
   const c = useColors();
@@ -93,6 +98,16 @@ export function AIModelsPage() {
     </header>
   );
 
+  const keysPanel = (
+    <div style={{ marginBottom: space['5'] }}>
+      <ByokKeysPanel
+        providers={settings.data?.byok?.providers}
+        keysPersist={settings.data?.byok?.keys_persist}
+        keyInvalid={settings.data?.byok?.key_invalid}
+      />
+    </div>
+  );
+
   if (settings.isLoading) {
     return (
       <div style={{ maxWidth: 1200, margin: '0 auto' }}>
@@ -110,6 +125,7 @@ export function AIModelsPage() {
     return (
       <div style={{ maxWidth: 1200, margin: '0 auto' }}>
         {header}
+        {keysPanel}
         <EmptyState
           title="Model settings unavailable"
           description={
@@ -130,6 +146,7 @@ export function AIModelsPage() {
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
       {header}
+      {keysPanel}
       <div
         style={{
           display: 'flex',

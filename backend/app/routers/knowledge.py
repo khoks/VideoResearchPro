@@ -114,6 +114,8 @@ def extract_knowledge(
     `?output_length=brief|standard|deep` scales the report's derived budget
     and gives the writer that depth's brief (D-064); extraction is unchanged.
     Returns 409 if the document already has an extraction unless `?force=true`.
+    Returns 502 if no report came back: the stored artifact stands and the
+    caller's quota is not spent.
     Returns 404 if the document doesn't exist OR this tenant cannot see it
     (D-063 — indistinguishable on purpose). Returns 422 if neither the
     transcript cache nor the document's chunks hold any text (nothing to
@@ -170,6 +172,21 @@ def extract_knowledge(
     # knowledge_synthesize_report (reduce) call sites in the agent.
     with llm_service.byok_context(current_user.id, db):
         result = run_knowledge_extract_agent(video, transcript_text, output_length=length)
+
+    # The agent reports a failed synthesis as an empty report, and a document
+    # with text always has something to write about. The artifact is shared by
+    # every tenant who can see the document (D-063), so an empty result must
+    # never replace it: without this, a Regenerate that failed cleared the
+    # report for all of them and came back 200.
+    if not (result.get("knowledge_report_md") or "").strip():
+        logger.warning(
+            "Knowledge synthesis returned no report for document %s; artifact left as it was",
+            video.document_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The report could not be written. Nothing was changed or charged. Try again.",
+        )
 
     # T-5.5.5: track consumption AFTER successful extraction.
     quota_metering_service.record_usage(

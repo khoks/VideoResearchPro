@@ -345,6 +345,17 @@ def test_a_document_that_leaves_the_library_before_the_worker_runs_is_left_out(d
     assert alone.error_message == "None of the chosen runs or documents has a report this deck can be built from."
 
 
+def test_the_prompt_header_names_what_the_source_is():
+    from app.services.outputters.deck import _about
+
+    def doc(source_type, **kw):
+        return Document(source_type=source_type, source_id="x", title="t", url="u", **kw)
+
+    assert _about(doc("article")) == "a web article"
+    assert _about(doc("tweet")) == "an X / Twitter post"
+    assert _about(doc("video", published_at=datetime(2025, 3, 2))) == "a YouTube video, published 2025-03-02"
+
+
 def test_knowledge_sources_lists_the_callers_documents_with_a_report(unauthenticated_client, db):
     user, headers = _pro(db, "kdeck-list@x.com")
     other, _ = _pro(db, "kdeck-list-other@x.com")

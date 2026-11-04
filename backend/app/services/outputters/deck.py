@@ -149,7 +149,7 @@ def _about(doc: Document) -> str:
     ``a YouTube video, published 2025-03-02``. The date anchors the report's
     "as of" claims (TEMPORAL_AWARENESS)."""
     noun = source_profile(doc.source_type).noun
-    article = "an" if noun[:1].lower() in "aeiou" else "a"
+    article = "an" if noun[:1].lower() in "aeiou" or noun.startswith("X ") else "a"
     when = f", published {doc.published_at:%Y-%m-%d}" if doc.published_at else ""
     return f"{article} {noun}{when}"
 

@@ -9,6 +9,7 @@ class UsageAmounts(BaseModel):
     llm_tokens_out: int = 0
     llm_calls: int = 0
     youtube_units: int = 0
+    whisper_seconds: int = 0
 
 
 class UsageFeatureRow(BaseModel):

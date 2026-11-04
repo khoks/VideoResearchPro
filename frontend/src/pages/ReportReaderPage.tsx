@@ -89,9 +89,7 @@ export function ReportReaderPage() {
   );
 
   if (isLoading) {
-    return (
-      <ReaderLoading label="Opening the report…" />
-    );
+    return <ReaderLoading label="Opening the report…" />;
   }
 
   if (error || !body || !parsed) {

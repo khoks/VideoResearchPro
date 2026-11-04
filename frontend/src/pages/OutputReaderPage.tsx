@@ -77,9 +77,7 @@ export function OutputReaderPage() {
   );
 
   if (output.isLoading || content.isLoading) {
-    return (
-      <ReaderLoading label="Opening the manuscript…" />
-    );
+    return <ReaderLoading label="Opening the manuscript…" />;
   }
 
   const err = output.error ?? content.error;

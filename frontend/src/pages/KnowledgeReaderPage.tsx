@@ -43,9 +43,7 @@ export function KnowledgeReaderPage() {
   );
 
   if (isLoading) {
-    return (
-      <ReaderLoading label="Opening the knowledge report…" />
-    );
+    return <ReaderLoading label="Opening the knowledge report…" />;
   }
 
   if (error) {

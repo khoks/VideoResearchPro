@@ -166,7 +166,7 @@ Layout: 75ch serif measure, `text-wrap: pretty` on prose and `balance` on headin
 
 | State | What renders |
 |-------|--------------|
-| Loading | Spinner with "Opening the report…" (`ReaderLoading`). The router shows the same line while the page's own chunk loads: the three readers are lazy routes (T-8.8.4.1), so DOMPurify, `html-react-parser` and the remark-gfm / hast stack stay out of the first paint. |
+| Loading | Spinner with "Opening the report…" (`ReaderLoading`). The router shows the same line while the page's own chunk loads: the three readers are lazy routes (T-8.8.4.1), so DOMPurify, `html-react-parser` and `remark-gfm` stay out of the first paint (react-markdown's own core stays: the job page, notes and Q&A cards import it). |
 | 404 (no report for this run) | `EmptyState` "No report for this run yet" + back link. |
 | Other error | `EmptyState` with the API's `detail` + back link. |
 | Report with no headings (e.g. "No transcript data available") | Body only; the outline nav is omitted. |

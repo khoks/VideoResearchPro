@@ -1,7 +1,7 @@
 /**
  * T-8.8.4.1: the three reader routes load their pages on demand, so the
- * sanitiser, the HTML parser and the remark-gfm / hast stack leave the
- * first-paint chunk.
+ * sanitiser (DOMPurify), the HTML parser (html-react-parser) and remark-gfm
+ * leave the first-paint chunk.
  *
  * Checked on the router the app mounts: each reader route's element is a
  * Suspense boundary around a React.lazy page, with the reader's own loading

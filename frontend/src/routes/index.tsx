@@ -42,8 +42,9 @@ import { ReaderLoading } from '../components/reader/ReaderLoading';
 // The library map pulls in sigma, graphology and a layout worker: its own chunk (S-8.9.2).
 const GraphPage = lazy(() => import('../pages/GraphPage'));
 
-// T-8.8.4.1: the three readers carry DOMPurify, html-react-parser and the
-// remark-gfm / hast stack, which no other page needs; each is its own chunk.
+// T-8.8.4.1: the three readers carry DOMPurify, html-react-parser and
+// remark-gfm, which no other page imports; each reader is its own chunk and
+// they share one `reader` chunk for those libraries.
 // While a reader's chunk loads it shows the line the reader itself shows
 // while its data loads, so the two waits read as one.
 const ReportReaderPage = lazy(() =>

@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 import functools
 import itertools
+import json
 import os
 import re
 from pathlib import Path
@@ -23,6 +24,7 @@ from app.config import Settings
 from app.main import app
 from app.models.job_video import JobVideo
 from app.routers.ws import router as ws_router
+from app.schemas.usage import UsageAmounts
 from app.services import llm_routing
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -416,6 +418,17 @@ def test_the_library_listing_is_described_as_the_callers() -> None:
     body = text[start:].splitlines()[1]
     assert "global" not in body.split("Returns")[0]
     assert "caller" in body.split("Returns")[0]
+
+
+def test_the_usage_example_shows_every_amount_the_response_carries() -> None:
+    """`UsageAmounts` defaults each field to 0, so validating the example would
+    pass with one missing. An API client is built from the example's keys."""
+    text = _reference()
+    section = text[text.index("### `GET /api/v1/usage`"):]
+    start = section.index("```json") + len("```json")
+    example = json.loads(section[start:section.index("```", start)])
+    rows = [*example["features"], example["totals"]]
+    assert all(set(row[w]) == set(UsageAmounts.model_fields) for row in rows for w in ("today", "last_30_days"))
 
 
 def test_the_reference_does_not_claim_no_doc_lists_endpoints() -> None:

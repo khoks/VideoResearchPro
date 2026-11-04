@@ -20,7 +20,7 @@ from youtube_transcript_api import TranscriptList, YouTubeTranscriptApi
 from app.config import settings
 from app.database import SessionLocal
 from app.models.transcript_cache import TranscriptCache
-from app.services import quota_service
+from app.services import quota_service, usage_service
 from app.services.quota_service import QuotaExceededError
 from app.utils.rate_limiter import RateLimiter
 from app.utils.youtube_helpers import parse_iso8601_duration
@@ -1274,6 +1274,10 @@ def _whisper_transcribe_with_retry(
     smaller on retry), ``AuthenticationError`` / ``PermissionDeniedError``
     (credentials won't fix themselves). These bubble up so the caller records
     the video as unavailable without wasting 3× the upload time.
+
+    Every Whisper call in the app comes through here, so this is where a
+    response's audio seconds are charged to the open usage scope (T-5.2.12):
+    once per response, and a chunk of a split file is a response of its own.
     """
     # Deferred import so the module loads cleanly in test environments where
     # ``openai`` may be unavailable at import time.
@@ -1294,13 +1298,15 @@ def _whisper_transcribe_with_retry(
                 f"({audio_size_mb:.1f} MB, attempt {attempt}/{_WHISPER_MAX_ATTEMPTS})..."
             )
             with open(audio_path, "rb") as audio_file:
-                return client.with_options(
+                response = client.with_options(
                     timeout=_WHISPER_REQUEST_TIMEOUT
                 ).audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file,
                     response_format="verbose_json",
                 )
+            usage_service.record_whisper(_whisper_duration(response))
+            return response
         except (BadRequestError, AuthenticationError, PermissionDeniedError) as e:
             # Non-retryable: re-raise so the caller records unavailable.
             logger.error(
@@ -1562,6 +1568,15 @@ def _merge_chunk_transcripts(
     return merged
 
 
+def _whisper_duration(response) -> float:
+    """The audio seconds a verbose_json response reports; 0.0 when it reports none."""
+    raw = response.get("duration") if isinstance(response, dict) else getattr(response, "duration", None)
+    try:
+        return float(raw or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _whisper_response_to_segments(response, tag: str, video_id: str) -> tuple[list[dict], str, float]:
     """Normalize a verbose_json Whisper response to our segment dicts.
 
@@ -1569,7 +1584,7 @@ def _whisper_response_to_segments(response, tag: str, video_id: str) -> tuple[li
     when the response carries only a text blob.
     """
     response_language = getattr(response, "language", None) or "unknown"
-    response_duration = float(getattr(response, "duration", 0.0) or 0.0)
+    response_duration = _whisper_duration(response)
 
     raw_segments = getattr(response, "segments", None) or []
     if raw_segments:

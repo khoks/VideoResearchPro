@@ -2,6 +2,7 @@ import api from './api';
 import type { Job, JobCreate, JobProvenance, VideoApproval } from '../types/job';
 import type { Video } from '../types/video';
 import type { ReportBody } from '../types/report';
+import { downloadApiFile } from './apiFiles';
 
 export const jobsApi = {
   create: (data: JobCreate, provenance?: JobProvenance) =>
@@ -24,4 +25,9 @@ export const jobsApi = {
     api.get<string>(`/jobs/${id}/report`, { responseType: 'text' }).then(r => r.data),
   /** S-8.8.1: reader payload `{title, html, statistics}` under header auth only. */
   getReportBody: (id: string) => api.get<ReportBody>(`/jobs/${id}/report/body`).then(r => r.data),
+  /** S-6.1.2: the report's Markdown source (`GET /jobs/{id}/report.md`), saved
+   * as `filename`. Fetched with the bearer header and saved from a blob: URL,
+   * never a navigation, so no token rides in a URL (T-8.8.1.5). */
+  downloadReportMarkdown: (id: string, filename: string) =>
+    downloadApiFile(`/jobs/${id}/report.md`, filename),
 };

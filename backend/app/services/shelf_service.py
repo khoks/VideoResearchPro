@@ -127,18 +127,6 @@ def job_ids_for_shelf(db: Session, shelf_id: str) -> list[str]:
     ]
 
 
-def shelves_for_job(db: Session, job_id: str, tenant_id: str) -> list[Shelf]:
-    """Shelves of ``tenant_id`` that hold ``job_id``. The tenant filter is on
-    the shelf, so a job id guessed from another tenant yields nothing."""
-    return (
-        db.query(Shelf)
-        .join(ShelfJob, ShelfJob.shelf_id == Shelf.id)
-        .filter(ShelfJob.job_id == job_id, Shelf.tenant_id == tenant_id)
-        .order_by(func.lower(Shelf.name).asc())
-        .all()
-    )
-
-
 def _name_taken(
     db: Session, tenant_id: str, name: str, *, exclude_id: str | None = None
 ) -> bool:

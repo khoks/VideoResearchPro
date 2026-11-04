@@ -31,6 +31,16 @@ def _create_job(client, topic="A run"):
     return r.json()["id"]
 
 
+def _shelves_holding(client, job_id):
+    """Names of the caller's shelves that hold ``job_id``, read the way the
+    job page reads them: from the listing's ``job_ids`` (``useJobShelves``),
+    one request for a whole page of job cards. ``GET /jobs/{id}/shelves``,
+    which had no caller, is gone."""
+    r = client.get("/api/v1/shelves")
+    assert r.status_code == 200, r.text
+    return {s["name"] for s in r.json() if job_id in s["job_ids"]}
+
+
 def _other_job(db, other, topic="Their run"):
     from app.models.job import Job
 
@@ -128,12 +138,11 @@ def test_add_job_is_idempotent_and_detail_lists_jobs(client, pro_user):
     assert {j["id"] for j in detail["jobs"]} == {job_a, job_b}
     assert {j["topic"] for j in detail["jobs"]} == {"First", "Second"}
 
-    mine = client.get(f"/api/v1/jobs/{job_a}/shelves").json()
-    assert [s["id"] for s in mine] == [shelf_id]
+    assert _shelves_holding(client, job_a) == {"Project"}
 
     assert client.delete(f"/api/v1/shelves/{shelf_id}/jobs/{job_a}").status_code == 204
     assert client.delete(f"/api/v1/shelves/{shelf_id}/jobs/{job_a}").status_code == 404
-    assert client.get(f"/api/v1/jobs/{job_a}/shelves").json() == []
+    assert _shelves_holding(client, job_a) == set()
     assert client.get(f"/api/v1/shelves/{shelf_id}").json()["job_count"] == 1
 
 
@@ -143,7 +152,7 @@ def test_a_job_can_sit_on_several_shelves(client, pro_user):
     job_id = _create_job(client)
     client.post(f"/api/v1/shelves/{a}/jobs/{job_id}")
     client.post(f"/api/v1/shelves/{b}/jobs/{job_id}")
-    assert {s["name"] for s in client.get(f"/api/v1/jobs/{job_id}/shelves").json()} == {"A", "B"}
+    assert _shelves_holding(client, job_id) == {"A", "B"}
 
 
 def test_deleting_a_shelf_keeps_its_jobs(client, pro_user):
@@ -153,7 +162,7 @@ def test_deleting_a_shelf_keeps_its_jobs(client, pro_user):
 
     assert client.delete(f"/api/v1/shelves/{shelf_id}").status_code == 204
     assert client.get(f"/api/v1/jobs/{job_id}").status_code == 200
-    assert client.get(f"/api/v1/jobs/{job_id}/shelves").json() == []
+    assert _shelves_holding(client, job_id) == set()
 
 
 def test_deleting_a_job_removes_it_from_every_shelf(client, db, pro_user):
@@ -196,11 +205,11 @@ def test_two_tenant_isolation(client, db, pro_user, other):
     assert client.get(f"/api/v1/shelves/{theirs.id}").status_code == 404
     assert client.put(f"/api/v1/shelves/{theirs.id}", json={"name": "Hijack"}).status_code == 404
     assert client.delete(f"/api/v1/shelves/{theirs.id}").status_code == 404
-    # Their job onto my shelf, my job onto their shelf, listing their job's shelves.
+    # Their job onto my shelf, my job onto their shelf, and their job's shelves.
     assert client.post(f"/api/v1/shelves/{my_shelf}/jobs/{their_job}").status_code == 404
     assert client.post(f"/api/v1/shelves/{theirs.id}/jobs/{my_job}").status_code == 404
     assert client.delete(f"/api/v1/shelves/{theirs.id}/jobs/{their_job}").status_code == 404
-    assert client.get(f"/api/v1/jobs/{their_job}/shelves").status_code == 404
+    assert _shelves_holding(client, their_job) == set(), "their membership never reaches my listing"
 
     db.expire_all()
     assert shelf_service.get_shelf(db, theirs.id, other.id).name == "Their shelf"

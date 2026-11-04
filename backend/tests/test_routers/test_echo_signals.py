@@ -453,6 +453,11 @@ def test_restore_drops_evidence_a_rejection_kept_from_before_the_fix(
     db.commit()
     db.expire_all()
     assert deleted_ref in db.get(VoiceSignal, row.id).derived_from
+    # The Rejected list names a rejection; it does not quote its stale evidence.
+    r = unauthenticated_client.get(f"{SIGNALS}/rejected", headers=ha)
+    assert {i["id"] for i in r.json()["items"]} == {row.id, orphan.id}
+    assert all(i["examples"] == [] for i in r.json()["items"])
+    assert all(words not in r.text for words in gone.values())
 
     r = unauthenticated_client.post(f"{SIGNALS}/{row.id}/restore", headers=ha)
     assert r.status_code == 200, r.text

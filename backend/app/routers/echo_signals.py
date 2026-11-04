@@ -94,10 +94,14 @@ def export_signals(db: Session = Depends(get_db), current_user: User = Depends(E
 
 @router.get("/rejected", response_model=RejectedSignalList)
 def list_rejected(db: Session = Depends(get_db), current_user: User = Depends(ECHO)):
-    """What the user marked "That's not me", most recent first (T-3.3.1.6)."""
+    """What the user marked "That's not me", most recent first (T-3.3.1.6).
+    Listed by name, without examples: a rejection made before T-3.3.1.6 may
+    still quote a source deleted while it was rejected (nothing cleaned
+    rejections then), and only restore re-checks them."""
     items = []
     for row in signals.list_rejected(db, current_user.id):
         d = _item(row).model_dump(by_alias=True)
+        d["examples"] = []
         items.append(RejectedSignalItem(**d, rejected_at=_utc(row.suppressed_at)))
     return RejectedSignalList(items=items)
 

@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.job import JobCreate, JobResponse, VideoApproval
-from app.schemas.shelf import ShelfResponse
 from app.schemas.job_template import JobTemplateResponse, SaveAsTemplate
 from app.schemas.video import VideoResponse
 from app.services import (
@@ -14,7 +13,6 @@ from app.services import (
     document_cap_service,
     job_service,
     report_service,
-    shelf_service,
     visibility_service,
 )
 from app.services import job_template_service
@@ -300,22 +298,6 @@ def save_job_as_template(
             status_code=422, detail=f"This run cannot be saved as a template: {exc.message}"
         )
     return job_template_service.template_to_dict(db, template, current_user)
-
-
-@router.get("/{job_id}/shelves", response_model=list[ShelfResponse])
-def get_job_shelves(
-    job_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Shelves this job sits on (E-8.1). Read for every tier; the job must be
-    the caller's, so a guessed id is a 404."""
-    job = job_service.get_job(db, job_id, tenant_id=current_user.id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return shelf_service.shelves_to_dicts(
-        db, shelf_service.shelves_for_job(db, job.id, current_user.id)
-    )
 
 
 @router.get("/{job_id}/videos", response_model=list[VideoResponse])

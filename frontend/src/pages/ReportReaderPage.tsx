@@ -6,13 +6,22 @@
  * and citation chips, and renders through `ReaderShell`. The iframe modal on
  * the job page survives as a quick peek and still owns "Open in new tab".
  * The report's processing note is shown above the body (T-8.8.4.4).
+ * "Download Markdown" saves the report's Markdown source
+ * (`GET /jobs/{id}/report.md`, S-6.1.2) through the same header-auth blob
+ * path as every other download.
+ *
+ * Lazy-loaded by the router (T-8.8.4.1), so the sanitiser and the HTML
+ * parser stay out of the first paint.
  */
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useReportBody } from '../hooks/useReport';
 import { useJobVideos } from '../hooks/useJobs';
 import { useCitationStills } from '../hooks/useVideoFrames';
-import { Button, EmptyState, Spinner } from '../components/primitives';
+import { jobsApi } from '../services/jobsApi';
+import { useJobStore } from '../stores/jobStore';
+import { Button, EmptyState } from '../components/primitives';
+import { ReaderLoading } from '../components/reader/ReaderLoading';
 import {
   CitationCardProvider,
   Endnotes,
@@ -23,9 +32,8 @@ import {
   parseReportHtml,
   resolveCitations,
   sanitizeReportHtml,
+  slugify,
 } from '../components/reader';
-import { useColors } from '../hooks/useTheme';
-import { fonts, fontSize, space } from '../theme';
 import type { ReportStatistics } from '../types/report';
 
 const KICKER: Record<string, string> = {
@@ -34,10 +42,17 @@ const KICKER: Record<string, string> = {
   subscription: 'Report',
 };
 
+/** The saved file's name: the report's title as a slug, else the server's own. */
+function reportMarkdownFilename(title: string | null | undefined, jobId: string): string {
+  const slug = title ? slugify(title) : '';
+  return `${slug && slug !== 'section' ? slug : `report-${jobId}`}.md`;
+}
+
 export function ReportReaderPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
-  const c = useColors();
+  const pushToast = useJobStore((s) => s.pushToast);
+  const [savingMarkdown, setSavingMarkdown] = useState(false);
   const { data: body, isLoading, error } = useReportBody(jobId ?? null);
   // The run's documents turn a citation's href (or, for old reports, the
   // title written beside it) into a source for the hover card (S-8.8.2).
@@ -74,11 +89,7 @@ export function ReportReaderPage() {
   );
 
   if (isLoading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: space['3'], color: c.textSecondary }}>
-        <Spinner /> <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm }}>Opening the report…</span>
-      </div>
-    );
+    return <ReaderLoading label="Opening the report…" />;
   }
 
   if (error || !body || !parsed) {
@@ -98,6 +109,18 @@ export function ReportReaderPage() {
 
   const meta = formatMeta(body.generated_at, body.statistics);
 
+  const downloadMarkdown = async () => {
+    if (!jobId || savingMarkdown) return;
+    setSavingMarkdown(true);
+    try {
+      await jobsApi.downloadReportMarkdown(jobId, reportMarkdownFilename(body.title, jobId));
+    } catch {
+      pushToast('error', 'Could not prepare the Markdown download.');
+    } finally {
+      setSavingMarkdown(false);
+    }
+  };
+
   return (
     <CitationCardProvider index={citationIndex} resolveStill={resolveStill}>
       <ReaderShell
@@ -107,6 +130,9 @@ export function ReportReaderPage() {
         actions={
           <>
             {backToRun}
+            <Button size="sm" variant="secondary" onClick={downloadMarkdown} disabled={savingMarkdown}>
+              {savingMarkdown ? 'Preparing…' : 'Download Markdown'}
+            </Button>
             <Button size="sm" variant="secondary" onClick={() => window.print()}>
               Print or save as PDF
             </Button>

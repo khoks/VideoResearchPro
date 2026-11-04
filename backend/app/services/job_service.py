@@ -64,6 +64,7 @@ def create_job(
             if job_data.job_type == "topic"
             else None
         ),
+        published_after_days=getattr(job_data, "published_after_days", None),
         template_id=template_id,
         template_version=template_version if template_id else None,
         tenant_id=tenant_id,
@@ -170,6 +171,7 @@ def job_to_response_dict(job: Job) -> dict:
         "output_length": job.output_length,
         "visual_analysis": bool(job.visual_analysis),
         "source_types": job_source_types.from_column(job.source_types_json, job_id=job.id),
+        "published_after_days": job.published_after_days,
         "template_id": job.template_id,
         "template_version": job.template_version,
         "search_queries_used": json.loads(job.search_queries_used) if job.search_queries_used else None,

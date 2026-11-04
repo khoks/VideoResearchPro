@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import socket
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -162,14 +163,28 @@ def test_the_check_says_who_and_how(unauthenticated_client, db, two):
 def test_tokens_are_capped_and_last_use_is_recorded(unauthenticated_client, db, two, monkeypatch):
     monkeypatch.setattr(settings, "ECHO_SHARE_TOKENS_MAX", 2)
     body, tok = _make(unauthenticated_client, two["ha"])
-    _make(unauthenticated_client, two["ha"])
+    other, _ = _make(unauthenticated_client, two["ha"])
     r = unauthenticated_client.post(TOKENS, json={"label": "third"}, headers=two["ha"])
     assert r.status_code == 409 and "revoke one" in r.json()["detail"]
     assert db.get(EchoShareToken, body["id"]).last_used_at is None
     unauthenticated_client.post(SHARES, json={"text": "x"}, headers=tok)
     db.expire_all()
     assert db.get(EchoShareToken, body["id"]).last_used_at is not None
-    assert unauthenticated_client.get(TOKENS, headers=two["ha"]).json()["items"][-1]["last_used_at"]
+    # By id, not by position: two tokens made inside one clock tick (about
+    # 15 ms on Windows) tie on created_at, and the tie-break is a random uuid.
+    listed = unauthenticated_client.get(TOKENS, headers=two["ha"]).json()["items"]
+    assert {t["id"]: bool(t["last_used_at"]) for t in listed} == {body["id"]: True, other["id"]: False}
+
+
+def test_the_token_list_is_newest_first(unauthenticated_client, db, two):
+    older, _ = _make(unauthenticated_client, two["ha"])
+    newer, _ = _make(unauthenticated_client, two["ha"])
+    # Set apart by hand, so the order does not depend on the clock's tick.
+    db.get(EchoShareToken, older["id"]).created_at = datetime(2026, 1, 1)
+    db.get(EchoShareToken, newer["id"]).created_at = datetime(2026, 1, 2)
+    db.commit()
+    listed = unauthenticated_client.get(TOKENS, headers=two["ha"]).json()["items"]
+    assert [t["id"] for t in listed] == [newer["id"], older["id"]]
 
 
 def test_another_tenants_token_writes_only_to_that_tenant(unauthenticated_client, db, two):

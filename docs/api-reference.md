@@ -397,7 +397,8 @@ Create a new job and dispatch its Celery task. The body discriminates on `job_ty
   "search_instructions": "...",
   "preferred_channels": ["@channel1", "..."],
   "num_videos": 25,
-  "source_types": ["video", "reddit_post"]
+  "source_types": ["video", "reddit_post"],
+  "published_after_days": 30
 }
 
 // channel
@@ -415,6 +416,8 @@ Create a new job and dispatch its Celery task. The body discriminates on `job_ty
 ```
 
 `source_types` (S-1.5.13, [D-114](decisions.md#d-114--which-sources-a-topic-run-searches-settings-decide-one-budget-for-the-run-no-whisper-before-approval-2026-10-29)) says what a topic run searches: `video`, `reddit_post`, `hn_story`, `mastodon_post`, `bluesky_post`, `podcast_episode`, `article`, `tweet`. Omitted, it searches YouTube only. A type that is unknown, library-only (`pdf`, `fb_post`, `ig_post`, `li_post`) or not set up on this install is a 422 naming the missing setting. `num_videos` (1 to 500, default 10) is the whole run's budget, shared across its sources, so it must be at least one per source. On a channel or subscription job, anything but YouTube is a 422.
+
+`published_after_days` (S-8.6.3, 1 to 3650, omitted or null for no preference) asks the search agent to prefer sources published in the last N days. It is stored as days and counted back from the day the run ranks its candidates, so a template or a queued job never goes stale. It is a ranking preference, never a filter ([D-059](decisions.md#d-059--selection-quotas-preferred-channel-guarantee--concentration-cap-2026-07-30), [D-072](decisions.md#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19)): a source outside the window is still selected when nothing better exists, and discovery and the candidate pool are unchanged. Where it disagrees with the planner's `temporal_profile`, the window leads, since the user chose it. It steers the ranking of YouTube results only, because nothing else ranks a run's candidates, so a channel or subscription job, or a topic job that does not search YouTube, is a 422. Omitted, the ranking prompt is byte-identical to a run from before the field.
 
 Also on a topic job: `min_duration_minutes`, `max_duration_minutes` and `channel_type_filters`. `videos_per_channel` is 1 to 50, default 10.
 
@@ -859,9 +862,10 @@ Named, reusable research recipes (E-8.6 / M6; plan: [`docs/plans/m6-job-template
     "num_videos": 25, "min_duration_minutes": 10, "max_duration_minutes": null,
     "channel_type_filters": ["educational"], "preferred_channels": ["@lexfridman"],
     "output_length": "deep", "visual_analysis": false,
+    "source_types": null, "published_after_days": 30,
     "channel_list": null, "videos_per_channel": null
   },
-  "problems": [],          // why the caller could not run it today, e.g. a tier cap below num_videos
+  "problems": [],          // what stops or limits a run today, e.g. a tier cap below num_videos
   "created_at": "…",
   "updated_at": "…"
 }
@@ -870,7 +874,7 @@ Named, reusable research recipes (E-8.6 / M6; plan: [`docs/plans/m6-job-template
 Parameters are validated the way a submission is (`JobCreate`, with a placeholder topic, and placeholder channels when a channel or subscription recipe leaves `channel_list` empty, meaning "add the channels each run"); a recipe that would fail is a **422**, and unknown fields are refused rather than dropped. Names are unique per reader among live templates, case-insensitively (409). `{{topic}}` in `search_instructions` is replaced by the run's topic at submission.
 
 ### `GET /api/v1/job-templates`
-The caller's templates A→Z, then the built-ins A→Z. The five starters (S-8.6.2) have stable `builtin_key`s: `topic-scan`, `deep-dive`, `quick-brief`, `channel-deep-dive`, `subscription-follow`.
+The caller's templates A→Z, then the built-ins A→Z. The seven starters (S-8.6.2, S-8.6.4) have stable `builtin_key`s: `topic-scan`, `deep-dive`, `quick-brief`, `channel-deep-dive`, `subscription-follow`, `podcast-digest`, `mixed-source-debate`. A starter names only sources that need no search credential. Reading a podcast can need more: an episode with no published transcript goes to Whisper after approval, so a template that reads podcasts lists a `problems` entry on an install with no `OPENAI_API_KEY`, with `WHISPER_MAX_PER_JOB=0`, or without ffmpeg (long episodes are split for Whisper).
 
 ### `POST /api/v1/job-templates`
 Body `{ "name", "description"?, "parameters" }`. 201.

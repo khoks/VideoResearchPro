@@ -22,15 +22,7 @@ import { ForgotPasswordPage } from '../pages/ForgotPasswordPage';
 import { ResetPasswordPage } from '../pages/ResetPasswordPage';
 import { OAuthCallbackPage } from '../pages/OAuthCallbackPage';
 import { AccountSecurityPage } from '../pages/AccountSecurityPage';
-import { SubscriptionPage } from '../pages/SubscriptionPage';
-import { AIModelsPage } from '../pages/AIModelsPage';
-import { SystemStatusPage } from '../pages/SystemStatusPage';
-import { EchoPage } from '../pages/EchoPage';
-import { EchoInboxPage } from '../pages/EchoInboxPage';
-import { EchoImportPage } from '../pages/EchoImportPage';
-import { EchoShareTargetPage } from '../pages/EchoShareTargetPage';
 import { EchoConnectorCallbackPage } from '../pages/EchoConnectorCallbackPage';
-import { AuthorPage } from '../pages/AuthorPage';
 import { WelcomePage } from '../pages/WelcomePage';
 import { SavedSearchesPage } from '../pages/SavedSearchesPage';
 import { OnboardingGate } from '../components/onboarding/OnboardingGate';
@@ -59,6 +51,17 @@ const OutputReaderPage = lazy(() =>
   import('../pages/OutputReaderPage').then((m) => ({ default: m.OutputReaderPage })),
 );
 
+// T-8.8.4.5: pages an account opens now and then, not on the way to a report or
+// an answer. Each is its own chunk, so the pages people work in load without them.
+const EchoPage = lazy(() => import('../pages/EchoPage').then((m) => ({ default: m.EchoPage })));
+const EchoInboxPage = lazy(() => import('../pages/EchoInboxPage').then((m) => ({ default: m.EchoInboxPage })));
+const EchoImportPage = lazy(() => import('../pages/EchoImportPage').then((m) => ({ default: m.EchoImportPage })));
+const EchoShareTargetPage = lazy(() => import('../pages/EchoShareTargetPage').then((m) => ({ default: m.EchoShareTargetPage })));
+const AuthorPage = lazy(() => import('../pages/AuthorPage').then((m) => ({ default: m.AuthorPage })));
+const SubscriptionPage = lazy(() => import('../pages/SubscriptionPage').then((m) => ({ default: m.SubscriptionPage })));
+const AIModelsPage = lazy(() => import('../pages/AIModelsPage').then((m) => ({ default: m.AIModelsPage })));
+const SystemStatusPage = lazy(() => import('../pages/SystemStatusPage').then((m) => ({ default: m.SystemStatusPage })));
+
 // A lazy route's chunk can fail to load where an eager page cannot, so each
 // one carries its own error screen, inside the app layout.
 function lazyRoute(page: ReactNode, fallback: ReactNode) {
@@ -70,6 +73,10 @@ function lazyRoute(page: ReactNode, fallback: ReactNode) {
 
 function reader(page: ReactNode, loading: string) {
   return lazyRoute(page, <ReaderLoading label={loading} />);
+}
+
+function lazyPage(element: ReactNode, loading: string) {
+  return lazyRoute(element, <Spinner label={loading} />);
 }
 
 function ProtectedRoute() {
@@ -142,18 +149,18 @@ export const router = createBrowserRouter([
           { path: 'qa-history', element: <QAHistoryChatPage /> },
           { path: 'exports', element: <ExportsPage /> },
           { path: 'notes', element: <NotesPage /> },
-          { path: 'author', element: <AuthorPage /> },
-          { path: 'echo', element: <EchoPage /> },
-          { path: 'echo/inbox', element: <EchoInboxPage /> },
-          { path: 'echo/import', element: <EchoImportPage /> },
+          { path: 'author', ...lazyPage(<AuthorPage />, 'Loading Author Studio') },
+          { path: 'echo', ...lazyPage(<EchoPage />, 'Loading Echo') },
+          { path: 'echo/inbox', ...lazyPage(<EchoInboxPage />, 'Loading the inbox') },
+          { path: 'echo/import', ...lazyPage(<EchoImportPage />, 'Loading the import page') },
           // T-3.7.6.1: public/share-target-sw.js keeps the share and redirects
           // here. It stays outside that worker's scope, /echo/share-target.
-          { path: 'echo/incoming', element: <EchoShareTargetPage /> },
+          { path: 'echo/incoming', ...lazyPage(<EchoShareTargetPage />, 'Loading what was shared') },
           { path: 'echo/connectors/:name/callback', element: <EchoConnectorCallbackPage /> },
-          { path: 'account/subscription', element: <SubscriptionPage /> },
-          { path: 'account/ai-models', element: <AIModelsPage /> },
+          { path: 'account/subscription', ...lazyPage(<SubscriptionPage />, 'Loading your subscription') },
+          { path: 'account/ai-models', ...lazyPage(<AIModelsPage />, 'Loading AI models') },
           { path: 'account/security', element: <AccountSecurityPage /> },
-          { path: 'account/system', element: <SystemStatusPage /> },
+          { path: 'account/system', ...lazyPage(<SystemStatusPage />, 'Loading system status') },
         ],
       },
     ],

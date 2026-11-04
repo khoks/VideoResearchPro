@@ -118,7 +118,7 @@ def test_email_messages_table_round_trips(migrated):
     _exec(eng, insert, id="a")
     with pytest.raises(IntegrityError):
         _exec(eng, insert, id="b")
-    command.downgrade(cfg, "5f8caf39b5b1")
+    command.downgrade(cfg, "927718ee5b78")
     assert "echo_email_messages" not in inspect(eng).get_table_names()
     command.upgrade(cfg, "head")
     assert "echo_email_messages" in inspect(eng).get_table_names()

@@ -21,7 +21,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
+import { Markdown } from '../common/Markdown';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CitationLink } from '../citation';
 import { citedFileFailed } from '../citation/citedFile';
@@ -785,7 +785,7 @@ function AnswerBody({ children }: { children: string }) {
   const c = useColors();
   return (
     <div className="reading" style={{ fontFamily: fonts.body, fontSize: fontSize.sm, lineHeight: lineHeight.loose, color: c.textPrimary }}>
-      <ReactMarkdown>{children}</ReactMarkdown>
+      <Markdown>{children}</Markdown>
     </div>
   );
 }

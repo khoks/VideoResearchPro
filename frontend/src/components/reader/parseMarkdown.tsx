@@ -75,11 +75,15 @@ function transform(root: Root, opts: ParseMarkdownOptions): { outline: OutlineEn
   const fragmentLinks: Element[] = [];
   const pageTitle = opts.title ? norm(opts.title).toLowerCase() : null;
 
-  // 1. A leading `# Title` is the document's title, not body text.
+  // 1. A leading `# Title` is the document's title, not body text. It still
+  //    takes its id, or a book called "Introduction" would give its own
+  //    "## Introduction" the plain id here and `introduction-2` in the EPUB,
+  //    PDF and contents links (T-8.8.4.2).
   let docTitle: string | null = null;
   const first = root.children.find(isElement);
   if (first && first.tagName === 'h1') {
     docTitle = norm(textOf(first));
+    slug(docTitle);
     root.children = root.children.filter((n) => n !== first);
   }
 
@@ -109,7 +113,10 @@ function transform(root: Root, opts: ParseMarkdownOptions): { outline: OutlineEn
       if (!isElement(node)) return [node];
       const name = node.tagName;
 
-      if (name === 'h1' && pageTitle && norm(textOf(node)).toLowerCase() === pageTitle) return [];
+      if (name === 'h1' && pageTitle && norm(textOf(node)).toLowerCase() === pageTitle) {
+        slug(norm(textOf(node)));
+        return [];
+      }
       if (name === 'h1') node.tagName = 'h2';
 
       if (/^h[2-6]$/.test(node.tagName)) {
@@ -162,10 +169,11 @@ function transform(root: Root, opts: ParseMarkdownOptions): { outline: OutlineEn
   };
   visit(root);
 
-  // 4. In-page links whose target was slugged differently. The book
-  //    outputter writes its table of contents against its own slug of the
-  //    bare chapter title, while the heading reads "1. Title", so a link to
-  //    `#title` belongs to the heading `1-title`.
+  // 4. In-page links whose target was slugged differently. Books stored
+  //    before T-6.1.4.4 keep a table of contents written against a slug of
+  //    the bare chapter title, while the heading reads "1. Title", so a link
+  //    to `#title` belongs to the heading `1-title`. A book written since
+  //    links the real ids, and nothing here touches it.
   for (const a of fragmentLinks) {
     const raw = String(a.properties.href).slice(1);
     let frag = raw;

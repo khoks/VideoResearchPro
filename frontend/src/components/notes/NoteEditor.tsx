@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { Markdown } from '../common/Markdown';
 import { Button, Textarea } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
@@ -135,7 +135,7 @@ export function NoteEditor({
             lineHeight: lineHeight.normal,
           }}
         >
-          <ReactMarkdown>{body}</ReactMarkdown>
+          <Markdown>{body}</Markdown>
         </div>
       )}
 

@@ -43,6 +43,14 @@ SUPPORTED_PROVIDERS: frozenset[str] = frozenset(
     {"openai", "anthropic", "google", "local"}
 )
 
+# The providers whose stored key an LLM call actually uses
+# (``llm_service._resolve_byok_api_key`` reads this set). ``local`` is
+# accepted for storage but never read: the local endpoint is install-wide
+# infrastructure (``LLM_LOCAL_BASE_URL``), not a per-user account. The
+# keys panel on /account/ai-models lists exactly these, so it never offers
+# a key that would be stored and then ignored.
+RESOLVED_PROVIDERS: frozenset[str] = frozenset({"openai", "anthropic", "google"})
+
 
 class UnsupportedProviderError(ValueError):
     pass
@@ -78,6 +86,37 @@ def _get_fernet() -> Fernet:
         "use cryptography.fernet.Fernet.generate_key()) in production."
     )
     return Fernet(Fernet.generate_key())
+
+
+def encryption_key_state() -> str:
+    """``"valid"``, ``"unset"`` or ``"invalid"``: what ``BYOK_ENCRYPTION_KEY``
+    holds, without touching the cached Fernet (an unset key would log its
+    warning and generate one). Configuration only, never key material.
+
+    * ``valid``: a Fernet key. Stored keys outlive a restart.
+    * ``unset``: ``_get_fernet`` encrypts with a key generated for this
+      process alone. A save works, but the ciphertext is unreadable at the
+      next restart, and the Celery worker (a separate process with its own
+      generated key) can never read it, so background jobs use the
+      install's keys.
+    * ``invalid``: set, but not 32 url-safe base64 bytes. ``_get_fernet``
+      raises ``EncryptionConfigurationError``, so every save fails and no
+      stored key can be read (calls fall back to the install's keys).
+    """
+    raw = getattr(settings, "BYOK_ENCRYPTION_KEY", None)
+    if not raw:
+        return "unset"
+    try:
+        Fernet(raw.encode("utf-8") if isinstance(raw, str) else raw)
+    except (ValueError, TypeError):
+        return "invalid"
+    return "valid"
+
+
+def keys_persist() -> bool:
+    """Whether a stored key outlives this process: only with a valid
+    ``BYOK_ENCRYPTION_KEY`` (see ``encryption_key_state``)."""
+    return encryption_key_state() == "valid"
 
 
 def encrypt_secret(plaintext: str) -> str:

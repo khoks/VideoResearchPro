@@ -38,6 +38,9 @@ settings.ECHO_PERSONAL_INDEX_ENABLED = False
 # S-3.2.1: connector syncs are queued to Celery in production; the suite
 # never queues (the connector tests run syncs inline with fakes).
 settings.ECHO_CONNECTOR_SYNC = "off"
+# T-3.4.1.8: writing a voice test calls the draft model about 40 times. The
+# suite never queues it; the tests run the generator inline with a fake model.
+settings.ECHO_VOICE_TEST_GENERATION = "off"
 # S-3.7.2 part 2: no shared image or recording may reach a remote provider
 # from the suite. Tests of the vision fallback and Whisper turn this back on
 # with the remote call patched.

@@ -16,6 +16,12 @@ Modes:
     python scripts/voice_match_harness.py user-score --key key.json --answers answers.json \
         --record data/videoresearchpro.db --tenant <id>   # stores the gate (S-3.4.1)
 
+Tier (iii) is also in the app now (T-3.4.1.8): the Echo page builds the same
+pairs and records the same gate. The procedure both use (the hold-out, the
+prompts, the pairs, the score) lives in app/services/echo_voice_test_service.py;
+this script keeps what only the command line does: the copy of the database,
+the files, the synthetic-writer run.
+
 Keys come from ``--env-file`` (default backend/.env beside this script), read
 before the app is imported, as in scripts/judge_pair.py.
 """
@@ -67,18 +73,8 @@ NEUTRAL = """{situation}
 
 Write a short note of 40 to 90 words in {language} reacting to this. Reply with the note only."""
 
-VOICE = """You are drafting a note as a specific person, in their voice. Below is what is known about how they write and think, and five things they actually wrote. Match their style: word choice, sentence length, punctuation, register, and the way they frame a point. Do not copy their sentences and do not mention the samples.
-
-How they write and think:
-{trait_card}
-
-Things they wrote:
-{exemplars}
-
-Situation:
-{situation}
-
-Write a short note of 40 to 90 words in {language} reacting to this, as this person. Reply with the note only."""
+# VOICE and TOPIC (tier iii) live in app/services/echo_voice_test_service.py,
+# which the app's in-page test uses too (``VOICE_PROMPT``, ``TOPIC_PROMPT``).
 
 JUDGE_VOICE = """Here are samples written by one person:
 
@@ -145,31 +141,15 @@ def _verdict(raw: str, allowed: tuple[str, ...]) -> str:
 
 def _exemplars(notes: list[str], k: int = 5) -> list[str]:
     """Style diversity, not topic: spread over the mean-sentence-length range."""
-    from app.services import echo_stylometry as stylo
+    from app.services import echo_voice_test_service as vt
 
-    ranked = sorted(notes, key=lambda t: stylo.profile(t).mean_sentence_words)
-    if len(ranked) <= k:
-        return ranked
-    idx = sorted({round(i * (len(ranked) - 1) / (k - 1)) for i in range(k)})
-    return [ranked[i] for i in idx]
+    return vt.exemplars(notes, k)
 
 
 def _trait_card(db, tenant_id: str, situation: str) -> list[str]:
-    from app.models.voice_signal import VoiceSignal
-    from app.services import echo_personal_vectors as pv
+    from app.services import echo_voice_test_service as vt
 
-    hits = pv.query_personal_context(tenant_id, situation, n=8, kinds=["signal"])
-    lines = [h.text.split("\nExamples:")[0] for h in hits]
-    cadence = (
-        db.query(VoiceSignal)
-        .filter(VoiceSignal.tenant_id == tenant_id, VoiceSignal.signal_type == "cadence", VoiceSignal.suppressed_at.is_(None))
-        .all()
-    )
-    for c in cadence:
-        line = f"style · cadence: {c.value}"
-        if line not in lines:
-            lines.append(line)
-    return lines
+    return vt.trait_card(db, tenant_id, situation)
 
 
 def _setup_writer(db, name: str, persona: dict) -> str:
@@ -196,6 +176,7 @@ def run(out: pathlib.Path | None) -> dict:
     from app.services import echo_personal_vectors as pv
     from app.services import echo_signal_extraction as ex
     from app.services import echo_stylometry as stylo
+    from app.services.echo_voice_test_service import voice_prompt
     from app.services.model_pricing import pricing_for
 
     Base.metadata.create_all(engine)
@@ -227,12 +208,7 @@ def run(out: pathlib.Path | None) -> dict:
                 card = _trait_card(db, tenant, situation)
                 n_text, t_in, t_out = _ask(drafter, NEUTRAL.format(situation=situation, language=language))
                 charge(DRAFTER[1], t_in, t_out)
-                v_prompt = VOICE.format(
-                    trait_card="\n".join(f"- {line}" for line in card) or "- (nothing learned yet)",
-                    exemplars="\n\n".join(f"[{i + 1}] {e}" for i, e in enumerate(exemplars)),
-                    situation=situation,
-                    language=language,
-                )
+                v_prompt = voice_prompt(card, exemplars, situation, language)
                 v_text, t_in, t_out = _ask(drafter, v_prompt)
                 charge(DRAFTER[1], t_in, t_out)
                 sims = {o: stylo.similarity(stylo.profile(v_text), held[o]) for o in personas}
@@ -339,56 +315,45 @@ def score(items: list[dict]) -> dict:
 # Tier (iii): the user as judge
 
 
-TOPIC = """In at most twelve words, name the topic of this note, as a situation someone could react to. Reply with the topic only.
-
-Note:
-{note}"""
-
-
 def user_pairs(db_path: pathlib.Path, tenant_id: str, out: pathlib.Path, key: pathlib.Path, n: int = 20) -> None:
     """Blinded pairs for tier (iii), from a COPY of a database (it is
     modified). Holds out ``n`` of the user's live notes (soft-deleted in the
     copy, so extraction withdraws them), re-learns from the rest, and writes
     a V draft for each held-out note's topic. ``out`` gets the pairs
     (``pair``, ``A``, ``B``) to show the user; ``key`` says which is theirs.
-    Refuses below the pre-registered floor of 40 live notes."""
+    Refuses below the pre-registered floor of 40 live notes. The pairs are
+    built by ``echo_voice_test_service.build_pairs``, as in the app."""
     _scratch_env()
     os.environ["DATABASE_URL"] = f"sqlite:///{db_path.as_posix()}"
     from app.database import SessionLocal
     from app.services import echo_personal_vectors as pv
     from app.services import echo_signal_extraction as ex
+    from app.services import echo_voice_test_service as vt
     from app.services import note_service
 
     rng = random.Random(SEED)
     db = SessionLocal()
     try:
         notes = list(note_service.iter_notes(db, tenant_id, include_deleted=False))
-        if len(notes) < 40:
-            raise SystemExit(f"tier (iii) needs at least 40 live notes; this tenant has {len(notes)}")
-        held = rng.sample(notes, n)
+        try:
+            held = vt.hold_out(notes, rng, n)
+        except vt.NotEnoughNotes as e:
+            raise SystemExit(str(e))
         held_text = {x.id: x.body_md for x in held}
         for x in held:
             note_service.delete_note(db, tenant_id, x.id)
         ex.run(db, tenant_id)
         pv.sync_tenant(db, tenant_id)
         remaining = [x.body_md for x in note_service.iter_notes(db, tenant_id, include_deleted=False)]
-        exemplars = _exemplars(remaining)
-        drafter = _client(DRAFTER, 1200)
-        pairs, keys = [], []
-        for i, (note_id, own) in enumerate(held_text.items(), start=1):
-            topic, _, _ = _ask(drafter, TOPIC.format(note=own))
-            language = ex.language_of(own)
-            card = _trait_card(db, tenant_id, topic)
-            draft, _, _ = _ask(drafter, VOICE.format(
-                trait_card="\n".join(f"- {line}" for line in card) or "- (nothing learned yet)",
-                exemplars="\n\n".join(f"[{k + 1}] {e}" for k, e in enumerate(exemplars)),
-                situation=topic,
-                language={"en": "English", "hi-Deva": "Hindi", "hi-Latn": "Hindi in Roman letters", "mixed": "Hinglish"}[language],
-            ))
-            own_first = rng.random() < 0.5
-            pid = f"p{i:02d}"
-            pairs.append({"pair": pid, "A": own if own_first else draft, "B": draft if own_first else own})
-            keys.append({"pair": pid, "own_is": "A" if own_first else "B", "note_id": note_id, "topic": topic})
+        drafter = _client(DRAFTER, vt.DRAFT_MAX_TOKENS)
+        built = vt.build_pairs(
+            list(held_text.items()),
+            remaining,
+            ask=lambda prompt: _ask(drafter, prompt),
+            trait_card=lambda topic: _trait_card(db, tenant_id, topic),
+            rng=rng,
+        )
+        pairs, keys = built.pairs, built.keys
     finally:
         db.close()
     out.write_text(json.dumps(pairs, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -398,14 +363,16 @@ def user_pairs(db_path: pathlib.Path, tenant_id: str, out: pathlib.Path, key: pa
 
 def user_score(key: pathlib.Path, answers: pathlib.Path) -> dict:
     """``key``: [{pair, own_is}] ; ``answers``: {pair: "A"|"B"}. Pass when the
-    user picks their own text in at most 80% of pairs (and >= 20 pairs)."""
+    user picks their own text in at most 80% of pairs (and >= 20 pairs).
+    The rule is ``echo_voice_test_service.score_picks``, as in the app."""
+    from app.services.echo_voice_test_service import score_picks
+
     k = json.loads(key.read_text(encoding="utf-8"))
     a = json.loads(answers.read_text(encoding="utf-8"))
-    picked_own = sum(1 for row in k if a.get(row["pair"]) == row["own_is"])
-    share = picked_own / len(k) if k else 1.0
-    result = {"pairs": len(k), "picked_own_share": round(share, 3), "pass": len(k) >= 20 and share <= 0.80}
+    scored = score_picks(k, a)
+    result = {name: scored[name] for name in ("pairs", "picked_own_share", "pass")}
     print(json.dumps(result, indent=2))
-    return {**result, "picked_own": picked_own}
+    return {**result, "picked_own": scored["picked_own"]}
 
 
 def record_result(db_path: pathlib.Path, tenant_id: str, result: dict) -> None:
@@ -448,6 +415,10 @@ def main() -> None:
     elif args.mode == "user-pairs":
         user_pairs(args.db, args.tenant, args.out, args.key)
     else:
+        if args.record:
+            # Scoring imports the app; the database it binds to must be the
+            # one --record writes, before that import reads the setting.
+            os.environ["DATABASE_URL"] = f"sqlite:///{args.record.as_posix()}"
         result = user_score(args.key, args.answers)
         if args.record:
             if not args.tenant:

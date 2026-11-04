@@ -51,6 +51,7 @@ from app.services import (
 )
 from app.models.echo_import import EchoImport
 from app.models.echo_draft import EchoDraft, EchoVoiceGate
+from app.models.echo_voice_test import EchoVoiceTest
 from app.models.echo_share_token import EchoShareToken
 from app.models.echo_card_state import EchoCardState
 from app.models.echo_fact_tombstone import EchoFactTombstone
@@ -144,6 +145,10 @@ def _seed_brain(db, chroma, user, *, marker: str) -> dict:
     echo_draft_service.record_voice_test(db, user.id, pairs=20, picked_own=10)
     db.add(EchoDraft(tenant_id=user.id, user_id=user.id, input_message=f"{marker} asks who pays",
                      language="en", draft=f"{marker} thinks the importer pays", disclosure="Drafted with Echo, reviewed by me"))
+    # T-3.4.1.8: an in-app voice test: the user's note beside a draft.
+    db.add(EchoVoiceTest(tenant_id=user.id, user_id=user.id, status="ready", seed=1, pairs_total=1, pairs_built=1,
+                         pairs_json=json.dumps([{"pair": "p01", "A": f"{marker} my note", "B": f"{marker} a draft"}]),
+                         key_json=json.dumps([{"pair": "p01", "own_is": "A", "note_id": "n1", "topic": f"{marker} topic"}])))
     db.commit()
     _vector(chroma, settings.CHROMA_SHARES_COLLECTION_NAME, echo_vectors.share_vector_id(file.id), user.id)
     _vector(chroma, settings.CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME, f"fact:{f2.id}", user.id)
@@ -204,6 +209,7 @@ def _direct_footprint(db, chroma, shares_dir, tenant_id: str) -> dict:
         "echo_imports": db.query(EchoImport).filter(EchoImport.tenant_id == tenant_id).count(),
         "echo_drafts": db.query(EchoDraft).filter(EchoDraft.tenant_id == tenant_id).count(),
         "echo_voice_gates": db.query(EchoVoiceGate).filter(EchoVoiceGate.tenant_id == tenant_id).count(),
+        "echo_voice_tests": db.query(EchoVoiceTest).filter(EchoVoiceTest.tenant_id == tenant_id).count(),
         "echo_card_state": db.query(EchoCardState).filter(EchoCardState.tenant_id == tenant_id).count(),
         "echo_fact_tombstones": db.query(EchoFactTombstone).filter(EchoFactTombstone.tenant_id == tenant_id).count(),
         "echo_share_tokens": db.query(EchoShareToken).filter(EchoShareToken.tenant_id == tenant_id).count(),
@@ -300,7 +306,7 @@ def test_export_is_audited_with_counts_only(unauthenticated_client, db, brains):
     assert row.user_id == brains["a"].id
     meta = json.loads(row.metadata_json)
     assert meta == {
-        "rows": {"personal_context": 2, "shares_inbox": 5, "voice_signals": 2, "voice_signal_inputs": 1, "activity_events": 1, "echo_connector_grants": 1, "echo_imports": 1, "echo_drafts": 1, "echo_voice_gates": 1, "echo_card_state": 1, "echo_fact_tombstones": 1},
+        "rows": {"personal_context": 2, "shares_inbox": 5, "voice_signals": 2, "voice_signal_inputs": 1, "activity_events": 1, "echo_connector_grants": 1, "echo_imports": 1, "echo_drafts": 1, "echo_voice_gates": 1, "echo_voice_tests": 1, "echo_card_state": 1, "echo_fact_tombstones": 1},
         "files": 1,
         "missing_files": 0,
     }
@@ -359,7 +365,7 @@ def test_delete_brain_empties_every_store_and_spares_the_other_tenant(
     before_a = _direct_footprint(db, chroma, shares_dir, a.id)
     before_b = _direct_footprint(db, chroma, shares_dir, b.id)
     assert before_a == {
-        "rows": {"personal_context": 2, "shares_inbox": 5, "voice_signals": 2, "voice_signal_inputs": 1, "activity_events": 1, "echo_connector_grants": 1, "echo_connector_credentials": 1, "echo_connector_oauth_states": 1, "echo_imports": 1, "echo_drafts": 1, "echo_voice_gates": 1, "echo_card_state": 1, "echo_fact_tombstones": 1, "echo_share_tokens": 1},
+        "rows": {"personal_context": 2, "shares_inbox": 5, "voice_signals": 2, "voice_signal_inputs": 1, "activity_events": 1, "echo_connector_grants": 1, "echo_connector_credentials": 1, "echo_connector_oauth_states": 1, "echo_imports": 1, "echo_drafts": 1, "echo_voice_gates": 1, "echo_voice_tests": 1, "echo_card_state": 1, "echo_fact_tombstones": 1, "echo_share_tokens": 1},
         "files": 1,
         "vectors": {settings.CHROMA_SHARES_COLLECTION_NAME: 1, settings.CHROMA_PERSONAL_CONTEXT_COLLECTION_NAME: 1},
     }
@@ -369,14 +375,14 @@ def test_delete_brain_empties_every_store_and_spares_the_other_tenant(
     body = r.json()
     assert body["removed"] == before_a
     assert body["footprint_after"] == {
-        "rows": {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0, "echo_imports": 0, "echo_drafts": 0, "echo_voice_gates": 0, "echo_card_state": 0, "echo_fact_tombstones": 0, "echo_share_tokens": 0},
+        "rows": {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0, "echo_imports": 0, "echo_drafts": 0, "echo_voice_gates": 0, "echo_voice_tests": 0, "echo_card_state": 0, "echo_fact_tombstones": 0, "echo_share_tokens": 0},
         "files": 0,
         "vectors": {n: 0 for n in echo_vectors.echo_collection_names()},
     }
 
     db.expire_all()
     after_a = _direct_footprint(db, chroma, shares_dir, a.id)
-    assert after_a["rows"] == {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0, "echo_imports": 0, "echo_drafts": 0, "echo_voice_gates": 0, "echo_card_state": 0, "echo_fact_tombstones": 0, "echo_share_tokens": 0}
+    assert after_a["rows"] == {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0, "echo_imports": 0, "echo_drafts": 0, "echo_voice_gates": 0, "echo_voice_tests": 0, "echo_card_state": 0, "echo_fact_tombstones": 0, "echo_share_tokens": 0}
     assert after_a["files"] == 0 and not (shares_dir / a.id).exists()
     assert not any(after_a["vectors"].values())
     for share_id in brains["seed_a"]["shares"]:
@@ -418,7 +424,7 @@ def test_delete_brain_twice_is_harmless(unauthenticated_client, brains):
     assert unauthenticated_client.delete(BRAIN, params=CONFIRM, headers=brains["ha"]).status_code == 200
     r = unauthenticated_client.delete(BRAIN, params=CONFIRM, headers=brains["ha"])
     assert r.status_code == 200
-    assert r.json()["removed"]["rows"] == {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0, "echo_imports": 0, "echo_drafts": 0, "echo_voice_gates": 0, "echo_card_state": 0, "echo_fact_tombstones": 0, "echo_share_tokens": 0}
+    assert r.json()["removed"]["rows"] == {"personal_context": 0, "shares_inbox": 0, "voice_signals": 0, "voice_signal_inputs": 0, "activity_events": 0, "echo_connector_grants": 0, "echo_connector_credentials": 0, "echo_connector_oauth_states": 0, "echo_imports": 0, "echo_drafts": 0, "echo_voice_gates": 0, "echo_voice_tests": 0, "echo_card_state": 0, "echo_fact_tombstones": 0, "echo_share_tokens": 0}
 
 
 def test_delete_brain_leaves_notes_and_the_library_alone(unauthenticated_client, db, brains):
@@ -466,7 +472,7 @@ def test_every_echo_table_is_tenant_keyed():
     exported nor deleted per tenant."""
     assert [name for name, _ in ECHO_TABLES] == [
         "personal_context", "shares_inbox", "voice_signals", "voice_signal_inputs", "activity_events", "echo_connector_grants",
-        "echo_imports", "echo_drafts", "echo_voice_gates", "echo_card_state", "echo_fact_tombstones",
+        "echo_imports", "echo_drafts", "echo_voice_gates", "echo_voice_tests", "echo_card_state", "echo_fact_tombstones",
     ]
     assert [name for name, _ in ECHO_SECRET_TABLES] == [
         "echo_connector_credentials", "echo_connector_oauth_states", "echo_share_tokens",

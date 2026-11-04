@@ -829,22 +829,22 @@ def run(db: Session, tenant_id: str, *, llm: LLMCall | None = None, model: str |
         return _run(db, tenant_id, llm=llm, model=model, use_llm=use_llm)
 
 
-def _run(db: Session, tenant_id: str, *, llm: LLMCall | None, model: str | None, use_llm: bool) -> ExtractionReport:
-    report = ExtractionReport()
-    inputs = gather_inputs(db, tenant_id)
-    state = pending(db, tenant_id, inputs)
-    by_ref = {i.ref: i for i in inputs}
-
+def apply_pending(db: Session, tenant_id: str, state: Pending) -> tuple[dict[str, VoiceSignalInput], int]:
+    """The database half of a run, before any model call: what is gone or
+    changed leaves every signal it fed, and what is new or changed gets its
+    ledger row (stylometry needs them whether or not the LLM runs). Returns
+    the ledger and how many inputs were withdrawn. Does not commit; the
+    in-app voice test (T-3.4.1.8) runs it in a transaction it rolls back."""
+    withdrawn = 0
     withdraw_missing_events(db, tenant_id)
     for ref in state.gone:
         withdraw_input(db, tenant_id, ref)
-        report.withdrawn += 1
+        withdrawn += 1
     for i in state.changed:
         withdraw_input(db, tenant_id, i.ref)
-        report.withdrawn += 1
+        withdrawn += 1
     db.flush()
 
-    # Ledger rows first: stylometry needs them whether or not the LLM runs.
     ledger: dict[str, VoiceSignalInput] = {
         r.source_ref: r for r in db.query(VoiceSignalInput).filter(VoiceSignalInput.tenant_id == tenant_id)
     }
@@ -861,6 +861,16 @@ def _run(db: Session, tenant_id: str, *, llm: LLMCall | None, model: str | None,
         db.add(row)
         ledger[i.ref] = row
     db.flush()
+    return ledger, withdrawn
+
+
+def _run(db: Session, tenant_id: str, *, llm: LLMCall | None, model: str | None, use_llm: bool) -> ExtractionReport:
+    report = ExtractionReport()
+    inputs = gather_inputs(db, tenant_id)
+    state = pending(db, tenant_id, inputs)
+    by_ref = {i.ref: i for i in inputs}
+
+    ledger, report.withdrawn = apply_pending(db, tenant_id, state)
     report.inputs_read = len(state.to_read)
 
     to_read = state.to_read

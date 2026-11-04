@@ -10,6 +10,7 @@ works for a user only once they passed the blinded "which of these did you
 write?" test (tier iii, pre-registered in
 docs/notes/2026-10-19-voice-match-preregistration.md): at least 20 pairs,
 their own text picked in at most 80% of them. One row per tenant, written by
+the in-app test (``echo_voice_tests``, T-3.4.1.8) or
 ``scripts/voice_match_harness.py user-score --record``.
 
 Both are part of the brain (``echo_privacy_service.ECHO_TABLES``): exported

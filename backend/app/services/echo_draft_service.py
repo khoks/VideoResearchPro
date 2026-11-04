@@ -7,7 +7,8 @@ run and gives it the user's material. Gates, in order (``status``):
 2. ``not_ready``: ``echo_service.is_ready``, the five-domain readiness (S-3.5.1).
 3. ``voice_test_required`` / ``voice_test_failed``: the per-user switch D-100
    requires. A user passes the blinded "which of these did you write?"
-   test (tier iii: at least 20 pairs, own text picked in at most 80%) with
+   test (tier iii: at least 20 pairs, own text picked in at most 80%) on
+   the Echo page (``echo_voice_test_service``, T-3.4.1.8) or with
    ``scripts/voice_match_harness.py user-pairs`` / ``user-score --record``.
 4. ``daily_cap``: ``echo_drafts`` per day through ``quota_metering_service``.
 
@@ -128,7 +129,8 @@ def voice_gate(db: Session, tenant_id: str) -> dict:
 
 def record_voice_test(db: Session, tenant_id: str, *, pairs: int, picked_own: int) -> EchoVoiceGate:
     """Apply the pre-registered rule to a finished test and store the result
-    (replacing an earlier one). Called by the harness's ``user-score --record``."""
+    (replacing an earlier one). Called by the harness's ``user-score --record``
+    and by the in-app test (``echo_voice_test_service.score``)."""
     if pairs <= 0 or not 0 <= picked_own <= pairs:
         raise ValueError("pairs must be positive and picked_own between 0 and pairs")
     share = picked_own / pairs

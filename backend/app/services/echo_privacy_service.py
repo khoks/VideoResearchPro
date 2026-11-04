@@ -57,6 +57,7 @@ from app.models.echo_card_state import EchoCardState
 from app.models.echo_fact_tombstone import EchoFactTombstone
 from app.models.echo_import import EchoImport
 from app.models.echo_draft import EchoDraft, EchoVoiceGate
+from app.models.echo_voice_test import EchoVoiceTest
 from app.models.echo_share_token import EchoShareToken
 from app.models.personal_context import PersonalContext
 from app.models.share import Share
@@ -89,6 +90,9 @@ ECHO_TABLES: tuple[tuple[str, Any], ...] = (
     # gates it (deleting the brain resets the gate).
     ("echo_drafts", EchoDraft),
     ("echo_voice_gates", EchoVoiceGate),
+    # T-3.4.1.8: each in-app voice test: the pairs (the user's notes beside
+    # drafts in their voice), their picks and the score.
+    ("echo_voice_tests", EchoVoiceTest),
     # S-3.8.2: what the panel's cards showed and what the user did with them.
     ("echo_card_state", EchoCardState),
     # T-3.2.4.4: derived facts the user deleted, so syncs skip them.

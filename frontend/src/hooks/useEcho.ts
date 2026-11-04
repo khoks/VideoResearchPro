@@ -6,6 +6,9 @@ import {
   type CreateSignalPayload,
   type CreateDraftPayload,
   type DraftFeedbackPayload,
+  type VoiceTest,
+  type VoiceTestOverview,
+  type VoiceTestSide,
   type ListContextParams,
   type ListSharesParams,
   type RecordContextPayload,
@@ -369,6 +372,60 @@ export function useDraftFeedback() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: DRAFTS_KEY });
       qc.invalidateQueries({ queryKey: ['echo', 'signals'] });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The voice test (T-3.4.1.8)
+// ---------------------------------------------------------------------------
+
+const VOICE_TEST_KEY = ['echo', 'voice-test'] as const;
+
+export function useVoiceTest(enabled = true) {
+  return useQuery({ queryKey: VOICE_TEST_KEY, queryFn: () => echoApi.voiceTest(), staleTime: 15_000, enabled });
+}
+
+/** Polls one test while it is being written. The overview re-reads readiness,
+ * which is too much to ask of it every few seconds. */
+export function useVoiceTestPoll(id: string | null, intervalMs = 3000) {
+  return useQuery({
+    queryKey: [...VOICE_TEST_KEY, 'poll', id],
+    queryFn: () => echoApi.getVoiceTest(id as string),
+    enabled: id !== null,
+    refetchInterval: (query) => (query.state.data && query.state.data.status !== 'generating' ? false : intervalMs),
+  });
+}
+
+export function useStartVoiceTest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => echoApi.startVoiceTest(),
+    onSettled: () => qc.invalidateQueries({ queryKey: VOICE_TEST_KEY }),
+  });
+}
+
+function storeTest(qc: ReturnType<typeof useQueryClient>, test: VoiceTest) {
+  qc.setQueryData<VoiceTestOverview>(VOICE_TEST_KEY, (old) => (old ? { ...old, test } : old));
+}
+
+export function usePickVoiceTest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, pair, pick }: { id: string; pair: string; pick: VoiceTestSide }) => echoApi.pickVoiceTest(id, pair, pick),
+    onSuccess: (test) => storeTest(qc, test),
+  });
+}
+
+export function useScoreVoiceTest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => echoApi.scoreVoiceTest(id),
+    onSuccess: ({ test }) => {
+      storeTest(qc, test);
+      qc.invalidateQueries({ queryKey: VOICE_TEST_KEY });
+      // The gate moved: the card's blockers and the bubble read it.
+      qc.invalidateQueries({ queryKey: DRAFTS_KEY });
     },
   });
 }

@@ -5,6 +5,8 @@
   ``echo_processing_service.process_share``; it is idempotent and fail-soft.
 - ``echo.extract_signals`` — one signal-extraction run for a tenant
   (S-3.3.2), queued by ``echo_signal_extraction.maybe_queue``.
+- ``echo.generate_voice_test`` — write the pairs of a voice test the user
+  started on the Echo page (T-3.4.1.8): about 40 draft-model calls.
 """
 from __future__ import annotations
 
@@ -53,5 +55,22 @@ def extract_signals_task(tenant_id: str) -> dict:
     db = SessionLocal()
     try:
         return echo_signal_extraction.run(db, tenant_id).to_dict()
+    finally:
+        db.close()
+
+
+GENERATE_VOICE_TEST_TASK = "echo.generate_voice_test"
+
+
+@celery_app.task(name=GENERATE_VOICE_TEST_TASK, ignore_result=True)
+def generate_voice_test_task(test_id: str) -> str:
+    """Write one voice test's pairs. Fail-soft: an error marks the test
+    failed, in words, and the user may start another."""
+    from app.services import echo_voice_test_service
+
+    db = SessionLocal()
+    try:
+        row = echo_voice_test_service.generate(db, test_id)
+        return row.status if row is not None else "missing"
     finally:
         db.close()

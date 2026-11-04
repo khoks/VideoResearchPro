@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthShell, AuthError } from '../components/auth/AuthShell';
+import { MfaCodeStep } from '../components/auth/MfaCodeStep';
+import { OAuthButtons } from '../components/auth/OAuthButtons';
 import { Button, FormField, Input } from '../components/primitives';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, space } from '../theme';
@@ -18,6 +20,8 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // T-5.4.6: the password was right and the account owes a second factor.
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
 
   const redirectTo = (location.state as LocationState | null)?.from?.pathname ?? '/';
 
@@ -25,13 +29,33 @@ export function LoginPage() {
     e.preventDefault();
     setError(null);
     try {
-      await login(email, password);
+      const result = await login(email, password);
+      if (result.status === 'mfa_required') {
+        setMfaToken(result.mfaToken);
+        return;
+      }
       navigate(redirectTo, { replace: true });
     } catch (err) {
       const detail = extractError(err);
       setError(detail ?? 'Login failed. Check your credentials and try again.');
     }
   };
+
+  if (mfaToken) {
+    return (
+      <AuthShell title="Two-step verification">
+        <MfaCodeStep
+          mfaToken={mfaToken}
+          email={email}
+          onSignedIn={() => navigate(redirectTo, { replace: true })}
+          onStartOver={() => {
+            setMfaToken(null);
+            setPassword('');
+          }}
+        />
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell title="Welcome back to your library.">
@@ -66,7 +90,14 @@ export function LoginPage() {
           {isLoading ? 'Signing in…' : 'Sign in'}
         </Button>
         {error && <AuthError message={error} />}
+        <Link
+          to="/forgot-password"
+          style={{ alignSelf: 'center', color: c.accent, fontFamily: fonts.ui, fontSize: fontSize.sm, textDecoration: 'none' }}
+        >
+          Forgot your password?
+        </Link>
       </form>
+      <OAuthButtons />
       <p
         style={{
           marginTop: space['5'],

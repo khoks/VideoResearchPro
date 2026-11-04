@@ -14,14 +14,43 @@ interface AuthResponse {
   user?: AuthUser;
 }
 
+/** `/auth/login` (or an OAuth callback) for an account with two-step on (T-5.4.6). */
+interface MfaRequiredResponse {
+  requires_mfa: true;
+  mfa_token: string;
+  expires_in?: number;
+}
+
+/**
+ * What a first sign-in step ended in: signed in, or a second factor owed.
+ * The mfa token is the five-minute ticket `/auth/login/mfa` exchanges, with
+ * a TOTP or recovery code, for the real session.
+ */
+export type SignInResult =
+  | { status: 'signed_in' }
+  | { status: 'mfa_required'; mfaToken: string; expiresIn: number };
+
 interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<SignInResult>;
+  /** Second step: the code from the authenticator app, or a recovery code. */
+  completeMfa: (mfaToken: string, code: string, email?: string) => Promise<void>;
+  /** Exchange the provider's `code` and `state` at the server (T-5.4.5). */
+  completeOAuth: (provider: string, code: string, state: string) => Promise<SignInResult>;
   register: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  /**
+   * Revoke this session at the server (`POST /auth/logout`), then forget it
+   * here. A failed call still signs this browser out.
+   */
+  logout: () => Promise<void>;
+}
+
+function isMfaRequired(data: unknown): data is MfaRequiredResponse {
+  return !!data && typeof data === 'object' && (data as { requires_mfa?: unknown }).requires_mfa === true
+    && typeof (data as { mfa_token?: unknown }).mfa_token === 'string';
 }
 
 const USER_STORAGE_KEY = 'videoresearchpro.authUser';
@@ -58,48 +87,100 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  const persistSession = useCallback((data: AuthResponse, fallbackEmail: string) => {
+  const persistSession = useCallback(async (data: AuthResponse, fallbackEmail: string) => {
     const nextUser: AuthUser = data.user ?? { email: fallbackEmail };
     localStorage.setItem(AUTH_TOKEN_KEY, data.access_token);
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(nextUser));
     setToken(data.access_token);
     setUser(nextUser);
+    if (!nextUser.email) {
+      // An OAuth sign-in returns only the token; ask who it is for so the
+      // sidebar can name the account. Best-effort: the session stands either way.
+      try {
+        const { data: me } = await api.get<AuthUser>('/auth/me');
+        const named: AuthUser = { id: me.id, email: me.email, tier: me.tier };
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(named));
+        setUser(named);
+      } catch {
+        /* the email shows after the next sign-in */
+      }
+    }
   }, []);
+
+  /** A first step's answer: a session to keep, or the second factor to ask for. */
+  const settleFirstStep = useCallback(async (data: AuthResponse | MfaRequiredResponse, email: string): Promise<SignInResult> => {
+    if (isMfaRequired(data)) {
+      return { status: 'mfa_required', mfaToken: data.mfa_token, expiresIn: data.expires_in ?? 300 };
+    }
+    await persistSession(data, email);
+    return { status: 'signed_in' };
+  }, [persistSession]);
 
   const login = useCallback(async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      const { data } = await api.post<AuthResponse>('/auth/login', { email, password });
-      persistSession(data, email);
+      const { data } = await api.post<AuthResponse | MfaRequiredResponse>('/auth/login', { email, password });
+      return await settleFirstStep(data, email);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [settleFirstStep]);
+
+  const completeMfa = useCallback(async (mfaToken: string, code: string, email = '') => {
+    setIsLoading(true);
+    try {
+      const { data } = await api.post<AuthResponse>('/auth/login/mfa', { mfa_token: mfaToken, code: code.trim() });
+      await persistSession(data, email);
     } finally {
       setIsLoading(false);
     }
   }, [persistSession]);
+
+  const completeOAuth = useCallback(async (provider: string, code: string, state: string) => {
+    setIsLoading(true);
+    try {
+      const { data } = await api.get<AuthResponse | MfaRequiredResponse>(
+        `/auth/oauth/${encodeURIComponent(provider)}/callback`,
+        { params: { code, state } },
+      );
+      return await settleFirstStep(data, '');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [settleFirstStep]);
 
   const register = useCallback(async (email: string, password: string) => {
     setIsLoading(true);
     try {
       const { data } = await api.post<Partial<AuthResponse>>('/auth/register', { email, password });
       if (data.access_token) {
-        persistSession(data as AuthResponse, email);
+        await persistSession(data as AuthResponse, email);
       } else {
         // `POST /auth/register` answers with the new user, not a session
         // (routers/auth.py `UserResponse`), so sign in with the same
         // credentials. Storing the absent token left every new account
         // signed out on its first page.
         const { data: session } = await api.post<AuthResponse>('/auth/login', { email, password });
-        persistSession(session, email);
+        await persistSession(session, email);
       }
     } finally {
       setIsLoading(false);
     }
   }, [persistSession]);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(AUTH_TOKEN_KEY);
-    localStorage.removeItem(USER_STORAGE_KEY);
-    setToken(null);
-    setUser(null);
+  const logout = useCallback(async () => {
+    try {
+      // T-5.4.7: revoke the session row, so the token stops working even if
+      // a copy of it outlives this browser's storage.
+      if (localStorage.getItem(AUTH_TOKEN_KEY)) await api.post('/auth/logout');
+    } catch {
+      /* already revoked, expired or offline: still sign this browser out */
+    } finally {
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      localStorage.removeItem(USER_STORAGE_KEY);
+      setToken(null);
+      setUser(null);
+    }
   }, []);
 
   const value = useMemo<AuthContextValue>(() => ({
@@ -108,9 +189,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: !!token,
     isLoading,
     login,
+    completeMfa,
+    completeOAuth,
     register,
     logout,
-  }), [user, token, isLoading, login, register, logout]);
+  }), [user, token, isLoading, login, completeMfa, completeOAuth, register, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -173,25 +173,32 @@ def test_password_reset_response_omits_secret_when_smtp_configured(
     assert r.status_code == 200
     body = r.json()
     # SMTP configured → response carries no secret.
-    assert body["debug_secret"] is None
+    assert set(body) == {"message"}
     fake_smtp.send_message.assert_called_once()
 
 
-def test_password_reset_response_returns_secret_when_smtp_unconfigured(
+def test_password_reset_secret_is_logged_not_returned_when_smtp_unconfigured(
     unauthenticated_client, db, monkeypatch
 ):
-    """Self-host posture: no SMTP → secret IS in the response so operators
-    can hand it off out-of-band."""
+    """Self-host posture: no SMTP → the secret goes to the server log for
+    the operator to hand over, and is NOT in the response. Until 2026-11-03
+    it was returned here as ``debug_secret``, which let any unauthenticated
+    caller reset the password of any address on a multi-user install."""
     monkeypatch.setattr(settings, "SMTP_HOST", None)
 
-    from app.services import auth_service
+    from app.services import auth_service, email_service
     auth_service.create_user(db, email="reset-nosmtp@x.com", password="oldpw1234")
+    log = MagicMock()
+    monkeypatch.setattr(email_service, "logger", log)
 
     r = unauthenticated_client.post(
         "/api/v1/auth/password-reset/request",
         json={"email": "reset-nosmtp@x.com"},
     )
     assert r.status_code == 200
-    body = r.json()
-    assert body["debug_secret"] is not None
-    assert len(body["debug_secret"]) > 16
+    assert set(r.json()) == {"message"}
+    logged = [c.args[-1] for c in log.info.call_args_list if "BEGIN EMAIL BODY" in str(c.args[0])]
+    assert len(logged) == 1
+    secret = next(line.strip() for line in logged[0].splitlines() if line.startswith("    "))
+    assert len(secret) > 16
+    assert secret not in r.text

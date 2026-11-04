@@ -25,23 +25,24 @@ export function EchoShareTargetPage() {
   const [stage, setStage] = useState<Stage>(lost ? { kind: 'lost' } : { kind: 'working' });
   const started = useRef(false);
 
-  const deliver = useCallback(async () => {
-    setStage({ kind: 'working' });
-    const outcome = await deliverPendingShares();
-    if (outcome.kind !== 'nothing') void queryClient.invalidateQueries({ queryKey: ['echo', 'shares'] });
-    if (outcome.kind !== 'added') {
-      setStage(outcome);
-      return;
-    }
-    pushToast('success', outcome.skipped ? `Added to Echo. Only the first files were kept; ${outcome.skipped} left out.` : 'Added to Echo.');
-    navigate('/echo/inbox', { replace: true });
-  }, [navigate, pushToast, queryClient]);
+  const settle = useCallback(
+    (outcome: ShareDelivery) => {
+      if (outcome.kind !== 'nothing') void queryClient.invalidateQueries({ queryKey: ['echo', 'shares'] });
+      if (outcome.kind !== 'added') {
+        setStage(outcome);
+        return;
+      }
+      pushToast('success', outcome.skipped ? `Added to Echo. Only the first files were kept; ${outcome.skipped} left out.` : 'Added to Echo.');
+      navigate('/echo/inbox', { replace: true });
+    },
+    [navigate, pushToast, queryClient],
+  );
 
   useEffect(() => {
     if (started.current || lost) return;
     started.current = true;
-    void deliver();
-  }, [deliver, lost]);
+    void deliverPendingShares().then(settle);
+  }, [settle, lost]);
 
   const text: React.CSSProperties = { margin: 0, fontFamily: fonts.body, fontSize: fontSize.base, color: c.textSecondary, lineHeight: lineHeight.normal };
   const inbox = <Link to="/echo/inbox" style={{ color: c.accent }}>your inbox</Link>;
@@ -71,7 +72,14 @@ export function EchoShareTargetPage() {
                 {stage.detail ?? 'Could not reach Echo.'} What you shared is still on this device.
               </p>
               <div>
-                <Button onClick={() => void deliver()}>Try again</Button>
+                <Button
+                  onClick={() => {
+                    setStage({ kind: 'working' });
+                    void deliverPendingShares().then(settle);
+                  }}
+                >
+                  Try again
+                </Button>
               </div>
             </>
           )}

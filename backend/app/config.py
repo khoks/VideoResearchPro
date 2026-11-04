@@ -352,6 +352,14 @@ class Settings(BaseSettings):
     ECHO_DRAFT_CRITIQUE_TARGET: float = 4.0
     # Library sources retrieved for one draft.
     ECHO_DRAFT_SOURCES: int = 6
+    # T-3.4.1.8: the in-app voice test. Writing one makes about 40 calls on
+    # the echo_draft use case (a topic and a draft per pair), so it runs as
+    # a task: celery (echo.generate_voice_test), inline (in the request,
+    # single-process dev) or off (the test suite; the tests call the
+    # generator with the model patched).
+    ECHO_VOICE_TEST_GENERATION: str = "celery"
+    # Tests a user may start per UTC day, which bounds that spend. 0 = no limit.
+    ECHO_VOICE_TESTS_PER_DAY: int = 3
     # S-3.3.3: keep personal_context_global (one vector per live fact and
     # signal) in step on every write and at startup. Off for the test suite,
     # like NOTES_INDEX_ENABLED, so no test embeds into a persistent Chroma;

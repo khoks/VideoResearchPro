@@ -67,6 +67,17 @@ export interface GateView {
   action?: { label: string; href: string };
 }
 
+/**
+ * Where the bubble sends someone the voice test is waiting for: the test
+ * lives on the Echo page (T-3.4.1.8), and needs enough notes first. Nothing
+ * when they have the notes but the test is not on offer at all.
+ */
+function testAction(gate: DraftGate, testOffered = true): GateView['action'] {
+  const enough = typeof gate.notes === 'number' && typeof gate.notes_needed === 'number' && gate.notes >= gate.notes_needed;
+  if (!enough) return { label: 'Write a note', href: '/notes' };
+  return testOffered ? { label: 'Take the test', href: '/echo' } : undefined;
+}
+
 const TEST_EXPLAINED =
   'Speak as me switches on for you after a blind test: you are shown pairs of texts and pick the one you wrote. It passes when you cannot reliably tell Echo’s draft from your own writing.';
 
@@ -88,7 +99,7 @@ export function draftGateView(gate: DraftGate | undefined, error: unknown, readi
   }
   if (!gate) return { available: false, title: 'Checking…', lines: [] };
   if (gate.enabled) return { available: true, title: 'Draft as me', lines: [] };
-  if (gate.blockers?.length) return blockersView(gate.blockers);
+  if (gate.blockers?.length) return blockersView(gate.blockers, gate);
 
   const reasons = (gate.reasons ?? []).filter(Boolean);
   const notes =
@@ -110,13 +121,14 @@ export function draftGateView(gate: DraftGate | undefined, error: unknown, readi
         available: false,
         title: 'Your voice test comes first',
         lines: [...(reasons.length ? reasons : [TEST_EXPLAINED]), ...notes],
-        action: { label: 'Write a note', href: '/notes' },
+        action: testAction(gate),
       };
     case 'voice_test_failed':
       return {
         available: false,
         title: 'Your voice test has not passed yet',
         lines: reasons.length ? reasons : ['You could still tell Echo’s drafts from your own writing. More of your own words will help; the test can be taken again.'],
+        action: testAction(gate),
       };
     default:
       return { available: false, title: 'Not switched on for you', lines: reasons.length ? reasons : [TEST_EXPLAINED] };
@@ -134,17 +146,18 @@ const BLOCKER_TITLE: Record<string, string> = {
 /**
  * S-3.4.1's own blockers, first one as the title. The not-ready message
  * repeats every unmet domain, which the readiness line above the tabs
- * already names, so it is shortened here.
+ * already names, so it is shortened here. This is the path every real
+ * response takes: the server sends blockers whenever drafting is off.
  */
-function blockersView(blockers: Array<{ code: string; message: string }>): GateView {
+function blockersView(blockers: Array<{ code: string; message: string }>, gate: DraftGate): GateView {
   const lines = blockers.map((b) =>
     b.code === 'not_ready' ? 'Echo needs more to go on first: the line above says what is missing.' : b.message,
   );
   const codes = new Set(blockers.map((b) => b.code));
   const action = codes.has('not_ready')
     ? { label: 'See what is missing', href: '/echo' }
-    : codes.has('voice_test_required')
-      ? { label: 'Write a note', href: '/notes' }
+    : codes.has('voice_test_required') || codes.has('voice_test_failed')
+      ? testAction(gate, !codes.has('install_off'))
       : undefined;
   return { available: false, title: BLOCKER_TITLE[blockers[0].code] ?? 'Not switched on for you', lines, action };
 }

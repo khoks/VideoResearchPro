@@ -7,7 +7,8 @@ run and gives it the user's material. Gates, in order (``status``):
 2. ``not_ready``: ``echo_service.is_ready``, the five-domain readiness (S-3.5.1).
 3. ``voice_test_required`` / ``voice_test_failed``: the per-user switch D-100
    requires. A user passes the blinded "which of these did you write?"
-   test (tier iii: at least 20 pairs, own text picked in at most 80%) with
+   test (tier iii: at least 20 pairs, own text picked in at most 80%) on
+   the Echo page (``echo_voice_test_service``, T-3.4.1.8) or with
    ``scripts/voice_match_harness.py user-pairs`` / ``user-score --record``.
 4. ``daily_cap``: ``echo_drafts`` per day through ``quota_metering_service``.
 
@@ -128,7 +129,8 @@ def voice_gate(db: Session, tenant_id: str) -> dict:
 
 def record_voice_test(db: Session, tenant_id: str, *, pairs: int, picked_own: int) -> EchoVoiceGate:
     """Apply the pre-registered rule to a finished test and store the result
-    (replacing an earlier one). Called by the harness's ``user-score --record``."""
+    (replacing an earlier one). Called by the harness's ``user-score --record``
+    and by the in-app test (``echo_voice_test_service.score``)."""
     if pairs <= 0 or not 0 <= picked_own <= pairs:
         raise ValueError("pairs must be positive and picked_own between 0 and pairs")
     share = picked_own / pairs
@@ -345,7 +347,7 @@ def draft(
     """One draft. Raises ``DraftBlocked``, ``DraftCapReached`` or
     ``NamesNeedConfirmation``; spends nothing when it raises before the model."""
     from app.agents.echo_agent import run_echo_draft
-    from app.services import audit_service, quota_metering_service, usage_service
+    from app.services import audit_service, llm_service, quota_metering_service
 
     st = status(db, user)
     gate = [b for b in st.blockers if b["code"] != "daily_cap"]
@@ -354,10 +356,11 @@ def draft(
     if any(b["code"] == "daily_cap" for b in st.blockers):
         raise DraftCapReached(next(b["message"] for b in st.blockers if b["code"] == "daily_cap"))
 
-    # E-5.2: the classify, draft and critique calls are the user's usage
-    # (feature echo_draft). The clients are built in _real_deps, so the scope
-    # opens before it.
-    with usage_service.metered(db, user.id):
+    # The classify, draft and critique calls are the user's: on the models
+    # they pinned (E-1.13), and their usage (E-5.2, feature echo_draft). The
+    # clients and ``deps.models`` are built in _real_deps, so the scope opens
+    # before it.
+    with llm_service.byok_context(user.id, db):
         deps = deps or _real_deps(db, user)
         state = run_echo_draft(
             deps, message=message, audience=audience, register=register, language=language,

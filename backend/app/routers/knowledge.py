@@ -60,18 +60,26 @@ def _load_merged_from_video(video: Document) -> dict[str, list[str]]:
 # lists in `extracted_knowledge_json` (readers pick the keys they want, as
 # with `_processing`). Absent means no preference was expressed.
 _OUTPUT_LENGTH_KEY = "_output_length"
+# T-1.15.3.8: the stored report stopped at its token budget, so its end is
+# missing. Written only when that happened, and a report is stored whole, so a
+# Regenerate that fits clears it. Absent on every report written before this:
+# those show nothing, because whether they were cut off was never recorded.
+_CUT_OFF_KEY = "_report_cut_off"
 
 
-def _stored_output_length(video: Document) -> str | None:
+def _stored_fields(video: Document) -> dict:
+    """`extracted_knowledge_json` as a dict; empty when unset or unreadable."""
     if not video.extracted_knowledge_json:
-        return None
+        return {}
     try:
         data = json.loads(video.extracted_knowledge_json)
     except (ValueError, TypeError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    value = data.get(_OUTPUT_LENGTH_KEY)
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _stored_output_length(video: Document) -> str | None:
+    value = _stored_fields(video).get(_OUTPUT_LENGTH_KEY)
     return output_length_policy.explicit_preference(value if isinstance(value, str) else None)
 
 
@@ -92,6 +100,7 @@ def _build_response(video: Document) -> KnowledgeExtractResponse:
         url=video.source_url or video.url or None,
         published_at=video.published_at,
         output_length=_stored_output_length(video),
+        report_cut_off=_stored_fields(video).get(_CUT_OFF_KEY) is True,
     )
 
 
@@ -202,6 +211,8 @@ def extract_knowledge(
         merged["_processing"] = result["_processing"]
     if length:
         merged[_OUTPUT_LENGTH_KEY] = length
+    if result.get(_CUT_OFF_KEY):
+        merged[_CUT_OFF_KEY] = True
     video.extracted_knowledge_json = json.dumps(merged, ensure_ascii=False)
     video.knowledge_report_md = result.get("knowledge_report_md", "") or ""
     video.knowledge_extracted_at = datetime.now(timezone.utc)

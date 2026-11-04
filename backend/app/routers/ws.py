@@ -76,10 +76,14 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
     Client messages:
         {"action": "subscribe", "job_id": "abc-123"}
         {"action": "unsubscribe", "job_id": "abc-123"}
+        {"action": "subscribe", "topic": "notifications"}    (T-8.3.3.8)
+        {"action": "unsubscribe", "topic": "notifications"}
         "ping"
 
     Server messages:
         Job progress/status/error events (see progress_service.py)
+        {"type": "notification", "id": "...", "kind": "..."}: a new
+            notification for the token's user; the bell refetches its list
         "pong"
     """
     if not token:
@@ -104,10 +108,19 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
 
             try:
                 msg = json.loads(raw)
+                if not isinstance(msg, dict):
+                    continue
                 action = msg.get("action")
                 job_id = msg.get("job_id")
 
-                if action == "subscribe" and job_id:
+                if msg.get("topic") == "notifications" and action in ("subscribe", "unsubscribe"):
+                    # T-8.3.3.8: the bell. Always the token's own user: the
+                    # message names no user, and one it names is ignored.
+                    if action == "subscribe":
+                        manager.subscribe_notifications(websocket, tenant_id)
+                    else:
+                        manager.unsubscribe_notifications(websocket, tenant_id)
+                elif action == "subscribe" and job_id:
                     # S-5.7.1: the socket previously subscribed to ANY job_id a
                     # client sent, so a valid token for user A streamed user B's
                     # progress, status messages and error text. Ownership is

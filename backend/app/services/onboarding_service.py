@@ -10,7 +10,8 @@ that finishes the run, so the worker needs no onboarding code.
 Activation events go to ``audit_log`` (best-effort, as every audit write):
 ``onboarding_started`` / ``_completed`` / ``_skipped`` from the wizard,
 ``first_job_created`` from job creation, ``first_report_opened`` from the
-reader's body route.
+reader's body route, ``first_cited_answer`` from the job and library Q&A
+routers.
 """
 from __future__ import annotations
 
@@ -132,6 +133,48 @@ def should_onboard(user: User, state: dict[str, Any] | None, job_count: int) -> 
     return job_count == 0
 
 
+def _channel_key(raw: str) -> str:
+    """A channel as typed, folded so a handle and its URL compare equal
+    (``@Name``, ``youtube.com/@name/``, ``https://www.youtube.com/@name``)."""
+    key = raw.strip().lower()
+    for prefix in ("https://", "http://"):
+        if key.startswith(prefix):
+            key = key[len(prefix):]
+    for prefix in ("www.", "m."):
+        if key.startswith(prefix):
+            key = key[len(prefix):]
+    if key.startswith("youtube.com/"):
+        key = key[len("youtube.com/"):]
+    key = key.split("?", 1)[0].rstrip("/")
+    for suffix in ("/videos", "/featured", "/streams", "/shorts"):
+        if key.endswith(suffix):
+            key = key[: -len(suffix)]
+    return key
+
+
+def channels_not_yet_run(db: Session, user: User, state: dict[str, Any] | None) -> list[str]:
+    """The wizard's channels that none of the caller's runs has named yet
+    (T-8.10.1.7), in the order chosen. The first run reads one of them; the
+    submit page pre-fills its channel list with the rest. A run counts
+    whatever became of it: the reader has acted on that channel."""
+    chosen = (state or {}).get("choices", {}).get("channels") or []
+    if not chosen:
+        return []
+    named: set[str] = set()
+    for (raw,) in db.query(Job.channel_list).filter(Job.tenant_id == user.id, Job.channel_list.isnot(None)):
+        try:
+            values = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(values, list):
+            named.update(_channel_key(v) for v in values if isinstance(v, str))
+    out: list[str] = []
+    for c in chosen:
+        if isinstance(c, str) and c.strip() and _channel_key(c) not in named and c not in out:
+            out.append(c)
+    return out
+
+
 def payload(db: Session, user: User) -> dict[str, Any]:
     state = load_state(user)
     m = milestones(db, user, state)
@@ -141,6 +184,7 @@ def payload(db: Session, user: User) -> dict[str, Any]:
         "started": state is not None and bool(state.get("started_at")),
         "milestones": m,
         "should_onboard": should_onboard(user, state, m["jobs"]),
+        "channels_not_yet_run": channels_not_yet_run(db, user, state),
     }
 
 
@@ -228,6 +272,45 @@ def note_job_created(db: Session, user: User, job: Job) -> None:
         )
     except Exception:  # pragma: no cover - auditing is best-effort
         logger.exception("onboarding: first_job_created not recorded")
+
+
+def _cites_a_source(ref: Any) -> bool:
+    """A citation of a source in the library. A note (S-8.5.2) is the
+    reader's own words, so an answer citing only notes does not count."""
+    return isinstance(ref, dict) and ref.get("source_type") != "note"
+
+
+def note_cited_answer(
+    db: Session,
+    user: User,
+    *,
+    surface: str,
+    exchange_id: str,
+    references: list[Any] | None,
+    job_id: str | None = None,
+) -> bool:
+    """`first_cited_answer`, once per account (T-8.10.1.6): the first stored
+    answer, on a run or in the library, that cites at least one source.
+    Returns whether it was written. Never fails the caller."""
+    try:
+        cited = sum(1 for r in references or [] if _cites_a_source(r))
+        if cited == 0:
+            return False
+        if _has_event(db, user.id, audit_service.Event.FIRST_CITED_ANSWER):
+            return False
+        metadata: dict[str, Any] = {"surface": surface, "exchange_id": exchange_id, "citations": cited}
+        if job_id:
+            metadata["job_id"] = job_id
+        row = audit_service.record(
+            db,
+            event=audit_service.Event.FIRST_CITED_ANSWER,
+            user_id=user.id,
+            metadata=metadata,
+        )
+        return row is not None
+    except Exception:  # pragma: no cover - auditing is best-effort
+        logger.exception("onboarding: first_cited_answer not recorded")
+        return False
 
 
 def note_report_opened(db: Session, user: User, job: Job) -> None:

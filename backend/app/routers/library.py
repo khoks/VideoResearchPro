@@ -112,8 +112,16 @@ def ask_library_question(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> LibraryQAResponse:
-    """Run library-wide Q&A across the global video library and persist the exchange."""
-    return answer_library_question(db, current_user, request, scope=None)
+    """Run library-wide Q&A across the global video library and persist the exchange.
+
+    With ``document_id`` (T-8.4.2.4) the question is about that one source:
+    retrieval and citations are restricted to it, and a source the caller
+    cannot see is a 404 before any quota is checked.
+    """
+    try:
+        return answer_library_question(db, current_user, request, scope=None)
+    except qa_scope_service.ScopeNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
 
 
 # Moved to the shared core (T-8.3.3.6); kept for callers that import it here.
@@ -133,7 +141,16 @@ def answer_library_question(
     so quota, corpus statistics, trust weights and the Q&A library index work
     the same everywhere. Raises ``qa_scope_service.ScopeNotFound`` for a scope
     that is not the caller's; the route turns it into a 404.
+
+    ``request.document_id`` (T-8.4.2.4) narrows ``scope`` to that one source,
+    stored by its canonical id. It narrows a shelf too, never widens it.
     """
+    if request.document_id:
+        doc = visibility_service.visible_document(db, current_user.id, request.document_id)
+        if doc is None:
+            raise qa_scope_service.ScopeNotFound("document")
+        scope = (scope or QAScope()).model_copy(update={"document_id": doc.document_id})
+
     # S-5.7.1 / S-8.1.4: the scope's documents (inside the visible set; an
     # empty list retrieves nothing) and the notes it may draw on, through the
     # core a saved search's run shares (T-8.3.3.6). Resolved first, so a
@@ -176,6 +193,14 @@ def answer_library_question(
     db.add(exchange)
     db.commit()
     db.refresh(exchange)
+
+    # T-8.10.1.6: the `first_cited_answer` activation milestone, once per
+    # account. Best-effort, after the exchange is stored.
+    from app.services import onboarding_service
+
+    onboarding_service.note_cited_answer(
+        db, current_user, surface="library", exchange_id=exchange.id, references=references
+    )
 
     # Index into the Q&A library collection so it powers the history-chat
     # meta-RAG. Chroma failures must never break the Q&A response.

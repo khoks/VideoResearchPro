@@ -14,6 +14,9 @@ The shape is a small JSON object:
   a scope that resolves to no documents retrieves nothing.
   - ``shelf_id``: the documents selected by the runs on one of the reader's
     shelves (M1).
+  - ``document_id``: exactly one source the reader can see (T-8.4.2.4), keyed
+    on the primary key (D-070); the knowledge drawer's questions about that
+    source. Stored canonical: a legacy YouTube id is resolved on the way in.
 * **Provenance keys** record where an exchange came from and never change
   what it retrieves.
   - ``saved_search_id``: produced by a saved search's run (M3).
@@ -23,8 +26,8 @@ Keys are added, never repurposed. Reading keeps keys this build does not know
 resolving refuses a key it does not know, because ignoring an unknown narrowing
 key would silently widen the question to the whole library.
 
-Examples: ``null`` · ``{"shelf_id": "…"}`` · ``{"saved_search_id": "…"}`` ·
-``{"saved_search_id": "…", "shelf_id": "…"}``.
+Examples: ``null`` · ``{"shelf_id": "…"}`` · ``{"document_id": "…"}`` ·
+``{"saved_search_id": "…"}`` · ``{"saved_search_id": "…", "shelf_id": "…"}``.
 """
 from pydantic import BaseModel, ConfigDict
 
@@ -33,4 +36,5 @@ class QAScope(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     shelf_id: str | None = None
+    document_id: str | None = None
     saved_search_id: str | None = None

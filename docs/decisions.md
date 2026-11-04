@@ -766,7 +766,7 @@ Two ways to close the gap:
 
 **Re-evaluation hooks.**
 - Ship per-segment when (a) we observe materially different reply quality across multiple replies of the same thread getting cited (so jumping to specific reply matters), or (b) a future connector emits content where the per-reply identity is the citable unit (e.g. forum threads with multiple long top-level posts, podcast chapter markers).
-- The chunker rework is also the natural moment to revisit pseudo-timestamp synthesis ([D-013](#d-013--pseudo-timestamps-at-3-wps-as-a-shared-cross-source-constant-2026-04-26)) — they could be replaced with explicit per-segment indices once `extra` is preserved.
+- The chunker rework is also the natural moment to revisit pseudo-timestamp synthesis ([D-013](#d-013--pseudo-timestamps-at-3-wps-for-text-based-connectors-2026-04-25)) — they could be replaced with explicit per-segment indices once `extra` is preserved.
 
 **Linked initiatives / PRs.** I-1 / E-1.5 / S-1.5.5 (frontend half shipped earlier). PR [#131](https://github.com/khoks/VideoResearchPro/pull/131). M-1.5 polish backlog item *Backend reference enrichment* — per-document layer ✅; per-segment layer remains open as a follow-up.
 
@@ -845,6 +845,8 @@ Two ways to resolve:
 **Linked initiatives / PRs.** I-2 / E-2.6 / T-2.6.6. PR [#137](https://github.com/khoks/VideoResearchPro/pull/137). Precedent referenced from [E-1.9](initiatives.md#e-19--rename-channels--creators-db--orm) when that epic schedules.
 
 ---
+
+**Status-changed 2026-11-04:** a correction, found by PR [#401](https://github.com/khoks/VideoResearchPro/pull/401). The decision and its consequences say the codebase keeps the legacy defaults. That was already untrue of the Chroma collection when this was written: T-2.6.1 (PR [#106](https://github.com/khoks/VideoResearchPro/pull/106), merged 2026-05-02) had moved `CHROMA_GLOBAL_COLLECTION_NAME`'s default to `pratidhvani_global`, so an install that embedded under the old default has to pin that name or migrate. `DATABASE_URL` is the default that stayed legacy. The runbook approach stands.
 
 ## D-033 — Whisper-as-service for podcasts: reuse existing OpenAI Whisper path (resolves OQ-4) (2026-05-03)
 
@@ -1376,7 +1378,7 @@ The implementation has to make a choice that's consistent across all four hot en
 
 - Many privacy-sensitive PDFs (paywalled academic papers, internal company documents, gated educational materials) don't have a public URL the connector could fetch from anyway — file upload covers them inherently.
 - Identity model from [D-034](#d-034--pdf-source-type-identity-uses-first-64kb-sha-256-not-full-file-hash-2026-05-03) (`source_id = pdf:{first_64kb_sha256}`) is bytes-derived, so adding URL-fetch later requires no schema migration: the same bytes hash to the same source_id whether they were uploaded or fetched.
-- The "no discovery surface" pattern from [D-035](#d-035-connectors-with-no-discovery-surface-raise-notimplementederror-dispatcher-treats-as-zero-candidates-2026-05-03) is preserved — URL-fetch would be intake, not discovery.
+- The "no discovery surface" pattern from [D-035](#d-035--connectors-with-no-discovery-surface-raise-notimplementederror-dispatcher-treats-as-zero-candidates-2026-05-03) is preserved — URL-fetch would be intake, not discovery.
 - E-1.8 follow-up list in `initiatives.md` already mentions "Frontend file-upload UI" but not URL-fetch — this decision formalizes URL-fetch as deferred.
 
 **Re-evaluation hooks.**
@@ -1432,7 +1434,7 @@ The personal-brain.md sub-table remains as the **forward-looking spec** for once
 
 **Status:** accepted.
 
-**Context.** Self-host operators today must `UPDATE users SET tier = 'studio' WHERE email = '...'` directly in SQL to evaluate paid-tier features (BYOK, Author Studio, Echo). That's hostile UX — the user has to know the schema, find the DB path, write SQL — and it's an obstacle to "kick the tires on Pro before deciding". The cleanest fix is a self-service Subscription page inside the app + a public Pricing page that explains what each tier unlocks. But the project is pre-Stripe (E-5.3 deferred to SaaS launch per [D-038](#d-038--tenancy-retrofit-ships-in-four-phases-audit-additive-backfillwrites-reads-not-null-2026-05-04) sequencing), so a "real" payment flow isn't shippable today.
+**Context.** Self-host operators today must `UPDATE users SET tier = 'studio' WHERE email = '...'` directly in SQL to evaluate paid-tier features (BYOK, Author Studio, Echo). That's hostile UX — the user has to know the schema, find the DB path, write SQL — and it's an obstacle to "kick the tires on Pro before deciding". The cleanest fix is a self-service Subscription page inside the app + a public Pricing page that explains what each tier unlocks. But the project is pre-Stripe (E-5.3 deferred to SaaS launch per [D-038](#d-038--tenancy-retrofit-ships-in-four-phases-audit--additive--backfillwrites--reads--not-null-2026-05-04) sequencing), so a "real" payment flow isn't shippable today.
 
 **Decision.** Ship a **self-service tier flip endpoint** (`PUT /api/v1/auth/me/tier`) that updates `users.tier` directly, gated on authentication only — no payment integration, no Stripe webhook. The frontend renders a Stripe-style payment modal pre-filled with test values (`4242 4242 4242 4242` etc.) and shows a prominent "DEMO MODE — no real payment will be processed" banner everywhere the upgrade flow is surfaced. The endpoint accepts an optional `mock_payment` field in the request body for forward-compat shape but **ignores it server-side**.
 
@@ -1643,7 +1645,7 @@ A perfect lossless consolidation measures 369,801 tokens against `compose`'s eff
 
 **Status:** accepted.
 
-**Context.** [D-055](#d-055--intelligence-delta-evaluation-methodology-production-input-replay-blind-ab-judging-2026-07-29) measured the report pipeline losing ~99.6% of its source material: a 200-video job produced a report citing 2 channels out of 92 and 4 videos out of 200, with zero quantitative claims, while asserting it synthesized 137 videos. Blind judging scored it 3.5/10 against a max-effort control at 8.5. The user approved fixing the funnel first (it is model-independent and cheaper than a tier upgrade), and added a requirement: **report size should scale with the amount of information the corpus actually yielded**, comparable to the depth seen in per-video knowledge extraction.
+**Context.** [D-055](#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29) measured the report pipeline losing ~99.6% of its source material: a 200-video job produced a report citing 2 channels out of 92 and 4 videos out of 200, with zero quantitative claims, while asserting it synthesized 137 videos. Blind judging scored it 3.5/10 against a max-effort control at 8.5. The user approved fixing the funnel first (it is model-independent and cheaper than a tier upgrade), and added a requirement: **report size should scale with the amount of information the corpus actually yielded**, comparable to the depth seen in per-video knowledge extraction.
 
 **Decision.**
 
@@ -1770,7 +1772,7 @@ It was invisible while `gpt-5.4-nano` was the volume model (it produced ~217K, u
 
 **Status:** accepted.
 
-**Context.** [D-055](#d-055--intelligence-delta-evaluation-methodology-production-input-replay-blind-ab-judging-2026-07-29) measured the production report at **3.5/10 against a max-effort control at 8.5/10, gap SEVERE**. Every structural cause of that verdict has since changed (D-056 funnel fix, D-057 Luna volume tier, D-060 extraction ratio), so the verdict was re-run on the same 200-video corpus with the same blind method.
+**Context.** [D-055](#d-055--intelligence-delta-evaluation-methodology-production-input-replay--blind-ab-judging-2026-07-29) measured the production report at **3.5/10 against a max-effort control at 8.5/10, gap SEVERE**. Every structural cause of that verdict has since changed (D-056 funnel fix, D-057 Luna volume tier, D-060 extraction ratio), so the verdict was re-run on the same 200-video corpus with the same blind method.
 
 **Method.** Production report regenerated end-to-end through the shipped pipeline (48.8 min, `gpt-5.6-luna` @ ratio 0.40, sectioned compose). Blind-paired against the max-effort control, both normalised to plain text and capped at 180,000 chars so neither wins on medium or length. **Three independent judges** on different lenses (coverage/breadth, factual rigour with live retrieval, synthesis/insight) plus a mechanical citation-integrity audit. Orientation hidden from all four.
 
@@ -1931,6 +1933,7 @@ Grounding the requirement first showed **most of it already shipped**: since [D-
 
 **Linked initiatives / PRs.** E-1.15 / S-1.15.1; constrained by D-055, D-056, D-062.
 
+**Status-changed 2026-11-04:** knowledge synthesis, the last surface with no preference, is covered by [D-125](#d-125--a-knowledge-reports-depth-applies-d-064-without-a-bracket-and-belongs-to-the-shared-artifact-and-a-failed-synthesis-never-reaches-it-2026-11-04), and the per-request override is now on the Q&A pages.
 
 ## D-065 — Channel subscriptions become per-tenant; transliteration reversed (2026-07-31)
 
@@ -2174,6 +2177,8 @@ Verdicts ON / OFF / tie: undated 22 / 34 / 4, dated 24 / 35 / 1. By surface (dat
 **Downgrade.** `alembic downgrade -1` restores `video_id` from `documents` and deletes grants over non-video documents, which the old schema cannot hold — exactly the pre-D-070 state, logged with a count. Revision `3653e565c1fc` (a random id: two earlier drafts took `c7d8e9f0a1b2` and `d8e9f0a1b2c3`, which S-8.3.1 and S-8.1.1 also took the same day), on top of S-8.1.1's `d8e9f0a1b2c3`. The round trip is pinned by `tests/test_migrations/test_visibility_document_id_migration.py`.
 
 **Linked initiatives / PRs.** S-5.10.4 (this fix, PR [#241](https://github.com/khoks/VideoResearchPro/pull/241)), S-5.10.1 (reopened by this gap, closed again), E-1.8, S-1.5.8 / PR #224 (diagnosis). Follows D-017, D-063, D-072.
+
+**Status-changed 2026-11-04:** extended by [D-128](#d-128--one-source-is-a-narrowing-key-on-qascope-every-citation-carries-document_id-and-the-notification-push-is-a-doorbell-2026-11-04): every citation carries `document_id`, and that is the id a scope check compares.
 
 ## D-071 — R1 verdict: annotations win on substance, fail on attribution and cost; UI deferred (2026-10-19)
 
@@ -3006,6 +3011,8 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Linked initiatives / PRs.** S-8.1.4 (E-8.1), S-8.3.2 / S-8.3.3 (E-8.3), S-8.5.2 (E-8.5), M1 and M3 plans, PRs [#313](https://github.com/khoks/VideoResearchPro/pull/313), [#319](https://github.com/khoks/VideoResearchPro/pull/319). Follows D-063, D-070, D-083.
 
+**Status-changed 2026-11-04:** extended by [D-128](#d-128--one-source-is-a-narrowing-key-on-qascope-every-citation-carries-document_id-and-the-notification-push-is-a-doorbell-2026-11-04): `document_id` is a new narrowing key, and the narrowest one.
+
 ## D-096 — R1 frames reach the user: opt-in per run, lazy stills, and a `visual_extractions` quota (2026-10-19)
 
 **Status:** accepted. The tier numbers are defaults flagged for the user's pricing call.
@@ -3134,6 +3141,8 @@ All single-run evidence. The S-1.18.8 protocol re-run should carry both of the f
 
 **Linked initiatives / PRs.** E-3.3 / S-3.3.4 (PR [#346](https://github.com/khoks/VideoResearchPro/pull/346)), #338 (pre-registration), D-055, D-097, [D-099](#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19).
 
+**Status-changed 2026-11-04:** tier (iii) now also runs in the app, with no operator ([D-127](#d-127--the-in-app-voice-test-is-a-rolled-back-what-if-on-the-echo_draft-use-case-and-an-open-tests-answers-stay-out-of-the-export-2026-11-04)). The rule is unchanged, and nobody has taken the test yet.
+
 ## D-101 — Echo readiness v2: five domains measured from their stores, blocked reads as not connected, the voice test reported not gated (2026-10-20)
 
 **Status:** accepted. Supersedes [D-049](#d-049--echo-cold-start-readiness-threshold-shipped-triple-is-v1-personal-brainmd-sub-table-is-forward-looking-spec-resolves-oq-6-2026-05-06).
@@ -3218,6 +3227,8 @@ The D-100 user-as-judge test is **not** part of `ready`. Readiness reports wheth
 - New stores: `echo_drafts` and `echo_voice_gates`, registered in `ECHO_TABLES`, so they are exported and erased with the brain.
 
 **Linked initiatives / PRs.** E-3.4 / S-3.4.1 (PR [#357](https://github.com/khoks/VideoResearchPro/pull/357)), E-3.8 / S-3.8.1 (PR [#355](https://github.com/khoks/VideoResearchPro/pull/355)), [D-100](#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19), [D-101](#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20), [D-089](#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19) item 1, D-066.
+
+**Status-changed 2026-11-04:** the in-app test writes `echo_voice_gates` as `--record` does, and drafts now honour the user's pins for the three Echo use cases ([D-127](#d-127--the-in-app-voice-test-is-a-rolled-back-what-if-on-the-echo_draft-use-case-and-an-open-tests-answers-stay-out-of-the-export-2026-11-04)).
 
 ## D-103 — Anticipation cards: only in the opened panel, three a view, three days a key, three dismissals turn a kind off (2026-10-20)
 
@@ -3561,6 +3572,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Linked initiatives / PRs.** E-1.14 (S-1.14.18, S-1.14.20: T-1.14.20.4), E-1.16 (T-1.16.2.3, T-1.16.2.7), E-1.17 (S-1.17.3, S-1.17.4), S-1.5.13, E-2.8, E-5.5 (T-5.5.6), E-5.6 (T-5.6.7), E-5.10 (T-5.10.2.5), E-6.1, E-6.2 (S-6.2.1, S-6.2.2), E-6.5, E-7.1 (T-7.1.1.6, T-7.1.2.2), E-7.2, E-8.1, E-8.2 (S-8.2.3), E-8.3 (S-8.3.2), E-8.6 (S-8.6.3), E-8.7, E-8.9 (S-8.9.3), E-8.11 (S-8.11.2), E-8.12 (S-8.12.3); [D-059](#d-059--selection-quotas-preferred-channel-guarantee--concentration-cap-2026-07-30), [D-068](#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18), [D-072](#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19), [D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19), [D-076](#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19), [D-079](#d-079--report-markdown-source-on-markdownify-new-report-routes-are-header-bearer-only-2026-10-19), [D-080](#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19), [D-082](#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19), [D-083](#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19), [D-085](#d-085--reading-room-reports-stay-html-sanitised-and-parsed-in-the-browser-one-shared-citation-card-fed-by-the-runs-documents-2026-10-19), [D-087](#d-087--mobile-reading-and-install-a-reading-toolbar-below-1200-px-a-docked-composer-lifted-by-visualviewport-hermetic-device-tests-a-manifest-without-a-service-worker-2026-10-19), [D-088](#d-088--report-intermediates-persisted-per-run-on-by-default-frozen-at-the-stage-that-produced-them-2026-10-19), [D-092](#d-092--library-graph-computed-per-request-sigma-used-directly-as-a-lazy-chunk-three-group-colours-the-accessibility-layer-inside-the-story-2026-10-19), [D-094](#d-094--map-batching-packed-restored-by-run-7s-pre-registered-rule-starved-sources-re-mapped-alone-the-switch-to-source-is-the-users-call-2026-10-19), [D-107](#d-107--r1s-substance-rule-a-tie-passes-any-loss-fails-attribution-stays-zero-error-2026-10-25).
 
+**Status-changed 2026-11-04:** the one-`.env.example` ruling shipped in PR [#401](https://github.com/khoks/VideoResearchPro/pull/401), which also deleted `frontend/.env.example`, a file this entry did not name ([D-129](#d-129--drift-tests-hold-the-docs-to-the-code-the-repo-has-one-env-template-and-the-anchor-checker-writes-only-when-told-to-2026-11-04)).
+
 ## D-113 — Knowledge text for any source: the transcript cache, else the document's chunks put back together (2026-10-29)
 
 **Status:** accepted (2026-10-29). Made while building knowledge reports for non-video documents (PR [#383](https://github.com/khoks/VideoResearchPro/pull/383)) and its review fixes, not ruled by the owner.
@@ -3833,6 +3846,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Linked initiatives / PRs.** E-1.16 (T-1.16.1.7, T-1.16.1.9, T-1.16.2.14), E-1.17 (S-1.17.3, T-1.17.3.3, OQ-20), S-1.11.11; PR [#390](https://github.com/khoks/VideoResearchPro/pull/390); [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19), [D-072](#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19), [D-080](#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19), [D-084](#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19), [D-109](#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25), [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25), [D-113](#d-113--knowledge-text-for-any-source-the-transcript-cache-else-the-documents-chunks-put-back-together-2026-10-29).
 
+**Status-changed 2026-11-04:** migration `0253eef57358` is applied. OQ-20 is answered: the services read `pratidhvani_global`, and both scripts write it. Dry runs on the live store would store 254 language profiles and update 5,549 of 8,567 chunks; the `--write` runs wait for the owner. `language_mix` is now rendered ([D-123](#d-123--unused-read-routes-are-removed-an-outputs-sources-list-groups-by-source-and-a-language-badge-names-a-language-only-on-evidence-2026-11-04)).
+
 ## D-121 — Reset codes never appear in a response, two-step verification guards every sign-in, and tokens say what they are (2026-11-04)
 
 **Status:** accepted (2026-11-04). Made while building the account security page (S-5.4.1, PR [#389](https://github.com/khoks/VideoResearchPro/pull/389)) and its review fixes, not ruled by the owner. Point 1 supersedes T-5.4.8's self-host `debug_secret` handoff.
@@ -3864,6 +3879,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 - Left open, all proposed: a reset leaves the account's other sessions alive (T-5.4.12); `/auth/login/mfa` has no per-ticket attempt cap (T-5.4.13); there is no password change while signed in (T-5.4.14); the `/ws/jobs` handshake refuses the ticket but does not check whether an access token's session was revoked, a gap older than this PR (T-5.4.15). Email verification stays deferred with T-5.4.11.
 
 **Linked initiatives / PRs.** E-5.4 (S-5.4.1, T-5.4.3, T-5.4.5 to T-5.4.8, T-5.4.11 to T-5.4.15); PR [#389](https://github.com/khoks/VideoResearchPro/pull/389); [D-040](#d-040--failed-logins-for-unknown-emails-do-not-create-user-rows-lock-arbitrary-account-defence-2026-05-04), [D-042](#d-042--oauth-first-login-links-to-existing-user-by-email-2026-05-05), [D-043](#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05), [D-116](#d-116--oauth-links-or-creates-an-account-only-from-a-provider-verified-email-and-the-link-records-it-2026-10-29).
+
+**Status-changed 2026-11-04:** T-5.4.12 to T-5.4.15, the four items left open here, shipped in PR [#399](https://github.com/khoks/VideoResearchPro/pull/399) ([D-124](#d-124--second-factor-attempts-count-on-the-ticket-one-bearer-check-for-http-and-the-socket-and-a-validation-error-never-quotes-what-was-sent-2026-11-04)).
 
 ## D-122 — A deleted derived fact stays deleted per connector; only a refused refresh asks for a reconnect; restore re-checks the evidence (2026-11-04)
 
@@ -3902,3 +3919,222 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 - Owner step: apply migration `a68953e57c63` (a restart does) and restart the API and the worker.
 
 **Linked initiatives / PRs.** E-3.2 (S-3.2.1: T-3.2.1.11, T-3.2.1.12; S-3.2.2: T-3.2.2.5; S-3.2.4: T-3.2.4.4; S-3.2.5), E-3.3 (S-3.3.1: T-3.3.1.6, T-3.3.1.7), E-3.10; PR [#392](https://github.com/khoks/VideoResearchPro/pull/392); [D-089](#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19), [D-098](#d-098--echo-connectors-events-unique-per-reader-tokens-in-a-secret-store-that-is-erased-with-the-brain-but-never-exported-2026-10-19), [D-099](#d-099--signal-extraction-verbatim-checked-examples-language-free-beliefs-stylometry-without-a-model-2026-10-19), [D-110](#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25).
+
+## D-123 — Unused read routes are removed, an output's Sources list groups by source, and a language badge names a language only on evidence (2026-11-04)
+
+**Status:** accepted (2026-11-04). Made while building the reader and route gaps (S-8.8.5, T-8.8.4.1, T-1.16.1.9, PR [#396](https://github.com/khoks/VideoResearchPro/pull/396)) and its review fixes, not ruled by the owner.
+
+**Context.**
+- `GET /channels/{id}/videos` and `GET /jobs/{id}/shelves` had no caller, and the pages that would use them already read the same data another way. Both still had to be kept in step with [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31).
+- `GET /author/outputs/{id}/citations` (S-6.7.3) had no UI. All four output kinds record citations, but they number them differently: only a book's endnote `n` is citation `n`.
+- `language_mix` (T-1.16.1.7) was served but not shown, while the caption label still calls romanised Hinglish `en`. The tagger's classes are English and everything else: any Latin-script word outside its English lexicon counts as `hi`, and a passage with no function words votes by word majority. On short samples, Spanish, Portuguese, Italian, Indonesian, Tagalog and Turkish read primary `hi` with 60 to 100% "Hindi grammar", and Arabic reads `hi` too.
+
+**Decision.**
+1. **Unused read routes are removed, not kept "in case".** Each extra scoped read is another place D-063 must be kept true. `GET /channels/{id}/videos` goes in favour of `GET /library/videos?channel_id=`, and `GET /jobs/{id}/shelves` (with `shelf_service.shelves_for_job`) in favour of the `job_ids` in the cached `GET /shelves` listing. A test pins each absence, built so that restoring the route fails it.
+2. **The output reader's Sources list groups citations by source, and prints only where the text cannot stand in for it.** One entry per cited source, with each citation as a chip. A book's endnotes and a deck's sources list every cited moment, so the list stays off paper there; a site's contents and a newsletter do not, so there it prints. Only a book names endnote numbers, because `position` equals the footnote number only there.
+3. **The language badge's existence follows the server's `code_mixed`; its name needs evidence.** The frontend never decides whether a mix exists: that stays the chunker's 3% rule ([D-080](#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19)) through `language_mix_service.public_view`. But the profile cannot say which language a Latin-script source is. So Hindi is named only with a `hi` or `ur` label, in Devanagari, or on a video captioned `en` with at least 5% Hindi grammar (`HINDI_GRAMMAR_FLOOR`; the library's 219 English transcripts read 0 to 0.4%). An `en` label counts only on a video, because PDFs, Reddit and HN are `en` by assumption. Otherwise the badge shows the labelled language or a neutral name.
+
+**Alternatives considered.**
+- *Point the channel page at `GET /channels/{id}/videos`.* It would lose `job_count` / `job_titles`, which the shared `VideoRow` needs, and the library's search, filters and paging.
+- *Read a job's shelves from `GET /jobs/{id}/shelves`.* A page of twenty cards would cost twenty requests instead of one.
+- *One row per citation.* It would repeat a title dozens of times in a book.
+- *A neutral label only when `matrix_hi_share` is 0,* the review's first suggestion. It would still put Hindi on most of the samples above, because the matrix breaks ties by word majority.
+
+**Consequences.**
+- No badge appears on the live library until the owner runs `scripts/backfill_language_mix.py --write`. The dry run of 2026-11-04 would store 254 profiles.
+- The prompts keep the old naming: `code_mixing_service.source_note` still tells the models a Spanish source is "Hindi (romanised)" (T-1.16.2.15, proposed). The badge's fix is on the client because only the row holds the label and the source type together.
+- Accepted gaps: a Hinglish Reddit thread or PDF reads "Other language + English", a Spanish video really labelled `en` would read as romanised Hindi, and ISO 639-2 labels are unread (T-1.16.1.10, proposed). No such document is in the library today.
+- `GET /author/outputs/{id}/citations` joins `documents` without `visibility_service`. Citations resolve only against documents visible when the output is written, and no route revokes a grant today, so the join reveals nothing new. It was left unchanged.
+
+**Linked initiatives / PRs.** E-8.8 (S-8.8.5, T-8.8.4.1, T-8.8.4.5), E-1.16 (T-1.16.1.9, T-1.16.1.10, T-1.16.2.15), E-6.7 (S-6.7.3); PR [#396](https://github.com/khoks/VideoResearchPro/pull/396); [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-080](#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19), [D-120](#d-120--older-chunks-gain-their-era-and-publish-fields-by-a-metadata-only-pass-amends-d-072-the-language-profile-is-stored-on-the-document-2026-11-04).
+
+## D-124 — Second-factor attempts count on the ticket, one bearer check for HTTP and the socket, and a validation error never quotes what was sent (2026-11-04)
+
+**Status:** accepted (2026-11-04). Made while building T-5.4.12 to T-5.4.15 and T-5.6.9 (PR [#399](https://github.com/khoks/VideoResearchPro/pull/399)) and its review fixes, not ruled by the owner. It closes the four items [D-121](#d-121--reset-codes-never-appear-in-a-response-two-step-verification-guards-every-sign-in-and-tokens-say-what-they-are-2026-11-04) left open.
+
+**Context.**
+- A password reset is what someone does when they think their password is known, and it left whoever was already signed in signed in.
+- One five-minute second-factor ticket could be tried from many addresses, because the only bound was the per-IP sign-in limit.
+- There was no way to change a password while signed in.
+- A token from a signed-out session kept opening the progress socket until it expired.
+- A malformed `BYOK_ENCRYPTION_KEY` surfaced as a bare 500 or as "wrong code", which sends the user to check their phone's clock when the fault is the operator's.
+- FastAPI's default 422 put the rejected value in `input`: the whole body when a field was missing, and the raw bytes when the content type was not JSON.
+
+**Decision.**
+1. **Second-factor attempts live in the database, keyed on the ticket's `jti`, and a ticket buys one session.** A ticket with no `jti` is refused rather than left uncounted. Five is a constant (`MFA_TICKET_MAX_ATTEMPTS`), beside `MFA_TOKEN_TTL_MIN`.
+2. **`users.has_password` rather than a nullable hash.** OAuth accounts keep a random hash, so the flag only decides what the change route answers, and sign-in never reads it. The backfill rule: first identity linked within 60 seconds of the account, no completed reset, and no `user_registered` event, which only `POST /auth/register` writes.
+3. **A wrong current password counts toward the account lockout,** through the same check as sign-in. A stolen session can then guess no faster than the sign-in page allows. It adds no new denial of service, since anyone who knows the address can already lock an account at `/auth/login` ([D-040](#d-040--failed-logins-for-unknown-emails-do-not-create-user-rows-lock-arbitrary-account-defence-2026-05-04)).
+4. **The change route answers 400 or 429, never 401.** The web client treats a 401 as a dead session and would sign the user out for a typo.
+5. **A validation error never quotes what was sent, on any route.** `input` is dropped in one app-level handler; `type`, `loc` and `msg` stay, and nothing in the backend, the web app or the extension reads `input`. The new password is still measured in the route, so a bad one gets a sentence the page can show.
+6. **Recovery codes keep working with a broken key,** since they are hashed. `verify_at_login` tries them before it raises, so they are the way in until the operator fixes the key.
+7. **One bearer check for HTTP and the socket** (`auth_service.authenticate_access_token`), with an app-level exception handler as the net under the per-route 503s for the key error ([D-043](#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05)).
+
+**Alternatives considered.**
+- *Count attempts in the in-memory rate limiter.* It resets on restart and is per process.
+- *Clear the password hash on OAuth accounts.* A wrong backfill guess would lock a user out, where a wrong flag costs them a pointer to the reset.
+- *Type the password fields `Any`, so the schema stops rejecting them.* A body that is not an object, and a form-encoded body, would still be quoted back.
+
+**Consequences.**
+- New table `mfa_step_tickets` and column `users.has_password` (migration `f748717dcb01`). On the owner's database the backfill marks nobody. Owner step: `./scripts/restart_services.ps1`; anyone mid-sign-in holds a ticket with no `jti` and is asked to start over.
+- Every route's 422 body changes: `input` is gone.
+- `_client_ip` trusts `X-Forwarded-For` from any caller, so the ticket cap and the lockout are the real bounds here, not the per-IP bucket (T-5.5.8, proposed).
+- A ticket issued before a reset survives it for at most five minutes, and it still needs the second factor. An open socket is not closed when its session is revoked later; only the handshake checks (T-5.4.19, proposed).
+- Left open, all proposed: `DELETE /auth/mfa` has no attempt cap (T-5.4.16); there is no account-wide second-factor count, which is the owner's call because it changes who gets locked out (T-5.4.17); a NUL or lone surrogate in a password is still a bare 500 on register and reset (T-5.4.18); a rotated key still reads as a wrong code (T-5.6.11).
+
+**Linked initiatives / PRs.** E-5.4 (T-5.4.12 to T-5.4.19), E-5.5 (T-5.5.8), E-5.6 (T-5.6.9, T-5.6.11); PR [#399](https://github.com/khoks/VideoResearchPro/pull/399); [D-040](#d-040--failed-logins-for-unknown-emails-do-not-create-user-rows-lock-arbitrary-account-defence-2026-05-04), [D-043](#d-043--single-shared-fernet-key-for-all-encrypted-at-rest-credentials-2026-05-05), [D-121](#d-121--reset-codes-never-appear-in-a-response-two-step-verification-guards-every-sign-in-and-tokens-say-what-they-are-2026-11-04).
+
+## D-125 — A knowledge report's depth applies D-064 without a bracket and belongs to the shared artifact, and a failed synthesis never reaches it (2026-11-04)
+
+**Status:** accepted (2026-11-04). Made while building S-1.15.3 and S-1.15.4 (PR [#395](https://github.com/khoks/VideoResearchPro/pull/395)) and its review fixes, not ruled by the owner. It extends [D-064](#d-064--output-length-corpus-brackets-with-an-optional-user-override-2026-07-31) to the last surface with no preference. Point 4 reverses a deliberate earlier behaviour, so the owner may want to rule on it (OQ-23).
+
+**Context.**
+- Knowledge synthesis was the only output surface with no user preference. S-1.14.8 already made its budget follow the size of the extraction.
+- Since T-1.15.2.3 the job and library Q&A requests accepted `output_length`, but no page sent it.
+- Every provider counts thinking inside `max_tokens`. On a short source brief alone is 3,600, under the 4,096 a Claude model on legacy thinking is budgeted at medium, and the API refuses that call.
+- `synthesize_report` turns any failure into an empty report, and the router stored that over the shared artifact, spent the caller's quota and returned 200.
+- A knowledge report is metered (10 a month on Free) and takes about a minute, and the drawer started one as soon as it opened.
+
+**Decision.**
+1. **Knowledge depth applies D-064 without a bracket.** One document is not a corpus, and S-1.14.8 already makes the budget follow the extraction. An explicit preference multiplies that budget, including its 8,000 floor; unset is exactly 1.0 with no brief. A shrunken budget keeps a thinking reserve (the floor's scaled share plus `thinking_reserve_tokens`, capped at the unset budget), because thinking is counted inside `max_tokens` and the brief, not the ceiling, does the shortening ([D-062](#d-062--report_compose-upgraded-to-claude-opus-5-2026-07-31)).
+2. **A knowledge report's depth is a property of the shared artifact.** Under [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), `documents` holds one report per document for every tenant who can see it, so the depth one tenant chooses is what the others read, and a Regenerate overwrites it for all of them. The overwrite already existed. The depth is now recorded and shown, so the effect is visible.
+3. **A failed synthesis never reaches the shared artifact.** An empty report is a 502: nothing is stored and no quota is spent.
+4. **The knowledge drawer asks before it spends.** It no longer starts a report on open. The select is preset to the surface's default, so accepting it is still one click, and Regenerate sits in the same row.
+5. **A per-ask depth applies to one ask,** unlike the answer language: it clears when the answer lands, and survives a failed ask and "Edit question". The request carries `output_length` only when a depth is picked, so the router's precedence (request, else job, else bracket) is unchanged.
+
+**Alternatives considered.**
+- *Bracket the document.* Every document would classify as `small`, and every unset request would get 1.25x plus the small-corpus nudge.
+- *Keep auto-start and offer depth only on Regenerate.* A reader who wants another depth pays for two metered reports.
+- *Put the Q&A select beside Ask, as the spec said.* On a 320 px phone it would leave the input about 65 px, so it sits with each surface's other per-ask option, and a thin note in the docked composer shows a picked depth on phones (OQ-22).
+
+**Consequences.**
+- Unset or `auto` is byte-identical to S-1.14.8, in budget and prompt. Regenerating without a depth clears the recorded one. `output_length` is `null` on every report written before this.
+- With reasoning on, a brief report on a short source gets 7,696 rather than 8,000 on the default model, so the brief does the shortening. The brief depth has not run on a live model (T-1.15.3.6, an owner step).
+- Left open, all proposed: `BatchExtract` sends no depth (T-1.15.3.7); a truncated report is stored with only a logged warning (T-1.15.3.8); there is no account-level preference, though the spec mentions one (T-1.15.3.9); Q&A brief has the same thinking arithmetic at 2,025 tokens (T-1.15.4.4).
+
+**Linked initiatives / PRs.** E-1.15 (S-1.15.3, S-1.15.4, T-1.15.3.6 to T-1.15.3.9, T-1.15.4.4, OQ-22, OQ-23); PR [#395](https://github.com/khoks/VideoResearchPro/pull/395); [D-062](#d-062--report_compose-upgraded-to-claude-opus-5-2026-07-31), [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-064](#d-064--output-length-corpus-brackets-with-an-optional-user-override-2026-07-31).
+
+## D-126 — A knowledge report is cited as its whole document, and an outputter can refuse a source before its row exists (2026-11-04)
+
+**Status:** accepted (2026-11-04). Made while building S-6.3.2 (PR [#398](https://github.com/khoks/VideoResearchPro/pull/398)) and its review fixes, not ruled by the owner.
+
+**Context.**
+- S-6.3.1 shipped decks from runs only, and E-6.3's scope also named a knowledge artifact. The board asked for the report's "citations as source markers, as reports do".
+- A knowledge report has no citations to link. The synthesis prompt never asks for them, and extraction reads text with the times already dropped (`_text_from_segments` keeps only each segment's text). The only times a report can hold are plain words such as "On screen at 4:12".
+- An uploaded PDF has no public address: its file is a relative path behind sign-in.
+
+**Decision.**
+1. **A knowledge report is cited as its whole document, not at moments.** The model is offered one marker, the document's, on every paragraph, list item and table row. Links are reduced to their labels and stray markers are removed, so the only marker on offer is one the sources slide can link.
+2. **The sources slide links the document where it lives,** or its knowledge report in the app when it has no public address.
+3. **An outputter may define `check_sources(db, user, source_ids)`,** which the router runs before the row exists, on create and on estimate. `OutputSourceNotFound` maps to 404 and `OutputSourceNotReady` to 409, matching [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)'s existence-leak posture: a document the caller cannot see reads exactly like one that does not exist. Runs are not pre-checked: a bad run is still left out at generation and disclosed, as in S-6.3.1.
+4. **The run-only prompt stays identical,** so S-6.3.1's trial still describes it. A note goes out only with a knowledge report: the marker cites the source as a whole, the source may not be a video, and a report's own sentences are not the source's words, so a quote slide may use only words the report itself gives as a quotation.
+
+**Alternatives considered.**
+- *Ground each sentence to its nearest transcript chunk by embedding similarity.* It would invent precision the report does not have and could pin a claim to the wrong moment.
+- *Give each section its own marker.* The markers would all resolve to the same link.
+- *Pre-check runs too.* It would change a shipped contract, and the spec asked for the document refusals only.
+
+**Consequences.**
+- In a deck from one knowledge report every slide cites the same source. "Every content slide cites a linked source" holds but says less than it does for runs: it shows the model cited what it was given, not that each bullet is supported.
+- What would change this: knowledge extraction that carries time ranges through to each item. `transcript_cache` segments have the times, but `document_text_service` drops them before the agent sees the text, so it needs a change to extraction and a fresh extraction per document.
+- The knowledge header carries no speech note (`code_mixing_service.source_note`). The model sees the English report, not the source's own text, and the run-report deck prompt carries none either. CLAUDE.md asks a new prompt that shows sources to carry it, so this is a reading of that rule the owner can overrule.
+- `DECK_SYSTEM` still says the reports "were compiled from video transcripts", so that the run-only prompt stays identical; the note corrects it for knowledge reports. Nothing checks a quote slide against any text: the note is the only guard, and no real model has run on it.
+- Owner steps: restart the API and the worker, and make one real deck (T-6.3.2.4). It would also give the first cost figure.
+
+**Linked initiatives / PRs.** E-6.3 (S-6.3.2, T-6.3.2.4); PR [#398](https://github.com/khoks/VideoResearchPro/pull/398); [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).
+
+## D-127 — The in-app voice test is a rolled-back what-if on the `echo_draft` use case, and an open test's answers stay out of the export (2026-11-04)
+
+**Status:** accepted (2026-11-04). Made while building T-3.4.1.8 (PR [#400](https://github.com/khoks/VideoResearchPro/pull/400)) and its review fixes, not ruled by the owner. It brings [D-100](#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19)'s tier (iii) into the app and writes [D-102](#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20)'s per-user gate. Five review questions stay open for the owner (OQ-24 to OQ-28).
+
+**Context.**
+- The switch for E-3.4 needed an operator to run two commands against a copy of the database and pass files back and forth, and T-3.3.4.3 had not run for anyone.
+- `user-pairs` soft-deletes the held-out notes in a copy and re-runs extraction, so nothing those notes taught reaches the draft. Without that, a draft could borrow from the note it is paired with and a user would pass falsely. The app can do neither on live data.
+- A test makes about 40 model calls on copies of a user's own notes, so it has to run on the model that user chose.
+
+**Decision.**
+1. **A rolled-back what-if instead of a copy.** `withdrawn_signals` runs the database half of an extraction run with the held-out notes gone, using the code the harness runs (`apply_pending`, split out of `_run`, plus `sync_stylometry`), on its own connection in a transaction that is always rolled back, with `join_transaction_mode="rollback_only"` so even a commit inside cannot persist. The surviving signals are ranked in a throwaway in-memory Chroma collection.
+2. **`echo_draft`, not the harness's pinned `DRAFTER`.** This gives routing, the user's pin and BYOK key, and metering, through `llm_service.byok_context`. The default is the same model and reasoning, and a test pins that. `echo_draft_service.draft` now resolves it the same way, so whoever moves `echo_draft` tests the drafts they will get.
+3. **One difference from the harness.** Texts Echo has not learned from yet are not learned during the test. Their stylometry still counts. This can only weaken the trait card, which pushes toward a fail.
+4. **The stored test is part of the brain.** `echo_voice_tests` is in `ECHO_TABLES`, so it is exported and erased with the brain ([D-089](#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19)). It keeps copies of notes and drafts after scoring, which T-3.4.1.9 can read.
+5. **Limits.** One open test at a time, held by a partial unique index, and 3 starts a day per user.
+6. **An open test's answers stay out of the export.** `key_json` and `seed` are exported as null while a test is open, and the manifest counts those rows. The export is complete once a test is scored. The user can always find their own text on `/notes`, so the blinding rests on honesty either way; this keeps the server from handing them the answer.
+7. **A closed test stays closed.** Staleness runs from the worker's last progress, and every write to a generating test is conditional on it still generating.
+
+**Alternatives considered.**
+- *Copy the database and Chroma per test.* Too heavy for a request flow.
+- *Reimplement withdrawal in memory.* It could drift from the real code.
+- *Learn pending texts during the test.* It would run the extraction model on live data for every test.
+- *Blank `key_json` alone in the export.* `seed` fixes the held-out sample and every coin flip, so with the user's notes it rebuilds the key.
+- *Show which side was theirs after scoring.* It would teach the tells a retake depends on.
+
+**Consequences.**
+- Scoring follows `user-score`, and a fail stores `status="failed"` as `--record` does, so a failed retake closes a gate that had passed. The page warns about that before a retake starts (OQ-24).
+- `echo_draft_service.draft` now honours the user's pins for `echo_draft`, `echo_classify_intent` and `echo_critique`, which it ignored until now.
+- The real drafts have not been seen in this flow: tests must not call paid providers.
+- Owner steps: restart the API and the worker (migration `6d5b3d5aa6fa`, new task `echo.generate_voice_test`), and set `ECHO_SPEAK_AS_ME_ENABLED=True` when the test should be offered. T-3.3.4.3 can then run from the Echo page.
+- Left open: `echo_drafts.model` stays `String(64)` (T-3.4.1.10, proposed); lost updates between concurrent pick requests were not reviewed.
+
+**Linked initiatives / PRs.** E-3.4 (T-3.4.1.8 to T-3.4.1.10, OQ-24 to OQ-28), E-3.3 (T-3.3.4.3); PR [#400](https://github.com/khoks/VideoResearchPro/pull/400); [D-089](#d-089--echos-privacy-contract-context-only-by-default-the-brain-is-a-registry-the-archive-is-the-users-whole-copy-delete-in-a-fixed-order-2026-10-19), [D-100](#d-100--voice-match-gate-mode-a-passes-on-synthetic-writers-speak-as-me-may-be-built-and-is-enabled-per-user-only-after-the-user-as-judge-test-2026-10-19), [D-102](#d-102--speak-as-me-two-switches-guards-in-code-the-reply-in-the-users-language-2026-10-20).
+
+## D-128 — One source is a narrowing key on `QAScope`, every citation carries `document_id`, and the notification push is a doorbell (2026-11-04)
+
+**Status:** accepted (2026-11-04). Made while building T-8.4.2.4, T-8.3.3.8, T-8.10.1.6 and T-8.10.1.7 (PR [#397](https://github.com/khoks/VideoResearchPro/pull/397)) and its review fixes, not ruled by the owner. Point 4 is a reading of "at least one citation" that the owner may want to confirm.
+
+**Context.**
+- The knowledge drawer's suggestions read as being about the source but were asked across the library.
+- A saved search runs in the worker, so nothing reached an open page for up to a minute. Pushing to the bell opens the socket on every signed-in page, not just on a running job.
+- M10 named `first_cited_answer` as its alternative activation milestone, and nothing wrote it.
+- The wizard collects up to five channels, and only the first run read one of them.
+- The review found a blocker: a scope check keyed on `video_id` dropped every citation of a non-YouTube source, because `video_id` is empty there.
+
+**Decision.**
+1. **`document_id` is a narrowing key on `QAScope`** (extends [D-095](#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19)). One source is the narrowest scope: with a shelf it intersects for documents, and its notes are the source's own rather than the union of both scopes.
+2. **The notification push is a doorbell.** It carries `id` and `kind`, never the title or body, so a notice's text is only read over HTTP, where the session is checked. Routing is by Redis channel, and the subscribing user comes from the token.
+3. **A signed-out browser keeps no socket, and a revoked token opens none.** `AuthProvider` closes the socket on any sign-out, the client replaces it when the stored token changes, and the handshake refuses a revoked token ([D-124](#d-124--second-factor-attempts-count-on-the-ticket-one-bearer-check-for-http-and-the-socket-and-a-validation-error-never-quotes-what-was-sent-2026-11-04)). A session revoked elsewhere does not close a socket already open: that is the stated gap, not a guarantee.
+4. **`first_cited_answer` means a source was cited.** An answer citing only the reader's own notes does not count, and neither does a saved-search run, which does not go through the routers. It is check-then-insert like the other activation events, so two truly concurrent first answers could write two.
+5. **The pre-fill offers channels no run has named,** whatever became of that run, derived on read. The "once" is per browser (localStorage), a convenience rather than server state, and it is spent only when the list is on screen.
+6. **Every citation carries `document_id`, and that is the id a scope check compares** (extends [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)). `video_id` stays as a fallback for stored references only.
+
+**Alternatives considered.**
+- *Pin a question about one source.* A saved search takes the library or a shelf, and one document's answer has little to change. The button is hidden, because it would have pinned the question over the whole library.
+- *An inline composer in the drawer.* The card hands over to library Q&A, as it did; the spec asks it to ask about the source and say so.
+- *Name the source's title on the answer card.* The exchange stores only the id, so it would mean a lookup per card or storing something that goes stale.
+- *Close the socket in `useLiveNotifications`.* The layout has already unmounted by the time the token is gone, so it lives in `AuthProvider`.
+
+**Consequences.**
+- New setting `NOTIFICATIONS_PUSH_ENABLED`, default on, off for the test suite. A worker on the new code with an API on the old code publishes unheard, and the one-minute poll covers it, as it does a notice published while the socket is down.
+- The bell has not been checked end to end in one running app: the server route, the Redis path and the client are each tested, but not together.
+- `document:<id>` suggestions now read questions asked about that source, and such a question invalidates their cache.
+- Left open, proposed: closing a socket already open when its session is revoked (T-5.4.19), and saved-search change detection, which still keys the cited set on `video_id`, so a non-YouTube citation is not counted there (T-8.3.3.10).
+- Owner step: restart the API, the worker and the frontend. No migration.
+
+**Linked initiatives / PRs.** E-8.4 (T-8.4.2.4), E-8.3 (T-8.3.3.8, T-8.3.3.10), E-8.10 (T-8.10.1.6, T-8.10.1.7), E-5.4 (T-5.4.19); PR [#397](https://github.com/khoks/VideoResearchPro/pull/397); [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19), [D-095](#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19), [D-124](#d-124--second-factor-attempts-count-on-the-ticket-one-bearer-check-for-http-and-the-socket-and-a-validation-error-never-quotes-what-was-sent-2026-11-04).
+
+## D-129 — Drift tests hold the docs to the code, the repo has one env template, and the anchor checker writes only when told to (2026-11-04)
+
+**Status:** accepted (2026-11-04). Made while building E-4.11, T-4.8.5 and T-5.6.7 (PR [#401](https://github.com/khoks/VideoResearchPro/pull/401)) and its review fixes, not ruled by the owner. It carries out [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25)'s one-template ruling and goes further than it in point 2, and corrects [D-032](#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03).
+
+**Context.**
+- CLAUDE.md loads into every session, so a wrong count or a phantom route misleads every later piece of work. It said 168 tests and 6 LangGraph agents, listed 54 of 199 endpoints with one route that did not exist, and left 61 settings out.
+- Three `.env.example` files existed, and the backend's still said 0.5 s between transcript fetches, the pace that got the install IP-blocked ([D-051](#d-051--transcript-pipeline-resilience-bundle-circuit-breaker--segmented-whisper--yt-dlp-client-fallback-2026-07-22)).
+- `fix_anchor_links.py` saw only 10 target docs, had no dry-run flag and ignored `--report`.
+- Without a test, docs like these drift again within weeks.
+
+**Decision.**
+1. **The drift tests go beyond the spec, and that is a standing rule for every session.** Besides `.env.example`, they cover CLAUDE.md's env table, its API list and `docs/api-reference.md`. A PR that adds a setting must touch three files and one that adds a route must touch two, or CI fails. That cost is the point.
+2. **`frontend/.env.example` is deleted too,** though D-112 named only the backend's. The `VITE_*` variables are a section of the root file: `VITE_API_BASE_URL` and `VITE_WS_URL` go in `frontend/.env`, and `VITE_PROXY_TARGET` in the shell, because `vite.config.ts` reads `process.env` and was left that way rather than given `loadEnv`, since its comment and Playwright's config already set it so.
+3. **`fix_anchor_links.py` writes only with `--write`,** like the backfill scripts. `--report` is removed rather than kept as an alias, so an unknown flag rewrites nothing. Its oracle is GitHub's rendered ids, and it deliberately does not read raw HTML headings or headings in list items: a good link to one fails `--check`, and the failure output says why.
+4. **Settings nothing reads are marked, not removed.** Removing them is a code change for its own PR, and a test holds the list to an AST scan of the code that runs, so wiring one up later fails until its marker comes off.
+
+**Alternatives considered.**
+- *Test only `.env.example`, the spec's scope.* CLAUDE.md's table and route list are what mislead sessions.
+- *Keep `--report` as an alias.* The board complained about exactly that flag, which was ignored while files were rewritten.
+- *Read routes from `app.routes`.* On FastAPI 0.162, which CI installs, it holds no `APIRoute`, so the tests read `app.openapi()` and the WS router and pass on both versions.
+
+**Consequences.**
+- Every later PR that adds a setting or a route pays this cost.
+- After the batch 4 tracker pass repaired the last 18 links, CI's lint job checks every Markdown file with nothing skipped.
+- Left open, proposed: the seven unread settings (T-4.11.1.4), a re-audit of `docs/ui-pages.md` and the docs #401 did not cover (T-4.11.1.5), section B of the runbook and `backend/alembic.ini` (T-2.6.7, the owner's call), and `MAX_CONCURRENT_JOBS` being install-wide (T-5.2.14).
+- Owner step: set `BYOK_ENCRYPTION_KEY` if it is not set. The template change touches no existing `.env`.
+
+**Linked initiatives / PRs.** E-4.11 (S-4.11.1), E-4.8 (T-4.8.5), E-5.6 (T-5.6.7), E-2.6 (T-2.6.1, T-2.6.7), E-5.2 (T-5.2.14); PR [#401](https://github.com/khoks/VideoResearchPro/pull/401); [D-032](#d-032--operator-coordinated-runbook-vs-automatic-startup-migration-for-data-bearing-identifier-renames-2026-05-03), [D-051](#d-051--transcript-pipeline-resilience-bundle-circuit-breaker--segmented-whisper--yt-dlp-client-fallback-2026-07-22), [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25).

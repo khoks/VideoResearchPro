@@ -53,7 +53,8 @@ class EchoDraft(Base):
     deviation_notes_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     flags_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     critique_rounds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 128: a pinned model id, as `user_llm_overrides.model` holds it.
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     tokens_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tokens_out: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)

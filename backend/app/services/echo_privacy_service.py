@@ -25,10 +25,12 @@ that an export or a delete happened, with counts only, never content.
 - ``files/<stored path>`` — the bytes, exactly.
 
 ``read_archive`` is its exact inverse; the round-trip test holds every column
-of every row and every file's bytes to it. One exception, for now only:
-what would give away an open voice test's answers is exported as null until
-the test is scored (``withheld_columns``), and the manifest counts those
-rows. The archive includes third-party
+of every row and every file's bytes to it. Two exceptions, each counted in the
+manifest: what would give away an open voice test's answers is exported as
+null until the test is scored (``withheld_columns``), and a rejected signal's
+evidence is exported only as far as it still stands, because a rejection made
+before PR #392 can quote a source the user has since deleted (T-3.3.1.7). The
+archive includes third-party
 share content: it is the user's own copy of what they handed over, the thing
 Article 20 portability covers. "Never exported" for context-only content
 applies to dataset and derived exports, not to this.
@@ -67,7 +69,7 @@ from app.models.personal_context import PersonalContext
 from app.models.share import Share
 from app.models.voice_signal import VoiceSignal
 from app.models.voice_signal_input import VoiceSignalInput
-from app.services import echo_intake_service, echo_vectors
+from app.services import echo_intake_service, echo_signal_service, echo_vectors
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +146,9 @@ def _aware(dt: datetime | None) -> datetime | None:
 #: An open voice test's answers: which side is the user's, and the seed that
 #: fixes the held-out sample and every coin flip, so it would rebuild that.
 VOICE_TEST_ANSWER_COLUMNS = ("key_json", "seed")
+#: What a rejected signal keeps of its evidence. An export carries only the
+#: part that still stands (T-3.3.1.7).
+SIGNAL_EVIDENCE_COLUMNS = ("derived_from", "examples_json")
 
 
 def withheld_columns(row: Any) -> tuple[str, ...]:
@@ -234,11 +239,22 @@ def write_archive(db: Session, tenant_id: str, out: IO[bytes]) -> dict[str, Any]
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         file_paths: list[str] = []
         columns_withheld = {"echo_voice_tests": {"columns": list(VOICE_TEST_ANSWER_COLUMNS), "rows": 0}}
+        # A rejection made before PR #392 can still quote a source the user
+        # has since deleted. Until the sweep clears it at rest, the archive
+        # must not hand those words back.
+        stale = echo_signal_service.stale_rejected_evidence(db, tenant_id)
+        if stale:
+            columns_withheld["voice_signals"] = {"columns": list(SIGNAL_EVIDENCE_COLUMNS), "rows": len(stale)}
         for name, model in ECHO_TABLES:
             count = 0
             with zf.open(f"{name}.jsonl", "w", force_zip64=True) as fh:
                 for row in _iter_rows(db, model, tenant_id):
-                    fh.write((json.dumps(row_to_record(row), ensure_ascii=False) + "\n").encode("utf-8"))
+                    record = row_to_record(row)
+                    if model is VoiceSignal and row.id in stale:
+                        sources, examples = stale[row.id]
+                        record["derived_from"] = json.dumps(sources)
+                        record["examples_json"] = json.dumps(examples, ensure_ascii=False)
+                    fh.write((json.dumps(record, ensure_ascii=False) + "\n").encode("utf-8"))
                     count += 1
                     if withheld_columns(row):
                         columns_withheld[name]["rows"] += 1

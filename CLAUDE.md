@@ -213,6 +213,7 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/app/services/echo_imap_service.py` | The email inbox (T-3.7.4.1): polls a dedicated mailbox from the scheduler tick; a message from an allowed sender becomes one context-only text share, once |
 | `frontend/public/share-target-sw.js` | The Android share target (T-3.7.6.1): a service worker scoped to `/echo/share-target` alone, keeping each share on the device so it never enters a URL, then redirecting out of its scope to `/echo/incoming`, so it controls no page. What it keeps is a proposal: any website can post there, so `EchoShareTargetPage` shows it and posts only on a tap |
 | `backend/scripts/echo_import.py` | Import an export into a user's Echo from the command line (`--email`, `--file`, `--preview`): the `/echo/import` flow for exports past the upload cap, such as Apple Health (S-3.7.5) |
+| `backend/scripts/sweep_rejected_signal_evidence.py` | Clear stale evidence from rejected voice signals at rest (T-3.3.1.7): dry run by default, `--write` is the owner's step; prints counts, never the words |
 | `backend/app/websocket/manager.py` | Redis pub/sub → WebSocket fan-out |
 | `backend/app/services/youtube_service.py` | YouTube API + transcript fetching with language fallback + rate limiting |
 | `backend/app/services/chroma_service.py` | ChromaDB collection management (singleton client) |

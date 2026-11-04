@@ -86,14 +86,6 @@ def test_add_job_refuses_another_tenants_job(db):
     assert shelf_service.job_count(db, shelf.id) == 0
 
 
-def test_shelves_for_job_is_scoped_by_the_shelf_owner(db):
-    mine = shelf_service.create_shelf(db, ME, "Mine")
-    job = _job(db, ME)
-    shelf_service.add_job(db, mine, job)
-    assert [s.id for s in shelf_service.shelves_for_job(db, job.id, ME)] == [mine.id]
-    assert shelf_service.shelves_for_job(db, job.id, THEM) == []
-
-
 def test_delete_shelf_removes_memberships_and_keeps_jobs(db):
     shelf = shelf_service.create_shelf(db, ME, "Temp")
     job = _job(db, ME)

@@ -94,10 +94,13 @@ def test_state_is_created_neutral_on_first_read(db, test_user, two_tenant_channe
     assert row.source_weight == 1.0
 
 
-def test_channel_video_listing_hides_foreign_documents(client, two_tenant_channels):
-    r = client.get("/api/v1/channels/UCtheirs00000000000000/videos")
+def test_channel_document_listing_hides_foreign_documents(client, two_tenant_channels):
+    """The channel page's listing (`GET /library/videos?channel_id=`)."""
+    r = client.get("/api/v1/library/videos", params={"channel_id": "UCtheirs00000000000000"})
     assert r.status_code == 200
     assert r.json() == [], "a foreign tenant's videos must not be listed"
+    mine = client.get("/api/v1/library/videos", params={"channel_id": "UCmine0000000000000000"})
+    assert [row["id"] for row in mine.json()] == ["doc-mine"]
 
 
 def test_video_count_reflects_only_visible_documents(client, two_tenant_channels):

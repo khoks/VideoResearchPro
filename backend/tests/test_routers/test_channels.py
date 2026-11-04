@@ -114,14 +114,20 @@ def test_sync_channel_dispatches_job(client, db, test_user):
     mock_task.apply_async.assert_called_once()
 
 
-def test_channel_videos_empty(client, db, test_user):
+# The channel page lists a channel's documents through the library listing
+# (`GET /library/videos?channel_id=`), whose rows carry `job_count` /
+# `job_titles` and the library's filters. `GET /channels/{id}/videos` had no
+# caller and was removed.
+
+
+def test_channel_documents_empty(client, db, test_user):
     _seed_channel(db, tenant_id=test_user.id, channel_id="UCvids1")
-    response = client.get("/api/v1/channels/UCvids1/videos")
+    response = client.get("/api/v1/library/videos", params={"channel_id": "UCvids1"})
     assert response.status_code == 200
     assert response.json() == []
 
 
-def test_channel_videos_lists_only_channel_videos(client, db, test_user):
+def test_channel_documents_lists_only_that_channels_documents(client, db, test_user):
     _seed_channel(db, tenant_id=test_user.id, channel_id="UCvids2", name="Vids2")
     _seed_channel(db, tenant_id=test_user.id, channel_id="UCother", name="Other")
 
@@ -157,7 +163,7 @@ def test_channel_videos_lists_only_channel_videos(client, db, test_user):
         visibility_service.SOURCE_JOB,
     )
 
-    response = client.get("/api/v1/channels/UCvids2/videos")
+    response = client.get("/api/v1/library/videos", params={"channel_id": "UCvids2"})
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2

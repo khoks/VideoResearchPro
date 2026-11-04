@@ -1,3 +1,5 @@
+import type { Depth } from '../utils/depth';
+
 /**
  * Per-citation reference returned by the Q&A agent.
  *
@@ -91,6 +93,11 @@ export interface QAExchange {
 export interface QARequest {
   question: string;
   context?: string;
+  /**
+   * R4: this ask's depth (S-1.15.2). Omitted, the job's own `output_length`
+   * applies, and with none there the corpus size decides.
+   */
+  output_length?: Depth;
 }
 
 export interface ClarifyRequest {
@@ -131,6 +138,8 @@ export interface LibraryQARequest {
   question: string;
   answer_language: AnswerLanguage;
   context?: string;
+  /** R4: this ask's depth (S-1.15.2). Omitted, the corpus size decides. */
+  output_length?: Depth;
 }
 
 export interface LibraryClarifyRequest {

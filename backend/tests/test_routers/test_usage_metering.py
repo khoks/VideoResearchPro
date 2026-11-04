@@ -165,7 +165,7 @@ def visible_video(db, test_user):
     return doc
 
 
-def _knowledge_agent(video, text):
+def _knowledge_agent(video, text, **_kw):
     call_llm("knowledge_extract_batch")
     call_llm("knowledge_synthesize_report")
     return {"topics": ["trade"], "concepts": [], "events": [], "facts": [], "knowledge_report_md": "# Trade"}

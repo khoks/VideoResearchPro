@@ -118,6 +118,36 @@ def guidance(statistics: dict | None, user_pref: str | None) -> str:
     return ""
 
 
+def explicit_preference(user_pref: str | None) -> str | None:
+    """The user's override as stored, or None when they expressed none.
+
+    'auto', an unknown value and None all mean "no preference", the same
+    normalisation `job_service` applies to `jobs.output_length`.
+    """
+    pref = (user_pref or "").lower()
+    return pref if pref in _USER_MULTIPLIER else None
+
+
+def override_scale(user_pref: str | None) -> float:
+    """Multiplier for a surface that has no corpus to bracket (S-1.15.3).
+
+    A knowledge report is about ONE document, and its budget already tracks
+    how much was extracted from that document (S-1.14.8), which is the size
+    half of D-064. Bracketing a single document would classify every one
+    `small` and give every unset request the 1.25x small-corpus default, so
+    an unset preference here is exactly 1.0: the derived budget unchanged.
+    """
+    pref = explicit_preference(user_pref)
+    return _USER_MULTIPLIER[pref] if pref else 1.0
+
+
+def override_guidance(user_pref: str | None) -> str:
+    """The brief for an explicit override; empty when none was expressed, so
+    an unset request's prompt stays as it was (see `override_scale`)."""
+    pref = explicit_preference(user_pref)
+    return _GUIDANCE[pref] if pref else ""
+
+
 def describe(statistics: dict | None, user_pref: str | None) -> str:
     """One-line log/debug description of the resolved policy."""
     return (

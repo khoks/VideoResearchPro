@@ -106,7 +106,8 @@ export interface ConnectorGrant {
   last_sync_at: string | null;
   backfilled_at: string | null;
   last_error: string | null;
-  last_counts: { added: number; updated: number; facts: number } | null;
+  /** `facts_kept_manual`: derived facts skipped because the user wrote that entry (T-3.2.1.11). */
+  last_counts: { added: number; updated: number; facts: number; facts_kept_manual?: number } | null;
   events: number;
 }
 

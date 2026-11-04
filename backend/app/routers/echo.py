@@ -237,7 +237,7 @@ def record_context_endpoint(
             kind=payload.kind,
             key=payload.key,
             value=payload.value,
-            source="manual",
+            source=echo_service.MANUAL_SOURCE,
             confidence=payload.confidence,
             expires_at=payload.expires_at,
         )

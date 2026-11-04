@@ -119,6 +119,7 @@ function ConnectorRow({ connector }: { connector: ConnectorItem }) {
   else if (!grant) status = 'Not connected.';
   else if (grant.status === 'syncing') status = `Connected as ${grant.account_label ?? 'you'} · syncing…`;
   else status = `Connected as ${grant.account_label ?? 'you'} · ${grant.events} ${grant.events === 1 ? 'event' : 'events'} · last synced ${when(grant.last_sync_at)}`;
+  const kept = grant?.last_counts?.facts_kept_manual ?? 0;
 
   return (
     <li
@@ -160,6 +161,7 @@ function ConnectorRow({ connector }: { connector: ConnectorItem }) {
         </div>
       </div>
       <p style={meta}>{status}</p>
+      {kept > 0 && <p style={meta}>Kept {kept} {kept === 1 ? 'entry' : 'entries'} as you wrote {kept === 1 ? 'it' : 'them'}.</p>}
       {grant?.last_error && (
         <p role="status" style={{ ...meta, color: c.error }}>
           {grant.last_error}{' '}

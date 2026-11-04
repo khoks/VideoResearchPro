@@ -62,19 +62,31 @@ class _Part:
     sub: list[tuple[str, str]] = field(default_factory=list)  # (id, text) of h3s
 
 
+def _heading_text(el) -> str:
+    return re.sub(r"\s+", " ", el.text_content()).strip()
+
+
 def _split(book: BookHtml) -> list[_Part]:
-    """Cut the body at every ``h2``: what comes before is the title page."""
+    """Cut the body at every ``h2``: what comes before is the title page.
+
+    The book's contents and endnotes are known by their text and their place,
+    never their id: a report's own "Endnotes" takes the plain id, and the
+    book's gets `endnotes-2`. Text alone is not enough either. The outputter
+    writes the contents before every chapter and the endnotes after them, and
+    an ``h2`` of either name anywhere else is a chapter's own text (an answer,
+    a model's prose), which stays in the book.
+    """
     root = book.fragment()
     parts: list[_Part] = [_Part(TITLE_FILE, "titlepage")]
+    h2s = [el for el in root if el.tag == "h2"]
+    contents = h2s[0] if h2s and _heading_text(h2s[0]) == TOC_HEADING else None
+    endnotes = h2s[-1] if h2s and _heading_text(h2s[-1]) == ENDNOTES_HEADING else None
     skipping = False
     for el in list(root):
         if not isinstance(el.tag, str):
             continue  # comments / processing instructions
         if el.tag == "h2":
-            # By its text, not its id: a report's own "Endnotes" earlier in
-            # the book takes the plain id, and this heading gets `endnotes-2`.
-            text = re.sub(r"\s+", " ", el.text_content()).strip()
-            if text == TOC_HEADING:
+            if el is contents:
                 skipping = True
                 continue
             skipping = False
@@ -82,16 +94,16 @@ def _split(book: BookHtml) -> list[_Part]:
             parts.append(
                 _Part(
                     f"part-{n:03d}.xhtml",
-                    "endnotes" if text == ENDNOTES_HEADING else "chapter",
+                    "endnotes" if el is endnotes else "chapter",
                     heading_id=el.get("id") or "",
-                    heading_text=text,
+                    heading_text=_heading_text(el),
                 )
             )
         if skipping:
             continue
         parts[-1].elements.append(el)
         if el.tag == "h3" and el.get("id"):
-            parts[-1].sub.append((el.get("id"), re.sub(r"\s+", " ", el.text_content()).strip()))
+            parts[-1].sub.append((el.get("id"), _heading_text(el)))
     return parts
 
 

@@ -25,7 +25,8 @@ from lxml import etree
 
 from app.config import settings
 from app.models.job import Job
-from app.services import auth_service, output_artifacts
+from app.models.qa_exchange import QAExchange
+from app.services import auth_service, output_artifacts, report_service
 from app.services.outputters import book_cohesion, book_epub, book_html, book_markdown, book_pdf
 from tests.test_services.test_book_endnotes import _generate
 
@@ -44,24 +45,22 @@ def quiet_progress():
         yield
 
 
-def _run(db, user_id: str, topic: str, html: str = "<h1>T</h1><p>Body.</p>") -> Job:
-    job = Job(id=str(uuid.uuid4()), tenant_id=user_id, job_type="topic", status="completed", topic=topic,
-              report_path=f"/{uuid.uuid4()}.html")
-    db.add(job)
-    db.commit()
-    _REPORTS[job.report_path] = html
-    return job
-
-
-_REPORTS: dict[str, str] = {}
-
-
 @pytest.fixture
-def reports(monkeypatch):
-    from app.services import report_service
+def run(tmp_path):
+    """A finished run whose report is a real file in this test's folder.
+    `report_markdown` caches its conversion beside the report, so a path at the
+    filesystem root would leave a new file there on every run."""
 
-    _REPORTS.clear()
-    monkeypatch.setattr(report_service, "get_report_html", lambda path: _REPORTS[path])
+    def make(db, user_id: str, topic: str, html: str = "<h1>T</h1><p>Body.</p>") -> Job:
+        report = tmp_path / f"{uuid.uuid4()}.html"
+        report.write_text(html, encoding="utf-8")
+        job = Job(id=str(uuid.uuid4()), tenant_id=user_id, job_type="topic", status="completed", topic=topic,
+                  report_path=str(report))
+        db.add(job)
+        db.commit()
+        return job
+
+    return make
 
 
 @pytest.fixture
@@ -71,6 +70,11 @@ def user(db):
 
 def _cohesion(chapters: int, **fields) -> book_cohesion.Cohesion:
     return book_cohesion.Cohesion(level="full", order=list(range(1, chapters + 1)), **fields)
+
+
+def _chapters(out) -> dict[str, etree._Element]:
+    with zipfile.ZipFile(output_artifacts.artifact_file(out, "epub")) as z:
+        return {n: etree.fromstring(z.read(n)) for n in z.namelist() if n.startswith("OEBPS/part-")}
 
 
 def _toc_links(nav) -> list:
@@ -97,10 +101,10 @@ def _landings(md: str) -> list[tuple[str, book_html.Heading]]:
 # ---------------------------------------------------------------------------
 
 
-def test_the_books_own_conclusion_is_not_the_reports(db, user, reports, monkeypatch):
+def test_the_books_own_conclusion_is_not_the_reports(db, user, run, monkeypatch):
     """The bug: the contents went to the first chapter's own Conclusion."""
     report = "<h1>T</h1><h2>Conclusion</h2><p>The report's ending.</p>"
-    a, b = _run(db, user.id, "First run", report), _run(db, user.id, "Second run", report)
+    a, b = run(db, user.id, "First run", report), run(db, user.id, "Second run", report)
     monkeypatch.setattr(book_cohesion, "plan", lambda digests, title, level, progress=None: _cohesion(
         2, introduction="Opening.", conclusion="The book's ending.", glossary=[("term", "meaning")], applied="full"
     ))
@@ -113,6 +117,37 @@ def test_the_books_own_conclusion_is_not_the_reports(db, user, reports, monkeypa
     end = next(h for label, h in landings if label == "Conclusion")
     assert md.split("\n")[end.line] == "## Conclusion"
     assert md.split("\n")[end.line + 2] == "The book's ending."
+
+
+@pytest.mark.parametrize("include_toc", [True, False])
+def test_an_answers_contents_and_endnotes_stay_in_its_chapter(db, user, run, include_toc):
+    """An answer is stored text, and a heading in it is not the book's. Matched
+    by text alone, an answer's "## Table of Contents" lost everything up to the
+    next book heading from the EPUB, and only from the EPUB."""
+    job = run(db, user.id, "Only run")
+    answer = "## Table of Contents\n\nThe answer's own list.\n\n## Endnotes\n\nThe answer's own notes."
+    db.add(QAExchange(job_id=job.id, tenant_id=user.id, question="What next?", answer=answer))
+    db.commit()
+    out = _generate(db, user, [job.id], formats=["epub"], include_toc=include_toc)
+
+    assert "\n##### Table of Contents\n" in out.content_text
+    assert "\n##### Endnotes\n" in out.content_text
+    [(name, chapter)] = _chapters(out).items()
+    assert name == "OEBPS/part-001.xhtml", "an answer adds no chapter"
+    text = "".join(chapter.itertext())
+    assert "The answer's own list." in text and "The answer's own notes." in text
+    assert chapter.find(f".//{XHTML}section").get("{http://www.idpf.org/2007/ops}type") == "chapter"
+
+
+def test_a_books_report_cache_stays_in_the_tests_own_folder(db, user, run, tmp_path):
+    """The conversion is cached beside the report. Nothing cleans up a path at
+    the filesystem root, so a report there leaves a new file on every run."""
+    job = run(db, user.id, "Only run")
+    _generate(db, user, [job.id], formats=[], include_qa=False)
+
+    cache = Path(report_service.markdown_path_for(job.report_path))
+    assert cache.parent == tmp_path
+    assert cache.is_file()
 
 
 @pytest.mark.parametrize(
@@ -132,8 +167,8 @@ def test_the_books_own_conclusion_is_not_the_reports(db, user, reports, monkeypa
         ("Café: déjà vu?", "Café: déjà vu?"),
     ],
 )
-def test_a_typed_topic_is_shown_as_typed_and_linked(db, user, reports, topic, shown):
-    job = _run(db, user.id, topic)
+def test_a_typed_topic_is_shown_as_typed_and_linked(db, user, run, topic, shown):
+    job = run(db, user.id, topic)
     out = _generate(db, user, [job.id], formats=["epub"], include_qa=False)
 
     [(label, heading)] = _landings(out.content_text)
@@ -149,11 +184,11 @@ def test_a_typed_topic_is_shown_as_typed_and_linked(db, user, reports, topic, sh
     assert heading.id in {el.get("id") for el in chapter.iter() if isinstance(el.tag, str)}
 
 
-def test_every_format_lands_on_the_same_heading(db, user, reports, monkeypatch):
+def test_every_format_lands_on_the_same_heading(db, user, run, monkeypatch):
     """Colliding headings, in the EPUB: each contents entry opens the file
     holding the book's heading, not the chapter that took the plain id."""
     report = "<h1>T</h1><h2>Glossary</h2><p>Terms.</p><h2>Endnotes</h2><p>The report's notes.</p>"
-    job = _run(db, user.id, "Only run", report)
+    job = run(db, user.id, "Only run", report)
     monkeypatch.setattr(book_cohesion, "plan", lambda digests, title, level, progress=None: _cohesion(
         1, conclusion="End.", glossary=[("term", "meaning")], applied="full"
     ))
@@ -172,7 +207,7 @@ def test_every_format_lands_on_the_same_heading(db, user, reports, monkeypatch):
     assert len(parts) == 3, "the chapter, the Conclusion, the Glossary: no section is lost"
 
 
-def test_a_pdf_contents_entry_opens_the_books_heading(db, user, reports, monkeypatch):
+def test_a_pdf_contents_entry_opens_the_books_heading(db, user, run, monkeypatch):
     fitz = pytest.importorskip("fitz")
     monkeypatch.setattr(settings, "AUTHOR_PDF_ENGINE", "auto")
     book_pdf.reset_probes()
@@ -180,7 +215,7 @@ def test_a_pdf_contents_entry_opens_the_books_heading(db, user, reports, monkeyp
         if book_pdf.pdf_engine() is None:
             pytest.skip(f"no PDF engine here: {book_pdf.unavailable_message()}")
         report = "<h1>T</h1><h2>Conclusion</h2><p>The report's ending.</p>"
-        job = _run(db, user.id, "Only run", report)
+        job = run(db, user.id, "Only run", report)
         monkeypatch.setattr(book_cohesion, "plan", lambda digests, title, level, progress=None: _cohesion(
             1, conclusion="The book's ending.", applied="full"
         ))
@@ -235,6 +270,24 @@ def test_the_epub_finds_its_sections_by_text_when_their_ids_were_taken():
     assert [p.kind for p in parts] == ["titlepage", "chapter", "endnotes"]
     assert parts[-1].heading_id == "endnotes-2"
     assert "Table of Contents" not in [p.heading_text for p in parts], "nav.xhtml replaces the manuscript's own"
+
+
+@pytest.mark.parametrize("contents", ["## Table of Contents\n\n1. [One](#1-one)\n\n", ""])
+def test_the_epub_takes_out_only_the_books_own_sections(contents):
+    """A Setext heading is not demoted, so an answer can still put an `h2` of
+    either name in a chapter. The contents are the first `h2` and the endnotes
+    the last: anything else named like them is the chapter's."""
+    book = book_html.render_book_html(
+        f"# B\n\n{contents}## 1. One\n\nAn answer.\n\nTable of Contents\n---\n\nIts list.\n\n"
+        "Endnotes\n---\n\nIts notes.\n\n## 2. Two\n\nMore.\n",
+        title="B",
+    )
+    parts = book_epub._split(book)
+    assert [(p.kind, p.heading_text) for p in parts[1:]] == [
+        ("chapter", "1. One"), ("chapter", "Table of Contents"), ("chapter", "Endnotes"), ("chapter", "2. Two"),
+    ]
+    kept = "".join(el.text_content() for part in parts for el in part.elements)
+    assert "Its list." in kept and "Its notes." in kept
 
 
 # ---------------------------------------------------------------------------

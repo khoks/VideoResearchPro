@@ -53,6 +53,8 @@ logger = logging.getLogger(__name__)
 # Chapter headings are H2 (`## 1. Title`), so a report's own headings start
 # two levels below: its H1 would otherwise compete with the book title.
 _CHAPTER_HEADING_OFFSET = 2
+# An answer sits under "### Questions & Answers", so its H1 starts one below.
+_ANSWER_HEADING_OFFSET = 3
 _ATX_HEADING = re.compile(r"^(#{1,6})(\s+)(.*)$")
 _FENCE = re.compile(r"^\s*(```|~~~)")
 # Markdown's inline punctuation, plus `#`, which would otherwise close a heading.
@@ -68,10 +70,11 @@ def _literal(text: str) -> str:
     return _MARKDOWN_PUNCTUATION.sub(r"\\\1", " ".join((text or "").split()))
 
 
-def _demote_headings(md: str, offset: int = _CHAPTER_HEADING_OFFSET) -> str:
+def _demote_headings(md: str, offset: int = _CHAPTER_HEADING_OFFSET, *, drop_h1: bool = True) -> str:
     """Push every ATX heading down ``offset`` levels (capped at H6), leaving
     fenced code untouched. The report's single H1 repeats the job topic the
-    chapter heading already carries, so it is dropped."""
+    chapter heading already carries, so it is dropped unless ``drop_h1`` is
+    off (an answer's H1 repeats nothing)."""
     out: list[str] = []
     in_fence = False
     dropped_h1 = False
@@ -85,7 +88,7 @@ def _demote_headings(md: str, offset: int = _CHAPTER_HEADING_OFFSET) -> str:
             out.append(line)
             continue
         level = len(m.group(1))
-        if level == 1 and not dropped_h1:
+        if level == 1 and drop_h1 and not dropped_h1:
             dropped_h1 = True
             continue
         out.append("#" * min(6, level + offset) + m.group(2) + m.group(3))
@@ -131,7 +134,10 @@ def _job_qa_markdown(
     for i, r in enumerate(rows, start=1):
         out.append(f"**Q{i}.** {r.question.strip()}")
         out.append("")
-        out.append(output_citation_service.strip_links((r.answer or "").strip()))
+        # Below the chapter's headings: an H2 is the book's, and an answer's
+        # own "## Endnotes" would read as a chapter or as the book's endnotes.
+        answer = output_citation_service.strip_links((r.answer or "").strip())
+        out.append(_demote_headings(answer, _ANSWER_HEADING_OFFSET, drop_h1=False))
         try:
             references = json.loads(r.references or "[]")
         except (TypeError, ValueError):

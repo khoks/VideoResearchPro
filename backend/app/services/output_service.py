@@ -113,6 +113,19 @@ class OutputUnavailable(OutputError):
     says what to install; in the worker it fails the row like any error."""
 
 
+class OutputSourceNotFound(OutputError):
+    """A chosen source is not in the caller's library (S-6.3.2: a document
+    they cannot see). Raised by an outputter's ``check_sources`` before the
+    row exists; the router answers 404, so another tenant's document reads
+    exactly like one that does not exist (D-063)."""
+
+
+class OutputSourceNotReady(OutputError):
+    """A chosen source is the caller's but lacks what the kind is built from
+    (S-6.3.2: a document with no knowledge report yet). The router answers
+    409 with the message, which says what to do first."""
+
+
 # ---------------------------------------------------------------------------
 # Outputter Protocol + registry
 # ---------------------------------------------------------------------------
@@ -128,6 +141,11 @@ class Outputter(Protocol):
     """
 
     kind: str  # one of OutputKind values
+
+    # Optional hooks the router looks up with ``getattr`` before any row is
+    # written: ``prepare_parameters(params) -> params`` (S-6.1.5) and
+    # ``check_sources(db, user, source_ids) -> None`` (S-6.3.2), which raises
+    # ``OutputSourceNotFound`` (404) or ``OutputSourceNotReady`` (409).
 
     def generate(
         self, db: Session, user: User, output: Output

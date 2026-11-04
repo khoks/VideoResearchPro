@@ -1,11 +1,21 @@
-"""DeckOutputter — I-6 / E-6.3 (S-6.3.1): a slide deck from research runs.
+"""DeckOutputter — I-6 / E-6.3 (S-6.3.1, S-6.3.2): a slide deck from research
+runs and knowledge reports.
 
-Source IDs are the caller's own job ids, as for books. Each run's report
-Markdown (S-6.1.2) has its citations resolved against the run's visible
-documents (`output_citation_service.cite_markdown`, S-6.1.4); the model then
-sees the report with every RESOLVED citation as a marker ``[S12]`` and nothing
-else that looks like a source. One ``author_deck_outline`` call plans the
-slides and cites them by marker.
+Source IDs are the caller's own job ids (bare or ``job:<id>``), as for books,
+and since S-6.3.2 ``document:<id>`` for a document in the caller's library
+(D-063) with an extracted knowledge report. Each run's report Markdown
+(S-6.1.2) has its citations resolved against the run's visible documents
+(`output_citation_service.cite_markdown`, S-6.1.4); the model then sees the
+report with every RESOLVED citation as a marker ``[S12]`` and nothing else
+that looks like a source. A knowledge report is about one document and cites
+no moments, so the document is its one source: every paragraph, list item
+and table row carries that document's marker. One ``author_deck_outline``
+call plans the slides and cites them by marker.
+
+A ``document:`` source the caller cannot see, or one with no knowledge
+report, is refused by ``check_sources`` before the row exists (404 / 409 at
+the router). One that stops qualifying before the worker reads it is left
+out and disclosed, like a run with no report.
 
 What the deck guarantees, whatever the model returns:
 - every bullets or quote slide cites at least one source the reports gave
@@ -24,16 +34,20 @@ from __future__ import annotations
 import json
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.agents.prompts import deck_prompts
+from app.agents.prompts.knowledge_prompts import source_profile
+from app.config import settings
+from app.models.document import Document
 from app.models.job import Job
 from app.models.output import Output
 from app.models.user import User
-from app.services import cost_estimator, output_artifacts, output_citation_service
-from app.services.output_service import OutputError, report_progress
+from app.services import cost_estimator, output_artifacts, output_citation_service, visibility_service
+from app.services.output_service import OutputError, OutputSourceNotFound, OutputSourceNotReady, report_progress
 from app.services.outputters import book_cohesion, deck_render
 from app.services.outputters.book_markdown import _chapter_documents, _job_report_markdown
 
@@ -52,6 +66,119 @@ _CITED_LINK = re.compile(r"\[([^\]\n]*)\]\(([^)\s]+)\)\[\^(\d+)\]")
 _FOOTNOTE = re.compile(r"\[\^(\d+)\]")
 _LINK = re.compile(r"!?\[([^\]\n]*)\]\([^)\s]*\)")
 _MARKER = re.compile(r"\[S\d+\]")
+_HEADING = re.compile(r"^\s{0,3}#{1,6}(?:\s|$)")
+_RULE = re.compile(r"^\s{0,3}([-*_])(?:\s*\1){2,}\s*$")
+_LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")  # at any depth: a nested item is a point of its own
+_TABLE_ROW = re.compile(r"^\s*\|")
+_TABLE_RULE = re.compile(r"^\s*\|[\s:|-]*$")  # |---|:--:|, and a row with nothing in it
+_ABSOLUTE = re.compile(r"^https?://", re.I)
+
+DOCUMENT_REF, JOB_REF = "document:", "job:"
+
+
+def _ref(source_id: Any) -> tuple[str, str]:
+    """``("document", id)`` for ``document:<id>`` (S-6.3.2); ``("job", id)``
+    for ``job:<id>`` or a bare id, which is what decks took before."""
+    s = str(source_id or "").strip()
+    if s.startswith(DOCUMENT_REF):
+        return "document", s[len(DOCUMENT_REF):].strip()
+    if s.startswith(JOB_REF):
+        return "job", s[len(JOB_REF):].strip()
+    return "job", s
+
+
+def _visible_document(db: Session, user: User, document_id: str) -> Document | None:
+    """The document, when it is in the caller's library (D-063). Keyed on the
+    primary key alone (D-070): a legacy YouTube id is not a document id."""
+    if not document_id:
+        return None
+    return (
+        db.query(Document)
+        .filter(
+            Document.document_id == document_id,
+            Document.document_id.in_(visibility_service.visible_document_ids(db, user.id)),
+        )
+        .first()
+    )
+
+
+def _has_knowledge(doc: Document) -> bool:
+    return bool((doc.knowledge_report_md or "").strip())
+
+
+def _starts_block(line: str) -> bool:
+    """``line`` cannot continue the paragraph or list item above it."""
+    return not line.strip() or any(p.match(line) for p in (_HEADING, _RULE, _LIST_ITEM, _TABLE_ROW))
+
+
+def _with_marker(line: str, n: int) -> str:
+    """``line`` ending in ``[Sn]``, inside the last cell of a table row."""
+    body = line.rstrip()
+    if _TABLE_ROW.match(body) and body.endswith("|"):
+        return f"{body[:-1].rstrip()} [S{n}] |"
+    return f"{body} [S{n}]"
+
+
+def _knowledge_marked(markdown: str, n: int) -> str:
+    """A knowledge report as the model sees it (S-6.3.2). It describes one
+    document and cites no moments, so that document is its only source:
+    every paragraph, list item (nested ones too) and table row ends with the
+    marker ``[Sn]``; headings, rules and a table's separator row carry none.
+    Links become their labels, and any marker or footnote already in the text
+    is removed, so the model can cite nothing but the one source the sources
+    slide links."""
+    text = _MARKER.sub("", _FOOTNOTE.sub("", _LINK.sub(r"\1", markdown or "")))
+    lines = text.splitlines()
+    out: list[str] = []
+    for i, line in enumerate(lines):
+        nxt = lines[i + 1] if i + 1 < len(lines) else ""
+        is_text = bool(line.strip()) and not any(p.match(line) for p in (_HEADING, _RULE, _TABLE_RULE))
+        ends_unit = bool(_TABLE_ROW.match(line)) or _starts_block(nxt)
+        out.append(_with_marker(line, n) if is_text and ends_unit else line)
+    return "\n".join(out).strip()
+
+
+def _document_spec(doc: Document) -> output_citation_service.CitationSpec:
+    """The citation a knowledge report gives: its document, linked where the
+    source lives (the video, the article). A source with no public address
+    (an uploaded PDF is served only to signed-in readers, by a relative
+    path) links to its knowledge report in the app instead."""
+    url = output_citation_service.timestamp_href(doc, None)
+    if not url or not _ABSOLUTE.match(url):
+        url = f"{settings.APP_BASE_URL.rstrip('/')}/knowledge/{doc.document_id}"
+    return output_citation_service.CitationSpec(
+        label=(doc.title or "Knowledge report")[:255],
+        href=url,
+        url=url,
+        seconds=None,
+        document_id=doc.document_id,
+        source_type=doc.source_type or "video",
+        source_id=doc.source_id,
+        resolved_by="document",
+        title=doc.title or None,
+        channel=doc.channel_name or None,
+    )
+
+
+def _about(doc: Document) -> str:
+    """What the source is, for the knowledge report's header in the prompt:
+    ``a YouTube video, published 2025-03-02``. The date anchors the report's
+    "as of" claims (TEMPORAL_AWARENESS)."""
+    noun = source_profile(doc.source_type).noun
+    article = "an" if noun[:1].lower() in "aeiou" or noun.startswith("X ") else "a"
+    when = f", published {doc.published_at:%Y-%m-%d}" if doc.published_at else ""
+    return f"{article} {noun}{when}"
+
+
+@dataclass
+class _Material:
+    reports: list[tuple[str, ...]] = field(default_factory=list)
+    specs: dict[int, output_citation_service.CitationSpec] = field(default_factory=dict)
+    missing_runs: list[str] = field(default_factory=list)
+    missing_documents: list[str] = field(default_factory=list)
+    runs: int = 0
+    knowledge: int = 0
+    asked_documents: bool = False
 
 
 def _marked(markdown: str, specs: dict[int, output_citation_service.CitationSpec]) -> str:
@@ -91,31 +218,61 @@ def _source_numbers(raw: Any, valid: set[int]) -> list[int]:
 class DeckOutputter:
     kind = "deck"
 
-    def _material(self, db: Session, user: User, source_ids: list[str]):
-        reports: list[tuple[str, str]] = []
-        specs: dict[int, output_citation_service.CitationSpec] = {}
-        missing: list[str] = []
+    def check_sources(self, db: Session, user: User, source_ids: list[str]) -> None:
+        """S-6.3.2: refuse a ``document:`` source before the row exists. One
+        the caller cannot see reads exactly like one that does not exist
+        (404, D-063); one with no knowledge report yet is 409. Runs are not
+        checked here: as before, a run with no report is left out at
+        generation and the deck says so."""
+        for raw in source_ids:
+            kind, ident = _ref(raw)
+            if kind != "document":
+                continue
+            doc = _visible_document(db, user, ident)
+            if doc is None:
+                raise OutputSourceNotFound(f"Document {ident or '(empty id)'} is not in your library.")
+            if not _has_knowledge(doc):
+                raise OutputSourceNotReady(
+                    f"“{doc.title or doc.document_id}” has no knowledge report yet. "
+                    "Extract one from the library first, then make the deck."
+                )
+
+    def _material(self, db: Session, user: User, source_ids: list[str]) -> _Material:
+        m = _Material()
         budget = REPORT_CHARS_BUDGET // max(1, len(source_ids))
-        for jid in source_ids:
-            job = db.query(Job).filter(Job.id == jid, Job.tenant_id == user.id).first()
+        for raw in source_ids:
+            kind, ident = _ref(raw)
+            if kind == "document":
+                m.asked_documents = True
+                doc = _visible_document(db, user, ident)
+                if doc is None or not _has_knowledge(doc):
+                    m.missing_documents.append(ident)
+                    continue
+                n = len(m.specs) + 1
+                m.specs[n] = _document_spec(doc)
+                m.reports.append(((doc.title or "Untitled").strip(), _knowledge_marked(doc.knowledge_report_md, n)[:budget], _about(doc)))
+                m.knowledge += 1
+                continue
+            job = db.query(Job).filter(Job.id == ident, Job.tenant_id == user.id).first()
             if job is None or not job.report_path:
-                missing.append(jid)
+                m.missing_runs.append(ident)
                 continue
             md = _job_report_markdown(job)
             if md.startswith("_("):  # the disclosed placeholder for a missing report
-                missing.append(jid)
+                m.missing_runs.append(ident)
                 continue
-            cited, cited_specs = output_citation_service.cite_markdown(md, _chapter_documents(db, user, job.id), len(specs) + 1)
-            for i, spec in enumerate(cited_specs, start=len(specs) + 1):
-                specs[i] = spec
-            reports.append(((job.topic or "Untitled").strip(), _marked(cited, specs)[:budget]))
-        return reports, specs, missing
+            cited, cited_specs = output_citation_service.cite_markdown(md, _chapter_documents(db, user, job.id), len(m.specs) + 1)
+            for i, spec in enumerate(cited_specs, start=len(m.specs) + 1):
+                m.specs[i] = spec
+            m.reports.append(((job.topic or "Untitled").strip(), _marked(cited, m.specs)[:budget]))
+            m.runs += 1
+        return m
 
     def estimate(self, db: Session, user: User, title: str, source_ids: list[str], params: dict[str, Any]) -> dict:
-        reports, _specs, _missing = self._material(db, user, source_ids)
-        if not reports:
+        material = self._material(db, user, source_ids)
+        if not material.reports:
             return {"calls": [], "cost_usd": 0.0}
-        prompt = deck_prompts.DECK_SYSTEM + deck_prompts.deck_user_prompt(title, reports)
+        prompt = deck_prompts.DECK_SYSTEM + deck_prompts.deck_user_prompt(title, material.reports)
         return cost_estimator.estimate_calls([(USE_CASE, book_cohesion._tokens(prompt, USE_CASE), OUTPUT_TOKENS_EST)])
 
     def generate(self, db: Session, user: User, output: Output) -> None:
@@ -124,16 +281,19 @@ class DeckOutputter:
         except (json.JSONDecodeError, TypeError, ValueError) as e:
             raise OutputError(f"Malformed source_ids_json: {e}") from e
         if not source_ids:
-            raise OutputError("A deck needs at least one run: source_ids is empty.")
+            raise OutputError("A deck needs at least one run or knowledge report: source_ids is empty.")
 
-        report_progress(db, output, 10, "Reading the runs")
-        reports, specs, missing = self._material(db, user, source_ids)
-        if not reports:
+        report_progress(db, output, 10, "Reading the sources")
+        material = self._material(db, user, source_ids)
+        specs = material.specs
+        if not material.reports:
+            if material.asked_documents:
+                raise OutputError("None of the chosen runs or documents has a report this deck can be built from.")
             raise OutputError("None of the chosen runs has a report this deck can be built from.")
 
         report_progress(db, output, 25, "Planning the slides")
         raw, call = book_cohesion._call(
-            USE_CASE, deck_prompts.DECK_SYSTEM, deck_prompts.deck_user_prompt(output.title, reports), MAX_TOKENS,
+            USE_CASE, deck_prompts.DECK_SYSTEM, deck_prompts.deck_user_prompt(output.title, material.reports), MAX_TOKENS,
             book_cohesion._default_invoke,
         )
         output.usage_json = json.dumps({
@@ -146,19 +306,26 @@ class DeckOutputter:
             raise OutputError(f"The slide outline call failed ({call.error}).")
 
         report_progress(db, output, 70, "Building the slides")
-        deck, cited_specs, dropped = self._deck(output, raw, specs, call.model, len(reports))
+        deck, cited_specs, dropped = self._deck(output, raw, specs, call.model, material.runs, material.knowledge)
         notes = []
         if dropped:
             notes.append(f"{dropped} planned slide{'' if dropped == 1 else 's'} cited no source and {'was' if dropped == 1 else 'were'} left out.")
+        missing = material.missing_runs
         if missing:
             notes.append(f"{len(missing)} chosen run{'' if len(missing) == 1 else 's'} had no report and {'was' if len(missing) == 1 else 'were'} left out.")
+        gone = material.missing_documents
+        if gone:
+            notes.append(
+                f"{len(gone)} chosen document{'' if len(gone) == 1 else 's'} had no knowledge report in your library "
+                f"and {'was' if len(gone) == 1 else 'were'} left out."
+            )
         deck.notes = notes
 
         output_artifacts.write_artifact(output, "pptx", deck_render.render(deck))
         output.content_text = _markdown(deck)
         output_citation_service.record_citations(db, output, cited_specs)
 
-    def _deck(self, output: Output, raw: dict, specs: dict, model: str, runs: int):
+    def _deck(self, output: Output, raw: dict, specs: dict, model: str, runs: int, knowledge: int = 0):
         valid = {n for n, s in specs.items() if s.url}
         slides: list[deck_render.DeckSlide] = []
         dropped = 0
@@ -196,7 +363,7 @@ class DeckOutputter:
             keep = set(id(s) for s in content[:MAX_SLIDES])
             slides = [s for s in slides if s.kind == "section" or id(s) in keep]
         if not any(s.kind != "section" for s in slides):
-            raise OutputError("The slide outline had no slide citing a source from the runs; nothing to show.")
+            raise OutputError("The slide outline had no slide citing a source it was given; nothing to show.")
 
         # Sources are DOCUMENTS (a video cited at five moments is one source
         # with five links), numbered by first use; slides refer to those
@@ -230,7 +397,7 @@ class DeckOutputter:
         cited_specs = [specs[n] for n in marker_order]
         for src in sources:  # a source's moments in time order, not citation order
             src.moments.sort(key=lambda m: _seconds(m[0]))
-        byline, disclosure = deck_render.byline(runs, model)
+        byline, disclosure = deck_render.byline(runs, model, knowledge=knowledge)
         deck = deck_render.Deck(
             title=_clean(raw.get("title"), 14) or output.title,
             subtitle=_clean(raw.get("subtitle"), 24),

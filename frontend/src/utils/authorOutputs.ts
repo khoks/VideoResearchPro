@@ -4,7 +4,8 @@
  */
 
 import type { BadgeTone } from '../components/primitives';
-import type { KindsResponse, OutputEstimate, OutputItem, OutputUsage } from '../services/authorApi';
+import type { KindsResponse, KnowledgeSource, OutputEstimate, OutputItem, OutputUsage } from '../services/authorApi';
+import { formatPublished, sourceKindLabel } from '../components/reader/sourceLabels';
 import type { WSProgressMessage } from '../types/ws';
 import { detailFromErrorBody, type HttpErrorLike } from './ingestResults';
 
@@ -32,7 +33,8 @@ export const OUTPUT_KIND_META: Record<string, KindMeta> = {
   },
   deck: {
     label: 'Deck',
-    description: 'A PowerPoint deck planned from one or more runs, every slide citing its sources in its notes.',
+    description:
+      'A PowerPoint deck planned from your runs or from knowledge reports, every slide citing its sources in its notes.',
     epic: 'E-6.3',
   },
   newsletter: {
@@ -143,6 +145,12 @@ export function describeCreateError(err: HttpErrorLike | null | undefined, kind:
       return `${kindMeta(kind).label} output has no generator yet. It is defined in the schema but nothing produces it today.`;
     case 400:
       return detail ?? 'The request was rejected. Check the title and selected sources.';
+    // S-6.3.2: a chosen document is not in your library (404) or has no
+    // knowledge report yet (409). The server's sentence names it.
+    case 404:
+      return detail ?? 'A chosen source is no longer in your library.';
+    case 409:
+      return detail ?? 'A chosen document has no knowledge report yet.';
     case 403:
       return detail ?? 'Author Studio is a Pro feature. Upgrade to create outputs.';
     case 401:
@@ -406,4 +414,35 @@ export function fileFormatOptions(kinds: KindsResponse | undefined, kind: string
 export function formatsParameter(options: FileFormatOption[], chosen: Set<string>): string[] | undefined {
   if (options.length === 0) return undefined;
   return ['md', ...options.filter((o) => o.available && chosen.has(o.format)).map((o) => o.format)];
+}
+
+/** S-6.3.2: a deck's `source_ids`. Runs stay bare ids, as decks took them
+ * before; a knowledge report is `document:<document_id>`. */
+export function deckSourceIds(jobIds: Iterable<string>, documentIds: Iterable<string>): string[] {
+  return [...jobIds, ...[...documentIds].map((id) => `document:${id}`)];
+}
+
+/** The line under a knowledge report in the deck's picker: what the source
+ * is, who made it, when its report was extracted. */
+export function knowledgeSourceMeta(source: KnowledgeSource): string {
+  const extracted = formatPublished(source.knowledge_extracted_at);
+  return [
+    sourceKindLabel(source.source_type),
+    source.channel_name?.trim() || null,
+    extracted ? `report ${extracted}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** How many knowledge reports the deck's picker asks for at a time. */
+export const KNOWLEDGE_SOURCES_LIMIT = 200;
+
+/** Said under the picker when the list came back full: older reports lie
+ * past it and the filter reaches them. `null` when it is not full. */
+export function knowledgeCapNote(count: number, filter: string): string | null {
+  if (count < KNOWLEDGE_SOURCES_LIMIT) return null;
+  return filter
+    ? `Showing the ${KNOWLEDGE_SOURCES_LIMIT} most recent matches. Narrow the filter to find an older one.`
+    : `Showing the ${KNOWLEDGE_SOURCES_LIMIT} most recent. Filter by source to find an older one.`;
 }

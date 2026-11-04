@@ -13,6 +13,12 @@ Endpoints under ``/api/v1/author/*``:
   and returns the finished row (the test path). A kind with no outputter
   is 501 before any row is written, and so is a format the server cannot
   build (a book's ``pdf`` with no converter installed; S-6.1.5).
+  S-6.3.2: an outputter's ``check_sources`` refuses a source the caller
+  cannot use before the row exists: 404 for a document outside their
+  library, 409 for one with no knowledge report (a deck's ``document:<id>``).
+- ``GET /author/knowledge-sources`` — documents in the caller's library with
+  a knowledge report, which a deck can be planned from (S-6.3.2). ``q``
+  filters by title or channel before the limit applies.
 - ``POST /author/outputs/estimate`` — what generating this output would
   cost before it runs (S-6.1.3: a book's cohesion pass). Same body as create.
 - ``POST /author/outputs/{id}/cancel`` — cancel a pending or generating
@@ -38,13 +44,23 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session, object_session
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session, load_only, object_session
 
 # Import outputters to register them. Side-effect import.
 from app.services import outputters  # noqa: F401
 from app.dependencies import get_db
+from app.models.channel import Channel
+from app.models.document import Document
 from app.models.user import User
-from app.services import newsletter_service, output_artifacts, output_citation_service, output_service, task_routing_service
+from app.services import (
+    newsletter_service,
+    output_artifacts,
+    output_citation_service,
+    output_service,
+    task_routing_service,
+    visibility_service,
+)
 from app.services.output_service import (
     OutputError,
     OutputKind,
@@ -118,9 +134,37 @@ class DeleteResponse(BaseModel):
     deleted: bool
 
 
+class KnowledgeSourceItem(BaseModel):
+    """S-6.3.2: a document in the caller's library with a knowledge report,
+    offered by the deck's create modal as ``document:<document_id>``."""
+
+    document_id: str
+    title: str
+    source_type: str = "video"
+    channel_name: str = ""
+    published_at: datetime | None = None
+    knowledge_extracted_at: datetime | None = None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _check_sources(kind: str, db: Session, user: User, source_ids: list[str]) -> None:
+    """Run the outputter's ``check_sources`` hook when it has one (S-6.3.2:
+    a deck's ``document:`` sources). A source outside the caller's library
+    is 404, as if it did not exist (D-063); one that is theirs but not
+    ready (no knowledge report) is 409."""
+    check = getattr(output_service.get_outputter(kind), "check_sources", None)
+    if check is None:
+        return
+    try:
+        check(db, user, list(source_ids))
+    except output_service.OutputSourceNotFound as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except output_service.OutputSourceNotReady as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
 
 def _citation_count(row) -> int:
@@ -176,6 +220,55 @@ def list_kinds(
     )
 
 
+@router.get("/knowledge-sources", response_model=list[KnowledgeSourceItem])
+def list_knowledge_sources(
+    q: str = Query("", max_length=500),
+    limit: int = Query(200, ge=1, le=500),
+    current_user: User = Depends(require_feature("author_studio")),
+    db: Session = Depends(get_db),
+) -> list[KnowledgeSourceItem]:
+    """S-6.3.2: the documents a deck can be planned from: those in the
+    caller's library (D-063) with an extracted knowledge report, most
+    recently extracted first. The report text itself is not sent. ``q``
+    matches the title or channel before ``limit`` applies, so a report
+    older than the list can still be found."""
+    query = (
+        db.query(Document)
+        .options(load_only(
+            Document.document_id, Document.title, Document.source_type, Document.channel_id,
+            Document.published_at, Document.knowledge_extracted_at,
+        ))
+        .filter(
+            Document.document_id.in_(visibility_service.visible_document_ids(db, current_user.id)),
+            Document.knowledge_report_md.isnot(None),
+            func.trim(Document.knowledge_report_md) != "",
+        )
+    )
+    term = q.strip()
+    if term:
+        query = query.filter(or_(
+            Document.title.icontains(term, autoescape=True),
+            Document.channel.has(Channel.name.icontains(term, autoescape=True)),
+        ))
+    rows = (
+        query
+        .order_by(Document.knowledge_extracted_at.is_(None), Document.knowledge_extracted_at.desc(), Document.title.asc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        KnowledgeSourceItem(
+            document_id=d.document_id,
+            title=d.title or "Untitled",
+            source_type=d.source_type or "video",
+            channel_name=d.channel_name or "",
+            published_at=d.published_at,
+            knowledge_extracted_at=d.knowledge_extracted_at,
+        )
+        for d in rows
+    ]
+
+
 @router.post("/outputs", response_model=OutputItem)
 def create_and_generate(
     payload: CreateOutputPayload,
@@ -220,6 +313,9 @@ def create_and_generate(
             raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(e))
         except OutputError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    # S-6.3.2: a source the caller cannot use is refused before the row
+    # exists, so no `failed` row is left behind.
+    _check_sources(payload.kind, db, current_user, payload.source_ids)
     try:
         row = output_service.create_output(
             db,
@@ -275,6 +371,7 @@ def estimate_output(
     estimate = getattr(outputter, "estimate", None)
     if estimate is None:
         return {"calls": [], "cost_usd": 0.0}
+    _check_sources(payload.kind, db, current_user, payload.source_ids)
     try:
         return estimate(db, current_user, payload.title, payload.source_ids, dict(payload.parameters))
     except OutputError as e:

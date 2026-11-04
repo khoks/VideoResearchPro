@@ -123,6 +123,16 @@ describe('WSClient (T-6.7.1.6)', () => {
     vi.advanceTimersByTime(60_000);
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
+
+  it('disconnect cancels a reconnect that was already waiting', async () => {
+    const client = await freshClient();
+    client.subscribe('a', () => {});
+    FakeWebSocket.instances[0].open();
+    FakeWebSocket.instances[0].close();
+    client.disconnect();
+    vi.advanceTimersByTime(60_000);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
 });
 
 describe('WSClient notifications (T-8.3.3.8)', () => {

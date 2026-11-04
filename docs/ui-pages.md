@@ -96,7 +96,7 @@ The protected routes share `<AppLayout>` (top-tabs nav today, sidebar after the 
 | State | What renders |
 |-------|--------------|
 | Default | Tabbed form with the active tab's inputs. |
-| Channels pre-filled | T-8.10.1.7: the first run reads one of the channels chosen in the wizard, so an empty Channels list is filled with the ones no run has named yet (`channels_not_yet_run`), once per browser, and the helper text says where they came from until the reader edits the list. Never over a draft, a cloned run or a template. |
+| Channels pre-filled | T-8.10.1.7: the first run reads one of the channels chosen in the wizard, so an empty Channels list is filled with the ones no run has named yet (`channels_not_yet_run`), once per browser, and the helper text says where they came from until the reader edits the list. The offer is made, and spent, only when the Channels form is on screen, so a reader who stays on Topic keeps it. Never over a draft (any setting changed, on any tab), a cloned run or a template. |
 | Submitting | Submit button shows spinner. |
 | LLM down for `search_plan_queries` | Banner above the Topic tab: "Search planning is unavailable. Topic jobs are paused. Channel and Subscribe still work." Topic tab's submit button is disabled. |
 | Quota near cap | Yellow banner: "YouTube quota at 86% — large jobs may fail." (Soft warning at 80% per `health/quota`.) |

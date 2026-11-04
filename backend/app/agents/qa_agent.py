@@ -561,6 +561,22 @@ def _chunk_document_key(meta: dict) -> str:
 
 
 def _chunk_to_reference(chunk: dict) -> tuple[str, dict]:
+    """A RAG chunk as a (dedupe_key, reference_dict) pair, of any source type.
+
+    Every reference carries the chunk's ``document_id`` (D-070) when it has
+    one: the only id a non-video source has, so the scoped citation check in
+    ``library_qa_service.within_scope`` compares it. ``video_id`` is empty on
+    those references, and keying that check on it dropped every citation of
+    a PDF, a pasted page, a thread or a podcast.
+    """
+    key, ref = _reference_for_source_type(chunk)
+    document_id = (chunk.get("metadata") or {}).get("document_id")
+    if document_id:
+        ref["document_id"] = document_id
+    return key, ref
+
+
+def _reference_for_source_type(chunk: dict) -> tuple[str, dict]:
     """Build a (dedupe_key, reference_dict) pair from a RAG chunk.
 
     Polymorphic by ``source_type`` per S-1.5.5. The frontend

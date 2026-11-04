@@ -134,8 +134,9 @@ def should_onboard(user: User, state: dict[str, Any] | None, job_count: int) -> 
 
 
 def _channel_key(raw: str) -> str:
-    """A channel as typed, folded so a handle and its URL compare equal
-    (``@Name``, ``youtube.com/@name/``, ``https://www.youtube.com/@name``)."""
+    """A channel as typed, folded so a handle or a channel id and its URL
+    compare equal (``@Name``, ``youtube.com/@name/``,
+    ``https://www.youtube.com/@name``; ``UC…``, ``youtube.com/channel/UC…``)."""
     key = raw.strip().lower()
     for prefix in ("https://", "http://"):
         if key.startswith(prefix):
@@ -145,6 +146,8 @@ def _channel_key(raw: str) -> str:
             key = key[len(prefix):]
     if key.startswith("youtube.com/"):
         key = key[len("youtube.com/"):]
+    if key.startswith("channel/"):
+        key = key[len("channel/"):]
     key = key.split("?", 1)[0].rstrip("/")
     for suffix in ("/videos", "/featured", "/streams", "/shorts"):
         if key.endswith(suffix):

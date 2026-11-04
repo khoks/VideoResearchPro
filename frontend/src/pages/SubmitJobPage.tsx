@@ -17,6 +17,7 @@ import {
   DEFAULT_FORM,
   formToJobCreate,
   formToTemplateParameters,
+  isDraftForm,
   jobToFormState,
   parseChannelList,
   parseDraft,
@@ -130,16 +131,18 @@ export function SubmitJobPage() {
   // T-8.10.1.7: the first run reads one of the channels chosen in the
   // welcome wizard; the others wait here. An empty channel list is filled
   // with the ones no run has named yet, once per browser, and never over a
-  // draft, a cloned run or a template.
+  // draft, a cloned run or a template. The offer is made when the Channels
+  // form is on screen, not on load: a reader on the default Topic tab would
+  // never see the list, and the "once" would be spent on nothing. A draft
+  // leaves the offer unspent, so it can be made once the draft is gone.
   const onboarding = useOnboarding();
   const [prefilledChannels, setPrefilledChannels] = useState<string | null>(null);
   const prefillDecided = useRef(false);
   useEffect(() => {
     const remaining = onboarding.data?.channels_not_yet_run;
-    if (prefillDecided.current || !remaining) return;
+    if (prefillDecided.current || !remaining || form.jobType !== 'channel' || isDraftForm(form)) return;
     prefillDecided.current = true;
-    if (remaining.length === 0 || cloneFromInitial || routeState?.fromTemplateId) return;
-    if (form.channelList.trim()) return;
+    if (remaining.length === 0 || cloneFromInitial || routeState?.fromTemplateId || fromTemplate) return;
     const offered = readPrefilled();
     if (remaining.every((ch) => offered.includes(ch))) return;
     const text = remaining.join('\n');
@@ -147,7 +150,7 @@ export function SubmitJobPage() {
     setPrefilledChannels(text);
     rememberPrefilled(remaining);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onboarding.data]);
+  }, [onboarding.data, form.jobType]);
 
   useEffect(() => {
     try {

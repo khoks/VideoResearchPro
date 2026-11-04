@@ -7,6 +7,8 @@ two tests drive those routes rather than the service.
 """
 from unittest.mock import patch
 
+import pytest
+
 from app.models.audit_log import AuditLog
 from app.models.job import Job
 from app.services import auth_service
@@ -190,6 +192,24 @@ def test_channels_not_yet_run_are_the_wizards_other_channels(client, db, test_us
     })
     assert later.status_code == 201, later.text
     assert client.get(URL).json()["channels_not_yet_run"] == ["@fourth"]
+
+
+@pytest.mark.parametrize(
+    "chosen, named",
+    [
+        ("UCabcdefghijklmnopqrstuv", "https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv"),
+        ("https://youtube.com/channel/UCabcdefghijklmnopqrstuv/", "UCabcdefghijklmnopqrstuv"),
+        ("youtube.com/channel/UCabcdefghijklmnopqrstuv", "https://www.youtube.com/channel/ucabcdefghijklmnopqrstuv/videos"),
+    ],
+)
+def test_a_channel_id_and_its_url_are_one_channel(client, db, test_user, chosen, named):
+    """The wizard and the submit page both accept a bare UC id and its URL.
+    Offering one after a run named the other would say, falsely, that no run
+    has read it."""
+    assert client.patch(URL, json={"channels": [chosen, "@other"]}).status_code == 200
+    run = client.post("/api/v1/jobs", json={"job_type": "channel", "channel_list": [named], "videos_per_channel": 5})
+    assert run.status_code == 201, run.text
+    assert client.get(URL).json()["channels_not_yet_run"] == ["@other"]
 
 
 def test_channels_not_yet_run_ignores_other_accounts_runs(client, db, test_user):

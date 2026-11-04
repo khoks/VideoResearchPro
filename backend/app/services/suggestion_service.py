@@ -50,7 +50,14 @@ from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.qa_exchange import QAExchange
 from app.models.suggestion_cache import SuggestionCache
 from app.models.user import User
-from app.services import chroma_service, job_service, report_service, usage_service, visibility_service
+from app.services import (
+    chroma_service,
+    job_service,
+    qa_scope_service,
+    report_service,
+    usage_service,
+    visibility_service,
+)
 from app.services.llm_service import get_llm_for, response_text
 
 logger = logging.getLogger(__name__)
@@ -300,14 +307,18 @@ def _document_context(db: Session, user: User, raw_id: str) -> Context:
         summary.append("What it covers: " + "; ".join(topics) + ".")
     elif doc.description:
         summary.append("Its description: " + doc.description[:600])
+    # T-8.4.2.4: a question can be asked about one source, so "already asked
+    # here" is real for this context, and a new one must invalidate its cache.
+    asked_rows = qa_scope_service.exchanges_scoped_to(db, user.id, "document_id", doc.document_id)
+    latest = asked_rows[0][0] if asked_rows else "-"
     return Context(
         kind="document",
         ref_id=doc.document_id,
         key=f"document:{doc.document_id}",
         summary=summary,
         query_text=" ".join([doc.title or "", *topics[:8]]),
-        asked=[],
-        fingerprint=_fingerprint(doc.knowledge_extracted_at, len(topics)),
+        asked=[question for _, question in asked_rows[:_ASKED]],
+        fingerprint=_fingerprint(doc.knowledge_extracted_at, len(topics), len(asked_rows), latest),
     )
 
 

@@ -123,23 +123,37 @@ def note_target_keys(
     return list(dict.fromkeys(out))
 
 
-def _earlier_answer_keys(db: Session, tenant_id: str, key: str, value: str) -> list[str]:
-    """Note keys of the asker's earlier library answers whose stored scope
-    has ``key == value``. ``dump`` writes compact JSON, so the LIKE marker
-    finds candidates and the parsed scope confirms each one."""
+def exchanges_scoped_to(db: Session, tenant_id: str, key: str, value: str) -> list[tuple[str, str]]:
+    """``(id, question)`` of the asker's library exchanges whose stored scope
+    has ``key == value``, newest first. ``dump`` writes compact JSON, so the
+    LIKE marker finds candidates and the parsed scope confirms each one."""
     from app.models.library_qa_exchange import LibraryQAExchange
-    from app.services import note_index
 
     marker = f'"{key}":"{value}"'
-    out: list[str] = []
-    for qa_id, raw in db.query(LibraryQAExchange.id, LibraryQAExchange.scope_json).filter(
-        LibraryQAExchange.tenant_id == tenant_id,
-        LibraryQAExchange.scope_json.like(f"%{marker}%"),
-    ):
+    rows = (
+        db.query(LibraryQAExchange.id, LibraryQAExchange.question, LibraryQAExchange.scope_json)
+        .filter(
+            LibraryQAExchange.tenant_id == tenant_id,
+            LibraryQAExchange.scope_json.like(f"%{marker}%"),
+        )
+        .order_by(LibraryQAExchange.created_at.desc())
+    )
+    out: list[tuple[str, str]] = []
+    for qa_id, question, raw in rows:
         scope_row = load(raw)
         if scope_row is not None and getattr(scope_row, key, None) == value:
-            out.append(note_index.target_key("library_qa_exchange", qa_id))
+            out.append((qa_id, question))
     return out
+
+
+def _earlier_answer_keys(db: Session, tenant_id: str, key: str, value: str) -> list[str]:
+    """Note keys of the asker's earlier library answers over this scope."""
+    from app.services import note_index
+
+    return [
+        note_index.target_key("library_qa_exchange", qa_id)
+        for qa_id, _ in exchanges_scoped_to(db, tenant_id, key, value)
+    ]
 
 
 def _document_note_keys(db: Session, tenant_id: str, raw_id: str, document_ids: list[str]) -> list[str]:

@@ -166,6 +166,16 @@ function outputLengthOf(value: string | null | undefined): OutputLength {
     : 'auto';
 }
 
+/**
+ * Whether the form holds anything of the reader's. The research type alone
+ * does not count: it is only the tab they are on.
+ */
+export function isDraftForm(form: JobFormState): boolean {
+  return (Object.keys(DEFAULT_FORM) as (keyof JobFormState)[]).some(
+    (key) => key !== 'jobType' && JSON.stringify(form[key]) !== JSON.stringify(DEFAULT_FORM[key]),
+  );
+}
+
 /** Restore a saved draft, tolerating fields from older versions. */
 export function parseDraft(raw: string | null): JobFormState {
   if (!raw) return DEFAULT_FORM;

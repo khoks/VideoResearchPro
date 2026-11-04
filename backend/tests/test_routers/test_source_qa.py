@@ -9,15 +9,19 @@ spends no quota. The exchange joins the library history with
 """
 import json
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.agents import qa_agent
+from app.models.audit_log import AuditLog
 from app.models.document import Document
 from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.models.library_qa_exchange import LibraryQAExchange
-from app.services import auth_service, shelf_service, visibility_service
+from app.services import auth_service, library_qa_service, shelf_service, visibility_service
+from app.tasks import job_tasks
+from app.utils.chunking import chunk_transcript
 
 
 @pytest.fixture
@@ -215,3 +219,132 @@ def test_a_blank_document_id_is_refused(client, setup):
     resp, agent = _ask(client, [], {"document_id": ""})
     assert resp.status_code == 422
     agent.assert_not_called()
+
+
+# ------------------------------------------------------------- the real agent
+#
+# The tests above hand the router a finished ``references`` list. These run
+# ``run_library_qa_agent`` itself, over chunks built the way ingest builds
+# them (``_build_video_metadata`` plus ``chunk_transcript``), with only
+# retrieval and the model stubbed. A reference shape written by hand is how a
+# non-YouTube citation looked scoped in a test and was dropped in production.
+
+
+def _ingested_chunks(doc):
+    """What retrieval returns for ``doc``, down to Chroma dropping ``None``."""
+    meta = job_tasks._build_video_metadata(doc, "en")
+    chunks = chunk_transcript(
+        [{"text": "Rates rose because the central bank moved first.", "start": 0.0, "duration": 5.0}],
+        video_metadata=meta,
+    )
+    assert chunks
+    return [
+        {"text": c["text"], "metadata": {k: v for k, v in c["metadata"].items() if v is not None}, "distance": 0.1}
+        for c in chunks
+    ]
+
+
+def _llm_for(answer):
+    def build(use_case, **_kwargs):
+        response = MagicMock()
+        response.content = {
+            "qa_sub_query_expansion": "",
+            "library_qa_refine_context": "Rates rose because the central bank moved first.",
+            "library_qa_formulate_answer": answer,
+        }.get(use_case, "[]")
+        llm = MagicMock()
+        llm.invoke.return_value = response
+        return llm
+
+    return build
+
+
+def _ask_the_agent(client, chunks, body, answer, path="/api/v1/library/qa"):
+    with (
+        patch.object(qa_agent.chroma_service, "query_collection", return_value=chunks) as query,
+        patch.object(qa_agent, "get_llm_for", side_effect=_llm_for(answer)),
+        patch("app.routers.library.chroma_service.upsert_qa_exchange", return_value=True),
+    ):
+        resp = client.post(path, json={"question": "What does it claim?", **body})
+    assert resp.status_code == 200, resp.text
+    return resp.json(), query
+
+
+_NON_VIDEO = ["pdf", "article", "tweet", "podcast_episode", "reddit_post", "hn_story", "mastodon_post", "bluesky_post"]
+
+
+@pytest.mark.parametrize("source_type", _NON_VIDEO)
+def test_a_source_with_no_youtube_id_keeps_its_citation(client, db, test_user, source_type):
+    """T-8.4.2.4 / D-070: every non-video reference has ``video_id: ""``. Keyed
+    on that, the check dropped the citation and the answer lost its sources."""
+    title = f"Everything about rates, a {source_type}"
+    doc = _doc(db, [test_user.id], source_type=source_type, title=title)
+
+    body, query = _ask_the_agent(
+        client, _ingested_chunks(doc), {"document_id": doc.document_id},
+        f'Rates rose. [Source: "{title}" by Someone at 0:00]',
+    )
+
+    assert query.call_args.kwargs["document_ids"] == [doc.document_id], "retrieval is that source"
+    assert [r["document_id"] for r in body["references"]] == [doc.document_id]
+    assert body["references"][0]["source_type"] == source_type
+    assert body["references"][0]["video_id"] == ""
+    stored = json.loads(db.get(LibraryQAExchange, body["id"]).references_json)
+    assert [r["document_id"] for r in stored] == [doc.document_id]
+
+    events = db.query(AuditLog).filter(AuditLog.user_id == test_user.id, AuditLog.event == "first_cited_answer").all()
+    assert len(events) == 1, "a kept citation is a cited answer"
+
+
+def test_a_youtube_source_is_still_cited_by_its_own_id(client, db, test_user):
+    title = "Rates explained in a video"
+    video = _doc(db, [test_user.id], vid="dQw4w9WgXcQ", title=title)
+    body, _ = _ask_the_agent(
+        client, _ingested_chunks(video), {"document_id": video.document_id},
+        f'Rates rose. [Source: "{title}" by Someone at 0:00]',
+    )
+    assert [(r["document_id"], r["video_id"]) for r in body["references"]] == [(video.document_id, "dQw4w9WgXcQ")]
+
+
+def test_a_shelf_question_keeps_a_pdf_citation(client, db, test_user):
+    """The same check narrows a shelf, which lost these before this page did."""
+    title = "A report on central banks"
+    pdf = _doc(db, [test_user.id], source_type="pdf", title=title)
+    job = Job(tenant_id=test_user.id, job_type="topic", topic="t", status="completed", num_videos=1)
+    db.add(job)
+    db.commit()
+    db.add(JobVideo(job_id=job.id, document_id=pdf.document_id, approved=True))
+    db.commit()
+    shelf = shelf_service.create_shelf(db, test_user.id, "Rates")
+    shelf_service.add_job(db, shelf, job)
+
+    body, query = _ask_the_agent(
+        client, _ingested_chunks(pdf), {}, f'Rates rose. [Source: "{title}" by Someone at 0:00]',
+        path=f"/api/v1/shelves/{shelf.id}/qa",
+    )
+    assert query.call_args.kwargs["document_ids"] == [pdf.document_id]
+    assert [r["document_id"] for r in body["references"]] == [pdf.document_id]
+
+
+def test_a_citation_of_another_source_is_dropped_by_document_id(client, db, test_user):
+    """The check is exact now, so it still drops what is out of scope when the
+    reference has no YouTube id to compare."""
+    title = "A page outside the question"
+    inside = _doc(db, [test_user.id], source_type="article", title="A page inside the question")
+    outside = _doc(db, [test_user.id], source_type="article", title=title)
+
+    body, _ = _ask_the_agent(
+        client, _ingested_chunks(outside), {"document_id": inside.document_id},
+        f'Rates rose. [Source: "{title}" by Someone at 0:00]',
+    )
+    assert body["references"] == []
+
+
+def test_a_reference_naming_no_document_is_left_alone(db, setup):
+    """An empty ``video_id`` names nothing; only a real id is compared."""
+    a, b = setup["a"], setup["b"]
+    nameless = {"source_type": "pdf", "video_id": "", "video_title": "t"}
+    no_keys = {"source_type": "pdf", "video_title": "t"}
+    foreign_video = {"video_id": b.video_id, "video_title": "t"}
+    kept = library_qa_service.within_scope(db, [nameless, no_keys, foreign_video], [a.document_id])
+    assert kept == [nameless, no_keys]

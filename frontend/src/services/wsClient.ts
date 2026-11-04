@@ -27,19 +27,23 @@ function resolveWsUrl(): string {
  *
  * T-8.3.3.8: the same socket carries the signed-in user's new-notification
  * events (`subscribe` with `topic: "notifications"`); the server binds them
- * to the user the token names. A socket is opened with one sign-in's token,
- * so once the stored token changes (sign-out, then someone else signs in)
- * the next `connect()` replaces it instead of reusing the old identity.
+ * to the user the token names. A socket is opened with one sign-in's token:
+ * `AuthProvider` calls `disconnect()` when the token goes away, and `connect()`
+ * replaces a socket whose token is no longer the stored one, so a tab never
+ * keeps the old identity. A session revoked from another device is the one
+ * case left: the server refuses its token at the handshake, but it does not
+ * close a socket that is already open.
  */
 export class WSClient {
   private ws: WebSocket | null = null;
-  /** The token `ws` was opened with: a socket never outlives its sign-in. */
+  /** The token `ws` was opened with, so a new sign-in gets its own socket. */
   private socketToken: string | null = null;
   private subscriptions = new Map<string, Set<Callback>>();
   private notificationCallbacks = new Set<NotificationCallback>();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
   private reconnectDelay = 1000;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingInterval: number | null = null;
 
   private static send(socket: WebSocket | null, data: string | object): void {
@@ -127,7 +131,8 @@ export class WSClient {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) return;
     if (this.subscriptions.size === 0 && this.notificationCallbacks.size === 0) return;
 
-    setTimeout(() => {
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       this.reconnectAttempts++;
       this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
       this.connect();
@@ -176,9 +181,12 @@ export class WSClient {
     };
   }
 
+  /** Sign-out: close the socket and forget everything, a waiting reconnect included. */
   disconnect(): void {
     this.subscriptions.clear();
     this.notificationCallbacks.clear();
+    if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
     this.dropSocket();
   }
 }

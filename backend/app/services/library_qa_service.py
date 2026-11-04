@@ -69,8 +69,11 @@ def within_scope(
     Retrieval is already restricted to ``document_ids``; this is the check on
     what the answer cites, so a scoped answer can never point outside its
     scope even if a future context source does. A note citation (S-8.5.2)
-    must target something in ``note_keys``. References that name neither a
-    document nor a note are left alone.
+    must target something in ``note_keys``. ``document_id`` is the exact
+    check and the one every source type has (D-070); ``video_id`` is the
+    fallback for a stored reference without it, and an empty one names
+    nothing. References that name neither a document nor a note are left
+    alone.
     """
     allowed = set(document_ids)
     allowed_notes = set(note_keys or [])
@@ -89,9 +92,9 @@ def within_scope(
         vid = ref.get("video_id") if isinstance(ref, dict) else None
         if isinstance(ref, dict) and ref.get("source_type") == "note":
             ok = f"{ref.get('note_target_type', '')}:{ref.get('note_target_id', '')}" in allowed_notes
-        elif doc_id is not None:
+        elif doc_id:
             ok = doc_id in allowed
-        elif vid is not None:
+        elif vid:
             ok = vid in allowed_videos
         else:
             ok = True

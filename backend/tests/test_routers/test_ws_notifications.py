@@ -12,8 +12,10 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from starlette.websockets import WebSocketDisconnect
 
 from app.config import settings
+from app.routers import ws as ws_router
 from app.services import auth_service, notification_service, progress_service
 from app.websocket.manager import ConnectionManager
 
@@ -202,6 +204,46 @@ def test_a_socket_that_never_asked_hears_nothing(unauthenticated_client, test_us
         ws.portal.call(live_manager.dispatch, f"notifications:{test_user.id}", json.dumps({"type": "notification"}))
         assert _sync(ws) == "pong"
     assert live_manager._user_connections == {}
+
+
+def test_a_revoked_session_cannot_open_a_socket(unauthenticated_client, db, test_user, live_manager):
+    """T-5.4.7: the check every HTTP request makes. A token revoked from the
+    account security page, or by a sign-out, stops working on the socket as
+    well, so it cannot subscribe to the bell for the rest of its lifetime."""
+    token, _ = auth_service.create_access_token(test_user.id, db=db)
+    jti = auth_service.decode_access_token(token)["jti"]
+    with unauthenticated_client.websocket_connect(f"/ws/jobs?token={token}") as ws:
+        assert _sync(ws) == "pong", "a live session opens a socket"
+
+    assert auth_service.revoke_session(db, jti, test_user.id) is True
+    with pytest.raises(WebSocketDisconnect) as refused:
+        with unauthenticated_client.websocket_connect(f"/ws/jobs?token={token}"):
+            pass
+    assert refused.value.code == 1008
+    assert live_manager._user_connections == {}
+
+
+def test_the_session_check_fails_closed(unauthenticated_client, test_user, live_manager, monkeypatch):
+    """A database failure denies, as the job ownership check does."""
+    def broken():
+        raise RuntimeError("database down")
+
+    monkeypatch.setattr(ws_router, "_handshake_session", broken)
+    token, _ = auth_service.create_access_token(test_user.id)
+    with pytest.raises(WebSocketDisconnect) as refused:
+        with unauthenticated_client.websocket_connect(f"/ws/jobs?token={token}"):
+            pass
+    assert refused.value.code == 1008
+
+
+def test_a_token_with_no_jti_still_opens_a_socket(unauthenticated_client, test_user, live_manager):
+    """Issued before T-5.4.7: as on HTTP, its own expiry bounds it."""
+    legacy, _ = auth_service.create_access_token(test_user.id)
+    payload = {**auth_service.decode_access_token(legacy)}
+    payload.pop("jti", None)
+    with patch("app.routers.ws.auth_service.decode_access_token", return_value=payload):
+        with unauthenticated_client.websocket_connect(f"/ws/jobs?token={legacy}") as ws:
+            assert _sync(ws) == "pong"
 
 
 # ------------------------------------------------------------------ the publisher

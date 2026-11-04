@@ -61,6 +61,39 @@ def _owns_job(tenant_id: str, job_id: str, session_factory=None) -> bool:
             db.close()
 
 
+def _handshake_session():
+    """A short-lived session for the handshake. A seam: the suite points it at
+    its own database (``tests/conftest.py``)."""
+    from app.database import SessionLocal
+
+    return SessionLocal()
+
+
+def _session_is_live(payload: dict) -> bool:
+    """Whether the session behind a decoded token is still live: the check
+    ``dependencies._resolve_user`` makes on every HTTP request (T-5.4.7), so a
+    token revoked at sign-out or from the account security page cannot open a
+    socket for the rest of its lifetime. A token with no ``jti`` predates
+    sessions, and as on HTTP its own expiry bounds it.
+
+    Runs before the socket is accepted, in its own session for the same
+    reason as ``_owns_job``, and fails CLOSED the same way.
+    """
+    jti = payload.get("jti")
+    if not isinstance(jti, str):
+        return True
+    db = None
+    try:
+        db = _handshake_session()
+        return auth_service.is_session_active(db, jti)
+    except Exception:
+        logger.exception("ws: session check failed; denying the handshake")
+        return False
+    finally:
+        if db is not None:
+            db.close()
+
+
 @router.websocket("/ws/jobs")
 async def job_progress_ws(websocket: WebSocket, token: str | None = Query(default=None)):
     """
@@ -68,7 +101,9 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
 
     Auth:
         Requires a valid JWT passed as ?token=... query parameter.
-        Connection is closed with code 1008 (policy violation) if missing/invalid.
+        Connection is closed with code 1008 (policy violation) if missing, invalid
+        or its session was revoked. A socket already open stays open if its session
+        is revoked later.
         This is the one route that still reads a token from the URL (T-8.8.1.5,
         D-085 addendum): the browser WebSocket API cannot set an Authorization
         header on the handshake. Every HTTP route is header-only.
@@ -95,6 +130,10 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
     payload = auth_service.decode_access_token(token)
     if not payload or not payload.get("sub"):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
+        return
+
+    if not _session_is_live(payload):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Session revoked")
         return
 
     tenant_id = payload["sub"]

@@ -46,7 +46,7 @@ Return the current user. Requires bearer token.
 Switch the caller's tier (mock payment, [D-050](decisions.md#d-050--self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15)). **Operator only** since T-5.2.8 ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): any other account gets 403 `Only this install's operator can do this.` and nothing changes. Body `{ "tier": "free" | "pro" | "studio", "mock_payment"?: {...} }` (`mock_payment` is accepted and ignored); 422 for another tier. Returns `{ "tier", "message", "mock_payment_mode": true }` and writes a `tier_changed` audit event.
 
 ### `GET /api/v1/auth/me/onboarding`
-The first-run wizard's state for the caller (S-8.10.1). `state` is the default when the wizard was never touched. Milestones are derived on read: `jobs` counts the caller's runs, `first_job` is the run the wizard started (else the oldest), `report_opened` is whether a `first_report_opened` audit event exists. `should_onboard` is what `/` uses: false once `onboarded_at` is set or the wizard was skipped; true once it was started; otherwise true only for an account with no runs. `channels_not_yet_run` (T-8.10.1.7) lists the wizard's channels that none of the caller's runs has named, in the order chosen, comparing a handle and its URL as one channel; the submit page pre-fills its channel list with them.
+The first-run wizard's state for the caller (S-8.10.1). `state` is the default when the wizard was never touched. Milestones are derived on read: `jobs` counts the caller's runs, `first_job` is the run the wizard started (else the oldest), `report_opened` is whether a `first_report_opened` audit event exists. `should_onboard` is what `/` uses: false once `onboarded_at` is set or the wizard was skipped; true once it was started; otherwise true only for an account with no runs. `channels_not_yet_run` (T-8.10.1.7) lists the wizard's channels that none of the caller's runs has named, in the order chosen, comparing a handle or a channel id and its URL as one channel; the submit page pre-fills its channel list with them.
 
 ```json
 {
@@ -460,7 +460,7 @@ Ask a question across everything the tenant can see (D-063). Runs `run_library_q
 }
 ```
 
-`document_id` (T-8.4.2.4) asks about that one source: its `document_id` or a video's legacy YouTube id, stored canonical. Retrieval and citations are restricted to exactly that document, the asker's notes to those on it, on its knowledge report, on its channel and on earlier answers about it. A source the caller cannot see, and one that does not exist, are the same **404**, before any quota is checked.
+`document_id` (T-8.4.2.4) asks about that one source: its `document_id` or a video's legacy YouTube id, stored canonical. Retrieval and citations are restricted to exactly that document (every reference carries its `document_id`; `video_id` is empty on a non-YouTube source), the asker's notes to those on it, on its knowledge report, on its channel and on earlier answers about it. A source the caller cannot see, and one that does not exist, are the same **404**, before any quota is checked.
 
 `scope` (S-8.1.4, [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19)) is what the question was asked over: `null` for the whole library, or an object such as `{"shelf_id": "…"}` for a question asked on a shelf or `{"document_id": "…"}` for one asked about a source. Narrowing keys (`shelf_id`, `document_id`) only ever restrict the reader's visible documents, and a scope with no documents retrieves nothing; provenance keys (`saved_search_id`, M3) record where an exchange came from. Unknown keys from newer builds may appear; clients keep them and do not interpret them. Shape: `backend/app/schemas/qa_scope.py`.
 
@@ -1334,7 +1334,7 @@ A socket subscribed to notifications also receives one event per new notificatio
 
 It carries no title, body or link, so what a notice says is only ever read over `GET /notifications`, where the session is checked. Delivery is best effort: the bell keeps its one-minute poll as the fallback.
 
-Heartbeats every 30 seconds (server pings, client pongs). Auth is enforced via the `?token=` query string at WS handshake (browsers cannot set `Authorization` headers on WebSocket connections). Since T-8.8.1.5 this is the only route that reads a token from the URL.
+Heartbeats every 30 seconds (server pings, client pongs). Auth is enforced via the `?token=` query string at WS handshake (browsers cannot set `Authorization` headers on WebSocket connections). Since T-8.8.1.5 this is the only route that reads a token from the URL. A missing, invalid or revoked token is closed with code 1008, the revocation check being the one every HTTP route makes. A socket already open is not closed when its session is revoked later.
 
 ---
 

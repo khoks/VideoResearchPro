@@ -13,12 +13,13 @@ User-facing session management:
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.dependencies import get_current_jti, get_current_user, get_db
 from app.models.user import User
 from app.services import audit_service, auth_service
@@ -36,8 +37,21 @@ class SessionMetadata(BaseModel):
     ip_address: str | None
     user_agent: str | None
     is_current: bool = False
+    # When the session's token stops working, and whether it still works
+    # (not revoked, not expired). A row is never deleted, so without these
+    # every sign-in since the account was made reads as a live session.
+    # The row stores no expiry: tokens are issued for JWT_EXPIRY_HOURS from
+    # the row's creation (auth_service.create_access_token), so the expiry
+    # is derived from the current setting.
+    expires_at: datetime | None = None
+    active: bool = False
 
     model_config = {"from_attributes": True}
+
+
+def _as_utc(value: datetime) -> datetime:
+    """SQLite hands back naive datetimes; the columns are written in UTC."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
 class RevokeResponse(BaseModel):
@@ -55,10 +69,14 @@ def list_sessions(
     db: Session = Depends(get_db),
 ) -> list[SessionMetadata]:
     rows = auth_service.list_user_sessions(db, current_user.id)
+    now = datetime.now(timezone.utc)
+    lifetime = timedelta(hours=settings.JWT_EXPIRY_HOURS)
     out: list[SessionMetadata] = []
     for r in rows:
         item = SessionMetadata.model_validate(r)
         item.is_current = current_jti is not None and item.jti == current_jti
+        item.expires_at = _as_utc(r.created_at) + lifetime
+        item.active = r.revoked_at is None and item.expires_at > now
         out.append(item)
     return out
 

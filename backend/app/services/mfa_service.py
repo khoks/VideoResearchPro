@@ -250,16 +250,25 @@ def verify_at_login(db: Session, user_id: str, code: str) -> bool:
 
 MFA_TOKEN_TTL_MIN = 5
 
+# The ticket's `typ` claim. It is signed with the access-token key, so it
+# authenticates nothing on its own only because every bearer check decodes
+# through `auth_service.decode_access_token`, which refuses it.
+MFA_STEP_TOKEN_TYPE = "mfa_step"
+
 
 def issue_mfa_step_token(user_id: str) -> str:
     """Short-lived signed token that proves the user successfully
-    completed the password step but still owes the second factor."""
+    completed the password step but still owes the second factor.
+
+    It is a ticket for ``/auth/login/mfa`` only, never a credential: see
+    ``auth_service.decode_access_token``."""
     now = datetime.now(timezone.utc)
     payload: dict[str, Any] = {
         "sub": user_id,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=MFA_TOKEN_TTL_MIN)).timestamp()),
         "mfa_step": True,
+        "typ": MFA_STEP_TOKEN_TYPE,
     }
     return jwt.encode(
         payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM

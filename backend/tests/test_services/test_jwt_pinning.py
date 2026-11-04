@@ -58,3 +58,29 @@ def test_mfa_step_token_round_trips_and_is_not_an_access_token():
     # An ordinary access token must not pass as an MFA-step token.
     access, _ = auth_service.create_access_token("user-2")
     assert mfa_service.decode_mfa_step_token(access) is None
+
+
+def test_the_mfa_step_ticket_is_not_an_access_token():
+    # The other direction, which nothing checked before decode_access_token:
+    # the ticket is signed with the same key, so decode_token takes it.
+    ticket = mfa_service.issue_mfa_step_token("user-3")
+    assert auth_service.decode_token(ticket) is not None
+    assert auth_service.decode_access_token(ticket) is None
+
+
+def test_decode_access_token_takes_access_tokens_and_legacy_ones():
+    access, _ = auth_service.create_access_token("user-4")
+    assert auth_service.decode_access_token(access)["typ"] == "access"
+    # Issued before the `typ` claim existed: still signed in after a deploy.
+    legacy = jwt.encode(
+        {"sub": "user-4", "exp": 4102444800, "jti": "j"}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM
+    )
+    assert auth_service.decode_access_token(legacy)["sub"] == "user-4"
+
+
+def test_decode_access_token_refuses_other_token_types():
+    for claims in ({"typ": "mfa_step"}, {"typ": "refresh"}, {"mfa_step": True}):
+        token = jwt.encode(
+            {"sub": "user-5", "exp": 4102444800, **claims}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM
+        )
+        assert auth_service.decode_access_token(token) is None, claims

@@ -87,13 +87,12 @@ class PasswordResetConfirmPayload(BaseModel):
 class PasswordResetRequestResponse(BaseModel):
     """Always 200 + a generic message — never leaks whether the
     email exists. The actual reset secret is delivered to the user
-    via email (when SMTP configured) or via operator log."""
+    via email (when SMTP configured) or via operator log, never in this
+    response: the route is unauthenticated, so a secret here is an account
+    takeover for anyone who knows the address (the ``debug_secret`` field
+    that did this when SMTP was unset was removed on 2026-11-03)."""
 
-    message: str = "If that email is registered, a reset link has been sent."
-    # When SMTP is unconfigured, the secret is included in this field
-    # so a self-host operator running the request manually can pass it
-    # straight to the user. Always None on a SaaS-style deployment.
-    debug_secret: str | None = None
+    message: str = "If that email is registered, a reset code has been sent."
 
 
 class PasswordResetConfirmResponse(BaseModel):

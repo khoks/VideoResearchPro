@@ -1,4 +1,5 @@
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
@@ -163,10 +164,19 @@ def password_reset_request(
     request: Request,
     db: Session = Depends(get_db),
 ) -> PasswordResetRequestResponse:
-    """Generate a reset token. Always returns 200 to avoid leaking
-    whether the email exists; the secret is returned in `debug_secret`
-    when SMTP is unconfigured so self-host operators can hand it off
-    out-of-band, and is always None in production SaaS deploys."""
+    """Generate a reset token and deliver it out of band.
+
+    Always 200 with the same generic body, whether or not the address has
+    an account, so the response never says which addresses exist. The
+    secret is delivered only by email (SMTP configured) or, when SMTP is
+    unset, by the email service's log fallback, which writes the email to
+    the server log for the operator to hand over. It is never in the
+    response: this route is unauthenticated, so a secret in the response
+    let anyone who knew an address reset that account's password. Until
+    2026-11-03 it was returned as ``debug_secret`` whenever SMTP was unset
+    (T-5.4.8's self-host handoff), which on a multi-user install was an
+    account takeover by email address.
+    """
     result = auth_service.request_password_reset(db, payload.email)
     if result is None:
         # Audit the attempt (with no user_id) so brute-force scanning
@@ -193,20 +203,14 @@ def password_reset_request(
         secret=secret,
         ttl_minutes=settings.PASSWORD_RESET_TOKEN_TTL_MIN,
     )
-    smtp_configured = email_service._is_smtp_configured()
     delivered = email_service.send_email(user.email, subject, body)
-    # Pre-T-5.4.8 self-host fallback: also return the secret in the
-    # response when SMTP is unconfigured so operators can hand it off
-    # immediately. On SaaS (SMTP configured) the secret is NEVER in the
-    # response — email is the only delivery channel.
-    response_secret = None if smtp_configured else secret
     if not delivered:
         logger.warning(
             "password-reset email delivery failed for user_id=%s — "
             "secret was logged via the email_service fallback path",
             user.id,
         )
-    return PasswordResetRequestResponse(debug_secret=response_secret)
+    return PasswordResetRequestResponse()
 
 
 @router.post("/password-reset/confirm", response_model=PasswordResetConfirmResponse)
@@ -313,14 +317,24 @@ def change_tier(
 def audit_log(
     limit: int = 100,
     offset: int = 0,
+    scope: Literal["all", "account"] = "all",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[AuditLogEntry]:
-    """Return the current user's audit log, newest first."""
+    """Return the current user's audit log, newest first.
+
+    ``scope=account`` keeps only account and security events
+    (``audit_service.ACCOUNT_EVENTS``), for the account security page;
+    the default ``all`` also returns product analytics such as suggestion
+    impressions."""
     if limit > 500:
         limit = 500
     rows = audit_service.list_for_user(
-        db, user_id=current_user.id, limit=limit, offset=offset
+        db,
+        user_id=current_user.id,
+        limit=limit,
+        offset=max(offset, 0),
+        events=audit_service.ACCOUNT_EVENTS if scope == "account" else None,
     )
     return [AuditLogEntry.model_validate(r) for r in rows]
 

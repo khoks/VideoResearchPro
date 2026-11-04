@@ -23,6 +23,7 @@ import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
 import { SubscriptionPage } from '../pages/SubscriptionPage';
 import { AIModelsPage } from '../pages/AIModelsPage';
+import { SystemStatusPage } from '../pages/SystemStatusPage';
 import { EchoPage } from '../pages/EchoPage';
 import { EchoInboxPage } from '../pages/EchoInboxPage';
 import { EchoImportPage } from '../pages/EchoImportPage';
@@ -115,6 +116,7 @@ export const router = createBrowserRouter([
           { path: 'echo/connectors/:name/callback', element: <EchoConnectorCallbackPage /> },
           { path: 'account/subscription', element: <SubscriptionPage /> },
           { path: 'account/ai-models', element: <AIModelsPage /> },
+          { path: 'account/system', element: <SystemStatusPage /> },
         ],
       },
     ],

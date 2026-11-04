@@ -32,7 +32,6 @@ from datetime import datetime, timezone
 
 from lxml import etree
 
-from app.services.output_citation_service import heading_slug
 from app.services.output_service import OutputError
 from app.services.outputters.book_html import ENDNOTES_HEADING, TOC_HEADING, BookHtml, stylesheet
 
@@ -47,9 +46,6 @@ CONTENT_DIR = "OEBPS"
 TITLE_FILE = "title.xhtml"
 NAV_FILE = "nav.xhtml"
 STYLE_FILE = "style.css"
-
-_TOC_ID = heading_slug(TOC_HEADING)
-_ENDNOTES_ID = heading_slug(ENDNOTES_HEADING)
 
 
 class EpubError(OutputError):
@@ -75,8 +71,10 @@ def _split(book: BookHtml) -> list[_Part]:
         if not isinstance(el.tag, str):
             continue  # comments / processing instructions
         if el.tag == "h2":
-            hid = el.get("id") or ""
-            if hid == _TOC_ID:
+            # By its text, not its id: a report's own "Endnotes" earlier in
+            # the book takes the plain id, and this heading gets `endnotes-2`.
+            text = re.sub(r"\s+", " ", el.text_content()).strip()
+            if text == TOC_HEADING:
                 skipping = True
                 continue
             skipping = False
@@ -84,9 +82,9 @@ def _split(book: BookHtml) -> list[_Part]:
             parts.append(
                 _Part(
                     f"part-{n:03d}.xhtml",
-                    "endnotes" if hid == _ENDNOTES_ID else "chapter",
-                    heading_id=hid,
-                    heading_text=re.sub(r"\s+", " ", el.text_content()).strip(),
+                    "endnotes" if text == ENDNOTES_HEADING else "chapter",
+                    heading_id=el.get("id") or "",
+                    heading_text=text,
                 )
             )
         if skipping:

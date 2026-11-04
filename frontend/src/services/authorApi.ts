@@ -32,6 +32,25 @@ export interface OutputItem {
   usage?: OutputUsage | null;
 }
 
+/**
+ * S-6.7.3: one place an output cites, from `GET /author/outputs/{id}/citations`,
+ * in output order. `position` is the book's endnote number. A citation no
+ * library document matched has `resolved_by`, `document_id` and `url` null.
+ */
+export interface OutputCitation {
+  position: number;
+  /** The link text in the manuscript, often a timestamp ("0:42"). */
+  label: string;
+  url: string | null;
+  seconds: number | null;
+  document_id: string | null;
+  source_type: string | null;
+  source_id: string | null;
+  resolved_by: string | null;
+  title?: string | null;
+  channel_name?: string | null;
+}
+
 /** One model call, as recorded on an output or planned by an estimate. */
 export interface ModelCallCost {
   use_case: string;
@@ -153,6 +172,10 @@ export const authorApi = {
     api
       .get<Blob>(`/author/outputs/${id}/download`, { params: format ? { format } : undefined, responseType: 'blob' })
       .then((r) => ({ blob: r.data, disposition: String(r.headers['content-disposition'] ?? '') })),
+
+  /** S-6.7.3: every place the output cites, in order. */
+  getCitations: (id: string) =>
+    api.get<OutputCitation[]>(`/author/outputs/${id}/citations`).then(r => r.data),
 
   estimateOutput: (payload: CreateOutputPayload) =>
     api.post<OutputEstimate>('/author/outputs/estimate', payload).then(r => r.data),

@@ -5,6 +5,7 @@ import { inferSourceType, libraryApi, type LibraryVideoResponse } from '../../se
 import { TabBlockedError } from '../../services/apiFiles';
 import { TAB_BLOCKED_MESSAGE } from '../citation/citedFile';
 import { formatDate, formatDuration } from '../../utils/formatters';
+import { languageMixBadge } from '../../utils/languageMix';
 import { sourceTypeLabel } from '../../utils/ingestResults';
 import { useJobStore } from '../../stores/jobStore';
 import { Badge, Button, Card, type BadgeTone } from '../primitives';
@@ -60,6 +61,7 @@ export function VideoRow({ video, channelLink = true }: Props) {
   const isVideo = sourceType === 'video';
   const hasText = video.transcript_status === 'fetched';
   const hasChannel = !!video.channel_id && !!video.channel_name;
+  const mixBadge = languageMixBadge(video.language_mix);
   const jobTitlesTooltip =
     video.job_titles && video.job_titles.length > 0
       ? video.job_titles.join('\n')
@@ -240,6 +242,16 @@ export function VideoRow({ video, channelLink = true }: Props) {
               <Badge tone="info" size="sm">
                 {video.transcript_language}
               </Badge>
+            )}
+            {/* T-1.16.1.9: the language measured from the words, which the
+                caption label above cannot see (it calls romanised Hinglish
+                `en`). Only sources that are not plain English get one. */}
+            {mixBadge && (
+              <span title={mixBadge.description} data-testid="language-mix" style={{ display: 'inline-flex' }}>
+                <Badge tone="accent" size="sm">
+                  {mixBadge.label}
+                </Badge>
+              </span>
             )}
             <span
               title={jobTitlesTooltip}

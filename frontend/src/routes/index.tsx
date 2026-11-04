@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { AppLayout } from '../layouts/AppLayout';
 import { MarketingLayout } from '../pages/marketing/MarketingLayout';
@@ -7,9 +7,6 @@ import { PricingPage } from '../pages/marketing/PricingPage';
 import { SubmitJobPage } from '../pages/SubmitJobPage';
 import { JobsListPage } from '../pages/JobsListPage';
 import { JobDetailPage } from '../pages/JobDetailPage';
-import { ReportReaderPage } from '../pages/ReportReaderPage';
-import { KnowledgeReaderPage } from '../pages/KnowledgeReaderPage';
-import { OutputReaderPage } from '../pages/OutputReaderPage';
 import { LibraryPage } from '../pages/LibraryPage';
 import { LibraryQAPage } from '../pages/LibraryQAPage';
 import { ChannelPage } from '../pages/ChannelPage';
@@ -38,9 +35,30 @@ import { SavedSearchesPage } from '../pages/SavedSearchesPage';
 import { OnboardingGate } from '../components/onboarding/OnboardingGate';
 import { useAuth } from '../contexts/AuthContext';
 import { Spinner } from '../components/primitives';
+// Direct, not through `components/reader/index`: the barrel would pull the
+// sanitiser and the parsers back into this chunk.
+import { ReaderLoading } from '../components/reader/ReaderLoading';
 
 // The library map pulls in sigma, graphology and a layout worker: its own chunk (S-8.9.2).
 const GraphPage = lazy(() => import('../pages/GraphPage'));
+
+// T-8.8.4.1: the three readers carry DOMPurify, html-react-parser and the
+// remark-gfm / hast stack, which no other page needs; each is its own chunk.
+// While a reader's chunk loads it shows the line the reader itself shows
+// while its data loads, so the two waits read as one.
+const ReportReaderPage = lazy(() =>
+  import('../pages/ReportReaderPage').then((m) => ({ default: m.ReportReaderPage })),
+);
+const KnowledgeReaderPage = lazy(() =>
+  import('../pages/KnowledgeReaderPage').then((m) => ({ default: m.KnowledgeReaderPage })),
+);
+const OutputReaderPage = lazy(() =>
+  import('../pages/OutputReaderPage').then((m) => ({ default: m.OutputReaderPage })),
+);
+
+function reader(page: ReactNode, loading: string) {
+  return <Suspense fallback={<ReaderLoading label={loading} />}>{page}</Suspense>;
+}
 
 function ProtectedRoute() {
   const { isAuthenticated } = useAuth();
@@ -98,9 +116,9 @@ export const router = createBrowserRouter([
           { path: 'submit', element: <SubmitJobPage /> },
           { path: 'jobs', element: <JobsListPage /> },
           { path: 'jobs/:jobId', element: <JobDetailPage /> },
-          { path: 'reports/:jobId', element: <ReportReaderPage /> },
-          { path: 'knowledge/:videoId', element: <KnowledgeReaderPage /> },
-          { path: 'author/outputs/:outputId', element: <OutputReaderPage /> },
+          { path: 'reports/:jobId', element: reader(<ReportReaderPage />, 'Opening the report…') },
+          { path: 'knowledge/:videoId', element: reader(<KnowledgeReaderPage />, 'Opening the knowledge report…') },
+          { path: 'author/outputs/:outputId', element: reader(<OutputReaderPage />, 'Opening the manuscript…') },
           { path: 'library', element: <LibraryPage /> },
           { path: 'library/qa', element: <LibraryQAPage /> },
           {

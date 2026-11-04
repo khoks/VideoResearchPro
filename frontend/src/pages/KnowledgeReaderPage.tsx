@@ -10,17 +10,15 @@
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useKnowledge } from '../hooks/useKnowledge';
-import { Button, EmptyState, Spinner } from '../components/primitives';
+import { Button, EmptyState } from '../components/primitives';
+import { ReaderLoading } from '../components/reader/ReaderLoading';
 import { ReaderShell, StatTiles, describeSource, formatPublished, parseMarkdownDoc } from '../components/reader';
 import { citedFileFailed } from '../components/citation/citedFile';
 import { openApiFile, openableApiFile } from '../services/apiFiles';
-import { useColors } from '../hooks/useTheme';
-import { fonts, fontSize, space } from '../theme';
 
 export function KnowledgeReaderPage() {
   const { videoId } = useParams<{ videoId: string }>();
   const navigate = useNavigate();
-  const c = useColors();
   const { data, isLoading, error } = useKnowledge(videoId ?? null);
 
   const parsed = useMemo(
@@ -46,9 +44,7 @@ export function KnowledgeReaderPage() {
 
   if (isLoading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: space['3'], color: c.textSecondary }}>
-        <Spinner /> <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm }}>Opening the knowledge report…</span>
-      </div>
+      <ReaderLoading label="Opening the knowledge report…" />
     );
   }
 

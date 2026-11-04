@@ -386,7 +386,7 @@ The native reader's payload (S-8.8.1). Splits the stored report back into its pa
 `html` is **not** sanitised server-side — it is the LLM-written markup with the template's header, statistics grid and stylesheet removed; the client runs it through DOMPurify before parsing. `statistics` is `null` when the grid is absent or unreadable; a report in an unrecognised shape comes back as the whole `<body>`. Auth: bearer header **only** — no `?token=` fallback, so no token ever appears in a URL. 404 when the job is not the caller's, has no report, or the file is missing.
 
 ### `GET /api/v1/jobs/{job_id}/report.md`
-The report's Markdown source (S-6.1.2): the stored HTML converted deterministically (`report_service.report_markdown`), cached beside it at `<report_path>.md`. `text/markdown; charset=utf-8` with `Content-Disposition: inline; filename="report-<job_id>.md"`. Citation links keep their `&t=` timestamps; the statistics grid and per-channel breakdown are Markdown tables. 404 `Job not found` (missing or another tenant's), `Report not generated yet`, `Report file not found`. **Header-bearer auth only** — a `?token=` does not authenticate it (the S-8.8.1 posture for new report routes); browsers download it through a fetch and a blob. Backend: `routers/reports.py`.
+The report's Markdown source (S-6.1.2): the stored HTML converted deterministically (`report_service.report_markdown`), cached beside it at `<report_path>.md`. `text/markdown; charset=utf-8` with `Content-Disposition: inline; filename="report-<job_id>.md"`. Citation links keep their `&t=` timestamps; the statistics grid and per-channel breakdown are Markdown tables. 404 `Job not found` (missing or another tenant's), `Report not generated yet`, `Report file not found`. **Header-bearer auth only** — a `?token=` does not authenticate it (the S-8.8.1 posture for new report routes); browsers download it through a fetch and a blob. The reading room's **Download Markdown** saves it as `<title-slug>.md`. Backend: `routers/reports.py`.
 
 ### `POST /api/v1/jobs/{job_id}/qa/clarify`
 Pre-answer clarification step. Asks the LLM to produce an interpretation and three follow-up clarifying questions. Used by the frontend before running the full Q&A.
@@ -682,8 +682,7 @@ What the channel says, over **the documents of it the caller can see** (S-8.7.2,
 
 `notes` explains, per panel, why it is empty or partial. Topics and concepts are merged case-insensitively and counted once per document. Keywords drop English function words and spoken filler (not scikit-learn's Glasgow stop list, which removes content words like "interest"); the newest 500 documents and 40,000 characters each are read. `qa` counts the caller's own job and library exchanges whose citations include a document of this channel that the caller can see.
 
-### `GET /api/v1/channels/{channel_id}/videos`
-The caller's visible documents from the channel, newest first (`limit`, `offset`). Returns `list[VideoResponse]`. The channel page lists documents through `GET /library/videos?channel_id=` instead, because those rows carry `job_count` / `job_titles`; both routes scope to the same visible set.
+A channel's documents are listed by `GET /library/videos?channel_id=`, whose rows carry `job_count` / `job_titles` and take the library's search, filters and paging. `GET /channels/{channel_id}/videos`, which listed the same visible set with none of that and had no caller, was removed on 2026-11-04 (it now 404s).
 
 ---
 
@@ -852,8 +851,7 @@ Put a job on the shelf. Idempotent: 200 with the (unchanged) `ShelfResponse` whe
 ### `DELETE /api/v1/shelves/{shelf_id}/jobs/{job_id}`
 204; 404 when the job is not on the shelf. Pro+.
 
-### `GET /api/v1/jobs/{job_id}/shelves`
-Shelves the job sits on, A→Z. Any tier; the job must be the caller's.
+A job's shelves are read from `GET /shelves`: every `ShelfResponse` carries its `job_ids`, so a page of job cards costs one request (`useJobShelves`). `GET /jobs/{job_id}/shelves`, which had no caller, was removed on 2026-11-04 (it now 404s).
 
 Deleting a job removes it from every shelf (an ORM cascade on `Job`, because SQLite does not enforce `ON DELETE CASCADE` without a pragma this app never sets). Still to come: `POST /shelves/{id}/qa` (S-8.1.4).
 
@@ -1035,7 +1033,7 @@ One output; 404 for another user's (existence-leak posture).
 The output as a file (S-6.7.2). `format` (optional, `[a-z0-9]{1,8}`) picks one of the row's `formats`; without it the first is served, which is the text (`md` for a book) when there is one. Text comes from `content_text`; binary artifacts (`pdf`, `epub`, `pptx`, `zip`, …) from `<OUTPUTS_DIR>/<user_id>/<output_id>/artifact.<format>`, always derived from the row's own ids. Media type by format; `Content-Disposition: attachment; filename="<ascii>"; filename*=UTF-8''<title-slug>.<format>`. 404 for another user's output, an output with no content, or a format it does not have (the detail lists what is available); 422 for a malformed `format`. **Header-bearer only** (D-079): a `?token=` does not authenticate it.
 
 ### `GET /api/v1/author/outputs/{output_id}/citations`
-Every source the output cites, in output order (S-6.7.3): `[{ "position": 1, "label": "0:00", "url": "https://www.youtube.com/watch?v=…&t=0", "seconds": 0, "document_id": "…", "source_type": "video", "source_id": "…", "resolved_by": "title", "title": "…", "channel_name": "…" }]`. `resolved_by` is `video_id`, `url`, `title` or `channel`, or null when no library document visible to the caller matched; an unmatched bare `&t=` anchor then has no `url`. 404 for another user's output. `OutputItem.citation_count` carries the count on every output response.
+Every source the output cites, in output order (S-6.7.3): `[{ "position": 1, "label": "0:00", "url": "https://www.youtube.com/watch?v=…&t=0", "seconds": 0, "document_id": "…", "source_type": "video", "source_id": "…", "resolved_by": "title", "title": "…", "channel_name": "…" }]`. `resolved_by` is `video_id`, `url`, `title` or `channel`, or null when no library document visible to the caller matched; an unmatched bare `&t=` anchor then has no `url`. 404 for another user's output. `OutputItem.citation_count` carries the count on every output response. The output reader shows it as its **Sources** list, and asks only when `citation_count` is above 0.
 
 ### `GET /api/v1/author/outputs/{output_id}/content`
 The generated text as `text/markdown` for books, `text/plain` otherwise. 404 when the row has no content yet. Header-auth only, so a browser download goes through a fetch and a blob, not an `<a href>`.

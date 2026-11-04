@@ -43,6 +43,17 @@ export function useAuthorOutputContent(id: string | null) {
   });
 }
 
+/** S-6.7.3: the places a finished output cites, for the reader's Sources list.
+ * Pass null to skip the request (an output with no citations, or not ready). */
+export function useAuthorOutputCitations(id: string | null) {
+  return useQuery({
+    queryKey: ['author', 'citations', id],
+    queryFn: () => authorApi.getCitations(id!),
+    enabled: !!id,
+    staleTime: 5 * 60_000,
+  });
+}
+
 /** S-6.1.3: the cost of generating with these settings, before it runs.
  * Keyed on what changes the price (runs and cohesion level), not the title. */
 export function useOutputEstimate(payload: CreateOutputPayload, enabled: boolean) {

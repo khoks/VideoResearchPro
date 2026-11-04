@@ -3,16 +3,21 @@
  * (S-8.8.3). Books are Markdown manuscripts; they get the same outline,
  * measure, drop cap, progress and print as reports. Replaces the Author
  * page's own viewer modal (T-6.1.1.3's "View opens the shared reader").
+ * Under the text, the Sources list reads `GET /author/outputs/{id}/citations`
+ * (S-6.7.3): every cited source with its timestamp links.
+ *
+ * Lazy-loaded by the router (T-8.8.4.1).
  */
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAuthorOutput, useAuthorOutputContent } from '../hooks/useAuthor';
+import { useAuthorOutput, useAuthorOutputCitations, useAuthorOutputContent } from '../hooks/useAuthor';
 import { useOutputsProgress } from '../hooks/useOutputProgress';
 import { authorApi } from '../services/authorApi';
 import { ProgressBar } from '../components/common/ProgressBar';
-import { Button, EmptyState, Spinner } from '../components/primitives';
+import { OutputSources } from '../components/author/OutputSources';
+import { Button, EmptyState } from '../components/primitives';
+import { ReaderLoading } from '../components/reader/ReaderLoading';
 import { ReaderShell, StatTiles, formatPublished, parseMarkdownDoc } from '../components/reader';
-import { useColors } from '../hooks/useTheme';
 import { useJobStore } from '../stores/jobStore';
 import { downloadUrl } from '../utils/download';
 import {
@@ -26,7 +31,7 @@ import {
   outputProgressLine,
   outputStatusLabel,
 } from '../utils/authorOutputs';
-import { fonts, fontSize, space } from '../theme';
+import { space } from '../theme';
 
 function httpStatus(err: unknown): number | undefined {
   return (err as { response?: { status?: number } } | null)?.response?.status;
@@ -39,7 +44,6 @@ function wordCount(text: string): number {
 export function OutputReaderPage() {
   const { outputId } = useParams<{ outputId: string }>();
   const navigate = useNavigate();
-  const c = useColors();
   const pushToast = useJobStore((s) => s.pushToast);
   const output = useAuthorOutput(outputId ?? null);
   const readable = !!output.data && isReadableOutput(output.data);
@@ -48,6 +52,9 @@ export function OutputReaderPage() {
   const live = !!output.data && isActiveOutput(output.data.status) && !isOrphanedPending(output.data);
   useOutputsProgress(live && outputId ? [outputId] : []);
   const content = useAuthorOutputContent(readable ? (outputId ?? null) : null);
+  // Only an output with recorded citations asks for them.
+  const cited = readable && (output.data?.citation_count ?? 0) > 0;
+  const citations = useAuthorOutputCitations(cited ? (outputId ?? null) : null);
 
   const parsed = useMemo(
     () => (content.data ? parseMarkdownDoc(content.data, { title: output.data?.title }) : null),
@@ -70,11 +77,7 @@ export function OutputReaderPage() {
   );
 
   if (output.isLoading || content.isLoading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: space['3'], color: c.textSecondary }}>
-        <Spinner /> <span style={{ fontFamily: fonts.ui, fontSize: fontSize.sm }}>Opening the manuscript…</span>
-      </div>
-    );
+    return <ReaderLoading label="Opening the manuscript…" />;
   }
 
   const err = output.error ?? content.error;
@@ -178,6 +181,7 @@ export function OutputReaderPage() {
           ]}
         />
       }
+      after={cited ? <OutputSources citations={citations.data} kind={item.kind} isError={citations.isError} /> : null}
     >
       {parsed.content}
     </ReaderShell>

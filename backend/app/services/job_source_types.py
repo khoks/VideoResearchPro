@@ -12,6 +12,7 @@ This module is the one place that knows:
 - which of them need an operator credential, and the ``/health``
   capability that reports it, so the submit form offers only what this
   install can run and the API refuses the rest with a 422;
+- what a podcast run needs beyond search (``transcription_gap``);
 - how the choice is stored: NULL for the default (YouTube only), so the
   column means exactly one thing, as with ``output_length``.
 
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 from typing import Iterable
 
 from app.config import settings
@@ -72,6 +74,32 @@ def missing_setting(source_type: str) -> str | None:
     elif source_type == "tweet":
         if not settings.TWITTER_BEARER_TOKEN:
             return "TWITTER_BEARER_TOKEN"
+    return None
+
+
+def transcription_gap(source_types: Iterable[str]) -> str | None:
+    """Why this install would lose podcast episodes after approval, or None.
+
+    Searching podcasts needs no credential, so ``missing_setting`` is right to
+    say nothing and the run is accepted. Reading them can need more: an episode
+    with no published transcript goes to Whisper at extraction, which takes an
+    OpenAI key and a non-zero ``WHISPER_MAX_PER_JOB``, and one past Whisper's
+    upload cap has to be split, which takes ffmpeg and ffprobe. Episodes are
+    lost one by one only after approval, so a template says so up front. The
+    message is reader-facing.
+    """
+    if "podcast_episode" not in source_types:
+        return None
+    if not settings.OPENAI_API_KEY or settings.WHISPER_MAX_PER_JOB <= 0:
+        return (
+            "Podcasts without a published transcript need Whisper, which this "
+            "install has not set up, so only episodes that publish one can be read."
+        )
+    if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+        return (
+            "Long podcasts without a published transcript need ffmpeg to be split "
+            "for Whisper, which this install does not have, so they will be skipped."
+        )
     return None
 
 

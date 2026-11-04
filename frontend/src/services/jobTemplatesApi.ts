@@ -15,6 +15,8 @@ export interface TemplateParameters {
   visual_analysis: boolean;
   /** S-1.5.13: null is the default (YouTube only). */
   source_types: string[] | null;
+  /** S-8.6.3: days, resolved when a run ranks; null is no preference. */
+  published_after_days: number | null;
   channel_list: string[] | null;
   videos_per_channel: number | null;
 }

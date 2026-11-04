@@ -22,6 +22,7 @@ import {
   parseChannelList,
   parseDraft,
   isDefaultSourceTypes,
+  MAX_PUBLISHED_AFTER_DAYS,
   sourceTypeLabel,
   sourceTypeShares,
   templateNeedsChannels,
@@ -602,6 +603,29 @@ export function SubmitJobPage() {
                   )}
                 </FormField>
               </div>
+              {/* S-8.6.3: a ranking preference, never a filter. Only YouTube
+                  results are ranked, so it goes when YouTube does. */}
+              {form.sourceTypes.includes('video') && (
+                <FormField
+                  label="Prefer sources from the last (days)"
+                  optional
+                  helperText={`A preference, not a filter: an older source is still picked when nothing newer is as good. Counted from the day the run starts, so a template stays current.${
+                    isDefaultSourceTypes(form.sourceTypes) ? '' : ' Steers the YouTube results only.'
+                  }`}
+                >
+                  {(id) => (
+                    <Input
+                      id={id}
+                      type="number"
+                      value={form.publishedAfterDays}
+                      onChange={(e) => update('publishedAfterDays', e.target.value)}
+                      placeholder="Any time"
+                      min={1}
+                      max={MAX_PUBLISHED_AFTER_DAYS}
+                    />
+                  )}
+                </FormField>
+              )}
               <FormField label="Channel-type filters" optional>
                 {() => (
                   <div

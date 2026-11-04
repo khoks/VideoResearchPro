@@ -364,6 +364,46 @@ def test_a_job_charges_podcast_audio_to_its_owner_as_reading_a_source(no_caption
     assert tenants_with_usage(db) == {owner.id}
 
 
+def test_a_job_reads_a_long_episode_whole_and_charges_every_chunk(no_captions, db, whisper_api, monkeypatch, tmp_path):
+    """Past Whisper's upload cap an episode used to be lost after approval, and
+    a run of them ended failed with "No transcripts could be fetched". At the
+    extraction task: all of it is read, and each chunk is charged to the owner."""
+    from app.sources.podcast import connector
+
+    owner = _owner(db)
+    feed_url = "https://example.com/feed.xml"
+    entry = {"id": "ep-1", "title": "Tariffs", "enclosures": [{"href": "https://example.com/ep.mp3"}]}
+    monkeypatch.setattr(connector.settings, "OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(connector.podcast_client, "get_client", lambda: SimpleNamespace(
+        fetch_feed=lambda url: {"feed": {}, "entries": [entry] if url == feed_url else []},
+        fetch_audio=lambda url: b"far too many mp3 bytes",
+    ))
+    _split_into(monkeypatch, tmp_path, 3)
+    whisper_api.seconds = 300.0
+    whisper_api.segment_start = 100.0
+    doc = Document(source_type="podcast_episode", source_id="podcast:ep-1", title="Tariffs",
+                   url="https://example.com/ep", channel_id=feed_url)
+    job = Job(job_type="topic", topic="tariffs", num_videos=1, status="awaiting_approval", tenant_id=owner.id)
+    db.add_all([doc, job])
+    db.flush()
+    db.add(JobVideo(job_id=job.id, document_id=doc.document_id, approved=True))
+    db.commit()
+
+    _run_resume(job)
+
+    db.expire_all()
+    assert db.get(Job, job.id).status == "completed"
+    assert db.get(Document, doc.document_id).transcript_source == "podcast_whisper"
+    assert whisper_api.sent == 3, "one request per chunk, never the whole file"
+    assert usage_rows(db, owner.id) == {WHISPER: 900}
+    stored = json.loads(db.get(TranscriptCache, doc.document_id).segments_json)
+    assert [(s["text"], s["start"]) for s in stored] == [
+        ("spoken words 1", 100.0),
+        ("spoken words 2", 385.0),
+        ("spoken words 3", 670.0),
+    ]
+
+
 def _run_resume(job, report=None) -> None:
     with (
         patch.object(job_tasks, "chroma_service") as chroma,

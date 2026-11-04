@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+from datetime import date, datetime, timedelta, timezone
 
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
@@ -115,6 +116,42 @@ _LANGUAGE_GUIDANCE = (
 )
 
 
+def _today() -> date:
+    return datetime.now(timezone.utc).date()
+
+
+def _publish_window_guidance(days: int) -> str:
+    """S-8.6.3: the user's relative publish window, for the TEMPORAL PROFILE.
+
+    The date is worked out here, when the run ranks, so a template saved
+    months ago and a job that waited in the queue both mean "the last N days"
+    from today. A preference among on-topic candidates, for the reason D-059
+    gave for language and D-072 for time: nothing is dropped from the pool,
+    and the quotas still draw on all of it.
+
+    Where it meets the planner's `temporal_profile`, the window leads. The
+    window is what the user asked for and the profile is what the planner
+    inferred, the same order D-059 put "include this creator" and "prefer
+    substantive" in. So a topic the planner calls `minimal` still favours the
+    window, while a foundational older video can win if nothing inside it is
+    as good. A `target_era` does not conflict: it is about the period a video
+    DISCUSSES and the window is about when it was POSTED (D-072's two dates).
+    """
+    start = (_today() - timedelta(days=days)).isoformat()
+    span = "the last day" if days == 1 else f"the last {days} days"
+    return (
+        f"PUBLISH WINDOW (the user set this for this run): prefer videos published "
+        f"on or after {start}, {span}. Where this disagrees with the recency "
+        "decision above, the window leads, because the user chose it: among "
+        "on-topic candidates of comparable substance, one inside the window beats "
+        "one outside it. It concerns when a video was POSTED, not the period it "
+        "discusses, so any target era still applies. When the window holds too few "
+        "good candidates, fill the selection with the best videos outside it "
+        "rather than with weak ones inside it. A video with no known publish date "
+        "counts as neither inside nor outside."
+    )
+
+
 def _normalise_temporal_profile(raw: object) -> dict:
     """Coerce the planner's `temporal_profile` into a known shape.
 
@@ -134,8 +171,12 @@ def _normalise_temporal_profile(raw: object) -> dict:
     return {"recency_weight": weight, "target_era": era, "rationale": rationale}
 
 
-def _temporal_guidance(profile: dict | None) -> str:
-    """The TEMPORAL PROFILE block for the ranking prompt."""
+def _temporal_guidance(profile: dict | None, published_after_days: int | None = None) -> str:
+    """The TEMPORAL PROFILE block for the ranking prompt.
+
+    With no publish window the block, and so the whole prompt, is exactly
+    what it was before S-8.6.3 (`tests/fixtures/search_rank/` pins it).
+    """
     prof = _normalise_temporal_profile(profile)
     lines = ["TEMPORAL PROFILE (decided once for this topic):", _RECENCY_GUIDANCE[prof["recency_weight"]]]
     if prof["target_era"]:
@@ -147,6 +188,8 @@ def _temporal_guidance(profile: dict | None) -> str:
         )
     if prof["rationale"]:
         lines.append(f"Planner's rationale: {prof['rationale']}")
+    if published_after_days:
+        lines.append(_publish_window_guidance(published_after_days))
     lines.append(
         "These are ranking preferences, never filters: a candidate is never "
         "excluded for its publish date or era alone."
@@ -830,7 +873,16 @@ def rank_and_curate(state: SearchAgentState) -> dict:
 
     # R3 / T-1.17.2.3: the planner's per-topic time decision, plus the
     # discussed era of every candidate the library has already dated.
-    temporal_guidance = _temporal_guidance(state.get("temporal_profile"))
+    # S-8.6.3: the user's publish window joins them, resolved once here so
+    # every round of a tournament is told the same date.
+    published_after_days = state.get("published_after_days")
+    temporal_guidance = _temporal_guidance(state.get("temporal_profile"), published_after_days)
+    if published_after_days:
+        logger.info(
+            "rank_and_curate: publish window %d days over planner recency=%s",
+            published_after_days,
+            _normalise_temporal_profile(state.get("temporal_profile"))["recency_weight"],
+        )
     known_eras = _lookup_known_eras([v.get("video_id") for v in videos if v.get("video_id")])
     if known_eras:
         for v in videos:
@@ -923,6 +975,7 @@ def run_search_agent(
     preferred_channels: list[str] | None = None,
     progress_callback=None,
     candidates_out: list[dict] | None = None,
+    published_after_days: int | None = None,
 ) -> tuple[list[dict], list[str], list[str]]:
     """Run the search agent.
 
@@ -940,6 +993,10 @@ def run_search_agent(
     can surface sub-progress instead of a static "Searching..." for the
     whole multi-minute phase. Callback errors are swallowed — progress
     reporting must never sink the search itself.
+
+    ``published_after_days`` (S-8.6.3) is the user's relative publish window.
+    It reaches the ranking prompt only, as a preference: planning, discovery
+    and the pool are the same with or without it.
     """
     graph = build_search_graph()
     initial_state = {
@@ -958,6 +1015,7 @@ def run_search_agent(
         "curated_videos": [],
         "search_queries_used": [],
         "temporal_profile": {},
+        "published_after_days": published_after_days,
     }
 
     def _notify(pct: int, message: str) -> None:

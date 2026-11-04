@@ -1,8 +1,9 @@
 """Author Studio prompts (I-6): the slide deck outline (S-6.3.1).
 
-One ``author_deck_outline`` call turns one or more research reports into a
-deck plan. The reports reach the model with every citation replaced by a
-source marker (``[S12]``), and the model cites slides by those numbers only;
+One ``author_deck_outline`` call turns one or more research reports, or
+knowledge reports about single documents (S-6.3.2), into a deck plan. The
+reports reach the model with every citation replaced by a source marker
+(``[S12]``), and the model cites slides by those numbers only;
 the renderer resolves them back to titles, timestamps and links. A slide that
 cites nothing it was given is dropped and the deck says so, so a slide cannot
 carry a claim with no source behind it.
@@ -60,9 +61,35 @@ SOURCES — NON-NEGOTIABLE:
 )
 
 
-def deck_user_prompt(title: str, reports: list[tuple[str, str]]) -> str:
-    """``reports``: ``(run title, report text with [S#] markers)``."""
+# S-6.3.2: a knowledge report is about ONE source as a whole and carries no
+# timestamped citations, so its paragraphs all carry that source's marker.
+# Said once, only when a knowledge report is in the prompt, so a deck made
+# from runs alone sends exactly the prompt S-6.3.1 was trialled on. That is
+# also why it, not DECK_SYSTEM, corrects what DECK_SYSTEM says about video
+# transcripts and quotes: a knowledge report is written by a model about any
+# source type, and nothing checks a quote slide against the source.
+KNOWLEDGE_REPORT_NOTE = (
+    "A KNOWLEDGE REPORT below describes one source as a whole, in report "
+    "voice. Its marker cites that source, not a moment in it; cite it for "
+    "points the knowledge report makes. Its source may not be a video, so "
+    "describe it as its header does and do not call it \"the video\" or "
+    "\"the speaker\" unless it is one. A knowledge report's own sentences are "
+    "not the source's words: a quote slide may use only words the report "
+    "itself gives as a quotation, attributed as the report attributes them."
+)
+
+
+def deck_user_prompt(title: str, reports: list[tuple[str, ...]]) -> str:
+    """``reports``: ``(run title, report text with [S#] markers)`` for a run,
+    or ``(source title, knowledge report with [S#] markers, what the source
+    is)`` for a knowledge report (S-6.3.2), e.g. ``"a YouTube video,
+    published 2025-03-02"``."""
     blocks = [f'DECK TITLE (the user\'s): "{title}"', ""]
-    for i, (run_title, text) in enumerate(reports, start=1):
-        blocks += [f"===== REPORT {i}: {run_title} =====", text.strip(), ""]
+    if any(len(r) > 2 and r[2] for r in reports):
+        blocks += [KNOWLEDGE_REPORT_NOTE, ""]
+    for i, report in enumerate(reports, start=1):
+        name, text = report[0], report[1]
+        about = report[2] if len(report) > 2 else ""
+        head = f"===== KNOWLEDGE REPORT {i}: {name} ({about}) =====" if about else f"===== REPORT {i}: {name} ====="
+        blocks += [head, text.strip(), ""]
     return "\n".join(blocks).strip()

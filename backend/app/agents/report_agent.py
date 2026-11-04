@@ -41,6 +41,7 @@ from app.config import settings
 from app.services import attribution_guard, code_mixing_service, language_service, quote_fidelity
 from app.services.visual_service import strip_annotations
 from app.services.llm_service import get_llm_for, response_text
+from app.services.llm_service import stopped_for_length as _stopped_for_length
 from app.services.llm_routing import (
     context_window_for,
     max_output_for,
@@ -306,19 +307,6 @@ class MapOutputError(RuntimeError):
     halves; before S-1.14.19 it came back as ``{"raw": text}``, counted as a
     success, and reached the composer as one unattributed half-written fact.
     """
-
-
-# finish_reason / stop_reason values meaning "ran out of output budget":
-# OpenAI `length`, Anthropic `max_tokens`, Google `MAX_TOKENS`.
-_LENGTH_STOPS = frozenset({"length", "max_tokens", "max_output_tokens"})
-
-
-def _stopped_for_length(response: object) -> bool:
-    meta = getattr(response, "response_metadata", None)
-    if not isinstance(meta, dict):
-        return False
-    reason = meta.get("finish_reason") or meta.get("stop_reason") or ""
-    return str(reason).strip().lower() in _LENGTH_STOPS
 
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")

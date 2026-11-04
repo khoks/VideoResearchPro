@@ -15,14 +15,16 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db
 from app.models.document import Document
 from app.schemas.knowledge import KnowledgeExtractResponse
 from app.services import document_text_service, visibility_service
+from app.services import output_length as output_length_policy
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,25 @@ def _load_merged_from_video(video: Document) -> dict[str, list[str]]:
     }
 
 
+# S-1.15.3: the depth the stored report was written at, beside the four
+# lists in `extracted_knowledge_json` (readers pick the keys they want, as
+# with `_processing`). Absent means no preference was expressed.
+_OUTPUT_LENGTH_KEY = "_output_length"
+
+
+def _stored_output_length(video: Document) -> str | None:
+    if not video.extracted_knowledge_json:
+        return None
+    try:
+        data = json.loads(video.extracted_knowledge_json)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    value = data.get(_OUTPUT_LENGTH_KEY)
+    return output_length_policy.explicit_preference(value if isinstance(value, str) else None)
+
+
 def _build_response(video: Document) -> KnowledgeExtractResponse:
     merged = _load_merged_from_video(video)
     return KnowledgeExtractResponse(
@@ -70,6 +91,7 @@ def _build_response(video: Document) -> KnowledgeExtractResponse:
         channel_name=video.channel_name or None,
         url=video.source_url or video.url or None,
         published_at=video.published_at,
+        output_length=_stored_output_length(video),
     )
 
 
@@ -80,12 +102,20 @@ def _build_response(video: Document) -> KnowledgeExtractResponse:
 def extract_knowledge(
     video_id: str,
     force: bool = False,
+    # S-1.15.3: the reader's depth for this report, D-064's values. A query
+    # parameter beside `force` (the POST has no body). Omitted or 'auto'
+    # leaves the synthesis budget and prompt exactly as before.
+    output_length: Literal["auto", "brief", "standard", "deep"] | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> KnowledgeExtractResponse:
     """Run the knowledge agent on this document and persist the artifact.
 
+    `?output_length=brief|standard|deep` scales the report's derived budget
+    and gives the writer that depth's brief (D-064); extraction is unchanged.
     Returns 409 if the document already has an extraction unless `?force=true`.
+    Returns 502 if no report came back: the stored artifact stands and the
+    caller's quota is not spent.
     Returns 404 if the document doesn't exist OR this tenant cannot see it
     (D-063 — indistinguishable on purpose). Returns 422 if neither the
     transcript cache nor the document's chunks hold any text (nothing to
@@ -134,10 +164,29 @@ def extract_knowledge(
     from app.agents.knowledge_agent import run_knowledge_extract_agent
     from app.services import llm_service
 
+    # 'auto' is normalised away here, as `job_service` does for jobs, so the
+    # agent and the stored artifact see one value for "no preference".
+    length = output_length_policy.explicit_preference(output_length)
+
     # T-5.6.4: BYOK context covers both knowledge_extract_batch (map) and
     # knowledge_synthesize_report (reduce) call sites in the agent.
     with llm_service.byok_context(current_user.id, db):
-        result = run_knowledge_extract_agent(video, transcript_text)
+        result = run_knowledge_extract_agent(video, transcript_text, output_length=length)
+
+    # The agent reports a failed synthesis as an empty report, and a document
+    # with text always has something to write about. The artifact is shared by
+    # every tenant who can see the document (D-063), so an empty result must
+    # never replace it: without this, a Regenerate that failed cleared the
+    # report for all of them and came back 200.
+    if not (result.get("knowledge_report_md") or "").strip():
+        logger.warning(
+            "Knowledge synthesis returned no report for document %s; artifact left as it was",
+            video.document_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The report could not be written. Nothing was changed or charged. Try again.",
+        )
 
     # T-5.5.5: track consumption AFTER successful extraction.
     quota_metering_service.record_usage(
@@ -151,6 +200,8 @@ def extract_knowledge(
     # only want the four lists are unaffected.
     if result.get("_processing"):
         merged["_processing"] = result["_processing"]
+    if length:
+        merged[_OUTPUT_LENGTH_KEY] = length
     video.extracted_knowledge_json = json.dumps(merged, ensure_ascii=False)
     video.knowledge_report_md = result.get("knowledge_report_md", "") or ""
     video.knowledge_extracted_at = datetime.now(timezone.utc)

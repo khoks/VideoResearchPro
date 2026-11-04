@@ -221,6 +221,21 @@ def _anthropic_reasoning_kwargs(reasoning: ReasoningLevel, model: str = "") -> d
     return {"thinking": {"type": "enabled", "budget_tokens": budget}}
 
 
+def thinking_reserve_tokens(cfg: UseCaseConfig) -> int:
+    """How much of ``max_tokens`` a config's thinking may spend before any text.
+
+    Every provider counts thinking inside ``max_tokens``. A Claude model on the
+    enabled+budget_tokens shape is refused outright when ``max_tokens`` does
+    not exceed the budget; on the others a low cap comes back empty (T-4.9.5,
+    PR #196). Only the Anthropic table states a figure, so it stands in for
+    adaptive thinking and for OpenAI, which publish none. Local servers are
+    sent no reasoning parameter at all.
+    """
+    if cfg.reasoning == "off" or cfg.provider == "local":
+        return 0
+    return _ANTHROPIC_THINKING_BUDGET.get(cfg.reasoning, _ANTHROPIC_THINKING_BUDGET["medium"])
+
+
 _GOOGLE_THINKING_LEVEL = {
     "minimal": "low",
     "low": "low",
@@ -708,6 +723,20 @@ def response_text(response) -> str:
                     parts.append(text)
         return "".join(parts)
     return "" if content is None else str(content)
+
+
+# finish_reason / stop_reason values meaning "ran out of output budget":
+# OpenAI `length`, Anthropic `max_tokens`, Google `MAX_TOKENS`.
+_LENGTH_STOPS = frozenset({"length", "max_tokens", "max_output_tokens"})
+
+
+def stopped_for_length(response: object) -> bool:
+    """True when a completion was cut off at its ``max_tokens``."""
+    meta = getattr(response, "response_metadata", None)
+    if not isinstance(meta, dict):
+        return False
+    reason = meta.get("finish_reason") or meta.get("stop_reason") or ""
+    return str(reason).strip().lower() in _LENGTH_STOPS
 
 
 # ---------------------------------------------------------------------------

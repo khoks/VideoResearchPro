@@ -34,9 +34,15 @@ from app.agents.prompts.knowledge_prompts import (
 )
 from app.agents.state import KnowledgeAgentState
 from app.config import settings
+from app.services import output_length as output_length_policy
 from app.services import temporal_service
-from app.services.llm_service import get_llm_for, response_text
-from app.services.llm_routing import max_output_for, resolve_config
+from app.services.llm_service import (
+    get_llm_for,
+    response_text,
+    stopped_for_length,
+    thinking_reserve_tokens,
+)
+from app.services.llm_routing import UseCaseConfig, max_output_for, resolve_config
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +60,9 @@ TRANSCRIPT_SANITY_CEILING_TOKENS = 500_000
 # the transcript excerpt only anchors voice/terminology.
 SYNTHESIS_EXCERPT_MAX_TOKENS = 20_000
 SYNTHESIS_EXTRACTION_JSON_MAX_TOKENS = 30_000
+
+# S-1.14.8: the synthesis budget tracks the extraction, from this floor up.
+SYNTHESIS_MIN_COMPLETION_TOKENS = 8_000
 
 # S-1.12.7: registry typ_out for knowledge_extract_batch is 2000 tokens of
 # strict JSON; 1.5x headroom so a dense batch can't run away unbounded.
@@ -307,6 +316,25 @@ def merge_extractions(state: KnowledgeAgentState) -> dict:
     return {"merged_extraction": deduped}
 
 
+def _synthesis_budget(extraction_tokens: int, length_scale: float, cfg: UseCaseConfig) -> int:
+    """The completion budget: S-1.14.8's size-based figure, scaled by D-064.
+
+    A preference that shrinks the figure must not squeeze out the model's
+    thinking, which is counted inside `max_tokens`: scaled alone, brief asks
+    for 3,600 on a short source, under the 4,096 a Claude model on legacy
+    thinking is budgeted at medium, and that call is refused. So a shrunken
+    budget keeps the thinking reserve on top of the floor's own scaled share,
+    and never exceeds what an unset request gets. With reasoning on and a short
+    source that leaves the ceiling near the floor, and the brief does the
+    shortening: D-062 measured that a model writes to the brief it is given
+    far more than to the ceiling. Unset, standard and deep are not lifted.
+    """
+    base = max(extraction_tokens, SYNTHESIS_MIN_COMPLETION_TOKENS)
+    report_share = int(SYNTHESIS_MIN_COMPLETION_TOKENS * length_scale)
+    budget = max(int(base * length_scale), min(base, report_share + thinking_reserve_tokens(cfg)))
+    return min(budget, max_output_for(cfg.model))
+
+
 def synthesize_report(state: KnowledgeAgentState) -> dict:
     """Compose the final Markdown knowledge document (S-1.12.8 contract).
 
@@ -351,19 +379,28 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
     # A flat 8,000 capped a 4-hour video's report at the same length as a
     # 10-minute one; D-055 scored the default 4/10 on signal density against a
     # max-effort control that ran ~2.5x longer on the same transcript.
+    #
+    # S-1.15.3 / D-064: the reader's depth preference multiplies that derived
+    # budget and adds its brief; it never replaces the budget with a cap. No
+    # preference is a multiplier of exactly 1.0 and no brief, so the call is
+    # the one S-1.14.8 shipped (`output_length.override_scale` says why a
+    # single document is not bracketed).
+    length_pref = state.get("output_length")
+    length_scale = output_length_policy.override_scale(length_pref)
+    length_guidance = output_length_policy.override_guidance(length_pref)
     _synth_cfg = resolve_config("knowledge_synthesize_report")
-    synth_max_tokens = min(
-        max(int(_count_tokens(merged_json) * 1.0), 8_000),
-        max_output_for(_synth_cfg.model),
-    )
+    synth_max_tokens = _synthesis_budget(_count_tokens(merged_json), length_scale, _synth_cfg)
     llm = get_llm_for(
         "knowledge_synthesize_report",
         temperature=0.2,
         max_tokens=synth_max_tokens,
     )
     logger.info(
-        "synthesize_report: extraction %d tokens -> completion budget %d (model %s)",
-        _count_tokens(merged_json), synth_max_tokens, _synth_cfg.model,
+        "synthesize_report: extraction %d tokens -> completion budget %d "
+        "(depth %s, scale %.2f, model %s)",
+        _count_tokens(merged_json), synth_max_tokens,
+        output_length_policy.explicit_preference(length_pref) or "unset",
+        length_scale, _synth_cfg.model,
     )
     profile = source_profile(state.get("source_type"))
     prompt = SYNTHESIZE_REPORT_PROMPT.format(
@@ -379,11 +416,19 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
         language_note=_language_note(full_transcript),
         merged_extraction_json=merged_json,
         full_transcript_text=transcript_excerpt,
+        # Its own paragraph before the closing instruction; nothing at all
+        # when unset, so the prompt is byte-for-byte the S-1.14.8 one.
+        length_note=f"\n{length_guidance}\n" if length_guidance else "",
     )
 
     try:
         response = llm.invoke([HumanMessage(content=prompt)])
         md = response_text(response).strip()
+        if stopped_for_length(response):
+            logger.warning(
+                "Knowledge report for video %s was cut off at its %d-token budget",
+                state.get("video_id", ""), synth_max_tokens,
+            )
         # Strip a surrounding code fence the model might add despite instructions.
         if md.startswith("```"):
             lines = md.splitlines()
@@ -412,7 +457,11 @@ def build_knowledge_graph():
     return graph.compile()
 
 
-def run_knowledge_extract_agent(video: Any, full_transcript_text: str) -> dict:
+def run_knowledge_extract_agent(
+    video: Any,
+    full_transcript_text: str,
+    output_length: str | None = None,
+) -> dict:
     """Run the knowledge agent for one video.
 
     S-1.12.8: the FULL transcript is batched and extracted — there is no
@@ -424,6 +473,10 @@ def run_knowledge_extract_agent(video: Any, full_transcript_text: str) -> dict:
     Args:
         video: the `Document` ORM row (used for title + channel_name).
         full_transcript_text: the full transcript as a single string.
+        output_length: the reader's depth preference (S-1.15.3), one of
+            D-064's values. It reaches the synthesis step only: extraction
+            fidelity is not a preference (D-064). None or 'auto' leaves the
+            synthesis budget and prompt exactly as S-1.14.8 shipped them.
 
     Returns:
         {
@@ -484,6 +537,7 @@ def run_knowledge_extract_agent(video: Any, full_transcript_text: str) -> dict:
         "published_at": published_at,
         "discussed_era": discussed_era,
         "full_transcript_text": text,
+        "output_length": output_length,
         "transcript_batches": [],
         "per_batch_extractions": [],
         "merged_extraction": {},

@@ -26,7 +26,7 @@ from lxml import etree
 from app.config import settings
 from app.models.job import Job
 from app.services import auth_service, output_artifacts
-from app.services.outputters import book_cohesion, book_html, book_markdown, book_pdf
+from app.services.outputters import book_cohesion, book_epub, book_html, book_markdown, book_pdf
 from tests.test_services.test_book_endnotes import _generate
 
 LINK = re.compile(r"\[((?:\\.|[^\]\\])*)\]\(#([^)]*)\)")
@@ -221,6 +221,20 @@ def test_headings_know_their_line_and_leave_no_trace_in_the_html():
     book = book_html.render_book_html("# A\r\n\r\n> ## B\n\ntext\n\n- ### C\n", title="t")
     assert [(h.text, h.line) for h in book.headings] == [("A", 0), ("B", 2), ("C", 6)]
     assert "data-source-line" not in book.body
+
+
+def test_the_epub_finds_its_sections_by_text_when_their_ids_were_taken():
+    """A report's own "Endnotes" takes the plain id, and so does a book called
+    "Table of Contents". The sections are still the contents and the endnotes."""
+    book = book_html.render_book_html(
+        "# Table of Contents\n\n## Table of Contents\n\n1. [One](#1-one)\n\n"
+        "## 1. One\n\n#### Endnotes\n\nThe report's.\n\n## Endnotes\n\nThe book's.\n",
+        title="Table of Contents",
+    )
+    parts = book_epub._split(book)
+    assert [p.kind for p in parts] == ["titlepage", "chapter", "endnotes"]
+    assert parts[-1].heading_id == "endnotes-2"
+    assert "Table of Contents" not in [p.heading_text for p in parts], "nav.xhtml replaces the manuscript's own"
 
 
 # ---------------------------------------------------------------------------

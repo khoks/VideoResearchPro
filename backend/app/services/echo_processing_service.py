@@ -9,9 +9,10 @@ By kind:
 - **text** — the words are the content. Embedded.
 - **url** — a YouTube link resolves its title, channel and description through
   the Data API (one quota unit); any other link goes through the article
-  extractor the paste path uses. The extracted text is embedded. A non-YouTube
-  link that the paste path can ingest gets a **library offer**: one click
-  later adds it to the library, visible to the sharer only.
+  extractor the paste path uses, behind the public-address guard, so a share
+  cannot point the server at its own network. The extracted text is embedded.
+  A non-YouTube link that the paste path can ingest gets a **library offer**:
+  one click later adds it to the library, visible to the sharer only.
 - **file** — a plain-text file is decoded. An image is read by on-device OCR,
   with a vision-model fallback when that reading is not confident; a voice
   memo or video clip is transcribed by Whisper; a PDF gives its text layer
@@ -99,7 +100,12 @@ def youtube_video_id(url: str) -> str | None:
 
 def _process_text(share: Share, payload: dict) -> tuple[str, dict]:
     text = payload.get("text") or share.extracted_text or ""
-    return text, {"extractor": "as_is"}
+    fields: dict = {"extractor": "as_is"}
+    # A mail's subject is its title: shown in the inbox and embedded with it.
+    source = payload.get("source")
+    if share.surface == echo_intake_service.EMAIL_SURFACE and isinstance(source, dict):
+        fields["title"] = source.get("title")
+    return text, fields
 
 
 def _process_youtube(url: str) -> tuple[str, dict]:
@@ -136,7 +142,9 @@ def _process_article(url: str) -> tuple[str, dict]:
     from app.services.paste_url_resolver import is_recognised_paste_source, resolve_source_type
 
     try:
-        result = extract_text(url)
+        result = extract_text(url, guard=echo_media.require_public_address)
+    except echo_media.MediaError as e:
+        raise ProcessingError(str(e)) from e
     except Exception as e:
         raise ProcessingError(f"Fetching the page failed: {type(e).__name__}") from e
     if result is None or not (result.text or "").strip():

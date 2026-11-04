@@ -293,6 +293,20 @@ class Settings(BaseSettings):
     ECHO_SHARE_TOKENS_MAX: int = 10
     ECHO_FETCH_TIMEOUT_SEC: int = 20
     ECHO_FETCH_ALLOW_PRIVATE: bool = False
+    # T-3.7.4.1: a dedicated mailbox polled over IMAP (TLS only) from the
+    # scheduler tick; each message from an allowed sender becomes a share with
+    # surface=email_in for the tenant named here. Anyone can email a mailbox,
+    # so ECHO_IMAP_ALLOWED_SENDERS (comma-separated addresses) is required:
+    # empty accepts nothing. A From header can be forged; see
+    # docs/echo-share-surfaces.md for what that means.
+    ECHO_IMAP_ENABLED: bool = False
+    ECHO_IMAP_HOST: str = ""
+    ECHO_IMAP_PORT: int = 993
+    ECHO_IMAP_USERNAME: str = ""
+    ECHO_IMAP_PASSWORD: str = ""
+    ECHO_IMAP_FOLDER: str = "INBOX"
+    ECHO_IMAP_TENANT_EMAIL: str = ""
+    ECHO_IMAP_ALLOWED_SENDERS: str = ""
     # S-3.7.2 part 2: media shares. Images go through on-device OCR
     # (RapidOCR) first; a reading counts as confident when it has at least
     # ECHO_OCR_MIN_CHARS non-space characters at a mean box score of at

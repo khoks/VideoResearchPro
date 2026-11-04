@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import api, { AUTH_TOKEN_KEY } from '../services/api';
+import { clearPendingShares } from '../services/shareTarget';
 import { wsClient } from '../services/wsClient';
 
 export interface AuthUser {
@@ -202,6 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearTimeout(timer);
       localStorage.removeItem(AUTH_TOKEN_KEY);
       localStorage.removeItem(USER_STORAGE_KEY);
+      void clearPendingShares();
       setToken(null);
       setUser(null);
     }

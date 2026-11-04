@@ -14,7 +14,9 @@ Invariants every caller relies on:
    every resolved path is checked to sit under the root before it is read or
    removed.
 3. **Third-party content is context-only by default** (``author_is_tenant``
-   False). See ``app.models.share``.
+   False). See ``app.models.share``. Mail is context-only always: anyone can
+   send it and a From header can be forged, so no ``email_in`` share can be
+   marked as the user's own words, at creation or later (T-3.7.4.1).
 4. **Deleting a share removes everything derived from it**: its vector (if
    S-3.7.2 wrote one), its file, the facts it produced, and the row. The
    vector goes first and a failure there aborts, so a retry can still find it.
@@ -47,6 +49,7 @@ SURFACES: frozenset[str] = frozenset(
     {"manual_quick_share", "drag_drop", "browser_ext", "email_in", "os_share", "file_import"}
 )
 PROCESSING_STATES: frozenset[str] = frozenset({"pending", "processed", "skipped", "failed"})
+EMAIL_SURFACE = "email_in"
 
 _CONTENT_TYPE_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _TENANT_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -169,6 +172,16 @@ def _validate_surface(value: str) -> str:
     return value
 
 
+def _check_authorship(surface: str, author_is_tenant: bool) -> None:
+    """Voice signals learn from ``author_is_tenant`` shares and nothing else
+    (D-089 item 1), so this flag is what keeps mail out of them."""
+    if surface == EMAIL_SURFACE and author_is_tenant:
+        raise InvalidShare(
+            "Mail stays context only: a From line can be forged, so it cannot "
+            "count as your own words. Add the words yourself to mark them yours."
+        )
+
+
 def _clean_annotation(value: str | None) -> str | None:
     if value is None:
         return None
@@ -206,6 +219,7 @@ def _new_share(
     share_id: str | None = None,
     file_path: str | None = None,
 ) -> Share:
+    _check_authorship(surface, author_is_tenant)
     return Share(
         id=share_id or str(uuid.uuid4()),
         tenant_id=tenant_id,
@@ -264,6 +278,40 @@ def create_url_share(
     return share
 
 
+def new_text_share(
+    tenant_id: str,
+    user_id: str,
+    *,
+    text: str,
+    annotation: str | None = None,
+    content_type: str | None = None,
+    author_is_tenant: bool = False,
+    surface: str = "manual_quick_share",
+    source: dict | None = None,
+) -> Share:
+    """A checked text share, not yet added to a session: for a caller that
+    commits it together with a row of its own (the email inbox's ledger)."""
+    if not text or not text.strip():
+        raise InvalidShare("text must not be blank")
+    if len(text) > settings.ECHO_SHARE_TEXT_MAX_CHARS:
+        raise ShareTooLarge(
+            f"text is over {settings.ECHO_SHARE_TEXT_MAX_CHARS} characters; "
+            "share it as a file instead"
+        )
+    return _new_share(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        surface=surface,
+        content_type=content_type or "text_snippet",
+        payload={"kind": "text", "text": text, **({"source": source} if source else {})},
+        annotation=annotation,
+        author_is_tenant=author_is_tenant,
+        # The words are the content; no extraction step stands between them
+        # and the inbox. Embedding and signals are still S-3.7.2's.
+        extracted_text=text,
+    )
+
+
 def create_text_share(
     db: Session,
     tenant_id: str,
@@ -276,24 +324,15 @@ def create_text_share(
     surface: str = "manual_quick_share",
     source: dict | None = None,
 ) -> Share:
-    if not text or not text.strip():
-        raise InvalidShare("text must not be blank")
-    if len(text) > settings.ECHO_SHARE_TEXT_MAX_CHARS:
-        raise ShareTooLarge(
-            f"text is over {settings.ECHO_SHARE_TEXT_MAX_CHARS} characters; "
-            "share it as a file instead"
-        )
-    share = _new_share(
-        tenant_id=tenant_id,
-        user_id=user_id,
-        surface=surface,
-        content_type=content_type or "text_snippet",
-        payload={"kind": "text", "text": text, **({"source": source} if source else {})},
+    share = new_text_share(
+        tenant_id,
+        user_id,
+        text=text,
         annotation=annotation,
+        content_type=content_type,
         author_is_tenant=author_is_tenant,
-        # The words are the content; no extraction step stands between them
-        # and the inbox. Embedding and signals are still S-3.7.2's.
-        extracted_text=text,
+        surface=surface,
+        source=source,
     )
     db.add(share)
     db.commit()
@@ -470,6 +509,7 @@ def update_share(
     if content_type is not _UNSET:
         share.content_type = _validate_content_type(content_type)  # type: ignore[arg-type]
     if author_is_tenant is not _UNSET:
+        _check_authorship(share.surface, bool(author_is_tenant))
         share.author_is_tenant = bool(author_is_tenant)
     share.updated_at = datetime.now(timezone.utc)
     db.commit()

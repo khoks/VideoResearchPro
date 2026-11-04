@@ -56,6 +56,7 @@ const OutputReaderPage = lazy(() =>
 const EchoPage = lazy(() => import('../pages/EchoPage').then((m) => ({ default: m.EchoPage })));
 const EchoInboxPage = lazy(() => import('../pages/EchoInboxPage').then((m) => ({ default: m.EchoInboxPage })));
 const EchoImportPage = lazy(() => import('../pages/EchoImportPage').then((m) => ({ default: m.EchoImportPage })));
+const EchoShareTargetPage = lazy(() => import('../pages/EchoShareTargetPage').then((m) => ({ default: m.EchoShareTargetPage })));
 const AuthorPage = lazy(() => import('../pages/AuthorPage').then((m) => ({ default: m.AuthorPage })));
 const SubscriptionPage = lazy(() => import('../pages/SubscriptionPage').then((m) => ({ default: m.SubscriptionPage })));
 const AIModelsPage = lazy(() => import('../pages/AIModelsPage').then((m) => ({ default: m.AIModelsPage })));
@@ -152,6 +153,9 @@ export const router = createBrowserRouter([
           { path: 'echo', ...lazyPage(<EchoPage />, 'Loading Echo') },
           { path: 'echo/inbox', ...lazyPage(<EchoInboxPage />, 'Loading the inbox') },
           { path: 'echo/import', ...lazyPage(<EchoImportPage />, 'Loading the import page') },
+          // T-3.7.6.1: public/share-target-sw.js keeps the share and redirects
+          // here. It stays outside that worker's scope, /echo/share-target.
+          { path: 'echo/incoming', ...lazyPage(<EchoShareTargetPage />, 'Loading what was shared') },
           { path: 'echo/connectors/:name/callback', element: <EchoConnectorCallbackPage /> },
           { path: 'account/subscription', ...lazyPage(<SubscriptionPage />, 'Loading your subscription') },
           { path: 'account/ai-models', ...lazyPage(<AIModelsPage />, 'Loading AI models') },

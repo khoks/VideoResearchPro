@@ -122,6 +122,25 @@ class ActivityConnector(Protocol):
     def incremental_sync(self, ctx: SyncContext, since: datetime | None) -> Iterator[ActivityEvent]: ...
 
 
+@runtime_checkable
+class RefreshableConnector(Protocol):
+    """Optional: a connector whose access tokens expire (Google's last an
+    hour) implements this too (T-3.2.2.5). GitHub's do not expire, so it does
+    not. Kept out of ``ActivityConnector`` so a connector without it still
+    satisfies the contract.
+
+    The runtime calls it before a sync once ``tokens.expires_at`` has passed
+    and ``tokens.refresh_token`` is set, and stores what it returns encrypted.
+    A returned ``refresh_token`` of None keeps the stored one (most providers
+    do not rotate it). Raise ``ConnectorError(..., auth=True)`` when the
+    provider refuses the refresh token (OAuth ``invalid_grant``: revoked,
+    expired, or a testing-mode token past its seven days); the user must then
+    reconnect. Any other ``ConnectorError`` is a failure the next sync
+    retries."""
+
+    def refresh_tokens(self, tokens: ConnectorTokens) -> ConnectorTokens: ...
+
+
 @dataclass(frozen=True)
 class ImportedShare:
     """Something the user handed over, from an export file (a WhatsApp

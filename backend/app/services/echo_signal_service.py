@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.voice_signal import VoiceSignal
@@ -126,6 +127,18 @@ def clean_example(text: str, source: str, at: str | None = None) -> dict[str, An
 
 def _live(q):
     return q.filter(VoiceSignal.suppressed_at.is_(None))
+
+
+def _withdrawable(q):
+    """Live signals and the user's rejections. A rejection keeps its row (the
+    tombstone), and so its examples; a deleted source's words must still
+    leave it, or restoring it (T-3.3.1.6) would bring them back."""
+    return q.filter(or_(VoiceSignal.suppressed_at.is_(None), VoiceSignal.suppressed_reason == "user"))
+
+
+def withdrawable_signals(db: Session, tenant_id: str) -> list[VoiceSignal]:
+    """Every signal a source withdrawal must clean: live ones and rejections."""
+    return _withdrawable(db.query(VoiceSignal).filter(VoiceSignal.tenant_id == tenant_id)).all()
 
 
 def list_signals(
@@ -299,6 +312,73 @@ def suppress(db: Session, tenant_id: str, signal_id: str, reason: str = "user") 
     return row
 
 
+def list_rejected(db: Session, tenant_id: str) -> list[VoiceSignal]:
+    """The user's "That's not me" rejections, most recent first (T-3.3.1.6).
+    A signal hidden because its sources were deleted is not a rejection and
+    is not listed: new evidence brings it back on its own."""
+    return (
+        db.query(VoiceSignal)
+        .filter(VoiceSignal.tenant_id == tenant_id, VoiceSignal.suppressed_reason == "user")
+        .order_by(VoiceSignal.suppressed_at.desc(), VoiceSignal.id)
+        .all()
+    )
+
+
+@dataclass(frozen=True)
+class Restored:
+    signal: VoiceSignal
+    #: False when nothing the user wrote still shows the signal: the
+    #: rejection is lifted, but it stays out of the profile (as
+    #: ``source_deleted``) until new evidence re-derives it.
+    live: bool
+
+
+def restore(db: Session, tenant_id: str, signal_id: str) -> Restored:
+    """Undo "That's not me" (T-3.3.1.6): clear the tombstone, so the signal
+    is in the profile again and re-adding or re-learning it is no longer
+    refused.
+
+    A learned signal whose every source was deleted while it was rejected has
+    no evidence left; it becomes ``source_deleted`` rather than live. If an
+    equal live signal exists (the user reworded another one to the same
+    words), that one is kept and the tombstone row is dropped. Commits."""
+    row = (
+        db.query(VoiceSignal)
+        .filter(
+            VoiceSignal.id == signal_id,
+            VoiceSignal.tenant_id == tenant_id,
+            VoiceSignal.suppressed_reason == "user",
+        )
+        .first()
+    )
+    if row is None:
+        raise SignalNotFound("Signal not found")
+    same = _live(
+        db.query(VoiceSignal).filter(
+            VoiceSignal.tenant_id == tenant_id,
+            VoiceSignal.signal_type == row.signal_type,
+            VoiceSignal.value_key == row.value_key,
+            VoiceSignal.language.is_(None) if row.language is None else VoiceSignal.language == row.language,
+            VoiceSignal.id != row.id,
+        )
+    ).first()
+    if same is not None:
+        db.delete(row)
+        db.commit()
+        db.refresh(same)
+        _sync_vectors(db, tenant_id)
+        return Restored(same, True)
+    if _json_list(row.derived_from):
+        row.suppressed_at = None
+        row.suppressed_reason = None
+    else:
+        row.suppressed_reason = "source_deleted"
+    db.commit()
+    db.refresh(row)
+    _sync_vectors(db, tenant_id)
+    return Restored(row, row.suppressed_at is None)
+
+
 @dataclass(frozen=True)
 class SourceWithdrawal:
     updated: int
@@ -312,8 +392,10 @@ def withdraw_source(db: Session, tenant_id: str, source_ref: str, *, signal_ids:
     signal left with no source at all (and that the user did not type) is
     suppressed as ``source_deleted``. ``signal_ids`` narrows the scan to the
     ids a share recorded in ``derived_signal_ids_json``; without it every
-    live signal of the tenant is checked. Does not commit."""
-    q = _live(db.query(VoiceSignal).filter(VoiceSignal.tenant_id == tenant_id))
+    live signal of the tenant is checked. The user's rejections are cleaned
+    too and stay rejections, so a later restore cannot bring back a deleted
+    source's words. Does not commit."""
+    q = _withdrawable(db.query(VoiceSignal).filter(VoiceSignal.tenant_id == tenant_id))
     ids = list(signal_ids or [])
     if signal_ids is not None:
         if not ids:
@@ -328,11 +410,12 @@ def withdraw_source(db: Session, tenant_id: str, source_ref: str, *, signal_ids:
         examples = [e for e in _json_list(row.examples_json) if e.get("source") != source_ref]
         row.derived_from = json.dumps(remaining)
         row.examples_json = json.dumps(examples)
-        if not remaining:
+        if not remaining and row.suppressed_reason != "user":
             row.suppressed_at = _now()
             row.suppressed_reason = "source_deleted"
             suppressed += 1
         else:
+            # A rejection stays one, whatever is left (see _withdrawable).
             row.weight = max(0.0, float(row.weight) - 1.0) or 0.5
             updated += 1
     return SourceWithdrawal(updated, suppressed)
@@ -340,13 +423,13 @@ def withdraw_source(db: Session, tenant_id: str, source_ref: str, *, signal_ids:
 
 def withdraw_sources(db: Session, tenant_id: str, source_refs: Iterable[str]) -> SourceWithdrawal:
     """``withdraw_source`` for many refs in ONE pass over the tenant's live
-    signals: a connector revoke or an import undo can remove thousands of
-    events at once. Does not commit."""
+    signals and rejections: a connector revoke or an import undo can remove
+    thousands of events at once. Does not commit."""
     refs = set(source_refs)
     if not refs:
         return SourceWithdrawal(0, 0)
     updated = suppressed = 0
-    for row in _live(db.query(VoiceSignal).filter(VoiceSignal.tenant_id == tenant_id)).all():
+    for row in withdrawable_signals(db, tenant_id):
         sources = _json_list(row.derived_from)
         gone = [s for s in sources if s in refs]
         if not gone:
@@ -354,11 +437,12 @@ def withdraw_sources(db: Session, tenant_id: str, source_refs: Iterable[str]) ->
         remaining = [s for s in sources if s not in refs]
         row.derived_from = json.dumps(remaining)
         row.examples_json = json.dumps([e for e in _json_list(row.examples_json) if e.get("source") not in refs])
-        if not remaining:
+        if not remaining and row.suppressed_reason != "user":
             row.suppressed_at = _now()
             row.suppressed_reason = "source_deleted"
             suppressed += 1
         else:
+            # A rejection stays one, whatever is left (see _withdrawable).
             row.weight = max(0.0, float(row.weight) - len(gone)) or 0.5
             updated += 1
     return SourceWithdrawal(updated, suppressed)

@@ -232,3 +232,141 @@ def test_rewording_a_learned_signal_makes_it_the_users(unauthenticated_client, d
     r = unauthenticated_client.patch(f"{SIGNALS}/{learned.id}", json={"value": "Starts from base rates"}, headers=ha)
     assert r.json()["origin"] == "user"
     assert r.json()["derived_from"] == ["note:n-3"], "the evidence is kept"
+
+
+# ------------------------------------------------------------------ T-3.3.1.6: list and restore rejections
+
+
+def test_rejections_are_listed_and_restore_lifts_the_refusal(unauthenticated_client, db, two):
+    """The panel's "Rejected (N)" and its Restore, at the router. Before the
+    restore, re-adding and re-learning are refused; after it, neither is."""
+    from app.services import echo_signal_extraction as extraction
+
+    a, ha, _, _ = two
+    keep = unauthenticated_client.post(SIGNALS, json={"signal_type": "framing", "value": "Starts from incentives"}, headers=ha).json()
+    sid = unauthenticated_client.post(SIGNALS, json={"signal_type": "interest", "value": "Cricket"}, headers=ha).json()["id"]
+    assert unauthenticated_client.get(f"{SIGNALS}/rejected", headers=ha).json() == {"items": []}
+    unauthenticated_client.delete(f"{SIGNALS}/{sid}", headers=ha)
+
+    r = unauthenticated_client.get(f"{SIGNALS}/rejected", headers=ha)
+    assert r.status_code == 200, r.text
+    [item] = r.json()["items"]
+    assert item["id"] == sid and item["value"] == "Cricket" and item["signal_type"] == "interest"
+    assert item["rejected_at"].endswith(("Z", "+00:00")), "sent with its offset"
+    assert keep["id"] not in [i["id"] for i in r.json()["items"]], "a live signal is not a rejection"
+
+    def learn_cricket():
+        counts = extraction.MergeCounts()
+        cand = {"signal_type": "interest", "value": "cricket", "language": None, "register": None,
+                "examples": [{"text": "I watched the test match", "source": "note:n-1"}]}
+        extraction.merge_candidate(db, a.id, cand, "llm", counts)
+        db.commit()
+        return counts
+
+    # Mutation-style: the refusal is real before the restore...
+    assert unauthenticated_client.post(SIGNALS, json={"signal_type": "interest", "value": "cricket"}, headers=ha).status_code == 422
+    assert learn_cricket().rejected_by_user == 1
+
+    r = unauthenticated_client.post(f"{SIGNALS}/{sid}/restore", headers=ha)
+    assert r.status_code == 200, r.text
+    assert r.json()["live"] is True and r.json()["signal"]["id"] == sid
+    # ...and gone after it: the signal is back, and learning merges into it.
+    assert unauthenticated_client.get(f"{SIGNALS}/rejected", headers=ha).json()["items"] == []
+    assert sid in [s["id"] for s in unauthenticated_client.get(SIGNALS, headers=ha).json()["items"]]
+    assert not echo_signal_service.is_suppressed(db, a.id, "interest", "cricket", None)
+    counts = learn_cricket()
+    assert counts.rejected_by_user == 0 and counts.merged == 1
+    assert unauthenticated_client.get(f"{SIGNALS}/export", headers=ha).json()["rejected"] == []
+    # Restoring twice is a 404: it is no longer a rejection.
+    assert unauthenticated_client.post(f"{SIGNALS}/{sid}/restore", headers=ha).status_code == 404
+
+
+def test_rejections_are_the_callers_own(unauthenticated_client, db, two):
+    a, ha, b, hb = two
+    sid = unauthenticated_client.post(SIGNALS, json={"signal_type": "apprehension", "value": "lock-in"}, headers=ha).json()["id"]
+    unauthenticated_client.delete(f"{SIGNALS}/{sid}", headers=ha)
+    assert unauthenticated_client.get(f"{SIGNALS}/rejected", headers=hb).json()["items"] == []
+    assert unauthenticated_client.post(f"{SIGNALS}/{sid}/restore", headers=hb).status_code == 404
+    db.expire_all()
+    assert db.get(VoiceSignal, sid).suppressed_reason == "user", "B's attempt changed nothing"
+
+
+def test_listing_and_restoring_rejections_need_the_echo_feature(unauthenticated_client, db):
+    _, h = _user(db, "signals-free-2@example.com", tier="free")
+    assert unauthenticated_client.get(f"{SIGNALS}/rejected", headers=h).status_code == 403
+    assert unauthenticated_client.post(f"{SIGNALS}/anything/restore", headers=h).status_code == 403
+    assert unauthenticated_client.get(f"{SIGNALS}/rejected").status_code == 401
+
+
+def test_a_signal_hidden_because_its_sources_went_is_not_a_rejection(unauthenticated_client, db, two):
+    a, ha, _, _ = two
+    row = _derived(db, a, ["note:n-7"], "Quotes old proverbs", signal_type="recurring_reference")
+    echo_signal_service.withdraw_source(db, a.id, "note:n-7")
+    db.commit()
+    assert db.get(VoiceSignal, row.id).suppressed_reason == "source_deleted"
+    assert unauthenticated_client.get(f"{SIGNALS}/rejected", headers=ha).json()["items"] == []
+    assert unauthenticated_client.post(f"{SIGNALS}/{row.id}/restore", headers=ha).status_code == 404
+
+
+def test_a_deleted_share_leaves_a_rejection_too_so_restore_cannot_bring_it_back(
+    unauthenticated_client, db, two, chroma, tmp_path, monkeypatch
+):
+    """Before T-3.3.1.6 a withdrawal skipped rejected rows, so a rejection kept
+    a deleted share's verbatim words; a restore would have put them back."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ECHO_SHARES_DIR", str(tmp_path / "shares"))
+    a, ha, _, _ = two
+    share = echo_intake_service.create_text_share(db, a.id, a.id, text="my own essay", author_is_tenant=True)
+    only = _derived(db, a, [f"share:{share.id}"], "Opens with a story")
+    both = _derived(db, a, [f"share:{share.id}", "note:n-2"], "Closes with a question")
+    for row in (only, both):
+        unauthenticated_client.delete(f"{SIGNALS}/{row.id}", headers=ha)
+
+    assert unauthenticated_client.delete(f"/api/v1/echo/shares/{share.id}", headers=ha).status_code in (200, 204)
+    db.expire_all()
+    for row_id in (only.id, both.id):
+        row = db.get(VoiceSignal, row_id)
+        assert row.suppressed_reason == "user", "still a rejection"
+        assert f"share:{share.id}" not in row.derived_from + row.examples_json, "the share's words left it"
+
+    # The one with evidence left comes back live, citing only that evidence.
+    r = unauthenticated_client.post(f"{SIGNALS}/{both.id}/restore", headers=ha)
+    assert r.json()["live"] is True
+    assert r.json()["signal"]["derived_from"] == ["note:n-2"]
+    assert [e["source"] for e in r.json()["signal"]["examples"]] == ["note:n-2"]
+    # The one with nothing left is no longer refused, but has no evidence to show.
+    r = unauthenticated_client.post(f"{SIGNALS}/{only.id}/restore", headers=ha)
+    assert r.status_code == 200 and r.json()["live"] is False
+    db.expire_all()
+    assert db.get(VoiceSignal, only.id).suppressed_reason == "source_deleted"
+    assert not echo_signal_service.is_suppressed(db, a.id, "framing", "Opens with a story", None)
+    assert [s["value"] for s in unauthenticated_client.get(SIGNALS, headers=ha).json()["items"]] == ["Closes with a question"]
+
+
+def test_missing_events_leave_rejections_too(db, two):
+    """The bulk path (a connector revoke, an import undo) cleans rejections."""
+    from app.services import echo_signal_extraction as extraction
+
+    a, _, _, _ = two
+    row = _derived(db, a, ["event:gone-1", "note:n-4"], "Writes terse commit messages", signal_type="cadence")
+    echo_signal_service.suppress(db, a.id, row.id)
+    extraction.withdraw_missing_events(db, a.id)
+    db.commit()
+    row = db.get(VoiceSignal, row.id)
+    assert json.loads(row.derived_from) == ["note:n-4"] and row.suppressed_reason == "user"
+
+
+def test_restore_keeps_an_equal_live_signal_and_drops_the_tombstone(unauthenticated_client, db, two):
+    a, ha, _, _ = two
+    sid = unauthenticated_client.post(SIGNALS, json={"signal_type": "interest", "value": "Chess"}, headers=ha).json()["id"]
+    unauthenticated_client.delete(f"{SIGNALS}/{sid}", headers=ha)
+    other = unauthenticated_client.post(SIGNALS, json={"signal_type": "interest", "value": "Go"}, headers=ha).json()["id"]
+    # Rewording another signal into the rejected one's words is not refused.
+    unauthenticated_client.patch(f"{SIGNALS}/{other}", json={"value": "chess"}, headers=ha)
+
+    r = unauthenticated_client.post(f"{SIGNALS}/{sid}/restore", headers=ha)
+    assert r.status_code == 200 and r.json()["signal"]["id"] == other and r.json()["live"] is True
+    db.expire_all()
+    assert db.get(VoiceSignal, sid) is None
+    assert [s["id"] for s in unauthenticated_client.get(SIGNALS, headers=ha).json()["items"]] == [other]

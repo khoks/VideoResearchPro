@@ -276,11 +276,13 @@ def withdraw_missing_events(db: Session, tenant_id: str) -> signals.SourceWithdr
     """Events are deleted in bulk (a connector revoke, an import undo), out
     of this module's sight. Any ``event:<id>`` a signal still cites that no
     longer exists leaves it now, in one pass. Called by those delete paths
-    and at the start of every run. Does not commit."""
+    and at the start of every run. Rejected signals are cleaned too, so a
+    restore (T-3.3.1.6) cannot bring a deleted event's words back. Does not
+    commit."""
     live = live_event_ids(db, tenant_id)
     cited = {
         ref
-        for row in signals.list_signals(db, tenant_id)
+        for row in signals.withdrawable_signals(db, tenant_id)
         for ref in json.loads(row.derived_from or "[]")
         if ref.startswith("event:")
     }

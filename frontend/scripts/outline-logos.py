@@ -28,6 +28,9 @@ them):
         --tiro tiro/package/files/tiro-devanagari-hindi-devanagari-400-normal.woff2 \
         --fraunces fraunces/package/files/fraunces-latin-full-italic.woff2
 
+A run that changes a wordmark fails backend/tests/test_ci/test_brand_assets.py
+until someone has rendered the result, read it and updated WORDMARK_SHA256 there.
+
 Re-rendering the PNG app icons from the mark is a separate step: npm run icons.
 """
 import argparse

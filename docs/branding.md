@@ -286,7 +286,7 @@ These are tracked in [feature-roadmap.md](feature-roadmap.md) as a "rebrand asse
 - **Dark is a separate file, not a media query:** `prefers-color-scheme` follows the operating system, and the app's theme is a toggle on `data-theme`.
 - **The live pages set the Latin line differently from §3:** roman capitals, tracked wide, in `frontend/src/layouts/AppLayout.tsx`, `frontend/src/components/auth/AuthShell.tsx` and `frontend/src/pages/marketing/`, and roman mixed case on the Astro site. The logo follows §3. One of the two should change, and that is the owner's call.
 
-The text is outlines, shaped by HarfBuzz, so no logo depends on an installed font. To change the artwork, change `logo-mark.svg` or the constants in `frontend/scripts/outline-logos.py` and regenerate (its header has the steps); do not edit the SVGs by hand. `backend/tests/test_ci/test_brand_assets.py` holds the files to the master, the tokens and the shaping.
+The text is outlines, shaped by HarfBuzz, so no logo depends on an installed font. To change the artwork, change `logo-mark.svg` or the constants in `frontend/scripts/outline-logos.py` and regenerate (its header has the steps); do not edit the SVGs by hand. `backend/tests/test_ci/test_brand_assets.py` holds the files to the master, the tokens and the shaping, and pins both wordmarks' outlines, so a regeneration that changes them fails until someone has rendered the result, looked at it and updated `WORDMARK_SHA256`.
 
 ### Fonts behind the outlines
 

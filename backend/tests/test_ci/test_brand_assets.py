@@ -2,12 +2,14 @@
 
 The artwork is generated once by frontend/scripts/outline-logos.py and committed,
 and CI builds neither the marketing site nor the logos, so nothing else would
-notice a hand edit, or a regeneration that lost the font outlines or the shaping.
-The fonts and the shaper are in no requirements file, so everything here reads the
-committed SVG alone. A failure is artwork to regenerate, not a test to relax.
+notice a hand edit, or a regeneration that lost the font outlines, the shaping or
+the word itself. The fonts and the shaper are in no requirements file, so everything
+here reads the committed SVG alone. A failure is artwork to regenerate, not a test
+to relax.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 import statistics
 import xml.etree.ElementTree as ET
@@ -34,6 +36,16 @@ NOT_SELF_CONTAINED = {
 PATH_TOKEN = re.compile(r"[MLHVQCZ]|-?\d*\.?\d+")
 PATH_ARGUMENTS = {"M": 2, "L": 2, "H": 1, "V": 1, "Q": 4, "C": 6, "Z": 0}
 THEME_TOKEN = r"^\s*{name}:\s*\{{ light: '(#\w+)', dark: '(#\w+)' \}}"
+
+# The outlines as generated and read by eye. Everything else here counts contours or
+# measures boxes, which cannot tell a wrong consonant from the right one (प्रतिध्वति has
+# the same 8 contours, and an ink box 0.1 wider) and do not look at the Latin's word,
+# weight or size at all. After a deliberate regeneration, render the file and look at
+# it (the shaper and the fonts are not here to check it), then update the pin.
+WORDMARK_SHA256 = {
+    "devanagari": "80f34651a2c089168823f5b30f697021952f1bc0aa911fd893238a0b5c30d8a7",
+    "latin": "3ca3afb79875e8fc8de9dfb77ac1ff8c2bfb30b8911867eab522ee1f00387e44",
+}
 
 
 def _root(path: Path) -> ET.Element:
@@ -97,14 +109,29 @@ def _box(contours: list[list[tuple[float, float]]]) -> tuple[float, float, float
     return min(xs), min(ys), max(xs), max(ys)
 
 
+def _public_files(page: str) -> list[str]:
+    """The root-relative URLs that name a file. /pricing/ is a route, not a file."""
+    urls = re.findall(r'\b(?:href|src)="/([^"/][^"]*)"', page)
+    paths = [re.split(r"[?#]", url)[0] for url in urls]
+    return [path for path in paths if "." in path.rsplit("/", 1)[-1]]
+
+
+def test_a_url_counts_as_a_public_file_only_when_it_names_one() -> None:
+    page = """
+        <a href="/pricing/">Pricing</a> <a href="/about">About</a> <a href="/v1.2/">Old</a>
+        <link href="/favicon.svg?v=2" /> <img src="/shots/app.png#top" />
+    """
+    assert _public_files(page) == ["favicon.svg", "shots/app.png"]
+
+
 def test_the_marketing_layout_links_the_favicon_the_site_ships() -> None:
     linked = [
-        url
+        path
         for page in (ROOT / "marketing" / "src").rglob("*.astro")
-        for url in re.findall(r'\b(?:href|src)="/([^"/][^"]*)"', page.read_text(encoding="utf-8"))
+        for path in _public_files(page.read_text(encoding="utf-8"))
     ]
     assert "favicon.svg" in linked
-    missing = [url for url in linked if not (SITE / url).is_file()]
+    missing = [path for path in linked if not (SITE / path).is_file()]
     assert not missing, f"linked by a page, not in marketing/public: {missing}"
 
 
@@ -163,6 +190,13 @@ def test_the_dark_lockup_is_the_same_drawing() -> None:
     assert _root(light).get("viewBox") == _root(dark).get("viewBox")
     for word in ("devanagari", "latin"):
         assert _wordmark(light, word).get("d") == _wordmark(dark, word).get("d")
+
+
+@pytest.mark.parametrize("word", WORDMARK_SHA256)
+def test_a_wordmark_is_the_outline_that_was_read(word: str) -> None:
+    """One lockup is enough: the dark one and the site's copies are held to it above."""
+    outline = _wordmark(APP / "logo-full.svg", word).get("d")
+    assert hashlib.sha256(outline.encode()).hexdigest() == WORDMARK_SHA256[word]
 
 
 @pytest.mark.parametrize("name", LOCKUPS)

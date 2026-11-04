@@ -20,6 +20,7 @@ from app.config import settings
 from app.schemas.job_template import TemplateParameters
 from app.services import job_source_types, job_template_service
 
+BELOW = "5f8caf39b5b1"
 COLUMN = "b84e405ab989"
 STARTERS = "927718ee5b78"
 ORIGINAL_FIVE = {"topic-scan", "deep-dive", "quick-brief", "channel-deep-dive", "subscription-follow"}
@@ -161,11 +162,11 @@ def test_the_budget_gives_every_source_a_share():
 
 def test_column_upgrade_and_downgrade(migrated):
     cfg, eng = migrated
-    command.upgrade(cfg, "6d5b3d5aa6fa")
+    command.upgrade(cfg, BELOW)
     assert "published_after_days" not in _columns(eng)
     command.upgrade(cfg, COLUMN)
     assert "published_after_days" in _columns(eng)
-    command.downgrade(cfg, "6d5b3d5aa6fa")
+    command.downgrade(cfg, BELOW)
     assert "published_after_days" not in _columns(eng)
 
 
@@ -182,7 +183,7 @@ def test_column_downgrade_keeps_the_jobs(migrated):
                 "VALUES ('j1', 't1', 'topic', 'completed', '2026-01-01', '2026-01-01', 10, 100, 30)"
             )
         )
-    command.downgrade(cfg, "6d5b3d5aa6fa")
+    command.downgrade(cfg, BELOW)
     with eng.connect() as conn:
         assert conn.execute(text("SELECT COUNT(*) FROM jobs")).scalar() == 1
 
@@ -224,7 +225,7 @@ def test_downgrade_leaves_stored_templates_readable_by_the_previous_code(migrate
     params = TemplateParameters(job_type="topic", num_videos=12, published_after_days=window).model_dump()
     _store_template(eng, json.dumps(params, sort_keys=True))
 
-    command.downgrade(cfg, "6d5b3d5aa6fa")
+    command.downgrade(cfg, BELOW)
 
     stored, created_at = _stored_version(eng)
     expected = {k: v for k, v in params.items() if k != "published_after_days"}
@@ -240,7 +241,7 @@ def test_downgrade_skips_a_version_it_cannot_read(migrated):
     command.upgrade(cfg, COLUMN)
     _store_template(eng, "not json")
 
-    command.downgrade(cfg, "6d5b3d5aa6fa")
+    command.downgrade(cfg, BELOW)
 
     assert _stored_version(eng)[0] == "not json"
     assert "published_after_days" not in _columns(eng)

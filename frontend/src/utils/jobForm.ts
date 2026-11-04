@@ -38,6 +38,9 @@ export const SOURCE_TYPE_OPTIONS = [
   { value: 'tweet', label: 'X / Twitter', capability: 'twitter_search_enabled' },
 ] as const satisfies readonly { value: string; label: string; capability?: string }[];
 
+/** S-8.6.3: mirrors MAX_PUBLISHED_AFTER_DAYS in `backend/app/schemas/job.py`. */
+export const MAX_PUBLISHED_AFTER_DAYS = 3650;
+
 export type SourceType = (typeof SOURCE_TYPE_OPTIONS)[number]['value'];
 export type SourceTypeOption = (typeof SOURCE_TYPE_OPTIONS)[number];
 
@@ -129,6 +132,12 @@ export interface JobFormState {
   visualAnalysis: boolean;
   /** S-1.5.13: what a topic run searches; `['video']` is the default. */
   sourceTypes: SourceType[];
+  /**
+   * S-8.6.3: prefer sources from the last N days, as typed; empty is no
+   * preference. A ranking preference, never a filter, and only YouTube
+   * results are ranked, so it needs YouTube among `sourceTypes`.
+   */
+  publishedAfterDays: string;
 }
 
 export const DEFAULT_FORM: JobFormState = {
@@ -146,6 +155,7 @@ export const DEFAULT_FORM: JobFormState = {
   subscriptionChannels: '',
   visualAnalysis: false,
   sourceTypes: [...DEFAULT_SOURCE_TYPES],
+  publishedAfterDays: '',
 };
 
 const OUTPUT_LENGTHS: readonly OutputLength[] = ['auto', 'brief', 'standard', 'deep'];
@@ -158,6 +168,15 @@ function validFilters(list: readonly string[] | null | undefined): ChannelTypeOp
 
 function lines(list: readonly string[] | null | undefined): string {
   return list && list.length > 0 ? list.join('\n') : '';
+}
+
+/** "30 days", or "day" for one, to follow "the last" (S-8.6.3). */
+export function windowLabel(days: number): string {
+  return days === 1 ? 'day' : `${days} days`;
+}
+
+function windowOf(days: number | null | undefined): string {
+  return days != null ? String(days) : '';
 }
 
 function outputLengthOf(value: string | null | undefined): OutputLength {
@@ -188,6 +207,7 @@ export function parseDraft(raw: string | null): JobFormState {
       visualAnalysis: parsed.visualAnalysis === true,
       channelFilters: Array.isArray(parsed.channelFilters) ? validFilters(parsed.channelFilters) : [],
       sourceTypes: sourceTypesOf(Array.isArray(parsed.sourceTypes) ? parsed.sourceTypes : null),
+      publishedAfterDays: typeof parsed.publishedAfterDays === 'string' ? parsed.publishedAfterDays : '',
     };
   } catch {
     return DEFAULT_FORM;
@@ -209,6 +229,7 @@ export function jobToFormState(job: Job): JobFormState {
     outputLength: outputLengthOf(job.output_length),
     visualAnalysis: job.visual_analysis === true,
     sourceTypes: job.job_type === 'topic' ? sourceTypesOf(job.source_types) : [...DEFAULT_SOURCE_TYPES],
+    publishedAfterDays: job.job_type === 'topic' ? windowOf(job.published_after_days) : '',
     minDuration: job.min_duration_minutes != null ? String(job.min_duration_minutes) : '',
     maxDuration: job.max_duration_minutes != null ? String(job.max_duration_minutes) : '',
     channelFilters: validFilters(job.channel_type_filters),
@@ -233,6 +254,7 @@ export function templateToFormState(params: TemplateParameters, keepTopic = ''):
     outputLength: outputLengthOf(params.output_length),
     visualAnalysis: params.visual_analysis === true,
     sourceTypes: params.job_type === 'topic' ? sourceTypesOf(params.source_types) : [...DEFAULT_SOURCE_TYPES],
+    publishedAfterDays: params.job_type === 'topic' ? windowOf(params.published_after_days) : '',
     minDuration: params.min_duration_minutes != null ? String(params.min_duration_minutes) : '',
     maxDuration: params.max_duration_minutes != null ? String(params.max_duration_minutes) : '',
     channelFilters: validFilters(params.channel_type_filters),
@@ -290,6 +312,19 @@ export function formToJobCreate(
     // S-1.5.13: YouTube alone is the server's default, so it is left out and
     // the request is the one every run sent before the choice existed.
     if (!isDefaultSourceTypes(sources)) data.source_types = sources;
+    // S-8.6.3: only YouTube results are ranked, so without YouTube there is
+    // nothing for the window to steer and the server would refuse it. The
+    // form hides the control then, and the typed value waits in the state.
+    if (form.publishedAfterDays.trim() && sources.includes('video')) {
+      const days = Number(form.publishedAfterDays);
+      if (!Number.isInteger(days) || days < 1 || days > MAX_PUBLISHED_AFTER_DAYS) {
+        return {
+          ok: false,
+          error: `Enter a whole number of days from 1 to ${MAX_PUBLISHED_AFTER_DAYS} for the publish window, or leave it empty.`,
+        };
+      }
+      data.published_after_days = days;
+    }
     if (form.topic.trim()) data.topic = form.topic.trim();
     data.num_videos = form.numVideos;
     data.search_instructions = form.searchInstructions || undefined;
@@ -345,6 +380,7 @@ export function formToTemplateParameters(form: JobFormState): { ok: true; params
       // stored setting while D-105 hides the option, so it returns intact.
       visual_analysis: form.visualAnalysis,
       source_types: rest.source_types ?? null,
+      published_after_days: rest.published_after_days ?? null,
       channel_list: rest.channel_list ?? null,
       videos_per_channel: rest.job_type === 'channel' ? rest.videos_per_channel ?? 10 : null,
     },

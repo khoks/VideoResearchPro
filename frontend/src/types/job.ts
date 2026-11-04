@@ -36,6 +36,11 @@ export interface Job {
    * Optional for responses from a server older than the field.
    */
   source_types?: string[];
+  /**
+   * S-8.6.3: prefer sources from the last N days; null means no preference.
+   * Optional for responses from a server older than the field.
+   */
+  published_after_days?: number | null;
   /** E-8.6: the template version this run started from, if any. */
   template_id: string | null;
   template_version: number | null;
@@ -66,6 +71,8 @@ export interface JobCreate {
   visual_analysis?: boolean;
   /** S-1.5.13: topic runs only; omitted means YouTube only. */
   source_types?: string[];
+  /** S-8.6.3: topic runs that search YouTube; omitted means no preference. */
+  published_after_days?: number;
 }
 
 /** E-8.6: which template version a submission started from. */

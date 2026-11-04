@@ -155,10 +155,13 @@ class FakeWhisperApi:
     """The OpenAI client below ``_whisper_transcribe_with_retry``, so that
     function, the meter behind it and every caller above it are production
     code. ``seconds`` is what each response reports; ``sent`` counts responses.
-    ``before_send`` runs first and may raise, as a dying worker does."""
+    ``segment_start`` is where its one segment begins: past the overlap, it
+    survives the merge of a split recording. ``before_send`` runs first and may
+    raise, as a dying worker does."""
 
     def __init__(self) -> None:
         self.seconds = 60.0
+        self.segment_start = 0.0
         self.sent = 0
         self.before_send = None
         self.client = MagicMock()
@@ -169,7 +172,9 @@ class FakeWhisperApi:
         if self.before_send is not None:
             self.before_send(self)
         self.sent += 1
-        segment = _WhisperSegment(text=f"spoken words {self.sent}", start=0.0, end=self.seconds)
+        segment = _WhisperSegment(
+            text=f"spoken words {self.sent}", start=self.segment_start, end=self.seconds
+        )
         return SimpleNamespace(language="en", duration=self.seconds, segments=[segment])
 
 

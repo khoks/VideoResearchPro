@@ -9,6 +9,7 @@ import {
   DEFAULT_FORM,
   formToJobCreate,
   formToTemplateParameters,
+  isDraftForm,
   jobToFormState,
   offeredSourceTypes,
   parseDraft,
@@ -96,6 +97,7 @@ describe('templates (S-8.6.1)', () => {
     output_length: 'brief',
     visual_analysis: false,
     source_types: ['video', 'hn_story'],
+    published_after_days: 30,
     channel_list: null,
     videos_per_channel: null,
   };
@@ -108,6 +110,7 @@ describe('templates (S-8.6.1)', () => {
     expect(form.maxDuration).toBe('90');
     expect(form.channelFilters).toEqual(['news']);
     expect(form.sourceTypes).toEqual(['video', 'hn_story']);
+    expect(form.publishedAfterDays).toBe('30');
   });
 
   it('turns the form back into the same parameters (no topic)', () => {
@@ -124,6 +127,91 @@ describe('templates (S-8.6.1)', () => {
   it('still requires channels to submit a channel run', () => {
     const result = formToJobCreate({ ...DEFAULT_FORM, jobType: 'channel' });
     expect(result.ok).toBe(false);
+  });
+});
+
+describe('publish window (S-8.6.3)', () => {
+  const FORM = { ...DEFAULT_FORM, topic: 'tariffs' };
+
+  it('is left out of the request when unset, so the request is unchanged', () => {
+    const result = formToJobCreate(FORM);
+    expect(result.ok && 'published_after_days' in result.data).toBe(false);
+    const blank = formToJobCreate({ ...FORM, publishedAfterDays: '   ' });
+    expect(blank).toEqual(result);
+  });
+
+  it('goes out as a number of days', () => {
+    const result = formToJobCreate({ ...FORM, publishedAfterDays: '30' });
+    expect(result.ok && result.data.published_after_days).toBe(30);
+  });
+
+  it.each(['0', '-7', '3651', '1.5', 'soon'])('refuses %s as the server would', (value) => {
+    expect(formToJobCreate({ ...FORM, publishedAfterDays: value }).ok).toBe(false);
+  });
+
+  it('accepts both ends of the range', () => {
+    expect(formToJobCreate({ ...FORM, publishedAfterDays: '1' }).ok).toBe(true);
+    expect(formToJobCreate({ ...FORM, publishedAfterDays: '3650' }).ok).toBe(true);
+  });
+
+  it('is not sent for a run that does not search YouTube, even a junk value', () => {
+    const podcasts = { ...FORM, sourceTypes: ['podcast_episode' as const] };
+    for (const publishedAfterDays of ['30', 'soon']) {
+      const result = formToJobCreate({ ...podcasts, publishedAfterDays });
+      expect(result.ok && 'published_after_days' in result.data).toBe(false);
+    }
+  });
+
+  it('is sent for a mixed run that includes YouTube', () => {
+    const mixed = { ...FORM, sourceTypes: ['video' as const, 'hn_story' as const], publishedAfterDays: '30' };
+    const result = formToJobCreate(mixed);
+    expect(result.ok && result.data.published_after_days).toBe(30);
+  });
+
+  it('is not sent for a channel or subscription run', () => {
+    for (const jobType of ['channel', 'subscription'] as const) {
+      const result = formToJobCreate({
+        ...DEFAULT_FORM,
+        jobType,
+        channelList: '@a',
+        subscriptionChannels: '@a',
+        publishedAfterDays: '30',
+      });
+      expect(result.ok && 'published_after_days' in result.data).toBe(false);
+    }
+  });
+
+  it('survives Duplicate', () => {
+    const job = { ...DEEP_VISUAL_JOB, published_after_days: 14 };
+    expect(jobToFormState(job).publishedAfterDays).toBe('14');
+    const result = formToJobCreate(jobToFormState(job));
+    expect(result.ok && result.data.published_after_days).toBe(14);
+  });
+
+  it('reads as unset from a server older than the field', () => {
+    expect(jobToFormState(DEEP_VISUAL_JOB).publishedAfterDays).toBe('');
+  });
+
+  it('is saved into a template and read back', () => {
+    const saved = formToTemplateParameters({ ...FORM, publishedAfterDays: '7' });
+    expect(saved.ok && saved.params.published_after_days).toBe(7);
+    expect(saved.ok && templateToFormState(saved.params).publishedAfterDays).toBe('7');
+  });
+
+  it('is null in a template that sets none', () => {
+    const saved = formToTemplateParameters(FORM);
+    expect(saved.ok && saved.params.published_after_days).toBe(null);
+  });
+
+  it('counts as a draft once typed', () => {
+    expect(isDraftForm({ ...DEFAULT_FORM, publishedAfterDays: '7' })).toBe(true);
+    expect(isDraftForm(DEFAULT_FORM)).toBe(false);
+  });
+
+  it('is restored from a draft, and tolerates a draft from before the field', () => {
+    expect(parseDraft(JSON.stringify({ topic: 'x', publishedAfterDays: '7' })).publishedAfterDays).toBe('7');
+    expect(parseDraft(JSON.stringify({ topic: 'x' })).publishedAfterDays).toBe('');
+    expect(parseDraft(JSON.stringify({ topic: 'x', publishedAfterDays: 7 })).publishedAfterDays).toBe('');
   });
 });
 

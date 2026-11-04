@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.job import MAX_PUBLISHED_AFTER_DAYS
+
 # The variable fields of a run: what a reader changes each time they use a
 # template. Everything else on `JobCreate` is frozen into the template.
 # `test_job_templates.py` pins that FROZEN ∪ VARIABLE == JobCreate's fields,
@@ -27,6 +29,11 @@ class TemplateParameters(BaseModel):
     # S-1.5.13: None is the default (YouTube only); validated like a
     # submission by `validate_parameters`.
     source_types: list[str] | None = None
+    # S-8.6.3: days, never a date, so a recipe means "the last N days"
+    # however long after saving it runs. None is no preference.
+    published_after_days: int | None = Field(
+        default=None, ge=1, le=MAX_PUBLISHED_AFTER_DAYS
+    )
     channel_list: list[str] | None = None
     videos_per_channel: int | None = Field(default=10, ge=1, le=50)
 

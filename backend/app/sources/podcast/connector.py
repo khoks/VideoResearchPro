@@ -13,6 +13,7 @@ import os
 import re
 import tempfile
 from datetime import datetime, timezone
+from itertools import chain, zip_longest
 from typing import Any, Iterator
 
 import httpx
@@ -282,6 +283,11 @@ def _whisper_transcribe_audio(
     stay consistent with the YouTube fallback path. Returns canonical
     `{text, start, duration}` segments or None on failure.
 
+    An episode past Whisper's 25 MB upload cap, which is most long shows,
+    goes through the same chunked path as a long YouTube video
+    (`_transcribe_in_chunks`), so it needs ffmpeg on PATH. Without ffmpeg it
+    is unavailable like any other failure here.
+
     Fail-soft: any error (HTTP fetch / Whisper call / file IO) is
     logged + caught here, and the function returns None. Caller
     treats None as "text unavailable".
@@ -327,16 +333,25 @@ def _whisper_transcribe_audio(
         # prefix; pass the source_id so log lines are correlatable.
         from openai import OpenAI
 
+        from app.services import youtube_service
         from app.services.youtube_service import _whisper_transcribe_with_retry
 
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        tag = f"[job:{job_id}] [podcast]" if job_id else "[podcast]"
+        if len(audio_bytes) > youtube_service.WHISPER_MAX_FILE_BYTES:
+            with tempfile.TemporaryDirectory() as chunk_dir:
+                result = youtube_service._transcribe_in_chunks(
+                    client, tmp_path, chunk_dir, source_id, tag
+                )
+            return result[0] if result else None
+
         size_mb = len(audio_bytes) / (1024 * 1024)
         try:
             response = _whisper_transcribe_with_retry(
                 client,
                 tmp_path,
                 source_id,
-                f"[job:{job_id}] [podcast]" if job_id else "[podcast]",
+                tag,
                 size_mb,
             )
         except Exception as e:
@@ -387,9 +402,13 @@ class PodcastConnector(BaseConnector):
         """Two-tier search: iTunes for shows, RSS for episodes.
 
         For each top-N show iTunes returns, fetch the show's RSS feed
-        and yield the most-recent K episodes. Up to
+        and take its most-recent K episodes. Up to
         ``PODCAST_SEARCH_TOP_N_SHOWS * PODCAST_EPISODES_PER_SHOW``
         candidates total, capped at `limit`.
+
+        The cap is applied by taking one episode from each show in turn:
+        a run's share of the budget is small (D-114), and filling it show
+        by show would hand nearly all of it to the first show iTunes ranks.
         """
         if not query.strip():
             return []
@@ -405,7 +424,7 @@ class PodcastConnector(BaseConnector):
             payload.get("results") if isinstance(payload, dict) else None
         ) or []
 
-        candidates: list[Candidate] = []
+        per_show: list[list[Candidate]] = []
         for show in results[: settings.PODCAST_SEARCH_TOP_N_SHOWS]:
             if not isinstance(show, dict):
                 continue
@@ -421,11 +440,14 @@ class PodcastConnector(BaseConnector):
                 )
                 continue
             entries = (feed.get("entries") if isinstance(feed, dict) else None) or []
-            for entry in entries[: settings.PODCAST_EPISODES_PER_SHOW]:
-                candidates.append(_entry_to_candidate(entry, feed_url, show_name))
-                if len(candidates) >= limit:
-                    return candidates
-        return candidates
+            per_show.append(
+                [
+                    _entry_to_candidate(entry, feed_url, show_name)
+                    for entry in entries[: settings.PODCAST_EPISODES_PER_SHOW]
+                ]
+            )
+        in_turn = chain.from_iterable(zip_longest(*per_show))
+        return [c for c in in_turn if c is not None][: max(0, limit)]
 
     def list_creator_items(
         self,

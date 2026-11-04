@@ -1611,6 +1611,64 @@ def _whisper_response_to_segments(response, tag: str, video_id: str) -> tuple[li
     return [], response_language, response_duration
 
 
+def _transcribe_in_chunks(
+    client, audio_path: str, tmpdir: str, source_id: str, tag: str
+) -> tuple[list[dict], str] | None:
+    """Transcribe audio past Whisper's upload cap, one chunk at a time.
+
+    The segmented path of S-1.11.2 / D-051, for any recording: split with
+    ``_split_audio_for_whisper`` into ``tmpdir``, send each chunk through
+    ``_whisper_transcribe_with_retry`` (so each is metered and retried on its
+    own), merge the results onto one timeline. Segments come back in the
+    canonical ``{text, start, duration}`` shape.
+
+    Returns (segments, language), or None when the audio cannot be split or
+    any chunk fails: a transcript with a hole in it would read as complete.
+    """
+    chunks = _split_audio_for_whisper(audio_path, tmpdir, tag)
+    if not chunks:
+        audio_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
+        logger.warning(
+            f"{tag} Audio for {source_id} is {audio_size_mb:.1f} MB, exceeds Whisper "
+            f"{WHISPER_MAX_FILE_BYTES // (1024 * 1024)} MB limit and could not be "
+            "split; skipping Whisper fallback"
+        )
+        return None
+    overlap = settings.WHISPER_SEGMENT_OVERLAP_SECONDS
+    per_chunk: list[tuple[float, float, list[dict]]] = []
+    language = "unknown"
+    n = len(chunks)
+    chunk_len_estimate = 0.0
+    for idx, (chunk_path, chunk_start) in enumerate(chunks):
+        chunk_mb = os.path.getsize(chunk_path) / (1024 * 1024)
+        try:
+            response = _whisper_transcribe_with_retry(
+                client, chunk_path, f"{source_id}#chunk{idx + 1}/{n}", tag, chunk_mb
+            )
+        except Exception as e:
+            logger.error(
+                f"{tag} Whisper failed on chunk {idx + 1}/{n} of {source_id}: {e}"
+            )
+            return None
+        if response is None:
+            return None
+        segs, lang, dur = _whisper_response_to_segments(response, tag, source_id)
+        if lang != "unknown":
+            language = lang
+        # Chunk length (sans tail overlap) — from the response duration.
+        chunk_len = max(0.0, dur - (overlap if idx < n - 1 else 0.0))
+        chunk_len_estimate = chunk_len or chunk_len_estimate
+        per_chunk.append((chunk_start, chunk_len or chunk_len_estimate, segs))
+    merged = _merge_chunk_transcripts(per_chunk, overlap, tag)
+    logger.info(
+        f"{tag} Segmented Whisper transcription succeeded for {source_id}: "
+        f"{len(merged)} segments across {n} chunks (language={language})"
+    )
+    if not merged:
+        return None
+    return merged, language
+
+
 def _transcribe_with_whisper(
     video_id: str, job_id: str = ""
 ) -> tuple[list[dict], str] | None:
@@ -1676,47 +1734,7 @@ def _transcribe_with_whisper(
 
         # Oversize step 2: segmented transcription.
         if audio_size_bytes > WHISPER_MAX_FILE_BYTES:
-            chunks = _split_audio_for_whisper(audio_path, tmpdir, tag)
-            if not chunks:
-                logger.warning(
-                    f"{tag} Audio for {video_id} is {audio_size_mb:.1f} MB, exceeds Whisper "
-                    f"{WHISPER_MAX_FILE_BYTES // (1024 * 1024)} MB limit and could not be "
-                    "split; skipping Whisper fallback"
-                )
-                return None
-            overlap = settings.WHISPER_SEGMENT_OVERLAP_SECONDS
-            per_chunk: list[tuple[float, float, list[dict]]] = []
-            language = "unknown"
-            n = len(chunks)
-            chunk_len_estimate = 0.0
-            for idx, (chunk_path, chunk_start) in enumerate(chunks):
-                chunk_mb = os.path.getsize(chunk_path) / (1024 * 1024)
-                try:
-                    response = _whisper_transcribe_with_retry(
-                        client, chunk_path, f"{video_id}#chunk{idx + 1}/{n}", tag, chunk_mb
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"{tag} Whisper failed on chunk {idx + 1}/{n} of {video_id}: {e}"
-                    )
-                    return None
-                if response is None:
-                    return None
-                segs, lang, dur = _whisper_response_to_segments(response, tag, video_id)
-                if lang != "unknown":
-                    language = lang
-                # Chunk length (sans tail overlap) — from the response duration.
-                chunk_len = max(0.0, dur - (overlap if idx < n - 1 else 0.0))
-                chunk_len_estimate = chunk_len or chunk_len_estimate
-                per_chunk.append((chunk_start, chunk_len or chunk_len_estimate, segs))
-            merged = _merge_chunk_transcripts(per_chunk, overlap, tag)
-            logger.info(
-                f"{tag} Segmented Whisper transcription succeeded for {video_id}: "
-                f"{len(merged)} segments across {n} chunks (language={language})"
-            )
-            if not merged:
-                return None
-            return merged, language
+            return _transcribe_in_chunks(client, audio_path, tmpdir, video_id, tag)
 
         # Standard single-file path.
         try:

@@ -10,6 +10,57 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Fix: YouTube transcripts come from the spoken-language caption track, never an auto-dub (S-1.11.11, 2026-10-29)
+
+PR [#386](https://github.com/khoks/VideoResearchPro/pull/386). [D-117](docs/decisions.md#d-117--the-caption-track-is-the-one-in-the-spoken-language-auto-dubs-are-read-from-the-players-audio-tracks-2026-10-29).
+
+- YouTube auto-dubs videos into other languages and lists each dub's captions beside the original's. The fetch used to try English and then take the first track listed, so a Hindi lecture could be ingested as a machine-dubbed Bengali or English transcript, and every quote from an English dub was words the speaker never said.
+- The fetch now takes the caption track in the language the video is spoken in. Dubs are recognised from the player's audio tracks, which the transcript library already downloads, and are skipped. A creator's manual track beats the automatic one. English-first is only the fallback when nothing says what language is spoken.
+- A video whose every caption track is a dub goes to Whisper instead of being ingested.
+- The chosen track, and why it was chosen, is recorded on the document.
+- `scripts/refetch_dubbed_transcripts.py` finds transcripts that came from a dub. Its dry run, the default, writes nothing. It found three in the dev library; the owner re-fetched them with `--write` on 2026-11-03.
+- Measured first on 37 Hindi, Hinglish and Kannada library videos: the old and new rules differ on 7 of 35 ([note](docs/notes/2026-10-25-caption-track-choice.md)).
+
+### Security: OAuth links or creates an account only from a provider-verified email (T-5.4.10, 2026-10-29)
+
+PR [#384](https://github.com/khoks/VideoResearchPro/pull/384). [D-116](docs/decisions.md#d-116--oauth-links-or-creates-an-account-only-from-a-provider-verified-email-and-the-link-records-it-2026-10-29), amending [D-042](docs/decisions.md#d-042--oauth-first-login-links-to-existing-user-by-email-2026-05-05).
+
+- A first Google or GitHub sign-in links to an existing account with the same email, or creates a new one, only when the provider verified the address. Before, only `ADMIN_EMAILS` addresses were checked, so any other account could be reached from an unverified address.
+- GitHub is checked through `GET /user/emails` (the primary address, `verified: true`). The public profile email is no longer trusted.
+- A refused sign-in gets a 403 with a plain message saying what to do, the same whether or not an account has the address. A failed GitHub lookup gets the usual retryable 401. People who already linked Google or GitHub sign in as before.
+- New nullable column `oauth_identities.email_verified_at` (migration `066d3f4b4d4d`) records the verification. Applied on the owner's install on 2026-11-03.
+- Still open, deferred by the owner on 2026-11-03: password sign-up verifies no email, so an account registered first with someone else's address is linked when the real owner signs in with Google or GitHub (T-5.4.11).
+
+### Added: the advertised document caps are enforced (T-5.2.10, 2026-10-29)
+
+PR [#385](https://github.com/khoks/VideoResearchPro/pull/385). [D-115](docs/decisions.md#d-115--the-document-cap-counts-visible-documents-a-request-that-names-its-documents-is-all-or-nothing-and-nothing-is-granted-before-approval-2026-10-29).
+
+- The library holds at most 500 documents on Free and 5,000 on Pro; Studio is unlimited. The caps were on the pricing page and checked nowhere.
+- The cap counts the documents in your library. A document you already have never counts again; one that only someone else added counts as new.
+- Approving a run, uploading a PDF and pasting URLs are all or nothing: if they do not fit, nothing is added and the message says how much room is left. Subscribing to or syncing a channel is refused only when the library is already full; otherwise the sync stops at the cap, takes the newest uploads first and says how many it left out.
+- The refusal is shown where the action starts: above the approve button (the selection is kept), on the upload row, in the paste alert, under the subscribe and sync buttons and in the Submit page's form. The Subscription page shows how much of the cap is used.
+- Candidates you deselect at approval no longer appear in your library. Before, the approval step made every candidate visible.
+
+### Added: topic runs choose which sources they search (S-1.5.13, 2026-10-29)
+
+PR [#382](https://github.com/khoks/VideoResearchPro/pull/382). [D-114](docs/decisions.md#d-114--which-sources-a-topic-run-searches-settings-decide-one-budget-for-the-run-no-whisper-before-approval-2026-10-29).
+
+- The Topic tab on the Submit page has a source picker: YouTube, Reddit, Hacker News, Mastodon, Bluesky, podcasts, web articles and X / Twitter. It offers only the sources this install has set up; X / Twitter appears only when tweet search is on. `POST /api/v1/jobs` takes the same `source_types` list. Leaving it out searches YouTube only, as before.
+- A source that is not set up is refused with a message naming the missing setting. `/health` now also reports `reddit_search_enabled`.
+- The number of results is the whole run's budget, shared across its sources, so the tier cap bounds the run.
+- Nothing goes to Whisper before approval. A podcast episode with no transcript in its feed is transcribed only after it is approved, and podcasts now count against `WHISPER_MAX_PER_JOB`.
+- Each approved document is fetched once: the text found during the search is reused at extraction. Fixed on the way: approved documents that were not YouTube videos were dropped at extraction.
+- Duplicate and templates carry the sources. A template saved before this change gains no new version when saved again unchanged.
+
+### Added: knowledge reports for PDFs, pasted pages, threads and podcasts (2026-10-29)
+
+PR [#383](https://github.com/khoks/VideoResearchPro/pull/383). [D-113](docs/decisions.md#d-113--knowledge-text-for-any-source-the-transcript-cache-else-the-documents-chunks-put-back-together-2026-10-29).
+
+- "Generate knowledge report" works for every source type. Before, anything without a YouTube transcript got a 422.
+- When a document has no cached transcript, its text is put back together from its stored chunks, in order and without the overlap between neighbouring chunks.
+- Every Library row whose text has been read has a Knowledge button, whatever its source. On a job page, the button now opens for threads and other non-video sources too. The frames panel shows for videos only.
+- The report names the source by its kind (a PDF document, a Reddit thread, a podcast episode). A video's report reads exactly as before.
+
 ### Changed: sign-in tokens stay out of URLs (T-8.8.1.5, 2026-10-25)
 
 PR [#380](https://github.com/khoks/VideoResearchPro/pull/380). Amends [D-085](docs/decisions.md#d-085--reading-room-reports-stay-html-sanitised-and-parsed-in-the-browser-one-shared-citation-card-fed-by-the-runs-documents-2026-10-19).

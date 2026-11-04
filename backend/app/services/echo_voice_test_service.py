@@ -32,11 +32,13 @@ per pair, then the coin flip for the order), ``score_picks`` (the
 
 The app differs from the harness in two ways:
 
-- The model is the ``echo_draft`` use case: routed, BYOK-aware and metered
-  as "Speak as me" usage. Its default is the harness's drafter (gpt-5.5,
-  reasoning low), called with the harness's temperature (1.0) and output cap
-  (1,200). An operator who moves ``echo_draft`` to another model tests the
-  drafts users will get.
+- The model is the ``echo_draft`` use case, resolved for the user inside
+  ``llm_service.byok_context``: their pin on /account/ai-models, their BYOK
+  key, and metered as "Speak as me" usage. Its default is the harness's
+  drafter (gpt-5.5, reasoning low), called with the harness's temperature
+  (1.0) and output cap (1,200). Whoever moves ``echo_draft`` to another
+  model tests the drafts they will get: ``echo_draft_service.draft`` resolves
+  it the same way.
 - Texts Echo has not learned from yet are not learned during the test. The
   harness's run reads them with the extraction model; here their stylometry
   counts and nothing else.
@@ -45,7 +47,16 @@ The app differs from the harness in two ways:
 readiness (the messages of ``GET /echo/draft/status``), 40 live notes, no
 test already open, and ``ECHO_VOICE_TESTS_PER_DAY``. The tier
 (``echo_speak_as_me``) is the router's 403. Only the user's click starts a
-test, after the page has said it makes about 40 model calls.
+test, after the page has said it makes about 40 model calls. Those checks
+read and then insert, so the rule of one open test is held by a partial
+unique index, which turns the loser of a race into the same conflict.
+
+**A test closed under the worker stays closed.** The page's poll marks a
+test failed when the worker has said nothing for ``STALE_AFTER``. Everything
+that writes to a generating test goes through ``_update_if_generating``, so
+the check and the write are one statement: a worker that was only slow
+finds out at its next pair, stops spending, and cannot turn the test back
+to ready.
 """
 from __future__ import annotations
 
@@ -60,10 +71,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable, Iterator
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models.echo_voice_test import EchoVoiceTest
+from app.models.echo_voice_test import OPEN_STATUSES, EchoVoiceTest
 from app.models.user import User
 from app.models.voice_signal import VoiceSignal
 
@@ -82,7 +94,8 @@ TRAIT_CARD_SIGNALS = 8
 USE_CASE = "echo_draft"
 DRAFT_TEMPERATURE = 1.0
 DRAFT_MAX_TOKENS = 1200
-#: A test still "generating" after this long lost its worker.
+#: A test "generating" that has shown no progress for this long lost its
+#: worker. Well above a slow pair: two calls of three tries each.
 STALE_AFTER = timedelta(minutes=30)
 
 LANGUAGE_NAMES = {"en": "English", "hi-Deva": "Hindi", "hi-Latn": "Hindi in Roman letters", "mixed": "Hinglish"}
@@ -356,28 +369,51 @@ class VoiceTestNotFound(LookupError):
     pass
 
 
+class _TestClosed(Exception):
+    """The test stopped being ``generating`` while the worker was on it."""
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _update_if_generating(db: Session, test_id: str, **values: Any) -> bool:
+    """Write to a test only if it is still ``generating``, and count that as
+    progress. The check and the write are one statement, and it commits.
+    False: the test was closed, and nothing was written."""
+    written = (
+        db.query(EchoVoiceTest)
+        .filter(EchoVoiceTest.id == test_id, EchoVoiceTest.status == "generating")
+        .update({**values, "last_progress_at": _now()}, synchronize_session=False)
+    )
+    db.commit()
+    return written > 0
+
+
 def _fail(db: Session, test_id: str, message: str) -> EchoVoiceTest | None:
+    """Mark a generating test failed. One that has been written or closed
+    meanwhile stays as it is."""
     db.rollback()
-    row = db.get(EchoVoiceTest, test_id)
-    if row is not None:
-        row.status = "failed"
-        row.error = message[:500]
-        db.commit()
-    return row
+    _update_if_generating(db, test_id, status="failed", error=message[:500])
+    return db.get(EchoVoiceTest, test_id)
+
+
+def _lost_its_worker(row: EchoVoiceTest) -> bool:
+    return row.status == "generating" and (row.last_progress_at or row.created_at) < _now() - STALE_AFTER
+
+
+def _open_message(row: EchoVoiceTest) -> str:
+    return "Your test is being written." if row.status == "generating" else "Finish the test you started first."
 
 
 def latest(db: Session, tenant_id: str) -> EchoVoiceTest | None:
-    """The tenant's newest test. One still generating long after it started
-    lost its worker: it is marked failed so a new one can start."""
+    """The tenant's newest test. One that has shown no progress for a long
+    time lost its worker: it is marked failed so a new one can start."""
     row = (
         db.query(EchoVoiceTest).filter(EchoVoiceTest.tenant_id == tenant_id)
         .order_by(EchoVoiceTest.created_at.desc(), EchoVoiceTest.id.desc()).first()
     )
-    if row is not None and row.status == "generating" and row.created_at < _now() - STALE_AFTER:
+    if row is not None and _lost_its_worker(row):
         return _fail(db, row.id, "Writing the test stopped before it finished. Start a new one.")
     return row
 
@@ -386,7 +422,7 @@ def get_test(db: Session, tenant_id: str, test_id: str) -> EchoVoiceTest:
     row = db.get(EchoVoiceTest, test_id)
     if row is None or row.tenant_id != tenant_id:
         raise VoiceTestNotFound(test_id)
-    if row.status == "generating" and row.created_at < _now() - STALE_AFTER:
+    if _lost_its_worker(row):
         row = _fail(db, row.id, "Writing the test stopped before it finished. Start a new one.")
     return row  # type: ignore[return-value]
 
@@ -401,6 +437,7 @@ def offer(db: Session, user: User) -> dict:
     The install switch and readiness reuse the draft gate's codes and
     messages, so the page can show each reason once."""
     from app.services import echo_draft_service as drafts
+    from app.services import llm_service
     from app.services.llm_routing import resolve_config
 
     st = drafts.status(db, user)
@@ -415,21 +452,21 @@ def offer(db: Session, user: User) -> dict:
             ),
         })
     current = latest(db, user.id)
-    if current is not None and current.status in ("generating", "ready"):
-        blockers.append({
-            "code": "test_open",
-            "message": "Your test is being written." if current.status == "generating" else "Finish the test you started first.",
-        })
+    if current is not None and current.status in OPEN_STATUSES:
+        blockers.append({"code": "test_open", "message": _open_message(current)})
     cap = settings.ECHO_VOICE_TESTS_PER_DAY
     used = tests_today(db, user.id)
     if cap > 0 and used >= cap:
         blockers.append({"code": "daily_limit", "message": f"You have started {cap} voice tests today. Try again tomorrow."})
+    # The model this user's test would run on: their pin, if they have one.
+    with llm_service.byok_context(user.id, db):
+        model = resolve_config(USE_CASE).model
     return {
         "available": not blockers,
         "blockers": blockers,
         "pairs": PAIRS,
         "model_calls": 2 * PAIRS,
-        "model": resolve_config(USE_CASE).model,
+        "model": model,
         "notes": notes,
         "notes_needed": MIN_NOTES,
         "pass_share": drafts.VOICE_TEST_MAX_OWN_SHARE,
@@ -476,7 +513,9 @@ def overview(db: Session, user: User) -> dict:
 
 def start(db: Session, user: User) -> EchoVoiceTest:
     """Start a test the user asked for: checks every gate, then writes the
-    pairs in the background (``ECHO_VOICE_TEST_GENERATION``)."""
+    pairs in the background (``ECHO_VOICE_TEST_GENERATION``). A request that
+    passed the gates while another was starting a test gets the same
+    conflict as one that came second."""
     from app.services import audit_service
 
     off = offer(db, user)
@@ -488,7 +527,14 @@ def start(db: Session, user: User) -> EchoVoiceTest:
         pairs_total=PAIRS, model=off["model"],
     )
     db.add(row)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        current = latest(db, user.id)
+        if current is None or current.status not in OPEN_STATUSES:
+            raise
+        raise VoiceTestConflict("test_open", _open_message(current)) from None
     db.refresh(row)
     try:
         audit_service.record(db, event="echo_voice_test_started", user_id=user.id, tenant_id=user.id,
@@ -551,21 +597,27 @@ def _drafter(db: Session, tenant_id: str) -> Ask:
 def generate(db: Session, test_id: str, *, ask: Ask | None = None) -> EchoVoiceTest | None:
     """Write the pairs of a test that is ``generating``: hold out
     ``pairs_total`` live notes with the test's seed, build the trait card
-    without them, then one topic and one draft call per pair. Progress is
-    committed pair by pair. Fail-soft: any error marks the test failed, in
-    words, and nothing of it is shown."""
-    from app.services import note_service, usage_service
+    without them, then one topic and one draft call per pair, on the model
+    this user's ``echo_draft`` resolves to. Progress is committed pair by
+    pair, and a test closed meanwhile stops there and stays closed.
+    Fail-soft: any error marks the test failed, in words, and nothing of it
+    is shown."""
+    from app.services import llm_service, note_service
+    from app.services.llm_routing import resolve_config
     from app.services.model_pricing import pricing_for
 
     row = db.get(EchoVoiceTest, test_id)
     if row is None or row.status != "generating":
         return row
-    tenant = row.tenant_id
+    tenant, seed, pairs_total = row.tenant_id, row.seed, row.pairs_total
     card: HeldOutTraitCard | None = None
     try:
+        # The wait in the queue is over: the clock runs from here.
+        if not _update_if_generating(db, test_id):
+            raise _TestClosed
         notes = list(note_service.iter_notes(db, tenant, include_deleted=False))
-        rng = random.Random(row.seed)
-        held = hold_out(notes, rng, row.pairs_total)
+        rng = random.Random(seed)
+        held = hold_out(notes, rng, pairs_total)
         held_ids = {n.id for n in held}
         held_texts = [(n.id, n.body_md) for n in held]
         remaining = [n.body_md for n in notes if n.id not in held_ids]
@@ -575,28 +627,33 @@ def generate(db: Session, test_id: str, *, ask: Ask | None = None) -> EchoVoiceT
         card = HeldOutTraitCard(db, tenant, [f"note:{i}" for i in held_ids])
 
         def progress(done: int) -> None:
-            row.pairs_built = done
-            db.commit()
+            if not _update_if_generating(db, test_id, pairs_built=done):
+                raise _TestClosed
 
-        with usage_service.metered(db, tenant):
+        with llm_service.byok_context(tenant, db):
+            model = resolve_config(USE_CASE).model
             result = build_pairs(held_texts, remaining, ask=ask or _drafter(db, tenant), trait_card=card, rng=rng, on_pair=progress)
-        price = pricing_for(row.model or "")
-        row.pairs_json = json.dumps(result.pairs, ensure_ascii=False)
-        row.key_json = json.dumps(result.keys, ensure_ascii=False)
-        row.tokens_in, row.tokens_out = result.tokens_in, result.tokens_out
-        row.cost_usd = round(result.tokens_in / 1e6 * price.input_per_m + result.tokens_out / 1e6 * price.output_per_m, 6) if price else 0.0
-        row.status = "ready"
-        row.ready_at = _now()
-        db.commit()
+        price = pricing_for(model)
+        written = _update_if_generating(
+            db, test_id, status="ready", ready_at=_now(), model=model,
+            pairs_json=json.dumps(result.pairs, ensure_ascii=False),
+            key_json=json.dumps(result.keys, ensure_ascii=False),
+            tokens_in=result.tokens_in, tokens_out=result.tokens_out,
+            cost_usd=round(result.tokens_in / 1e6 * price.input_per_m + result.tokens_out / 1e6 * price.output_per_m, 6) if price else 0.0,
+        )
+        if not written:
+            raise _TestClosed
+    except _TestClosed:
+        logger.info("voice test: %s was closed while it was being written", test_id)
     except NotEnoughNotes:
-        row = _fail(db, test_id, f"The test needs {MIN_NOTES} of your notes; some were deleted while it was being written.")
+        _fail(db, test_id, f"The test needs {MIN_NOTES} of your notes; some were deleted while it was being written.")
     except Exception:  # noqa: BLE001
         logger.exception("voice test: could not write %s", test_id)
-        row = _fail(db, test_id, "Echo could not write the test. Start a new one.")
+        _fail(db, test_id, "Echo could not write the test. Start a new one.")
     finally:
         if card is not None:
             card.close()
-    return row
+    return db.get(EchoVoiceTest, test_id)
 
 
 def pick(db: Session, tenant_id: str, test_id: str, pair: str, choice: str) -> EchoVoiceTest:

@@ -25,7 +25,10 @@ that an export or a delete happened, with counts only, never content.
 - ``files/<stored path>`` — the bytes, exactly.
 
 ``read_archive`` is its exact inverse; the round-trip test holds every column
-of every row and every file's bytes to it. The archive includes third-party
+of every row and every file's bytes to it. One exception, for now only:
+what would give away an open voice test's answers is exported as null until
+the test is scored (``withheld_columns``), and the manifest counts those
+rows. The archive includes third-party
 share content: it is the user's own copy of what they handed over, the thing
 Article 20 portability covers. "Never exported" for context-only content
 applies to dataset and derived exports, not to this.
@@ -57,7 +60,7 @@ from app.models.echo_card_state import EchoCardState
 from app.models.echo_fact_tombstone import EchoFactTombstone
 from app.models.echo_import import EchoImport
 from app.models.echo_draft import EchoDraft, EchoVoiceGate
-from app.models.echo_voice_test import EchoVoiceTest
+from app.models.echo_voice_test import OPEN_STATUSES, EchoVoiceTest
 from app.models.echo_share_token import EchoShareToken
 from app.models.personal_context import PersonalContext
 from app.models.share import Share
@@ -134,12 +137,28 @@ def _aware(dt: datetime | None) -> datetime | None:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
 
+#: An open voice test's answers: which side is the user's, and the seed that
+#: fixes the held-out sample and every coin flip, so it would rebuild that.
+VOICE_TEST_ANSWER_COLUMNS = ("key_json", "seed")
+
+
+def withheld_columns(row: Any) -> tuple[str, ...]:
+    """Columns of ``row`` kept out of an export for now, as null. The blinding
+    the "speak as me" gate rests on holds until the test is scored; then they
+    are the user's copy like every other column."""
+    if isinstance(row, EchoVoiceTest) and row.status in OPEN_STATUSES:
+        return VOICE_TEST_ANSWER_COLUMNS
+    return ()
+
+
 def row_to_record(row: Any) -> dict[str, Any]:
-    """Every column of ``row``, JSON-safe. Datetimes become ISO strings with
-    an offset; everything else is stored as-is."""
+    """Every column of ``row``, JSON-safe, but for ``withheld_columns``.
+    Datetimes become ISO strings with an offset; everything else is stored
+    as-is."""
+    withheld = withheld_columns(row)
     out: dict[str, Any] = {}
     for col in row.__table__.columns:
-        value = getattr(row, col.key)
+        value = None if col.name in withheld else getattr(row, col.key)
         if isinstance(value, datetime):
             value = _aware(value).isoformat()  # type: ignore[union-attr]
         out[col.name] = value
@@ -147,11 +166,13 @@ def row_to_record(row: Any) -> dict[str, Any]:
 
 
 def row_columns(row: Any) -> dict[str, Any]:
-    """Every column of ``row``, typed (datetimes UTC-aware). What
-    ``read_archive`` must give back for the same row."""
+    """Every column of ``row``, typed (datetimes UTC-aware), but for
+    ``withheld_columns``. What ``read_archive`` must give back for the same
+    row."""
+    withheld = withheld_columns(row)
     out: dict[str, Any] = {}
     for col in row.__table__.columns:
-        value = getattr(row, col.key)
+        value = None if col.name in withheld else getattr(row, col.key)
         out[col.name] = _aware(value) if isinstance(value, datetime) else value
     return out
 
@@ -208,12 +229,15 @@ def write_archive(db: Session, tenant_id: str, out: IO[bytes]) -> dict[str, Any]
     }
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         file_paths: list[str] = []
+        columns_withheld = {"echo_voice_tests": {"columns": list(VOICE_TEST_ANSWER_COLUMNS), "rows": 0}}
         for name, model in ECHO_TABLES:
             count = 0
             with zf.open(f"{name}.jsonl", "w", force_zip64=True) as fh:
                 for row in _iter_rows(db, model, tenant_id):
                     fh.write((json.dumps(row_to_record(row), ensure_ascii=False) + "\n").encode("utf-8"))
                     count += 1
+                    if withheld_columns(row):
+                        columns_withheld[name]["rows"] += 1
                     if model is Share and row.file_path:
                         file_paths.append(row.file_path)
             manifest["tables"][name] = {"file": f"{name}.jsonl", "rows": count}
@@ -224,7 +248,7 @@ def write_archive(db: Session, tenant_id: str, out: IO[bytes]) -> dict[str, Any]
             )
             for name, model in ECHO_SECRET_TABLES
         }
-        manifest["withheld"] = {"tables": withheld, "reason": WITHHELD_REASON}
+        manifest["withheld"] = {"tables": withheld, "reason": WITHHELD_REASON, "columns": columns_withheld}
 
         for stored in file_paths:
             try:

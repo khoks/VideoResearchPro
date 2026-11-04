@@ -11,11 +11,16 @@ At the production caller, with the draft model patched:
   writes it: a pass opens speak as me, a fail does not (and a failed retake
   closes it again).
 - Every test is its owner's: another tenant's id is a 404.
+- The card names, and the row records, the model the user pinned.
+- Two starts at once make one test.
+- The whole-brain export carries no key while a test is open.
 """
 from __future__ import annotations
 
+import io
 import json
 import uuid
+import zipfile
 
 import pytest
 
@@ -23,8 +28,10 @@ from app.config import settings
 from app.models.echo_draft import EchoVoiceGate
 from app.models.echo_voice_test import EchoVoiceTest
 from app.models.job import Job
+from app.models.user_llm_override import UserLLMOverride
 from app.services import auth_service, echo_draft_service, note_service, task_routing_service
 from app.services import echo_voice_test_service as vt
+from app.services.echo_privacy_service import read_archive, row_columns
 from app.services.llm_routing import resolve_config
 from tests.test_services.test_echo_draft import _make_ready
 from tests.test_services.test_echo_voice_test import NOTES, FakeModel
@@ -287,3 +294,83 @@ class _NoClose:
 
     def close(self):
         pass
+
+
+def test_the_card_and_the_row_name_the_model_the_user_pinned(unauthenticated_client, db, model, monkeypatch):
+    _open(monkeypatch)
+    monkeypatch.setattr(settings, "ECHO_VOICE_TEST_GENERATION", "off")
+    user, h = _user(db)
+    pinned, _ = _user(db, notes=[])
+    db.add(UserLLMOverride(user_id=user.id, use_case="echo_draft", provider="local", model="qwen/qwen3-9b", reasoning="off"))
+    db.commit()
+
+    assert unauthenticated_client.get(VT, headers=h).json()["offer"]["model"] == "qwen/qwen3-9b"
+    test = _started(unauthenticated_client, h)
+    assert test["model"] == "qwen/qwen3-9b"
+    assert db.get(EchoVoiceTest, test["id"]).model == "qwen/qwen3-9b"
+    other = vt.offer(db, pinned)
+    assert other["model"] == resolve_config("echo_draft").model != "qwen/qwen3-9b", "one user's pin is theirs alone"
+
+
+def test_two_starts_at_once_make_one_test(unauthenticated_client, db, model, monkeypatch):
+    """Two tabs, or a client's retry: both pass the check before either has
+    committed. The index turns the loser into the usual conflict."""
+    _open(monkeypatch)
+    monkeypatch.setattr(settings, "ECHO_VOICE_TEST_GENERATION", "celery")
+    queued = []
+    monkeypatch.setattr(task_routing_service, "dispatch_for_user", lambda task, user, *args: queued.append(args))
+    user, h = _user(db)
+    real = vt.offer
+
+    def the_other_tab_gets_in_first(session, u):
+        off = real(session, u)
+        assert off["blockers"] == [], "this request saw no open test"
+        monkeypatch.setattr(vt, "offer", real)
+        vt.start(session, u)
+        return off
+
+    monkeypatch.setattr(vt, "offer", the_other_tab_gets_in_first)
+    r = unauthenticated_client.post(VT, headers=h)
+
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == {"code": "test_open", "message": "Your test is being written."}
+    assert db.query(EchoVoiceTest).filter(EchoVoiceTest.tenant_id == user.id).count() == 1
+    assert len(queued) == 1, "one test, one worker task"
+
+
+def _export(client, h):
+    r = client.get("/api/v1/echo/export", headers=h)
+    assert r.status_code == 200, r.text
+    with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+        blob = b"".join(zf.read(n) for n in zf.namelist())
+    return read_archive(io.BytesIO(r.content)), blob
+
+
+def test_the_export_keeps_the_key_until_the_test_is_scored(unauthenticated_client, db, model, monkeypatch):
+    """The whole-brain export is the one other way out of the server. The
+    seed fixes the sample and every coin flip, so it would rebuild the key."""
+    _open(monkeypatch)
+    _, h = _user(db)
+    test = _started(unauthenticated_client, h)
+    row = db.get(EchoVoiceTest, test["id"])
+
+    archive, blob = _export(unauthenticated_client, h)
+
+    assert b"own_is" not in blob and b"note_id" not in blob
+    exported = archive.tables["echo_voice_tests"][0]
+    assert exported["key_json"] is None and exported["seed"] is None
+    assert exported["pairs_json"] == row.pairs_json, "the rest of the row is the user's, as ever"
+    assert exported == row_columns(row)
+    assert archive.manifest["withheld"]["columns"] == {"echo_voice_tests": {"columns": ["key_json", "seed"], "rows": 1}}
+
+    _pick_own(unauthenticated_client, h, db, test["id"], own=10)
+    assert unauthenticated_client.post(f"{VT}/{test['id']}/score", headers=h).status_code == 200
+
+    archive, blob = _export(unauthenticated_client, h)
+
+    db.refresh(row)
+    exported = archive.tables["echo_voice_tests"][0]
+    assert b"own_is" in blob, "once scored it is the user's copy like every other column"
+    assert exported["key_json"] == row.key_json and exported["seed"] == row.seed
+    assert exported == row_columns(row)
+    assert archive.manifest["withheld"]["columns"] == {"echo_voice_tests": {"columns": ["key_json", "seed"], "rows": 0}}

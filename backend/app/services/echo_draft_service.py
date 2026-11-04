@@ -347,7 +347,7 @@ def draft(
     """One draft. Raises ``DraftBlocked``, ``DraftCapReached`` or
     ``NamesNeedConfirmation``; spends nothing when it raises before the model."""
     from app.agents.echo_agent import run_echo_draft
-    from app.services import audit_service, quota_metering_service, usage_service
+    from app.services import audit_service, llm_service, quota_metering_service
 
     st = status(db, user)
     gate = [b for b in st.blockers if b["code"] != "daily_cap"]
@@ -356,10 +356,11 @@ def draft(
     if any(b["code"] == "daily_cap" for b in st.blockers):
         raise DraftCapReached(next(b["message"] for b in st.blockers if b["code"] == "daily_cap"))
 
-    # E-5.2: the classify, draft and critique calls are the user's usage
-    # (feature echo_draft). The clients are built in _real_deps, so the scope
-    # opens before it.
-    with usage_service.metered(db, user.id):
+    # The classify, draft and critique calls are the user's: on the models
+    # they pinned (E-1.13), and their usage (E-5.2, feature echo_draft). The
+    # clients and ``deps.models`` are built in _real_deps, so the scope opens
+    # before it.
+    with llm_service.byok_context(user.id, db):
         deps = deps or _real_deps(db, user)
         state = run_echo_draft(
             deps, message=message, audience=audience, register=register, language=language,

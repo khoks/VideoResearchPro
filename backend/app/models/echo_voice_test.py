@@ -6,22 +6,34 @@ user-pairs`` builds them), the picks they made, and the score. Scoring writes
 ``echo_voice_gates`` as the harness's ``user-score --record`` does; that row,
 not this one, is the switch "speak as me" reads.
 
-``key_json`` says which side of each pair is the user's own note. It never
-leaves the server through the API, before or after scoring.
+``key_json`` says which side of each pair is the user's own note. The test's
+routes never send it, before or after scoring.
 
 Part of the brain (``echo_privacy_service.ECHO_TABLES``): it holds copies of
-the user's notes and drafts in their voice, so it is exported whole and
-erased with the brain.
+the user's notes and drafts in their voice, so it is erased with the brain
+and exported with it. An export keeps ``key_json`` and ``seed`` back while a
+test is open (``echo_privacy_service.withheld_columns``): the seed fixes the
+held-out sample and every coin flip, so it would rebuild the key. Once a test
+is scored both are the user's copy like every other column.
+
+At most one test per tenant is open (``OPEN_STATUSES``). The partial unique
+index holds that, so two requests that both pass the check in
+``echo_voice_test_service.start`` still make one test.
 """
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
+
+#: A test still being written or taken. Spelled out in the index below and
+#: in migration 6d5b3d5aa6fa.
+OPEN_STATUSES = ("generating", "ready")
+_OPEN = text("status IN ('generating', 'ready')")
 
 
 def _utcnow() -> datetime:
@@ -30,7 +42,10 @@ def _utcnow() -> datetime:
 
 class EchoVoiceTest(Base):
     __tablename__ = "echo_voice_tests"
-    __table_args__ = (Index("ix_echo_voice_tests_tenant_created", "tenant_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_echo_voice_tests_tenant_created", "tenant_id", "created_at"),
+        Index("uq_echo_voice_tests_one_open", "tenant_id", unique=True, sqlite_where=_OPEN, postgresql_where=_OPEN),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False)
@@ -50,12 +65,18 @@ class EchoVoiceTest(Base):
     picks_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     picked_own: Mapped[int | None] = mapped_column(Integer, nullable=True)
     passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: The ``echo_draft`` model: the user's pin if they have one, which
+    #: ``user_llm_overrides`` allows 128 characters.
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     tokens_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tokens_out: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     #: Why generation failed, in words for the user.
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+    #: The worker's last sign of life while ``generating``: when it picked the
+    #: test up, then each finished pair. Staleness runs from this, else
+    #: from ``created_at``.
+    last_progress_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ready_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     scored_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

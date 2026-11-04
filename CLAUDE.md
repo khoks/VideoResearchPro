@@ -254,8 +254,8 @@ POST   /api/v1/notifications/read-all
 GET    /api/v1/usage                     # The caller's own usage by feature, today + last 30 days (E-5.2); recorded, never limited
 
 GET    /api/v1/echo/voice-test                # Voice test: can it start (blockers in words), its cost, the gate, the newest test (T-3.4.1.8)
-POST   /api/v1/echo/voice-test                # Start one (202): about 40 draft-model calls, written by a worker task
-GET    /api/v1/echo/voice-test/{id}           # The test, for polling; never says which side is the user's
+POST   /api/v1/echo/voice-test                # Start one (202): about 40 calls on the user's echo_draft model, written by a worker task. One open test per tenant, held by an index
+GET    /api/v1/echo/voice-test/{id}           # The test, for polling; never says which side is the user's (nor does /echo/export while it is open)
 PUT    /api/v1/echo/voice-test/{id}/picks     # {pair, pick: A|B}
 POST   /api/v1/echo/voice-test/{id}/score     # Score as user-score does; writes echo_voice_gates as --record does
 

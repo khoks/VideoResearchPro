@@ -12,6 +12,12 @@ What must hold:
   would let the draft borrow from the very note it is paired with.
 - Generation spends through one patched model, commits progress, and fails
   in words; a failed or stale test is never shown as pairs.
+- A test runs on the model the user pinned for ``echo_draft``, and the row
+  says so.
+- Staleness is measured from the last progress, and a test marked failed
+  stays failed: the worker stops spending and cannot turn it back to ready.
+- The database, not the check before the insert, holds one open test per
+  tenant.
 """
 from __future__ import annotations
 
@@ -22,16 +28,21 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.echo_voice_test import EchoVoiceTest
 from app.models.job import Job
+from app.models.user_llm_override import UserLLMOverride
 from app.models.voice_signal import VoiceSignal
 from app.models.voice_signal_input import VoiceSignalInput
 from app.services import auth_service, note_service
 from app.services import echo_personal_vectors as pv
 from app.services import echo_signal_extraction as ex
 from app.services import echo_voice_test_service as vt
+from app.services.llm_routing import UseCaseConfig, resolve_config
+from tests.usage_helpers import MeteredFakeChat
 
 PERSONAS = json.loads(
     (Path(__file__).resolve().parents[1] / "fixtures" / "echo_voice" / "personas.json").read_text(encoding="utf-8")
@@ -259,7 +270,7 @@ def test_the_held_out_card_ranks_as_the_harness_index_does(db, chroma):
 
 def _generating(db, user, **kw):
     row = EchoVoiceTest(tenant_id=user.id, user_id=user.id, status="generating", seed=kw.pop("seed", 42),
-                        pairs_total=vt.PAIRS, model="gpt-5.5", **kw)
+                        pairs_total=vt.PAIRS, model=kw.pop("model_name", "gpt-5.5"), **kw)
     db.add(row)
     db.commit()
     return row
@@ -357,3 +368,197 @@ def test_the_key_never_leaves_through_to_dict(db):
     db.refresh(row)
     shown = json.dumps(vt.to_dict(row), default=str)
     assert "own_is" not in shown and "note_id" not in shown and "key" not in vt.to_dict(row)
+
+
+def _poll_gives_up(db, test_id):
+    """What the page's poll does to a silent test, from its own session: the
+    worker's session does not see it happen."""
+    other = Session(bind=db.get_bind())
+    try:
+        vt._fail(other, test_id, "Writing the test stopped before it finished. Start a new one.")
+    finally:
+        other.close()
+
+
+# ---------------------------------------------------------------------------
+# The user's own model (D-041, E-1.13)
+
+
+PINNED = UseCaseConfig("local", "qwen/qwen3-9b", "off")
+
+
+def _pin(db, user, cfg=PINNED):
+    db.add(UserLLMOverride(user_id=user.id, use_case=vt.USE_CASE, provider=cfg.provider, model=cfg.model, reasoning=cfg.reasoning))
+    db.commit()
+
+
+@pytest.fixture
+def clients(monkeypatch):
+    """The config of each client the real ``get_llm_for`` builds. Only the
+    provider client is fake: resolving the config stays production code."""
+    built = []
+
+    def build(cfg, temperature, max_tokens, *, byok_api_key=None):
+        built.append(cfg)
+        return MeteredFakeChat(reply="some words")
+
+    monkeypatch.setattr("app.services.llm_service._build_from_config", build)
+    return built
+
+
+def test_a_test_runs_on_the_model_the_user_pinned(db, clients):
+    """Their notes go only where they said. The worker has no request around
+    it, so nothing but ``generate`` can load the user's overrides."""
+    user = _writer(db)
+    _pin(db, user)
+    row = _generating(db, user)
+
+    vt.generate(db, row.id)
+
+    db.refresh(row)
+    assert row.status == "ready"
+    assert clients == [PINNED], "every call went to the pinned model, not the install's"
+    assert row.model == PINNED.model, "the row names the model that ran"
+    assert row.tokens_in > 0 and row.cost_usd == 0.0, "priced as the pinned model, not as the install's"
+
+
+def test_a_user_without_a_pin_runs_on_the_install_model(db, clients):
+    user = _writer(db)
+    row = _generating(db, user, model_name="an old name")
+    vt.generate(db, row.id)
+    db.refresh(row)
+    assert clients == [resolve_config(vt.USE_CASE)]
+    assert row.model == resolve_config(vt.USE_CASE).model
+
+
+def test_the_pin_stays_with_the_test(db, clients):
+    """The override is loaded for the block, not left on the worker for the
+    next user's task."""
+    user = _writer(db)
+    _pin(db, user)
+    vt.generate(db, _generating(db, user).id)
+    assert resolve_config(vt.USE_CASE) != PINNED
+
+
+# ---------------------------------------------------------------------------
+# Staleness and a test closed under the worker
+
+
+def test_staleness_runs_from_the_last_progress_not_the_start(db):
+    user = _writer(db, notes=NOTES[:2])
+    row = _generating(db, user)
+    row.created_at = vt._now() - vt.STALE_AFTER - timedelta(hours=1)
+    row.last_progress_at = vt._now() - vt.STALE_AFTER + timedelta(minutes=1)
+    db.commit()
+    assert vt.latest(db, user.id).status == "generating", "a slow test that is moving is not lost"
+    assert vt.get_test(db, user.id, row.id).status == "generating"
+
+    row.last_progress_at = vt._now() - vt.STALE_AFTER - timedelta(minutes=1)
+    db.commit()
+    assert vt.get_test(db, user.id, row.id).status == "failed", "silent for too long: its worker is gone"
+
+
+def test_the_time_in_the_queue_does_not_count_once_the_worker_starts(db):
+    """A long report ahead of it on a solo pool: the test starts late, then
+    the clock runs from there."""
+    user = _writer(db)
+    row = _generating(db, user)
+    row.created_at = vt._now() - vt.STALE_AFTER - timedelta(minutes=1)
+    db.commit()
+    model = FakeModel()
+    seen = []
+
+    def ask(prompt):
+        if not seen:
+            other = Session(bind=db.get_bind())
+            seen.append(vt.latest(other, user.id).status)
+            other.close()
+        return model(prompt)
+
+    vt.generate(db, row.id, ask=ask)
+
+    assert seen == ["generating"]
+    db.refresh(row)
+    assert row.status == "ready" and row.error is None
+
+
+def test_a_test_marked_failed_stays_failed_and_stops_spending(db):
+    user = _writer(db)
+    row = _generating(db, user)
+    message = "Writing the test stopped before it finished. Start a new one."
+    model = FakeModel()
+
+    def ask(prompt):
+        if len(model.prompts) == 4:
+            _poll_gives_up(db, row.id)
+        return model(prompt)
+
+    result = vt.generate(db, row.id, ask=ask)
+
+    assert len(model.prompts) == 6, "the pair in flight finishes; the other 17 are never asked for"
+    assert result.status == "failed"
+    db.refresh(row)
+    assert (row.status, row.error, row.pairs_built, row.ready_at) == ("failed", message, 2, None)
+    assert (row.pairs_json, row.key_json) == ("[]", "[]"), "no pairs and no key on a closed test"
+
+
+def test_the_last_write_cannot_turn_a_failed_test_back_to_ready(db, monkeypatch):
+    """The poll gives up after the last pair's progress, before the pairs are
+    stored."""
+    user = _writer(db)
+    row = _generating(db, user)
+    real = vt.build_pairs
+
+    def then_give_up(*args, **kwargs):
+        built = real(*args, **kwargs)
+        _poll_gives_up(db, row.id)
+        return built
+
+    monkeypatch.setattr(vt, "build_pairs", then_give_up)
+    vt.generate(db, row.id, ask=FakeModel())
+
+    db.refresh(row)
+    assert row.status == "failed" and row.ready_at is None
+    assert (row.pairs_json, row.key_json) == ("[]", "[]")
+
+
+def test_a_failure_cannot_overwrite_a_test_that_got_written(db):
+    """The poll read "generating" just before the worker finished."""
+    user = _writer(db)
+    row = _generating(db, user)
+    vt.generate(db, row.id, ask=FakeModel())
+    _poll_gives_up(db, row.id)
+    db.refresh(row)
+    assert row.status == "ready" and row.error is None
+
+
+def test_a_test_closed_while_queued_is_never_written(db):
+    user = _writer(db)
+    row = _generating(db, user)
+    _poll_gives_up(db, row.id)
+    db.expire_all()  # a worker's session is new, and reads what the poll wrote
+    model = FakeModel()
+    vt.generate(db, row.id, ask=model)
+    assert model.prompts == []
+
+
+# ---------------------------------------------------------------------------
+# One open test per tenant
+
+
+def test_the_database_holds_one_open_test_per_tenant(db):
+    user = _writer(db, notes=[])
+    other = _writer(db, notes=[])
+    _generating(db, user)
+
+    def another(status, owner=user):
+        return EchoVoiceTest(tenant_id=owner.id, user_id=owner.id, status=status, seed=1, pairs_total=vt.PAIRS)
+
+    for status in ("generating", "ready"):
+        db.add(another(status))
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+
+    db.add_all([another("scored"), another("scored"), another("failed"), another("ready", owner=other)])
+    db.commit()

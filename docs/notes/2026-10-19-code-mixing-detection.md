@@ -669,7 +669,7 @@ news register, verse, chat), the eleven foreign samples 0.23 at most. DEV's toke
 scores do not move for any `EVIDENCE_MIN_SHARE` from 0.15 to 0.4; at 0.5 recall
 falls to 0.925. 0.3 is the plateau's centre. `UNPLACED_MIN_WORDS` came from DEV:
 without it, short English comments with unknown words ("Sugar cosmetics are they
-making profit") jumped language and four rendering decisions flipped.
+making profit") jumped language and three rendering decisions flipped.
 
 | Foreign sample (hand-written, `foreign_latin_sample.json`) | Before | After |
 |---|---|---|
@@ -720,7 +720,7 @@ LLM and no network:
 3. A word carrying ॉ, ऑ or ॅ is English. Those signs exist to write English
    sounds. Checked on the 26 Hindi transcripts outside the labelled set, so TEST
    was not read: all 941 such tokens missing from the lexicon (209 distinct) were
-   English words or names.
+   English words, names, or garbled spellings of them.
 
 | Devanagari | Token P | Token R | F1 | Share MAE |
 |---|---|---|---|---|

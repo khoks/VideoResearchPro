@@ -144,7 +144,7 @@ def test_an_english_span_keeps_its_words_and_only_loses_the_guess():
 
 def test_a_short_span_proves_nothing_about_a_language():
     """Below `UNPLACED_MIN_WORDS` an English span of unknown words must not
-    jump to another language: on DEV that flipped four rendering decisions."""
+    jump to another language: on DEV that flipped three rendering decisions."""
     s = cm.shares(tag for _, tag in cm.tag_tokens("Sugar cosmetics are they making profit"))
     assert s["hi_share"] < 0.2
 

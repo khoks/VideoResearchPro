@@ -4,8 +4,9 @@
  * track's `transcript_language`, which calls romanised Hinglish `en`.
  * Only a source that is not plain English gets one; the profile's
  * `code_mixed` (the chunker's 3% rule) says which. The profile cannot say
- * what a Latin-script source IS: the tagger counts every word outside its
- * English lexicon as `hi`, so Hindi is named only where something supports it.
+ * what a Latin-script source IS: since T-1.16.2.15 the tagger abstains (`other`)
+ * where it finds no Hindi, and a profile stored before that says `hi` for any
+ * language, so Hindi is named only where something supports it.
  *
  * Rendered through `DocumentsBrowser`, the list the channel and shelf pages
  * use, fed rows shaped like `GET /library/videos`.

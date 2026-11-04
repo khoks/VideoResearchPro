@@ -311,26 +311,31 @@ def test_a_from_that_is_not_one_plain_allowed_address_is_dropped(db, owner, head
     assert report.dropped_sender == 1 and report.accepted == 0 and not _shares(db, owner[0])
 
 
+ID = b"Message-ID: <forged@x>"
+
+
 @pytest.mark.parametrize(
     "lines",
     [
-        # Python takes "From " for an envelope line, wherever it stands.
-        (b"From : stranger@evil.example", b"From: me@example.com", b"Subject: forged"),
-        (b"From: me@example.com", b"From : stranger@evil.example", b"Subject: forged"),
-        (b"Subject: forged", b"From: me@example.com", b"From : stranger@evil.example"),
+        # Python takes "From " for an envelope line on the first line, for a
+        # misplaced one in the middle, and for the body's first on the last.
+        (b"From : stranger@evil.example", b"From: me@example.com", ID),
+        (b"From: me@example.com", b"From : stranger@evil.example", ID),
+        (ID, b"From: me@example.com", b"From : stranger@evil.example"),
         # And any other line it cannot read ends the headers there.
-        (b"From: me@example.com", b"FROM : stranger@evil.example", b"Subject: forged"),
-        (b"From: me@example.com", b"From\t: stranger@evil.example"),
-        (b"From: me@example.com", b"no colon on this line", b"From: stranger@evil.example"),
+        (b"From: me@example.com", b"FROM : stranger@evil.example", ID),
+        (b"From: me@example.com", ID, b"From	: stranger@evil.example"),
+        (b"From: me@example.com", b"no colon on this line", b"From: stranger@evil.example", ID),
         # Folded into the allowed header, it is one malformed header.
-        (b"From: me@example.com\r\n From : stranger@evil.example", b"Subject: forged"),
+        (b"From: me@example.com
+ From : stranger@evil.example", ID),
     ],
     ids=["first-line", "middle", "last-line", "upper-case", "tab", "ends-the-headers", "folded"],
 )
 def test_a_from_the_parser_sets_aside_is_not_a_second_chance(db, owner, lines):
     """RFC 5322's obsolete syntax allows a space before the colon, so a DMARC
     check can read the stranger while Python reads only the allowed address."""
-    fake = FakeImap([_raw_mail(*lines, b"Message-ID: <forged@x>")])
+    fake = FakeImap([_raw_mail(*lines)])
     report = _poll(db, fake)
     assert report.dropped_sender == 1 and report.accepted == 0 and not _shares(db, owner[0])
     assert fake.bodies_fetched() == [], "dropped on its headers"

@@ -11,6 +11,7 @@ from datetime import date, datetime, timezone
 from app.database import SessionLocal
 from app.dependencies import get_redis
 from app.models.api_quota_log import ApiQuotaLog
+from app.services import usage_service
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,11 @@ def record(operation: str, units: int | None = None) -> None:
         units: Override cost; falls back to ``OPERATION_COSTS`` then ``1``.
     """
     cost = units if units is not None else OPERATION_COSTS.get(operation, 1)
+
+    # E-5.2: the same units, charged to the tenant whose work made the call
+    # (the open metering scope, if any). The install-wide log below is
+    # unchanged: /health/quota still reads it.
+    usage_service.record_youtube(operation, cost)
 
     try:
         db = SessionLocal()

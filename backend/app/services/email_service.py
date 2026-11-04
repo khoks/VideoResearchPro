@@ -7,10 +7,10 @@ Pluggable email backend. Two modes:
   (and the SaaS path).
 - **Logged** — when ``SMTP_HOST`` is unset, log the rendered email
   body to stderr instead. The self-host fallback so password-reset
-  flows work without operators needing to set up SMTP. The pre-T-5.4.8
-  password-reset endpoint also returned the secret in the response;
-  that fallback is now de-emphasised in favour of going through this
-  service so log-based delivery is uniform.
+  flows work without operators needing to set up SMTP. Until 2026-11-03
+  the password-reset endpoint also returned the secret in the response
+  (``debug_secret``), which let any caller reset any account; the log is
+  now the only fallback.
 
 The service is **fail-safe**: any SMTP error is logged but does NOT
 propagate to the caller. The user-facing endpoint (e.g. the
@@ -166,16 +166,30 @@ def send_email_strict(to: str, subject: str, body: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def password_reset_page_url() -> str:
+    """The address of the page that takes a reset code (``/reset-password``).
+
+    The bare page, never with the code in it: a secret in a URL ends up in
+    browser history, proxy logs and Referer headers."""
+    return f"{settings.APP_BASE_URL.rstrip('/')}/reset-password"
+
+
 def render_password_reset_email(
     *, recipient_email: str, secret: str, ttl_minutes: int
 ) -> tuple[str, str]:
-    """Return ``(subject, body)`` for the password-reset email."""
+    """Return ``(subject, body)`` for the password-reset email.
+
+    The email is the only way the code reaches the user (the request
+    endpoint never returns it), so it names the page to paste it into: the
+    reader may open it on another device, or after closing the tab that
+    asked for it, where nothing else leads to that page."""
     subject = "Pratidhvani — Password reset request"
     body = (
         f"Hello,\n\n"
         f"A password reset was requested for your Pratidhvani account "
-        f"({recipient_email}). If this was you, paste the token below "
-        f"into the password-reset form within {ttl_minutes} minutes:\n\n"
+        f"({recipient_email}). If this was you, open "
+        f"{password_reset_page_url()} and paste the code below into the "
+        f"form within {ttl_minutes} minutes:\n\n"
         f"    {secret}\n\n"
         f"If you didn't request this, you can safely ignore this email "
         f"— your password remains unchanged.\n\n"

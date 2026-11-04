@@ -29,6 +29,7 @@ from app.models.personal_context import PersonalContext
 from app.models.echo_import import EchoImport
 from app.models.echo_share_token import EchoShareToken
 from app.models.echo_card_state import EchoCardState
+from app.models.echo_fact_tombstone import EchoFactTombstone
 from app.models.qa_exchange import QAExchange
 from app.models.qa_history_exchange import QAHistoryExchange
 from app.models.quota_usage import QuotaUsage
@@ -44,6 +45,7 @@ from app.models.suggestion_cache import SuggestionCache
 from app.models.tag import Tag
 from app.models.tagging import Tagging
 from app.models.transcript_cache import TranscriptCache
+from app.models.usage_record import UsageRecord
 from app.models.user import User
 from app.models.user_llm_override import UserLLMOverride
 from app.models.user_credential import UserCredential
@@ -85,9 +87,11 @@ __all__ = [
     "EchoImport",
     "EchoShareToken",
     "EchoCardState",
+    "EchoFactTombstone",
     "QAExchange",
     "QAHistoryExchange",
     "QuotaUsage",
+    "UsageRecord",
     "ScheduledRun",
     "Session",
     "Share",

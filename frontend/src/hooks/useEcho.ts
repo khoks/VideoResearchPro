@@ -54,7 +54,32 @@ function useInvalidateEcho() {
   return () => {
     qc.invalidateQueries({ queryKey: CONTEXT_KEY });
     qc.invalidateQueries({ queryKey: STATUS_KEY });
+    // Deleting a derived fact records a tombstone (T-3.2.4.4).
+    qc.invalidateQueries({ queryKey: TOMBSTONES_KEY });
   };
+}
+
+// T-3.2.4.4: derived facts the user deleted, which syncs and re-imports skip.
+const TOMBSTONES_KEY = ['echo', 'fact-tombstones'] as const;
+
+export function useFactTombstones(enabled = true) {
+  return useQuery({
+    queryKey: TOMBSTONES_KEY,
+    queryFn: () => echoApi.listFactTombstones(),
+    staleTime: 15_000,
+    enabled,
+  });
+}
+
+export function useClearFactTombstone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => echoApi.clearFactTombstone(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: TOMBSTONES_KEY });
+      qc.invalidateQueries({ queryKey: ['echo', 'footprint'] });
+    },
+  });
 }
 
 export function useRecordContext() {
@@ -264,9 +289,28 @@ export function useVoiceSignals(enabled = true) {
 function useInvalidateSignals() {
   const qc = useQueryClient();
   return () => {
+    // Prefix match: the rejected list (T-3.3.1.6) lives under it too.
     qc.invalidateQueries({ queryKey: SIGNALS_KEY });
     qc.invalidateQueries({ queryKey: FOOTPRINT_KEY });
   };
+}
+
+/** T-3.3.1.6: the "That's not me" rejections, for the panel's Rejected list. */
+export function useRejectedSignals(enabled = true) {
+  return useQuery({
+    queryKey: [...SIGNALS_KEY, 'rejected'],
+    queryFn: () => echoApi.listRejectedSignals(),
+    staleTime: 15_000,
+    enabled,
+  });
+}
+
+export function useRestoreSignal() {
+  const invalidate = useInvalidateSignals();
+  return useMutation({
+    mutationFn: (id: string) => echoApi.restoreSignal(id),
+    onSuccess: invalidate,
+  });
 }
 
 export function useCreateSignal() {

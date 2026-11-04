@@ -17,6 +17,7 @@ from app.services import (
     job_service,
     quota_metering_service,
     report_service,
+    usage_service,
 )
 from app.services.llm_service import get_llm_for
 
@@ -68,9 +69,6 @@ def clarify_question(
     if job.status != "completed":
         raise HTTPException(status_code=400, detail="Job is not completed yet")
 
-    # S-1.12.7: clarify returns a tiny JSON blob — cap runaway completions.
-    llm = get_llm_for("qa_clarification", temperature=0.3, max_tokens=400)
-
     prompt = (
         f'The user asked: "{request.question}"\n\n'
         "Please: 1) Write a 1-2 sentence interpretation of what they most likely want to know, "
@@ -80,7 +78,11 @@ def clarify_question(
         '{"interpretation": "...", "clarifications": ["q1", "q2", "q3"]}'
     )
 
-    response = llm.invoke(prompt)
+    # E-5.2: the clarify call is the asker's usage too (feature job_qa).
+    with usage_service.metered(db, current_user.id):
+        # S-1.12.7: clarify returns a tiny JSON blob — cap runaway completions.
+        llm = get_llm_for("qa_clarification", temperature=0.3, max_tokens=400)
+        response = llm.invoke(prompt)
     content = response.content.strip()
 
     # Strip markdown code fences if the model returns them anyway
@@ -168,6 +170,8 @@ def _run_qa_and_persist(
     note_target_keys = note_index.job_target_keys(db, job.id, approved_document_ids)
 
     usage: dict = {}
+    # E-5.2: byok_context is also the metering scope: every call the agent
+    # makes is counted against the asker (feature job_qa) when it closes.
     with llm_service.byok_context(current_user.id, db):
         answer, references = run_qa_agent(
             job_id=job.id,
@@ -205,21 +209,9 @@ def _run_qa_and_persist(
     db.commit()
     db.refresh(qa)
 
-    # Per-user LLM token metering. Metering failures must never break
-    # the Q&A response.
-    try:
-        if prompt_tokens is not None:
-            quota_metering_service.record_usage(
-                db, current_user.id, "llm_tokens_in", prompt_tokens
-            )
-        if completion_tokens is not None:
-            quota_metering_service.record_usage(
-                db, current_user.id, "llm_tokens_out", completion_tokens
-            )
-    except Exception:
-        logger.exception(
-            f"Failed to record LLM token metering for qa_exchange id={qa.id}"
-        )
+    # The daily llm_tokens_in / llm_tokens_out totals were recorded here from
+    # the tally until E-5.2; the metering scope above records them now, by
+    # feature, so recording them here as well would count them twice.
 
     # Index into the Q&A library collection so it powers the history-chat
     # meta-RAG. Chroma failures must never break the Q&A response.

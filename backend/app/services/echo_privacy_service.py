@@ -54,6 +54,7 @@ from app.models.echo_connector import (
     EchoConnectorOAuthState,
 )
 from app.models.echo_card_state import EchoCardState
+from app.models.echo_fact_tombstone import EchoFactTombstone
 from app.models.echo_import import EchoImport
 from app.models.echo_draft import EchoDraft, EchoVoiceGate
 from app.models.echo_share_token import EchoShareToken
@@ -90,6 +91,8 @@ ECHO_TABLES: tuple[tuple[str, Any], ...] = (
     ("echo_voice_gates", EchoVoiceGate),
     # S-3.8.2: what the panel's cards showed and what the user did with them.
     ("echo_card_state", EchoCardState),
+    # T-3.2.4.4: derived facts the user deleted, so syncs skip them.
+    ("echo_fact_tombstones", EchoFactTombstone),
 )
 
 # Echo tables that hold secrets: OAuth tokens (encrypted, D-043) and the PKCE

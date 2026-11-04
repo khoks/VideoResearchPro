@@ -479,6 +479,10 @@ class ActivityConnector:
 
 **As built (S-3.2.1, 2026-10-19):** `backend/app/connectors/base.py::ActivityConnector`. It adds `display_name`, `consent_version` (the grant records which disclosure the user agreed to) and `schedule`. `authenticate` became `authorize_url` + `handle_callback`, because the runtime owns state, PKCE and token storage. The sync methods take a `SyncContext` (tokens, a cursor the connector keeps between syncs, derived facts) instead of a user id. File importers implement `ArchiveImporter` beside it. See [D-098](decisions.md#d-098--echo-connectors-events-unique-per-reader-tokens-in-a-secret-store-that-is-erased-with-the-brain-but-never-exported-2026-10-19).
 
+**Token refresh (T-3.2.2.5).** A connector whose access tokens expire (Google's last an hour) also implements the optional `RefreshableConnector.refresh_tokens(tokens) -> ConnectorTokens`. Before a sync the runtime renews a token past its `expires_at` (60 seconds early) and stores the result encrypted like the first; a `refresh_token` of None keeps the stored one. Raise `ConnectorError(..., auth=True)` for an `invalid_grant` refusal: the grant then asks the user to reconnect. Any other failure is an error the next sync retries. GitHub's tokens do not expire, so it does not implement it.
+
+**Deleted derived facts stay deleted (T-3.2.4.4, D-110).** The runtime, not the connector, skips every `(kind, key)` the user deleted from a fact the connector (or importer) derived: deleting one records a tombstone in `echo_fact_tombstones`, which the Echo page lists under "Kept deleted". A connector needs no code for this.
+
 Conformance to this interface is the *only* way new connectors enter the system. PR-time review of any new connector specifically checks:
 
 - The consent disclosure is human-readable, not legalese.

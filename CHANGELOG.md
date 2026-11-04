@@ -10,6 +10,55 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Added: Echo keeps deleted facts deleted, renews connector tokens and can restore rejected signals (T-3.2.4.4, T-3.2.2.5, T-3.3.1.6, 2026-11-04)
+
+PR [#392](https://github.com/khoks/VideoResearchPro/pull/392). [D-122](docs/decisions.md#d-122--a-deleted-derived-fact-stays-deleted-per-connector-only-a-refused-refresh-asks-for-a-reconnect-restore-re-checks-the-evidence-2026-11-04).
+
+- A fact that a connector or an import derived stays deleted once you delete it: the nightly sync and a re-import of the same kind of export skip it. Before, the GitHub sync brought back a forgotten "Python (GitHub)". The Echo page lists these under "Kept deleted (N)", each with **Allow again**. Facts you typed yourself need no such record.
+- Connector access tokens are renewed before they expire, so connectors whose tokens last an hour (the Google ones, still waiting on an OAuth client) can keep syncing. Only a refused renewal asks you to reconnect; a brief provider failure is retried at the next sync.
+- "That's not me" can be undone: the signals panel has a "Rejected (N)" list with **Restore**. A restored signal brings back only evidence that still exists. If all of it was deleted in the meantime, the signal stays out of your profile until new writing shows it again.
+- Fixed underneath: deleting a share or an event now also removes its words from signals you had rejected. Before, a rejected signal kept them.
+- New table `echo_fact_tombstones` (migration `a68953e57c63`), exported and erased with the rest of Echo.
+
+### Added: an account security page, two-step sign-in and password reset in the app; the API no longer returns reset codes (S-5.4.1, 2026-11-04)
+
+PR [#389](https://github.com/khoks/VideoResearchPro/pull/389). [D-121](docs/decisions.md#d-121--reset-codes-never-appear-in-a-response-two-step-verification-guards-every-sign-in-and-tokens-say-what-they-are-2026-11-04).
+
+- New page `/account/security` (Account menu, Security): the sessions that still work, with "Sign out" and "Sign out everywhere else"; two-step verification set-up and removal (a key and a setup link to copy, recovery codes shown once); a link to reset your password; and your recent account activity.
+- Sign-in asks for the authenticator code or a recovery code when two-step verification is on, links to "Forgot your password?", and shows Google or GitHub buttons when the install has them set up. New pages for the sign-in return, the reset request and the reset itself.
+- Signing out now ends the session on the server too, and clears what the browser held for the account.
+- Security: `POST /auth/password-reset/request` no longer returns the reset code when SMTP is unset. Anyone who knew an address could reset that account's password, and the response revealed which addresses had accounts. Without SMTP, the code is only in the server log.
+- Security: two-step verification now applies to Google and GitHub sign-ins too, and the short-lived ticket between the two steps no longer works as a sign-in token.
+- `GET /auth/sessions` says which sessions still work (`active`, `expires_at`), and `GET /auth/audit-log?scope=account` returns account and security events only.
+
+### Added: each document's language profile is stored, and older chunks gain their era and publish dates without re-embedding (T-1.16.1.7, S-1.17.3, 2026-11-04)
+
+PR [#390](https://github.com/khoks/VideoResearchPro/pull/390). [D-120](docs/decisions.md#d-120--older-chunks-gain-their-era-and-publish-fields-by-a-metadata-only-pass-amends-d-072-the-language-profile-is-stored-on-the-document-2026-11-04), amending [D-072](docs/decisions.md#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19).
+
+- New column `documents.language_mix` (migration `0253eef57358`) holds the language profile measured when a source is chunked: primary language, script, non-English share and quote form. Every ingest path writes it, and a re-fetched transcript replaces it. The library, job and channel video listings return it as `language_mix`; nothing displays it yet.
+- `scripts/backfill_language_mix.py` profiles documents ingested earlier, from their cached transcript or their stored chunks, with no model calls.
+- `scripts/backfill_chunk_temporal_fields.py` adds the discussed era and the numeric publish date to chunks embedded before those fields existed, and keeps each chunk's displayed date in step with them. It changes metadata only: nothing is re-embedded, and unknown values are left out. On a copy of the live library, 5,549 of 8,567 chunks would gain fields.
+- Both scripts are dry runs unless given `--write`, are safe to re-run, and are owner steps.
+- On a visual-analysis run (off by default), the chunks' language fields now come from the speech alone, not from the frame descriptions.
+
+### Added: usage is recorded per user, by feature (S-5.2.1, 2026-11-04)
+
+PR [#391](https://github.com/khoks/VideoResearchPro/pull/391). [D-119](docs/decisions.md#d-119--usage-is-metered-at-a-scope-that-names-the-tenant-and-written-in-a-session-of-its-own-2026-11-04).
+
+- Every model call made for a user, in any feature, and every YouTube Data API request made on their behalf is now recorded against them by feature: tokens in and out, model calls and YouTube units, per UTC day (new table `usage_records`, migration `6cf03630d943`). Nothing new is limited.
+- `GET /api/v1/usage` returns your own usage for today and the last 30 days, and the Subscription page shows it under "Your usage". `GET /auth/quota` now counts tokens from every feature, not only job Q&A and suggestions.
+- Fixed on the way: report runs that map several batches at once ran those batches on the install's API key and default models, ignoring a Studio user's own key and model choices.
+- Not recorded yet: Whisper audio minutes, and tokens from local models that do not report them (their calls are counted).
+
+### Added: a panel for your own API keys, and a system status page (S-5.6.1, 2026-11-04)
+
+PR [#388](https://github.com/khoks/VideoResearchPro/pull/388). [D-118](docs/decisions.md#d-118--a-provider-key-is-stored-only-for-a-provider-a-call-reads-it-for-the-settings-report-the-encryption-keys-state-never-the-key-2026-11-04).
+
+- Studio accounts can add, replace and remove their own OpenAI, Anthropic and Google keys on `/account/ai-models`. A key is sent once and never shown again. The page says when the install's encryption key is missing (saved keys will not survive a restart) or malformed (saving is off).
+- New page `/account/system` (Account menu, System status): each AI use case's model, reachability, latency and warnings, the scheduler, and the YouTube quota. Operators also get a "Restart services" button.
+- `GET /settings/llm` reports which providers take a key and whether saved keys will last, never any key material.
+- Security: an over-long key sent to `PUT /auth/credentials/{provider}` was echoed back in the 422 error. It now gets a 400 that does not quote it. A key for `local`, which no call reads, is refused.
+
 ### Fix: YouTube transcripts come from the spoken-language caption track, never an auto-dub (S-1.11.11, 2026-10-29)
 
 PR [#386](https://github.com/khoks/VideoResearchPro/pull/386). [D-117](docs/decisions.md#d-117--the-caption-track-is-the-one-in-the-spoken-language-auto-dubs-are-read-from-the-players-audio-tracks-2026-10-29).

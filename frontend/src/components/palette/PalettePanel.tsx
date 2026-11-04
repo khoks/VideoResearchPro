@@ -159,6 +159,7 @@ export default function PalettePanel({ onClose }: { onClose: () => void }) {
       nav('ai-models', 'AI models', '/account/ai-models', 'llm settings keys byok'),
       nav('system', 'System status', '/account/system', 'health probe scheduler quota restart operator'),
       nav('subscription', 'Subscription', '/account/subscription', 'plan tier billing'),
+      nav('security', 'Security', '/account/security', 'sessions devices sign out two-step 2fa mfa totp password reset activity'),
       {
         id: 'theme',
         label: theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode',

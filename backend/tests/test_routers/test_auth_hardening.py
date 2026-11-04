@@ -9,14 +9,45 @@ The fixtures from `conftest.py` give us:
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
 
+import pytest
 
 from app.config import settings
 from app.models.audit_log import AuditLog
 from app.models.password_reset_token import PasswordResetToken
-from app.services import auth_service
+from app.services import auth_service, email_service
 from app.services.audit_service import Event
+
+
+RESET_REQUEST = "/api/v1/auth/password-reset/request"
+
+
+def _request_reset(client, monkeypatch, email: str):
+    """POST a reset request with SMTP unset and return ``(response,
+    secrets_in_the_server_log)``. The log fallback is the self-host
+    channel: the email body, with the secret on its own indented line,
+    goes to ``email_service.logger``."""
+    monkeypatch.setattr(settings, "SMTP_HOST", None)
+    log = MagicMock()
+    monkeypatch.setattr(email_service, "logger", log)
+    r = client.post(RESET_REQUEST, json={"email": email})
+    bodies = [
+        call.args[-1]
+        for call in log.info.call_args_list
+        if call.args and "BEGIN EMAIL BODY" in str(call.args[0])
+    ]
+    found = [m for body in bodies for m in re.findall(r"^    (\S+)$", body, re.M)]
+    return r, found
+
+
+def _reset_secret(client, monkeypatch, email: str) -> str:
+    r, found = _request_reset(client, monkeypatch, email)
+    assert r.status_code == 200
+    assert len(found) == 1, "the reset email should be logged once with its secret"
+    return found[0]
 
 
 # ---------------------------------------------------------------------------
@@ -237,51 +268,76 @@ def test_audit_log_limit_capped_at_500(client, db, test_user):
 # ---------------------------------------------------------------------------
 
 
-def test_password_reset_request_returns_secret_when_email_exists(
-    unauthenticated_client, db
+def test_password_reset_request_creates_a_token_and_logs_the_secret(
+    unauthenticated_client, db, monkeypatch
 ):
     user = auth_service.create_user(db, email="reset1@x.com", password="oldpw12345")
 
-    r = unauthenticated_client.post(
-        "/api/v1/auth/password-reset/request",
-        json={"email": "reset1@x.com"},
-    )
-    assert r.status_code == 200
-    body = r.json()
-    assert body["debug_secret"] is not None
-    assert len(body["debug_secret"]) >= 16
+    secret = _reset_secret(unauthenticated_client, monkeypatch, "reset1@x.com")
+    assert len(secret) >= 16
 
-    # A token row was created.
+    # A token row was created, for that secret.
     rows = db.query(PasswordResetToken).filter(
         PasswordResetToken.user_id == user.id
     ).all()
     assert len(rows) == 1
+    assert rows[0].token_hash == auth_service._hash_token(secret)
+
+
+@pytest.mark.parametrize("smtp_host", [None, "smtp.example.com"])
+def test_password_reset_response_never_carries_the_secret(
+    unauthenticated_client, db, monkeypatch, smtp_host
+):
+    """The route is unauthenticated: a secret in the response let anyone
+    who knew an address take the account (the old ``debug_secret`` when
+    SMTP was unset). The body is the generic message and nothing else, and
+    the secret reaches only the out-of-band channel."""
+    auth_service.create_user(db, email="victim@x.com", password="oldpw12345")
+    sent: list[str] = []
+    monkeypatch.setattr(settings, "SMTP_HOST", smtp_host)
+    monkeypatch.setattr(
+        email_service,
+        "send_email",
+        lambda to, subject, body, **kw: sent.append(body) or True,
+    )
+
+    r = unauthenticated_client.post(RESET_REQUEST, json={"email": "victim@x.com"})
+
+    assert r.status_code == 200
+    assert set(r.json()) == {"message"}
+    assert len(sent) == 1
+    secret = re.search(r"^    (\S+)$", sent[0], re.M).group(1)
+    assert secret not in r.text
+
+
+def test_password_reset_response_is_the_same_for_unknown_and_known_addresses(
+    unauthenticated_client, db, monkeypatch
+):
+    """With SMTP unset the old response named the existing addresses (a
+    secret for them, none for the rest). It now reads the same."""
+    auth_service.create_user(db, email="known@x.com", password="oldpw12345")
+    known, _ = _request_reset(unauthenticated_client, monkeypatch, "known@x.com")
+    unknown, _ = _request_reset(unauthenticated_client, monkeypatch, "nobody@x.com")
+    assert known.status_code == unknown.status_code == 200
+    assert known.json() == unknown.json()
 
 
 def test_password_reset_request_does_not_leak_unknown_email(
-    unauthenticated_client, db
+    unauthenticated_client, db, monkeypatch
 ):
-    r = unauthenticated_client.post(
-        "/api/v1/auth/password-reset/request",
-        json={"email": "ghost@x.com"},
-    )
+    r, found = _request_reset(unauthenticated_client, monkeypatch, "ghost@x.com")
     assert r.status_code == 200
-    body = r.json()
-    # No secret returned because no user.
-    assert body["debug_secret"] is None
+    # Nothing to send because no user.
+    assert found == []
     # No token row created.
     assert db.query(PasswordResetToken).count() == 0
 
 
-def test_password_reset_confirm_rotates_password(unauthenticated_client, db):
+def test_password_reset_confirm_rotates_password(unauthenticated_client, db, monkeypatch):
     auth_service.create_user(db, email="reset2@x.com", password="oldpw12345")
 
     # Request the secret.
-    r = unauthenticated_client.post(
-        "/api/v1/auth/password-reset/request",
-        json={"email": "reset2@x.com"},
-    )
-    secret = r.json()["debug_secret"]
+    secret = _reset_secret(unauthenticated_client, monkeypatch, "reset2@x.com")
 
     # Confirm with the new password.
     r = unauthenticated_client.post(
@@ -305,14 +361,10 @@ def test_password_reset_confirm_rotates_password(unauthenticated_client, db):
     assert r.status_code == 200
 
 
-def test_password_reset_token_is_single_use(unauthenticated_client, db):
+def test_password_reset_token_is_single_use(unauthenticated_client, db, monkeypatch):
     auth_service.create_user(db, email="reset3@x.com", password="oldpw12345")
 
-    r = unauthenticated_client.post(
-        "/api/v1/auth/password-reset/request",
-        json={"email": "reset3@x.com"},
-    )
-    secret = r.json()["debug_secret"]
+    secret = _reset_secret(unauthenticated_client, monkeypatch, "reset3@x.com")
 
     # First use succeeds.
     r1 = unauthenticated_client.post(
@@ -375,11 +427,7 @@ def test_password_reset_clears_lockout(unauthenticated_client, db, monkeypatch):
     assert user.locked_until is not None
 
     # Reset.
-    r = unauthenticated_client.post(
-        "/api/v1/auth/password-reset/request",
-        json={"email": "reset5@x.com"},
-    )
-    secret = r.json()["debug_secret"]
+    secret = _reset_secret(unauthenticated_client, monkeypatch, "reset5@x.com")
     r = unauthenticated_client.post(
         "/api/v1/auth/password-reset/confirm",
         json={"token": secret, "new_password": "newpw12345"},
@@ -392,14 +440,10 @@ def test_password_reset_clears_lockout(unauthenticated_client, db, monkeypatch):
     assert user.failed_login_attempts == 0
 
 
-def test_password_reset_creates_audit_events(unauthenticated_client, db):
+def test_password_reset_creates_audit_events(unauthenticated_client, db, monkeypatch):
     auth_service.create_user(db, email="reset6@x.com", password="oldpw12345")
 
-    r = unauthenticated_client.post(
-        "/api/v1/auth/password-reset/request",
-        json={"email": "reset6@x.com"},
-    )
-    secret = r.json()["debug_secret"]
+    secret = _reset_secret(unauthenticated_client, monkeypatch, "reset6@x.com")
     unauthenticated_client.post(
         "/api/v1/auth/password-reset/confirm",
         json={"token": secret, "new_password": "newpw12345"},

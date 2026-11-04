@@ -1,3 +1,4 @@
+import contextlib
 import json
 import logging
 import sys
@@ -11,7 +12,14 @@ from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.models.transcript_cache import TranscriptCache
 from app.models.document import Document
-from app.services import chroma_service, progress_service, temporal_service, youtube_service
+from app.services import (
+    chroma_service,
+    language_mix_service,
+    progress_service,
+    temporal_service,
+    usage_service,
+    youtube_service,
+)
 from app.sources import connector_for
 from app.sources.types import Candidate, SourceMetadata
 from app.tasks.celery_app import celery_app
@@ -949,11 +957,15 @@ def _is_cancelled(db, job_id: str) -> bool:
 def execute_topic_job(self, job_id: str) -> None:
     """Orchestrates topic-based job Phase 1: search for videos."""
     db = SessionLocal()
+    # E-5.2: the run's LLM calls and YouTube Data API requests are the job
+    # owner's usage; the scope opens once the job (and so its tenant) is known.
+    meter = contextlib.ExitStack()
     try:
         job = _get_job(db, job_id)
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
             return
+        meter.enter_context(usage_service.metered(db, job.tenant_id))
 
         logger.info(f"[job:{job_id}] Topic job starting: topic='{job.topic}', num_videos={job.num_videos}")
 
@@ -1121,6 +1133,7 @@ def execute_topic_job(self, job_id: str) -> None:
         logger.exception(f"[job:{job_id}] Topic job failed during search: {e}")
         _handle_failure(db, job_id, str(e))
     finally:
+        meter.close()
         # Backstop: if the task is about to return while the job is still
         # in a transient state, something silently bailed. Force-fail it so
         # the UI doesn't hang forever at "Searching...". Harmless when the
@@ -1133,11 +1146,15 @@ def execute_topic_job(self, job_id: str) -> None:
 def execute_channel_job(self, job_id: str) -> None:
     """Orchestrates channel-based job Phase 1: fetch videos from channels."""
     db = SessionLocal()
+    # E-5.2: the run's LLM calls and YouTube Data API requests are the job
+    # owner's usage; the scope opens once the job (and so its tenant) is known.
+    meter = contextlib.ExitStack()
     try:
         job = _get_job(db, job_id)
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
             return
+        meter.enter_context(usage_service.metered(db, job.tenant_id))
 
         channel_list = json.loads(job.channel_list) if job.channel_list else []
         videos_per_channel = job.videos_per_channel or 10
@@ -1243,6 +1260,7 @@ def execute_channel_job(self, job_id: str) -> None:
         logger.exception(f"[job:{job_id}] Channel job failed during search: {e}")
         _handle_failure(db, job_id, str(e))
     finally:
+        meter.close()
         _backstop_orphan(db, job_id)
         db.close()
 
@@ -1251,11 +1269,15 @@ def execute_channel_job(self, job_id: str) -> None:
 def resume_job_after_approval(self, job_id: str) -> None:
     """Resumes job after user approves video list: extract → RAG → report → done."""
     db = SessionLocal()
+    # E-5.2: the run's LLM calls and YouTube Data API requests are the job
+    # owner's usage; the scope opens once the job (and so its tenant) is known.
+    meter = contextlib.ExitStack()
     try:
         job = _get_job(db, job_id)
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
             return
+        meter.enter_context(usage_service.metered(db, job.tenant_id))
 
         # PHASE: EXTRACTING
         # `approved` now lives on the JobVideo link row, not on Document.
@@ -1319,12 +1341,14 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 cached = _load_cached_segments(video.video_id, video.document_id)
                 if cached is not None:
                     segments, cached_language = cached
+                    language_profile = language_mix_service.ensure(video, segments)
                     _ensure_era(db, video, segments, job_id)
                     chunks = chunk_transcript(
                         _with_visuals(db, job, video, segments, visual_budget, job_id),
                         chunk_size=settings.CHUNK_SIZE,
                         chunk_overlap=settings.CHUNK_OVERLAP,
                         video_metadata=_build_video_metadata(video, cached_language),
+                        language_profile=language_profile,
                     )
                     all_chunks.extend(chunks)
                     reused_count += 1
@@ -1351,12 +1375,14 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 cached = _load_cached_segments(video.video_id, video.document_id)
                 if cached is not None:
                     segments, cached_language = cached
+                    language_profile = language_mix_service.ensure(video, segments)
                     _ensure_era(db, video, segments, job_id)
                     chunks = chunk_transcript(
                         _with_visuals(db, job, video, segments, visual_budget, job_id),
                         chunk_size=settings.CHUNK_SIZE,
                         chunk_overlap=settings.CHUNK_OVERLAP,
                         video_metadata=_build_video_metadata(video, cached_language),
+                        language_profile=language_profile,
                     )
                     all_chunks.extend(chunks)
                     new_chunks.extend(chunks)
@@ -1429,12 +1455,14 @@ def resume_job_after_approval(self, job_id: str) -> None:
                         video.transcript_source = extracted.text_source
                     _record_caption_track(video, extracted)
 
+                    language_profile = language_mix_service.ensure(video, transcript)
                     _ensure_era(db, video, transcript, job_id)
                     chunks = chunk_transcript(
                         _with_visuals(db, job, video, transcript, visual_budget, job_id),
                         chunk_size=settings.CHUNK_SIZE,
                         chunk_overlap=settings.CHUNK_OVERLAP,
                         video_metadata=_build_video_metadata(video, actual_language),
+                        language_profile=language_profile,
                     )
                     all_chunks.extend(chunks)
                     new_chunks.extend(chunks)
@@ -1611,6 +1639,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
         logger.exception(f"[job:{job_id}] Job failed: {e}")
         _handle_failure(db, job_id, str(e))
     finally:
+        meter.close()
         _backstop_orphan(db, job_id)
         db.close()
 
@@ -1679,12 +1708,14 @@ def _run_extraction_and_rag(self, db, job) -> None:
             cached = _load_cached_segments(video.video_id)
             if cached is not None:
                 segments, cached_language = cached
+                language_profile = language_mix_service.ensure(video, segments)
                 _ensure_era(db, video, segments, job_id)
                 chunks = chunk_transcript(
                     _with_visuals(db, job, video, segments, visual_budget, job_id),
                     chunk_size=settings.CHUNK_SIZE,
                     chunk_overlap=settings.CHUNK_OVERLAP,
                     video_metadata=_build_video_metadata(video, cached_language),
+                    language_profile=language_profile,
                 )
                 all_chunks.extend(chunks)
                 reused_count += 1
@@ -1701,12 +1732,14 @@ def _run_extraction_and_rag(self, db, job) -> None:
             cached = _load_cached_segments(video.video_id)
             if cached is not None:
                 segments, cached_language = cached
+                language_profile = language_mix_service.ensure(video, segments)
                 _ensure_era(db, video, segments, job_id)
                 chunks = chunk_transcript(
                     _with_visuals(db, job, video, segments, visual_budget, job_id),
                     chunk_size=settings.CHUNK_SIZE,
                     chunk_overlap=settings.CHUNK_OVERLAP,
                     video_metadata=_build_video_metadata(video, cached_language),
+                    language_profile=language_profile,
                 )
                 all_chunks.extend(chunks)
                 new_chunks.extend(chunks)
@@ -1753,12 +1786,14 @@ def _run_extraction_and_rag(self, db, job) -> None:
                     video.transcript_source = extracted.text_source
                 _record_caption_track(video, extracted)
 
+                language_profile = language_mix_service.ensure(video, transcript)
                 _ensure_era(db, video, transcript, job_id)
                 chunks = chunk_transcript(
                     _with_visuals(db, job, video, transcript, visual_budget, job_id),
                     chunk_size=settings.CHUNK_SIZE,
                     chunk_overlap=settings.CHUNK_OVERLAP,
                     video_metadata=_build_video_metadata(video, actual_language),
+                    language_profile=language_profile,
                 )
                 all_chunks.extend(chunks)
                 new_chunks.extend(chunks)
@@ -1878,11 +1913,15 @@ def execute_subscription_job(self, job_id: str) -> None:
     from app.services import document_cap_service, subscription_service
 
     db = SessionLocal()
+    # E-5.2: the run's LLM calls and YouTube Data API requests are the job
+    # owner's usage; the scope opens once the job (and so its tenant) is known.
+    meter = contextlib.ExitStack()
     try:
         job = _get_job(db, job_id)
         if not job:
             logger.warning(f"[job:{job_id}] Job not found in DB, aborting")
             return
+        meter.enter_context(usage_service.metered(db, job.tenant_id))
 
         channel_inputs = json.loads(job.channel_list) if job.channel_list else []
         logger.info(
@@ -2125,6 +2164,7 @@ def execute_subscription_job(self, job_id: str) -> None:
         logger.exception(f"[job:{job_id}] Subscription job failed: {e}")
         _handle_failure(db, job_id, str(e))
     finally:
+        meter.close()
         _backstop_orphan(db, job_id)
         db.close()
 

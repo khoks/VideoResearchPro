@@ -173,6 +173,11 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
     stats: dict[str, int] = {}
     batch: list[dict[str, Any]] = []
     checked: set[str] = set()
+    # T-3.2.4.4: facts the user deleted from an earlier import of this kind
+    # stay deleted when the same export is imported again.
+    from app.services import echo_fact_tombstones
+
+    deleted_facts = echo_fact_tombstones.blocked_keys(db, user.id, module.name)
     surface = echo_intake_service._validate_surface("file_import")
     try:
         for item in _parse(module, source, opts, stats, tenant_id=user.id):
@@ -183,6 +188,9 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
                     events = []
                 continue
             if isinstance(item, DerivedFact):
+                if (item.kind, item.key) in deleted_facts:
+                    stats["facts_kept_deleted"] = stats.get("facts_kept_deleted", 0) + 1
+                    continue
                 _record_fact(db, user.id, record.id, item, counts)
                 continue
             if not isinstance(item, ImportedShare):

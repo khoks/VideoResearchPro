@@ -276,15 +276,114 @@ def withdraw_missing_events(db: Session, tenant_id: str) -> signals.SourceWithdr
     """Events are deleted in bulk (a connector revoke, an import undo), out
     of this module's sight. Any ``event:<id>`` a signal still cites that no
     longer exists leaves it now, in one pass. Called by those delete paths
-    and at the start of every run. Does not commit."""
+    and at the start of every run. Rejected signals are cleaned too, so a
+    restore (T-3.3.1.6) cannot bring a deleted event's words back. Does not
+    commit."""
     live = live_event_ids(db, tenant_id)
     cited = {
         ref
-        for row in signals.list_signals(db, tenant_id)
+        for row in signals.withdrawable_signals(db, tenant_id)
         for ref in json.loads(row.derived_from or "[]")
         if ref.startswith("event:")
     }
     return signals.withdraw_sources(db, tenant_id, {ref for ref in cited if ref.split(":", 1)[1] not in live})
+
+
+_IN_CHUNK = 500
+
+
+def _chunks(ids: Iterable[str]) -> Iterable[list[str]]:
+    ordered = sorted(ids)
+    for i in range(0, len(ordered), _IN_CHUNK):
+        yield ordered[i : i + _IN_CHUNK]
+
+
+def live_evidence_texts(db: Session, tenant_id: str, refs: Iterable[str]) -> dict[str, str]:
+    """The current text of each ref in ``refs`` that is still one of the
+    tenant's live inputs, by ``gather_inputs``' rules (without its sampling
+    or language detection). A ref missing from the result is gone: deleted,
+    no longer marked as the user's own words, or of a kind this does not
+    know. ``user`` (typed on the panel) names no input and is never returned.
+
+    Restore (T-3.3.1.6) re-checks a rejection's evidence with it: before
+    T-3.3.1.6 a withdrawal skipped rejected signals, and the delete paths
+    drop the ledger row at once, so no later run cleans what they kept."""
+    from types import SimpleNamespace
+
+    from app.models.activity_event import ActivityEvent
+    from app.models.echo_draft import EchoDraft
+    from app.models.note import Note
+    from app.services.echo_draft_edits import user_written_text
+    from app.services.echo_processing_service import voice_eligible
+
+    wanted: dict[str, set[str]] = {}
+    for ref in refs:
+        prefix, sep, ident = str(ref).partition(":")
+        if sep and ident:
+            wanted.setdefault(prefix, set()).add(ident)
+    out: dict[str, str] = {}
+
+    def share_text(extracted: str | None, annotation: str | None) -> str:
+        return "\n\n".join(p.strip() for p in (extracted or "", annotation or "") if p and p.strip())
+
+    for part in _chunks(wanted.get("note", ())):
+        for nid, body in db.query(Note.id, Note.body_md).filter(
+            Note.tenant_id == tenant_id, Note.deleted_at.is_(None), Note.id.in_(part)
+        ):
+            if (body or "").strip():
+                out[f"note:{nid}"] = body.strip()
+    for prefix, model in (("qa", QAExchange), ("library_qa", LibraryQAExchange), ("history_qa", QAHistoryExchange)):
+        for part in _chunks(wanted.get(prefix, ())):
+            for ex_id, question in db.query(model.id, model.question).filter(
+                model.tenant_id == tenant_id, model.id.in_(part)
+            ):
+                if (question or "").strip():
+                    out[f"{prefix}:{ex_id}"] = question.strip()
+    share_cols = (Share.id, Share.extracted_text, Share.user_annotation, Share.author_is_tenant)
+    for part in _chunks(wanted.get("share", ())):
+        for sid, extracted, annotation, own in db.query(*share_cols).filter(
+            Share.tenant_id == tenant_id, Share.id.in_(part)
+        ):
+            text = share_text(extracted, annotation)
+            if text and voice_eligible(SimpleNamespace(author_is_tenant=own)):
+                out[f"share:{sid}"] = text
+    for part in _chunks(wanted.get("import", ())):
+        turns: dict[str, list[str]] = {}
+        for import_id, extracted, annotation, own in db.query(
+            Share.import_id, Share.extracted_text, Share.user_annotation, Share.author_is_tenant
+        ).filter(Share.tenant_id == tenant_id, Share.import_id.in_(part)):
+            text = share_text(extracted, annotation)
+            if text and voice_eligible(SimpleNamespace(author_is_tenant=own)):
+                turns.setdefault(import_id, []).append(text)
+        out.update({f"import:{iid}": "\n".join(t) for iid, t in turns.items()})
+    events = db.query(ActivityEvent.id, ActivityEvent.connector, ActivityEvent.text_content).filter(
+        ActivityEvent.tenant_id == tenant_id,
+        ActivityEvent.text_content.isnot(None),
+        ActivityEvent.connector != INTERNAL_CONNECTOR,
+    )
+    for part in _chunks(wanted.get("event", ())):
+        for eid, _connector, text in events.filter(ActivityEvent.id.in_(part)):
+            if (text or "").strip():
+                out[f"event:{eid}"] = text.strip()
+    for part in _chunks(wanted.get("events", ())):
+        by_connector: dict[str, list[str]] = {}
+        for _eid, connector, text in events.filter(ActivityEvent.connector.in_(part)):
+            if (text or "").strip():
+                by_connector.setdefault(connector, []).append(text.strip())
+        out.update({f"events:{c}": "\n".join(t) for c, t in by_connector.items()})
+    for part in _chunks(wanted.get("draft_edit", ())):
+        for did, draft, final, message in db.query(
+            EchoDraft.id, EchoDraft.draft, EchoDraft.final_text, EchoDraft.input_message
+        ).filter(
+            EchoDraft.tenant_id == tenant_id,
+            EchoDraft.final_text.isnot(None),
+            EchoDraft.written_words >= _edit_floor(),
+            EchoDraft.id.in_(part),
+        ):
+            t = user_written_text(draft, final, min_words=_edit_floor(), third_party=[message])
+            if t:
+                out[f"draft_edit:{did}"] = t
+    return out
 
 
 @dataclass
@@ -447,6 +546,15 @@ def find_verbatim(quote: str, text: str) -> str | None:
     return text[index[at] : index[at + len(q) - 1] + 1]
 
 
+def still_quotes(quote: str, text: str) -> bool:
+    """Is an example kept on a signal still in its source's current text?
+    Matched as ``find_verbatim`` matches (case, spacing and quote marks
+    ignored), with no minimum length: a stored example passed that already,
+    or is a short sentence stylometry picked."""
+    q, _ = _normalise_with_map((quote or "").strip())
+    return bool(q) and q in _normalise_with_map(text or "")[0]
+
+
 def _signal_language(signal_type: str, example_languages: list[str]) -> str | None:
     """A style signal belongs to the language its examples are in (the
     majority of their passages, as ``language_of`` read them, never the
@@ -591,7 +699,7 @@ def merge_candidate(db: Session, tenant_id: str, cand: dict, origin: str, counts
     return row
 
 
-def _record_on_shares(db: Session, tenant_id: str, row: VoiceSignal) -> None:
+def record_on_shares(db: Session, tenant_id: str, row: VoiceSignal) -> None:
     """A share lists the signals it fed, so deleting it can withdraw them."""
     for ref in json.loads(row.derived_from or "[]"):
         if not ref.startswith("share:"):
@@ -711,7 +819,17 @@ def _cost(model: str | None, tokens_in: int, tokens_out: int) -> float:
 
 
 def run(db: Session, tenant_id: str, *, llm: LLMCall | None = None, model: str | None = None, use_llm: bool = True) -> ExtractionReport:
-    """One extraction run for a tenant. Commits."""
+    """One extraction run for a tenant. Commits.
+
+    E-5.2: metered against the tenant (feature echo_signals), from the Celery
+    task, the inline mode and "Learn now" alike."""
+    from app.services import usage_service
+
+    with usage_service.metered(db, tenant_id):
+        return _run(db, tenant_id, llm=llm, model=model, use_llm=use_llm)
+
+
+def _run(db: Session, tenant_id: str, *, llm: LLMCall | None, model: str | None, use_llm: bool) -> ExtractionReport:
     report = ExtractionReport()
     inputs = gather_inputs(db, tenant_id)
     state = pending(db, tenant_id, inputs)
@@ -776,7 +894,7 @@ def run(db: Session, tenant_id: str, *, llm: LLMCall | None = None, model: str |
             for cand in candidates:
                 row = merge_candidate(db, tenant_id, cand, "llm", report.counts)
                 if row is not None:
-                    _record_on_shares(db, tenant_id, row)
+                    record_on_shares(db, tenant_id, row)
                     if (row.signal_type, row.value) not in known:
                         known.append((row.signal_type, row.value))
             read_ok.update(i.ref for i in batch)

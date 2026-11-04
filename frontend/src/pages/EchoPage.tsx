@@ -6,6 +6,7 @@ import { SignalsPanel } from '../components/echo/SignalsPanel';
 import { SpeakAsMePanel } from '../components/echo/SpeakAsMePanel';
 import { ActivityTimeline } from '../components/echo/ActivityTimeline';
 import { ConnectorsPanel } from '../components/echo/ConnectorsPanel';
+import { FactTombstones, isDerivedSource, keptDeletedNote } from '../components/echo/FactTombstones';
 import { ReadinessDomains } from '../components/echo/ReadinessDomains';
 import {
   useDeleteContext,
@@ -352,6 +353,8 @@ export function EchoPage() {
                 ))}
               </div>
             )}
+            {/* T-3.2.4.4: deleted derived facts, which syncs and re-imports skip. */}
+            <FactTombstones enabled={allowed} />
           </section>
 
           <div style={{ marginTop: space['6'] }}>
@@ -410,6 +413,7 @@ export function EchoPage() {
       >
         <p style={{ margin: 0, fontFamily: fonts.body, lineHeight: lineHeight.normal }}>
           “{deleting?.key}” under {deleting ? kindLabel(deleting.kind) : ''} will be deleted.
+          {keptDeletedNote(deleting?.source) ? ` ${keptDeletedNote(deleting?.source)}` : ''}
         </p>
       </Modal>
 
@@ -432,6 +436,9 @@ export function EchoPage() {
           Every entry attributed to <strong>{revoking?.source}</strong> ({revoking?.count}) will be
           deleted. This is the opt-out path for a connector; for manual entries it clears
           everything you typed under that source.
+          {isDerivedSource(revoking?.source)
+            ? ' A connected connector keeps running, but its syncs and re-imports skip these facts from now on (see "Kept deleted"). To stop it, disconnect it above.'
+            : ''}
         </p>
       </Modal>
     </div>

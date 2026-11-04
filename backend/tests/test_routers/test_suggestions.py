@@ -251,12 +251,24 @@ def test_generator_unavailable_skips_the_model(db, test_user):
     assert out["generated"] is False
 
 
-def test_generation_is_metered_under_the_daily_token_keys(db, test_user):
+def test_generation_is_metered_under_the_daily_token_keys(db, test_user, monkeypatch):
+    """E-5.2: served below ``get_llm_for`` so the production meter runs; the
+    daily totals and the suggestions breakdown come from the same scope."""
+    from app.services import llm_service
+    from tests.usage_helpers import MeteredFakeChat, usage_rows
+
     job = _job(db, test_user.id)
-    with patch.object(suggestion_service, "get_llm_for", return_value=FakeLLM()):
-        suggestion_service.suggestions_for(db, test_user, f"job:{job.id}")
+    reply = json.dumps({"suggestions": GENERATED})
+    monkeypatch.setattr(
+        llm_service, "_build_from_config",
+        lambda *a, **k: MeteredFakeChat(reply=reply, tokens_in=1200, tokens_out=160),
+    )
+    suggestion_service.suggestions_for(db, test_user, f"job:{job.id}")
     rows = {r.resource: r.consumed for r in db.query(QuotaUsage).filter_by(user_id=test_user.id)}
     assert rows.get("llm_tokens_in") == 1200 and rows.get("llm_tokens_out") == 160
+    assert usage_rows(db, test_user.id) == {
+        ("suggestions", "llm_calls"): 1, ("suggestions", "llm_tokens_in"): 1200, ("suggestions", "llm_tokens_out"): 160,
+    }
 
 
 # ---------------------------------------------------------------- isolation

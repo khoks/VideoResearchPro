@@ -152,6 +152,17 @@ export interface ActivityResponse {
   next_before: string | null;
 }
 
+/** T-3.2.4.4: a derived fact the user deleted, which the connector or
+ * importer that derived it will not write again. Its value is not kept. */
+export interface FactTombstone {
+  id: string;
+  connector: string;
+  connector_display_name: string;
+  kind: string;
+  key: string;
+  created_at: string;
+}
+
 // ---------------------------------------------------------------------------
 // Shares inbox (S-3.7.1) and privacy (S-3.10.1 / S-3.10.2)
 // ---------------------------------------------------------------------------
@@ -365,6 +376,18 @@ export interface VoiceSignalList {
   items: VoiceSignal[];
   consent_version: string;
   learning?: LearningState | null;
+}
+
+/** T-3.3.1.6: a signal the user marked "That's not me". */
+export interface RejectedSignal extends VoiceSignal {
+  rejected_at: string;
+}
+
+export interface RestoreSignalResponse {
+  signal: VoiceSignal;
+  /** False when nothing the user wrote still shows the signal: Echo may
+   * learn it again, but it stays out of the profile until it does. */
+  live: boolean;
 }
 
 export interface LearnResponse {
@@ -633,6 +656,13 @@ export const echoApi = {
   listActivity: (params?: { connector?: string; before?: string; limit?: number }) =>
     api.get<ActivityResponse>('/echo/activity', { params }).then(r => r.data),
 
+  /** T-3.2.4.4: derived facts the user deleted, kept deleted. */
+  listFactTombstones: () => api.get<{ items: FactTombstone[] }>('/echo/fact-tombstones').then(r => r.data),
+
+  /** Let the connector write this fact again at its next sync. */
+  clearFactTombstone: (id: string) =>
+    api.delete<{ cleared: boolean }>(`/echo/fact-tombstones/${encodeURIComponent(id)}`).then(r => r.data),
+
   listShares: (params?: ListSharesParams) =>
     api.get<ShareListResponse>('/echo/shares', { params }).then(r => r.data),
 
@@ -727,6 +757,13 @@ export const echoApi = {
   /** "That's not me": a tombstone; Echo never learns the signal again. */
   rejectSignal: (id: string) =>
     api.delete<VoiceSignal>(`/echo/signals/${encodeURIComponent(id)}`).then(r => r.data),
+
+  /** T-3.3.1.6: what the user marked "That's not me", newest first. */
+  listRejectedSignals: () => api.get<{ items: RejectedSignal[] }>('/echo/signals/rejected').then(r => r.data),
+
+  /** Undo "That's not me": Echo may add and learn the signal again. */
+  restoreSignal: (id: string) =>
+    api.post<RestoreSignalResponse>(`/echo/signals/${encodeURIComponent(id)}/restore`).then(r => r.data),
 
   exportSignals: () => downloadAuthenticated('/echo/signals/export', 'echo-voice-profile.json'),
 

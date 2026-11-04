@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { isPublicAuthPath } from '../utils/accountSecurity';
 
 export const AUTH_TOKEN_KEY = 'videoresearchpro.authToken';
 
@@ -21,9 +22,9 @@ api.interceptors.response.use(
   (error) => {
     if (error?.response?.status === 401) {
       localStorage.removeItem(AUTH_TOKEN_KEY);
-      // Avoid redirect loops if already on an auth page
-      const path = window.location.pathname;
-      if (path !== '/login' && path !== '/register') {
+      // Avoid redirect loops if already on an auth page; there a 401 is the
+      // page's own answer (wrong password, wrong code, a refused OAuth sign-in).
+      if (!isPublicAuthPath(window.location.pathname)) {
         window.location.href = '/login';
       }
     }

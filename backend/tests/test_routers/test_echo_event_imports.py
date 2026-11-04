@@ -481,3 +481,27 @@ def test_the_command_line_importer_runs_the_same_flow(db, two, tmp_path, monkeyp
     out = json.loads(capsys.readouterr().out)
     assert out["counts"]["facts"] == 3 and db.query(EchoImport).filter(EchoImport.id == out["import_id"]).count() == 1
     assert cli.main(["--email", "nobody@example.com", "--file", str(path)], session_factory=Shared()) == 2
+
+
+def test_a_fact_deleted_from_an_import_stays_deleted_when_the_export_is_imported_again(unauthenticated_client, db, two):
+    """T-3.2.4.4 for importers: the tombstone names the importer, not the
+    import, so a fresh export of the same kind skips the deleted key."""
+    from app.models.echo_fact_tombstone import EchoFactTombstone
+
+    first = _run(unauthenticated_client, two["ha"], *apple_health())
+    assert first["counts"]["facts"] == 3
+    assert unauthenticated_client.delete("/api/v1/echo/context/daily_routine/steps", headers=two["ha"]).status_code == 200
+    [tomb] = db.query(EchoFactTombstone).filter_by(tenant_id=two["a"].id).all()
+    assert (tomb.connector, tomb.kind, tomb.key) == ("apple_health_export", "daily_routine", "steps")
+
+    again = _run(unauthenticated_client, two["ha"], *apple_health())
+    assert again["counts"]["facts"] == 2 and again["counts"]["facts_kept_deleted"] == 1
+    keys = {f.key for f in db.query(PersonalContext).filter(PersonalContext.tenant_id == two["a"].id)}
+    assert keys == {"sleep", "workouts"}
+
+    # Another reader's import is untouched by A's tombstone.
+    assert _run(unauthenticated_client, two["hb"], *apple_health())["counts"]["facts"] == 3
+
+    # Cleared, the next import writes it again.
+    unauthenticated_client.delete(f"/api/v1/echo/fact-tombstones/{tomb.id}", headers=two["ha"])
+    assert _run(unauthenticated_client, two["ha"], *apple_health())["counts"]["facts"] == 3

@@ -8,6 +8,7 @@ import { useJobStore } from '../stores/jobStore';
 import { TIER_DESCRIPTORS, getTierDescriptor } from '../data/tiers';
 import { TierCard } from '../components/marketing/TierCard';
 import { MockPaymentModal } from '../components/marketing/MockPaymentModal';
+import { UsageSummaryPanel } from '../components/account/UsageSummaryPanel';
 import { apiErrorMessage } from '../utils/apiError';
 import { useQuota } from '../hooks/useChannelIntelligence';
 import { documentUsageLine } from '../utils/documentCap';
@@ -29,6 +30,9 @@ import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../theme
  * T-5.2.8 / D-111: only the install's operator may switch tiers. Anyone
  * else sees the plans without action buttons and a note saying who can
  * change their plan, instead of a switch that fails on submit.
+ *
+ * E-5.2: below the plans, the reader's own usage by feature (`GET /usage`),
+ * recorded and never limited.
  */
 export function SubscriptionPage() {
   const c = useColors();
@@ -216,6 +220,8 @@ export function SubscriptionPage() {
           );
         })}
       </div>
+
+      <UsageSummaryPanel />
 
       {/* Upgrade flow → mock payment modal */}
       {canSwitch && targetTier && (

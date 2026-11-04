@@ -21,6 +21,10 @@ import { ExportsPage } from '../pages/ExportsPage';
 import { NotesPage } from '../pages/NotesPage';
 import { LoginPage } from '../pages/LoginPage';
 import { RegisterPage } from '../pages/RegisterPage';
+import { ForgotPasswordPage } from '../pages/ForgotPasswordPage';
+import { ResetPasswordPage } from '../pages/ResetPasswordPage';
+import { OAuthCallbackPage } from '../pages/OAuthCallbackPage';
+import { AccountSecurityPage } from '../pages/AccountSecurityPage';
 import { SubscriptionPage } from '../pages/SubscriptionPage';
 import { AIModelsPage } from '../pages/AIModelsPage';
 import { SystemStatusPage } from '../pages/SystemStatusPage';
@@ -72,8 +76,14 @@ export const router = createBrowserRouter([
     children: [
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage /> },
+      // T-5.4.5: where Google / GitHub send the browser back.
+      { path: '/login/oauth/:provider/callback', element: <OAuthCallbackPage /> },
     ],
   },
+  // Password reset (T-5.4.3): open signed in or out, so the Security page
+  // can send a signed-in reader here to set a new password.
+  { path: '/forgot-password', element: <ForgotPasswordPage /> },
+  { path: '/reset-password', element: <ResetPasswordPage /> },
   // Authenticated app surface.
   {
     element: <ProtectedRoute />,
@@ -116,6 +126,7 @@ export const router = createBrowserRouter([
           { path: 'echo/connectors/:name/callback', element: <EchoConnectorCallbackPage /> },
           { path: 'account/subscription', element: <SubscriptionPage /> },
           { path: 'account/ai-models', element: <AIModelsPage /> },
+          { path: 'account/security', element: <AccountSecurityPage /> },
           { path: 'account/system', element: <SystemStatusPage /> },
         ],
       },

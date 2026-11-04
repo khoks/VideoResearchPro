@@ -1,7 +1,15 @@
 import { useState } from 'react';
-import { useCreateSignal, useLearnSignals, useRejectSignal, useUpdateSignal, useVoiceSignals } from '../../hooks/useEcho';
+import {
+  useCreateSignal,
+  useLearnSignals,
+  useRejectSignal,
+  useRejectedSignals,
+  useRestoreSignal,
+  useUpdateSignal,
+  useVoiceSignals,
+} from '../../hooks/useEcho';
 import { useJobStore } from '../../stores/jobStore';
-import { echoApi, type VoiceSignal } from '../../services/echoApi';
+import { echoApi, type RejectedSignal, type VoiceSignal } from '../../services/echoApi';
 import { Badge, Button, Card, FormField, Modal, Select, Skeleton, Textarea } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, space } from '../../theme';
@@ -17,6 +25,7 @@ import {
   learningSummary,
   originLabel,
   registerLabel,
+  restoreToast,
   signalTypeMeta,
   sourceLabel,
   type SignalGroup,
@@ -123,7 +132,7 @@ export function SignalsPanel() {
       <p style={text}>
         What Echo has learned about how you write and what you think. It learns only from your own words: your notes, the
         questions you ask, and shares you marked as written by you. Correct anything that is off. "That's not me" removes a
-        signal, and Echo never learns it again.
+        signal, and Echo never learns it again unless you restore it from Rejected.
       </p>
       {learning && (
         <div
@@ -168,6 +177,8 @@ export function SignalsPanel() {
         </div>
       )}
 
+      <RejectedSignals />
+
       <p style={{ ...text, marginTop: space['3'], fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>
         Learning terms version {signals.data?.consent_version ?? '…'}. Shares you did not write never shape these signals.
       </p>
@@ -203,6 +214,74 @@ export function SignalsPanel() {
         </p>
       </Modal>
     </Card>
+  );
+}
+
+/**
+ * T-3.3.1.6: the undo for "That's not me". Hidden until there is something
+ * to restore; a restored signal may be added and learned again.
+ */
+function RejectedSignals() {
+  const c = useColors();
+  const pushToast = useJobStore((s) => s.pushToast);
+  const rejected = useRejectedSignals();
+  const restore = useRestoreSignal();
+  const items = rejected.data?.items ?? [];
+  if (items.length === 0) return null;
+
+  const doRestore = (s: RejectedSignal) =>
+    restore.mutate(s.id, {
+      onSuccess: (resp) => pushToast('success', restoreToast(resp.live)),
+      onError: (e) =>
+        pushToast('error', detailFromErrorBody((e as HttpErrorLike).response?.data) ?? 'Could not restore the signal.'),
+    });
+
+  return (
+    <details data-rejected style={{ marginTop: space['4'] }}>
+      <summary style={{ cursor: 'pointer', fontFamily: fonts.ui, fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: c.textSecondary }}>
+        Rejected ({items.length})
+      </summary>
+      <p style={{ margin: `${space['2']} 0`, fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textMuted, lineHeight: lineHeight.normal }}>
+        Signals you marked "That's not me". Echo will not add or learn these again unless you restore one.
+      </p>
+      <Card flush>
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+          {items.map((s, i) => {
+            const language = languageLabel(s.language);
+            return (
+              <li
+                key={s.id}
+                data-rejected-signal={s.id}
+                style={{
+                  padding: `${space['2']} ${space['4']}`,
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  gap: space['3'],
+                  flexWrap: 'wrap',
+                  borderBottom: i === items.length - 1 ? 'none' : `1px solid ${c.border}`,
+                }}
+              >
+                <span style={{ flex: '1 1 14rem', minWidth: 0, fontFamily: fonts.body, fontSize: fontSize.base, color: c.textSecondary, lineHeight: lineHeight.normal }}>
+                  {s.value}
+                </span>
+                <span style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>
+                  {signalTypeMeta(s.signal_type).label}
+                  {language ? ` · ${language}` : ''} · rejected {formatDate(s.rejected_at)}
+                </span>
+                <Button
+                  size="sm"
+                  variant="tertiary"
+                  loading={restore.isPending && restore.variables === s.id}
+                  onClick={() => doRestore(s)}
+                >
+                  Restore
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      </Card>
+    </details>
   );
 }
 

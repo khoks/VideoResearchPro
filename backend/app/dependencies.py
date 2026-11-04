@@ -43,7 +43,10 @@ def _resolve_user(token: str | None, db: Session) -> User:
     if not token:
         raise credentials_exc
 
-    payload = auth_service.decode_token(token)
+    # decode_access_token, not decode_token: the second-factor ticket is
+    # signed with the same key and has no `jti`, so it would pass every check
+    # below and skip two-step verification.
+    payload = auth_service.decode_access_token(token)
     if not payload:
         raise credentials_exc
 
@@ -100,7 +103,7 @@ def get_current_jti(
     revoke the current session row."""
     if not token:
         return None
-    payload = auth_service.decode_token(token)
+    payload = auth_service.decode_access_token(token)
     if not payload:
         return None
     jti = payload.get("jti")

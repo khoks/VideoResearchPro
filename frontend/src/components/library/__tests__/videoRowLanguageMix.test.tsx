@@ -186,6 +186,23 @@ describe('languageMixBadge names Hindi only where something supports it', () => 
     expect(languageMixBadge(DEVANAGARI, label, 'video')?.label).toBe('Hindi + English');
     expect(languageMixBadge(ROMANISED, label, 'video')?.label).toBe('Other language + English');
   });
+
+  // T-1.16.1.10: an ISO 639-2 label names the same language as its two-letter
+  // code. Unmapped, `eng` reads as a third language, and Intl then calls it
+  // "English" with no shares at all.
+  it.each([
+    ['eng', 'en'], ['ENG', 'en'], ['hin', 'hi'], ['urd', 'ur'], ['hin-IN', 'hi'],
+  ])('reads the ISO 639-2 label %s as %s', (label, code) => {
+    for (const profile of [DEVANAGARI, ROMANISED, MOSTLY_ENGLISH, ARABIC]) {
+      expect(languageMixBadge(profile, label, 'video')).toEqual(languageMixBadge(profile, code, 'video'));
+    }
+  });
+
+  it('calls a mixed source labelled eng what it measures, not "English"', () => {
+    expect(languageMixBadge(ROMANISED, 'eng', 'video')?.label).toBe('Hindi (romanised) + English');
+    expect(languageMixBadge(ROMANISED, 'hin', 'pdf')?.label).toBe('Hindi (romanised) + English');
+    expect(languageMixBadge(ARABIC, 'urd', 'video')?.label).toBe('Urdu/Hindi');
+  });
 });
 
 function row(id: string, overrides: Partial<LibraryVideoResponse>): LibraryVideoResponse {

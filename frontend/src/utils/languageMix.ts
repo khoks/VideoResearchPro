@@ -32,8 +32,12 @@ export const HINDI_GRAMMAR_FLOOR = 0.05;
 /** Labels that name no language. */
 const NOT_A_LANGUAGE = new Set(['unknown', 'und', 'mul', 'mis', 'zxx']);
 
-/** Captions carry a BCP-47 code; Whisper writes the language's English name. */
-const CODE_BY_NAME: Record<string, string> = { english: 'en', hindi: 'hi', urdu: 'ur' };
+/** Captions carry a BCP-47 code, Whisper writes the language's English name,
+ * and some sources carry an ISO 639-2 code (T-1.16.1.10). */
+const CODE_BY_NAME: Record<string, string> = {
+  english: 'en', hindi: 'hi', urdu: 'ur',
+  eng: 'en', hin: 'hi', urd: 'ur',
+};
 
 export interface LanguageMixBadge {
   /** "Hindi + English", "Hindi (romanised) + English", "Spanish", "English + other words"… */

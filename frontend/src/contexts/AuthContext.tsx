@@ -55,6 +55,13 @@ function isMfaRequired(data: unknown): data is MfaRequiredResponse {
 
 const USER_STORAGE_KEY = 'videoresearchpro.authUser';
 
+/**
+ * How long sign-out waits for the server to revoke the session before it
+ * signs this browser out anyway. The shared axios instance has no timeout,
+ * so a stalled backend would otherwise leave the browser signed in.
+ */
+export const LOGOUT_REVOKE_TIMEOUT_MS = 5000;
+
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 function readStoredUser(): AuthUser | null {
@@ -169,13 +176,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [persistSession]);
 
   const logout = useCallback(async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       // T-5.4.7: revoke the session row, so the token stops working even if
-      // a copy of it outlives this browser's storage.
-      if (localStorage.getItem(AUTH_TOKEN_KEY)) await api.post('/auth/logout');
+      // a copy of it outlives this browser's storage. Bounded twice: axios
+      // aborts the request at the timeout, and the race gives up on it even
+      // if the transport ignores that, so the `finally` below always runs.
+      if (localStorage.getItem(AUTH_TOKEN_KEY)) {
+        const gaveUp = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('sign-out request timed out')), LOGOUT_REVOKE_TIMEOUT_MS);
+        });
+        await Promise.race([api.post('/auth/logout', null, { timeout: LOGOUT_REVOKE_TIMEOUT_MS }), gaveUp]);
+      }
     } catch {
-      /* already revoked, expired or offline: still sign this browser out */
+      /* already revoked, expired, offline or stalled: still sign this browser out */
     } finally {
+      clearTimeout(timer);
       localStorage.removeItem(AUTH_TOKEN_KEY);
       localStorage.removeItem(USER_STORAGE_KEY);
       setToken(null);

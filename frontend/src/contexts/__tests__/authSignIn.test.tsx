@@ -7,7 +7,7 @@
 import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AuthProvider, useAuth, type SignInResult } from '../AuthContext';
+import { AuthProvider, LOGOUT_REVOKE_TIMEOUT_MS, useAuth, type SignInResult } from '../AuthContext';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -127,7 +127,7 @@ describe('logout', () => {
       return { data: { revoked: true } };
     });
     await run(() => ctx.logout());
-    expect(postMock).toHaveBeenCalledWith('/auth/logout');
+    expect(postMock).toHaveBeenCalledWith('/auth/logout', null, { timeout: LOGOUT_REVOKE_TIMEOUT_MS });
     expect(tokenAtCall).toBe('jwt.session');
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
     expect(localStorage.getItem(USER_KEY)).toBeNull();
@@ -139,5 +139,35 @@ describe('logout', () => {
     await run(() => ctx.logout());
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
     expect(authed()).toBe('false');
+  });
+
+  it('signs this browser out when the call never settles', async () => {
+    // A stalled backend: the request neither answers nor fails. The mock
+    // ignores axios's own timeout, as a hung transport would.
+    vi.useFakeTimers();
+    try {
+      postMock.mockImplementationOnce(() => new Promise(() => {}));
+      let done = false;
+      await act(async () => {
+        void ctx.logout().then(() => {
+          done = true;
+        });
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(LOGOUT_REVOKE_TIMEOUT_MS - 1);
+      });
+      expect(done).toBe(false);
+      expect(localStorage.getItem(TOKEN_KEY)).toBe('jwt.session');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(done).toBe(true);
+      expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+      expect(localStorage.getItem(USER_KEY)).toBeNull();
+      expect(authed()).toBe('false');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -77,8 +77,10 @@ async function flush() {
   }
 }
 
+let qc: QueryClient;
+
 async function mount() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   act(() =>
     root.render(
       <QueryClientProvider client={qc}>
@@ -262,6 +264,63 @@ describe('two-step verification', () => {
     await submit(form);
     expect(host.querySelector('[role="alert"]')!.textContent).toContain('That code did not match');
     expect(host.querySelector('[data-secret]')).not.toBeNull();
+  });
+
+  /** The status query's background refetch fails, e.g. on window focus. */
+  async function failStatusRefetch() {
+    const ok = http.get.getMockImplementation()!;
+    http.get.mockImplementation(async (url, config) => {
+      if (url === '/auth/mfa/status') throw Object.assign(new Error('502'), { isAxiosError: true, response: { status: 502 } });
+      return ok(url, config);
+    });
+    await act(async () => {
+      await qc.refetchQueries({ queryKey: ['auth', 'mfa'] });
+    });
+    await flush();
+    expect(qc.getQueryState(['auth', 'mfa'])!.status).toBe('error');
+  }
+
+  it('keeps the recovery codes on screen when a status refetch fails', async () => {
+    http.post.mockImplementation(async (url) => {
+      if (url === '/auth/mfa/enroll') return { data: { secret: SECRET, provisioning_uri: URI } };
+      mfaEnabled = true;
+      return { data: { enabled: true, recovery_codes: CODES } };
+    });
+    await mount();
+    await click('Set up two-step verification');
+    const form = host.querySelector('form[aria-label="Set up two-step verification"]');
+    await type(form!.querySelector('input')!, '123456');
+    await submit(form);
+
+    await failStatusRefetch();
+
+    const list = host.querySelector('ol[aria-label="Recovery codes"]');
+    expect(list, 'the codes are not shown again once this view goes').not.toBeNull();
+    expect(Array.from(list!.querySelectorAll('li')).map((li) => li.textContent)).toEqual(CODES);
+    expect(host.textContent).not.toContain('Could not read whether two-step verification is on');
+    expect(button('I have saved them')).toBeTruthy();
+  });
+
+  it('keeps the setup key on screen when a status refetch fails', async () => {
+    http.post.mockResolvedValue({ data: { secret: SECRET, provisioning_uri: URI } });
+    await mount();
+    await click('Set up two-step verification');
+
+    await failStatusRefetch();
+
+    expect(host.querySelector('[data-secret]')!.textContent).toBe('JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP');
+    expect(host.querySelector('form[aria-label="Set up two-step verification"]')).not.toBeNull();
+  });
+
+  it('says it cannot read the status when the first read fails', async () => {
+    const ok = http.get.getMockImplementation()!;
+    http.get.mockImplementation(async (url, config) => {
+      if (url === '/auth/mfa/status') throw Object.assign(new Error('502'), { isAxiosError: true, response: { status: 502 } });
+      return ok(url, config);
+    });
+    await mount();
+    expect(host.textContent).toContain('Could not read whether two-step verification is on');
+    expect(buttons().some((b) => b.textContent === 'Set up two-step verification')).toBe(false);
   });
 
   it('cancelling the setup drops the key', async () => {

@@ -220,3 +220,79 @@ def test_oauth_sign_in_without_two_step_still_signs_in(
     assert r.status_code == 200
     assert r.json()["access_token"]
     assert "requires_mfa" not in r.json()
+
+
+# ---------------------------------------------------------------------------
+# The second-factor ticket is not a credential
+# ---------------------------------------------------------------------------
+#
+# The ticket the first step hands out is signed with the access-token key and
+# carries a `sub` but no `jti`. Until decode_access_token, every bearer check
+# took it, so whoever had the password (or the provider account) could skip
+# the code and use the ticket as an access token for its five minutes.
+
+# Routes that read the caller through get_current_user, plus logout, whose
+# get_current_jti read the ticket too.
+_PROTECTED = [
+    ("get", "/api/v1/auth/me"),
+    ("get", "/api/v1/jobs"),
+    ("get", "/api/v1/auth/sessions"),
+    ("post", "/api/v1/auth/logout"),
+]
+
+
+def _password_ticket(client, db, email: str) -> tuple[str, str]:
+    user = auth_service.create_user(db, email=email, password="goodpw1234")
+    secret = _enable_mfa(db, user)
+    r = client.post("/api/v1/auth/login", json={"email": email, "password": "goodpw1234"})
+    assert r.status_code == 200
+    assert r.json()["requires_mfa"] is True
+    return r.json()["mfa_token"], secret
+
+
+@pytest.mark.parametrize("method,path", _PROTECTED)
+def test_the_password_step_ticket_authenticates_nothing(unauthenticated_client, db, method, path):
+    ticket, _secret = _password_ticket(unauthenticated_client, db, f"ticket-{method}@x.com")
+
+    r = getattr(unauthenticated_client, method)(path, headers=_auth(ticket))
+
+    assert r.status_code == 401, f"the second-factor ticket authenticated {method.upper()} {path}"
+
+
+def test_the_ticket_still_finishes_sign_in_and_the_token_it_buys_works(unauthenticated_client, db):
+    # The other half: the guard refuses the ticket, not access tokens.
+    ticket, secret = _password_ticket(unauthenticated_client, db, "ticket-ok@x.com")
+    done = unauthenticated_client.post(
+        "/api/v1/auth/login/mfa", json={"mfa_token": ticket, "code": pyotp.TOTP(secret).now()}
+    )
+    assert done.status_code == 200
+    me = unauthenticated_client.get("/api/v1/auth/me", headers=_auth(done.json()["access_token"]))
+    assert me.status_code == 200
+    assert me.json()["email"] == "ticket-ok@x.com"
+
+
+def test_the_oauth_step_ticket_authenticates_nothing(unauthenticated_client, db, monkeypatch, _google):
+    user = auth_service.create_user(db, email="ticket-oauth@x.com", password="goodpw1234")
+    _enable_mfa(db, user)
+    body = _google_callback(unauthenticated_client, db, monkeypatch, "ticket-oauth@x.com").json()
+    assert body["requires_mfa"] is True
+
+    for method, path in _PROTECTED:
+        r = getattr(unauthenticated_client, method)(path, headers=_auth(body["mfa_token"]))
+        assert r.status_code == 401, f"the OAuth ticket authenticated {method.upper()} {path}"
+
+
+def test_the_ticket_does_not_open_the_progress_socket(unauthenticated_client, db, monkeypatch):
+    from starlette.websockets import WebSocketDisconnect
+
+    from tests.test_routers.test_url_tokens import _FakeManager
+
+    fake = _FakeManager()
+    monkeypatch.setattr("app.routers.ws.manager", fake)
+    ticket, _secret = _password_ticket(unauthenticated_client, db, "ticket-ws@x.com")
+
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with unauthenticated_client.websocket_connect(f"/ws/jobs?token={ticket}"):
+            pass
+    assert exc.value.code == 1008
+    assert fake.connected == 0

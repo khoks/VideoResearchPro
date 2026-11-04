@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# The `typ` claim of a token that authenticates requests. Required (when
+# present) by `decode_access_token`; the second-factor ticket says "mfa_step".
+ACCESS_TOKEN_TYPE = "access"
+
 
 # E-5.4: outcomes returned by `authenticate_user_v2` so the router can
 # distinguish "wrong password" from "locked out" without leaking the
@@ -320,6 +324,7 @@ def create_access_token(
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
         "jti": jti,
+        "typ": ACCESS_TOKEN_TYPE,
     }
     token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
@@ -360,6 +365,34 @@ def decode_token(token: str) -> dict[str, Any] | None:
     except JWTError:
         logger.info("JWT decode failed")
         return None
+
+
+def decode_access_token(token: str) -> dict[str, Any] | None:
+    """The payload of a token that may authenticate a request, else None.
+
+    Every place that accepts a bearer credential (``dependencies._resolve_user``,
+    ``get_current_jti``, the ``/ws/jobs`` handshake) must decode through this,
+    not ``decode_token``. The second-factor ticket
+    (``mfa_service.issue_mfa_step_token``) is signed with the same key and
+    algorithm, and carries a ``sub`` but no ``jti``, so it passes every other
+    check: before this, the ticket POST /auth/login hands out after the
+    password step worked as a full access token for its five minutes, and two-
+    step verification could be skipped by never sending the code.
+
+    A ticket carries ``mfa_step`` (and, since this change, ``typ="mfa_step"``);
+    an access token carries ``typ="access"``. A token with no ``typ`` was
+    issued before the claim existed and is still accepted, so a deploy does not
+    sign everyone out; it cannot be a ticket unless it says ``mfa_step``.
+    """
+    payload = decode_token(token)
+    if payload is None:
+        return None
+    if payload.get("mfa_step"):
+        return None
+    typ = payload.get("typ")
+    if typ is not None and typ != ACCESS_TOKEN_TYPE:
+        return None
+    return payload
 
 
 # ---------------------------------------------------------------------------

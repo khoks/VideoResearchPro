@@ -31,6 +31,22 @@ def test_render_password_reset_email_includes_secret_and_ttl():
     assert "user@example.com" in body
 
 
+@pytest.mark.parametrize("base", ["https://app.example.com", "https://app.example.com/"])
+def test_reset_email_names_the_page_and_keeps_the_code_out_of_every_url(monkeypatch, base):
+    # The email is the only way the code arrives, and the reader may open it
+    # on another device, where nothing leads to /reset-password.
+    import re
+
+    monkeypatch.setattr(settings, "APP_BASE_URL", base)
+    _subject, body = render_password_reset_email(
+        recipient_email="user@example.com", secret="REAL-SECRET-TOKEN", ttl_minutes=30
+    )
+
+    urls = re.findall(r"https?://\S+", body)
+    assert "https://app.example.com/reset-password" in urls
+    assert not any("REAL-SECRET-TOKEN" in url for url in urls)
+
+
 # ---------------------------------------------------------------------------
 # Log fallback (no SMTP configured)
 # ---------------------------------------------------------------------------

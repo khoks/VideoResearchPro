@@ -133,16 +133,13 @@ export function TwoStepCard() {
     </p>
   );
 
+  // The setup key and the recovery codes come first, ahead of the status
+  // query's loading and error states: they live only in this component, so
+  // a background refetch that fails (the window-focus refetch when the
+  // reader comes back from their password manager, say) must not replace
+  // them. The codes are never shown again once this view goes.
   let body: React.ReactNode;
-  if (status.isLoading) {
-    body = <Skeleton variant="row" />;
-  } else if (status.isError) {
-    body = (
-      <p role="alert" style={{ ...text, color: c.error }}>
-        Could not read whether two-step verification is on.
-      </p>
-    );
-  } else if (step.kind === 'setup') {
+  if (step.kind === 'setup') {
     const { secret, provisioning_uri } = step.enrollment;
     body = (
       <form onSubmit={confirm} aria-label="Set up two-step verification" style={{ display: 'flex', flexDirection: 'column', gap: space['4'] }}>
@@ -235,6 +232,14 @@ export function TwoStepCard() {
           </Button>
         </div>
       </div>
+    );
+  } else if (status.isLoading) {
+    body = <Skeleton variant="row" />;
+  } else if (status.isError) {
+    body = (
+      <p role="alert" style={{ ...text, color: c.error }}>
+        Could not read whether two-step verification is on.
+      </p>
     );
   } else if (enabled && step.kind === 'disabling') {
     body = (

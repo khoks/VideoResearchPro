@@ -103,6 +103,18 @@ export interface KindFormats {
   pdf_engine?: string | null;
 }
 
+/** S-6.3.2: `GET /author/knowledge-sources`. A document in the caller's
+ * library with a knowledge report, which a deck takes as
+ * `document:<document_id>`. */
+export interface KnowledgeSource {
+  document_id: string;
+  title: string;
+  source_type: string;
+  channel_name: string;
+  published_at: string | null;
+  knowledge_extracted_at: string | null;
+}
+
 export interface CreateOutputPayload {
   kind: string;
   title: string;
@@ -147,6 +159,12 @@ export interface ListOutputsParams {
 
 export const authorApi = {
   listKinds: () => api.get<KindsResponse>('/author/kinds').then(r => r.data),
+
+  /** S-6.3.2: documents a deck can be planned from (a knowledge report),
+   * most recently extracted first. `q` matches title or channel on the
+   * server, so it reaches reports older than `limit`. */
+  listKnowledgeSources: (params?: { q?: string; limit?: number }) =>
+    api.get<KnowledgeSource[]>('/author/knowledge-sources', { params }).then(r => r.data),
 
   listOutputs: (params?: ListOutputsParams) =>
     api.get<OutputItem[]>('/author/outputs', { params }).then(r => r.data),

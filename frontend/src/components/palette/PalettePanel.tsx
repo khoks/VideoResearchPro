@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { Command, useCommandState } from 'cmdk';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { useDebounced } from '../../hooks/useDebounced';
 import { isMacPlatform, modLabel } from '../../hooks/useShortcuts';
 import { useColors, useShadows } from '../../hooks/useTheme';
 import { useTierCapabilities } from '../../hooks/useTierCapabilities';
@@ -27,15 +28,6 @@ import {
 } from './model';
 
 const DEBOUNCE_MS = 180;
-
-function useDebounced<T>(value: T, ms: number): T {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = window.setTimeout(() => setV(value), ms);
-    return () => window.clearTimeout(t);
-  }, [value, ms]);
-  return v;
-}
 
 export default function PalettePanel({ onClose }: { onClose: () => void }) {
   const c = useColors();

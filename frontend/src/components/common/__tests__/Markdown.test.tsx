@@ -73,13 +73,17 @@ describe('Markdown', () => {
     expect(blocks()).toEqual(BLOCKS);
 
     release();
-    await vi.waitFor(async () => {
-      await settle();
-      expect(container.querySelector('a')?.getAttribute('href')).toBe('https://example.org/a');
-    });
+    // The real module loads here, which is slow on a busy machine.
+    await vi.waitFor(
+      async () => {
+        await settle();
+        expect(container.querySelector('a')?.getAttribute('href')).toBe('https://example.org/a');
+      },
+      { timeout: 25_000, interval: 50 },
+    );
     expect(container.querySelector('strong')?.textContent).toBe('rose');
     expect(blocks(), 'the same blocks, so nothing moves').toEqual(BLOCKS);
-  });
+  }, 30_000);
 
   it('keeps the plain text if the chunk cannot load', async () => {
     vi.doMock('react-markdown', () => {

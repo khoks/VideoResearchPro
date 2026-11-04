@@ -309,9 +309,9 @@ _DEVANAGARI_STEM_ENDINGS = (
 def _english_in_devanagari(word: str, lex: _Lexicons) -> bool:
     """Whether a Devanagari word is an English word as Hindi captions spell it.
 
-    The closed class first (`ENGLISH_IN_DEVANAGARI`), then the content-word
-    lexicon, directly or under a plural or oblique ending, then the vowel
-    signs only English words use. No LLM: this runs on every word at ingest
+    The closed class (`ENGLISH_IN_DEVANAGARI`) and the vowel signs only
+    English words use, then the content-word lexicon, directly or under a
+    plural or oblique ending. No LLM: this runs on every word at ingest
     (D-080).
     """
     if word in ENGLISH_IN_DEVANAGARI or any(sign in word for sign in _ENGLISH_VOWEL_SIGNS):
@@ -692,10 +692,10 @@ def profile_transcript(
     - ``hi_share``: non-English words over non-English + English words.
     - ``named_share``: of the non-English words, the share the tagger could
       name, by a lexicon or by their script; the rest are `OTHER`. None when
-      there are no non-English words. Below `NAMED_MIN_SHARE` a Latin-script
-      source is no language the tagger knows: `primary_language` is "other",
-      never Hindi, or "en" when English frames it and only stray words are
-      unplaced.
+      there are no non-English words. Below `NAMED_MIN_SHARE`, with more
+      non-English words than borrowing explains, a Latin-script source is no
+      language the tagger knows and `primary_language` is "other". English
+      with stray unplaced words stays "en".
     - ``matrix_hi_share``: share of language-bearing words in windows whose
       GRAMMAR is Hindi. The primary language is the one framing at least
       half the speech — so a Hindi talk dense with English terms is still
@@ -742,8 +742,6 @@ def profile_transcript(
         primary = "other"
     elif matrix_hi_share < 0.5:
         primary = "en"
-    elif unnamed:
-        primary = "other"
     else:
         # "hi" covers Hindi/Urdu however it is written (Devanagari,
         # Arabic script, or romanised). A non-English language in any other

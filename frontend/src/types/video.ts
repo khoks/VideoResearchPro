@@ -25,7 +25,8 @@ import type {
  * the words themselves.
  */
 export interface LanguageMix {
-  /** `en`, `hi` (Hindi/Urdu in any script), `other` (see `native_script`) or `none`. */
+  /** `en`, `hi` (Hindi/Urdu in any script), `other` (see `native_script`; in Latin
+   * script, a language the tagger cannot name) or `none`. */
   primary_language: string;
   /** Script of the non-English words (`Devanagari`, `Bengali`; `Latin` when romanised). */
   native_script: string | null;

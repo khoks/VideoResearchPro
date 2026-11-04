@@ -3,12 +3,11 @@
 //
 // `transcript_language` is the source's label, which calls romanised Hinglish
 // `en`. `language_mix` (T-1.16.1.7) is measured from the words, so it is the
-// one that can say "Hindi + English". But the tagger knows two classes,
-// English and "hi". Any Latin-script word outside its English lexicon counts
-// as `hi`, and a passage with no function words votes by word majority, so
-// conversational Spanish or Turkish measures `primary_language: hi` with
-// "Hindi grammar" in 60 to 100% of the speech. On Latin-script text the
-// profile proves "not English", never "Hindi".
+// one that can say "Hindi + English". Until T-1.16.2.15 the tagger knew two
+// classes, and conversational Spanish or Turkish measured `primary_language:
+// hi`. It now abstains on Latin text with no Hindi evidence and reports
+// `other`, which this file trusts. A profile stored before that still says
+// `hi`, so on Latin-script text `hi` alone proves "not English", never "Hindi".
 //
 // So the badge names Hindi only where something else supports it:
 // - a label naming a third language (`es`, `kn`, Whisper's `spanish`) wins;
@@ -78,7 +77,9 @@ function nameFromWords(
     return labelledHindi ? { name: 'Urdu/Hindi', evidence: 'hindi' } : { name: 'Arabic script', evidence: 'other' };
   }
   if (script === 'Latin') {
-    const hinglishCaptions = sourceType === 'video' && code === 'en' && matrix >= HINDI_GRAMMAR_FLOOR;
+    // `other` is the tagger abstaining: an `en` label cannot make that Hindi.
+    const hinglishCaptions = mix.primary_language !== 'other'
+      && sourceType === 'video' && code === 'en' && matrix >= HINDI_GRAMMAR_FLOOR;
     if (labelledHindi || hinglishCaptions) return { name: 'Hindi (romanised)', evidence: 'hindi' };
     return { name: mix.primary_language === 'en' ? 'other words' : 'Other language', evidence: 'unnamed' };
   }
@@ -127,9 +128,13 @@ export function languageMixBadge(
     ? { name: third, evidence: 'other' as Evidence }
     : nameFromWords(mix, matrix, code, sourceType);
 
+  // An abstained source's "English" words are homographs of its own (`a`,
+  // `no`), so the measure says nothing about a mix with English.
+  const abstained = primary === 'other' && evidence === 'unnamed';
+
   let label: string;
   if (primary === 'en') label = `English + ${name}`;
-  else if (share >= SOLE_LANGUAGE_SHARE) label = name;
+  else if (share >= SOLE_LANGUAGE_SHARE || abstained) label = name;
   else label = `${name} + English`;
 
   const short = name.split(' (')[0];

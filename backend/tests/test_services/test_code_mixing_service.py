@@ -139,29 +139,34 @@ def test_lexicon_detector_on_held_out_romanised_text():
     pred = {u["id"]: [t for _, t in cm.tag_tokens(u["text"])] for u in units}
     s = ev.score(units, pred)["latin"]
     # Measured 2026-10-19: token P 0.929 R 0.890; unit P 0.875 R 0.933.
+    # With abstention, read once on 2026-11-04 (PR #403): token P 0.938 R 0.874;
+    # unit P 0.931 R 0.900. Three tokens and one unit lost, two false ones gone.
     assert s["token_hindi"]["precision"] >= 0.90
     assert s["token_hindi"]["recall"] >= 0.86
     assert s["unit_contains_hindi"]["recall"] >= 0.90
     assert s["hindi_share_mae"] <= 0.03
 
 
-def test_lexicon_detector_cannot_see_english_content_words_in_devanagari():
-    """The known blind spot, pinned so it is measured rather than forgotten:
-    a Devanagari word is Hindi to the lexicon detector unless it is one of
-    the closed class of English function words (इज, टू, द), so "मशीन
-    लर्निंग" counts as Hindi. Recall stays perfect; precision is what it
-    costs. Measured 0.767 before the function-word list (T-1.16.2.1), 0.792
-    after (T-1.16.2.2)."""
+def test_lexicon_detector_on_english_content_words_in_devanagari():
+    """The blind spot, measured rather than forgotten. A Devanagari word is
+    Hindi to the detector unless it is in the closed class of English function
+    words (इज, टू, द), the content-word lexicon (मशीन, लर्निंग) or carries a
+    vowel sign only English uses. Precision read 0.767 before the function
+    words (T-1.16.2.1), 0.792 after (T-1.16.2.2), and 0.940 with the lexicon,
+    read once on 2026-11-04 (T-1.16.2.8, PR #403), recall staying 1.000. The
+    lexicon reaches what its list and rule know: an English word it has not
+    heard of still reads as Hindi, so precision is not 1."""
     units = _test_units()
     pred = {u["id"]: [t for _, t in cm.tag_tokens(u["text"])] for u in units}
     s = ev.score(units, pred)["devanagari"]
-    assert s["token_hindi"]["recall"] == 1.0
-    assert 0.78 <= s["token_hindi"]["precision"] < 0.82
+    assert s["token_hindi"]["recall"] >= 0.97
+    assert 0.90 <= s["token_hindi"]["precision"] < 1.0
+    assert s["hindi_share_mae"] <= 0.08
 
 
-def test_english_function_words_in_devanagari_are_english_and_hindi_homographs_are_not():
+def test_english_words_in_devanagari_are_english_and_hindi_homographs_are_not():
     tags = [tag for _, tag in cm.tag_tokens("इनपुट दिया टू द मशीन")]
-    assert tags == ["hi", "hi", "en", "en", "hi"]
+    assert tags == ["en", "hi", "en", "en", "en"]
     # इन ("these"), आई ("came"), दे ("give") are Hindi words first.
     assert {tag for _, tag in cm.tag_tokens("इन लोगों ने दे दिया वो आई")} == {"hi"}
 
@@ -349,18 +354,22 @@ def test_thresholds_come_from_settings(monkeypatch):
 def test_policy_decisions_on_held_out_units_match_gold_decisions():
     """Measured 2026-10-19 at the defaults (0.6 / 0.2): the mode computed from
     the detector's analysis equals the mode computed from the labels for
-    0.970 of Latin units and 0.823 of mixed units."""
+    0.970 of Latin units and 0.823 of mixed units. With the Devanagari lexicon
+    (2026-11-04): 0.970 and 0.871."""
     r = ev.policy_agreement(_test_units())
     assert r["agreement"]["latin"] >= 0.95
     assert r["agreement"]["mixed"] >= 0.80
 
 
 def test_the_open_question_on_the_dominant_threshold_is_pinned():
-    """D-080 records it: the tagger cannot see English nouns in Devanagari, so
-    it overstates the Hindi share of Devanagari Hinglish, and a HIGHER
-    dominant threshold flips more Devanagari decisions. Measured on TEST:
-    0.912 agreement at 0.5, 0.824 at 0.6, 0.647 at 0.8. If this ever
-    inverts, the detector changed and the default deserves a second look."""
+    """D-080 records it: a tagger that misses English nouns in Devanagari
+    overstates the Hindi share of Devanagari Hinglish, and a HIGHER dominant
+    threshold flips more Devanagari decisions. Measured on TEST before the
+    lexicon: 0.912 agreement at 0.5, 0.824 at 0.6, 0.647 at 0.8. After it
+    (T-1.16.2.8, read once on 2026-11-04): 0.971, 0.912, 0.882, and across all
+    units the flips at 0.6 run both ways (3 to native script, 4 to Roman).
+    The order held and the slope halved. If this ever inverts, the detector
+    changed and the default deserves a second look."""
     units = _test_units()
     by = {d: ev.policy_agreement(units, d, 0.2)["agreement"]["devanagari"] for d in (0.5, 0.6, 0.8)}
     assert by[0.5] > by[0.6] > by[0.8]
@@ -473,7 +482,9 @@ def test_frozen_detector_on_80_unseen_comments():
     parameter was frozen. Measured 2026-10-19: token P 0.986 R 0.849; 17 of
     18 Hindi-bearing comments caught — the miss is one borrowed word
     ("rupye") in an English comment, which renders as plain English anyway;
-    no English comment flagged except one misspelling ("mauch")."""
+    no English comment flagged except one misspelling ("mauch"). With
+    abstention, read once on 2026-11-04 (PR #403): token P 0.993 R 0.837, still
+    17 of 18, and "mauch" no longer flagged."""
     from pathlib import Path
 
     units = ev.load_units(Path(ev.FIXTURE).parent / "heldout_units.json")

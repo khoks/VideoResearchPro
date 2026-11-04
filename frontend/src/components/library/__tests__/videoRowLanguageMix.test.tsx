@@ -70,6 +70,11 @@ const SPANISH_SPEECH = mix({
   primary_language: 'hi', native_script: 'Latin', hi_share: 0.5494, matrix_hi_share: 0.598,
   quote_mode: 'roman', code_mixed: true,
 });
+// The same language after T-1.16.2.15: the tagger abstains.
+const SPANISH_ABSTAINED = mix({
+  primary_language: 'other', native_script: 'Latin', hi_share: 0.742, matrix_hi_share: 1,
+  quote_mode: 'native_script', code_mixed: true,
+});
 const ARABIC = mix({
   primary_language: 'hi', native_script: 'Arabic', hi_share: 1, matrix_hi_share: 1,
   quote_mode: 'native_script', code_mixed: true,
@@ -185,6 +190,16 @@ describe('languageMixBadge names Hindi only where something supports it', () => 
   it.each(['unknown', 'und', 'a.en', '', null, undefined])('falls back on the words for the label %s', (label) => {
     expect(languageMixBadge(DEVANAGARI, label, 'video')?.label).toBe('Hindi + English');
     expect(languageMixBadge(ROMANISED, label, 'video')?.label).toBe('Other language + English');
+  });
+
+  it('never calls a source the tagger abstained on Hindi, whatever its label says', () => {
+    expect(languageMixBadge(SPANISH_ABSTAINED, 'es', 'video')?.label).toBe('Spanish');
+    // The accepted gap of #396: a Spanish video really labelled `en`.
+    expect(languageMixBadge(SPANISH_ABSTAINED, 'en', 'video')?.label).toBe('Other language');
+    expect(languageMixBadge(SPANISH_ABSTAINED, null, 'pdf')?.label).toBe('Other language');
+    expect(languageMixBadge(SPANISH_ABSTAINED, 'en', 'video')?.description).toContain('Nothing says which language');
+    // A hi label is still evidence the tagger does not have.
+    expect(languageMixBadge(SPANISH_ABSTAINED, 'hi', 'video')?.label).toContain('Hindi (romanised)');
   });
 
   // T-1.16.1.10: an ISO 639-2 label names the same language as its two-letter

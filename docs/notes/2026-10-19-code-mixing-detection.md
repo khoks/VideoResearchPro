@@ -628,3 +628,128 @@ cd backend
 ./venv/Scripts/python scripts/eval_code_mixing_e2e.py --env-file <.env> --db <db> --video QSlta0EnGJo --comments <comments.json>:GSA8jvzIjjQ --out e2e.json --compose
 ./venv/Scripts/python scripts/eval_code_mixed_retrieval_heldout.py --env-file <.env> --db <db> --videos QSlta0EnGJo GSA8jvzIjjQ --cache heldout_retrieval.json
 ```
+
+## 13. Abstaining on languages the tagger does not know (T-1.16.2.15)
+
+The tagger knows two languages. A Latin word in neither lexicon goes to the
+character n-gram model, which only weighs Hindi against English, so it has to
+land on one of them. #396 measured the result: Spanish, Portuguese, Italian,
+Indonesian, Tagalog and Turkish all read `primary_language: hi`, or `en` with
+"Hindi (romanised)" on the words left over, and `source_note` told every prompt
+so. The badge worked around it on the client; the prompts could not.
+
+**Method.** The acceptance rule was written into PR #403 before anything was
+measured. After Viterbi, `_abstain` looks at the Latin words of the span:
+
+- *evidence*: words in the Hindi lexicon and not in the English vocabulary;
+- *unplaced*: words in neither.
+
+Where evidence is under `EVIDENCE_MIN_SHARE` (0.3) of evidence + unplaced, the
+n-gram's guess says nothing. If at least `UNPLACED_MIN_SHARE` (0.5) of at least
+`UNPLACED_MIN_WORDS` (8) words are unplaced, this is another language: every
+reading of Hindi, and every unplaced word whatever the n-gram leaned to, becomes
+`OTHER` (`xx`), because its lexicon hits ("di", "che", "un") are homographs.
+Otherwise it is English with stray words: only the unplaced words the n-gram
+called Hindi become `OTHER`.
+
+`OTHER` is a refinement of "non-English", not a third class for the policy.
+`shares` counts it as non-English, the morpheme vote counts it as it counted
+"hi", and a span mostly in `OTHER` reads as a non-English grammar. So on a span
+that keeps its words every share, matrix and rendering decision is the one it
+had before, and a Spanish chunk is still translated and rendered for retrieval
+(D-084). What changes is the name. `profile_transcript` reports `named_share`,
+the share of non-English words the tagger could name, and below
+`NAMED_MIN_SHARE` (0.5) on Latin text, with more non-English words than borrowing
+explains, the source is `other`. The 3% presence floor
+now counts only named words, so an English talk full of unplaced names is plain
+English. A profile stored before `named_share` existed reads as it did.
+
+**Margins.** Evidence per transcript window: romanised Hindi 0.51 and up (formal
+news register, verse, chat), the eleven foreign samples 0.23 at most. DEV's token
+scores do not move for any `EVIDENCE_MIN_SHARE` from 0.15 to 0.4; at 0.5 recall
+falls to 0.925. 0.3 is the plateau's centre. `UNPLACED_MIN_WORDS` came from DEV:
+without it, short English comments with unknown words ("Sugar cosmetics are they
+making profit") jumped language and four rendering decisions flipped.
+
+| Foreign sample (hand-written, `foreign_latin_sample.json`) | Before | After |
+|---|---|---|
+| Spanish, French, German (tuning, 6 documents) | 5 `en`, 1 `hi`, all "Hindi (romanised)" | 6 `other`, no Hindi, 100% abstained |
+| Portuguese, Italian, Indonesian, Tagalog, Turkish (unseen, set nothing) | 1 `en`, 4 `hi` | 5 `other`, no Hindi, 100% abstained |
+| Romanised Hindi controls (formal, verse, chat, English frame) | Hindi | Hindi, `named_share` 1.0 |
+
+| Held-out, read once | Token P | Token R | Hindi-bearing units | English units flagged |
+|---|---|---|---|---|
+| TEST Latin, before | 0.929 | 0.890 | 28/30 | 4/138 |
+| TEST Latin, after | 0.938 | 0.874 | 27/30 | 2/138 |
+| `heldout_units.json`, before | 0.986 | 0.849 | 17/18 | 1/62 |
+| `heldout_units.json`, after | 0.993 | 0.837 | 17/18 | 0/62 |
+
+DEV did not move at all, so this is what abstention costs: 3 of 191 Hindi tokens
+and one unit on TEST, 2 of 166 tokens on the held-out comments. It cleared every
+floor, unit recall exactly (0.900). Matrix accuracy on TEST stays 0.952 and
+Latin policy agreement 0.970.
+
+**The live library** (254 cached transcripts, profiled in memory, nothing
+written). No document changes primary language or quote mode. Two English talks
+stop reading as code-mixed: "Laal Singh Chaddha Boycott" (share 4.5%, 6% named)
+and "Maayon" (3.5%, 8% named). Their words are Aamir, Krishna, Vyuha, Arjun:
+names, which is the abstention working. The library holds no foreign-language
+transcript, so the live store tests the absence of harm, and the fixture tests
+the fix. One limit stands: the tagger says "not English or Hindi", never which
+language. A label can name it, which is why the badge keeps reading labels.
+
+## 14. English content words in Devanagari (T-1.16.2.8)
+
+D-080's measured blind spot: every Devanagari word outside a closed list of
+function words read as Hindi, so मशीन लर्निंग counted as Hindi and the share of
+Devanagari Hinglish was overstated. D-080 kept the ingest path free of the LLM,
+so the question was whether an offline list could do it.
+
+**Method.** Three lookups in `_english_in_devanagari`, in `tag_tokens`, with no
+LLM and no network:
+
+1. `lexicons/english_devanagari.txt`: 1,009 base forms written from general
+   knowledge before a single Devanagari unit of the labelled set was read, plus
+   15 DEV-derived entries in a marked section (D-080's method). Words that are
+   also ordinary Hindi are left out on purpose (बस, पास, कम, मन, मेल, गोल):
+   calling Hindi English costs more than a miss, because it hides Hindi from the
+   share that decides quoting. A Hindi system morpheme can never enter the set.
+2. `devanagari_key` folds spellings (a nukta on a borrowed consonant, three ways
+   of writing a nasal, चंद्रबिंदु), and the plural and oblique endings are stripped
+   (प्रोडक्ट्स, मशीनों, कंपनियों), so one entry covers its forms.
+3. A word carrying ॉ, ऑ or ॅ is English. Those signs exist to write English
+   sounds. Checked on the 26 Hindi transcripts outside the labelled set, so TEST
+   was not read: all 941 such tokens missing from the lexicon (209 distinct) were
+   English words or names.
+
+| Devanagari | Token P | Token R | F1 | Share MAE |
+|---|---|---|---|---|
+| DEV, before | 0.808 | 1.000 | 0.894 | 0.195 |
+| DEV, base list only | 0.921 | 1.000 | 0.959 | 0.066 |
+| DEV, final (in-sample: it includes DEV's own words) | 0.986 | 1.000 | 0.993 | 0.011 |
+| TEST, before | 0.792 | 1.000 | 0.884 | 0.204 |
+| **TEST, final, read once** | **0.940** | **1.000** | **0.969** | **0.051** |
+
+No Hindi word in either split was called English. TEST is the figure to quote: the
+base-list DEV number predicted it well, and the final DEV number does not. The
+blind spot is narrowed, not closed: 28 English words on TEST still read as Hindi.
+
+On the live library all 32 Devanagari documents stay `hi` and `native_script`.
+Their median share falls from 0.993 to 0.936 and the most English lecture from
+0.956 to 0.752. Outside the labelled set, 5.4% of Devanagari tokens now read as
+English; the top of that list is प्लॉट, डेटा, वीडियो, ग्राफ, चैनल.
+
+**D-080's open question 3.** The argument for a 50% threshold was that the tagger
+overstates the Hindi share of Devanagari Hinglish, so a higher threshold flips
+decisions on noise. That bias is largely gone.
+
+| Devanagari decisions against gold (TEST) | 0.5 | 0.6 | 0.8 |
+|---|---|---|---|
+| Before the lexicon | 0.912 | 0.824 | 0.647 |
+| After | 0.971 | 0.912 | 0.882 |
+
+The 0.6 default now agrees with gold as often as 0.5 did before, and across all
+TEST units its misses run both ways (3 to native script, 4 to Roman). Mixed units
+overall go from 0.823 to 0.871. 0.5 still scores best, by two units of 34, on
+labels no native speaker has checked. So robustness no longer argues strongly for
+moving the threshold, and D-112's ruling (0.6 stays until T-1.16.2.7) stands.

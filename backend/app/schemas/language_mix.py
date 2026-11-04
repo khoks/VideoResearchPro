@@ -21,8 +21,9 @@ class LanguageMixView(BaseModel):
     Mirrors ``frontend/src/types/video.ts::LanguageMix``.
 
     - ``primary_language``: ``en``, ``hi`` (Hindi/Urdu in any script),
-      ``other`` (a non-English language in another script; see
-      ``native_script``) or ``none`` (no language-bearing words).
+      ``other`` (a non-English language in another script, see
+      ``native_script``, or in Latin script with no Hindi evidence: the tagger
+      cannot name it) or ``none`` (no language-bearing words).
     - ``native_script``: the script the non-English words are written in
       (``Devanagari``, ``Bengali``...; ``Latin`` when romanised), or null.
     - ``hi_share``: non-English words over all language-bearing words.

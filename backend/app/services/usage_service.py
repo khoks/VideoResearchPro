@@ -20,22 +20,27 @@ BYOK-correct (D-041) is metered without a second line. Inside a scope:
   reference use cases, so it names ``library_qa``), otherwise the use case's
   entry in ``USE_CASE_FEATURES``.
 - ``quota_service.record`` (every YouTube Data API request) adds its units,
-  under the kind of call: ``search``, ``video_metadata`` or ``channel_sync``.
+  under the kind of call: ``youtube_search``, ``video_metadata`` or
+  ``channel_sync``.
   The install-wide ``api_quota_log`` row is written exactly as before.
 
 Nested scopes for the same tenant share the outermost one's ledger, and the
 outermost scope that named a feature wins (a saved search's run is a
 ``saved_search``, though it asks through the library-Q&A core).
 
-**When it is written.** The outermost scope writes its ledger when it closes,
-through the caller's session: one upsert per (day, feature, metric) into
-``usage_records`` plus the matching daily ``quota_usage`` totals
-(``llm_tokens_in`` / ``llm_tokens_out`` / ``youtube_units``) that
-``/auth/quota`` already reports. When the session holds none of the caller's
-pending changes it commits, as ``quota_metering_service.record_usage`` always
-has. When it does, the rows ride on the caller's next commit (a
-``before_commit`` hook), so a scope never commits half of someone else's
-work. Metering never raises into the work it measures.
+**When it is written.** The outermost scope writes its ledger when it closes:
+one upsert per (day, feature, metric) into ``usage_records`` plus the
+matching daily ``quota_usage`` totals (``llm_tokens_in`` / ``llm_tokens_out``
+/ ``youtube_units``) that ``/auth/quota`` already reports. It writes through
+**its own session** on the caller's engine and commits that, never the
+caller's: the meter neither commits nor rolls back the caller's work, pending
+or flushed. When the caller's open transaction has already written to the
+database (an ORM flush, a DML statement, or, on SQLite, any open write
+transaction on its connection), a second connection would wait on the
+caller's write lock (SQLite) or row locks (Postgres), so the write waits
+until the caller's outermost transaction ends, by commit, rollback or close.
+Tokens spent on work that is then rolled back are still recorded: they were
+spent. Metering never raises into the work it measures.
 
 What is not counted: local models that report no usage (their calls are
 counted, their tokens are not), Whisper audio minutes, embeddings (local),
@@ -83,6 +88,7 @@ FEATURES: dict[str, str] = {
     "echo_signals": "Echo learning your voice",
     "echo_shares": "Echo shares",
     "author": "Author Studio",
+    "youtube_search": "Searches (YouTube)",
     "video_metadata": "Video details (YouTube)",
     "channel_sync": "Channel listings (YouTube)",
     "other": "Other",
@@ -130,9 +136,13 @@ USE_CASE_FEATURES: dict[str, str] = {
     "echo_share_ocr": "echo_shares",
 }
 
-# YouTube Data API operation (``quota_service.OPERATION_COSTS``) -> feature.
+# YouTube Data API operation (``quota_service.OPERATION_COSTS``) -> feature:
+# the kind of call, not the action that made it. ``search.list`` is not only
+# topic search: resolving a channel typed by name falls back to it (100
+# units) in channel jobs and subscription syncs, so its units are
+# ``youtube_search``, never the ``search`` feature (topic search's LLM calls).
 YOUTUBE_FEATURES: dict[str, str] = {
-    "search": "search",
+    "search": "youtube_search",
     "videos": "video_metadata",
     "channels": "channel_sync",
     "playlistItems": "channel_sync",
@@ -384,40 +394,101 @@ def _write(db: Session, tenant_id: str, entries: dict[tuple[date, str, str], int
             )
 
 
-def _has_pending(db: Session) -> bool:
+# ``Session.info`` keys. ``_WROTE``: the caller's current transaction has sent
+# a write to the database. ``_DEFERRED``: ledgers waiting for that transaction
+# to end. Both are dropped when the outermost transaction ends.
+_WROTE = "usage_tx_wrote"
+_DEFERRED = "usage_deferred_writes"
+_TEXT_DML = ("INSERT", "UPDATE", "DELETE", "REPLACE", "UPSERT", "MERGE")
+
+
+@event.listens_for(Session, "after_flush")
+def _note_flush(session: Session, flush_context: Any) -> None:
+    session.info[_WROTE] = True
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _note_dml(state: Any) -> None:
+    """``session.execute(insert/update/delete)`` and ``Query.update/delete``
+    write without a flush; so does a ``text()`` DML statement."""
     try:
-        return bool(db.new or db.dirty or db.deleted) or not db.is_active
-    except Exception:  # noqa: BLE001
+        if state.is_insert or state.is_update or state.is_delete:
+            state.session.info[_WROTE] = True
+            return
+        text = getattr(state.statement, "text", None)
+        if isinstance(text, str) and text.lstrip().upper().startswith(_TEXT_DML):
+            state.session.info[_WROTE] = True
+    except Exception:  # noqa: BLE001 - bookkeeping never breaks a statement
+        pass
+
+
+@event.listens_for(Session, "after_transaction_end")
+def _on_transaction_end(session: Session, transaction: Any) -> None:
+    """The caller's outermost transaction is over (committed, rolled back or
+    closed), its connection released: write what waited for it."""
+    if transaction.parent is not None:  # a SAVEPOINT; the outer one still runs
+        return
+    session.info.pop(_WROTE, None)
+    waiting = session.info.pop(_DEFERRED, None)
+    for bind, tenant_id, entries in waiting or ():
+        _write_own(bind, tenant_id, entries)
+
+
+def _caller_has_written(db: Session) -> bool:
+    """Whether the caller's open transaction has already written to the
+    database. Unflushed changes do not count: they are not in the database
+    yet, and the meter's own session cannot touch them.
+
+    On SQLite the DBAPI connection's ``in_transaction`` is exact (pysqlite
+    opens a transaction only for a write), and it also sees writes the
+    session events cannot: ``bulk_save_objects`` and statements run on
+    ``db.connection()`` directly. Elsewhere the events decide."""
+    try:
+        if not db.is_active:  # a failed flush; the caller must roll back
+            return True
+        if db.info.get(_WROTE):
+            return True
+        if not db.in_transaction():
+            return False
+        conn = db.connection()
+        if conn.dialect.name == "sqlite":
+            return bool(getattr(conn.connection.dbapi_connection, "in_transaction", False))
+        return False
+    except Exception:  # noqa: BLE001 - unsure: wait for the transaction to end
         return True
 
 
+def _write_own(bind: Any, tenant_id: str, entries: dict[tuple[date, str, str], int]) -> None:
+    """Write and commit a ledger in a session of the meter's own."""
+    own = Session(bind=bind, autoflush=False, expire_on_commit=False)
+    try:
+        _write(own, tenant_id, entries)
+        own.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("usage: write failed for tenant %s", tenant_id[:8])
+        try:
+            own.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        own.close()
+
+
 def flush(db: Session, scope: Scope) -> None:
-    """Write the scope's ledger (see the module docstring for when it commits)."""
+    """Write the scope's ledger (see the module docstring for when)."""
     entries = scope.ledger.drain()
     if not entries:
         return
     tenant_id = scope.tenant_id
-    if _has_pending(db):
-        def _ride_along(session: Session) -> None:
-            try:
-                _write(session, tenant_id, entries)
-            except Exception:  # noqa: BLE001 - never fail the caller's commit
-                logger.exception("usage: deferred write failed for tenant %s", tenant_id[:8])
-
-        try:
-            event.listen(db, "before_commit", _ride_along, once=True)
-        except Exception:  # noqa: BLE001
-            logger.exception("usage: could not defer the write for tenant %s", tenant_id[:8])
-        return
     try:
-        _write(db, tenant_id, entries)
-        db.commit()
+        bind = db.get_bind()
+        if _caller_has_written(db):
+            db.info.setdefault(_DEFERRED, []).append((bind, tenant_id, entries))
+            return
     except Exception:  # noqa: BLE001
-        logger.exception("usage: write failed for tenant %s", tenant_id[:8])
-        try:
-            db.rollback()
-        except Exception:  # noqa: BLE001
-            pass
+        logger.exception("usage: could not write for tenant %s", tenant_id[:8])
+        return
+    _write_own(bind, tenant_id, entries)
 
 
 def record(db: Session, tenant_id: str, feature: str, metric: str, amount: int) -> None:

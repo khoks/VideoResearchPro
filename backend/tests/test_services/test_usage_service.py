@@ -158,9 +158,28 @@ def test_tokens_fall_back_to_the_provider_raw_usage():
     assert usage_service.tokens_from_result(LLMResult(generations=[[gen]])) == (None, None)
 
 
+def _three(feature, calls=1):
+    return {(feature, "llm_calls"): calls, (feature, "llm_tokens_in"): 100 * calls,
+            (feature, "llm_tokens_out"): 20 * calls}
+
+
+def _job(tenant_id, topic="meter-probe"):
+    from app.models.job import Job
+
+    return Job(job_type="topic", topic=topic, num_videos=1, tenant_id=tenant_id)
+
+
+def _jobs(db, topic="meter-probe"):
+    from app.models.job import Job
+
+    db.expire_all()
+    return db.query(Job).filter(Job.topic == topic).count()
+
+
 def test_a_session_with_pending_changes_is_not_committed_by_the_meter(db, test_user, metered_llms):
-    """The meter must never commit half of the caller's work: with changes
-    pending it rides on the caller's next commit instead."""
+    """The meter writes through a session of its own, so the caller's
+    unflushed change is neither committed nor discarded, and the tokens it
+    spent are recorded whatever the caller then does."""
     test_user.failed_login_attempts = 4
     with usage_service.metered(db, test_user.id):
         call_llm("echo_draft")
@@ -168,7 +187,108 @@ def test_a_session_with_pending_changes_is_not_committed_by_the_meter(db, test_u
     db.rollback()
     db.expire_all()
     assert test_user.failed_login_attempts != 4
-    assert usage_rows(db, test_user.id) == {}, "rolled back with the caller's work"
+    assert usage_rows(db, test_user.id) == _three("echo_draft"), "spent, so recorded"
+
+
+def test_flushed_work_is_not_committed_by_the_meter(db, test_user, metered_llms):
+    """Review finding: a flushed write leaves the identity map clean. The
+    meter must still see it, wait for the caller's transaction, and never
+    commit it; a rollback must take the work away and leave the usage."""
+    with usage_service.metered(db, test_user.id):
+        db.add(_job(test_user.id))
+        db.flush()
+        call_llm("echo_extract_signals")
+    assert usage_rows(db, test_user.id) == {}, "waits while the caller's write transaction is open"
+    db.rollback()
+    assert _jobs(db) == 0, "the meter committed the caller's flushed work"
+    assert usage_rows(db, test_user.id) == _three("echo_signals"), "written once the transaction ended"
+
+
+def test_flushed_work_and_usage_both_land_when_the_caller_commits(db, test_user, metered_llms):
+    with usage_service.metered(db, test_user.id):
+        db.add(_job(test_user.id))
+        db.flush()
+        call_llm("report_compose")
+    db.commit()
+    assert _jobs(db) == 1
+    assert usage_rows(db, test_user.id) == _three("report")
+
+
+def test_usage_waiting_on_a_flushed_transaction_is_written_when_the_session_closes(db, test_user, metered_llms):
+    """A Celery task that raised closes its session without committing
+    (``echo_tasks.extract_signals_task``): the work goes, the usage stays."""
+    from tests.conftest import TestingSessionLocal
+
+    task_db = TestingSessionLocal()
+    with usage_service.metered(task_db, test_user.id):
+        task_db.add(_job(test_user.id))
+        task_db.flush()
+        call_llm("knowledge_extract_batch")
+    task_db.close()
+
+    assert _jobs(db) == 0
+    assert usage_rows(db, test_user.id) == _three("knowledge")
+
+
+def test_a_core_dml_statement_is_seen_as_written(db, test_user, metered_llms):
+    from sqlalchemy import update
+
+    from app.models.user import User
+
+    with usage_service.metered(db, test_user.id):
+        db.execute(update(User).where(User.id == test_user.id).values(failed_login_attempts=7))
+        call_llm("echo_draft")
+    db.rollback()
+    db.expire_all()
+    assert test_user.failed_login_attempts != 7, "the meter committed the caller's UPDATE"
+    assert usage_rows(db, test_user.id) == _three("echo_draft")
+
+
+def test_a_write_on_the_raw_connection_is_seen_on_sqlite(db, test_user, metered_llms):
+    """No session event sees a statement run on ``db.connection()``; the
+    SQLite connection's own transaction state does."""
+    with usage_service.metered(db, test_user.id):
+        db.connection().exec_driver_sql(
+            "UPDATE users SET failed_login_attempts = 9 WHERE id = ?", (test_user.id,)
+        )
+        call_llm("echo_draft")
+    db.rollback()
+    db.expire_all()
+    assert test_user.failed_login_attempts != 9, "the meter committed the caller's raw UPDATE"
+    assert usage_rows(db, test_user.id) == _three("echo_draft")
+
+
+def test_a_failing_meter_write_never_rolls_back_the_callers_work(db, test_user, metered_llms, monkeypatch):
+    """Before: a failed upsert rolled back the caller's session, dropping its
+    flushed rows and its unflushed ones while the caller carried on."""
+    def broken(*a, **k):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(usage_service, "_write", broken)
+    with usage_service.metered(db, test_user.id):
+        db.add(_job(test_user.id, topic="flushed"))
+        db.flush()
+        call_llm("echo_draft")
+    db.commit()
+    with usage_service.metered(db, test_user.id):
+        db.add(_job(test_user.id, topic="unflushed"))
+        call_llm("echo_draft")
+    db.commit()
+    assert _jobs(db, "flushed") == 1
+    assert _jobs(db, "unflushed") == 1
+    assert usage_rows(db, test_user.id) == {}
+
+
+def test_the_meters_own_write_does_not_leave_the_caller_marked_as_written(db, test_user, metered_llms):
+    """Two scopes in a row on a clean session both write at once: the
+    bookkeeping clears when a transaction ends."""
+    db.add(_job(test_user.id))
+    db.commit()
+    for _ in range(2):
+        with usage_service.metered(db, test_user.id):
+            call_llm("echo_draft")
+        assert usage_rows(db, test_user.id)[("echo_draft", "llm_calls")] >= 1
+    assert usage_rows(db, test_user.id) == _three("echo_draft", calls=2)
 
 
 def test_pending_changes_and_usage_commit_together(db, test_user, metered_llms):
@@ -201,7 +321,7 @@ def test_youtube_requests_are_charged_to_the_scope_and_still_logged_install_wide
         youtube_service.search_videos("tariffs", max_results=5)
     youtube_service.get_video_details(["v1"])  # no scope: install-wide only
 
-    assert usage_rows(db, test_user.id) == {("video_metadata", "youtube_units"): 1, ("search", "youtube_units"): 100}
+    assert usage_rows(db, test_user.id) == {("video_metadata", "youtube_units"): 1, ("youtube_search", "youtube_units"): 100}
     assert quota_metering_service.get_usage(db, test_user.id, "youtube_units") == 101
     db.expire_all()
     assert sorted((r.operation, r.units) for r in db.query(ApiQuotaLog)) == [
@@ -217,7 +337,7 @@ def test_summary_reads_only_the_callers_rows_in_the_window(db, test_user):
         (test_user.id, today, "library_qa", "llm_calls", 2),
         (test_user.id, today - timedelta(days=29), "report", "llm_tokens_in", 9000),
         (test_user.id, today - timedelta(days=30), "report", "llm_tokens_in", 1),  # outside the window
-        (test_user.id, today - timedelta(days=3), "search", "youtube_units", 200),
+        (test_user.id, today - timedelta(days=3), "youtube_search", "youtube_units", 200),
         ("someone-else", today, "library_qa", "llm_tokens_in", 77),
     ]
     for tenant, day, feature, metric, amount in rows:
@@ -228,10 +348,11 @@ def test_summary_reads_only_the_callers_rows_in_the_window(db, test_user):
     assert out["window_start"] == today - timedelta(days=29)
     assert out["metered_since"] == today - timedelta(days=30)
     by = {f["feature"]: f for f in out["features"]}
-    assert [f["feature"] for f in out["features"]] == ["report", "library_qa", "search"]
+    assert [f["feature"] for f in out["features"]] == ["report", "library_qa", "youtube_search"]
     assert by["report"]["last_30_days"]["llm_tokens_in"] == 9000 and by["report"]["today"]["llm_tokens_in"] == 0
     assert by["library_qa"]["today"] == {"llm_tokens_in": 500, "llm_tokens_out": 0, "llm_calls": 2, "youtube_units": 0}
-    assert by["search"]["label"] == "Topic search" and by["search"]["last_30_days"]["youtube_units"] == 200
+    assert by["youtube_search"]["label"] == "Searches (YouTube)"
+    assert by["youtube_search"]["last_30_days"]["youtube_units"] == 200
     assert out["totals"]["today"]["llm_tokens_in"] == 500
     assert out["totals"]["last_30_days"]["llm_tokens_in"] == 9500
 

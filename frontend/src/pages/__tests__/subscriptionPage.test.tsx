@@ -224,8 +224,13 @@ describe('SubscriptionPage usage (E-5.2)', () => {
         },
         {
           feature: 'search', label: 'Topic search',
-          today: { llm_tokens_in: 1_200, llm_tokens_out: 300, llm_calls: 2, youtube_units: 200 },
-          last_30_days: { llm_tokens_in: 1_200, llm_tokens_out: 300, llm_calls: 2, youtube_units: 200 },
+          today: { llm_tokens_in: 1_200, llm_tokens_out: 300, llm_calls: 2, youtube_units: 0 },
+          last_30_days: { llm_tokens_in: 1_200, llm_tokens_out: 300, llm_calls: 2, youtube_units: 0 },
+        },
+        {
+          feature: 'youtube_search', label: 'Searches (YouTube)',
+          today: { ...zero, youtube_units: 200 },
+          last_30_days: { ...zero, youtube_units: 200 },
         },
       ],
       totals: {
@@ -242,7 +247,10 @@ describe('SubscriptionPage usage (E-5.2)', () => {
     expect(report.querySelector('th')!.textContent).toBe('Reports');
     expect(cells).toEqual(['—', '412.3K in · 51K out37 model calls']);
     const search = panel.querySelector('[data-usage-feature="search"]')!;
-    expect(search.querySelectorAll('td')[0].textContent).toBe('1.2K in · 300 out2 model calls200 YouTube units');
+    expect(search.querySelectorAll('td')[0].textContent).toBe('1.2K in · 300 out2 model calls');
+    const ytSearch = panel.querySelector('[data-usage-feature="youtube_search"]')!;
+    expect(ytSearch.querySelector('th')!.textContent).toBe('Searches (YouTube)');
+    expect(ytSearch.querySelectorAll('td')[0].textContent).toBe('200 YouTube units');
     expect(panel.querySelector('[data-usage-total]')!.textContent).toContain('413.5K in · 51.3K out');
     expect(panel.querySelector('[data-usage-since]')!.textContent).toContain('Recording started on 2026-10-20');
   });

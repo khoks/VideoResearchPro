@@ -27,7 +27,7 @@ from app.models.document import Document
 from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.models.transcript_cache import TranscriptCache
-from app.services import auth_service, youtube_service
+from app.services import auth_service, usage_service, youtube_service
 from app.tasks import job_tasks
 from tests.usage_helpers import call_llm, metered_llms, tenants_with_usage, usage_rows, youtube_network  # noqa: F401
 
@@ -91,7 +91,7 @@ def test_topic_search_charges_its_model_calls_and_youtube_search_to_the_owner(wo
     assert db.get(Job, job.id).status == "awaiting_approval"
     assert usage_rows(db, owner.id) == {
         ("search", "llm_calls"): 2, ("search", "llm_tokens_in"): 200, ("search", "llm_tokens_out"): 40,
-        ("search", "youtube_units"): 100, ("video_metadata", "youtube_units"): 1,
+        ("youtube_search", "youtube_units"): 100, ("video_metadata", "youtube_units"): 1,
     }
     # The install-wide log keeps every request, as before.
     assert sorted(r.operation for r in db.query(ApiQuotaLog)) == ["search", "videos"]
@@ -121,6 +121,35 @@ def test_a_channel_job_charges_its_youtube_requests_to_the_owner(worker, db, you
     assert usage_rows(db, owner.id) == {("channel_sync", "youtube_units"): 2, ("video_metadata", "youtube_units"): 1}
     assert db.query(ApiQuotaLog).count() == 3
     assert tenants_with_usage(db) == {owner.id}
+
+
+def test_a_channel_typed_by_name_charges_its_search_fallback_as_a_youtube_search(worker, db, youtube_network):
+    """Review finding: resolving a channel typed by name falls back to
+    ``search.list`` (100 units). That is a YouTube search, made by a channel
+    job; it must not show as "Topic search" for a user who never ran one."""
+    owner = _owner(db)
+    job = Job(job_type="channel", num_videos=2, videos_per_channel=2, channel_list=json.dumps(["Veritasium"]),
+              tenant_id=owner.id)
+    db.add(job)
+    db.commit()
+    youtube_network.responses = {
+        **_channel_responses(["vC1", "vC2"]),
+        "search": {"items": [{"snippet": {"channelId": CHANNEL, "title": "Econ"}}]},
+    }
+
+    job_tasks.execute_channel_job.run(job.id)
+
+    db.expire_all()
+    assert db.get(Job, job.id).status == "awaiting_approval"
+    assert ("search", {"q": "Veritasium", "part": "snippet", "type": "channel", "maxResults": 1}) in youtube_network.calls
+    rows = usage_rows(db, owner.id)
+    assert rows == {
+        ("youtube_search", "youtube_units"): 100,
+        ("channel_sync", "youtube_units"): 2,
+        ("video_metadata", "youtube_units"): 1,
+    }
+    assert usage_service.label_for("youtube_search") == "Searches (YouTube)"
+    assert not any(feature == "search" for feature, _ in rows), "charged to Topic search"
 
 
 def test_mutation_a_channel_job_without_its_scope_charges_no_one(worker, db, youtube_network, monkeypatch):
@@ -323,3 +352,42 @@ def test_an_echo_learning_run_is_charged_to_its_tenant(db, metered_llms, monkeyp
     assert rows[("echo_signals", "llm_calls")] >= 1
     assert rows[("echo_signals", "llm_tokens_in")] == 100 * rows[("echo_signals", "llm_calls")]
     assert {f for f, _ in rows} == {"echo_signals"}
+
+
+def test_an_echo_run_that_raises_after_flushing_is_not_committed_by_the_meter(db, metered_llms, monkeypatch):
+    """Review finding: a learning run flushes its ledger rows, makes a model
+    call, then raises outside the per-batch guard. The identity map is
+    clean, so the old meter committed the half-finished run. Now the run's
+    rows go with the task's session and the tokens it spent are still
+    charged."""
+    from app.models.voice_signal_input import VoiceSignalInput
+    from app.services import echo_signal_extraction, note_service
+    from app.tasks import echo_tasks
+    from tests import conftest as _conftest
+
+    monkeypatch.setattr(echo_tasks, "SessionLocal", _conftest.TestingSessionLocal)
+    owner = _owner(db)
+    owner.tier = "studio"
+    db.add(Job(id=f"job-{owner.id[:8]}", tenant_id=owner.id, job_type="topic", topic="t", status="completed"))
+    db.commit()
+    for body in ("Base rates first, always. One source is not evidence.",
+                 "I check who benefits before I believe a claim about trade."):
+        note_service.create_note(db, owner.id, target_type="job", target_id=f"job-{owner.id[:8]}", body_md=body)
+    metered_llms.reply = json.dumps({"signals": []})
+    monkeypatch.setattr(echo_signal_extraction, "parse_reply", lambda raw, ids: ([object()], 0))
+
+    def merge_fails(*a, **k):
+        raise RuntimeError("merge failed")
+
+    monkeypatch.setattr(echo_signal_extraction, "merge_candidate", merge_fails)
+
+    with pytest.raises(RuntimeError, match="merge failed"):
+        echo_tasks.extract_signals_task.run(owner.id)
+
+    db.expire_all()
+    assert db.query(VoiceSignalInput).filter(VoiceSignalInput.tenant_id == owner.id).count() == 0, (
+        "the meter committed the ledger rows of a run that raised"
+    )
+    rows = usage_rows(db, owner.id)
+    assert rows[("echo_signals", "llm_calls")] == 1
+    assert rows[("echo_signals", "llm_tokens_in")] == 100

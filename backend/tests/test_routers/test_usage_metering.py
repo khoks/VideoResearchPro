@@ -11,8 +11,9 @@ Mutation checks (each makes the test named beside it fail, and is pinned as
 a ``test_mutation_*`` below): dropping the feature from
 ``library_qa_service.ask`` (``test_library_qa_is_charged_to_library_qa``),
 taking the scope out of ``byok_context`` (``test_knowledge_extraction_...``),
-and taking the scope out of the clarify route
-(``test_job_clarify_is_charged_to_the_asker``).
+taking the scope out of the clarify route
+(``test_job_clarify_is_charged_to_the_asker``), and taking the scope out of
+``upload_pdf`` (``test_uploading_a_pdf_charges_the_english_rendering_...``).
 """
 from __future__ import annotations
 
@@ -226,6 +227,75 @@ def test_pasting_a_url_charges_the_english_rendering_to_the_paster(client, db, t
         r = client.post("/api/v1/library/paste-urls", json={"urls": ["https://example.com/hindi-essay"]})
     assert r.status_code == 201, r.text
     assert usage_rows(db, test_user.id) == _three("ingest")
+
+
+# ---------------------------------------------------------------- ingest (PDF upload)
+
+
+def _hinglish_pdf():
+    from app.sources.types import ExtractedText
+
+    return ExtractedText(
+        segments=[
+            {"text": "Yeh tariff ka asar hai, aur isliye importers ko zyada paisa dena padta hai. "
+                     "Hum log samajhte hain ki sarkar ko yeh nahi karna chahiye.",
+             "start": 0.0, "duration": 0.0, "extra": {"kind": "page", "comment_url": "#page=1"}},
+            {"text": "Mera kehna hai ki yeh niti galat hai, kyunki isse mehngai badhti hai.",
+             "start": 1.0, "duration": 0.0, "extra": {"kind": "page", "comment_url": "#page=2"}},
+        ],
+        language="hi",
+        text_source="pdf",
+        word_count=40,
+        extra={"page_count": 2},
+    )
+
+
+def _upload_hinglish_pdf(client, monkeypatch, tmp_path, metered_llms):
+    """``POST /library/upload-pdf`` with a romanised-Hindi PDF. Chunking runs
+    for real (it tags the chunks as Hindi); the Chroma write is replaced by
+    its first step, ``code_mixing_service.ensure_english_renderings``, run
+    for real, so the rendering call goes through ``get_llm_for``."""
+    from app.services import code_mixing_service
+    from tests.test_routers.test_library_upload_pdf import _FakeConnector
+
+    monkeypatch.setattr(settings, "PDF_UPLOAD_DIR", str(tmp_path / "pdf"))
+    monkeypatch.setattr(settings, "CODE_MIX_ENGLISH_RENDERING_ENABLED", True)
+    metered_llms.reply = json.dumps({"chunks": [{"i": 0, "english": "This is the effect of the tariff."}]})
+    rendered: list = []
+
+    def insert_chunks(chunks):
+        code_mixing_service.ensure_english_renderings(chunks)
+        rendered.extend(c["metadata"].get("text_en") for c in chunks)
+        return len(chunks)
+
+    with (
+        patch("app.routers.library._connector_for", return_value=_FakeConnector(_hinglish_pdf())),
+        patch("app.routers.library.chroma_service.insert_chunks", side_effect=insert_chunks),
+    ):
+        r = client.post(
+            "/api/v1/library/upload-pdf",
+            files={"file": ("tariffs-hi.pdf", b"%PDF-1.4\n% usage metering\n", "application/pdf")},
+        )
+    assert r.status_code == 201, r.text
+    assert rendered == ["This is the effect of the tariff."], "the English rendering ran"
+    return r
+
+
+def test_uploading_a_pdf_charges_the_english_rendering_to_the_uploader(client, db, test_user, metered_llms,
+                                                                       monkeypatch, tmp_path):
+    _upload_hinglish_pdf(client, monkeypatch, tmp_path, metered_llms)
+    assert usage_rows(db, test_user.id) == _three("ingest")
+    assert tenants_with_usage(db) == {test_user.id}
+
+
+def test_mutation_a_pdf_upload_without_its_scope_charges_no_one(client, db, test_user, metered_llms,
+                                                               monkeypatch, tmp_path):
+    """Take the scope out of ``upload_pdf``: the rendering still runs, and
+    is charged to no one, which the test above catches."""
+    monkeypatch.setattr("app.routers.library.usage_service.metered", lambda *a, **k: nullcontext())
+    _upload_hinglish_pdf(client, monkeypatch, tmp_path, metered_llms)
+    assert usage_rows(db, test_user.id) == {}
+    assert tenants_with_usage(db) == set()
 
 
 # ---------------------------------------------------------------- Echo

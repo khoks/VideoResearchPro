@@ -487,7 +487,7 @@ class ActivityConnector:
 
 **Deleted derived facts stay deleted (T-3.2.4.4, D-110).** The runtime, not the connector, skips every `(kind, key)` the user deleted from a fact the connector (or importer) derived: deleting one records a tombstone in `echo_fact_tombstones`, which the Echo page lists under "Kept deleted". A connector needs no code for this.
 
-**A fact the user wrote stays theirs (T-3.2.1.11).** A sync or an import never writes over a `manual` row: the key is skipped and the run says so (`facts_kept_manual`). Editing a derived fact makes it `manual` and records what it replaced (`edited_from`), so deleting it later still leaves a tombstone. A connector needs no code for this either.
+**A fact the user wrote stays theirs (T-3.2.1.11).** A sync or an import never writes over a live `manual` row: the key is skipped and the run says so (`facts_kept_manual`). Past its expiry a row holds nothing, and the connector takes the key back. A `manual` row records the connector or importer that wants its key (`wanted_by`), whether the user edited what it derived or typed the row first and turned its write away, so deleting the row still leaves a tombstone. A connector needs no code for this either.
 
 Conformance to this interface is the *only* way new connectors enter the system. PR-time review of any new connector specifically checks:
 

@@ -376,6 +376,53 @@ def test_disconnecting_during_a_refresh_does_not_bring_the_token_back(db, provid
     assert db.query(EchoConnectorGrant).filter_by(tenant_id=TENANT).count() == 0
 
 
+@pytest.mark.parametrize("refresh", ["reconnected-r", "refresh-0"], ids=["new refresh token", "same refresh token"])
+def test_a_reconnect_during_a_refresh_is_not_written_over(db, provider, conn, refresh):
+    """The user reconnects, perhaps as another account, while a sync waits on
+    the provider. The renewal comes from the old grant: storing it would leave
+    the new account's name on the old account's tokens and lose the new pair.
+    A provider that does not rotate can hand back the same refresh token, so
+    the check is on the pair."""
+    grant_id = _seed(db, expires_at=PAST)
+    spend = conn.refresh_tokens
+
+    def reconnected_during_the_call(tokens):
+        fresh = spend(tokens)
+        svc._store_tokens(db, TENANT, NAME, ConnectorTokens(
+            access_token="reconnected", refresh_token=refresh,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        ))
+        provider.access_valid.add("reconnected")
+        return fresh
+
+    conn.refresh_tokens = reconnected_during_the_call
+
+    assert svc.run_sync(db, grant_id).status == "ok"
+
+    stored = _stored(db)
+    assert (stored.access_token, stored.refresh_token) == ("reconnected", refresh)
+    assert {token for _, token in provider.pages} == {"reconnected"}, "the sync went on with what is stored"
+    assert _claim_columns(db) == (None, None)
+
+
+def test_a_reader_that_outlived_its_claim_still_stores_what_it_renewed(db, provider, conn):
+    """Nothing wrote the row while the provider answered, so the rotated token
+    is the only live copy. Losing the claim is no reason to drop it."""
+    grant_id = _seed(db, expires_at=PAST)
+
+    def a_later_reader_took_the_lapsed_claim():
+        cred = db.query(EchoConnectorCredential).filter_by(tenant_id=TENANT, connector=NAME).one()
+        cred.refresh_claim = "later-reader"
+        db.commit()
+
+    provider.before_refresh = a_later_reader_took_the_lapsed_claim
+
+    assert svc.run_sync(db, grant_id).status == "ok"
+
+    assert _stored(db).refresh_token == "refresh-1"
+    assert _claim_columns(db)[0] == "later-reader", "not ours to release"
+
+
 def test_a_new_connect_clears_a_claim_on_the_old_tokens(db, provider, conn):
     _seed(db)
     assert svc._claim_refresh(db, TENANT, NAME, "old-reader")

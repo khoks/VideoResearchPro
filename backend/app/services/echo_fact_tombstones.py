@@ -1,17 +1,17 @@
 """Deleted derived facts stay deleted (T-3.2.4.4, accepted by D-110).
 
 A connector's sync and an export importer write their derived facts with
-``echo_service.record_context``, an upsert by ``(kind, key)``. Without a
-record of the user's delete, the next sync re-created the fact. This module
+``echo_service.record_derived_context``, an upsert by ``(kind, key)``. Without
+a record of the user's delete, the next sync re-created the fact. This module
 owns that record (``echo_fact_tombstones``):
 
 * ``record_for_fact`` is called by the user's delete paths
   (``echo_service.delete_context`` and ``revoke_source``) before the row
   goes. It records a tombstone only when the fact came from a connector
   (source ``connector:<name>``) or an importer (source ``import:<id>``,
-  resolved to the importer's name), or is a row of theirs the user edited
-  (``edited_from``); a fact the user typed has nothing that could bring it
-  back.
+  resolved to the importer's name), or is a manual row one of them wants
+  (``wanted_by``); a fact the user typed that no source asked for has nothing
+  that could bring it back.
 * ``blocked_keys`` is what the sync and the importer ask before writing.
 * ``list_for_tenant`` and ``clear`` back the Echo page's "Kept deleted" list.
 
@@ -73,9 +73,10 @@ def record(db: Session, tenant_id: str, connector: str, kind: str, key: str) -> 
 
 def record_for_fact(db: Session, fact: Any) -> EchoFactTombstone | None:
     """Tombstone ``fact`` (a ``PersonalContext`` row about to be deleted by
-    the user) when a connector or importer derived it. Does not commit."""
+    the user) when a connector or importer derived it or wants its key. Does
+    not commit."""
     tenant_id = fact.tenant_id or fact.user_id
-    connector = connector_of_source(db, tenant_id, fact.source) or connector_of_source(db, tenant_id, fact.edited_from)
+    connector = connector_of_source(db, tenant_id, fact.source) or fact.wanted_by
     if connector is None:
         return None
     return record(db, tenant_id, connector, fact.kind, fact.key)

@@ -319,14 +319,20 @@ def _write_tokens(cred: EchoConnectorCredential, tokens: ConnectorTokens) -> Non
     cred.expires_at = _naive(tokens.expires_at)
 
 
+def _read_tokens(cred: EchoConnectorCredential) -> tuple[str, str | None]:
+    refresh = byok_service.decrypt_secret(cred.refresh_token_encrypted) if cred.refresh_token_encrypted else None
+    return byok_service.decrypt_secret(cred.access_token_encrypted), refresh
+
+
 def load_tokens(db: Session, tenant_id: str, name: str) -> ConnectorTokens | None:
     cred = _credential(db, tenant_id, name)
     if cred is None:
         return None
     grant = get_grant(db, tenant_id, name)
+    access, refresh = _read_tokens(cred)
     return ConnectorTokens(
-        access_token=byok_service.decrypt_secret(cred.access_token_encrypted),
-        refresh_token=byok_service.decrypt_secret(cred.refresh_token_encrypted) if cred.refresh_token_encrypted else None,
+        access_token=access,
+        refresh_token=refresh,
         expires_at=cred.expires_at,
         scopes=(grant.scopes if grant else "") or "",
         account_label=grant.account_label if grant else None,
@@ -590,7 +596,9 @@ def _spend_refresh_token(
     db: Session, tenant_id: str, name: str, conn, tokens: ConnectorTokens, claim: str
 ) -> ConnectorTokens:
     """Call the provider under ``claim`` and store what it returns, releasing
-    the claim in the same commit. Nothing is held open during the call."""
+    the claim in the same commit. Nothing is held open during the call, so the
+    row can change meanwhile: a fresh connect, or a reader that took a lapsed
+    claim and finished first. Then that write stands and this returns it."""
     who = (name, tenant_id[:8])
     try:
         fresh = conn.refresh_tokens(tokens)
@@ -628,6 +636,9 @@ def _spend_refresh_token(
         # Disconnected while the provider answered: never bring the token back.
         raise TokenRenewalFailed("the connector was disconnected during the sync")
     try:
+        if _read_tokens(cred) != (tokens.access_token, tokens.refresh_token):
+            logger.info("echo: the %s tokens for %s changed during the refresh; keeping the stored ones", *who)
+            return load_tokens(db, tenant_id, name)
         _write_tokens(cred, renewed)
     except byok_service.EncryptionConfigurationError:
         db.rollback()
@@ -635,7 +646,8 @@ def _spend_refresh_token(
         raise TokenRenewalFailed(
             "Sync failed: this install's encryption key is not valid. Ask the operator to fix it."
         ) from None
-    # Stored even if the claim lapsed: a rotated token is the only live copy.
+    # Stored even if the claim lapsed: nothing else wrote, so a rotated token
+    # is the only live copy.
     if cred.refresh_claim == claim:
         cred.refresh_claim = cred.refresh_claimed_at = None
     db.commit()

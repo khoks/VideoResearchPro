@@ -220,7 +220,7 @@ def test_echo_runtime_columns_round_trip(tmp_path):
     command.upgrade(cfg, "head")
     assert _model_width(url) == 128
     assert {"refresh_claim", "refresh_claimed_at"} <= _columns(url, "echo_connector_credentials")
-    assert "edited_from" in _columns(url, "personal_context")
+    assert "wanted_by" in _columns(url, "personal_context")
     engine = create_engine(url)
     try:
         with engine.connect() as conn:
@@ -232,7 +232,7 @@ def test_echo_runtime_columns_round_trip(tmp_path):
     command.downgrade(cfg, below)
     assert _model_width(url) == 64
     assert not ({"refresh_claim", "refresh_claimed_at"} & _columns(url, "echo_connector_credentials"))
-    assert "edited_from" not in _columns(url, "personal_context")
+    assert "wanted_by" not in _columns(url, "personal_context")
     command.upgrade(cfg, "head")
     assert _model_width(url) == 128
 

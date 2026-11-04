@@ -7,14 +7,15 @@ import { Button, Card, Input, Skeleton } from '../primitives';
 import { useColors } from '../../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../theme';
 import { formatDate } from '../../utils/formatters';
-import { apiOrigin, lastUsedLabel } from '../../utils/echoExtension';
+import { apiOrigin, iosShortcutSteps, lastUsedLabel, sharesEndpoint } from '../../utils/echoExtension';
 import { detailFromErrorBody, type HttpErrorLike } from '../../utils/ingestResults';
 
 /**
  * "Add from your browser" (S-3.7.3): share tokens for the Add to Echo
  * extension. A token can only add to the inbox; it is shown once, listed by
  * its first characters, and revoked here. The server address the extension
- * needs is shown beside it.
+ * needs is shown beside it, and so are the steps for the iPhone Shortcut,
+ * which uses a token the same way (T-3.7.6.1).
  */
 export function ShareTokensCard() {
   const c = useColors();
@@ -25,6 +26,7 @@ export function ShareTokensCard() {
   const [label, setLabel] = useState('');
   const [fresh, setFresh] = useState<CreatedShareToken | null>(null);
   const server = apiOrigin(api.defaults.baseURL, window.location.origin);
+  const endpoint = sharesEndpoint(api.defaults.baseURL, window.location.origin);
   const items = tokens.data?.items ?? [];
   const atMax = tokens.data ? items.length >= tokens.data.max : false;
 
@@ -137,6 +139,31 @@ export function ShareTokensCard() {
           ))
         )}
       </div>
+
+      <details style={{ marginTop: space['4'] }}>
+        <summary style={{ fontFamily: fonts.ui, fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: c.textPrimary, cursor: 'pointer' }}>
+          From an iPhone or an Android phone
+        </summary>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'], marginTop: space['2'] }}>
+          <p style={text}>
+            On Android, install Pratidhvani from Chrome (Add to Home screen) and it appears in the share sheet. Nothing to set up here.
+          </p>
+          <p style={text}>
+            iOS lets no web app into its share sheet, so an iPhone uses a Shortcut with a share token of its own. Make the token first; the
+            Shortcut keeps it, so anyone holding the Shortcut can add to your inbox until you revoke it.
+          </p>
+          <ol style={{ ...text, paddingLeft: space['5'], display: 'flex', flexDirection: 'column', gap: space['1'] }}>
+            {iosShortcutSteps(endpoint).map((step) => (
+              <li key={step} style={{ overflowWrap: 'anywhere' }}>
+                {step}
+              </li>
+            ))}
+          </ol>
+          <p style={{ ...text, fontSize: fontSize.sm, color: c.textMuted }}>
+            These steps have not been run on a real iPhone yet, so a menu may read differently on yours.
+          </p>
+        </div>
+      </details>
     </Card>
   );
 }

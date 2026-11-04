@@ -17,6 +17,7 @@ import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
 import { formatDate } from '../utils/formatters';
 import {
+  attachmentsLabel,
   authorshipLabel,
   contentTypeLabel,
   formatBytes,
@@ -281,6 +282,13 @@ function ShareCard({ share, onDelete }: { share: Share; onDelete: () => void }) 
             {share.occurred_at ? ` · ${formatDate(share.occurred_at)}` : ''}
           </span>
         )}
+        {share.source?.from && (
+          <span style={metaStyle} title="The address the mail claims. A From line can be forged.">
+            By email from {share.source.from}
+            {share.source.attachments?.length ? ` · ${attachmentsLabel(share.source.attachments)}` : ''}
+          </span>
+        )}
+        {!share.source?.url && !share.source?.from && share.source?.title && <span style={metaStyle}>From {share.source.title}</span>}
         {share.source?.url && (
           <span style={metaStyle}>
             From{' '}
@@ -383,14 +391,16 @@ function ShareCard({ share, onDelete }: { share: Share; onDelete: () => void }) 
               {share.user_annotation ? 'Edit why' : 'Add why'}
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="tertiary"
-            onClick={() => save({ author_is_tenant: !share.author_is_tenant })}
-            title={share.author_is_tenant ? "Treat as someone else's words: context only" : 'Mark as words you wrote'}
-          >
-            {share.author_is_tenant ? 'Not my words' : 'These are my words'}
-          </Button>
+          {share.surface !== 'email_in' && (
+            <Button
+              size="sm"
+              variant="tertiary"
+              onClick={() => save({ author_is_tenant: !share.author_is_tenant })}
+              title={share.author_is_tenant ? "Treat as someone else's words: context only" : 'Mark as words you wrote'}
+            >
+              {share.author_is_tenant ? 'Not my words' : 'These are my words'}
+            </Button>
+          )}
           <Button size="sm" variant="tertiary" style={{ color: c.error, marginLeft: 'auto' }} onClick={onDelete}>
             Delete
           </Button>

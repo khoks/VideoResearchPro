@@ -35,6 +35,7 @@ The frontend is a single-page app under `frontend/src/`. Routing is `react-route
 | `/echo` | `EchoPage` | protected, Studio | Echo: personal-context store, readiness meter, sources and connectors, export and delete |
 | `/echo/inbox` | `EchoInboxPage` | protected, Studio | Echo's shares inbox: everything the user forwarded, with state and authorship |
 | `/echo/import` | `EchoImportPage` | protected, Studio | Import an export from another service (WhatsApp, Google Takeout, Spotify, Goodreads, Letterboxd, Strava, Apple Health): preview, choose whose words are whose, import, undo |
+| `/echo/share-target` | `EchoShareTargetPage` | protected, Studio (the server refuses the share otherwise) | Where a share from the Android share sheet lands: adds what is waiting on the device, then opens the inbox. A share made signed out waits through the sign-in ([docs/echo-share-surfaces.md](echo-share-surfaces.md)) |
 | `/echo/connectors/:name/callback` | `EchoConnectorCallbackPage` | protected | Where a provider returns after the user approves a connector: posts the code back, then returns to `/echo?connected=<name>` |
 | `/account/subscription` | `SubscriptionPage` | protected | Tier, upgrade / downgrade (demo billing) |
 | `/account/ai-models` | `AIModelsPage` | protected | Per-use-case LLM overrides and BYOK keys |

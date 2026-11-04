@@ -204,7 +204,14 @@ export interface Share {
   /** The importer's provenance: chat and sender, or note title and labels. */
   imported?: Record<string, unknown> | null;
   /** S-3.7.3: the page a quote or an image came from. */
-  source?: { url?: string; title?: string } | null;
+  /** Where a share came from. A mail adds its sender (`from`, unverified) and
+   * the attachments it held, which are listed and not read. */
+  source?: {
+    url?: string;
+    title?: string;
+    from?: string;
+    attachments?: { name: string; type: string }[];
+  } | null;
 }
 
 export interface ShareProcessing {

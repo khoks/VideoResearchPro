@@ -57,6 +57,7 @@ from app.models.echo_connector import (
     EchoConnectorOAuthState,
 )
 from app.models.echo_card_state import EchoCardState
+from app.models.echo_email_message import EchoEmailMessage
 from app.models.echo_fact_tombstone import EchoFactTombstone
 from app.models.echo_import import EchoImport
 from app.models.echo_draft import EchoDraft, EchoVoiceGate
@@ -100,6 +101,9 @@ ECHO_TABLES: tuple[tuple[str, Any], ...] = (
     ("echo_card_state", EchoCardState),
     # T-3.2.4.4: derived facts the user deleted, so syncs skip them.
     ("echo_fact_tombstones", EchoFactTombstone),
+    # T-3.7.4.1: which mail the inbox has taken (hashes only), so a re-poll
+    # adds nothing and a deleted share stays deleted.
+    ("echo_email_messages", EchoEmailMessage),
 )
 
 # Echo tables that hold secrets: OAuth tokens (encrypted, D-043) and the PKCE

@@ -99,7 +99,12 @@ def youtube_video_id(url: str) -> str | None:
 
 def _process_text(share: Share, payload: dict) -> tuple[str, dict]:
     text = payload.get("text") or share.extracted_text or ""
-    return text, {"extractor": "as_is"}
+    fields: dict = {"extractor": "as_is"}
+    # A mail's subject is its title: shown in the inbox and embedded with it.
+    source = payload.get("source")
+    if share.surface == echo_intake_service.EMAIL_SURFACE and isinstance(source, dict):
+        fields["title"] = source.get("title")
+    return text, fields
 
 
 def _process_youtube(url: str) -> tuple[str, dict]:

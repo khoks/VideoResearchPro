@@ -3,11 +3,13 @@
  *
  * Studio accounts see one row per provider a stored key is used for
  * (`byok.providers`), with whether a key is set and when it last changed.
- * A key goes out once in the PUT body; the field is emptied the moment the
- * form submits, and the key never reaches the DOM, React Query's caches, a
- * toast or the console. Other tiers see the plan note and never call
- * `/auth/credentials`. The "keys do not last" note follows
- * `byok.keys_persist`.
+ * A key goes out once in the PUT body; the field is emptied the moment Save
+ * is pressed, and the key never reaches the DOM, React Query's caches, a
+ * toast or the console. The field stays out of the browser's password
+ * manager: `autocomplete="one-time-code"` and no <form> to submit. Other
+ * tiers see the plan note and never call `/auth/credentials`. The "keys do
+ * not last" note follows `byok.keys_persist`; a malformed key
+ * (`byok.key_invalid`) turns saving off and says so instead.
  *
  * The "key" below is a placeholder, not key material.
  */
@@ -31,7 +33,9 @@ vi.mock('../../hooks/useMe', () => ({
   useInvalidateMe: () => async () => undefined,
 }));
 
-const byok: { current: { providers: string[]; keys_persist: boolean } | undefined } = { current: undefined };
+const byok: { current: { providers: string[]; keys_persist: boolean; key_invalid?: boolean } | undefined } = {
+  current: undefined,
+};
 let stored: CredentialMetadata[] = [];
 
 function settingsBody() {
@@ -156,10 +160,17 @@ async function typeInto(el: HTMLInputElement, value: string) {
   });
 }
 
+/** Press the form's Save button (there is no <form> to submit). */
 async function submitForm() {
-  const form = keyField()!.closest('form')!;
+  const save = Array.from(host.querySelectorAll<HTMLButtonElement>('[data-byok-key-form] button')).find(
+    (b) => b.textContent?.trim() === 'Save key',
+  )!;
+  await act(async () => save.click());
+}
+
+async function pressEnter(el: HTMLInputElement) {
   await act(async () => {
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
   });
 }
 
@@ -256,7 +267,6 @@ describe('keys panel for a Studio account', () => {
     act(() => rowButton('anthropic', 'Add key')!.click());
     const field = keyField()!;
     expect(field.type).toBe('password');
-    expect(field.getAttribute('autocomplete')).toBe('off');
     await typeInto(field, `  ${PLACEHOLDER}\n`);
     await submitForm();
 
@@ -274,6 +284,45 @@ describe('keys panel for a Studio account', () => {
     expect(everywhere()).not.toContain(PLACEHOLDER);
     expect(consoleSawPlaceholder()).toBe(false);
     expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the key field out of the browser password manager', async () => {
+    await mount();
+    act(() => rowButton('anthropic', 'Add key')!.click());
+    const field = keyField()!;
+    expect(field.type).toBe('password');
+    // Chromium ignores "off" on a password field, and "new-password" is
+    // the sign-up signal that invites its generator and save prompt.
+    expect(field.getAttribute('autocomplete')).toBe('one-time-code');
+    // No form, so no form submission for the browser to detect.
+    expect(field.closest('form')).toBeNull();
+    expect(row('anthropic')!.querySelector('form')).toBeNull();
+    const buttons = Array.from(row('anthropic')!.querySelectorAll('button'));
+    expect(buttons.every((b) => b.getAttribute('type') === 'button')).toBe(true);
+  });
+
+  it('saves on Enter in the key field, once', async () => {
+    await mount();
+    act(() => rowButton('anthropic', 'Add key')!.click());
+    await typeInto(keyField()!, PLACEHOLDER);
+    await pressEnter(keyField()!);
+    await flush();
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(put.mock.calls[0][1]).toEqual({ secret: PLACEHOLDER, label: null });
+    expect(keyField()).toBeNull();
+    expect(everywhere()).not.toContain(PLACEHOLDER);
+  });
+
+  it('saves on Enter in the label field too', async () => {
+    await mount();
+    act(() => rowButton('google', 'Add key')!.click());
+    await typeInto(keyField()!, PLACEHOLDER);
+    const label = row('google')!.querySelectorAll('input')[1] as HTMLInputElement;
+    await typeInto(label, 'home');
+    await pressEnter(label);
+    await flush();
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(put.mock.calls[0][1]).toEqual({ secret: PLACEHOLDER, label: 'home' });
   });
 
   it('keeps the label when replacing a key', async () => {
@@ -361,6 +410,56 @@ describe('keys panel for a Studio account', () => {
   it('shows no such note when stored keys persist', async () => {
     await mount();
     expect(host.querySelector('[data-byok-ephemeral]')).toBeNull();
+    expect(host.querySelector('[data-byok-invalid]')).toBeNull();
+  });
+
+  it('turns saving off and names the cause when BYOK_ENCRYPTION_KEY is malformed', async () => {
+    byok.current = { providers: ['anthropic', 'google', 'openai'], keys_persist: false, key_invalid: true };
+    await mount();
+    const note = host.querySelector('[data-byok-invalid]');
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain('BYOK_ENCRYPTION_KEY is set but is not a valid key');
+    expect(note!.textContent).toContain('saving is turned off');
+    // Not the "no key, temporary key" note: that cause would be wrong.
+    expect(host.querySelector('[data-byok-ephemeral]')).toBeNull();
+    expect(host.textContent).not.toContain('This install has no BYOK_ENCRYPTION_KEY');
+    // No way to open the key field.
+    expect(rowButton('anthropic', 'Add key')!.disabled).toBe(true);
+    expect(rowButton('openai', 'Replace key')!.disabled).toBe(true);
+    act(() => rowButton('anthropic', 'Add key')!.click());
+    expect(keyField()).toBeNull();
+    // Removing a stored key never touches the encryption key, so it stays.
+    expect(rowButton('openai', 'Remove')!.disabled).toBe(false);
+    await act(async () => rowButton('openai', 'Remove')!.click());
+    await act(async () => anyButton('Remove key')!.click());
+    await flush();
+    expect(del).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the server reason inline when a save is refused for a malformed key', async () => {
+    put.mockRejectedValueOnce(
+      new AxiosError('Service Unavailable', 'ERR_BAD_RESPONSE', undefined, undefined, {
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: {
+          detail:
+            "Keys cannot be saved: this install's BYOK_ENCRYPTION_KEY is set but is not a valid key. Ask the operator to fix it.",
+        },
+      }),
+    );
+    // Settings read before the operator broke the key: saving still offered.
+    await mount();
+    act(() => rowButton('google', 'Add key')!.click());
+    await typeInto(keyField()!, PLACEHOLDER);
+    await submitForm();
+    await flush();
+    expect(row('google')!.querySelector('[role="alert"]')!.textContent).toContain(
+      'BYOK_ENCRYPTION_KEY is set but is not a valid key',
+    );
+    expect(keyField()!.value).toBe('');
+    expect(everywhere()).not.toContain(PLACEHOLDER);
   });
 
   it('lists only the providers the server names', async () => {

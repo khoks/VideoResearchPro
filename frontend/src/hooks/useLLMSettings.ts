@@ -84,10 +84,11 @@ export interface LLMSettingsResponse {
   vision_capable_models: string[];
   /**
    * The keys panel's configuration (E-5.6): the providers a stored key is
-   * used for, and whether stored keys outlive a restart (false when the
-   * install has no valid BYOK_ENCRYPTION_KEY). Never key material.
+   * used for, whether stored keys outlive a restart (false when the
+   * install has no valid BYOK_ENCRYPTION_KEY), and whether that key is set
+   * but malformed (every save then fails). Never key material.
    */
-  byok?: { providers: string[]; keys_persist: boolean };
+  byok?: { providers: string[]; keys_persist: boolean; key_invalid?: boolean };
 }
 
 // ── Choice assessment ─────────────────────────────────────────────

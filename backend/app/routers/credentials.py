@@ -4,9 +4,15 @@ Per-user provider API keys, gated on the ``byok_llm_keys`` feature
 (Studio tier). The router never returns the decrypted secret — only
 metadata (provider, label, timestamps). To rotate a key, the user
 sets a new value with PUT (which overwrites). To remove a key, DELETE.
+
+PUT takes a key only for ``byok_service.RESOLVED_PROVIDERS``, the
+providers an LLM call reads a stored key for; ``GET /providers`` lists the
+same set. DELETE takes every ``SUPPORTED_PROVIDERS`` name, so a row stored
+before that rule (a ``local`` key, which no call reads) can still go.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -17,10 +23,14 @@ from app.dependencies import get_db
 from app.models.user import User
 from app.services import byok_service
 from app.services.byok_service import (
+    RESOLVED_PROVIDERS,
     SUPPORTED_PROVIDERS,
+    EncryptionConfigurationError,
     UnsupportedProviderError,
 )
 from app.services.tier_service import require_feature
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth/credentials", tags=["auth"])
 
@@ -77,6 +87,17 @@ def set_credential(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Key is too long (at most {SECRET_MAX_CHARS} characters).",
         )
+    if provider in SUPPORTED_PROVIDERS and provider not in RESOLVED_PROVIDERS:
+        # Storable, but no call would ever read it (``local`` is the
+        # install's own endpoint, keyed by LLM_LOCAL_API_KEY): refuse
+        # rather than store a key that is silently ignored.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"No call uses a stored key for '{provider}'. Keys are taken for: "
+                f"{', '.join(sorted(RESOLVED_PROVIDERS))}."
+            ),
+        )
     try:
         row = byok_service.set_credential(
             db,
@@ -94,6 +115,22 @@ def set_credential(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        )
+    except EncryptionConfigurationError:
+        # BYOK_ENCRYPTION_KEY is set but malformed, so nothing can be
+        # encrypted. The user cannot fix that; say so, and leave the
+        # operator a log line. Neither carries the configured key or the
+        # submitted one.
+        logger.error(
+            "BYOK key save refused: BYOK_ENCRYPTION_KEY is set but is not a "
+            "valid Fernet key (32 url-safe base64-encoded bytes)"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Keys cannot be saved: this install's BYOK_ENCRYPTION_KEY is set "
+                "but is not a valid key. Ask the operator to fix it."
+            ),
         )
     return CredentialMetadata.model_validate(row)
 
@@ -120,7 +157,8 @@ def delete_credential(
 def list_providers(
     _: User = Depends(require_feature("byok_llm_keys")),
 ) -> list[str]:
-    """Return the set of providers BYOK is supported for. Useful for
-    populating the credentials-management UI without hard-coding
-    provider names client-side."""
-    return sorted(SUPPORTED_PROVIDERS)
+    """Return the providers a key can be set for: the ones an LLM call
+    reads a stored key for (``RESOLVED_PROVIDERS``, the same list as
+    ``GET /settings/llm`` ``byok.providers``). Useful for populating a
+    credentials-management UI without hard-coding provider names."""
+    return sorted(RESOLVED_PROVIDERS)

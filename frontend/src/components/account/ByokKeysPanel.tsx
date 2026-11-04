@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useColors } from '../../hooks/useTheme';
@@ -21,14 +21,16 @@ import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../th
  * Studio only, like the API (`require_feature("byok_llm_keys")`): other tiers
  * see what the plan adds and never call `/auth/credentials`. A key is typed
  * into a password field, sent once in the PUT body, and the field is emptied
- * the moment the form submits; it never enters React Query (no mutation
+ * the moment Save is pressed; it never enters React Query (no mutation
  * variables), the toast, or the console. The server answers with metadata
  * only, so the panel can show whether a key is set and when it last changed,
  * never the key.
  *
  * `providers` comes from `GET /settings/llm` `byok.providers`: the providers
  * a stored key is actually used for (the local endpoint is not one).
- * `keysPersist` false means the install has no BYOK_ENCRYPTION_KEY.
+ * `keysPersist` false means the install has no valid BYOK_ENCRYPTION_KEY;
+ * `keyInvalid` tells "set but malformed" (no save can work, so saving is
+ * off) apart from "unset" (saves work until the server restarts).
  */
 
 const PROVIDER_NAMES: Record<string, string> = {
@@ -48,15 +50,23 @@ export function providerName(provider: string): string {
 export function ByokKeysPanel({
   providers,
   keysPersist,
+  keyInvalid,
 }: {
   providers?: string[];
   keysPersist?: boolean;
+  keyInvalid?: boolean;
 }) {
   const { has, isLoading: tierLoading } = useTierCapabilities();
   const allowed = has('byok_llm_keys');
   if (tierLoading) return <Skeleton variant="card" height={120} />;
   if (!allowed) return <LockedPanel />;
-  return <KeysPanel providers={providers ?? FALLBACK_PROVIDERS} keysPersist={keysPersist} />;
+  return (
+    <KeysPanel
+      providers={providers ?? FALLBACK_PROVIDERS}
+      keysPersist={keysPersist}
+      keyInvalid={keyInvalid === true}
+    />
+  );
 }
 
 function PanelHeading({ children }: { children: ReactNode }) {
@@ -117,7 +127,37 @@ function LockedPanel() {
   );
 }
 
-function KeysPanel({ providers, keysPersist }: { providers: string[]; keysPersist?: boolean }) {
+function Notice({ children, ...rest }: { children: ReactNode } & Record<`data-${string}`, boolean>) {
+  const c = useColors();
+  return (
+    <div
+      role="note"
+      {...rest}
+      style={{
+        borderLeft: `3px solid ${c.warn}`,
+        background: c.warnSubtle,
+        borderRadius: radius.sm,
+        padding: `${space['2']} ${space['3']}`,
+        fontFamily: fonts.ui,
+        fontSize: fontSize.sm,
+        lineHeight: lineHeight.snug,
+        color: c.textPrimary,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function KeysPanel({
+  providers,
+  keysPersist,
+  keyInvalid,
+}: {
+  providers: string[];
+  keysPersist?: boolean;
+  keyInvalid: boolean;
+}) {
   const c = useColors();
   const qc = useQueryClient();
   const pushToast = useJobStore((s) => s.pushToast);
@@ -162,27 +202,24 @@ function KeysPanel({ providers, keysPersist }: { providers: string[]; keysPersis
           install's key, and bills to your account. It is stored encrypted and never shown
           again, not even to you. Remove it to go back to the install's key.
         </Prose>
-        {keysPersist === false && (
-          <div
-            role="note"
-            data-byok-ephemeral
-            style={{
-              borderLeft: `3px solid ${c.warn}`,
-              background: c.warnSubtle,
-              borderRadius: radius.sm,
-              padding: `${space['2']} ${space['3']}`,
-              fontFamily: fonts.ui,
-              fontSize: fontSize.sm,
-              lineHeight: lineHeight.snug,
-              color: c.textPrimary,
-            }}
-          >
-            <span style={{ fontWeight: fontWeight.semibold }}>Keys saved here do not last.</span>{' '}
-            This install has no BYOK_ENCRYPTION_KEY, so a saved key is encrypted with a temporary
-            key: it stops working when the server restarts, and background work (search and
-            reports) cannot read it and uses the install's key instead. The operator can set
-            BYOK_ENCRYPTION_KEY to make keys last.
-          </div>
+        {keyInvalid ? (
+          <Notice data-byok-invalid>
+            <span style={{ fontWeight: fontWeight.semibold }}>Keys cannot be saved right now.</span>{' '}
+            This install's BYOK_ENCRYPTION_KEY is set but is not a valid key, so nothing can be
+            encrypted: saving is turned off, and a key already stored here cannot be read, so your
+            calls use the install's key. The operator must fix BYOK_ENCRYPTION_KEY. You can still
+            remove a stored key.
+          </Notice>
+        ) : (
+          keysPersist === false && (
+            <Notice data-byok-ephemeral>
+              <span style={{ fontWeight: fontWeight.semibold }}>Keys saved here do not last.</span>{' '}
+              This install has no BYOK_ENCRYPTION_KEY, so a saved key is encrypted with a temporary
+              key: it stops working when the server restarts, and background work (search and
+              reports) cannot read it and uses the install's key instead. The operator can set
+              BYOK_ENCRYPTION_KEY to make keys last.
+            </Notice>
+          )
         )}
       </div>
 
@@ -209,7 +246,8 @@ function KeysPanel({ providers, keysPersist }: { providers: string[]; keysPersis
             key={provider}
             provider={provider}
             stored={byProvider.get(provider)}
-            editing={editing === provider}
+            canSave={!keyInvalid}
+            editing={editing === provider && !keyInvalid}
             onEdit={() => setEditing(provider)}
             onCancel={() => setEditing(null)}
             onSaved={() => onSaved(provider)}
@@ -281,6 +319,7 @@ function lastChanged(k: CredentialMetadata): string {
 function ProviderRow({
   provider,
   stored,
+  canSave,
   editing,
   onEdit,
   onCancel,
@@ -290,6 +329,7 @@ function ProviderRow({
 }: {
   provider: string;
   stored: CredentialMetadata | undefined;
+  canSave: boolean;
   editing: boolean;
   onEdit: () => void;
   onCancel: () => void;
@@ -329,7 +369,7 @@ function ProviderRow({
         </div>
         {!editing && (
           <div style={{ display: 'flex', gap: space['2'], flexWrap: 'wrap' }}>
-            <Button variant="secondary" size="sm" onClick={onEdit}>
+            <Button variant="secondary" size="sm" onClick={onEdit} disabled={!canSave}>
               {isSet ? 'Replace key' : 'Add key'}
             </Button>
             {stored && (
@@ -388,10 +428,19 @@ function UnusedRow({
 }
 
 /**
- * The key field. The draft lives here only until submit: the field is
+ * The key field. The draft lives here only until Save: the field is
  * emptied before the request goes out, and the key exists after that only
  * as the request body. A refused save shows the server's reason (which
  * never quotes the key) and leaves the field empty.
+ *
+ * Kept away from the browser's password manager, which would otherwise
+ * offer to save the key as this site's password (and sync it, and autofill
+ * it into the sign-in form). Chromium ignores `autocomplete="off"` on a
+ * password field, and `new-password` is the sign-up signal that invites its
+ * generator and its save prompt. So the field says `one-time-code`, which
+ * Chromium's password manager leaves alone, and there is no <form>: Save is
+ * a plain button and Enter is handled here, so no form submission happens
+ * for submission detection to see.
  */
 function KeyForm({
   provider,
@@ -412,8 +461,8 @@ function KeyForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
+  const submit = async () => {
+    if (saving) return;
     const secret = draft.trim();
     setDraft('');
     if (!secret) {
@@ -432,12 +481,18 @@ function KeyForm({
     }
   };
 
+  const onEnter = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    void submit();
+  };
+
   const name = providerName(provider);
   return (
-    <form
-      onSubmit={(e) => void submit(e)}
+    <div
+      role="group"
+      data-byok-key-form
       aria-label={`${replacing ? 'Replace' : 'Add'} your ${name} key`}
-      autoComplete="off"
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -458,12 +513,15 @@ function KeyForm({
             type="password"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            autoComplete="off"
+            onKeyDown={onEnter}
+            autoComplete="one-time-code"
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
             data-lpignore="true"
             data-1p-ignore="true"
+            data-bwignore="true"
+            data-form-type="other"
             invalid={!!error}
             disabled={saving}
             style={{ fontFamily: fonts.mono, fontSize: fontSize.sm }}
@@ -477,19 +535,20 @@ function KeyForm({
             value={label}
             maxLength={128}
             onChange={(e) => setLabel(e.target.value)}
+            onKeyDown={onEnter}
             disabled={saving}
             style={{ fontSize: fontSize.sm }}
           />
         )}
       </FormField>
       <div style={{ display: 'flex', gap: space['2'], flexWrap: 'wrap' }}>
-        <Button type="submit" size="sm" loading={saving}>
+        <Button type="button" size="sm" loading={saving} onClick={() => void submit()}>
           Save key
         </Button>
         <Button type="button" variant="tertiary" size="sm" onClick={onCancel} disabled={saving}>
           Cancel
         </Button>
       </div>
-    </form>
+    </div>
   );
 }

@@ -164,6 +164,7 @@ def get_llm_settings(
                 }
             )
 
+    key_state = byok_service.encryption_key_state()
     return {
         "use_cases": use_cases,
         "providers": _model_options(),
@@ -171,12 +172,15 @@ def get_llm_settings(
         "pricing_as_of": PRICING_AS_OF,
         "vision_capable_models": sorted(VISION_CAPABLE_MODELS),
         # The keys panel on this page (E-5.6): which providers a stored key
-        # is used for, and whether stored keys outlive a restart (false
-        # when the install has no valid BYOK_ENCRYPTION_KEY). Configuration
-        # only; no key material, and the same for every caller.
+        # is used for, whether stored keys outlive a restart (false when
+        # the install has no valid BYOK_ENCRYPTION_KEY), and whether the
+        # key is set but malformed (every save then fails, so the panel
+        # turns saving off and says why). Configuration only; no key
+        # material, and the same for every caller.
         "byok": {
             "providers": sorted(byok_service.RESOLVED_PROVIDERS),
-            "keys_persist": byok_service.keys_persist(),
+            "keys_persist": key_state == "valid",
+            "key_invalid": key_state == "invalid",
         },
     }
 

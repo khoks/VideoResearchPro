@@ -7,8 +7,8 @@ Covers:
   returned in the response.
 * DELETE removes the row; subsequent DELETE returns deleted=False.
 * Unknown provider → 400.
-* GET /providers returns the supported set without leaking server
-  state.
+* GET /providers returns the providers a call reads a stored key for
+  (not ``local``) without leaking server state.
 """
 from __future__ import annotations
 
@@ -174,7 +174,8 @@ def test_list_providers(unauthenticated_client, db):
     assert "openai" in providers
     assert "anthropic" in providers
     assert "google" in providers
-    assert "local" in providers
+    # The install's own endpoint takes no per-user key: no call reads one.
+    assert "local" not in providers
 
 
 # ---------------------------------------------------------------------------

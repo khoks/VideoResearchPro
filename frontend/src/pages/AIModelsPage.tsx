@@ -103,6 +103,7 @@ export function AIModelsPage() {
       <ByokKeysPanel
         providers={settings.data?.byok?.providers}
         keysPersist={settings.data?.byok?.keys_persist}
+        keyInvalid={settings.data?.byok?.key_invalid}
       />
     </div>
   );

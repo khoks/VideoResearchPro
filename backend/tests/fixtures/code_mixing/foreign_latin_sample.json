@@ -1,0 +1,107 @@
+[
+ {
+  "id": "es-speech",
+  "language": "es",
+  "group": "tuning",
+  "style": "speech",
+  "text": "Hola a todos, bienvenidos otra vez al canal. Hoy quiero hablar de algo que me pasó la semana pasada, porque creo que a muchos de ustedes les puede servir. Yo estaba en casa con mi hermana y de repente se fue la luz en todo el barrio. No teníamos velas, no teníamos nada, y el teléfono ya casi no tenía batería. Entonces le dije, mira, vamos a bajar a la tienda de la esquina a ver si todavía está abierta. Pero claro, la tienda también estaba cerrada, así que nos quedamos un buen rato en la calle hablando con los vecinos. Y sabes qué, fue muy bonito, porque hace años que no hablábamos con ellos. Bueno, la cosa es que al final volvió la luz y cada uno se fue a su casa. Si les gusta este tipo de historias, déjenme un comentario abajo y nos vemos en el próximo video."
+ },
+ {
+  "id": "es-essay",
+  "language": "es",
+  "group": "tuning",
+  "style": "essay",
+  "text": "La energía solar se ha convertido en una de las fuentes más importantes de electricidad en América Latina durante la última década. Los gobiernos de la región han aprobado leyes que favorecen la inversión privada, y el precio de los paneles ha bajado de manera constante. Sin embargo, la red eléctrica no siempre puede absorber toda la producción, sobre todo en las horas centrales del día. Por eso los investigadores proponen sistemas de almacenamiento que guardan la energía sobrante para usarla por la noche. Estos sistemas todavía son caros, pero su costo disminuye cada año. Además, las comunidades rurales que nunca tuvieron acceso a la electricidad ahora pueden instalar pequeñas plantas locales. El desafío principal ya no es técnico sino político, porque depende de que las empresas y las autoridades acuerden reglas estables a largo plazo."
+ },
+ {
+  "id": "fr-speech",
+  "language": "fr",
+  "group": "tuning",
+  "style": "speech",
+  "text": "Salut tout le monde, c'est encore moi, et aujourd'hui je voulais vous raconter ce qui m'est arrivé pendant les vacances. Alors voilà, on était partis avec des copains dans un petit village à la montagne, et le premier soir on s'est rendu compte qu'on avait oublié les clés de la maison. Du coup on a dû appeler le propriétaire, qui habitait à deux heures de route. Il n'était pas très content, mais il est quand même venu, et franchement il était super gentil. Après ça on a mangé ensemble, il nous a parlé de sa vie, de ses enfants, de tout ce qui a changé dans le coin depuis vingt ans. Moi je trouve que c'est ça, le plaisir du voyage, on ne sait jamais qui on va rencontrer. Bon, je vous laisse, n'oubliez pas de vous abonner et on se retrouve la semaine prochaine pour une nouvelle vidéo."
+ },
+ {
+  "id": "fr-essay",
+  "language": "fr",
+  "group": "tuning",
+  "style": "essay",
+  "text": "La transition énergétique pose aux villes européennes des questions que leurs institutions n'avaient jamais eu à traiter. Les réseaux de chaleur, longtemps considérés comme une technologie du passé, connaissent un regain d'intérêt depuis que le prix du gaz est devenu imprévisible. Plusieurs municipalités ont choisi de racheter les concessions accordées à des entreprises privées afin de mieux contrôler les tarifs. Cette évolution ne va pas sans difficultés, car les compétences techniques manquent souvent au sein des services publics. Les syndicats rappellent par ailleurs que la rénovation des bâtiments anciens demande une main-d'œuvre qualifiée dont le pays ne dispose pas encore. Les économistes estiment néanmoins que ces investissements seront rentables à long terme, à condition que l'État garantisse un cadre réglementaire stable et que les ménages les plus modestes soient protégés contre les hausses de loyer."
+ },
+ {
+  "id": "de-speech",
+  "language": "de",
+  "group": "tuning",
+  "style": "speech",
+  "text": "Hallo zusammen, schön, dass ihr wieder dabei seid. Heute möchte ich euch erzählen, was mir letzte Woche passiert ist, weil ich immer noch darüber lachen muss. Ich war mit meinem Bruder im Baumarkt, wir wollten eigentlich nur ein paar Schrauben kaufen, und plötzlich stehen wir vor diesem riesigen Regal und keiner von uns weiß, welche wir brauchen. Also haben wir einen Verkäufer gefragt, und der hat uns dann ungefähr zwanzig Minuten lang alles erklärt. Am Ende sind wir mit einer neuen Bohrmaschine nach Hause gegangen, obwohl wir gar keine brauchten. Meine Frau hat nur den Kopf geschüttelt. Naja, jedenfalls haben wir das Regal am Wochenende aufgebaut, und es steht sogar gerade. Wenn euch solche Geschichten gefallen, lasst gerne ein Abo da, und dann sehen wir uns beim nächsten Mal wieder."
+ },
+ {
+  "id": "de-essay",
+  "language": "de",
+  "group": "tuning",
+  "style": "essay",
+  "text": "Die Digitalisierung der öffentlichen Verwaltung kommt in Deutschland nur langsam voran, obwohl die Bundesregierung seit Jahren entsprechende Programme ankündigt. Viele Behörden arbeiten weiterhin mit Papierakten, weil die einzelnen Bundesländer unterschiedliche Systeme verwenden, die nicht miteinander kompatibel sind. Fachleute weisen darauf hin, dass nicht die Technik das eigentliche Hindernis ist, sondern die Zersplitterung der Zuständigkeiten. Jede Gemeinde entscheidet selbst, welche Software sie anschafft, und die Mitarbeiter werden selten ausreichend geschult. Hinzu kommt der Mangel an Fachkräften, denn die Gehälter im öffentlichen Dienst können mit denen der Privatwirtschaft kaum mithalten. Die Bürgerinnen und Bürger erleben die Folgen täglich, wenn sie für einen einfachen Antrag mehrere Termine brauchen. Eine zentrale Plattform könnte diese Probleme verringern, doch dafür müssten die Länder einen Teil ihrer Befugnisse abgeben."
+ },
+ {
+  "id": "pt-speech",
+  "language": "pt",
+  "group": "unseen",
+  "style": "speech",
+  "text": "Oi pessoal, tudo bem com vocês? Hoje eu vim contar uma coisa que aconteceu comigo no fim de semana. Eu fui visitar a minha avó no interior, e ela me pediu para ajudar a arrumar o quintal. Só que quando a gente começou a mexer nas plantas, apareceu uma cobra pequena perto da parede. Eu saí correndo, gritando, e a minha avó ficou lá parada, rindo de mim, porque para ela isso é normal. Depois ela pegou um pedaço de pau, levou a cobra para o mato e voltou como se nada tivesse acontecido. A gente almoçou junto, ela fez aquele feijão que só ela sabe fazer, e passamos a tarde inteira conversando sobre a família. Então é isso, gente, se vocês gostaram do vídeo deixem o like e se inscrevam no canal, que semana que vem tem mais."
+ },
+ {
+  "id": "it-speech",
+  "language": "it",
+  "group": "unseen",
+  "style": "speech",
+  "text": "Ciao ragazzi, bentornati sul canale. Oggi vi voglio raccontare una cosa che mi è successa ieri sera, perché ancora non ci credo. Stavo tornando a casa dal lavoro e ho incontrato un mio vecchio amico delle scuole medie, che non vedevo da quindici anni. Ci siamo fermati in un bar a prendere un caffè e abbiamo parlato per più di due ore. Mi ha detto che adesso vive in Germania, che ha due bambini e che lavora in una piccola azienda di informatica. Tu lo sai come vanno queste cose, all'inizio non sai bene cosa dire, poi piano piano ti ricordi tutto. Alla fine ci siamo scambiati i numeri e abbiamo promesso di rivederci quest'estate. Se hai avuto un'esperienza simile scrivimela nei commenti, e non dimenticare di iscriverti, ci vediamo nel prossimo video."
+ },
+ {
+  "id": "id-speech",
+  "language": "id",
+  "group": "unseen",
+  "style": "speech",
+  "text": "Halo teman-teman, selamat datang kembali di channel saya. Hari ini saya mau cerita tentang pengalaman saya waktu pergi ke pasar tadi pagi. Jadi saya bangun agak siang, terus ibu saya minta tolong beli sayur dan ikan. Sampai di pasar ternyata ramai sekali, karena besok ada acara di kampung kami. Saya ketemu tetangga yang sudah lama tidak kelihatan, dan kami ngobrol cukup lama di depan toko. Dia bilang anaknya sekarang kuliah di Jakarta dan jarang pulang. Setelah itu saya beli semua yang ibu minta, lalu pulang naik motor. Di jalan hujan turun deras, jadi saya berhenti dulu di warung sambil minum kopi. Nah, kalau kalian suka video seperti ini, jangan lupa tekan tombol suka dan tulis komentar di bawah, sampai jumpa lagi di video berikutnya."
+ },
+ {
+  "id": "tl-speech",
+  "language": "tl",
+  "group": "unseen",
+  "style": "speech",
+  "text": "Kumusta kayo mga kaibigan, maligayang pagbabalik sa aking channel. Ngayong araw ikukuwento ko sa inyo ang nangyari sa akin noong nakaraang linggo. Pumunta kami ng pamilya ko sa probinsya para bisitahin ang lola ko, at habang nasa biyahe kami ay nasiraan kami ng sasakyan. Wala kaming magawa kundi maghintay sa gilid ng kalsada. Mabuti na lang may dumaan na mabait na lalaki na tumulong sa amin at dinala kami sa pinakamalapit na talyer. Inabot kami ng tatlong oras doon pero masaya naman kasi nagkuwentuhan kami at kumain ng tinapay. Pagdating namin sa bahay ni lola, nagluto siya ng paborito naming ulam at sobrang saya ng lahat. Kung nagustuhan ninyo ang kuwentong ito, huwag kalimutang mag-subscribe at mag-iwan ng komento sa ibaba, kita-kita tayo sa susunod na video."
+ },
+ {
+  "id": "tr-speech",
+  "language": "tr",
+  "group": "unseen",
+  "style": "speech",
+  "text": "Merhaba arkadaşlar, kanalıma tekrar hoş geldiniz. Bugün size geçen hafta başıma gelen bir olayı anlatmak istiyorum. Annemle birlikte pazara gitmiştik, ve tam dönerken arabanın anahtarını kaybettiğimi fark ettim. Bütün sokağı aradık, dükkanlara sorduk, ama hiçbir yerde bulamadık. Sonra yaşlı bir amca yanımıza geldi ve bize yardım etmek istedi. Meğer anahtar onun tezgahının altına düşmüş, o da saatlerdir sahibini bekliyormuş. Çok mutlu olduk, ona teşekkür ettik ve biraz sohbet ettik. Bana gençliğini, bu mahallede geçirdiği yılları anlattı. Eve döndüğümüzde annem bu kadar güzel insanların hâlâ var olduğunu söyledi. Eğer bu videoyu beğendiyseniz yorum yapmayı ve abone olmayı unutmayın, bir sonraki videoda görüşmek üzere, hoşça kalın."
+ },
+ {
+  "id": "hi-formal",
+  "language": "hi",
+  "group": "romanised_control",
+  "style": "formal",
+  "text": "Bharat ki arthvyavastha pichhle dashak mein tezi se badli hai aur iska sabse bada kaaran vanijya aur praudyogiki ka vistar hai. Sarkar ne kai nai yojnaon ki ghoshna ki hai jinka uddeshya gramin kshetron mein rozgar ke avsar badhana hai. Arthshastriyon ka maanna hai ki mudrasphiti ki dar badhne se aam nagrikon ki kharid kshamta par sidha prabhav padta hai. Isliye rashtriya bank ne byaj daron mein parivartan kiya taaki bazaar mein sthirta bani rahe. Vipaksh ka aarop hai ki in nitiyon se kisanon ko koi labh nahi mila aur unki samasyaen jyon ki tyon bani hui hain. Sarkar ka kehna hai ki aane wale varshon mein iske parinaam dikhai denge, lekin visheshagya abhi bhi savdhani baratne ki salah de rahe hain."
+ },
+ {
+  "id": "hi-poetic",
+  "language": "hi",
+  "group": "romanised_control",
+  "style": "poetic",
+  "text": "Dil ki baat zubaan par aate aate reh gayi, teri yaad mein raatein yun hi guzar gayi. Chaandni raat mein tanha baitha sochta hoon, kaash tu paas hota to yeh duniya haseen lagti. Barsaat ki boondon mein teri khushboo basi hai, har ek lamha tere bina adhoora sa lagta hai. Mohabbat ka yeh safar aasan to nahi tha, phir bhi humne har mushkil ko hans kar saha. Zindagi ke raaste kitne ajeeb hote hain, jo apne lagte hain wahi door chale jaate hain. Khwabon ke sheher mein ek ghar banaya tha, waqt ki aandhi ne use bhi mitti mein mila diya."
+ },
+ {
+  "id": "hi-chat",
+  "language": "hi",
+  "group": "romanised_control",
+  "style": "chat",
+  "text": "Arre yaar kal ka plan kya hai, mujhe office se jaldi nikalna hai. Tu bata kitne baje milna hai, warna main ghar chala jaunga. Sumit bol raha tha ki woh bhi aayega par uska kuch pakka nahi hota. Bhai pichli baar bhi usne last moment pe cancel kar diya tha, yaad hai na. Chal theek hai, main shaam ko call karta hoon, tab tak tu bhi dekh le. Mummy ne bola hai ki aate time doodh aur sabzi le aana, to thoda late ho sakta hai. Haan haan koi tension nahi, aaram se aa jana, hum log wahi chai pe baithe honge."
+ },
+ {
+  "id": "hi-english-frame",
+  "language": "hi-en",
+  "group": "romanised_control",
+  "style": "english_matrix",
+  "text": "So I was talking to my manager yesterday and he said ki yeh project abhi tak complete nahi hua. I told him that we need more time because the client keeps changing the requirements, matlab har din kuch naya. He was okay with it but you know how these people are, thoda pressure to rahega. Anyway the deadline is next Friday so we have to finish the testing by then, warna bahut problem ho jayegi. I think we should just focus on the main features first aur baaki sab baad mein dekh lenge."
+ }
+]

@@ -711,7 +711,17 @@ def _cost(model: str | None, tokens_in: int, tokens_out: int) -> float:
 
 
 def run(db: Session, tenant_id: str, *, llm: LLMCall | None = None, model: str | None = None, use_llm: bool = True) -> ExtractionReport:
-    """One extraction run for a tenant. Commits."""
+    """One extraction run for a tenant. Commits.
+
+    E-5.2: metered against the tenant (feature echo_signals), from the Celery
+    task, the inline mode and "Learn now" alike."""
+    from app.services import usage_service
+
+    with usage_service.metered(db, tenant_id):
+        return _run(db, tenant_id, llm=llm, model=model, use_llm=use_llm)
+
+
+def _run(db: Session, tenant_id: str, *, llm: LLMCall | None, model: str | None, use_llm: bool) -> ExtractionReport:
     report = ExtractionReport()
     inputs = gather_inputs(db, tenant_id)
     state = pending(db, tenant_id, inputs)

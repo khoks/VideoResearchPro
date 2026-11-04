@@ -1,7 +1,7 @@
 """documents.language_mix — the per-document language profile (T-1.16.1.7)
 
 Revision ID: 0253eef57358
-Revises: 066d3f4b4d4d
+Revises: 6cf03630d943
 Create Date: 2026-11-03
 
 `code_mixing_service.profile_transcript` measures a source's primary language
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0253eef57358"
-down_revision = "066d3f4b4d4d"
+down_revision = "6cf03630d943"
 branch_labels = None
 depends_on = None
 

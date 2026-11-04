@@ -32,6 +32,7 @@ from app.services import chroma_service
 from app.services import document_cap_service
 from app.services import language_mix_service
 from app.services import graph_service, library_query_service, qa_scope_service, tag_service, visibility_service
+from app.services import usage_service
 from app.services.llm_service import get_llm_for
 from app.sources.pdf.connector import (
     SOURCE_ID_PREFIX as PDF_SOURCE_ID_PREFIX,
@@ -57,15 +58,16 @@ router = APIRouter(
     "/qa/clarify",
     response_model=LibraryClarifyResponse,
 )
-def clarify_library_question(request: LibraryClarifyRequest) -> LibraryClarifyResponse:
+def clarify_library_question(
+    request: LibraryClarifyRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> LibraryClarifyResponse:
     """Two-step clarify flow: ask the LLM to interpret + suggest clarifications.
 
     The clarify step doesn't depend on any job context, so we reuse the same
     prompt structure as the job Q&A clarify endpoint.
     """
-    # S-1.12.7: clarify returns a tiny JSON blob — cap runaway completions.
-    llm = get_llm_for("library_qa_clarification", temperature=0.3, max_tokens=400)
-
     prompt = (
         f'The user asked: "{request.question}"\n\n'
         "Please: 1) Write a 1-2 sentence interpretation of what they most likely want to know, "
@@ -75,7 +77,11 @@ def clarify_library_question(request: LibraryClarifyRequest) -> LibraryClarifyRe
         '{"interpretation": "...", "clarifications": ["q1", "q2", "q3"]}'
     )
 
-    response = llm.invoke(prompt)
+    # E-5.2: counted against the asker (feature library_qa).
+    with usage_service.metered(db, current_user.id):
+        # S-1.12.7: clarify returns a tiny JSON blob — cap runaway completions.
+        llm = get_llm_for("library_qa_clarification", temperature=0.3, max_tokens=400)
+        response = llm.invoke(prompt)
     content = (response.content or "").strip()
 
     # Strip markdown code fences if the model returns them anyway
@@ -741,7 +747,10 @@ async def upload_pdf(
         language_profile=language_profile,
         transcription_source="pdf",
     )
-    chroma_service.insert_chunks(chunks)
+    # E-5.2: embedding a non-English source renders it into English first
+    # (code_mixing_render_english), the uploader's usage (feature ingest).
+    with usage_service.metered(db, current_user.id):
+        chroma_service.insert_chunks(chunks)
     doc.embedded_in_chroma = True
     db.commit()
 
@@ -942,7 +951,10 @@ def _ingest_single_paste_url(url: str, db: Session, current_user) -> dict:
         language_profile=language_profile,
         transcription_source=extracted.text_source,
     )
-    chroma_service.insert_chunks(chunks)
+    # E-5.2: embedding a non-English source renders it into English first
+    # (code_mixing_render_english), the uploader's usage (feature ingest).
+    with usage_service.metered(db, current_user.id):
+        chroma_service.insert_chunks(chunks)
     doc.embedded_in_chroma = True
     db.commit()
 

@@ -36,7 +36,7 @@ from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
 from app.config import settings
-from app.services import llm_routing
+from app.services import llm_routing, usage_service
 from app.services.llm_routing import (
     ReasoningLevel,
     UseCase,
@@ -82,6 +82,11 @@ def byok_context(
     this context manager (D-041), so piggybacking here gives override
     coverage everywhere BYOK is already correct. Load failures degrade
     to defaults (never break the wrapped work).
+
+    E-5.2: it is also a usage-metering scope (``usage_service.metered``) for
+    the same tenant, for the same reason: every LLM call made inside is
+    counted against ``tenant_id``. An enclosing scope for that tenant is
+    joined, so a Celery task that meters its whole run counts once.
     """
     token = _byok_context.set((tenant_id, db))
     override_token = None
@@ -96,7 +101,8 @@ def byok_context(
                 tenant_id,
             )
     try:
-        yield
+        with usage_service.metered(db, tenant_id):
+            yield
     finally:
         if override_token is not None:
             llm_routing.user_override_context.reset(override_token)
@@ -661,9 +667,12 @@ def get_llm_for(
         )
 
     byok_api_key = _resolve_byok_api_key(cfg.provider, tenant_id, db)
-    return _build_from_config(
+    llm = _build_from_config(
         cfg, temperature, max_tokens, byok_api_key=byok_api_key
     )
+    # E-5.2: count this client's calls against the open metering scope (the
+    # tenant whose work this is), under the use case's feature.
+    return usage_service.attach(llm, use_case, tenant_id=tenant_id)
 
 
 # ---------------------------------------------------------------------------

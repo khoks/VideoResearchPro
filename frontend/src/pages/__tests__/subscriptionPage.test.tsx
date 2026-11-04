@@ -24,14 +24,26 @@ vi.mock('../../hooks/useMe', () => ({
 const put = vi.fn(async (_url: string, body: { tier: string }) => ({ data: { tier: body.tier, message: 'ok' } }));
 // T-5.2.10: `GET /auth/quota` feeds the library-usage line.
 const documentsUsage: { current: { consumed: number; limit: number } | null } = { current: null };
-const get = vi.fn(async (_url: string) => ({
-  data: {
-    tier: 'free',
-    resources: documentsUsage.current
-      ? [{ resource: 'documents', period_kind: 'lifetime', period_start: '', period_end: null, over_limit: false, ...documentsUsage.current }]
-      : [],
-  },
-}));
+// E-5.2: `GET /usage` feeds the usage table below the plans.
+const zero = { llm_tokens_in: 0, llm_tokens_out: 0, llm_calls: 0, youtube_units: 0 };
+const usage: { current: unknown } = { current: null };
+function emptyUsage() {
+  return {
+    today: '2026-11-03', window_start: '2026-10-05', window_days: 30, metered_since: null,
+    features: [], totals: { today: zero, last_30_days: zero },
+  };
+}
+const get = vi.fn(async (url: string) => {
+  if (url === '/usage') return { data: usage.current ?? emptyUsage() };
+  return {
+    data: {
+      tier: 'free',
+      resources: documentsUsage.current
+        ? [{ resource: 'documents', period_kind: 'lifetime', period_start: '', period_end: null, over_limit: false, ...documentsUsage.current }]
+        : [],
+    },
+  };
+});
 vi.mock('../../services/api', () => ({
   default: {
     put: (url: string, body: { tier: string }) => put(url, body),
@@ -96,6 +108,7 @@ beforeEach(() => {
   root = createRoot(host);
   me.current = account();
   documentsUsage.current = null;
+  usage.current = null;
   useJobStore.setState({ toasts: [] });
 });
 
@@ -195,5 +208,58 @@ describe('SubscriptionPage library usage (T-5.2.10)', () => {
   it('shows nothing when the quota does not report documents', async () => {
     await mount();
     expect(host.querySelector('[data-document-usage]')).toBeNull();
+  });
+});
+
+describe('SubscriptionPage usage (E-5.2)', () => {
+  it('lists the reader’s usage by feature, today and over 30 days, with a total', async () => {
+    usage.current = {
+      ...emptyUsage(),
+      metered_since: '2026-10-20',
+      features: [
+        {
+          feature: 'report', label: 'Reports',
+          today: zero,
+          last_30_days: { llm_tokens_in: 412_300, llm_tokens_out: 51_000, llm_calls: 37, youtube_units: 0 },
+        },
+        {
+          feature: 'search', label: 'Topic search',
+          today: { llm_tokens_in: 1_200, llm_tokens_out: 300, llm_calls: 2, youtube_units: 0 },
+          last_30_days: { llm_tokens_in: 1_200, llm_tokens_out: 300, llm_calls: 2, youtube_units: 0 },
+        },
+        {
+          feature: 'youtube_search', label: 'Searches (YouTube)',
+          today: { ...zero, youtube_units: 200 },
+          last_30_days: { ...zero, youtube_units: 200 },
+        },
+      ],
+      totals: {
+        today: { llm_tokens_in: 1_200, llm_tokens_out: 300, llm_calls: 2, youtube_units: 200 },
+        last_30_days: { llm_tokens_in: 413_500, llm_tokens_out: 51_300, llm_calls: 39, youtube_units: 200 },
+      },
+    };
+    await mount();
+    expect(get).toHaveBeenCalledWith('/usage');
+    const panel = host.querySelector('[data-usage-summary]')!;
+    expect(panel.textContent).toContain('none of it is limited');
+    const report = panel.querySelector('[data-usage-feature="report"]')!;
+    const cells = Array.from(report.querySelectorAll('td')).map((td) => td.textContent);
+    expect(report.querySelector('th')!.textContent).toBe('Reports');
+    expect(cells).toEqual(['—', '412.3K in · 51K out37 model calls']);
+    const search = panel.querySelector('[data-usage-feature="search"]')!;
+    expect(search.querySelectorAll('td')[0].textContent).toBe('1.2K in · 300 out2 model calls');
+    const ytSearch = panel.querySelector('[data-usage-feature="youtube_search"]')!;
+    expect(ytSearch.querySelector('th')!.textContent).toBe('Searches (YouTube)');
+    expect(ytSearch.querySelectorAll('td')[0].textContent).toBe('200 YouTube units');
+    expect(panel.querySelector('[data-usage-total]')!.textContent).toContain('413.5K in · 51.3K out');
+    expect(panel.querySelector('[data-usage-since]')!.textContent).toContain('Recording started on 2026-10-20');
+  });
+
+  it('says nothing is recorded yet instead of showing an empty table', async () => {
+    await mount();
+    const panel = host.querySelector('[data-usage-summary]')!;
+    expect(panel.querySelector('[data-usage-empty]')).not.toBeNull();
+    expect(panel.querySelector('table')).toBeNull();
+    expect(panel.querySelector('[data-usage-since]')).toBeNull();
   });
 });

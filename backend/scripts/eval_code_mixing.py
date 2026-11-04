@@ -138,9 +138,15 @@ def main() -> None:
         for grp in ("latin", "devanagari", "all"):
             s = report[name][grp]
             th, uh = s["token_hindi"], s["unit_contains_hindi"]
-            print(f"  {grp:10} units={s['units']:3}  token P={th['precision']:.3f} R={th['recall']:.3f} "
-                  f"F1={th['f1']:.3f}  unit P={uh['precision']:.3f} R={uh['recall']:.3f} "
-                  f"(fn={uh['fn']}, fp={uh['fp']})  share MAE={s['hindi_share_mae']:.3f}")
+            print(f"  {grp:10} units={s['units']:3}  called Hindi: token P={th['precision']:.3f} "
+                  f"R={th['recall']:.3f} F1={th['f1']:.3f}  unit P={uh['precision']:.3f} "
+                  f"R={uh['recall']:.3f} (fn={uh['fn']}, fp={uh['fp']})")
+            pr = s["production"]
+            tp, up = pr["token_non_english"], pr["unit_non_english"]
+            print(f"  {'':10}            production:   token P={tp['precision']:.3f} "
+                  f"R={tp['recall']:.3f} F1={tp['f1']:.3f}  unit P={up['precision']:.3f} "
+                  f"R={up['recall']:.3f} (fn={up['fn']}, fp={up['fp']})  "
+                  f"share MAE={pr['hindi_share_mae']:.3f}")
         if report[name]["missing_units"]:
             print("  missing:", report[name]["missing_units"])
     print("matrix, system-morpheme vote:", report["lexicon_matrix"])

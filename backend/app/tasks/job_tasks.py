@@ -15,6 +15,7 @@ from app.models.document import Document
 from app.services import (
     chroma_service,
     language_mix_service,
+    metadata_backfill_service,
     progress_service,
     temporal_service,
     usage_service,
@@ -777,13 +778,40 @@ def _ensure_era(db, video: Document, segments: list[dict], job_id: str) -> None:
     Runs BEFORE `_build_video_metadata` so the chunks about to be built carry
     the era. Fail-soft like `_with_visuals`: an era is enrichment on top of a
     working job, so nothing here may break one.
+
+    A document already embedded is re-chunked without being re-inserted, so
+    the chunks built here never reach Chroma. When this run is the one that
+    extracted its era, its stored chunks are stamped now (T-1.17.3.3) instead
+    of waiting for the next backfill.
     """
+    had_era = bool(getattr(video, "discussed_era_json", None))
     try:
         temporal_service.ensure_discussed_era(db, video, segments)
     except Exception:
         logger.exception(
             f"[job:{job_id}] Discussed-era extraction failed for "
             f"video_id={video.video_id}; continuing with era unknown"
+        )
+        return
+    if not had_era and getattr(video, "discussed_era_json", None):
+        _stamp_era_on_embedded_chunks(video, job_id)
+
+
+def _stamp_era_on_embedded_chunks(video: Document, job_id: str) -> None:
+    """Metadata-only update of an embedded document's chunks. Fail-soft: the
+    era is on the document, and the backfill script reaches the chunks later."""
+    if not getattr(video, "embedded_in_chroma", False):
+        return
+    try:
+        updated = metadata_backfill_service.stamp_chunk_temporal_fields(video)
+        logger.info(
+            f"[job:{job_id}] Era stamped on {updated} stored chunks of "
+            f"document_id={video.document_id}"
+        )
+    except Exception:
+        logger.exception(
+            f"[job:{job_id}] Could not stamp the era on the stored chunks of "
+            f"document_id={video.document_id}; the backfill script will"
         )
 
 

@@ -38,7 +38,9 @@ ORIGIN_CHUNKS = "chunks"
 
 # The fields a reader needs; the rest of the stored profile (window counts,
 # per-window modes, unresolved flicker) is diagnostic.
-PUBLIC_KEYS = ("primary_language", "native_script", "hi_share", "matrix_hi_share", "quote_mode")
+PUBLIC_KEYS = (
+    "primary_language", "native_script", "hi_share", "named_share", "matrix_hi_share", "quote_mode",
+)
 
 
 def compute(segments_or_text: Any) -> dict[str, Any]:

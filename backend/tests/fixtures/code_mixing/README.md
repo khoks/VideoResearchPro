@@ -12,6 +12,13 @@ timestamps were stripped.
 job, labelled the same way AFTER every parameter was frozen; the out-of-sample
 check in T-1.16.2.6. Never tune against it either.
 
+`foreign_latin_sample.json` — hand-written speech and prose for T-1.16.2.15, no
+labels, read by language and group. `tuning` (Spanish, French, German) may be
+used to set a parameter. `unseen` (Portuguese, Italian, Indonesian, Tagalog,
+Turkish) was written at the same time and sets nothing. `romanised_control` is
+Hindi in Latin letters that must stay Hindi: formal, verse, chat, and an English
+frame. It is not a held-out set: `test` and `heldout_units.json` still are.
+
 `llm_predictions.json` — the `code_mixing_detect` model's raw answers for every
 unit (`gpt-5.6-luna`, reasoning off), so the test suite scores the LLM detector
 without calling a provider. `scripts/eval_code_mixing.py --llm` regenerates it.

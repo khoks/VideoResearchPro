@@ -1,6 +1,6 @@
 """Metadata backfills that need no LLM and no re-embedding (T-1.16.1.7, S-1.17.3).
 
-Two passes over what the library already holds, each dry-run by default:
+Three passes over what the library already holds, each dry-run by default:
 
 * ``backfill_language_mix`` — ``documents.language_mix`` for documents
   profiled before the column existed, computed from their stored text
@@ -11,12 +11,18 @@ Two passes over what the library already holds, each dry-run by default:
   kept in step with the numeric publish fields. D-072 deferred this
   backfill because it read as a re-index; it is a metadata-only update, the
   same operation ``chroma_service.backfill_chunk_document_ids`` already
-  runs at startup.
+  runs at startup. ``stamp_chunk_temporal_fields`` is the same update for
+  one document, which a job runs when it extracts a reused document's era
+  for the first time (T-1.17.3.3).
+* ``backfill_chunk_language_fields`` — the document-level ``code_mix_*``
+  fields on chunks written before S-1.16.2, from the stored
+  ``documents.language_mix`` (T-1.16.2.14).
 
-Both are idempotent (a second run finds nothing to change) and resumable (an
+All are idempotent (a second run finds nothing to change) and resumable (an
 interrupted run is finished by running it again). The CLIs are
-``scripts/backfill_language_mix.py`` and
-``scripts/backfill_chunk_temporal_fields.py``; ``--write`` is the owner's step.
+``scripts/backfill_language_mix.py``,
+``scripts/backfill_chunk_temporal_fields.py`` and
+``scripts/backfill_chunk_language_fields.py``; ``--write`` is the owner's step.
 """
 from __future__ import annotations
 
@@ -30,7 +36,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.document import Document
-from app.services import language_mix_service, temporal_service
+from app.services import code_mixing_service, language_mix_service, temporal_service
 from app.utils.chunking import published_at_field, published_numeric_fields
 
 logger = logging.getLogger(__name__)
@@ -87,8 +93,6 @@ def backfill_language_mix(
     stopped. ``on_row(document, outcome, profile)`` is called per document,
     for the CLI's progress lines.
     """
-    from app.services import code_mixing_service
-
     report = LanguageMixReport(write=write)
     query = db.query(Document).filter(
         or_(Document.transcript_status == "fetched", Document.embedded_in_chroma.is_(True))
@@ -134,6 +138,112 @@ def backfill_language_mix(
             on_row(document, outcome, profile)
     logger.info("backfill_language_mix: %s", report.as_dict())
     return report
+
+
+# ---------------------------------------------------------------------------
+# Shared by the chunk passes: resolve a chunk to its document, diff, write
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _DocumentIndex:
+    """How a chunk finds its document: ``document_id`` metadata first, then
+    ``(source_type, source_id)`` and ``video_id`` for a chunk the startup
+    backfill has not stamped."""
+
+    known: set[str] = field(default_factory=set)
+    by_video: dict[str, str] = field(default_factory=dict)
+    by_source: dict[tuple[str, str], str] = field(default_factory=dict)
+
+    def add(self, document: Any) -> None:
+        self.known.add(document.document_id)
+        if document.video_id:
+            self.by_video[document.video_id] = document.document_id
+        if document.source_id:
+            self.by_source[(document.source_type or "video", document.source_id)] = (
+                document.document_id
+            )
+
+    def resolve(self, meta: dict[str, Any]) -> str:
+        document_id = meta.get("document_id") or self.by_source.get(
+            (str(meta.get("source_type") or "video"), str(meta.get("source_id") or ""))
+        ) or self.by_video.get(str(meta.get("video_id") or ""))
+        return str(document_id or "")
+
+
+def _scan_chunks(collection: Any, page_size: int, visit: Callable[[str, dict], None], name: str) -> str:
+    """Call ``visit(chunk_id, metadata)`` for every chunk, metadata only.
+
+    Returns "" or, when a page could not be read, why the pass stopped: a
+    partial scan writes nothing.
+    """
+    offset = 0
+    while True:
+        try:
+            page = collection.get(limit=page_size, offset=offset, include=["metadatas"])
+        except Exception as exc:  # noqa: BLE001 — a partial scan writes nothing
+            logger.exception("%s: scan failed at offset %d", name, offset)
+            return f"scan failed at chunk {offset} ({type(exc).__name__}); nothing written"
+        ids = page.get("ids") or []
+        if not ids:
+            return ""
+        metas = page.get("metadatas") or [None] * len(ids)
+        for chunk_id, meta in zip(ids, metas):
+            visit(chunk_id, meta or {})
+        offset += len(ids)
+        if len(ids) < page_size:
+            return ""
+
+
+def _diff_fields(
+    fields: dict[str, Any], meta: dict[str, Any]
+) -> tuple[dict[str, Any], list[str], list[str]]:
+    """What ``fields`` would change on a chunk: ``(diff, gained, changed)``."""
+    diff: dict[str, Any] = {}
+    gained: list[str] = []
+    changed: list[str] = []
+    for name, value in fields.items():
+        if _same(name, meta.get(name), value):
+            continue
+        diff[name] = value
+        (gained if _missing(meta.get(name)) else changed).append(name)
+    return diff, gained, changed
+
+
+def _write_pending(
+    collection: Any, pending: list[tuple[str, dict[str, Any]]], page_size: int, name: str
+) -> tuple[int, str]:
+    """Metadata-only updates: ``(chunks updated, why it stopped or "")``.
+
+    Each batch's metadata is re-read just before the update and sent whole
+    (stored metadata plus the new fields). Chroma 1.5 merges an ``update``'s
+    metadata into the stored one, so the explicit merge only matters on a
+    version that replaces; either way every other key (``document_id``,
+    ``code_mix_*``, ``text_en``, timestamps) survives. The embedding and the
+    stored text are not touched. The first failed batch stops the pass;
+    running it again resumes, because chunks already updated compare equal
+    and are skipped.
+    """
+    updated = 0
+    for start in range(0, len(pending), page_size):
+        batch = pending[start:start + page_size]
+        try:
+            current = collection.get(ids=[cid for cid, _ in batch], include=["metadatas"])
+            stored = dict(zip(current.get("ids") or [], current.get("metadatas") or []))
+            ids_out = [cid for cid, _ in batch if cid in stored]
+            metas_out = [
+                _merge_metadata(stored[cid], diff) for cid, diff in batch if cid in stored
+            ]
+            if ids_out:
+                collection.update(ids=ids_out, metadatas=metas_out)
+            updated += len(ids_out)
+        except Exception as exc:  # noqa: BLE001 — report and stop; a re-run resumes
+            logger.exception("%s: update failed for the batch at %d", name, start)
+            return updated, (
+                f"update failed at chunk {start} of {len(pending)} "
+                f"({type(exc).__name__}); run again to resume"
+            )
+    return updated, ""
 
 
 # ---------------------------------------------------------------------------
@@ -241,23 +351,13 @@ def backfill_chunk_temporal_fields(
     """Bring every chunk of a dated document up to its document's temporal fields.
 
     Pages through the global collection (metadata only), resolves each chunk
-    to its document — ``document_id`` metadata first, then ``(source_type,
-    source_id)`` and ``video_id`` for a chunk the startup backfill has not
-    stamped — and lists the fields that are missing or differ. Nothing is
-    ever removed: a field the document does not know is left as the chunk
+    to its document and lists the fields that are missing or differ. Nothing
+    is ever removed: a field the document does not know is left as the chunk
     has it. ``published_at`` is rewritten with ``published_ts`` /
     ``published_year`` whenever the document's date is known and the chunk's
     string names a different instant (or none), so the date the prompts show
-    and the one a range filter reads always agree.
-
-    With ``write``, each batch's metadata is re-read just before the update
-    and sent whole (stored metadata plus the new fields). Chroma 1.5 merges
-    an ``update``'s metadata into the stored one, so the explicit merge only
-    matters on a version that replaces; either way every other key
-    (``document_id``, ``code_mix_*``, ``text_en``, timestamps) survives. The
-    embedding and the stored text are not touched. The first failed batch
-    stops the pass; running it again resumes, because chunks already
-    updated compare equal and are skipped.
+    and the one a range filter reads always agree. With ``write`` the
+    differences go through ``_write_pending``.
     """
     report = TemporalReport(write=write)
     if collection is None:
@@ -270,15 +370,9 @@ def backfill_chunk_temporal_fields(
     if wanted:
         query = query.filter(Document.document_id.in_(wanted))
     targets: dict[str, dict[str, Any]] = {}
-    known: set[str] = set()
-    by_video: dict[str, str] = {}
-    by_source: dict[tuple[str, str], str] = {}
+    index = _DocumentIndex()
     for document in query.all():
-        known.add(document.document_id)
-        if document.video_id:
-            by_video[document.video_id] = document.document_id
-        if document.source_id:
-            by_source[(document.source_type or "video", document.source_id)] = document.document_id
+        index.add(document)
         fields = chunk_temporal_fields(document)
         if fields:
             targets[document.document_id] = fields
@@ -288,76 +382,226 @@ def backfill_chunk_temporal_fields(
         return report
 
     pending: list[tuple[str, dict[str, Any]]] = []
-    offset = 0
-    while True:
-        try:
-            page = collection.get(limit=page_size, offset=offset, include=["metadatas"])
-        except Exception as exc:  # noqa: BLE001 — a partial scan writes nothing
-            logger.exception("backfill_chunk_temporal_fields: scan failed at offset %d", offset)
-            report.stopped = (
-                f"scan failed at chunk {offset} ({type(exc).__name__}); nothing written"
-            )
-            report.chunks_to_update = len(pending)
-            return report
-        ids = page.get("ids") or []
-        if not ids:
-            break
-        metas = page.get("metadatas") or [None] * len(ids)
-        for chunk_id, meta in zip(ids, metas):
-            meta = meta or {}
-            report.chunks_scanned += 1
-            document_id = meta.get("document_id") or by_source.get(
-                (str(meta.get("source_type") or "video"), str(meta.get("source_id") or ""))
-            ) or by_video.get(str(meta.get("video_id") or ""))
-            document_id = str(document_id or "")
-            fields = targets.get(document_id)
-            if fields is None:
-                if document_id in known:
-                    report.chunks_undated += 1
-                else:
-                    report.chunks_unresolved += 1
-                continue
-            report.chunks_matched += 1
-            diff: dict[str, Any] = {}
-            for name, value in fields.items():
-                if _same(name, meta.get(name), value):
-                    continue
-                diff[name] = value
-                if _missing(meta.get(name)):
-                    report.gained[name] += 1
-                else:
-                    report.changed[name] += 1
-            if diff:
-                pending.append((chunk_id, diff))
+
+    def visit(chunk_id: str, meta: dict[str, Any]) -> None:
+        report.chunks_scanned += 1
+        document_id = index.resolve(meta)
+        fields = targets.get(document_id)
+        if fields is None:
+            if document_id in index.known:
+                report.chunks_undated += 1
             else:
-                report.chunks_already_current += 1
-        offset += len(ids)
-        if len(ids) < page_size:
-            break
+                report.chunks_unresolved += 1
+            return
+        report.chunks_matched += 1
+        diff, gained, changed = _diff_fields(fields, meta)
+        report.gained.update(gained)
+        report.changed.update(changed)
+        if diff:
+            pending.append((chunk_id, diff))
+        else:
+            report.chunks_already_current += 1
+
+    report.stopped = _scan_chunks(collection, page_size, visit, "backfill_chunk_temporal_fields")
     report.chunks_to_update = len(pending)
+    if report.stopped:
+        return report
 
     if write:
-        for start in range(0, len(pending), page_size):
-            batch = pending[start:start + page_size]
-            try:
-                current = collection.get(ids=[cid for cid, _ in batch], include=["metadatas"])
-                stored = dict(zip(current.get("ids") or [], current.get("metadatas") or []))
-                ids_out = [cid for cid, _ in batch if cid in stored]
-                metas_out = [
-                    _merge_metadata(stored[cid], diff) for cid, diff in batch if cid in stored
-                ]
-                if ids_out:
-                    collection.update(ids=ids_out, metadatas=metas_out)
-                report.chunks_updated += len(ids_out)
-            except Exception as exc:  # noqa: BLE001 — report and stop; a re-run resumes
-                logger.exception(
-                    "backfill_chunk_temporal_fields: update failed for the batch at %d", start
-                )
-                report.stopped = (
-                    f"update failed at chunk {start} of {len(pending)} "
-                    f"({type(exc).__name__}); run again to resume"
-                )
-                break
+        report.chunks_updated, report.stopped = _write_pending(
+            collection, pending, page_size, "backfill_chunk_temporal_fields"
+        )
 
     logger.info("backfill_chunk_temporal_fields: %s", report.as_dict())
+    return report
+
+
+def stamp_chunk_temporal_fields(document: Any, *, collection: Any = None, page_size: int = 1000) -> int:
+    """The same update for one document's chunks (T-1.17.3.3). Returns how many changed.
+
+    A job that reuses an embedded document re-chunks it without re-inserting,
+    so an era extracted on that run would otherwise reach the stored chunks
+    only at the next backfill. Reads the document's chunks by ``document_id``
+    (then ``video_id``, like ``chroma_service.get_document_chunks``) instead
+    of scanning the collection. Raises on a Chroma read error and logs a
+    failed write; the caller decides what that means for its job.
+    """
+    fields = chunk_temporal_fields(document)
+    if not fields:
+        return 0
+    if collection is None:
+        from app.services import chroma_service
+
+        collection = chroma_service.get_global_collection()
+    got = collection.get(where={"document_id": document.document_id}, include=["metadatas"])
+    video_id = getattr(document, "video_id", None)
+    if not (got.get("ids") or []) and video_id:
+        got = collection.get(where={"video_id": video_id}, include=["metadatas"])
+    ids = got.get("ids") or []
+    metas = got.get("metadatas") or [None] * len(ids)
+    pending = []
+    for chunk_id, meta in zip(ids, metas):
+        diff, _, _ = _diff_fields(fields, meta or {})
+        if diff:
+            pending.append((chunk_id, diff))
+    updated, _ = _write_pending(collection, pending, page_size, "stamp_chunk_temporal_fields")
+    return updated
+
+
+# ---------------------------------------------------------------------------
+# T-1.16.2.14: document-level code_mix_* on chunks written before S-1.16.2
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class LanguageFieldsReport:
+    write: bool
+    # Documents with a stored `language_mix`, and those it says are not plain
+    # English: only those have fields to stamp.
+    documents_profiled: int = 0
+    documents_code_mixed: int = 0
+    chunks_scanned: int = 0
+    chunks_matched: int = 0
+    # Chunks of a document profiled as plain English (nothing to add), of a
+    # document with no stored profile (run backfill_language_mix.py first),
+    # and of no document in scope.
+    chunks_plain_english: int = 0
+    chunks_unprofiled: int = 0
+    chunks_unresolved: int = 0
+    # Plain-English chunks still carrying `code_mix_*`: a refreshed profile
+    # no longer agrees with them. They stay until `clear_stale` removes them:
+    # no normal path re-chunks an embedded document, so they never self-heal.
+    chunks_stale: int = 0
+    chunks_cleared: int = 0
+    chunks_already_current: int = 0
+    chunks_to_update: int = 0
+    chunks_updated: int = 0
+    # Chunks of a code-mixed document with no English rendering. Their fields
+    # tell every prompt the source's language; their vectors stay those of
+    # the original text (D-084): rendering takes an LLM and a re-embed.
+    chunks_embedded_as_original: int = 0
+    gained: Counter = field(default_factory=Counter)
+    changed: Counter = field(default_factory=Counter)
+    stopped: str = ""
+
+    def as_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["gained"] = {f: self.gained.get(f, 0) for f in LANGUAGE_FIELDS}
+        data["changed"] = {f: self.changed.get(f, 0) for f in LANGUAGE_FIELDS}
+        return data
+
+
+# What `chunk_metadata_from_profile` writes. The per-chunk `code_mix_chunk_*`
+# fields are not document-level and are left to chunking.
+LANGUAGE_FIELDS = (
+    "code_mix_primary", "code_mix_script", "code_mix_share",
+    "code_mix_matrix_share", "code_mix_quote", "code_mix_named_share",
+)
+
+
+def chunk_language_fields(profile: dict[str, Any] | None) -> dict[str, Any]:
+    """The document-level fields a chunk carries for this stored profile.
+
+    ``chunk_metadata_from_profile``, the function chunking uses, so an old
+    chunk ends up with what a new one is written with. Empty for plain
+    English and for a missing profile. A blank value is left out: it would
+    compare as missing on every run.
+    """
+    fields = code_mixing_service.chunk_metadata_from_profile(profile)
+    return {name: value for name, value in fields.items() if value != ""}
+
+
+def backfill_chunk_language_fields(
+    db: Session,
+    *,
+    write: bool = False,
+    page_size: int = 1000,
+    document_ids: Iterable[str] | None = None,
+    collection: Any = None,
+    clear_stale: bool = False,
+) -> LanguageFieldsReport:
+    """Stamp each chunk of a code-mixed document from ``documents.language_mix``.
+
+    Metadata only, through ``_write_pending``: nothing is re-embedded and no
+    LLM runs, so a chunk written before D-084 keeps the vector of its
+    original text (``chunks_embedded_as_original`` counts them). A chunk
+    holding a different value is brought up to the stored profile, which is
+    how a refreshed profile reaches its chunks.
+
+    A document now profiled as plain English keeps what its chunks carry, and
+    ``chunks_stale`` reports it. No normal path re-chunks an embedded document,
+    so those fields never leave on their own. ``clear_stale`` removes every
+    ``code_mix_*`` key from such chunks, with ``write`` (Chroma drops a key
+    updated to None). ``text_en`` stays: it is what the chunk's vector was
+    embedded from.
+    """
+    report = LanguageFieldsReport(write=write)
+    if collection is None:
+        from app.services import chroma_service
+
+        collection = chroma_service.get_global_collection()
+
+    wanted = {d for d in (document_ids or []) if d}
+    query = db.query(Document)
+    if wanted:
+        query = query.filter(Document.document_id.in_(wanted))
+    index = _DocumentIndex()
+    profiled: set[str] = set()
+    targets: dict[str, dict[str, Any]] = {}
+    for document in query.all():
+        index.add(document)
+        profile = language_mix_service.load(document)
+        if profile is None:
+            continue
+        profiled.add(document.document_id)
+        fields = chunk_language_fields(profile)
+        if fields:
+            targets[document.document_id] = fields
+    report.documents_profiled = len(profiled)
+    report.documents_code_mixed = len(targets)
+
+    pending: list[tuple[str, dict[str, Any]]] = []
+    stale: list[tuple[str, dict[str, Any]]] = []
+
+    def visit(chunk_id: str, meta: dict[str, Any]) -> None:
+        report.chunks_scanned += 1
+        document_id = index.resolve(meta)
+        fields = targets.get(document_id)
+        if fields is None:
+            if document_id in profiled:
+                report.chunks_plain_english += 1
+                carried = {name: None for name in meta if name.startswith("code_mix_")}
+                if carried:
+                    stale.append((chunk_id, carried))
+            elif document_id in index.known:
+                report.chunks_unprofiled += 1
+            else:
+                report.chunks_unresolved += 1
+            return
+        report.chunks_matched += 1
+        report.chunks_embedded_as_original += 0 if meta.get("text_en") else 1
+        diff, gained, changed = _diff_fields(fields, meta)
+        report.gained.update(gained)
+        report.changed.update(changed)
+        if diff:
+            pending.append((chunk_id, diff))
+        else:
+            report.chunks_already_current += 1
+
+    report.stopped = _scan_chunks(collection, page_size, visit, "backfill_chunk_language_fields")
+    report.chunks_to_update = len(pending)
+    report.chunks_stale = len(stale)
+    if report.stopped:
+        return report
+
+    if write:
+        report.chunks_updated, report.stopped = _write_pending(
+            collection, pending, page_size, "backfill_chunk_language_fields"
+        )
+    if write and clear_stale and not report.stopped:
+        report.chunks_cleared, report.stopped = _write_pending(
+            collection, stale, page_size, "backfill_chunk_language_fields"
+        )
+
+    logger.info("backfill_chunk_language_fields: %s", report.as_dict())
     return report

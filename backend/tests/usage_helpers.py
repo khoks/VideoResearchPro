@@ -9,8 +9,11 @@ caller opened, and the write when the scope closes. A test that patched
 """
 from __future__ import annotations
 
+import itertools
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -139,6 +142,53 @@ class FakeRedis:
 
     def get(self, key):
         return self.counts.get(key)
+
+
+class _WhisperSegment(SimpleNamespace):
+    """A pydantic model in the SDK: read by attribute, and by ``model_dump``."""
+
+    def model_dump(self) -> dict:
+        return dict(vars(self))
+
+
+class FakeWhisperApi:
+    """The OpenAI client below ``_whisper_transcribe_with_retry``, so that
+    function, the meter behind it and every caller above it are production
+    code. ``seconds`` is what each response reports; ``sent`` counts responses.
+    ``before_send`` runs first and may raise, as a dying worker does."""
+
+    def __init__(self) -> None:
+        self.seconds = 60.0
+        self.sent = 0
+        self.before_send = None
+        self.client = MagicMock()
+        self.client.with_options.return_value = self.client
+        self.client.audio.transcriptions.create.side_effect = self._create
+
+    def _create(self, **kwargs):
+        if self.before_send is not None:
+            self.before_send(self)
+        self.sent += 1
+        segment = _WhisperSegment(text=f"spoken words {self.sent}", start=0.0, end=self.seconds)
+        return SimpleNamespace(language="en", duration=self.seconds, segments=[segment])
+
+
+@pytest.fixture
+def whisper_api(monkeypatch) -> FakeWhisperApi:
+    api = FakeWhisperApi()
+    monkeypatch.setattr("openai.OpenAI", lambda *a, **k: api.client)
+    return api
+
+
+@pytest.fixture
+def flush_always_due(monkeypatch):
+    """Every look at the clock is a long time after the last, so each
+    checkpoint writes. Only for code that writes from one thread at a time: the
+    suite's sessions share one connection (``StaticPool``)."""
+    from app.services import usage_service
+
+    ticks = itertools.count(0, 3600)
+    monkeypatch.setattr(usage_service, "_clock", lambda: next(ticks))
 
 
 @pytest.fixture

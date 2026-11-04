@@ -24,8 +24,9 @@ import type { LanguageMix } from '../types/video';
 export const SOLE_LANGUAGE_SHARE = 0.95;
 
 /** The least Hindi-grammar share that counts as a Hindi signal on a video
- * captioned `en`. English talks read 0 to 0.4% (names the lexicon has not
- * seen), measured on 219 cached transcripts on 2026-11-04. */
+ * captioned `en`. English talks read 0 to 0.4%, even ones full of Indian
+ * proper names (Krishna, Aamir Khan), measured on 219 cached transcripts on
+ * 2026-11-04. */
 export const HINDI_GRAMMAR_FLOOR = 0.05;
 
 /** Labels that name no language. */

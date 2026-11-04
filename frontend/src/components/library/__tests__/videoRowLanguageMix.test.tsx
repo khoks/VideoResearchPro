@@ -78,7 +78,7 @@ const KANNADA = mix({
   primary_language: 'other', native_script: 'Kannada', hi_share: 1, matrix_hi_share: 1,
   quote_mode: 'native_script', code_mixed: true,
 });
-// A real English talk from the library: 3% unseen names.
+// A real English talk from the library: 3% of its words are proper names.
 const ENGLISH_WITH_NAMES = mix({
   primary_language: 'en', native_script: 'Latin', hi_share: 0.0333, matrix_hi_share: 0.0037,
   quote_mode: 'plain_english', code_mixed: true,
@@ -167,7 +167,7 @@ describe('languageMixBadge names Hindi only where something supports it', () => 
     expect(languageMixBadge(ENGLISH_WITH_NAMES, 'hi', 'video')?.label).toBe('English + Hindi (romanised)');
   });
 
-  it('does not call unseen names in an English talk Hindi', () => {
+  it('does not call the proper names in an English talk Hindi', () => {
     expect(languageMixBadge(ENGLISH_WITH_NAMES, 'en-US', 'video')?.label).toBe('English + other words');
     expect(languageMixBadge(SPANISH_ESSAY, 'en', 'video')?.label).toBe('English + other words');
     const atFloor = mix({ ...ENGLISH_WITH_NAMES, matrix_hi_share: HINDI_GRAMMAR_FLOOR });

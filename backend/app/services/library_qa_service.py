@@ -117,7 +117,7 @@ def ask(
     """Run the library agent over a prepared scope. ``agent`` is for tests;
     by default it is ``app.agents.qa_agent.run_library_qa_agent``, imported
     here at call time so tests that patch it there see the call."""
-    from app.services import corpus_stats_service, llm_service, subscription_service
+    from app.services import corpus_stats_service, llm_service, subscription_service, usage_service
 
     if agent is None:
         from app.agents.qa_agent import run_library_qa_agent as agent  # noqa: N813
@@ -129,7 +129,10 @@ def ask(
     channel_weights = subscription_service.channel_weights(db, tenant_id)
     # T-5.6.4: BYOK context: Studio users' provider keys override the
     # install-wide keys for the duration of the call.
-    with llm_service.byok_context(tenant_id, db):
+    # E-5.2: metered as library Q&A by name, because the agent also calls the
+    # job-Q&A use cases (sub-query expansion, reference extraction). A caller
+    # that opened its own scope (a saved search's run) keeps its feature.
+    with usage_service.metered(db, tenant_id, feature="library_qa"), llm_service.byok_context(tenant_id, db):
         result = agent(
             question=question,
             answer_language=answer_language,

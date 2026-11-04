@@ -165,6 +165,46 @@ YouTube API quota status (today's usage, soft cap, hard cap, time-to-reset).
 
 ---
 
+## Usage
+
+### `GET /api/v1/usage`
+The signed-in user's own usage (E-5.2), by feature, today and over the last 30 days (UTC days, today included). Requires auth; only rows whose `tenant_id` is the caller's are read. Recorded, never limited ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): caps are still reported by `GET /auth/quota`. Features are the user-facing actions (`job_qa`, `library_qa`, `qa_history`, `report`, `search`, `knowledge`, `ingest`, `visual`, `suggestions`, `saved_search`, `echo_draft`, `echo_signals`, `echo_shares`, `author`); YouTube units are grouped by the kind of call (`youtube_search`, `video_metadata`, `channel_sync`): every `search.list` is a `youtube_search`, including the fallback that resolves a channel typed by name in channel jobs and subscription syncs, so `search` (Topic search) carries only the topic planner's and curator's model calls. Tokens spent on work that then fails or is rolled back are still recorded. Sorted by tokens over the window. `metered_since` is the first day anything was recorded for the caller. Tokens are what the provider reported; a local model that reports none shows calls only. UI: the Subscription page.
+
+```json
+{
+  "today": "2026-11-03",
+  "window_start": "2026-10-05",
+  "window_days": 30,
+  "metered_since": "2026-11-03",
+  "features": [
+    {
+      "feature": "report",
+      "label": "Reports",
+      "today":        { "llm_tokens_in": 412300, "llm_tokens_out": 51000, "llm_calls": 37, "youtube_units": 0 },
+      "last_30_days": { "llm_tokens_in": 412300, "llm_tokens_out": 51000, "llm_calls": 37, "youtube_units": 0 }
+    },
+    {
+      "feature": "search",
+      "label": "Topic search",
+      "today":        { "llm_tokens_in": 1200, "llm_tokens_out": 300, "llm_calls": 2, "youtube_units": 0 },
+      "last_30_days": { "llm_tokens_in": 1200, "llm_tokens_out": 300, "llm_calls": 2, "youtube_units": 0 }
+    },
+    {
+      "feature": "youtube_search",
+      "label": "Searches (YouTube)",
+      "today":        { "llm_tokens_in": 0, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 200 },
+      "last_30_days": { "llm_tokens_in": 0, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 200 }
+    }
+  ],
+  "totals": {
+    "today":        { "llm_tokens_in": 413500, "llm_tokens_out": 51300, "llm_calls": 39, "youtube_units": 200 },
+    "last_30_days": { "llm_tokens_in": 413500, "llm_tokens_out": 51300, "llm_calls": 39, "youtube_units": 200 }
+  }
+}
+```
+
+---
+
 ## AI model settings
 
 Per-user overrides of the per-use-case LLM registry (E-1.13, [D-054](decisions.md#d-054--per-user-llm-overrides--cost-calculator-gpt-56-adaptive-reasoning-findings-2026-07-29)) plus the measured guidance behind each default (S-1.14.7). All endpoints require auth; an override applies only to the caller and takes precedence over `LLM_USE_CASE_CONFIG` and the registry default. UI: `/account/ai-models`.

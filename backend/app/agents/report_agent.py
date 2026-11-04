@@ -1,3 +1,4 @@
+import contextvars
 import html as html_lib
 import json
 import logging
@@ -51,6 +52,20 @@ from app.utils import html_balance
 from app.utils.youtube_helpers import format_timestamp
 
 logger = logging.getLogger(__name__)
+
+
+def _map_in_context(pool: ThreadPoolExecutor, fn, items) -> list:
+    """``pool.map`` that runs each call in a copy of the CALLER's context.
+
+    A pool thread starts with an empty context, so the BYOK key, the user's
+    model overrides (``byok_context``) and the usage-metering scope (E-5.2)
+    set by the task never reached a concurrent map batch: those calls ran on
+    the install-wide key and default models and were counted against no one.
+    Results come back in input order; the first failure raises, as with
+    ``pool.map``."""
+    futures = [pool.submit(contextvars.copy_context().run, fn, item) for item in items]
+    return [f.result() for f in futures]
+
 
 # S-1.12.5 (context-rot guard): even when the resolved model's window would
 # hold more, batches above ~120K tokens degrade extraction recall over the
@@ -646,7 +661,7 @@ def map_chunks(state: ReportAgentState) -> dict:
         results = [_run_batch(i) for i in range(len(batches))]
     else:
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            results = list(pool.map(_run_batch, range(len(batches))))
+            results = _map_in_context(pool, _run_batch, range(len(batches)))
 
     # S-1.14.20: a packed batch can starve a source (the model writes a
     # roughly fixed number of items per call). Re-map each starved source on
@@ -685,7 +700,7 @@ def map_chunks(state: ReportAgentState) -> dict:
             remap_results = [_run_batch(i) for i in remap_ids]
         else:
             with ThreadPoolExecutor(max_workers=min(workers, len(remap_ids))) as pool:
-                remap_results = list(pool.map(_run_batch, remap_ids))
+                remap_results = _map_in_context(pool, _run_batch, remap_ids)
         drop = set(starved)
         for res in results:
             res["pairs"] = [(_without_sources(sm, drop, by_url, by_title) if sm is not None else None, rec)

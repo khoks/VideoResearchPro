@@ -45,6 +45,7 @@ from app.models.suggestion_cache import SuggestionCache
 from app.models.tag import Tag
 from app.models.tagging import Tagging
 from app.models.transcript_cache import TranscriptCache
+from app.models.usage_record import UsageRecord
 from app.models.user import User
 from app.models.user_llm_override import UserLLMOverride
 from app.models.user_credential import UserCredential
@@ -90,6 +91,7 @@ __all__ = [
     "QAExchange",
     "QAHistoryExchange",
     "QuotaUsage",
+    "UsageRecord",
     "ScheduledRun",
     "Session",
     "Share",

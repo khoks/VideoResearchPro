@@ -11,6 +11,7 @@ import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { DockedComposer, QADock, QAThread } from '../components/qa/Composer';
 import { InfoStripe, LibraryQAExchangeCard } from '../components/qa/LibraryQAExchangeCard';
 import { useExchangeFocus } from '../hooks/useExchangeFocus';
+import { ComposerDepthNote, DepthSelect } from '../components/common/DepthSelect';
 import {
   Button,
   Card,
@@ -31,6 +32,7 @@ import {
 } from '../theme';
 import type { AnswerLanguage, SourceScope } from '../types/qa';
 import { buildClarifyContext, CLARIFY_ANSWER_MAX_CHARS } from '../utils/clarifyContext';
+import { withDepth, type Depth } from '../utils/depth';
 
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
@@ -63,6 +65,9 @@ export function LibraryQAPage() {
 
   const [question, setQuestion] = useState('');
   const [language, setLanguage] = useState<AnswerLanguage>('en');
+  // R4: the next ask's depth, and that ask's only: it clears once the answer
+  // lands. Null sends none and the corpus size decides.
+  const [depth, setDepth] = useState<Depth | null>(null);
   const [step, setStep] = useState<'ask' | 'clarify'>('ask');
   const [interpretation, setInterpretation] = useState('');
   const [clarifications, setClarifications] = useState<string[]>([]);
@@ -84,6 +89,14 @@ export function LibraryQAPage() {
     setClarificationAnswers([]);
   };
 
+  // An answer landed. "Edit" uses resetToAsk alone: that is still the same
+  // ask, so it keeps the depth; a failed ask keeps it for the retry.
+  const finishAsk = () => {
+    setQuestion('');
+    setDepth(null);
+    resetToAsk();
+  };
+
   const handleAsk = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!question.trim() || !libraryQAAvailable) return;
@@ -99,16 +112,14 @@ export function LibraryQAPage() {
     // Kept under the server's 4,000-character bound, or the ask is a 422.
     const context = buildClarifyContext(interpretation, clarifications, clarificationAnswers);
 
-    await askQuestion.mutateAsync(scoped({ question, answer_language: language, context }));
-    setQuestion('');
-    resetToAsk();
+    await askQuestion.mutateAsync(withDepth(scoped({ question, answer_language: language, context }), depth));
+    finishAsk();
   };
 
   const handleSkipAndAsk = async () => {
     if (!libraryQAAvailable) return;
-    await askQuestion.mutateAsync(scoped({ question, answer_language: language }));
-    setQuestion('');
-    resetToAsk();
+    await askQuestion.mutateAsync(withDepth(scoped({ question, answer_language: language }), depth));
+    finishAsk();
   };
 
   // S-8.4.2: Shift-click on a suggestion asks at once (no clarify step).
@@ -117,12 +128,11 @@ export function LibraryQAPage() {
     setQuestion(q);
     try {
       const body = { question: q, answer_language: language };
-      await askQuestion.mutateAsync(about ? { ...body, document_id: about.id } : body);
+      await askQuestion.mutateAsync(withDepth(about ? { ...body, document_id: about.id } : body, depth));
     } catch {
       return; // the global mutation cache already toasted
     }
-    setQuestion('');
-    resetToAsk();
+    finishAsk();
   };
 
   // A suggestion picked in the knowledge drawer arrives as route state:
@@ -206,29 +216,52 @@ export function LibraryQAPage() {
           >
             New question
           </h2>
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: space['2'],
-              fontFamily: fonts.ui,
-              fontSize: fontSize.sm,
-              color: c.textSecondary,
-            }}
-          >
-            Answer language
-            <Select
-              value={language}
-              onChange={(e) => setLanguage(e.target.value as AnswerLanguage)}
-              style={{ width: 'auto', minWidth: 140 }}
+          <div style={{ display: 'flex', alignItems: 'center', gap: space['4'], flexWrap: 'wrap' }}>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: space['2'],
+                fontFamily: fonts.ui,
+                fontSize: fontSize.sm,
+                color: c.textSecondary,
+              }}
             >
-              {LANGUAGE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </Select>
-          </label>
+              Answer language
+              <Select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value as AnswerLanguage)}
+                style={{ width: 'auto', minWidth: 140 }}
+              >
+                {LANGUAGE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            {/* R4: a per-ask override beside the other per-ask option. */}
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: space['2'],
+                fontFamily: fonts.ui,
+                fontSize: fontSize.sm,
+                color: c.textSecondary,
+              }}
+            >
+              Answer depth
+              <DepthSelect
+                value={depth}
+                onChange={setDepth}
+                unsetLabel="Default"
+                aria-label="Answer depth"
+                title="Default: sized to how much of your library the question draws on."
+                disabled={askQuestion.isPending}
+              />
+            </label>
+          </div>
         </div>
 
         {source && (
@@ -255,6 +288,7 @@ export function LibraryQAPage() {
               </div>
             )}
             <DockedComposer>
+            <ComposerDepthNote depth={depth} onClear={() => setDepth(null)} />
             <form
               onSubmit={handleAsk}
               style={{

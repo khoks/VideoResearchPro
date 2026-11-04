@@ -33,6 +33,8 @@ class Event(str, Enum):
     PASSWORD_RESET_COMPLETED = "password_reset_completed"
     PASSWORD_RESET_INVALID_TOKEN = "password_reset_invalid_token"
     PASSWORD_CHANGED = "password_changed"
+    # T-5.4.14: a change refused for a wrong current password (or the lock).
+    PASSWORD_CHANGE_FAILED = "password_change_failed"
     # T-5.4.7 session management
     LOGOUT = "logout"
     SESSION_REVOKED = "session_revoked"
@@ -85,6 +87,7 @@ ACCOUNT_EVENTS: frozenset[Event] = frozenset(
         Event.PASSWORD_RESET_COMPLETED,
         Event.PASSWORD_RESET_INVALID_TOKEN,
         Event.PASSWORD_CHANGED,
+        Event.PASSWORD_CHANGE_FAILED,
         Event.LOGOUT,
         Event.SESSION_REVOKED,
         Event.SESSIONS_REVOKED_ALL,

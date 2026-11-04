@@ -127,10 +127,7 @@ def set_credential(
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "Keys cannot be saved: this install's BYOK_ENCRYPTION_KEY is set "
-                "but is not a valid key. Ask the operator to fix it."
-            ),
+            detail=byok_service.invalid_key_detail("Keys cannot be saved"),
         )
     return CredentialMetadata.model_validate(row)
 

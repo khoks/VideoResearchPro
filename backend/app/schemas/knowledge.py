@@ -28,5 +28,9 @@ class KnowledgeExtractResponse(BaseModel):
     channel_name: str | None = None
     url: str | None = None
     published_at: datetime | None = None
+    # S-1.15.3: the depth the stored report was written at (brief, standard
+    # or deep); None when no preference was expressed, and for every report
+    # written before the preference existed.
+    output_length: str | None = None
 
     model_config = {"from_attributes": True}

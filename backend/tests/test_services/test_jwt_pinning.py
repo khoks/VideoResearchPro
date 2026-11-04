@@ -54,10 +54,13 @@ def test_expired_token_is_rejected():
 
 def test_mfa_step_token_round_trips_and_is_not_an_access_token():
     token = mfa_service.issue_mfa_step_token("user-2")
-    assert mfa_service.decode_mfa_step_token(token) == "user-2"
+    ticket = mfa_service.decode_mfa_step_ticket(token)
+    assert ticket.user_id == "user-2"
+    assert ticket.jti, "the attempt count (T-5.4.13) is keyed on it"
+    assert mfa_service.decode_mfa_step_ticket(mfa_service.issue_mfa_step_token("user-2")).jti != ticket.jti
     # An ordinary access token must not pass as an MFA-step token.
     access, _ = auth_service.create_access_token("user-2")
-    assert mfa_service.decode_mfa_step_token(access) is None
+    assert mfa_service.decode_mfa_step_ticket(access) is None
 
 
 def test_the_mfa_step_ticket_is_not_an_access_token():

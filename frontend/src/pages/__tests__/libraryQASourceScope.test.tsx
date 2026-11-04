@@ -101,6 +101,15 @@ function type(value: string) {
   });
 }
 
+function pickDepth(value: string) {
+  const select = host.querySelector<HTMLSelectElement>('select[aria-label="Answer depth"]')!;
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!;
+  act(() => {
+    setter.call(select, value);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
+
 beforeEach(() => {
   history = [];
   cards.length = 0;
@@ -136,6 +145,24 @@ describe('library Q&A about one source', () => {
   it('Shift-click in the drawer asks at once, about that source', async () => {
     await mount({ pathname: '/library/qa', state: { question: 'Who is quoted?', ask: true, source: SOURCE } });
     expect(ask).toHaveBeenCalledWith({ question: 'Who is quoted?', answer_language: 'en', document_id: 'doc-rates' });
+  });
+
+  it('a depth picked for the ask goes with the source, on every path', async () => {
+    await mount({ pathname: '/library/qa', state: { question: 'What does it claim?', source: SOURCE } });
+    pickDepth('deep');
+    await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    await flush();
+    await act(async () => button('Skip clarifications')!.click());
+    await flush();
+    expect(ask).toHaveBeenLastCalledWith({
+      question: 'What does it claim?', answer_language: 'en', document_id: 'doc-rates', output_length: 'deep',
+    });
+
+    pickDepth('brief');
+    await act(async () => lastCard().onAsk!('Second?'));
+    expect(ask).toHaveBeenLastCalledWith({
+      question: 'Second?', answer_language: 'en', document_id: 'doc-rates', output_length: 'brief',
+    });
   });
 
   it('a suggestion on the page asks about the source too, until the reader clears it', async () => {

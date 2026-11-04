@@ -104,13 +104,6 @@ engine = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-@pytest.fixture(autouse=True)
-def _websocket_handshake_uses_the_test_database(monkeypatch):
-    """`/ws/jobs` opens its own session for the handshake's revocation check;
-    ``app.database``'s engine is the one the suite must never touch."""
-    monkeypatch.setattr("app.routers.ws._handshake_session", TestingSessionLocal)
-
-
 @pytest.fixture
 def db():
     Base.metadata.create_all(bind=engine)

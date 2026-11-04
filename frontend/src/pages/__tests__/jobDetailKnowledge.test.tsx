@@ -167,6 +167,11 @@ function knowledgeButtonFor(title: string): HTMLButtonElement | undefined {
 }
 
 const drawer = () => document.body.querySelector('[role="dialog"][aria-label^="Knowledge report for"]');
+const generateButton = () =>
+  Array.from(drawer()?.querySelectorAll('button') ?? []).find(
+    (b) => (b.textContent ?? '').trim() === 'Generate report',
+  ) as HTMLButtonElement | undefined;
+const depthSelect = () => drawer()?.querySelector<HTMLSelectElement>('select[aria-label="Report depth"]');
 const frames = () => document.body.querySelector('[data-testid="frames"]');
 
 beforeEach(() => {
@@ -200,10 +205,34 @@ describe('JobDetailPage: knowledge report per source', () => {
     expect(knowledgeIds).toContain('doc-thread-1');
     expect(extractIds).toContain('doc-thread-1');
     expect(knowledgeIds).not.toContain('row-thread');
-    // Nothing extracted yet: the drawer generates the report on open.
+    // Nothing extracted yet: the drawer offers the report (S-1.15.3) and
+    // spends nothing until asked; the run has no depth, so none is sent.
+    expect(mutate).not.toHaveBeenCalled();
+    act(() => generateButton()!.click());
     expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate).toHaveBeenCalledWith({ force: false, depth: null });
     // A thread has no video stream, so no frames panel.
     expect(frames()).toBeNull();
+  });
+
+  it("starts a source's report at the depth the run was asked for (S-1.15.3)", () => {
+    job = { ...JOB, output_length: 'deep' };
+    mount();
+    act(() => knowledgeButtonFor(THREAD.title)!.click());
+    const select = depthSelect()!;
+    expect(select.value).toBe('deep');
+
+    act(() => generateButton()!.click());
+    expect(mutate).toHaveBeenCalledWith({ force: false, depth: 'deep' });
+
+    // The reader can still pick another depth for this report.
+    mutate.mockReset();
+    act(() => {
+      select.value = 'brief';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    act(() => generateButton()!.click());
+    expect(mutate).toHaveBeenCalledWith({ force: false, depth: 'brief' });
   });
 
   it('opens it for a video row too, with the frames panel', () => {

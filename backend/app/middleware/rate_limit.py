@@ -26,7 +26,8 @@ Override knobs in ``settings``:
 - ``RATE_LIMIT_PER_MIN_FREE`` / ``_PRO`` / ``_STUDIO`` — per-user.
 - ``RATE_LIMIT_PER_MIN_UNAUTH`` — per-IP fallback for endpoints
   without an authenticated user.
-- ``RATE_LIMIT_LOGIN_PER_MIN`` — sensitive bucket for /auth/login.
+- ``RATE_LIMIT_LOGIN_PER_MIN`` — sensitive bucket for /auth/login, and
+  (its own bucket, same rate) for /auth/password/change.
 - ``RATE_LIMIT_RESET_PER_MIN`` — sensitive bucket for
   /auth/password-reset/{request,confirm}.
 - ``RATE_LIMIT_REGISTER_PER_MIN`` — sensitive bucket for /auth/register.
@@ -56,6 +57,11 @@ _SENSITIVE_PATHS: list[tuple[str, str, str]] = [
     ("/api/v1/auth/password-reset/request", "reset", "ip"),
     ("/api/v1/auth/password-reset/confirm", "reset", "ip"),
     ("/api/v1/auth/register", "register", "ip"),
+    # T-5.4.14: checks a password, so limited like sign-in (its own bucket at
+    # the sign-in rate, so changing a password never eats sign-in attempts).
+    # The route is authenticated, so the per-user bucket below applies too,
+    # and a wrong current password counts toward the account lockout.
+    ("/api/v1/auth/password/change", "password_change", "ip"),
 ]
 
 
@@ -112,7 +118,7 @@ def _match_sensitive(path: str) -> tuple[str, RateLimit] | None:
     endpoint, else ``None``."""
     for prefix, ns, _key_basis in _SENSITIVE_PATHS:
         if path == prefix or path.startswith(prefix + "/"):
-            if ns == "login":
+            if ns in ("login", "password_change"):
                 lim = RateLimit(
                     requests=settings.RATE_LIMIT_LOGIN_PER_MIN,
                     window_sec=60,

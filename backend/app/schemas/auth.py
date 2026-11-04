@@ -99,6 +99,28 @@ class PasswordResetConfirmResponse(BaseModel):
     message: str = "Password updated. You may now log in."
 
 
+# T-5.4.14 change the password while signed in
+class PasswordChangePayload(BaseModel):
+    # No length constraints here: ``routers/auth.change_password`` checks the
+    # new one against PASSWORD_MIN_CHARS..PASSWORD_MAX_CHARS, the rule a reset
+    # uses, so a bad one gets a 400 with a sentence the page can show (the
+    # ``detail`` of a 422 is a list). A 422 quotes nothing either way: the
+    # handler in ``app/main.py`` drops ``input``.
+    current_password: str
+    new_password: str
+
+
+# The new-password rule shared by register and reset (their Field bounds).
+PASSWORD_MIN_CHARS = 6
+PASSWORD_MAX_CHARS = 128
+
+
+class PasswordChangeResponse(BaseModel):
+    message: str = "Password changed. Your other sessions have been signed out."
+    # How many other sessions were signed out; this one stays signed in.
+    sessions_revoked: int = 0
+
+
 # E-5.4 audit log
 class AuditLogEntry(BaseModel):
     id: str

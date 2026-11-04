@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.services import llm_service
+from app.services.llm_routing import UseCaseConfig
 
 
 @pytest.fixture(autouse=True)
@@ -197,3 +198,24 @@ def test_build_google_gemini3_uses_thinking_level(
 def test_google_gemini3_off_matrix(model: str, expected_kwargs: dict) -> None:
     """reasoning='off' maps per the measured Gemini 3.x thinking matrix."""
     assert llm_service._google_reasoning_kwargs("off", model) == expected_kwargs
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "reasoning", "reserve"),
+    [
+        # The figure is the budget a legacy Claude model is actually sent.
+        ("anthropic", "claude-haiku-4-5", "minimal", 1_024),
+        ("anthropic", "claude-haiku-4-5", "medium", 4_096),
+        ("anthropic", "claude-haiku-4-5", "high", 16_384),
+        # Adaptive thinking and OpenAI publish no figure; the table stands in.
+        ("anthropic", "claude-sonnet-5", "medium", 4_096),
+        ("openai", "gpt-5.5", "low", 2_048),
+        # Nothing is spent: reasoning off, or a local server that is sent none.
+        ("anthropic", "claude-sonnet-5", "off", 0),
+        ("openai", "gpt-5.4-mini", "off", 0),
+        ("local", "qwen/qwen3-9b", "medium", 0),
+    ],
+)
+def test_thinking_reserve_tokens(provider: str, model: str, reasoning: str, reserve: int) -> None:
+    cfg = UseCaseConfig(provider, model, reasoning)
+    assert llm_service.thinking_reserve_tokens(cfg) == reserve

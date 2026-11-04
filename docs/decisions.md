@@ -1,6 +1,6 @@
 # Pratidhvani — Decision Log
 
-**Status:** living doc (last refreshed 2026-10-25). Owner: [`/knowledge-curator`](../.claude/skills/knowledge-curator/SKILL.md) skill.
+**Status:** living doc (last refreshed 2026-11-03). Owner: [`/knowledge-curator`](../.claude/skills/knowledge-curator/SKILL.md) skill.
 
 This is the chronological record of every product / engineering decision made on this project that is **not** trivially recoverable from `git log`. Use it to recall *why* a path was chosen and what alternatives were rejected, so future-you doesn't relitigate settled questions.
 
@@ -1180,6 +1180,8 @@ Path B has a security implication: it trusts that the OAuth provider has verifie
 - T-5.4.5b unlink endpoint when a real user request surfaces.
 
 **Linked initiatives / PRs.** I-5 / E-5.4 / T-5.4.5. PR [#166](https://github.com/khoks/VideoResearchPro/pull/166).
+
+**Status-changed 2026-10-29:** amended by [D-116](#d-116--oauth-links-or-creates-an-account-only-from-a-provider-verified-email-and-the-link-records-it-2026-10-29) (T-5.4.10, PR [#384](https://github.com/khoks/VideoResearchPro/pull/384)), which adopts option (B'). A first OAuth link or a new OAuth account now needs a provider-verified email (Google's `email_verified` claim; GitHub's primary address in `/user/emails` with `verified: true`, since the `/user` public email carries no verification we can check), and `oauth_identities.email_verified_at` records it. Path B stands for verified addresses.
 
 ---
 
@@ -3500,6 +3502,8 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 
 **Linked initiatives / PRs.** E-5.2 (T-5.2.6, T-5.2.8, T-5.2.9, T-5.2.10), E-5.3 (T-5.3.1), E-5.10; [D-045](#d-045--quota-metering-enforce-before-record-after-success-2026-05-05), [D-050](#d-050--self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15), [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-096](#d-096--r1-frames-reach-the-user-opt-in-per-run-lazy-stills-and-a-visual_extractions-quota-2026-10-19), [D-109](#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25).
 
+**Status-changed 2026-10-29:** the rulings stand; two consequences were carried further while building. The document caps are enforced as [D-115](#d-115--the-document-cap-counts-visible-documents-a-request-that-names-its-documents-is-all-or-nothing-and-nothing-is-granted-before-approval-2026-10-29) sets out (T-5.2.10, PR [#385](https://github.com/khoks/VideoResearchPro/pull/385)). The OAuth rule for listed addresses is replaced by [D-116](#d-116--oauth-links-or-creates-an-account-only-from-a-provider-verified-email-and-the-link-records-it-2026-10-29), which requires a provider-verified email for every first link or new account, and no longer counts GitHub's public email as verified (T-5.4.10, PR [#384](https://github.com/khoks/VideoResearchPro/pull/384)).
+
 ## D-112 — The remaining rulings of 2026-10-25: map batching, public sharing, the code-mixing threshold and the quick calls (2026-10-25)
 
 **Status:** accepted (the owner's decisions, 2026-10-25). One bullet per ruling. [D-109](#d-109--r1-is-parked-visual-analysis-stays-hidden-its-measurement-stops-the-code-stays-2026-10-25), [D-110](#d-110--echo-only-sees-what-the-user-hands-it-no-background-capture-and-the-echo-scope-rulings-2026-10-25) and [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25) carry the larger rulings of the same day.
@@ -3550,3 +3554,175 @@ For reference: run 9's outcome (1–0–2, 8.67 vs 8.67) passes the amended rule
 - OQ-7, OQ-9 and OQ-16 on the board are answered; D-080's question 3 stays open with its condition.
 
 **Linked initiatives / PRs.** E-1.14 (S-1.14.18, S-1.14.20: T-1.14.20.4), E-1.16 (T-1.16.2.3, T-1.16.2.7), E-1.17 (S-1.17.3, S-1.17.4), S-1.5.13, E-2.8, E-5.5 (T-5.5.6), E-5.6 (T-5.6.7), E-5.10 (T-5.10.2.5), E-6.1, E-6.2 (S-6.2.1, S-6.2.2), E-6.5, E-7.1 (T-7.1.1.6, T-7.1.2.2), E-7.2, E-8.1, E-8.2 (S-8.2.3), E-8.3 (S-8.3.2), E-8.6 (S-8.6.3), E-8.7, E-8.9 (S-8.9.3), E-8.11 (S-8.11.2), E-8.12 (S-8.12.3); [D-059](#d-059--selection-quotas-preferred-channel-guarantee--concentration-cap-2026-07-30), [D-068](#d-068--curated-source-ranking-v1-per-tenant-trust-weight-re-ranks-retrieval-perspective-banding-deferred-2026-10-18), [D-072](#d-072--two-dates-per-source-era-at-ingest-time-as-a-ranking-preference-qa-statistics-from-the-database-2026-10-19), [D-074](#d-074--notes-one-stream-per-document-soft-delete-only-lossless-w3c-json-ld-export-echo-feeder-reported-not-gated-2026-10-19), [D-076](#d-076--model-guidance-measured-means-the-use-cases-own-output-was-graded-verdicts-warn-never-block-2026-10-19), [D-079](#d-079--report-markdown-source-on-markdownify-new-report-routes-are-header-bearer-only-2026-10-19), [D-080](#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19), [D-082](#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19), [D-083](#d-083--organisation-features-access-and-scope-defaults-on-the-plans-open-questions-2026-10-19), [D-085](#d-085--reading-room-reports-stay-html-sanitised-and-parsed-in-the-browser-one-shared-citation-card-fed-by-the-runs-documents-2026-10-19), [D-087](#d-087--mobile-reading-and-install-a-reading-toolbar-below-1200-px-a-docked-composer-lifted-by-visualviewport-hermetic-device-tests-a-manifest-without-a-service-worker-2026-10-19), [D-088](#d-088--report-intermediates-persisted-per-run-on-by-default-frozen-at-the-stage-that-produced-them-2026-10-19), [D-092](#d-092--library-graph-computed-per-request-sigma-used-directly-as-a-lazy-chunk-three-group-colours-the-accessibility-layer-inside-the-story-2026-10-19), [D-094](#d-094--map-batching-packed-restored-by-run-7s-pre-registered-rule-starved-sources-re-mapped-alone-the-switch-to-source-is-the-users-call-2026-10-19), [D-107](#d-107--r1s-substance-rule-a-tie-passes-any-loss-fails-attribution-stays-zero-error-2026-10-25).
+
+## D-113 — Knowledge text for any source: the transcript cache, else the document's chunks put back together (2026-10-29)
+
+**Status:** accepted (2026-10-29). Made while building knowledge reports for non-video documents (PR [#383](https://github.com/khoks/VideoResearchPro/pull/383)) and its review fixes, not ruled by the owner.
+
+**Context.**
+- `POST /videos/{id}/extract-knowledge` read the text from `transcript_cache` by `video_id`. That column is NULL for every non-video source ([D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)), and PDFs, pasted pages and connector documents keep their text only as chunks in the global Chroma collection. So every one of them got a 422. It was found while shipping S-5.10.5 (PR [#378](https://github.com/khoks/VideoResearchPro/pull/378)), which made their artifacts exportable.
+- Neighbouring chunks overlap by `CHUNK_OVERLAP` tokens, and chunk ids do not sort in reading order (`:10` sorts before `:2`).
+- `insert_chunks` upserts and never deletes, so a re-ingest that produces fewer chunks leaves the earlier ingest's higher-index chunks in place.
+
+**Decision.**
+1. `document_text_service.full_text(db, document)`, keyed on `document_id`, is the one reader. It takes the `transcript_cache` row (by `document_id`, then the legacy `video_id`), otherwise the document's chunks from the global collection. The router returns 422 only when neither holds any text.
+2. Chunks are put back together:
+   - in numeric `chunk_index` order (the chunk-id suffix when a chunk has no index), each index read once;
+   - with the overlap removed: the longest run of words that ends one chunk and starts the next is dropped, capped at `max(4 × CHUNK_OVERLAP, 64)` words, and the rest of the chunk is kept exactly as stored;
+   - one paragraph per chunk, so the knowledge splitter gets sentence-aligned boundaries;
+   - after dropping chunks left by an earlier, longer ingest. Every ingest rewrites chunk 0, so its `total_chunks` is the current count; a chunk at or past that index, or carrying a different count, is dropped and logged. When chunk 0 has no count, every chunk is kept.
+3. The Chroma read is fail-soft: an error reads as no chunks, so the request gets a 422, not a 500.
+4. The knowledge prompts name the source by its type through `knowledge_prompts.SOURCE_PROFILES` (a PDF is "the text of a PDF document", with `Document:` / `Author:`). A video's prompts stay byte-identical, so measured video behaviour cannot move. Every profile keeps the English-output rule, the three quote forms, the temporal note, the code-mixing note and the visual contract.
+
+**Alternatives considered.**
+- *Write a `transcript_cache` (or `text_cache`) row from every ingest path.* A schema-wide change across five paths, and generalising the cache into `text_cache` is its own story.
+- *Re-extract a PDF from its stored bytes (`PDF_UPLOAD_DIR`).* It covers PDFs only and puts PyMuPDF on this path. Chunks are the one store every source type has, and putting them back together returns the original text up to whitespace.
+- *Hand the chunks to the agent as stored.* The overlap repeats the sentences at every boundary, and id order scrambles any document of ten or more chunks.
+
+**Consequences.**
+- Every library row whose text has been read has a Knowledge button, whatever its source type, and the job page opens the drawer by `document_id`.
+- Since PR [#382](https://github.com/khoks/VideoResearchPro/pull/382) ([D-114](#d-114--which-sources-a-topic-run-searches-settings-decide-one-budget-for-the-run-no-whisper-before-approval-2026-10-29), point 7), a document fetched by a topic run's search has a `transcript_cache` row keyed on `document_id`, so its text is read from the cache. Uploaded PDFs and pasted pages are still read from their chunks.
+- The token budgets (`KNOWLEDGE_MAX_TRANSCRIPT_TOKENS` and the 500K ceiling) are unchanged.
+- A video with no cache row falls back to its chunks, which may carry `[VISUAL @ ...]` spans; the extract prompt's visual contract covers them ([D-067](#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31)).
+- A length preference for knowledge reports stays S-1.15.3.
+
+**Linked initiatives / PRs.** E-1.8 (follow-up: knowledge reports for non-video documents), S-5.10.5, S-1.15.3; PR [#383](https://github.com/khoks/VideoResearchPro/pull/383); [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-066](#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31), [D-067](#d-067--visual-understanding-separate-frames-table-marker-in-text-annotation-opt-in-per-job-2026-07-31), [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19).
+
+## D-114 — Which sources a topic run searches: settings decide, one budget for the run, no Whisper before approval (2026-10-29)
+
+**Status:** accepted (2026-10-29). Made while building S-1.5.13 (PR [#382](https://github.com/khoks/VideoResearchPro/pull/382)) and its review fixes, not ruled by the owner; the owner's go-ahead for the story is [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25). Point 4 was amended the same day by [D-115](#d-115--the-document-cap-counts-visible-documents-a-request-that-names-its-documents-is-all-or-nothing-and-nothing-is-granted-before-approval-2026-10-29): no candidate of any source type is granted before approval.
+
+**Context.**
+- `JobCreate` had no `source_types` field and nothing wrote `jobs.source_types_json`, so every topic run searched YouTube only, and the dispatch through `connector_dispatch` shipped in S-1.5.11 could not be reached from the API (the S-8.6.1 finding, [D-082](#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19)).
+- Wiring it up raised questions the connectors had left open: what a run that asks for an unconfigured source gets, how the tier cap applies to several sources, and when podcast audio may go to Whisper.
+
+**Decision.**
+1. **Settings decide which sources a run may search, and a source this install has not set up is refused with a 422 that names the missing setting.** `app/services/job_source_types.py` is the one place that knows. The searchable types are listed in code (`SEARCHABLE_SOURCE_TYPES`) and never read from the connector registry, because tests swap connectors in and out of it. Reddit needs `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET`, web articles `BRAVE_SEARCH_API_KEY`, and X / Twitter `TWITTER_BEARER_TOKEN` ([D-009](#d-009--twitter--x-is-byok--opt-in-2026-04-25)). Unknown types, library-only types (`pdf`, `fb_post`, `ig_post`, `li_post`), an empty list and non-YouTube types on channel and subscription runs are refused too. The same check drives the `/health` flags (`reddit_search_enabled` is new) and the submit form.
+2. **The YouTube-only default is stored as NULL, and a list is stored in canonical order.** This follows the `output_length` "auto → NULL" pattern. Responses always return the resolved list (`["video"]` by default).
+3. **Template versions are compared as parsed parameters, not as stored JSON text,** so adding an optional field never creates a new version on an identical save. A template stores `source_types` normalised the way `JobCreate` normalises it.
+4. **Dispatched non-video documents are granted visibility at search time**, to match the video branch. *Amended by D-115 point 5: the premise was wrong (video candidates were never granted at search time), and the grant let a mixed run past the document cap. Nothing is granted before approval.*
+5. **`num_videos` is the whole run's budget, shared across its sources.** `job_source_types.share_limits` splits it as evenly as possible, with the remainder going to the earlier types in canonical order. The search agent gets YouTube's share, and each dispatched type is cut to its share even when its connector returns more. Asking for fewer results than sources is a 422. The tier cap therefore bounds the whole run.
+6. **No Whisper before approval, for any source.** The search phase reads only text a source already publishes: connectors are called with `allow_whisper=False`, and an episode without an in-feed transcript is stored as `pending`. Whisper runs at extraction under `WHISPER_MAX_PER_JOB`, which now counts podcast episodes as well as YouTube videos.
+7. **A dispatched document's search-time text is cached in `transcript_cache` keyed on `document_id`** (`video_id` NULL, [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19)) and reused at extraction, so each approved document is fetched, and for social sources classified, once. The extraction query joins approvals on `document_id`; the join on `video_id` had dropped every approved non-video document.
+
+**Alternatives considered.**
+- *Let an unconfigured source return zero candidates,* as the connector docstrings assumed. The run would look like a search that found nothing, and the user could not tell a missing key from an empty topic.
+- *Read the searchable types from the connector registry.* Tests replace registry entries, so the API's answer would depend on test order.
+- *Store the default as `["video"]`.* Existing jobs and templates would differ from new ones that mean the same thing.
+- *Apply `num_videos` to each source.* A three-source run would get three times the tier cap.
+- *Whisper at search time, as the podcast connector did.* It pays for episodes the user may reject at approval, outside the per-job budget ([D-033](#d-033--whisper-as-service-for-podcasts-reuse-existing-openai-whisper-path-resolves-oq-4-2026-05-03)).
+
+**Consequences.**
+- The multi-source dispatch shipped in S-1.5.11 is reachable from the API, the submit form, Duplicate and templates. X / Twitter is offered only when `/health` reports `twitter_search_enabled`, which closes T-1.5.9.3.
+- A duplicated run or a template that names a source the install no longer has shows it struck through, and it must be removed before submitting; a saved template lists it as a problem.
+- The non-video dispatch and the extraction-phase fetch run inside the submitter's BYOK context ([D-041](#d-041--contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05)).
+- Mastodon and Bluesky are always offered: their base URLs have defaults, and a blank one is not treated as "not set up".
+- No connector was checked live; they are faked in the tests.
+- Follow-ups: S-8.6.3 and S-8.6.4 are unblocked; the job detail page does not show a run's sources yet; a per-job Whisper control (S-1.11.7) would now cover podcasts too; the Twitter reply fetch (T-1.5.10.3) is connector work.
+
+**Linked initiatives / PRs.** E-1.5 (S-1.5.9, S-1.5.11, S-1.5.13), E-1.7, E-8.6 (S-8.6.1, S-8.6.3, S-8.6.4), S-1.11.7; PR [#382](https://github.com/khoks/VideoResearchPro/pull/382); [D-009](#d-009--twitter--x-is-byok--opt-in-2026-04-25), [D-020](#d-020--file-orchestrator-dispatch-as-standalone-story-s-1511-2026-04-26), [D-033](#d-033--whisper-as-service-for-podcasts-reuse-existing-openai-whisper-path-resolves-oq-4-2026-05-03), [D-041](#d-041--contextvar-plumbing-vs-explicit-kwargs-for-cross-cutting-per-user-state-2026-05-05), [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19), [D-082](#d-082--job-templates-identity-plus-immutable-versions-provenance-without-a-foreign-key-starters-in-a-self-contained-data-migration-2026-10-19), [D-112](#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25), [D-115](#d-115--the-document-cap-counts-visible-documents-a-request-that-names-its-documents-is-all-or-nothing-and-nothing-is-granted-before-approval-2026-10-29).
+
+## D-115 — The document cap counts visible documents; a request that names its documents is all or nothing, and nothing is granted before approval (2026-10-29)
+
+**Status:** accepted (2026-10-29). Made while building T-5.2.10 (PR [#385](https://github.com/khoks/VideoResearchPro/pull/385)) and its review fixes, not ruled by the owner. The ruling it carries out is [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25): the caps stay advertised and a later E-5.2 item enforces them. Point 5 amends [D-114](#d-114--which-sources-a-topic-run-searches-settings-decide-one-budget-for-the-run-no-whisper-before-approval-2026-10-29) point 4.
+
+**Context.**
+- `document_count_cap` (Free 500, Pro 5,000, Studio unlimited) was advertised on the pricing page and checked nowhere.
+- `documents` is a shared, deduplicated cache ([D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31)): one row can be visible to many tenants, and a tenant can see documents someone else caused to be created. What a cap counts is not obvious.
+- Documents reach a tenant's library through job approval, PDF upload, pasted URLs, channel subscribe and sync, and subscription jobs. A sync cannot know in advance how many uploads it will add.
+- The resume task that granted an approval's documents can wait hours behind other work on a solo worker.
+
+**Decision.**
+1. **The cap counts the tenant's visible documents** (their `document_visibility` rows), not the documents they created and not a metering counter. A dedup hit on a document the tenant already sees never counts. A cached document that only another tenant sees counts as new. `GET /auth/quota` reads `documents` usage from visibility.
+2. **A request that names what it adds is all or nothing.** An approval counts only the approved documents the tenant cannot see yet; a paste batch counts each distinct, not-yet-visible URL once, before any page is fetched; an upload is checked before its bytes are written. If it does not fit, nothing changes (no approval flag, no task, no file, no fetch) and the refusal says how much room is left, so the user chooses what to drop.
+3. **A sync names nothing in advance, so it is refused only when the library is already full.** Otherwise it stops at the cap: uploads the tenant already sees always pass, new ones are taken newest first, and the job's note says how many were left out. It fails with that note if nothing could be linked. The cap lives in `execute_subscription_job`, so any future scheduled sync behaves the same.
+4. **Refusals are HTTP 429** in the `QuotaExceededError` shape every quota uses ([D-045](#d-045--quota-metering-enforce-before-record-after-success-2026-05-05)), with `resource: documents` plus `requested`, `available` and a `message` shown as is.
+5. **Visibility is granted for approved links only, when a document is admitted.** An approval grants its approved set in the request; a sync grants each channel's admitted uploads as it links them, and a redelivered sync grants its earlier links before it reads the budget; the search phase grants nothing, for any source type. Deselected candidates are never granted. This amends D-114 point 4, whose search-time grant covered every candidate of a mixed run, video ones included, and so let any approval of such a run past the cap check.
+6. **There is no backstop in `visibility_service.grant`.** A refusal there would come after the work is done and would hide finished work.
+
+**Alternatives considered.**
+- *Count the documents a tenant created, or a metering counter.* Dedup makes "created" depend on who ingested first, and a counter drifts from what the tenant can actually see.
+- *Admit as much of a request as fits.* The server would choose which documents to drop; the user knows which ones matter.
+- *Cap topic and channel job creation.* Their new documents are checked at approval, and refusing at creation would block runs made entirely of documents the tenant already has. The cost is that a full library still pays for the search step.
+- *Grant in the resume task, as before.* The cap counts grants, so documents admitted but not yet granted would be invisible to the next check, and a second approval, paste or upload could pass the cap while the first resume waited.
+- *A per-tenant lock.* Two requests in the same instant can still each pass the check; with every admission granted at once, sequential use cannot. Not worth a lock today.
+
+**Consequences.**
+- A refusal is shown where the action starts: above the approve button (the selection is kept), on the upload row, in the paste alert, under the subscribe and sync buttons, and in the Submit page's form. The global error toast shows the server's message and stays quiet for document-cap refusals. The Subscription page shows a usage line.
+- A tenant over the cap after a downgrade keeps everything and can re-use it, but cannot add new documents.
+- There is no way to free room, because there is no "remove from my library" feature; only a plan change raises a full library (T-5.2.11, proposed).
+- Grants written before this change for deselected candidates are not revoked. An approved run cancelled before its resume keeps its grants. The paste check counts entries whose extraction may still fail, so it errs towards refusing.
+
+**Linked initiatives / PRs.** E-5.2 (T-5.2.10, T-5.2.11), E-5.10, S-1.5.13; PR [#385](https://github.com/khoks/VideoResearchPro/pull/385); [D-045](#d-045--quota-metering-enforce-before-record-after-success-2026-05-05), [D-063](#d-063--per-user-isolation-shared-cache-private-catalogue-2026-07-31), [D-070](#d-070--document-visibility-keyed-on-document_id-not-the-legacy-video_id-2026-10-19), [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25), [D-114](#d-114--which-sources-a-topic-run-searches-settings-decide-one-budget-for-the-run-no-whisper-before-approval-2026-10-29).
+
+## D-116 — OAuth links or creates an account only from a provider-verified email, and the link records it (2026-10-29)
+
+**Status:** accepted (2026-10-29). Made while building T-5.4.10 (PR [#384](https://github.com/khoks/VideoResearchPro/pull/384)) and its review fixes, not ruled by the owner. It amends [D-042](#d-042--oauth-first-login-links-to-existing-user-by-email-2026-05-05) by adopting its option (B'), and replaces the narrower OAuth check in [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)'s consequences, which covered only `ADMIN_EMAILS` addresses and counted GitHub's public email as verified.
+
+**Context.**
+- D-042 links a first OAuth sign-in to an existing account by email, trusting both providers to verify the address by construction. Its re-evaluation hook said to add an `email_verified` check for any provider that did not.
+- T-5.2.8 (PR [#377](https://github.com/khoks/VideoResearchPro/pull/377)) added that check only for addresses in `ADMIN_EMAILS`. Any other existing account could be reached by an OAuth identity that reported the same address unverified.
+- GitHub's `/user` email was counted as verified on the understanding that GitHub only lets a verified address be public. `GET /user/emails` reports verification directly, so there is no need to assume it.
+
+**Decision.**
+1. **A first OAuth link, or a new OAuth account, needs a provider-verified email**; otherwise the sign-in is refused and nothing is linked or created. Google: the OIDC `email_verified` claim, with a missing claim counting as unverified. GitHub: the primary address in `GET /user/emails` with `verified: true`. The `/user` public email is never trusted, and there is no fallback to a verified address that is not the primary.
+2. **The refusal is a 403 with a plain message**, not [D-040](#d-040--failed-logins-for-unknown-emails-do-not-create-user-rows-lock-arbitrary-account-defence-2026-05-04)'s generic 401. It is a policy refusal after the provider has authenticated the user, and the user needs to know what to do next. It is audited as `login_failure` with `reason: oauth_email_unverified`. Every other callback failure is still the generic 401.
+3. **The check runs before any account lookup, and the message is the same whether or not an account has the address,** so the refusal cannot be used to find out which addresses are registered.
+4. **A failed `/user/emails` lookup is unknown, not unverified.** An outage, a rate limit, a timeout or an answer with no primary address gives a first sign-in the generic, retryable 401 (audited `oauth_failure`). A returning user, matched by provider id, is unaffected, including when the lookup fails.
+5. **The link records the verification** in a new nullable column, `oauth_identities.email_verified_at`, set when an identity is linked (migration `066d3f4b4d4d`). NULL marks identities linked before T-5.4.10.
+6. `user:email` has been in the GitHub scope since T-5.4.5, so existing GitHub sign-ins need no fresh consent; a test pins the scope.
+
+**Alternatives considered.**
+- *Keep the check for `ADMIN_EMAILS` addresses only.* Every other existing account stays reachable from an unverified address.
+- *Keep trusting GitHub's public `/user` email.* Nothing in that response says the address was verified, and `/user/emails` does.
+- *Treat a failed lookup as unverified (403).* An outage would tell users whose address may well be verified to go and verify it, and would fill the audit log with policy refusals.
+- *A confirmation-email round trip before linking (D-042's option C).* An extra step on a one-click flow; still out of scope.
+- *Re-check or revoke identities linked before this change.* There is no record of whether they were verified, and revoking could lock out real users.
+
+**Consequences.**
+- No frontend change: the app has no OAuth sign-in UI yet, so the 403 message is for whichever client shows it. `docs/api-reference.md` documents the three OAuth endpoints.
+- Identities linked before T-5.4.10 still sign in. An operator who is worried can look for rows with `email_verified_at` NULL, or for `login_success` events with `via: oauth` on accounts first registered with a password.
+- **Open risk, the verified direction:** `POST /auth/register` verifies no email. Someone can register a password account with another person's address before that person uses the app. When the real owner later signs in with a verified Google or GitHub address, the identity links to that account and the registrant keeps the password. Two remedies were named, and choosing needs the owner: OAuth never links automatically to an existing password account; or, when it links, the account's password is cleared and its sessions are revoked (the reset flow, which proves the address, sets a new one; this ends password sign-in for people who registered honestly and then add Google). Filed as T-5.4.11. **Deferred by the owner on 2026-11-03** with email verification as a whole ("keep email verification for later"); the risk stays open until then.
+- The live database needs migration `066d3f4b4d4d`, which `schema_init` applies at startup. Applied on 2026-11-03, when the owner's services were restarted on master.
+
+**Linked initiatives / PRs.** E-5.4 (T-5.4.5, T-5.4.10, T-5.4.11), E-5.2 (T-5.2.8); PR [#384](https://github.com/khoks/VideoResearchPro/pull/384); [D-040](#d-040--failed-logins-for-unknown-emails-do-not-create-user-rows-lock-arbitrary-account-defence-2026-05-04), [D-042](#d-042--oauth-first-login-links-to-existing-user-by-email-2026-05-05), [D-111](#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25).
+
+## D-117 — The caption track is the one in the spoken language; auto-dubs are read from the player's audio tracks (2026-10-29)
+
+**Status:** accepted (2026-10-29). Made while building S-1.11.11 (PR [#386](https://github.com/khoks/VideoResearchPro/pull/386)), not ruled by the owner: first drafted 2026-10-25 and revised in review on 2026-10-29 with the three-signal order below. It departs from the brief's literal order (see the first alternative), which the owner may want to confirm (OQ-18 on the board, under S-1.11.11).
+
+**Context.**
+- `_fetch_transcript_once` tried `en` / `en-auto` and then took the first listed track. YouTube auto-dubs videos into other languages, and each dub's caption track is listed beside the original's. The S-1.16.2 held-out evaluation found 2 of 13 Hindi-speech videos ingested as machine-dubbed tracks: `1v3_AQ26jZ0`, a Hindi lecture, was in the library as a Bengali dub. An English dub is undetectable downstream, so every quote from it is words the speaker never said.
+- Measured before fixing ([note](notes/2026-10-25-caption-track-choice.md)), on 37 Hindi, Hinglish and Kannada library videos, for 1 quota unit:
+  - Dubs show up only in the player response that `youtube-transcript-api` already fetches and then discards. The original audio track is `<lang>.4`, each dub is `<lang>.10`, and a dub's caption track carries exactly the dub's code.
+  - `v6CuYULP3tM`, one of the two known dubs, declares no `defaultAudioLanguage`. Only its `hi.4` audio track says the speech is Hindi.
+  - `IcVYyF3EEbk` has a real `en` track beside an `en-US` dub, so a dub has to be matched on its exact code.
+  - The old and new rules disagree on 7 of the 35 videos that could be listed: 5 auto-dubs, 1 creator's English translation of Hindi speech, and 1 manual track preferred over an automatic one.
+
+**Decision.**
+1. **The spoken language is the first of three signals that some non-dub track is in:**
+   1. `snippet.defaultAudioLanguage`, looked up lazily (1 unit, `videos.list`): at most once per fetch, and only when the non-dub tracks span more than one language;
+   2. the player's original audio track (`<lang>.4`, or the default track when there is no `.4`);
+   3. on a single-audio video, the language of its automatic (ASR) track.
+
+   A signal with no track in its language is passed over, not taken as the answer. `snippet.defaultLanguage` is never a speech signal.
+2. **An auto-dub is an automatic track whose code exactly equals a non-original audio track's code,** and it is dropped.
+3. **Within the spoken language, a manual track beats an automatic one.** The old English-first fallback applies only when all three signals come up empty.
+4. **A list of nothing but dubs is refused, never ingested.** The fetch is not retried and goes to Whisper, or the video is recorded unavailable when the Whisper budget is spent.
+5. The chosen track is recorded on `documents.source_metadata_json["caption_track"]`: its language, manual or automatic, why it was chosen, the declared audio language and the dubs skipped. No migration.
+6. **Accepted risk:** dub detection reads two `youtube-transcript-api` internals (`_fetcher._fetch_captions_json`, `_fetcher._http_client`). A test pins them, and if they move the code falls back to the public `list()` without dub detection.
+
+**Alternatives considered.**
+- *The brief's literal order: take `defaultAudioLanguage` from the Data API for every video.* It misses `v6CuYULP3tM`, which declares nothing; it fails when the quota is spent; and it costs a unit for every video, where the measured sample needed one for 2 of 35.
+- *Recognise a dub by its language rather than its exact code.* Treating an `en-US` dub as covering every English track would have thrown away `IcVYyF3EEbk`'s only real track, its `en` automatic track. Tracks that are not dubs are still matched to the spoken language on the primary subtag, so a regional English track counts as English once the dubs are gone, which is what T-1.11.11.1 asked for.
+- *Trust a declaration that has no track in its language.* A declared `ur` with no Urdu track would have sent the fetch to English-first and a creator's translation, though the original audio's `hi` track was there.
+- *Take a dub when nothing else exists.* An English dub of Hindi speech puts words in the speaker's mouth; Whisper on the real audio does not.
+
+**Consequences.**
+- New fetches never ingest an auto-dub. On the 35 measured videos, the review's signal order changes no chosen track, only the recorded reason.
+- When this shipped, three library documents held dubbed transcripts: `1v3_AQ26jZ0` (Bengali dub of Hindi), `5AuuOZ4vuxI` (Bengali dub of Hindi) and `v6CuYULP3tM` (`en-US` dub of Hindi); none had a knowledge report. `scripts/refetch_dubbed_transcripts.py --write` replaces them. It is an owner step on live data, and re-embedding their Hindi chunks makes paid `code_mixing_render_english` calls ([D-084](#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19)) while `CODE_MIX_ENGLISH_RENDERING_ENABLED` is on. Its dry run, the default, writes nothing and is paced per [D-051](#d-051--transcript-pipeline-resilience-bundle-circuit-breaker--segmented-whisper--yt-dlp-client-fallback-2026-07-22). The owner ran `--write` on 2026-11-03 and re-fetched all three (T-1.11.11.3).
+- A judgement call left as it is: `9tigHWH-UD8` declares `en`, so its manual English track is taken although YouTube's recogniser heard Hindi. On Hinglish speech both are plausible (OQ-19 on the board, under S-1.11.11).
+- Not in the sample, and both fail safe to Whisper: creator-uploaded multi-language audio, and a dub whose code equals the original's automatic track's code.
+- Passing `get_video_details`' `defaultAudioLanguage` through to `fetch_transcript` would save the lazy lookup (T-1.11.11.4, proposed).
+
+**Linked initiatives / PRs.** E-1.11 (S-1.11.11), E-1.16 (S-1.16.2, T-1.16.2.6); PR [#386](https://github.com/khoks/VideoResearchPro/pull/386); [D-051](#d-051--transcript-pipeline-resilience-bundle-circuit-breaker--segmented-whisper--yt-dlp-client-fallback-2026-07-22), [D-066](#d-066--language-contract-temporal-awareness-and-corpus-aware-qa-length-2026-07-31), [D-080](#d-080--code-mixing-detection-a-lexicon-tagger-not-an-llm-pass-2026-10-19), [D-084](#d-084--code-mixed-retrieval-embed-an-english-rendering-keep-the-original-as-the-stored-text-2026-10-19).

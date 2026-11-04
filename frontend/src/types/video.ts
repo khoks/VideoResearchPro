@@ -25,12 +25,16 @@ import type {
  * the words themselves.
  */
 export interface LanguageMix {
-  /** `en`, `hi` (Hindi/Urdu in any script), `other` (see `native_script`) or `none`. */
+  /** `en`, `hi` (Hindi/Urdu in any script), `other` (see `native_script`; in Latin
+   * script, a language the tagger cannot name) or `none`. */
   primary_language: string;
   /** Script of the non-English words (`Devanagari`, `Bengali`; `Latin` when romanised). */
   native_script: string | null;
   /** Non-English words over all language-bearing words, 0–1. */
   hi_share: number;
+  /** Of those words, the share the tagger could name; the rest it abstained
+   * on. Null or absent on a profile stored before T-1.16.2.15. */
+  named_share?: number | null;
   /** Share of speech framed by non-English grammar, 0–1. */
   matrix_hi_share: number;
   /** `plain_english`, `roman` or `native_script`. */

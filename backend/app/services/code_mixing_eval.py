@@ -19,7 +19,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from app.services.code_mixing_service import tokenize
+from app.services.code_mixing_service import NON_ENGLISH_TAGS, tokenize
 
 FIXTURE = (
     Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "code_mixing"
@@ -94,18 +94,62 @@ def _prf(tp: int, fp: int, fn: int) -> dict[str, float]:
             "tp": tp, "fp": fp, "fn": fn}
 
 
+def _row(rows: list[tuple[dict, list[str], list[str]]], called: tuple[str, ...]) -> dict[str, Any]:
+    """Token, unit and share figures with `called` as the predicted class."""
+    tp = fp = fn = 0
+    u_tp = u_fp = u_fn = u_tn = 0
+    abs_err = []
+    for _, g, p in rows:
+        for gt, pt in zip(g, p):
+            if gt == "ne":
+                continue
+            if gt == "hi" and pt in called:
+                tp += 1
+            elif gt != "hi" and pt in called:
+                fp += 1
+            elif gt == "hi" and pt not in called:
+                fn += 1
+        scored = [(gt, pt) for gt, pt in zip(g, p) if gt != "ne"]
+        if scored:
+            g_share = sum(gt == "hi" for gt, _ in scored) / len(scored)
+            p_share = sum(pt in called for _, pt in scored) / len(scored)
+            abs_err.append(abs(g_share - p_share))
+        g_has = any(t == "hi" for t in g)
+        p_has = any(pt in called for gt, pt in zip(g, p) if gt != "ne")
+        if g_has and p_has:
+            u_tp += 1
+        elif p_has and not g_has:
+            u_fp += 1
+        elif g_has and not p_has:
+            u_fn += 1
+        else:
+            u_tn += 1
+    return {
+        "token": _prf(tp, fp, fn),
+        "unit": {**_prf(u_tp, u_fp, u_fn), "tn": u_tn},
+        "share_mae": round(sum(abs_err) / len(abs_err), 4) if abs_err else 0.0,
+    }
+
+
 def score(units: list[dict], predicted: dict[str, list[str]]) -> dict[str, Any]:
     """Score predicted tags (unit id -> tags) against gold.
 
-    Reports, per script group:
-    - token-level P/R/F1 for the Hindi class, over tokens whose GOLD tag is
-      en or hi (gold-neutral tokens — names, numbers — are not scored);
-    - unit-level P/R for "contains Hindi" on Latin units: the
-      honest-failure-mode metric — a missed unit is Hinglish passed
-      through as English;
-    - mean absolute error of the Hindi share per unit.
-    Units with no prediction (an LLM batch failed) count as missing, not as
-    all-English, and are reported separately.
+    Reports two rows per script group, over tokens whose GOLD tag is en or hi
+    (gold-neutral tokens, names and numbers, are not scored):
+
+    - **Called Hindi by name** (`token_hindi`, `unit_contains_hindi`): tag
+      "hi" only. It says what the tagger names a word, which is what
+      `source_note` depends on, and nothing about any share.
+    - **`production`**: every tag `shares` counts as non-English, `OTHER`
+      included (`NON_ENGLISH_TAGS`). This is what the pipeline's shares,
+      rendering decisions and quote modes actually read, so
+      `hindi_share_mae` lives here. A regression that inflates `OTHER` on
+      English text moves this row and cannot move the first.
+
+    Token P/R/F1 is for the class. Unit P/R is for "contains the class": the
+    honest-failure-mode metric, since a missed unit is Hinglish passed through
+    as English. Units with no prediction (an LLM batch failed) count as
+    missing, not as all-English, and are reported separately.
     """
     out: dict[str, Any] = {}
     groups = {"latin": [], "devanagari": [], "all": []}
@@ -123,39 +167,16 @@ def score(units: list[dict], predicted: dict[str, list[str]]) -> dict[str, Any]:
         groups["all"].append((u, g, p))
 
     for name, rows in groups.items():
-        tp = fp = fn = 0
-        u_tp = u_fp = u_fn = u_tn = 0
-        abs_err = []
-        for u, g, p in rows:
-            for gt, pt in zip(g, p):
-                if gt == "ne":
-                    continue
-                if gt == "hi" and pt == "hi":
-                    tp += 1
-                elif gt != "hi" and pt == "hi":
-                    fp += 1
-                elif gt == "hi" and pt != "hi":
-                    fn += 1
-            scored = [(gt, pt) for gt, pt in zip(g, p) if gt != "ne"]
-            if scored:
-                g_share = sum(gt == "hi" for gt, _ in scored) / len(scored)
-                p_share = sum(pt == "hi" for _, pt in scored) / len(scored)
-                abs_err.append(abs(g_share - p_share))
-            g_has = any(t == "hi" for t in g)
-            p_has = any(pt == "hi" for gt, pt in zip(g, p) if gt != "ne")
-            if g_has and p_has:
-                u_tp += 1
-            elif p_has and not g_has:
-                u_fp += 1
-            elif g_has and not p_has:
-                u_fn += 1
-            else:
-                u_tn += 1
+        named, production = _row(rows, ("hi",)), _row(rows, NON_ENGLISH_TAGS)
         out[name] = {
             "units": len(rows),
-            "token_hindi": _prf(tp, fp, fn),
-            "unit_contains_hindi": {**_prf(u_tp, u_fp, u_fn), "tn": u_tn},
-            "hindi_share_mae": round(sum(abs_err) / len(abs_err), 4) if abs_err else 0.0,
+            "token_hindi": named["token"],
+            "unit_contains_hindi": named["unit"],
+            "production": {
+                "token_non_english": production["token"],
+                "unit_non_english": production["unit"],
+                "hindi_share_mae": production["share_mae"],
+            },
         }
     out["missing_units"] = missing
     return out

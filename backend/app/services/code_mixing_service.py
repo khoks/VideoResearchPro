@@ -17,20 +17,25 @@ Two detectors, measured against the same hand-labelled set
   maps them back onto the same tokens so both detectors are scored on one
   token sequence.
 
-Token languages are "en", "hi" and "ne" (neutral: numbers, fillers, bare
-punctuation). Hindi and Urdu are one class here: spoken Hindustani is the
-same language whichever script the transcriber chose, and the pipeline's
-decision — translate it, and how to quote it — does not differ between them.
-A word in any other non-Latin script (Bengali, Tamil...) is also tagged "hi"
-— read it as "the source's non-English language": the decisions are the
-same, and `profile_transcript` reports which script it is, so a native-script
-quote is shown in Bengali rather than Devanagari.
+Token languages are "en", "hi", "ne" (neutral: numbers, fillers, bare
+punctuation) and "xx" (`OTHER`: a Latin word in a span that shows neither
+English nor Hindi, T-1.16.2.15). Hindi and Urdu are one class here: spoken
+Hindustani is the same language whichever script the transcriber chose, and
+the pipeline's decision — translate it, and how to quote it — does not differ
+between them. A word in any other non-Latin script (Bengali, Tamil...) is also
+tagged "hi" — read it as "the source's non-English language": the decisions
+are the same, and `profile_transcript` reports which script it is, so a
+native-script quote is shown in Bengali rather than Devanagari. `OTHER` counts
+as non-English everywhere a share or a rendering decision is made, so a
+Spanish source is still translated and rendered for retrieval; it only stops
+being called Hindi.
 """
 from __future__ import annotations
 
 import json
 import logging
 import math
+import re
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass
@@ -64,6 +69,18 @@ NGRAM_SCALE = 1.5            # out-of-vocabulary word: char n-gram log-odds per 
 NGRAM_CLIP = 2.5
 SWITCH_PENALTY = 1.25        # cost of changing language between adjacent words
 ENGLISH_START_BIAS = 0.25    # all-ambiguous text defaults to English
+
+# The tag of a Latin-script word that is not English and shows no Hindi
+# (T-1.16.2.15). It reads as "not English, language unknown": the tagger knows
+# two languages, so before this tag a Spanish source measured as Hindi.
+OTHER = "xx"
+# Every tag that counts as non-English in a share or a rendering decision.
+NON_ENGLISH_TAGS = ("hi", OTHER)
+EVIDENCE_MIN_SHARE = 0.3     # Hindi-lexicon words over Hindi-lexicon + unplaced words
+UNPLACED_MIN_SHARE = 0.5     # words in neither lexicon, over Latin words: another language
+UNPLACED_MIN_WORDS = 8       # ...measured on at least this many: a short span proves nothing
+NAMED_MIN_SHARE = 0.5        # a source's non-English words the tagger could name
+ENGLISH_FRAMED_BELOW = 0.5   # non-English grammar under this: English frames most speech
 
 
 @dataclass(frozen=True)
@@ -126,6 +143,7 @@ class _Lexicons:
     ngram_en: dict[str, float]
     ngram_hi_unseen: float
     ngram_en_unseen: float
+    devanagari_english: frozenset[str]
 
 
 def _read_words(path: Path) -> list[str]:
@@ -135,6 +153,20 @@ def _read_words(path: Path) -> list[str]:
         if line and not line.startswith("#"):
             out.append(line.split("\t")[0].lower())
     return out
+
+
+def devanagari_key(word: str) -> str:
+    """One spelling for the ways captions write the same Devanagari word.
+
+    A nukta on a borrowed consonant comes and goes (ज़/ज, फ़/फ), a nasal before
+    a consonant is written three ways (कंपनी, कम्पनी; कॉन्सेप्ट, कॉंसेप्ट), and
+    चंद्रबिंदु is anusvara to a transcriber. ड़ and ढ़ stay: there the nukta makes
+    another letter, and गुड़ is not गुड.
+    """
+    key = unicodedata.normalize("NFC", word)
+    key = re.sub("([कखगजफ])\u093c", r"\1", key)
+    key = key.replace("\u0901", "\u0902")
+    return re.sub("[नमणञङ]\u094d(?=[क-ह])", "\u0902", key)
 
 
 def _char_ngrams(word: str, n_min: int = 2, n_max: int = 4) -> list[str]:
@@ -187,7 +219,14 @@ def lexicons() -> _Lexicons:
         (w, 1.0 + math.log10(c)) for w, c in counts.items() if w not in hindi
     )
     ngram_hi, hi_unseen = _ngram_model((w, 2.0) for w in hindi)
-    return _Lexicons(hindi, english_zipf, ngram_hi, ngram_en, hi_unseen, en_unseen)
+    # Hindi's own system words win any clash: a closed class must never be
+    # read as English by a lexicon typo.
+    devanagari_english = frozenset(
+        devanagari_key(w) for w in _read_words(_LEXICON_DIR / "english_devanagari.txt")
+    ) - {devanagari_key(w) for w in HINDI_VERBAL_MORPHEMES | HINDI_FUNCTION_MORPHEMES}
+    return _Lexicons(
+        hindi, english_zipf, ngram_hi, ngram_en, hi_unseen, en_unseen, devanagari_english
+    )
 
 
 def _ngram_log_odds(word: str, lex: _Lexicons) -> float:
@@ -257,16 +296,89 @@ def _viterbi(scores: list[float]) -> list[str]:
     return list(reversed(path))
 
 
+# Devanagari has these signs to write English sounds (कॉल, ऑफिस, बॅट). On the 26
+# Hindi transcripts outside the labelled set, all 941 tokens carrying one and
+# missing from the lexicon were English words or names, none native Hindi.
+_ENGLISH_VOWEL_SIGNS = ("ॉ", "ऑ", "ॅ")
+
+# Endings Hindi and English put on an English stem in Devanagari. Longest first.
+_DEVANAGARI_STEM_ENDINGS = (
+    ("ियों", "ी"),   # कंपनियों -> कंपनी
+    ("ों", ""),      # मशीनों -> मशीन
+    ("्स", ""),      # प्रोडक्ट्स -> प्रोडक्ट
+)
+
+
+def _english_in_devanagari(word: str, lex: _Lexicons) -> bool:
+    """Whether a Devanagari word is an English word as Hindi captions spell it.
+
+    The closed class (`ENGLISH_IN_DEVANAGARI`) and the vowel signs only
+    English words use, then the content-word lexicon, directly or under a
+    plural or oblique ending. No LLM: this runs on every word at ingest
+    (D-080).
+    """
+    if word in ENGLISH_IN_DEVANAGARI or any(sign in word for sign in _ENGLISH_VOWEL_SIGNS):
+        return True
+    key = devanagari_key(word)
+    if key in lex.devanagari_english:
+        return True
+    return any(
+        key.endswith(ending) and key[:-len(ending)] + stem in lex.devanagari_english
+        for ending, stem in _DEVANAGARI_STEM_ENDINGS
+    )
+
+
+def _abstain(tokens: list[Token], tags: list[str], lex: _Lexicons) -> None:
+    """Stop calling Latin words Hindi where the span shows no Hindi (in place).
+
+    The n-gram model only weighs Hindi against English, so a word in neither
+    list has to land on one of them. Evidence for Hindi is a word in the
+    Hindi lexicon that is not an English word. Where such words account for
+    too little of the words the lexicons cannot place, the n-gram's guess
+    says nothing:
+
+    - most of the span unplaced: this is another language. Its words that
+      happen to match the Hindi lexicon ("di", "che", "un") prove nothing
+      either, and the words the n-gram leaned English on are not English.
+      Every non-English reading becomes `OTHER`;
+    - otherwise it is English with stray words (names, typos): those are
+      `OTHER` where the n-gram called them Hindi, and the rest stands.
+    """
+    latin = [i for i, tok in enumerate(tokens) if tok.script == "Latin" and tags[i] in ("en", "hi")]
+    unplaced = [
+        i for i in latin
+        if tokens[i].norm not in lex.hindi and tokens[i].norm not in lex.english_zipf
+    ]
+    if not unplaced:
+        return
+    evidence = sum(
+        1 for i in latin
+        if tokens[i].norm in lex.hindi and tokens[i].norm not in lex.english_zipf
+    )
+    if evidence >= EVIDENCE_MIN_SHARE * (evidence + len(unplaced)):
+        return
+    if len(latin) >= UNPLACED_MIN_WORDS and len(unplaced) >= UNPLACED_MIN_SHARE * len(latin):
+        for i in latin:
+            if tags[i] == "hi":
+                tags[i] = OTHER
+        for i in unplaced:
+            tags[i] = OTHER
+    else:
+        for i in unplaced:
+            if tags[i] == "hi":
+                tags[i] = OTHER
+
+
 def tag_tokens(text: str) -> list[tuple[Token, str]]:
     """Language per token: the lexicon detector.
 
-    Latin words go through the lexicon + n-gram + Viterbi pass. Words in a
-    non-Latin script are tagged from the script (Devanagari and Arabic-script
-    words are Hindi/Urdu), except the closed class of English function words
-    as Hindi ASR spells them (`ENGLISH_IN_DEVANAGARI`: इज, टू, द, एंड...).
-    That leaves one known blind spot, measured on the labelled set rather
-    than assumed away: English CONTENT words transcribed in Devanagari
-    ("मशीन लर्निंग"), which YouTube's Hindi auto-captions produce constantly.
+    Latin words go through the lexicon + n-gram + Viterbi pass, then
+    `_abstain`: a Latin word that shows no Hindi and no English is `OTHER`.
+    Words in a non-Latin script are tagged from the script (Devanagari and
+    Arabic-script words are Hindi/Urdu), except English written in Devanagari
+    as Hindi ASR spells it (`_english_in_devanagari`: the function words इज,
+    टू, द, the content words मशीन, लर्निंग). What that lexicon has not heard of
+    still reads as Hindi: T-1.16.2.8 narrowed the blind spot, it did not close it.
     """
     lex = lexicons()
     tokens = tokenize(text)
@@ -284,19 +396,20 @@ def tag_tokens(text: str) -> list[tuple[Token, str]]:
         # Devanagari/Arabic/Gurmukhi were tagged and everything else fell to
         # "neutral" — so a Bengali transcript measured 0% non-English and
         # would have been quoted as plain English.
-        tags[i] = "en" if tok.norm in ENGLISH_IN_DEVANAGARI else "hi"
+        tags[i] = "en" if _english_in_devanagari(tok.norm, lex) else "hi"
         runs.append([])
     for run in runs:
         path = _viterbi([emission(tokens[i].norm, lex) for i in run])
         for i, lang in zip(run, path):
             tags[i] = lang
+    _abstain(tokens, tags, lex)
     return list(zip(tokens, tags))
 
 
 def shares(tags: Iterable[str]) -> dict[str, Any]:
     """Token counts and the Hindi share among language-bearing tokens."""
     c = Counter(tags)
-    en, hi = c.get("en", 0), c.get("hi", 0)
+    en, hi = c.get("en", 0), sum(c.get(tag, 0) for tag in NON_ENGLISH_TAGS)
     lang = en + hi
     return {
         "en_tokens": en,
@@ -328,10 +441,8 @@ def profile_text(text: str) -> dict[str, Any]:
 # The lists are closed classes, so they live here rather than in a lexicon
 # file. Devanagari entries matter twice over: Hindi function words written in
 # Devanagari vote Hindi, and English function words written in Devanagari
-# ("इट इज नॉट", "टू द") vote English even though the tagger calls every
-# Devanagari word Hindi — the one place the lexicon detector can see English
-# in Devanagari, and the place it matters most, because an English-matrix
-# sentence must not be quoted as Hindi.
+# ("इट इज नॉट", "टू द") vote English, which matters most where it works: an
+# English-matrix sentence must not be quoted as Hindi.
 
 HINDI_VERBAL_MORPHEMES = frozenset({
     "hai", "hain", "hei", "he", "h", "hoon", "hun", "hu", "ho", "tha", "thi", "the", "thee",
@@ -386,7 +497,8 @@ VERBAL_MORPHEME_WEIGHT = 2.0
 # by `tag_tokens` — a closed class, so this is exact where it applies, and it
 # is what lets an English-matrix sentence written in Devanagari ("इट इज नॉट
 # बीइंग एक्सप्लीसिटली प्रोग्राम") be recognised as English at all. English
-# CONTENT words in Devanagari (मशीन, लर्निंग) remain the measured blind spot.
+# CONTENT words in Devanagari (मशीन, लर्निंग) come from `lexicons/`, and only
+# these function words vote on the matrix.
 ENGLISH_IN_DEVANAGARI = frozenset(
     w for w in ENGLISH_VERBAL_MORPHEMES | ENGLISH_FUNCTION_MORPHEMES
     if language_service.dominant_script(w) == "Devanagari"
@@ -403,7 +515,7 @@ def morpheme_votes(tagged: list[tuple[Token, str]]) -> dict[str, float]:
     votes = {"en": 0.0, "hi": 0.0}
     for tok, tag in tagged:
         w = tok.norm
-        if tag == "hi":
+        if tag in NON_ENGLISH_TAGS:
             if w in HINDI_VERBAL_MORPHEMES:
                 votes["hi"] += VERBAL_MORPHEME_WEIGHT
             elif w in HINDI_FUNCTION_MORPHEMES:
@@ -420,8 +532,15 @@ def matrix_language(tagged: list[tuple[Token, str]]) -> str:
     """"en", "hi", or "none" when the span has no language-bearing word.
 
     A tied vote (including no system morphemes at all, as in a bare noun
-    phrase) falls back to the majority of words.
+    phrase) falls back to the majority of words. A span mostly in a language
+    the tagger cannot name (`OTHER`) has no grammar it can vote on: the
+    few homographs of English function words in it ("a", "no") say nothing,
+    and it counts as a non-English grammar, which is what the policy's "hi"
+    means.
     """
+    tags = Counter(tag for _, tag in tagged)
+    if tags[OTHER] > tags["en"]:
+        return "hi"
     votes = morpheme_votes(tagged)
     if votes["en"] != votes["hi"]:
         return "hi" if votes["hi"] > votes["en"] else "en"
@@ -565,14 +684,22 @@ def profile_transcript(
 
     Returns::
 
-        {primary_language, native_script, hi_share, matrix_hi_share,
-         quote_mode, windows, window_modes, flicker_unresolved}
+        {primary_language, native_script, hi_share, named_share,
+         matrix_hi_share, quote_mode, windows, window_modes,
+         flicker_unresolved}
 
     - ``native_script``: the script the non-English words are written in
       ("Devanagari", "Bengali"...; "Latin" when they are romanised), which
       is the script a native-script quote is shown in. None when the
       transcript has no non-English words.
     - ``hi_share``: non-English words over non-English + English words.
+    - ``named_share``: of the non-English words, the share the tagger could
+      name, by a lexicon or by their script; the rest are `OTHER`. None when
+      there are no non-English words. Below `NAMED_MIN_SHARE`, with more
+      non-English words than borrowing explains, a Latin-script source is no
+      language the tagger knows and `primary_language` is "other". English
+      with stray unplaced words, or with a short passage it cannot name,
+      stays "en" (`chunk_metadata_from_profile` tells those two apart).
     - ``matrix_hi_share``: share of language-bearing words in windows whose
       GRAMMAR is Hindi. The primary language is the one framing at least
       half the speech — so a Hindi talk dense with English terms is still
@@ -584,14 +711,17 @@ def profile_transcript(
       ``flicker_unresolved``: how many script changes a quote-by-quote
       policy would have produced — the thing this resolution removes.
     """
+    from app.config import settings
+
     windows = transcript_windows(segments_or_text)
-    en = hi = 0
+    en = hi = other = 0
     weight = {"en": 0, "hi": 0}
     modes: list[str] = []
     scripts: Counter[str] = Counter()
     for w in windows:
         tagged = tag_tokens(w)
-        scripts.update(tok.script for tok, tag in tagged if tag == "hi")
+        scripts.update(tok.script for tok, tag in tagged if tag in NON_ENGLISH_TAGS)
+        other += sum(1 for _, tag in tagged if tag == OTHER)
         a = shares(tag for _, tag in tagged)
         a["matrix"] = matrix_language(tagged)
         en += a["en_tokens"]
@@ -604,8 +734,16 @@ def profile_transcript(
     framed = weight["en"] + weight["hi"]
     matrix_hi_share = round(weight["hi"] / framed, 4) if framed else 0.0
     native = scripts.most_common(1)[0][0] if scripts else None
+    named_share = round((hi - other) / hi, 4) if hi else None
+    unnamed = native == "Latin" and named_share is not None and named_share < NAMED_MIN_SHARE
     if not total:
         primary = "none"
+    elif unnamed and hi / total > (
+        settings.CODE_MIX_BORROWING_MAX_SHARE if borrowing is None else borrowing
+    ):
+        # More unplaced words than any English source shows: a window's few
+        # English homographs do not make it English, whatever they voted.
+        primary = "other"
     elif matrix_hi_share < 0.5:
         primary = "en"
     else:
@@ -622,6 +760,7 @@ def profile_transcript(
         "primary_language": primary,
         "native_script": native,
         "hi_share": overall["hi_share"],
+        "named_share": named_share,
         "matrix_hi_share": matrix_hi_share,
         "quote_mode": rendering_mode(overall, dominant, borrowing),
         "windows": len(windows),
@@ -683,19 +822,32 @@ def chunk_metadata_from_profile(p: dict[str, Any] | None) -> dict[str, Any]:
         k not in p for k in ("primary_language", "quote_mode", "hi_share")
     ):
         return {}
+    # English with stray words the tagger cannot place is plain English: the
+    # floor counts the non-English words it can name. A profile stored before
+    # `named_share` existed counts them all, as it did. A PASSAGE it cannot name
+    # is another matter: stray names are scattered, but a passage's words sit
+    # together, so its windows read as a non-English grammar. Such a source
+    # keeps its fields, and with them the note and the D-084 rendering.
+    share, named = p["hi_share"], p.get("named_share")
+    present = share if named is None else share * named
+    passage = min(share, p.get("matrix_hi_share") or 0.0) >= DOCUMENT_PRESENCE_SHARE
     if (
         p["primary_language"] in ("en", "none")
         and p["quote_mode"] == PLAIN_ENGLISH
-        and p["hi_share"] < DOCUMENT_PRESENCE_SHARE
+        and present < DOCUMENT_PRESENCE_SHARE
+        and not passage
     ):
         return {}
-    return {
+    fields = {
         "code_mix_primary": p["primary_language"],
         "code_mix_script": p.get("native_script") or "",
-        "code_mix_share": p["hi_share"],
+        "code_mix_share": share,
         "code_mix_matrix_share": p.get("matrix_hi_share") or 0.0,
         "code_mix_quote": p["quote_mode"],
     }
+    if named is not None:
+        fields["code_mix_named_share"] = named
+    return fields
 
 
 def chunk_fields(text: str) -> dict[str, Any]:
@@ -729,6 +881,32 @@ def quote_form(meta: dict[str, Any] | None) -> str:
     return "quote in Roman script + English translation"
 
 
+def _unnamed_speech(meta: dict[str, Any]) -> str:
+    """What a note says about Latin text the tagger abstained on; "" for the rest.
+
+    The tagger cannot say what such a source is. Its grammar share says how
+    much of it English frames, and that much it will not deny: Dutch and a
+    bilingual English and Spanish interview read alike here, so the words are
+    hedged rather than guessed. A chunk with no `code_mix_named_share`
+    (written before it existed) cannot tell, and reads as it did.
+    """
+    if meta.get("code_mix_script") != "Latin":
+        return ""
+    primary = meta.get("code_mix_primary")
+    if primary == "other":
+        if (meta.get("code_mix_matrix_share") or 0.0) < ENGLISH_FRAMED_BELOW:
+            return "partly English, partly a language the tagger cannot name (not Hindi)"
+        return "not English or Hindi, language unknown"
+    named = meta.get("code_mix_named_share")
+    if primary == "en" and named is not None and named < NAMED_MIN_SHARE:
+        share = meta.get("code_mix_share") or 0.0
+        return (
+            f"mostly English, partly a language the tagger cannot name "
+            f"(not Hindi, {share:.0%} of words)"
+        )
+    return ""
+
+
 def source_note(meta: dict[str, Any] | None) -> str:
     """One header fragment naming a source's language and quote form.
 
@@ -742,6 +920,10 @@ def source_note(meta: dict[str, Any] | None) -> str:
         return ""
     script = meta.get("code_mix_script") or ""
     share = meta.get("code_mix_share") or 0.0
+    form = quote_form(meta)
+    unnamed = _unnamed_speech(meta)
+    if unnamed:
+        return f"speech: {unnamed} — {form}"
     if primary == "other":
         lang = f"a {script}-script language" if script else "a non-English language"
     else:
@@ -758,16 +940,22 @@ def source_note(meta: dict[str, Any] | None) -> str:
         desc += ", this passage in Hindi grammar"
     elif primary in ("hi", "other") and chunk_matrix == "en":
         desc += ", this passage in English grammar"
-    form = quote_form(meta)
     return f"speech: {desc}" + (f" — {form}" if form else "")
 
 
 def describe_source_for_prompt(segments_or_text: Any) -> str:
     """A self-contained note for a prompt that reads ONE source's transcript
     (knowledge extraction). Empty for English sources."""
-    note = source_note(chunk_metadata_for_transcript(segments_or_text))
+    meta = chunk_metadata_for_transcript(segments_or_text)
+    note = source_note(meta)
     if not note:
         return ""
+    if _unnamed_speech(meta):
+        return (
+            f"SOURCE LANGUAGE (measured from this transcript) — {note}. Read each "
+            f"passage in its own language and translate its meaning. Where you keep "
+            f"a speaker's exact wording, show it in the quote form named here."
+        )
     return (
         f"SOURCE LANGUAGE (measured from this transcript) — {note}. Hindi "
         f"written in Latin letters is Hindi, not English: read each sentence in "

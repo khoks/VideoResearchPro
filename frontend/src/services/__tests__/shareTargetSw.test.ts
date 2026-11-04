@@ -3,8 +3,8 @@
  * public/share-target-sw.js, run for real against fake worker globals
  * (T-3.7.6.1). The browser-level path is in tests/manifest.spec.ts; this one
  * pins the worker's two promises where a failure is easy to read: the shared
- * words leave the request and enter nothing but the device's cache, and every
- * other request is left alone.
+ * words leave the request and enter nothing but the device's cache, and no
+ * page ends up in the worker's scope, so nothing else ever goes through it.
  */
 import { describe, expect, it, vi } from 'vitest';
 import source from '../../../public/share-target-sw.js?raw';
@@ -32,7 +32,9 @@ function boot(open?: () => Promise<unknown>) {
   return { listeners, put, self };
 }
 
-function dispatch(fetchHandler: (e: unknown) => void, request: Request) {
+const PAGE = `${ORIGIN}/echo/incoming`;
+
+function dispatch(fetchHandler: (e: unknown) => void, request: Pick<Request, 'url' | 'method' | 'mode'> & Partial<Request>) {
   const respondWith = vi.fn();
   fetchHandler({ request, respondWith });
   return respondWith;
@@ -52,7 +54,7 @@ describe('the share-target worker', () => {
     const respondWith = dispatch(listeners.fetch, share());
     const response = (await respondWith.mock.calls[0][0]) as Response;
     expect(response.status).toBe(303);
-    expect(response.headers.get('location')).toBe(`${ORIGIN}/echo/share-target`);
+    expect(response.headers.get('location')).toBe(PAGE);
     expect(response.headers.get('location')).not.toContain('private');
 
     const [key, kept] = put.mock.calls[0] as unknown as [string, Response];
@@ -68,7 +70,22 @@ describe('the share-target worker', () => {
     });
     const respondWith = dispatch(listeners.fetch, share());
     const response = (await respondWith.mock.calls[0][0]) as Response;
-    expect(response.headers.get('location')).toBe(`${ORIGIN}/echo/share-target?failed=1`);
+    expect(response.headers.get('location')).toBe(`${PAGE}?failed=1`);
+  });
+
+  it('sends the page outside its own scope, so no document is ever controlled', async () => {
+    const { listeners } = boot();
+    const respondWith = dispatch(listeners.fetch, share());
+    const location = new URL(((await respondWith.mock.calls[0][0]) as Response).headers.get('location') ?? '');
+    expect(location.pathname.startsWith('/echo/share-target')).toBe(false);
+  });
+
+  it('turns a plain visit to the path away as well', async () => {
+    const { listeners } = boot();
+    const visit = { url: `${ORIGIN}/echo/share-target`, method: 'GET', mode: 'navigate' as RequestMode };
+    const respondWith = dispatch(listeners.fetch, visit);
+    const response = (await respondWith.mock.calls[0][0]) as Response;
+    expect(response.headers.get('location')).toBe(PAGE);
   });
 
   it('leaves every other request alone', () => {

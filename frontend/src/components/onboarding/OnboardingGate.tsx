@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useOnboarding } from '../../hooks/useOnboarding';
-import { hasPendingShares, SHARE_TARGET_PATH } from '../../services/shareTarget';
+import { hasPendingShares, SHARE_REVIEW_PATH } from '../../services/shareTarget';
 import { Spinner } from '../primitives';
 
 /**
@@ -26,7 +26,7 @@ export function OnboardingGate() {
     };
   }, []);
 
-  if (sharePending) return <Navigate to={SHARE_TARGET_PATH} replace />;
+  if (sharePending) return <Navigate to={SHARE_REVIEW_PATH} replace />;
   if (isLoading || sharePending === null) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>

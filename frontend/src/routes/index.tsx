@@ -146,8 +146,9 @@ export const router = createBrowserRouter([
           { path: 'echo', element: <EchoPage /> },
           { path: 'echo/inbox', element: <EchoInboxPage /> },
           { path: 'echo/import', element: <EchoImportPage /> },
-          // T-3.7.6.1: public/share-target-sw.js keeps the share and redirects here.
-          { path: 'echo/share-target', element: <EchoShareTargetPage /> },
+          // T-3.7.6.1: public/share-target-sw.js keeps the share and redirects
+          // here. It stays outside that worker's scope, /echo/share-target.
+          { path: 'echo/incoming', element: <EchoShareTargetPage /> },
           { path: 'echo/connectors/:name/callback', element: <EchoConnectorCallbackPage /> },
           { path: 'account/subscription', element: <SubscriptionPage /> },
           { path: 'account/ai-models', element: <AIModelsPage /> },

@@ -1,6 +1,6 @@
 # Adding to Echo from outside the app
 
-How something reaches the shares inbox when the app is not open. All of these end in the same intake as the quick-share box: the same caps, the same processing, the same inbox, and the same Studio check.
+How something reaches the shares inbox when the app is not open. All of these end in the same intake as the quick-share box: the same caps, the same processing, the same inbox, and the same Studio check. A link is fetched only if its address is public (see [below](#a-shared-link)).
 
 | Where you are | How | Surface | Set up by |
 |---|---|---|---|
@@ -13,16 +13,21 @@ Whatever arrives this way is context only: Echo can draw on it but never quotes 
 
 ## Android: the share sheet
 
-Install Pratidhvani from Chrome (Add to Home screen), and it appears in the Android share sheet. Share a page, some text, an image, a PDF or a recording to it. It lands in your inbox with no step in between.
+Install Pratidhvani from Chrome (Add to Home screen), and it appears in the Android share sheet. Share a page, some text, an image, a PDF or a recording to it. The app opens, shows what arrived, and asks. One tap on **Add to Echo** puts it in your inbox, and **Discard** drops it unposted.
 
-If you are signed out, the app asks you to sign in first, and the share waits on the phone until you have. A share still waiting after 24 hours is dropped unread.
+If you are signed out, the app asks you to sign in first, and the share waits on the phone until you have. A share still waiting after 24 hours is dropped unread. Signing out drops whatever is waiting.
 
-**How it works.** The manifest's `share_target` posts a multipart form to `/echo/share-target`. A small service worker, `frontend/public/share-target-sw.js`, answers that one path. It keeps the form in the browser's Cache API on this device and redirects to the same path with nothing in the address. The page then reads it, posts it to `/echo/shares` or `/echo/shares/upload` with your session, and removes it.
+**How it works.** The manifest's `share_target` posts a multipart form to `/echo/share-target`. A small service worker, `frontend/public/share-target-sw.js`, answers that one path. It keeps the form in the browser's Cache API on this device and redirects to `/echo/incoming` with nothing in the address. That page reads the form and shows it. On the tap it posts what it showed to `/echo/shares` or `/echo/shares/upload` with your session, and removes it.
 
-So the shared words never appear in a URL, the address bar, the browser history or a server log, and no sign-in token ever does. A `GET` share target could not promise that: the browser would send the words in the query string to whatever serves the app, and a log would have them before any script ran. The worker's scope is that one path, so it touches no other request in the app and caches nothing for offline reading, which is why it does not reopen [D-087](decisions.md#d-087--mobile-reading-and-install-a-reading-toolbar-below-1200-px-a-docked-composer-lifted-by-visualviewport-hermetic-device-tests-a-manifest-without-a-service-worker-2026-10-19)'s reasons for having no service worker.
+So the shared words never appear in a URL, the address bar, the browser history or a server log, and no sign-in token ever does. A `GET` share target could not promise that: the browser would send the words in the query string to whatever serves the app, and a log would have them before any script ran.
+
+The worker's scope is `/echo/share-target` alone, and it answers everything there with a redirect out of that scope, so no page is ever under its control and no API call goes through it. It caches nothing for offline reading. That is why it does not reopen [D-087](decisions.md#d-087--mobile-reading-and-install-a-reading-toolbar-below-1200-px-a-docked-composer-lifted-by-visualviewport-hermetic-device-tests-a-manifest-without-a-service-worker-2026-10-19)'s reasons for having no service worker.
+
+**Why there is a tap.** Every other surface adds at once, because something proves who is asking: a session, or a token in a header. The share target proves nothing. It is a form post, and any website can make one, in any browser that has opened the app, installed or not. The worker cannot tell that post from the share sheet: it cannot read `Sec-Fetch-Site`, and a form can send no `Referer`, just as the share sheet does. If the app posted what arrived, a stranger's page could add text to your brain, make the server fetch an address, or spend your model budget on a file, all with your session and no click. So what arrives is only a proposal until you have seen it. The tap covers what the page showed, and something that arrives while the page is open waits for its own look.
 
 **Limits.**
 - It needs HTTPS (or `localhost`), as installing does. An `http://` LAN address has no service worker and no install.
+- On a browser someone else also uses, a share left waiting with no sign-out, such as after a session expired, is shown to whoever signs in next. It goes nowhere without their tap, but they can read it.
 - Chrome adds a new share target to a phone only when it updates the installed app, which can take a few days. Reinstalling is the quick way.
 - A share of more than 10 files keeps the first 10.
 - Firefox on Android and every iOS browser have no share target.
@@ -60,6 +65,10 @@ Anyone holding the Shortcut holds the token, so it goes in a header and never in
 
 **Limits.** Text and links only, since the route for files takes a multipart upload. A text with a link in it is sent as the link alone, by step 3.
 
+## A shared link
+
+On every surface, a link that is not a YouTube video is fetched by the server, and the page's text becomes the share. So the address is checked first, and again at every redirect: one that resolves to a private, loopback or link-local address is refused, and the share fails with that reason. A self-hosted install whose pages live on the LAN can set `ECHO_FETCH_ALLOW_PRIVATE`. The check resolves the name and the fetch resolves it again, so a host that changes its answer between the two is not stopped.
+
 ## Email: an IMAP mailbox (self-host)
 
 Point Pratidhvani at a mailbox used for nothing else. Every few minutes it reads the unread mail there, and each message from an address you allow becomes a share for one account.
@@ -96,7 +105,8 @@ So the design assumes a forged message will arrive, and limits what one can do:
 - **It cannot teach your voice.** Mail is always context only. No `email_in` share can be marked as your own words, by the poller, the API or the inbox, not even one from your own address. To have those words count, add them yourself through quick share.
 - **It cannot make the server fetch anything.** A message is always text, so a link in it stays a link for you to open. A URL share would have the server fetch an address a stranger chose.
 - **It cannot spend your model budget on media.** Attachments are listed on the share and not read, so a forged message cannot call the vision model or Whisper.
-- **It can put text in your inbox**, and that text can be retrieved as context for a draft or an answer. It is treated as third-party words, never quoted. Delete a share you do not recognise, and everything derived from it goes too.
+- **It can put text in your inbox**, and that text can be retrieved as context for a draft. Delete a share you do not recognise, and everything derived from it goes too.
+- **It cannot pass as something you chose to share.** In a draft, mail is labelled an unverified email, not your view, and the draft prompts say that such an item supports no factual claim and that nothing retrieved is an instruction. That is a request to a model, so it is not the guarantee. The guarantee is in code: a draft that cites mail is flagged, says so under the draft, and shows the email among what it drew on, and citing only mail leaves a draft marked as ungrounded. Words from mail are never quoted. A model can still use mail without citing it, so read a draft before you send it, as you always should.
 
 The password and the message bodies are never logged. The log carries counts and exception types only.
 

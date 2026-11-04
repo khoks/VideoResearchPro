@@ -9,6 +9,8 @@
  * The share target (T-3.7.6.1) is driven the way Android drives it: a real
  * multipart POST navigation to the manifest's action, in Chromium, with the
  * real service worker answering it. Only the share sheet itself is missing.
+ * That is also how a hostile page reaches it, so that is driven too, from a
+ * page on another origin.
  */
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
@@ -127,7 +129,7 @@ interface Stub {
 }
 
 /** The API as the share flow meets it. An unmatched call fails the test. */
-async function stubApi(page: Page, options: { refuse?: boolean } = {}): Promise<Stub> {
+async function stubApi(page: Page, options: { refuse?: boolean; dropOnce?: string } = {}): Promise<Stub> {
   const stub: Stub = { posted: [], uploads: [], authorizations: [], unmatched: [], urls: [] };
   const answers: Record<string, unknown> = {
     'GET /api/v1/health': fixture('health'),
@@ -154,6 +156,10 @@ async function stubApi(page: Page, options: { refuse?: boolean } = {}): Promise<
       if (key.endsWith('upload')) stub.uploads.push(request.postData() ?? '');
       else stub.posted.push(request.postDataJSON());
       if (options.refuse) return route.fulfill({ status: 403, json: { detail: 'Echo needs the Studio plan.' } });
+      if (options.dropOnce && (request.postData() ?? '').includes(options.dropOnce)) {
+        options.dropOnce = undefined;
+        return route.fulfill({ status: 503, json: { detail: 'Try later.' } });
+      }
       return route.fulfill({ status: 201, json: { id: 's1' } });
     }
     if (key in answers) return route.fulfill({ json: answers[key] });
@@ -212,10 +218,18 @@ async function shareFromAndroid(page: Page, fields: Record<string, string>, file
 // modules, uncached because routes are on, can take seconds on a busy machine.
 const LOAD = { timeout: 20_000 };
 
-/** The toast the share page raises as it hands over to the inbox. */
+const addButton = (page: Page) => page.getByRole('button', { name: 'Add to Echo' });
+
+/** The one tap every share needs, and the toast as it hands over to the inbox. */
 async function expectAdded(page: Page) {
+  await addButton(page).click(LOAD);
   await expect(page.getByText('Added to Echo.')).toBeVisible(LOAD);
   await expect(page).toHaveURL(/\/echo\/inbox$/);
+}
+
+/** Does this document go through the share worker? */
+async function controlled(page: Page): Promise<boolean> {
+  return page.evaluate(() => navigator.serviceWorker.controller !== null);
 }
 
 /** Signed out, the app sends the share page on to the sign-in page. */
@@ -249,15 +263,58 @@ test.describe('share target', () => {
     test.skip(({ browserName }) => browserName !== 'chromium', 'WebKit has no share target; an iPhone uses the Shortcut');
 
     test('the worker sees the share path and nothing else in the app', async ({ page }) => {
-      await stubApi(page);
-      await page.goto('/login');
+      const stub = await stubApi(page);
+      await signIn(page);
+      await page.goto('/echo/inbox');
       await workerActive(page);
-      const { scope, controlled } = await page.evaluate(async () => ({
-        scope: (await navigator.serviceWorker.getRegistration('/echo/share-target'))?.scope,
-        controlled: navigator.serviceWorker.controller !== null,
-      }));
+      const scope = await page.evaluate(async () => (await navigator.serviceWorker.getRegistration('/echo/share-target'))?.scope);
       expect(new URL(scope ?? 'http://x').pathname).toBe(manifest.share_target.action);
-      expect(controlled, 'an app page goes through no service worker').toBe(false);
+      expect(await controlled(page), 'an app page goes through no service worker').toBe(false);
+
+      // Nor does the page a share lands on, or the app after it: a page in the
+      // worker's scope would send every API call through the worker.
+      await shareFromAndroid(page, { text: SECRET });
+      await expect(addButton(page)).toBeVisible(LOAD);
+      await expect(page).toHaveURL(/\/echo\/incoming$/);
+      expect(await controlled(page), 'the share page').toBe(false);
+      await expectAdded(page);
+      expect(await controlled(page), 'the inbox after it').toBe(false);
+
+      await page.goto(manifest.share_target.action);
+      await expect(page).toHaveURL(/\/echo\/incoming$/);
+      expect(await controlled(page), 'a plain visit to the path').toBe(false);
+      expect(stub.unmatched).toEqual([]);
+    });
+
+    test('a form on another site can propose a share and can do nothing else', async ({ page, baseURL }) => {
+      const metadata = 'http://169.254.169.254/latest/meta-data/';
+      const stub = await stubApi(page);
+      await signIn(page);
+      await page.goto('/echo/inbox');
+      await workerActive(page);
+      const action = new URL(manifest.share_target.action, baseURL).href;
+      await page.route('http://evil.example/**', (route) =>
+        route.fulfill({
+          contentType: 'text/html',
+          body: `<form id="f" method="post" enctype="multipart/form-data" action="${action}">
+            <input type="hidden" name="url" value="${metadata}">
+          </form><script>document.getElementById('f').submit()</script>`,
+        }),
+      );
+      await page.goto('http://evil.example/');
+
+      await expect(addButton(page)).toBeVisible(LOAD);
+      await expect(page.getByText(metadata)).toBeVisible();
+      await page.waitForTimeout(500);
+      expect(stub.posted, 'nothing goes without the tap, with a session in the browser').toEqual([]);
+      expect(stub.uploads).toEqual([]);
+      expect(await pendingCount(page)).toBe(1);
+
+      await page.getByRole('button', { name: 'Discard' }).click();
+      await expect(page.getByText('Discarded. Nothing was added.')).toBeVisible(LOAD);
+      await expect(page).toHaveURL(/\/echo\/inbox$/);
+      expect(stub.posted).toEqual([]);
+      expect(await pendingCount(page)).toBe(0);
     });
 
     test('a shared line lands in the inbox and enters no URL', async ({ page }) => {
@@ -266,14 +323,34 @@ test.describe('share target', () => {
       await page.goto('/echo/inbox');
       await workerActive(page);
       await shareFromAndroid(page, { title: 'A title', text: SECRET });
+      await expect(page.getByText(SECRET)).toBeVisible(LOAD);
       await expectAdded(page);
 
       expect(stub.posted).toEqual([{ text: SECRET, surface: 'os_share', source_title: 'A title' }]);
       expect(stub.authorizations).toEqual([`Bearer ${FIXTURE_TOKEN}`]);
-      expect(stub.urls.filter((u) => u.includes(SECRET) || u.includes('share-target?'))).toEqual([]);
+      expect(stub.urls.filter((u) => u.includes(SECRET) || u.includes('incoming?'))).toEqual([]);
       expect(await page.evaluate(() => JSON.stringify(window.history.state))).not.toContain(SECRET);
       expect(await pendingCount(page)).toBe(0);
       expect(stub.unmatched).toEqual([]);
+    });
+
+    test('what reached the server is not sent again after a reload', async ({ page }) => {
+      const stub = await stubApi(page, { dropOnce: 'Different words' });
+      await signIn(page);
+      await page.goto('/echo/inbox');
+      await workerActive(page);
+      await shareFromAndroid(page, { url: 'https://example.org/essay', text: 'Different words' });
+      await addButton(page).click(LOAD);
+      await expect(page.getByRole('alert')).toContainText('still on this device', LOAD);
+      expect(await pendingCount(page)).toBe(1);
+
+      await page.reload();
+      await expect(page.getByText('Different words')).toBeVisible(LOAD);
+      await expect(page.getByText('https://example.org/essay')).toHaveCount(0);
+      await expectAdded(page);
+      expect(stub.posted.filter((body) => body.url)).toHaveLength(1);
+      expect(stub.posted.filter((body) => body.text)).toHaveLength(2);
+      expect(await pendingCount(page)).toBe(0);
     });
 
     test('a link in the text field becomes a link share', async ({ page }) => {
@@ -332,12 +409,28 @@ test.describe('share target', () => {
       expect(await pendingCount(page)).toBe(0);
     });
 
+    test('signing out leaves nothing for the next person on this browser', async ({ page }) => {
+      const stub = await stubApi(page);
+      await signIn(page);
+      await page.goto('/echo/inbox');
+      await workerActive(page);
+      await shareFromAndroid(page, { text: SECRET });
+      await expect(addButton(page)).toBeVisible(LOAD);
+
+      await page.getByRole('button', { name: 'Open navigation' }).click();
+      await page.getByRole('button', { name: 'Sign out' }).click();
+      await expect(page).toHaveURL(/\/login$/);
+      await expect.poll(() => pendingCount(page)).toBe(0);
+      expect(stub.posted).toEqual([]);
+    });
+
     test('an account without Echo is refused as at every intake, and nothing stays', async ({ page }) => {
       const stub = await stubApi(page, { refuse: true });
       await signIn(page);
       await page.goto('/echo/inbox');
       await workerActive(page);
       await shareFromAndroid(page, { text: SECRET });
+      await addButton(page).click(LOAD);
       await expect(page.getByRole('alert')).toContainText('Echo needs the Studio plan.', LOAD);
       expect(stub.posted).toHaveLength(1);
       expect(await pendingCount(page)).toBe(0);

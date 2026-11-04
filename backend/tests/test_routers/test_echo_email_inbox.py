@@ -311,6 +311,35 @@ def test_a_from_that_is_not_one_plain_allowed_address_is_dropped(db, owner, head
     assert report.dropped_sender == 1 and report.accepted == 0 and not _shares(db, owner[0])
 
 
+@pytest.mark.parametrize(
+    "lines",
+    [
+        # Python takes "From " for an envelope line, wherever it stands.
+        (b"From : stranger@evil.example", b"From: me@example.com", b"Subject: forged"),
+        (b"From: me@example.com", b"From : stranger@evil.example", b"Subject: forged"),
+        (b"Subject: forged", b"From: me@example.com", b"From : stranger@evil.example"),
+        # And any other line it cannot read ends the headers there.
+        (b"From: me@example.com", b"FROM : stranger@evil.example", b"Subject: forged"),
+        (b"From: me@example.com", b"From\t: stranger@evil.example"),
+        (b"From: me@example.com", b"no colon on this line", b"From: stranger@evil.example"),
+    ],
+    ids=["first-line", "middle", "last-line", "upper-case", "tab", "ends-the-headers"],
+)
+def test_a_from_the_parser_sets_aside_is_not_a_second_chance(db, owner, lines):
+    """RFC 5322's obsolete syntax allows a space before the colon, so a DMARC
+    check can read the stranger while Python reads only the allowed address."""
+    fake = FakeImap([_raw_mail(*lines, b"Message-ID: <forged@x>")])
+    report = _poll(db, fake)
+    assert report.dropped_sender == 1 and report.accepted == 0 and not _shares(db, owner[0])
+    assert fake.bodies_fetched() == [], "dropped on its headers"
+
+
+def test_an_ordinary_header_block_is_not_caught_by_that_rule(db, owner):
+    """The same block with nothing set aside, including a folded header."""
+    fake = FakeImap([_raw_mail(b"From: me@example.com", b"Subject: a\r\n  folded line", b"Message-ID: <fine@x>")])
+    assert _poll(db, fake).accepted == 1
+
+
 def test_an_empty_list_accepts_nothing_and_leaves_the_mailbox_alone(db, owner, monkeypatch):
     monkeypatch.setattr(settings, "ECHO_IMAP_ALLOWED_SENDERS", " , ")
     connect = MagicMock()

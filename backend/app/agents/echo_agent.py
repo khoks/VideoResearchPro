@@ -27,6 +27,10 @@ What code guarantees, not the prompt:
 - **Citations are what the draft used.** Markers the draft cites are mapped
   to the items it was given; markers that match nothing are dropped. The
   delivered text carries no markers.
+- **Mail grounds nothing.** Anyone can write a mail and its From line, so an
+  ``unverified`` item is labelled so in the prompt, and a draft citing one is
+  flagged ``unverified_source`` and told to the user, whatever the model made
+  of the prompt. Citing only such items leaves a draft ``ungrounded``.
 """
 from __future__ import annotations
 
@@ -74,6 +78,8 @@ class ContextItem:
     label: str
     url: str | None = None
     third_party: bool = True
+    #: Nothing proves who wrote it (an inbound email), so it grounds no claim.
+    unverified: bool = False
 
 
 @dataclass
@@ -328,7 +334,11 @@ def build_graph(deps: DraftDeps):
             {"kind": items[m].kind, "ref": m, "label": items[m].label, **({"url": items[m].url} if items[m].url else {})}
             for m in cited_markers(text) if m in items
         ]
-        if not citations and state.get("intent") in ("question", "opinion", "recommendation"):
+        if any(items[c["ref"]].unverified for c in citations):
+            flags.append("unverified_source")
+            notes.append("Part of this draft comes from an email, and nothing proves who wrote it. Check it before sending.")
+        grounded = [c for c in citations if not items[c["ref"]].unverified]
+        if not grounded and state.get("intent") in ("question", "opinion", "recommendation"):
             flags.append("ungrounded")
             notes.append("Nothing in your library or notes backed this reply; check every claim before sending.")
         s = best.get("scores")

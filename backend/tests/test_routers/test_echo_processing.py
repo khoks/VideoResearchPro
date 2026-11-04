@@ -8,14 +8,16 @@ what the per-share and whole-brain deletes depend on.
 from __future__ import annotations
 
 import json
+import socket
 from unittest.mock import patch
 
+import httpx
 import pytest
 
 from app.config import settings
 from app.models.document_visibility import DocumentVisibility
 from app.models.share import Share
-from app.services import auth_service, echo_processing_service, echo_vectors
+from app.services import auth_service, echo_media, echo_processing_service, echo_vectors
 from app.services.article_extraction.extractor import ExtractionResult
 from app.sources.types import ExtractedText
 
@@ -103,7 +105,7 @@ def test_article_link_is_extracted_and_offered_to_the_library(unauthenticated_cl
     s = unauthenticated_client.post(SHARES, json={"url": ARTICLE}, headers=two["ha"]).json()
     with patch("app.services.article_extraction.extractor.extract_text", return_value=_article()) as ex:
         assert _process(db, s["id"]).state == "processed"
-    ex.assert_called_once_with(ARTICLE)
+    ex.assert_called_once_with(ARTICLE, guard=echo_media.require_public_address)
     got = unauthenticated_client.get(f"{SHARES}/{s['id']}", headers=two["ha"]).json()
     assert got["extracted_text"].startswith("Tariffs raise prices")
     p = got["processing"]
@@ -148,6 +150,68 @@ def test_text_file_is_decoded(unauthenticated_client, db, two, chroma):
 # ---------------------------------------------------------------------------
 # Fail-soft and retry
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def web():
+    """The real extractor and the real guard over a small fake internet: a
+    resolver and the extractor's one call out. ``fetched`` is every address
+    that left the server."""
+    dns: dict[str, str] = {}
+    pages: dict[str, httpx.Response] = {}
+    fetched: list[str] = []
+
+    def getaddrinfo(host, port):
+        if host not in dns:
+            raise socket.gaierror("unknown host")
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (dns[host], port))]
+
+    def get(url, **_kw):
+        fetched.append(url)
+        page = pages.get(url, httpx.Response(404))
+        return httpx.Response(page.status_code, headers=page.headers, content=page.content,
+                              request=httpx.Request("GET", url))
+
+    with patch.object(echo_media, "_getaddrinfo", getaddrinfo), \
+         patch("app.services.article_extraction.extractor.httpx.get", get):
+        yield dns, pages, fetched
+
+
+@pytest.mark.parametrize("url", [
+    "http://169.254.169.254/latest/meta-data/",  # the cloud metadata address
+    "http://127.0.0.1:8000/api/v1/health",
+    "http://10.0.0.5/admin",
+    "http://[::1]/",
+    "http://intranet.example.org/wiki",  # a public-looking name for a private host
+])
+def test_a_shared_link_cannot_point_the_server_at_its_own_network(unauthenticated_client, db, two, chroma, web, url):
+    dns, _pages, fetched = web
+    dns.update({"169.254.169.254": "169.254.169.254", "127.0.0.1": "127.0.0.1", "10.0.0.5": "10.0.0.5",
+                "::1": "::1", "intranet.example.org": "10.1.2.3"})
+    s = unauthenticated_client.post(SHARES, json={"url": url, "surface": "os_share"}, headers=two["ha"]).json()
+    result = _process(db, s["id"])
+    assert result.state == "failed" and "private network" in result.reason
+    assert fetched == [], "nothing left the server"
+
+
+def test_a_redirect_into_a_private_network_stops_there(unauthenticated_client, db, two, chroma, web):
+    dns, pages, fetched = web
+    dns.update({"example.org": "93.184.216.34", "metadata.example.org": "169.254.169.254"})
+    pages[ARTICLE] = httpx.Response(302, headers={"location": "http://metadata.example.org/latest/"})
+    s = unauthenticated_client.post(SHARES, json={"url": ARTICLE}, headers=two["ha"]).json()
+    result = _process(db, s["id"])
+    assert result.state == "failed" and "private network" in result.reason
+    assert fetched == [ARTICLE], "the second hop was never fetched"
+
+
+def test_a_self_hosted_install_can_allow_its_own_network(unauthenticated_client, db, two, chroma, web, monkeypatch):
+    dns, _pages, fetched = web
+    dns["intranet.example.org"] = "10.1.2.3"
+    monkeypatch.setattr(settings, "ECHO_FETCH_ALLOW_PRIVATE", True)
+    url = "http://intranet.example.org/wiki"
+    s = unauthenticated_client.post(SHARES, json={"url": url}, headers=two["ha"]).json()
+    result = _process(db, s["id"])
+    assert fetched == [url] and "private network" not in result.reason
 
 
 def test_a_failed_extraction_stays_browsable_and_retry_recovers(unauthenticated_client, db, two, chroma, monkeypatch):

@@ -1258,6 +1258,7 @@ Share shape: `{ id, received_at, updated_at, surface, content_type, kind: "url"|
 - `DELETE /api/v1/echo/share-tokens/{id}` — `{ revoked: true }`; 404 for another tenant's or an already revoked token.
 - `GET /api/v1/echo/share-tokens/check` — for the extension's settings: `{ ok, email, via: "share_token" | "session" }`.
 - **Source.** `POST /api/v1/echo/shares` takes optional `source_url` (http/https, validated like a share URL) and `source_title`: the page a quote or an image came from. The share shape gains `source: { url, title }`.
+- **Pages by address.** A URL share that is not a YouTube video is fetched by processing. Its address and every redirect go through the same public-address check as an image, below, unless `ECHO_FETCH_ALLOW_PRIVATE` is set. A refused fetch fails the share with a reason.
 - **Images by address.** A URL share with `content_type: "image"`, or a URL ending in an image extension, is fetched by processing into the tenant's share directory, then read like an uploaded image. Hosts that resolve to private, loopback, link-local or other non-global addresses are refused, and so is every redirect into one, unless `ECHO_FETCH_ALLOW_PRIVATE` is set. Only image content types are kept, up to `ECHO_SHARE_MAX_BYTES`. A refused fetch fails the share with a reason, and Retry runs it again.
 
 ### Echo anticipation cards (S-3.8.2)

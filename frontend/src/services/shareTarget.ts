@@ -2,10 +2,16 @@
  * The Android share target (T-3.7.6.1), page side.
  *
  * `public/share-target-sw.js` keeps each incoming share in the Cache API and
- * redirects here without it, so the shared words never sit in a URL. This
- * module reads what is waiting, turns it into the same `/echo/shares` calls
- * every other surface makes, and removes it. Waiting on the device is also how
- * a share survives a sign-in: nothing about it travels through the redirect.
+ * redirects to the page without it, so the shared words never sit in a URL.
+ * This module reads what is waiting, turns it into the same `/echo/shares`
+ * calls every other surface makes, and removes it. Waiting on the device is
+ * also how a share survives a sign-in: nothing about it travels through the
+ * redirect.
+ *
+ * What waits here is a proposal, not a request: any website can post a form to
+ * the share target, and only the user's tap on the page says this one is theirs.
+ * Nothing here posts on its own, and a delivery covers only the shares the user
+ * was shown (`keys`), not whatever has arrived since.
  */
 import type { AxiosError } from 'axios';
 import { MAX_DROP_FILES } from '../utils/echoDrop';
@@ -13,11 +19,15 @@ import { parseQuickShareInput } from '../utils/echoShares';
 import { detailFromErrorBody } from '../utils/ingestResults';
 import { echoApi } from './echoApi';
 
-export const SHARE_TARGET_PATH = '/echo/share-target';
+/** The manifest's share target: the worker's whole scope, and never a page. */
+const SHARE_TARGET_PATH = '/echo/share-target';
+/** Where the worker sends a share. Outside its scope, so the page is not controlled. */
+export const SHARE_REVIEW_PATH = '/echo/incoming';
 const WORKER_URL = '/share-target-sw.js';
 // Repeated in public/share-target-sw.js, which is served as it is.
 const CACHE_NAME = 'echo-pending-shares-v1';
 const STORED_AT_HEADER = 'x-stored-at';
+const SENT_HEADER = 'x-sent-parts';
 const SOURCE_TITLE_MAX = 300;
 
 /** A share left waiting this long is dropped unread: whoever opens the app a
@@ -30,6 +40,8 @@ export interface PendingShare {
   text: string;
   url: string;
   files: File[];
+  /** Indexes into the plan that have already reached the server. */
+  sent: number[];
 }
 
 export type SharePart =
@@ -40,7 +52,7 @@ export type SharePart =
 export type ShareDelivery =
   | { kind: 'nothing' }
   | { kind: 'added'; count: number; skipped: number }
-  | { kind: 'refused'; count: number; status: number; detail: string | null }
+  | { kind: 'refused'; count: number; refused: number; status: number; detail: string | null }
   | { kind: 'failed'; detail: string | null };
 
 /** Makes the app ready to receive shares. Fails quietly: an insecure origin
@@ -65,8 +77,13 @@ function field(form: FormData, name: string): string {
   return typeof value === 'string' ? value : '';
 }
 
+function sentParts(response: Response): number[] {
+  return (response.headers.get(SENT_HEADER) ?? '').split(',').filter(Boolean).map(Number);
+}
+
 /** Everything waiting that is still wanted, oldest first. Stale or unreadable
- * entries are removed here. */
+ * entries are removed here, and so is one with nothing left to post: a form
+ * with no fields, or a share that went in full and could not be removed. */
 export async function readPendingShares(now: number = Date.now()): Promise<PendingShare[]> {
   const stash = await openStash();
   if (!stash) return [];
@@ -80,14 +97,17 @@ export async function readPendingShares(now: number = Date.now()): Promise<Pendi
     }
     try {
       const form = await response.formData();
-      found.push({
+      const item = {
         key: request.url,
         storedAt,
         title: field(form, 'title'),
         text: field(form, 'text'),
         url: field(form, 'url'),
         files: form.getAll('files').filter((f): f is File => f instanceof File && f.size > 0),
-      });
+        sent: sentParts(response),
+      };
+      if (unsentParts(item).parts.length) found.push(item);
+      else await stash.delete(request);
     } catch {
       await stash.delete(request);
     }
@@ -106,6 +126,38 @@ export async function hasPendingShares(): Promise<boolean> {
 async function forgetPendingShare(key: string): Promise<void> {
   const stash = await openStash();
   await stash?.delete(key);
+}
+
+/** The user declined these. They leave the device unposted. */
+export async function discardPendingShares(keys: string[]): Promise<void> {
+  await Promise.all(keys.map(forgetPendingShare));
+}
+
+/** On sign-out: a waiting share carries no owner, so without this the next
+ * person to sign in on this browser would be offered it. */
+export async function clearPendingShares(): Promise<void> {
+  try {
+    if (typeof caches !== 'undefined') await caches.delete(CACHE_NAME);
+  } catch {
+    /* signing out must not depend on the Cache API */
+  }
+}
+
+/** Remember on the device what has been posted, so that a reload, a retry or
+ * a reopened app does not post it again. The whole entry is rewritten, which
+ * is one atomic step of the Cache API. If it fails the worst case is one
+ * share added twice. */
+async function recordSent(key: string, sent: Set<number>): Promise<void> {
+  try {
+    const stash = await openStash();
+    const stored = await stash?.match(key);
+    if (!stash || !stored) return;
+    const headers = new Headers(stored.headers);
+    headers.set(SENT_HEADER, [...sent].join(','));
+    await stash.put(key, new Response(await stored.blob(), { headers }));
+  } catch {
+    /* see above */
+  }
 }
 
 /**
@@ -145,55 +197,67 @@ async function sendPart(part: SharePart): Promise<void> {
   }
 }
 
-/** A refusal is the server's answer and will not change on a retry, so the
- * share is dropped (a plan without Echo, a file over the cap). Anything else
- * may pass later, so it keeps waiting: a dropped connection, a server error, a
- * rate limit, or a session that ended, which sends the user to sign in. */
+/** What is left of a share to post, for showing and for sending. */
+export function unsentParts(pending: PendingShare): { parts: SharePart[]; skipped: number } {
+  const { parts, skipped } = planOsShare(pending);
+  return { parts: parts.filter((_, index) => !pending.sent.includes(index)), skipped };
+}
+
+/** A refusal is the server's answer and will not change on a retry, so that
+ * part is dropped (a file over the cap). Anything else may pass later, so the
+ * share keeps waiting: a dropped connection, a server error, a rate limit, or
+ * a session that ended, which sends the user to sign in. */
 function refusedStatus(err: unknown): number | null {
   const status = (err as AxiosError).response?.status;
   if (status === undefined || status >= 500 || status === 401 || status === 429) return null;
   return status;
 }
 
-// Parts already sent, so a retry on this page does not add them twice.
-const sentParts = new Set<string>();
-
-async function deliver(send: (part: SharePart) => Promise<void>): Promise<ShareDelivery> {
-  const pending = await readPendingShares();
+async function deliver(keys: string[], send: (part: SharePart) => Promise<void>): Promise<ShareDelivery> {
+  const wanted = new Set(keys);
+  const pending = (await readPendingShares()).filter((item) => wanted.has(item.key));
   if (!pending.length) return { kind: 'nothing' };
   let count = 0;
   let skipped = 0;
-  let refused: { status: number; detail: string | null } | null = null;
+  let refused = 0;
+  let first: { status: number; detail: string | null } | null = null;
   for (const item of pending) {
     const plan = planOsShare(item);
     skipped += plan.skipped;
+    const sent = new Set(item.sent);
     for (const [index, part] of plan.parts.entries()) {
-      const id = `${item.key}#${index}`;
-      if (sentParts.has(id)) continue;
+      if (sent.has(index)) continue;
+      // A 403 is the whole account, so the rest would only hear it again.
+      if (first?.status === 403) {
+        refused += 1;
+        continue;
+      }
       try {
         await send(part);
-        sentParts.add(id);
-        count += 1;
       } catch (err) {
         const detail = detailFromErrorBody((err as AxiosError).response?.data) ?? null;
         const status = refusedStatus(err);
         if (status === null) return { kind: 'failed', detail };
-        refused = refused ?? { status, detail };
-        break;
+        refused += 1;
+        if (!first || status === 403) first = { status, detail };
+        continue;
       }
+      sent.add(index);
+      await recordSent(item.key, sent);
     }
+    count += sent.size;
     await forgetPendingShare(item.key);
   }
-  return refused ? { kind: 'refused', count, ...refused } : { kind: 'added', count, skipped };
+  return first ? { kind: 'refused', count, refused, ...first } : { kind: 'added', count, skipped };
 }
 
 let delivering: Promise<ShareDelivery> | null = null;
 
-/** Post everything waiting. Each share leaves the device once it has been
- * added or refused, and only then. A second call while one runs joins it, so
- * no share is posted twice. */
-export function deliverPendingShares(send: (part: SharePart) => Promise<void> = sendPart): Promise<ShareDelivery> {
-  delivering ??= deliver(send).finally(() => {
+/** Post the shares the user was shown and agreed to. Each one leaves the
+ * device once every part has been added or refused, and only then. A second
+ * call while one runs joins it, so no share is posted twice. */
+export function deliverPendingShares(keys: string[], send: (part: SharePart) => Promise<void> = sendPart): Promise<ShareDelivery> {
+  delivering ??= deliver(keys, send).finally(() => {
     delivering = null;
   });
   return delivering;

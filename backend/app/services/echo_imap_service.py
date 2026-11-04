@@ -14,14 +14,16 @@ forged (docs/echo-share-surfaces.md), and that shapes everything here:
   A message that does not name exactly one allowed sender is dropped on its
   headers, before its body is ever fetched.
 - A message is a **text** share, always. The poller never makes a URL share,
-  which would have the server fetch an address a stranger chose, past the
-  article extractor's lack of a private-address guard. Attachments are listed
-  on the share and not read, so a forged message cannot drive vision or Whisper
-  spend. A link in a mail stays text in the inbox.
+  which would have the server fetch an address a stranger chose; the public-
+  address guard limits where a fetch goes, not whether a stranger starts one.
+  Attachments are listed on the share and not read, so a forged message cannot
+  drive vision or Whisper spend. A link in a mail stays text in the inbox.
 - A message is never the user's own words. ``author_is_tenant`` stays False,
   and ``echo_intake_service`` refuses to make it True for this surface, so mail
   cannot reach voice signals (D-089 item 1).
 - Nothing from a message goes in ``user_annotation``: that field is the user's.
+- A draft may retrieve a message, labelled as an unverified email, and a draft
+  that cites one says so (``echo_draft_service``, ``echo_agent``).
 - The log carries counts and exception types, never a body, a subject, an
   address or the password.
 
@@ -114,7 +116,16 @@ def sender_of(msg: EmailMessage) -> str | None:
     is refused, not guessed at. A second address or header claims an allowed
     sender beside the real one, and a malformed header is worse: Python reads
     ``owner@x.com <evil@y.com>`` as the first address, where a mail provider's
-    DMARC check reads the second."""
+    DMARC check reads the second.
+
+    The same goes for a header block that does not parse whole. Python sets
+    aside a line it does not read as a header: ``From : evil@y.com``, with the
+    space RFC 5322's obsolete syntax allows, becomes an envelope line, a
+    message defect or the start of a body by its position, and any other
+    unreadable line ends the headers there. ``get_all`` then shows one From,
+    where a DMARC check may have read the other."""
+    if msg.get_unixfrom() is not None or msg.defects or str(msg.get_payload() or "").strip():
+        return None
     headers = msg.get_all("From") or []
     if len(headers) != 1:
         return None

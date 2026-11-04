@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 import trafilatura
@@ -45,6 +45,11 @@ _USER_AGENT = (
     "pratidhvani/0.1 (+https://github.com/anthropics/pratidhvani; article-extraction)"
 )
 
+#: Called with every address before it is fetched; raises to refuse it. A
+#: fetch with a guard walks redirects itself, so each hop is checked.
+UrlGuard = Callable[[str], None]
+_MAX_GUARDED_REDIRECTS = 5
+
 
 @dataclass
 class ExtractionResult:
@@ -75,20 +80,39 @@ class ExtractionResult:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
-def _fetch_html(url: str) -> str | None:
-    """GET ``url`` and return the raw HTML body.
-
-    Returns ``None`` on any HTTP failure or non-2xx response. Callers
-    treat None as "extraction failed, document unavailable" — same
-    contract every other connector uses for fail-soft.
-    """
-    try:
-        resp = httpx.get(
+def _get(url: str, guard: UrlGuard | None) -> httpx.Response:
+    if guard is None:
+        return httpx.get(
             url,
             headers={"User-Agent": _USER_AGENT},
             timeout=_TIMEOUT,
             follow_redirects=True,
         )
+    current = url
+    for _ in range(_MAX_GUARDED_REDIRECTS + 1):
+        guard(current)
+        resp = httpx.get(
+            current,
+            headers={"User-Agent": _USER_AGENT},
+            timeout=_TIMEOUT,
+            follow_redirects=False,
+        )
+        if not resp.is_redirect:
+            return resp
+        current = str(resp.url.join(resp.headers["location"]))
+    raise httpx.TooManyRedirects("too many redirects", request=resp.request)
+
+
+def _fetch_html(url: str, guard: UrlGuard | None = None) -> str | None:
+    """GET ``url`` and return the raw HTML body.
+
+    Returns ``None`` on any HTTP failure or non-2xx response. Callers
+    treat None as "extraction failed, document unavailable" — same
+    contract every other connector uses for fail-soft. What a ``guard``
+    raises is not a fetch failure, and reaches the caller.
+    """
+    try:
+        resp = _get(url, guard)
     except (httpx.HTTPError, httpx.InvalidURL) as e:
         logger.warning("article-extraction fetch failed for %s: %s", url, e)
         return None
@@ -302,7 +326,7 @@ def _playwright_fallback(url: str) -> ExtractionResult | None:
     return primary
 
 
-def extract_text(url: str) -> ExtractionResult | None:
+def extract_text(url: str, *, guard: UrlGuard | None = None) -> ExtractionResult | None:
     """Extract clean article text from ``url``.
 
     Hybrid strategy:
@@ -319,6 +343,10 @@ def extract_text(url: str) -> ExtractionResult | None:
         url: Absolute HTTP/HTTPS URL of the article. Relative paths,
             ``file://``, or other schemes are rejected by httpx and
             surface as a warning + None.
+        guard: Checks every address fetched, the first and each redirect,
+            and raises to refuse one. For a URL the server should not
+            trust. The Playwright fallback is skipped under a guard: a
+            browser follows redirects no guard can see.
 
     Returns:
         :class:`ExtractionResult` on success, ``None`` on failure.
@@ -327,7 +355,7 @@ def extract_text(url: str) -> ExtractionResult | None:
         logger.warning("extract_text: invalid url %r", url)
         return None
 
-    html = _fetch_html(url)
+    html = _fetch_html(url, guard)
     if not html:
         # HTTP-level failure — Playwright fallback wouldn't help on
         # an unreachable URL, so short-circuit here.
@@ -340,7 +368,7 @@ def extract_text(url: str) -> ExtractionResult | None:
     # Either trafilatura returned nothing (likely SPA shell), or it
     # returned a too-short result (likely paywall stub or navigation
     # page). Try the Playwright fallback.
-    fallback = _playwright_fallback(url)
+    fallback = None if guard else _playwright_fallback(url)
     if fallback is not None and fallback.word_count >= MIN_WORD_COUNT:
         return fallback
 

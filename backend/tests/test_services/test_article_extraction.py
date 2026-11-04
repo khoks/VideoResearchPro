@@ -139,6 +139,83 @@ def _mock_response(html: str, status: int = 200) -> Mock:
     return resp
 
 
+class Web:
+    """``httpx.get`` over a dict of real responses, recording each call."""
+
+    def __init__(self, pages: dict[str, httpx.Response]):
+        self.pages = pages
+        self.calls: list[tuple[str, bool]] = []
+
+    def __call__(self, url, **kwargs):
+        self.calls.append((url, kwargs["follow_redirects"]))
+        page = self.pages[url]
+        return httpx.Response(page.status_code, headers=page.headers, content=page.content,
+                              request=httpx.Request("GET", url))
+
+
+def _redirect(location: str) -> httpx.Response:
+    return httpx.Response(302, headers={"location": location})
+
+
+# ---------------------------------------------------------------------------
+# A fetch under a guard (Echo's shared links)
+# ---------------------------------------------------------------------------
+
+
+def test_a_guard_sees_every_address_and_a_relative_redirect_resolves():
+    web = Web({
+        "https://a.example/start": _redirect("/moved"),
+        "https://a.example/moved": _redirect("https://b.example/article"),
+        "https://b.example/article": httpx.Response(200, text=ARTICLE_HTML),
+    })
+    seen: list[str] = []
+    with patch("app.services.article_extraction.extractor.httpx.get", web):
+        result = extract_text("https://a.example/start", guard=seen.append)
+    assert result is not None and result.word_count > 0
+    assert seen == ["https://a.example/start", "https://a.example/moved", "https://b.example/article"]
+    assert all(follow is False for _url, follow in web.calls), "httpx must not walk a redirect the guard cannot see"
+
+
+def test_what_a_guard_raises_reaches_the_caller():
+    class Refused(RuntimeError):
+        pass
+
+    def guard(url):
+        if "private" in url:
+            raise Refused(url)
+
+    web = Web({"https://a.example/start": _redirect("https://private.example/")})
+    with patch("app.services.article_extraction.extractor.httpx.get", web), pytest.raises(Refused):
+        extract_text("https://a.example/start", guard=guard)
+    assert [url for url, _ in web.calls] == ["https://a.example/start"]
+
+
+def test_a_guarded_redirect_loop_ends():
+    web = Web({"https://a.example/x": _redirect("https://a.example/x")})
+    with patch("app.services.article_extraction.extractor.httpx.get", web):
+        assert extract_text("https://a.example/x", guard=lambda url: None) is None
+    assert len(web.calls) == 6
+
+
+def test_a_guarded_fetch_never_reaches_the_browser_fallback(monkeypatch):
+    """A browser follows redirects no guard sees."""
+    fallback = Mock(return_value=None)
+    monkeypatch.setattr("app.services.article_extraction.extractor._playwright_fallback", fallback)
+    web = Web({"https://a.example/thin": httpx.Response(200, text="<html><body><p>Too short.</p></body></html>")})
+    with patch("app.services.article_extraction.extractor.httpx.get", web):
+        extract_text("https://a.example/thin", guard=lambda url: None)
+        fallback.assert_not_called()
+        extract_text("https://a.example/thin")
+    fallback.assert_called_once()
+
+
+def test_without_a_guard_the_fetch_is_as_it_was():
+    web = Web({"https://a.example/x": httpx.Response(200, text=ARTICLE_HTML)})
+    with patch("app.services.article_extraction.extractor.httpx.get", web):
+        extract_text("https://a.example/x")
+    assert web.calls == [("https://a.example/x", True)]
+
+
 # ---------------------------------------------------------------------------
 # Trafilatura primary path
 # ---------------------------------------------------------------------------

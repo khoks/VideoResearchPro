@@ -50,6 +50,8 @@ QUOTA_RESOURCE = "echo_drafts"
 VOICE_TEST_MIN_PAIRS = 20
 VOICE_TEST_MAX_OWN_SHARE = 0.80
 VOICE_TEST_RULE_VERSION = "2026-10-19"
+#: The prompts name this label, and the user reads it under a draft.
+UNVERIFIED_MAIL_LABEL = "an unverified email, not your view"
 
 
 class DraftBlocked(Exception):
@@ -264,6 +266,7 @@ def _real_deps(db: Session, user: User):
     from app.models.voice_signal import VoiceSignal
     from app.services import chroma_service, echo_personal_vectors, echo_vectors, note_index, qa_scope_service
     from app.services import echo_signal_extraction as extraction
+    from app.services.echo_intake_service import EMAIL_SURFACE
     from app.services.llm_routing import resolve_config
 
     tenant = user.id
@@ -283,11 +286,13 @@ def _real_deps(db: Session, user: User):
         for n, hit in enumerate(echo_vectors.query_share_vectors(tenant, topic, n=3), 1):
             md = hit.get("metadata") or {}
             # A context-only share may ground the draft but is never quoted
-            # (D-089 item 1); the user's own share is their own words.
+            # (D-089 item 1); the user's own share is their own words. Mail
+            # was not shared by anyone we can name: a From line proves nothing.
             own = bool(md.get("author_is_tenant"))
-            items.append(ContextItem(f"S{len(items) + 1}", "share", hit["text"][:1200],
-                                     "something you wrote and shared" if own else "something you shared",
-                                     None, third_party=not own))
+            mail = md.get("surface") == EMAIL_SURFACE
+            label = UNVERIFIED_MAIL_LABEL if mail else "something you wrote and shared" if own else "something you shared"
+            items.append(ContextItem(f"S{len(items) + 1}", "share", hit["text"][:1200], label,
+                                     None, third_party=not own, unverified=mail))
         for n, hit in enumerate(chroma_service.query_qa_collection(topic, top_k=3, tenant_id=tenant), 1):
             # A past answer is the model's words over third-party sources.
             items.append(ContextItem(f"Q{n}", "qa", hit["text"][:1200], "a question you asked before", None, third_party=True))

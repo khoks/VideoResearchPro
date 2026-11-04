@@ -1033,6 +1033,7 @@ def execute_topic_job(self, job_id: str) -> None:
                     ),
                     progress_callback=_search_progress,
                     candidates_out=candidate_pool,
+                    published_after_days=job.published_after_days,
                 )
             logger.info(
                 f"[job:{job_id}] Search Agent complete: found "

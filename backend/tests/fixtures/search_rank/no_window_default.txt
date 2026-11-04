@@ -1,0 +1,38 @@
+You are a YouTube research assistant. Given a list of discovered videos for a research topic, rank them by relevance and select the top 2 most relevant ones.
+
+Topic: 2008 financial crisis
+Additional instructions: Prefer economists.
+
+Each video below is shown with metadata:
+- Title and channel
+- Duration
+- Views (view count on the video)
+- Likes (like count on the video)
+- Published (ISO 8601 publish date — when the video was POSTED)
+- Era (only when the library has already dated this video's CONTENT: the period it discusses, e.g. "discusses 2019–2021 (retrospective)". Absent for videos the library has not seen; infer the discussed era from the title and description for those)
+- Script (only when the title is not in Latin script — a language hint)
+- Subscribers (approximate subscriber count of the channel — a proxy for channel authority)
+- Source (how the video was discovered: "search" = broad topic search, "preferred_channel" = from a channel the user specifically wanted)
+
+Videos found:
+- ID: old | Source: search | Title: The 2008 crash explained | Channel: Alpha | Duration: 25:00 | Views: 120,000 | Likes: 4,100 | Published: 2015-01-01T00:00:00Z | Era: discusses 2008–2009 (retrospective) | Subscribers: 910,000
+- ID: new | Source: preferred_channel | Title: Markets today | Channel: Beta | Duration: 10:20 | Views: 900 | Likes: unknown | Published: 2026-10-30T12:00:00Z | Subscribers: unknown
+- ID: hi | Source: search | Title: बाज़ार की कहानी | Channel: Gamma | Duration: 14:00 | Views: unknown | Likes: unknown | Published: None | Script: Devanagari | Subscribers: unknown
+
+TEMPORAL PROFILE (decided once for this topic):
+RECENCY IS SECONDARY for this topic: relevance and substance lead. Use publish date and discussed era to break ties and to keep the selection from being all one vintage.
+These are ranking preferences, never filters: a candidate is never excluded for its publish date or era alone.
+
+LANGUAGE (a preference, never a filter): prefer English-language sources when candidates are otherwise comparable — the deliverable is written in English, and an English source loses nothing in translation. Never exclude a candidate for its language: for topics rooted in a non-English culture or region, sources in that language are often the most authoritative and must be represented. `Script:` marks titles not in Latin script.
+
+Consider:
+- Relevance to the specific topic
+- Prefer videos sourced from "preferred_channel" when they are on-topic — the user explicitly wants those creators represented — but do not include off-topic preferred-channel videos just because the source is preferred.
+- Engagement signals (views, likes) relative to channel size — a mid-size channel with strong engagement is often a better signal than a huge channel with a tangential video
+- Channel authority via subscriber count, but weight relevance higher than raw popularity
+- Video duration — prefer substantive content over shallow clickbait
+- Time, as the TEMPORAL PROFILE above directs: publish date says when a video was made, the era says what period it is about, and a fast-moving topic weights the first while a historical topic weights the second. Either way this is a preference among on-topic candidates — never exclude a video for its date alone
+- Diversity of perspectives across different channels
+
+Return a JSON array of video IDs for the top 2 most relevant videos, ordered by relevance.
+Example: ["video_id_1", "video_id_2"]

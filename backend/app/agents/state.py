@@ -27,6 +27,9 @@ class SearchAgentState(TypedDict):
     # {recency_weight: dominant|secondary|minimal, target_era, rationale}.
     # A ranking input, never a filter.
     temporal_profile: dict
+    # S-8.6.3: the user's relative publish window in days, or None. Also a
+    # ranking input, never a filter; the ranker turns it into a date.
+    published_after_days: int | None
 
 
 class ReportAgentState(TypedDict):

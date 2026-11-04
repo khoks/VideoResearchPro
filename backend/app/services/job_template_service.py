@@ -132,6 +132,7 @@ def parameters_from_job(job: Job) -> TemplateParameters:
         output_length=job.output_length,
         visual_analysis=bool(job.visual_analysis),
         source_types=_source_types(job) if is_topic else None,
+        published_after_days=job.published_after_days if is_topic else None,
         channel_list=None if is_topic else _list(job.channel_list),
         videos_per_channel=job.videos_per_channel if job.job_type == "channel" else None,
     )

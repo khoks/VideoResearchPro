@@ -5,6 +5,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.services import job_source_types
 
+# S-8.6.3: ten years. Past that a "recent" window says nothing, and the bound
+# keeps the date arithmetic at run time in range.
+MAX_PUBLISHED_AFTER_DAYS = 3650
+
 
 class JobCreate(BaseModel):
     job_type: Literal["topic", "channel", "subscription"]
@@ -44,6 +48,15 @@ class JobCreate(BaseModel):
     # go through `connector_dispatch`. `num_videos` is shared across them
     # (`job_source_types.share_limits`), so the tier cap bounds the run.
     source_types: list[str] | None = Field(default=None, max_length=32)
+
+    # S-8.6.3: prefer sources published in the last N days, counted when the
+    # run ranks its candidates, not when the job or a template was saved. A
+    # ranking PREFERENCE, never a filter (D-059, D-072): a source outside the
+    # window is still selected when nothing better exists. Only the search
+    # agent ranks, so this needs a run that searches YouTube.
+    published_after_days: int | None = Field(
+        default=None, ge=1, le=MAX_PUBLISHED_AFTER_DAYS
+    )
 
     # Channel fields
     channel_list: list[str] | None = None
@@ -87,6 +100,19 @@ class JobCreate(BaseModel):
                 f"num_videos must be at least {len(self.source_types)}, one per "
                 "source type: a run shares num_videos across the sources it searches"
             )
+        if self.published_after_days is not None:
+            # A setting that would quietly do nothing is refused, as with
+            # source_types (D-082): nothing else ranks a run's candidates.
+            if self.job_type != "topic":
+                raise ValueError(
+                    "published_after_days applies to topic research only; channel "
+                    "and subscription runs read a channel's uploads as they are"
+                )
+            if self.source_types is not None and "video" not in self.source_types:
+                raise ValueError(
+                    "published_after_days steers how YouTube results are ranked, so "
+                    "the run must search YouTube; the other sources are not ranked"
+                )
         return self
 
 
@@ -110,6 +136,8 @@ class JobResponse(BaseModel):
     visual_analysis: bool = False
     # S-1.5.13: what the run searches, resolved (["video"] by default).
     source_types: list[str] = Field(default_factory=lambda: ["video"])
+    # S-8.6.3: the preferred window in days; None means no preference.
+    published_after_days: int | None = None
     # E-8.6: the template version this run started from, if any.
     template_id: str | None = None
     template_version: int | None = None

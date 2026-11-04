@@ -33,6 +33,12 @@ class Job(Base):
     # should dispatch across — e.g. '["video"]', '["video","reddit_post","hn_story"]'.
     # NULL → ["video"] for back-compat. See ``app.services.connector_dispatch``.
     source_types_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # S-8.6.3: prefer sources published in the last N days; NULL is no
+    # preference. Kept in days and turned into a date only when the run ranks
+    # (`search_agent._publish_window_guidance`), so neither a queued job nor
+    # the template it came from goes stale. A ranking preference, never a
+    # filter (D-059, D-072).
+    published_after_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     min_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     channel_type_filters: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array

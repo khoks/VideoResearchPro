@@ -192,6 +192,7 @@ def test_a_message_from_an_allowed_sender_lands_in_the_inbox_as_context(unauthen
     assert item["source"]["message_id"] == "<one@mail.example>"
     assert fake.selected == '"INBOX"' and fake.logged_out
     assert fake.flagged == ["1"], "dealt with, so the next UNSEEN search skips it"
+    assert all("PEEK" in items for _, items in fake.fetched), "reading must not be what marks it read"
 
 
 def test_it_goes_through_the_same_processing_as_every_share(db, owner, monkeypatch):

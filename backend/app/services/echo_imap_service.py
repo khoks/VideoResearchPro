@@ -119,9 +119,7 @@ def sender_of(msg: EmailMessage) -> str | None:
     if len(headers) != 1:
         return None
     header = headers[0]
-    if header.defects or len(header.groups) != 1 or header.groups[0].display_name is not None:
-        return None
-    if len(header.addresses) != 1:
+    if header.defects or len(header.addresses) != 1 or header.groups[0].display_name is not None:
         return None
     address = (header.addresses[0].addr_spec or "").strip().lower()
     return address if "@" in address else None

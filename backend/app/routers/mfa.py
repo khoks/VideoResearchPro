@@ -2,7 +2,8 @@
 
 - ``POST /auth/mfa/enroll`` — start enrollment; returns secret + QR URI.
 - ``POST /auth/mfa/verify-enrollment`` — confirm with first TOTP code,
-  enable MFA, return recovery codes (returned ONCE).
+  enable MFA, return recovery codes (returned ONCE). 409 once it is on,
+  before any code is checked, so it is no way around the cap below.
 - ``GET /auth/mfa/status`` — is MFA enabled for the current user?
 - ``DELETE /auth/mfa`` — disable MFA. Requires the current TOTP code
   to prove possession; raw password isn't required because the user
@@ -18,7 +19,8 @@ The TOTP secret is encrypted with the install's shared key (D-043). When
 ``BYOK_ENCRYPTION_KEY`` is malformed (T-5.6.9), or well formed but unable to
 read the secret (T-5.6.11, a rotated key), every route here that encrypts or
 decrypts it answers 503 with the cause; a recovery code still works, since
-those are stored hashed.
+those are stored hashed. On ``DELETE /auth/mfa`` that 503 costs no attempt,
+so retrying a code the server cannot check leaves the recovery code usable.
 """
 from __future__ import annotations
 
@@ -58,6 +60,10 @@ DISABLE_EXHAUSTED_DETAIL = (
     "Too many codes tried. Two-step verification stays on: try again in "
     f"up to {mfa_service.MFA_DISABLE_WINDOW_MIN} minutes."
 )
+
+
+# The start of the 503 on DELETE /auth/mfa when the key is broken.
+DISABLE_UNCHECKED_WHAT = "The code cannot be checked (a recovery code still works)"
 
 
 def _key_unavailable(what: str, error: EncryptionConfigurationError) -> HTTPException:
@@ -147,6 +153,8 @@ def verify_enrollment(
         recovery_codes = mfa_service.verify_enrollment(
             db, current_user, payload.code
         )
+    except MfaAlreadyEnabledError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except MfaNotEnrolledError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except MfaError as e:
@@ -191,8 +199,15 @@ def disable(
     after it answers 429 without checking the code, even the right one, and
     writes no audit row, since a session can send these as fast as it likes.
     A wrong code touches nothing sign-in reads, and a right one clears the
-    count. Counted before the check, as at sign-in, so a check that fails for
-    any reason spends an attempt."""
+    count. Counted before the check, as at sign-in.
+
+    With a key that cannot read the secret (T-5.6.9, T-5.6.11) only recovery
+    codes can be checked, which splits what was tried. A code that cannot be
+    one checked nothing, so its attempt goes back: a user retrying it must not
+    use up the tries for the recovery code the 503 points them to. A code
+    shaped like one was checked and missed, so it stays counted and recorded,
+    or a broken key would be a way round the cap, and the 503 gives way to the
+    429 on the fifth, since by then that sentence would no longer be true."""
     if not mfa_service.is_enabled(db, current_user.id):
         # Already disabled — idempotent.
         return MfaDisableResponse(disabled=True)
@@ -203,12 +218,14 @@ def disable(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=DISABLE_EXHAUSTED_DETAIL,
         )
+    key_error: EncryptionConfigurationError | None = None
     try:
         ok = mfa_service.verify_at_login(db, current_user.id, payload.code)
     except EncryptionConfigurationError as e:
-        raise _key_unavailable(
-            "The code cannot be checked (a recovery code still works)", e
-        )
+        if not mfa_service.could_be_recovery_code(payload.code):
+            mfa_service.refund_disable_attempt(db, current_user.id)
+            raise _key_unavailable(DISABLE_UNCHECKED_WHAT, e)
+        ok, key_error = False, e
     if not ok:
         exhausted = attempts >= mfa_service.MFA_TICKET_MAX_ATTEMPTS
         audit_service.record(
@@ -226,6 +243,8 @@ def disable(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=DISABLE_EXHAUSTED_DETAIL,
             )
+        if key_error is not None:
+            raise _key_unavailable(DISABLE_UNCHECKED_WHAT, key_error)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid TOTP / recovery code",

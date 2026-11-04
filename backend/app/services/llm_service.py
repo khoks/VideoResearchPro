@@ -41,6 +41,7 @@ from app.services.llm_routing import (
     ReasoningLevel,
     UseCase,
     UseCaseConfig,
+    max_output_for,
     resolve_config,
     resolve_route,
 )
@@ -234,6 +235,43 @@ def thinking_reserve_tokens(cfg: UseCaseConfig) -> int:
     if cfg.reasoning == "off" or cfg.provider == "local":
         return 0
     return _ANTHROPIC_THINKING_BUDGET.get(cfg.reasoning, _ANTHROPIC_THINKING_BUDGET["medium"])
+
+
+def _claude_budget_tokens(cfg: UseCaseConfig) -> int:
+    """The ``budget_tokens`` this config sends: Claude's legacy thinking only.
+    Adaptive thinking and the other providers send none."""
+    if cfg.provider != "anthropic":
+        return 0
+    return _anthropic_reasoning_kwargs(cfg.reasoning, cfg.model).get("thinking", {}).get("budget_tokens", 0)
+
+
+def max_tokens_for_reply(cfg: UseCaseConfig, reply_tokens: int) -> int:
+    """``max_tokens`` for a call whose reply needs ``reply_tokens``: that
+    share on top of the config's thinking reserve, within the model's ceiling.
+
+    A ceiling at or under a Claude ``budget_tokens`` is the one exception. It
+    is ignored, because Claude refuses a ``max_tokens`` that does not exceed
+    the budget, so nothing could run under it. An unmeasured model has such a
+    ceiling: ``max_output_for`` gives it a floor of 4,096, the medium budget
+    (``claude-opus-4-5``). Anywhere else nothing refuses the call, and the
+    conservative figure holds.
+    """
+    wanted = reply_tokens + thinking_reserve_tokens(cfg)
+    budget = _claude_budget_tokens(cfg)
+    ceiling = max_output_for(cfg.model)
+    return wanted if budget and ceiling <= budget else min(wanted, ceiling)
+
+
+# S-1.12.7: a clarify reply is a tiny JSON blob, so its length is capped.
+CLARIFY_REPLY_TOKENS = 400
+
+
+def clarify_max_tokens(use_case: UseCase) -> int:
+    """``max_tokens`` for a clarify call. Call it inside ``byok_context``,
+    which is where a model pin resolves. T-5.6.10 lets a pin put a thinking
+    model here, and a bare 400 is refused or comes back empty, which also stops
+    the Ask button on the job and library pages, since it waits on this call."""
+    return max_tokens_for_reply(resolve_config(use_case), CLARIFY_REPLY_TOKENS)
 
 
 _GOOGLE_THINKING_LEVEL = {

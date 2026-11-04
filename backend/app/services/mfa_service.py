@@ -25,7 +25,9 @@ Login flow:
   A dead ticket means signing in again from the first step.
 
 Turning it off takes a code too, under the same count keyed on the user
-(T-5.4.16, ``count_disable_attempt``).
+(T-5.4.16, ``count_disable_attempt``). Those two are the only places a code
+meets a live secret: ``verify_enrollment`` refuses an enabled row before it
+checks anything, or it would be a third, uncounted.
 """
 from __future__ import annotations
 
@@ -33,6 +35,7 @@ import hashlib
 import json
 import logging
 import secrets
+import string
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -71,8 +74,20 @@ def _generate_recovery_codes() -> list[str]:
     ]
 
 
+def _normalise_code(code: str) -> str:
+    return code.upper().strip()
+
+
 def _hash_code(code: str) -> str:
-    return hashlib.sha256(code.upper().strip().encode("utf-8")).hexdigest()
+    return hashlib.sha256(_normalise_code(code).encode("utf-8")).hexdigest()
+
+
+def could_be_recovery_code(code: str) -> bool:
+    """True iff ``code`` has the shape of a recovery code, read the way the
+    hash reads it. Anything else, a six-digit authenticator code above all,
+    cannot match one, so with the key broken nothing can check it."""
+    normalised = _normalise_code(code)
+    return len(normalised) == RECOVERY_CODE_LENGTH and all(c in string.hexdigits for c in normalised)
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +164,12 @@ def verify_enrollment(
     """Validate the user's first TOTP code, flip ``enabled=True``,
     generate recovery codes, return them. The raw codes are returned
     here exactly once — the database stores only their hashes.
+
+    Raises ``MfaAlreadyEnabledError`` on an enabled row before any code is
+    checked. Only an in-flight secret, which protects nothing yet, is tested
+    here. On a live one this route would be an uncounted way past T-5.4.16's
+    cap: a stolen session could guess the code, and a match would replace
+    the recovery codes with ones the thief holds, which then turn it off.
     """
     row = (
         db.query(MfaSecret).filter(MfaSecret.user_id == user.id).first()
@@ -156,6 +177,10 @@ def verify_enrollment(
     if row is None:
         raise MfaNotEnrolledError(
             "No MFA enrollment in flight. Call /auth/mfa/enroll first."
+        )
+    if row.enabled:
+        raise MfaAlreadyEnabledError(
+            "MFA is already enabled. Disable it first before re-enrolling."
         )
     if not _verify_totp_against_row(row, code):
         raise MfaError("Invalid TOTP code")
@@ -448,6 +473,20 @@ def count_disable_attempt(db: Session, user_id: str) -> int:
             expires_at=now + timedelta(minutes=MFA_DISABLE_WINDOW_MIN),
         ),
     )
+
+
+def refund_disable_attempt(db: Session, user_id: str) -> None:
+    """Hand back the attempt ``count_disable_attempt`` just took, for a code
+    nothing could check (see ``routers/mfa.py``). Paired with that count, so
+    it can never take the row below what was really checked."""
+    db.query(MfaStepTicket).filter(
+        MfaStepTicket.jti == _turn_off_counter_id(user_id),
+        MfaStepTicket.attempts > 0,
+    ).update(
+        {MfaStepTicket.attempts: MfaStepTicket.attempts - 1},
+        synchronize_session=False,
+    )
+    db.commit()
 
 
 def use_ticket(db: Session, ticket: MfaTicket) -> bool:

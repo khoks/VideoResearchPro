@@ -15,9 +15,10 @@
 * T-5.6.10: the job and library clarify endpoints serve a Studio user on their
   own key. The shelf path already did, and its clarify is the library's.
 * T-5.6.11: a well-formed key that cannot read a stored TOTP secret is
-  reported as a malformed one is, not as a wrong code. Recovery codes work.
+  reported as a malformed one is, not as a wrong code. Recovery codes work,
+  and retrying a code the server cannot check costs no attempt.
 
-Mutation checks (run when this shipped, 40 in all; each made the named test
+Mutation checks (run when this shipped; each made the named test
 fail, and the cheap ones are pinned as ``test_mutation_*``). One stays: taking
 out the ``not networks`` early return in ``client_ip`` changes nothing, because
 an empty list trusts no peer anyway. Among them: dropping the
@@ -37,7 +38,20 @@ reading only the header's first line (``test_a_proxy_that_adds_its_own_line_is_r
 the header's leftmost entry, as before T-5.5.8
 (``test_a_client_cannot_spoof_past_the_proxy``); the old ``usage_service.metered``
 scope on either clarify route (``test_clarify_is_served_on_the_askers_own_key``);
-swallowing ``InvalidToken`` again (``test_a_rotated_key_reads_as_the_key_not_a_wrong_code``).
+swallowing ``InvalidToken`` again (``test_a_rotated_key_reads_as_the_key_not_a_wrong_code``);
+dropping the ``row.enabled`` check, or the router's 409 for it
+(``test_the_setup_route_is_no_way_round_the_cap``); dropping the thinking reserve,
+always clamping at the ceiling, or a bare 400 back on either route
+(``test_clarify_leaves_room_for_the_reply_above_a_pins_thinking``); never clamping
+(``test_a_ceiling_above_the_thinking_still_caps_the_reply``); ignoring a ceiling
+for a provider that sends no budget
+(``test_library.py::test_library_clarify_stays_within_the_models_output_limit``);
+no refund on the 503
+(``test_a_code_the_key_cannot_check_leaves_recovery_codes_reachable``); refunding
+every 503, or answering the fifth with one, or not recording the miss
+(``test_recovery_guesses_stay_counted_while_the_key_is_broken``); a refund that
+clears the count (``test_a_code_that_was_not_checked_keeps_the_misses_before_it``);
+the shape check reading the raw text (``test_the_shape_check_reads_what_the_hash_reads``).
 """
 from __future__ import annotations
 
@@ -81,7 +95,7 @@ from app.services import (
     shelf_service,
 )
 from app.services.audit_service import ACCOUNT_EVENTS, Event
-from app.services.llm_routing import resolve_config
+from app.services.llm_routing import UseCaseConfig, resolve_config
 from app.utils import client_ip as client_ip_module
 from app.utils.client_ip import client_ip
 from app.websocket import manager as manager_module
@@ -91,6 +105,7 @@ from tests.test_routers.test_auth_hardening_followups import (
     LOGIN_MFA,
     PASSWORD,
     _auth,
+    _break_the_key,
     _change,
     _events,
     _login,
@@ -281,6 +296,48 @@ def test_turning_off_when_it_is_already_off_counts_nothing(unauthenticated_clien
     r = _turn_off(unauthenticated_client, _session(db, user), "123456")
     assert r.status_code == 200 and r.json() == {"disabled": True}
     assert db.query(MfaStepTicket).count() == 0
+
+
+def _confirm_setup(client, token: str, code: str):
+    return client.post(f"{MFA}/verify-enrollment", json={"code": code}, headers=_auth(token))
+
+
+def test_the_setup_route_is_no_way_round_the_cap(unauthenticated_client, db, stable_key, monkeypatch):
+    """It takes a session and no ticket, so on an account already on it was an
+    uncounted way to guess the live secret, and a match replaced the recovery
+    codes, which then turned the second factor off. Once it is on, the route
+    checks nothing: the right code gets the same 409 as a wrong one."""
+    user, secret, codes = _mfa_user(db, "off-reconfirm@x.com")
+    token = _session(db, user)
+    stored = db.query(MfaSecret).filter(MfaSecret.user_id == user.id).one().recovery_codes_json
+    enabled_events = len(_events(db, Event.MFA_ENABLED, user.id))
+    checked = MagicMock(wraps=mfa_service._verify_totp_against_row)
+    monkeypatch.setattr(mfa_service, "_verify_totp_against_row", checked)
+
+    for code in (_wrong_code(secret), pyotp.TOTP(secret).now()):
+        r = _confirm_setup(unauthenticated_client, token, code)
+        assert r.status_code == 409, r.text
+        assert "recovery_codes" not in r.json()
+    checked.assert_not_called()
+
+    db.expire_all()
+    row = db.query(MfaSecret).filter(MfaSecret.user_id == user.id).one()
+    assert row.recovery_codes_json == stored
+    assert row.enabled is True
+    assert len(_events(db, Event.MFA_ENABLED, user.id)) == enabled_events
+    # The owner's codes are still the ones that work.
+    assert _turn_off(unauthenticated_client, token, codes[0]).status_code == 200
+
+
+def test_a_setup_in_flight_still_takes_a_code(unauthenticated_client, db, stable_key):
+    """Only an account already on is refused: an in-flight secret guards
+    nothing yet, so the first code is still checked as before."""
+    user = auth_service.create_user(db, email="off-inflight@x.com", password=PASSWORD)
+    secret, _uri = mfa_service.enroll(db, user)
+    token = _session(db, user)
+    assert _confirm_setup(unauthenticated_client, token, _wrong_code(secret)).status_code == 400
+    r = _confirm_setup(unauthenticated_client, token, pyotp.TOTP(secret).now())
+    assert r.status_code == 200 and len(r.json()["recovery_codes"]) == mfa_service.RECOVERY_CODE_COUNT
 
 
 # ---------------------------------------------------------------------------
@@ -1114,6 +1171,67 @@ def test_clarify_honours_the_askers_model_pin_and_its_reply_shape(
     assert built == ["claude-pin"]
 
 
+@pytest.mark.parametrize("surface, use_case", CLARIFY_SURFACES)
+@pytest.mark.parametrize(
+    "provider, model, reasoning, thinking",
+    [
+        # A measured ceiling, far above the budget.
+        ("anthropic", "claude-haiku-4-5", "medium", 4_096),
+        # Unmeasured, so `max_output_for` says 4,096: clamping to that leaves
+        # `max_tokens` equal to the budget, or under it, and Claude refuses both.
+        ("anthropic", "claude-opus-4-5", "medium", 4_096),
+        ("anthropic", "claude-opus-4-5", "high", 16_384),
+        # No budget is sent to OpenAI, but a low cap can come back empty.
+        ("openai", "gpt-5.4", "medium", 4_096),
+    ],
+)
+def test_clarify_leaves_room_for_the_reply_above_a_pins_thinking(
+    client, db, test_user, stable_key, monkeypatch, metered_llms, surface, use_case, provider, model, reasoning, thinking
+):
+    """A pin reaches both clarify routes now, and thinking counts inside
+    ``max_tokens``, so a bare 400 is refused or comes back empty. Clarify is
+    awaited with no catch, so that would stop the Ask button itself.
+    ``claude-opus-4-5`` is the pin CLAUDE.md's own example names."""
+    db.add(UserLLMOverride(user_id=test_user.id, use_case=use_case, provider=provider, model=model, reasoning=reasoning))
+    db.commit()
+    caps: list[int] = []
+
+    def _build(cfg, temperature, max_tokens, *, byok_api_key=None):
+        caps.append(max_tokens)
+        return metered_llms(cfg, temperature, max_tokens, byok_api_key=byok_api_key)
+
+    monkeypatch.setattr(llm_service, "_build_from_config", _build)
+    metered_llms.reply = CLARIFY_JSON
+    r = _clarify(client, db, test_user, surface)
+    assert r.status_code == 200, r.text
+    assert caps == [thinking + 400]
+
+
+@pytest.mark.parametrize("surface, use_case", CLARIFY_SURFACES)
+def test_clarify_with_reasoning_off_keeps_its_cap(
+    client, db, test_user, stable_key, monkeypatch, metered_llms, surface, use_case
+):
+    db.add(UserLLMOverride(user_id=test_user.id, use_case=use_case, provider="anthropic", model="claude-opus-4-5", reasoning="off"))
+    db.commit()
+    caps: list[int] = []
+
+    def _build(cfg, temperature, max_tokens, *, byok_api_key=None):
+        caps.append(max_tokens)
+        return metered_llms(cfg, temperature, max_tokens, byok_api_key=byok_api_key)
+
+    monkeypatch.setattr(llm_service, "_build_from_config", _build)
+    metered_llms.reply = CLARIFY_JSON
+    assert _clarify(client, db, test_user, surface).status_code == 200
+    assert caps == [400]
+
+
+def test_a_ceiling_above_the_thinking_still_caps_the_reply(monkeypatch):
+    """A ceiling is only ignored when nothing could ever run under it."""
+    cfg = UseCaseConfig(provider="anthropic", model="claude-measured", reasoning="medium")
+    monkeypatch.setattr(llm_service, "max_output_for", lambda _model: 4_200)
+    assert llm_service.max_tokens_for_reply(cfg, 400) == 4_200
+
+
 def test_a_shelf_question_is_served_on_the_askers_own_key(client, db, test_user, stable_key, keys_used):
     """The shelf's ask route shares the library's core, and the page asks the
     library's clarify (``POST /library/qa/clarify`` takes no scope), so the
@@ -1173,6 +1291,113 @@ def test_turning_off_with_a_rotated_key(unauthenticated_client, db, stable_key, 
 
     assert _turn_off(unauthenticated_client, token, codes[0]).status_code == 200
     assert mfa_service.is_enabled(db, user.id) is False
+
+
+# What a mistyped or a guessed recovery code looks like: its length, no match.
+A_RECOVERY_GUESS = "ABCDEF0123"
+
+
+@pytest.mark.parametrize("break_key", [_rotate_the_key, _break_the_key], ids=["rotated", "malformed"])
+def test_a_code_the_key_cannot_check_leaves_recovery_codes_reachable(
+    unauthenticated_client, db, stable_key, monkeypatch, break_key
+):
+    """The 503 says a recovery code still works, and someone retrying during
+    an outage will send it many times. An authenticator code tested nothing
+    here, so it spends nothing, and the recovery code is still let in."""
+    user, secret, codes = _mfa_user(db, "rot-retry@x.com")
+    token = _session(db, user)
+    break_key(monkeypatch)
+
+    for _ in range(mfa_service.MFA_TICKET_MAX_ATTEMPTS + 2):
+        r = _turn_off(unauthenticated_client, token, pyotp.TOTP(secret).now())
+        assert r.status_code == 503, r.text
+        assert "recovery code still works" in r.json()["detail"]
+
+    assert _turn_off(unauthenticated_client, token, codes[0]).status_code == 200
+    assert mfa_service.is_enabled(db, user.id) is False
+
+
+def test_recovery_guesses_stay_counted_while_the_key_is_broken(unauthenticated_client, db, stable_key, monkeypatch):
+    """A code that could be a recovery code WAS checked against the stored
+    hashes, so a broken key is no way round the cap. The fifth says so at
+    once: a 503 there would promise a recovery code the next try refuses."""
+    user, _secret, codes = _mfa_user(db, "rot-guess@x.com")
+    token = _session(db, user)
+    _rotate_the_key(monkeypatch)
+
+    for _ in range(mfa_service.MFA_TICKET_MAX_ATTEMPTS - 1):
+        assert _turn_off(unauthenticated_client, token, A_RECOVERY_GUESS).status_code == 503
+    r = _turn_off(unauthenticated_client, token, A_RECOVERY_GUESS)
+    assert r.status_code == 429 and r.json()["detail"] == mfa_router.DISABLE_EXHAUSTED_DETAIL
+
+    # Past the cap nothing is checked, a real recovery code included.
+    assert _turn_off(unauthenticated_client, token, codes[0]).status_code == 429
+    assert mfa_service.is_enabled(db, user.id) is True
+    db.expire_all()
+    stored = json.loads(db.query(MfaSecret).filter(MfaSecret.user_id == user.id).one().recovery_codes_json)
+    assert len(stored) == mfa_service.RECOVERY_CODE_COUNT, "the refused code was not spent"
+    # A refused guess is on the record, as with a working key.
+    rows = _events(db, Event.MFA_DISABLE_FAILED, user.id)
+    assert len(rows) == mfa_service.MFA_TICKET_MAX_ATTEMPTS
+    assert _meta(rows[-1])["reason"] == "too_many_attempts"
+
+
+def test_a_code_that_was_not_checked_keeps_the_misses_before_it(unauthenticated_client, db, stable_key, monkeypatch):
+    """It gives back its own attempt, never the count: retrying through a
+    broken key must not wipe real misses."""
+    user, secret, _codes = _mfa_user(db, "rot-keep@x.com")
+    token = _session(db, user)
+    for _ in range(2):
+        assert _turn_off(unauthenticated_client, token, _wrong_code(secret)).status_code == 400
+    _rotate_the_key(monkeypatch)
+
+    assert _turn_off(unauthenticated_client, token, pyotp.TOTP(secret).now()).status_code == 503
+    db.expire_all()
+    assert db.query(MfaStepTicket).one().attempts == 2
+
+
+def test_only_a_recovery_codes_length_can_be_one():
+    assert mfa_service.could_be_recovery_code("123456") is False
+    assert mfa_service.could_be_recovery_code(" 123456 ") is False
+    assert mfa_service.could_be_recovery_code(A_RECOVERY_GUESS) is True
+    assert mfa_service.could_be_recovery_code(f" {A_RECOVERY_GUESS.lower()} ") is True, "as `_hash_code` reads it"
+    assert all(mfa_service.could_be_recovery_code(c) for c in mfa_service._generate_recovery_codes())
+
+
+def test_only_the_code_that_checked_nothing_is_handed_back(unauthenticated_client, db, stable_key, monkeypatch):
+    user, secret, _codes = _mfa_user(db, "rot-mixed@x.com")
+    token = _session(db, user)
+    _rotate_the_key(monkeypatch)
+
+    assert _turn_off(unauthenticated_client, token, pyotp.TOTP(secret).now()).status_code == 503
+    assert _turn_off(unauthenticated_client, token, A_RECOVERY_GUESS).status_code == 503
+    assert _turn_off(unauthenticated_client, token, pyotp.TOTP(secret).now()).status_code == 503
+
+    db.expire_all()
+    assert db.query(MfaStepTicket).one().attempts == 1
+
+
+def test_a_closed_window_is_a_429_with_a_broken_key_too(unauthenticated_client, db, stable_key, monkeypatch):
+    """Past the cap a 503 would send the user to a recovery code that this
+    route is about to refuse."""
+    user, secret, _codes = _mfa_user(db, "rot-closed@x.com")
+    token = _session(db, user)
+    for _ in range(mfa_service.MFA_TICKET_MAX_ATTEMPTS):
+        _turn_off(unauthenticated_client, token, _wrong_code(secret))
+    _rotate_the_key(monkeypatch)
+    r = _turn_off(unauthenticated_client, token, pyotp.TOTP(secret).now())
+    assert r.status_code == 429 and r.json()["detail"] == mfa_router.DISABLE_EXHAUSTED_DETAIL
+
+
+def test_the_shape_check_reads_what_the_hash_reads():
+    """U+FB00 upper-cases to "FF", so the hash reads this as ten hex characters
+    and a recovery code can match it. Judged on the raw text it would be handed
+    back after a real recovery check: an uncounted guess."""
+    ligature = "\ufb00" + "0" * 8
+    assert mfa_service._hash_code(ligature) == mfa_service._hash_code("FF" + "0" * 8)
+    assert mfa_service.could_be_recovery_code(ligature) is True
+    for code in ("123 456", "12345678", "ABCDEF012G", "ABCDEF01234"):
+        assert mfa_service.could_be_recovery_code(code) is False, code
 
 
 def test_confirming_setup_with_a_rotated_key(unauthenticated_client, db, stable_key, monkeypatch):

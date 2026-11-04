@@ -267,6 +267,26 @@ describe('two-step verification', () => {
     expect(host.querySelector('[data-secret]')).not.toBeNull();
   });
 
+  it('shows two-step as on when another tab confirmed it first', async () => {
+    http.post.mockImplementation(async (url) => {
+      if (url === '/auth/mfa/enroll') return { data: { secret: SECRET, provisioning_uri: URI } };
+      mfaEnabled = true;
+      throw Object.assign(new Error('409'), {
+        isAxiosError: true,
+        response: { status: 409, data: { detail: 'MFA is already enabled. Disable it first before re-enrolling.' } },
+      });
+    });
+    await mount();
+    await click('Set up two-step verification');
+    const form = host.querySelector('form[aria-label="Set up two-step verification"]');
+    await type(form!.querySelector('input')!, '123456');
+    await submit(form);
+
+    expect(host.querySelector('[data-secret]')).toBeNull();
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.textContent).toContain('Turn off two-step verification');
+  });
+
   /** The status query's background refetch fails, e.g. on window focus. */
   async function failStatusRefetch() {
     const ok = http.get.getMockImplementation()!;

@@ -82,8 +82,11 @@ def clarify_question(
     # the ask route. E-5.2: byok_context is also the metering scope, so the
     # call is the asker's usage (feature job_qa).
     with llm_service.byok_context(current_user.id, db):
-        # S-1.12.7: clarify returns a tiny JSON blob — cap runaway completions.
-        llm = get_llm_for("qa_clarification", temperature=0.3, max_tokens=400)
+        llm = get_llm_for(
+            "qa_clarification",
+            temperature=0.3,
+            max_tokens=llm_service.clarify_max_tokens("qa_clarification"),
+        )
         response = llm.invoke(prompt)
     content = llm_service.response_text(response).strip()
 

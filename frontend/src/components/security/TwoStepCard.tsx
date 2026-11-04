@@ -82,11 +82,17 @@ export function TwoStepCard() {
       reset({ kind: 'codes', codes: recovery_codes });
       void refresh();
     } catch (err) {
-      setError(
-        isAxiosError(err) && err.response?.status === 400
-          ? 'That code did not match. Enter the newest code your app shows for Pratidhvani.'
-          : apiErrorMessage(err, 'Could not check the code. Try again.'),
-      );
+      if (isAxiosError(err) && err.response?.status === 409) {
+        // Already on (another tab confirmed it, and showed the codes there): show that.
+        reset();
+        void refresh(MFA_KEY);
+      } else {
+        setError(
+          isAxiosError(err) && err.response?.status === 400
+            ? 'That code did not match. Enter the newest code your app shows for Pratidhvani.'
+            : apiErrorMessage(err, 'Could not check the code. Try again.'),
+        );
+      }
     } finally {
       setBusy(false);
     }

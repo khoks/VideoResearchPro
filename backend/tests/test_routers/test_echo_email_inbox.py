@@ -322,8 +322,10 @@ def test_a_from_that_is_not_one_plain_allowed_address_is_dropped(db, owner, head
         (b"From: me@example.com", b"FROM : stranger@evil.example", b"Subject: forged"),
         (b"From: me@example.com", b"From\t: stranger@evil.example"),
         (b"From: me@example.com", b"no colon on this line", b"From: stranger@evil.example"),
+        # Folded into the allowed header, it is one malformed header.
+        (b"From: me@example.com\r\n From : stranger@evil.example", b"Subject: forged"),
     ],
-    ids=["first-line", "middle", "last-line", "upper-case", "tab", "ends-the-headers"],
+    ids=["first-line", "middle", "last-line", "upper-case", "tab", "ends-the-headers", "folded"],
 )
 def test_a_from_the_parser_sets_aside_is_not_a_second_chance(db, owner, lines):
     """RFC 5322's obsolete syntax allows a space before the colon, so a DMARC

@@ -41,6 +41,7 @@ import { formatDuration, formatDate, statusTone } from '../utils/formatters';
 import { buildClarifyContext, CLARIFY_ANSWER_MAX_CHARS } from '../utils/clarifyContext';
 import { depthLabel, depthOf, withDepth, type Depth } from '../utils/depth';
 import { apiErrorMessage } from '../utils/apiError';
+import { windowLabel } from '../utils/jobForm';
 import { useJobStore } from '../stores/jobStore';
 import { wsClient } from '../services/wsClient';
 import { ReportPeekModal } from '../components/jobs/ReportPeekModal';
@@ -417,7 +418,7 @@ function unresolvedChannelsFrom(raw: unknown): string[] {
 // what this job was run with — supports the "view it entirely, duplicate,
 // or tweak and re-run" workflow. Empty/null fields are omitted so the card
 // doesn't bloat for minimal topic jobs.
-function JobParamsCard({ job }: { job: Job }) {
+export function JobParamsCard({ job }: { job: Job }) {
   const c = useColors();
   const unresolvedChannels = unresolvedChannelsFrom(
     (job as Job & { channel_list_resolved?: unknown }).channel_list_resolved,
@@ -437,6 +438,9 @@ function JobParamsCard({ job }: { job: Job }) {
   if (job.num_videos != null) rows.push(['Number of videos', String(job.num_videos)]);
   if (job.min_duration_minutes != null) rows.push(['Min duration', `${job.min_duration_minutes} min`]);
   if (job.max_duration_minutes != null) rows.push(['Max duration', `${job.max_duration_minutes} min`]);
+  if (job.published_after_days != null) {
+    rows.push(['Prefers sources from', `the last ${windowLabel(job.published_after_days)}`]);
+  }
   if (job.channel_type_filters && job.channel_type_filters.length > 0) {
     rows.push(['Channel type filters', job.channel_type_filters.join(', ')]);
   }

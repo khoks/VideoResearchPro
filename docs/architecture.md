@@ -462,7 +462,7 @@ resolve_preferred_channels → plan_searches → execute_searches → rank_and_c
 ```
 
 - **resolve_preferred_channels** turns the channels named on the job into ids.
-- **plan_searches** (`use_case=search_plan_queries`) plans 3-5 YouTube search queries from the user's topic + free-text instructions, and since 2026-10-19 a `temporal_profile` — a deliberate per-topic decision on how time should weigh in ranking (`recency_weight` of `dominant` / `secondary` / `minimal`, an optional `target_era`, a rationale).
+- **plan_searches** (`use_case=search_plan_queries`) plans 3-5 YouTube search queries from the user's topic + free-text instructions, and since 2026-10-19 a `temporal_profile` — a deliberate per-topic decision on how time should weigh in ranking (`recency_weight` of `dominant` / `secondary` / `minimal`, an optional `target_era`, a rationale). A run's `published_after_days` (S-8.6.3) never reaches this node: it is added at ranking, as a preference that leads this profile where the two disagree, and the date is worked out then, so a template stays relative.
 - **execute_searches** runs each query against YouTube Data API v3 in parallel (asyncio).
 - **rank_and_curate** (`use_case=search_rank_and_curate`) deduplicates and ranks the results into the final candidate list — the largest reasoning-mode win in the codebase. The prompt receives the temporal profile, each candidate's publish date and (when the library has already dated it) its discussed era, a `Script:` hint for non-Latin titles, and an English preference. All of these are ranking PREFERENCES; no candidate is ever excluded for its date or language (D-059, D-072).
 

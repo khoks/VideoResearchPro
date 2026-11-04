@@ -887,6 +887,9 @@ def _from(peer: str) -> TestClient:
 def limited(monkeypatch):
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
     monkeypatch.setattr(settings, "RATE_LIMIT_LOGIN_PER_MIN", 3)
+    # One clock minute, as in test_rate_limit.py: the limiter buckets by the
+    # minute, so requests that straddle one would see their count reset.
+    monkeypatch.setattr(rate_limit_service, "_now", lambda: 1_000_020)
     rate_limit_service.reset()
     yield
     rate_limit_service.reset()

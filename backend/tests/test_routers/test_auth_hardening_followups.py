@@ -603,6 +603,8 @@ def test_change_is_rate_limited_like_sign_in(unauthenticated_client, db, monkeyp
     token = _login(unauthenticated_client, "change-rate@x.com")
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
     monkeypatch.setattr(settings, "RATE_LIMIT_LOGIN_PER_MIN", 2)
+    # One clock minute: requests that straddle one see their count reset.
+    monkeypatch.setattr(rate_limit_service, "_now", lambda: 1_000_020)
     rate_limit_service.reset()
 
     codes = [_change(unauthenticated_client, token, "not-the-password", "brand-new-pw").status_code for _ in range(3)]

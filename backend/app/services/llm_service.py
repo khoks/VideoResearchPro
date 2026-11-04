@@ -492,11 +492,14 @@ def _resolve_byok_api_key(
     - No credential is stored for this provider
     - The stored credential is undecryptable (key rotation; warn and
       fall back to env-var)
-    - The provider is ``local`` (BYOK doesn't apply)
+    - The provider is not in ``byok_service.RESOLVED_PROVIDERS`` (``local``:
+      BYOK doesn't apply). The keys panel lists the same set.
     """
     if tenant_id is None or db is None:
         return None
-    if provider == "local":
+    from app.services.byok_service import RESOLVED_PROVIDERS
+
+    if provider not in RESOLVED_PROVIDERS:
         return None
     try:
         # Tier gate — only Studio gets BYOK. Free / Pro users could still

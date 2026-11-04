@@ -311,6 +311,9 @@ function NavContent({
         <NavItem active={active['ai-models']} onClick={() => onChange('ai-models')}>
           AI models
         </NavItem>
+        <NavItem active={pathname === '/account/system'} onClick={() => onNavigatePath('/account/system')}>
+          System status
+        </NavItem>
       </NavGroup>
     </nav>
   );

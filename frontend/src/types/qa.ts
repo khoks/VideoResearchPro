@@ -112,6 +112,8 @@ export type AnswerLanguage = 'en' | 'hi' | 'es' | 'fr';
  */
 export interface QAScope {
   shelf_id?: string | null;
+  /** T-8.4.2.4: asked about this one source (its `document_id`). */
+  document_id?: string | null;
   saved_search_id?: string | null;
   [key: string]: unknown;
 }
@@ -127,10 +129,22 @@ export interface LibraryQAExchange {
   scope?: QAScope | null;
 }
 
+/**
+ * T-8.4.2.4: the one source a library question is asked about, handed from
+ * its knowledge drawer to the library Q&A page.
+ */
+export interface SourceScope {
+  /** The document's id (or a video's legacy id); the server resolves it. */
+  id: string;
+  title: string;
+}
+
 export interface LibraryQARequest {
   question: string;
   answer_language: AnswerLanguage;
   context?: string;
+  /** T-8.4.2.4: ask about this one source instead of the whole library. */
+  document_id?: string;
 }
 
 export interface LibraryClarifyRequest {

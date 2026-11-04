@@ -46,11 +46,14 @@ export function InfoStripe({ text }: { text: string }) {
   );
 }
 
-/** "Asked on shelf Rates", "From a saved search": what a scoped exchange was asked over. */
+/**
+ * "Asked on shelf Rates", "Asked about one source", "From a saved search":
+ * what a scoped exchange was asked over.
+ */
 export function ScopeNote({ scope }: { scope: QAScope | null | undefined }) {
   const c = useColors();
   const shelves = useShelves();
-  if (!scope || (!scope.shelf_id && !scope.saved_search_id)) return null;
+  if (!scope || (!scope.shelf_id && !scope.document_id && !scope.saved_search_id)) return null;
   const shelf = scope.shelf_id ? shelves.data?.find((s) => s.id === scope.shelf_id) : undefined;
   const style = { margin: `0 0 ${space['2']}`, fontFamily: fonts.ui, fontSize: fontSize.sm, color: c.textSecondary };
   return (
@@ -68,7 +71,17 @@ export function ScopeNote({ scope }: { scope: QAScope | null | undefined }) {
         ) : (
           'Asked on a shelf that no longer exists'
         ))}
-      {scope.shelf_id && scope.saved_search_id ? ' · ' : ''}
+      {scope.shelf_id && scope.document_id ? ' · ' : ''}
+      {scope.document_id && (
+        // T-8.4.2.4: the library list narrows to that one row.
+        <>
+          Asked about{' '}
+          <Link to={`/library?document=${encodeURIComponent(scope.document_id)}`} style={{ color: c.accent }}>
+            one source
+          </Link>
+        </>
+      )}
+      {(scope.shelf_id || scope.document_id) && scope.saved_search_id ? ' · ' : ''}
       {scope.saved_search_id && 'From a saved search'}
     </p>
   );
@@ -123,12 +136,16 @@ export function LibraryQAExchangeCard({ qa, showScope = true }: { qa: LibraryQAE
           </p>
         </div>
         <div style={{ display: 'flex', gap: space['1'], flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {/* S-8.3.2: re-ask this question on a schedule, over the same scope. */}
-          <PinQuestionButton
-            question={qa.question}
-            answerLanguage={qa.answer_language ?? 'en'}
-            scope={qa.scope?.shelf_id ? { shelf_id: qa.scope.shelf_id } : null}
-          />
+          {/* S-8.3.2: re-ask this question on a schedule, over the same
+              scope. Not for one source (T-8.4.2.4): a saved search takes a
+              library or a shelf, so pinning would widen the question. */}
+          {!qa.scope?.document_id && (
+            <PinQuestionButton
+              question={qa.question}
+              answerLanguage={qa.answer_language ?? 'en'}
+              scope={qa.scope?.shelf_id ? { shelf_id: qa.scope.shelf_id } : null}
+            />
+          )}
           <Button size="sm" variant="tertiary" onClick={handleCopy}>
             {copied ? (
               <Badge tone="success" size="sm">

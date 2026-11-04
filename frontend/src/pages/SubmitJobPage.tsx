@@ -9,6 +9,7 @@ import { useSystemStatusStore } from '../stores/systemStatusStore';
 import { featureFlags } from '../config/features';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { useCreateTemplate, useJobTemplates, useUpdateTemplate } from '../hooks/useJobTemplates';
+import { useOnboarding } from '../hooks/useOnboarding';
 import { SaveTemplateModal, TemplatePicker } from '../components/templates';
 import type { JobTemplate } from '../services/jobTemplatesApi';
 import {
@@ -54,6 +55,27 @@ import type { Job, JobType, OutputLength } from '../types/job';
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
 const FORM_STATE_KEY = 'vrp:submit-form';
+// T-8.10.1.7: the wizard's channels this browser has already pre-filled, so
+// a list the reader cleared is not filled in again on the next visit.
+const PREFILLED_CHANNELS_KEY = 'vrp:submit-prefilled-channels';
+
+function readPrefilled(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(PREFILLED_CHANNELS_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberPrefilled(channels: string[]): void {
+  try {
+    const all = Array.from(new Set([...readPrefilled(), ...channels])).slice(-50);
+    window.localStorage.setItem(PREFILLED_CHANNELS_KEY, JSON.stringify(all));
+  } catch {
+    // storage full / disabled: the worst case is one more pre-fill
+  }
+}
 
 type PersistedFormState = JobFormState;
 
@@ -104,6 +126,28 @@ export function SubmitJobPage() {
     cloneFromInitial ? jobToFormState(cloneFromInitial) : loadForm(),
   );
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // T-8.10.1.7: the first run reads one of the channels chosen in the
+  // welcome wizard; the others wait here. An empty channel list is filled
+  // with the ones no run has named yet, once per browser, and never over a
+  // draft, a cloned run or a template.
+  const onboarding = useOnboarding();
+  const [prefilledChannels, setPrefilledChannels] = useState<string | null>(null);
+  const prefillDecided = useRef(false);
+  useEffect(() => {
+    const remaining = onboarding.data?.channels_not_yet_run;
+    if (prefillDecided.current || !remaining) return;
+    prefillDecided.current = true;
+    if (remaining.length === 0 || cloneFromInitial || routeState?.fromTemplateId) return;
+    if (form.channelList.trim()) return;
+    const offered = readPrefilled();
+    if (remaining.every((ch) => offered.includes(ch))) return;
+    const text = remaining.join('\n');
+    setForm((f) => (f.channelList.trim() ? f : { ...f, channelList: text }));
+    setPrefilledChannels(text);
+    rememberPrefilled(remaining);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onboarding.data]);
 
   useEffect(() => {
     try {
@@ -605,7 +649,11 @@ export function SubmitJobPage() {
               <FormField
                 label="YouTube channels"
                 required
-                helperText="One per line."
+                helperText={
+                  prefilledChannels !== null && form.channelList === prefilledChannels
+                    ? 'One per line. Filled in from the channels you chose when you started; none of your runs has read them yet.'
+                    : 'One per line.'
+                }
                 errorText={
                   invalidChannels.length > 0
                     ? `Invalid entries: ${invalidChannels.slice(0, 3).join(', ')}${

@@ -96,6 +96,7 @@ The protected routes share `<AppLayout>` (top-tabs nav today, sidebar after the 
 | State | What renders |
 |-------|--------------|
 | Default | Tabbed form with the active tab's inputs. |
+| Channels pre-filled | T-8.10.1.7: the first run reads one of the channels chosen in the wizard, so an empty Channels list is filled with the ones no run has named yet (`channels_not_yet_run`), once per browser, and the helper text says where they came from until the reader edits the list. Never over a draft, a cloned run or a template. |
 | Submitting | Submit button shows spinner. |
 | LLM down for `search_plan_queries` | Banner above the Topic tab: "Search planning is unavailable. Topic jobs are paused. Channel and Subscribe still work." Topic tab's submit button is disabled. |
 | Quota near cap | Yellow banner: "YouTube quota at 86% — large jobs may fail." (Soft warning at 80% per `health/quota`.) |
@@ -277,6 +278,7 @@ Layout: question textarea + clarify-first toggle + language selector at the top;
 | State | What renders |
 |-------|--------------|
 | Default | Textarea + button + history list. Under 640 px the composer docks at the bottom below the history, as on the job page (S-8.12.1). **You might ask** (S-8.4.2): under the composer, up to five suggested next questions from `GET /suggestions` (generated from the context, or the reader's own past questions, marked "You asked this before."). A click fills the composer; Shift-click asks at once, skipping the clarify step. Each use is logged through `POST /suggestions/feedback`. The card loads after the page, shows "Finding questions worth asking…" meanwhile, and renders nothing when there is nothing to suggest, when the request fails, or when the Q&A feature is down. Context `library`. A question handed over from the knowledge drawer (route state) fills the composer, or is asked at once after a Shift-click. |
+| About one source | T-8.4.2.4: a question handed over from a knowledge drawer brings its source. A strip beside the composer reads "Asking about one source: *title*" with **Ask the whole library**; until that is pressed every ask carries `document_id`, the placeholder names the source, and the suggestions are that source's (context `document:<id>`). The answer card reads "Asked about one source" (a link to `/library?document=<id>`) and offers no **Pin this question**: a saved search takes the library or a shelf, so pinning would widen the question. |
 | Clarifying | Inline "Interpretation: ..." plus three suggested clarifying questions; user picks one or types their own context. |
 | Pin (Pro+) | Each answer card carries **Pin this question** beside **Copy answer** (S-8.3.2). The dialog shows the question and asks only when: daily, weekly or monthly, the day, the hour in the reader's zone (weekly at 09:00 by default), and "Email me when the answer changes". **Pin it** creates the saved search; the button becomes a **Pinned** link to `/saved-searches`. Hidden on tiers without `saved_searches`. |
 | Asking | Streaming answer area appears; citations populate as the agent extracts references. |
@@ -441,7 +443,7 @@ Tabs: **Structured** (topics / concepts / events / facts) and **Report** (Markdo
 |-------|--------------|
 | Not yet extracted | "No knowledge report yet for this video." + "Generate" button. |
 | Extracting | Progress indicator, disabled drawer-close (so user doesn't accidentally lose progress). |
-| Extracted | Two tabs populated; "Regenerate" button at the bottom (calls the endpoint with `?force=true`). Under the report, **You might ask** for this source (context `document:<id>`, S-8.4.2), noted "Asked across your library.": there is no per-source Q&A, so a click opens library Q&A with the question filled in and a Shift-click asks it there; hidden while library Q&A is down. Below the report: "Your notes on this report" (section-variant notes panel, target `knowledge_artifact`; the target only exists once extraction has run). |
+| Extracted | Two tabs populated; "Regenerate" button at the bottom (calls the endpoint with `?force=true`). Under the report, **You might ask** for this source (context `document:<id>`, S-8.4.2), noted "Asked about this source only." (T-8.4.2.4): a click opens library Q&A scoped to this source with the question filled in, and a Shift-click asks it there; hidden while library Q&A is down. Below the report: "Your notes on this report" (section-variant notes panel, target `knowledge_artifact`; the target only exists once extraction has run). |
 | LLM down | "Generate" disabled with a tooltip pointing at health status. |
 
 ---
@@ -484,7 +486,7 @@ Each card has a × to dismiss it. **Card settings** turns each kind on or off. A
 The conversation lasts for the session: each answer is already saved where it was asked. **Clear** empties the panel. Pure logic (readiness wording, the gate in words, error wording) lives in `frontend/src/utils/echoPanel.ts`, unit-tested.
 
 ### Notification bell (every protected page)
-`components/notifications/NotificationBell.tsx` (S-8.3.3), beside **Search…** in the sidebar and before the search icon in the mobile bar. The button names its unread count ("Notifications, 2 unread") and shows it as a badge. It opens a panel (dialog role) with the latest notices, newest first, unread ones tinted: title, body, how long ago. Opening one marks it read and goes to its `href`; **Mark all read** clears the count; Escape or a click outside closes it and focus returns to the bell. Empty: "Nothing new. A saved search tells you here when its answer changes." The list polls every minute and on focus; a WebSocket channel for it is a follow-up.
+`components/notifications/NotificationBell.tsx` (S-8.3.3), beside **Search…** in the sidebar and before the search icon in the mobile bar. The button names its unread count ("Notifications, 2 unread") and shows it as a badge. It opens a panel (dialog role) with the latest notices, newest first, unread ones tinted: title, body, how long ago. Opening one marks it read and goes to its `href`; **Mark all read** clears the count; Escape or a click outside closes it and focus returns to the bell. Empty: "Nothing new. A saved search tells you here when its answer changes." The list refetches the moment a notification arrives over `/ws/jobs` (T-8.3.3.8, `useLiveNotifications`, mounted once in the layout since the bell renders twice), and still polls every minute and on focus as the fallback.
 
 ### Layout (`AppLayout`)
 - Today: top horizontal tab bar with the protected pages.

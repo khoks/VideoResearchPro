@@ -53,6 +53,8 @@ vi.mock('../../hooks/useCapability', () => ({ useCapability: () => false }));
 vi.mock('../../hooks/useTierCapabilities', () => ({
   useTierCapabilities: () => ({ tier: 'free', numVideosCap: 100 }),
 }));
+// T-8.10.1.7: the page reads the wizard's channels; none here.
+vi.mock('../../hooks/useOnboarding', () => ({ useOnboarding: () => ({ data: undefined }) }));
 vi.mock('../../hooks/useJobTemplates', () => ({
   useJobTemplates: () => ({ data: [] }),
   useCreateTemplate: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),

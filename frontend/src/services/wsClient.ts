@@ -1,7 +1,10 @@
-import type { WSProgressMessage } from '../types/ws';
+import type { WSNotificationMessage, WSProgressMessage } from '../types/ws';
 import { AUTH_TOKEN_KEY } from './api';
 
 type Callback = (msg: WSProgressMessage) => void;
+type NotificationCallback = (msg: WSNotificationMessage) => void;
+
+const NOTIFICATIONS_TOPIC = 'notifications';
 
 function resolveWsUrl(): string {
   const fromEnv = import.meta.env.VITE_WS_URL;
@@ -21,10 +24,19 @@ function resolveWsUrl(): string {
  * connecting: `InvalidStateError: Still in CONNECTING state`. Now a
  * connecting socket is reused, every handler talks to the socket it belongs
  * to, and a replaced socket's close never schedules a reconnect.
+ *
+ * T-8.3.3.8: the same socket carries the signed-in user's new-notification
+ * events (`subscribe` with `topic: "notifications"`); the server binds them
+ * to the user the token names. A socket is opened with one sign-in's token,
+ * so once the stored token changes (sign-out, then someone else signs in)
+ * the next `connect()` replaces it instead of reusing the old identity.
  */
 export class WSClient {
   private ws: WebSocket | null = null;
+  /** The token `ws` was opened with: a socket never outlives its sign-in. */
+  private socketToken: string | null = null;
   private subscriptions = new Map<string, Set<Callback>>();
+  private notificationCallbacks = new Set<NotificationCallback>();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
   private reconnectDelay = 1000;
@@ -36,11 +48,16 @@ export class WSClient {
   }
 
   connect(): void {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
     const state = this.ws?.readyState;
-    if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) return;
+    if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) {
+      if (this.socketToken === token) return;
+      // Opened as someone else (or signed out since): drop it. Its close
+      // handler sees it is no longer `this.ws` and schedules nothing.
+      this.dropSocket();
+    }
 
     const baseUrl = resolveWsUrl();
-    const token = localStorage.getItem(AUTH_TOKEN_KEY);
     // The one URL that still carries the JWT (T-8.8.1.5): the WebSocket API
     // cannot set an Authorization header on the handshake. Every HTTP file is
     // fetched with the header instead (services/apiFiles.ts).
@@ -49,6 +66,7 @@ export class WSClient {
       : baseUrl;
     const socket = new WebSocket(url);
     this.ws = socket;
+    this.socketToken = token;
 
     socket.onopen = () => {
       if (this.ws !== socket) {
@@ -61,6 +79,9 @@ export class WSClient {
       for (const jobId of this.subscriptions.keys()) {
         WSClient.send(socket, { action: 'subscribe', job_id: jobId });
       }
+      if (this.notificationCallbacks.size > 0) {
+        WSClient.send(socket, { action: 'subscribe', topic: NOTIFICATIONS_TOPIC });
+      }
       if (this.pingInterval) clearInterval(this.pingInterval);
       this.pingInterval = window.setInterval(() => WSClient.send(socket, 'ping'), 30000);
     };
@@ -68,7 +89,11 @@ export class WSClient {
     socket.onmessage = (event) => {
       if (event.data === 'pong') return;
       try {
-        const msg: WSProgressMessage = JSON.parse(event.data);
+        const msg = JSON.parse(event.data) as WSProgressMessage | WSNotificationMessage;
+        if (msg.type === 'notification') {
+          this.notificationCallbacks.forEach((cb) => cb(msg));
+          return;
+        }
         const callbacks = this.subscriptions.get(msg.job_id);
         callbacks?.forEach((cb) => cb(msg));
       } catch {
@@ -89,9 +114,18 @@ export class WSClient {
     };
   }
 
+  private dropSocket(): void {
+    if (this.pingInterval) clearInterval(this.pingInterval);
+    this.pingInterval = null;
+    const socket = this.ws;
+    this.ws = null;
+    this.socketToken = null;
+    socket?.close();
+  }
+
   private handleReconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) return;
-    if (this.subscriptions.size === 0) return;
+    if (this.subscriptions.size === 0 && this.notificationCallbacks.size === 0) return;
 
     setTimeout(() => {
       this.reconnectAttempts++;
@@ -122,13 +156,30 @@ export class WSClient {
     };
   }
 
+  /**
+   * T-8.3.3.8: hear about the signed-in user's new notifications. The first
+   * listener subscribes the socket, the last one to leave unsubscribes it.
+   */
+  subscribeNotifications(callback: NotificationCallback): () => void {
+    const first = this.notificationCallbacks.size === 0;
+    this.notificationCallbacks.add(callback);
+    // An open socket gets the subscribe now; a connecting one sends it from
+    // onopen (send is a no-op until then).
+    this.connect();
+    if (first) WSClient.send(this.ws, { action: 'subscribe', topic: NOTIFICATIONS_TOPIC });
+
+    return () => {
+      if (!this.notificationCallbacks.delete(callback)) return;
+      if (this.notificationCallbacks.size === 0) {
+        WSClient.send(this.ws, { action: 'unsubscribe', topic: NOTIFICATIONS_TOPIC });
+      }
+    };
+  }
+
   disconnect(): void {
-    if (this.pingInterval) clearInterval(this.pingInterval);
-    this.pingInterval = null;
     this.subscriptions.clear();
-    const socket = this.ws;
-    this.ws = null;
-    socket?.close();
+    this.notificationCallbacks.clear();
+    this.dropSocket();
   }
 }
 

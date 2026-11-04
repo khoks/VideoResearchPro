@@ -232,7 +232,7 @@ GET    /api/v1/jobs/{id}/report        # Serve HTML report
 POST   /api/v1/jobs/{id}/qa            # Ask question (runs Q&A agent)
 GET    /api/v1/jobs/{id}/qa            # Q&A history
 
-POST   /api/v1/library/qa              # Library-wide Q&A ask
+POST   /api/v1/library/qa              # Library-wide Q&A ask; `document_id` asks about that one source (404 if not visible)
 GET    /api/v1/library/qa              # Library-wide Q&A history
 POST   /api/v1/library/qa/clarify      # Library-wide clarify step
 DELETE /api/v1/library/qa/{id}         # Delete a library Q&A exchange (optional)
@@ -272,7 +272,7 @@ GET    /api/v1/exports/qa-dataset/tuple.jsonl          # Q&A dataset, plain tupl
 GET    /api/v1/exports/knowledge-dataset/openai.jsonl  # Knowledge dataset, chat format
 GET    /api/v1/exports/knowledge-dataset/tuple.jsonl   # Knowledge dataset, tuple format
 
-WS     /ws/jobs                        # Multiplexed progress (subscribe/unsubscribe per job)
+WS     /ws/jobs                        # Multiplexed progress (subscribe/unsubscribe per job), plus `topic: "notifications"` for the token's own bell
 ```
 
 ## Environment Variables
@@ -380,6 +380,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `SAVED_SEARCH_EMBEDDING_THRESHOLD` | No | `0.15` | S-8.3.3: an answer whose embedding is further than this (cosine distance) from the previous one votes "changed". Pre-registered prior; calibration pending |
 | `SAVED_SEARCH_GATE_ENABLED` | No | `True` | Skip a scheduled saved-search run whose scope resolves to the same document set as the last good run (no quota, no model). Run now always asks |
 | `APP_BASE_URL` | No | `http://localhost:5173` | Base of the links in emails (saved-search alerts) |
+| `NOTIFICATIONS_PUSH_ENABLED` | No | `True` | T-8.3.3.8: publish each new notification on `notifications:{tenant_id}` so an open bell refetches at once over `/ws/jobs`; the one-minute poll is the fallback. Off for the test suite |
 | `SUGGESTIONS_CACHE_TTL_MIN` | No | `60` | How long a context's question suggestions (S-8.4.1) are reused before recomputing; a new exchange, report or knowledge state invalidates sooner. `0` = never reuse |
 | `REPORT_INTERMEDIATES_ENABLED` | No | `True` | Persist the report pipeline's per-batch map extractions and reduced dataset to `job_report_intermediates` (S-1.14.6), about twice the reduced dataset's size per run. Audit with `backend/scripts/audit_report_intermediates.py` |
 | **Code-mixed speech (R5 / N-002 / D-080)** | | | |

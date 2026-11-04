@@ -14,6 +14,7 @@ import { SystemStatusBanner } from '../components/common/SystemStatusBanner';
 import { CommandPalette } from '../components/palette/CommandPalette';
 import { SearchButton } from '../components/palette/SearchButton';
 import { NotificationBell } from '../components/notifications/NotificationBell';
+import { useLiveNotifications } from '../hooks/useNotifications';
 import { useShowGettingStarted } from '../hooks/useOnboarding';
 import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, radius, space, motion } from '../theme';
@@ -40,6 +41,8 @@ export function AppLayout() {
   const { refetch: refetchSystemStatus } = useSystemStatus();
   const { has, tier } = useTierCapabilities();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // T-8.3.3.8: one live subscription for both bells (sidebar and phone bar).
+  useLiveNotifications();
 
   const handleTabChange = (tab: AppTab) => {
     setActiveTab(tab);

@@ -133,3 +133,169 @@ def test_user_score_applies_the_tier_three_rule(tmp_path):
     answers["p16"] = "A"
     (tmp_path / "answers.json").write_text(json.dumps(answers))
     assert user_score(tmp_path / "key.json", tmp_path / "answers.json")["pass"] is False
+
+
+# ---------------------------------------------------------------------------
+# T-3.4.1.8: the procedure moved into echo_voice_test_service; the script
+# calls it. Same score, same output, same gate row as before the move.
+
+USER_TEST = Path(__file__).resolve().parents[1] / "fixtures" / "echo_voice" / "user_test"
+#: What the script printed for the fixture before the move (master at
+#: dc11f41, run 2026-11-04): the user picked their own text in 15 of 20.
+SCRIPT_OUTPUT = '{\n  "pairs": 20,\n  "picked_own_share": 0.75,\n  "pass": true\n}\nrecorded: passed (20 pairs, own text picked in 75%)\n'
+
+
+def test_the_script_scores_the_fixture_as_before(tmp_path):
+    """``user-score --record`` end to end, as the operator runs it: the same
+    printed score and the same gate row, written to the --record database
+    and nowhere else."""
+    import os
+    import subprocess
+
+    from sqlalchemy import create_engine, text
+
+    from app.database import Base
+
+    live = tmp_path / "live.db"
+    engine = create_engine(f"sqlite:///{live.as_posix()}")
+    Base.metadata.create_all(engine)
+    script = Path(__file__).resolve().parents[2] / "scripts" / "voice_match_harness.py"
+    env = {**os.environ, "DATABASE_URL": f"sqlite:///{(tmp_path / 'elsewhere.db').as_posix()}", "PYTHONIOENCODING": "utf-8"}
+    run = subprocess.run(
+        [sys.executable, str(script), "user-score", "--key", str(USER_TEST / "key.json"),
+         "--answers", str(USER_TEST / "answers.json"), "--record", str(live), "--tenant", "tenant-1"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, encoding="utf-8", timeout=300,
+    )
+    assert run.returncode == 0, run.stderr[-2000:]
+    assert run.stdout.replace("\r\n", "\n") == SCRIPT_OUTPUT
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT tenant_id, status, pairs, picked_own_share, rule_version FROM echo_voice_gates")).all()
+    engine.dispose()
+    assert [tuple(r) for r in rows] == [("tenant-1", "passed", 20, 0.75, "2026-10-19")]
+    assert not (tmp_path / "elsewhere.db").exists(), "the gate went to the --record database only"
+
+
+#: Runs ``user-pairs`` in its own process, as it binds the app to the copy of
+#: the database at import. The model is replaced: no provider is called.
+PAIRS_DRIVER = r"""
+import os, pathlib, sys
+
+db_path, tenant, small_tenant, out, key, scripts, module = sys.argv[1:8]
+os.environ.update({
+    "DATABASE_URL": "sqlite:///" + pathlib.Path(db_path).as_posix(),
+    "CHROMA_PERSIST_DIR": str(pathlib.Path(out).parent / "chroma"),
+    "ECHO_PERSONAL_INDEX_ENABLED": "False",
+    "NOTES_INDEX_ENABLED": "False",
+})
+sys.path.insert(0, scripts)
+harness = __import__(module)
+from app.services import echo_signal_extraction as ex
+
+
+def ask(client, prompt):
+    if prompt.startswith("In at most twelve words"):
+        return "topic " + prompt.split("Note:\n", 1)[1][:24], 40, 6
+    return "draft for " + prompt.split("Situation:\n", 1)[1].split("\n", 1)[0], 900, 60
+
+
+harness._client = lambda cfg, max_tokens: object()
+harness._ask = ask
+ex._default_llm = lambda tenant_id, db: ((lambda prompt: ('{"signals": []}', 1, 1)), "fake")
+try:
+    harness.user_pairs(pathlib.Path(db_path), small_tenant, pathlib.Path(out), pathlib.Path(key))
+except SystemExit as e:
+    print("refused:", e)
+harness.user_pairs(pathlib.Path(db_path), tenant, pathlib.Path(out), pathlib.Path(key))
+"""
+
+
+def test_user_pairs_still_builds_the_pairs_on_a_copy(tmp_path):
+    """The script end to end with the model replaced: its fixed seed picks the
+    held-out notes, the notes are soft-deleted in the copy (the app never does
+    that), the files keep their shapes, the 40-note floor still refuses."""
+    import os
+    import random
+    import subprocess
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.database import Base
+    from app.models.job import Job
+    from app.models.note import Note
+    from app.services import auth_service, note_service
+
+    copy = tmp_path / "copy.db"
+    engine = create_engine(f"sqlite:///{copy.as_posix()}")
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    tenants = []
+    for email, notes in (("big@example.com", PERSONAS["asha"]["notes"] + PERSONAS["chetan"]["notes"]),
+                         ("small@example.com", PERSONAS["asha"]["notes"] + PERSONAS["chetan"]["notes"][:15])):
+        user = auth_service.create_user(db, email=email, password="pw" * 8)
+        user.tier = "studio"
+        db.add(Job(id=f"job-{user.id[:8]}", tenant_id=user.id, job_type="topic", topic="t", status="completed"))
+        db.commit()
+        for text in notes:
+            note_service.create_note(db, user.id, target_type="job", target_id=f"job-{user.id[:8]}", body_md=text)
+        tenants.append(user.id)
+    big, small = tenants
+    notes = list(note_service.iter_notes(db, big, include_deleted=False))
+    bodies = {n.id: n.body_md for n in notes}
+    held = [n.id for n in random.Random(3304).sample(notes, 20)]
+    db.close()
+    engine.dispose()
+
+    driver = tmp_path / "driver.py"
+    driver.write_text(PAIRS_DRIVER, encoding="utf-8")
+    out, key = tmp_path / "pairs.json", tmp_path / "key.json"
+    scripts = Path(__file__).resolve().parents[2] / "scripts"
+    run = subprocess.run(
+        [sys.executable, str(driver), str(copy), big, small, str(out), str(key), str(scripts), "voice_match_harness"],
+        cwd=tmp_path, env={**os.environ, "PYTHONPATH": str(scripts.parent), "PYTHONIOENCODING": "utf-8"},
+        capture_output=True, text=True, encoding="utf-8", timeout=300,
+    )
+    assert run.returncode == 0, run.stderr[-2000:]
+    assert "refused: tier (iii) needs at least 40 live notes; this tenant has 39" in run.stdout
+    assert f"wrote 20 pairs to {out} and the key to {key}. Show the user only the pairs file." in run.stdout
+
+    pairs = json.loads(out.read_text(encoding="utf-8"))
+    keys = json.loads(key.read_text(encoding="utf-8"))
+    assert [k["note_id"] for k in keys] == held, "the harness's seed picks the notes"
+    assert [p["pair"] for p in pairs] == [f"p{i:02d}" for i in range(1, 21)]
+    for p, k in zip(pairs, keys):
+        assert set(p) == {"pair", "A", "B"} and set(k) == {"pair", "own_is", "note_id", "topic"}
+        assert p[k["own_is"]] == bodies[k["note_id"]]
+        assert p["B" if k["own_is"] == "A" else "A"] == f"draft for {k['topic']}"
+    engine = create_engine(f"sqlite:///{copy.as_posix()}")
+    db = sessionmaker(bind=engine)()
+    assert {n.id for n in db.query(Note).filter(Note.tenant_id == big, Note.deleted_at.isnot(None))} == set(held)
+    db.close()
+    engine.dispose()
+
+
+def test_the_app_scores_the_fixture_as_the_script_does(tmp_path, unauthenticated_client, db, monkeypatch):
+    """The same key and answers, scored by ``POST /echo/voice-test/{id}/score``."""
+    import uuid
+
+    from app.models.echo_voice_test import EchoVoiceTest
+    from app.services import auth_service
+
+    key = json.loads((USER_TEST / "key.json").read_text(encoding="utf-8"))
+    answers = json.loads((USER_TEST / "answers.json").read_text(encoding="utf-8"))
+    script = user_score(USER_TEST / "key.json", USER_TEST / "answers.json")
+
+    user = auth_service.create_user(db, email=f"fx-{uuid.uuid4().hex[:8]}@example.com", password="pw" * 6)
+    user.tier = "studio"
+    pairs = [{"pair": k["pair"], "A": f"text {k['pair']} A", "B": f"text {k['pair']} B"} for k in key]
+    row = EchoVoiceTest(tenant_id=user.id, user_id=user.id, status="ready", seed=1, pairs_total=len(key), pairs_built=len(key),
+                        pairs_json=json.dumps(pairs), key_json=json.dumps(key), picks_json=json.dumps(answers))
+    db.add(row)
+    db.commit()
+    token, _ = auth_service.create_access_token(user.id)
+    r = unauthenticated_client.post(f"/api/v1/echo/voice-test/{row.id}/score", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert got["test"]["result"] == {"pairs": script["pairs"], "picked_own": script["picked_own"],
+                                     "picked_own_share": script["picked_own_share"], "passed": script["pass"]}
+    assert (got["gate"]["status"], got["gate"]["pairs"], got["gate"]["picked_own_share"]) == ("passed", 20, 0.75)

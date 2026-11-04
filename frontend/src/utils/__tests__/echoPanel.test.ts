@@ -69,9 +69,12 @@ describe('the speak-as-me gate', () => {
     const test = draftGateView({ enabled: false, state: 'voice_test_needed', notes: 41, notes_needed: 40 }, null, ready);
     expect(test.title).toBe('Your voice test comes first');
     expect(test.lines.some((l) => l.includes('notes of the'))).toBe(false);
-    expect(draftGateView({ enabled: false, state: 'voice_test_failed', reasons: ['Try again after 10 more notes.'] }, null, ready).lines).toEqual([
-      'Try again after 10 more notes.',
-    ]);
+    expect(test.action).toEqual({ label: 'Take the test', href: '/echo' });
+    const short = draftGateView({ enabled: false, state: 'voice_test_needed', notes: 3, notes_needed: 40 }, null, ready);
+    expect(short.action).toEqual({ label: 'Write a note', href: '/notes' });
+    const failed = draftGateView({ enabled: false, state: 'voice_test_failed', reasons: ['Try again after 10 more notes.'], notes: 41, notes_needed: 40 }, null, ready);
+    expect(failed.lines).toEqual(['Try again after 10 more notes.']);
+    expect(failed.action).toEqual({ label: 'Take the test', href: '/echo' });
     expect(draftGateView({ enabled: false, state: 'paused_by_operator' }, null, ready).title).toBe('Not switched on for you');
   });
 });
@@ -140,5 +143,34 @@ describe('the gate from S-3.4.1 blockers', () => {
     const cap = draftGateView({ enabled: false, state: 'daily_cap', blockers: [{ code: 'daily_cap', message: 'You have used today’s 20 drafts.' }] }, null, ready);
     expect(cap.title).toBe('That was today’s last draft');
     expect(cap.action).toBeUndefined();
+  });
+
+  // Blockers and counts together: the shape the server really sends.
+  const required = [{ code: 'voice_test_required', message: 'Speak as me turns on after you pass the test.' }];
+
+  it('sends someone with enough notes to the test, and someone without to their notes', () => {
+    const enough = draftGateView({ enabled: false, state: 'voice_test_needed', blockers: required, notes: 41, notes_needed: 40 }, null, ready);
+    expect(enough.action).toEqual({ label: 'Take the test', href: '/echo' });
+    const exactly = draftGateView({ enabled: false, state: 'voice_test_needed', blockers: required, notes: 40, notes_needed: 40 }, null, ready);
+    expect(exactly.action).toEqual({ label: 'Take the test', href: '/echo' });
+    const short = draftGateView({ enabled: false, state: 'voice_test_needed', blockers: required, notes: 39, notes_needed: 40 }, null, ready);
+    expect(short.action).toEqual({ label: 'Write a note', href: '/notes' });
+  });
+
+  it('offers the retake after a failed test, once there are notes enough for one', () => {
+    const blockers = [{ code: 'voice_test_failed', message: 'You picked your own writing in 85% of 20 pairs.' }];
+    const retake = draftGateView({ enabled: false, state: 'voice_test_failed', blockers, notes: 41, notes_needed: 40 }, null, ready);
+    expect(retake.title).toBe('Your voice test has not passed yet');
+    expect(retake.action).toEqual({ label: 'Take the test', href: '/echo' });
+    const short = draftGateView({ enabled: false, state: 'voice_test_failed', blockers, notes: 12, notes_needed: 40 }, null, ready);
+    expect(short.action?.href).toBe('/notes');
+  });
+
+  it('offers no test the install has turned off, and readiness comes first', () => {
+    const off = [{ code: 'install_off', message: 'Speak as me is turned off on this install.' }, ...required];
+    expect(draftGateView({ enabled: false, state: 'install_off', blockers: off, notes: 41, notes_needed: 40 }, null, ready).action).toBeUndefined();
+    const notReady = [{ code: 'not_ready', message: 'Echo needs more.' }, ...required];
+    const view = draftGateView({ enabled: false, state: 'not_ready', blockers: notReady, notes: 41, notes_needed: 40 }, null, ready);
+    expect(view.action).toEqual({ label: 'See what is missing', href: '/echo' });
   });
 });

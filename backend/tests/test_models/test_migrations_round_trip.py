@@ -14,7 +14,8 @@ import sqlite3
 import pytest
 from alembic import command
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 
 from app.services.schema_init_service import _alembic_config
 
@@ -50,6 +51,7 @@ LANE_MIGRATIONS = [
     ("6cf03630d943", {"usage_records"}),
     ("a68953e57c63", {"echo_fact_tombstones"}),
     ("f748717dcb01", {"mfa_step_tickets"}),
+    ("6d5b3d5aa6fa", {"echo_voice_tests"}),
     # S-8.2.1: the search index is created only when SQLite has FTS5 with the
     # trigram tokenizer; elsewhere the migration deliberately creates nothing.
     pytest.param(
@@ -169,3 +171,29 @@ def test_documents_language_mix_round_trip(tmp_path):
     assert "language_mix" not in _columns(url, "documents")
     command.upgrade(cfg, "head")
     assert "language_mix" in _columns(url, "documents")
+
+
+def test_echo_voice_tests_hold_one_open_test_after_the_migration(tmp_path):
+    """The rule lives in a partial unique index, so a database built by
+    Alembic must have what ``create_all`` builds in the suite."""
+    url = "sqlite:///" + (tmp_path / "round_trip.db").as_posix()
+    cfg = _alembic_config()
+    cfg.set_main_option("sqlalchemy.url", url)
+    command.upgrade(cfg, "head")
+    assert "last_progress_at" in _columns(url, "echo_voice_tests")
+
+    insert = text(
+        "INSERT INTO echo_voice_tests (id, tenant_id, user_id, status, seed, pairs_total, created_at) "
+        "VALUES (:id, :tenant, 'u', :status, 1, 20, '2026-11-04 00:00:00')"
+    )
+    engine = create_engine(url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(insert, {"id": "1", "tenant": "t", "status": "generating"})
+            conn.execute(insert, {"id": "2", "tenant": "t", "status": "scored"})
+            conn.execute(insert, {"id": "3", "tenant": "t", "status": "failed"})
+            conn.execute(insert, {"id": "4", "tenant": "other", "status": "ready"})
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            conn.execute(insert, {"id": "5", "tenant": "t", "status": "ready"})
+    finally:
+        engine.dispose()

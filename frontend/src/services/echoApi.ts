@@ -442,6 +442,61 @@ export interface DraftStatus {
   pairs_needed: number;
 }
 
+/** T-3.4.1.8: the in-app "which of these did you write?" test. */
+export interface VoiceTestOffer {
+  /** Whether a test can start now; if not, `blockers` says why, in words. */
+  available: boolean;
+  blockers: DraftBlocker[];
+  pairs: number;
+  /** What one test spends: shown before the user starts it. */
+  model_calls: number;
+  model: string;
+  notes: number;
+  notes_needed: number;
+  pass_share: number;
+  tests_today: number;
+  tests_per_day: number;
+}
+
+/** One blinded pair. The server never says which side is the user's. */
+export interface VoiceTestPair {
+  pair: string;
+  A: string;
+  B: string;
+}
+
+export type VoiceTestSide = 'A' | 'B';
+
+export interface VoiceTestResult {
+  pairs: number;
+  picked_own: number;
+  picked_own_share: number;
+  passed: boolean;
+}
+
+export interface VoiceTest {
+  id: string;
+  status: 'generating' | 'ready' | 'scored' | 'failed';
+  pairs_total: number;
+  pairs_built: number;
+  /** Filled while the test is open (`ready`). */
+  pairs: VoiceTestPair[];
+  picks: Record<string, VoiceTestSide>;
+  result: VoiceTestResult | null;
+  error: string | null;
+  model: string | null;
+  cost_usd: number;
+  created_at: string;
+  ready_at: string | null;
+  scored_at: string | null;
+}
+
+export interface VoiceTestOverview {
+  offer: VoiceTestOffer;
+  gate: VoiceGate;
+  test: VoiceTest | null;
+}
+
 export interface DraftCitation {
   kind: 'source' | 'fact' | 'note' | 'qa' | 'share' | string;
   /** The draft's marker for it (S1, F2), unique within one draft. */
@@ -775,6 +830,20 @@ export const echoApi = {
   listDrafts: (limit = 5) => api.get<{ items: EchoDraft[] }>('/echo/drafts', { params: { limit } }).then(r => r.data),
 
   deleteDraft: (id: string) => api.delete(`/echo/drafts/${encodeURIComponent(id)}`).then(() => undefined),
+
+  /** T-3.4.1.8: whether the voice test can start, the gate, the newest test. */
+  voiceTest: () => api.get<VoiceTestOverview>('/echo/voice-test').then(r => r.data),
+
+  /** Starts a test: about 40 model calls. Only ever from the user's click. */
+  startVoiceTest: () => api.post<VoiceTest>('/echo/voice-test').then(r => r.data),
+
+  getVoiceTest: (id: string) => api.get<VoiceTest>(`/echo/voice-test/${encodeURIComponent(id)}`).then(r => r.data),
+
+  pickVoiceTest: (id: string, pair: string, pick: VoiceTestSide) =>
+    api.put<VoiceTest>(`/echo/voice-test/${encodeURIComponent(id)}/picks`, { pair, pick }).then(r => r.data),
+
+  scoreVoiceTest: (id: string) =>
+    api.post<{ test: VoiceTest; gate: VoiceGate }>(`/echo/voice-test/${encodeURIComponent(id)}/score`).then(r => r.data),
 
   /** S-3.4.2: the version the user used; the words they typed teach Echo. */
   draftFeedback: (id: string, payload: DraftFeedbackPayload) =>

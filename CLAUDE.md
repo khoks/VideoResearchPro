@@ -199,6 +199,7 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/scripts/judge_report_sections.py` | Split a report into sections and judge each in full — replaces the 180,000-char judging cap |
 | `backend/scripts/audit_report_intermediates.py` | Read a job's persisted map/reduce intermediates back: batch statuses, item counts, reduce accounting |
 | `backend/app/agents/echo_agent.py` | "Speak as me" LangGraph agent; the verbatim, citation and private-name guards live here in code (S-3.4.1) |
+| `backend/app/services/echo_voice_test_service.py` | The D-100 "which of these did you write?" test, one procedure for the app (`/echo/voice-test`) and `scripts/voice_match_harness.py`: hold-out, prompts, pairs, score, and the rolled-back what-if that keeps the live database unchanged (T-3.4.1.8) |
 | `backend/app/services/echo_draft_edits.py` | What the user changed in a draft: only the words they TYPED are theirs, minus 8-word stretches repeated from the incoming message (the provenance guard for S-3.4.2, D-104) |
 | `backend/scripts/echo_import.py` | Import an export into a user's Echo from the command line (`--email`, `--file`, `--preview`): the `/echo/import` flow for exports past the upload cap, such as Apple Health (S-3.7.5) |
 | `backend/app/websocket/manager.py` | Redis pub/sub → WebSocket fan-out |
@@ -251,6 +252,12 @@ GET    /api/v1/notifications             # The bell: {items, unread}
 PATCH  /api/v1/notifications/{id}        # {read}
 POST   /api/v1/notifications/read-all
 GET    /api/v1/usage                     # The caller's own usage by feature, today + last 30 days (E-5.2); recorded, never limited
+
+GET    /api/v1/echo/voice-test                # Voice test: can it start (blockers in words), its cost, the gate, the newest test (T-3.4.1.8)
+POST   /api/v1/echo/voice-test                # Start one (202): about 40 calls on the user's echo_draft model, written by a worker task. One open test per tenant, held by an index
+GET    /api/v1/echo/voice-test/{id}           # The test, for polling; never says which side is the user's (nor does /echo/export while it is open)
+PUT    /api/v1/echo/voice-test/{id}/picks     # {pair, pick: A|B}
+POST   /api/v1/echo/voice-test/{id}/score     # Score as user-score does; writes echo_voice_gates as --record does
 
 GET    /api/v1/channels                # List all channels
 GET    /api/v1/channels/{id}           # Single channel detail
@@ -359,7 +366,9 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `ECHO_SIGNALS_MAX_BATCHES_PER_RUN` | No | `20` | Cost bound per run; a larger backlog is read over several runs |
 | `ECHO_SIGNALS_IMPORT_SAMPLE` / `ECHO_SIGNALS_MIN_PASSAGE_WORDS` | No | `300` / `4` | An export import is one input: stylometry reads every own-words turn; the model reads at most this many turns of at least this many words, spread over the chat's timeline (T-3.3.2.10) |
 | **Speak as me (S-3.4.1 / D-102)** | | | |
-| `ECHO_SPEAK_AS_ME_ENABLED` | No | `False` | The install switch. Each user also needs a passed voice test (`echo_voice_gates`, written by `scripts/voice_match_harness.py user-score --record`), readiness and the Studio tier |
+| `ECHO_SPEAK_AS_ME_ENABLED` | No | `False` | The install switch. Each user also needs a passed voice test (`echo_voice_gates`, written by the Echo page's test or `scripts/voice_match_harness.py user-score --record`), readiness and the Studio tier |
+| `ECHO_VOICE_TEST_GENERATION` | No | `celery` | How the in-app voice test's pairs are written (T-3.4.1.8): `celery` (`echo.generate_voice_test`), `inline` or `off` (the suite) |
+| `ECHO_VOICE_TESTS_PER_DAY` | No | `3` | Voice tests one user may start per UTC day; each makes about 40 calls on `echo_draft`. `0` = no limit |
 | `ECHO_DRAFT_CRITIQUE_ROUNDS` / `ECHO_DRAFT_CRITIQUE_TARGET` | No | `2` / `4.0` | Critique-and-revise rounds per draft, and the mean voice score (1-5) at which they stop early |
 | `ECHO_DRAFT_SOURCES` | No | `6` | Library chunks retrieved for one draft |
 | `ECHO_PERSONAL_INDEX_ENABLED` | No | `True` | S-3.3.3: keep `personal_context_global` (one vector per live fact and signal) in step on every write and at startup. Off for the test suite, like `NOTES_INDEX_ENABLED` |

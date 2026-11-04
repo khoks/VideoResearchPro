@@ -54,6 +54,7 @@ from app.models.visual_frame import VisualFrame
 from app.models.voice_signal import VoiceSignal
 from app.models.voice_signal_input import VoiceSignalInput
 from app.models.echo_draft import EchoDraft, EchoVoiceGate
+from app.models.echo_voice_test import EchoVoiceTest
 
 __all__ = [
     "ActivityEvent",
@@ -114,4 +115,5 @@ __all__ = [
     "VoiceSignalInput",
     "EchoDraft",
     "EchoVoiceGate",
+    "EchoVoiceTest",
 ]

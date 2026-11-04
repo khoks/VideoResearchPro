@@ -11,9 +11,13 @@ import uuid
 import pytest
 
 from app.config import settings
+from app.models.echo_draft import EchoDraft
+from app.models.user_llm_override import UserLLMOverride
 from app.services import auth_service, echo_draft_service
 from app.services import quota_metering_service as quota
+from app.services.llm_routing import UseCaseConfig, resolve_config
 from tests.test_services.test_echo_draft import _make_ready, deps
+from tests.usage_helpers import MeteredFakeChat
 
 DRAFT = "/api/v1/echo/draft"
 
@@ -150,3 +154,31 @@ def test_feedback_records_the_users_version(unauthenticated_client, db, fake, mo
     assert body["edit"]["quoted"] == []
     assert unauthenticated_client.get(f"{DRAFT}/status", headers=h).json()["drafts_today"] == 1, "feedback is not a draft"
     assert unauthenticated_client.get(f"/api/v1/echo/drafts/{did}", headers=h).json()["final_text"] == final
+
+
+def test_a_draft_runs_on_the_models_the_user_pinned(unauthenticated_client, db, monkeypatch):
+    """The drafts the voice test gates run on the model the test ran on. A
+    use case the user did not pin stays on the install's."""
+    user, h = _user(db)
+    _enable(db, user, monkeypatch)
+    pinned = UseCaseConfig("local", "qwen/qwen3-9b", "off")
+    db.add(UserLLMOverride(user_id=user.id, use_case="echo_draft", provider=pinned.provider, model=pinned.model, reasoning=pinned.reasoning))
+    db.commit()
+    built = []
+
+    def build(cfg, temperature, max_tokens, *, byok_api_key=None):
+        built.append(cfg)
+        return MeteredFakeChat()
+
+    monkeypatch.setattr("app.services.llm_service._build_from_config", build)
+    monkeypatch.setattr("app.agents.echo_agent.run_echo_draft", lambda deps, **kw: {
+        "language": "en", "intent": "reply", "tokens_in": 10, "tokens_out": 5,
+        "result": {"draft": "A draft.", "voice_match_score": 80, "confidence": 0.8, "citations": [],
+                   "deviation_notes": [], "flags": [], "critique_rounds": 0},
+    })
+
+    r = unauthenticated_client.post(DRAFT, json={"message": "Who pays?"}, headers=h)
+
+    assert r.status_code == 201, r.text
+    assert built == [resolve_config("echo_classify_intent"), pinned, resolve_config("echo_critique")]
+    assert db.get(EchoDraft, r.json()["id"]).model == pinned.model, "the row names the model that ran"

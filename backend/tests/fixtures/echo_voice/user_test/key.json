@@ -1,0 +1,122 @@
+[
+  {
+    "pair": "p01",
+    "own_is": "B",
+    "note_id": "note-01",
+    "topic": "tariffs on steel"
+  },
+  {
+    "pair": "p02",
+    "own_is": "A",
+    "note_id": "note-02",
+    "topic": "a late train"
+  },
+  {
+    "pair": "p03",
+    "own_is": "A",
+    "note_id": "note-03",
+    "topic": "monsoon prices"
+  },
+  {
+    "pair": "p04",
+    "own_is": "B",
+    "note_id": "note-04",
+    "topic": "a cricket final"
+  },
+  {
+    "pair": "p05",
+    "own_is": "A",
+    "note_id": "note-05",
+    "topic": "school fees"
+  },
+  {
+    "pair": "p06",
+    "own_is": "A",
+    "note_id": "note-06",
+    "topic": "a new phone"
+  },
+  {
+    "pair": "p07",
+    "own_is": "B",
+    "note_id": "note-07",
+    "topic": "the city budget"
+  },
+  {
+    "pair": "p08",
+    "own_is": "B",
+    "note_id": "note-08",
+    "topic": "a wedding guest list"
+  },
+  {
+    "pair": "p09",
+    "own_is": "B",
+    "note_id": "note-09",
+    "topic": "remote work"
+  },
+  {
+    "pair": "p10",
+    "own_is": "B",
+    "note_id": "note-10",
+    "topic": "a broken promise"
+  },
+  {
+    "pair": "p11",
+    "own_is": "A",
+    "note_id": "note-11",
+    "topic": "grocery inflation"
+  },
+  {
+    "pair": "p12",
+    "own_is": "A",
+    "note_id": "note-12",
+    "topic": "a long flight"
+  },
+  {
+    "pair": "p13",
+    "own_is": "A",
+    "note_id": "note-13",
+    "topic": "a noisy neighbour"
+  },
+  {
+    "pair": "p14",
+    "own_is": "B",
+    "note_id": "note-14",
+    "topic": "a job offer"
+  },
+  {
+    "pair": "p15",
+    "own_is": "B",
+    "note_id": "note-15",
+    "topic": "old friends"
+  },
+  {
+    "pair": "p16",
+    "own_is": "A",
+    "note_id": "note-16",
+    "topic": "a film remake"
+  },
+  {
+    "pair": "p17",
+    "own_is": "B",
+    "note_id": "note-17",
+    "topic": "a power cut"
+  },
+  {
+    "pair": "p18",
+    "own_is": "B",
+    "note_id": "note-18",
+    "topic": "an election poster"
+  },
+  {
+    "pair": "p19",
+    "own_is": "B",
+    "note_id": "note-19",
+    "topic": "a family recipe"
+  },
+  {
+    "pair": "p20",
+    "own_is": "B",
+    "note_id": "note-20",
+    "topic": "a lost wallet"
+  }
+]

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useCreateDraft, useDeleteDraft, useDraftStatus, useRecentDrafts } from '../../hooks/useEcho';
 import { DraftEditor } from './DraftEditor';
+import { VoiceTestPanel } from './VoiceTestPanel';
 import { useJobStore } from '../../stores/jobStore';
 import { openApiLink } from '../../services/apiFiles';
 import type { CreateDraftPayload, EchoDraft } from '../../services/echoApi';
@@ -16,7 +17,8 @@ import { citationLabel, draftErrorOf } from '../../utils/echoDrafts';
  * readiness, the user's own "which did you write?" test (D-100), the daily
  * cap. Echo drafts; it never sends. The user edits the draft into their own
  * version and may drop the disclosure line; saving it records what they
- * typed, which is all Echo learns from.
+ * typed, which is all Echo learns from. The test itself is taken here too
+ * (`VoiceTestPanel`, T-3.4.1.8).
  */
 export function SpeakAsMePanel() {
   const c = useColors();
@@ -161,6 +163,8 @@ export function SpeakAsMePanel() {
           </ul>
         </details>
       )}
+
+      {st && <VoiceTestPanel shown={st.blockers.map((b) => b.code)} />}
     </Card>
   );
 }

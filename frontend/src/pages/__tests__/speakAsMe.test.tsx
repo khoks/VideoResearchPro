@@ -21,10 +21,19 @@ const api = {
   listDrafts: vi.fn(async () => ({ items: [] as EchoDraft[] })),
   deleteDraft: vi.fn(async () => undefined),
   draftFeedback: vi.fn<(id: string, p: unknown) => Promise<EchoDraft>>(),
+  voiceTest: vi.fn(async () => ({
+    offer: {
+      available: false, blockers: [], pairs: 20, model_calls: 40, model: 'gpt-5.5', notes: 3, notes_needed: 40,
+      pass_share: 0.8, tests_today: 0, tests_per_day: 3,
+    },
+    gate: { status: 'not_run', run_at: null, pairs: 0, picked_own_share: null, notes_total: 3, notes_needed: 40 },
+    test: null,
+  })),
 };
 vi.mock('../../services/echoApi', () => ({
   echoApi: {
     draftStatus: () => api.draftStatus(),
+    voiceTest: () => api.voiceTest(),
     createDraft: (p: unknown) => api.createDraft(p),
     listDrafts: () => api.listDrafts(),
     deleteDraft: () => api.deleteDraft(),
@@ -134,6 +143,27 @@ describe('helpers', () => {
 });
 
 describe('SpeakAsMePanel', () => {
+  it('hosts the voice test, which does not repeat the gates above it (T-3.4.1.8)', async () => {
+    api.voiceTest.mockResolvedValueOnce({
+      offer: {
+        available: false,
+        blockers: [
+          { code: 'install_off', message: 'Speak as me is turned off on this install.' },
+          { code: 'notes_needed', message: 'The test needs 40 of your notes. You have 3.' },
+        ],
+        pairs: 20, model_calls: 40, model: 'gpt-5.5', notes: 3, notes_needed: 40, pass_share: 0.8, tests_today: 0, tests_per_day: 3,
+      },
+      gate: GATE,
+      test: null,
+    } as never);
+    await mount();
+    const section = host.querySelector('[data-voice-test-panel]');
+    expect(section).not.toBeNull();
+    expect(section?.querySelector('[data-blocker="install_off"]')).toBeNull();
+    expect(section?.querySelector('[data-blocker="notes_needed"]')?.textContent).toContain('You have 3');
+    expect(host.querySelectorAll('[data-blocker="install_off"]')).toHaveLength(1);
+  });
+
   it('while off, shows every gate in words and no composer', async () => {
     await mount();
     expect(host.textContent).toContain('Off');

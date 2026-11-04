@@ -291,6 +291,36 @@ def test_export_withholds_connector_secrets(unauthenticated_client, brains):
     assert "never leave the server" in manifest["withheld"]["reason"]
 
 
+def test_export_carries_no_stale_evidence_from_a_rejected_signal(unauthenticated_client, db, brains):
+    """A rejection made before PR #392 can quote a source deleted since. The
+    archive carries every column, so until the sweep runs (T-3.3.1.7) it must
+    hand back only the evidence that still stands, and say it did."""
+    a = brains["a"].id
+    db.add(Note(id="n-live", tenant_id=a, target_type="job", target_id="job-1", body_md="I start from the base rates."))
+    db.commit()
+    stale = echo_signal_service.create(
+        db, tenant_id=a, user_id=a, signal_type="methodology", value="Argues from base rates", origin="llm", weight=2.0,
+        examples=[
+            {"text": "the base rates", "source": "note:n-live"},
+            {"text": "words from a share I deleted", "source": "share:gone"},
+        ],
+    )
+    echo_signal_service.suppress(db, a, stale.id)
+    assert "words from a share I deleted" in db.get(VoiceSignal, stale.id).examples_json, "at rest, as it stood"
+
+    r = unauthenticated_client.get(EXPORT, headers=brains["ha"])
+    assert r.status_code == 200, r.text
+    archive = read_archive(io.BytesIO(r.content))
+
+    record = next(row for row in archive.tables["voice_signals"] if row["id"] == stale.id)
+    assert "words from a share I deleted" not in record["examples_json"]
+    assert json.loads(record["examples_json"]) == [{"text": "the base rates", "source": "note:n-live"}]
+    assert json.loads(record["derived_from"]) == ["note:n-live"]
+    assert archive.manifest["withheld"]["columns"]["voice_signals"] == {"columns": ["derived_from", "examples_json"], "rows": 1}
+    db.expire_all()
+    assert "words from a share I deleted" in db.get(VoiceSignal, stale.id).examples_json, "an export writes nothing"
+
+
 def test_export_never_carries_another_tenant(unauthenticated_client, brains):
     r = unauthenticated_client.get(EXPORT, headers=brains["ha"])
     with zipfile.ZipFile(io.BytesIO(r.content)) as zf:

@@ -191,7 +191,8 @@ def run_import(db: Session, user: Any, fileobj: IO[bytes], filename: str, *,
                 if (item.kind, item.key) in deleted_facts:
                     stats["facts_kept_deleted"] = stats.get("facts_kept_deleted", 0) + 1
                     continue
-                _record_fact(db, user.id, record.id, item, counts)
+                if not _record_fact(db, user.id, record.id, item, counts):
+                    stats["facts_kept_manual"] = stats.get("facts_kept_manual", 0) + 1
                 continue
             if not isinstance(item, ImportedShare):
                 stats["not_stored"] = stats.get("not_stored", 0) + 1
@@ -392,14 +393,18 @@ def _store_new_events(db: Session, tenant_id: str, connector: str, import_id: st
     counts["events_already_held"] = counts.get("events_already_held", 0) + len(held)
 
 
-def _record_fact(db: Session, tenant_id: str, import_id: str, fact: DerivedFact, counts: dict[str, int]) -> None:
+def _record_fact(db: Session, tenant_id: str, import_id: str, fact: DerivedFact, counts: dict[str, int]) -> bool:
+    """False when a row the user wrote holds the key (T-3.2.1.11)."""
     from app.services import echo_service
 
-    echo_service.record_context(
+    written = echo_service.record_derived_context(
         db, user_id=tenant_id, kind=fact.kind, key=fact.key, value=fact.value,
         source=f"import:{import_id}", confidence=min(float(fact.confidence), 0.99),
     )
+    if written is None:
+        return False
     counts["facts"] = counts.get("facts", 0) + 1
+    return True
 
 
 def delete_import(db: Session, tenant_id: str, import_id: str) -> dict[str, int]:

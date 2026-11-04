@@ -41,6 +41,7 @@ from app.connectors.base import (
     ConnectorTokens,
     DerivedFact,
     SyncContext,
+    TokenRenewalFailed,
 )
 
 logger = logging.getLogger(__name__)
@@ -250,10 +251,18 @@ class GitHubConnector:
             raise ConnectorError(f"GitHub answered {resp.status} for {path}")
         return resp
 
+    def _call(self, ctx: SyncContext, path: str, params: dict | None = None,
+              etag: str | None = None) -> HttpResponse:
+        """One request of a sync, through ``ctx.call`` (T-3.2.1.12). GitHub's
+        tokens do not expire, so ``ctx`` has nothing to renew here and a 401
+        means the user revoked the grant; a connector whose tokens expire
+        follows the same pattern and gets the renewal for free."""
+        return ctx.call(lambda token: self._api(token, path, params, etag=etag))
+
     def _login(self, ctx: SyncContext) -> str:
         login = ctx.tokens.account_label or ctx.cursor.get("login")
         if not login:
-            login = (self._api(ctx.tokens.access_token, "/user").data or {}).get("login")
+            login = (self._call(ctx, "/user").data or {}).get("login")
         if not login:
             raise ConnectorError("GitHub did not say who the token belongs to", auth=True)
         ctx.cursor["login"] = login
@@ -263,7 +272,7 @@ class GitHubConnector:
         newest: str | None = None
         for page in range(1, EVENT_PAGES + 1):
             etag = ctx.cursor.get("events_etag") if page == 1 and stop_at else None
-            resp = self._api(ctx.tokens.access_token, f"/users/{login}/events", {"per_page": 100, "page": page}, etag=etag)
+            resp = self._call(ctx, f"/users/{login}/events", {"per_page": 100, "page": page}, etag=etag)
             if resp.status == 304:
                 return  # nothing new; costs no rate limit
             if page == 1 and resp.headers.get("etag"):
@@ -288,8 +297,8 @@ class GitHubConnector:
     def _own_repos(self, ctx: SyncContext, login: str, pages: int = REPO_PAGES) -> list[dict]:
         out: list[dict] = []
         for page in range(1, pages + 1):
-            resp = self._api(ctx.tokens.access_token, f"/users/{login}/repos",
-                             {"type": "owner", "sort": "pushed", "per_page": 100, "page": page})
+            resp = self._call(ctx, f"/users/{login}/repos",
+                              {"type": "owner", "sort": "pushed", "per_page": 100, "page": page})
             items = resp.data if isinstance(resp.data, list) else []
             out.extend(items)
             if len(items) < 100:
@@ -304,7 +313,9 @@ class GitHubConnector:
             params["since"] = aware.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         for page in range(1, COMMIT_PAGES + 1):
             try:
-                resp = self._api(ctx.tokens.access_token, f"/repos/{full_name}/commits", {**params, "page": page})
+                resp = self._call(ctx, f"/repos/{full_name}/commits", {**params, "page": page})
+            except TokenRenewalFailed:
+                raise
             except ConnectorError as e:
                 if e.auth or "hourly limit" in str(e):
                     raise

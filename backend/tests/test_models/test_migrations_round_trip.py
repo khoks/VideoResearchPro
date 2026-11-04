@@ -173,6 +173,70 @@ def test_documents_language_mix_round_trip(tmp_path):
     assert "language_mix" in _columns(url, "documents")
 
 
+def _model_width(url: str) -> int:
+    engine = create_engine(url)
+    try:
+        return next(c for c in inspect(engine).get_columns("echo_drafts") if c["name"] == "model")["type"].length
+    finally:
+        engine.dispose()
+
+
+def test_a_draft_holds_any_model_id_a_user_can_pin():
+    """T-3.4.1.10. A pin is ``user_llm_overrides.model``; both tables that
+    record which model wrote something must fit it."""
+    from app.models.echo_draft import EchoDraft
+    from app.models.echo_voice_test import EchoVoiceTest
+    from app.models.user_llm_override import UserLLMOverride
+
+    pinned = UserLLMOverride.__table__.c.model.type.length
+    assert EchoDraft.__table__.c.model.type.length == pinned
+    assert EchoVoiceTest.__table__.c.model.type.length == pinned
+
+
+def test_echo_runtime_columns_round_trip(tmp_path):
+    """Columns, not tables, and one of them re-typed in SQLite's batch mode,
+    which rebuilds ``echo_drafts``: its rows and its index must come across."""
+    url = "sqlite:///" + (tmp_path / "round_trip.db").as_posix()
+    cfg = _alembic_config()
+    cfg.set_main_option("sqlalchemy.url", url)
+    below = ScriptDirectory.from_config(cfg).get_revision("5f8caf39b5b1").down_revision
+
+    command.upgrade(cfg, below)
+    assert _model_width(url) == 64
+    long_model = "m" * 64
+    engine = create_engine(url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO echo_drafts (id, tenant_id, user_id, input_message, language, draft, model, disclosure, created_at) "
+                    "VALUES ('d1', 't', 'u', 'hi', 'en', 'hello', :model, 'AI', '2026-11-04 00:00:00')"
+                ),
+                {"model": long_model},
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "head")
+    assert _model_width(url) == 128
+    assert {"refresh_claim", "refresh_claimed_at"} <= _columns(url, "echo_connector_credentials")
+    assert "wanted_by" in _columns(url, "personal_context")
+    engine = create_engine(url)
+    try:
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT model FROM echo_drafts WHERE id = 'd1'")).scalar_one() == long_model
+        assert "ix_echo_drafts_tenant_created" in {i["name"] for i in inspect(engine).get_indexes("echo_drafts")}
+    finally:
+        engine.dispose()
+
+    command.downgrade(cfg, below)
+    assert _model_width(url) == 64
+    assert not ({"refresh_claim", "refresh_claimed_at"} & _columns(url, "echo_connector_credentials"))
+    assert "wanted_by" not in _columns(url, "personal_context")
+    command.upgrade(cfg, "head")
+    assert _model_width(url) == 128
+
+
 def test_echo_voice_tests_hold_one_open_test_after_the_migration(tmp_path):
     """The rule lives in a partial unique index, so a database built by
     Alembic must have what ``create_all`` builds in the suite."""

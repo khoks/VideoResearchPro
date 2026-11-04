@@ -17,12 +17,16 @@ export interface MfaCodeStepProps {
   onStartOver: () => void;
 }
 
+// routers/mfa.py: TICKET_EXPIRED_DETAIL, TICKET_EXHAUSTED_DETAIL.
 const EXPIRED_DETAIL = 'Invalid or expired MFA session';
+const EXHAUSTED_DETAIL = 'Too many codes tried for this sign-in. Start over and sign in again.';
 
 /**
  * The second sign-in step (T-5.4.6): a code from the authenticator app, or
  * one of the recovery codes shown when two-step verification was turned on.
- * Both go to `POST /auth/login/mfa`; a recovery code works once.
+ * Both go to `POST /auth/login/mfa`; a recovery code works once. The ticket
+ * takes five codes (T-5.4.13); after that even the right one is refused, so
+ * this step sends the reader back to the first one.
  */
 export function MfaCodeStep({ mfaToken, email, onSignedIn, onStartOver }: MfaCodeStepProps) {
   const c = useColors();
@@ -44,6 +48,11 @@ export function MfaCodeStep({ mfaToken, email, onSignedIn, onStartOver }: MfaCod
       if (detail === EXPIRED_DETAIL) {
         setExpired(true);
         setError('This sign-in timed out. Start over and enter your password again.');
+        return;
+      }
+      if (detail === EXHAUSTED_DETAIL) {
+        setExpired(true);
+        setError('Too many codes tried. Start over and enter your password again.');
         return;
       }
       setError(

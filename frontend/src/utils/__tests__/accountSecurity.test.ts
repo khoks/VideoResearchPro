@@ -94,6 +94,25 @@ describe('describeAuditEvent', () => {
     );
     expect(describeAuditEvent(e('sessions_revoked_all', { keep_current: true, revoked_count: 2 }))).toBe('Signed out everywhere else');
     expect(describeAuditEvent(e('sessions_revoked_all', { keep_current: false }))).toBe('Signed out everywhere');
+    expect(describeAuditEvent(e('sessions_revoked_all', { keep_current: false, reason: 'password_reset' }))).toBe(
+      'Signed out everywhere after the password reset',
+    );
+    expect(describeAuditEvent(e('sessions_revoked_all', { keep_current: true, reason: 'password_change' }))).toBe(
+      'Signed out everywhere else after the password change',
+    );
+    expect(describeAuditEvent(e('password_change_failed', { reason: 'wrong_password' }))).toBe(
+      'Password change refused: wrong current password',
+    );
+    expect(describeAuditEvent(e('password_change_failed', { reason: 'locked_out' }))).toBe(
+      'Password change refused while the account was locked',
+    );
+    expect(describeAuditEvent(e('mfa_login_failure', { reason: 'invalid_code' }))).toBe('Wrong two-step code entered');
+    expect(describeAuditEvent(e('mfa_login_failure', { reason: 'too_many_attempts' }))).toBe(
+      'Two-step sign-in stopped after too many wrong codes',
+    );
+    expect(describeAuditEvent(e('mfa_login_failure', { reason: 'ticket_used' }))).toBe(
+      'Two-step sign-in repeated after it had finished',
+    );
     expect(describeAuditEvent(e('mfa_enabled'))).toBe('Two-step verification turned on');
     expect(describeAuditEvent(e('tier_changed', { to_tier: 'pro' }))).toBe('Plan changed to pro');
   });
@@ -104,6 +123,7 @@ describe('describeAuditEvent', () => {
   it('marks failed and refused sign-ins as warnings', () => {
     expect(isWarningEvent('login_failure')).toBe(true);
     expect(isWarningEvent('mfa_login_failure')).toBe(true);
+    expect(isWarningEvent('password_change_failed')).toBe(true);
     expect(isWarningEvent('login_success')).toBe(false);
   });
 });

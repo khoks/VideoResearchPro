@@ -61,13 +61,45 @@ def _owns_job(tenant_id: str, job_id: str, session_factory=None) -> bool:
             db.close()
 
 
+def _authenticate(token: str, session_factory=None) -> str | None:
+    """The tenant id ``token`` signs in as, or None.
+
+    The same check every HTTP bearer route makes
+    (``auth_service.authenticate_access_token``, T-5.4.15): an access token,
+    not the second-factor ticket; a session that is not revoked; a user that
+    still exists. Until T-5.4.15 the handshake decoded the token itself and
+    never looked at the session, so signing out, "sign out everywhere" or a
+    password reset left the token opening this socket until it expired.
+
+    Opens its own short-lived session, like ``_owns_job``, and fails CLOSED:
+    a database error refuses the socket.
+    """
+    if session_factory is None:
+        from app.database import SessionLocal
+
+        session_factory = SessionLocal
+
+    db = None
+    try:
+        db = session_factory()
+        resolved = auth_service.authenticate_access_token(db, token)
+        return resolved[0].id if resolved is not None else None
+    except Exception:
+        logger.exception("ws: token check failed; refusing the socket")
+        return None
+    finally:
+        if db is not None:
+            db.close()
+
+
 @router.websocket("/ws/jobs")
 async def job_progress_ws(websocket: WebSocket, token: str | None = Query(default=None)):
     """
     Multiplexed WebSocket for job progress updates.
 
     Auth:
-        Requires a valid JWT passed as ?token=... query parameter.
+        Requires a valid JWT passed as ?token=... query parameter, from a
+        session that is not revoked (checked once, at the handshake).
         Connection is closed with code 1008 (policy violation) if missing/invalid.
         This is the one route that still reads a token from the URL (T-8.8.1.5,
         D-085 addendum): the browser WebSocket API cannot set an Authorization
@@ -86,14 +118,14 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Missing token")
         return
 
-    # An access token only: the second-factor ticket is signed with the same
+    # An access token of a live session (T-5.4.15), checked as the HTTP
+    # routes check theirs. The second-factor ticket is signed with the same
     # key and would otherwise open the socket before the code is sent.
-    payload = auth_service.decode_access_token(token)
-    if not payload or not payload.get("sub"):
+    tenant_id = _authenticate(token)
+    if tenant_id is None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
         return
 
-    tenant_id = payload["sub"]
     await manager.connect(websocket)
     try:
         while True:

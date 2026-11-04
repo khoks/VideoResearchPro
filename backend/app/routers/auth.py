@@ -6,15 +6,19 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.dependencies import get_current_user, get_db, require_operator
+from app.dependencies import get_current_jti, get_current_user, get_db, require_operator
 from app.models.user import User
 from app.schemas.auth import (
+    PASSWORD_MAX_CHARS,
+    PASSWORD_MIN_CHARS,
     AuditLogEntry,
     ChangeTierRequest,
     ChangeTierResponse,
     LoginRequest,
     MeResponse,
     MfaRequiredResponse,
+    PasswordChangePayload,
+    PasswordChangeResponse,
     PasswordResetConfirmPayload,
     PasswordResetConfirmResponse,
     PasswordResetRequestPayload,
@@ -219,10 +223,13 @@ def password_reset_confirm(
     request: Request,
     db: Session = Depends(get_db),
 ) -> PasswordResetConfirmResponse:
-    user = auth_service.confirm_password_reset(
+    """Set the new password and sign the account out everywhere (T-5.4.12):
+    whoever was signed in, the person the reset is meant to lock out among
+    them, has to sign in again with the new password."""
+    result = auth_service.confirm_password_reset(
         db, secret=payload.token, new_password=payload.new_password
     )
-    if user is None:
+    if result is None:
         audit_service.record(
             db,
             event=Event.PASSWORD_RESET_INVALID_TOKEN,
@@ -232,13 +239,123 @@ def password_reset_confirm(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired token",
         )
+    user, revoked = result
     audit_service.record(
         db,
         event=Event.PASSWORD_RESET_COMPLETED,
         user_id=user.id,
         request=request,
+        metadata={"sessions_revoked": revoked},
+    )
+    audit_service.record(
+        db,
+        event=Event.SESSIONS_REVOKED_ALL,
+        user_id=user.id,
+        request=request,
+        metadata={"revoked_count": revoked, "keep_current": False, "reason": "password_reset"},
     )
     return PasswordResetConfirmResponse()
+
+
+# What the change route says when the account has no password to check.
+PASSWORD_CHANGE_NO_PASSWORD = (
+    "This account has no password yet: it was made by signing in with Google "
+    "or GitHub. To set one, use \"Forgot it?\" to get a reset code."
+)
+
+
+@router.post("/password/change", response_model=PasswordChangeResponse)
+def change_password(
+    payload: PasswordChangePayload,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    current_jti: str | None = Depends(get_current_jti),
+    db: Session = Depends(get_db),
+) -> PasswordChangeResponse:
+    """T-5.4.14: a signed-in user sets a new password by giving the current
+    one. Every other session on the account is signed out; this one stays.
+
+    * The current password is checked under the account lockout, as at
+      sign-in: a wrong one counts toward the lock (400), and while locked
+      the route answers 429. The per-IP limit is the sign-in one
+      (``middleware/rate_limit.py``, ``password_change``).
+    * An account with no password (Google or GitHub sign-in made it) gets
+      400 pointing to the reset flow, which sets a first one.
+    * Refusals are 400 or 429, never 401: the web client treats a 401 as a
+      signed-out session and would sign the user out for a typo. A body
+      that is not two strings is a 422 before any of this runs.
+    * No password, current or new, is echoed back: every 400 here is a
+      fixed sentence, and the 422 handler in ``app/main.py`` drops ``input``.
+    """
+    if not (PASSWORD_MIN_CHARS <= len(payload.new_password) <= PASSWORD_MAX_CHARS):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"The new password must be {PASSWORD_MIN_CHARS} to {PASSWORD_MAX_CHARS} characters.",
+        )
+    if not auth_service.password_can_be_hashed(payload.new_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The new password has a character that cannot be stored: a null character or broken Unicode.",
+        )
+    outcome, revoked = auth_service.change_password(
+        db,
+        current_user,
+        current_password=payload.current_password,
+        new_password=payload.new_password,
+        keep_jti=current_jti,
+    )
+    if outcome == auth_service.PasswordChangeOutcome.NO_PASSWORD:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=PASSWORD_CHANGE_NO_PASSWORD,
+        )
+    if outcome != auth_service.PasswordChangeOutcome.CHANGED:
+        locked = outcome == auth_service.PasswordChangeOutcome.LOCKED_OUT
+        audit_service.record(
+            db,
+            event=Event.PASSWORD_CHANGE_FAILED,
+            user_id=current_user.id,
+            request=request,
+            metadata={"reason": "locked_out" if locked else "wrong_password"},
+        )
+        if locked:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    "Too many wrong passwords: password sign-in is locked for a "
+                    f"while (up to {settings.LOCKOUT_DURATION_MIN} minutes). Try "
+                    "again later, or use \"Forgot it?\" to reset it."
+                ),
+            )
+        # This failure may have just locked the account: mark it, as sign-in does.
+        db.refresh(current_user)
+        if auth_service.is_locked(current_user):
+            audit_service.record(
+                db,
+                event=Event.ACCOUNT_LOCKED,
+                user_id=current_user.id,
+                request=request,
+                metadata={"locked_until": current_user.locked_until.isoformat()},
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The current password is not right.",
+        )
+    audit_service.record(
+        db,
+        event=Event.PASSWORD_CHANGED,
+        user_id=current_user.id,
+        request=request,
+        metadata={"sessions_revoked": revoked},
+    )
+    audit_service.record(
+        db,
+        event=Event.SESSIONS_REVOKED_ALL,
+        user_id=current_user.id,
+        request=request,
+        metadata={"revoked_count": revoked, "keep_current": True, "reason": "password_change"},
+    )
+    return PasswordChangeResponse(sessions_revoked=revoked)
 
 
 @router.get("/me", response_model=MeResponse)

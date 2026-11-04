@@ -50,6 +50,7 @@ LANE_MIGRATIONS = [
     ("5029fce5d1ac", {"echo_card_state"}),
     ("6cf03630d943", {"usage_records"}),
     ("a68953e57c63", {"echo_fact_tombstones"}),
+    ("f748717dcb01", {"mfa_step_tickets"}),
     ("6d5b3d5aa6fa", {"echo_voice_tests"}),
     # S-8.2.1: the search index is created only when SQLite has FTS5 with the
     # trigram tokenizer; elsewhere the migration deliberately creates nothing.

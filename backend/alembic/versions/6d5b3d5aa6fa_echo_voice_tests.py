@@ -1,7 +1,7 @@
 """echo_voice_tests — the in-app voice test for speak as me (T-3.4.1.8)
 
 Revision ID: 6d5b3d5aa6fa
-Revises: a68953e57c63
+Revises: f748717dcb01
 Create Date: 2026-11-04
 
 One row per "which of these did you write?" test taken on the Echo page:
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "6d5b3d5aa6fa"
-down_revision = "a68953e57c63"
+down_revision = "f748717dcb01"
 branch_labels = None
 depends_on = None
 

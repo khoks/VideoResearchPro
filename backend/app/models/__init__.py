@@ -19,6 +19,7 @@ from app.models.job_search_candidate import JobSearchCandidate
 from app.models.job_report_intermediate import JobReportIntermediate
 from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.mfa_secret import MfaSecret
+from app.models.mfa_step_ticket import MfaStepTicket
 from app.models.note import Note
 from app.models.oauth import OAuthIdentity, OAuthState
 from app.models.output import Output
@@ -76,6 +77,7 @@ __all__ = [
     "JobReportIntermediate",
     "LibraryQAExchange",
     "MfaSecret",
+    "MfaStepTicket",
     "Note",
     "OAuthIdentity",
     "OAuthState",

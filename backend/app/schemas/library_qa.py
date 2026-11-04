@@ -47,6 +47,10 @@ class LibraryQARequest(BaseModel):
     # S-1.15.2 / T-1.15.2.3: per-request depth override; None lets the
     # visible corpus's size bracket decide (D-064). Never a cap.
     output_length: Literal["auto", "brief", "standard", "deep"] | None = None
+    # T-8.4.2.4: ask about one source rather than the whole library. Its
+    # ``document_id`` (or a video's legacy YouTube id); it must be a source
+    # the asker can see, else 404. Narrows a shelf question the same way.
+    document_id: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class LibraryQAResponse(BaseModel):

@@ -124,6 +124,41 @@ def test_unknown_key_is_refused_not_ignored(db, test_user, library):
         qa_scope_service.resolve_document_ids(db, test_user.id, QAScope.model_validate({"channel_id": "UC1"}))
 
 
+def test_document_scope_is_that_one_source(db, test_user, library):
+    """T-8.4.2.4: by its primary key or its legacy YouTube id, always the
+    canonical id back."""
+    a = library["a"]
+    assert qa_scope_service.resolve_document_ids(db, test_user.id, {"document_id": a.document_id}) == [a.document_id]
+    assert qa_scope_service.resolve_document_ids(db, test_user.id, QAScope(document_id=a.video_id)) == [a.document_id]
+    assert qa_scope_service.narrowing({"document_id": a.document_id, "saved_search_id": "q1"}) == {
+        "document_id": a.document_id
+    }
+
+
+def test_another_readers_document_is_not_found(db, test_user, library):
+    for raw in (library["theirs"].document_id, library["theirs"].video_id, "no-such-document"):
+        with pytest.raises(qa_scope_service.ScopeNotFound) as exc:
+            qa_scope_service.resolve_document_ids(db, test_user.id, {"document_id": raw})
+        assert exc.value.kind == "document"
+        with pytest.raises(qa_scope_service.ScopeNotFound):
+            qa_scope_service.note_target_keys(db, test_user.id, {"document_id": raw}, [])
+
+
+def test_document_on_a_shelf_is_the_intersection(db, test_user, library):
+    shelf = shelf_service.create_shelf(db, test_user.id, "Rates")
+    shelf_service.add_job(db, shelf, _job(db, test_user.id, [library["a"]]))
+    both = {"shelf_id": shelf.id, "document_id": library["a"].document_id}
+    assert qa_scope_service.resolve_document_ids(db, test_user.id, both) == [library["a"].document_id]
+    off = {"shelf_id": shelf.id, "document_id": library["b"].document_id}
+    assert qa_scope_service.resolve_document_ids(db, test_user.id, off) == []
+
+
+def test_document_scope_round_trips_through_the_column():
+    raw = qa_scope_service.dump(QAScope(document_id="d1"))
+    assert raw == '{"document_id":"d1"}'
+    assert qa_scope_service.load(raw) == QAScope(document_id="d1")
+
+
 def test_nothing_visible_resolves_to_nothing(db, other):
     assert qa_scope_service.resolve_document_ids(db, other.id, None) == []
 
@@ -141,5 +176,5 @@ def test_history_carries_each_exchanges_scope(client, db, test_user):
     db.commit()
     rows = {r["question"]: r for r in client.get("/api/v1/library/qa").json()}
     assert rows["Whole library?"]["scope"] is None
-    assert rows["On a shelf?"]["scope"] == {"shelf_id": "s1", "saved_search_id": None}
+    assert rows["On a shelf?"]["scope"] == {"shelf_id": "s1", "document_id": None, "saved_search_id": None}
     assert rows["Corrupt scope?"]["scope"] is None

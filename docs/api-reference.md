@@ -46,7 +46,7 @@ Return the current user. Requires bearer token.
 Switch the caller's tier (mock payment, [D-050](decisions.md#d-050--self-service-tier-flip-with-mock-payment-until-e-53-stripe-ships-2026-05-15)). **Operator only** since T-5.2.8 ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): any other account gets 403 `Only this install's operator can do this.` and nothing changes. Body `{ "tier": "free" | "pro" | "studio", "mock_payment"?: {...} }` (`mock_payment` is accepted and ignored); 422 for another tier. Returns `{ "tier", "message", "mock_payment_mode": true }` and writes a `tier_changed` audit event.
 
 ### `GET /api/v1/auth/me/onboarding`
-The first-run wizard's state for the caller (S-8.10.1). `state` is the default when the wizard was never touched. Milestones are derived on read: `jobs` counts the caller's runs, `first_job` is the run the wizard started (else the oldest), `report_opened` is whether a `first_report_opened` audit event exists. `should_onboard` is what `/` uses: false once `onboarded_at` is set or the wizard was skipped; true once it was started; otherwise true only for an account with no runs.
+The first-run wizard's state for the caller (S-8.10.1). `state` is the default when the wizard was never touched. Milestones are derived on read: `jobs` counts the caller's runs, `first_job` is the run the wizard started (else the oldest), `report_opened` is whether a `first_report_opened` audit event exists. `should_onboard` is what `/` uses: false once `onboarded_at` is set or the wizard was skipped; true once it was started; otherwise true only for an account with no runs. `channels_not_yet_run` (T-8.10.1.7) lists the wizard's channels that none of the caller's runs has named, in the order chosen, comparing a handle or a channel id and its URL as one channel; the submit page pre-fills its channel list with them.
 
 ```json
 {
@@ -63,12 +63,13 @@ The first-run wizard's state for the caller (S-8.10.1). `state` is the default w
   },
   "started": true,
   "milestones": { "jobs": 0, "first_job": null, "report_opened": false, "questions": 0 },
-  "should_onboard": true
+  "should_onboard": true,
+  "channels_not_yet_run": ["@3blue1brown"]
 }
 ```
 
 ### `PATCH /api/v1/auth/me/onboarding`
-Merge a change into the caller's state; returns the same shape as `GET`. Every field is optional and unknown fields are a 422. `step` is 1 to 3. `channels` replaces the list (at most five; trimmed, de-duplicated, blanks dropped). `first_job_id` must be one of the caller's runs, else 404. `completed: true` sets `onboarded_at`; `dismissed: true` records a skip; `checklist_dismissed: true` hides the jobs page's first-run checklist (S-8.10.2) and, unlike every other field, does not start the wizard. The first PATCH that touches the wizard writes `started_at`. `milestones.questions` counts the caller's questions on runs, the library and the history chat. Audit events, each once per account: `onboarding_started`, `onboarding_completed`, `onboarding_skipped`; `first_job_created` is written by `POST /jobs` and `first_report_opened` by `GET /jobs/{id}/report/body`.
+Merge a change into the caller's state; returns the same shape as `GET`. Every field is optional and unknown fields are a 422. `step` is 1 to 3. `channels` replaces the list (at most five; trimmed, de-duplicated, blanks dropped). `first_job_id` must be one of the caller's runs, else 404. `completed: true` sets `onboarded_at`; `dismissed: true` records a skip; `checklist_dismissed: true` hides the jobs page's first-run checklist (S-8.10.2) and, unlike every other field, does not start the wizard. The first PATCH that touches the wizard writes `started_at`. `milestones.questions` counts the caller's questions on runs, the library and the history chat. Audit events, each once per account: `onboarding_started`, `onboarding_completed`, `onboarding_skipped`; `first_job_created` is written by `POST /jobs`, `first_report_opened` by `GET /jobs/{id}/report/body`, and `first_cited_answer` (T-8.10.1.6) by the job and library Q&A routes, the first time a stored answer cites a source (an answer citing only the reader's own notes does not count; metadata `surface`, `exchange_id`, `citations`, and `job_id` on a run).
 
 ```json
 // request
@@ -444,7 +445,7 @@ Ask a question across everything the tenant can see (D-063). Runs `run_library_q
 
 ```json
 // request
-{ "question": "...", "answer_language": "English", "output_length": "brief" }  // output_length optional: "auto" | "brief" | "standard" | "deep""
+{ "question": "...", "answer_language": "English", "output_length": "brief", "document_id": "..." }  // output_length optional: "auto" | "brief" | "standard" | "deep"; document_id optional
 // response
 {
   "id": "...",
@@ -459,7 +460,9 @@ Ask a question across everything the tenant can see (D-063). Runs `run_library_q
 }
 ```
 
-`scope` (S-8.1.4, [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19)) is what the question was asked over: `null` for the whole library (this endpoint always), or an object such as `{"shelf_id": "…"}` for a question asked on a shelf. Narrowing keys (`shelf_id`) only ever restrict the reader's visible documents, and a scope with no documents retrieves nothing; provenance keys (`saved_search_id`, M3) record where an exchange came from. Unknown keys from newer builds may appear; clients keep them and do not interpret them. Shape: `backend/app/schemas/qa_scope.py`.
+`document_id` (T-8.4.2.4) asks about that one source: its `document_id` or a video's legacy YouTube id, stored canonical. Retrieval and citations are restricted to exactly that document (every reference carries its `document_id`; `video_id` is empty on a non-YouTube source), the asker's notes to those on it, on its knowledge report, on its channel and on earlier answers about it. A source the caller cannot see, and one that does not exist, are the same **404**, before any quota is checked.
+
+`scope` (S-8.1.4, [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19)) is what the question was asked over: `null` for the whole library, or an object such as `{"shelf_id": "…"}` for a question asked on a shelf or `{"document_id": "…"}` for one asked about a source. Narrowing keys (`shelf_id`, `document_id`) only ever restrict the reader's visible documents, and a scope with no documents retrieves nothing; provenance keys (`saved_search_id`, M3) record where an exchange came from. Unknown keys from newer builds may appear; clients keep them and do not interpret them. Shape: `backend/app/schemas/qa_scope.py`.
 
 ### `GET /api/v1/library/qa`
 Library Q&A history. Query params: `limit` (default 100), `offset` (default 0). Ordered ascending by `created_at`. Returns `list[LibraryQAResponse]`, every exchange whatever its scope, each with its `scope` (a malformed stored value reads as `null`).
@@ -733,7 +736,7 @@ The last 20 runs, newest first (S-8.3.3). Each: `ran_at`, `trigger` (`schedule` 
 In-app notices for the caller (S-8.3.3). No tier gate; today's only producer is a saved search whose answer changed.
 
 ### `GET /api/v1/notifications?unread_only=&limit=`
-`{items: [{id, kind, title, body, href, read_at, created_at}], unread}`: newest first, `limit` 1 to 100 (default 30); `unread` counts every unread notice whatever the filter.
+`{items: [{id, kind, title, body, href, read_at, created_at}], unread}`: newest first, `limit` 1 to 100 (default 30); `unread` counts every unread notice whatever the filter. A new notice is announced on `/ws/jobs` (T-8.3.3.8), and this route is where its text is read.
 
 ### `PATCH /api/v1/notifications/{id}`
 Body `{read: true | false}`; another tenant's id is a 404.
@@ -1293,7 +1296,7 @@ Returns 501 on non-Windows hosts (the trampoline is Windows-only today). **Opera
 ## WebSocket
 
 ### `WS /ws/jobs`
-Multiplexed progress stream for jobs. The endpoint is mounted at the root, **not** under `/api/v1`.
+Multiplexed progress stream for jobs, and the bell's live channel. The endpoint is mounted at the root, **not** under `/api/v1`.
 
 After connecting, send subscribe/unsubscribe messages:
 
@@ -1302,6 +1305,9 @@ After connecting, send subscribe/unsubscribe messages:
 { "action": "subscribe", "job_id": "..." }
 // unsubscribe
 { "action": "unsubscribe", "job_id": "..." }
+// the bell (T-8.3.3.8): the token's own user, whatever else the message says
+{ "action": "subscribe", "topic": "notifications" }
+{ "action": "unsubscribe", "topic": "notifications" }
 ```
 
 The server publishes progress events for any subscribed job:
@@ -1318,7 +1324,15 @@ The server publishes progress events for any subscribed job:
 }
 ```
 
-Heartbeats every 30 seconds (server pings, client pongs). Auth is enforced via the `?token=` query string at WS handshake (browsers cannot set `Authorization` headers on WebSocket connections). Since T-8.8.1.5 this is the only route that reads a token from the URL.
+A socket subscribed to notifications also receives one event per new notification of its token's user:
+
+```json
+{ "type": "notification", "id": "<notification_id>", "kind": "saved_search_changed" }
+```
+
+It carries no title, body or link, so what a notice says is only ever read over `GET /notifications`, where the session is checked. Delivery is best effort: the bell keeps its one-minute poll as the fallback.
+
+Heartbeats every 30 seconds (server pings, client pongs). Auth is enforced via the `?token=` query string at WS handshake (browsers cannot set `Authorization` headers on WebSocket connections). Since T-8.8.1.5 this is the only route that reads a token from the URL. A missing, invalid or revoked token is closed with code 1008, the revocation check being the one every HTTP route makes. A socket already open is not closed when its session is revoked later.
 
 ---
 

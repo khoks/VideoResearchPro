@@ -202,6 +202,25 @@ def test_new_sources_and_a_new_answer_notify_in_app_and_by_email(db, pro, _seams
     assert f"/saved-searches?search={ss.id}&run={run.id}" in body and saved_search_service_settings_base() in body
 
 
+def test_a_changed_answer_rings_the_live_bell(db, pro, monkeypatch):
+    """T-8.3.3.8 at the production producer: the notification a changed
+    answer stores is published for its owner's open sockets, id and kind
+    only; the baseline run publishes nothing."""
+    from app.config import settings
+    from app.services import progress_service
+
+    monkeypatch.setattr(settings, "NOTIFICATIONS_PUSH_ENABLED", True)
+    ss = _search(db, pro)
+    with patch.object(progress_service, "publish_notification", return_value=True) as publish:
+        saved_search_service.execute(db, ss.id, agent=Agent())
+        publish.assert_not_called()
+        changed = Agent(answer="A third cut arrived in October after weak hiring data.", refs=(("v9", "October statement"),))
+        with patch.object(saved_search_change_service, "get_llm_for"):
+            saved_search_service.execute(db, ss.id, trigger="manual", agent=changed)
+    (note,) = _notes(db, pro)
+    publish.assert_called_once_with(pro.id, {"type": "notification", "id": note.id, "kind": "saved_search_changed"})
+
+
 def saved_search_service_settings_base():
     from app.config import settings
 

@@ -450,6 +450,12 @@ class Settings(BaseSettings):
     # Links in emails (saved-search alerts) point here.
     APP_BASE_URL: str = "http://localhost:5173"
 
+    # T-8.3.3.8: publish each new notification on Redis
+    # (`notifications:{tenant_id}`) so an open bell refetches at once over
+    # the `/ws/jobs` socket; the bell's one-minute poll is the fallback.
+    # Off for the test suite, so no test publishes to a live Redis.
+    NOTIFICATIONS_PUSH_ENABLED: bool = True
+
     # S-1.14.6: persist the report pipeline's map/reduce intermediates
     # (per-batch extraction JSON, the reduced dataset) to
     # `job_report_intermediates`, so stage quality can be audited after a

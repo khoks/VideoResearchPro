@@ -29,6 +29,12 @@ export interface Onboarding {
   milestones: { jobs: number; first_job: OnboardingFirstJob | null; report_opened: boolean; questions: number };
   /** Whether `/` sends this account to `/welcome`. */
   should_onboard: boolean;
+  /**
+   * T-8.10.1.7: the wizard's channels no run has named yet, in the order
+   * chosen. The submit page pre-fills its channel list with them. Absent
+   * from servers older than the field.
+   */
+  channels_not_yet_run?: string[];
 }
 
 export interface OnboardingPatch {

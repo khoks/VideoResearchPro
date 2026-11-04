@@ -30,11 +30,18 @@ import {
   radius,
   space,
 } from '../theme';
-import type { AnswerLanguage } from '../types/qa';
+import type { AnswerLanguage, SourceScope } from '../types/qa';
 import { buildClarifyContext, CLARIFY_ANSWER_MAX_CHARS } from '../utils/clarifyContext';
 import { withDepth, type Depth } from '../utils/depth';
 
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
+
+/** What the knowledge drawer hands over as route state (T-8.4.2.4). */
+interface HandOver {
+  question?: string;
+  ask?: boolean;
+  source?: SourceScope;
+}
 
 const LANGUAGE_OPTIONS: Array<{ value: AnswerLanguage; label: string }> = [
   { value: 'en', label: 'English' },
@@ -65,6 +72,11 @@ export function LibraryQAPage() {
   const [interpretation, setInterpretation] = useState('');
   const [clarifications, setClarifications] = useState<string[]>([]);
   const [clarificationAnswers, setClarificationAnswers] = useState<string[]>([]);
+  // T-8.4.2.4: while set, every question here is asked about this source
+  // alone; "Ask the whole library" clears it.
+  const [source, setSource] = useState<SourceScope | null>(null);
+  const scoped = (body: { question: string; answer_language: AnswerLanguage; context?: string }) =>
+    source ? { ...body, document_id: source.id } : body;
 
   const askInputDisabled = clarifyQuestion.isPending || !libraryQAAvailable;
   const askButtonDisabled = askInputDisabled || !question.trim();
@@ -100,22 +112,23 @@ export function LibraryQAPage() {
     // Kept under the server's 4,000-character bound, or the ask is a 422.
     const context = buildClarifyContext(interpretation, clarifications, clarificationAnswers);
 
-    await askQuestion.mutateAsync(withDepth({ question, answer_language: language, context }, depth));
+    await askQuestion.mutateAsync(withDepth(scoped({ question, answer_language: language, context }), depth));
     finishAsk();
   };
 
   const handleSkipAndAsk = async () => {
     if (!libraryQAAvailable) return;
-    await askQuestion.mutateAsync(withDepth({ question, answer_language: language }, depth));
+    await askQuestion.mutateAsync(withDepth(scoped({ question, answer_language: language }), depth));
     finishAsk();
   };
 
   // S-8.4.2: Shift-click on a suggestion asks at once (no clarify step).
-  const askSuggestion = async (q: string) => {
+  const askSuggestion = async (q: string, about: SourceScope | null = source) => {
     if (!libraryQAAvailable) return;
     setQuestion(q);
     try {
-      await askQuestion.mutateAsync(withDepth({ question: q, answer_language: language }, depth));
+      const body = { question: q, answer_language: language };
+      await askQuestion.mutateAsync(withDepth(about ? { ...body, document_id: about.id } : body, depth));
     } catch {
       return; // the global mutation cache already toasted
     }
@@ -123,15 +136,18 @@ export function LibraryQAPage() {
   };
 
   // A suggestion picked in the knowledge drawer arrives as route state:
-  // fill the composer, or ask at once for a Shift-click. Once per visit.
+  // fill the composer, or ask at once for a Shift-click, about that source
+  // (T-8.4.2.4). Once per visit.
   const location = useLocation();
   const handedOver = useRef(false);
   useEffect(() => {
-    const state = location.state as { question?: string; ask?: boolean } | null;
+    const state = location.state as HandOver | null;
     if (handedOver.current || !state?.question) return;
     handedOver.current = true;
     navigate(location.pathname, { replace: true, state: null });
-    if (state.ask) void askSuggestion(state.question);
+    const about = state.source?.id ? state.source : null;
+    setSource(about);
+    if (state.ask) void askSuggestion(state.question, about);
     else setQuestion(state.question);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
@@ -152,7 +168,7 @@ export function LibraryQAPage() {
             lineHeight: lineHeight.tight,
           }}
         >
-          Ask the whole library
+          {source ? 'Ask one source' : 'Ask the whole library'}
         </h1>
         <p
           style={{
@@ -164,7 +180,9 @@ export function LibraryQAPage() {
             maxWidth: measure.reading,
           }}
         >
-          Questions travel every shelf — every transcript you've ever gathered. Answers come back grounded in the corpus with timestamped citations.
+          {source
+            ? 'Questions here stay inside one source, and answers cite only it.'
+            : "Questions travel every shelf — every transcript you've ever gathered. Answers come back grounded in the corpus with timestamped citations."}
         </p>
       </header>
 
@@ -246,6 +264,10 @@ export function LibraryQAPage() {
           </div>
         </div>
 
+        {source && (
+          <SourceScopeChip source={source} onClear={() => setSource(null)} disabled={askQuestion.isPending} />
+        )}
+
         {step === 'ask' && (
           <>
             {!libraryQAAvailable && (
@@ -281,9 +303,11 @@ export function LibraryQAPage() {
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
                   placeholder={
-                    libraryQAAvailable
-                      ? 'Ask a question about your entire library…'
-                      : FEATURE_UNAVAILABLE_MSG
+                    !libraryQAAvailable
+                      ? FEATURE_UNAVAILABLE_MSG
+                      : source
+                        ? 'Ask a question about this source…'
+                        : 'Ask a question about your entire library…'
                   }
                   disabled={askInputDisabled}
                   title={!libraryQAAvailable ? FEATURE_UNAVAILABLE_MSG : undefined}
@@ -303,7 +327,7 @@ export function LibraryQAPage() {
             {clarifyQuestion.isPending && <InfoStripe text="Listening for the echo of your question…" />}
             {!askQuestion.isPending && (
               <SuggestionCard
-                context="library"
+                context={source ? `document:${source.id}` : 'library'}
                 enabled={libraryQAAvailable}
                 onFill={setQuestion}
                 onAsk={(q) => void askSuggestion(q)}
@@ -472,6 +496,57 @@ export function LibraryQAPage() {
         </QADock>
       </Card>
       )}
+    </div>
+  );
+}
+
+/**
+ * T-8.4.2.4: says, beside the composer, that questions here are asked about
+ * one source, and offers the way back to the whole library.
+ */
+function SourceScopeChip({
+  source,
+  onClear,
+  disabled,
+}: {
+  source: SourceScope;
+  onClear: () => void;
+  disabled?: boolean;
+}) {
+  const c = useColors();
+  return (
+    <div
+      role="status"
+      data-source-scope=""
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: space['3'],
+        flexWrap: 'wrap',
+        marginBottom: space['3'],
+        padding: `${space['2']} ${space['3']}`,
+        background: c.accentSubtle,
+        borderRadius: radius.md,
+        borderLeft: `3px solid ${c.accent}`,
+      }}
+    >
+      <p
+        style={{
+          margin: 0,
+          minWidth: 0,
+          fontFamily: fonts.ui,
+          fontSize: fontSize.sm,
+          color: c.textSecondary,
+          overflowWrap: 'anywhere',
+        }}
+      >
+        Asking about one source:{' '}
+        <strong style={{ color: c.textPrimary, fontWeight: fontWeight.semibold }}>{source.title}</strong>
+      </p>
+      <Button size="sm" variant="tertiary" onClick={onClear} disabled={disabled}>
+        Ask the whole library
+      </Button>
     </div>
   );
 }

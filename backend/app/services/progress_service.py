@@ -79,3 +79,22 @@ def publish_error(job_id: str, error: str) -> None:
         _get_redis().publish(f"job_progress:{job_id}", json.dumps(payload))
     except Exception as e:
         logger.warning(f"Failed to publish error for job {job_id}: {e}")
+
+
+# T-8.3.3.8: one channel per user. The WebSocket manager subscribes to the
+# pattern and reads the user from the CHANNEL name, never from the payload.
+NOTIFICATIONS_CHANNEL_PREFIX = "notifications:"
+
+
+def publish_notification(tenant_id: str, payload: dict) -> bool:
+    """Publish a "you have a new notification" event for ``tenant_id``'s
+    open sockets. Fail-soft: a Redis outage leaves the bell to its poll.
+    Returns whether the publish reached Redis."""
+    if not tenant_id:
+        return False
+    try:
+        _get_redis().publish(f"{NOTIFICATIONS_CHANNEL_PREFIX}{tenant_id}", json.dumps(payload))
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to publish a notification for tenant {tenant_id}: {e}")
+        return False

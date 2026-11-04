@@ -7,6 +7,8 @@ two tests drive those routes rather than the service.
 """
 from unittest.mock import patch
 
+import pytest
+
 from app.models.audit_log import AuditLog
 from app.models.job import Job
 from app.services import auth_service
@@ -168,3 +170,56 @@ def test_hiding_the_checklist_does_not_start_the_wizard(client, db, test_user):
     # and it survives a later wizard patch
     client.patch(URL, json={"step": 2})
     assert client.get(URL).json()["state"]["checklist_dismissed"] is True
+
+
+def test_channels_not_yet_run_are_the_wizards_other_channels(client, db, test_user):
+    """T-8.10.1.7: the submit page pre-fills its channel list with the
+    wizard's channels that no run has named. The first run reads one; the
+    rest stay offered until a run names them, however the link is written."""
+    chosen = ["@first", "@Second", "https://www.youtube.com/@third/videos", "@fourth"]
+    assert client.patch(URL, json={"step": 2, "channels": chosen}).status_code == 200
+    assert client.get(URL).json()["channels_not_yet_run"] == chosen
+
+    first = client.post("/api/v1/jobs", json={"job_type": "channel", "channel_list": ["@first"], "videos_per_channel": 5})
+    assert first.status_code == 201, first.text
+    assert client.get(URL).json()["channels_not_yet_run"] == chosen[1:]
+
+    # A later run that names two of them as URLs, in another case.
+    later = client.post("/api/v1/jobs", json={
+        "job_type": "channel",
+        "channel_list": ["https://youtube.com/@second/", "@THIRD"],
+        "videos_per_channel": 5,
+    })
+    assert later.status_code == 201, later.text
+    assert client.get(URL).json()["channels_not_yet_run"] == ["@fourth"]
+
+
+@pytest.mark.parametrize(
+    "chosen, named",
+    [
+        ("UCabcdefghijklmnopqrstuv", "https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv"),
+        ("https://youtube.com/channel/UCabcdefghijklmnopqrstuv/", "UCabcdefghijklmnopqrstuv"),
+        ("youtube.com/channel/UCabcdefghijklmnopqrstuv", "https://www.youtube.com/channel/ucabcdefghijklmnopqrstuv/videos"),
+    ],
+)
+def test_a_channel_id_and_its_url_are_one_channel(client, db, test_user, chosen, named):
+    """The wizard and the submit page both accept a bare UC id and its URL.
+    Offering one after a run named the other would say, falsely, that no run
+    has read it."""
+    assert client.patch(URL, json={"channels": [chosen, "@other"]}).status_code == 200
+    run = client.post("/api/v1/jobs", json={"job_type": "channel", "channel_list": [named], "videos_per_channel": 5})
+    assert run.status_code == 201, run.text
+    assert client.get(URL).json()["channels_not_yet_run"] == ["@other"]
+
+
+def test_channels_not_yet_run_ignores_other_accounts_runs(client, db, test_user):
+    other, _ = _other_user_headers(db)
+    db.add(Job(job_type="channel", status="completed", num_videos=1, tenant_id=other.id, channel_list='["@mine"]'))
+    db.add(Job(job_type="channel", status="completed", num_videos=1, tenant_id=test_user.id, channel_list="not json"))
+    db.commit()
+    client.patch(URL, json={"channels": ["@mine"]})
+    assert client.get(URL).json()["channels_not_yet_run"] == ["@mine"]
+
+
+def test_no_wizard_channels_means_nothing_to_prefill(client):
+    assert client.get(URL).json()["channels_not_yet_run"] == []

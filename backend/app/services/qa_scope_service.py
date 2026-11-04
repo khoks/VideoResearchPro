@@ -18,12 +18,12 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.schemas.qa_scope import QAScope
-from app.services import library_query_service, shelf_service
+from app.services import library_query_service, shelf_service, visibility_service
 
 logger = logging.getLogger(__name__)
 
 # Keys that restrict what a question may retrieve.
-NARROWING_KEYS = frozenset({"shelf_id"})
+NARROWING_KEYS = frozenset({"shelf_id", "document_id"})
 # Keys that only record where an exchange came from.
 PROVENANCE_KEYS = frozenset({"saved_search_id"})
 
@@ -93,17 +93,21 @@ def note_target_keys(
 
     A shelf draws what job Q&A would draw for each of its runs (notes on the
     run, its documents in scope and their knowledge reports, its answers and
-    its channels) plus notes on answers asked on this shelf before. Call after
+    its channels) plus notes on answers asked on this shelf before. One
+    source (T-8.4.2.4) draws the notes on that source, its knowledge report
+    and its channel, plus notes on answers asked about it before; it is the
+    narrowest scope, so with a shelf as well it draws only those. Call after
     ``resolve_document_ids``, with its result.
     """
     keys = narrowing(scope)
     if not keys:
         return None
     from app.models.job_video import JobVideo
-    from app.models.library_qa_exchange import LibraryQAExchange
     from app.services import note_index
 
     allowed = set(document_ids)
+    if "document_id" in keys:
+        return _document_note_keys(db, tenant_id, str(keys["document_id"]), document_ids)
     shelf = shelf_service.get_shelf(db, str(keys["shelf_id"]), tenant_id)
     if shelf is None:
         raise ScopeNotFound("shelf")
@@ -115,14 +119,63 @@ def note_target_keys(
             if row[0] in allowed
         ]
         out.extend(note_index.job_target_keys(db, job_id, docs))
-    marker = f'"shelf_id":"{shelf.id}"'
-    for qa_id, raw in db.query(LibraryQAExchange.id, LibraryQAExchange.scope_json).filter(
-        LibraryQAExchange.tenant_id == tenant_id,
-        LibraryQAExchange.scope_json.like(f"%{marker}%"),
-    ):
+    out.extend(_earlier_answer_keys(db, tenant_id, "shelf_id", shelf.id))
+    return list(dict.fromkeys(out))
+
+
+def exchanges_scoped_to(db: Session, tenant_id: str, key: str, value: str) -> list[tuple[str, str]]:
+    """``(id, question)`` of the asker's library exchanges whose stored scope
+    has ``key == value``, newest first. ``dump`` writes compact JSON, so the
+    LIKE marker finds candidates and the parsed scope confirms each one."""
+    from app.models.library_qa_exchange import LibraryQAExchange
+
+    marker = f'"{key}":"{value}"'
+    rows = (
+        db.query(LibraryQAExchange.id, LibraryQAExchange.question, LibraryQAExchange.scope_json)
+        .filter(
+            LibraryQAExchange.tenant_id == tenant_id,
+            LibraryQAExchange.scope_json.like(f"%{marker}%"),
+        )
+        .order_by(LibraryQAExchange.created_at.desc())
+    )
+    out: list[tuple[str, str]] = []
+    for qa_id, question, raw in rows:
         scope_row = load(raw)
-        if scope_row is not None and scope_row.shelf_id == shelf.id:
-            out.append(note_index.target_key("library_qa_exchange", qa_id))
+        if scope_row is not None and getattr(scope_row, key, None) == value:
+            out.append((qa_id, question))
+    return out
+
+
+def _earlier_answer_keys(db: Session, tenant_id: str, key: str, value: str) -> list[str]:
+    """Note keys of the asker's earlier library answers over this scope."""
+    from app.services import note_index
+
+    return [
+        note_index.target_key("library_qa_exchange", qa_id)
+        for qa_id, _ in exchanges_scoped_to(db, tenant_id, key, value)
+    ]
+
+
+def _document_note_keys(db: Session, tenant_id: str, raw_id: str, document_ids: list[str]) -> list[str]:
+    """What a question about one source may draw notes from. ``document_ids``
+    is what ``resolve_document_ids`` returned for the same scope: empty when
+    a shelf in the scope does not hold this source, and then no notes."""
+    from app.models.document import Document
+    from app.services import note_index
+
+    doc = visibility_service.visible_document(db, tenant_id, raw_id)
+    if doc is None:
+        raise ScopeNotFound("document")
+    if doc.document_id not in set(document_ids):
+        return []
+    out = [
+        note_index.target_key("document", doc.document_id),
+        note_index.target_key("knowledge_artifact", doc.document_id),
+    ]
+    channel_id = db.query(Document.channel_id).filter(Document.document_id == doc.document_id).scalar()
+    if channel_id:
+        out.append(note_index.target_key("channel", channel_id))
+    out.extend(_earlier_answer_keys(db, tenant_id, "document_id", doc.document_id))
     return list(dict.fromkeys(out))
 
 
@@ -130,8 +183,10 @@ def resolve_document_ids(db: Session, tenant_id: str, scope: QAScope | dict | No
     """The document ids a question asked over ``scope`` may retrieve from,
     always inside the tenant's visible set. ``[]`` means nothing.
 
-    Raises ``ScopeNotFound`` for a shelf that is not the tenant's and
-    ``UnknownScopeKey`` for a key this build cannot resolve.
+    Raises ``ScopeNotFound`` for a shelf that is not the tenant's or a
+    document the tenant cannot see, and ``UnknownScopeKey`` for a key this
+    build cannot resolve. A document scope with a shelf as well is the
+    intersection: that source if a run on the shelf selected it, else ``[]``.
     """
     keys = narrowing(scope)
     unknown = sorted(set(keys) - NARROWING_KEYS)
@@ -144,4 +199,12 @@ def resolve_document_ids(db: Session, tenant_id: str, scope: QAScope | dict | No
         if shelf is None:
             raise ScopeNotFound("shelf")
         filters["job_ids"] = shelf_service.job_ids_for_shelf(db, shelf.id)
+    if "document_id" in keys:
+        # T-8.4.2.4: one source. By its primary key or its legacy YouTube
+        # id, but only one the tenant can see: another reader's source and
+        # a missing one are the same "not found".
+        doc = visibility_service.visible_document(db, tenant_id, str(keys["document_id"]))
+        if doc is None:
+            raise ScopeNotFound("document")
+        filters["document_id"] = doc.document_id
     return library_query_service.document_ids(db, tenant_id, **filters)

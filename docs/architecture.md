@@ -265,7 +265,7 @@ ApiQuotaLog (append-only ledger of YouTube + LLM calls)
 - **Embeddings happen exactly once per document.** `Document.embedded_in_chroma` flips to `true` after chunks land in `videoresearchpro_global`. Subsequent jobs referencing that document skip embedding.
 - **Q&A exchanges have three flavors** that union into one Chroma collection:
   - `qa_exchanges` (job-scoped)
-  - `library_qa_exchanges` (library-scoped; `scope_json` narrows a question to a shelf, documents and the asker's notes alike, or records that a saved search asked it, null = the whole visible library and every note: [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19))
+  - `library_qa_exchanges` (library-scoped; `scope_json` narrows a question to a shelf or to one source, documents and the asker's notes alike, or records that a saved search asked it, null = the whole visible library and every note: [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19))
   - `qa_history_exchanges` (meta-chat surface)
 
   All three are stored separately for SQL-level filtering but indexed together in `qa_library_global` so meta-chat retrieval crosses surfaces.
@@ -375,6 +375,8 @@ A single WebSocket endpoint at `/ws/jobs`. Clients send JSON `{action: "subscrib
 - Maintains a single Redis subscriber that listens on the pattern `job_progress:*`.
 - On every progress event, fans the message out to every client subscribed to that job_id.
 - Heartbeats every 30 seconds (server pings, client pongs).
+
+The same socket carries the notification bell (T-8.3.3.8). `notification_service.create` publishes `{type, id, kind}` on `notifications:{tenant_id}` after its commit, so it works from the Celery worker; the listener also holds the pattern `notifications:*` and routes each message by its **channel**, never its payload, to the sockets that sent `{action: "subscribe", topic: "notifications"}`. A socket joins only as the user its token names. The event is a doorbell: `useLiveNotifications` (mounted once in `AppLayout`) refetches `GET /notifications`, and the one-minute poll stays as the fallback for a dropped socket or a down Redis. `AuthProvider` closes the socket when the token goes away, on a sign-out in this tab or another, and `wsClient` remembers the token a socket was opened with and replaces the socket when the stored token changes, so a tab never keeps the first identity. The handshake makes the same check as an HTTP request (`auth_service.authenticate_access_token`, T-5.4.15, failing closed), so a revoked token cannot open a socket. The gap that remains: a session revoked from another device keeps a socket that is already open until it closes, as job progress always has. The doorbell carries no text, so that socket learns only that something arrived.
 
 The frontend's `useJobProgress` hook drives React Query cache invalidation off WS messages: a status change to `awaiting_approval` invalidates the `jobVideos` query so the approval list auto-populates without a manual reload.
 

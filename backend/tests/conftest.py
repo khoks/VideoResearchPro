@@ -34,6 +34,9 @@ settings.NOTES_INDEX_ENABLED = False
 settings.ECHO_SHARE_PROCESSING = "off"
 settings.ECHO_SIGNAL_EXTRACTION = "off"
 settings.ECHO_PERSONAL_INDEX_ENABLED = False
+# T-8.3.3.8: a new notification is published on Redis for the live bell.
+# Off for the suite; the push tests turn it on with the publisher patched.
+settings.NOTIFICATIONS_PUSH_ENABLED = False
 
 # S-3.2.1: connector syncs are queued to Celery in production; the suite
 # never queues (the connector tests run syncs inline with fakes).

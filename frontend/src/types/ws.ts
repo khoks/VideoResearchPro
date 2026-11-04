@@ -10,3 +10,13 @@ export interface WSProgressMessage {
   data?: Record<string, unknown>;
   timestamp: string;
 }
+
+/**
+ * T-8.3.3.8: a new notification for the signed-in user. A doorbell, not the
+ * letter: the bell refetches `GET /notifications` for the text.
+ */
+export interface WSNotificationMessage {
+  type: 'notification';
+  id: string;
+  kind?: string;
+}

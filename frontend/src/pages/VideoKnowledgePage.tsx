@@ -19,6 +19,7 @@ import {
   z,
 } from '../theme';
 import type { KnowledgeArtifact } from '../services/knowledgeApi';
+import type { SourceScope } from '../types/qa';
 import { depthLabel, depthOf, type Depth } from '../utils/depth';
 
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
@@ -70,6 +71,7 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, defaultD
   }, [onClose]);
 
   const displayed: KnowledgeArtifact | null = artifact ?? extract.data ?? null;
+  const source: SourceScope = { id: videoId, title: videoTitle };
   const isBusy = isLoadingCached || extract.isPending;
   const showUnavailableEmptyState =
     !knowledgeExtractionAvailable && !displayed && !isBusy;
@@ -298,14 +300,15 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, defaultD
               only a YouTube video has any. */}
           {(!sourceType || sourceType === 'video') && <VideoFramesPanel videoId={videoId} />}
           {displayed && (
-            // S-8.4.2: no per-source Q&A exists, so a suggestion goes to
-            // the library Q&A page (filled, or asked on Shift-click).
+            // T-8.4.2.4: a suggestion is asked about this source alone, on
+            // the library Q&A page (filled, or asked on Shift-click), which
+            // says so beside its composer.
             <SuggestionCard
               context={`document:${videoId}`}
               enabled={libraryQAAvailable}
-              note="Asked across your library."
-              onFill={(q) => navigate('/library/qa', { state: { question: q } })}
-              onAsk={(q) => navigate('/library/qa', { state: { question: q, ask: true } })}
+              note="Asked about this source only."
+              onFill={(q) => navigate('/library/qa', { state: { question: q, source } })}
+              onAsk={(q) => navigate('/library/qa', { state: { question: q, ask: true, source } })}
             />
           )}
           {displayed && (

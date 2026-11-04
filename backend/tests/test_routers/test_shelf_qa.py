@@ -94,7 +94,7 @@ def test_shelf_question_retrieves_and_cites_only_the_shelf(client, db, setup):
 
     body = resp.json()
     assert [r["video_id"] for r in body["references"]] == ["shelfqa00001"], "an off-shelf citation is dropped"
-    assert body["scope"] == {"shelf_id": shelf.id, "saved_search_id": None}
+    assert body["scope"] == {"shelf_id": shelf.id, "document_id": None, "saved_search_id": None}
     row = db.get(LibraryQAExchange, body["id"])
     assert json.loads(row.scope_json) == {"shelf_id": shelf.id}
     assert [r["video_id"] for r in json.loads(row.references_json)] == ["shelfqa00001"]

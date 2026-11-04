@@ -55,6 +55,9 @@ class Event(str, Enum):
     ONBOARDING_SKIPPED = "onboarding_skipped"
     FIRST_JOB_CREATED = "first_job_created"
     FIRST_REPORT_OPENED = "first_report_opened"
+    # T-8.10.1.6: the plan's alternative milestone, the first answer that
+    # cites a source (job or library Q&A).
+    FIRST_CITED_ANSWER = "first_cited_answer"
     # S-8.4.1 question suggestions: impressions and uses, so click-through
     # can be measured before the feature is called good.
     SUGGESTION_SHOWN = "suggestion_shown"

@@ -153,8 +153,10 @@ def ask_shelf_question(
     Open to every tier, like reading the shelf; the library Q&A quota applies."""
     try:
         return answer_library_question(db, current_user, request, QAScope(shelf_id=shelf_id))
-    except qa_scope_service.ScopeNotFound:
-        raise HTTPException(status_code=404, detail="Shelf not found")
+    except qa_scope_service.ScopeNotFound as exc:
+        # A `document_id` in the body (T-8.4.2.4) narrows the shelf to one source.
+        detail = "Source not found" if exc.kind == "document" else "Shelf not found"
+        raise HTTPException(status_code=404, detail=detail)
 
 
 @router.get("/{shelf_id}/qa", response_model=list[LibraryQAResponse])

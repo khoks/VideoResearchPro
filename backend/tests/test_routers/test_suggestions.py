@@ -21,10 +21,18 @@ from app.models.audit_log import AuditLog
 from app.models.document import Document
 from app.models.job import Job
 from app.models.job_video import JobVideo
+from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.qa_exchange import QAExchange
 from app.models.quota_usage import QuotaUsage
 from app.models.suggestion_cache import SuggestionCache
-from app.services import auth_service, llm_routing, llm_smoke, suggestion_service, visibility_service
+from app.services import (
+    auth_service,
+    llm_routing,
+    llm_smoke,
+    qa_scope_service,
+    suggestion_service,
+    visibility_service,
+)
 
 URL = "/api/v1/suggestions"
 
@@ -214,6 +222,76 @@ def test_cache_hit_makes_no_model_call_and_a_new_exchange_invalidates(db, test_u
         third = suggestion_service.suggestions_for(db, test_user, f"job:{job.id}")
     assert len(fake.prompts) == 2 and third["cached"] is False
     assert db.query(SuggestionCache).filter_by(tenant_id=test_user.id).count() == 1
+
+
+def _source(db, user_id, title="Rates explained"):
+    doc = Document(
+        video_id=f"src{uuid.uuid4().hex[:8]}", title=title, url="https://example.com", transcript_status="completed",
+    )
+    db.add(doc)
+    db.commit()
+    visibility_service.grant(db, [doc.document_id], user_id, "job")
+    return doc
+
+
+def _ask_library(db, user_id, question, scope=None):
+    row = LibraryQAExchange(
+        tenant_id=user_id, question=question, answer="…", references_json="[]",
+        scope_json=qa_scope_service.dump(scope),
+    )
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_a_source_knows_what_was_asked_about_it_and_nothing_else(db, test_user):
+    """T-8.4.2.4 made a question about one source real, so ``document:<id>``
+    has its own asked list: not the library's, another source's or another
+    reader's."""
+    doc, other_doc = _source(db, test_user.id), _source(db, test_user.id, "Another source")
+    other_reader = auth_service.create_user(db, email="asked-other@example.com", password="otherpass123")
+    context = f"document:{doc.document_id}"
+
+    empty = suggestion_service.resolve_context(db, test_user, context)
+    assert empty.asked == []
+
+    _ask_library(db, test_user.id, "A question of the whole library")
+    _ask_library(db, test_user.id, "A question about another source", {"document_id": other_doc.document_id})
+    _ask_library(db, other_reader.id, "Another reader's question", {"document_id": doc.document_id})
+    assert suggestion_service.resolve_context(db, test_user, context).asked == []
+
+    _ask_library(db, test_user.id, "What does it claim about rates?", {"document_id": doc.document_id})
+    _ask_library(db, test_user.id, "Asked on a shelf", {"document_id": doc.document_id, "shelf_id": "s1"})
+    asked = suggestion_service.resolve_context(db, test_user, context)
+    assert set(asked.asked) == {"What does it claim about rates?", "Asked on a shelf"}
+    assert asked.fingerprint != empty.fingerprint
+
+
+def test_a_question_asked_about_a_source_is_not_offered_again(client, db, test_user):
+    """Through the routes the page uses: the card's own question, asked from
+    ``/library/qa`` scoped to the source, invalidates the cached card and
+    leaves it. It used to come back from the cache for up to an hour."""
+    doc = _source(db, test_user.id)
+    fake = FakeLLM()
+    params = {"context": f"document:{doc.document_id}"}
+    with patch.object(suggestion_service, "get_llm_for", return_value=fake):
+        before = client.get(URL, params=params)
+        assert before.status_code == 200, before.text
+        question = before.json()["suggestions"][0]["question"]
+        assert client.get(URL, params=params).json()["cached"] is True
+
+        with (
+            patch("app.agents.qa_agent.run_library_qa_agent", return_value={"answer": "An answer.", "references": []}),
+            patch("app.routers.library.chroma_service.upsert_qa_exchange", return_value=True),
+        ):
+            asked = client.post("/api/v1/library/qa", json={"question": question, "document_id": doc.document_id})
+        assert asked.status_code == 200, asked.text
+
+        after = client.get(URL, params=params)
+    assert after.status_code == 200, after.text
+    assert after.json()["cached"] is False
+    assert question not in [s["question"] for s in after.json()["suggestions"]]
+    assert f"- {question}" in fake.prompts[-1], "the generator is told what was asked here"
 
 
 def test_cache_expires_after_the_window(db, test_user):

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import api, { AUTH_TOKEN_KEY } from '../services/api';
+import { wsClient } from '../services/wsClient';
 
 export interface AuthUser {
   id?: string;
@@ -93,6 +94,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
+
+  // T-8.3.3.8: the socket outlives every page, so it closes here, on any way
+  // a sign-in ends (this tab or another). The layout cannot do it: signing
+  // out unmounts the layout, which only drops its listener.
+  useEffect(() => {
+    if (!token) wsClient.disconnect();
+  }, [token]);
 
   const persistSession = useCallback(async (data: AuthResponse, fallbackEmail: string) => {
     const nextUser: AuthUser = data.user ?? { email: fallbackEmail };

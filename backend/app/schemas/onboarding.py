@@ -43,6 +43,9 @@ class OnboardingResponse(BaseModel):
     milestones: OnboardingMilestones
     #: Whether `/` should send this account to `/welcome`.
     should_onboard: bool
+    #: T-8.10.1.7: the wizard's channels no run has named yet, in the order
+    #: chosen; the submit page pre-fills its channel list with them.
+    channels_not_yet_run: list[str] = []
 
 
 class OnboardingPatch(BaseModel):

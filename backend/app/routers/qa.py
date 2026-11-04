@@ -209,6 +209,14 @@ def _run_qa_and_persist(
     db.commit()
     db.refresh(qa)
 
+    # T-8.10.1.6: the `first_cited_answer` activation milestone, once per
+    # account (the library router writes it too). Best-effort.
+    from app.services import onboarding_service
+
+    onboarding_service.note_cited_answer(
+        db, current_user, surface="job", exchange_id=qa.id, references=references, job_id=job.id
+    )
+
     # The daily llm_tokens_in / llm_tokens_out totals were recorded here from
     # the tally until E-5.2; the metering scope above records them now, by
     # feature, so recording them here as well would count them twice.

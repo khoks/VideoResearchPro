@@ -5,6 +5,8 @@ formulate_answer, and extract_references ranking.
 """
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 from app.agents import qa_agent
 
@@ -428,6 +430,28 @@ def test_formulate_answer_injects_allowed_sources():
 # Reference.source_type. The backend extractor emits that discriminator
 # per chunk so Reddit / HN citations render with their proper labels
 # (r/sub · u/author · title) rather than falling through to YouTube.
+
+@pytest.mark.parametrize(
+    "source_type",
+    ["video", "reddit_post", "hn_story", "mastodon_post", "bluesky_post", "article", "fb_post",
+     "ig_post", "li_post", "tweet", "pdf", "podcast_episode"],
+)
+def test_chunk_to_reference_carries_the_document_id_on_every_source_type(source_type: str) -> None:
+    """D-070: the one id every chunk has. The scoped citation check compares
+    it, and a non-video source has no other."""
+    chunk = {"text": "t", "metadata": {"source_type": source_type, "document_id": "doc-1", "source_id": "s"}}
+    _key, ref = qa_agent._chunk_to_reference(chunk)
+    assert ref["document_id"] == "doc-1"
+
+
+def test_chunk_to_reference_omits_a_document_id_the_chunk_does_not_have() -> None:
+    """A note has none, and a chunk the backfill has not reached has none:
+    the key stays absent rather than an empty id."""
+    note = {"text": "t", "metadata": {"source_type": "note", "note_id": "n1"}}
+    legacy = {"text": "t", "metadata": {"video_id": "abc"}}
+    assert "document_id" not in qa_agent._chunk_to_reference(note)[1]
+    assert "document_id" not in qa_agent._chunk_to_reference(legacy)[1]
+
 
 def test_chunk_to_reference_video_default_path() -> None:
     """Legacy YouTube-only chunks (no source_type in metadata) keep

@@ -27,6 +27,7 @@ import { OAuthCallbackPage } from '../pages/OAuthCallbackPage';
 import { AccountSecurityPage } from '../pages/AccountSecurityPage';
 import { SubscriptionPage } from '../pages/SubscriptionPage';
 import { AIModelsPage } from '../pages/AIModelsPage';
+import { SystemStatusPage } from '../pages/SystemStatusPage';
 import { EchoPage } from '../pages/EchoPage';
 import { EchoInboxPage } from '../pages/EchoInboxPage';
 import { EchoImportPage } from '../pages/EchoImportPage';
@@ -126,6 +127,7 @@ export const router = createBrowserRouter([
           { path: 'account/subscription', element: <SubscriptionPage /> },
           { path: 'account/ai-models', element: <AIModelsPage /> },
           { path: 'account/security', element: <AccountSecurityPage /> },
+          { path: 'account/system', element: <SystemStatusPage /> },
         ],
       },
     ],

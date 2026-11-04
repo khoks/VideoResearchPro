@@ -16,7 +16,7 @@ const FEATURE_LABELS: Record<string, string> = {
   channel_report: 'Channel reports',
 };
 
-function featureLabel(feature: string): string {
+export function featureLabel(feature: string): string {
   return FEATURE_LABELS[feature] ?? feature;
 }
 

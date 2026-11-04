@@ -320,6 +320,9 @@ function NavContent({
         <NavItem active={pathname.startsWith('/account/security')} onClick={() => onNavigatePath('/account/security')}>
           Security
         </NavItem>
+        <NavItem active={pathname === '/account/system'} onClick={() => onNavigatePath('/account/system')}>
+          System status
+        </NavItem>
       </NavGroup>
     </nav>
   );

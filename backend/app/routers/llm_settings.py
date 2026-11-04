@@ -1,6 +1,7 @@
 """Per-user LLM settings + cost calculator — E-1.13.
 
-GET    /api/v1/settings/llm            — use cases, defaults, overrides, model options
+GET    /api/v1/settings/llm            — use cases, defaults, overrides, model options,
+                                          and the keys panel's configuration (`byok`)
 PUT    /api/v1/settings/llm/{use_case} — set the caller's override
 DELETE /api/v1/settings/llm/{use_case} — clear the caller's override
 POST   /api/v1/settings/llm/estimate   — benchmark cost estimate (with optional
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db
 from app.models.user_llm_override import UserLLMOverride
-from app.services import llm_service
+from app.services import byok_service, llm_service
 from app.services.cost_estimator import estimate
 from app.services.llm_routing import (
     _VALID_PROVIDERS,
@@ -163,12 +164,24 @@ def get_llm_settings(
                 }
             )
 
+    key_state = byok_service.encryption_key_state()
     return {
         "use_cases": use_cases,
         "providers": _model_options(),
         "reasoning_levels": list(_VALID_REASONING),
         "pricing_as_of": PRICING_AS_OF,
         "vision_capable_models": sorted(VISION_CAPABLE_MODELS),
+        # The keys panel on this page (E-5.6): which providers a stored key
+        # is used for, whether stored keys outlive a restart (false when
+        # the install has no valid BYOK_ENCRYPTION_KEY), and whether the
+        # key is set but malformed (every save then fails, so the panel
+        # turns saving off and says why). Configuration only; no key
+        # material, and the same for every caller.
+        "byok": {
+            "providers": sorted(byok_service.RESOLVED_PROVIDERS),
+            "keys_persist": key_state == "valid",
+            "key_invalid": key_state == "invalid",
+        },
     }
 
 

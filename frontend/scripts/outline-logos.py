@@ -18,11 +18,12 @@ directory (both fonts are SIL OFL 1.1, which does not reach artwork made with
 them):
 
     python -m venv venv
-    venv/Scripts/pip install uharfbuzz fonttools brotli
+    venv/Scripts/pip install uharfbuzz==0.57.0 fonttools==4.68.0 brotli==1.2.1
     npm pack @fontsource/tiro-devanagari-hindi@5.3.0 --ignore-scripts
     npm pack @fontsource-variable/fraunces@5.3.0 --ignore-scripts
-    tar -xzf fontsource-tiro-devanagari-hindi-5.3.0.tgz --one-top-level=tiro
-    tar -xzf fontsource-variable-fraunces-5.3.0.tgz --one-top-level=fraunces
+    mkdir tiro fraunces
+    tar -xzf fontsource-tiro-devanagari-hindi-5.3.0.tgz -C tiro
+    tar -xzf fontsource-variable-fraunces-5.3.0.tgz -C fraunces
     venv/Scripts/python -I <repo>/frontend/scripts/outline-logos.py \
         --tiro tiro/package/files/tiro-devanagari-hindi-devanagari-400-normal.woff2 \
         --fraunces fraunces/package/files/fraunces-latin-full-italic.woff2

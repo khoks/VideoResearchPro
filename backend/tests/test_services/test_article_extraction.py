@@ -197,6 +197,28 @@ def test_a_guarded_redirect_loop_ends():
     assert len(web.calls) == 6
 
 
+@pytest.mark.parametrize("status", [300, 304, 302])
+def test_a_3xx_with_nowhere_to_go_is_an_unavailable_page_not_a_crash(status):
+    web = Web({"https://a.example/x": httpx.Response(status)})
+    with patch("app.services.article_extraction.extractor.httpx.get", web):
+        assert extract_text("https://a.example/x", guard=lambda url: None) is None
+
+
+def test_a_guard_refuses_a_redirect_to_another_scheme():
+    """The guard is what checks the scheme, so it has to see the redirect."""
+    seen: list[str] = []
+
+    def guard(url):
+        seen.append(url)
+        if not url.startswith("https://"):
+            raise RuntimeError("refused")
+
+    web = Web({"https://a.example/x": _redirect("file:///etc/passwd")})
+    with patch("app.services.article_extraction.extractor.httpx.get", web), pytest.raises(RuntimeError):
+        extract_text("https://a.example/x", guard=guard)
+    assert seen == ["https://a.example/x", "file:///etc/passwd"]
+
+
 def test_a_guarded_fetch_never_reaches_the_browser_fallback(monkeypatch):
     """A browser follows redirects no guard sees."""
     fallback = Mock(return_value=None)

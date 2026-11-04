@@ -97,7 +97,7 @@ def _get(url: str, guard: UrlGuard | None) -> httpx.Response:
             timeout=_TIMEOUT,
             follow_redirects=False,
         )
-        if not resp.is_redirect:
+        if not resp.has_redirect_location:
             return resp
         current = str(resp.url.join(resp.headers["location"]))
     raise httpx.TooManyRedirects("too many redirects", request=resp.request)

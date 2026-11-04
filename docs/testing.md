@@ -246,7 +246,7 @@ GitHub Actions runs [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) on
 
 | Job | Runner | What it runs |
 |-----|--------|--------------|
-| Backend tests (pytest) | ubuntu-latest, Python 3.12 | `pip install -r requirements.txt -r requirements-dev.txt` (pip cache; PyTorch from the CPU wheel index first, so the CUDA libraries never download), then `python -m pytest tests/ -q -rs` from `backend/` (`-rs` lists each skip with its reason). The multilingual embedder and Chroma's ONNX model are cached between runs (`~/.cache/huggingface`, `~/.cache/chroma`): one step downloads both on a cache miss, and the cache is saved right after that step succeeds, before the tests, so a red test run still keeps it and a cancelled or failed download never does (a key is never overwritten, so a partial copy would stay for good; bump `MODEL_CACHE_KEY` to discard a bad entry) |
+| Backend tests (pytest) | ubuntu-latest, Python 3.12 | `pip install -r requirements.txt -r requirements-dev.txt` (pip cache; PyTorch from the CPU wheel index first, so the CUDA libraries never download), then `python -m pytest tests/ -q -rs` from `backend/` (`-rs` lists each skip with its reason). The multilingual embedder and Chroma's ONNX model are cached between runs (`~/.cache/huggingface`, `~/.cache/chroma`): one step downloads both on a cache miss, and the cache is saved right after that step succeeds, before the tests, so a red test run still keeps it and a cancelled or failed download never does (a key is never overwritten, so a partial copy would stay for good; bump `MODEL_CACHE_KEY` to discard a bad entry). The pytest step alone sets `HF_HUB_OFFLINE=1`, so a DNS drop cannot fail a test, and a bad cache fails loudly instead of downloading at test time (T-8.8.4.7) |
 | Backend lint (ruff) | ubuntu-latest | `backend/scripts/fix_anchor_links.py --check`, which fails on any Markdown anchor link that does not resolve (T-4.8.5), and `ruff check backend --select E9,F63,F7,F82` with the `ruff` pinned in `requirements-dev.txt`: syntax errors, undefined names, invalid comparisons and statements. The repository has no ruff config, and ruff's default set reports 57 existing findings (mostly unused imports), so the default set is not gated; widening the rules means fixing those first, in a change of its own |
 | Frontend build and unit tests | ubuntu-latest, Node 22 | `npm ci`, `npm run build` (type check plus Vite build), `npx vitest run` from `frontend/` |
 | Browser extension tests | ubuntu-latest, Node 22 | `npm test` from `extension/` (`node --test`, no install) |
@@ -270,6 +270,8 @@ npm run test:mobile:update   # re-record the screenshot baselines after an inten
 
 The device tests are hermetic: every `/api/v1` call is answered from `frontend/tests/fixtures/api` (its README says where each file came from), the WebSocket and the dev proxy are cut off, and an unmatched API call fails the test. Baselines live in `frontend/tests/__screenshots__/<project>/` and tolerate a 2 % pixel difference. Never capture a real user's data into those fixtures: the repository is public ([D-087](decisions.md#d-087--mobile-reading-and-install-a-reading-toolbar-below-1200-px-a-docked-composer-lifted-by-visualviewport-hermetic-device-tests-a-manifest-without-a-service-worker-2026-10-19)).
 
+The dev server for these tests listens on both loopback addresses (`--host ::`, T-8.8.4.6). A browser that cannot open a connection to `localhost`'s first address tries the second, and Windows does fail the odd connect (`WSAEADDRINUSE` or `WSAENOBUFS`, about one page load in a thousand under load). With the server on one family, that retry lands on nothing and the module comes back as `net::ERR_CONNECTION_REFUSED`, while every other connection works, so the page stays blank. `tests/server.spec.ts` keeps both addresses answering.
+
 ### 5.5a. From a git worktree
 
 A `.claude/worktrees/<name>` checkout has no `backend/venv` or `backend/.env`, and its `backend/data/videoresearchpro.db` is a stale copy with no `alembic_version`, so the first `TestClient` trips `ensure_schema_at_head` with *tables present but alembic_version is missing*. The tests themselves use the in-memory engine from §3.1; only the app lifespan touches `DATABASE_URL`. Point it at a scratch file and reuse the main checkout's interpreter:
@@ -281,6 +283,8 @@ DATABASE_URL="sqlite:///<absolute scratch dir>/test.db" \
 ```
 
 Every `TestClient` startup also runs the real LLM smoke probes (one short call per unique provider/model, a few seconds and a few cents), so batch reruns rather than iterating one test at a time.
+
+**The embedding model.** The first run downloads `paraphrase-multilingual-MiniLM-L12-v2` from huggingface.co. From then on `tests/hf_offline.py` sets `HF_HUB_OFFLINE=1` before anything imports the hub, so a model load makes no network call and a DNS drop cannot fail a test (T-8.8.4.7). It stays online only while the model is missing or partly downloaded. Set `HF_HUB_OFFLINE=0` to force a hub check.
 
 ### 5.5. Pre-merge sanity checks (manual)
 

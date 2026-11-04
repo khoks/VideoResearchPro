@@ -12,18 +12,32 @@
 import { lazy, Suspense } from 'react';
 import { markdownBlocks, type MarkdownBlock } from '../../utils/markdownBlocks';
 
+function Text({ children }: { children: string }) {
+  return (
+    <>
+      {children.split('**').map((run, i) => (i % 2 === 1 ? <strong key={i}>{run}</strong> : run))}
+    </>
+  );
+}
+
 function Block({ block }: { block: MarkdownBlock }) {
   switch (block.kind) {
     case 'heading': {
       const Heading = `h${block.level}` as const;
-      return <Heading>{block.text}</Heading>;
+      return (
+        <Heading>
+          <Text>{block.text}</Text>
+        </Heading>
+      );
     }
     case 'list': {
       const List = block.ordered ? 'ol' : 'ul';
       return (
         <List>
           {block.items.map((item, i) => (
-            <li key={i}>{item}</li>
+            <li key={i}>
+              <Text>{item}</Text>
+            </li>
           ))}
         </List>
       );
@@ -35,7 +49,11 @@ function Block({ block }: { block: MarkdownBlock }) {
         </pre>
       );
     case 'paragraph':
-      return <p>{block.text}</p>;
+      return (
+        <p>
+          <Text>{block.text}</Text>
+        </p>
+      );
   }
 }
 

@@ -18,9 +18,13 @@ describe('markdownBlocks', () => {
   });
 
   it('takes the inline marks off and keeps a link or image by its text', () => {
-    expect(markdownBlocks('**bold** *soft* `code` ~~gone~~ [a link](https://x.y/z) ![a chart](c.png)')).toEqual([
-      { kind: 'paragraph', text: 'bold soft code gone a link a chart' },
+    expect(markdownBlocks('*soft* `code` ~~gone~~ [a link](https://x.y/z) ![a chart](c.png)')).toEqual([
+      { kind: 'paragraph', text: 'soft code gone a link a chart' },
     ]);
+  });
+
+  it('keeps bold for the caller, since it changes where lines wrap', () => {
+    expect(markdownBlocks('**Answer.** No, *not* yet.')).toEqual([{ kind: 'paragraph', text: '**Answer.** No, not yet.' }]);
   });
 
   it('leaves underscores in names', () => {

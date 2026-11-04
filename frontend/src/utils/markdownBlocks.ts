@@ -1,12 +1,15 @@
 /**
  * Markdown read just far enough to lay out as text (T-8.8.4.5): paragraphs,
- * headings, lists and code blocks, with the inline marks taken off.
+ * headings, lists and code blocks, with the inline marks taken off, except
+ * `**`, which stays for the caller to render as bold.
  *
  * What the page shows while the real renderer's chunk arrives, or for good if
  * it cannot load. The blocks become the same elements react-markdown would
  * write, so the styles that apply are the same and the text does not move when
- * the real one replaces it. No dependency, on purpose: this stays in the main
- * chunk. Not a parser: tables, nested lists and quotes read as paragraphs.
+ * the real one replaces it. Bold stays for the same reason: an answer that
+ * opens in bold wraps a line later than one that does not, and on a phone that
+ * line moves the whole thread. No dependency, on purpose: this stays in the
+ * main chunk. Not a parser: tables, nested lists and quotes read as paragraphs.
  */
 export type MarkdownBlock =
   | { kind: 'heading'; level: 1 | 2 | 3 | 4 | 5 | 6; text: string }
@@ -18,8 +21,8 @@ const HEADING = /^ {0,3}(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;
 const LIST_ITEM = /^\s*(?:[-*+]|(\d+)[.)])\s+(.*)$/;
 const FENCE = /^\s*(```|~~~)/;
 const LINK = /!?\[([^\]]*)\]\([^)]*\)/g;
-// `_` is left alone: it is in more names than emphasis.
-const INLINE_MARK = /\*\*|__|~~|[*`]/g;
+// `**` stays, and `_` is left alone: it is in more names than emphasis.
+const INLINE_MARK = /~~|`|(?<!\*)\*(?!\*)/g;
 const QUOTE_MARK = /^\s*>\s?/;
 
 function plain(text: string): string {

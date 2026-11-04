@@ -69,6 +69,7 @@ describe('Markdown', () => {
     // While the chunk is on its way: readable, no marks, no link yet.
     expect(container.textContent).toBe('FindingsPrices rose in the first year.onetwo');
     expect(container.querySelector('a')).toBeNull();
+    expect(container.querySelector('strong')?.textContent).toBe('rose');
     expect(blocks()).toEqual(BLOCKS);
 
     release();

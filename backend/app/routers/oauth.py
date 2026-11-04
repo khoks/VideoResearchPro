@@ -40,6 +40,7 @@ from app.services.oauth_service import (
     OAuthProviderUnconfiguredError,
     OAuthUnverifiedEmailError,
 )
+from app.utils.client_ip import client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +143,7 @@ def callback(
         request=request,
         metadata={"provider": provider, "via": "oauth"},
     )
-    ip = request.client.host if request.client else None
+    ip = client_ip(request)
     ua = request.headers.get("user-agent")
     token, expires_in = auth_service.create_access_token(
         user.id, db=db, ip_address=ip, user_agent=ua

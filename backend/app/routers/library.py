@@ -32,7 +32,7 @@ from app.services import chroma_service
 from app.services import document_cap_service
 from app.services import language_mix_service
 from app.services import graph_service, library_query_service, qa_scope_service, tag_service, visibility_service
-from app.services import usage_service
+from app.services import llm_service, usage_service
 from app.services.llm_service import get_llm_for
 from app.sources.pdf.connector import (
     SOURCE_ID_PREFIX as PDF_SOURCE_ID_PREFIX,
@@ -77,12 +77,14 @@ def clarify_library_question(
         '{"interpretation": "...", "clarifications": ["q1", "q2", "q3"]}'
     )
 
-    # E-5.2: counted against the asker (feature library_qa).
-    with usage_service.metered(db, current_user.id):
+    # T-5.6.10: the asker's own provider key and model pin apply here as on
+    # the ask route. E-5.2: byok_context is also the metering scope, so the
+    # call is the asker's usage (feature library_qa).
+    with llm_service.byok_context(current_user.id, db):
         # S-1.12.7: clarify returns a tiny JSON blob — cap runaway completions.
         llm = get_llm_for("library_qa_clarification", temperature=0.3, max_tokens=400)
         response = llm.invoke(prompt)
-    content = (response.content or "").strip()
+    content = llm_service.response_text(response).strip()
 
     # Strip markdown code fences if the model returns them anyway
     if content.startswith("```"):

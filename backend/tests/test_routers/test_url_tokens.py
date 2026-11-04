@@ -142,7 +142,7 @@ class _FakeManager:
         self.connected = 0
         self.disconnected = 0
 
-    async def connect(self, websocket):
+    async def connect(self, websocket, *, tenant_id=None, jti=None):
         await websocket.accept()
         self.connected += 1
 

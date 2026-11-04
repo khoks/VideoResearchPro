@@ -62,6 +62,7 @@ import jwt
 import pyotp
 import pytest
 from cryptography.fernet import Fernet
+from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app.config import settings
@@ -177,7 +178,7 @@ def test_a_reset_writes_the_sign_out_to_the_audit_log(unauthenticated_client, db
 
 def test_mutation_a_reset_without_the_revocation_leaves_sessions_alive(unauthenticated_client, db, monkeypatch):
     # The pre-T-5.4.12 service: the first test fails against it.
-    monkeypatch.setattr(auth_service, "_mark_sessions_revoked", lambda *a, **k: 0)
+    monkeypatch.setattr(auth_service, "_mark_sessions_revoked", lambda *a, **k: [])
     auth_service.create_user(db, email="reset-mut@x.com", password=PASSWORD)
     phone = _login(unauthenticated_client, "reset-mut@x.com")
     assert _reset(unauthenticated_client, monkeypatch, "reset-mut@x.com").status_code == 200
@@ -261,25 +262,28 @@ def test_mutation_without_the_cap_the_sixth_code_signs_in(unauthenticated_client
     assert r.status_code == 200
 
 
-def test_the_cap_follows_the_ticket_not_the_address(unauthenticated_client, db, stable_key):
+def test_the_cap_follows_the_ticket_not_the_address(unauthenticated_client, db, stable_key, monkeypatch):
     _user, secret, _codes = _mfa_user(db, "cap-ip@x.com")
-    spent = _ticket(unauthenticated_client, "cap-ip@x.com")
-    fresh = _ticket(unauthenticated_client, "cap-ip@x.com")
+    # Behind a proxy we trust, so the header does change the address (T-5.5.8).
+    monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "10.0.0.1")
+    proxy = TestClient(app, client=("10.0.0.1", 40000))
+    spent = _ticket(proxy, "cap-ip@x.com")
+    fresh = _ticket(proxy, "cap-ip@x.com")
     wrong = _wrong_code(secret)
 
     # Five misses from five addresses still close the ticket.
     for i in range(5):
-        unauthenticated_client.post(
+        proxy.post(
             LOGIN_MFA, json={"mfa_token": spent, "code": wrong}, headers={"X-Forwarded-For": f"203.0.113.{i + 1}"}
         )
-    r = unauthenticated_client.post(
+    r = proxy.post(
         LOGIN_MFA,
         json={"mfa_token": spent, "code": pyotp.TOTP(secret).now()},
         headers={"X-Forwarded-For": "198.51.100.77"},
     )
     assert r.status_code == 401 and r.json()["detail"] == mfa_router.TICKET_EXHAUSTED_DETAIL
     # Another ticket, from the address that spent the first, is untouched.
-    r = unauthenticated_client.post(
+    r = proxy.post(
         LOGIN_MFA,
         json={"mfa_token": fresh, "code": pyotp.TOTP(secret).now()},
         headers={"X-Forwarded-For": "203.0.113.1"},
@@ -685,7 +689,7 @@ def test_mutation_the_old_decode_only_handshake_lets_a_revoked_token_in(unauthen
 
     def _decode_only(token, session_factory=None):
         payload = auth_service.decode_access_token(token)
-        return payload.get("sub") if payload else None
+        return (payload.get("sub"), payload.get("jti")) if payload else None
 
     monkeypatch.setattr(ws, "_authenticate", _decode_only)
     auth_service.create_user(db, email="ws-mut@x.com", password=PASSWORD)

@@ -70,6 +70,34 @@ class EncryptionConfigurationError(RuntimeError):
     that can meet it say what failed in their own words; the exception
     handler in ``app.main`` is the net for any other."""
 
+    # For the operator's log line: names the setting, never its value.
+    log_cause = "BYOK_ENCRYPTION_KEY is set but is not a valid Fernet key"
+
+    def detail(self, what: str) -> str:
+        """The 503 ``detail`` for this failure."""
+        return invalid_key_detail(what)
+
+
+class StoredSecretUnreadableError(EncryptionConfigurationError):
+    """T-5.6.11: the key is well formed but cannot read a stored secret. It
+    was changed since the secret was saved (rotated, or unset so that a
+    process-local one was generated), or the row is corrupt.
+
+    Same treatment as a malformed key, so every caller that handles one
+    handles this: 503 with the cause, because the user cannot fix it and a
+    "wrong code" would send them to their phone's clock. Only the words
+    differ. Raised by callers that cannot fall back; ``get_credential`` can
+    (to the install's provider key), so it still returns None."""
+
+    log_cause = "BYOK_ENCRYPTION_KEY cannot read a stored secret (the key changed since it was saved, or the row is corrupt)"
+
+    def detail(self, what: str) -> str:
+        return (
+            f"{what}: the stored secret cannot be read with this install's "
+            "BYOK_ENCRYPTION_KEY, which has probably changed since it was "
+            "saved. Ask the operator to restore the earlier key."
+        )
+
 
 def invalid_key_detail(what: str) -> str:
     """The 503 ``detail`` for a request refused because

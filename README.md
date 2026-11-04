@@ -153,6 +153,22 @@ The endpoint spawns the restart script as a detached child, returns `202`, then 
 
 ---
 
+## Running behind a reverse proxy
+
+Behind nginx, Caddy, a load balancer or a CDN, tell the app which proxies it can believe. Every request reaches the API from the proxy, so the real caller is only in `X-Forwarded-For`, and anyone can write that header. Set `TRUSTED_PROXY_IPS` in `backend/.env` to the proxies' addresses, as comma-separated IPs or CIDRs:
+
+```bash
+TRUSTED_PROXY_IPS=10.0.0.1,172.16.0.0/12
+```
+
+- **Unset, the default:** the header is ignored and the caller is the socket peer. That is right for an install nobody proxies. **An install behind a proxy that leaves this unset sees one address for every user:** they all share one per-IP limit, so one busy minute refuses everyone's sign-in, and the audit log and session list show the proxy's address.
+- **Set:** when the peer is one of these proxies, the header is read from the right and the first address that is not a trusted proxy is the caller. What a client puts in the header itself is on the left, so it changes nothing. A malformed header falls back to the peer.
+- **Your proxy must append to the header**, not pass the client's copy through unchanged. In nginx that is `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`.
+
+uvicorn has proxy handling of its own, on by default for peers at 127.0.0.1: it rewrites the peer from the header before the app runs, so a local caller could still pick its address. `scripts/start.ps1` and `scripts/restart_services.ps1` pass `--no-proxy-headers` to turn it off. Pass it too if you start uvicorn by hand on a shared host. The app reads nothing else uvicorn's handling sets.
+
+---
+
 ## How it works (one paragraph each)
 
 1. **Submit a job.** Topic (AI-discovered videos), channel (paste URLs), or subscription (fire-and-forget ingestion of a channel's uploads playlist).

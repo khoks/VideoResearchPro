@@ -29,6 +29,7 @@ from app.schemas.auth import (
 )
 from app.services import audit_service, auth_service, email_service, mfa_service
 from app.services.audit_service import Event
+from app.utils.client_ip import client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,12 @@ def register(
     request: Request,
     db: Session = Depends(get_db),
 ) -> UserResponse:
+    # T-5.4.18: before anything else, so this says nothing about the address.
+    if not auth_service.password_can_be_hashed(payload.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=auth_service.PASSWORD_CANNOT_BE_STORED,
+        )
     existing = auth_service.get_user_by_email(db, payload.email)
     if existing:
         raise HTTPException(
@@ -154,7 +161,7 @@ def login(
     )
     # T-5.4.7: write a session row so this token can be individually
     # revoked from /auth/sessions/{id}.
-    ip = request.client.host if request.client else None
+    ip = client_ip(request)
     ua = request.headers.get("user-agent")
     token, expires_in = auth_service.create_access_token(
         user.id, db=db, ip_address=ip, user_agent=ua
@@ -226,6 +233,12 @@ def password_reset_confirm(
     """Set the new password and sign the account out everywhere (T-5.4.12):
     whoever was signed in, the person the reset is meant to lock out among
     them, has to sign in again with the new password."""
+    # T-5.4.18: checked first, so the code is not spent on a refused password.
+    if not auth_service.password_can_be_hashed(payload.new_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=auth_service.PASSWORD_CANNOT_BE_STORED,
+        )
     result = auth_service.confirm_password_reset(
         db, secret=payload.token, new_password=payload.new_password
     )
@@ -295,7 +308,7 @@ def change_password(
     if not auth_service.password_can_be_hashed(payload.new_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The new password has a character that cannot be stored: a null character or broken Unicode.",
+            detail=auth_service.PASSWORD_CANNOT_BE_STORED,
         )
     outcome, revoked = auth_service.change_password(
         db,

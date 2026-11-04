@@ -179,7 +179,7 @@ if (-not (Test-Path $venvPython)) {
     Write-Step "  ERROR: venv python not found at $venvPython"
 } else {
     Start-Process -FilePath $venvPython `
-        -ArgumentList @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000') `
+        -ArgumentList @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000', '--no-proxy-headers') `
         -WorkingDirectory $backendDir `
         -WindowStyle Hidden `
         -RedirectStandardOutput $backendOut `

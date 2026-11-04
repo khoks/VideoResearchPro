@@ -157,16 +157,13 @@ app = FastAPI(
 # this instead of a bare 500. Neither the response nor the log carries the
 # configured key.
 @app.exception_handler(byok_service.EncryptionConfigurationError)
-async def _encryption_key_invalid(request: Request, exc: Exception) -> JSONResponse:
-    logger.error(
-        "%s %s refused: BYOK_ENCRYPTION_KEY is set but is not a valid Fernet key "
-        "(32 url-safe base64-encoded bytes)",
-        request.method,
-        request.url.path,
-    )
+async def _encryption_key_invalid(
+    request: Request, exc: byok_service.EncryptionConfigurationError
+) -> JSONResponse:
+    logger.error("%s %s refused: %s", request.method, request.url.path, exc.log_cause)
     return JSONResponse(
         status_code=503,
-        content={"detail": byok_service.invalid_key_detail("Nothing stored encrypted can be saved or read")},
+        content={"detail": exc.detail("Nothing stored encrypted can be saved or read")},
     )
 
 

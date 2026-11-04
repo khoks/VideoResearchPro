@@ -97,6 +97,17 @@ def _isolate_app_lifespan():
     ):
         yield
 
+@pytest.fixture(autouse=True)
+def _publishes_stay_off_redis(monkeypatch):
+    # A session revocation publishes on Redis (T-5.4.19), so sign-out tests
+    # would otherwise reach a live Redis, or wait out a connection refused
+    # one. Publishes are fail-soft, so nothing else notices. Tests of the
+    # publishers patch `_get_redis` themselves, after this.
+    from app.services import progress_service
+
+    monkeypatch.setattr(progress_service, "_get_redis", MagicMock)
+
+
 SQLALCHEMY_DATABASE_URL = "sqlite://"
 
 engine = create_engine(

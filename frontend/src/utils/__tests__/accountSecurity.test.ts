@@ -106,6 +106,12 @@ describe('describeAuditEvent', () => {
     expect(describeAuditEvent(e('password_change_failed', { reason: 'locked_out' }))).toBe(
       'Password change refused while the account was locked',
     );
+    expect(describeAuditEvent(e('mfa_disable_failed', { reason: 'invalid_code' }))).toBe(
+      'Turning off two-step verification refused: wrong code',
+    );
+    expect(describeAuditEvent(e('mfa_disable_failed', { reason: 'too_many_attempts' }))).toBe(
+      'Turning off two-step verification stopped after too many wrong codes',
+    );
     expect(describeAuditEvent(e('mfa_login_failure', { reason: 'invalid_code' }))).toBe('Wrong two-step code entered');
     expect(describeAuditEvent(e('mfa_login_failure', { reason: 'too_many_attempts' }))).toBe(
       'Two-step sign-in stopped after too many wrong codes',
@@ -123,6 +129,7 @@ describe('describeAuditEvent', () => {
   it('marks failed and refused sign-ins as warnings', () => {
     expect(isWarningEvent('login_failure')).toBe(true);
     expect(isWarningEvent('mfa_login_failure')).toBe(true);
+    expect(isWarningEvent('mfa_disable_failed')).toBe(true);
     expect(isWarningEvent('password_change_failed')).toBe(true);
     expect(isWarningEvent('login_success')).toBe(false);
   });

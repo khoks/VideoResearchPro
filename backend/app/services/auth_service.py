@@ -3,7 +3,7 @@ import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Iterable
 
 import jwt
 from jwt import PyJWTError as JWTError  # T-5.4.9: PyJWT replaced python-jose (unfixed CVE)
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
+from app.services import progress_service
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,9 @@ def hash_password(password: str) -> str:
 def password_can_be_hashed(password: str) -> bool:
     """Whether ``hash_password`` will take ``password``. It raises on a NUL
     character (bcrypt ends its input there) and on a lone surrogate, which
-    JSON can carry and UTF-8 cannot encode."""
+    JSON can carry and UTF-8 cannot encode. Every route that takes a new
+    password asks this first (T-5.4.18), and ``verify_password`` refuses such
+    a password before bcrypt sees it."""
     if "\x00" in password:
         return False
     try:
@@ -52,7 +55,20 @@ def password_can_be_hashed(password: str) -> bool:
     return True
 
 
+# The 400 for a new password ``hash_password`` cannot take. A fixed sentence:
+# the password itself appears in no response and no log (T-5.4.18).
+PASSWORD_CANNOT_BE_STORED = (
+    "The new password has a character that cannot be stored: a null character "
+    "or broken Unicode."
+)
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    # T-5.4.18: no password has such a character, so this is a wrong password.
+    # Decided before bcrypt, whose exception would go to the log below with
+    # the character's position in its message.
+    if not password_can_be_hashed(plain_password):
+        return False
     try:
         return _pwd_context.verify(plain_password, hashed_password)
     except Exception:
@@ -338,7 +354,8 @@ def confirm_password_reset(
     revoked = _mark_sessions_revoked(db, user.id)
     db.commit()
     db.refresh(user)
-    return user, revoked
+    _announce_revoked(user.id, revoked)
+    return user, len(revoked)
 
 
 class PasswordChangeOutcome:
@@ -381,7 +398,8 @@ def change_password(
     revoked = _mark_sessions_revoked(db, user.id, except_jti=keep_jti)
     db.commit()
     db.refresh(user)
-    return PasswordChangeOutcome.CHANGED, revoked
+    _announce_revoked(user.id, revoked)
+    return PasswordChangeOutcome.CHANGED, len(revoked)
 
 
 def create_access_token(
@@ -583,6 +601,7 @@ def revoke_session(db: Session, jti: str, user_id: str) -> bool:
         return True
     row.revoked_at = datetime.now(timezone.utc)
     db.commit()
+    _announce_revoked(user_id, [jti])
     return True
 
 
@@ -595,17 +614,44 @@ def revoke_all_sessions(
 
     Returns the number of sessions revoked.
     """
-    n = _mark_sessions_revoked(db, user_id, except_jti=except_jti)
+    revoked = _mark_sessions_revoked(db, user_id, except_jti=except_jti)
     db.commit()
-    return n
+    _announce_revoked(user_id, revoked)
+    return len(revoked)
+
+
+def _announce_revoked(user_id: str, jtis: list[str]) -> None:
+    """T-5.4.19: tell every API process to close the sockets on ``jtis``.
+
+    Called after the commit that revoked them, on every path that revokes
+    (``revoke_session``, ``revoke_all_sessions``, ``confirm_password_reset``,
+    ``change_password``); a new path that revokes must call it too. It never
+    raises: with Redis down the revocation stands, and the socket closes at
+    the manager's next look at the sessions table."""
+    progress_service.publish_sessions_revoked(user_id, jtis)
+
+
+def revoked_jtis(db: Session, jtis: Iterable[str]) -> set[str]:
+    """Which of ``jtis`` name a revoked session. A ``jti`` with no row is not
+    among them, as in ``is_session_active``."""
+    from app.models.session import Session as SessionRow
+
+    rows = (
+        db.query(SessionRow.jti)
+        .filter(SessionRow.jti.in_(list(jtis)), SessionRow.revoked_at.is_not(None))
+        .all()
+    )
+    return {jti for (jti,) in rows}
 
 
 def _mark_sessions_revoked(
     db: Session, user_id: str, *, except_jti: str | None = None
-) -> int:
+) -> list[str]:
     """Set ``revoked_at`` on every live session of ``user_id`` but
-    ``except_jti``, without committing, so a caller can revoke in the same
-    commit as the change that calls for it (a reset, a password change)."""
+    ``except_jti`` and return their ``jti``s, without committing, so a caller
+    can revoke in the same commit as the change that calls for it (a reset, a
+    password change). The caller passes them to ``_announce_revoked`` after
+    that commit."""
     from app.models.session import Session as SessionRow
 
     q = db.query(SessionRow).filter(
@@ -618,7 +664,7 @@ def _mark_sessions_revoked(
     now = datetime.now(timezone.utc)
     for row in rows:
         row.revoked_at = now
-    return len(rows)
+    return [row.jti for row in rows]
 
 
 def list_user_sessions(db: Session, user_id: str) -> list:

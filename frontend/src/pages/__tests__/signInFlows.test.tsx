@@ -387,6 +387,14 @@ describe('ResetPasswordPage', () => {
     expect(host.querySelector('[role="alert"]')!.textContent).toContain('That code is not valid any more');
   });
 
+  it('shows the server\'s sentence for a password it refused, because the code is still good (T-5.4.18)', async () => {
+    const detail = 'The new password has a character that cannot be stored: a null character or broken Unicode.';
+    http.post.mockRejectedValue(axiosError(400, detail));
+    mount('/reset-password');
+    await fill('the-reset-code-123', 'new password 1', 'new password 1');
+    expect(host.querySelector('[role="alert"]')!.textContent).toBe(detail);
+  });
+
   it('never reads the code from the address bar', async () => {
     mount('/reset-password?token=from-the-url');
     expect(inputs()[0].value).toBe('');

@@ -36,7 +36,7 @@ from app.models.library_qa_exchange import LibraryQAExchange
 from app.models.saved_search import SavedSearch
 from app.models.saved_search_run import SavedSearchRun
 from app.models.user import User
-from app.services import qa_scope_service, scheduler_service, tier_service
+from app.services import qa_scope_service, scheduler_service, tier_service, usage_service
 
 logger = logging.getLogger(__name__)
 
@@ -378,9 +378,6 @@ def execute(db: Session, saved_search_id: str, *, trigger: str = "schedule", age
     scope gained no new source since the last good run is skipped before
     the quota or the model (S-8.3.3 stage 1); Run now always asks.
     """
-    from app.config import settings
-    from app.services import saved_search_change_service as change
-
     ss = db.get(SavedSearch, saved_search_id)
     if ss is None:
         return {"status": STATUS_MISSING}
@@ -393,6 +390,16 @@ def execute(db: Session, saved_search_id: str, *, trigger: str = "schedule", age
     if not tier_service.has_feature(user, FEATURE):
         _record(db, ss, STATUS_FEATURE, "This plan no longer includes saved searches.", trigger=trigger)
         return {"status": STATUS_FEATURE}
+
+    # E-5.2: everything the run spends (the library agent, the change judge)
+    # is the owner's usage, as a saved search rather than as library Q&A.
+    with usage_service.metered(db, user.id, feature="saved_search"):
+        return _execute_run(db, ss, user, saved_search_id, trigger=trigger, agent=agent)
+
+
+def _execute_run(db: Session, ss: SavedSearch, user: User, saved_search_id: str, *, trigger: str, agent) -> dict[str, Any]:
+    from app.config import settings
+    from app.services import saved_search_change_service as change
 
     scope = _load_scope(ss)
     from app.services import library_qa_service

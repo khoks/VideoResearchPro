@@ -133,12 +133,31 @@ def _qa_agent_patches(with_usage=True):
     )
 
 
-def test_qa_persists_token_usage(client, db, test_user):
+def _factory_built_qa_llms(monkeypatch):
+    """The same three calls as ``_qa_agent_patches``, but served below
+    ``get_llm_for`` (at ``_build_from_config``) by LangChain models that
+    report usage, so the production meter ``get_llm_for`` attaches runs."""
+    from app.services import llm_service
+    from tests.usage_helpers import MeteredFakeChat
+
+    llms = iter([
+        MeteredFakeChat(reply="", tokens_in=10, tokens_out=5),
+        MeteredFakeChat(reply="compacted context", tokens_in=100, tokens_out=20),
+        MeteredFakeChat(reply="Answer referencing v1 / Video A", tokens_in=200, tokens_out=50),
+    ])
+    monkeypatch.setattr(llm_service, "_build_from_config", lambda *a, **k: next(llms))
+
+
+def test_qa_persists_token_usage(client, db, test_user, monkeypatch):
     from app.services import quota_metering_service
+    from tests.usage_helpers import usage_rows
 
     job = _make_completed_job(db, report_path=None, tenant_id=test_user.id)
-    p_chroma, p_llm, p_upsert = _qa_agent_patches()
-    with p_chroma, p_llm, p_upsert:
+    _factory_built_qa_llms(monkeypatch)
+    with (
+        patch("app.agents.qa_agent.chroma_service.query_collection", return_value=[_rag_chunk()]),
+        patch("app.routers.qa.chroma_service.upsert_qa_exchange", return_value=True),
+    ):
         response = client.post(
             f"/api/v1/jobs/{job.id}/qa", json={"question": "tell me"}
         )
@@ -147,9 +166,13 @@ def test_qa_persists_token_usage(client, db, test_user):
     row = db.query(QAExchange).filter(QAExchange.job_id == job.id).one()
     assert row.prompt_tokens == 310
     assert row.completion_tokens == 75
-    # Per-user token metering recorded alongside the row.
+    # Per-user token metering, by the scope byok_context opens (E-5.2): the
+    # daily totals once, and the job_qa breakdown beside them.
     assert quota_metering_service.get_usage(db, test_user.id, "llm_tokens_in") == 310
     assert quota_metering_service.get_usage(db, test_user.id, "llm_tokens_out") == 75
+    assert usage_rows(db, test_user.id) == {
+        ("job_qa", "llm_calls"): 3, ("job_qa", "llm_tokens_in"): 310, ("job_qa", "llm_tokens_out"): 75,
+    }
 
 
 def test_qa_token_columns_stay_null_without_usage_metadata(client, db, test_user):

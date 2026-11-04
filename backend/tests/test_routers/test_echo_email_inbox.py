@@ -324,11 +324,10 @@ ID = b"Message-ID: <forged@x>"
         (ID, b"From: me@example.com", b"From : stranger@evil.example"),
         # And any other line it cannot read ends the headers there.
         (b"From: me@example.com", b"FROM : stranger@evil.example", ID),
-        (b"From: me@example.com", ID, b"From	: stranger@evil.example"),
+        (b"From: me@example.com", ID, b"From\t: stranger@evil.example"),
         (b"From: me@example.com", b"no colon on this line", b"From: stranger@evil.example", ID),
         # Folded into the allowed header, it is one malformed header.
-        (b"From: me@example.com
- From : stranger@evil.example", ID),
+        (b"From: me@example.com\r\n From : stranger@evil.example", ID),
     ],
     ids=["first-line", "middle", "last-line", "upper-case", "tab", "ends-the-headers", "folded"],
 )

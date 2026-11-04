@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
+import { Markdown } from '../components/common/Markdown';
 import { useJob, useJobVideos, useApproveJob, useCancelJob, useDeleteJob } from '../hooks/useJobs';
 import { useJobProgress } from '../hooks/useJobProgress';
 import {
@@ -1281,7 +1281,7 @@ function QAExchangeCard({ qa }: { qa: QAExchange }) {
           maxWidth: 'none',
         }}
       >
-        <ReactMarkdown>{qa.answer}</ReactMarkdown>
+        <Markdown>{qa.answer}</Markdown>
       </div>
       {qa.references.length > 0 && (
         <div

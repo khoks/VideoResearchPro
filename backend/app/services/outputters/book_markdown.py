@@ -416,7 +416,7 @@ def _assemble(
         head += [f"_Processing note: {note}_", ""]
 
     body: list[str] = []
-    targets: list[tuple[str, int, str]] = []  # (kind, body line index, label)
+    targets: list[tuple[str, int, str]] = []  # (kind, index into body, label)
 
     def heading(kind: str, text: str, label: str | None = None) -> None:
         targets.append((kind, len(body), _literal(label or text)))

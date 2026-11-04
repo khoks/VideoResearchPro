@@ -18,6 +18,11 @@ default and writes nothing. ``--write`` (the owner's step) stores each
 profile and commits it at once, so an interrupted run is finished by running
 it again. Chroma is only read.
 
+A tagger change does not reach a stored profile by itself. ``--all --write``
+re-profiles every document and rewrites only the profiles that differ; then
+``scripts/backfill_chunk_language_fields.py --write --clear-stale`` carries them
+to the chunks.
+
 Usage (from backend/):
     ./venv/Scripts/python scripts/backfill_language_mix.py
     ./venv/Scripts/python scripts/backfill_language_mix.py --document-ids <id>,<id>

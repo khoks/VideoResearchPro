@@ -9,12 +9,17 @@ No network calls, no Whisper API calls. Tests run in <1 second.
 """
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import feedparser
 import httpx
 import pytest
 
+from app.services import youtube_service
 from app.sources import registry
 from app.sources.podcast import client as podcast_client_mod
 from app.sources.podcast import connector as podcast_connector_mod
@@ -224,6 +229,53 @@ def test_search_yields_at_most_limit(podcast, fake_client):
     ):
         out = podcast.search("anything", limit=4)
     assert len(out) == 4
+
+
+def _show_feed(name: str, episodes: int) -> dict:
+    return {
+        "feed": {"title": name},
+        "entries": [
+            {
+                "id": f"{name}-{i}",
+                "title": f"{name}{i}",
+                "enclosures": [{"href": f"https://cdn.example.com/{name}-{i}.mp3"}],
+            }
+            for i in range(episodes)
+        ],
+    }
+
+
+def _titles_found(podcast, fake_client, shows: dict[str, int], limit: int) -> list[str]:
+    fake_client.itunes_search.return_value = {
+        "results": [
+            {"collectionName": name, "feedUrl": f"https://{name}.example.com/f"}
+            for name in shows
+        ],
+    }
+    fake_client.fetch_feed.side_effect = [_show_feed(n, count) for n, count in shows.items()]
+    with patch.object(
+        podcast_connector_mod.podcast_client, "get_client", return_value=fake_client
+    ):
+        return [c.title for c in podcast.search("anything", limit=limit)]
+
+
+@pytest.mark.parametrize(
+    "limit, expected",
+    [
+        (1, ["A0"]),
+        (6, ["A0", "B0", "C0", "A1", "B1", "C1"]),
+        (8, ["A0", "B0", "C0", "A1", "B1", "C1", "A2", "B2"]),
+        (15, [f"{show}{i}" for i in range(5) for show in "ABC"]),
+    ],
+)
+def test_search_takes_each_shows_newest_episodes_in_turn(podcast, fake_client, limit, expected):
+    """A run's share is small (6 in the debate starter) and a show gives up to 5
+    episodes, so filling it show by show would make it one show's back catalogue."""
+    assert _titles_found(podcast, fake_client, {"A": 5, "B": 5, "C": 5}, limit) == expected
+
+
+def test_search_lets_other_shows_fill_what_a_short_show_cannot(podcast, fake_client):
+    assert _titles_found(podcast, fake_client, {"A": 1, "B": 5}, 4) == ["A0", "B0", "B1", "B2"]
 
 
 def test_search_skips_results_without_feed_url(podcast, fake_client):
@@ -539,6 +591,168 @@ def test_fetch_text_falls_through_to_whisper_when_no_transcript(podcast, fake_cl
     assert out.text_source == "podcast_whisper"
     assert len(out.segments) == 2
     mock_whisper.assert_called_once()
+
+
+def _segment(text: str, start: float, end: float) -> SimpleNamespace:
+    """A segment as the OpenAI SDK returns it: read by attribute."""
+    return SimpleNamespace(text=text, start=start, end=end)
+
+
+def _whisper_says(*segments: SimpleNamespace, duration: float) -> SimpleNamespace:
+    return SimpleNamespace(language="en", duration=duration, segments=list(segments))
+
+
+@pytest.fixture
+def long_episode(fake_client, tmp_path, monkeypatch):
+    """An episode with no transcript, whose audio is past the upload cap and
+    splits into two chunks of 100 s with 10 s shared between them. Yields the
+    chunk paths."""
+    fake_client.fetch_feed.return_value = {
+        "feed": {"title": "The Test Show"},
+        "entries": [
+            {
+                "id": "https://testshow.example.com/ep1",
+                "title": "Episode 1: Hello",
+                "link": "https://testshow.example.com/ep1",
+                "enclosures": [{"href": "https://cdn.testshow.example.com/ep1.mp3"}],
+            }
+        ],
+    }
+    fake_client.fetch_audio.return_value = b"x" * 9
+    chunks = [tmp_path / "chunk0.mp3", tmp_path / "chunk1.mp3"]
+    for chunk in chunks:
+        chunk.write_bytes(b"x")
+    monkeypatch.setattr(youtube_service, "WHISPER_MAX_FILE_BYTES", 8)
+    monkeypatch.setattr(youtube_service.settings, "WHISPER_SEGMENT_OVERLAP_SECONDS", 10.0)
+    monkeypatch.setattr(podcast_connector_mod.settings, "OPENAI_API_KEY", "sk-fake")
+    monkeypatch.setattr(
+        youtube_service,
+        "_split_audio_for_whisper",
+        lambda path, tmpdir, tag: [(str(chunks[0]), 0.0), (str(chunks[1]), 100.0)],
+    )
+    with patch.object(
+        podcast_connector_mod.podcast_client, "get_client", return_value=fake_client
+    ):
+        yield chunks
+
+
+def test_fetch_text_splits_an_episode_past_the_whisper_upload_cap(podcast, long_episode):
+    """D-033's known limitation. Sent whole, Whisper refuses such a file and the
+    episode is lost, which is most long shows. Each chunk goes instead, and the
+    words land on one timeline with the shared 10 s kept once."""
+    answers = {
+        str(long_episode[0]): _whisper_says(
+            _segment("Opening.", 0.0, 90.0),
+            _segment("Said at the seam.", 103.0, 106.0),
+            duration=110.0,
+        ),
+        str(long_episode[1]): _whisper_says(
+            _segment("Said at the seam.", 3.0, 6.0),
+            _segment("Closing.", 40.0, 50.0),
+            duration=100.0,
+        ),
+    }
+    sent: list[str] = []
+
+    def whisper(client, path, label, tag, size_mb):
+        sent.append(path)
+        return answers[path]
+
+    with patch.object(youtube_service, "_whisper_transcribe_with_retry", side_effect=whisper):
+        out = podcast.fetch_text(_candidate_for_ep1(), job_id="j1")
+
+    assert sent == [str(chunk) for chunk in long_episode], "chunks, never the whole file"
+    assert out.text_source == "podcast_whisper"
+    assert [(s["text"], s["start"], s["duration"]) for s in out.segments] == [
+        ("Opening.", 0.0, 90.0),
+        ("Said at the seam.", 103.0, 3.0),
+        ("Closing.", 140.0, 10.0),
+    ]
+    assert out.segments[-1]["extra"]["comment_url"].endswith("#t=140")
+    assert out.word_count == 6
+
+
+def test_fetch_text_leaves_audio_at_the_cap_in_one_request(podcast, fake_client, long_episode):
+    fake_client.fetch_audio.return_value = b"x" * 8
+    answer = Mock(segments=[{"start": 0.0, "end": 3.0, "text": "Short episode."}])
+    with (
+        patch.object(youtube_service, "_transcribe_in_chunks") as in_chunks,
+        patch.object(youtube_service, "_whisper_transcribe_with_retry", return_value=answer) as whisper,
+    ):
+        out = podcast.fetch_text(_candidate_for_ep1(), job_id="j1")
+
+    in_chunks.assert_not_called()
+    whisper.assert_called_once()
+    assert [s["text"] for s in out.segments] == ["Short episode."]
+
+
+def test_fetch_text_loses_an_oversize_episode_it_cannot_split(podcast, long_episode, monkeypatch):
+    """No ffmpeg, say. Sending it whole would only be refused."""
+    monkeypatch.setattr(youtube_service, "_split_audio_for_whisper", lambda path, tmpdir, tag: None)
+    with patch.object(youtube_service, "_whisper_transcribe_with_retry") as whisper:
+        assert podcast.fetch_text(_candidate_for_ep1(), job_id="j1") is None
+    whisper.assert_not_called()
+
+
+def test_fetch_text_loses_the_episode_when_a_chunk_fails(podcast, long_episode):
+    """A transcript with a hole would read as the whole episode."""
+    answers = [_whisper_says(_segment("Opening.", 0.0, 90.0), duration=110.0), RuntimeError("refused")]
+    with patch.object(youtube_service, "_whisper_transcribe_with_retry", side_effect=answers):
+        assert podcast.fetch_text(_candidate_for_ep1(), job_id="j1") is None
+
+
+@pytest.mark.skipif(
+    not (shutil.which("ffmpeg") and shutil.which("ffprobe")),
+    reason="needs ffmpeg and ffprobe",
+)
+def test_a_real_mp3_splits_under_the_cap_and_covers_the_episode(podcast, fake_client, tmp_path, monkeypatch):
+    """The fakes above stop at `_split_audio_for_whisper`. This runs it on a real
+    mp3, in the file name the connector gives an enclosure."""
+    audio = tmp_path / "source.mp3"
+    made = subprocess.run(
+        [
+            shutil.which("ffmpeg"), "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=150",
+            "-c:a", "libmp3lame", "-b:a", "128k", str(audio),
+        ],
+        capture_output=True,
+    )
+    if made.returncode != 0:
+        pytest.skip("this ffmpeg cannot encode mp3")
+    # 150 s at 128 kbps is about 2.4 MB, so a 1 MB cap stands in for 25 MB.
+    cap = 1024 * 1024
+    monkeypatch.setattr(youtube_service, "WHISPER_MAX_FILE_BYTES", cap)
+    monkeypatch.setattr(youtube_service.settings, "WHISPER_SEGMENT_TARGET_MB", 1)
+    monkeypatch.setattr(youtube_service.settings, "WHISPER_SEGMENT_OVERLAP_SECONDS", 5.0)
+    monkeypatch.setattr(podcast_connector_mod.settings, "OPENAI_API_KEY", "sk-fake")
+    fake_client.fetch_feed.return_value = {
+        "feed": {"title": "The Test Show"},
+        "entries": [
+            {
+                "id": "https://testshow.example.com/ep1",
+                "title": "Episode 1: Hello",
+                "link": "https://testshow.example.com/ep1",
+                "enclosures": [{"href": "https://cdn.testshow.example.com/ep1.mp3"}],
+            }
+        ],
+    }
+    fake_client.fetch_audio.return_value = audio.read_bytes()
+    sizes: list[int] = []
+
+    def whisper(client, path, label, tag, size_mb):
+        sizes.append(os.path.getsize(path))
+        duration = youtube_service._probe_audio_duration(path, "")
+        return _whisper_says(_segment(f"chunk {len(sizes)}", 10.0, duration), duration=duration)
+
+    with (
+        patch.object(podcast_connector_mod.podcast_client, "get_client", return_value=fake_client),
+        patch.object(youtube_service, "_whisper_transcribe_with_retry", side_effect=whisper),
+    ):
+        out = podcast.fetch_text(_candidate_for_ep1(), job_id="j1")
+
+    assert len(sizes) == 3 and max(sizes) <= cap
+    last = out.segments[-1]
+    assert [s["text"] for s in out.segments] == ["chunk 1", "chunk 2", "chunk 3"]
+    assert last["start"] + last["duration"] == pytest.approx(150.0, abs=1.0)
 
 
 def test_fetch_text_never_whispers_when_whisper_is_not_allowed(podcast, fake_client):

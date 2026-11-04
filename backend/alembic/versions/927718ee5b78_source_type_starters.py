@@ -14,9 +14,11 @@ have not changed, so copying them would only risk versioning them by accident,
 and the downgrade walks this list, so it removes these two and nothing else.
 
 Why these sources. A migration cannot vary by install, so a starter may only
-name sources every install can run; a credential-gated one (Reddit, web
-articles, X) would show as a problem on a stock install. The reader can add
-those after loading. Two ungated sources are left out on evidence from a live
+name sources that need no search credential; a credential-gated one (Reddit,
+web articles, X) would show as a problem on a stock install. The reader can add
+those after loading. Finding podcasts takes no credential, but reading one with
+no published transcript takes Whisper after approval, so `problems_for` says so
+on an install without it. Two ungated sources are left out on evidence from a live
 check on 2026-11-04: Bluesky's public `searchPosts` answered 403, which the
 connector turns into an empty list, and Mastodon searches one hashtag made by
 joining the words of the topic, which found nothing for a phrase. A run's
@@ -81,7 +83,8 @@ STARTERS = [
         "name": "Mixed-source debate",
         "description": (
             "Where people disagree about a subject: talks, podcasts and Hacker News "
-            "threads, read side by side. Works best with a short subject, not a full question."
+            "threads, read side by side. Works best with a short subject, not a full question. "
+            "Episodes with no published transcript are transcribed after you approve them."
         ),
         "job_type": "topic",
         "parameters": {

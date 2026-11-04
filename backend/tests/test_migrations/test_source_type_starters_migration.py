@@ -51,9 +51,13 @@ def migrated(tmp_path):
 
 @pytest.fixture
 def no_credentials(monkeypatch):
-    """A stock install: nothing credential-gated is set up."""
+    """A stock install: no search credential set up, the OpenAI key the defaults
+    require (CLAUDE.md), and ffmpeg."""
     for name in ("REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "BRAVE_SEARCH_API_KEY", "TWITTER_BEARER_TOKEN"):
         monkeypatch.setattr(settings, name, "")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(settings, "WHISPER_MAX_PER_JOB", 50)
+    monkeypatch.setattr(job_source_types.shutil, "which", lambda tool, **_: f"/usr/bin/{tool}")
 
 
 def _snapshot(eng) -> dict[str, tuple]:
@@ -109,12 +113,22 @@ def test_each_starter_carries_every_field_of_a_template():
         assert set(s["parameters"]) == set(TemplateParameters.model_fields)
 
 
-def test_every_source_needs_no_credential(no_credentials):
+def test_every_source_needs_no_search_credential(no_credentials):
     """A migration cannot vary by install, so a gated source would be a problem
-    on every stock install, and the starter could not be run as it comes."""
+    on every stock install. What reading a podcast needs is
+    `transcription_gap`, tested with the starters below."""
     for s in load_migration().STARTERS:
         for source_type in s["parameters"]["source_types"]:
             assert job_source_types.missing_setting(source_type) is None
+
+
+def test_a_starter_that_reads_podcasts_says_transcription_comes_after_approval():
+    """Whisper is a cost to the install, and the digest's reader was told while
+    the debate's, with up to 6 episodes, was not. Revising this copy later takes
+    another data migration."""
+    for s in load_migration().STARTERS:
+        assert "podcast_episode" in s["parameters"]["source_types"]
+        assert "transcribed after you approve them" in s["description"], s["builtin_key"]
 
 
 def test_sources_the_live_check_found_empty_are_left_out():
@@ -171,6 +185,65 @@ def test_column_downgrade_keeps_the_jobs(migrated):
     command.downgrade(cfg, "6d5b3d5aa6fa")
     with eng.connect() as conn:
         assert conn.execute(text("SELECT COUNT(*) FROM jobs")).scalar() == 1
+
+
+def _store_template(eng, parameters_json: str) -> None:
+    """A reader's template as the app stores it."""
+    with eng.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO job_templates (id, tenant_id, name, job_type, latest_version, created_at, updated_at) "
+                "VALUES ('tpl-1', 't1', 'Weekly scan', 'topic', 1, '2026-01-01', '2026-01-01')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO job_template_versions (template_id, version, parameters_json, created_at) "
+                "VALUES ('tpl-1', 1, :p, '2026-01-01')"
+            ),
+            {"p": parameters_json},
+        )
+
+
+def _stored_version(eng) -> tuple:
+    with eng.connect() as conn:
+        return tuple(
+            conn.execute(
+                text("SELECT parameters_json, created_at FROM job_template_versions WHERE template_id = 'tpl-1'")
+            ).one()
+        )
+
+
+@pytest.mark.parametrize("window", [30, None])
+def test_downgrade_leaves_stored_templates_readable_by_the_previous_code(migrated, window):
+    """The app writes every field on save, so a null window is stored too. The
+    previous `TemplateParameters` forbids extras and `_parse` builds it straight
+    from the stored JSON, so a left-over key would be a 500 on GET /job-templates."""
+    cfg, eng = migrated
+    command.upgrade(cfg, COLUMN)
+    params = TemplateParameters(job_type="topic", num_videos=12, published_after_days=window).model_dump()
+    _store_template(eng, json.dumps(params, sort_keys=True))
+
+    command.downgrade(cfg, "6d5b3d5aa6fa")
+
+    stored, created_at = _stored_version(eng)
+    expected = {k: v for k, v in params.items() if k != "published_after_days"}
+    previous_fields = set(TemplateParameters.model_fields) - {"published_after_days"}
+    assert json.loads(stored) == expected, "every other parameter survives"
+    assert set(json.loads(stored)) <= previous_fields
+    assert created_at == "2026-01-01"
+
+
+def test_downgrade_skips_a_version_it_cannot_read(migrated):
+    """Parsing is what a template read does; a bad row must not stop a rollback."""
+    cfg, eng = migrated
+    command.upgrade(cfg, COLUMN)
+    _store_template(eng, "not json")
+
+    command.downgrade(cfg, "6d5b3d5aa6fa")
+
+    assert _stored_version(eng)[0] == "not json"
+    assert "published_after_days" not in _columns(eng)
 
 
 def test_upgrade_adds_the_two_and_leaves_the_five_alone(migrated):
@@ -274,6 +347,45 @@ def test_starters_are_listed_for_every_reader_ready_to_use(client, starters, oth
     token, _ = auth_service.create_access_token(other_reader.id)
     second = client.get("/api/v1/job-templates", headers={"Authorization": f"Bearer {token}"})
     assert NEW_TWO <= {t["builtin_key"] for t in second.json()}
+
+
+def _problems(client) -> dict[str, list[str]]:
+    return {t["builtin_key"]: t["problems"] for t in client.get("/api/v1/job-templates").json()}
+
+
+@pytest.mark.parametrize(
+    "setting, value",
+    [("OPENAI_API_KEY", ""), ("OPENAI_API_KEY", None), ("WHISPER_MAX_PER_JOB", 0), ("WHISPER_MAX_PER_JOB", -1)],
+)
+def test_a_starter_says_when_this_install_has_no_whisper(client, starters, no_credentials, monkeypatch, setting, value):
+    """Search needs no credential, so nothing else speaks up: the run is accepted,
+    and the episodes are lost after approval. CLAUDE.md allows an install with no
+    OpenAI key, and the budget at 0 is how an operator stops the spend."""
+    monkeypatch.setattr(settings, setting, value)
+    problems = _problems(client)
+    for key in NEW_TWO:
+        assert len(problems[key]) == 1 and "need Whisper" in problems[key][0], key
+
+
+def test_a_starter_says_when_long_episodes_cannot_be_split(client, starters, no_credentials, monkeypatch):
+    monkeypatch.setattr(job_source_types.shutil, "which", lambda tool, **_: None if tool == "ffprobe" else tool)
+    problems = _problems(client)
+    for key in NEW_TWO:
+        assert len(problems[key]) == 1 and "need ffmpeg" in problems[key][0], key
+
+
+def test_the_gap_is_reported_for_a_readers_own_template_and_only_for_podcasts(client, no_credentials, monkeypatch):
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
+
+    def problems_of(source_types):
+        params = {"job_type": "topic", "num_videos": 10, "source_types": source_types}
+        r = client.post("/api/v1/job-templates", json={"name": str(source_types), "parameters": params})
+        assert r.status_code == 201, r.text
+        return r.json()["problems"]
+
+    assert len(problems_of(["hn_story", "podcast_episode"])) == 1
+    assert problems_of(["video", "hn_story"]) == []
+    assert problems_of(None) == []
 
 
 def test_starters_are_read_only(client, starters):

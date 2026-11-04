@@ -865,7 +865,7 @@ Named, reusable research recipes (E-8.6 / M6; plan: [`docs/plans/m6-job-template
     "source_types": null, "published_after_days": 30,
     "channel_list": null, "videos_per_channel": null
   },
-  "problems": [],          // why the caller could not run it today, e.g. a tier cap below num_videos
+  "problems": [],          // what stops or limits a run today, e.g. a tier cap below num_videos
   "created_at": "…",
   "updated_at": "…"
 }
@@ -874,7 +874,7 @@ Named, reusable research recipes (E-8.6 / M6; plan: [`docs/plans/m6-job-template
 Parameters are validated the way a submission is (`JobCreate`, with a placeholder topic, and placeholder channels when a channel or subscription recipe leaves `channel_list` empty, meaning "add the channels each run"); a recipe that would fail is a **422**, and unknown fields are refused rather than dropped. Names are unique per reader among live templates, case-insensitively (409). `{{topic}}` in `search_instructions` is replaced by the run's topic at submission.
 
 ### `GET /api/v1/job-templates`
-The caller's templates A→Z, then the built-ins A→Z. The seven starters (S-8.6.2, S-8.6.4) have stable `builtin_key`s: `topic-scan`, `deep-dive`, `quick-brief`, `channel-deep-dive`, `subscription-follow`, `podcast-digest`, `mixed-source-debate`. A starter names only sources that need no credential, so every install can run it as it comes.
+The caller's templates A→Z, then the built-ins A→Z. The seven starters (S-8.6.2, S-8.6.4) have stable `builtin_key`s: `topic-scan`, `deep-dive`, `quick-brief`, `channel-deep-dive`, `subscription-follow`, `podcast-digest`, `mixed-source-debate`. A starter names only sources that need no search credential. Reading a podcast can need more: an episode with no published transcript goes to Whisper after approval, so a template that reads podcasts lists a `problems` entry on an install with no `OPENAI_API_KEY`, with `WHISPER_MAX_PER_JOB=0`, or without ffmpeg (long episodes are split for Whisper).
 
 ### `POST /api/v1/job-templates`
 Body `{ "name", "description"?, "parameters" }`. 201.

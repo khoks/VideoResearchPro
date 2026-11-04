@@ -105,6 +105,9 @@ def problems_for(params: TemplateParameters, user: User) -> list[str]:
                 f"Searches {', '.join(unavailable)}, which this install has not "
                 "set up. Remove it after loading."
             )
+        gap = job_source_types.transcription_gap(params.source_types or [])
+        if gap:
+            problems.append(gap)
     return problems
 
 

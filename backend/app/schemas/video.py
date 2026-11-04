@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from app.schemas.language_mix import LanguageMixView
+
 
 class VideoResponse(BaseModel):
     """API response for a video.
@@ -43,6 +45,8 @@ class VideoResponse(BaseModel):
     transcript_word_count: int | None = None
     transcript_language: str | None = None
     transcript_source: str | None = None
+    # T-1.16.1.7: the measured language mix (null until profiled).
+    language_mix: LanguageMixView | None = None
 
     embedded_in_chroma: bool = False
 

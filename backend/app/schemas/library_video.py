@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.schemas.language_mix import LanguageMixView
 from app.schemas.tag import TagSummary
 
 
@@ -40,6 +41,9 @@ class LibraryVideoResponse(BaseModel):
     transcript_status: str
     transcript_language: str | None = None
     transcript_word_count: int | None = None
+    # T-1.16.1.7: the measured language mix; `transcript_language` is the
+    # caption track's label, which reads `en` for romanised Hinglish.
+    language_mix: LanguageMixView | None = None
 
     job_count: int = 0
     job_titles: list[str] = []

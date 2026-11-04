@@ -42,7 +42,7 @@ from app.database import SessionLocal  # noqa: E402
 from app.models.document import Document  # noqa: E402
 from app.models.job import Job  # noqa: E402
 from app.models.job_video import JobVideo  # noqa: E402
-from app.services import chroma_service  # noqa: E402
+from app.services import chroma_service, language_mix_service  # noqa: E402
 from app.sources import connector_for  # noqa: E402
 from app.sources.types import Candidate  # noqa: E402
 from app.tasks.job_tasks import _build_video_metadata, _record_caption_track  # noqa: E402
@@ -123,11 +123,13 @@ def main(argv: list[str] | None = None) -> int:
                 doc.transcript_source = extracted.text_source
             _record_caption_track(doc, extracted)
 
+            language_profile = language_mix_service.ensure(doc, extracted.segments)
             chunks = chunk_transcript(
                 extracted.segments,
                 chunk_size=settings.CHUNK_SIZE,
                 chunk_overlap=settings.CHUNK_OVERLAP,
                 video_metadata=_build_video_metadata(doc, extracted.language),
+                language_profile=language_profile,
             )
             chroma_service.insert_chunks(chunks)
             if hasattr(doc, "embedded_in_chroma"):

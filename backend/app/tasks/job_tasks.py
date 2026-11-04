@@ -12,7 +12,14 @@ from app.models.job import Job
 from app.models.job_video import JobVideo
 from app.models.transcript_cache import TranscriptCache
 from app.models.document import Document
-from app.services import chroma_service, progress_service, temporal_service, usage_service, youtube_service
+from app.services import (
+    chroma_service,
+    language_mix_service,
+    progress_service,
+    temporal_service,
+    usage_service,
+    youtube_service,
+)
 from app.sources import connector_for
 from app.sources.types import Candidate, SourceMetadata
 from app.tasks.celery_app import celery_app
@@ -1334,12 +1341,14 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 cached = _load_cached_segments(video.video_id, video.document_id)
                 if cached is not None:
                     segments, cached_language = cached
+                    language_profile = language_mix_service.ensure(video, segments)
                     _ensure_era(db, video, segments, job_id)
                     chunks = chunk_transcript(
                         _with_visuals(db, job, video, segments, visual_budget, job_id),
                         chunk_size=settings.CHUNK_SIZE,
                         chunk_overlap=settings.CHUNK_OVERLAP,
                         video_metadata=_build_video_metadata(video, cached_language),
+                        language_profile=language_profile,
                     )
                     all_chunks.extend(chunks)
                     reused_count += 1
@@ -1366,12 +1375,14 @@ def resume_job_after_approval(self, job_id: str) -> None:
                 cached = _load_cached_segments(video.video_id, video.document_id)
                 if cached is not None:
                     segments, cached_language = cached
+                    language_profile = language_mix_service.ensure(video, segments)
                     _ensure_era(db, video, segments, job_id)
                     chunks = chunk_transcript(
                         _with_visuals(db, job, video, segments, visual_budget, job_id),
                         chunk_size=settings.CHUNK_SIZE,
                         chunk_overlap=settings.CHUNK_OVERLAP,
                         video_metadata=_build_video_metadata(video, cached_language),
+                        language_profile=language_profile,
                     )
                     all_chunks.extend(chunks)
                     new_chunks.extend(chunks)
@@ -1444,12 +1455,14 @@ def resume_job_after_approval(self, job_id: str) -> None:
                         video.transcript_source = extracted.text_source
                     _record_caption_track(video, extracted)
 
+                    language_profile = language_mix_service.ensure(video, transcript)
                     _ensure_era(db, video, transcript, job_id)
                     chunks = chunk_transcript(
                         _with_visuals(db, job, video, transcript, visual_budget, job_id),
                         chunk_size=settings.CHUNK_SIZE,
                         chunk_overlap=settings.CHUNK_OVERLAP,
                         video_metadata=_build_video_metadata(video, actual_language),
+                        language_profile=language_profile,
                     )
                     all_chunks.extend(chunks)
                     new_chunks.extend(chunks)
@@ -1695,12 +1708,14 @@ def _run_extraction_and_rag(self, db, job) -> None:
             cached = _load_cached_segments(video.video_id)
             if cached is not None:
                 segments, cached_language = cached
+                language_profile = language_mix_service.ensure(video, segments)
                 _ensure_era(db, video, segments, job_id)
                 chunks = chunk_transcript(
                     _with_visuals(db, job, video, segments, visual_budget, job_id),
                     chunk_size=settings.CHUNK_SIZE,
                     chunk_overlap=settings.CHUNK_OVERLAP,
                     video_metadata=_build_video_metadata(video, cached_language),
+                    language_profile=language_profile,
                 )
                 all_chunks.extend(chunks)
                 reused_count += 1
@@ -1717,12 +1732,14 @@ def _run_extraction_and_rag(self, db, job) -> None:
             cached = _load_cached_segments(video.video_id)
             if cached is not None:
                 segments, cached_language = cached
+                language_profile = language_mix_service.ensure(video, segments)
                 _ensure_era(db, video, segments, job_id)
                 chunks = chunk_transcript(
                     _with_visuals(db, job, video, segments, visual_budget, job_id),
                     chunk_size=settings.CHUNK_SIZE,
                     chunk_overlap=settings.CHUNK_OVERLAP,
                     video_metadata=_build_video_metadata(video, cached_language),
+                    language_profile=language_profile,
                 )
                 all_chunks.extend(chunks)
                 new_chunks.extend(chunks)
@@ -1769,12 +1786,14 @@ def _run_extraction_and_rag(self, db, job) -> None:
                     video.transcript_source = extracted.text_source
                 _record_caption_track(video, extracted)
 
+                language_profile = language_mix_service.ensure(video, transcript)
                 _ensure_era(db, video, transcript, job_id)
                 chunks = chunk_transcript(
                     _with_visuals(db, job, video, transcript, visual_budget, job_id),
                     chunk_size=settings.CHUNK_SIZE,
                     chunk_overlap=settings.CHUNK_OVERLAP,
                     video_metadata=_build_video_metadata(video, actual_language),
+                    language_profile=language_profile,
                 )
                 all_chunks.extend(chunks)
                 new_chunks.extend(chunks)

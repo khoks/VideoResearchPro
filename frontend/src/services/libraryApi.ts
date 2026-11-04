@@ -1,6 +1,7 @@
 import type { AxiosProgressEvent } from 'axios';
 import api from './api';
 import { openApiFile } from './apiFiles';
+import type { LanguageMix } from '../types/video';
 import type { TagSummary } from './tagsApi';
 
 export type TranscriptStatus = 'fetched' | 'pending' | 'unavailable';
@@ -27,6 +28,8 @@ export interface LibraryVideoResponse {
   transcript_status: TranscriptStatus | string;
   transcript_language: string | null;
   transcript_word_count: number | null;
+  /** The measured language mix (T-1.16.1.7); null until profiled. */
+  language_mix?: LanguageMix | null;
   job_count: number;
   job_titles: string[];
   /** The caller's own tags on this document, A→Z (S-8.1.3). */

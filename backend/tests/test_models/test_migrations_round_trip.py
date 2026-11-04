@@ -153,3 +153,18 @@ def test_library_qa_scope_column_round_trip(tmp_path):
     assert "scope_json" not in _columns(url, "library_qa_exchanges")
     command.upgrade(cfg, "head")
     assert "scope_json" in _columns(url, "library_qa_exchanges")
+
+
+def test_documents_language_mix_round_trip(tmp_path):
+    """T-1.16.1.7 adds a column, not a table, so it gets its own check."""
+    url = "sqlite:///" + (tmp_path / "round_trip.db").as_posix()
+    cfg = _alembic_config()
+    cfg.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(cfg, "head")
+    assert "language_mix" in _columns(url, "documents")
+    below = ScriptDirectory.from_config(cfg).get_revision("0253eef57358").down_revision
+    command.downgrade(cfg, below)
+    assert "language_mix" not in _columns(url, "documents")
+    command.upgrade(cfg, "head")
+    assert "language_mix" in _columns(url, "documents")

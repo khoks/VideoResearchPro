@@ -6,6 +6,7 @@ export interface UsageAmounts {
   llm_tokens_out: number;
   llm_calls: number;
   youtube_units: number;
+  whisper_seconds: number;
 }
 
 export interface UsageFeatureRow {
@@ -37,6 +38,11 @@ export function formatCount(n: number): string {
   return n < 1000 ? String(n) : compact.format(n);
 }
 
+/** 45 → "45 sec", 90 → "1.5 min", 5_400 → "90 min". */
+export function formatAudio(seconds: number): string {
+  return seconds < 60 ? `${seconds} sec` : `${compact.format(seconds / 60)} min`;
+}
+
 /** The lines a usage cell shows; empty when nothing was used. */
 export function usageLines(a: UsageAmounts): string[] {
   const lines: string[] = [];
@@ -45,5 +51,6 @@ export function usageLines(a: UsageAmounts): string[] {
   }
   if (a.llm_calls) lines.push(`${formatCount(a.llm_calls)} model call${a.llm_calls === 1 ? '' : 's'}`);
   if (a.youtube_units) lines.push(`${formatCount(a.youtube_units)} YouTube unit${a.youtube_units === 1 ? '' : 's'}`);
+  if (a.whisper_seconds) lines.push(`${formatAudio(a.whisper_seconds)} of audio transcribed`);
   return lines;
 }

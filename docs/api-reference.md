@@ -258,25 +258,31 @@ The signed-in user's own usage (E-5.2), by feature, today and over the last 30 d
     {
       "feature": "report",
       "label": "Reports",
-      "today":        { "llm_tokens_in": 412300, "llm_tokens_out": 51000, "llm_calls": 37, "youtube_units": 0 },
-      "last_30_days": { "llm_tokens_in": 412300, "llm_tokens_out": 51000, "llm_calls": 37, "youtube_units": 0 }
+      "today":        { "llm_tokens_in": 412300, "llm_tokens_out": 51000, "llm_calls": 37, "youtube_units": 0, "whisper_seconds": 0 },
+      "last_30_days": { "llm_tokens_in": 412300, "llm_tokens_out": 51000, "llm_calls": 37, "youtube_units": 0, "whisper_seconds": 0 }
     },
     {
       "feature": "search",
       "label": "Topic search",
-      "today":        { "llm_tokens_in": 1200, "llm_tokens_out": 300, "llm_calls": 2, "youtube_units": 0 },
-      "last_30_days": { "llm_tokens_in": 1200, "llm_tokens_out": 300, "llm_calls": 2, "youtube_units": 0 }
+      "today":        { "llm_tokens_in": 1200, "llm_tokens_out": 300, "llm_calls": 2, "youtube_units": 0, "whisper_seconds": 0 },
+      "last_30_days": { "llm_tokens_in": 1200, "llm_tokens_out": 300, "llm_calls": 2, "youtube_units": 0, "whisper_seconds": 0 }
     },
     {
       "feature": "youtube_search",
       "label": "Searches (YouTube)",
-      "today":        { "llm_tokens_in": 0, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 200 },
-      "last_30_days": { "llm_tokens_in": 0, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 200 }
+      "today":        { "llm_tokens_in": 0, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 200, "whisper_seconds": 0 },
+      "last_30_days": { "llm_tokens_in": 0, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 200, "whisper_seconds": 0 }
+    },
+    {
+      "feature": "ingest",
+      "label": "Reading sources",
+      "today":        { "llm_tokens_in": 0, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 0, "whisper_seconds": 1830 },
+      "last_30_days": { "llm_tokens_in": 0, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 0, "whisper_seconds": 1830 }
     }
   ],
   "totals": {
-    "today":        { "llm_tokens_in": 413500, "llm_tokens_out": 51300, "llm_calls": 39, "youtube_units": 200 },
-    "last_30_days": { "llm_tokens_in": 413500, "llm_tokens_out": 51300, "llm_calls": 39, "youtube_units": 200 }
+    "today":        { "llm_tokens_in": 413500, "llm_tokens_out": 51300, "llm_calls": 39, "youtube_units": 200, "whisper_seconds": 1830 },
+    "last_30_days": { "llm_tokens_in": 413500, "llm_tokens_out": 51300, "llm_calls": 39, "youtube_units": 200, "whisper_seconds": 1830 }
   }
 }
 ```

@@ -51,9 +51,11 @@ spent. Metering never raises into the work it measures.
 **Part-way through long work.** A worker that dies never reaches the close,
 so an open scope also writes what it has counted so far, at most once every
 ``USAGE_FLUSH_INTERVAL_SECONDS`` (``checkpoint``). It tries after every model
-call and wherever a long loop calls ``checkpoint()``, which is how YouTube
-units and Whisper seconds get written in a run with no model calls. It keeps
-the rules above: its own session, and while the caller's transaction has
+call and every Whisper response (the chunks of a split recording are billed
+minutes apart inside one iteration of the caller's loop), and wherever a long
+loop calls ``checkpoint()``, which is how YouTube units get written in a run
+with no model calls, and what a try was too early for or had to leave. It
+keeps the rules above: its own session, and while the caller's transaction has
 written it leaves the amounts where they are for a later checkpoint or the
 close. Each amount leaves the ledger before it is written and goes back only
 when that write rolled back, so a checkpoint and the close never write the
@@ -409,6 +411,7 @@ def record_whisper(seconds: float) -> None:
         return
     try:
         scope.add_whisper(seconds)
+        _checkpoint(scope)
     except Exception:  # noqa: BLE001
         logger.exception("usage: could not count Whisper audio")
 

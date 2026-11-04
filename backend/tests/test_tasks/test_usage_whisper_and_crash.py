@@ -9,8 +9,8 @@ after emptying the ledger, which is what a dead process leaves behind. Its
 meter's close finds nothing to write, and ``db.close()`` rolls back what the
 dead process had not committed.
 
-Mutation checks, pinned below: with ``checkpoint`` a no-op a killed sync leaves
-nothing (``test_mutation_a_sync_without_its_checkpoints_loses_the_killed_run``),
+Mutation checks, pinned below: with ``checkpoint`` a no-op a killed run leaves
+nothing (``test_mutation_a_loop_without_its_checkpoint_loses_the_killed_run``),
 and with no try after a model call a killed report leaves nothing
 (``test_mutation_a_model_call_that_tries_no_checkpoint_loses_the_report``).
 """
@@ -71,6 +71,25 @@ def _fake_download(video_id, tmpdir, tag, prefer_smallest=False):
     with open(path, "wb") as f:
         f.write(b"fake audio bytes")
     return path
+
+
+def _split_into(monkeypatch, tmp_path, count: int, step: float = 285.0) -> None:
+    """Every download is over the upload limit and splits into ``count`` chunks."""
+    chunks = [tmp_path / f"chunk{i}.m4a" for i in range(count)]
+    for c in chunks:
+        c.write_bytes(b"x")
+    monkeypatch.setattr(youtube_service, "WHISPER_MAX_FILE_BYTES", 4)
+    monkeypatch.setattr(youtube_service, "_split_audio_for_whisper",
+                        lambda path, tmpdir, tag: [(str(c), i * step) for i, c in enumerate(chunks)])
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    """Moves only when a test moves it, so a try lands where the test puts it
+    and pool threads never write at once on the suite's one connection."""
+    time = SimpleNamespace(now=1000.0)
+    monkeypatch.setattr(usage_service, "_clock", lambda: time.now)
+    return time
 
 
 @pytest.fixture
@@ -139,12 +158,7 @@ def test_a_sync_charges_its_whisper_fallback_to_the_subscriber(no_captions, db, 
 def test_a_split_recording_is_charged_per_chunk_overlap_included(no_captions, db, whisper_api, monkeypatch, tmp_path):
     """The overlap between chunks is sent twice, so it is billed twice."""
     owner = _owner(db)
-    chunks = [tmp_path / f"chunk{i}.m4a" for i in range(3)]
-    for c in chunks:
-        c.write_bytes(b"x")
-    monkeypatch.setattr(youtube_service, "WHISPER_MAX_FILE_BYTES", 4)
-    monkeypatch.setattr(youtube_service, "_split_audio_for_whisper",
-                        lambda path, tmpdir, tag: [(str(c), i * 285.0) for i, c in enumerate(chunks)])
+    _split_into(monkeypatch, tmp_path, 3)
     whisper_api.seconds = 300.0
 
     with usage_service.metered(db, owner.id):
@@ -156,12 +170,7 @@ def test_a_split_recording_is_charged_per_chunk_overlap_included(no_captions, db
 
 def test_a_chunk_that_fails_leaves_the_chunks_already_billed_on_the_record(no_captions, db, whisper_api, monkeypatch, tmp_path):
     owner = _owner(db)
-    chunks = [tmp_path / f"chunk{i}.m4a" for i in range(3)]
-    for c in chunks:
-        c.write_bytes(b"x")
-    monkeypatch.setattr(youtube_service, "WHISPER_MAX_FILE_BYTES", 4)
-    monkeypatch.setattr(youtube_service, "_split_audio_for_whisper",
-                        lambda path, tmpdir, tag: [(str(c), 0.0) for c in chunks])
+    _split_into(monkeypatch, tmp_path, 3, step=0.0)
 
     def fail_second(api):
         if api.sent == 1:
@@ -214,22 +223,6 @@ def test_a_run_past_its_whisper_budget_records_no_audio(no_captions, db, whisper
     assert usage_rows(db, owner.id) == {}
 
 
-def test_podcast_audio_is_charged_as_reading_a_source(db, whisper_api, monkeypatch):
-    from app.sources.podcast import connector
-
-    owner = _owner(db)
-    monkeypatch.setattr(connector.settings, "OPENAI_API_KEY", "sk-test")
-    monkeypatch.setattr(connector.podcast_client, "get_client",
-                        lambda: SimpleNamespace(fetch_audio=lambda url: b"mp3 bytes"))
-    whisper_api.seconds = 1800.0
-
-    with usage_service.metered(db, owner.id):
-        connector._whisper_transcribe_audio("https://example.com/ep.mp3", "ep-1", "j")
-
-    assert whisper_api.sent == 1
-    assert usage_rows(db, owner.id) == {WHISPER: 1800}
-
-
 # ---------------------------------------------------------------- a dying worker
 
 
@@ -277,20 +270,32 @@ def test_a_sync_killed_on_its_first_video_keeps_the_walks_youtube_units(
     assert _units(rows) == _logged_units(db) > 0
 
 
-def test_mutation_a_sync_without_its_checkpoints_loses_the_killed_run(
-    no_captions, db, youtube_network, whisper_api, flush_always_due, monkeypatch
+def test_a_split_recording_keeps_its_billed_chunks_when_the_worker_dies_inside_it(
+    no_captions, db, youtube_network, whisper_api, flush_always_due, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(usage_service, "checkpoint", lambda: False)
+    """A long upload is one iteration of the loop and has no model call in it,
+    so the try after each response is all that stands between the chunks
+    already billed and a dead worker."""
     owner = _owner(db)
     job = _sync_job(db, owner)
-    youtube_network.responses = _channel_responses(["vLost000001", "vLost000002"])
-    whisper_api.before_send = _die_at_request(2)
+    youtube_network.responses = _channel_responses(["vSplit00001"])
+    _split_into(monkeypatch, tmp_path, 4)
+    whisper_api.before_send = _die_at_request(3)
 
     _run_until_killed(monkeypatch, lambda: _run_sync(job))
 
-    assert whisper_api.sent == 1
-    assert usage_rows(db, owner.id) == {}
-    assert _logged_units(db) > 0, "the install-wide log does not depend on the meter"
+    assert whisper_api.sent == 2
+    assert usage_rows(db, owner.id)[WHISPER] == 120, "the billed chunks went with the worker"
+
+    # The transcript was never cached, so the redelivery sends all four again
+    # and pays for them again.
+    whisper_api.before_send = None
+    _run_sync(job)
+
+    db.expire_all()
+    assert db.get(Job, job.id).status == "completed"
+    assert whisper_api.sent == 6
+    assert usage_rows(db, owner.id)[WHISPER] == 360, "either attempt's bill is missing"
 
 
 def test_flushing_all_the_way_records_what_writing_at_the_end_records(
@@ -327,6 +332,38 @@ def _approved_job(db, owner, video_ids):
     return job
 
 
+def test_a_job_charges_podcast_audio_to_its_owner_as_reading_a_source(no_captions, db, whisper_api, monkeypatch):
+    """The third Whisper path, at its caller: the task's own scope is what
+    catches an episode, ``fetch_text`` opens none."""
+    from app.sources.podcast import connector
+
+    owner = _owner(db)
+    feed_url = "https://example.com/feed.xml"
+    entry = {"id": "ep-1", "title": "Tariffs", "enclosures": [{"href": "https://example.com/ep.mp3"}]}
+    monkeypatch.setattr(connector.settings, "OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(connector.podcast_client, "get_client", lambda: SimpleNamespace(
+        fetch_feed=lambda url: {"feed": {}, "entries": [entry] if url == feed_url else []},
+        fetch_audio=lambda url: b"mp3 bytes",
+    ))
+    whisper_api.seconds = 1800.0
+    doc = Document(source_type="podcast_episode", source_id="podcast:ep-1", title="Tariffs",
+                   url="https://example.com/ep", channel_id=feed_url)
+    job = Job(job_type="topic", topic="tariffs", num_videos=1, status="awaiting_approval", tenant_id=owner.id)
+    db.add_all([doc, job])
+    db.flush()
+    db.add(JobVideo(job_id=job.id, document_id=doc.document_id, approved=True))
+    db.commit()
+
+    _run_resume(job)
+
+    db.expire_all()
+    assert db.get(Job, job.id).status == "completed"
+    assert db.get(Document, doc.document_id).transcript_source == "podcast_whisper"
+    assert whisper_api.sent == 1
+    assert usage_rows(db, owner.id) == {WHISPER: 1800}
+    assert tenants_with_usage(db) == {owner.id}
+
+
 def _run_resume(job, report=None) -> None:
     with (
         patch.object(job_tasks, "chroma_service") as chroma,
@@ -358,6 +395,50 @@ def test_a_job_killed_during_extraction_keeps_what_it_flushed_and_its_redelivery
     assert usage_rows(db, owner.id) == {WHISPER: 180}
 
 
+def _sync_of(db, owner, youtube_network, video_ids):
+    youtube_network.responses = _channel_responses(video_ids)
+    return _sync_job(db, owner), _run_sync
+
+
+def _approved_job_of(db, owner, youtube_network, video_ids):
+    return _approved_job(db, owner, video_ids), _run_resume
+
+
+LOOPS = pytest.mark.parametrize("loop", [_sync_of, _approved_job_of], ids=["sync", "approved_job"])
+
+
+def _killed_with_the_interval_passing_after_the_audio(loop, db, youtube_network, whisper_api, clock, monkeypatch):
+    """The first video's audio comes back too soon for a write, the rest of its
+    iteration takes longer than the interval, and the worker dies in the second
+    video's request. Only the loop's own checkpoint can have written the first."""
+    owner = _owner(db)
+    job, run = loop(db, owner, youtube_network, ["vLoop000001", "vLoop000002"])
+    monkeypatch.setattr(job_tasks, "_ensure_era", lambda *a, **k: setattr(clock, "now", clock.now + 3600))
+    whisper_api.before_send = _die_at_request(2)
+
+    _run_until_killed(monkeypatch, lambda: run(job))
+
+    assert whisper_api.sent == 1
+    return owner
+
+
+@LOOPS
+def test_a_loop_writes_at_the_end_of_a_video_what_the_response_was_too_early_for(
+    loop, no_captions, db, youtube_network, whisper_api, clock, monkeypatch
+):
+    owner = _killed_with_the_interval_passing_after_the_audio(loop, db, youtube_network, whisper_api, clock, monkeypatch)
+    assert usage_rows(db, owner.id)[WHISPER] == 60
+
+
+@LOOPS
+def test_mutation_a_loop_without_its_checkpoint_loses_the_killed_run(
+    loop, no_captions, db, youtube_network, whisper_api, clock, monkeypatch
+):
+    monkeypatch.setattr(usage_service, "checkpoint", lambda: False)
+    owner = _killed_with_the_interval_passing_after_the_audio(loop, db, youtube_network, whisper_api, clock, monkeypatch)
+    assert usage_rows(db, owner.id) == {}
+
+
 def _report_job(db, owner):
     doc = Document(video_id="vRepKill001", source_id="vRepKill001", title="Tariffs",
                    url="https://www.youtube.com/watch?v=vRepKill001", transcript_status="fetched")
@@ -369,15 +450,6 @@ def _report_job(db, owner):
                            segments_json=json.dumps([{"text": "Tariffs are taxes.", "start": 0.0, "duration": 3.0}])))
     db.commit()
     return job
-
-
-@pytest.fixture
-def report_clock(monkeypatch):
-    """Still during the map batches, so pool threads never write at once on
-    the suite's one connection; the stand-in moves it on after them."""
-    time = SimpleNamespace(now=1000.0)
-    monkeypatch.setattr(usage_service, "_clock", lambda: time.now)
-    return time
 
 
 def _report_that_dies(clock):
@@ -392,14 +464,14 @@ def _report_that_dies(clock):
 
 
 def test_a_worker_killed_during_a_report_keeps_the_model_calls_it_had_made(
-    no_captions, db, metered_llms, report_clock, monkeypatch
+    no_captions, db, metered_llms, clock, monkeypatch
 ):
     """The report has no loop of the task's: the meter's own try after each
     model call is what saves the map phase, the most expensive part of a job."""
     owner = _owner(db)
     job = _report_job(db, owner)
 
-    _run_until_killed(monkeypatch, lambda: _run_resume(job, _report_that_dies(report_clock)))
+    _run_until_killed(monkeypatch, lambda: _run_resume(job, _report_that_dies(clock)))
 
     assert usage_rows(db, owner.id) == {
         ("report", "llm_calls"): 4, ("report", "llm_tokens_in"): 400, ("report", "llm_tokens_out"): 80,
@@ -407,12 +479,12 @@ def test_a_worker_killed_during_a_report_keeps_the_model_calls_it_had_made(
 
 
 def test_mutation_a_model_call_that_tries_no_checkpoint_loses_the_report(
-    no_captions, db, metered_llms, report_clock, monkeypatch
+    no_captions, db, metered_llms, clock, monkeypatch
 ):
     monkeypatch.setattr(usage_service, "_checkpoint", lambda scope: False)
     owner = _owner(db)
     job = _report_job(db, owner)
 
-    _run_until_killed(monkeypatch, lambda: _run_resume(job, _report_that_dies(report_clock)))
+    _run_until_killed(monkeypatch, lambda: _run_resume(job, _report_that_dies(clock)))
 
     assert usage_rows(db, owner.id) == {}

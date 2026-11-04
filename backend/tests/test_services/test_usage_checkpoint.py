@@ -178,6 +178,28 @@ def test_a_checkpoint_waits_for_a_flushed_write_and_never_commits_it(db, test_us
     assert usage_rows(db, test_user.id) == _three("echo_draft"), "written once the transaction ended"
 
 
+def test_every_whisper_response_tries_a_checkpoint(db, test_user, flush_always_due):
+    """The chunks of a split recording are billed minutes apart, inside one
+    iteration of the caller's loop and with no model call among them."""
+    with usage_service.metered(db, test_user.id):
+        usage_service.record_whisper(30.0)
+        assert usage_rows(db, test_user.id) == {("ingest", "whisper_seconds"): 30}
+        usage_service.record_whisper(30.0)
+        assert usage_rows(db, test_user.id) == {("ingest", "whisper_seconds"): 60}
+    assert usage_rows(db, test_user.id) == {("ingest", "whisper_seconds"): 60}
+
+
+def test_a_whisper_try_waits_for_a_flushed_write_and_never_commits_it(db, test_user, flush_always_due):
+    with usage_service.metered(db, test_user.id):
+        db.add(_job(test_user.id))
+        db.flush()
+        usage_service.record_whisper(30.0)
+        assert usage_rows(db, test_user.id) == {}, "wrote into the caller's open transaction"
+    db.rollback()
+    assert _jobs(db) == 0, "the meter committed the caller's flushed work"
+    assert usage_rows(db, test_user.id) == {("ingest", "whisper_seconds"): 30}, "written once the transaction ended"
+
+
 def test_a_try_that_had_to_wait_does_not_use_up_the_interval(db, test_user, metered_llms, clock):
     """A sync's model call can land mid-iteration on a flushed session, every
     time. If that try restarted the interval, the clean checkpoint at the end

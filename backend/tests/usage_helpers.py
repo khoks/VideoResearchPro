@@ -144,6 +144,13 @@ class FakeRedis:
         return self.counts.get(key)
 
 
+class _WhisperSegment(SimpleNamespace):
+    """A pydantic model in the SDK: read by attribute, and by ``model_dump``."""
+
+    def model_dump(self) -> dict:
+        return dict(vars(self))
+
+
 class FakeWhisperApi:
     """The OpenAI client below ``_whisper_transcribe_with_retry``, so that
     function, the meter behind it and every caller above it are production
@@ -162,7 +169,7 @@ class FakeWhisperApi:
         if self.before_send is not None:
             self.before_send(self)
         self.sent += 1
-        segment = SimpleNamespace(text=f"spoken words {self.sent}", start=0.0, end=self.seconds)
+        segment = _WhisperSegment(text=f"spoken words {self.sent}", start=0.0, end=self.seconds)
         return SimpleNamespace(language="en", duration=self.seconds, segments=[segment])
 
 

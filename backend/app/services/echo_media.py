@@ -351,23 +351,27 @@ def _http_client(**kwargs):
     return httpx.Client(**kwargs)
 
 
-def _public_address(url: str) -> None:
+def require_public_address(url: str) -> None:
     """Refuse a URL whose host resolves to a private, loopback, link-local or
     otherwise non-public address, so a share cannot make the server fetch from
-    its own network. ``ECHO_FETCH_ALLOW_PRIVATE`` lifts this for a self-hosted
-    install whose images live on the LAN."""
+    its own network. Used for images and pages shared by their address.
+    ``ECHO_FETCH_ALLOW_PRIVATE`` lifts this for a self-hosted install whose
+    pages or images live on the LAN.
+
+    It checks what the name resolves to now, and the fetch resolves it again,
+    so a host that changes its answer between the two is not stopped."""
     import ipaddress
     from urllib.parse import urlsplit
 
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.hostname:
-        raise MediaError("Only http(s) image addresses can be fetched.")
+        raise MediaError("Only http(s) addresses can be fetched.")
     if settings.ECHO_FETCH_ALLOW_PRIVATE:
         return
     try:
         infos = _getaddrinfo(parts.hostname, parts.port or (443 if parts.scheme == "https" else 80))
     except OSError as e:
-        raise MediaError("The image's host could not be found.") from e
+        raise MediaError("That address's host could not be found.") from e
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
         if not ip.is_global or ip.is_multicast:
@@ -382,7 +386,7 @@ def fetch_image(url: str, dest_dir: Path, stem: str) -> tuple[Path, str]:
     current = url
     with _http_client(timeout=settings.ECHO_FETCH_TIMEOUT_SEC, follow_redirects=False) as client:
         for _ in range(_MAX_REDIRECTS + 1):
-            _public_address(current)
+            require_public_address(current)
             with client.stream("GET", current, headers={"User-Agent": "Pratidhvani-Echo/1"}) as resp:
                 if resp.is_redirect:
                     location = resp.headers.get("location")

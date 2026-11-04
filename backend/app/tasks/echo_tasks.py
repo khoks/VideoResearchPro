@@ -7,13 +7,16 @@
   (S-3.3.2), queued by ``echo_signal_extraction.maybe_queue``.
 - ``echo.generate_voice_test`` — write the pairs of a voice test the user
   started on the Echo page (T-3.4.1.8): about 40 draft-model calls.
+- ``echo.poll_imap`` — one poll of the email inbox (T-3.7.4.1). The scheduler
+  tick dispatches it for the ``echo_imap`` row; registering the kind here is
+  what lets a worker dispatch it (D-077).
 """
 from __future__ import annotations
 
 import logging
 
 from app.database import SessionLocal
-from app.services import echo_processing_service
+from app.services import echo_imap_service, echo_processing_service, scheduler_service
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -57,6 +60,23 @@ def extract_signals_task(tenant_id: str) -> dict:
         return echo_signal_extraction.run(db, tenant_id).to_dict()
     finally:
         db.close()
+
+
+POLL_IMAP_TASK = "echo.poll_imap"
+
+
+@celery_app.task(name=POLL_IMAP_TASK, ignore_result=True)
+def poll_imap_task(target_id: str, scheduled_run_id: str | None = None) -> str:
+    """One poll. Fail-soft: a mailbox that cannot be reached logs and waits
+    for the next tick."""
+    db = SessionLocal()
+    try:
+        return echo_imap_service.poll(db).status
+    finally:
+        db.close()
+
+
+scheduler_service.register_kind(echo_imap_service.KIND, poll_imap_task)
 
 
 GENERATE_VOICE_TEST_TASK = "echo.generate_voice_test"

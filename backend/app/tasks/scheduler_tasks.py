@@ -17,6 +17,10 @@ Kinds register from the task module that defines their task, e.g.::
 Celery's ``autodiscover_tasks`` must import that module (see
 ``celery_app.py``) or this worker reports the kind as ``no_handler``.
 
+A row usually comes from something a user did. The email inbox's comes from
+settings, which no request ever touches, so the tick keeps that one row in
+step before it reads the table (``echo_imap_service.sync_schedule``).
+
 Run exactly one beat process: ``scripts/start.ps1`` and
 ``scripts/restart_services.ps1`` do. A second beat doubles the tick load;
 the row lease keeps it from double-dispatching, but it is still wrong.
@@ -27,7 +31,7 @@ import logging
 
 from app.config import settings
 from app.database import SessionLocal
-from app.services import scheduler_service
+from app.services import echo_imap_service, scheduler_service
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -44,6 +48,11 @@ def scheduler_tick() -> dict:
 
     db = SessionLocal()
     try:
+        try:
+            echo_imap_service.sync_schedule(db)
+        except Exception:  # noqa: BLE001 — never a reason to skip every other row
+            db.rollback()
+            logger.exception("scheduler: could not sync the email inbox's row; the tick goes on")
         return scheduler_service.run_tick(db)
     finally:
         db.close()

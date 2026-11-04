@@ -107,6 +107,23 @@ def test_imports_table_and_share_columns_round_trip(migrated):
     command.upgrade(cfg, "head")
 
 
+def test_email_messages_table_round_trips(migrated):
+    """c62da1d081c6 (T-3.7.4.1): one ledger row per (tenant, message)."""
+    cfg, eng = migrated
+    command.upgrade(cfg, "c62da1d081c6")
+    insert = (
+        "INSERT INTO echo_email_messages (id, tenant_id, message_key, created_at) "
+        "VALUES (:id, 't', 'k', CURRENT_TIMESTAMP)"
+    )
+    _exec(eng, insert, id="a")
+    with pytest.raises(IntegrityError):
+        _exec(eng, insert, id="b")
+    command.downgrade(cfg, "927718ee5b78")
+    assert "echo_email_messages" not in inspect(eng).get_table_names()
+    command.upgrade(cfg, "head")
+    assert "echo_email_messages" in inspect(eng).get_table_names()
+
+
 def test_share_tokens_table_round_trips(migrated):
     """d3bc5b91fcce (S-3.7.3) adds echo_share_tokens with a unique hash, and
     removes it."""

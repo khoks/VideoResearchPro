@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apiOrigin, lastUsedLabel } from '../echoExtension';
+import { apiOrigin, iosShortcutSteps, lastUsedLabel, sharesEndpoint } from '../echoExtension';
 
 describe('apiOrigin', () => {
   it('uses the API host when the base URL is absolute (development)', () => {
@@ -20,5 +20,30 @@ describe('lastUsedLabel', () => {
     expect(lastUsedLabel('2026-10-19T11:15:00Z', now)).toBe('Used 45 minutes ago');
     expect(lastUsedLabel('2026-10-19T11:00:00Z', now)).toBe('Used 1 hour ago');
     expect(lastUsedLabel('2026-10-16T12:00:00Z', now)).toBe('Used 3 days ago');
+  });
+});
+
+describe('sharesEndpoint', () => {
+  it('is absolute whichever way the API is addressed', () => {
+    expect(sharesEndpoint('http://localhost:8000/api/v1', 'http://localhost:5173')).toBe('http://localhost:8000/api/v1/echo/shares');
+    expect(sharesEndpoint('/api/v1/', 'https://app.example')).toBe('https://app.example/api/v1/echo/shares');
+    expect(sharesEndpoint(undefined, 'https://app.example')).toBe('https://app.example/api/v1/echo/shares');
+  });
+});
+
+describe('iosShortcutSteps', () => {
+  const steps = iosShortcutSteps('https://app.example/api/v1/echo/shares');
+
+  it('names the endpoint and the surface in both branches', () => {
+    expect(steps.filter((s) => s.includes('https://app.example/api/v1/echo/shares'))).toHaveLength(2);
+    expect(steps.filter((s) => s.includes('os_share'))).toHaveLength(2);
+    expect(steps.join(' ')).toContain('Show in Share Sheet');
+  });
+
+  it('sends the token in a header, and never claims the words are the user’s', () => {
+    const text = steps.join(' ');
+    expect(text).toContain('a header Authorization');
+    expect(text).not.toMatch(/[?&]token=/);
+    expect(text).not.toContain('author_is_tenant');
   });
 });

@@ -145,6 +145,12 @@ export function processingStateLabel(state: string): string {
   }
 }
 
+/** A mail's attachments are listed on its share and not read. */
+export function attachmentsLabel(attachments: { name: string }[]): string {
+  const names = attachments.map((a) => a.name).join(', ');
+  return `${attachments.length === 1 ? '1 attachment' : `${attachments.length} attachments`} not read: ${names}`;
+}
+
 export function authorshipLabel(authorIsTenant: boolean): { label: string; hint: string } {
   return authorIsTenant
     ? {

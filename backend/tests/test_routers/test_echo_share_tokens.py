@@ -67,6 +67,35 @@ def _make(client, headers, label="Chrome"):
 
 
 # ---------------------------------------------------------------------------
+# The iPhone Shortcut (T-3.7.6.1): the requests docs/echo-share-surfaces.md
+# tells the user to build, exactly, against the production route.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("body", "kind"),
+    [({"url": "https://example.org/essay", "surface": "os_share"}, "url"),
+     ({"text": "A line worth keeping", "surface": "os_share"}, "text")],
+)
+def test_the_documented_shortcut_requests_add_context_only_shares(unauthenticated_client, db, two, body, kind):
+    _, headers = _make(unauthenticated_client, two["ha"], "iPhone Shortcut")
+    r = unauthenticated_client.post(SHARES, json=body, headers=headers)
+    assert r.status_code == 201, r.text
+    item = r.json()
+    assert item["surface"] == "os_share" and item["kind"] == kind
+    assert item["author_is_tenant"] is False, "the Shortcut never claims the words are the user's"
+    assert unauthenticated_client.get(SHARES, headers=headers).status_code == 401, "it can add, never read"
+
+
+def test_the_shortcut_token_stops_when_the_plan_does(unauthenticated_client, db, two):
+    _, headers = _make(unauthenticated_client, two["ha"], "iPhone Shortcut")
+    two["a"].tier = "pro"
+    db.commit()
+    body = {"text": "A line", "surface": "os_share"}
+    assert unauthenticated_client.post(SHARES, json=body, headers=headers).status_code == 403
+
+
+# ---------------------------------------------------------------------------
 # Tokens
 # ---------------------------------------------------------------------------
 

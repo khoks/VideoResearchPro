@@ -347,6 +347,8 @@ Constant-stream intake is what Echo's readiness threshold leans on most heavily 
 
 All surfaces drop into the same `shares_inbox` table. The user can review the inbox periodically (or it auto-flushes after 24h with default categorisation).
 
+*As built:* the Android share sheet (a manifest `share_target` and a service worker scoped to one path), an iPhone Shortcut, and the self-host IMAP mailbox are described, with their limits, in [echo-share-surfaces.md](echo-share-surfaces.md). Mail is context only, always: a From header can be forged. The Android path has the one approval step in this table: any website can post to a share target, so the app shows what arrived and adds it on one tap.
+
 ### Intake content types
 
 Per the user's explicit list, plus the natural extensions:

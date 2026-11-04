@@ -170,6 +170,17 @@ def _derived(db, a, share_ids, value, signal_type="framing"):
     return row
 
 
+def _note(db, a, nid, body=None):
+    """A live note whose text holds the example ``_derived`` writes for it."""
+    from app.models.note import Note
+
+    note = Note(id=nid, tenant_id=a.id, target_type="job", target_id="job-1",
+                body_md=body if body is not None else f"Some context, then example from note:{nid} and more.")
+    db.add(note)
+    db.commit()
+    return note
+
+
 def test_deleting_a_share_withdraws_it_as_evidence(unauthenticated_client, db, two, chroma, tmp_path, monkeypatch):
     from app.config import settings
 
@@ -318,6 +329,7 @@ def test_a_deleted_share_leaves_a_rejection_too_so_restore_cannot_bring_it_back(
     monkeypatch.setattr(settings, "ECHO_SHARES_DIR", str(tmp_path / "shares"))
     a, ha, _, _ = two
     share = echo_intake_service.create_text_share(db, a.id, a.id, text="my own essay", author_is_tenant=True)
+    _note(db, a, "n-2")
     only = _derived(db, a, [f"share:{share.id}"], "Opens with a story")
     both = _derived(db, a, [f"share:{share.id}", "note:n-2"], "Closes with a question")
     for row in (only, both):
@@ -370,3 +382,166 @@ def test_restore_keeps_an_equal_live_signal_and_drops_the_tombstone(unauthentica
     db.expire_all()
     assert db.get(VoiceSignal, sid) is None
     assert [s["id"] for s in unauthenticated_client.get(SIGNALS, headers=ha).json()["items"]] == [other]
+
+
+def test_restore_drops_evidence_a_rejection_kept_from_before_the_fix(
+    unauthenticated_client, db, two, chroma, tmp_path, monkeypatch
+):
+    """Before T-3.3.1.6 a delete left rejected signals alone and dropped the
+    ledger row at once, so no later run cleans them: a rejection made before
+    the deploy can still cite a deleted share (or note, event, question,
+    draft edit) and hold its words. Restoring it must not bring them back,
+    nor words the user has since edited out of a note."""
+    from datetime import datetime
+
+    from app.config import settings
+    from app.models.activity_event import ActivityEvent
+    from app.models.note import Note
+
+    monkeypatch.setattr(settings, "ECHO_SHARES_DIR", str(tmp_path / "shares"))
+    a, ha, _, _ = two
+    _note(db, a, "n-live", "I always start from the base rates, then argue.")
+    _note(db, a, "n-edited", "These days I mostly play go.")
+    _note(db, a, "n-deleted", "words from a note I deleted")
+    db.get(Note, "n-deleted").deleted_at = datetime(2026, 10, 1)
+    kept_share = echo_intake_service.create_text_share(
+        db, a.id, a.id, text="My essay opens with a story about my grandfather.", author_is_tenant=True
+    )
+    deleted_share = echo_intake_service.create_text_share(
+        db, a.id, a.id, text="the essay I deleted, every word of it", author_is_tenant=True
+    )
+    unmarked = echo_intake_service.create_text_share(
+        db, a.id, a.id, text="words I no longer mark as mine", author_is_tenant=True
+    )
+    event = ActivityEvent(
+        tenant_id=a.id, user_id=a.id, connector="github", external_id="c-1", event_type="committed",
+        occurred_at=datetime(2026, 10, 2), payload_json="{}", text_content="Refactor the parser so it reads one pass",
+    )
+    db.add(event)
+    db.commit()
+    live = {
+        "note:n-live": "start from the base rates",
+        f"share:{kept_share.id}": "opens with a story about my grandfather",
+        f"event:{event.id}": "reads one pass",
+    }
+    gone = {
+        "note:n-edited": "chess is my whole life",
+        "note:n-deleted": "words from a note I deleted",
+        f"share:{deleted_share.id}": "the essay I deleted",
+        f"share:{unmarked.id}": "no longer mark as mine",
+        "event:gone-1": "fixed the flaky test again",
+        "qa:gone-q": "why do tariffs always rise",
+        "draft_edit:gone-d": "thanks, I will look tonight",
+    }
+    examples = [{"text": t, "source": ref} for ref, t in {**live, **gone}.items()]
+    row = echo_signal_service.create(
+        db, tenant_id=a.id, user_id=a.id, signal_type="methodology", value="Argues from first principles",
+        origin="llm", weight=10.0, examples=examples,
+    )
+    orphan = echo_signal_service.create(
+        db, tenant_id=a.id, user_id=a.id, signal_type="framing", value="Ends on a confession",
+        origin="llm", weight=1.0, examples=[{"text": "the essay I deleted", "source": f"share:{deleted_share.id}"}],
+    )
+    for sid in (row.id, orphan.id):
+        assert unauthenticated_client.delete(f"{SIGNALS}/{sid}", headers=ha).status_code == 200
+    # The deletes as they ran before the fix: the rows go, the rejections keep
+    # citing them and holding their words.
+    unmarked.author_is_tenant = False
+    deleted_ref = f"share:{deleted_share.id}"
+    db.expunge(deleted_share)
+    db.query(Share).filter(Share.id == deleted_ref.split(":", 1)[1]).delete(synchronize_session=False)
+    db.commit()
+    db.expire_all()
+    assert deleted_ref in db.get(VoiceSignal, row.id).derived_from
+
+    r = unauthenticated_client.post(f"{SIGNALS}/{row.id}/restore", headers=ha)
+    assert r.status_code == 200, r.text
+    signal = r.json()["signal"]
+    assert r.json()["live"] is True
+    assert sorted(signal["derived_from"]) == sorted(live)
+    assert sorted((e["source"], e["text"]) for e in signal["examples"]) == sorted(live.items())
+    assert signal["weight"] == 3.0, "one less per source that left, as a withdrawal counts it"
+    db.expire_all()
+    stored = db.get(VoiceSignal, row.id)
+    for ref, words in gone.items():
+        assert ref not in stored.derived_from and words not in stored.examples_json, ref
+        assert words not in r.text, ref
+    [listed] = unauthenticated_client.get(SIGNALS, headers=ha).json()["items"]
+    assert listed["id"] == row.id and len(listed["examples"]) == len(live)
+
+    # Nothing left: no longer refused, out of the profile, and none of the
+    # deleted share's words kept on the row.
+    r = unauthenticated_client.post(f"{SIGNALS}/{orphan.id}/restore", headers=ha)
+    assert r.status_code == 200 and r.json()["live"] is False
+    assert r.json()["signal"]["examples"] == [] and r.json()["signal"]["derived_from"] == []
+    db.expire_all()
+    assert db.get(VoiceSignal, orphan.id).suppressed_reason == "source_deleted"
+    assert "the essay I deleted" not in db.get(VoiceSignal, orphan.id).examples_json
+
+
+def test_restore_lifts_every_rejection_of_the_same_signal(
+    unauthenticated_client, db, two, chroma, tmp_path, monkeypatch
+):
+    """Rewording one signal into a rejected one's words, then rejecting it
+    too, makes two rejections of one key. Restoring either must lift both,
+    or the twin goes on refusing the restored signal; its evidence is merged
+    in, and a share it cited now withdraws from the restored row."""
+    from app.config import settings
+    from app.services import echo_signal_extraction as extraction
+
+    monkeypatch.setattr(settings, "ECHO_SHARES_DIR", str(tmp_path / "shares"))
+    a, ha, _, _ = two
+    _note(db, a, "n-c")
+    share = echo_intake_service.create_text_share(
+        db, a.id, a.id, text="I keep coming back to the Najdorf.", author_is_tenant=True
+    )
+    first = _derived(db, a, ["note:n-c"], "Chess", signal_type="interest")
+    unauthenticated_client.delete(f"{SIGNALS}/{first.id}", headers=ha)
+    twin = echo_signal_service.create(
+        db, tenant_id=a.id, user_id=a.id, signal_type="interest", value="Go", origin="llm", weight=1.0,
+        examples=[{"text": "coming back to the Najdorf", "source": f"share:{share.id}"}],
+    )
+    extraction.record_on_shares(db, a.id, twin)
+    db.commit()
+    assert unauthenticated_client.patch(f"{SIGNALS}/{twin.id}", json={"value": "chess"}, headers=ha).status_code == 200
+    unauthenticated_client.delete(f"{SIGNALS}/{twin.id}", headers=ha)
+    assert len(unauthenticated_client.get(f"{SIGNALS}/rejected", headers=ha).json()["items"]) == 2
+
+    r = unauthenticated_client.post(f"{SIGNALS}/{first.id}/restore", headers=ha)
+    assert r.status_code == 200 and r.json()["live"] is True and r.json()["signal"]["id"] == first.id
+    assert r.json()["signal"]["derived_from"] == ["note:n-c", f"share:{share.id}"], "the twin's evidence is merged"
+    assert unauthenticated_client.get(f"{SIGNALS}/rejected", headers=ha).json()["items"] == []
+    db.expire_all()
+    assert db.get(VoiceSignal, twin.id) is None
+    assert not echo_signal_service.is_suppressed(db, a.id, "interest", "chess", None)
+    counts = extraction.MergeCounts()
+    cand = {"signal_type": "interest", "value": "chess", "language": None, "register": None,
+            "examples": [{"text": "example from note:n-c", "source": "note:n-c"}]}
+    assert extraction.merge_candidate(db, a.id, cand, "llm", counts).id == first.id
+    assert counts.rejected_by_user == 0 and counts.merged == 1
+    db.commit()
+
+    # The merged share evidence is withdrawn when the share is deleted.
+    assert unauthenticated_client.delete(f"/api/v1/echo/shares/{share.id}", headers=ha).status_code in (200, 204)
+    db.expire_all()
+    assert json.loads(db.get(VoiceSignal, first.id).derived_from) == ["note:n-c"]
+    # And re-adding it is no longer refused.
+    assert unauthenticated_client.post(SIGNALS, json={"signal_type": "interest", "value": "chess"}, headers=ha).status_code == 201
+
+
+def test_restore_onto_an_equal_live_signal_drops_every_tombstone(unauthenticated_client, db, two):
+    a, ha, _, _ = two
+    ids = [unauthenticated_client.post(SIGNALS, json={"signal_type": "interest", "value": v}, headers=ha).json()["id"]
+           for v in ("Chess", "Go", "Draughts")]
+    first, twin, other = ids
+    unauthenticated_client.delete(f"{SIGNALS}/{first}", headers=ha)
+    unauthenticated_client.patch(f"{SIGNALS}/{twin}", json={"value": "chess"}, headers=ha)
+    unauthenticated_client.delete(f"{SIGNALS}/{twin}", headers=ha)
+    unauthenticated_client.patch(f"{SIGNALS}/{other}", json={"value": "CHESS"}, headers=ha)
+
+    r = unauthenticated_client.post(f"{SIGNALS}/{first}/restore", headers=ha)
+    assert r.status_code == 200 and r.json()["signal"]["id"] == other
+    assert unauthenticated_client.get(f"{SIGNALS}/rejected", headers=ha).json()["items"] == []
+    db.expire_all()
+    assert db.get(VoiceSignal, first) is None and db.get(VoiceSignal, twin) is None
+    assert not echo_signal_service.is_suppressed(db, a.id, "interest", "chess", None)

@@ -338,10 +338,19 @@ def restore(db: Session, tenant_id: str, signal_id: str) -> Restored:
     is in the profile again and re-adding or re-learning it is no longer
     refused.
 
-    A learned signal whose every source was deleted while it was rejected has
-    no evidence left; it becomes ``source_deleted`` rather than live. If an
-    equal live signal exists (the user reworded another one to the same
-    words), that one is kept and the tombstone row is dropped. Commits."""
+    The evidence is re-checked first. Before T-3.3.1.6 a withdrawal skipped
+    rejected signals, so a rejection can still cite a source the user has
+    since deleted or edited, and hold its words: a ref that is no longer a
+    live input leaves the signal, and so does an example its source no longer
+    contains (``_still_evidence``). A learned signal left with no evidence
+    becomes ``source_deleted`` rather than live.
+
+    Every other rejection of the same signal (same type, wording and
+    language: rewording one signal into another's words makes a twin) is
+    lifted with it, its checked evidence merged in and its row dropped;
+    otherwise the twin would go on refusing the restored signal. If an equal
+    live signal exists, that one is kept and the tombstones are dropped.
+    Commits."""
     row = (
         db.query(VoiceSignal)
         .filter(
@@ -353,30 +362,78 @@ def restore(db: Session, tenant_id: str, signal_id: str) -> Restored:
     )
     if row is None:
         raise SignalNotFound("Signal not found")
-    same = _live(
-        db.query(VoiceSignal).filter(
-            VoiceSignal.tenant_id == tenant_id,
-            VoiceSignal.signal_type == row.signal_type,
-            VoiceSignal.value_key == row.value_key,
-            VoiceSignal.language.is_(None) if row.language is None else VoiceSignal.language == row.language,
-            VoiceSignal.id != row.id,
-        )
-    ).first()
+    same_key = db.query(VoiceSignal).filter(
+        VoiceSignal.tenant_id == tenant_id,
+        VoiceSignal.signal_type == row.signal_type,
+        VoiceSignal.value_key == row.value_key,
+        VoiceSignal.language.is_(None) if row.language is None else VoiceSignal.language == row.language,
+        VoiceSignal.id != row.id,
+    )
+    twins = same_key.filter(VoiceSignal.suppressed_reason == "user").order_by(VoiceSignal.created_at, VoiceSignal.id).all()
+    same = _live(same_key).first()
     if same is not None:
-        db.delete(row)
+        for r in (row, *twins):
+            db.delete(r)
         db.commit()
         db.refresh(same)
         _sync_vectors(db, tenant_id)
         return Restored(same, True)
-    if _json_list(row.derived_from):
+
+    own = _json_list(row.derived_from)
+    sources = list(own)
+    examples = _json_list(row.examples_json)
+    for twin in twins:
+        sources += [s for s in _json_list(twin.derived_from) if s not in sources]
+        examples += [e for e in _json_list(twin.examples_json) if e not in examples]
+    sources, examples = _still_evidence(db, tenant_id, sources, examples)
+    gained = len([s for s in sources if s not in own])
+    lost = len([s for s in own if s not in sources])
+    row.derived_from = json.dumps(sources)
+    row.examples_json = json.dumps(examples[:MAX_EXAMPLES], ensure_ascii=False)
+    if gained or lost:
+        row.weight = max(0.0, float(row.weight) + gained - lost) or 0.5
+    for twin in twins:
+        db.delete(twin)
+    if sources:
         row.suppressed_at = None
         row.suppressed_reason = None
+        from app.services import echo_signal_extraction
+
+        # A twin's shares now feed this row: deleting one must withdraw it.
+        echo_signal_extraction.record_on_shares(db, tenant_id, row)
     else:
         row.suppressed_reason = "source_deleted"
     db.commit()
     db.refresh(row)
     _sync_vectors(db, tenant_id)
     return Restored(row, row.suppressed_at is None)
+
+
+def _still_evidence(db: Session, tenant_id: str, sources: list[str], examples: list) -> tuple[list[str], list[dict]]:
+    """The part of a signal's evidence that still stands: refs that are live
+    inputs (``user``, typed on the panel, always is) and examples whose
+    source still contains their words. A ref whose every example on the
+    signal is gone was edited away and leaves too (as an edited input is
+    withdrawn); a ref with no example kept on the signal stays while the
+    input is live, since it shows no words."""
+    from app.services import echo_signal_extraction
+
+    examples = [e for e in examples if isinstance(e, dict)]
+    texts = echo_signal_extraction.live_evidence_texts(
+        db, tenant_id, [*sources, *(str(e.get("source", "")) for e in examples)]
+    )
+
+    def stands(e: dict) -> bool:
+        src = str(e.get("source", ""))
+        if src == "user":
+            return True
+        return src in texts and echo_signal_extraction.still_quotes(str(e.get("text", "")), texts[src])
+
+    kept_examples = [e for e in examples if stands(e)]
+    cited = {str(e.get("source", "")) for e in examples}
+    shown = {str(e.get("source", "")) for e in kept_examples}
+    kept_sources = [s for s in sources if s == "user" or (s in texts and (s not in cited or s in shown))]
+    return kept_sources, kept_examples
 
 
 @dataclass(frozen=True)

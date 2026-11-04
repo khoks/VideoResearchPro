@@ -64,11 +64,18 @@ SOURCES — NON-NEGOTIABLE:
 # S-6.3.2: a knowledge report is about ONE source as a whole and carries no
 # timestamped citations, so its paragraphs all carry that source's marker.
 # Said once, only when a knowledge report is in the prompt, so a deck made
-# from runs alone sends exactly the prompt S-6.3.1 was trialled on.
+# from runs alone sends exactly the prompt S-6.3.1 was trialled on. That is
+# also why it, not DECK_SYSTEM, corrects what DECK_SYSTEM says about video
+# transcripts and quotes: a knowledge report is written by a model about any
+# source type, and nothing checks a quote slide against the source.
 KNOWLEDGE_REPORT_NOTE = (
     "A KNOWLEDGE REPORT below describes one source as a whole, in report "
     "voice. Its marker cites that source, not a moment in it; cite it for "
-    "points the knowledge report makes."
+    "points the knowledge report makes. Its source may not be a video, so "
+    "describe it as its header does and do not call it \"the video\" or "
+    "\"the speaker\" unless it is one. A knowledge report's own sentences are "
+    "not the source's words: a quote slide may use only words the report "
+    "itself gives as a quotation, attributed as the report attributes them."
 )
 
 

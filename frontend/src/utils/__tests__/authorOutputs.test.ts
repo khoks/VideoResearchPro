@@ -3,7 +3,7 @@ import {
   applyOutputProgress,
   deckSourceIds,
   describeCreateError,
-  filterKnowledgeSources,
+  knowledgeCapNote,
   knowledgeSourceMeta,
   downloadLabel,
   estimateLabel,
@@ -204,11 +204,10 @@ describe('S-6.3.2 deck sources', () => {
     expect(knowledgeSourceMeta({ ...doc, source_type: 'something_new', channel_name: ' ' })).toBe('Source · report 1 Nov 2026');
   });
 
-  it('filters by title or channel', () => {
-    const pdf = { ...doc, document_id: 'd2', title: 'Guideline', channel_name: '' };
-    expect(filterKnowledgeSources([doc, pdf], 'raju').map((d) => d.document_id)).toEqual(['d1']);
-    expect(filterKnowledgeSources([doc, pdf], ' GUIDE ').map((d) => d.document_id)).toEqual(['d2']);
-    expect(filterKnowledgeSources(undefined, '')).toEqual([]);
+  it('discloses a list that came back full, and only then', () => {
+    expect(knowledgeCapNote(199, '')).toBeNull();
+    expect(knowledgeCapNote(200, '')).toBe('Showing the 200 most recent. Filter by source to find an older one.');
+    expect(knowledgeCapNote(200, 'bp')).toBe('Showing the 200 most recent matches. Narrow the filter to find an older one.');
   });
 
   it('turns a 404 or 409 into the server sentence', () => {

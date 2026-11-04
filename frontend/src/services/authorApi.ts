@@ -138,9 +138,11 @@ export interface ListOutputsParams {
 export const authorApi = {
   listKinds: () => api.get<KindsResponse>('/author/kinds').then(r => r.data),
 
-  /** S-6.3.2: documents a deck can be planned from (a knowledge report). */
-  listKnowledgeSources: () =>
-    api.get<KnowledgeSource[]>('/author/knowledge-sources').then(r => r.data),
+  /** S-6.3.2: documents a deck can be planned from (a knowledge report),
+   * most recently extracted first. `q` matches title or channel on the
+   * server, so it reaches reports older than `limit`. */
+  listKnowledgeSources: (params?: { q?: string; limit?: number }) =>
+    api.get<KnowledgeSource[]>('/author/knowledge-sources', { params }).then(r => r.data),
 
   listOutputs: (params?: ListOutputsParams) =>
     api.get<OutputItem[]>('/author/outputs', { params }).then(r => r.data),

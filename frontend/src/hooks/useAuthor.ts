@@ -1,5 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authorApi, type CreateOutputPayload, type ListOutputsParams, type NewsletterSettings } from '../services/authorApi';
+import { KNOWLEDGE_SOURCES_LIMIT } from '../utils/authorOutputs';
 
 const OUTPUTS_KEY = ['author', 'outputs'] as const;
 
@@ -13,13 +14,15 @@ export function useAuthorKinds(enabled = true) {
 }
 
 /** S-6.3.2: the caller's documents with a knowledge report, for the deck's
- * create modal. */
-export function useKnowledgeSources(enabled = true) {
+ * create modal. `filter` is asked of the server: the list holds only the most
+ * recent reports, so filtering it locally could not find an older one. */
+export function useKnowledgeSources(enabled = true, filter = '') {
   return useQuery({
-    queryKey: ['author', 'knowledge-sources'],
-    queryFn: () => authorApi.listKnowledgeSources(),
+    queryKey: ['author', 'knowledge-sources', filter],
+    queryFn: () => authorApi.listKnowledgeSources({ ...(filter ? { q: filter } : {}), limit: KNOWLEDGE_SOURCES_LIMIT }),
     staleTime: 60_000,
     enabled,
+    placeholderData: keepPreviousData,
   });
 }
 

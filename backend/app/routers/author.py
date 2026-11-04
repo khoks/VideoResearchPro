@@ -17,7 +17,8 @@ Endpoints under ``/api/v1/author/*``:
   cannot use before the row exists: 404 for a document outside their
   library, 409 for one with no knowledge report (a deck's ``document:<id>``).
 - ``GET /author/knowledge-sources`` — documents in the caller's library with
-  a knowledge report, which a deck can be planned from (S-6.3.2).
+  a knowledge report, which a deck can be planned from (S-6.3.2). ``q``
+  filters by title or channel before the limit applies.
 - ``POST /author/outputs/estimate`` — what generating this output would
   cost before it runs (S-6.1.3: a book's cohesion pass). Same body as create.
 - ``POST /author/outputs/{id}/cancel`` — cancel a pending or generating
@@ -43,12 +44,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, load_only, object_session
 
 # Import outputters to register them. Side-effect import.
 from app.services import outputters  # noqa: F401
 from app.dependencies import get_db
+from app.models.channel import Channel
 from app.models.document import Document
 from app.models.user import User
 from app.services import (
@@ -220,14 +222,17 @@ def list_kinds(
 
 @router.get("/knowledge-sources", response_model=list[KnowledgeSourceItem])
 def list_knowledge_sources(
+    q: str = Query("", max_length=500),
     limit: int = Query(200, ge=1, le=500),
     current_user: User = Depends(require_feature("author_studio")),
     db: Session = Depends(get_db),
 ) -> list[KnowledgeSourceItem]:
     """S-6.3.2: the documents a deck can be planned from: those in the
     caller's library (D-063) with an extracted knowledge report, most
-    recently extracted first. The report text itself is not sent."""
-    rows = (
+    recently extracted first. The report text itself is not sent. ``q``
+    matches the title or channel before ``limit`` applies, so a report
+    older than the list can still be found."""
+    query = (
         db.query(Document)
         .options(load_only(
             Document.document_id, Document.title, Document.source_type, Document.channel_id,
@@ -238,6 +243,15 @@ def list_knowledge_sources(
             Document.knowledge_report_md.isnot(None),
             func.trim(Document.knowledge_report_md) != "",
         )
+    )
+    term = q.strip()
+    if term:
+        query = query.filter(or_(
+            Document.title.icontains(term, autoescape=True),
+            Document.channel.has(Channel.name.icontains(term, autoescape=True)),
+        ))
+    rows = (
+        query
         .order_by(Document.knowledge_extracted_at.is_(None), Document.knowledge_extracted_at.desc(), Document.title.asc())
         .limit(limit)
         .all()

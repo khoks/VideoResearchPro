@@ -62,6 +62,19 @@ The discussion is framed for patients who feel well and assume the condition has
 - Speculation: home monitoring may reduce unsupervised discontinuation.
 - A quote given in full: रक्तचाप एक मौन रोग है (raktachāp ek maun rog hai) — "blood pressure is a silent disease".
 
+## Events
+
+- 2017: Guidelines lowered the treatment threshold.
+    - The threshold fell to 130/80.
+    - Patients were told to taper rather than stop.
+- 2021: A follow-up review was published.
+	- It repeated the taper advice.
+
+| Year | Event |
+|------|-------|
+| 2017 | Threshold lowered |
+| 2021 | Review published |
+
 ## References
 
 - [World Health Organization hypertension fact sheet](https://www.who.int/news-room/fact-sheets/detail/hypertension)
@@ -181,9 +194,19 @@ def test_a_knowledge_report_deck_cites_its_document_on_every_content_slide(unaut
     assert "](http" not in prompt and "[^" not in prompt and "who.int" not in prompt
     report = prompt.split("=====\n", 1)[1]
     for line in report.splitlines():
-        if line.strip() and not line.lstrip().startswith("#"):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if set(line.strip()) <= set("|-: "):
+            assert "[S1]" not in line, "a table's separator row is not a claim"
+        elif line.lstrip().startswith("|"):
+            assert line.rstrip().endswith("[S1] |"), f"a table row cites the document inside its last cell: {line!r}"
+        else:
             assert line.rstrip().endswith("[S1]"), f"every paragraph and list item cites the document: {line!r}"
     assert "रक्तचाप एक मौन रोग है" in prompt, "the quote's original script reaches the model"
+    # DECK_SYSTEM speaks of video transcripts and of quotes "with who said
+    # it"; the note, sent only with a knowledge report, corrects both.
+    assert "may not be a video" in prompt
+    assert "not the source's words" in prompt and "only words the report itself gives as a quotation" in prompt
 
     out = db.get(Output, body["id"])
     assert output_artifacts.available_formats(out) == ["md", "pptx"]
@@ -204,6 +227,33 @@ def test_a_knowledge_report_deck_cites_its_document_on_every_content_slide(unaut
     md = out.content_text
     assert md.startswith("# Stopping blood pressure pills") and "## Sources" in md
     assert re.findall(r"^\[\^\d+\]: .*$", md, flags=re.M) == [f"[^1]: *{doc.title}* — Dr Raju Health: <{DOC_URL}>."]
+
+
+def test_every_nested_item_and_table_row_carries_the_marker():
+    """Each is a point the model may put on a slide, and DECK_SYSTEM keeps
+    a point off the slides when no marker stands behind it."""
+    from app.services.outputters.deck import _knowledge_marked
+
+    md = (
+        "An opening paragraph\nwrapped onto a second line.\n"
+        "| Year | Event |\n| :--- | ---: |\n| 1947 | Partition |\n"
+        "A paragraph straight after the table.\n***\n"
+        "- 1947: Partition\n    - First child\n    - Second child\n\t- Tab child\n    1. Numbered child\n"
+    )
+    assert _knowledge_marked(md, 7).splitlines() == [
+        "An opening paragraph",
+        "wrapped onto a second line. [S7]",
+        "| Year | Event [S7] |",
+        "| :--- | ---: |",
+        "| 1947 | Partition [S7] |",
+        "A paragraph straight after the table. [S7]",
+        "***",
+        "- 1947: Partition [S7]",
+        "    - First child [S7]",
+        "    - Second child [S7]",
+        "\t- Tab child [S7]",
+        "    1. Numbered child [S7]",
+    ]
 
 
 def test_another_tenants_document_is_404_and_writes_nothing(unauthenticated_client, db, outputs_dir, monkeypatch):
@@ -291,7 +341,7 @@ def test_a_run_only_deck_prompt_is_unchanged(db, outputs_dir, monkeypatch):
     out = output_service.run_generation(db, user, row)
     assert out.status == "completed", out.error_message
     assert model.prompts[0].startswith('DECK TITLE (the user\'s): "Runs"\n\n===== REPORT 1: Smoke run =====\n')
-    assert "KNOWLEDGE" not in model.prompts[0]
+    assert "KNOWLEDGE" not in model.prompts[0] and "may not be a video" not in model.prompts[0]
     texts, *_ = _slides(out)
     assert "from 1 research run ·" in texts[0]
 
@@ -370,7 +420,39 @@ def test_knowledge_sources_lists_the_callers_documents_with_a_report(unauthentic
         (mine.document_id, mine.title, "video", "Dr Raju Health")
     ]
     assert "knowledge_report_md" not in r.json()[0]
+    assert unauthenticated_client.get("/api/v1/author/knowledge-sources", params={"q": "Someone"}, headers=headers).json() == []
     free = auth_service.create_user(db, email="kdeck-free@x.com", password="pw" * 6)
     token, _ = auth_service.create_access_token(free.id)
     assert unauthenticated_client.get("/api/v1/author/knowledge-sources",
                                       headers={"Authorization": f"Bearer {token}"}).status_code == 403
+
+
+def test_the_knowledge_source_filter_finds_a_report_past_the_most_recent_page(unauthenticated_client, db):
+    """The list holds the most recently extracted reports, so the modal's
+    filter has to ask the server, or an older report cannot be found."""
+    user, headers = _pro(db, "kdeck-older@x.com")
+    other, _ = _pro(db, "kdeck-older-other@x.com")
+
+    def extracted(day: int, title: str, tenant: str = user.id) -> Document:
+        doc = _document(db, visible_to=[tenant], video_id=f"bpOlder{day:04d}", url=f"https://www.youtube.com/watch?v=bpOlder{day:04d}",
+                        title=title, knowledge_extracted_at=datetime(2026, 1, day))
+        return doc
+
+    oldest = extracted(1, "Ancient remedies: 100% herbal")
+    oldest.channel.name = "Vaidya Sharma"
+    extracted(2, "Newer talk")
+    newest = extracted(3, "Newest talk")
+    extracted(4, "Ancient remedies, another reader's copy", tenant=other.id)
+    db.commit()
+
+    def listed(**params) -> list[str]:
+        r = unauthenticated_client.get("/api/v1/author/knowledge-sources", params=params, headers=headers)
+        assert r.status_code == 200, r.text
+        return [d["document_id"] for d in r.json()]
+
+    assert oldest.document_id not in listed(limit=2) and listed(limit=1) == [newest.document_id]
+    assert listed(q="ancient", limit=2) == [oldest.document_id], "by title, whatever the case, and only the caller's"
+    assert listed(q="  vaidya sharma ", limit=2) == [oldest.document_id], "by channel, the filter's own promise"
+    assert listed(q="100%", limit=2) == [oldest.document_id], "a percent sign is a character here"
+    assert listed(q="1_0%") == [], "and so is an underscore"
+    assert listed(q="   ", limit=1) == [newest.document_id], "a blank filter is no filter"

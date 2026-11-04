@@ -435,9 +435,14 @@ export function knowledgeSourceMeta(source: KnowledgeSource): string {
     .join(' · ');
 }
 
-/** Knowledge reports whose source title or channel matches the filter. */
-export function filterKnowledgeSources(sources: KnowledgeSource[] | undefined, query: string): KnowledgeSource[] {
-  const q = query.trim().toLowerCase();
-  const all = sources ?? [];
-  return q ? all.filter((s) => `${s.title} ${s.channel_name ?? ''}`.toLowerCase().includes(q)) : all;
+/** How many knowledge reports the deck's picker asks for at a time. */
+export const KNOWLEDGE_SOURCES_LIMIT = 200;
+
+/** Said under the picker when the list came back full: older reports lie
+ * past it and the filter reaches them. `null` when it is not full. */
+export function knowledgeCapNote(count: number, filter: string): string | null {
+  if (count < KNOWLEDGE_SOURCES_LIMIT) return null;
+  return filter
+    ? `Showing the ${KNOWLEDGE_SOURCES_LIMIT} most recent matches. Narrow the filter to find an older one.`
+    : `Showing the ${KNOWLEDGE_SOURCES_LIMIT} most recent. Filter by source to find an older one.`;
 }

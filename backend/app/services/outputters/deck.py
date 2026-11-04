@@ -8,9 +8,9 @@ and since S-6.3.2 ``document:<id>`` for a document in the caller's library
 (`output_citation_service.cite_markdown`, S-6.1.4); the model then sees the
 report with every RESOLVED citation as a marker ``[S12]`` and nothing else
 that looks like a source. A knowledge report is about one document and cites
-no moments, so the document is its one source: every paragraph and list
-item carries that document's marker. One ``author_deck_outline`` call plans
-the slides and cites them by marker.
+no moments, so the document is its one source: every paragraph, list item
+and table row carries that document's marker. One ``author_deck_outline``
+call plans the slides and cites them by marker.
 
 A ``document:`` source the caller cannot see, or one with no knowledge
 report, is refused by ``check_sources`` before the row exists (404 / 409 at
@@ -68,7 +68,9 @@ _LINK = re.compile(r"!?\[([^\]\n]*)\]\([^)\s]*\)")
 _MARKER = re.compile(r"\[S\d+\]")
 _HEADING = re.compile(r"^\s{0,3}#{1,6}(?:\s|$)")
 _RULE = re.compile(r"^\s{0,3}([-*_])(?:\s*\1){2,}\s*$")
-_LIST_ITEM = re.compile(r"^\s{0,3}(?:[-*+]|\d+[.)])\s")
+_LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")  # at any depth: a nested item is a point of its own
+_TABLE_ROW = re.compile(r"^\s*\|")
+_TABLE_RULE = re.compile(r"^\s*\|[\s:|-]*$")  # |---|:--:|, and a row with nothing in it
 _ABSOLUTE = re.compile(r"^https?://", re.I)
 
 DOCUMENT_REF, JOB_REF = "document:", "job:"
@@ -104,21 +106,35 @@ def _has_knowledge(doc: Document) -> bool:
     return bool((doc.knowledge_report_md or "").strip())
 
 
+def _starts_block(line: str) -> bool:
+    """``line`` cannot continue the paragraph or list item above it."""
+    return not line.strip() or any(p.match(line) for p in (_HEADING, _RULE, _LIST_ITEM, _TABLE_ROW))
+
+
+def _with_marker(line: str, n: int) -> str:
+    """``line`` ending in ``[Sn]``, inside the last cell of a table row."""
+    body = line.rstrip()
+    if _TABLE_ROW.match(body) and body.endswith("|"):
+        return f"{body[:-1].rstrip()} [S{n}] |"
+    return f"{body} [S{n}]"
+
+
 def _knowledge_marked(markdown: str, n: int) -> str:
     """A knowledge report as the model sees it (S-6.3.2). It describes one
     document and cites no moments, so that document is its only source:
-    every paragraph and list item ends with the marker ``[Sn]``, headings and
-    rules carry none. Links become their labels, and any marker or footnote
-    already in the text is removed, so the model can cite nothing but the
-    one source the sources slide links."""
+    every paragraph, list item (nested ones too) and table row ends with the
+    marker ``[Sn]``; headings, rules and a table's separator row carry none.
+    Links become their labels, and any marker or footnote already in the text
+    is removed, so the model can cite nothing but the one source the sources
+    slide links."""
     text = _MARKER.sub("", _FOOTNOTE.sub("", _LINK.sub(r"\1", markdown or "")))
     lines = text.splitlines()
     out: list[str] = []
     for i, line in enumerate(lines):
         nxt = lines[i + 1] if i + 1 < len(lines) else ""
-        is_text = bool(line.strip()) and not _HEADING.match(line) and not _RULE.match(line)
-        ends_unit = not nxt.strip() or bool(_HEADING.match(nxt)) or bool(_LIST_ITEM.match(nxt))
-        out.append(f"{line.rstrip()} [S{n}]" if is_text and ends_unit else line)
+        is_text = bool(line.strip()) and not any(p.match(line) for p in (_HEADING, _RULE, _TABLE_RULE))
+        ends_unit = bool(_TABLE_ROW.match(line)) or _starts_block(nxt)
+        out.append(_with_marker(line, n) if is_text and ends_unit else line)
     return "\n".join(out).strip()
 
 

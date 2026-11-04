@@ -9,6 +9,7 @@ import {
   useDeleteOutput,
   useKnowledgeSources,
 } from '../hooks/useAuthor';
+import { useDebounced } from '../hooks/useDebounced';
 import { useOutputsProgress } from '../hooks/useOutputProgress';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { NewsletterCard } from '../components/author/NewsletterCard';
@@ -38,7 +39,7 @@ import {
   COHESION_OPTIONS,
   DEFAULT_COHESION,
   deckSourceIds,
-  filterKnowledgeSources,
+  knowledgeCapNote,
   knowledgeSourceMeta,
   NEWSLETTER_PERIODS,
   NEWSLETTER_SECTIONS,
@@ -68,6 +69,7 @@ import type { HttpErrorLike } from '../utils/ingestResults';
 import type { Job } from '../types/job';
 
 const OUTPUT_STATUSES = ['pending', 'generating', 'completed', 'failed'] as const;
+const DOC_FILTER_DEBOUNCE_MS = 250;
 
 function isForbidden(err: unknown): boolean {
   return (err as HttpErrorLike | null)?.response?.status === 403;
@@ -617,10 +619,15 @@ function CreateOutputModal({
   };
   // S-6.3.2: a deck takes knowledge reports (one document each) beside runs.
   const isDeck = kind === 'deck';
-  const knowledge = useKnowledgeSources(isDeck);
   const [docsSelected, setDocsSelected] = useState<Set<string>>(() => new Set());
   const [docSearch, setDocSearch] = useState('');
-  const docCandidates = useMemo(() => filterKnowledgeSources(knowledge.data, docSearch), [knowledge.data, docSearch]);
+  const docFilter = docSearch.trim();
+  const askedFilter = useDebounced(docFilter, DOC_FILTER_DEBOUNCE_MS);
+  const knowledge = useKnowledgeSources(isDeck, askedFilter);
+  const docCandidates = knowledge.data ?? [];
+  const docCapNote = knowledgeCapNote(docCandidates.length, askedFilter);
+  // Until this filter's answer is in, an empty list says nothing about it.
+  const docsAsking = knowledge.isLoading || docFilter !== askedFilter || knowledge.isPlaceholderData;
   const toggleDoc = (id: string) => {
     setDocsSelected((prev) => {
       const next = new Set(prev);
@@ -907,7 +914,7 @@ function CreateOutputModal({
                     background: c.surface,
                   }}
                 >
-                  {knowledge.isLoading ? (
+                  {docsAsking && docCandidates.length === 0 ? (
                     <div style={{ padding: space['4'], textAlign: 'center' }}>
                       <Spinner />
                     </div>
@@ -917,7 +924,7 @@ function CreateOutputModal({
                     </div>
                   ) : docCandidates.length === 0 ? (
                     <div style={{ padding: space['4'], fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textMuted, fontStyle: 'italic' }}>
-                      {(knowledge.data ?? []).length > 0
+                      {docFilter
                         ? 'No knowledge reports match that filter.'
                         : 'No knowledge reports yet. Open a source in the library and choose Knowledge report; it is listed here once extracted.'}
                     </div>
@@ -932,6 +939,11 @@ function CreateOutputModal({
                     ))
                   )}
                 </div>
+                {docCapNote && (
+                  <div data-testid="knowledge-picker-cap" style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>
+                    {docCapNote}
+                  </div>
+                )}
               </div>
             )}
           </FormField>

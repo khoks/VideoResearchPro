@@ -32,7 +32,7 @@ const PDF: KnowledgeSource = {
 };
 
 const api = {
-  knowledge: vi.fn<() => Promise<KnowledgeSource[]>>(),
+  knowledge: vi.fn<(p?: { q?: string; limit?: number }) => Promise<KnowledgeSource[]>>(),
   create: vi.fn<(p: CreateOutputPayload) => Promise<unknown>>(),
   estimate: vi.fn<(p: CreateOutputPayload) => Promise<unknown>>(),
 };
@@ -40,7 +40,7 @@ vi.mock('../../services/authorApi', () => ({
   authorApi: {
     listKinds: async () => ({ available: ['book', 'deck'], supported: ['book', 'deck'], formats: {} }),
     listOutputs: async () => [],
-    listKnowledgeSources: () => api.knowledge(),
+    listKnowledgeSources: (p?: { q?: string; limit?: number }) => api.knowledge(p),
     createOutput: (p: CreateOutputPayload) => api.create(p),
     estimateOutput: (p: CreateOutputPayload) => api.estimate(p),
   },
@@ -93,6 +93,14 @@ async function mountDeckModal() {
   await flush();
 }
 
+/** Past the filter's debounce. */
+async function settleFilter() {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 300));
+  });
+  await flush();
+}
+
 function typeInto(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
   act(() => {
@@ -103,6 +111,9 @@ function typeInto(input: HTMLInputElement, value: string) {
 
 const titleInput = () =>
   document.querySelector('input[placeholder="e.g. Two years of the AI policy debate"]') as HTMLInputElement;
+const filterInput = () =>
+  document.querySelector('input[placeholder="Filter knowledge reports by source…"]') as HTMLInputElement;
+const picker = () => document.querySelector('[data-testid="knowledge-picker"]');
 const generate = () =>
   Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Generate') as HTMLButtonElement;
 const rowCheckbox = (text: string) =>
@@ -172,6 +183,48 @@ describe('deck create modal (S-6.3.2)', () => {
     await act(async () => generate().click());
     await flush();
     expect(useJobStore.getState().toasts.map((t) => t.message)).toContain(detail);
+  });
+
+  it('asks the server when filtering, so a report older than the list is found', async () => {
+    const OLDER = { ...PDF, document_id: 'doc-old', title: 'An older report' };
+    api.knowledge.mockImplementation(async (p) => (p?.q ? [OLDER] : [DOC, PDF]));
+    await mountDeckModal();
+    expect(picker()?.textContent).not.toContain('An older report');
+    typeInto(filterInput(), '  older ');
+    await settleFilter();
+    expect(api.knowledge).toHaveBeenLastCalledWith({ q: 'older', limit: 200 });
+    expect(picker()?.textContent).toContain('An older report');
+    expect(picker()?.textContent).not.toContain('BP tablets');
+  });
+
+  it('says a filter matched nothing only once the server has answered', async () => {
+    let answer: (rows: KnowledgeSource[]) => void = () => undefined;
+    api.knowledge.mockImplementation((p) =>
+      p?.q ? new Promise((resolve) => { answer = resolve; }) : Promise.resolve([]),
+    );
+    await mountDeckModal();
+    typeInto(filterInput(), 'nothing like this');
+    await settleFilter();
+    expect(picker()?.textContent).not.toContain('No knowledge reports match that filter.');
+    expect(picker()?.textContent).not.toContain('No knowledge reports yet.');
+    await act(async () => answer([]));
+    await flush();
+    expect(picker()?.textContent).toContain('No knowledge reports match that filter.');
+    expect(picker()?.textContent).not.toContain('No knowledge reports yet.');
+  });
+
+  it('says the list is cut off when it comes back full', async () => {
+    const full = Array.from({ length: 200 }, (_, i) => ({ ...DOC, document_id: `doc-${i}`, title: `Report ${i}` }));
+    api.knowledge.mockResolvedValue(full);
+    await mountDeckModal();
+    expect(api.knowledge).toHaveBeenCalledWith({ limit: 200 });
+    expect(document.querySelector('[data-testid="knowledge-picker-cap"]')?.textContent).toBe(
+      'Showing the 200 most recent. Filter by source to find an older one.',
+    );
+    api.knowledge.mockResolvedValue([DOC]);
+    typeInto(filterInput(), 'bp');
+    await settleFilter();
+    expect(document.querySelector('[data-testid="knowledge-picker-cap"]')).toBeNull();
   });
 
   it('says how to get a knowledge report when there is none', async () => {

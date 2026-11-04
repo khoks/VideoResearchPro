@@ -9,6 +9,7 @@ committed SVG alone. A failure is artwork to regenerate, not a test to relax.
 from __future__ import annotations
 
 import re
+import statistics
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -186,18 +187,20 @@ def test_the_devanagari_is_shaped_not_mapped_character_by_character(name: str) -
     contours = _contours(_wordmark(APP / name, "devanagari").get("d"))
     boxes = sorted(_box([contour]) for contour in contours)
     _, top, _, bottom = _box(contours)
-    height = bottom - top
 
     # Six glyphs (प्र ि त ध्व ि न) plus the counters of प्र and ध्व.
     assert len(contours) == 8
 
     # A vowel sign is the only contour rising above the headline, so its place in
     # left-to-right order is where it landed. Both stand BEFORE their consonant.
-    rises = [i for i, box in enumerate(boxes) if box[1] - top < 0.2 * height]
+    rises = [i for i, box in enumerate(boxes) if box[1] - top < 0.2 * (bottom - top)]
     assert rises == [2, 6]
 
-    # प्र and ध्व are conjuncts: no halant left hanging below the word.
-    assert not [box for box in boxes if box[1] - top > 0.75 * height]
+    # प्र and ध्व are conjuncts: no halant left hanging under the word. Measured
+    # from the line the glyph bodies stand on, not from the word's own bottom,
+    # which a hanging mark moves down and so hides itself from.
+    baseline = statistics.median(box[3] for box in boxes)
+    assert not [box for box in boxes if box[1] - top > 0.9 * (baseline - top)]
 
 
 def test_the_inventory_names_every_file_it_lists() -> None:

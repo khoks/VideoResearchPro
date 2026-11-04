@@ -24,8 +24,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import IO, Any, Iterator, Literal, Protocol, Union, runtime_checkable
+from typing import IO, Any, Callable, Iterator, Literal, Protocol, TypeVar, Union, runtime_checkable
 
+T = TypeVar("T")
 PrivacyWeight = Literal["low", "medium", "high", "very_high"]
 
 
@@ -61,10 +62,11 @@ class DerivedFact:
 @dataclass
 class ConnectorTokens:
     """What a successful OAuth callback returns. Stored encrypted; never
-    logged, never exported."""
+    logged, never exported. The token values stay out of ``repr``, so a debug
+    line or a traceback cannot print them."""
 
-    access_token: str
-    refresh_token: str | None = None
+    access_token: str = field(repr=False)
+    refresh_token: str | None = field(default=None, repr=False)
     expires_at: datetime | None = None
     scopes: str = ""
     # The provider account, for display ("octocat").
@@ -75,12 +77,39 @@ class ConnectorTokens:
 class SyncContext:
     """Handed to a connector's sync methods. ``cursor`` is the connector's
     own resume state, persisted between syncs (start from it, write the new
-    one back). ``facts`` collects derived facts for the runtime to store."""
+    one back). ``facts`` collects derived facts for the runtime to store.
+
+    A connector makes each provider call of a sync through ``call``, so a 401
+    in the middle of a sync costs one renewal rather than a reconnect
+    (T-3.2.1.12). ``renew`` is the runtime's: it is set when this grant can be
+    renewed, returns the tokens to use, and raises ``ConnectorError`` when it
+    cannot."""
 
     tenant_id: str
     tokens: ConnectorTokens
     cursor: dict[str, Any] = field(default_factory=dict)
     facts: list[DerivedFact] = field(default_factory=list)
+    renew: Callable[[], ConnectorTokens] | None = field(default=None, repr=False, compare=False)
+    _renewed: bool = field(default=False, init=False, repr=False, compare=False)
+
+    def call(self, request: Callable[[str], T]) -> T:
+        """Run ``request(access_token)``. On ``ConnectorError(auth=True)``
+        renew the token and run it once more; that second refusal stands, so
+        the user reconnects. One renewal per sync: a later 401 ends the sync
+        without asking for a reconnect, since the token renewed a moment ago
+        may simply have lapsed, and the next sync finds out."""
+        try:
+            return request(self.tokens.access_token)
+        except ConnectorError as refused:
+            if not refused.auth or self.renew is None:
+                raise
+            if self._renewed:
+                raise TokenRenewalFailed(
+                    "Sync failed: the provider refused a token renewed during this sync. The next sync tries again."
+                ) from None
+        self._renewed = True
+        self.tokens = self.renew()
+        return request(self.tokens.access_token)
 
 
 class ConnectorError(RuntimeError):
@@ -90,6 +119,14 @@ class ConnectorError(RuntimeError):
     def __init__(self, message: str, *, auth: bool = False):
         super().__init__(message)
         self.auth = auth
+
+
+class TokenRenewalFailed(ConnectorError):
+    """The access token could not be renewed, for a reason the next sync may
+    not share (the provider's token endpoint is down, another sync held the
+    renewal too long). It ends the sync without asking for a reconnect. A
+    connector that skips past a failed call must let this through, as it does
+    an ``auth`` error."""
 
 
 @runtime_checkable
@@ -130,13 +167,18 @@ class RefreshableConnector(Protocol):
     satisfies the contract.
 
     The runtime calls it before a sync once ``tokens.expires_at`` has passed
-    and ``tokens.refresh_token`` is set, and stores what it returns encrypted.
-    A returned ``refresh_token`` of None keeps the stored one (most providers
+    and ``tokens.refresh_token`` is set, and when a provider call made through
+    ``SyncContext.call`` answers 401; it stores what it returns encrypted. A
+    returned ``refresh_token`` of None keeps the stored one (most providers
     do not rotate it). Raise ``ConnectorError(..., auth=True)`` when the
     provider refuses the refresh token (OAuth ``invalid_grant``: revoked,
     expired, or a testing-mode token past its seven days); the user must then
     reconnect. Any other ``ConnectorError`` is a failure the next sync
-    retries."""
+    retries.
+
+    Readers of one grant take turns: the runtime claims the refresh per
+    connector, so a provider that rotates refresh tokens sees each one spent
+    once. Never put a token in an exception's message or a log line."""
 
     def refresh_tokens(self, tokens: ConnectorTokens) -> ConnectorTokens: ...
 

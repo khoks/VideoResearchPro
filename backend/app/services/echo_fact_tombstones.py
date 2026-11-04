@@ -9,8 +9,9 @@ owns that record (``echo_fact_tombstones``):
   (``echo_service.delete_context`` and ``revoke_source``) before the row
   goes. It records a tombstone only when the fact came from a connector
   (source ``connector:<name>``) or an importer (source ``import:<id>``,
-  resolved to the importer's name); a fact the user typed has nothing that
-  could bring it back.
+  resolved to the importer's name), or is a row of theirs the user edited
+  (``edited_from``); a fact the user typed has nothing that could bring it
+  back.
 * ``blocked_keys`` is what the sync and the importer ask before writing.
 * ``list_for_tenant`` and ``clear`` back the Echo page's "Kept deleted" list.
 
@@ -74,7 +75,7 @@ def record_for_fact(db: Session, fact: Any) -> EchoFactTombstone | None:
     """Tombstone ``fact`` (a ``PersonalContext`` row about to be deleted by
     the user) when a connector or importer derived it. Does not commit."""
     tenant_id = fact.tenant_id or fact.user_id
-    connector = connector_of_source(db, tenant_id, fact.source)
+    connector = connector_of_source(db, tenant_id, fact.source) or connector_of_source(db, tenant_id, fact.edited_from)
     if connector is None:
         return None
     return record(db, tenant_id, connector, fact.kind, fact.key)

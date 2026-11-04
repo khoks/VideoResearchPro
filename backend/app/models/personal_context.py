@@ -72,6 +72,10 @@ class PersonalContext(Base):
     value: Mapped[str] = mapped_column(Text, nullable=False)
     # Where this row came from. Connectors register their own source.
     source: Mapped[str] = mapped_column(String(64), nullable=False)
+    # On a row the user edited: the derived source it replaced. The row is
+    # `manual` now, so nothing else says a connector can write this key again,
+    # and deleting it must still leave a tombstone (T-3.2.1.11, T-3.2.4.4).
+    edited_from: Mapped[str | None] = mapped_column(String(64), nullable=True)
     confidence: Mapped[float] = mapped_column(
         Float, nullable=False, default=1.0, server_default="1.0"
     )

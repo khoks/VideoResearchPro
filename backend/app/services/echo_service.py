@@ -59,6 +59,10 @@ class UnsupportedKindError(ValueError):
     pass
 
 
+# ``source`` of a row the user wrote: typed in, or a derived row they edited.
+MANUAL_SOURCE = "manual"
+
+
 def _validate_kind(kind: str) -> None:
     if kind not in SUPPORTED_KINDS:
         raise UnsupportedKindError(
@@ -111,6 +115,8 @@ def record_context(
     )
     now = datetime.now(timezone.utc)
     if existing is not None:
+        if source == MANUAL_SOURCE and existing.source != MANUAL_SOURCE:
+            existing.edited_from = existing.source
         existing.value = encoded
         existing.source = source
         existing.confidence = confidence
@@ -136,6 +142,28 @@ def record_context(
     db.refresh(row)
     _sync_vectors(db, user_id)
     return row
+
+
+def record_derived_context(
+    db: Session,
+    *,
+    user_id: str,
+    kind: str,
+    key: str,
+    value: Any,
+    source: str,
+    confidence: float,
+) -> PersonalContext | None:
+    """``record_context`` for a fact a connector or importer derived. A row the
+    user wrote holds its key (T-3.2.1.11): their words outrank a guess, so
+    nothing is written and this returns None. Asked per fact, at write time, so
+    an edit made while a long sync ran is seen."""
+    existing = get_context(db, user_id, kind, key)
+    if existing is not None and existing.source == MANUAL_SOURCE:
+        return None
+    return record_context(
+        db, user_id=user_id, kind=kind, key=key, value=value, source=source, confidence=confidence
+    )
 
 
 def _sync_vectors(db: Session, tenant_id: str) -> None:

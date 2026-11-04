@@ -127,6 +127,20 @@ describe('consent before connecting', () => {
     expect(button('Reconnect')).toBeDefined();
     expect(button('Disconnect')).toBeDefined();
   });
+
+  it('says when a sync left an entry as the user wrote it', () => {
+    const grant = {
+      account_label: 'octocat', granted_at: null, consent_version: '2026-10-19', consent_outdated: false,
+      status: 'idle', last_sync_at: null, backfilled_at: null, last_error: null, events: 12,
+    };
+    const counts = { added: 1, updated: 0, facts: 2 };
+    render(<ConnectorsPanel connectors={[{ ...GITHUB, connected: true, grant: { ...grant, last_counts: counts } }]} />);
+    expect(host.textContent).not.toContain('as you wrote');
+    render(<ConnectorsPanel connectors={[{ ...GITHUB, connected: true, grant: { ...grant, last_counts: { ...counts, facts_kept_manual: 1 } } }]} />);
+    expect(host.textContent).toContain('Kept 1 entry as you wrote it.');
+    render(<ConnectorsPanel connectors={[{ ...GITHUB, connected: true, grant: { ...grant, last_counts: { ...counts, facts_kept_manual: 2 } } }]} />);
+    expect(host.textContent).toContain('Kept 2 entries as you wrote them.');
+  });
 });
 
 function Where() {

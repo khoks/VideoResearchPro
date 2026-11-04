@@ -10,6 +10,85 @@ For the *why* behind any entry, follow the linked PR. For the active roadmap, se
 
 ## Unreleased
 
+### Changed: the docs match the code, and CI holds them to it (T-4.8.5, T-5.6.7, 2026-11-04)
+
+PR [#401](https://github.com/khoks/VideoResearchPro/pull/401). [D-129](docs/decisions.md#d-129--drift-tests-hold-the-docs-to-the-code-the-repo-has-one-env-template-and-the-anchor-checker-writes-only-when-told-to-2026-11-04).
+
+- `CLAUDE.md` now lists all 199 API endpoints and all 206 settings with their real defaults, and no longer lists a route that does not exist. Seven settings that nothing reads are marked as such.
+- There is one `.env.example`, at the repo root, with every setting, its default and blank secrets. `backend/.env.example` and `frontend/.env.example` are gone; the `VITE_*` variables are a section of the root file.
+- `docs/api-reference.md` gained 30 missing routes and corrected request bodies that had drifted, `docs/architecture.md` caught up with what has shipped, and `README.md` gives the real collection default, test count and agents.
+- `backend/scripts/fix_anchor_links.py` checks every Markdown file and every link form against GitHub's own heading ids. It is a dry run by default: `--check` exits 1 on a bad link and `--write` repairs. `--report` is gone. CI's lint job runs `--check` on the whole repo; #401 fixed 8 broken links, and the batch's tracker pass fixed the other 18.
+- New tests fail a PR that adds a setting without `.env.example` and `CLAUDE.md`'s table, or a route without `CLAUDE.md` and `docs/api-reference.md`.
+
+### Added: ask about one source, a live notification bell, and the wizard's channels on the submit page (T-8.4.2.4, T-8.3.3.8, T-8.10.1.6, T-8.10.1.7, 2026-11-04)
+
+PR [#397](https://github.com/khoks/VideoResearchPro/pull/397). [D-128](docs/decisions.md#d-128--one-source-is-a-narrowing-key-on-qascope-every-citation-carries-document_id-and-the-notification-push-is-a-doorbell-2026-11-04).
+
+- A question from a knowledge report's suggestions is now asked about that source only, not across the library. `POST /library/qa` takes `document_id`: a source you cannot see is a 404, and on a shelf the two scopes intersect. `/library/qa` says when it is asking about one source, with **Ask the whole library** to clear it.
+- The bell updates as soon as a saved search finishes, over the `/ws/jobs` socket. The push carries only an id and a kind, so a notice's text is still read over HTTP, and the one-minute poll stays as the fallback.
+- Signing out now closes that socket, including a sign-out in another tab.
+- The submit page's channel list is filled from the channels you gave the wizard that no run has used yet: once per browser, and never over a draft, a cloned run or a template.
+- `first_cited_answer` is recorded once per account, the first time an answer cites a source.
+- Fixed underneath: every citation now carries `document_id`. A scoped question about a non-YouTube source would otherwise have lost every citation.
+- New setting `NOTIFICATIONS_PUSH_ENABLED`, default on.
+
+### Added: an in-app voice test for "speak as me" (T-3.4.1.8, 2026-11-04)
+
+PR [#400](https://github.com/khoks/VideoResearchPro/pull/400). [D-127](docs/decisions.md#d-127--the-in-app-voice-test-is-a-rolled-back-what-if-on-the-echo_draft-use-case-and-an-open-tests-answers-stay-out-of-the-export-2026-11-04).
+
+- The "which of these did you write?" test now runs in the Speak as me card on the Echo page, so turning the feature on no longer needs an operator. The card states the cost first, and only your click starts a test. You see 20 blinded pairs one at a time, your picks survive a reload, and scoring writes the per-user gate as the operator's script does.
+- If the install switch is off, you are not ready, or you have under 40 notes, the card says why and offers no test. A failed retake closes a gate that had passed, and the page warns you first.
+- The test changes nothing in your live data: the held-out notes are withdrawn in a transaction that is always rolled back.
+- Drafts now use your pinned models for `echo_draft`, `echo_classify_intent` and `echo_critique`, which they ignored before.
+- New table `echo_voice_tests` (migration `6d5b3d5aa6fa`), exported and erased with the rest of Echo, with an open test's answers held back from the export. New settings `ECHO_VOICE_TEST_GENERATION` and `ECHO_VOICE_TESTS_PER_DAY`. The test has not yet run on a real model.
+
+### Added: a slide deck from a knowledge report (S-6.3.2, 2026-11-04)
+
+PR [#398](https://github.com/khoks/VideoResearchPro/pull/398). [D-126](docs/decisions.md#d-126--a-knowledge-report-is-cited-as-its-whole-document-and-an-outputter-can-refuse-a-source-before-its-row-exists-2026-11-04).
+
+- Author Studio's deck modal offers knowledge reports beside runs, with a filter, and a deck can be made from either or both. `source_ids` accept `document:<id>`, and `GET /author/knowledge-sources` lists the reports you can use.
+- A knowledge report is cited as its whole document, so a deck from one report cites the same source on every slide. The sources slide links the video or article, or, for an uploaded PDF, its report in the app.
+- A document you cannot see reads as not found (404) and one with no report is refused (409), before anything is written. A document that drops out before the worker reaches it is left out and disclosed on the last slide.
+- Decks from runs alone are unchanged. No real deck from a knowledge report has been generated yet.
+
+### Added: a depth for knowledge reports and for a single question (S-1.15.3, S-1.15.4, 2026-11-04)
+
+PR [#395](https://github.com/khoks/VideoResearchPro/pull/395). [D-125](docs/decisions.md#d-125--a-knowledge-reports-depth-applies-d-064-without-a-bracket-and-belongs-to-the-shared-artifact-and-a-failed-synthesis-never-reaches-it-2026-11-04).
+
+- `POST /videos/{id}/extract-knowledge` takes `?output_length=auto|brief|standard|deep`, and the knowledge drawer has a "Report depth" select. A report records its depth and says so. Without one, the budget and prompt are exactly what they were.
+- **Changed:** the drawer no longer starts a report when it opens. A report is metered, so it now waits for **Generate report**, with the depth preset to the run's, or to Auto in the library.
+- The job and library Q&A pages have an "Answer depth" select for one ask: it clears when the answer lands, and a failed ask keeps it for the retry. On phones a picked depth also shows in the docked composer.
+- Fixed: a knowledge run that produced no report used to blank the shared report for every reader, spend the caller's quota and return 200. It now returns 502 and changes nothing.
+- A report cut off at its budget is still stored, and now logs a warning.
+
+### Added: change your password while signed in; a reset signs every session out; second-factor codes are capped per sign-in (T-5.4.12 to T-5.4.15, T-5.6.9, 2026-11-04)
+
+PR [#399](https://github.com/khoks/VideoResearchPro/pull/399). [D-124](docs/decisions.md#d-124--second-factor-attempts-count-on-the-ticket-one-bearer-check-for-http-and-the-socket-and-a-validation-error-never-quotes-what-was-sent-2026-11-04).
+
+- `POST /auth/password/change`, with a Password card on `/account/security`, signs out your other sessions and keeps this one. A wrong current password counts toward the account lockout, and accounts Google or GitHub created are pointed to the reset.
+- A password reset now revokes every session.
+- Security: one second-factor sign-in allows five codes, counted on the sign-in rather than the address, and buys one session. After the fifth miss even the right code is refused and sign-in starts over.
+- Security: a token from a signed-out session can no longer open the `/ws/jobs` socket. HTTP and the socket now share one check.
+- Security: a 422 no longer quotes what was sent, on any route. FastAPI's default put the rejected value in the response, passwords and keys included.
+- A malformed `BYOK_ENCRYPTION_KEY` now answers 503 with the cause on the two-step verification and Echo connector routes, where it was a bare 500 or a misleading "wrong code". Recovery codes keep working.
+- New table `mfa_step_tickets` and column `users.has_password` (migration `f748717dcb01`).
+
+### Added: download a report as Markdown, see an output's sources, and language badges in the library (T-8.8.4.1, T-1.16.1.9, S-8.8.5, 2026-11-04)
+
+PR [#396](https://github.com/khoks/VideoResearchPro/pull/396). [D-123](docs/decisions.md#d-123--unused-read-routes-are-removed-an-outputs-sources-list-groups-by-source-and-a-language-badge-names-a-language-only-on-evidence-2026-11-04).
+
+- The report reader has a **Download Markdown** button. It fetches with the bearer header, so no token goes in a URL.
+- The output reader shows a **Sources** list under the text: each cited source once, with a chip for each place it is cited.
+- Library, channel and shelf rows show a language badge such as "Hindi + English" or "Hindi (romanised) + English" on code-mixed sources. Documents ingested earlier get one once `scripts/backfill_language_mix.py --write` has run.
+- The three reader pages load on demand, which takes the main bundle from 290 to 242 kB gzip. That is still above the 170 kB budget. A page whose code fails to load now offers **Reload**.
+- **Removed:** `GET /channels/{id}/videos` and `GET /jobs/{id}/shelves`. Neither had a caller.
+
+### Fix: the library-map device test waits on what it recorded (2026-11-04)
+
+PR [#393](https://github.com/khoks/VideoResearchPro/pull/393).
+
+- `frontend/tests/graph.spec.ts` polls the observer's record of layout changes instead of waiting on an attribute that can match the mount value. That race failed the device suite on the batch 2 and batch 3 landings. The component is unchanged.
+
 ### Added: Echo keeps deleted facts deleted, renews connector tokens and can restore rejected signals (T-3.2.4.4, T-3.2.2.5, T-3.3.1.6, 2026-11-04)
 
 PR [#392](https://github.com/khoks/VideoResearchPro/pull/392). [D-122](docs/decisions.md#d-122--a-deleted-derived-fact-stays-deleted-per-connector-only-a-refused-refresh-asks-for-a-reconnect-restore-re-checks-the-evidence-2026-11-04).
@@ -283,7 +362,7 @@ PR [#357](https://github.com/khoks/VideoResearchPro/pull/357). [D-102](docs/deci
 
 ### Changed: Echo readiness counts five parts of you, and says what each is missing (S-3.5.1, 2026-10-20)
 
-PR [#354](https://github.com/khoks/VideoResearchPro/pull/354). [D-101](decisions.md#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20), superseding D-049.
+PR [#354](https://github.com/khoks/VideoResearchPro/pull/354). [D-101](docs/decisions.md#d-101--echo-readiness-v2-five-domains-measured-from-their-stores-blocked-reads-as-not-connected-the-voice-test-reported-not-gated-2026-10-20), superseding D-049.
 
 - Echo is ready when five parts are each far enough along:
   - facts you wrote yourself;
@@ -480,7 +559,7 @@ PR [#337](https://github.com/khoks/VideoResearchPro/pull/337). Runs on the sched
 
 ### Added: Echo's activity stream storage (2026-10-19)
 
-[S-3.2.1](docs/initiatives.md#s-321--connector-runtime-and-activity_events), PR [#332](https://github.com/khoks/VideoResearchPro/pull/332), [D-098](decisions.md#d-098--echo-connectors-events-unique-per-reader-tokens-in-a-secret-store-that-is-erased-with-the-brain-but-never-exported-2026-10-19).
+[S-3.2.1](docs/initiatives.md#s-321--connector-runtime-and-activity_events), PR [#332](https://github.com/khoks/VideoResearchPro/pull/332), [D-098](docs/decisions.md#d-098--echo-connectors-events-unique-per-reader-tokens-in-a-secret-store-that-is-erased-with-the-brain-but-never-exported-2026-10-19).
 
 - `activity_events`: what you did, from connectors, stored once per event
   however often it syncs. Sharing something to Echo is now one such event
@@ -654,7 +733,7 @@ PR [#315](https://github.com/khoks/VideoResearchPro/pull/315). Plan: [docs/plans
 
 ### Added: the scope of a library question (2026-10-19)
 
-[S-8.1.4](docs/initiatives.md#s-814--shelf-scoped-qa), PR [#313](https://github.com/khoks/VideoResearchPro/pull/313), [D-095](decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19).
+[S-8.1.4](docs/initiatives.md#s-814--shelf-scoped-qa), PR [#313](https://github.com/khoks/VideoResearchPro/pull/313), [D-095](docs/decisions.md#d-095--scoped-library-questions-one-history-table-with-a-scope_json-object-narrowing-and-provenance-keys-unknown-keys-refused-2026-10-19).
 
 - `library_qa_exchanges.scope_json` records what a library question was asked
   over: null for the whole library (every existing row), `{"shelf_id": …}`

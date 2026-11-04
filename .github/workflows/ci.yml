@@ -129,15 +129,9 @@ jobs:
         run: ruff check backend --select E9,F63,F7,F82 --output-format=github
 
       # Every anchor link in the repo's Markdown resolves (T-4.8.5). Standard
-      # library only. The three skipped files are the tracker's: links IN them
-      # are left out until its pass repairs them, which then drops these flags.
-      # Links TO them are checked, so a renamed heading still fails here.
+      # library only.
       - name: Check Markdown anchor links
-        run: >-
-          python backend/scripts/fix_anchor_links.py --check
-          --skip-source CHANGELOG.md
-          --skip-source docs/decisions.md
-          --skip-source docs/initiatives.md
+        run: python backend/scripts/fix_anchor_links.py --check
 
   frontend:
     name: Frontend build and unit tests (vitest)

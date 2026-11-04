@@ -25,7 +25,7 @@ const put = vi.fn(async (_url: string, body: { tier: string }) => ({ data: { tie
 // T-5.2.10: `GET /auth/quota` feeds the library-usage line.
 const documentsUsage: { current: { consumed: number; limit: number } | null } = { current: null };
 // E-5.2: `GET /usage` feeds the usage table below the plans.
-const zero = { llm_tokens_in: 0, llm_tokens_out: 0, llm_calls: 0, youtube_units: 0 };
+const zero = { llm_tokens_in: 0, llm_tokens_out: 0, llm_calls: 0, youtube_units: 0, whisper_seconds: 0 };
 const usage: { current: unknown } = { current: null };
 function emptyUsage() {
   return {
@@ -220,12 +220,12 @@ describe('SubscriptionPage usage (E-5.2)', () => {
         {
           feature: 'report', label: 'Reports',
           today: zero,
-          last_30_days: { llm_tokens_in: 412_300, llm_tokens_out: 51_000, llm_calls: 37, youtube_units: 0 },
+          last_30_days: { ...zero, llm_tokens_in: 412_300, llm_tokens_out: 51_000, llm_calls: 37 },
         },
         {
           feature: 'search', label: 'Topic search',
-          today: { llm_tokens_in: 1_200, llm_tokens_out: 300, llm_calls: 2, youtube_units: 0 },
-          last_30_days: { llm_tokens_in: 1_200, llm_tokens_out: 300, llm_calls: 2, youtube_units: 0 },
+          today: { ...zero, llm_tokens_in: 1_200, llm_tokens_out: 300, llm_calls: 2 },
+          last_30_days: { ...zero, llm_tokens_in: 1_200, llm_tokens_out: 300, llm_calls: 2 },
         },
         {
           feature: 'youtube_search', label: 'Searches (YouTube)',
@@ -234,8 +234,8 @@ describe('SubscriptionPage usage (E-5.2)', () => {
         },
       ],
       totals: {
-        today: { llm_tokens_in: 1_200, llm_tokens_out: 300, llm_calls: 2, youtube_units: 200 },
-        last_30_days: { llm_tokens_in: 413_500, llm_tokens_out: 51_300, llm_calls: 39, youtube_units: 200 },
+        today: { ...zero, llm_tokens_in: 1_200, llm_tokens_out: 300, llm_calls: 2, youtube_units: 200 },
+        last_30_days: { ...zero, llm_tokens_in: 413_500, llm_tokens_out: 51_300, llm_calls: 39, youtube_units: 200 },
       },
     };
     await mount();
@@ -253,6 +253,37 @@ describe('SubscriptionPage usage (E-5.2)', () => {
     expect(ytSearch.querySelectorAll('td')[0].textContent).toBe('200 YouTube units');
     expect(panel.querySelector('[data-usage-total]')!.textContent).toContain('413.5K in · 51.3K out');
     expect(panel.querySelector('[data-usage-since]')!.textContent).toContain('Recording started on 2026-10-20');
+  });
+
+  it('shows audio sent to Whisper in sentences a reader can use, on the feature and in the total', async () => {
+    usage.current = {
+      ...emptyUsage(),
+      metered_since: '2026-10-20',
+      features: [
+        {
+          feature: 'ingest', label: 'Reading sources',
+          today: { ...zero, whisper_seconds: 45 },
+          last_30_days: { ...zero, whisper_seconds: 5_400 },
+        },
+        {
+          feature: 'echo_shares', label: 'Echo shares',
+          today: zero,
+          last_30_days: { ...zero, whisper_seconds: 90 },
+        },
+      ],
+      totals: {
+        today: { ...zero, whisper_seconds: 45 },
+        last_30_days: { ...zero, whisper_seconds: 5_490 },
+      },
+    };
+    await mount();
+    const panel = host.querySelector('[data-usage-summary]')!;
+    const ingest = Array.from(panel.querySelectorAll('[data-usage-feature="ingest"] td')).map((td) => td.textContent);
+    expect(ingest).toEqual(['45 sec of audio transcribed', '90 min of audio transcribed']);
+    const echo = panel.querySelector('[data-usage-feature="echo_shares"]')!;
+    expect(echo.querySelectorAll('td')[0].textContent).toBe('—');
+    expect(echo.querySelectorAll('td')[1].textContent).toBe('1.5 min of audio transcribed');
+    expect(panel.querySelector('[data-usage-total]')!.textContent).toContain('91.5 min of audio transcribed');
   });
 
   it('says nothing is recorded yet instead of showing an empty table', async () => {

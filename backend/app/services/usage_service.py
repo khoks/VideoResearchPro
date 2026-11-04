@@ -1,4 +1,5 @@
-"""Per-tenant usage metering: LLM tokens by feature, YouTube Data API units (E-5.2).
+"""Per-tenant usage metering: LLM tokens by feature, YouTube Data API units,
+Whisper audio seconds (E-5.2).
 
 Records, never limits. D-111 took the daily-token line off the pricing page
 because nothing enforced it; this module makes the numbers real without
@@ -23,6 +24,11 @@ BYOK-correct (D-041) is metered without a second line. Inside a scope:
   under the kind of call: ``youtube_search``, ``video_metadata`` or
   ``channel_sync``.
   The install-wide ``api_quota_log`` row is written exactly as before.
+- ``youtube_service._whisper_transcribe_with_retry``, which every hosted
+  Whisper call goes through (the YouTube fallback, podcast audio, Echo
+  recordings), adds the seconds each response reports as ``whisper_seconds``:
+  what OpenAI bills, chunk overlap included. It is charged to the scope's
+  feature, else ``ingest``; an Echo recording's scope names ``echo_shares``.
 
 Nested scopes for the same tenant share the outermost one's ledger, and the
 outermost scope that named a feature wins (a saved search's run is a
@@ -42,14 +48,31 @@ until the caller's outermost transaction ends, by commit, rollback or close.
 Tokens spent on work that is then rolled back are still recorded: they were
 spent. Metering never raises into the work it measures.
 
+**Part-way through long work.** A worker that dies never reaches the close,
+so an open scope also writes what it has counted so far, at most once every
+``USAGE_FLUSH_INTERVAL_SECONDS`` (``checkpoint``). It tries after every model
+call and every Whisper response (the chunks of a split recording are billed
+minutes apart inside one iteration of the caller's loop), and wherever a long
+loop calls ``checkpoint()``, which is how YouTube units get written in a run
+with no model calls, and what a try was too early for or had to leave. It
+keeps the rules above: its own session, and while the caller's transaction has
+written it leaves the amounts where they are for a later checkpoint or the
+close. Each amount leaves the ledger before it is written and goes back only
+when that write rolled back, so a checkpoint and the close never write the
+same amount. A redelivered task starts with an empty ledger and adds only what
+it spends itself; work it repeats it really did pay for twice. A dead worker
+loses what it counted since its last write, never more.
+
 What is not counted: local models that report no usage (their calls are
-counted, their tokens are not), Whisper audio minutes, embeddings (local),
-and the startup probes (``probe_config`` builds its own clients).
+counted, their tokens are not), a Whisper request that got no response (OpenAI
+may still bill one that timed out), embeddings (local), and the startup probes
+(``probe_config`` builds its own clients).
 """
 from __future__ import annotations
 
 import logging
 import threading
+import time
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -60,13 +83,15 @@ from typing import Any, Iterator
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Vocabulary
 # ---------------------------------------------------------------------------
 
-METRICS: tuple[str, ...] = ("llm_tokens_in", "llm_tokens_out", "llm_calls", "youtube_units")
+METRICS: tuple[str, ...] = ("llm_tokens_in", "llm_tokens_out", "llm_calls", "youtube_units", "whisper_seconds")
 
 # The daily totals mirrored into quota_usage (the keys /auth/quota reports).
 _QUOTA_METRICS: tuple[str, ...] = ("llm_tokens_in", "llm_tokens_out", "youtube_units")
@@ -161,6 +186,10 @@ def _today() -> date:
     return datetime.now(timezone.utc).date()
 
 
+def _clock() -> float:
+    return time.monotonic()
+
+
 # ---------------------------------------------------------------------------
 # Scopes
 # ---------------------------------------------------------------------------
@@ -175,6 +204,7 @@ class _Ledger:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._amounts: dict[tuple[date, str, str], int] = {}
+        self._last_flush = _clock()
 
     def add(self, feature: str, metric: str, amount: int) -> None:
         if amount <= 0:
@@ -192,12 +222,36 @@ class _Ledger:
         with self._lock:
             return dict(self._amounts)
 
+    def restore(self, entries: dict[tuple[date, str, str], int]) -> None:
+        """Take back amounts a write rolled back; they keep the day they were spent."""
+        with self._lock:
+            for key, amount in entries.items():
+                self._amounts[key] = self._amounts.get(key, 0) + amount
+
+    def flush_due(self, interval: float) -> bool:
+        return _clock() - self._last_flush >= interval
+
+    def claim_flush(self, interval: float) -> bool:
+        """True for the one caller that may flush now: pool threads race here
+        and one of them wins. The interval restarts only for a write, so a try
+        that had to wait does not cost the next one its turn."""
+        now = _clock()
+        with self._lock:
+            if now - self._last_flush < interval:
+                return False
+            self._last_flush = now
+            return True
+
 
 @dataclass
 class Scope:
     tenant_id: str
     feature: str | None
     ledger: _Ledger = field(default_factory=_Ledger)
+    # The session the outermost scope closes on and the thread that owns it:
+    # a checkpoint on any other thread must not touch that session.
+    db: Session | None = None
+    thread: int = field(default_factory=threading.get_ident)
 
     def add_llm(self, use_case: str, tokens_in: int | None, tokens_out: int | None) -> None:
         feature = self.feature or feature_for_use_case(use_case)
@@ -207,6 +261,12 @@ class Scope:
 
     def add_youtube(self, operation: str, units: int) -> None:
         self.ledger.add(YOUTUBE_FEATURES.get(operation, "other"), "youtube_units", units)
+
+    def add_whisper(self, seconds: float) -> None:
+        # OpenAI bills to the nearest second, and a clip under half a second
+        # was still sent, so a billed call never rounds away to nothing.
+        if seconds > 0:
+            self.ledger.add(self.feature or "ingest", "whisper_seconds", max(1, round(seconds)))
 
 
 _current: ContextVar[Scope | None] = ContextVar("usage_scope", default=None)
@@ -228,7 +288,10 @@ def metered(db: Session | None, tenant_id: str | None, *, feature: str | None = 
         return
     parent = _current.get()
     if parent is not None and parent.tenant_id == tenant_id:
-        child = Scope(tenant_id=tenant_id, feature=parent.feature or feature, ledger=parent.ledger)
+        child = Scope(
+            tenant_id=tenant_id, feature=parent.feature or feature, ledger=parent.ledger,
+            db=parent.db, thread=parent.thread,
+        )
         token = _current.set(child)
         try:
             yield child
@@ -236,7 +299,7 @@ def metered(db: Session | None, tenant_id: str | None, *, feature: str | None = 
             _current.reset(token)
         return
 
-    scope = Scope(tenant_id=tenant_id, feature=feature)
+    scope = Scope(tenant_id=tenant_id, feature=feature, db=db)
     token = _current.set(scope)
     try:
         yield scope
@@ -300,6 +363,7 @@ class UsageCallback(BaseCallbackHandler):  # type: ignore[misc,valid-type]
         try:
             tin, tout = tokens_from_result(response)
             self.scope.add_llm(self.use_case, tin, tout)
+            _checkpoint(self.scope)
         except Exception:  # noqa: BLE001 - metering never breaks a call
             logger.exception("usage: could not count a %s call", self.use_case)
 
@@ -337,6 +401,19 @@ def record_youtube(operation: str, units: int) -> None:
         scope.add_youtube(operation, units)
     except Exception:  # noqa: BLE001
         logger.exception("usage: could not count a YouTube %s call", operation)
+
+
+def record_whisper(seconds: float) -> None:
+    """Called for every response from the hosted Whisper API, with the audio
+    seconds it reports. No scope, nothing recorded."""
+    scope = _current.get()
+    if scope is None:
+        return
+    try:
+        scope.add_whisper(seconds)
+        _checkpoint(scope)
+    except Exception:  # noqa: BLE001
+        logger.exception("usage: could not count Whisper audio")
 
 
 # ---------------------------------------------------------------------------
@@ -458,18 +535,21 @@ def _caller_has_written(db: Session) -> bool:
         return True
 
 
-def _write_own(bind: Any, tenant_id: str, entries: dict[tuple[date, str, str], int]) -> None:
-    """Write and commit a ledger in a session of the meter's own."""
+def _write_own(bind: Any, tenant_id: str, entries: dict[tuple[date, str, str], int]) -> bool:
+    """Write and commit a ledger in a session of the meter's own. False when
+    the write failed and was rolled back, so nothing of it was kept."""
     own = Session(bind=bind, autoflush=False, expire_on_commit=False)
     try:
         _write(own, tenant_id, entries)
         own.commit()
+        return True
     except Exception:  # noqa: BLE001
         logger.exception("usage: write failed for tenant %s", tenant_id[:8])
         try:
             own.rollback()
         except Exception:  # noqa: BLE001
             pass
+        return False
     finally:
         own.close()
 
@@ -489,6 +569,45 @@ def flush(db: Session, scope: Scope) -> None:
         logger.exception("usage: could not write for tenant %s", tenant_id[:8])
         return
     _write_own(bind, tenant_id, entries)
+
+
+def _checkpoint(scope: Scope | None) -> bool:
+    interval = settings.USAGE_FLUSH_INTERVAL_SECONDS
+    if scope is None or interval <= 0 or not scope.ledger.flush_due(interval):
+        return False
+    try:
+        db = scope.db
+        # A Session is not thread-safe, and report map batches run on a pool
+        # while the task's own thread waits for them, so off that thread the
+        # meter reads only the bookkeeping it keeps itself.
+        if threading.get_ident() == scope.thread:
+            wait = _caller_has_written(db)
+        else:
+            wait = bool(db.info.get(_WROTE))
+        if wait:  # the amounts stay in the ledger for a later try or the close
+            return False
+        bind = db.get_bind()
+    except Exception:  # noqa: BLE001
+        logger.exception("usage: part-way write skipped for tenant %s", scope.tenant_id[:8])
+        return False
+    if not scope.ledger.claim_flush(interval):
+        return False
+    entries = scope.ledger.drain()
+    if not entries:
+        return False
+    if _write_own(bind, scope.tenant_id, entries):
+        return True
+    scope.ledger.restore(entries)
+    return False
+
+
+def checkpoint() -> bool:
+    """Write what the open scope has counted so far, if the interval has passed
+    (see the module docstring). True when it wrote.
+
+    For long loops, at a point where the caller has committed: a no-op without
+    a scope, cheap before the interval, safe on any thread, and it never raises."""
+    return _checkpoint(_current.get())
 
 
 def record(db: Session, tenant_id: str, feature: str, metric: str, amount: int) -> None:
@@ -544,7 +663,7 @@ def summary(db: Session, tenant_id: str, *, today: date | None = None, days: int
         w = slot["last_30_days"]
         spent = w["llm_tokens_in"] + w["llm_tokens_out"]
         pos = order.index(feature) if feature in order else len(order)
-        return (-spent, -w["youtube_units"], -w["llm_calls"], pos, feature)
+        return (-spent, -w["youtube_units"], -w["whisper_seconds"], -w["llm_calls"], pos, feature)
 
     since = db.query(func.min(UsageRecord.day)).filter(UsageRecord.tenant_id == tenant_id).scalar()
     return {

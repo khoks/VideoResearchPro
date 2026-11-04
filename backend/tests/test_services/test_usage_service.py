@@ -17,6 +17,7 @@ from app.models.quota_usage import QuotaUsage
 from app.models.usage_record import UsageRecord
 from app.services import llm_service, quota_metering_service, quota_service, usage_service
 from app.services.llm_routing import USE_CASE_REGISTRY
+from tests.usage_helpers import flush_always_due, whisper_api  # noqa: F401
 from tests.usage_helpers import call_llm, metered_llms, usage_rows, youtube_network  # noqa: F401
 
 
@@ -350,11 +351,30 @@ def test_summary_reads_only_the_callers_rows_in_the_window(db, test_user):
     by = {f["feature"]: f for f in out["features"]}
     assert [f["feature"] for f in out["features"]] == ["report", "library_qa", "youtube_search"]
     assert by["report"]["last_30_days"]["llm_tokens_in"] == 9000 and by["report"]["today"]["llm_tokens_in"] == 0
-    assert by["library_qa"]["today"] == {"llm_tokens_in": 500, "llm_tokens_out": 0, "llm_calls": 2, "youtube_units": 0}
+    assert by["library_qa"]["today"] == {"llm_tokens_in": 500, "llm_tokens_out": 0, "llm_calls": 2,
+                                         "youtube_units": 0, "whisper_seconds": 0}
     assert by["youtube_search"]["label"] == "Searches (YouTube)"
     assert by["youtube_search"]["last_30_days"]["youtube_units"] == 200
     assert out["totals"]["today"]["llm_tokens_in"] == 500
     assert out["totals"]["last_30_days"]["llm_tokens_in"] == 9500
+
+
+def test_summary_carries_whisper_seconds_and_sorts_on_them_after_tokens_and_units(db, test_user):
+    today = date(2026, 11, 3)
+    rows = [
+        (today, "ingest", "whisper_seconds", 5400),
+        (today, "echo_shares", "whisper_seconds", 90),
+        (today, "library_qa", "llm_calls", 40),
+        (today, "report", "youtube_units", 3),
+    ]
+    for day, feature, metric, amount in rows:
+        db.add(UsageRecord(tenant_id=test_user.id, day=day, feature=feature, metric=metric, amount=amount))
+    db.commit()
+
+    out = usage_service.summary(db, test_user.id, today=today)
+    assert [f["feature"] for f in out["features"]] == ["report", "ingest", "echo_shares", "library_qa"]
+    assert out["totals"]["today"]["whisper_seconds"] == 5490
+    assert out["features"][1]["last_30_days"]["whisper_seconds"] == 5400
 
 
 def test_record_writes_one_amount_now(db, test_user):

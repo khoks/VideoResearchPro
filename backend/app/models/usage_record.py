@@ -1,9 +1,10 @@
 """UsageRecord: what one tenant spent on one day, by feature (E-5.2).
 
 One row per ``(tenant_id, day, feature, metric)``; ``amount`` only grows.
-Written by ``usage_service`` when a metering scope closes, read by
-``GET /api/v1/usage``. Metrics: ``llm_tokens_in``, ``llm_tokens_out``,
-``llm_calls`` and ``youtube_units``. Features are the user-facing actions
+Written by ``usage_service`` when a metering scope closes, and part-way
+through a long one; read by ``GET /api/v1/usage``. Metrics: ``llm_tokens_in``,
+``llm_tokens_out``, ``llm_calls``, ``youtube_units`` and ``whisper_seconds``.
+Features are the user-facing actions
 (``library_qa``, ``report``, ``search``, ...) listed in
 ``usage_service.FEATURES``.
 

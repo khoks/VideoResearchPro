@@ -256,20 +256,46 @@ Editorial, never blame-y, never tech-jargon-only:
 
 ## 8. Asset inventory
 
-Files to create as part of the brand rollout. **Shipped 2026-10-19 with S-8.12.2** (an interim rendering of the §3 echo mark, re-rendered from `logo-mark.svg` by `npm run icons`): the favicon, the Apple touch icon, the mark-only logo, the manifest (plus 192 / 512 / maskable PNGs under `frontend/public/icons/`) and the page title. The Open Graph image, the full lockup and the marketing set are still to do.
+Files of the brand rollout. **Shipped 2026-10-19 with S-8.12.2:** the favicon, the Apple touch icon, the mark-only logo, the manifest (plus 192 / 512 / maskable PNGs under `frontend/public/icons/`) and the page title, all from the §3 echo mark, re-rendered from `logo-mark.svg` by `npm run icons`. [D-112](decisions.md#d-112--the-remaining-rulings-of-2026-10-25-map-batching-public-sharing-the-code-mixing-threshold-and-the-quick-calls-2026-10-25) made that mark the identity. **Made 2026-11-04 (T-2.8.2, T-2.8.4):** the full lockup and the marketing set, which also gives the marketing site the favicon its layout links to. The Open Graph image waits until M11 is scheduled (T-2.8.3).
+
+**The owner has not seen the 2026-11-04 artwork.** It was checked by rendering it, not by the person whose brand it is. Treat it as a proposal until they have.
 
 | Asset | Path | Notes |
 |-------|------|-------|
 | Favicon | `frontend/public/favicon.svg` | Concentric-arcs glyph mark, dark/light variants |
 | Apple touch icon | `frontend/public/apple-touch-icon.png` | 180×180 |
-| Open Graph image | `frontend/public/og.png` | 1200×630, masthead lockup over paper bg |
-| Logo SVG (full lockup) | `frontend/public/logo-full.svg` | Devanagari + Latin |
-| Logo SVG (mark only) | `frontend/public/logo-mark.svg` | Concentric arcs |
+| Open Graph image | `frontend/public/og.png` | 1200×630, masthead lockup over paper bg. Not made yet: waits for M11 (T-2.8.3) |
+| Logo SVG (full lockup) | `frontend/public/logo-full.svg` | Mark + Devanagari + Latin, text outlined. For light backgrounds |
+| Logo SVG (full lockup, dark) | `frontend/public/logo-full-dark.svg` | The same drawing in the dark tokens |
+| Logo SVG (mark only) | `frontend/public/logo-mark.svg` | Concentric arcs. The master: every logo and app icon comes from it |
+| Logo SVG (mark only, dark) | `frontend/public/logo-mark-dark.svg` | The master's arcs in the dark accent |
 | Manifest | `frontend/public/manifest.webmanifest` | Update `name`, `short_name`, `theme_color: #7a2c1a` |
 | Page title | `frontend/index.html` | `<title>Pratidhvani — Your sources, echoed back.</title>` |
-| Marketing site logo | `marketing/public/logo-*.svg` | Same set, marketing-side |
+| Marketing full lockup | `marketing/public/logo-full.svg`, `marketing/public/logo-full-dark.svg` | Same files as the app's |
+| Marketing mark | `marketing/public/logo-mark.svg`, `marketing/public/logo-mark-dark.svg` | Same files as the app's |
+| Marketing favicon | `marketing/public/favicon.svg` | The app's favicon; `marketing/src/layouts/BaseLayout.astro` links it |
 
 These are tracked in [feature-roadmap.md](feature-roadmap.md) as a "rebrand asset rollout" milestone, not part of the doc-refresh phase.
+
+### How the full lockup is built
+
+- **The wordmarks follow §3:** Tiro Devanagari Hindi Regular, and Fraunces Italic at optical size 14, weight 500, letter-spacing −0.01em, lowercase.
+- **§3 sets no colours, so the lockup takes the app's:** Devanagari in `accent.primary`, Latin in `text.secondary`. The Astro site sets its Devanagari in `text.primary`.
+- **Layout:** the mark at its master size, the text block exactly as tall as the mark's ink, both wordmarks on one left edge.
+- **Smallest size: 32 px tall.** Below that the Latin line stops being legible at 1× pixels. Use the mark alone (§1).
+- **Dark is a separate file, not a media query:** `prefers-color-scheme` follows the operating system, and the app's theme is a toggle on `data-theme`.
+- **The live pages set the Latin line differently from §3:** roman capitals, tracked wide, in `frontend/src/layouts/AppLayout.tsx`, `frontend/src/components/auth/AuthShell.tsx` and `frontend/src/pages/marketing/`, and roman mixed case on the Astro site. The logo follows §3. One of the two should change, and that is the owner's call.
+
+The text is outlines, shaped by HarfBuzz, so no logo depends on an installed font. To change the artwork, change `logo-mark.svg` or the constants in `frontend/scripts/outline-logos.py` and regenerate (its header has the steps); do not edit the SVGs by hand. `backend/tests/test_ci/test_brand_assets.py` holds the files to the master, the tokens and the shaping, and pins both wordmarks' outlines, so a regeneration that changes them fails until someone has rendered the result, looked at it and updated `WORDMARK_SHA256`.
+
+### Fonts behind the outlines
+
+| Wordmark | Font | Taken from | Licence |
+|----------|------|------------|---------|
+| Devanagari | Tiro Devanagari Hindi Regular, version 1.52, © The Indigo Project Authors | npm `@fontsource/tiro-devanagari-hindi@5.3.0` | SIL OFL 1.1 |
+| Latin | Fraunces Italic variable, version 1.000, © The Fraunces Project Authors | npm `@fontsource-variable/fraunces@5.3.0` | SIL OFL 1.1 |
+
+Outlining is allowed: the OFL's terms do "not apply to any document created using the Font Software", and neither font declares a Reserved Font Name. No font file is in the repository.
 
 ---
 

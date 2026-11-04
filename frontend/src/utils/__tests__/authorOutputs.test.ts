@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyOutputProgress,
+  deckSourceIds,
+  describeCreateError,
+  filterKnowledgeSources,
+  knowledgeSourceMeta,
   downloadLabel,
   estimateLabel,
   fileFormatOptions,
@@ -176,5 +180,39 @@ describe('S-6.7.2 download helpers', () => {
     expect(fileFormatOptions(kinds, 'deck')).toEqual([]);
     expect(formatsParameter([], new Set(['pdf']))).toBeUndefined();
     expect(fileFormatOptions({ available: ['book'], supported: ['book'] }, 'book')).toEqual([]);
+  });
+});
+
+describe('S-6.3.2 deck sources', () => {
+  const doc = {
+    document_id: 'd1',
+    title: 'BP tablets',
+    source_type: 'video',
+    channel_name: 'Dr Raju Health',
+    published_at: null,
+    knowledge_extracted_at: '2026-11-01T10:00:00',
+  };
+
+  it('keeps runs as bare ids and names documents', () => {
+    expect(deckSourceIds(new Set(['j1', 'j2']), new Set(['d1']))).toEqual(['j1', 'j2', 'document:d1']);
+    expect(deckSourceIds([], [])).toEqual([]);
+  });
+
+  it('describes a knowledge report by its source', () => {
+    expect(knowledgeSourceMeta(doc)).toBe('YouTube video · Dr Raju Health · report 1 Nov 2026');
+    expect(knowledgeSourceMeta({ ...doc, source_type: 'pdf', channel_name: '', knowledge_extracted_at: null })).toBe('PDF');
+    expect(knowledgeSourceMeta({ ...doc, source_type: 'something_new', channel_name: ' ' })).toBe('Source · report 1 Nov 2026');
+  });
+
+  it('filters by title or channel', () => {
+    const pdf = { ...doc, document_id: 'd2', title: 'Guideline', channel_name: '' };
+    expect(filterKnowledgeSources([doc, pdf], 'raju').map((d) => d.document_id)).toEqual(['d1']);
+    expect(filterKnowledgeSources([doc, pdf], ' GUIDE ').map((d) => d.document_id)).toEqual(['d2']);
+    expect(filterKnowledgeSources(undefined, '')).toEqual([]);
+  });
+
+  it('turns a 404 or 409 into the server sentence', () => {
+    expect(describeCreateError({ response: { status: 409, data: { detail: 'No report yet.' } } }, 'deck')).toBe('No report yet.');
+    expect(describeCreateError({ response: { status: 404, data: {} } }, 'deck')).toBe('A chosen source is no longer in your library.');
   });
 });

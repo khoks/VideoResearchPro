@@ -256,9 +256,16 @@ def render(deck: Deck) -> bytes:
     return buf.getvalue()
 
 
-def byline(runs: int, model: str, when: datetime | None = None) -> tuple[str, str]:
+def byline(runs: int, model: str, when: datetime | None = None, *, knowledge: int = 0) -> tuple[str, str]:
+    """The title slide's two lines. ``knowledge``: how many of the deck's
+    sources are knowledge reports about single documents (S-6.3.2)."""
     when = when or datetime.now(timezone.utc)
+    parts = []
+    if runs or not knowledge:
+        parts.append(f"{runs} research run{'' if runs == 1 else 's'}")
+    if knowledge:
+        parts.append(f"{knowledge} knowledge report{'' if knowledge == 1 else 's'}")
     return (
-        f"Compiled by Pratidhvani Author Studio from {runs} research run{'' if runs == 1 else 's'} · {when:%Y-%m-%d}",
+        f"Compiled by Pratidhvani Author Studio from {' and '.join(parts)} · {when:%Y-%m-%d}",
         f"Slides planned by a model ({model}) from the reports; every point's sources are in the slide notes.",
     )

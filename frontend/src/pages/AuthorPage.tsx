@@ -7,6 +7,7 @@ import {
   useCreateOutput,
   useCancelOutput,
   useDeleteOutput,
+  useKnowledgeSources,
 } from '../hooks/useAuthor';
 import { useOutputsProgress } from '../hooks/useOutputProgress';
 import { ProgressBar } from '../components/common/ProgressBar';
@@ -15,7 +16,7 @@ import { useJobs } from '../hooks/useJobs';
 import { useShelves } from '../hooks/useShelves';
 import { useTierCapabilities } from '../hooks/useTierCapabilities';
 import { useJobStore } from '../stores/jobStore';
-import { authorApi, type OutputItem } from '../services/authorApi';
+import { authorApi, type KnowledgeSource, type OutputItem } from '../services/authorApi';
 import {
   Badge,
   Button,
@@ -36,6 +37,9 @@ import {
   describeCreateError,
   COHESION_OPTIONS,
   DEFAULT_COHESION,
+  deckSourceIds,
+  filterKnowledgeSources,
+  knowledgeSourceMeta,
   NEWSLETTER_PERIODS,
   NEWSLETTER_SECTIONS,
   defaultNewsletterSections,
@@ -560,7 +564,8 @@ function OutputRow({
 /**
  * Create + generate in one step. For `book`, source IDs are job IDs (one
  * chapter per run), so the picker lists the user's non-subscription runs
- * and only lets finished runs with a report be chosen.
+ * and only lets finished runs with a report be chosen. A `deck` also takes
+ * documents with a knowledge report, as `document:<id>` (S-6.3.2).
  */
 function CreateOutputModal({
   kind,
@@ -610,17 +615,38 @@ function CreateOutputModal({
       return next;
     });
   };
+  // S-6.3.2: a deck takes knowledge reports (one document each) beside runs.
+  const isDeck = kind === 'deck';
+  const knowledge = useKnowledgeSources(isDeck);
+  const [docsSelected, setDocsSelected] = useState<Set<string>>(() => new Set());
+  const [docSearch, setDocSearch] = useState('');
+  const docCandidates = useMemo(() => filterKnowledgeSources(knowledge.data, docSearch), [knowledge.data, docSearch]);
+  const toggleDoc = (id: string) => {
+    setDocsSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const sourceIds = isSite
+    ? [...[...shelvesSelected].map((id) => `shelf:${id}`), ...[...selected].map((id) => `job:${id}`)]
+    : isDeck
+      ? deckSourceIds(selected, docsSelected)
+      : [...selected];
   // A deck always calls a model (S-6.3.1); a book only with framing.
   const estimate = useOutputEstimate(
     {
       kind,
       title: title.trim() || 'Untitled',
-      source_ids: [...selected],
+      source_ids: isDeck ? sourceIds : [...selected],
       parameters: isBook ? { cohesion } : kind === 'newsletter' ? { sections: { featured: true } } : {},
     },
     kind === 'newsletter'
       ? Boolean(nlSections.featured)
-      : selected.size > 0 && (isBook ? cohesion !== 'none' : kind === 'deck'),
+      : isDeck
+        ? sourceIds.length > 0
+        : selected.size > 0 && isBook && cohesion !== 'none',
   );
   const toggleFormat = (format: string, on: boolean) => {
     const next = new Set(chosen);
@@ -646,11 +672,10 @@ function CreateOutputModal({
 
   const canSubmit =
     title.trim().length > 0 &&
-    (isNewsletter ? Object.values(nlSections).some(Boolean) : selected.size > 0 || (isSite && shelvesSelected.size > 0)) &&
+    (isNewsletter
+      ? Object.values(nlSections).some(Boolean)
+      : selected.size > 0 || (isSite && shelvesSelected.size > 0) || (isDeck && docsSelected.size > 0)) &&
     !create.isPending;
-  const sourceIds = isSite
-    ? [...[...shelvesSelected].map((id) => `shelf:${id}`), ...[...selected].map((id) => `job:${id}`)]
-    : [...selected];
 
   const submit = () => {
     if (!canSubmit) return;
@@ -715,7 +740,7 @@ function CreateOutputModal({
               ? "Each run's report becomes a page with its citations, and each source gets a page listing the reports that cite it. No model is involved, and nothing on the site loads from the web."
               : isNewsletter
                 ? 'The lists come straight from your library. If nothing is new in the period, no issue is made.'
-                : 'A model plans the slides from the reports. A slide that cites no source is left out, and every slide lists its sources in its notes.'}
+                : 'A model plans the slides from the reports you pick: run reports, knowledge reports, or both. A slide that cites no source is left out, and every slide lists its sources in its notes.'}
         </p>
 
         <FormField label="Title" required>
@@ -810,15 +835,11 @@ function CreateOutputModal({
         {!isNewsletter && (
         <FormField
           label={isBook ? 'Chapters' : 'Runs'}
-          required={!isSite}
+          required={!isSite && !isDeck}
           helperText={
             isBook
               ? `${selected.size} selected. One chapter per run: its report, and its Q&A if you keep that on.`
-              : isSite
-              ? `${selected.size} selected.`
-              : `${selected.size} selected. The deck draws on every report you pick.${
-                  selected.size > 0 && estimateLabel(estimate.data) ? ` ${estimateLabel(estimate.data)}.` : ''
-                }`
+              : `${selected.size} selected.`
           }
         >
           {(id) => (
@@ -855,6 +876,65 @@ function CreateOutputModal({
             </div>
           )}
         </FormField>
+        )}
+
+        {isDeck && (
+          <FormField
+            label="Knowledge reports"
+            helperText={`${docsSelected.size} selected. A knowledge report describes one source as a whole, so its slides cite that source rather than moments in it. ${
+              sourceIds.length > 0
+                ? `The deck draws on all ${sourceIds.length} ${sourceIds.length === 1 ? 'report' : 'reports'} you picked.${
+                    estimateLabel(estimate.data) ? ` ${estimateLabel(estimate.data)}.` : ''
+                  }`
+                : 'Pick runs, knowledge reports or both.'
+            }`}
+          >
+            {(id) => (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: space['2'] }}>
+                <Input
+                  id={id}
+                  value={docSearch}
+                  onChange={(e) => setDocSearch(e.target.value)}
+                  placeholder="Filter knowledge reports by source…"
+                />
+                <div
+                  data-testid="knowledge-picker"
+                  style={{
+                    maxHeight: 220,
+                    overflowY: 'auto',
+                    border: `1px solid ${c.border}`,
+                    borderRadius: radius.md,
+                    background: c.surface,
+                  }}
+                >
+                  {knowledge.isLoading ? (
+                    <div style={{ padding: space['4'], textAlign: 'center' }}>
+                      <Spinner />
+                    </div>
+                  ) : knowledge.isError ? (
+                    <div style={{ padding: space['4'], fontFamily: fonts.body, fontSize: fontSize.sm, color: c.error }}>
+                      Could not load your knowledge reports.
+                    </div>
+                  ) : docCandidates.length === 0 ? (
+                    <div style={{ padding: space['4'], fontFamily: fonts.body, fontSize: fontSize.sm, color: c.textMuted, fontStyle: 'italic' }}>
+                      {(knowledge.data ?? []).length > 0
+                        ? 'No knowledge reports match that filter.'
+                        : 'No knowledge reports yet. Open a source in the library and choose Knowledge report; it is listed here once extracted.'}
+                    </div>
+                  ) : (
+                    docCandidates.map((doc) => (
+                      <KnowledgePickRow
+                        key={doc.document_id}
+                        source={doc}
+                        checked={docsSelected.has(doc.document_id)}
+                        onToggle={() => toggleDoc(doc.document_id)}
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </FormField>
         )}
 
         {isBook && (
@@ -973,6 +1053,39 @@ function JobPickRow({ job, checked, onToggle }: { job: Job; checked: boolean; on
             </>
           )}
         </span>
+      </span>
+    </label>
+  );
+}
+
+/** S-6.3.2: one document with a knowledge report, in the deck's picker. */
+function KnowledgePickRow({ source, checked, onToggle }: { source: KnowledgeSource; checked: boolean; onToggle: () => void }) {
+  const c = useColors();
+  return (
+    <label
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: space['3'],
+        padding: `${space['2']} ${space['3']}`,
+        borderBottom: `1px solid ${c.border}`,
+        cursor: 'pointer',
+      }}
+    >
+      <input type="checkbox" checked={checked} onChange={onToggle} style={{ marginTop: 3, accentColor: c.accent }} />
+      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span
+          style={{
+            fontFamily: fonts.ui,
+            fontSize: fontSize.sm,
+            fontWeight: fontWeight.medium,
+            color: c.textPrimary,
+            overflowWrap: 'anywhere',
+          }}
+        >
+          {source.title}
+        </span>
+        <span style={{ fontFamily: fonts.ui, fontSize: fontSize.xs, color: c.textMuted }}>{knowledgeSourceMeta(source)}</span>
       </span>
     </label>
   );

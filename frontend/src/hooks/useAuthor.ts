@@ -12,6 +12,17 @@ export function useAuthorKinds(enabled = true) {
   });
 }
 
+/** S-6.3.2: the caller's documents with a knowledge report, for the deck's
+ * create modal. */
+export function useKnowledgeSources(enabled = true) {
+  return useQuery({
+    queryKey: ['author', 'knowledge-sources'],
+    queryFn: () => authorApi.listKnowledgeSources(),
+    staleTime: 60_000,
+    enabled,
+  });
+}
+
 export function useAuthorOutputs(params?: ListOutputsParams, enabled = true) {
   return useQuery({
     queryKey: [...OUTPUTS_KEY, params?.kind ?? null, params?.status ?? null],

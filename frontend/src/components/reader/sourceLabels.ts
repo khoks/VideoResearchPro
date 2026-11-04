@@ -32,6 +32,11 @@ const KIND_LABEL: Record<string, string> = {
   tweet: 'Post on X',
 };
 
+/** "YouTube video", "PDF"… for a `source_type`; "Source" for one not listed. */
+export function sourceKindLabel(kind: string | null | undefined): string {
+  return KIND_LABEL[kind || 'video'] ?? 'Source';
+}
+
 const TIMED = new Set(['video', 'podcast_episode']);
 
 function host(url: string | null | undefined): string | null {
@@ -88,7 +93,7 @@ export function describeSource(source: CitationSource): SourceDescription {
       meta = [host(link), author, published];
   }
   return {
-    kind: KIND_LABEL[kind] ?? 'Source',
+    kind: sourceKindLabel(kind),
     meta: meta.filter((x): x is string => !!x),
     timed: TIMED.has(kind),
   };

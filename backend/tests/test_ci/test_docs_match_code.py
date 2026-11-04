@@ -13,16 +13,18 @@ import re
 from pathlib import Path
 
 import pytest
-from fastapi.routing import APIRoute, APIWebSocketRoute
+from fastapi.routing import APIWebSocketRoute
 from pydantic import TypeAdapter
 
 from app.config import Settings
 from app.main import app
+from app.routers.ws import router as ws_router
 from app.services import llm_routing
 
 ROOT = Path(__file__).resolve().parents[3]
 TEMPLATE = ROOT / ".env.example"
 FIELDS = Settings.model_fields
+HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
 
 SECRET_NAME = re.compile(r"(_KEY|_SECRET|_PASSWORD|_TOKEN)$")
 GROUP_LINE = re.compile(r"^# ===== (.+) =====$")
@@ -80,13 +82,20 @@ def _key(method: str, path: str) -> tuple[str, str]:
 
 
 def _routes() -> set[tuple[str, str]]:
-    found = set()
-    for route in app.routes:
-        if isinstance(route, APIWebSocketRoute):
-            found.add(_key("WS", route.path))
-        elif isinstance(route, APIRoute):
-            found.update(_key(m, route.path) for m in route.methods if m not in ("HEAD", "OPTIONS"))
+    """What the app serves, read through OpenAPI. `app.routes` is no public
+    list of them: FastAPI 0.162, which CI installs, wraps each included router
+    in a private `_IncludedRouter`. The schema has no WebSockets, so those come
+    from their router. Every HTTP route is in the schema: nothing sets
+    `include_in_schema=False`."""
+    found = {
+        _key(method.upper(), path)
+        for path, operations in app.openapi()["paths"].items()
+        for method in operations
+        if method.upper() in HTTP_METHODS
+    }
+    found.update(_key("WS", r.path) for r in ws_router.routes if isinstance(r, APIWebSocketRoute))
     assert len(found) > 150, "the app's routes did not load"
+    assert ("WS", "/ws/jobs") in found, "the progress socket did not load"
     return found
 
 

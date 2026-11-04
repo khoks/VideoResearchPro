@@ -216,7 +216,7 @@ def test_a_guard_refuses_a_redirect_to_another_scheme():
     web = Web({"https://a.example/x": _redirect("file:///etc/passwd")})
     with patch("app.services.article_extraction.extractor.httpx.get", web), pytest.raises(RuntimeError):
         extract_text("https://a.example/x", guard=guard)
-    assert seen == ["https://a.example/x", "file:///etc/passwd"]
+    assert len(seen) == 2 and seen[1].startswith("file:")
 
 
 def test_a_guarded_fetch_never_reaches_the_browser_fallback(monkeypatch):

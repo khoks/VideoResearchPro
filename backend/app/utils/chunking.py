@@ -103,6 +103,21 @@ def _parse_datetime(value: Any) -> datetime | None:
     return dt
 
 
+def published_at_field(published_at: Any) -> str:
+    """The ``published_at`` string a chunk carries: ISO-8601, "" when unknown.
+
+    The display field the prompts read (``temporal_service.published_display``);
+    ``published_numeric_fields`` are its numeric twins. Shared with the
+    S-1.17.3 backfill, which rewrites it together with them so a chunk's
+    displayed date and its numeric date never disagree.
+    """
+    if not published_at:
+        return ""
+    if hasattr(published_at, "isoformat"):
+        return published_at.isoformat()
+    return str(published_at)
+
+
 def published_numeric_fields(published_at: Any) -> dict[str, int]:
     """``published_ts`` / ``published_year`` chunk fields for a publish date.
 
@@ -326,11 +341,7 @@ def chunk_transcript(
 
     # Normalize optional metadata so ChromaDB (which requires flat scalar
     # metadata) gets predictable types.
-    published_at = metadata.get("published_at") or ""
-    if hasattr(published_at, "isoformat"):
-        published_at = published_at.isoformat()
-    else:
-        published_at = str(published_at) if published_at else ""
+    published_at = published_at_field(metadata.get("published_at"))
 
     # T-1.17.1.6: numeric twins of `published_at`, omitted when unknown.
     published_numeric = published_numeric_fields(metadata.get("published_at"))

@@ -207,3 +207,49 @@ def test_an_unreadable_stored_profile_lists_as_none(client, db, seeded):
 
     rows = {r["id"]: r for r in client.get("/api/v1/library/videos").json()}
     assert rows[doc.document_id]["language_mix"] is None
+
+
+# --- what `code_mixed` means ------------------------------------------------
+
+
+def test_code_mixed_is_documented_as_a_property_of_the_text(client):
+    """The served API contract says what the flag is: the chunker's rule
+    applied to the measured words, not a fact about the stored chunks, which
+    may predate S-1.16.2 and carry no ``code_mix_*`` for a document profiled
+    since (the backfill, or a job that reused its chunks)."""
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+    field = resp.json()["components"]["schemas"]["LanguageMixView"]["properties"]["code_mixed"]
+    description = field.get("description") or ""
+    assert "measured text" in description
+    assert "not of its stored chunks" in description
+    assert "S-1.16.2" in description and "re-chunked" in description
+
+
+def test_code_mixed_follows_the_profile_even_when_the_chunks_predate_it(
+    client, db, seeded, ephemeral_chroma
+):
+    """A document chunked before S-1.16.2 (its chunks carry no ``code_mix_*``)
+    and profiled by the backfill since lists as code-mixed: the flag reads
+    the stored profile, as documented, and is not evidence about the chunks."""
+    from app.utils.chunking import chunk_transcript
+
+    doc = seeded["docs"][0]
+    segments = [{"text": s, "start": float(i), "duration": 1.0} for i, s in enumerate(HINGLISH)]
+    chunks = chunk_transcript(
+        segments, chunk_size=40, chunk_overlap=8,
+        video_metadata={"video_id": doc.video_id, "document_id": doc.document_id},
+    )
+    for chunk in chunks:
+        for key in [k for k in chunk["metadata"] if k.startswith("code_mix_")]:
+            chunk["metadata"].pop(key)
+    ephemeral_chroma.insert_chunks(chunks)
+    doc.language_mix = json.dumps(code_mixing_service.profile_transcript(segments))
+    db.commit()
+
+    rows = {r["id"]: r for r in client.get("/api/v1/library/videos").json()}
+    assert rows[doc.document_id]["language_mix"]["code_mixed"] is True
+    stored = ephemeral_chroma.get_document_chunks(doc.document_id, doc.video_id)
+    assert stored and not any(
+        k.startswith("code_mix_") for c in stored for k in (c.get("metadata") or {})
+    )

@@ -1,4 +1,15 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+# The documented meaning of `code_mixed`, also served in the OpenAPI schema.
+CODE_MIXED_DESCRIPTION = (
+    "Whether the measured text is not plain English by the chunker's 3% rule "
+    "(code_mixing_service.chunk_metadata_from_profile): a property of the "
+    "document's words, not of its stored chunks. A document chunked before "
+    "S-1.16.2 and profiled since (scripts/backfill_language_mix.py, or a job "
+    "that reused its existing chunks) can read true while its chunks carry no "
+    "code_mix_* fields, so the models are not told its language mix until it "
+    "is re-chunked."
+)
 
 
 class LanguageMixView(BaseModel):
@@ -17,9 +28,12 @@ class LanguageMixView(BaseModel):
     - ``hi_share``: non-English words over all language-bearing words.
     - ``matrix_hi_share``: share of speech framed by non-English grammar.
     - ``quote_mode``: ``plain_english`` / ``roman`` / ``native_script``.
-    - ``code_mixed``: whether the chunks carry the ``code_mix_*`` fields,
-      the chunker's own decision (3% presence floor), so a page labels a
-      source as mixed exactly when the models are told it is.
+    - ``code_mixed``: whether the measured TEXT is not plain English by the
+      chunker's own rule (3% presence floor). It describes the words, not
+      the stored chunks: a document chunked before S-1.16.2 and profiled
+      since (the backfill, or a job that reused its chunks without
+      re-embedding) can read true while its chunks carry no ``code_mix_*``
+      fields until it is re-chunked. See ``CODE_MIXED_DESCRIPTION``.
     """
 
     primary_language: str
@@ -27,4 +41,4 @@ class LanguageMixView(BaseModel):
     hi_share: float = 0.0
     matrix_hi_share: float = 0.0
     quote_mode: str | None = None
-    code_mixed: bool = False
+    code_mixed: bool = Field(False, description=CODE_MIXED_DESCRIPTION)

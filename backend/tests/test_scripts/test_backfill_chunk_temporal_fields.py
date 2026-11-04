@@ -5,7 +5,10 @@ production chunker's output (so ``code_mix_*``, ``document_id`` and the
 timestamps are real) with the era and numeric publish fields removed, plus a
 ``text_en`` rendering of the kind D-084 adds. The pass must add exactly the
 fields the chunker writes today, omit unknown ones, keep every other key, the
-stored text and the embedding, and find nothing to do the second time.
+stored text and the embedding, and find nothing to do the second time. The
+``published_at`` display string moves with the numeric publish fields: the
+PDF and the legacy video were chunked undated (``published_at`` is "") and
+dated later.
 """
 from __future__ import annotations
 
@@ -17,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from app.models.document import Document
-from app.services import metadata_backfill_service
+from app.services import metadata_backfill_service, temporal_service
 from app.services.metadata_backfill_service import TEMPORAL_FIELDS
 from app.utils.chunking import chunk_transcript
 
@@ -132,6 +135,9 @@ def test_dry_run_counts_per_field_and_writes_nothing(library, ephemeral_chroma, 
         "era_start": hindi_n, "era_end": hindi_n, "era_confidence": hindi_n,
         "is_retrospective": hindi_n,
         "published_ts": hindi_n + pdf_n + legacy_n, "published_year": hindi_n + pdf_n + legacy_n,
+        # The Hindi chunks already show their date; the other two were
+        # chunked undated and gain the display string with the numbers.
+        "published_at": pdf_n + legacy_n,
     }
     assert set(report["changed"].values()) == {0}
 
@@ -149,7 +155,7 @@ def test_write_adds_known_fields_keeps_every_other_key_and_never_reembeds(
         # Stored text and vector untouched; no key lost or altered.
         assert row["text"] == before[cid]["text"]
         assert row["embedding"] == before[cid]["embedding"]
-        old = before[cid]["meta"]
+        old = {k: v for k, v in before[cid]["meta"].items() if k != "published_at"}
         assert {k: row["meta"].get(k) for k in old} == old, cid
 
     published_ts = int(PUBLISHED.replace(tzinfo=timezone.utc).timestamp())
@@ -161,17 +167,26 @@ def test_write_adds_known_fields_keeps_every_other_key_and_never_reembeds(
         assert (meta["era_start"], meta["era_end"], meta["is_retrospective"]) == (2019, 2021, True)
         assert meta["era_confidence"] == pytest.approx(0.8)
         assert (meta["published_ts"], meta["published_year"]) == (published_ts, 2024)
+        # Already showed its date: the display string is left as written.
+        assert meta["published_at"] == PUBLISHED.isoformat()
     for row in _by_prefix(after, library["pdf"] + ":"):
         # A publish date but no era: the era fields stay absent, never sentinels.
         assert row["meta"]["published_year"] == 2025
         assert not any(k.startswith("era_") or k == "is_retrospective" for k in row["meta"])
+        # Chunked undated, dated later: the date the prompts show moves with
+        # the numbers instead of staying "".
+        assert row["meta"]["published_at"] == "2025-01-02T00:00:00"
+        assert temporal_service.published_display(row["meta"]["published_at"]) == "2025-01-02"
     for row in _by_prefix(after, "vidLEGACY01:"):
         # Resolved through video_id although the chunk has no document_id yet.
         assert row["meta"]["published_year"] == 2023
+        assert row["meta"]["published_at"] == "2023-06-01T00:00:00"
         assert "document_id" not in row["meta"]
     for prefix in ("vidUNDATED1:", "vidGONE0001:"):
         for row in _by_prefix(after, prefix):
             assert not any(k in row["meta"] for k in TEMPORAL_FIELDS)
+            # Nothing known, nothing written: the chunker's "" stays.
+            assert row["meta"]["published_at"] == ""
 
     # Idempotent: the second run finds every dated chunk current.
     code, again = _run(tmp_path, "--write")
@@ -188,9 +203,54 @@ def test_a_changed_publish_date_is_reported_as_changed(db, library, ephemeral_ch
     db.commit()
 
     code, report = _run(tmp_path, "--write")
-    n = len(_by_prefix(_snapshot(ephemeral_chroma), library["pdf"] + ":"))
+    rows = _by_prefix(_snapshot(ephemeral_chroma), library["pdf"] + ":")
+    n = len(rows)
     assert report["changed"]["published_ts"] == n and report["changed"]["published_year"] == 0
-    assert report["gained"]["published_ts"] == 0
+    assert report["changed"]["published_at"] == n
+    assert report["gained"]["published_ts"] == 0 and report["gained"]["published_at"] == 0
+    # The displayed date and its numeric twins agree on the corrected date.
+    published_ts = int(datetime(2025, 7, 1, tzinfo=timezone.utc).timestamp())
+    for row in rows:
+        assert row["meta"]["published_at"] == "2025-07-01T00:00:00"
+        assert row["meta"]["published_ts"] == published_ts
+
+
+def test_a_differently_spelled_same_date_is_not_rewritten(db, library, ephemeral_chroma, tmp_path):
+    """The display string is compared as an instant, not as text: a chunk
+    whose ``published_at`` is ``Z``-suffixed shows the same date and is left
+    alone, so the pass does not churn on format."""
+    collection = ephemeral_chroma.get_global_collection()
+    got = collection.get(include=["metadatas"])
+    ids = [c for c in got["ids"] if c.startswith("vidHINDI001:")]
+    spelled = PUBLISHED.isoformat() + "Z"
+    collection.update(ids=ids, metadatas=[{"published_at": spelled} for _ in ids])
+
+    _, report = _run(tmp_path, "--write")
+
+    # Only the chunks chunked undated (the PDF, the legacy video) gain it.
+    assert report["changed"]["published_at"] == 0
+    assert report["gained"]["published_at"] == report["gained"]["published_ts"] - len(ids)
+    after = _snapshot(ephemeral_chroma)
+    assert all(r["meta"]["published_at"] == spelled for r in _by_prefix(after, "vidHINDI001:"))
+
+
+def test_mutation_leaving_published_at_out_keeps_the_display_date_stale(
+    db, library, ephemeral_chroma, tmp_path, monkeypatch
+):
+    """Mutation check: the pre-fix field set (numbers only) leaves a chunk
+    that shows "" (undated) while it range-filters as 2025, which the write
+    test above catches."""
+    original = metadata_backfill_service.chunk_temporal_fields
+    monkeypatch.setattr(
+        metadata_backfill_service, "chunk_temporal_fields",
+        lambda document: {k: v for k, v in original(document).items() if k != "published_at"},
+    )
+
+    _run(tmp_path, "--write")
+
+    for row in _by_prefix(_snapshot(ephemeral_chroma), library["pdf"] + ":"):
+        assert row["meta"]["published_year"] == 2025
+        assert row["meta"]["published_at"] == ""
 
 
 def test_document_ids_limit_the_pass(library, ephemeral_chroma, tmp_path):
@@ -242,7 +302,8 @@ def test_keys_survive_an_update_that_replaces_metadata(db, library, ephemeral_ch
 
     assert report.chunks_updated > 0
     for cid, old in before.items():
-        assert {k: store.metas[cid].get(k) for k in old} == old
+        kept = {k: v for k, v in old.items() if k != "published_at"}
+        assert {k: store.metas[cid].get(k) for k in kept} == kept
     assert all(store.metas[c]["code_mix_primary"] == "hi" for c in store.metas if c.startswith("vidHINDI"))
 
 

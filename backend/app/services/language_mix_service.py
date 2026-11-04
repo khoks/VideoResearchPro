@@ -106,9 +106,12 @@ def ensure(document: Any, segments_or_text: Any) -> dict[str, Any] | None:
 def public_view(document: Any) -> dict[str, Any] | None:
     """The stored profile for an API response, or None when not profiled.
 
-    ``code_mixed`` is the chunker's own decision (``chunk_metadata_from_profile``,
-    with its 3% presence floor), so a page shows a source as mixed exactly
-    when its chunks tell the models so.
+    ``code_mixed`` applies the chunker's own rule (``chunk_metadata_from_profile``,
+    with its 3% presence floor) to the stored profile, so it says whether the
+    TEXT is not plain English. It is not a fact about the chunks: a document
+    chunked before S-1.16.2 and profiled since (the backfill, or a job that
+    reused its chunks without re-embedding) reads true while its chunks carry
+    no ``code_mix_*`` until it is re-chunked.
     """
     profile = load(document)
     if profile is None:

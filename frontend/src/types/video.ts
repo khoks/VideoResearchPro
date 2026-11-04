@@ -35,7 +35,12 @@ export interface LanguageMix {
   matrix_hi_share: number;
   /** `plain_english`, `roman` or `native_script`. */
   quote_mode: string | null;
-  /** True when the source's chunks are marked as not plain English (3% floor). */
+  /**
+   * True when the measured text is not plain English by the chunker's 3%
+   * rule. A property of the words, not of the stored chunks: a source
+   * chunked before S-1.16.2 and profiled since can read true while its
+   * chunks carry no `code_mix_*` until it is re-chunked.
+   */
   code_mixed: boolean;
 }
 

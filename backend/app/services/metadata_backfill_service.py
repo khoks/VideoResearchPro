@@ -7,9 +7,11 @@ Two passes over what the library already holds, each dry-run by default:
   (``language_mix_service.stored_segments``) with the lexicon tagger.
 * ``backfill_chunk_temporal_fields`` — the era and numeric publish fields on
   chunks embedded before R3 shipped (2026-10-19), or before their
-  document's era was extracted. D-072 deferred this backfill because it
-  read as a re-index; it is a metadata-only update, the same operation
-  ``chroma_service.backfill_chunk_document_ids`` already runs at startup.
+  document's era was extracted, with the ``published_at`` display string
+  kept in step with the numeric publish fields. D-072 deferred this
+  backfill because it read as a re-index; it is a metadata-only update, the
+  same operation ``chroma_service.backfill_chunk_document_ids`` already
+  runs at startup.
 
 Both are idempotent (a second run finds nothing to change) and resumable (an
 interrupted run is finished by running it again). The CLIs are
@@ -29,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from app.models.document import Document
 from app.services import language_mix_service, temporal_service
-from app.utils.chunking import published_numeric_fields
+from app.utils.chunking import published_at_field, published_numeric_fields
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +56,9 @@ class LanguageMixReport:
     failed: int = 0
     by_origin: Counter = field(default_factory=Counter)
     by_primary: Counter = field(default_factory=Counter)
-    # Profiles whose chunks carry `code_mix_*` (the chunker's 3% floor).
+    # Profiles that are not plain English by the chunker's 3% rule. Their
+    # chunks gain `code_mix_*` only when re-chunked; this pass writes the
+    # column, never the chunks.
     code_mixed: int = 0
 
     def as_dict(self) -> dict[str, Any]:
@@ -136,21 +140,35 @@ def backfill_language_mix(
 # S-1.17.3: era + numeric publish fields on pre-R3 chunks
 # ---------------------------------------------------------------------------
 
+# The fields R3 added to chunks: chunks embedded before it carry none of them.
 TEMPORAL_FIELDS = (
     "era_start", "era_end", "era_confidence", "is_retrospective",
     "published_ts", "published_year",
 )
+# The display date every chunk has carried since before R3 ("" when the
+# document was undated at chunk time). The prompts read it, so the pass
+# writes it together with its numeric twins: a chunk must never show one
+# date and range-filter on another.
+PUBLISHED_AT = "published_at"
+# Every field the pass may write, as its report counts them.
+REPORT_FIELDS = TEMPORAL_FIELDS + (PUBLISHED_AT,)
 
 
 def chunk_temporal_fields(document: Any) -> dict[str, Any]:
     """The temporal fields a chunk of ``document`` carries when chunked today.
 
-    The exact functions ``chunk_transcript`` uses (``era_metadata`` and
-    ``published_numeric_fields``), so an old chunk ends up with what a new
-    one is written with. Unknown values are absent, never sentinels.
+    The exact functions ``chunk_transcript`` uses (``era_metadata``,
+    ``published_numeric_fields`` and ``published_at_field``), so an old chunk
+    ends up with what a new one is written with. Unknown values are absent,
+    never sentinels; ``published_at`` is included exactly when the numeric
+    publish fields are, so the three always move together.
     """
     fields = dict(temporal_service.era_metadata(temporal_service.load_era(document)))
-    fields.update(published_numeric_fields(getattr(document, "published_at", None)))
+    published_at = getattr(document, "published_at", None)
+    numeric = published_numeric_fields(published_at)
+    if numeric:
+        fields.update(numeric)
+        fields[PUBLISHED_AT] = published_at_field(published_at)
     return fields
 
 
@@ -163,9 +181,19 @@ def _merge_metadata(stored: dict[str, Any] | None, new_fields: dict[str, Any]) -
     return {**(stored or {}), **new_fields}
 
 
-def _same(current: Any, target: Any) -> bool:
-    if current is None:
+def _missing(value: Any) -> bool:
+    # The chunker writes "" for an unknown `published_at`; every other
+    # temporal field is simply absent.
+    return value is None or value == ""
+
+
+def _same(name: str, current: Any, target: Any) -> bool:
+    if _missing(current):
         return False
+    if name == PUBLISHED_AT:
+        # The same instant, however the string is spelled (a date-only or
+        # `Z`-suffixed value is not rewritten just for its format).
+        return published_numeric_fields(current) == published_numeric_fields(target)
     if isinstance(target, bool) or isinstance(current, bool):
         return isinstance(current, bool) and isinstance(target, bool) and current == target
     if isinstance(target, float) or isinstance(current, float):
@@ -197,8 +225,8 @@ class TemporalReport:
 
     def as_dict(self) -> dict[str, Any]:
         data = asdict(self)
-        data["gained"] = {f: self.gained.get(f, 0) for f in TEMPORAL_FIELDS}
-        data["changed"] = {f: self.changed.get(f, 0) for f in TEMPORAL_FIELDS}
+        data["gained"] = {f: self.gained.get(f, 0) for f in REPORT_FIELDS}
+        data["changed"] = {f: self.changed.get(f, 0) for f in REPORT_FIELDS}
         return data
 
 
@@ -217,7 +245,10 @@ def backfill_chunk_temporal_fields(
     source_id)`` and ``video_id`` for a chunk the startup backfill has not
     stamped — and lists the fields that are missing or differ. Nothing is
     ever removed: a field the document does not know is left as the chunk
-    has it.
+    has it. ``published_at`` is rewritten with ``published_ts`` /
+    ``published_year`` whenever the document's date is known and the chunk's
+    string names a different instant (or none), so the date the prompts show
+    and the one a range filter reads always agree.
 
     With ``write``, each batch's metadata is re-read just before the update
     and sent whole (stored metadata plus the new fields). Chroma 1.5 merges
@@ -289,10 +320,10 @@ def backfill_chunk_temporal_fields(
             report.chunks_matched += 1
             diff: dict[str, Any] = {}
             for name, value in fields.items():
-                if _same(meta.get(name), value):
+                if _same(name, meta.get(name), value):
                     continue
                 diff[name] = value
-                if meta.get(name) is None:
+                if _missing(meta.get(name)):
                     report.gained[name] += 1
                 else:
                     report.changed[name] += 1

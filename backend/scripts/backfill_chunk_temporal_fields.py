@@ -10,6 +10,11 @@ This script brings every chunk of a document with ``discussed_era_json`` or
     era_start, era_end, era_confidence, is_retrospective,
     published_ts, published_year
 
+and rewrites the chunk's ``published_at`` display string with them whenever
+the document's date is known and the chunk's names a different date (or
+none: a source dated after it was chunked), so the date the prompts show
+and the one a range filter reads never disagree.
+
 Unknown fields are left out, never written as sentinels (an era with no
 start year or zero confidence counts as unknown, as at chunk time). Nothing
 is removed and nothing is re-embedded: the update is metadata only, and each
@@ -43,7 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.database import SessionLocal  # noqa: E402
 from app.services import metadata_backfill_service  # noqa: E402
-from app.services.metadata_backfill_service import TEMPORAL_FIELDS  # noqa: E402
+from app.services.metadata_backfill_service import REPORT_FIELDS  # noqa: E402
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -84,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         f"to update; {data['chunks_updated']} updated."
     )
     print(f"{'field':<18}{'gained':>10}{'changed':>10}")
-    for name in TEMPORAL_FIELDS:
+    for name in REPORT_FIELDS:
         print(f"{name:<18}{data['gained'][name]:>10}{data['changed'][name]:>10}")
     if data["stopped"]:
         print(f"STOPPED: {data['stopped']}")

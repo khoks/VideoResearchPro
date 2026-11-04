@@ -101,6 +101,44 @@ def test_post_library_qa_clarify_returns_interpretation_and_clarifications(clien
     assert "What level?" in data["clarifications"]
 
 
+def test_library_clarify_uses_the_askers_key(client, test_user):
+    """S-8.13.2: the shelf panel clarifies through this route, and the ask that
+    follows runs on the asker's BYOK key, so the clarify call must too. It used
+    to open only a metering scope, which left it on the install's key. Fails
+    with `usage_service.metered` back in place of `byok_context`."""
+    from app.services import llm_service
+    from tests.usage_helpers import CLARIFY_JSON, FakeFactory
+
+    factory = FakeFactory()
+    factory.reply = CLARIFY_JSON
+    with (
+        patch.object(llm_service, "_resolve_byok_api_key", return_value="byok-test-value") as resolve,
+        patch.object(llm_service, "_build_from_config", side_effect=factory),
+    ):
+        response = client.post("/api/v1/library/qa/clarify", json={"question": "What about rates?"})
+
+    assert response.status_code == 200, response.text
+    assert resolve.call_args.args[1] == test_user.id
+
+
+def test_library_clarify_reads_a_reply_with_thinking_blocks(client):
+    """A BYOK pin can put a reasoning model here: its reply is a block list."""
+    payload = '{"interpretation": "Rates.", "clarifications": ["Which bank?"]}'
+
+    class _Resp:
+        content = [{"type": "thinking", "thinking": "..."}, {"type": "text", "text": payload}]
+
+    class _LLM:
+        def invoke(self, _prompt):
+            return _Resp()
+
+    with patch("app.routers.library.get_llm_for", return_value=_LLM()):
+        response = client.post("/api/v1/library/qa/clarify", json={"question": "What about rates?"})
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"interpretation": "Rates.", "clarifications": ["Which bank?"]}
+
+
 # ---------------------------------------------------------------------------
 # S-8.13.1: "Confirm & search" sends the clarify answers as `context`
 # ---------------------------------------------------------------------------

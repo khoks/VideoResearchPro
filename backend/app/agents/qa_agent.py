@@ -21,7 +21,7 @@ from app.agents.prompts.shared import NOTE_ANNOTATION_CONTRACT, NOTE_MARKER_PREF
 from app.agents.state import QAAgentState
 from app.config import settings
 from app.services import chroma_service, code_mixing_service, note_index
-from app.services.llm_service import get_llm_for, response_text
+from app.services.llm_service import get_llm_for, response_text, thinking_reserve_tokens
 from app.services.llm_routing import max_output_for, resolve_config
 from app.services import output_length as output_length_policy
 from app.services import temporal_service
@@ -194,6 +194,32 @@ def _chunk_header(index: int, chunk: dict) -> str:
     return head + "]"
 
 
+def _answer_budget(
+    statistics: dict | None,
+    length_pref: str | None,
+    use_case: str,
+    base_tokens: int,
+) -> int:
+    """The answer's completion budget: D-064's multiplier, with room for thinking.
+
+    T-1.15.4.4, the rule T-1.15.3.2 gave knowledge reports (D-125). Thinking is
+    counted inside `max_tokens`, and brief's 2,025 sits under the 4,096 a Claude
+    model on legacy thinking is budgeted at medium, so that call is refused. On
+    adaptive thinking (the default `claude-sonnet-5:medium`) nothing refuses it:
+    whatever the model spends thinking comes out of the 2,025, and the answer is
+    cut short or comes back empty. So a budget the multiplier shrinks keeps the
+    thinking reserve on top of its scaled share and never exceeds the unscaled
+    figure. With reasoning on that leaves brief at 4,500, and the brief does the
+    shortening: D-062 measured that a model writes to the brief it is given far
+    more than to the ceiling. Only brief scales below 1.0, so unset, standard
+    and deep are the multiplier alone.
+    """
+    cfg = resolve_config(use_case)
+    scaled = int(base_tokens * output_length_policy.resolve_scale(statistics, length_pref))
+    budget = max(scaled, min(base_tokens, scaled + thinking_reserve_tokens(cfg)))
+    return min(budget, max_output_for(cfg.model))
+
+
 def _answer_policy(
     statistics: dict | None,
     length_pref: str | None,
@@ -215,9 +241,8 @@ def _answer_policy(
     them.
     """
     statistics = statistics or {}
-    scale = output_length_policy.resolve_scale(statistics, length_pref)
     guidance = output_length_policy.guidance(statistics, length_pref)
-    max_tokens = min(int(base_tokens * scale), max_output_for(resolve_config(use_case).model))
+    max_tokens = _answer_budget(statistics, length_pref, use_case, base_tokens)
 
     corpus_note = ""
     if statistics.get("video_count"):
@@ -236,8 +261,8 @@ def _answer_policy(
             "along a time axis, say so and name the dates."
         )
     logger.info(
-        "%s: length policy %s", use_case,
-        output_length_policy.describe(statistics, length_pref),
+        "%s: length policy %s, completion budget %d", use_case,
+        output_length_policy.describe(statistics, length_pref), max_tokens,
     )
     return max_tokens, corpus_note, guidance
 

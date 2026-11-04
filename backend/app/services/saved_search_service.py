@@ -279,9 +279,10 @@ def scope_document_ids(db: Session, tenant_id: str, scope: dict | None) -> list[
 
 
 def reference_ids(references: list[dict]) -> list[str]:
-    """The cited document set, as the stable citation key each reference carries."""
-    out = {str(r.get("video_id")) for r in references if r.get("video_id")}
-    return sorted(out)
+    """The cited document set, keyed on ``document_id`` (D-070)."""
+    from app.services import saved_search_change_service as change
+
+    return sorted(change.cited_keys(references))
 
 
 def _encode(texts: list[str]) -> list[list[float]]:
@@ -439,10 +440,11 @@ def _execute_run(db: Session, ss: SavedSearch, user: User, saved_search_id: str,
             db, user.id, prepared, question=ss.question, answer_language=ss.answer_language, agent=agent
         )
         answer = result.answer
-        references = result.references
+        references = change.with_document_ids(db, user.id, result.references)
         quota_metering_service.record_usage(db, user.id, QUOTA_RESOURCE)
 
         previous_answer, previous_refs, previous_embedding = _previous(db, ss)
+        previous_refs = change.with_document_ids(db, user.id, previous_refs)
         previous_exchange_id = ss.last_exchange_id
         embedding = _encode([answer])[0]
         with llm_service.byok_context(user.id, db):

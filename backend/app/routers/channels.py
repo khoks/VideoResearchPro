@@ -15,6 +15,7 @@ from app.schemas.video import VideoResponse
 from app.services import (
     channel_intelligence_service,
     document_cap_service,
+    language_mix_service,
     subscription_service,
     visibility_service,
 )
@@ -223,6 +224,7 @@ def list_channel_videos(
             "transcript_word_count": v.transcript_word_count,
             "transcript_language": v.transcript_language,
             "transcript_source": v.transcript_source,
+            "language_mix": language_mix_service.public_view(v),
             "embedded_in_chroma": v.embedded_in_chroma,
         }
         for v in videos

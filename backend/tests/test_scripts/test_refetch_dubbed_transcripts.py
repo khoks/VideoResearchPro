@@ -199,6 +199,24 @@ def test_write_mode_replaces_the_transcript_and_the_chunks(db, library, chroma):
     assert chroma["inserted"] and all(TRACK_TEXT["hi"] in c["text"] for c in chroma["inserted"])
 
 
+def test_write_mode_stores_the_new_transcripts_language_profile(db, library, chroma):
+    """T-1.16.1.7: the profile is the re-fetched Hindi's, written with the
+    cache row, and the new chunks carry the fields it yields."""
+    from app.services import code_mixing_service, language_mix_service
+
+    api = _MultiApi(library["by_video"])
+    rd.run(db, video_ids=["1v3_AQ26jZ0"], write=True, ytt_api=api, sleep=lambda s: None)
+
+    profile = language_mix_service.load(_doc(db, "1v3_AQ26jZ0"))
+    segments = json.loads(_cached(db, "1v3_AQ26jZ0").segments_json)
+    assert profile == code_mixing_service.profile_transcript(segments)
+    assert (profile["primary_language"], profile["native_script"]) == ("hi", "Devanagari")
+    expected = code_mixing_service.chunk_metadata_from_profile(profile)
+    assert all(
+        {k: c["metadata"].get(k) for k in expected} == expected for c in chroma["inserted"]
+    )
+
+
 def test_write_mode_writes_nothing_when_the_old_chunks_cannot_be_deleted(db, library, chroma):
     """`delete_video_chunks` reports a failure (Chroma locked by the worker)
     by returning False. Upserting anyway would overwrite chunk ids 0..N-1 and
@@ -213,6 +231,7 @@ def test_write_mode_writes_nothing_when_the_old_chunks_cannot_be_deleted(db, lib
     doc = _doc(db, "1v3_AQ26jZ0")
     assert doc.transcript_language == "bn" and doc.source_metadata_json is None
     assert doc.embedded_in_chroma is True  # its chunks are still there
+    assert doc.language_mix is None  # the profile is not the dub's text
     # The next run finds it again.
     again = rd.run(db, video_ids=["1v3_AQ26jZ0"], ytt_api=_MultiApi(library["by_video"]),
                    sleep=lambda s: None)

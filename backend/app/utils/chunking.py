@@ -103,12 +103,31 @@ def _parse_datetime(value: Any) -> datetime | None:
     return dt
 
 
+def published_numeric_fields(published_at: Any) -> dict[str, int]:
+    """``published_ts`` / ``published_year`` chunk fields for a publish date.
+
+    T-1.17.1.6: numeric twins of ``published_at``. Chroma cannot range-filter
+    or weight an ISO string; it can on an int. EMPTY (not sentinel-valued)
+    when the date is unknown, so ``{"published_ts": {"$gte": ...}}`` excludes
+    undated chunks instead of matching them against 1970. Shared with the
+    S-1.17.3 backfill so old chunks get exactly what new ones are written with.
+    """
+    published_dt = _parse_datetime(published_at)
+    if published_dt is None:
+        return {}
+    return {
+        "published_ts": int(published_dt.timestamp()),
+        "published_year": published_dt.year,
+    }
+
+
 def chunk_transcript(
     transcript_segments: list[dict],
     chunk_size: int = 256,
     chunk_overlap: int = 32,
     video_metadata: dict | None = None,
     transcription_source: str = "youtube",
+    language_profile: dict | None = None,
 ) -> list[dict]:
     """
     Chunk a YouTube transcript into RAG-ready documents with timestamp mapping.
@@ -150,6 +169,12 @@ def chunk_transcript(
             OpenAI Whisper fallback. Propagated into per-chunk metadata
             so downstream consumers can reason about quality/language
             reliability.
+        language_profile: the document's ``profile_transcript`` result when
+            the caller already computed it (``language_mix_service.ensure``
+            persists it on ``documents.language_mix``, T-1.16.1.7). The
+            ``code_mix_*`` fields are derived from it instead of profiling
+            the transcript a second time. Omitted, the chunker profiles
+            ``transcript_segments`` itself, as before.
 
     Returns:
         List of {text, metadata} dicts ready for ChromaDB insertion.
@@ -307,17 +332,8 @@ def chunk_transcript(
     else:
         published_at = str(published_at) if published_at else ""
 
-    # T-1.17.1.6: numeric twins of `published_at`. Chroma cannot range-filter
-    # or weight an ISO string; it can on an int. OMITTED (not sentinel-valued)
-    # when the date is unknown, so `{"published_ts": {"$gte": ...}}` excludes
-    # undated chunks instead of matching them against 1970.
-    published_numeric: dict[str, int] = {}
-    published_dt = _parse_datetime(metadata.get("published_at"))
-    if published_dt is not None:
-        published_numeric = {
-            "published_ts": int(published_dt.timestamp()),
-            "published_year": published_dt.year,
-        }
+    # T-1.17.1.6: numeric twins of `published_at`, omitted when unknown.
+    published_numeric = published_numeric_fields(metadata.get("published_at"))
 
     # R3 / S-1.17.2: the era the source DISCUSSES, already flattened to
     # scalars by `temporal_service.era_metadata` (empty when unknown — same
@@ -334,7 +350,10 @@ def chunk_transcript(
     try:
         from app.services import code_mixing_service
 
-        code_mix_doc = code_mixing_service.chunk_metadata_for_transcript(transcript_segments)
+        if language_profile is not None:
+            code_mix_doc = code_mixing_service.chunk_metadata_from_profile(language_profile)
+        else:
+            code_mix_doc = code_mixing_service.chunk_metadata_for_transcript(transcript_segments)
     except Exception:
         logger.exception("Code-mixing profile failed; chunks carry no language mix")
 

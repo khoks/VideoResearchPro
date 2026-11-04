@@ -224,7 +224,7 @@ def _refetch_one(db, row: Row, choice) -> tuple[str, str]:
        fails the document stays un-embedded, and the next job that selects
        it embeds the new text from the cache (its old chunks are gone).
     """
-    from app.services import chroma_service
+    from app.services import chroma_service, language_mix_service
     from app.tasks.job_tasks import _build_video_metadata
     from app.utils.chunking import chunk_transcript
 
@@ -234,11 +234,19 @@ def _refetch_one(db, row: Row, choice) -> tuple[str, str]:
         return "refetch_failed", "fetched an empty transcript; nothing written"
     language = getattr(transcript, "language_code", None) or choice.language
     doc = db.query(Document).filter(Document.document_id == row.document_id).one()
+    # T-1.16.1.7: the new transcript's language profile, computed now and
+    # stored in step 3 with the cache row, never before (a failed delete must
+    # leave the document describing the dub it still holds).
+    try:
+        language_profile = language_mix_service.compute(segments)
+    except Exception:  # noqa: BLE001 — enrichment; the chunker profiles itself
+        language_profile = None
     chunks = chunk_transcript(
         segments,
         chunk_size=settings.CHUNK_SIZE,
         chunk_overlap=settings.CHUNK_OVERLAP,
         video_metadata=_build_video_metadata(doc, language),
+        language_profile=language_profile,
     )
 
     if not chroma_service.delete_video_chunks(row.video_id):
@@ -255,6 +263,7 @@ def _refetch_one(db, row: Row, choice) -> tuple[str, str]:
         doc.transcripted_at = datetime.now(timezone.utc)
         doc.transcript_source = "youtube"
         doc.embedded_in_chroma = False
+        language_mix_service.record(doc, language_profile)
         try:
             meta = json.loads(doc.source_metadata_json) if doc.source_metadata_json else {}
         except (TypeError, ValueError):

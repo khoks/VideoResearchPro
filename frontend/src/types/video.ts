@@ -16,6 +16,29 @@ import type {
   SourceType,
 } from '../components/approval';
 
+/**
+ * A document's measured language mix (T-1.16.1.7), from
+ * `documents.language_mix`. Mirrors `backend/app/schemas/language_mix.py`.
+ * Null until the document is chunked again or profiled by
+ * `scripts/backfill_language_mix.py`. Unlike `transcript_language` (the
+ * caption track's label, `en` for romanised Hinglish), it is measured from
+ * the words themselves.
+ */
+export interface LanguageMix {
+  /** `en`, `hi` (Hindi/Urdu in any script), `other` (see `native_script`) or `none`. */
+  primary_language: string;
+  /** Script of the non-English words (`Devanagari`, `Bengali`; `Latin` when romanised). */
+  native_script: string | null;
+  /** Non-English words over all language-bearing words, 0–1. */
+  hi_share: number;
+  /** Share of speech framed by non-English grammar, 0–1. */
+  matrix_hi_share: number;
+  /** `plain_english`, `roman` or `native_script`. */
+  quote_mode: string | null;
+  /** True when the source's chunks are marked as not plain English (3% floor). */
+  code_mixed: boolean;
+}
+
 export interface Video {
   id: string;
   // Legacy YouTube identity (still used for source_type='video' approvals
@@ -40,6 +63,8 @@ export interface Video {
   transcript_status: string;
   transcript_word_count: number | null;
   transcript_language: string | null;
+  /** Read-only; absent from older responses. */
+  language_mix?: LanguageMix | null;
 }
 
 /**

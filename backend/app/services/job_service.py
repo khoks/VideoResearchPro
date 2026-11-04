@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.job import Job
 from app.schemas.job import JobCreate
-from app.services import job_source_types
+from app.services import job_source_types, language_mix_service
 
 
 def create_job(
@@ -256,6 +256,8 @@ def job_videos_response(job: Job) -> list[dict]:
             "transcript_word_count": v.transcript_word_count,
             "transcript_language": v.transcript_language,
             "transcript_source": v.transcript_source,
+            # T-1.16.1.7: the measured language mix, read-only.
+            "language_mix": language_mix_service.public_view(v),
             "embedded_in_chroma": v.embedded_in_chroma,
         })
     return results

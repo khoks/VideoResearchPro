@@ -139,6 +139,77 @@ def test_library_clarify_reads_a_reply_with_thinking_blocks(client):
     assert response.json() == {"interpretation": "Rates.", "clarifications": ["Which bank?"]}
 
 
+def _clarify_built_with(client, pin: dict | None):
+    """Clarify through the real pin route and `get_llm_for`, faking only the
+    provider client. Returns the config and `max_tokens` it was built with."""
+    from app.services import llm_service
+    from tests.usage_helpers import CLARIFY_JSON, FakeFactory
+
+    if pin:
+        put = client.put("/api/v1/settings/llm/library_qa_clarification", json=pin)
+        assert put.status_code == 200, put.text
+    factory = FakeFactory()
+    factory.reply = CLARIFY_JSON
+    built: list = []
+
+    def build(cfg, temperature, max_tokens, *, byok_api_key=None):
+        built.append((cfg, max_tokens))
+        return factory(cfg, temperature, max_tokens, byok_api_key=byok_api_key)
+
+    with patch.object(llm_service, "_build_from_config", side_effect=build):
+        response = client.post("/api/v1/library/qa/clarify", json={"question": "What about rates?"})
+    assert response.status_code == 200, response.text
+    assert len(built) == 1
+    return built[0]
+
+
+@pytest.mark.parametrize("reasoning", ["minimal", "low", "medium", "high", "auto"])
+def test_library_clarify_clears_a_pinned_claude_thinking_budget(client, reasoning):
+    """A pin reaches this route since S-8.13.2 (byok_context loads it), and
+    every library and shelf question passes through here. A Claude model on
+    legacy thinking refuses a `max_tokens` at or below its budget, which a bare
+    400 always is. Fails with `max_tokens=400` back."""
+    from app.services import llm_service
+
+    model = "claude-haiku-4-5"
+    thinking = llm_service._anthropic_reasoning_kwargs(reasoning, model)["thinking"]["budget_tokens"]
+    cfg, max_tokens = _clarify_built_with(
+        client, {"provider": "anthropic", "model": model, "reasoning": reasoning},
+    )
+    assert (cfg.model, cfg.reasoning) == (model, reasoning)
+    assert max_tokens == thinking + 400
+
+
+def test_library_clarify_keeps_room_on_adaptive_thinking(client):
+    """Nothing refuses 400 here: thinking spends it, the text comes back empty,
+    and the route answers 502. The reply gets its 400 after the thinking."""
+    _, max_tokens = _clarify_built_with(
+        client, {"provider": "anthropic", "model": "claude-sonnet-5", "reasoning": "medium"},
+    )
+    assert max_tokens == 4_096 + 400
+
+
+@pytest.mark.parametrize(
+    "pin",
+    [None, {"provider": "anthropic", "model": "claude-haiku-4-5", "reasoning": "off"}],
+    ids=["no pin", "reasoning off"],
+)
+def test_library_clarify_without_thinking_stays_at_400(client, pin):
+    """The default config and any pin that does not think: the request as it was."""
+    _, max_tokens = _clarify_built_with(client, pin)
+    assert max_tokens == 400
+
+
+def test_library_clarify_stays_within_the_models_output_limit(client):
+    """A model with no measured limit is held to the conservative figure."""
+    from app.services.llm_routing import max_output_for
+
+    cfg, max_tokens = _clarify_built_with(
+        client, {"provider": "google", "model": "gemini-2.5-flash", "reasoning": "high"},
+    )
+    assert max_tokens == max_output_for(cfg.model) == 4_096
+
+
 # ---------------------------------------------------------------------------
 # S-8.13.1: "Confirm & search" sends the clarify answers as `context`
 # ---------------------------------------------------------------------------

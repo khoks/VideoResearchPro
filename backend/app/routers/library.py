@@ -33,6 +33,7 @@ from app.services import document_cap_service
 from app.services import language_mix_service
 from app.services import graph_service, library_query_service, qa_scope_service, tag_service, visibility_service
 from app.services import llm_service, usage_service
+from app.services.llm_routing import max_output_for, resolve_config
 from app.services.llm_service import get_llm_for, response_text
 from app.sources.pdf.connector import (
     SOURCE_ID_PREFIX as PDF_SOURCE_ID_PREFIX,
@@ -84,7 +85,12 @@ def clarify_library_question(
     # asker's BYOK key and model pin, as the ask that follows has.
     with llm_service.byok_context(current_user.id, db):
         # S-1.12.7: clarify returns a tiny JSON blob — cap runaway completions.
-        llm = get_llm_for("library_qa_clarification", temperature=0.3, max_tokens=400)
+        # That cap is the reply's: a pin can put a thinking model here, thinking
+        # counts inside `max_tokens`, and every library and shelf question comes
+        # through this call, so its reserve goes on top (T-1.15.4.4's arithmetic).
+        cfg = resolve_config("library_qa_clarification")
+        max_tokens = min(400 + llm_service.thinking_reserve_tokens(cfg), max_output_for(cfg.model))
+        llm = get_llm_for("library_qa_clarification", temperature=0.3, max_tokens=max_tokens)
         response = llm.invoke(prompt)
     content = response_text(response).strip()
 

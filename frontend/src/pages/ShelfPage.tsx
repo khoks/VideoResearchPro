@@ -199,7 +199,9 @@ export function ShelfPage() {
 
       <ShelfRuns shelf={shelf} canWrite={canWrite} />
 
-      <ShelfQAPanel shelfId={shelf.id} shelfName={shelf.name} />
+      {/* Keyed: the sidebar moves between shelves on this same route element, and
+          a question or clarify step belongs to the shelf it was started on. */}
+      <ShelfQAPanel key={shelf.id} shelfId={shelf.id} shelfName={shelf.name} />
 
       <ShelfDocuments shelfId={shelf.id} />
 

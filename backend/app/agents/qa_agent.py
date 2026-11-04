@@ -202,21 +202,28 @@ def _answer_budget(
 ) -> int:
     """The answer's completion budget: D-064's multiplier, with room for thinking.
 
-    T-1.15.4.4, the rule T-1.15.3.2 gave knowledge reports (D-125). Thinking is
-    counted inside `max_tokens`, and brief's 2,025 sits under the 4,096 a Claude
-    model on legacy thinking is budgeted at medium, so that call is refused. On
-    adaptive thinking (the default `claude-sonnet-5:medium`) nothing refuses it:
-    whatever the model spends thinking comes out of the 2,025, and the answer is
-    cut short or comes back empty. So a budget the multiplier shrinks keeps the
-    thinking reserve on top of its scaled share and never exceeds the unscaled
-    figure. With reasoning on that leaves brief at 4,500, and the brief does the
-    shortening: D-062 measured that a model writes to the brief it is given far
-    more than to the ceiling. Only brief scales below 1.0, so unset, standard
-    and deep are the multiplier alone.
+    T-1.15.4.4, the reserve T-1.15.3.2 gave knowledge reports (D-125). Thinking
+    is counted inside `max_tokens`, and brief's 2,025 sits under the 4,096 a
+    Claude model on legacy thinking is budgeted at medium, so that call is
+    refused. On adaptive thinking (the default `claude-sonnet-5:medium`) nothing
+    refuses it: whatever the model spends thinking comes out of the 2,025, and
+    the answer is cut short or comes back empty. So a budget the multiplier
+    shrinks keeps the whole thinking reserve on top of its scaled share.
+
+    D-125 also caps that at the unset budget, and a knowledge report's reserve
+    fits under its cap. Q&A's does not: the unset figure is 4,500 from `large`
+    up, which would leave 404 tokens for a 2,025 answer. So there is no cap
+    here, and with reasoning on brief's ceiling sits above standard's. It is a
+    ceiling, not a length: the brief does the shortening, because D-062 measured
+    that a model writes to the brief it is given far more than to the ceiling.
+    Only brief scales below 1.0, so unset, standard and deep are the multiplier
+    alone.
     """
     cfg = resolve_config(use_case)
-    scaled = int(base_tokens * output_length_policy.resolve_scale(statistics, length_pref))
-    budget = max(scaled, min(base_tokens, scaled + thinking_reserve_tokens(cfg)))
+    scale = output_length_policy.resolve_scale(statistics, length_pref)
+    budget = int(base_tokens * scale)
+    if scale < 1.0:
+        budget += thinking_reserve_tokens(cfg)
     return min(budget, max_output_for(cfg.model))
 
 

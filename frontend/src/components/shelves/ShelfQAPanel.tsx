@@ -6,9 +6,13 @@
  *
  * S-8.13.2: a question goes through the library page's clarify step first.
  * That call sends the question and nothing about the shelf, so it needs no
- * shelf route; the ask that follows is the one scoped to the shelf.
+ * shelf route; the ask that follows is the one scoped to the shelf. The step
+ * is optional: when it fails the question goes straight to the shelf, because
+ * a clarify outage must not stop an ask that does not need it.
+ *
+ * `ShelfPage` keys this panel on the shelf, so all of this state is one shelf's.
  */
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Button, Card, FormField, Select, Textarea } from '../primitives';
 import { ClarifyStep } from '../qa/ClarifyStep';
 import { InfoStripe, LibraryQAExchangeCard } from '../qa/LibraryQAExchangeCard';
@@ -40,6 +44,14 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
   const [interpretation, setInterpretation] = useState('');
   const [clarifications, setClarifications] = useState<string[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const empty = hasSources.isSuccess && !hasSources.data;
   const disabled = !available || empty || ask.isPending || clarify.isPending;
@@ -55,7 +67,9 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
       setAnswers(new Array(result.clarifications.length).fill(''));
       setStep('clarify');
     } catch {
-      // the global mutation cache already toasted; keep the question to retry
+      // The global mutation cache already toasted the clarify failure. A panel
+      // the reader has left asks nothing: that call settled after they moved on.
+      if (mounted.current) await send();
     }
   };
 
@@ -129,7 +143,7 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
                   }}
                   rows={3}
                   placeholder={`What do the sources on ${shelfName} say about…`}
-                  disabled={!available || clarify.isPending}
+                  disabled={!available || clarify.isPending || ask.isPending}
                 />
               )}
             </FormField>
@@ -162,7 +176,7 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
               <Button
                 type="submit"
                 disabled={disabled || !question.trim()}
-                loading={clarify.isPending}
+                loading={clarify.isPending || ask.isPending}
                 title={!available ? 'LLM-dependent feature is temporarily unavailable' : undefined}
               >
                 Ask this shelf
@@ -174,6 +188,12 @@ export function ShelfQAPanel({ shelfId, shelfName }: { shelfId: string; shelfNam
         {clarify.isPending && (
           <div style={{ marginTop: space['3'] }}>
             <InfoStripe text="Listening for the echo of your question…" />
+          </div>
+        )}
+
+        {ask.isPending && step === 'ask' && (
+          <div style={{ marginTop: space['3'] }}>
+            <InfoStripe text="Searching this shelf and writing the answer…" />
           </div>
         )}
 

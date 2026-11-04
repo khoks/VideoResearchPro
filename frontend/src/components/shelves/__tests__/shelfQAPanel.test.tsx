@@ -7,8 +7,12 @@
  * S-8.13.2: a question goes through the clarify step, as on the library page.
  * The clarify call carries the question and nothing about the shelf; "Confirm
  * & search" sends what the reader typed as `context`, "Skip clarifications"
- * sends none. Mutation check, run by hand on 2026-11-04: dropping the context
- * from `send` fails the "Confirm & search" test.
+ * sends none. Clarifying is optional, so when that call fails the question
+ * goes to the shelf directly: a shelf ask worked before this step existed.
+ * Mutation checks, run by hand on 2026-11-04: dropping the context from `send`
+ * fails the "Confirm & search" test; dropping the direct ask fails "asks the
+ * shelf directly"; dropping the mounted check fails "asks nothing"; dropping
+ * the form's own pending state fails "shows the direct ask running".
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -175,10 +179,38 @@ describe('ShelfQAPanel', () => {
     expect(askMock).not.toHaveBeenCalled();
   });
 
-  it('keeps the question when the clarify call fails', async () => {
+  it('asks the shelf directly when the clarify call fails', async () => {
     clarifyMock.mockRejectedValue(new Error('Bad gateway'));
+    askMock.mockResolvedValue(exchange('e1', 'What about rates?', { shelf_id: 's1' }));
+    await clarifyQuestion();
+    expect(askMock).toHaveBeenCalledTimes(1);
+    expect(askMock).toHaveBeenCalledWith('s1', { question: 'What about rates?', answer_language: 'en' });
+    expect(host.querySelector('textarea')!.value).toBe('');
+  });
+
+  it('shows the direct ask running', async () => {
+    clarifyMock.mockRejectedValue(new Error('Bad gateway'));
+    askMock.mockReturnValue(new Promise(() => {}));
+    await clarifyQuestion();
+    expect(host.textContent).toContain('Searching this shelf and writing the answer…');
+    expect(host.querySelector('textarea')!.disabled).toBe(true);
+  });
+
+  it('keeps the question when the clarify call and the direct ask both fail', async () => {
+    clarifyMock.mockRejectedValue(new Error('Bad gateway'));
+    askMock.mockRejectedValue(new Error('Bad gateway'));
     await clarifyQuestion();
     expect(host.querySelector('textarea')!.value).toBe('What about rates?');
+    expect(button('Ask this shelf').disabled).toBe(false);
+  });
+
+  it('asks nothing when the clarify call fails after the reader has left', async () => {
+    let fail: (e: Error) => void = () => {};
+    clarifyMock.mockReturnValue(new Promise((_, reject) => { fail = reject; }));
+    await clarifyQuestion();
+    act(() => root.render(null));
+    await act(async () => fail(new Error('Bad gateway')));
+    await flush();
     expect(askMock).not.toHaveBeenCalled();
   });
 

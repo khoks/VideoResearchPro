@@ -9,13 +9,16 @@
  * network dropped) the plain text stays: an answer that loses its bold is
  * better than an error screen over a page that loaded.
  */
-import { lazy, Suspense } from 'react';
-import { markdownBlocks, type MarkdownBlock } from '../../utils/markdownBlocks';
+import { Fragment, lazy, Suspense } from 'react';
+import { inlineRuns, markdownBlocks, type MarkdownBlock } from '../../utils/markdownBlocks';
 
 function Text({ children }: { children: string }) {
   return (
     <>
-      {children.split('**').map((run, i) => (i % 2 === 1 ? <strong key={i}>{run}</strong> : run))}
+      {inlineRuns(children).map((run, i) => {
+        const text = run.code ? <code>{run.text}</code> : run.text;
+        return run.bold ? <strong key={i}>{text}</strong> : <Fragment key={i}>{text}</Fragment>;
+      })}
     </>
   );
 }

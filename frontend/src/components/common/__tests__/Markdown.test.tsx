@@ -96,6 +96,18 @@ describe('Markdown', () => {
     expect(container.textContent).toContain('Prices rose in the first year.');
   });
 
+  it('leaves the words of an answer alone in the plain text', async () => {
+    vi.doMock('react-markdown', () => {
+      throw new Error('Failed to fetch dynamically imported module');
+    });
+    const { Markdown } = await import('../Markdown');
+    await show(<Markdown>{'The rate is 2 * 3 = 6, and `**kwargs` is **named** with **no partner'}</Markdown>);
+    await settle();
+    expect(container.textContent).toBe('The rate is 2 * 3 = 6, and **kwargs is named with **no partner');
+    expect(container.querySelector('code')?.textContent).toBe('**kwargs');
+    expect([...container.querySelectorAll('strong')].map((el) => el.textContent)).toEqual(['named']);
+  });
+
   it('gives each call its own boundary, so an answer never suspends its page', async () => {
     const { Markdown } = await import('../Markdown');
     await show(

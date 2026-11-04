@@ -533,6 +533,14 @@ class Settings(BaseSettings):
     SCHEDULER_MAX_RETRY_TICKS: int = 3
 
     # -------------------------------------------------------------------
+    # Usage metering (E-5.2)
+    # -------------------------------------------------------------------
+    # T-5.2.13: how often an open metering scope writes what it has counted
+    # so far, so a worker that dies mid-task loses about this much of its
+    # usage and not the whole run. 0 = only when the scope closes.
+    USAGE_FLUSH_INTERVAL_SECONDS: int = 60
+
+    # -------------------------------------------------------------------
     # Article connector — search engine + RSS (E-1.6 T-1.6.2 + T-1.6.3)
     # -------------------------------------------------------------------
     # Search-engine integration is opt-in via API key. Brave Search is

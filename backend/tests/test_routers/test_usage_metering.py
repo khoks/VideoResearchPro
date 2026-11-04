@@ -386,7 +386,24 @@ def test_usage_endpoint_returns_only_the_callers_usage(client, db, test_user):
     assert [f["feature"] for f in body["features"]] == ["report", "search"]
     assert body["features"][0]["label"] == "Reports"
     assert body["features"][0]["today"]["llm_tokens_in"] == 1234
-    assert body["totals"]["last_30_days"] == {"llm_tokens_in": 1234, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 200}
+    assert body["totals"]["last_30_days"] == {"llm_tokens_in": 1234, "llm_tokens_out": 0, "llm_calls": 0,
+                                              "youtube_units": 200, "whisper_seconds": 0}
+
+
+def test_the_usage_endpoint_shows_whisper_seconds(client, db, test_user):
+    with usage_service.metered(db, test_user.id):
+        usage_service.record_whisper(5400.0)
+    with usage_service.metered(db, test_user.id, feature="echo_shares"):
+        usage_service.record_whisper(90.0)
+
+    body = client.get("/api/v1/usage").json()
+
+    by = {f["feature"]: f for f in body["features"]}
+    assert by["ingest"]["label"] == "Reading sources"
+    assert by["ingest"]["today"]["whisper_seconds"] == 5400
+    assert by["echo_shares"]["last_30_days"]["whisper_seconds"] == 90
+    assert body["totals"]["today"]["whisper_seconds"] == 5490
+    assert body["totals"]["last_30_days"]["llm_calls"] == 0
 
 
 def test_usage_endpoint_requires_sign_in(unauthenticated_client):
@@ -399,7 +416,7 @@ def test_usage_after_real_calls_shows_on_the_endpoint(client, db, test_user, met
     body = client.get("/api/v1/usage").json()
     assert body["features"] == [{
         "feature": "library_qa", "label": "Library Q&A",
-        "today": {"llm_tokens_in": 100, "llm_tokens_out": 20, "llm_calls": 1, "youtube_units": 0},
-        "last_30_days": {"llm_tokens_in": 100, "llm_tokens_out": 20, "llm_calls": 1, "youtube_units": 0},
+        "today": {"llm_tokens_in": 100, "llm_tokens_out": 20, "llm_calls": 1, "youtube_units": 0, "whisper_seconds": 0},
+        "last_30_days": {"llm_tokens_in": 100, "llm_tokens_out": 20, "llm_calls": 1, "youtube_units": 0, "whisper_seconds": 0},
     }]
     assert tenants_with_usage(db) == {test_user.id}

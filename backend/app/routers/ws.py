@@ -86,7 +86,9 @@ async def job_progress_ws(websocket: WebSocket, token: str | None = Query(defaul
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Missing token")
         return
 
-    payload = auth_service.decode_token(token)
+    # An access token only: the second-factor ticket is signed with the same
+    # key and would otherwise open the socket before the code is sent.
+    payload = auth_service.decode_access_token(token)
     if not payload or not payload.get("sub"):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
         return

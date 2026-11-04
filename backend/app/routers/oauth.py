@@ -11,7 +11,10 @@ Endpoints:
   can decide how to navigate.)
 - ``GET /api/v1/auth/oauth/{provider}/callback?code=...&state=...`` —
   consume the provider's redirect. On success, issues a Pratidhvani
-  access token + writes a session row. Returns ``TokenResponse``.
+  access token + writes a session row. Returns ``TokenResponse``, or
+  ``MfaRequiredResponse`` when the account has two-step verification on:
+  the caller finishes at ``POST /auth/login/mfa`` exactly as after a
+  password sign-in.
 
 Per [D-040](../decisions.md#d-040-...), failures return a generic 401
 without leaking which step (state validation / token exchange / userinfo
@@ -29,8 +32,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
-from app.schemas.auth import TokenResponse
-from app.services import audit_service, auth_service, oauth_service
+from app.schemas.auth import MfaRequiredResponse, TokenResponse
+from app.services import audit_service, auth_service, mfa_service, oauth_service
 from app.services.audit_service import Event
 from app.services.oauth_service import (
     OAuthError,
@@ -75,14 +78,14 @@ def start(
     return OAuthStartResponse(authorize_url=url)
 
 
-@router.get("/{provider}/callback", response_model=TokenResponse)
+@router.get("/{provider}/callback")
 def callback(
     provider: str,
     request: Request,
     code: str = Query(..., min_length=1),
     state: str = Query(..., min_length=1),
     db: Session = Depends(get_db),
-) -> TokenResponse:
+) -> TokenResponse | MfaRequiredResponse:
     try:
         user = oauth_service.complete_flow(db, provider, state, code)
     except OAuthUnverifiedEmailError as e:
@@ -111,6 +114,25 @@ def callback(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="OAuth authentication failed",
+        )
+
+    # Two-step verification guards every sign-in, not just the password
+    # one. The provider vouches for the email, and D-042 links an account
+    # by email, so without this whoever holds the provider account would
+    # skip the second factor the user turned on. Same ticket and second
+    # step as /auth/login.
+    if mfa_service.is_enabled(db, user.id):
+        audit_service.record(
+            db,
+            event=Event.LOGIN_SUCCESS,
+            user_id=user.id,
+            request=request,
+            metadata={"provider": provider, "via": "oauth", "requires_mfa": True},
+        )
+        return MfaRequiredResponse(
+            requires_mfa=True,
+            mfa_token=mfa_service.issue_mfa_step_token(user.id),
+            expires_in=mfa_service.MFA_TOKEN_TTL_MIN * 60,
         )
 
     audit_service.record(

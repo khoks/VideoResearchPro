@@ -399,7 +399,7 @@ Copy `.env.example` to `backend/.env` and fill in required keys:
 | `PASSWORD_RESET_TOKEN_TTL_MIN` | No | `30` | Password-reset token validity window (minutes). Single-use. |
 | `MFA_ISSUER_NAME` | No | `Pratidhvani` | Issuer label shown by the user's authenticator app. |
 | `ADMIN_EMAILS` | No | (empty) | The install's operators, comma-separated and case-insensitive (T-5.2.8 / D-111). Only operators may switch tiers (`PUT /auth/me/tier`) or restart the services (`POST /admin/restart`); anyone else gets 403. Empty: the earliest-registered account is the operator, so a single-user install needs nothing. A multi-user install should name its operators. **Register the account before listing it**: sign-up verifies no email, so password registration refuses a listed address (403); Google or GitHub sign-in with that address, verified by the provider, still works, and startup warns about every listed address with no account |
-| `SMTP_HOST` | No | (unset) | SMTP server for password-reset emails. When unset, the secret is returned in the API response + logged so self-host operators can hand it off out-of-band (per T-5.4.8). |
+| `SMTP_HOST` | No | (unset) | SMTP server for password-reset emails. When unset, the reset email (with its code) goes to the server log for the operator to hand over out-of-band. The code is never in the API response: it was until 2026-11-03 (T-5.4.8's `debug_secret`), which let anyone reset any account by its address. |
 | `SMTP_PORT` | No | `587` | SMTP port. |
 | `SMTP_USERNAME` / `SMTP_PASSWORD` | No | (unset) | SMTP auth. Both required, or both unset for anonymous relays. |
 | `SMTP_FROM_ADDRESS` | No | `no-reply@<SMTP_HOST>` | Sender envelope. |

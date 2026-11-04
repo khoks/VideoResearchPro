@@ -62,6 +62,42 @@ class Event(str, Enum):
     ECHO_BRAIN_DELETED = "echo_brain_deleted"
 
 
+# What the account security page's "Recent activity" lists
+# (``GET /auth/audit-log?scope=account``): sign-ins, sign-in failures,
+# lockouts, password resets, sessions, two-step verification, plan changes
+# and the Echo export and delete. The same table also carries product
+# analytics (onboarding milestones, suggestion impressions and clicks,
+# Echo drafts), which are written far more often and would bury the
+# security events. An inclusion list, not an exclusion list, so an event
+# added later stays out of the security view until someone puts it here.
+ACCOUNT_EVENTS: frozenset[Event] = frozenset(
+    {
+        Event.USER_REGISTERED,
+        Event.LOGIN_SUCCESS,
+        Event.LOGIN_FAILURE,
+        Event.LOGIN_LOCKED_OUT,
+        Event.ACCOUNT_LOCKED,
+        Event.ACCOUNT_UNLOCKED,
+        Event.PASSWORD_RESET_REQUESTED,
+        Event.PASSWORD_RESET_COMPLETED,
+        Event.PASSWORD_RESET_INVALID_TOKEN,
+        Event.PASSWORD_CHANGED,
+        Event.LOGOUT,
+        Event.SESSION_REVOKED,
+        Event.SESSIONS_REVOKED_ALL,
+        Event.MFA_ENROLLED,
+        Event.MFA_ENABLED,
+        Event.MFA_DISABLED,
+        Event.MFA_LOGIN_SUCCESS,
+        Event.MFA_LOGIN_FAILURE,
+        Event.MFA_RECOVERY_CODE_USED,
+        Event.TIER_CHANGED,
+        Event.ECHO_EXPORTED,
+        Event.ECHO_BRAIN_DELETED,
+    }
+)
+
+
 def _ip_from_request(request: Request | None) -> str | None:
     if request is None:
         return None
@@ -143,12 +179,17 @@ def list_for_user(
     *,
     limit: int = 100,
     offset: int = 0,
+    events: frozenset[Event] | None = None,
 ) -> list[AuditLog]:
-    """Return the user's most-recent audit events, newest first."""
+    """Return the user's most-recent audit events, newest first.
+    ``events`` narrows the list to those events (``None`` is every event).
+    Ties on ``created_at`` break on ``id`` so paging never repeats or
+    skips a row."""
+    q = db.query(AuditLog).filter(AuditLog.user_id == user_id)
+    if events is not None:
+        q = q.filter(AuditLog.event.in_(sorted(e.value for e in events)))
     return (
-        db.query(AuditLog)
-        .filter(AuditLog.user_id == user_id)
-        .order_by(AuditLog.created_at.desc())
+        q.order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
         .offset(offset)
         .limit(limit)
         .all()

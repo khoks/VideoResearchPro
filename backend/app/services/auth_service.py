@@ -136,8 +136,16 @@ def warn_unregistered_operators(session_factory=None) -> list[str]:
     return missing
 
 
-def create_user(db: Session, email: str, password: str) -> User:
-    user = User(email=email.lower(), password_hash=hash_password(password))
+def create_user(
+    db: Session, email: str, password: str, *, has_password: bool = True
+) -> User:
+    """``has_password=False`` for an account whose holder does not know
+    ``password`` (Google or GitHub sign-in made it with a random one)."""
+    user = User(
+        email=email.lower(),
+        password_hash=hash_password(password),
+        has_password=has_password,
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -183,15 +191,28 @@ def authenticate_user_v2(
         verify_password(password, _DUMMY_PWD_HASH)
         return None, AuthOutcome.INVALID_CREDENTIALS
 
-    now = datetime.now(timezone.utc)
+    return user, _check_password_with_lockout(db, user, password)
 
+
+def is_locked(user: User, now: datetime | None = None) -> bool:
+    """Whether the account lockout holds ``user`` at ``now``."""
+    now = now or datetime.now(timezone.utc)
     # Treat any naive datetime stored before lockout shipped as UTC.
     locked_until = user.locked_until
     if locked_until is not None and locked_until.tzinfo is None:
         locked_until = locked_until.replace(tzinfo=timezone.utc)
+    return locked_until is not None and locked_until > now
 
-    if locked_until is not None and locked_until > now:
-        return user, AuthOutcome.LOCKED_OUT
+
+def _check_password_with_lockout(db: Session, user: User, password: str) -> str:
+    """``password`` against ``user``'s, under the account lockout: refused
+    while locked, a wrong one counts toward the lock, a right one clears the
+    count. Shared by sign-in and the change-password route (T-5.4.14), so a
+    signed-in session guessing the current password meets the same lock as
+    someone guessing it at the sign-in page."""
+    now = datetime.now(timezone.utc)
+    if is_locked(user, now):
+        return AuthOutcome.LOCKED_OUT
 
     if not verify_password(password, user.password_hash):
         # Failed attempt → increment + maybe lock.
@@ -203,7 +224,7 @@ def authenticate_user_v2(
             )
         db.commit()
         db.refresh(user)
-        return user, AuthOutcome.INVALID_CREDENTIALS
+        return AuthOutcome.INVALID_CREDENTIALS
 
     # Success — clear lockout state.
     if user.failed_login_attempts or user.locked_until:
@@ -211,7 +232,7 @@ def authenticate_user_v2(
         user.locked_until = None
         db.commit()
         db.refresh(user)
-    return user, AuthOutcome.SUCCESS
+    return AuthOutcome.SUCCESS
 
 
 # Used as a constant-cost decoy in `authenticate_user_v2` when an
@@ -259,12 +280,18 @@ def confirm_password_reset(
     db: Session,
     secret: str,
     new_password: str,
-) -> User | None:
-    """Validate the reset secret and rotate the password.
+) -> tuple[User, int] | None:
+    """Validate the reset secret, rotate the password and sign the account
+    out everywhere.
 
-    Returns the updated User on success, or ``None`` if the token is
-    unknown / already-consumed / expired. Single-use is enforced by
+    Returns ``(user, sessions_revoked)`` on success, or ``None`` if the
+    token is unknown / already-consumed / expired. Single-use is enforced by
     setting ``consumed_at`` on the token row.
+
+    T-5.4.12: every session on the account is revoked in the same commit as
+    the new password. A reset is what someone does when they think the
+    password is known to someone else, and until this a reset left whoever
+    was already signed in signed in. The caller writes the audit event.
     """
     token_hash = _hash_token(secret)
     row = (
@@ -287,14 +314,61 @@ def confirm_password_reset(
         return None
 
     user.password_hash = hash_password(new_password)
+    # The holder now knows a password, whether or not they had one before
+    # (an account Google or GitHub sign-in created gets its first here).
+    user.has_password = True
     # A successful reset implicitly clears any active lockout — the
     # legitimate user has just proven control of the email account.
     user.failed_login_attempts = 0
     user.locked_until = None
     row.consumed_at = datetime.now(timezone.utc)
+    revoked = _mark_sessions_revoked(db, user.id)
     db.commit()
     db.refresh(user)
-    return user
+    return user, revoked
+
+
+class PasswordChangeOutcome:
+    """What ``change_password`` did. ``CHANGED`` is the only success."""
+
+    CHANGED = "changed"
+    # The account has no password to check (Google or GitHub sign-in made it).
+    NO_PASSWORD = "no_password"
+    WRONG_PASSWORD = "wrong_password"
+    LOCKED_OUT = "locked_out"
+
+
+def change_password(
+    db: Session,
+    user: User,
+    *,
+    current_password: str,
+    new_password: str,
+    keep_jti: str | None,
+) -> tuple[str, int]:
+    """T-5.4.14: set a new password for a signed-in user who knows the
+    current one. Returns ``(outcome, sessions_revoked)``.
+
+    The current password is checked under the account lockout, exactly as
+    at sign-in (``_check_password_with_lockout``): a wrong one counts toward
+    the lock, so a stolen session cannot guess it faster than the sign-in
+    page allows. An account with no password (``has_password`` false) is
+    refused before any check and counts nothing. On success the new password
+    and the revocation of every other session go in one commit; ``keep_jti``,
+    the session making the request, stays signed in.
+    """
+    if not user.has_password:
+        return PasswordChangeOutcome.NO_PASSWORD, 0
+    checked = _check_password_with_lockout(db, user, current_password)
+    if checked == AuthOutcome.LOCKED_OUT:
+        return PasswordChangeOutcome.LOCKED_OUT, 0
+    if checked != AuthOutcome.SUCCESS:
+        return PasswordChangeOutcome.WRONG_PASSWORD, 0
+    user.password_hash = hash_password(new_password)
+    revoked = _mark_sessions_revoked(db, user.id, except_jti=keep_jti)
+    db.commit()
+    db.refresh(user)
+    return PasswordChangeOutcome.CHANGED, revoked
 
 
 def create_access_token(
@@ -395,6 +469,40 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
     return payload
 
 
+def authenticate_access_token(
+    db: Session, token: str | None
+) -> tuple[User, dict[str, Any]] | None:
+    """``(user, payload)`` when ``token`` may authenticate a request, else
+    None. The one bearer check: ``dependencies._resolve_user`` (every HTTP
+    route) and the ``/ws/jobs`` handshake both call it, so they cannot
+    drift apart again (T-5.4.15: the socket decoded the token itself and
+    never looked at the session, so a signed-out or revoked session kept
+    opening it until the token expired).
+
+    Refuses a token that does not decode as an access token
+    (``decode_access_token``: bad signature, expired, the second-factor
+    ticket), one with no string ``sub``, one whose session is revoked
+    (``is_session_active``; a token with no ``jti`` predates sessions and
+    skips that check), and one whose user no longer exists.
+    """
+    if not token:
+        return None
+    payload = decode_access_token(token)
+    if not payload:
+        return None
+    user_id = payload.get("sub")
+    if not isinstance(user_id, str):
+        return None
+    # T-5.4.7: a valid signature is not enough once the session is revoked.
+    jti = payload.get("jti")
+    if isinstance(jti, str) and not is_session_active(db, jti):
+        return None
+    user = get_user_by_id(db, user_id)
+    if user is None:
+        return None
+    return user, payload
+
+
 # ---------------------------------------------------------------------------
 # T-5.4.7 session management
 # ---------------------------------------------------------------------------
@@ -472,6 +580,17 @@ def revoke_all_sessions(
 
     Returns the number of sessions revoked.
     """
+    n = _mark_sessions_revoked(db, user_id, except_jti=except_jti)
+    db.commit()
+    return n
+
+
+def _mark_sessions_revoked(
+    db: Session, user_id: str, *, except_jti: str | None = None
+) -> int:
+    """Set ``revoked_at`` on every live session of ``user_id`` but
+    ``except_jti``, without committing, so a caller can revoke in the same
+    commit as the change that calls for it (a reset, a password change)."""
     from app.models.session import Session as SessionRow
 
     q = db.query(SessionRow).filter(
@@ -484,7 +603,6 @@ def revoke_all_sessions(
     now = datetime.now(timezone.utc)
     for row in rows:
         row.revoked_at = now
-    db.commit()
     return len(rows)
 
 

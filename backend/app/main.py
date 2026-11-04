@@ -2,8 +2,9 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.database import Base, engine
@@ -44,7 +45,7 @@ from app.routers import (
     usage,
     ws,
 )
-from app.services import auth_service, chroma_service, note_index, search_service
+from app.services import auth_service, byok_service, chroma_service, note_index, search_service
 from app.services.llm_smoke import run_startup_probes
 from app.services.schema_init_service import ensure_schema_at_head
 
@@ -143,6 +144,27 @@ app = FastAPI(
     title=settings.APP_NAME,
     lifespan=lifespan,
 )
+
+
+# T-5.6.9: the net under every route that encrypts or decrypts with the
+# shared Fernet key (D-043). A malformed BYOK_ENCRYPTION_KEY raises
+# EncryptionConfigurationError from byok_service._get_fernet; the routes that
+# can meet it (/auth/credentials, two-step verification, Echo connectors)
+# answer 503 in their own words, and any route that does not catch it answers
+# this instead of a bare 500. Neither the response nor the log carries the
+# configured key.
+@app.exception_handler(byok_service.EncryptionConfigurationError)
+async def _encryption_key_invalid(request: Request, exc: Exception) -> JSONResponse:
+    logger.error(
+        "%s %s refused: BYOK_ENCRYPTION_KEY is set but is not a valid Fernet key "
+        "(32 url-safe base64-encoded bytes)",
+        request.method,
+        request.url.path,
+    )
+    return JSONResponse(
+        status_code=503,
+        content={"detail": byok_service.invalid_key_detail("Nothing stored encrypted can be saved or read")},
+    )
 
 # E-5.5: per-route + per-tier rate limiting. Disabled in tests via
 # RATE_LIMIT_ENABLED=False (set automatically in conftest.py).

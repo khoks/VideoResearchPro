@@ -99,6 +99,28 @@ class PasswordResetConfirmResponse(BaseModel):
     message: str = "Password updated. You may now log in."
 
 
+# T-5.4.14 change the password while signed in
+class PasswordChangePayload(BaseModel):
+    # No length constraints here: FastAPI's 422 body carries a rejected
+    # value as ``input``, so a constraint would send the password straight
+    # back in the response (the reason /auth/credentials checks its key in
+    # the handler). ``routers/auth.change_password`` checks the new one
+    # against PASSWORD_MIN_CHARS..PASSWORD_MAX_CHARS, the rule a reset uses.
+    current_password: str
+    new_password: str
+
+
+# The new-password rule shared by register and reset (their Field bounds).
+PASSWORD_MIN_CHARS = 6
+PASSWORD_MAX_CHARS = 128
+
+
+class PasswordChangeResponse(BaseModel):
+    message: str = "Password changed. Your other sessions have been signed out."
+    # How many other sessions were signed out; this one stays signed in.
+    sessions_revoked: int = 0
+
+
 # E-5.4 audit log
 class AuditLogEntry(BaseModel):
     id: str

@@ -8,6 +8,7 @@ import { NotesPanel } from '../components/notes';
 import { SuggestionCard } from '../components/qa/SuggestionCard';
 import { VideoFramesPanel } from '../components/frames/VideoFramesPanel';
 import { DepthSelect } from '../components/common/DepthSelect';
+import { KnowledgeCutOffNote } from '../components/knowledge/KnowledgeCutOffNote';
 import { useColors, useShadows } from '../hooks/useTheme';
 import {
   fonts,
@@ -78,6 +79,10 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, defaultD
   const showRunBar = knowledgeExtractionAvailable && !isLoadingCached;
   const writtenAt = depthOf(displayed?.output_length);
   const run = () => extract.mutate({ force: !!displayed, depth });
+  const regenerateAt = (next: Depth) => {
+    setDepth(next);
+    extract.mutate({ force: true, depth: next });
+  };
 
   return (
     <div
@@ -293,6 +298,14 @@ export function VideoKnowledgeDrawer({ videoId, videoTitle, sourceType, defaultD
                 </Button>
               </div>
             </div>
+          )}
+
+          {displayed?.report_cut_off && (
+            <KnowledgeCutOffNote
+              writtenAt={writtenAt}
+              onRegenerate={knowledgeExtractionAvailable ? regenerateAt : undefined}
+              busy={extract.isPending}
+            />
           )}
 
           {displayed && <KnowledgeBody artifact={displayed} />}

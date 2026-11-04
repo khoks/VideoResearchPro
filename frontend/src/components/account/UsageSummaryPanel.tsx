@@ -6,7 +6,8 @@ import { fonts, fontSize, fontWeight, lineHeight, radius, space } from '../../th
 
 /**
  * E-5.2: what the signed-in user has spent, by feature: model tokens and
- * calls, and YouTube Data API units, today and over the last 30 days.
+ * calls, YouTube Data API units and audio sent to Whisper, today and over the
+ * last 30 days.
  * Read-only and informational: nothing shown here is a limit (D-111 took the
  * daily-token line off the pricing page because nothing enforced it).
  */
@@ -78,9 +79,9 @@ export function UsageSummaryPanel() {
         Your usage
       </h2>
       <p style={{ ...muted, margin: `${space['2']} 0 ${space['4']}` }}>
-        Model tokens and YouTube Data API units your work used, today and over the last 30 days (UTC days).
-        Recorded for your information; none of it is limited. Local models report no token counts, so only
-        their calls are counted.
+        Model tokens, YouTube Data API units and audio transcribed by Whisper for your work, today and over
+        the last 30 days (UTC days). Recorded for your information; none of it is limited. Local models report
+        no token counts, so only their calls are counted.
       </p>
 
       {isLoading ? (

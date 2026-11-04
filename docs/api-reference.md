@@ -246,7 +246,7 @@ The install's YouTube Data API units today. `daily_limit` is `YOUTUBE_DAILY_QUOT
 ## Usage
 
 ### `GET /api/v1/usage`
-The signed-in user's own usage (E-5.2), by feature, today and over the last 30 days (UTC days, today included). Requires auth; only rows whose `tenant_id` is the caller's are read. Recorded, never limited ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): caps are still reported by `GET /auth/quota`. Features are the user-facing actions (`job_qa`, `library_qa`, `qa_history`, `report`, `search`, `knowledge`, `ingest`, `visual`, `suggestions`, `saved_search`, `echo_draft`, `echo_signals`, `echo_shares`, `author`); YouTube units are grouped by the kind of call (`youtube_search`, `video_metadata`, `channel_sync`): every `search.list` is a `youtube_search`, including the fallback that resolves a channel typed by name in channel jobs and subscription syncs, so `search` (Topic search) carries only the topic planner's and curator's model calls. Tokens spent on work that then fails or is rolled back are still recorded. Sorted by tokens over the window. `metered_since` is the first day anything was recorded for the caller. Tokens are what the provider reported; a local model that reports none shows calls only. UI: the Subscription page.
+The signed-in user's own usage (E-5.2), by feature, today and over the last 30 days (UTC days, today included). Requires auth; only rows whose `tenant_id` is the caller's are read. Recorded, never limited ([D-111](decisions.md#d-111--operator-only-tier-switching-and-an-honest-pricing-page-2026-10-25)): caps are still reported by `GET /auth/quota`. Features are the user-facing actions (`job_qa`, `library_qa`, `qa_history`, `report`, `search`, `knowledge`, `ingest`, `visual`, `suggestions`, `saved_search`, `echo_draft`, `echo_signals`, `echo_shares`, `author`); YouTube units are grouped by the kind of call (`youtube_search`, `video_metadata`, `channel_sync`): every `search.list` is a `youtube_search`, including the fallback that resolves a channel typed by name in channel jobs and subscription syncs, so `search` (Topic search) carries only the topic planner's and curator's model calls. Tokens spent on work that then fails or is rolled back are still recorded. Sorted by tokens over the window. `metered_since` is the first day anything was recorded for the caller. Tokens are what the provider reported; a local model that reports none shows calls only. `whisper_seconds` is audio sent to the hosted Whisper API, the seconds each response reported: under `ingest` for a video without captions or a podcast episode, under `echo_shares` for an Echo recording, the overlap of a split recording included. A run in progress is written about once a minute (`USAGE_FLUSH_INTERVAL_SECONDS`), so its figures trail it by that much. UI: the Subscription page.
 
 ```json
 {
@@ -258,25 +258,31 @@ The signed-in user's own usage (E-5.2), by feature, today and over the last 30 d
     {
       "feature": "report",
       "label": "Reports",
-      "today":        { "llm_tokens_in": 412300, "llm_tokens_out": 51000, "llm_calls": 37, "youtube_units": 0 },
-      "last_30_days": { "llm_tokens_in": 412300, "llm_tokens_out": 51000, "llm_calls": 37, "youtube_units": 0 }
+      "today":        { "llm_tokens_in": 412300, "llm_tokens_out": 51000, "llm_calls": 37, "youtube_units": 0, "whisper_seconds": 0 },
+      "last_30_days": { "llm_tokens_in": 412300, "llm_tokens_out": 51000, "llm_calls": 37, "youtube_units": 0, "whisper_seconds": 0 }
     },
     {
       "feature": "search",
       "label": "Topic search",
-      "today":        { "llm_tokens_in": 1200, "llm_tokens_out": 300, "llm_calls": 2, "youtube_units": 0 },
-      "last_30_days": { "llm_tokens_in": 1200, "llm_tokens_out": 300, "llm_calls": 2, "youtube_units": 0 }
+      "today":        { "llm_tokens_in": 1200, "llm_tokens_out": 300, "llm_calls": 2, "youtube_units": 0, "whisper_seconds": 0 },
+      "last_30_days": { "llm_tokens_in": 1200, "llm_tokens_out": 300, "llm_calls": 2, "youtube_units": 0, "whisper_seconds": 0 }
     },
     {
       "feature": "youtube_search",
       "label": "Searches (YouTube)",
-      "today":        { "llm_tokens_in": 0, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 200 },
-      "last_30_days": { "llm_tokens_in": 0, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 200 }
+      "today":        { "llm_tokens_in": 0, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 200, "whisper_seconds": 0 },
+      "last_30_days": { "llm_tokens_in": 0, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 200, "whisper_seconds": 0 }
+    },
+    {
+      "feature": "ingest",
+      "label": "Reading sources",
+      "today":        { "llm_tokens_in": 0, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 0, "whisper_seconds": 1830 },
+      "last_30_days": { "llm_tokens_in": 0, "llm_tokens_out": 0, "llm_calls": 0, "youtube_units": 0, "whisper_seconds": 1830 }
     }
   ],
   "totals": {
-    "today":        { "llm_tokens_in": 413500, "llm_tokens_out": 51300, "llm_calls": 39, "youtube_units": 200 },
-    "last_30_days": { "llm_tokens_in": 413500, "llm_tokens_out": 51300, "llm_calls": 39, "youtube_units": 200 }
+    "today":        { "llm_tokens_in": 413500, "llm_tokens_out": 51300, "llm_calls": 39, "youtube_units": 200, "whisper_seconds": 1830 },
+    "last_30_days": { "llm_tokens_in": 413500, "llm_tokens_out": 51300, "llm_calls": 39, "youtube_units": 200, "whisper_seconds": 1830 }
   }
 }
 ```
@@ -524,7 +530,7 @@ Per-job Q&A history. Query params: `limit` (default 50), `offset` (default 0). O
 All `/library` endpoints require auth.
 
 ### `POST /api/v1/library/qa/clarify`
-Pre-answer clarification step for library-scoped questions. Same shape as the per-job clarify endpoint.
+Pre-answer clarification step for library-scoped questions. Same shape as the per-job clarify endpoint. The shelf panel uses it too (S-8.13.2): only the question reaches the model, so there is nothing of the shelf to scope, and the `POST /shelves/{shelf_id}/qa` that follows checks the shelf. Runs on the asker's BYOK key and model pin, and is metered as `library_qa`.
 
 ### `POST /api/v1/library/qa`
 Ask a question across everything the tenant can see (D-063). Runs `run_library_qa_agent` with corpus statistics for the visible set, so answer length follows the corpus bracket (D-072).
@@ -811,7 +817,7 @@ PATCH accepts any of the create fields plus `enabled`; a new cadence recomputes 
 Queues one run on the caller's tier queue outside the schedule; 202 `{status: "queued"}`. The quota is checked here as well as in the run, so an exhausted month answers 429 at once. A run asks the library Q&A agent over the caller's visible set (narrowed to the shelf's runs' approved documents when scoped, never widened when that is empty), with corpus statistics and trust weights as `POST /library/qa` passes them, records the quota, stores a `library_qa_exchanges` row (indexed in `qa_library_global`, `scope_json` = the scope plus `saved_search_id`) and updates the saved search's baseline: answer hash, cited document set, last exchange.
 
 ### `GET /api/v1/saved-searches/{id}/runs`
-The last 20 runs, newest first (S-8.3.3). Each: `ran_at`, `trigger` (`schedule` / `manual`), `status` (the saved-search statuses plus `no_new_sources`, the gate's skip), `exchange_id`, `previous_exchange_id`, `changed` (null on the first run, which sets the baseline, and on runs that did not answer), `jaccard` and `embedding_distance` (the two signals), `decided_by` (`none` / `agreed` / `judged` / `judge_failed`), `added_reference_ids`, `dropped_reference_ids`, `diff_summary`.
+The last 20 runs, newest first (S-8.3.3). Each: `ran_at`, `trigger` (`schedule` / `manual`), `status` (the saved-search statuses plus `no_new_sources`, the gate's skip), `exchange_id`, `previous_exchange_id`, `changed` (null on the first run, which sets the baseline, and on runs that did not answer), `jaccard` and `embedding_distance` (the two signals), `decided_by` (`none` / `agreed` / `judged` / `judge_failed` / `embedding_only`), `added_reference_ids`, `dropped_reference_ids`, `diff_summary`. The cited sets are keyed on `document_id` (T-8.3.3.10), so the two id lists hold `document_id` values; runs from before that hold YouTube ids. `embedding_only` means the sets could not be compared because a citation named no document (a non-YouTube citation stored before #397): `jaccard` is null, nothing is listed as added or dropped, and the embedding alone decided.
 
 **How a run decides it changed** ([pre-registered thresholds](notes/2026-10-19-saved-search-change-thresholds.md)): (1) a scheduled run whose scope resolves to the same document set as the last good run is skipped (`no_new_sources`, no quota, no model); Run now always asks. (2) After answering, the cited-set Jaccard below `SAVED_SEARCH_JACCARD_THRESHOLD` (0.50) or the answer-embedding cosine distance above `SAVED_SEARCH_EMBEDDING_THRESHOLD` (0.15) votes "changed". (3) When exactly one votes, `saved_search_judge` decides and writes the sentence; if it fails, the citation vote decides. A change writes a notification (`saved_search_changed`, `href` `/saved-searches?search=<id>&run=<run_id>`) and, when `notify_email` is on, an email through `email_service` linking to `APP_BASE_URL` + that path.
 
@@ -1012,7 +1018,7 @@ Run the knowledge extraction agent for this document, whatever its source type. 
 
 Query params:
 - `?force=true` re-runs if already extracted. Returns 409 if already extracted and `force` is omitted.
-- `?output_length=auto|brief|standard|deep` (S-1.15.3) multiplies the report's size-based budget by the [D-064](decisions.md#d-064--output-length-corpus-brackets-with-an-optional-user-override-2026-07-31) depth and gives the writer that depth's brief. Extraction is unchanged. Unset or `auto` is exactly the budget and prompt from before. The depth is stored in `extracted_knowledge_json` as `_output_length`, and the response returns it as `output_length`, `null` when none was asked for.
+- `?output_length=auto|brief|standard|deep` (S-1.15.3) multiplies the report's size-based budget by the [D-064](decisions.md#d-064--output-length-corpus-brackets-with-an-optional-user-override-2026-07-31) depth and gives the writer that depth's brief. Extraction is unchanged. Unset or `auto` is exactly the budget and prompt from before. The depth is stored in `extracted_knowledge_json` as `_output_length`, and the response returns it as `output_length`, `null` when none was asked for. A report that stopped at its token budget is stored with `_report_cut_off: true` beside it (T-1.15.3.8) and the response returns `report_cut_off`, on this route and the `GET` below; it is `false` for a report that fitted and for every report written before this was recorded.
 
 404 for a document the caller cannot see, the same as one that does not exist. 422 when neither the transcript cache nor the chunks hold any text. 502 when no report came back: the stored artifact stands and no quota is spent.
 

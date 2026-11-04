@@ -1531,6 +1531,7 @@ def resume_job_after_approval(self, job_id: str) -> None:
             job.progress_message = progress_message
             job.updated_at = datetime.now(timezone.utc)
             db.commit()
+            usage_service.checkpoint()  # T-5.2.13
 
         unavailable_count = total - fetched_count
         logger.info(
@@ -1840,6 +1841,7 @@ def _run_extraction_and_rag(self, db, job) -> None:
         job.progress_message = progress_message
         job.updated_at = datetime.now(timezone.utc)
         db.commit()
+        usage_service.checkpoint()  # T-5.2.13: a sync's videos can take hours
 
     unavailable_count = total - fetched_count
     logger.info(
@@ -2120,6 +2122,7 @@ def execute_subscription_job(self, job_id: str) -> None:
                 job_id, "searching", 18 + int(7 * ((i + 1) / max(1, len(resolved_channels)))),
                 f"{total_ingested} videos ingested so far...",
             )
+            usage_service.checkpoint()  # T-5.2.13
 
         logger.info(
             f"[job:{job_id}] Subscription uploads walk complete: "

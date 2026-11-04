@@ -668,7 +668,21 @@ DOCUMENT_PRESENCE_SHARE = 0.03
 
 def chunk_metadata_for_transcript(segments_or_text: Any) -> dict[str, Any]:
     """Document-level fields for chunk metadata; empty for English sources."""
-    p = profile_transcript(segments_or_text)
+    return chunk_metadata_from_profile(profile_transcript(segments_or_text))
+
+
+def chunk_metadata_from_profile(p: dict[str, Any] | None) -> dict[str, Any]:
+    """Document-level chunk fields from an already computed ``profile_transcript``.
+
+    The same decision as ``chunk_metadata_for_transcript``, for a caller that
+    holds the profile (it is persisted on ``documents.language_mix``,
+    T-1.16.1.7) so the transcript is not profiled twice. Empty for English
+    sources and for a missing or unreadable profile.
+    """
+    if not isinstance(p, dict) or any(
+        k not in p for k in ("primary_language", "quote_mode", "hi_share")
+    ):
+        return {}
     if (
         p["primary_language"] in ("en", "none")
         and p["quote_mode"] == PLAIN_ENGLISH
@@ -677,9 +691,9 @@ def chunk_metadata_for_transcript(segments_or_text: Any) -> dict[str, Any]:
         return {}
     return {
         "code_mix_primary": p["primary_language"],
-        "code_mix_script": p["native_script"] or "",
+        "code_mix_script": p.get("native_script") or "",
         "code_mix_share": p["hi_share"],
-        "code_mix_matrix_share": p["matrix_hi_share"],
+        "code_mix_matrix_share": p.get("matrix_hi_share") or 0.0,
         "code_mix_quote": p["quote_mode"],
     }
 

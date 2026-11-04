@@ -103,6 +103,16 @@ class Document(Base):
     # document, so the cost is paid once per document, not once per job.
     discussed_era_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # R5 / T-1.16.1.7: the source's measured language mix, as JSON — the
+    # profile `code_mixing_service.profile_transcript` computes from the
+    # whole text: {primary_language, native_script, hi_share,
+    # matrix_hi_share, quote_mode, windows, window_modes,
+    # flicker_unresolved}. Written by every chunking path from the segments
+    # it chunks (`language_mix_service.ensure`), so it always describes the
+    # text the chunks were built from; older documents are profiled by
+    # `scripts/backfill_language_mix.py`. NULL means not profiled yet.
+    language_mix: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )

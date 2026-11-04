@@ -30,6 +30,7 @@ from app.schemas.tag import TagSummary
 from app.services import library_qa_service
 from app.services import chroma_service
 from app.services import document_cap_service
+from app.services import language_mix_service
 from app.services import graph_service, library_query_service, qa_scope_service, tag_service, visibility_service
 from app.services import usage_service
 from app.services.llm_service import get_llm_for
@@ -507,6 +508,7 @@ def query_library_documents(
             transcript_status=v.transcript_status,
             transcript_language=v.transcript_language,
             transcript_word_count=v.transcript_word_count,
+            language_mix=language_mix_service.public_view(v),
             job_count=counts_by_document.get(v.document_id, 0),
             job_titles=titles_by_document.get(v.document_id, []),
             tags=tags_by_document.get(v.document_id, []),
@@ -734,11 +736,15 @@ async def upload_pdf(
     # the PDF flatten module emits land on chunk metadata via the
     # dominant-segment heuristic.
     video_metadata = _build_video_metadata(doc, language=extracted.language)
+    # T-1.16.1.7: the language profile, stored on the document and reused
+    # by the chunker (committed with `embedded_in_chroma` below).
+    language_profile = language_mix_service.ensure(doc, extracted.segments)
     chunks = chunk_transcript(
         extracted.segments,
         chunk_size=settings.CHUNK_SIZE,
         chunk_overlap=settings.CHUNK_OVERLAP,
         video_metadata=video_metadata,
+        language_profile=language_profile,
         transcription_source="pdf",
     )
     # E-5.2: embedding a non-English source renders it into English first
@@ -934,11 +940,15 @@ def _ingest_single_paste_url(url: str, db: Session, current_user) -> dict:
     # carries the per-document polymorphic fields (source_type,
     # permalink, author) into Chroma per S-1.5.12.
     video_metadata = _build_video_metadata(doc, language=extracted.language)
+    # T-1.16.1.7: the language profile, stored on the document and reused
+    # by the chunker (committed with `embedded_in_chroma` below).
+    language_profile = language_mix_service.ensure(doc, extracted.segments)
     chunks = chunk_transcript(
         extracted.segments,
         chunk_size=settings.CHUNK_SIZE,
         chunk_overlap=settings.CHUNK_OVERLAP,
         video_metadata=video_metadata,
+        language_profile=language_profile,
         transcription_source=extracted.text_source,
     )
     # E-5.2: embedding a non-English source renders it into English first

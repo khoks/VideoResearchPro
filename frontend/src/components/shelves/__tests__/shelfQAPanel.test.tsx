@@ -110,6 +110,35 @@ describe('ShelfQAPanel', () => {
     expect(host.textContent).toContain('What about rates?');
     expect(host.querySelector('[data-qa-scope]')).toBeNull();
     expect(box.value).toBe('');
+    // R4: the depth control was left on Default, so no depth was sent.
+    expect('output_length' in askMock.mock.calls[0][1]).toBe(false);
+  });
+
+  it('sends the depth chosen beside Ask, for that ask (R4)', async () => {
+    documentsMock.mockResolvedValue([{ id: 'd1' }]);
+    questionsMock.mockResolvedValue([]);
+    askMock.mockResolvedValue(exchange('e1', 'What about rates?', { shelf_id: 's1' }));
+    await render(<ShelfQAPanel shelfId="s1" shelfName="Rates" />);
+
+    const select = Array.from(host.querySelectorAll('select')).find((el) =>
+      Array.from(el.options).some((o) => o.value === 'deep'),
+    )!;
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Default', 'Brief', 'Standard', 'Deep']);
+    expect(select.value).toBe('');
+    act(() => {
+      select.value = 'deep';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    type(host.querySelector('textarea')!, 'What about rates?');
+    const submit = Array.from(host.querySelectorAll('button')).find((b) => b.textContent === 'Ask this shelf')!;
+    await act(async () => submit.click());
+    await flush();
+
+    expect(askMock).toHaveBeenCalledWith('s1', {
+      question: 'What about rates?',
+      answer_language: 'en',
+      output_length: 'deep',
+    });
   });
 });
 

@@ -34,6 +34,7 @@ from app.agents.prompts.knowledge_prompts import (
 )
 from app.agents.state import KnowledgeAgentState
 from app.config import settings
+from app.services import output_length as output_length_policy
 from app.services import temporal_service
 from app.services.llm_service import get_llm_for, response_text
 from app.services.llm_routing import max_output_for, resolve_config
@@ -351,9 +352,18 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
     # A flat 8,000 capped a 4-hour video's report at the same length as a
     # 10-minute one; D-055 scored the default 4/10 on signal density against a
     # max-effort control that ran ~2.5x longer on the same transcript.
+    #
+    # S-1.15.3 / D-064: the reader's depth preference multiplies that derived
+    # budget and adds its brief; it never replaces the budget with a cap. No
+    # preference is a multiplier of exactly 1.0 and no brief, so the call is
+    # the one S-1.14.8 shipped (`output_length.override_scale` says why a
+    # single document is not bracketed).
+    length_pref = state.get("output_length")
+    length_scale = output_length_policy.override_scale(length_pref)
+    length_guidance = output_length_policy.override_guidance(length_pref)
     _synth_cfg = resolve_config("knowledge_synthesize_report")
     synth_max_tokens = min(
-        max(int(_count_tokens(merged_json) * 1.0), 8_000),
+        int(max(int(_count_tokens(merged_json) * 1.0), 8_000) * length_scale),
         max_output_for(_synth_cfg.model),
     )
     llm = get_llm_for(
@@ -362,8 +372,11 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
         max_tokens=synth_max_tokens,
     )
     logger.info(
-        "synthesize_report: extraction %d tokens -> completion budget %d (model %s)",
-        _count_tokens(merged_json), synth_max_tokens, _synth_cfg.model,
+        "synthesize_report: extraction %d tokens -> completion budget %d "
+        "(depth %s, scale %.2f, model %s)",
+        _count_tokens(merged_json), synth_max_tokens,
+        output_length_policy.explicit_preference(length_pref) or "unset",
+        length_scale, _synth_cfg.model,
     )
     profile = source_profile(state.get("source_type"))
     prompt = SYNTHESIZE_REPORT_PROMPT.format(
@@ -379,6 +392,9 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
         language_note=_language_note(full_transcript),
         merged_extraction_json=merged_json,
         full_transcript_text=transcript_excerpt,
+        # Its own paragraph before the closing instruction; nothing at all
+        # when unset, so the prompt is byte-for-byte the S-1.14.8 one.
+        length_note=f"\n{length_guidance}\n" if length_guidance else "",
     )
 
     try:
@@ -412,7 +428,11 @@ def build_knowledge_graph():
     return graph.compile()
 
 
-def run_knowledge_extract_agent(video: Any, full_transcript_text: str) -> dict:
+def run_knowledge_extract_agent(
+    video: Any,
+    full_transcript_text: str,
+    output_length: str | None = None,
+) -> dict:
     """Run the knowledge agent for one video.
 
     S-1.12.8: the FULL transcript is batched and extracted — there is no
@@ -424,6 +444,10 @@ def run_knowledge_extract_agent(video: Any, full_transcript_text: str) -> dict:
     Args:
         video: the `Document` ORM row (used for title + channel_name).
         full_transcript_text: the full transcript as a single string.
+        output_length: the reader's depth preference (S-1.15.3), one of
+            D-064's values. It reaches the synthesis step only: extraction
+            fidelity is not a preference (D-064). None or 'auto' leaves the
+            synthesis budget and prompt exactly as S-1.14.8 shipped them.
 
     Returns:
         {
@@ -484,6 +508,7 @@ def run_knowledge_extract_agent(video: Any, full_transcript_text: str) -> dict:
         "published_at": published_at,
         "discussed_era": discussed_era,
         "full_transcript_text": text,
+        "output_length": output_length,
         "transcript_batches": [],
         "per_batch_extractions": [],
         "merged_extraction": {},

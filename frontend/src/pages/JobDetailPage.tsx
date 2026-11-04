@@ -17,6 +17,7 @@ import { ProgressBar } from '../components/common/ProgressBar';
 import { CitationLink } from '../components/citation';
 import { DockedComposer, QADock, QAThread } from '../components/qa/Composer';
 import { SuggestionCard } from '../components/qa/SuggestionCard';
+import { DepthSelect } from '../components/common/DepthSelect';
 import { useExchangeFocus } from '../hooks/useExchangeFocus';
 import { NotesPanel } from '../components/notes';
 import { JobShelfChips, ShelfPicker } from '../components/shelves';
@@ -38,6 +39,7 @@ import { useColors } from '../hooks/useTheme';
 import { fonts, fontSize, fontWeight, lineHeight, measure, radius, space } from '../theme';
 import { formatDuration, formatDate, statusTone } from '../utils/formatters';
 import { buildClarifyContext, CLARIFY_ANSWER_MAX_CHARS } from '../utils/clarifyContext';
+import { depthLabel, depthOf, withDepth, type Depth } from '../utils/depth';
 import { apiErrorMessage } from '../utils/apiError';
 import { useJobStore } from '../stores/jobStore';
 import { wsClient } from '../services/wsClient';
@@ -325,7 +327,7 @@ export function JobDetailPage() {
         <ReportPeekModal jobId={job.id} onClose={closeReportModal} />
       )}
 
-      {job.status === 'completed' && <QASection jobId={job.id} />}
+      {job.status === 'completed' && <QASection jobId={job.id} jobDepth={job.output_length} />}
 
       {/* Keyed on document_id (D-070): a PDF or a thread has no video_id,
           and gating on it opened nothing for every non-video row. */}
@@ -334,6 +336,8 @@ export function JobDetailPage() {
           videoId={knowledgeVideo.document_id || knowledgeVideo.video_id || ''}
           videoTitle={knowledgeVideo.title}
           sourceType={knowledgeVideo.source_type}
+          // S-1.15.3: a source's report starts at the depth the run was asked for.
+          defaultDepth={job.output_length}
           onClose={() => setKnowledgeVideo(null)}
         />
       )}
@@ -838,7 +842,7 @@ export function VideoApprovalSection({
   );
 }
 
-function QASection({ jobId }: { jobId: string }) {
+function QASection({ jobId, jobDepth }: { jobId: string; jobDepth?: string | null }) {
   const c = useColors();
   const { data: history } = useQAHistory(jobId);
   const askQuestion = useAskQuestion(jobId);
@@ -852,6 +856,10 @@ function QASection({ jobId }: { jobId: string }) {
   const [interpretation, setInterpretation] = useState('');
   const [clarifications, setClarifications] = useState<string[]>([]);
   const [clarificationAnswers, setClarificationAnswers] = useState<string[]>([]);
+  // R4: this ask's depth. Null sends none, so the run's own depth applies and,
+  // with none set there, the corpus size decides (the router's precedence).
+  const [depth, setDepth] = useState<Depth | null>(null);
+  const runDepth = depthOf(jobDepth);
 
   // True while an answer is being produced by either path — the SSE stream
   // or the non-streaming mutation it falls back to.
@@ -874,7 +882,8 @@ function QASection({ jobId }: { jobId: string }) {
   // Streaming-first ask. Falls back to the classic non-streaming mutation
   // when the stream endpoint isn't deployed (404). Returns true on success
   // so callers only reset the form when an answer actually landed.
-  const submitQuestion = async (payload: { question: string; context?: string }): Promise<boolean> => {
+  const submitQuestion = async (ask: { question: string; context?: string }): Promise<boolean> => {
+    const payload = withDepth(ask, depth);
     try {
       await askStreaming(payload);
       return true;
@@ -939,7 +948,44 @@ function QASection({ jobId }: { jobId: string }) {
   return (
     <Card>
       <QADock>
-      <SectionHeader title="Ask questions" description="Citation-grounded answers drawn from this job's transcripts and report." />
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: space['4'],
+          flexWrap: 'wrap',
+        }}
+      >
+        <SectionHeader title="Ask questions" description="Citation-grounded answers drawn from this job's transcripts and report." />
+        {/* R4: a per-ask override, out of the composer's way. The docked phone
+            composer has no width to spare beside Ask (S-8.12.1). */}
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: space['2'],
+            marginBottom: space['4'],
+            fontFamily: fonts.ui,
+            fontSize: fontSize.sm,
+            color: c.textSecondary,
+          }}
+        >
+          Answer depth
+          <DepthSelect
+            value={depth}
+            onChange={setDepth}
+            unsetLabel={runDepth ? `Default (${depthLabel(runDepth).toLowerCase()})` : 'Default'}
+            aria-label="Answer depth"
+            title={
+              runDepth
+                ? `Default: the depth this run was asked for (${depthLabel(runDepth).toLowerCase()}).`
+                : 'Default: sized to how much this run gathered.'
+            }
+            disabled={answering}
+          />
+        </label>
+      </div>
 
       {step === 'ask' && (
         <>

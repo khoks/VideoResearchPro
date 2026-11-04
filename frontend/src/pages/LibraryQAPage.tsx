@@ -11,6 +11,7 @@ import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { DockedComposer, QADock, QAThread } from '../components/qa/Composer';
 import { InfoStripe, LibraryQAExchangeCard } from '../components/qa/LibraryQAExchangeCard';
 import { useExchangeFocus } from '../hooks/useExchangeFocus';
+import { DepthSelect } from '../components/common/DepthSelect';
 import {
   Button,
   Card,
@@ -31,6 +32,7 @@ import {
 } from '../theme';
 import type { AnswerLanguage } from '../types/qa';
 import { buildClarifyContext, CLARIFY_ANSWER_MAX_CHARS } from '../utils/clarifyContext';
+import { withDepth, type Depth } from '../utils/depth';
 
 const FEATURE_UNAVAILABLE_MSG = 'LLM-dependent feature is temporarily unavailable';
 
@@ -56,6 +58,8 @@ export function LibraryQAPage() {
 
   const [question, setQuestion] = useState('');
   const [language, setLanguage] = useState<AnswerLanguage>('en');
+  // R4: this ask's depth; null sends none and the corpus size decides.
+  const [depth, setDepth] = useState<Depth | null>(null);
   const [step, setStep] = useState<'ask' | 'clarify'>('ask');
   const [interpretation, setInterpretation] = useState('');
   const [clarifications, setClarifications] = useState<string[]>([]);
@@ -87,14 +91,14 @@ export function LibraryQAPage() {
     // Kept under the server's 4,000-character bound, or the ask is a 422.
     const context = buildClarifyContext(interpretation, clarifications, clarificationAnswers);
 
-    await askQuestion.mutateAsync({ question, answer_language: language, context });
+    await askQuestion.mutateAsync(withDepth({ question, answer_language: language, context }, depth));
     setQuestion('');
     resetToAsk();
   };
 
   const handleSkipAndAsk = async () => {
     if (!libraryQAAvailable) return;
-    await askQuestion.mutateAsync({ question, answer_language: language });
+    await askQuestion.mutateAsync(withDepth({ question, answer_language: language }, depth));
     setQuestion('');
     resetToAsk();
   };
@@ -104,7 +108,7 @@ export function LibraryQAPage() {
     if (!libraryQAAvailable) return;
     setQuestion(q);
     try {
-      await askQuestion.mutateAsync({ question: q, answer_language: language });
+      await askQuestion.mutateAsync(withDepth({ question: q, answer_language: language }, depth));
     } catch {
       return; // the global mutation cache already toasted
     }
@@ -188,29 +192,52 @@ export function LibraryQAPage() {
           >
             New question
           </h2>
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: space['2'],
-              fontFamily: fonts.ui,
-              fontSize: fontSize.sm,
-              color: c.textSecondary,
-            }}
-          >
-            Answer language
-            <Select
-              value={language}
-              onChange={(e) => setLanguage(e.target.value as AnswerLanguage)}
-              style={{ width: 'auto', minWidth: 140 }}
+          <div style={{ display: 'flex', alignItems: 'center', gap: space['4'], flexWrap: 'wrap' }}>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: space['2'],
+                fontFamily: fonts.ui,
+                fontSize: fontSize.sm,
+                color: c.textSecondary,
+              }}
             >
-              {LANGUAGE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </Select>
-          </label>
+              Answer language
+              <Select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value as AnswerLanguage)}
+                style={{ width: 'auto', minWidth: 140 }}
+              >
+                {LANGUAGE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            {/* R4: a per-ask override beside the other per-ask option. */}
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: space['2'],
+                fontFamily: fonts.ui,
+                fontSize: fontSize.sm,
+                color: c.textSecondary,
+              }}
+            >
+              Answer depth
+              <DepthSelect
+                value={depth}
+                onChange={setDepth}
+                unsetLabel="Default"
+                aria-label="Answer depth"
+                title="Default: sized to how much of your library the question draws on."
+                disabled={askQuestion.isPending}
+              />
+            </label>
+          </div>
         </div>
 
         {step === 'ask' && (

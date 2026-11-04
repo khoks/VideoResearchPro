@@ -84,18 +84,19 @@ def _hash(text: str, meta: dict) -> str:
     return hashlib.sha256((text + json.dumps(meta, sort_keys=True)).encode("utf-8")).hexdigest()[:32]
 
 
+def is_live_fact(row: PersonalContext) -> bool:
+    """Not past its ``expires_at``. Naive UTC on both sides: SQLite gives the
+    column back naive."""
+    if row.expires_at is None:
+        return True
+    return row.expires_at.replace(tzinfo=None) > datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def _live_facts(db: Session, tenant_id: str) -> list[PersonalContext]:
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
     rows = db.query(PersonalContext).filter(
         (PersonalContext.tenant_id == tenant_id) | (PersonalContext.user_id == tenant_id)
     )
-    out = []
-    for r in rows:
-        exp = r.expires_at
-        if exp is not None and (exp.replace(tzinfo=None) if exp.tzinfo else exp) <= now:
-            continue
-        out.append(r)
-    return out
+    return [r for r in rows if is_live_fact(r)]
 
 
 def _live_signals(db: Session, tenant_id: str) -> list[VoiceSignal]:

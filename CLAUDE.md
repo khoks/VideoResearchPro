@@ -210,6 +210,7 @@ Redis pub/sub → WebSocket Manager → Frontend React Query cache update
 | `backend/app/services/echo_voice_test_service.py` | The D-100 "which of these did you write?" test, one procedure for the app (`/echo/voice-test`) and `scripts/voice_match_harness.py`: hold-out, prompts, pairs, score, and the rolled-back what-if that keeps the live database unchanged (T-3.4.1.8) |
 | `backend/app/services/echo_draft_edits.py` | What the user changed in a draft: only the words they TYPED are theirs, minus 8-word stretches repeated from the incoming message (the provenance guard for S-3.4.2, D-104) |
 | `backend/scripts/echo_import.py` | Import an export into a user's Echo from the command line (`--email`, `--file`, `--preview`): the `/echo/import` flow for exports past the upload cap, such as Apple Health (S-3.7.5) |
+| `backend/scripts/sweep_rejected_signal_evidence.py` | Clear stale evidence from rejected voice signals at rest (T-3.3.1.7): dry run by default, `--write` is the owner's step; prints counts, never the words |
 | `backend/app/websocket/manager.py` | Redis pub/sub → WebSocket fan-out; closes a socket when its session is revoked (T-5.4.19) |
 | `backend/app/services/youtube_service.py` | YouTube API + transcript fetching with language fallback + rate limiting |
 | `backend/app/services/chroma_service.py` | ChromaDB collection management (singleton client) |

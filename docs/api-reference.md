@@ -1216,6 +1216,8 @@ Every connector this install offers, with the caller's grant (S-3.2.1, [#336](ht
                          "last_counts": { "added": 40, "updated": 2, "facts": 3 }, "events": 412 } }] }
 ```
 
+`last_counts` is the last sync's summary. It also carries `facts_kept_manual` when the sync skipped derived facts because the user wrote those entries (T-3.2.1.11).
+
 Connectors on this build: `github` (S-3.2.4; public activity under `read:user`; event types `pushed`, `committed`, `opened_pull_request`, `merged_pull_request`, `reviewed_pull_request`, `opened_issue`, `commented`, `published_release`, `created_repository`, `starred`, `forked`; nightly).
 
 ### `POST /api/v1/echo/connectors/{name}/authorize`
@@ -1346,7 +1348,7 @@ Backend: `backend/app/routers/echo_drafts.py`, service `services/echo_draft_serv
 Each draft is metered as the daily quota resource `echo_drafts` (`echo_drafts_per_day`: Free 0, Pro 0, Studio 20) and audited as `echo_drafted` with counts only. Drafts and voice-test results (`echo_drafts`, `echo_voice_gates`) are part of the brain: exported and erased with it.
 
 ### `GET /api/v1/echo/export`
-The whole brain as one zip (S-3.10.1): `manifest.json` (format `pratidhvani-echo-archive`, version 1, export time, tenant, row counts per table, every file with size and SHA-256, any missing file), `personal_context.jsonl`, `shares_inbox.jsonl`, `voice_signals.jsonl` and `voice_signal_inputs.jsonl` (every column; datetimes ISO-8601 with offset), and `files/<stored path>`. Lossless: `services/echo_privacy_service.py::read_archive` is the exact inverse, with one exception: while a voice test is open, its `key_json` and `seed` are exported as null, because they give away which side of each pair is the user's; `manifest.withheld.columns` counts those rows, and once the test is scored both are exported. Built in a temporary file and removed after sending. Audited (`echo_exported`, counts only). Notes and the library are not part of Echo; notes export at `/exports/notes.*`.
+The whole brain as one zip (S-3.10.1): `manifest.json` (format `pratidhvani-echo-archive`, version 1, export time, tenant, row counts per table, every file with size and SHA-256, any missing file), `personal_context.jsonl`, `shares_inbox.jsonl`, `voice_signals.jsonl` and `voice_signal_inputs.jsonl` (every column; datetimes ISO-8601 with offset), and `files/<stored path>`. Lossless: `services/echo_privacy_service.py::read_archive` is the exact inverse, with two exceptions, both counted in `manifest.withheld.columns`. While a voice test is open, its `key_json` and `seed` are exported as null, because they give away which side of each pair is the user's; once the test is scored both are exported. A rejected voice signal's `derived_from` and `examples_json` carry only the evidence that still stands, because a rejection made before PR #392 can quote a source deleted since (T-3.3.1.7). Built in a temporary file and removed after sending. Audited (`echo_exported`, counts only). Notes and the library are not part of Echo; notes export at `/exports/notes.*`.
 
 ### `GET /api/v1/echo/brain/footprint`
 What Echo holds for the caller in every store: `{ "rows": {"personal_context": n, "shares_inbox": n, "voice_signals": n, "voice_signal_inputs": n}, "files": n, "vectors": {"shares_global": n, "personal_context_global": n} }`.

@@ -59,6 +59,10 @@ class UnsupportedKindError(ValueError):
     pass
 
 
+# ``source`` of a row the user wrote: typed in, or a derived row they edited.
+MANUAL_SOURCE = "manual"
+
+
 def _validate_kind(kind: str) -> None:
     if kind not in SUPPORTED_KINDS:
         raise UnsupportedKindError(
@@ -90,6 +94,8 @@ def record_context(
     key) updates the row's value + captured_at + expires_at +
     confidence; never duplicates.
     """
+    from app.services import echo_fact_tombstones
+
     _validate_kind(kind)
     if not source or not source.strip():
         raise ValueError("source is required (e.g. 'manual', 'youtube_watch_history')")
@@ -111,6 +117,10 @@ def record_context(
     )
     now = datetime.now(timezone.utc)
     if existing is not None:
+        if source != MANUAL_SOURCE:
+            existing.wanted_by = None  # the source column says who wrote it now
+        elif existing.source != MANUAL_SOURCE:
+            existing.wanted_by = echo_fact_tombstones.connector_of_source(db, user_id, existing.source)
         existing.value = encoded
         existing.source = source
         existing.confidence = confidence
@@ -136,6 +146,38 @@ def record_context(
     db.refresh(row)
     _sync_vectors(db, user_id)
     return row
+
+
+def record_derived_context(
+    db: Session,
+    *,
+    user_id: str,
+    kind: str,
+    key: str,
+    value: Any,
+    source: str,
+    confidence: float,
+) -> PersonalContext | None:
+    """``record_context`` for a fact a connector or importer derived. A row the
+    user wrote holds its key (T-3.2.1.11): their words outrank a guess, so
+    nothing is written and this returns None. Asked per fact, at write time, so
+    an edit made while a long sync ran is seen.
+
+    The row notes who it turned away (``wanted_by``): a row typed before any
+    source derived the key was never edited, and deleting it must still keep
+    the source out (T-3.2.4.4). A row past its ``expires_at`` holds nothing: it
+    is gone from the list and from retrieval, so the source takes the key back."""
+    from app.services import echo_fact_tombstones, echo_personal_vectors
+
+    existing = get_context(db, user_id, kind, key)
+    if existing is not None and existing.source == MANUAL_SOURCE and echo_personal_vectors.is_live_fact(existing):
+        if existing.wanted_by is None:
+            existing.wanted_by = echo_fact_tombstones.connector_of_source(db, user_id, source)
+            db.commit()
+        return None
+    return record_context(
+        db, user_id=user_id, kind=kind, key=key, value=value, source=source, confidence=confidence
+    )
 
 
 def _sync_vectors(db: Session, tenant_id: str) -> None:

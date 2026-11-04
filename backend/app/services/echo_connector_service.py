@@ -16,12 +16,17 @@ module owns the rest, per tenant:
 3. **Sync.** ``run_sync`` backfills once, then syncs incrementally from the
    last success, storing events idempotently and derived facts below 1.0
    confidence (source ``connector:<name>``), except the keys the user deleted
-   (T-3.2.4.4, ``echo_fact_tombstones``). An access token past its
-   ``expires_at`` is renewed first through the connector's
-   ``refresh_tokens`` and stored encrypted (T-3.2.2.5). Fail-soft: a provider
-   error marks the grant ``error`` with the reason; an auth error, a refused
-   or impossible refresh, or a stored token this install can no longer
-   decrypt, asks the user to reconnect.
+   (T-3.2.4.4, ``echo_fact_tombstones``) and the keys a row the user wrote
+   holds (T-3.2.1.11). An access token past its ``expires_at`` is renewed
+   first through the connector's ``refresh_tokens`` and stored encrypted
+   (T-3.2.2.5); a 401 on a call made through ``SyncContext.call`` renews once
+   and retries that call once. One reader of a grant spends its refresh token
+   at a time, and the others use the result (T-3.2.1.12, ``_await_refresh``).
+   Fail-soft: a provider error marks the grant ``error`` with the reason; only
+   what a sync cannot get past asks the user to reconnect: a provider refusing
+   the refresh token or a token it just issued, an auth error on a grant that
+   cannot be renewed, or a stored token this install can no longer decrypt.
+   No token reaches a log line or ``last_error`` (``_scrub``).
 4. **Revoke.** One request deletes the grant, tokens, pending states, every
    event and every derived fact of that connector, and its schedule. Revoking
    at the provider is best effort; local data goes regardless.
@@ -36,11 +41,16 @@ import hashlib
 import json
 import logging
 import secrets
+import time
+import traceback
+import urllib.parse
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from cryptography.fernet import InvalidToken
+from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -51,6 +61,7 @@ from app.connectors.base import (
     ConnectorTokens,
     RefreshableConnector,
     SyncContext,
+    TokenRenewalFailed,
 )
 from app.models.echo_connector import (
     EchoConnectorCredential,
@@ -83,6 +94,13 @@ RECONNECT_PREFIX = "Reconnect to sync: "
 # An access token this close to its expiry is renewed before the sync, so
 # it cannot lapse between the check and the provider call.
 REFRESH_SKEW = timedelta(seconds=60)
+# A refresh claim older than this belongs to a reader that died: the next one
+# may take it. Well above a provider call (connectors time out at 20 s).
+REFRESH_CLAIM_TTL = timedelta(seconds=120)
+# How long a second reader waits for the first's renewed token, then how often
+# it looks. Past the wait it stops with an error the next sync retries.
+REFRESH_WAIT_SECONDS = 30.0
+REFRESH_POLL_SECONDS = 0.25
 
 
 class ConnectorNotFound(LookupError):
@@ -108,6 +126,8 @@ class SyncOutcome:
     added: int = 0
     updated: int = 0
     facts: int = 0
+    # Derived facts skipped because a row the user wrote holds the key.
+    facts_kept_manual: int = 0
     error: str | None = None
 
 
@@ -269,35 +289,50 @@ def complete_connect(db: Session, tenant_id: str, name: str, *, state: str, code
     return grant
 
 
-def _store_tokens(db: Session, tenant_id: str, name: str, tokens: ConnectorTokens) -> None:
-    cred = (
+def _credential(db: Session, tenant_id: str, name: str) -> EchoConnectorCredential | None:
+    """The row as the database holds it now, not as this session last saw it:
+    another reader may have renewed the tokens."""
+    return (
         db.query(EchoConnectorCredential)
+        .populate_existing()
         .filter(EchoConnectorCredential.tenant_id == tenant_id, EchoConnectorCredential.connector == name)
         .first()
     )
+
+
+def _store_tokens(db: Session, tenant_id: str, name: str, tokens: ConnectorTokens) -> None:
+    """A fresh connect: new tokens, and any refresh claim on the old ones is
+    moot."""
+    cred = _credential(db, tenant_id, name)
     if cred is None:
         cred = EchoConnectorCredential(tenant_id=tenant_id, connector=name, access_token_encrypted="")
         db.add(cred)
-    cred.access_token_encrypted = byok_service.encrypt_secret(tokens.access_token)
-    cred.refresh_token_encrypted = (
-        byok_service.encrypt_secret(tokens.refresh_token) if tokens.refresh_token else None
-    )
-    cred.expires_at = _naive(tokens.expires_at)
+    _write_tokens(cred, tokens)
+    cred.refresh_claim = cred.refresh_claimed_at = None
     db.commit()
 
 
+def _write_tokens(cred: EchoConnectorCredential, tokens: ConnectorTokens) -> None:
+    access = byok_service.encrypt_secret(tokens.access_token)
+    refresh = byok_service.encrypt_secret(tokens.refresh_token) if tokens.refresh_token else None
+    cred.access_token_encrypted, cred.refresh_token_encrypted = access, refresh
+    cred.expires_at = _naive(tokens.expires_at)
+
+
+def _read_tokens(cred: EchoConnectorCredential) -> tuple[str, str | None]:
+    refresh = byok_service.decrypt_secret(cred.refresh_token_encrypted) if cred.refresh_token_encrypted else None
+    return byok_service.decrypt_secret(cred.access_token_encrypted), refresh
+
+
 def load_tokens(db: Session, tenant_id: str, name: str) -> ConnectorTokens | None:
-    cred = (
-        db.query(EchoConnectorCredential)
-        .filter(EchoConnectorCredential.tenant_id == tenant_id, EchoConnectorCredential.connector == name)
-        .first()
-    )
+    cred = _credential(db, tenant_id, name)
     if cred is None:
         return None
     grant = get_grant(db, tenant_id, name)
+    access, refresh = _read_tokens(cred)
     return ConnectorTokens(
-        access_token=byok_service.decrypt_secret(cred.access_token_encrypted),
-        refresh_token=byok_service.decrypt_secret(cred.refresh_token_encrypted) if cred.refresh_token_encrypted else None,
+        access_token=access,
+        refresh_token=refresh,
         expires_at=cred.expires_at,
         scopes=(grant.scopes if grant else "") or "",
         account_label=grant.account_label if grant else None,
@@ -374,37 +409,49 @@ def run_sync(db: Session, grant_id: str) -> SyncOutcome:
         grant.status, grant.last_error = "error", RECONNECT_PREFIX + "the access token is missing."
         db.commit()
         return SyncOutcome("auth_error", error=grant.last_error)
-    if needs_refresh(tokens):
-        renewed = _refresh_tokens(db, grant, conn, tokens)
-        if isinstance(renewed, SyncOutcome):
-            return renewed
-        tokens = renewed
 
     started = _now()
+    tenant_id, name = grant.tenant_id, grant.connector
     grant.status = "syncing"
     db.commit()
     ctx = SyncContext(
-        tenant_id=grant.tenant_id,
+        tenant_id=tenant_id,
         tokens=tokens,
         cursor=json.loads(grant.cursor_json) if grant.cursor_json else {},
     )
+    held = [tokens]  # every token of this sync, to keep out of what it reports
+
+    def renew() -> ConnectorTokens:
+        fresh = _renew(db, tenant_id, name, conn, ctx.tokens)
+        held.append(fresh)
+        return fresh
+
+    if tokens.refresh_token and isinstance(conn, RefreshableConnector):
+        ctx.renew = renew
     backfill = grant.backfilled_at is None
     try:
+        if needs_refresh(tokens):
+            ctx.tokens = renew()
         events = conn.initial_backfill(ctx) if backfill else conn.incremental_sync(ctx, grant.last_sync_at)
-        counts = activity_event_service.store_events(db, grant.tenant_id, grant.connector, events)
-        facts = _store_facts(db, grant, ctx)
+        counts = activity_event_service.store_events(db, tenant_id, name, events)
+        facts, kept = _store_facts(db, tenant_id, name, ctx)
     except ConnectorError as e:
         db.rollback()
+        reason = _scrub(str(e), *held)
+        logger.warning("echo: %s sync for %s failed: %s", name, tenant_id[:8], reason)
         grant = db.get(EchoConnectorGrant, grant_id)
+        if grant is None:  # disconnected while it ran
+            return SyncOutcome("missing")
         grant.status = "error"
-        grant.last_error = (RECONNECT_PREFIX if e.auth else "") + str(e)[:500]
+        grant.last_error = (RECONNECT_PREFIX if e.auth else "") + reason[:500]
         db.commit()
-        logger.warning("echo: %s sync for %s failed: %s", grant.connector, grant.tenant_id[:8], e)
         return SyncOutcome("auth_error" if e.auth else "error", error=grant.last_error)
     except Exception as e:  # unexpected: fail-soft, logged loudly
         db.rollback()
-        logger.exception("echo: %s sync crashed for grant %s", grant.connector, grant_id)
+        logger.error("echo: %s sync crashed for grant %s:\n%s", name, grant_id, _scrub(traceback.format_exc(), *held))
         grant = db.get(EchoConnectorGrant, grant_id)
+        if grant is None:
+            return SyncOutcome("missing")
         grant.status, grant.last_error = "error", f"Sync failed: {type(e).__name__}"
         db.commit()
         return SyncOutcome("error", error=grant.last_error)
@@ -415,9 +462,12 @@ def run_sync(db: Session, grant_id: str) -> SyncOutcome:
         grant.backfilled_at = started
     grant.status = "idle"
     grant.last_error = None
-    grant.last_counts_json = json.dumps({"added": counts["added"], "updated": counts["updated"], "facts": facts})
+    summary = {"added": counts["added"], "updated": counts["updated"], "facts": facts}
+    if kept:
+        summary["facts_kept_manual"] = kept
+    grant.last_counts_json = json.dumps(summary)
     db.commit()
-    return SyncOutcome("ok", added=counts["added"], updated=counts["updated"], facts=facts)
+    return SyncOutcome("ok", added=counts["added"], updated=counts["updated"], facts=facts, facts_kept_manual=kept)
 
 
 def needs_refresh(tokens: ConnectorTokens, now: datetime | None = None) -> bool:
@@ -429,54 +479,149 @@ def needs_refresh(tokens: ConnectorTokens, now: datetime | None = None) -> bool:
     return expires_at <= _naive((now or _now()) + REFRESH_SKEW)
 
 
-def _refresh_tokens(
-    db: Session, grant: EchoConnectorGrant, conn, tokens: ConnectorTokens
-) -> ConnectorTokens | SyncOutcome:
-    """T-3.2.2.5: renew an expired access token before the sync calls the
-    provider, and store the new one encrypted like the first (D-043).
+def _scrub(text: str, *held: ConnectorTokens) -> str:
+    """``text`` with every token value in it blanked. A provider's error body
+    or a connector's message can echo what it was sent, and what this returns
+    goes to the log and to ``last_error``, which the panel shows. Scrub before
+    truncating: half a token is still a leak."""
+    for tokens in held:
+        for secret in (tokens.access_token, tokens.refresh_token):
+            if secret:
+                text = text.replace(secret, "[token]").replace(urllib.parse.quote(secret, safe=""), "[token]")
+    return text
 
-    Returns the renewed tokens, or the outcome the grant now records. Never
-    raises (this runs inside the ``echo.sync_connector`` Celery task): a
-    refresh the provider refuses, a missing refresh token, or a connector
-    that cannot refresh asks the user to reconnect (``RECONNECT_PREFIX``);
-    any other failure is an ordinary error the next sync retries, since the
-    refresh token may still be good. Neither token is ever logged."""
 
-    def reconnect(why: str) -> SyncOutcome:
-        grant.status = "error"
-        grant.last_error = RECONNECT_PREFIX + why
+def _claim_refresh(db: Session, tenant_id: str, name: str, claim: str) -> bool:
+    """Take the right to spend this grant's refresh token. Atomic: the UPDATE's
+    WHERE repeats the check, so of two readers one sees rowcount 1. A lease, so
+    a reader that dies holding it blocks the others for ``REFRESH_CLAIM_TTL``
+    at most. Commits at once: nothing is held open during the provider call."""
+    now = _naive(_now())
+    cred = EchoConnectorCredential
+    result = db.execute(
+        update(cred)
+        .where(
+            cred.tenant_id == tenant_id,
+            cred.connector == name,
+            or_(cred.refresh_claimed_at.is_(None), cred.refresh_claimed_at < now - REFRESH_CLAIM_TTL),
+        )
+        .values(refresh_claim=claim, refresh_claimed_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    db.commit()
+    return result.rowcount == 1
+
+
+def _release_refresh(db: Session, tenant_id: str, name: str, claim: str) -> None:
+    """Give the claim back, if it is still this reader's. Best effort: a
+    claim left behind lapses on its own."""
+    cred = EchoConnectorCredential
+    try:
+        db.execute(
+            update(cred)
+            .where(cred.tenant_id == tenant_id, cred.connector == name, cred.refresh_claim == claim)
+            .values(refresh_claim=None, refresh_claimed_at=None)
+            .execution_options(synchronize_session=False)
+        )
         db.commit()
-        return SyncOutcome("auth_error", error=grant.last_error)
+    except Exception as e:
+        db.rollback()
+        logger.warning("echo: could not release the %s refresh claim for %s: %s", name, tenant_id[:8], type(e).__name__)
 
-    def failed(why: str) -> SyncOutcome:
-        grant.status = "error"
-        grant.last_error = f"Sync failed: could not renew the access token ({why}). The next sync tries again."
-        db.commit()
-        return SyncOutcome("error", error=grant.last_error)
 
-    who = (grant.connector, grant.tenant_id[:8])
-    if not tokens.refresh_token:
+def _await_refresh(
+    db: Session, tenant_id: str, name: str, held: ConnectorTokens
+) -> tuple[str | None, ConnectorTokens]:
+    """Settle who renews (T-3.2.1.12). A scheduled sync and "Sync now" can both
+    find the token expired, and a provider that rotates refresh tokens answers
+    a second use of the old one with ``invalid_grant`` (some revoke the whole
+    grant for it). So one reader claims the refresh per connector and the
+    others wait for its result.
+
+    Returns ``(claim, tokens)``: a claim means this reader spends ``tokens``'
+    refresh token and must release it; None means another reader already
+    renewed and ``tokens`` is its result. Every pass reads the row AFTER trying
+    to claim, so a reader that finished just before this one claimed is seen
+    rather than renewed over. Raises ``TokenRenewalFailed`` past the wait."""
+    claim = str(uuid.uuid4())
+    deadline = time.monotonic() + REFRESH_WAIT_SECONDS
+    while True:
+        claimed = _claim_refresh(db, tenant_id, name, claim)
+        current = load_tokens(db, tenant_id, name)
+        if current is None:  # disconnected: run_sync reports the grant gone
+            raise TokenRenewalFailed("the connector was disconnected during the sync")
+        if current.access_token != held.access_token and not needs_refresh(current):
+            if claimed:
+                _release_refresh(db, tenant_id, name, claim)
+            return None, current
+        if claimed:
+            return claim, current
+        if time.monotonic() >= deadline:
+            raise _renewal_failed("another sync is still renewing it")
+        time.sleep(REFRESH_POLL_SECONDS)
+
+
+def _renewal_failed(why: str) -> TokenRenewalFailed:
+    return TokenRenewalFailed(f"Sync failed: could not renew the access token ({why}). The next sync tries again.")
+
+
+def _renew(db: Session, tenant_id: str, name: str, conn, held: ConnectorTokens) -> ConnectorTokens:
+    """T-3.2.2.5, T-3.2.1.12: replace ``held``, expired or just refused by the
+    provider, and store the new tokens encrypted like the first (D-043).
+
+    Returns the tokens to use, from this reader's refresh or another's. Raises
+    ``ConnectorError``, which ``run_sync`` records on the grant: with
+    ``auth=True`` (reconnect) for a missing refresh token, a connector that
+    cannot refresh, or a refresh the provider refuses; ``TokenRenewalFailed``
+    (the next sync retries) for anything else, since the refresh token may
+    still be good. Neither token is ever logged."""
+    who = (name, tenant_id[:8])
+    if not held.refresh_token:
         logger.info("echo: the %s access token for %s expired with no refresh token; reconnect needed", *who)
-        return reconnect("the access token expired and there is no refresh token to renew it.")
+        raise ConnectorError("the access token expired and there is no refresh token to renew it.", auth=True)
     if not isinstance(conn, RefreshableConnector):
         logger.warning("echo: the %s access token for %s expired and the connector cannot refresh it", *who)
-        return reconnect("the access token expired and this connector cannot renew it.")
+        raise ConnectorError("the access token expired and this connector cannot renew it.", auth=True)
+    claim, current = _await_refresh(db, tenant_id, name, held)
+    if claim is None:
+        logger.info("echo: using the %s access token another sync renewed for %s", *who)
+        return current
+    try:
+        return _spend_refresh_token(db, tenant_id, name, conn, current, claim)
+    finally:
+        _release_refresh(db, tenant_id, name, claim)
+
+
+def _spend_refresh_token(
+    db: Session, tenant_id: str, name: str, conn, tokens: ConnectorTokens, claim: str
+) -> ConnectorTokens:
+    """Call the provider under ``claim`` and store what it returns, releasing
+    the claim in the same commit. Nothing is held open during the call, so the
+    row can change meanwhile: a fresh connect, or a reader that took a lapsed
+    claim and finished first. Then that write stands and this returns it."""
+    who = (name, tenant_id[:8])
     try:
         fresh = conn.refresh_tokens(tokens)
     except ConnectorError as e:
-        db.rollback()
         if e.auth:
+            # A refusal is a revocation unless the token it refused is no
+            # longer the stored one: a reader that outlived its claim got there
+            # first, and its result is good.
+            latest = load_tokens(db, tenant_id, name)
+            if latest is not None and latest.refresh_token != tokens.refresh_token:
+                logger.info("echo: another sync rotated the %s refresh token for %s; using its result", *who)
+                return latest
             logger.warning("echo: %s refused to renew the access token for %s; reconnect needed", *who)
-            return reconnect("the provider no longer accepts this connection.")
-        logger.warning("echo: renewing the %s access token for %s failed: %s", *who, e)
-        return failed(str(e)[:300])
+            raise ConnectorError("the provider no longer accepts this connection.", auth=True) from None
+        reason = _scrub(str(e), tokens)
+        logger.warning("echo: renewing the %s access token for %s failed: %s", *who, reason)
+        raise _renewal_failed(reason[:300]) from None
     except Exception as e:  # a connector bug or a transport error: fail-soft
-        db.rollback()
         logger.error("echo: renewing the %s access token for %s crashed: %s", *who, type(e).__name__)
-        return failed(type(e).__name__)
+        raise _renewal_failed(type(e).__name__) from None
     if fresh is None or not getattr(fresh, "access_token", None):
         logger.error("echo: the %s connector returned no access token on refresh for %s", *who)
-        return failed("the provider returned no access token")
+        raise _renewal_failed("the provider returned no access token")
 
     renewed = ConnectorTokens(
         access_token=fresh.access_token,
@@ -486,15 +631,26 @@ def _refresh_tokens(
         scopes=fresh.scopes or tokens.scopes,
         account_label=tokens.account_label,
     )
+    cred = _credential(db, tenant_id, name)
+    if cred is None:
+        # Disconnected while the provider answered: never bring the token back.
+        raise TokenRenewalFailed("the connector was disconnected during the sync")
     try:
-        _store_tokens(db, grant.tenant_id, grant.connector, renewed)
+        if _read_tokens(cred) != (tokens.access_token, tokens.refresh_token):
+            logger.info("echo: the %s tokens for %s changed during the refresh; keeping the stored ones", *who)
+            return load_tokens(db, tenant_id, name)
+        _write_tokens(cred, renewed)
     except byok_service.EncryptionConfigurationError:
         db.rollback()
         logger.error("echo: %s sync for %s skipped: BYOK_ENCRYPTION_KEY is not a valid key", *who)
-        grant.status = "error"
-        grant.last_error = "Sync failed: this install's encryption key is not valid. Ask the operator to fix it."
-        db.commit()
-        return SyncOutcome("error", error=grant.last_error)
+        raise TokenRenewalFailed(
+            "Sync failed: this install's encryption key is not valid. Ask the operator to fix it."
+        ) from None
+    # Stored even if the claim lapsed: nothing else wrote, so a rotated token
+    # is the only live copy.
+    if cred.refresh_claim == claim:
+        cred.refresh_claim = cred.refresh_claimed_at = None
+    db.commit()
     logger.info("echo: renewed the %s access token for %s", *who)
     return renewed
 
@@ -503,25 +659,29 @@ def fact_source(name: str) -> str:
     return f"connector:{name}"
 
 
-def _store_facts(db: Session, grant: EchoConnectorGrant, ctx: SyncContext) -> int:
+def _store_facts(db: Session, tenant_id: str, name: str, ctx: SyncContext) -> tuple[int, int]:
     """Upsert the sync's derived facts, skipping every key the user deleted
-    (T-3.2.4.4). Returns how many were written."""
-    blocked = echo_fact_tombstones.blocked_keys(db, grant.tenant_id, grant.connector)
-    stored = 0
+    (T-3.2.4.4) and every key a row the user wrote holds (T-3.2.1.11). Returns
+    how many were written, and how many of the second kind were skipped."""
+    blocked = echo_fact_tombstones.blocked_keys(db, tenant_id, name)
+    stored = kept = 0
     for fact in ctx.facts:
         if (fact.kind, fact.key) in blocked:
             continue
-        stored += 1
-        echo_service.record_context(
+        written = echo_service.record_derived_context(
             db,
-            user_id=grant.tenant_id,
+            user_id=tenant_id,
             kind=fact.kind,
             key=fact.key,
             value=fact.value,
-            source=fact_source(grant.connector),
+            source=fact_source(name),
             confidence=min(float(fact.confidence), MAX_FACT_CONFIDENCE),
         )
-    return stored
+        if written is None:
+            kept += 1
+        else:
+            stored += 1
+    return stored, kept
 
 
 # --------------------------------------------------------------------------- revoke

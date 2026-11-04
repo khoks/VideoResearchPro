@@ -6,9 +6,10 @@ Three tables, split by what the user's archive may carry:
   which consent text, as which account, and how syncing is going. Part of the
   brain: exported and erased (``echo_privacy_service.ECHO_TABLES``).
 * ``echo_connector_credentials`` — the OAuth tokens, Fernet-encrypted with the
-  install's single key (D-043, ``byok_service.encrypt_secret``). Counted and
-  erased with the brain but **never written into an export**, encrypted or not
-  (``echo_privacy_service.ECHO_SECRET_TABLES``).
+  install's single key (D-043, ``byok_service.encrypt_secret``), and the claim
+  that lets one reader at a time spend the refresh token (T-3.2.1.12). Counted
+  and erased with the brain but **never written into an export**, encrypted or
+  not (``echo_privacy_service.ECHO_SECRET_TABLES``).
 * ``echo_connector_oauth_states`` — the CSRF state and PKCE verifier of a
   connect that has not come back yet, bound to the tenant. Single use, expires
   in minutes; secret like the tokens.
@@ -66,6 +67,10 @@ class EchoConnectorCredential(Base):
     access_token_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
     refresh_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Who is renewing these tokens, and since when (a lease): a provider that
+    # rotates refresh tokens must see each one spent once.
+    refresh_claim: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    refresh_claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
 

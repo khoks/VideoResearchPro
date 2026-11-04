@@ -9,12 +9,28 @@
  */
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useKnowledge } from '../hooks/useKnowledge';
+import { useExtractKnowledge, useKnowledge } from '../hooks/useKnowledge';
+import { useFeatureAvailable } from '../hooks/useFeatureAvailable';
 import { Button, EmptyState } from '../components/primitives';
+import { KnowledgeCutOffNote } from '../components/knowledge/KnowledgeCutOffNote';
 import { ReaderLoading } from '../components/reader/ReaderLoading';
 import { ReaderShell, StatTiles, describeSource, formatPublished, parseMarkdownDoc } from '../components/reader';
 import { citedFileFailed } from '../components/citation/citedFile';
 import { openApiFile, openableApiFile } from '../services/apiFiles';
+import { depthOf } from '../utils/depth';
+
+/** T-1.15.3.8: the reader's cut-off note, wired to the same extraction as the drawer's. */
+function ReaderCutOffNote({ videoId, writtenAt }: { videoId: string; writtenAt: string | null | undefined }) {
+  const extract = useExtractKnowledge(videoId);
+  const available = useFeatureAvailable('knowledge_extraction');
+  return (
+    <KnowledgeCutOffNote
+      writtenAt={depthOf(writtenAt)}
+      onRegenerate={available ? (depth) => extract.mutate({ force: true, depth }) : undefined}
+      busy={extract.isPending}
+    />
+  );
+}
 
 export function KnowledgeReaderPage() {
   const { videoId } = useParams<{ videoId: string }>();
@@ -119,15 +135,18 @@ export function KnowledgeReaderPage() {
       }
       outline={parsed.outline}
       before={
-        <StatTiles
-          label="What was extracted"
-          tiles={[
-            { label: 'Topics', value: data.topics.length },
-            { label: 'Concepts', value: data.concepts.length },
-            { label: 'Events', value: data.events.length },
-            { label: 'Facts', value: data.facts.length },
-          ]}
-        />
+        <>
+          {data.report_cut_off && videoId && <ReaderCutOffNote videoId={videoId} writtenAt={data.output_length} />}
+          <StatTiles
+            label="What was extracted"
+            tiles={[
+              { label: 'Topics', value: data.topics.length },
+              { label: 'Concepts', value: data.concepts.length },
+              { label: 'Events', value: data.events.length },
+              { label: 'Facts', value: data.facts.length },
+            ]}
+          />
+        </>
       }
     >
       {parsed.content}

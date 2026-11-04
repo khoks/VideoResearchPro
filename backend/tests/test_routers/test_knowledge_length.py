@@ -27,7 +27,10 @@ assertion rejects that mutant. Run by hand on 2026-11-04:
   `test_unset_is_the_call_s_1_14_8_shipped`: 1.25x, not 1.0;
 - dropping the thinking reserve, or the cap at the unset budget, fails the
   `reasoning` tests;
-- dropping the router's empty-report guard fails the `failed` tests.
+- dropping the router's empty-report guard fails the `failed` tests;
+- T-1.15.3.8: the agent dropping the finish reason, or the router not storing
+  it, fails `test_a_cut_off_report_says_so_on_both_endpoints`; carrying the old
+  flag over a Regenerate fails `test_a_regenerate_that_fits_clears_the_note`.
 """
 from __future__ import annotations
 
@@ -355,3 +358,65 @@ def test_a_report_cut_off_at_its_budget_is_logged(client, video, stop_reason, wa
     assert resp.status_code == 200, resp.text
     cut_off = [call for call in log.warning.call_args_list if "cut off" in call.args[0]]
     assert bool(cut_off) is warned
+
+
+# --- T-1.15.3.8: a report cut off at its budget tells the reader -------------
+
+
+@pytest.mark.parametrize("stop_reason", ["max_tokens", "length", "MAX_TOKENS"])
+def test_a_cut_off_report_says_so_on_both_endpoints(client, video, db, stop_reason):
+    resp, _ = _extract(client, video, "?output_length=brief", stop_reason=stop_reason)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["report_cut_off"] is True
+    assert resp.json()["knowledge_report_md"] == _REPORT, "a truncated report is still a report"
+    assert client.get(f"/api/v1/videos/{video.video_id}/knowledge").json()["report_cut_off"] is True
+    db.expire_all()
+    stored = json.loads(db.get(Document, video.document_id).extracted_knowledge_json)
+    assert stored["_report_cut_off"] is True
+    assert stored["_output_length"] == "brief"
+    assert stored["facts"] == _SMALL["facts"]
+
+
+def test_a_report_that_fits_records_nothing(client, video, db):
+    resp, _ = _extract(client, video, "?output_length=brief")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["report_cut_off"] is False
+    assert client.get(f"/api/v1/videos/{video.video_id}/knowledge").json()["report_cut_off"] is False
+    db.expire_all()
+    assert "_report_cut_off" not in json.loads(db.get(Document, video.document_id).extracted_knowledge_json)
+
+
+def test_a_regenerate_that_fits_clears_the_note(client, video):
+    first, _ = _extract(client, video, stop_reason="max_tokens")
+    assert first.json()["report_cut_off"] is True
+    again, _ = _extract(client, video, "?force=true&output_length=deep")
+    assert again.json()["report_cut_off"] is False
+    assert client.get(f"/api/v1/videos/{video.video_id}/knowledge").json()["report_cut_off"] is False
+
+
+def test_a_failed_regenerate_keeps_the_note_on_the_report_that_stands(client, video):
+    first, _ = _extract(client, video, stop_reason="max_tokens")
+    assert first.json()["report_cut_off"] is True
+    resp, _ = _extract(client, video, "?force=true&output_length=deep", report="")
+    assert resp.status_code == 502
+    assert client.get(f"/api/v1/videos/{video.video_id}/knowledge").json()["report_cut_off"] is True
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        json.dumps({"topics": ["t"], "concepts": [], "events": [], "facts": []}),  # before this was recorded
+        json.dumps({"topics": [], "_report_cut_off": "yes"}),
+        "not json",
+    ],
+    ids=["older", "not-a-bool", "corrupt"],
+)
+def test_a_report_with_no_flag_shows_nothing(client, video, db, stored):
+    row = db.get(Document, video.document_id)
+    row.extracted_knowledge_json = stored
+    row.knowledge_report_md = _REPORT
+    row.knowledge_extracted_at = datetime.now(timezone.utc)
+    db.commit()
+    body = client.get(f"/api/v1/videos/{video.video_id}/knowledge").json()
+    assert body["report_cut_off"] is False
+    assert body["knowledge_report_md"] == _REPORT

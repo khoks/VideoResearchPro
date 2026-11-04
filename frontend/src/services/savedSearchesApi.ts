@@ -49,7 +49,7 @@ export interface SavedSearchRun {
   changed: boolean | null;
   jaccard: number | null;
   embedding_distance: number | null;
-  decided_by: 'none' | 'agreed' | 'judged' | 'judge_failed' | null;
+  decided_by: 'none' | 'agreed' | 'judged' | 'judge_failed' | 'embedding_only' | null;
   added_reference_ids: string[];
   dropped_reference_ids: string[];
   diff_summary: string | null;

@@ -424,7 +424,8 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
     try:
         response = llm.invoke([HumanMessage(content=prompt)])
         md = response_text(response).strip()
-        if stopped_for_length(response):
+        cut_off = stopped_for_length(response)
+        if cut_off:
             logger.warning(
                 "Knowledge report for video %s was cut off at its %d-token budget",
                 state.get("video_id", ""), synth_max_tokens,
@@ -434,7 +435,7 @@ def synthesize_report(state: KnowledgeAgentState) -> dict:
             lines = md.splitlines()
             end = -1 if lines and lines[-1].startswith("```") else len(lines)
             md = "\n".join(lines[1:end]).strip()
-        return {"knowledge_report_md": md}
+        return {"knowledge_report_md": md, "knowledge_report_cut_off": cut_off}
     except Exception:
         logger.exception("Knowledge synthesis failed")
         return {"knowledge_report_md": ""}
@@ -491,6 +492,9 @@ def run_knowledge_extract_agent(
               "processed_tokens": int,   # tokens actually extracted
               "total_tokens": int,       # tokens in the original transcript
           },
+          # Present ONLY when the report stopped at its token budget
+          # (T-1.15.3.8). Stored beside `_output_length`, shown to the reader:
+          "_report_cut_off": True,
         }
     """
     video_id = getattr(video, "video_id", "") or getattr(video, "document_id", "") or ""
@@ -554,4 +558,6 @@ def run_knowledge_extract_agent(
     }
     if processing is not None:
         out["_processing"] = processing
+    if result.get("knowledge_report_cut_off"):
+        out["_report_cut_off"] = True
     return out

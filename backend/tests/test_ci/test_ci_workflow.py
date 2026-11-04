@@ -164,6 +164,21 @@ def test_the_download_step_fills_every_cached_path_before_the_save(workflow) -> 
         )
 
 
+def test_only_the_test_step_is_offline(workflow) -> None:
+    """T-8.8.4.7: pytest runs with the hub off, so a DNS drop cannot fail it.
+    Set any wider and the download step could not fetch the model on a cache
+    miss, and every run after a new cache key would fail."""
+    steps = _backend_steps(workflow)
+    pytest_step = next(s for s in steps if "pytest" in str(s.get("run", "")))
+    assert pytest_step.get("env", {}).get("HF_HUB_OFFLINE") == "1"
+
+    _, save = _step(steps, "actions/cache/save@")
+    _, download = _gating_download(steps, save)
+    assert "HF_HUB_OFFLINE" not in download.get("env", {})
+    assert "HF_HUB_OFFLINE" not in _job_env(workflow)
+    assert "HF_HUB_OFFLINE" not in workflow.get("env", {})
+
+
 def test_restore_and_save_use_the_same_key_and_paths(workflow) -> None:
     steps = _backend_steps(workflow)
     env = _job_env(workflow)

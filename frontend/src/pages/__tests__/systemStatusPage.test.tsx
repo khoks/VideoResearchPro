@@ -232,7 +232,7 @@ describe('wiring', () => {
     const routes = raw(
       import.meta.glob('../../routes/index.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>,
     );
-    expect(routes).toMatch(/path: 'account\/system', element: <SystemStatusPage \/>/);
+    expect(routes).toMatch(/path: 'account\/system', \.\.\.lazyPage\(<SystemStatusPage \/>/);
     const layout = raw(
       import.meta.glob('../../layouts/AppLayout.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>,
     );

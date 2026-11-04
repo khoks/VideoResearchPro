@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { Markdown } from '../components/common/Markdown';
 import { NotesPanel } from '../components/notes';
 import {
   useAskQAHistoryChat,
@@ -367,7 +367,7 @@ function QAHistoryExchangeCard({ qa }: { qa: QAHistoryExchange }) {
           lineHeight: lineHeight.loose,
         }}
       >
-        <ReactMarkdown>{qa.answer}</ReactMarkdown>
+        <Markdown>{qa.answer}</Markdown>
       </div>
       {qa.references.length > 0 && (
         <div

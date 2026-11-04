@@ -53,20 +53,28 @@ logger = logging.getLogger(__name__)
 # Chapter headings are H2 (`## 1. Title`), so a report's own headings start
 # two levels below: its H1 would otherwise compete with the book title.
 _CHAPTER_HEADING_OFFSET = 2
+# An answer sits under "### Questions & Answers", so its H1 starts one below.
+_ANSWER_HEADING_OFFSET = 3
 _ATX_HEADING = re.compile(r"^(#{1,6})(\s+)(.*)$")
 _FENCE = re.compile(r"^\s*(```|~~~)")
+# Markdown's inline punctuation, plus `#`, which would otherwise close a heading.
+_MARKDOWN_PUNCTUATION = re.compile(r"([\\`*_\[\]<&~#])")
+_LINE_BREAK = re.compile(r"\r\n?|\n")
 
 
-def _slugify(text: str) -> str:
-    s = re.sub(r"[^\w\s-]", "", (text or "").strip().lower())
-    s = re.sub(r"[\s_-]+", "-", s)
-    return s.strip("-") or "section"
+def _literal(text: str) -> str:
+    """``text`` as Markdown that reads as exactly that text, on one line. A run
+    topic or a book title is what someone typed, not Markdown: left as it is,
+    `AT&T <draft>` parses differently in the reader and the EPUB, so their
+    heading ids differ, and an unbalanced `]` breaks the contents link."""
+    return _MARKDOWN_PUNCTUATION.sub(r"\\\1", " ".join((text or "").split()))
 
 
-def _demote_headings(md: str, offset: int = _CHAPTER_HEADING_OFFSET) -> str:
+def _demote_headings(md: str, offset: int = _CHAPTER_HEADING_OFFSET, *, drop_h1: bool = True) -> str:
     """Push every ATX heading down ``offset`` levels (capped at H6), leaving
     fenced code untouched. The report's single H1 repeats the job topic the
-    chapter heading already carries, so it is dropped."""
+    chapter heading already carries, so it is dropped unless ``drop_h1`` is
+    off (an answer's H1 repeats nothing)."""
     out: list[str] = []
     in_fence = False
     dropped_h1 = False
@@ -80,7 +88,7 @@ def _demote_headings(md: str, offset: int = _CHAPTER_HEADING_OFFSET) -> str:
             out.append(line)
             continue
         level = len(m.group(1))
-        if level == 1 and not dropped_h1:
+        if level == 1 and drop_h1 and not dropped_h1:
             dropped_h1 = True
             continue
         out.append("#" * min(6, level + offset) + m.group(2) + m.group(3))
@@ -126,7 +134,10 @@ def _job_qa_markdown(
     for i, r in enumerate(rows, start=1):
         out.append(f"**Q{i}.** {r.question.strip()}")
         out.append("")
-        out.append(output_citation_service.strip_links((r.answer or "").strip()))
+        # Below the chapter's headings: an H2 is the book's, and an answer's
+        # own "## Endnotes" would read as a chapter or as the book's endnotes.
+        answer = output_citation_service.strip_links((r.answer or "").strip())
+        out.append(_demote_headings(answer, _ANSWER_HEADING_OFFSET, drop_h1=False))
         try:
             references = json.loads(r.references or "[]")
         except (TypeError, ValueError):
@@ -307,7 +318,6 @@ class BookMarkdownOutputter:
 # ---------------------------------------------------------------------------
 
 _ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
-_LINK_IN_HEADING = re.compile(r"!?\[([^\]\n]*)\]\([^)\s]*\)")
 
 
 def _digests(db: Session, user: User, source_ids: list[str]) -> list[book_cohesion.ChapterDigest]:
@@ -323,30 +333,59 @@ def _digests(db: Session, user: User, source_ids: list[str]) -> list[book_cohesi
     return out
 
 
-def _heading_text(line: str) -> str | None:
-    m = _ATX_HEADING.match(line)
-    if m is None:
-        return None
-    text = re.sub(r"\s+#+\s*$", "", m.group(3))
-    return _LINK_IN_HEADING.sub(r"\1", text).strip()
+def _line_numbers(parts: list[str]) -> list[int]:
+    """The line each of ``parts`` starts on once they are joined with newlines.
+    A part is rarely one line: a whole chapter body is one part."""
+    numbers: list[int] = []
+    line = 0
+    for part in parts:
+        numbers.append(line)
+        line += len(_LINE_BREAK.findall(part)) + 1
+    return numbers
 
 
-def _heading_ids(lines: list[str], slug) -> dict[int, str]:
-    """The id each heading line gets in the reader (and in the EPUB/PDF):
-    the reader's slug with `-2`, `-3` for repeats, in document order, fenced
-    code skipped. Keyed by line index."""
-    ids: dict[int, str] = {}
-    in_fence = False
-    for idx, line in enumerate(lines):
-        if _FENCE.match(line):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
-        text = _heading_text(line)
-        if text is not None:
-            ids[idx] = slug(text)
-    return ids
+def _table_of_contents(head: list[str], body: list[str], targets: list[tuple[str, int, str]]) -> list[str]:
+    """The contents section, linking the ids the book's headings really get.
+
+    The ids come from rendering the manuscript, not from slugging each title:
+    a heading's id depends on every heading before it, so a report's own
+    "Conclusion", even one in a quote, takes the plain id from the book's.
+    ``targets`` are (kind, index into ``body``, label). The section's own
+    heading is rendered too, so that it takes its place in the sequence; its
+    links add no heading.
+    """
+    heading = [f"## {book_html.TOC_HEADING}", ""]
+    before = head + heading
+    lines = _line_numbers(before + body)[len(before):]
+    rendered = book_html.render_book_html("\n".join(before + body), title="")
+    ids = {h.line: h.id for h in rendered.headings}
+
+    def link(label: str, index: int) -> str:
+        # No id means the line did not render as a heading (an unclosed code
+        # fence in a chapter swallows what follows it). A dead link is worse
+        # than plain text, so the entry keeps its label and loses the link.
+        anchor = ids.get(lines[index])
+        return f"[{label}](#{anchor})" if anchor else label
+
+    toc = list(heading)
+    chapter_no = 0
+    # Chapters are one numbered list (its numbers continue across parts);
+    # the book's own sections are bullets; a part is a bold line.
+    previous = ""
+    for kind, index, label in targets:
+        if kind != previous and toc[-1] != "":
+            toc.append("")
+        if kind == "chapter":
+            chapter_no += 1
+            toc.append(f"{chapter_no}. {link(label, index)}")
+        elif kind == "part":
+            toc.extend([f"**{link(label, index)}**", ""])
+        else:
+            toc.append(f"- {link(label, index)}")
+        previous = kind
+    if toc[-1] != "":
+        toc.append("")
+    return toc
 
 
 def _assemble(
@@ -360,7 +399,7 @@ def _assemble(
     """The manuscript. Chapter bodies go in untouched; everything a model
     wrote is framing around them and is disclosed in the front matter."""
     head: list[str] = [
-        f"# {title}",
+        f"# {_literal(title)}",
         "",
         f"_Authored by Pratidhvani Author Studio — {datetime.now(timezone.utc):%Y-%m-%d}_",
         "",
@@ -383,11 +422,11 @@ def _assemble(
         head += [f"_Processing note: {note}_", ""]
 
     body: list[str] = []
-    targets: list[tuple[str, int, str]] = []  # (kind, body line index, label)
+    targets: list[tuple[str, int, str]] = []  # (kind, index into body, label)
 
     def heading(kind: str, text: str, label: str | None = None) -> None:
-        targets.append((kind, len(body), label or text))
-        body.extend([f"## {text}", ""])
+        targets.append((kind, len(body), _literal(label or text)))
+        body.extend([f"## {_literal(text)}", ""])
 
     if cohesion.introduction:
         heading("extra", "Introduction")
@@ -423,34 +462,5 @@ def _assemble(
         body.extend(output_citation_service.endnote_definitions(citations))
         body.append("")
 
-    # Ids in document order, exactly as the reader assigns them (T-6.1.4.4):
-    # the title, then the contents heading, then everything in the body. A
-    # report's own "Conclusion" earlier in the book takes the plain id, so the
-    # book's own sections cannot be linked by a guessed slug.
-    slug = book_html.slugger()
-    _heading_ids(head, slug)
-    toc: list[str] = []
-    if include_toc and chapters:
-        slug(book_html.TOC_HEADING)
-        ids = _heading_ids(body, slug)
-        toc = [f"## {book_html.TOC_HEADING}", ""]
-        chapter_no = 0
-        # Chapters are one numbered list (its numbers continue across parts);
-        # the book's own sections are bullets; a part is a bold line.
-        previous = ""
-        for kind, idx, label in targets:
-            anchor = ids.get(idx, "")
-            if kind != previous and toc[-1] != "":
-                toc.append("")
-            if kind == "chapter":
-                chapter_no += 1
-                toc.append(f"{chapter_no}. [{label}](#{anchor})")
-            elif kind == "part":
-                toc.extend([f"**[{label}](#{anchor})**", ""])
-            else:
-                toc.append(f"- [{label}](#{anchor})")
-            previous = kind
-        if toc[-1] != "":
-            toc.append("")
-
+    toc = _table_of_contents(head, body, targets) if include_toc and chapters else []
     return "\n".join(head + toc + body).strip() + "\n"

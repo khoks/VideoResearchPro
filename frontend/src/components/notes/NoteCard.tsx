@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { Markdown } from '../common/Markdown';
 import type { Note } from '../../services/notesApi';
 import { formatDate } from '../../utils/formatters';
 import { Button } from '../primitives';
@@ -130,7 +130,7 @@ export function NoteCard({ note, onEdit, onDelete, deleting, meta }: Props) {
           overflowWrap: 'anywhere',
         }}
       >
-        <ReactMarkdown>{note.body_md}</ReactMarkdown>
+        <Markdown>{note.body_md}</Markdown>
       </div>
     </article>
   );
